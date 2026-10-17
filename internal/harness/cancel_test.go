@@ -179,8 +179,8 @@ func TestCancelReleasesDependent(t *testing.T) {
 	})
 }
 
-// TestCancelCorrectionReleasingHeldPush: cancelling a push correction worker releases
-// the held push, so push checks run and push proceeds when green.
+// TestCancelCorrectionReleasingHeldPush: cancelling a push correction worker releases the held push, so, the branch
+// fixed by hand meanwhile, push checks run and push proceeds when green.
 func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -226,6 +226,7 @@ func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
+	in.handCommit(t) // The developer fixed it, and cancelled the correction.
 
 	in.pass(t, time.Second)
 	tip := in.tip(t)

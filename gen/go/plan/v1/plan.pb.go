@@ -3158,12 +3158,16 @@ type CheckRun struct {
 	Passed bool `protobuf:"varint,8,opt,name=passed,proto3" json:"passed,omitempty"`
 	// Its exit code; -1 when it could not run.
 	ExitCode int32 `protobuf:"varint,9,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
-	// When it failed, why, and the end of its output.
+	// When it failed, why, and the end of its output (the whole of it in output_file).
 	Reason string `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
 	Output string `protobuf:"bytes,11,opt,name=output,proto3" json:"output,omitempty"`
 	// When it ended, and how long it took, in milliseconds.
-	EndTime       *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	DurationMs    int64                  `protobuf:"varint,13,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	EndTime    *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	DurationMs int64                  `protobuf:"varint,13,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	// When it failed, the file under Djinn's data folder that keeps its whole output (checks/ of its project), and the
+	// tests or specs its output names as failing.
+	OutputFile    string   `protobuf:"bytes,14,opt,name=output_file,json=outputFile,proto3" json:"output_file,omitempty"`
+	Failed        []string `protobuf:"bytes,15,rep,name=failed,proto3" json:"failed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3287,6 +3291,20 @@ func (x *CheckRun) GetDurationMs() int64 {
 		return x.DurationMs
 	}
 	return 0
+}
+
+func (x *CheckRun) GetOutputFile() string {
+	if x != nil {
+		return x.OutputFile
+	}
+	return ""
+}
+
+func (x *CheckRun) GetFailed() []string {
+	if x != nil {
+		return x.Failed
+	}
+	return nil
 }
 
 // A skill a project summons from another project. It stays in its source, and the summoning project follows it:
@@ -4069,7 +4087,8 @@ type WishPush struct {
 	Approved bool `protobuf:"varint,5,opt,name=approved,proto3" json:"approved,omitempty"`
 	// Why the project's push checks hold the push, at the branch's tip then; empty once they pass.
 	Held string `protobuf:"bytes,6,opt,name=held,proto3" json:"held,omitempty"`
-	// How many times in a row they held it: at the second, or once no work is left to commit, Djinn asks.
+	// How many times in a row they ran red and held it. Push checks never run twice on the same tree: due again on it,
+	// or once no work is left to commit, Djinn starts a correction.
 	HeldRuns int32 `protobuf:"varint,7,opt,name=held_runs,json=heldRuns,proto3" json:"held_runs,omitempty"`
 	// The person said to push without the push checks: the next push skips them, once.
 	Unchecked bool `protobuf:"varint,8,opt,name=unchecked,proto3" json:"unchecked,omitempty"`
@@ -6939,7 +6958,11 @@ type IntegrationFailure struct {
 	Reason string `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
 	// For a merge of the project's main branch into the integration branch, main's commit merged: no task's work is in
 	// it, and the correction's success records main as merged.
-	MainSha       string `protobuf:"bytes,9,opt,name=main_sha,json=mainSha,proto3" json:"main_sha,omitempty"`
+	MainSha string `protobuf:"bytes,9,opt,name=main_sha,json=mainSha,proto3" json:"main_sha,omitempty"`
+	// For a red check, or a setup that failed, the file that keeps its whole output (CheckRun.output_file), and the
+	// tests or specs its output names as failing: what the correction reads first.
+	OutputFile    string   `protobuf:"bytes,10,opt,name=output_file,json=outputFile,proto3" json:"output_file,omitempty"`
+	Failed        []string `protobuf:"bytes,11,rep,name=failed,proto3" json:"failed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7035,6 +7058,20 @@ func (x *IntegrationFailure) GetMainSha() string {
 		return x.MainSha
 	}
 	return ""
+}
+
+func (x *IntegrationFailure) GetOutputFile() string {
+	if x != nil {
+		return x.OutputFile
+	}
+	return ""
+}
+
+func (x *IntegrationFailure) GetFailed() []string {
+	if x != nil {
+		return x.Failed
+	}
+	return nil
 }
 
 // TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T07). When a
@@ -24325,7 +24362,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
 	"correction\x18\f \x01(\tR\n" +
 	"correction\x12\x16\n" +
-	"\x06landed\x18\r \x01(\bR\x06landed\"\xf7\x02\n" +
+	"\x06landed\x18\r \x01(\bR\x06landed\"\xb0\x03\n" +
 	"\bCheckRun\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05setup\x18\x02 \x01(\bR\x05setup\x12\x18\n" +
@@ -24341,7 +24378,10 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06output\x18\v \x01(\tR\x06output\x125\n" +
 	"\bend_time\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x12\x1f\n" +
 	"\vduration_ms\x18\r \x01(\x03R\n" +
-	"durationMs\"z\n" +
+	"durationMs\x12\x1f\n" +
+	"\voutput_file\x18\x0e \x01(\tR\n" +
+	"outputFile\x12\x16\n" +
+	"\x06failed\x18\x0f \x03(\tR\x06failed\"z\n" +
 	"\x06Summon\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
@@ -24731,7 +24771,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0eTaskCorrection\x125\n" +
 	"\afailure\x18\x01 \x01(\v2\x1b.plan.v1.IntegrationFailureR\afailure\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x05R\aattempt\x12\x18\n" +
-	"\aadopted\x18\x03 \x01(\bR\aadopted\"\x92\x02\n" +
+	"\aadopted\x18\x03 \x01(\bR\aadopted\"\xcb\x02\n" +
 	"\x12IntegrationFailure\x12/\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x19.plan.v1.IntegrationStateR\x05state\x12\x12\n" +
 	"\x04base\x18\x02 \x01(\tR\x04base\x12!\n" +
@@ -24741,7 +24781,11 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06output\x18\x06 \x01(\tR\x06output\x12\x19\n" +
 	"\btask_ids\x18\a \x03(\tR\ataskIds\x12\x16\n" +
 	"\x06reason\x18\b \x01(\tR\x06reason\x12\x19\n" +
-	"\bmain_sha\x18\t \x01(\tR\amainSha\"\xa5\x03\n" +
+	"\bmain_sha\x18\t \x01(\tR\amainSha\x12\x1f\n" +
+	"\voutput_file\x18\n" +
+	" \x01(\tR\n" +
+	"outputFile\x12\x16\n" +
+	"\x06failed\x18\v \x03(\tR\x06failed\"\xa5\x03\n" +
 	"\x0fTaskIntegration\x12/\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x19.plan.v1.IntegrationStateR\x05state\x12\x16\n" +
 	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x10\n" +

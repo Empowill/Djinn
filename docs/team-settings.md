@@ -236,9 +236,11 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   again: the task's events say `commit checks: lint passed by the worker on this tree, not run again`. Any change
   after it, a merge that brings other work, or a failed run, and the check runs.
 - **Push checks** run on the branch's tip when a push is due. A check that passed as a commit check on that very commit
-  does not run again. Red, the push is **held**: the tasks' events and the wish's head say why. Red twice in a row, or
-  at once when no work of the wish is left to commit in the project, Djinn starts a correction worker (within
-  `correction_attempts`). If the correction fails, or its attempts are spent, or none can start, Djinn tells the lead
+  does not run again. Red, the push is **held**: the tasks' events and the wish's head say why, and the whole output
+  is kept in `projects/<id>/checks/` of Djinn's data folder (the last 100 red runs, any check), the events naming the
+  file and the failing tests. Push checks never run twice on the same tree: when the push is due again on it, or at
+  once when no work of the wish is left to commit in the project, Djinn starts a correction worker (within
+  `correction_attempts`) instead of running them; only a push the developer asks for or approves checks it again. If the correction fails, or its attempts are spent, or none can start, Djinn tells the lead
   (a move event, no question to the developer): retry a correction, drop the work, or leave it waiting. While the push
   is held, the wish's new tasks in the project wait (`waits for feat/x to be green again`), corrections and
   investigators aside; so they do while any correction repairs the branch (`waits for W9 to settle the conflict in
@@ -290,8 +292,8 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
    after it are committed on their own meanwhile.
 6. **A correction worker** starts by itself: a work task part of the same azima as the failed task, of its provider,
    its worktree on the failed merge (the branch, and that merge again, its conflicts left in place; or the work merged,
-   for a red check), what failed in its first prompt: the files in conflict, or the check's command and
-   the end of its output. It commits its work, which concludes the merge, and its branch integrates like any task's,
+   for a red check), what failed in its first prompt: the files in conflict, or the check's command,
+   the end of its output and the file that keeps the whole of it. It commits its work, which concludes the merge, and its branch integrates like any task's,
    at once and alone. Green, the failed tasks are committed with it, saying
    `corrected by W5`. A correction whose work fails in turn, or whose worker fails, counts as an attempt.
 7. Past `correction_attempts` (2 by default), Djinn **tells the lead**, a move event and no question to the

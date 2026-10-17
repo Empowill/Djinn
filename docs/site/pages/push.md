@@ -140,11 +140,25 @@ When a push check is red, the push is **held**:
   it becomes their correction (see below).
 - Djinn runs the push checks again when new work is committed, or when the branch moves, even by a push of yours.
   Green, the hold lifts and the push goes on.
+- Never twice on the same files: a branch whose files are those the push checks were red on is not checked again,
+  whatever commit it is at. When the push is due again on it, Djinn starts its correction at once instead. Only a push
+  you ask for, or approve, checks such a branch again. On 17/10/2026, before this rule, the same branch ran its push
+  checks nine times in three hours, red each time on the same spec, and no correction started.
+
+### The whole output
+
+Each red check, a push check, a commit check or the setup, keeps its **whole output** in a file of its own, in the
+checks folder of the project in Djinn's data folder; the last hundred stay. The tasks' events give the file, with the
+tests and specs its output names as failing: Go tests, Playwright specs with their line, Node tests. The correction's
+instructions point to that file first, and its title names what failed. The branch's line and the top of the wish
+still show the end of the output, on hover.
 
 ### Its correction
 
-When the push checks are red twice in a row, or at once when the wish has no work left to commit in the project, Djinn
-starts a correction worker: a task told to make the push checks pass without undoing what the branch did. It is the
+When the push is due again on the files its push checks were red on, or at once when the wish has no work left to commit
+in the project, Djinn starts a correction worker: a task told to make the push checks pass without undoing what the
+branch did. Its instructions say that only a commit of its own has them run again: a correction that changes nothing
+leaves the push held, and the next attempt, or the Djinn, takes over. It is the
 branch's one repair: while it runs, nothing else merges into the branch, and when another correction already repairs
 it, the push stays held until that one's work is in (see
 [One repair at a time](#merges-and-corrections-one-repair-at-a-time)). The top of
@@ -162,7 +176,9 @@ retry a correction, drop the work, or leave it waiting. The Djinn decides, and a
 [Merges and corrections](#merges-and-corrections).
 
 > **Example.** Three tasks of your wish are committed, and an hour has passed: a push is due. The push checks run the
-> whole test suite, and one test fails. The push is held; the next run fails again, and Djinn starts W9 to correct it.
+> whole test suite, and one test fails. The push is held while other work may still land; a minute later the push is due
+> again on the same files: the suite does not run again, and Djinn starts W9 to correct it, its instructions pointing
+> to the whole output of the red run.
 > W9 fixes the test, its work lands, the suite passes, and Djinn pushes the four commits. The wish's head reads
 > **Pushed feat/invoice-pdf to origin, 4 commits, just now**.
 

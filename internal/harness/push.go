@@ -354,12 +354,15 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		return nil, plan.ErrUpToDate
 	}
 	var cmd, held, out string
+	var red *planv1.CheckRun
+	var seen *planv1.IntegrationFailure // Red on this very tree already: not checked again, unless the person asks (W245).
 	if !unchecked {
 		var stopped bool
 		if settings, err := plan.LoadSettings(h.home, project); err != nil {
 			held = err.Error()
-		} else {
-			cmd, held, out, stopped = h.pushChecks(pushing, wish, project, settings, branch, sha, committed,
+		} else if seen = seenRed(ctx, repo, state, settings, sha); seen == nil || approved {
+			seen = nil
+			cmd, held, out, red, stopped = h.pushChecks(pushing, wish, project, settings, branch, sha, committed,
 				func(check string) {
 					h.setDoing(doing + ", checking " + check)
 					run.set(ctx, planv1.PushStage_PUSH_STAGE_CHECKING, check, "")
@@ -415,8 +418,12 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	}
 	if !unchecked {
 		switch {
+		case seen != nil:
+			h.holdSeen(ctx, wish, project, committed, branch, sha, seen)
+			run.set(ctx, planv1.PushStage_PUSH_STAGE_HELD, "", heldNote(seen.GetReason(), seen.GetOutput()))
+			return nil, fmt.Errorf("the push is held: its checks were red on this very tree (%s)", headline(seen.GetReason()))
 		case held != "":
-			h.holdPush(ctx, wish, project, committed, branch, sha, cmd, held, out)
+			h.holdPush(ctx, wish, project, committed, branch, sha, cmd, held, out, red)
 			run.set(ctx, planv1.PushStage_PUSH_STAGE_HELD, "", heldNote(held, out))
 			return nil, fmt.Errorf("the push is held: its checks are red (%s)", held)
 		case state.GetHeld() != "" || state.GetHeldRuns() > 0:

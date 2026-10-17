@@ -68,7 +68,7 @@ func TestFreezeWhileRepairing(t *testing.T) {
 		t.Fatal(err1, err2)
 	}
 	for range 2 {
-		in.h.holdPush(t.Context(), wish, project, []*planv1.Task{w3}, in.branch, tip, "test", "test: test exited 1", "")
+		in.h.holdPush(t.Context(), wish, project, []*planv1.Task{w3}, in.branch, tip, "test", "test: test exited 1", "", nil)
 	}
 	if state := in.pushState(t); state.GetHeld() == "" || state.GetCorrectedBy() != "" {
 		t.Errorf("the push %v; want held, no correction while %s repairs", state, w2.GetCode())

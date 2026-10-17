@@ -777,7 +777,7 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 	if err != nil {
 		return "", fmt.Errorf("prepare the install worktree: %w", err)
 	}
-	if why, out, _ := h.setUp(ctx, project, settings, wishID, "", wt, dir); why != "" {
+	if why, out, _, _ := h.setUp(ctx, project, settings, wishID, "", wt, dir); why != "" {
 		return out, fmt.Errorf("%s: %s", setupName, why)
 	}
 	step = InstallBuilding
@@ -1288,7 +1288,7 @@ func (h *Harness) mergeAndTest(
 			why = fmt.Sprintf("%s conflicts with %s in %s", t.GetCode(), branch, strings.Join(conflicts, ", "))
 		default:
 			why = h.settleGenerated(ctx, t.GetCode(), t.GetId(), wt, dir, settings.Generate, conflicts, func() string {
-				failed, _, _ := h.setUp(ctx, project, settings, wish.GetId(), t.GetId(), wt, dir)
+				failed, _, _, _ := h.setUp(ctx, project, settings, wish.GetId(), t.GetId(), wt, dir)
 				return failed
 			})
 		}
@@ -1324,11 +1324,16 @@ func (h *Harness) mergeAndTest(
 			return wait(err.Error())
 		}
 	}
-	red := func(command, why, out string) (string, *planv1.TaskIntegration, string, []leftOut) {
-		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, why,
-			&planv1.IntegrationFailure{Base: sha, Command: command, Output: tail(out), TaskIds: ids(merged)})
+	red := func(command, why, out string, run *planv1.CheckRun) (string, *planv1.TaskIntegration, string, []leftOut) {
+		f := keptOutput(&planv1.IntegrationFailure{Base: sha, Command: command, Output: tail(out), TaskIds: ids(merged)}, run)
+		if step := outputStep(f, run); step != "" {
+			for _, t := range merged {
+				h.integrationStep(ctx, t, step)
+			}
+		}
+		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, why, f)
 	}
-	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, merged, sha, wt, dir, func(c *planv1.ProjectCheck) {
+	command, why, out, run, stopped := h.commitChecks(ctx, wish, project, settings, merged, sha, wt, dir, func(c *planv1.ProjectCheck) {
 		// The window shows the check that runs, and since when (TaskIntegration.check).
 		h.settleIntegration(ctx, merged, &planv1.TaskIntegration{
 			State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, Branch: branch, Check: c.GetName(),
@@ -1339,7 +1344,7 @@ func (h *Harness) mergeAndTest(
 	case stopped != "":
 		return wait(stopped)
 	case why != "":
-		return red(command, why, out)
+		return red(command, why, out, run)
 	}
 	return sha, nil, "", left
 }
@@ -1347,11 +1352,12 @@ func (h *Harness) mergeAndTest(
 // commitChecks makes the integration worktree wt ready with the setup, then runs the project's commit checks on sha
 // there, in dir, for the tasks of batch (none: for no task), each through its gate, saying each with step before it
 // runs. A check a task's worker passed on sha's tree is not run again, said in that task's events (passedOnTree). It
-// returns the command that failed, why, and the end of its output; or why it stopped, when djinn up stopped.
+// returns the command that failed, why, its output, and its run when it ran red; or why it stopped, when djinn up
+// stopped.
 func (h *Harness) commitChecks(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
 	sha, wt, dir string, step func(*planv1.ProjectCheck),
-) (command, why, out, stopped string) {
+) (command, why, out string, red *planv1.CheckRun, stopped string) {
 	checks := settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT)
 	taskID := ""
 	if len(batch) > 0 {
@@ -1359,12 +1365,12 @@ func (h *Harness) commitChecks(
 		checks = h.passedOnTree(ctx, project.GetId(), checks, batch, wt, sha)
 	}
 	if len(checks) == 0 {
-		return "", "", "", ""
+		return "", "", "", nil, ""
 	}
-	if why, out, halted := h.setUp(ctx, project, settings, wish.GetId(), taskID, wt, dir); halted {
-		return "", "", "", "djinn up stopped during the setup"
+	if why, out, red, halted := h.setUp(ctx, project, settings, wish.GetId(), taskID, wt, dir); halted {
+		return "", "", "", nil, "djinn up stopped during the setup"
 	} else if why != "" {
-		return settings.Setup, setupName + ": " + why, out, ""
+		return settings.Setup, setupName + ": " + why, out, red, ""
 	}
 	for _, c := range checks {
 		step(c)
@@ -1373,12 +1379,12 @@ func (h *Harness) commitChecks(
 			TaskId: taskID, Sha: sha,
 		}
 		if why, out, halted := h.check(ctx, project.GetId(), run, dir); halted {
-			return "", "", "", "djinn up stopped during the check " + c.GetName()
+			return "", "", "", nil, "djinn up stopped during the check " + c.GetName()
 		} else if why != "" {
-			return c.GetCommand(), why, out, ""
+			return c.GetCommand(), why, out, run, ""
 		}
 	}
-	return "", "", "", ""
+	return "", "", "", nil, ""
 }
 
 // settleGenerated settles a merge of what, a task's code or a branch, whose conflicts are all in generated files: it

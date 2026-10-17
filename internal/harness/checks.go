@@ -30,8 +30,8 @@ import (
 // fresh worktree ready (setup). Each runs in the wish's integration worktree, the push checks in its push worktree
 // (push_apart.go), through a gate of its name, and the project keeps its last run. A red commit check fails the
 // merge, as a conflict does: a correction worker starts. A red push check holds the push, said in the tasks' events
-// and on the wish; still red, Djinn starts a correction worker, and asks the person only once that fails or its
-// attempts are spent.
+// and on the wish; due again on the same tree, it is not run again: Djinn starts a correction worker, and tells the
+// lead only once that fails or its attempts are spent. A red check keeps its whole output in a file (check_output.go).
 
 // methodCheck is how the journal records a check's run: the request is the run (planv1.CheckRun).
 const methodCheck = "harness/check"
@@ -48,8 +48,9 @@ var lockFiles = []string{
 }
 
 // check runs run's command, a check or the setup, in dir under the gate of its name, and records how it ended as the
-// project's last run of it. It returns why it failed, "" when it passed, and the end of its output; stopped when djinn
-// up stopped during it, nothing recorded.
+// project's last run of it; red, its whole output is kept in a file (keepOutput), the tests it names failing with it.
+// It returns why it failed, "" when it passed, and its output; stopped when djinn up stopped during it, nothing
+// recorded.
 func (h *Harness) check(ctx context.Context, projectID string, run *planv1.CheckRun, dir string) (why, out string, stopped bool) {
 	start := h.now()
 	out, code, err := h.command(ctx, run.GetName(), run.GetTaskId(), run.GetCommand(), dir)
@@ -63,6 +64,8 @@ func (h *Harness) check(ctx context.Context, projectID string, run *planv1.Check
 	case code != 0:
 		run.Reason = fmt.Sprintf("%s exited %d%s", run.GetCommand(), code, tail(out))
 		run.Output = strings.TrimPrefix(tail(out), ":\n")
+		run.Failed = failingTests(out)
+		run.OutputFile = h.keepOutput(projectID, run, out)
 	}
 	end := h.now()
 	run.EndTime, run.DurationMs = timestamppb.New(end), end.Sub(start).Milliseconds()
@@ -135,36 +138,36 @@ func (h *Harness) recordCheck(ctx context.Context, projectID string, run *planv1
 
 // setUp makes the integration worktree wt ready with the project's setup command, run in dir, the project's folder
 // there, for the wish wishID and the task taskID: once, then again when the command or its lock files change. It
-// returns why it failed, "" when the worktree is ready, and the end of its output; stopped when djinn up stopped
-// during it.
+// returns why it failed, "" when the worktree is ready, its output, and its run when it ran red; stopped when djinn
+// up stopped during it.
 func (h *Harness) setUp(
 	ctx context.Context, project *planv1.Project, settings plan.Settings, wishID, taskID, wt, dir string,
-) (why, out string, stopped bool) {
+) (why, out string, red *planv1.CheckRun, stopped bool) {
 	if settings.Setup == "" {
-		return "", "", false
+		return "", "", nil, false
 	}
 	key, err := setupKey(ctx, dir, settings.Setup)
 	if err != nil {
-		return "read the lock files: " + err.Error(), "", false
+		return "read the lock files: " + err.Error(), "", nil, false
 	}
 	stamp := setupStamp(wt)
 	if b, err := os.ReadFile(stamp); err == nil && string(b) == key && setupInstalled(dir) {
-		return "", "", false
+		return "", "", nil, false
 	}
 	sha, err := git(ctx, wt, "rev-parse", "HEAD")
 	if err != nil {
-		return err.Error(), "", false
+		return err.Error(), "", nil, false
 	}
 	run := &planv1.CheckRun{
 		Name: setupName, Setup: true, Command: settings.Setup, WishId: wishID, TaskId: taskID, Sha: sha,
 	}
 	if why, out, stopped = h.check(ctx, project.GetId(), run, dir); why != "" || stopped {
-		return why, out, stopped
+		return why, out, run, stopped
 	}
 	if err := fsx.WriteAtomic(stamp, []byte(key), 0o600); err != nil {
 		logx.L().Warn("record the setup", "project", project.GetName(), "wish", wishID, "file", stamp, "err", err)
 	}
-	return "", out, false
+	return "", out, nil, false
 }
 
 // setupInstalled reports whether the directory's dependencies installed by setup are present.
@@ -202,18 +205,19 @@ func setupKey(ctx context.Context, dir, setup string) (string, error) {
 // worktree (pushDir), which pushMu holds: merges go on meanwhile in its integration worktree. A check that passed on
 // that very commit already, as a commit check, is not run again. committed are the
 // tasks the push brings: their events say each check, and running is told the name of each as it starts. It returns
-// the failed check's command, why the push is held, "" when it may go; stopped when djinn up stopped during them.
+// the failed check's command, why the push is held, "" when it may go, its output, and its run when it ran red;
+// stopped when djinn up stopped during them.
 func (h *Harness) pushChecks(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch, sha string,
 	committed []*planv1.Task, running func(check string),
-) (cmd, why, out string, stopped bool) {
+) (cmd, why, out string, red *planv1.CheckRun, stopped bool) {
 	checks := settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_PUSH)
 	if len(checks) == 0 {
-		return "", "", "", false
+		return "", "", "", nil, false
 	}
 	cur, err := store.Get[*planv1.Project](ctx, h.store, project.GetId())
 	if err != nil {
-		return "", err.Error(), "", false
+		return "", err.Error(), "", nil, false
 	}
 	checks = slices.DeleteFunc(slices.Clone(checks), func(c *planv1.ProjectCheck) bool {
 		return slices.ContainsFunc(cur.GetCheckRuns(), func(r *planv1.CheckRun) bool {
@@ -222,16 +226,16 @@ func (h *Harness) pushChecks(
 		})
 	})
 	if len(checks) == 0 {
-		return "", "", "", false
+		return "", "", "", nil, false
 	}
 	running(checks[0].GetName())
 	wt := pushDir(h.home, project.GetId(), wish.GetId())
 	dir, _, err := integrationWorktree(ctx, project.GetDirectory(), wt, sha)
 	if err != nil {
-		return "", "prepare the push worktree: " + err.Error(), "", false
+		return "", "prepare the push worktree: " + err.Error(), "", nil, false
 	}
-	if why, out, stopped = h.setUp(ctx, project, settings, wish.GetId(), "", wt, dir); why != "" || stopped {
-		return cmp.Or(settings.Setup, setupName), setupName + ": " + why, out, stopped
+	if why, out, red, stopped = h.setUp(ctx, project, settings, wish.GetId(), "", wt, dir); why != "" || stopped {
+		return cmp.Or(settings.Setup, setupName), setupName + ": " + why, out, red, stopped
 	}
 	for i, c := range checks {
 		if i > 0 {
@@ -243,10 +247,10 @@ func (h *Harness) pushChecks(
 			Name: c.GetName(), Command: c.GetCommand(), When: planv1.CheckWhen_CHECK_WHEN_PUSH, WishId: wish.GetId(), Sha: sha,
 		}
 		if why, out, stopped = h.check(ctx, project.GetId(), run, dir); why != "" || stopped {
-			return c.GetCommand(), c.GetName() + ": " + why, out, stopped
+			return c.GetCommand(), c.GetName() + ": " + why, out, run, stopped
 		}
 	}
-	return "", "", "", false
+	return "", "", "", nil, false
 }
 
 // wishProviderAndModel returns the provider and model to use for a push correction worker: from the latest committed
@@ -279,7 +283,7 @@ func (h *Harness) wishProviderAndModel(ctx context.Context, wish *planv1.Wish, s
 }
 
 // pushCorrectionPrompt is the first prompt of the attempt-th correction worker of a failed push check on branch: what failed,
-// the command, and its output tail.
+// the command, its output tail, and the file of its whole output.
 func pushCorrectionPrompt(branch string, f *planv1.IntegrationFailure, settings plan.Settings, attempt int32) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "The push checks of %s failed: %s.\n\n", branch, headline(f.GetReason()))
@@ -290,7 +294,9 @@ func pushCorrectionPrompt(branch string, f *planv1.IntegrationFailure, settings 
 			b.WriteString("    " + line)
 		}
 	}
-	fmt.Fprintf(&b, "\n\nMake the push checks pass without undoing what the branch did. Commit your work before you end, with a message in the repository's style (`git log` shows it), and leave nothing not committed: Djinn commits nothing blindly, and a review worker would judge what you leave. Djinn then integrates your branch like any task's, its commit checks (%s) run through their gates. Its success lets Djinn run the push checks again.", settings.CommitGates())
+	b.WriteString(outputLines(f))
+	b.WriteString("\n\nDjinn does not run the push checks again on a tree they were red on: only a commit of yours runs them again.")
+	fmt.Fprintf(&b, " Make the push checks pass without undoing what the branch did. Commit your work before you end, with a message in the repository's style (`git log` shows it), and leave nothing not committed: Djinn commits nothing blindly, and a review worker would judge what you leave. Djinn then integrates your branch like any task's, its commit checks (%s) run through their gates. Its success lets Djinn run the push checks again.", settings.CommitGates())
 	if attempt > 1 {
 		fmt.Fprintf(&b, "\n\nThis is attempt %d: the correction before yours failed.", attempt)
 	}
@@ -313,40 +319,27 @@ func (h *Harness) spawnPushCorrection(
 	return h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, req, made)
 }
 
-// holdPush holds the push of wish's integration branch in project, at sha, its push checks red for why (with command), out the end
-// of the output: said in the events of the tasks it would bring, committed, and on the wish. Red twice in a row, or
-// once no work of the wish is left to commit there, Djinn starts a correction worker; if that fails or attempts are
-// spent, Djinn asks the person.
+// holdPush holds the push of wish's integration branch in project, at sha, its push checks red for why (with command), out
+// their output and red the check's run (nil when none ran): said in the events of the tasks it would bring, committed,
+// with the file of its whole output, and on the wish. Once no work of the wish is left to commit there, Djinn starts a
+// correction worker (correctPush); else it waits, and the push due again on the same tree starts it (holdSeen).
 func (h *Harness) holdPush(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha, command, why, out string,
+	red *planv1.CheckRun,
 ) {
 	cur := pushState(wish, project.GetId())
-	if id := cur.GetQuestionId(); id != "" {
-		if cur.GetHeld() != "" && cur.GetFailedSha() == sha {
-			return // The question is about these very checks: the answer says what Djinn does.
-		}
-		// Red at another commit than the one Djinn asked about: the question is stale, and nobody would act on the
-		// hold while it stays open. Djinn withdraws it and acts on these checks instead.
-		h.withdrawPushQuestion(ctx, wish.GetId(), project.GetId(), id,
-			fmt.Sprintf("Djinn: the push checks of %s ran again at %s and are red; Djinn acts on them instead.", branch, short8(sha)))
-	}
-	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") && cur.GetFailedSha() == sha {
+	if h.pushHeldAlready(ctx, wish, project, branch, sha, cur) {
 		return
 	}
-	if id := cur.GetCorrectedBy(); id != "" {
-		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
-			return
-		}
-	}
 	held := fmt.Sprintf("at %s, %s", short8(sha), headline(why))
-	f := &planv1.IntegrationFailure{
+	f := keptOutput(&planv1.IntegrationFailure{
 		State:   planv1.IntegrationState_INTEGRATION_STATE_RED,
 		Base:    sha,
 		Command: command,
 		Output:  tail(out),
 		Reason:  why,
 		TaskIds: ids(committed),
-	}
+	}, red)
 	var runs int32
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
@@ -360,6 +353,9 @@ func (h *Harness) holdPush(
 		return
 	}
 	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s is held: its push checks are red %s", branch, held))
+	if step := outputStep(f, red); step != "" {
+		h.pushSteps(ctx, committed, step)
+	}
 	h.notify()
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
 	if err != nil {
@@ -369,6 +365,96 @@ func (h *Harness) holdPush(
 	if runs < 2 && workLeft(tasks, project.GetId()) {
 		return // The next work committed may make them pass: Djinn checks again when the next push is due.
 	}
+	h.correctPush(ctx, wish, project, committed, branch, sha, f, cur.GetAttempts(), tasks)
+}
+
+// holdSeen holds the push of wish's integration branch in project, at sha, on f, the failure of its push checks red on
+// that very tree already (seenRed): they do not run again, and Djinn starts its correction at once (correctPush),
+// unless one runs, Djinn asks about it, it is left to the lead, or a correction repairs the branch, whose work goes in
+// first. Nothing is said while it waits: each pass may look.
+func (h *Harness) holdSeen(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha string,
+	f *planv1.IntegrationFailure,
+) {
+	cur := pushState(wish, project.GetId())
+	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") {
+		// Theirs still, the tree unchanged: the tip is recorded, so the next pass does not look again (pushIfDue).
+		if cur.GetFailedSha() != sha {
+			err := h.store.Tx(ctx, func(tx *store.Tx) error {
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) { p.FailedSha = sha })
+			})
+			if err != nil {
+				logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
+			}
+		}
+		return
+	}
+	if h.pushHeldAlready(ctx, wish, project, branch, sha, cur) {
+		return
+	}
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
+	if err != nil {
+		logx.L().Error("read the tasks", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
+		return
+	}
+	if h.repairOf(ctx, wish, project, branch, tasks) != nil {
+		return // Its work goes in first (W233): the tree changes, and the push checks run on it then.
+	}
+	was := f.GetBase()
+	f = proto.CloneOf(f)
+	f.Base = sha
+	if len(committed) > 0 {
+		f.TaskIds = ids(committed)
+	}
+	err = h.store.Tx(ctx, func(tx *store.Tx) error {
+		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
+			p.Held, p.Approved, p.Unchecked = fmt.Sprintf("at %s, %s", short8(sha), headline(f.GetReason())), false, false
+			p.FailedSha, p.Failure = sha, f
+		})
+	})
+	if err != nil {
+		logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
+		return
+	}
+	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s at %s do not run again: they were red on this very tree at %s (%s); "+
+		"the whole output is in %s", branch, short8(sha), short8(was), headline(f.GetReason()), f.GetOutputFile()))
+	h.notify()
+	h.correctPush(ctx, wish, project, committed, branch, sha, f, cur.GetAttempts(), tasks)
+}
+
+// pushHeldAlready tells whether the push of wish's branch in project, held as cur says, needs nothing more for push
+// checks red at sha: Djinn asks the person about these very checks, they were left to the lead at sha, or a
+// correction runs. A question about other checks is withdrawn: nobody would act on the hold while it stays open.
+func (h *Harness) pushHeldAlready(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, sha string, cur *planv1.WishPush,
+) bool {
+	if id := cur.GetQuestionId(); id != "" {
+		if cur.GetHeld() != "" && cur.GetFailedSha() == sha {
+			return true // The question is about these very checks: the answer says what Djinn does.
+		}
+		// Red at another commit than the one Djinn asked about: the question is stale. Djinn withdraws it and acts on
+		// these checks instead.
+		h.withdrawPushQuestion(ctx, wish.GetId(), project.GetId(), id,
+			fmt.Sprintf("Djinn: the push checks of %s ran again at %s and are red; Djinn acts on them instead.", branch, short8(sha)))
+	}
+	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") && cur.GetFailedSha() == sha {
+		return true
+	}
+	if id := cur.GetCorrectedBy(); id != "" {
+		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// correctPush starts a correction worker for f, the push checks of branch red at sha, after attempts in vain, tasks
+// being the wish's: unless another correction repairs the branch, which goes first; when that fails or the attempts
+// are spent, Djinn leaves it to the lead.
+func (h *Harness) correctPush(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha string,
+	f *planv1.IntegrationFailure, attempts int32, tasks []*planv1.Task,
+) {
 	if r := h.repairOf(ctx, wish, project, branch, tasks); r != nil {
 		// One correction repairs a branch at a time: once its work is in, the push checks run again (repair.go).
 		h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s stays held; its correction waits for %s, which repairs it",
@@ -380,7 +466,6 @@ func (h *Harness) holdPush(
 		logx.L().Warn("read the project settings", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
 		return
 	}
-	attempts := cur.GetAttempts()
 	var unstarted error
 	if int(attempts) < settings.CorrectionAttempts {
 		c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, attempts+1, committed)
@@ -453,7 +538,7 @@ func (h *Harness) askPushHeld(
 	}
 	line := fmt.Sprintf("Djinn: the push checks of %s stay red: %s. The move is yours: retry a correction, drop the work (djinn task done --drop / djinn task cancel), or leave it waiting.",
 		branch, headline(f.GetReason()))
-	h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE, wish.GetId(), "", line)
+	h.tellLeadDetail(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE, wish.GetId(), "", line, capital(strings.TrimPrefix(outputStep(f, nil), "integration: ")))
 	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s stay red; left to the lead", branch))
 	h.notify()
 }

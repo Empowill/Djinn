@@ -107,6 +107,13 @@ the code does not say by itself; remove one when a change makes it false.
   and never conflicts. *Do:* wait for the stop event rather than releasing the hold; make a task that must conflict
   before the first merge, with `Integration` nil, and queue it later (`putTaskInDB`). *Where:*
   `internal/harness/push_apart_test.go`.
+- **Harness integration tests: push checks never run twice on a tree.** Since W245 push checks red on a tree do not
+  run again on the same files (`seenRed`): the next push due starts the correction instead, even within the same pass
+  (`pushPass` after the merge's `pushIfDue`). *Sign:* a test that flips `in.testCode` to 0 and expects a green push
+  after a correction, a cancel or a hand commit that changed no file sees a new correction or "left to the lead"
+  instead; a test asserting "held, no correction yet" flakes when the push ends before the pass's own look. *Do:* make
+  the fake fix change a file (`fixTests`, `handCommit`); hold the first push check with `in.testWait` and
+  `in.passApart` until the pass is over. *Where:* `internal/harness/check_output.go`.
 - **A done fake worker now tells the lead, and may babysit.** Since W492 a work task done reaches the lead once: its
   MERGED line, or one ENDED (`tellDone`, `tellNothingMerged`); since W498 a project with no checks integrates into a
   wish's own branch, so such tests see MERGED, not ENDED; since W499 a task ending done in a project with a babysit

@@ -225,6 +225,7 @@ func correctionPrompt(work, merging string, f *planv1.IntegrationFailure, branch
 		for line := range strings.Lines(strings.TrimPrefix(f.GetOutput(), ":\n")) {
 			b.WriteString("    " + line)
 		}
+		b.WriteString(outputLines(f))
 		b.WriteString("\n\nMake the tests pass without undoing what either side did.")
 	} else {
 		fmt.Fprintf(&b, "You correct it. Your worktree is on that merge: the merge of %s is under way, its conflicts left "+
