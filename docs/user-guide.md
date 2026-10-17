@@ -545,8 +545,8 @@ a wish to file it in, or a new one. The side panel counts the new items, and the
 notification. Nothing is made until you click; **Rub the lamp** takes the recommended route, **Dismiss** sets the item
 aside for good. Djinn only reads a source: it never comments, reacts or replies. `djinn inbox list` lists the items.
 A skill whose front matter Djinn cannot read (a line that breaks the YAML, like `argument-hint: [a] [b]`) is not
-listed as a source: it is one of the project's problems, at the top of its panel and in `djinn project show`, with
-the line at fault. Until it is fixed, Djinn ignores what it declares. Details: [the
+listed as a source: it is one of the project's things to fix, at the top of its panel and in `djinn project show`,
+with the line at fault; so is a source this machine has not decided on, until you plug it in or unplug it to say no. Until it is fixed, Djinn ignores what it declares. Details: [the
 inbox](wish-templates.md#the-inbox-what-comes-from-outside).
 
 ## Team settings and integration

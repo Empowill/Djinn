@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
@@ -443,6 +444,11 @@ func (p *testPusher) Syncs(ctx context.Context, project *planv1.Project) ([]*pla
 		{WishId: "w1", Branch: "feat/x", Remote: "origin", Target: "feat/x", Ahead: 3, Behind: 1},
 		{WishId: p.azimaWish, Branch: "djinn/T1-azima", Remote: "origin", Target: "djinn/T1-azima", Ahead: 1, AzimaId: "a1"},
 	}, nil
+}
+
+// Reference finds main, as a repository with a remote holds it.
+func (p *testPusher) Reference(ctx context.Context, project *planv1.Project, name string) (string, string, error) {
+	return cmp.Or(name, "main"), "refs/remotes/origin/" + cmp.Or(name, "main"), nil
 }
 
 func TestProjectPushAndSetPush(t *testing.T) {

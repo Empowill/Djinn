@@ -397,43 +397,76 @@ func LoadSettings(home string, project *planv1.Project) (Settings, error) {
 
 // loadSettings reads both files of project, and why each one that could not be read was not.
 func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.ProjectSettings, warnings []string, problems []error) {
-	if project == nil {
-		return nil, nil, nil, nil
-	}
-	repoFile, devFile := settingsFiles(home, project)
-	var err error
-	var w []string
-	if repoFile != "" {
-		if repo, w, err = ReadSettingsWithWarnings(repoFile); err != nil {
-			problems = append(problems, err)
-		} else {
-			if len(repo.GetWatchCommands()) > 0 {
-				w = append(w, repoFile+": watch_commands is ignored: a developer allows a watcher command in their own "+
-					"file (djinn project allow --watch), the repository lists its commands in .agents/permissions.txtpb")
-			}
-			if len(repo.GetServeCommands()) > 0 {
-				w = append(w, repoFile+": serve_commands is ignored: a developer allows a serve command in their own "+
-					"file (djinn project allow --serve), the repository lists its commands in .agents/permissions.txtpb")
-			}
-			for _, warn := range w {
-				if !slices.Contains(warnings, warn) {
-					warnings = append(warnings, warn)
-				}
-			}
+	for _, f := range readSettingsFiles(home, project) {
+		if f.err != nil {
+			problems = append(problems, f.err)
+			continue
 		}
-	}
-	if devFile != "" {
-		if dev, w, err = ReadSettingsWithWarnings(devFile); err != nil {
-			problems = append(problems, err)
+		if f.team {
+			repo = f.settings
 		} else {
-			for _, warn := range w {
-				if !slices.Contains(warnings, warn) {
-					warnings = append(warnings, warn)
-				}
+			dev = f.settings
+		}
+		for _, warn := range f.warnings {
+			if !slices.Contains(warnings, warn.text) {
+				warnings = append(warnings, warn.text)
 			}
 		}
 	}
 	return repo, dev, warnings, problems
+}
+
+// settingsFile is one settings file of a project as Djinn read it.
+type settingsFile struct {
+	// path is the file; team tells the repository's from the developer's.
+	path string
+	team bool
+	// settings are what it holds; nil without the file, or when it cannot be read: err says why.
+	settings *planv1.ProjectSettings
+	err      error
+	// warnings are what Djinn ignored in it.
+	warnings []settingsWarning
+}
+
+// settingsWarning is a thing a settings file holds that Djinn ignores; ignored says a line to remove, not a field a
+// newer Djinn knows.
+type settingsWarning struct {
+	text    string
+	ignored bool
+}
+
+// readSettingsFiles reads the files of project: the repository's, then the developer's; a file project has no path
+// for is left out.
+func readSettingsFiles(home string, project *planv1.Project) []settingsFile {
+	if project == nil {
+		return nil
+	}
+	repoFile, devFile := settingsFiles(home, project)
+	var out []settingsFile
+	for _, f := range []settingsFile{{path: repoFile, team: true}, {path: devFile}} {
+		if f.path == "" {
+			continue
+		}
+		var w []string
+		f.settings, w, f.err = ReadSettingsWithWarnings(f.path)
+		for _, text := range w {
+			f.warnings = append(f.warnings, settingsWarning{text: text})
+		}
+		if f.err == nil && f.team {
+			if len(f.settings.GetWatchCommands()) > 0 {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: f.path + ": watch_commands is " +
+					"ignored: a developer allows a watcher command in their own file (djinn project allow --watch), the " +
+					"repository lists its commands in .agents/permissions.txtpb"})
+			}
+			if len(f.settings.GetServeCommands()) > 0 {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: f.path + ": serve_commands is " +
+					"ignored: a developer allows a serve command in their own file (djinn project allow --serve), the " +
+					"repository lists its commands in .agents/permissions.txtpb"})
+			}
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // Rows are the settings as djinn project show lists them.

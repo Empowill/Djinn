@@ -282,13 +282,16 @@ func TestUnreadableSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	problems := show.Msg.GetProblems()
-	if len(problems) != 2 ||
-		!strings.HasPrefix(problems[0], "the skill bad-djinn cannot be read: Djinn ignores its wish template, inbox "+
-			"source and babysit: SKILL.md: metadata.djinn: ") ||
-		!strings.HasPrefix(problems[1], "the skill notion-ticket cannot be read: Djinn ignores its wish template, "+
-			"inbox source and babysit: SKILL.md: its front matter is not YAML: yaml: line 2: ") {
-		t.Errorf("problems = %q", problems)
+	var unreadable []string
+	for _, n := range show.Msg.GetNotices() {
+		if n.GetTopic() == planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SKILL {
+			unreadable = append(unreadable, n.GetSubject()+": "+n.GetDetail())
+		}
+	}
+	if len(unreadable) != 2 ||
+		!strings.HasPrefix(unreadable[0], "bad-djinn: SKILL.md: metadata.djinn: ") ||
+		!strings.HasPrefix(unreadable[1], "notion-ticket: SKILL.md: its front matter is not YAML: yaml: line 2: ") {
+		t.Errorf("unreadable skills = %q", unreadable)
 	}
 
 	// Plugged in, then broken: listed with why, and unplugged.

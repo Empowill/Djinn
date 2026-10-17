@@ -35,6 +35,7 @@ func Entities() []proto.Message {
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
 		&planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{}, &planv1.Lead{},
 		&planv1.LeadEvent{}, &planv1.TilasmComment{}, &planv1.SourceRun{}, &planv1.LeadBatch{},
+		&planv1.DeclinedSource{},
 	}
 }
 
@@ -42,11 +43,13 @@ func Entities() []proto.Message {
 // identity of their own.
 const actor = "local"
 
-// Pusher pushes a wish's branches, all or only one, and computes how far each branch it pushes in a project is out of
-// sync with its remote.
+// Pusher pushes a wish's branches, all or only one, computes how far each branch it pushes in a project is out of
+// sync with its remote, and finds a project's reference branch: from name, its main_branch setting, the branch and the
+// ref Djinn merges it from (refs/remotes/origin/main), or why the repository holds none.
 type Pusher interface {
 	Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error)
 	Syncs(ctx context.Context, project *planv1.Project) ([]*planv1.ProjectSync, error)
+	Reference(ctx context.Context, project *planv1.Project, name string) (branch, ref string, err error)
 }
 
 // Option sets what the plan services reach beyond the store.
@@ -252,9 +255,11 @@ type Projects struct {
 	Pusher Pusher
 }
 
-func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
+// fillProject adds to project what is computed on every read, and returns what Djinn finds in its configuration:
+// project.to_fix counts the things to fix.
+func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) []*planv1.ProjectNotice {
 	if project == nil {
-		return
+		return nil
 	}
 	repo, dev, _, _ := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
@@ -266,6 +271,9 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
 			project.Syncs = syncs
 		}
 	}
+	notices := p.projectNotices(ctx, project)
+	project.ToFix = countToFix(notices)
+	return notices
 }
 
 func (p *Projects) wishForProject(ctx context.Context, projectID, wishNameOrID string) (*planv1.Wish, error) {
@@ -391,18 +399,14 @@ func (p *Projects) Show(
 	if err != nil {
 		return nil, Status(err)
 	}
-	p.fillProject(ctx, project)
-	repo, dev, warnings, problems := loadSettings(p.Home, project)
+	notices := p.fillProject(ctx, project)
+	repo, dev, _, _ := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
 	out := &planv1.ProjectServiceShowResponse{
 		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
-		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands,
+		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands, Notices: notices,
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
-	for _, err := range append(problems, SkillProblems(project.GetDirectory())...) {
-		out.Problems = append(out.Problems, err.Error())
-	}
-	out.Warnings = append(out.Warnings, warnings...)
 	return connect.NewResponse(out), nil
 }
 

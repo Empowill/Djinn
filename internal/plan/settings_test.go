@@ -410,7 +410,10 @@ func TestWatchCommandsSettings(t *testing.T) {
 
 	writeSettings(t, filepath.Join(dir, SettingsFile), "watch_commands: \"rm -rf\"\n")
 	show, err = c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "dolmen"}))
-	if err != nil || !slices.ContainsFunc(show.Msg.GetWarnings(), func(w string) bool { return strings.Contains(w, "watch_commands is ignored") }) ||
+	if err != nil || !slices.ContainsFunc(show.Msg.GetNotices(), func(n *planv1.ProjectNotice) bool {
+		return n.GetAction() == planv1.ProjectNoticeAction_PROJECT_NOTICE_ACTION_FIX_FILE &&
+			strings.Contains(n.GetDetail(), "watch_commands is ignored")
+	}) ||
 		slices.Contains(show.Msg.GetWatchCommands(), "rm -rf") {
 		t.Errorf("the repository's watch_commands: %v, %v", show.Msg, err)
 	}
@@ -618,8 +621,8 @@ func TestProjectShow(t *testing.T) {
 	res := show()
 	repoFile := filepath.Join(project.GetDirectory(), ".agents", "settings.txtpb")
 	devFile := filepath.Join(home, "projects", project.GetId(), "settings.txtpb")
-	if res.GetRepositoryFile() != repoFile || res.GetDeveloperFile() != devFile || len(res.GetProblems()) > 0 {
-		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
+	if res.GetRepositoryFile() != repoFile || res.GetDeveloperFile() != devFile || len(res.GetNotices()) > 0 {
+		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetNotices(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
 		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
@@ -654,8 +657,9 @@ func TestProjectShow(t *testing.T) {
 		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
-	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {
-		t.Errorf("problems = %v; want one naming %s", res.GetProblems(), devFile)
+	if n := res.GetNotices(); len(n) != 1 || n[0].GetKind() != planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX ||
+		n[0].GetFile() != devFile || !strings.Contains(n[0].GetDetail(), devFile) || res.GetProject().GetToFix() != 1 {
+		t.Errorf("notices = %v, to fix %d; want one naming %s", n, res.GetProject().GetToFix(), devFile)
 	}
 	if _, err := LoadSettings(home, project); err == nil || !strings.Contains(err.Error(), devFile) {
 		t.Errorf("LoadSettings = %v; want an error naming %s", err, devFile)

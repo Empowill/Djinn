@@ -119,7 +119,8 @@ func TestWatchSaysAPushChanged(t *testing.T) {
 	}
 }
 
-// TestWatchSaysPlugged: plugging a source in, or unplugging it, changes the inbox's sources.
+// TestWatchSaysPlugged: plugging a source in, or unplugging it, changes the inbox's sources, and the things its
+// project has to fix: a source decided on.
 func TestWatchSaysPlugged(t *testing.T) {
 	c := serve(t)
 	dir := t.TempDir()
@@ -128,16 +129,17 @@ func TestWatchSaysPlugged(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := watch(t, c.wishes, "")
+	both := []planv1.Change{planv1.Change_CHANGE_PROJECT, planv1.Change_CHANGE_INBOX}
 	if _, err := c.inbox.Plug(t.Context(), connect.NewRequest(&planv1.InboxServicePlugRequest{Source: "mentions"})); err != nil {
 		t.Fatal(err)
 	}
-	if msg := next(t, s); !slices.Equal(msg.GetChanges(), []planv1.Change{planv1.Change_CHANGE_INBOX}) {
+	if msg := next(t, s); !slices.Equal(msg.GetChanges(), both) {
 		t.Fatalf("after plug: %v", msg)
 	}
 	if _, err := c.inbox.Unplug(t.Context(), connect.NewRequest(&planv1.InboxServiceUnplugRequest{Source: "mentions"})); err != nil {
 		t.Fatal(err)
 	}
-	if msg := next(t, s); !slices.Equal(msg.GetChanges(), []planv1.Change{planv1.Change_CHANGE_INBOX}) {
+	if msg := next(t, s); !slices.Equal(msg.GetChanges(), both) {
 		t.Fatalf("after unplug: %v", msg)
 	}
 }

@@ -63,6 +63,8 @@ type Source struct {
 	Every time.Duration
 	// Plugged tells whether the source is plugged in on this machine: only then does its command run.
 	Plugged bool
+	// Declined tells whether you said no to it on this machine: its project no longer asks whether to plug it in.
+	Declined bool
 	// Err says why the source cannot be used; nil when it can.
 	Err error
 	// Run is its last run on this machine; nil before its first.
@@ -147,9 +149,18 @@ func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Pro
 	if err != nil {
 		return nil, err
 	}
+	declined, err := store.List[*planv1.DeclinedSource](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
 	isPlugged := func(s *Source) bool {
 		return slices.ContainsFunc(plugged, func(p *planv1.PluggedSource) bool {
 			return strings.EqualFold(p.GetProjectId(), s.HolderID) && strings.EqualFold(p.GetSkill(), s.Skill)
+		})
+	}
+	isDeclined := func(s *Source) bool {
+		return slices.ContainsFunc(declined, func(d *planv1.DeclinedSource) bool {
+			return strings.EqualFold(d.GetProjectId(), s.HolderID) && strings.EqualFold(d.GetSkill(), s.Skill)
 		})
 	}
 	lastRun := func(s *Source) *planv1.SourceRun {
@@ -180,7 +191,7 @@ func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Pro
 				continue
 			}
 			s.HolderID, s.Holder, s.ProjectID = d.HolderID, d.Holder, p.GetId()
-			s.Plugged = isPlugged(s)
+			s.Plugged, s.Declined = isPlugged(s), isDeclined(s)
 			// A skill Djinn cannot read declares no source it knows of: its project's problems say why. One plugged
 			// in stays listed, to be unplugged.
 			if errors.As(err, &unreadable) && !s.Plugged {
@@ -266,7 +277,7 @@ func KeepSourceRun(ctx context.Context, st *store.Store, s *Source, end time.Tim
 func sourceMessage(s *Source) *planv1.InboxSource {
 	out := &planv1.InboxSource{
 		Name: s.Name(), Skill: s.Skill, Project: s.Holder, Watch: s.Watch, Plugged: s.Plugged, Summary: s.Summary,
-		LastRun: s.Run,
+		LastRun: s.Run, Declined: s.Declined,
 	}
 	if s.Every > 0 {
 		out.Every = s.Every.String()
@@ -518,6 +529,11 @@ func (in *Inbox) Plug(
 				return err
 			}
 		}
+		// Plugged in, it is decided: a no said before is forgotten.
+		if err := forgetDeclined(ctx, tx, s); err != nil {
+			return err
+		}
+		s.Declined = false
 		out = sourceMessage(s)
 		return nil
 	})
@@ -563,7 +579,17 @@ func (in *Inbox) Unplug(
 				}
 			}
 		}
-		s.Plugged, s.Run = false, nil
+		// Unplugged, it is decided: its project no longer asks whether to plug it in. One no skill declares any more
+		// has nothing to ask.
+		if !s.Declined && s.Dir != "" {
+			err := tx.Put(&planv1.DeclinedSource{
+				Id: store.NewID(), ProjectId: s.HolderID, Skill: s.Skill, CreateTime: timestamppb.Now(),
+			})
+			if err != nil {
+				return err
+			}
+		}
+		s.Plugged, s.Declined, s.Run = false, s.Dir != "", nil
 		out = sourceMessage(s)
 		return nil
 	})
@@ -571,6 +597,22 @@ func (in *Inbox) Unplug(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.InboxServiceUnplugResponse{Source: out}), nil
+}
+
+// forgetDeclined forgets the no said to the source s on this machine, if any.
+func forgetDeclined(ctx context.Context, tx *store.Tx, s *Source) error {
+	declined, err := store.List[*planv1.DeclinedSource](ctx, tx, nil)
+	if err != nil {
+		return err
+	}
+	for _, d := range declined {
+		if strings.EqualFold(d.GetProjectId(), s.HolderID) && strings.EqualFold(d.GetSkill(), s.Skill) {
+			if err := tx.Delete(d); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // InboxFirstLine is the first line of the lead of a wish made for an inbox item: the item, and its source.

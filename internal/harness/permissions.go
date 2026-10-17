@@ -1,16 +1,12 @@
 package harness
 
 import (
-	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"buf.build/go/protovalidate"
-	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
@@ -18,34 +14,17 @@ import (
 	"github.com/empowill/djinn/internal/plan"
 )
 
-// PermissionsFile is where a project declares, for every agent, what an agent may do in it: a djinn.v1.Permissions
-// in text protobuf, under the .agents folder that Codex and Antigravity already read for skills.
-var PermissionsFile = filepath.Join(".agents", "permissions.txtpb")
+// PermissionsFile is where a project declares what an agent may do in it (plan.PermissionsFile).
+var PermissionsFile = plan.PermissionsFile
 
-// LoadPermissions reads the permissions a project declares in dir. It returns nil, and no error, when the project
-// declares none.
+// LoadPermissions reads the permissions a project declares in dir, each field a newer Djinn knows logged once. It
+// returns nil, and no error, when the project declares none.
 func LoadPermissions(dir string) (*djinnv1.Permissions, error) {
-	path := filepath.Join(dir, PermissionsFile)
-	b, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	p := &djinnv1.Permissions{}
-	unknowns := plan.FindUnknownFields(b, p)
+	p, unknowns, err := plan.ReadPermissions(dir)
 	for _, u := range unknowns {
-		plan.WarnUnknownField(path, u)
+		plan.WarnUnknownField(filepath.Join(dir, PermissionsFile), u)
 	}
-	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
-	if err := opts.Unmarshal(b, p); err != nil {
-		return nil, fmt.Errorf("%s: %w", PermissionsFile, err)
-	}
-	if err := protovalidate.Validate(p); err != nil {
-		return nil, fmt.Errorf("%s: %w", PermissionsFile, err)
-	}
-	return p, nil
+	return p, err
 }
 
 // effectiveMode is the mode the agent gets: AUTO only with edit, since a reviewer could approve a command that
