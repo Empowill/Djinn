@@ -173,6 +173,17 @@ the code does not say by itself; remove one when a change makes it false.
   its wait while other workers loaded the machine (W181). The e2e's djinns and `djinn up` in the Go tests read the
   machine calm (`machine.Calm`, `DJINN_TEST_MACHINE=calm` on a test build). *Do:* a spec or test that starts a djinn
   of its own keeps it; one that tests the pressure gives a fake reading instead.
+- **Each step of a spec costs a snapshot of the page.** The trace (`retain-on-failure`) records the DOM before and
+  after every action and assertion, and a loaded machine makes each one slow: the Grimoire's splash spec, ~95 steps on
+  a document that held every page (~10 000 elements, before W165 read each page when opened), took ~70 ms a step on a
+  quiet machine, 300-600 ms under other workers' load, past its 30 s (W248). *Sign:* a timeout with no failed
+  assertion, each step in the trace a few hundred ms. *Do:* one assertion over a list (`expect.poll` on a role
+  locator's `allInnerTexts()`) rather than one per item, and a long spec in parts; measure with `--trace off` against
+  the default.
+- **Every spec after one point refuses: the specs' djinn ended.** `ERR_CONNECTION_REFUSED`, "djinn is not running
+  … no …/server.addr": the shared djinn of the suite is gone, and each spec after it fails (W248: a push check at
+  56a98a21, from the tilasms spec on). *Do:* read `test-results/e2e/djinn-logs/` (`exit.txt` says when and how it
+  ended; its `djinn.log` and `crash.txt`, which the teardown keeps).
 - **Two Playwright runs in one worktree erase each other's traces.** `go tool task test` runs the e2e too; beside
   `go tool task e2e` (or a second agent in the same worktree) both write `test-results/`. *Sign:*
   `ENOENT … .playwright-artifacts-0/traces/*.trace`. *Do:* one run at a time.
