@@ -75,6 +75,8 @@ const (
 	QuestionServiceWithdrawProcedure = "/plan.v1.QuestionService/Withdraw"
 	// QuestionServiceLaterProcedure is the fully-qualified name of the QuestionService's Later RPC.
 	QuestionServiceLaterProcedure = "/plan.v1.QuestionService/Later"
+	// QuestionServiceSleepProcedure is the fully-qualified name of the QuestionService's Sleep RPC.
+	QuestionServiceSleepProcedure = "/plan.v1.QuestionService/Sleep"
 	// QuestionServiceLaunchProcedure is the fully-qualified name of the QuestionService's Launch RPC.
 	QuestionServiceLaunchProcedure = "/plan.v1.QuestionService/Launch"
 	// ProjectServiceAddProcedure is the fully-qualified name of the ProjectService's Add RPC.
@@ -291,6 +293,10 @@ type QuestionServiceClient interface {
 	// Put an open question off for later: it goes below the open questions asked before now, in the window and the
 	// brief, and keeps that place. With clear, it goes back to its place, by when it was asked.
 	Later(context.Context, *connect.Request[v1.QuestionServiceLaterRequest]) (*connect.Response[v1.QuestionServiceLaterResponse], error)
+	// Put an open question to sleep until typed conditions hold: tasks over, requests merged, a time. It leaves the open
+	// questions until the scheduler finds them all holding; then it wakes, the lead checks it, and it shows at the top.
+	// With wake, it wakes now.
+	Sleep(context.Context, *connect.Request[v1.QuestionServiceSleepRequest]) (*connect.Response[v1.QuestionServiceSleepResponse], error)
 	// Launch the task the chosen option of an answered question planned, as it is or with the flags given in place of
 	// its own: what djinn task spawn takes, the question its decision. Djinn launches it by itself on an answer without
 	// a note when it comes after no task and blocks none; otherwise the lead does, once it has read the answer. A plan
@@ -366,6 +372,12 @@ func NewQuestionServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(questionServiceMethods.ByName("Later")),
 			connect.WithClientOptions(opts...),
 		),
+		sleep: connect.NewClient[v1.QuestionServiceSleepRequest, v1.QuestionServiceSleepResponse](
+			httpClient,
+			baseURL+QuestionServiceSleepProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Sleep")),
+			connect.WithClientOptions(opts...),
+		),
 		launch: connect.NewClient[v1.QuestionServiceLaunchRequest, v1.QuestionServiceLaunchResponse](
 			httpClient,
 			baseURL+QuestionServiceLaunchProcedure,
@@ -386,6 +398,7 @@ type questionServiceClient struct {
 	move      *connect.Client[v1.QuestionServiceMoveRequest, v1.QuestionServiceMoveResponse]
 	withdraw  *connect.Client[v1.QuestionServiceWithdrawRequest, v1.QuestionServiceWithdrawResponse]
 	later     *connect.Client[v1.QuestionServiceLaterRequest, v1.QuestionServiceLaterResponse]
+	sleep     *connect.Client[v1.QuestionServiceSleepRequest, v1.QuestionServiceSleepResponse]
 	launch    *connect.Client[v1.QuestionServiceLaunchRequest, v1.QuestionServiceLaunchResponse]
 }
 
@@ -434,6 +447,11 @@ func (c *questionServiceClient) Later(ctx context.Context, req *connect.Request[
 	return c.later.CallUnary(ctx, req)
 }
 
+// Sleep calls plan.v1.QuestionService.Sleep.
+func (c *questionServiceClient) Sleep(ctx context.Context, req *connect.Request[v1.QuestionServiceSleepRequest]) (*connect.Response[v1.QuestionServiceSleepResponse], error) {
+	return c.sleep.CallUnary(ctx, req)
+}
+
 // Launch calls plan.v1.QuestionService.Launch.
 func (c *questionServiceClient) Launch(ctx context.Context, req *connect.Request[v1.QuestionServiceLaunchRequest]) (*connect.Response[v1.QuestionServiceLaunchResponse], error) {
 	return c.launch.CallUnary(ctx, req)
@@ -463,6 +481,10 @@ type QuestionServiceHandler interface {
 	// Put an open question off for later: it goes below the open questions asked before now, in the window and the
 	// brief, and keeps that place. With clear, it goes back to its place, by when it was asked.
 	Later(context.Context, *connect.Request[v1.QuestionServiceLaterRequest]) (*connect.Response[v1.QuestionServiceLaterResponse], error)
+	// Put an open question to sleep until typed conditions hold: tasks over, requests merged, a time. It leaves the open
+	// questions until the scheduler finds them all holding; then it wakes, the lead checks it, and it shows at the top.
+	// With wake, it wakes now.
+	Sleep(context.Context, *connect.Request[v1.QuestionServiceSleepRequest]) (*connect.Response[v1.QuestionServiceSleepResponse], error)
 	// Launch the task the chosen option of an answered question planned, as it is or with the flags given in place of
 	// its own: what djinn task spawn takes, the question its decision. Djinn launches it by itself on an answer without
 	// a note when it comes after no task and blocks none; otherwise the lead does, once it has read the answer. A plan
@@ -534,6 +556,12 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 		connect.WithSchema(questionServiceMethods.ByName("Later")),
 		connect.WithHandlerOptions(opts...),
 	)
+	questionServiceSleepHandler := connect.NewUnaryHandler(
+		QuestionServiceSleepProcedure,
+		svc.Sleep,
+		connect.WithSchema(questionServiceMethods.ByName("Sleep")),
+		connect.WithHandlerOptions(opts...),
+	)
 	questionServiceLaunchHandler := connect.NewUnaryHandler(
 		QuestionServiceLaunchProcedure,
 		svc.Launch,
@@ -560,6 +588,8 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 			questionServiceWithdrawHandler.ServeHTTP(w, r)
 		case QuestionServiceLaterProcedure:
 			questionServiceLaterHandler.ServeHTTP(w, r)
+		case QuestionServiceSleepProcedure:
+			questionServiceSleepHandler.ServeHTTP(w, r)
 		case QuestionServiceLaunchProcedure:
 			questionServiceLaunchHandler.ServeHTTP(w, r)
 		default:
@@ -605,6 +635,10 @@ func (UnimplementedQuestionServiceHandler) Withdraw(context.Context, *connect.Re
 
 func (UnimplementedQuestionServiceHandler) Later(context.Context, *connect.Request[v1.QuestionServiceLaterRequest]) (*connect.Response[v1.QuestionServiceLaterResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Later is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Sleep(context.Context, *connect.Request[v1.QuestionServiceSleepRequest]) (*connect.Response[v1.QuestionServiceSleepResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Sleep is not implemented"))
 }
 
 func (UnimplementedQuestionServiceHandler) Launch(context.Context, *connect.Request[v1.QuestionServiceLaunchRequest]) (*connect.Response[v1.QuestionServiceLaunchResponse], error) {

@@ -800,6 +800,9 @@ enum LeadEventKind {
   // The developer sent their comments on a tilasm, all at once, with their choice: launch its work, or iterate on it.
   // Its code is the tilasm's; its line, how many comments and the command that reads them.
   LEAD_EVENT_KIND_COMMENTS = 14;
+  // An asleep question woke (Question.sleep): its conditions held, or the developer woke it. The lead checks that its
+  // facts still hold (costs, the state of tasks and requests) and revises it if they changed.
+  LEAD_EVENT_KIND_WOKE = 15;
 }
 
 // LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the
@@ -1220,6 +1223,10 @@ message TaskBabysit {
   string done_when = 4;
   // The task that opened it, by code (W5); empty for one found open for the wish's branch.
   string opened_by = 5;
+  // When the watcher printed its done line (done_when): the request is merged, for the babysit skills Djinn knows.
+  // Unset while it watches, or when its command ended without it. A question asleep until the request is merged wakes
+  // on it (SLEEP_KIND_MERGED).
+  google.protobuf.Timestamp done_time = 6;
 }
 
 // TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, to decide
@@ -1813,6 +1820,53 @@ message Question {
   // none; otherwise the lead reads the plan with the answer and launches it, as it is or edited (djinn question
   // launch). An option without a plan is the lead's to turn into tasks.
   repeated PlannedTask plans = 24;
+  // What it sleeps until, set by the asker or the developer (djinn question sleep, ask or revise with --sleep-until; the
+  // window's Sleep): while it sleeps, it is out of the open questions of the window, the bar and the brief, which count
+  // it apart. The scheduler's pass checks its conditions; once they all hold it wakes (QuestionSleep.wake_time): the
+  // lead hears of it to check its facts still hold and revise it, and it shows at the top of its wish's open questions.
+  // Unset: it never slept.
+  QuestionSleep sleep = 25;
+}
+
+// QuestionSleep is what a question sleeps until, and when it woke.
+message QuestionSleep {
+  // The conditions, each typed: the question wakes once all of them hold.
+  repeated SleepCondition conditions = 1;
+  // When it was put to sleep.
+  google.protobuf.Timestamp create_time = 2;
+  // When it woke: its conditions held at a pass of the scheduler, or it was woken by hand (by_hand). Unset while it
+  // sleeps.
+  google.protobuf.Timestamp wake_time = 3;
+  // It was woken by hand (djinn question sleep --wake, the window's Wake), before its conditions held.
+  bool by_hand = 4;
+}
+
+// SleepCondition is one condition an asleep question waits for.
+message SleepCondition {
+  // What it waits for.
+  SleepKind kind = 1;
+  // For a task or a request named by a task: the task, by identifier.
+  string task_id = 2;
+  // That task's code, as the window and the brief name it: W12.
+  string code = 3;
+  // For a request named by its web address: the address.
+  string url = 4;
+  // For a time: when.
+  google.protobuf.Timestamp time = 5;
+}
+
+// SleepKind is what a condition of an asleep question waits for.
+enum SleepKind {
+  // Not set.
+  SLEEP_KIND_UNSPECIFIED = 0;
+  // A task over: done, stopped, cancelled or deleted; an azima closed (done).
+  SLEEP_KIND_TASK = 1;
+  // A pull or merge request merged, as Djinn knows it: the watcher that babysits it printed its done line
+  // (TaskBabysit.done_time), or the pull request of an azima is merged. Named by the watcher, by the task that opened
+  // it, by the azima, or by its web address.
+  SLEEP_KIND_MERGED = 2;
+  // A time come.
+  SLEEP_KIND_TIME = 3;
 }
 
 // PlannedTask is the task an option of a question launches: the fields of djinn task spawn, in the question's wish,
@@ -2082,6 +2136,13 @@ service QuestionService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Put an open question to sleep until typed conditions hold: tasks over, requests merged, a time. It leaves the open
+  // questions until the scheduler finds them all holding; then it wakes, the lead checks it, and it shows at the top.
+  // With wake, it wakes now.
+  rpc Sleep(QuestionServiceSleepRequest) returns (QuestionServiceSleepResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Launch the task the chosen option of an answered question planned, as it is or with the flags given in place of
   // its own: what djinn task spawn takes, the question its decision. Djinn launches it by itself on an answer without
   // a note when it comes after no task and blocks none; otherwise the lead does, once it has read the answer. A plan
@@ -2207,6 +2268,11 @@ message QuestionServiceReviseRequest {
   // Give back the question's earlier versions too: its rounds, each with what the question said before it. Not set:
   // the question as it stands now, its current version only.
   bool history = 12;
+  // Put it to sleep, revised, until these conditions hold (see djinn question sleep --until), in place of any it had.
+  repeated string sleep_until = 13 [
+    (buf.validate.field).repeated.max_items = 16,
+    (buf.validate.field).repeated.items.string.max_len = 2048
+  ];
 }
 
 message QuestionServiceReviseResponse {
@@ -2274,6 +2340,11 @@ message QuestionServiceAskRequest {
   repeated string plan_file = 12 [
     (buf.validate.field).repeated.max_items = 4,
     (buf.validate.field).repeated.items.string.max_len = 4096
+  ];
+  // Ask it asleep, until these conditions hold (see djinn question sleep --until): it shows once they all do.
+  repeated string sleep_until = 13 [
+    (buf.validate.field).repeated.max_items = 16,
+    (buf.validate.field).repeated.items.string.max_len = 2048
   ];
 }
 
@@ -2432,6 +2503,31 @@ message QuestionServiceLaterRequest {
 
 message QuestionServiceLaterResponse {
   // The question, put off or back in its place.
+  Question question = 1;
+}
+
+message QuestionServiceSleepRequest {
+  // The question to put to sleep: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What it sleeps until, a condition each, all to hold, in place of any it had; commas separate several in one
+  // value. A task of the wish, W12: done, stopped or cancelled (an azima: closed). merged:W45: the pull or merge
+  // request W45 babysits, or the one W45 opened, or azima W45's, merged; a request's web address says the same. A
+  // time: 2026-10-20, 2026-10-20T09:00 (this machine's time), an RFC 3339 time, or a delay from now, like 3d or 2h30m.
+  repeated string until = 3 [
+    (buf.validate.field).repeated.max_items = 16,
+    (buf.validate.field).repeated.items.string.max_len = 2048
+  ];
+  // Wake it now instead: it shows at the top of its wish's open questions, and the lead is told.
+  bool wake = 4;
+}
+
+message QuestionServiceSleepResponse {
+  // The question, asleep or awake.
   Question question = 1;
 }
 

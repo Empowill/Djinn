@@ -2,7 +2,8 @@
 // questions on the page's ground, no card around them, grouped by wish on the flying carpet (each group headed by its
 // wish's title, which opens it), the wish's own on its page. A question is closed, its two-line row, or open, in full
 // (wish-question.tsx): one is open at a time, the first until you go to another, and when the open one leaves (answered,
-// withdrawn, moved) the one below it opens, else the one above.
+// withdrawn, moved, put to sleep) the one below it opens, else the one above. The questions asleep (Question.sleep)
+// are out of it: a grey count below the groups lists them on demand (AsleepQuestions); one that wakes comes first.
 // Nothing moves under the reader (AGENTS.md, Interface): each wish's questions come as they were asked, the oldest
 // first, so a new one comes below and a revised one keeps its place; the groups keep the wishes' rank. The question
 // open stays open when one comes above it, and stays where it is on screen: the page's scroll anchoring holds it
@@ -15,6 +16,7 @@
 // then your pick is cleared (wish-question.tsx), then the focus leaves the column, where ↓ brings it back. With the
 // focus nowhere, the open question takes the other keys as if it had it, and the focus with them. Space and the page
 // keys scroll a long question: the arrows stay with the questions.
+import { Moon } from "lucide-react";
 import {
   type ReactNode,
   useCallback,
@@ -27,6 +29,7 @@ import {
 
 import type { Choice, Question, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { byAsked, type OpenQuestion } from "./data/flight";
+import { sleepTexts } from "./data/format";
 import { t } from "./i18n";
 import {
   type QuestionKey,
@@ -136,6 +139,9 @@ export function QuestionColumn({
   onMove,
   onWithdraw,
   onLater,
+  onSleep,
+  asleep = [],
+  onWake,
   children,
 }: {
   groups: QuestionGroup[];
@@ -153,6 +159,11 @@ export function QuestionColumn({
   onWithdraw?: (question: Question) => void;
   // Puts a question off for later, or gives it its place back; resolves once djinn has it.
   onLater?: (question: Question) => Promise<unknown>;
+  // Puts a question to sleep until conditions hold (SleepQuestionDialog).
+  onSleep?: (question: Question) => void;
+  // The questions asleep, counted in a line below the others, listed on demand (AsleepQuestions), each woken by hand.
+  asleep?: readonly OpenQuestion[];
+  onWake?: (question: Question) => Promise<unknown>;
   // What else waits for you, below the questions: the workers that wait, the proofs, the grant.
   children?: ReactNode;
 }) {
@@ -385,12 +396,70 @@ export function QuestionColumn({
               onMove={onMove}
               onWithdraw={onWithdraw}
               onLater={later}
+              onSleep={onSleep}
             />
           ))}
         </div>
       ))}
+      <AsleepQuestions questions={asleep} headings={headings} onWake={onWake} />
       {children}
     </section>
+  );
+}
+
+// AsleepQuestions are the questions asleep until their conditions hold, out of the column: a discreet count, which
+// opens their list, each with what it sleeps until and a button that wakes it now.
+export function AsleepQuestions({
+  questions,
+  headings = false,
+  onWake,
+}: {
+  questions: readonly OpenQuestion[];
+  // On the flying carpet: each says its wish.
+  headings?: boolean;
+  onWake?: (question: Question) => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  if (questions.length === 0) return null;
+  return (
+    <div className="question-asleep">
+      <button
+        type="button"
+        className="question-asleep-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Moon size={13} aria-hidden="true" />
+        {t("question.asleep_count", { count: questions.length })}
+      </button>
+      {open && (
+        <ul className="question-asleep-list">
+          {questions.map(({ wish, item }) => (
+            <li key={item.id} id={`asleep-${item.id}`}>
+              <span className="question-id">{item.code}</span>
+              <span className="question-asleep-text">
+                {item.text}
+                {headings && (
+                  <span className="question-asleep-wish">{wish.title}</span>
+                )}
+                <span className="question-asleep-until">
+                  {t("question.asleep_until", { until: sleepTexts(item) })}
+                </span>
+              </span>
+              {onWake && (
+                <button
+                  type="button"
+                  className="button secondary question-wake"
+                  onClick={() => void onWake(item).catch(() => {})}
+                >
+                  {t("question.wake")}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
