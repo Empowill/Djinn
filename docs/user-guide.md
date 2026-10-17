@@ -93,9 +93,13 @@ A project is a folder Djinn's workers work in. Git or not: a folder outside Git 
   type the path in the browser) and, optionally, a name.
 - From a terminal: `djinn project add <folder>`.
 
-Click a project to see its folder, whether it is a Git repository, its remote and its skills, those summoned from
-another project included ("from app"). `djinn skill summon app/babysit-mr --into infra` lets infra's workers use a
-skill of app without a copy.
+Click a project to see its configuration, as Djinn reads it on this machine. What waits for you comes first, in red
+("To fix"): each thing in a sentence, the error as read, and what settles it (a file to correct, a source to plug in or
+say no to, a skill to unsummon). Then its reference branch (the ref and commit Djinn merges, and where its name comes
+from), its checks, the inbox sources of this machine, its skills with the role each has for Djinn (a wish template, an
+inbox source, a babysit, or know-how for the workers alone), its push cadence, and every other setting with where it
+comes from: Djinn's default, the team's file or yours. Skills summoned from another project show "from app".
+`djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app without a copy.
 
 ## A wish
 
@@ -562,7 +566,7 @@ the cards, and the window shows each new item as a system notification. Nothing 
 lamp** takes the recommended choice. Djinn only reads a source: it never comments, reacts or replies. `djinn inbox
 list` lists the items.
 
-The sources live in their project's panel, under "Inbox sources, on this machine": what each reads, how its last run
+The sources live in their project's panel, under "Inbox sources", on this machine: what each reads, how its last run
 went, and **Plug in** or **Unplug**, with what it does written under the button. A source runs only once plugged in, on
 this machine; one this machine has not decided on is one of the project's things to fix, until you plug it in or
 unplug it to say no. One you plugged in that fails gets a card of the kind **Djinn's configuration**: the error, since
@@ -601,7 +605,8 @@ or **On demand** (pushes only when you click **Push** or run `djinn project push
 switch cadence in the project view or with `djinn project set-push <project> standard|on_demand`. A push due waits for the work in line to be
 merged and checked, 15 minutes at most. Before it pushes the branch,
 it runs the checks named for `push`: red, the push is held, and Djinn starts a correction worker; if that fails or attempts
-are spent, it tells the Djinn. `djinn project show` and the project's view in the window list the checks and how each last ran.
+are spent, it tells the Djinn. `djinn project show` and the project's configuration in the window list the checks and
+how each last ran.
 When the settings also name an install command, the window proposes the build it pushed, one per integration branch:
 on one line, its commit, the branch and wish it comes from, and against the running Djinn the tasks it adds, or "older
 than the running Djinn on 3 commits" when the running Djinn holds commits it lacks; **Details** unfolds the tasks merged

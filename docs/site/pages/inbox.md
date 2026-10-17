@@ -22,7 +22,7 @@ back, and nothing is said or marked at the source.
 
 A skill may declare a source: a command that prints what comes from outside, like the merge requests assigned to you.
 It says what it reads, in a sentence its skill writes in its metadata, else the skill's description. The sources live
-in their project's panel, under **Inbox sources, on this machine**: what each one reads, how its last run went, and
+in their project's panel, under **Inbox sources**, on this machine: what each one reads, how its last run went, and
 **Plug in** or **Unplug**, with what that does written under the button. A source runs only once you plug it in, on
 this machine; the inbox never lists the sources.
 

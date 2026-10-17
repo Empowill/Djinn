@@ -218,8 +218,8 @@ with a watcher: a wish whose watcher starts at once), and under each choice what
 click; "Dismiss", the last choice, sets an item aside. The inbox shows only what waits for you: empty, it is hidden.
 
 **A source runs only once you plug it in, on your machine.** Declaring one in a skill runs nothing: a clone of the
-repository polls no forge by itself. Each project's panel lists the sources its skills declare ("Inbox sources, on
-this machine"), each with its summary, its last run, its command and a "Plug in" button ("Unplug" once plugged in),
+repository polls no forge by itself. Each project's panel lists the sources its skills declare ("Inbox sources", on
+this machine), each with its summary, its last run, its command and a "Plug in" button ("Unplug" once plugged in),
 what the button does written under it; `djinn inbox sources`, `djinn inbox plug <source>` and `djinn inbox unplug
 <source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or
 by its skill alone when one project holds it. Whether it is plugged in lives in Djinn's data on this machine, never in

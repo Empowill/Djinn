@@ -27,8 +27,9 @@ Two projects never share a name, nor a folder, case ignored. The folder must exi
 Djinn's command line adds a project too: see the [Command line](#commands).
 
 > **Example.** You add the folder of your web application as "app". The side panel lists it; a click on it shows its
-> folder, Git repository, its remote on GitHub, its two checks (lint before a commit, tests before a push) and its
-> skills. You make the wish "Let customers export their invoices as PDF" on app.
+> configuration: its folder, its remote on GitHub, its reference branch main, its two checks (lint before a commit,
+> tests before a push), each from the team's file, and its skills with their role. You make the wish "Let customers
+> export their invoices as PDF" on app.
 
 ### In Git or not
 
@@ -47,20 +48,25 @@ machine does not have. The side panel marks it **No folder on this machine**, an
 this machine. Adding its folder, as above, attaches it to that project instead of making a new one: Djinn matches it by
 its remote, then by its name.
 
-## The project's view
+## The project's configuration
 
-A click on a project in the side panel, on its name or on its gear, opens its view:
+A click on a project in the side panel, on its name or on its gear, opens its configuration, as Djinn reads it on this
+machine. Under its name, its folder, its remote and whether it is a Git repository; then one box per part, what waits
+for you first:
 
 | Part | What it shows |
 | --- | --- |
-| Notices | In red at the top: what Djinn finds in the project's configuration, things to fix first. See below. |
-| Folder | Its path, and whether it is a Git repository. |
-| Remote | Where Djinn pushes, when the repository has one. |
-| Push cadence | **Standard** or **On demand**, and each branch Djinn pushes that differs from its remote, with a button to push it. See [Push](#push). |
-| Checks | What Djinn runs on finished work, and how each last ran: passed on which commit, when, in how long, or why it failed. |
+| To fix | In red, first, only when something waits for you: what Djinn finds that you must settle, each in one sentence, the error as Djinn read it, and what settles it. A source to decide on has its two choices, **Plug in** and **Say no**, each with what it changes; a summoned skill no longer found has **Unsummon**; a file to correct names the file; a command that does it is there to copy. See below. |
+| Reference branch | The branch Djinn keeps the wishes up to date with, and that pull requests aim at: its name, the ref Djinn merges it from and the commit it points at, and where its name comes from (Djinn's default, the team's file or yours). When your copy has another branch checked out, a line says so. |
+| Worth knowing | The information Djinn finds: nothing waits for you. |
+| Checks | The setup and the checks Djinn runs on finished work, where each comes from, and how each last ran: passed on which commit, when, in how long, or why it failed. |
+| Inbox sources | The sources its skills declare on this machine: what each reads, how its last run went, and **Plug in** or **Unplug**, with what that does. See [Inbox](#inbox). |
+| Skills | The project's skills, the folder each lives in, and those it uses from another project, marked **from** that project. Each says its role for Djinn: the wish template it offers, the inbox source it declares, the babysit of the project's pull requests; or know-how for the workers alone. A skill Djinn cannot read, or cannot use in part, sends you to To fix. |
+| Push cadence | **Standard** or **On demand**, where it comes from, and each branch Djinn pushes that differs from its remote, with a button to push it. See [Push](#push). |
+| Settings | Every other setting, its value and where it comes from: those a file sets first, those at Djinn's default folded under them. Hovering where a value comes from shows the file. |
 | Watcher commands you allow | The commands a [watcher](#watcher) may run here for you, with **Allow** and **Take back**. |
-| Inbox sources, on this machine | The sources its skills declare: what each reads, how its last run went, and **Plug in** or **Unplug**, with what that does. See [Inbox](#inbox). |
-| Skills | The project's skills, and those it uses from another project, marked **from** that project. |
+
+No button of the configuration is in the accent colour: none is a recommendation.
 
 The side panel also shows, under each project, the branches waiting to be pushed, a button that opens a terminal at the
 project's root, and its gear.
@@ -73,8 +79,8 @@ Djinn reads a project's configuration each time it shows the project, and says w
 which wait for you, then information. Each one says what it is in one sentence, and the one action that settles it: a
 file to correct, a source to decide on, a skill to unsummon, a reference branch to name. The projects list carries the
 number of things to fix: while there is one, the project's gear in the side panel turns red with a small flame, its
-tooltip counts them, and the [inbox](#inbox) gives the project one line that opens its view. Information leaves the
-gear grey: you read it on opening the view.
+tooltip counts them, and the [inbox](#inbox) gives the project one line that opens its configuration. Information
+leaves the gear grey: you read it on opening the configuration.
 
 - **Things to fix**: a settings file or the permissions Djinn cannot read; no reference branch found, or the one the
   settings name missing from the repository; the setup that failed its last run; a skill whose header Djinn cannot
@@ -138,14 +144,14 @@ allow an ifrit's serve. A repository that sets them is warned, and ignored: it l
 ### Checks make Djinn integrate
 
 The checks are what turn on Djinn's handling of finished work. With at least one check, Djinn merges each task's work
-into the wish's branch, checked, and pushes it once its push checks pass. With none, the project's view says **No
-check**: Djinn merges finished work only into a wish's own branch, untested, never into the main branch. See
+into the wish's branch, checked, and pushes it once its push checks pass. With none, the project's configuration says
+**No check**: Djinn merges finished work only into a wish's own branch, untested, never into the main branch. See
 [Merges and corrections](#merges-and-corrections).
 
 ### Changing a setting
 
-- **From the window**: the push cadence switch, and the watcher commands you allow, in the project's view. Both write
-  your own file.
+- **From the window**: the push cadence switch, and the watcher commands you allow, in the project's configuration.
+  Both write your own file.
 - **For the team**: edit the repository's file and commit it, like any change of the project, or ask the Djinn for a
   task that does.
 - **For yourself**: your own file, or Djinn's command line, whose project details list every setting with where it
