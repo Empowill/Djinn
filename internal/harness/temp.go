@@ -42,7 +42,7 @@ func (h *Harness) sweepTemp(ctx context.Context) []string {
 				continue
 			}
 			dir := filepath.Join(parent, e.Name())
-			dirs = append(dirs, dir, filepath.Join(dir, "worktrees"), filepath.Join(dir, "integration"))
+			dirs = append(dirs, dir, filepath.Join(dir, "worktrees"), filepath.Join(dir, "integration"), filepath.Join(dir, "push"))
 		}
 	}
 	// The azimas' files, in each project's plan folder and its wish folders.

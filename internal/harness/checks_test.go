@@ -581,9 +581,25 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 		return "text push checks fixed"
 	})
 
-	// Pass 1: W1 commits into the branch.
-	// Push check fails on tip (testCode = 1). Push is held.
-	// Correction worker W3 is spawned.
+	// Pass 1: W1 commits into the branch. Dependent task W2 is free to start because W1 is COMMITTED: it runs while
+	// the push checks run apart (W180). They fail on the tip (testCode = 1): the push is held, no correction yet, W2's
+	// work may make them pass.
+	wait := make(chan struct{})
+	in.mu.Lock()
+	in.testWait = wait
+	in.mu.Unlock()
+	in.passApart(t, 0)
+	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	close(wait)
+	in.h.waitPushes()
+	if state := in.pushState(t); state.GetHeldRuns() != 1 || state.GetCorrectedBy() != "" {
+		t.Fatalf("push state %v; want held once, no correction while W2 runs", state)
+	}
+	in.mu.Lock()
+	in.testWait = nil
+	in.mu.Unlock()
+
+	// Pass 2: red twice in a row, the correction worker W3 is spawned.
 	in.pass(t, 0)
 
 	// Remote has not received the red push.
@@ -608,8 +624,6 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 		t.Fatalf("correction worker is %s, want W3", w3.GetCode())
 	}
 
-	// Dependent task W2 is free to start because W1 is COMMITTED!
-	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 	writeFile(t, w2.GetWorktree(), "app/src/b.txt", "b by W2\n")
 	commitAll(t, w2.GetWorktree(), "W2 adds b.txt")
 

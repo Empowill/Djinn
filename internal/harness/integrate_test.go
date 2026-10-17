@@ -68,8 +68,15 @@ func (in *integration) clock() time.Time {
 	return in.now
 }
 
-// pass moves the clock by d, then lets the integration make a pass.
+// pass moves the clock by d, then lets the integration make a pass, and waits for the pushes it started apart.
 func (in *integration) pass(t *testing.T, d time.Duration) {
+	t.Helper()
+	in.passApart(t, d)
+	in.h.waitPushes()
+}
+
+// passApart is pass without waiting for the pushes it started apart (push_apart.go).
+func (in *integration) passApart(t *testing.T, d time.Duration) {
 	t.Helper()
 	in.mu.Lock()
 	in.now = in.now.Add(d)

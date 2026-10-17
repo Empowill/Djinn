@@ -13,7 +13,7 @@ where it pushes only when you ask.
 - **One CI run per push, not per worker.** Ten workers pushing ten branches would start ten pipelines; Djinn pushes the
   wish's branch once a batch of work is in, checked.
 - **Checked before it leaves the machine.** The push checks, the long ones such as the whole test suite, run on the
-  exact commit about to be pushed.
+  exact commit about to be pushed, while the merges go on.
 - **Never forced.** A forced push can erase a teammate's work and the place of every review. Djinn never forces; when
   it cannot push without forcing, it stops and says so.
 - **One door out.** In a Git project, any push a worker tries goes nowhere: Djinn alone talks to the remote.
@@ -33,9 +33,17 @@ wish was made before its first push. Djinn looks after each task's work is commi
 granted wishes are not pushed by the cadence.
 
 **Merged safely first.** A push that is due waits while finished work is still in line for the branch, being merged, or
-while a correction repairs it: Djinn pushes once all of it is in and checked. The tasks' events say it: *a push of
-feat/invoice-pdf is due (the azima A2 ends); it waits for W7, W8 to merge, 15 minutes at most*. Fifteen minutes after
-the push became due, it goes all the same, if its push checks pass: a stream of merges never holds it back for good.
+while a correction repairs it: no push check runs meanwhile, and Djinn pushes once all of it is in and checked. The
+tasks' events say it: *a push of feat/invoice-pdf is due (the azima A2 ends); it waits for W7, W8 to merge, 15 minutes
+at most*. Fifteen minutes after the push became due, it goes all the same, if its push checks pass: a stream of merges
+never holds it back for good.
+
+**Merges go on during the push checks.** The push checks run apart, in a worktree of their own, on the commit the
+branch was at when they began: the work that ends meanwhile merges at once, its commit checks run, and the tasks that
+wait for it start. A merge that lands before the push checks end makes them moot: Djinn neither pushes nor holds that
+commit, says so in the tasks' events (*the push checks of feat/invoice-pdf at 1a2b3c4d are moot: it moved to 5e6f7a8b
+meanwhile*), and checks the new tip once no merge is in line. Your own push, or one you approved, checks the new tip
+at once instead, three times at most.
 
 ### Changing the cadence
 
@@ -117,7 +125,8 @@ commits, 2 hours ago**, with the commits on hover.
 ## Held pushes
 
 Before each push, Djinn runs the project's **push checks** on the branch's tip, each through the [gate](#gates) of its
-name. A check that already passed on that very commit, as a commit check for instance, is not run again.
+name, in the wish's push worktree, beside the one it merges in. A check that already passed on that very commit, as a
+commit check for instance, is not run again.
 
 When a push check is red, the push is **held**:
 
