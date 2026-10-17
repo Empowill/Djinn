@@ -2253,6 +2253,16 @@ func (h *Harness) wishAzimas(ctx context.Context, wish *planv1.Wish) []*planv1.T
 	return azimas
 }
 
+// filledAzimas are the azimas of wish, each with where it stands (plan.FillAzimas, read from all its tasks).
+func (h *Harness) filledAzimas(ctx context.Context, wish *planv1.Wish) []*planv1.Task {
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
+	if err != nil {
+		return nil
+	}
+	plan.FillAzimas(tasks)
+	return slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return !plan.IsAzima(t) })
+}
+
 // azimaBranchesOf lists all existing azima branches for wish in project's repo.
 func (h *Harness) azimaBranchesOf(ctx context.Context, wish *planv1.Wish, project *planv1.Project) []string {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})

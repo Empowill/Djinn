@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -662,6 +663,94 @@ func (in *integration) syncOf(t *testing.T, project *planv1.Project, branch stri
 	}
 	t.Fatalf("no sync of %s among %v", branch, syncs)
 	return nil
+}
+
+// TestPushSyncLandedInMain: a done azima's branch whose remote copy lags behind, but whose commits main holds already
+// (its merge request merged them, then closed), waits for no push: ahead 0, landed. Its sync forgotten, the project's
+// syncs leave it out, until a new commit on it waits for a push again; a branch with commits to push is never forgotten.
+func TestPushSyncLandedInMain(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.remote(t)
+	ctx := t.Context()
+	in.git(t, in.repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/"+in.branch)
+
+	commit := func(branch, title string) {
+		tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+branch)
+		tip = in.git(t, in.repo, "commit-tree", tip+"^{tree}", "-p", tip, "-m", title)
+		in.git(t, in.repo, "update-ref", "refs/heads/"+branch, tip)
+	}
+	// The hotfix branch, pushed once, then three more commits that main took by its merge request and pushed.
+	in.git(t, in.repo, "branch", "hotfix-tenant", in.branch)
+	commit("hotfix-tenant", "first")
+	in.git(t, in.repo, "push", "--quiet", "origin", "hotfix-tenant")
+	for _, title := range []string{"second", "third", "fourth"} {
+		commit("hotfix-tenant", title)
+	}
+	main := in.git(t, in.repo, "rev-parse", "refs/heads/"+in.branch)
+	in.git(t, in.repo, "update-ref", "refs/heads/"+in.branch, in.git(t, in.repo, "rev-parse", "refs/heads/hotfix-tenant"))
+	in.git(t, in.repo, "push", "--quiet", "origin", in.branch)
+	err := in.db.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("local", "test", &planv1.Wish{}); err != nil {
+			return err
+		}
+		for code, branch := range map[string]string{"T2": "hotfix-tenant", "T3": "feat/ahead"} {
+			err := tx.Put(&planv1.Task{
+				Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: code, Title: "Tenants apart",
+				Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+				Azima: &planv1.Azima{Branch: branch, BaseBranch: in.branch, CutFrom: main, Named: true},
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A done azima whose branch has a commit main lacks: it waits for a push, and is no landed one.
+	in.git(t, in.repo, "branch", "feat/ahead", main)
+	commit("feat/ahead", "ahead")
+	project, err := store.Get[*planv1.Project](ctx, in.db, in.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if s := in.syncOf(t, project, "hotfix-tenant"); s.GetAhead() != 0 || s.GetBehind() != 0 || !s.GetLanded() {
+		t.Errorf("hotfix-tenant, in main: ↑%d ↓%d landed %v; want ↑0 ↓0, landed", s.GetAhead(), s.GetBehind(), s.GetLanded())
+	}
+	if s := in.syncOf(t, project, "feat/ahead"); s.GetAhead() != 1 || s.GetLanded() {
+		t.Errorf("feat/ahead: ↑%d landed %v; want ↑1, not landed", s.GetAhead(), s.GetLanded())
+	}
+	if _, err := in.h.Push(ctx, in.wishID, in.projectID, "hotfix-tenant"); !errors.Is(err, plan.ErrUpToDate) {
+		t.Errorf("Push of hotfix-tenant: %v, want up to date", err)
+	}
+
+	if err := in.h.ForgetSync(ctx, project, "feat/ahead"); err == nil || !strings.Contains(err.Error(), "1 commits to push") {
+		t.Errorf("ForgetSync of feat/ahead: %v, want refused, it has a commit to push", err)
+	}
+	if err := in.h.ForgetSync(ctx, project, "hotfix-tenant"); err != nil {
+		t.Fatalf("ForgetSync of hotfix-tenant: %v", err)
+	}
+	branches := func() []string {
+		syncs, err := in.h.Syncs(ctx, project)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, s := range syncs {
+			got = append(got, s.GetBranch())
+		}
+		return got
+	}
+	if got := branches(); slices.Contains(got, "hotfix-tenant") || !slices.Contains(got, "feat/ahead") {
+		t.Errorf("syncs once hotfix-tenant forgotten: %v, want feat/ahead and not hotfix-tenant", got)
+	}
+	commit("hotfix-tenant", "fifth")
+	if s := in.syncOf(t, project, "hotfix-tenant"); s.GetAhead() != 1 || s.GetLanded() {
+		t.Errorf("hotfix-tenant with a new commit: ↑%d landed %v; want ↑1, not landed", s.GetAhead(), s.GetLanded())
+	}
 }
 
 // TestPushSyncs: a project holds a sync for each branch Djinn pushes there that exists: the integration branch of each

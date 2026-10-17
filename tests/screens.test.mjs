@@ -17,7 +17,7 @@ export { renderToStaticMarkup } from "react-dom/server";
 export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { WishSidebar } from "@/src/wish-sidebar.tsx";
-export { SyncLine, SyncLines } from "@/src/project-sync.tsx";
+export { SyncLine, SyncLines, syncTitle } from "@/src/project-sync.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export {
   QuestionColumn,
@@ -9076,6 +9076,46 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
   );
   assert.match(mergedHtml, /<span class="azima-pushed-status">Pushed<\/span>/);
   assert.match(mergedHtml, /<span class="azima-pr-badge">PR merged<\/span>/);
+
+  // A done azima whose commits main holds already, its remote branch left behind (W163): landed, never waiting for a
+  // push, its sync to forget.
+  const landed = projectSync("hotfix-tenant", 0, 0, {
+    azimaId: "a27",
+    azimaCode: "T27",
+    azimaTitle: "Tenants apart",
+    landed: true,
+  });
+  let forgotten;
+  const landedCard = {
+    azima: {
+      ...taskT27,
+      azima: { branch: "hotfix-tenant", baseBranch: "main" },
+    },
+    sync: landed,
+    parts: [],
+    tasks: new Map(),
+    render: () => null,
+    isPerAzima: true,
+    onPush() {},
+    onForgetSync: (sync) => {
+      forgotten = sync;
+    },
+  };
+  const landedHtml = s.renderToStaticMarkup(h(s.AzimaCard, landedCard));
+  assert.match(
+    landedHtml,
+    /<span class="azima-pushed-status" title="Every commit of hotfix-tenant is in main already: nothing waits for a push">Landed in main<\/span><button type="button" class="icon-button azima-forget-sync" title="Forget the sync of hotfix-tenant/,
+  );
+  assert.doesNotMatch(landedHtml, /sync-line|>Pushed</);
+  live(s.AzimaCard, landedCard)
+    .all("button")
+    .find((b) => b.props.className === "icon-button azima-forget-sync")
+    .props.onClick(fakeEvent);
+  assert.equal(forgotten?.branch, "hotfix-tenant");
+  assert.equal(
+    s.syncTitle(landed),
+    "Branch of the azima T27 Tenants apart, wish Lamp\nLanded: main holds its commits already, nothing to push",
+  );
 
   // 7. Verify T27: AzimaCard is memoized (React.memo)
   assert.equal(typeof s.AzimaCard, "object");

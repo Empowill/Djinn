@@ -74,6 +74,9 @@ message ProjectSync {
   PushRun push = 11;
   // The correction worker Djinn started to make the push checks pass, by code, while the push is held.
   string correction = 12;
+  // The azima is done, or awaits its proof, and every commit of its branch is in the remote's main, or in the branch it
+  // lands in: its work landed there, nothing waits for a push. ahead never counts the commits main holds already.
+  bool landed = 13;
 }
 
 // CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
@@ -505,6 +508,9 @@ message WishPush {
   IntegrationFailure failure = 12;
   // The last push Djinn ran in this project, or runs now: its push checks, then git push.
   PushRun run = 13;
+  // The branches whose sync the developer forgot (djinn project forget-sync), each with its tip then: Project.syncs
+  // leaves a branch out while its tip stays there, and shows it again once it moves.
+  map<string, string> forgotten = 14;
 }
 
 // PushRun is a push Djinn runs, or ran, of one branch: what the window shows on its sync line, the same however it
@@ -2319,6 +2325,12 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
+  // syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
+  rpc ForgetSync(ProjectServiceForgetSyncRequest) returns (ProjectServiceForgetSyncResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // List the local branches of a project's repository a wish's work may land in, the latest commit first: those
   // Djinn made for its tasks' worktrees left out.
   rpc Branches(ProjectServiceBranchesRequest) returns (ProjectServiceBranchesResponse) {
@@ -2471,6 +2483,21 @@ message ProjectServiceAllowResponse {
   // The serve commands you allow in the project, from your own settings file.
   repeated string serve_commands = 3;
 }
+
+message ProjectServiceForgetSyncRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The branch, among the project's syncs (Project.syncs).
+  string branch = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 255
+  ];
+}
+
+message ProjectServiceForgetSyncResponse {}
 
 message ProjectServiceBranchesRequest {
   // The project, by name (case ignored) or identifier.

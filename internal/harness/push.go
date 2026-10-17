@@ -841,25 +841,57 @@ func (h *Harness) Syncs(ctx context.Context, project *planv1.Project) ([]*planv1
 	slices.SortStableFunc(wishes, func(a, b *planv1.Wish) int {
 		return cmp.Or(cmp.Compare(a.GetState(), b.GetState()), cmp.Compare(a.GetRank(), b.GetRank()))
 	})
+	// The project's main, and each branch an azima lands in, as the remote holds them: their commits wait for no push.
+	var mainName string
+	if settings, err := plan.LoadSettings(h.home, project); err == nil {
+		mainName = settings.MainBranch
+	}
+	main, _, _ := mainRef(ctx, repo, mainName)
+	bases := map[string]string{}
+	baseRef := func(name string) string {
+		if ref, ok := bases[name]; ok {
+			return ref
+		}
+		_, ref, err := mainRef(ctx, repo, name)
+		if err != nil || !strings.HasPrefix(ref, "refs/remotes/") {
+			ref = ""
+		} else if _, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", ref); err != nil {
+			ref = ""
+		}
+		bases[name] = ref
+		return ref
+	}
 	var syncs []*planv1.ProjectSync
 	add := func(wish *planv1.Wish, azima *planv1.Task, branch string) {
 		if !branches[branch] {
 			return
 		}
 		delete(branches, branch) // a branch shows once
-		sync := branchSync(ctx, repo, branch)
+		landsIn := []string{baseRef(main)}
+		if base := azima.GetAzima().GetBaseBranch(); base != "" && !strings.EqualFold(base, main) {
+			landsIn = append(landsIn, baseRef(base))
+		}
+		landsIn = slices.DeleteFunc(landsIn, func(ref string) bool { return ref == "" })
+		sync := branchSync(ctx, repo, branch, landsIn...)
 		if sync == nil {
+			return
+		}
+		if tip, ok := pushState(wish, project.GetId()).GetForgotten()[branch]; ok && tip == branchTip(ctx, repo, branch) {
 			return
 		}
 		sync.WishId, sync.WishTitle = wish.GetId(), wish.GetTitle()
 		if azima != nil {
 			sync.AzimaId, sync.AzimaCode, sync.AzimaTitle = azima.GetId(), azima.GetCode(), azima.GetTitle()
+			switch azima.GetAzima().GetState() {
+			case planv1.AzimaState_AZIMA_STATE_DONE, planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF:
+				sync.Landed = sync.GetAhead() == 0 && landed(ctx, repo, branch, landsIn)
+			}
 		}
 		h.syncPush(ctx, sync, wish, project.GetId())
 		syncs = append(syncs, sync)
 	}
 	for _, wish := range wishes {
-		azimas := h.wishAzimas(ctx, wish)
+		azimas := h.filledAzimas(ctx, wish)
 		// Per azima, an azima that adopted the wish's integration branch shows it as its own.
 		var owner *planv1.Task
 		if h.pushesPerAzima(ctx, h.store, wish) {
@@ -874,8 +906,9 @@ func (h *Harness) Syncs(ctx context.Context, project *planv1.Project) ([]*planv1
 	return syncs, nil
 }
 
-// branchSync computes how far branch of repo is ahead of and behind its remote target; nil without a remote.
-func branchSync(ctx context.Context, repo, branch string) *planv1.ProjectSync {
+// branchSync computes how far branch of repo is ahead of and behind its remote target; nil without a remote. A commit
+// that landsIn holds, the remote's main or the branch an azima lands in, is not ahead: it needs no push.
+func branchSync(ctx context.Context, repo, branch string, landsIn ...string) *planv1.ProjectSync {
 	remote, target := pushTarget(ctx, repo, branch)
 	if remote == "" || target == "" {
 		return nil
@@ -883,7 +916,8 @@ func branchSync(ctx context.Context, repo, branch string) *planv1.ProjectSync {
 	var ahead, behind int64
 	remoteRef := "refs/remotes/" + remote + "/" + target
 	if _, err := git(ctx, repo, "rev-parse", "--verify", remoteRef); err == nil {
-		if out, err := git(ctx, repo, "rev-list", "--count", "refs/heads/"+branch, "--not", remoteRef); err == nil {
+		not := append([]string{"rev-list", "--count", "refs/heads/" + branch, "--not", remoteRef}, landsIn...)
+		if out, err := git(ctx, repo, not...); err == nil {
 			ahead, _ = strconv.ParseInt(strings.TrimSpace(out), 10, 32)
 		}
 		if out, err := git(ctx, repo, "rev-list", "--count", remoteRef, "--not", "refs/heads/"+branch); err == nil {
@@ -903,6 +937,51 @@ func branchSync(ctx context.Context, repo, branch string) *planv1.ProjectSync {
 		Ahead:  int32(ahead),
 		Behind: int32(behind),
 	}
+}
+
+// landed tells whether every commit of branch is in one of landsIn, refs that exist: its work landed there.
+func landed(ctx context.Context, repo, branch string, landsIn []string) bool {
+	for _, ref := range landsIn {
+		if _, err := git(ctx, repo, "merge-base", "--is-ancestor", "refs/heads/"+branch, ref); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// branchTip is the commit branch of repo is on; "" without it.
+func branchTip(ctx context.Context, repo, branch string) string {
+	tip, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	if err != nil {
+		return ""
+	}
+	return tip
+}
+
+// ForgetSync forgets the sync of branch in project: Syncs leaves it out until its tip moves. A branch with commits to
+// push keeps its sync.
+func (h *Harness) ForgetSync(ctx context.Context, project *planv1.Project, branch string) error {
+	syncs, err := h.Syncs(ctx, project)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(syncs, func(s *planv1.ProjectSync) bool { return s.GetBranch() == branch })
+	if i < 0 {
+		return fmt.Errorf("%w: %s is no branch Djinn pushes in %s", store.ErrNotFound, branch, project.GetName())
+	}
+	sync := syncs[i]
+	if n := sync.GetAhead(); n > 0 {
+		return fmt.Errorf("%s has %d commits to push to %s/%s: push it first", branch, n, sync.GetRemote(), sync.GetTarget())
+	}
+	tip := branchTip(ctx, project.GetDirectory(), branch)
+	return h.store.Tx(ctx, func(tx *store.Tx) error {
+		return editPush(ctx, tx, sync.GetWishId(), project.GetId(), func(p *planv1.WishPush) {
+			if p.Forgotten == nil {
+				p.Forgotten = map[string]string{}
+			}
+			p.Forgotten[branch] = tip
+		})
+	})
 }
 
 // clearApproved forgets an approval that found nothing to push.

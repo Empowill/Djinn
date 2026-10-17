@@ -10,6 +10,7 @@ import {
   ExternalLink,
   GitBranch,
   Pencil,
+  X,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -221,6 +222,7 @@ export const AzimaCard = memo(function AzimaCard({
   isPerAzima = false,
   sync: ownSync,
   onPush,
+  onForgetSync,
   onOpenPr,
   onValidate,
   onRename,
@@ -243,6 +245,8 @@ export const AzimaCard = memo(function AzimaCard({
   sync?: ProjectSync;
   // Pushes the azima's own branch.
   onPush?: (azima: Task) => Promise<unknown> | void;
+  // Forgets the sync of its branch, landed in main: the project's syncs leave it out until it moves.
+  onForgetSync?: (sync: ProjectSync) => void;
   // Opens the pull request in the external browser.
   onOpenPr?: (url: string) => void;
   // Validates the azima once its work is done: it is marked done, by you.
@@ -351,12 +355,18 @@ export const AzimaCard = memo(function AzimaCard({
     : [];
   const sync = ownSync ?? azima.azima?.sync;
   const outOfSync = isSyncShown(sync);
-  const isPushed = Boolean(
-    sync &&
-    sync.ahead === 0 &&
-    sync.behind === 0 &&
-    (sync.target || sync.remote || sync.branch),
-  );
+  // Its work in main already, nothing waits for a push: landed, its sync to forget. A push of it running shows instead.
+  const landed =
+    sync?.landed && sync.ahead === 0 && sync.behind === 0 ? sync : undefined;
+  const isLanded = Boolean(landed) && !outOfSync;
+  const isPushed =
+    !isLanded &&
+    Boolean(
+      sync &&
+      sync.ahead === 0 &&
+      sync.behind === 0 &&
+      (sync.target || sync.remote || sync.branch),
+    );
   const canPush = outOfSync && Boolean(onPush);
   const { pushing, outcomes, push } = usePushes(
     onPush && (() => onPush(azima)),
@@ -372,7 +382,7 @@ export const AzimaCard = memo(function AzimaCard({
         : t("azima.pr_open")
     : null;
 
-  const hasActions = outOfSync || isPushed || Boolean(prText);
+  const hasActions = outOfSync || isPushed || isLanded || Boolean(prText);
   // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: what comes
   // before it on its title; its parts, counted by state, and its time on its bar; what its proof needs on its badge,
   // and in the card opened, with its own branch.
@@ -477,6 +487,32 @@ export const AzimaCard = memo(function AzimaCard({
             )}
             {isPushed && !outOfSync && (
               <span className="azima-pushed-status">{t("azima.pushed")}</span>
+            )}
+            {isLanded && landed && (
+              <>
+                <span
+                  className="azima-pushed-status"
+                  title={t("azima.landed_detail", { branch: landed.branch })}
+                >
+                  {t("azima.landed", { branch: baseBranch || "main" })}
+                </span>
+                {onForgetSync && (
+                  <button
+                    type="button"
+                    className="icon-button azima-forget-sync"
+                    title={t("azima.forget_sync", { branch: landed.branch })}
+                    aria-label={t("azima.forget_sync", {
+                      branch: landed.branch,
+                    })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onForgetSync(landed);
+                    }}
+                  >
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                )}
+              </>
             )}
             {prUrl ? (
               <a

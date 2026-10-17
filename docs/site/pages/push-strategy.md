@@ -62,7 +62,9 @@ djinn/T07-the-orchestrator.
 - **It keeps up with main**, by the same rules as a wish's branch.
 - **It is pushed** by the project's cadence: under Standard, at the latest when the azima ends. Its card shows the branch's line when it
   differs from the remote, with its push button, and **Pushed** when it does not.
-- **It lands in main** through its own pull request.
+- **It lands in main** through its own pull request. Once the azima is done and main holds every commit of its branch,
+  its card says **Landed in main**, even when the remote's copy of the branch lags behind: nothing waits for a push. The
+  cross beside it forgets the branch's sync, until a new commit on it.
 
 ### An azima's pull request
 

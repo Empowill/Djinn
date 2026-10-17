@@ -47,6 +47,7 @@ const actor = "local"
 type Pusher interface {
 	Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error)
 	Syncs(ctx context.Context, project *planv1.Project) ([]*planv1.ProjectSync, error)
+	ForgetSync(ctx context.Context, project *planv1.Project, branch string) error
 }
 
 // Option sets what the plan services reach beyond the store.
@@ -535,6 +536,26 @@ func (p *Projects) Allow(
 		return nil, Status(err)
 	}
 	return connect.NewResponse(out), nil
+}
+
+// ForgetSync forgets the sync of a branch with nothing to push: the project's syncs leave it out until it moves.
+func (p *Projects) ForgetSync(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceForgetSyncRequest],
+) (*connect.Response[planv1.ProjectServiceForgetSyncResponse], error) {
+	if p.Pusher == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("push is unavailable"))
+	}
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	switch err := p.Pusher.ForgetSync(ctx, project, req.Msg.GetBranch()); {
+	case errors.Is(err, store.ErrNotFound):
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&planv1.ProjectServiceForgetSyncResponse{}), nil
 }
 
 // Branches lists the local branches of a project's repository, the latest commit first, without the branches of
