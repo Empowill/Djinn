@@ -369,6 +369,12 @@ func leadCommandsBrief(driven bool) string {
 		"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you; " +
 		"`djinn question move <question> --wish <wish>` moves an open question to another wish (`--follow` moves tasks naming it as decision); " +
 		"`djinn question withdraw <question> --note \"…\"` closes it without an answer.\n" +
+		"- `djinn question sleep <question> --until W12,merged:W45,2026-10-20` puts a question to sleep until typed " +
+		"conditions all hold: a task over (an azima closed), a request merged (by the watcher that babysits it, the task " +
+		"that opened it, or its address), a time or a delay (`3d`). Asleep, it is out of the developer's questions; " +
+		"once they hold, Djinn wakes it, tells you, and it shows first: check its facts (costs, tasks, requests) and " +
+		"revise it if they changed. `--wake` wakes it now; `djinn question ask` and `revise` take `--sleep-until`. A " +
+		"question to bring back \"once X\" sleeps until X: never keep it in your memory or a block.\n" +
 		"- `djinn mark list <wish>`: the open questions the developer marked read in the window, without a word. Start a " +
 		"recommendation with its option's letter (`B: …`): the developer approves it in one click.\n" +
 		"- `djinn wish sync <wish>`: the wish's page, which Djinn keeps up to date in the file it prints. After the wish " +
@@ -756,60 +762,8 @@ func movingBrief(
 
 	tilasmsBrief(&b, exp.GetTilasms(), unanswered)
 
-	var open, investigate []*planv1.Question
-	for _, q := range exp.GetQuestions() {
-		if q.GetWithdrawal() != nil {
-			continue
-		}
-		if Investigating(q) {
-			investigate = append(investigate, q)
-		} else if q.GetAnswer() == nil {
-			open = append(open, q)
-		}
-	}
-	if len(open) > 0 {
-		b.WriteString("\n## Open questions\n\n")
-		render.ByUrgency(open, exp.GetTasks())
-		blocked := render.Blocked(exp.GetTasks())
-		for _, q := range open {
-			level := "can wait"
-			switch render.UrgencyOf(q, blocked) {
-			case render.Blocking:
-				level = "blocking: " + strings.Join(blocked[q.GetId()], ", ") + " waits"
-			case render.Move:
-				level = "your move"
-			case render.Before:
-				level = clipLine(q.GetBefore())
-			}
-			fmt.Fprintf(&b, "- **%s** %s (%s)\n", q.GetCode(), clipLine(q.GetText()), level)
-			for i, o := range q.GetOptions() {
-				fmt.Fprintf(&b, "  - %c: %s\n", 'A'+i, clipLine(o))
-			}
-			if rec := q.GetRecommendation(); rec != "" {
-				fmt.Fprintf(&b, "  - Recommended: %s\n", clipLine(rec))
-			}
-			if n := q.GetRevision(); n > 0 {
-				fmt.Fprintf(&b, "  - Revised %d times\n", n)
-			}
-			if q.GetLaterTime() != nil {
-				b.WriteString("  - Put off for later: listed below the others\n")
-			}
-		}
-	}
-	if len(investigate) > 0 {
-		b.WriteString("\n## To investigate\n\n")
-		b.WriteString("The developer asked to find out more before deciding. Dig, then `djinn question revise <question> " +
-			"--wish-id <wish>` with what you found (`--context`, `--options`, `--recommendation`, `--before`), the " +
-			"context in the shape every question keeps: the commands in one code block at the top, then short Markdown.\n\n")
-		for _, q := range investigate {
-			last := q.GetRounds()[len(q.GetRounds())-1]
-			fmt.Fprintf(&b, "- **%s** %s (asked %s)", q.GetCode(), clipLine(q.GetText()), when(last.GetCreateTime().AsTime()))
-			if note := last.GetNote(); note != "" {
-				b.WriteString(": " + clipLine(note))
-			}
-			b.WriteString("\n")
-		}
-	}
+	questionsBrief(&b, exp)
+
 	if decided := render.Decisions(exp); len(decided) > 0 {
 		b.WriteString("\n## Latest decisions\n\n")
 		for _, d := range decided[:min(len(decided), briefDecisions)] {
@@ -1357,7 +1311,7 @@ func glanceLine(exp *planv1.WishExport) string {
 		}
 	}
 	for _, q := range exp.GetQuestions() {
-		if q.GetWithdrawal() == nil && q.GetAnswer() == nil {
+		if q.GetWithdrawal() == nil && q.GetAnswer() == nil && !render.Asleep(q) {
 			open++
 		}
 	}
@@ -1514,14 +1468,21 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 			b.WriteString(": " + waitText(t) + "\n")
 		}
 	}
-	var open, investigate []*planv1.Question
+	questionsBrief(b, exp)
+}
+
+// questionsBrief writes a wish's open questions, the most urgent first; those asleep, each with what it sleeps until;
+// and those to investigate.
+func questionsBrief(b *strings.Builder, exp *planv1.WishExport) {
+	var open, asleep, investigate []*planv1.Question
 	for _, q := range exp.GetQuestions() {
-		if q.GetWithdrawal() != nil {
-			continue
-		}
-		if Investigating(q) {
+		switch {
+		case q.GetWithdrawal() != nil, q.GetAnswer() != nil:
+		case Investigating(q):
 			investigate = append(investigate, q)
-		} else if q.GetAnswer() == nil {
+		case render.Asleep(q):
+			asleep = append(asleep, q)
+		default:
 			open = append(open, q)
 		}
 	}
@@ -1552,6 +1513,18 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 			if q.GetLaterTime() != nil {
 				b.WriteString("  - Put off for later: listed below the others\n")
 			}
+			if render.Woken(q) {
+				fmt.Fprintf(b, "  - Woke %s, after sleeping until %s: listed first; check its facts still hold\n",
+					when(q.GetSleep().GetWakeTime().AsTime()), SleepTexts(q))
+			}
+		}
+	}
+	if len(asleep) > 0 {
+		b.WriteString("\n## Asleep questions\n\n")
+		b.WriteString("Out of the developer's questions until what each sleeps until holds; then it wakes, and you check " +
+			"it. `djinn question sleep <question> --until …` changes that, `--wake` wakes it now.\n\n")
+		for _, q := range asleep {
+			fmt.Fprintf(b, "- **%s** %s (until %s)\n", q.GetCode(), clipLine(q.GetText()), SleepTexts(q))
 		}
 	}
 	if len(investigate) > 0 {

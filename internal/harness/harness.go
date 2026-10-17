@@ -110,6 +110,7 @@ type Harness struct {
 	kick       chan struct{} // wakes the scheduler
 	scheduling sync.Once
 	loopDone   chan struct{} // closed when the scheduler has stopped; nil until Schedule
+	sleepers   atomic.Bool   // a question may sleep: the scheduler's next pass reads them (wakeQuestions)
 
 	// The integration of finished work (integrate.go).
 	gates            TakeGate      // nil: commands run without a gate
@@ -2169,7 +2170,11 @@ func carry(tx *store.Tx, t *planv1.Task) {
 		t.Comments = stored.GetComments()
 		t.Marks = stored.GetMarks()
 		if t.GetBabysit().GetUrl() == "" && stored.GetBabysit().GetUrl() != "" {
-			t.Babysit = stored.GetBabysit()
+			done := t.GetBabysit().GetDoneTime()
+			t.Babysit = proto.CloneOf(stored.GetBabysit())
+			if done != nil {
+				t.Babysit.DoneTime = done
+			}
 		}
 	}
 }

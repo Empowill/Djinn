@@ -57,8 +57,35 @@ func Place(q *planv1.Question) time.Time {
 	return at
 }
 
-// ByPlace orders open questions by their Place, the oldest first; those at the same place keep their order.
+// Asleep tells an open question put to sleep that has not woken yet (Question.sleep): it waits for its conditions,
+// not for the developer, and is out of the open questions.
+func Asleep(q *planv1.Question) bool {
+	s := q.GetSleep()
+	return q.GetAnswer() == nil && q.GetWithdrawal() == nil && s != nil && s.GetWakeTime() == nil
+}
+
+// Woken tells an open question that woke from its sleep and was not put off since (Later): it comes at the top of its
+// wish's open questions.
+func Woken(q *planv1.Question) bool {
+	woke := q.GetSleep().GetWakeTime()
+	if q.GetAnswer() != nil || q.GetWithdrawal() != nil || woke == nil {
+		return false
+	}
+	return q.GetLaterTime() == nil || q.GetLaterTime().AsTime().Before(woke.AsTime())
+}
+
+// ByPlace orders open questions: the woken ones first (Woken), by when they woke, then the others by their Place, the
+// oldest first; those at the same place keep their order. The window orders them the same way (byAsked).
 func ByPlace(a, b *planv1.Question) int {
+	wa, wb := Woken(a), Woken(b)
+	switch {
+	case wa && wb:
+		return a.GetSleep().GetWakeTime().AsTime().Compare(b.GetSleep().GetWakeTime().AsTime())
+	case wa:
+		return -1
+	case wb:
+		return 1
+	}
 	return Place(a).Compare(Place(b))
 }
 

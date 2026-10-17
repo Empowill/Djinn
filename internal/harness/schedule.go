@@ -150,10 +150,12 @@ func (h *Harness) prepare() {
 func WithTick(d time.Duration) Option { return func(h *Harness) { h.tick = d } }
 
 // Schedule starts the scheduler: a planned task starts as soon as its dependencies are done, its write scopes are
-// free and a slot is free. djinn up calls it once the harness has recovered; Close stops it.
+// free and a slot is free, and an asleep question wakes once its conditions hold. djinn up calls it once the harness
+// has recovered; Close stops it.
 func (h *Harness) Schedule() {
 	h.scheduling.Do(func() {
 		h.loopDone = make(chan struct{})
+		h.watchSleepers()
 		go h.loop()
 	})
 }
@@ -248,7 +250,8 @@ func (h *Harness) Works(taskID string) bool {
 func planned(t *planv1.Task) bool { return dispatch.Planned(t) }
 
 // schedule makes one pass over the planned tasks, the first wish first: each one starts, waits with its reason,
-// or fails when a dependency failed. The rules are internal/dispatch's.
+// or fails when a dependency failed. The rules are internal/dispatch's. The asleep questions whose conditions hold
+// wake first.
 func (h *Harness) schedule(ctx context.Context) {
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
@@ -277,6 +280,7 @@ func (h *Harness) schedule(ctx context.Context) {
 			tasks = reloaded
 		}
 	}
+	h.wakeQuestions(ctx, tasks)
 	if !slices.ContainsFunc(tasks, planned) {
 		return
 	}

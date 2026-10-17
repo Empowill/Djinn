@@ -15,6 +15,9 @@ import (
 	"time"
 	"unicode"
 
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/dispatch"
@@ -626,8 +629,14 @@ func (h *Harness) wakeLead(r *run, w *Watched, text string) {
 	if w.First == "" {
 		return
 	}
-	// A babysit's done line ends it, in any wish; a template's asks whether to grant the wish too.
+	// A babysit's done line ends it, in any wish, and says when its request was merged (a question may sleep until
+	// then); a template's asks whether to grant the wish too.
 	done := plan.DoneLineOf(r.task.GetBabysit().GetDoneWhen(), text) != ""
+	if done {
+		babysit := proto.CloneOf(r.task.GetBabysit()) // Replaced, never changed: a copy of the task taken before shares it.
+		babysit.DoneTime = timestamppb.New(h.now())
+		r.task.Babysit = babysit
+	}
 	if watched != nil {
 		grant, err := watched(ctx, r.task, text)
 		if err != nil {

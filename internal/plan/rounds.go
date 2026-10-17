@@ -161,6 +161,11 @@ func (q *Questions) Revise(
 			if m.Before != nil {
 				question.Before = strings.TrimSpace(m.GetBefore())
 			}
+			if len(m.GetSleepUntil()) > 0 {
+				if err := sleepUntil(ctx, tx, question, m.GetSleepUntil(), round.GetCreateTime().AsTime()); err != nil {
+					return err
+				}
+			}
 			question.Revision++
 			return nil
 		})

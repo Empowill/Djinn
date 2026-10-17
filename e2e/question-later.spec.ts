@@ -64,11 +64,11 @@ test("Later sends a question to the bottom, kept across a reload and in the brie
   await expect(codes).toHaveText(["Q01", "Q02", "Q03"]);
   await expect(open.locator(".question-id")).toHaveText("Q01");
 
-  // Later sits before Move, named by its tooltip; a click sends Q01 below Q02 and Q03, and Q02 opens.
+  // Later sits first, then Sleep and Move, named by its tooltip; a click sends Q01 below Q02 and Q03, and Q02 opens.
   const later = open.getByRole("button", { name: "Later", exact: true });
-  await expect(open.locator(".question-corner button")).toHaveCount(2);
+  await expect(open.locator(".question-corner button")).toHaveCount(3);
   await expect(
-    open.locator(".question-corner button").nth(1),
+    open.locator(".question-corner button").nth(2),
   ).toHaveAccessibleName("Move to another wish");
   await expect(later).toHaveAttribute("aria-pressed", "false");
   await later.hover();

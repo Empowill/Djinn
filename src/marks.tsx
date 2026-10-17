@@ -1,5 +1,5 @@
 // The writes the screens share: an answer, a request to investigate, a task reviewed (src/review-tab.tsx), a move, a
-// withdrawal or a question put off for later, each read again once djinn has it.
+// withdrawal, a question put off for later or put to sleep, each read again once djinn has it.
 import { useCallback, useMemo } from "react";
 
 import {
@@ -161,6 +161,26 @@ export function useWrites(onToast: (text: string) => void) {
     [act, clients.questions, store],
   );
 
+  // sleep puts an open question to sleep until conditions hold (QuestionService.Sleep, --until), or wakes it with
+  // wake: it takes its place at once, whatever the reads that follow take.
+  const sleep = useCallback(
+    (wishId: string, id: string, until: string[], wake = false) =>
+      act(
+        wishId,
+        async () => {
+          const res = await clients.questions.sleep({
+            question: { ref: { case: "id", value: id } },
+            wishId,
+            until,
+            wake,
+          });
+          if (res.question) store.putQuestion(res.question);
+        },
+        QUESTIONS_CHANGES,
+      ),
+    [act, clients.questions, store],
+  );
+
   return useMemo(
     () => ({
       clients,
@@ -172,7 +192,19 @@ export function useWrites(onToast: (text: string) => void) {
       move,
       withdraw,
       later,
+      sleep,
     }),
-    [clients, act, quiet, answer, enlighten, review, move, withdraw, later],
+    [
+      clients,
+      act,
+      quiet,
+      answer,
+      enlighten,
+      review,
+      move,
+      withdraw,
+      later,
+      sleep,
+    ],
   );
 }

@@ -20,6 +20,7 @@ export { ProjectGear, WishSidebar } from "@/src/wish-sidebar.tsx";
 export { SyncLine, SyncLines, syncTitle } from "@/src/project-sync.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
 export {
+  AsleepQuestions,
   QuestionColumn,
   arrowTo,
   columnMove,
@@ -83,7 +84,11 @@ export {
   ProjectChecks,
   ProjectPanel,
   ShortcutField,
+  SleepQuestionDialog,
   WatchCommands,
+  sleepRequests,
+  sleepTasks,
+  sleepUntil,
 } from "@/src/wish-dialogs.tsx";
 export {
   LastPushes,
@@ -12656,5 +12661,174 @@ test("the azimas of a wish show in their rank, each with the grip that drags it 
   assert.match(
     html,
     /<div class="azima-row"><button type="button" class="azima-grip"/,
+  );
+});
+
+test("Sleep sits between Later and Move in a question's top right corner, and opens what it sleeps until", () => {
+  const question = {
+    id: "q1",
+    code: "Q01",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin"],
+    recommendation: "",
+    rounds: [],
+    revision: 0,
+    createTime: { seconds: 1_760_000_000n, nanos: 0 },
+  };
+  const slept = [];
+  const card = live(s.WishQuestion, {
+    question,
+    onAnswer: async () => {},
+    onMove: () => {},
+    onLater: () => {},
+    onSleep: (q) => slept.push(q.code),
+  });
+  assert.match(
+    card.html(),
+    /aria-label="Later">(?:(?!<\/button>).)*<\/button><button class="question-corner-button question-sleep" type="button" aria-label="Sleep"><svg[^>]*lucide-moon[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><button class="question-corner-button question-move"/,
+  );
+  card.one("question-sleep").onClick();
+  assert.deepEqual(slept, ["Q01"]);
+  // Woken, the grey line says when.
+  card.update({
+    question: {
+      ...question,
+      sleep: {
+        conditions: [],
+        createTime: { seconds: 1_760_000_100n, nanos: 0 },
+        wakeTime: { seconds: 1_760_000_600n, nanos: 0 },
+      },
+    },
+  });
+  assert.match(card.html(), /asked [^<]* · woke (?:at|[^<]* at) /);
+});
+
+test("the questions asleep are a discreet count below the column, their list on demand, each with what it waits for and Wake", () => {
+  const lamp = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const asleep = {
+    id: "q3",
+    code: "Q03",
+    wishId: "w1",
+    text: "Release now?",
+    options: [],
+    rounds: [],
+    createTime: { seconds: 1_760_000_000n, nanos: 0 },
+    sleep: {
+      conditions: [
+        { kind: s.SleepKind.TASK, code: "W12", taskId: "t12", url: "" },
+        { kind: s.SleepKind.MERGED, code: "W45", taskId: "t45", url: "" },
+        {
+          kind: s.SleepKind.MERGED,
+          code: "",
+          taskId: "",
+          url: "https://github.com/acme/lamp/pull/7",
+        },
+      ],
+      createTime: { seconds: 1_760_000_000n, nanos: 0 },
+    },
+  };
+  const woken = [];
+  const list = live(s.AsleepQuestions, {
+    questions: [{ wish: lamp, item: asleep, blocking: [] }],
+    headings: true,
+    onWake: async (q) => woken.push(q.code),
+  });
+  assert.match(
+    list.html(),
+    /^<div class="question-asleep"><button type="button" class="question-asleep-toggle" aria-expanded="false"><svg[^>]*lucide-moon[^>]*>(?:(?!<\/svg>).)*<\/svg>1 question asleep<\/button><\/div>$/,
+  );
+  list.one("question-asleep-toggle").onClick();
+  const html = list.html();
+  assert.match(html, /aria-expanded="true"/);
+  assert.match(
+    html,
+    /<li id="asleep-q3"><span class="question-id">Q03<\/span><span class="question-asleep-text">Release now\?<span class="question-asleep-wish">Ship the lamp<\/span><span class="question-asleep-until">until W12 over · W45&#x27;s request merged · https:\/\/github.com\/acme\/lamp\/pull\/7 merged<\/span><\/span><button type="button" class="button secondary question-wake">Wake<\/button><\/li>/,
+  );
+  list.one("question-wake").onClick();
+  assert.deepEqual(woken, ["Q03"]);
+  // None asleep: nothing at all.
+  assert.equal(
+    s.renderToStaticMarkup(h(s.AsleepQuestions, { questions: [] })),
+    "",
+  );
+  // In the column, below its questions; none open, the line still says so.
+  const column = s.renderToStaticMarkup(
+    h(s.QuestionColumn, {
+      groups: [],
+      asleep: [{ wish: lamp, item: asleep, blocking: [] }],
+      onAnswer: async () => {},
+    }),
+  );
+  assert.match(
+    column,
+    /<p class="question-none">No open question\.<\/p><div class="question-asleep">/,
+  );
+});
+
+test("the sleep dialog offers the wish's tasks not over and the requests not merged, and sends what you pick, all of it", () => {
+  const task = (id, code, status, extra = {}) => ({
+    id,
+    code,
+    title: `Task ${code}`,
+    status,
+    role: s.TaskRole.UNSPECIFIED,
+    kind: s.TaskKind.WORK,
+    ...extra,
+  });
+  const tasks = [
+    task("t1", "W1", s.TaskStatus.RUNNING),
+    task("t2", "W2", s.TaskStatus.DONE),
+    task("t3", "W3", s.TaskStatus.CANCELLED),
+    task("t4", "T4", s.TaskStatus.DONE, {
+      kind: s.TaskKind.AZIMA,
+      azima: { state: s.AzimaState.IN_PROGRESS },
+    }),
+    task("t5", "T5", s.TaskStatus.DONE, {
+      kind: s.TaskKind.AZIMA,
+      azima: { state: s.AzimaState.DONE },
+    }),
+    task("t6", "W6", s.TaskStatus.RUNNING, { role: s.TaskRole.INVESTIGATOR }),
+    task("t7", "W7", s.TaskStatus.RUNNING, {
+      babysit: { url: "https://github.com/acme/lamp/pull/7" },
+    }),
+    task("t8", "W8", s.TaskStatus.DONE, {
+      babysit: {
+        url: "https://github.com/acme/lamp/pull/8",
+        doneTime: { seconds: 1n, nanos: 0 },
+      },
+    }),
+  ];
+  assert.deepEqual(
+    s.sleepTasks(tasks).map((t) => t.code),
+    ["W1", "T4"],
+  );
+  assert.deepEqual(
+    s.sleepRequests(tasks).map((t) => t.code),
+    ["W7"],
+  );
+  assert.deepEqual(
+    s.sleepUntil(["W1", "T4"], ["W7"], "2026-10-20T09:00", " 3d, merged:W9 ,"),
+    ["W1", "T4", "merged:W7", "2026-10-20T09:00", "3d", "merged:W9"],
+  );
+  assert.deepEqual(s.sleepUntil([], [], "", " "), []);
+  const html = s.renderToStaticMarkup(
+    h(s.SleepQuestionDialog, {
+      question: { id: "q1", code: "Q01", text: "Release now?" },
+      tasks,
+      currentWishId: "w1",
+      onClose: () => {},
+      onSleep: async () => {},
+    }),
+  );
+  assert.match(html, /Put Q01 to sleep/);
+  assert.match(html, /<b>W1<\/b> Task W1/);
+  assert.match(html, /<b>T4<\/b> Task T4/);
+  assert.doesNotMatch(html, /<b>(?:W2|W3|T5|W6|W8)<\/b>/);
+  assert.match(html, /<b>W7<\/b> https:\/\/github.com\/acme\/lamp\/pull\/7/);
+  assert.match(html, /type="datetime-local"/);
+  // Nothing picked: nothing to send.
+  assert.match(
+    html,
+    /<button type="submit" class="button accent" disabled="">/,
   );
 });

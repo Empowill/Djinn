@@ -78,3 +78,35 @@ func TestByUrgencyPlace(t *testing.T) {
 		t.Errorf("Place(Q04) = %v, want its creation", got)
 	}
 }
+
+// TestByPlaceWoken: a question that woke from its sleep comes first among the open questions, the first woken first;
+// one put off after it woke goes back to its place, put off; one asleep is out of the open ones (Asleep).
+func TestByPlaceWoken(t *testing.T) {
+	at := func(m int) *timestamppb.Timestamp {
+		return timestamppb.New(time.Date(2026, 10, 16, 10, m, 0, 0, time.UTC))
+	}
+	woke := func(m int) *planv1.QuestionSleep { return &planv1.QuestionSleep{CreateTime: at(0), WakeTime: at(m)} }
+	questions := []*planv1.Question{
+		{Id: "a", Code: "Q01", CreateTime: at(1)},
+		{Id: "b", Code: "Q02", CreateTime: at(2), Sleep: woke(9)},
+		{Id: "c", Code: "Q03", CreateTime: at(3), Sleep: woke(8)},
+		{Id: "d", Code: "Q04", CreateTime: at(4), Sleep: woke(6), LaterTime: at(7)},
+		{Id: "e", Code: "Q05", CreateTime: at(5)},
+	}
+	ByUrgency(questions, nil)
+	got := ""
+	for _, q := range questions {
+		got += q.GetCode() + " "
+	}
+	if want := "Q03 Q02 Q01 Q05 Q04 "; got != want {
+		t.Errorf("order = %q, want %q", got, want)
+	}
+	asleep := &planv1.Question{Code: "Q06", Sleep: &planv1.QuestionSleep{CreateTime: at(1)}}
+	if !Asleep(asleep) || Woken(asleep) {
+		t.Errorf("a question put to sleep: asleep %v, woken %v; want asleep", Asleep(asleep), Woken(asleep))
+	}
+	asleep.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_YES}
+	if Asleep(asleep) {
+		t.Error("an answered question is asleep, want awake: it waits for nothing")
+	}
+}

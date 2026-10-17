@@ -1880,6 +1880,70 @@ html[data-motion="reduced"] .question-wisp {
   color: var(--text);
 }
 
+/* The questions asleep: a discreet count below the column, in grey, which opens their list on demand; each row says
+   what it sleeps until, and Wake brings it back now. */
+.question-asleep {
+  margin: 0.375rem 0 0 0.5rem;
+}
+.question-asleep-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.question-asleep-toggle:hover,
+.question-asleep-toggle[aria-expanded="true"] {
+  color: var(--text);
+}
+.question-asleep-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.question-asleep-list {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0.375rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.question-asleep-list li {
+  display: grid;
+  grid-template-columns: 2.875rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+.question-asleep-text {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+.question-asleep-wish,
+.question-asleep-until {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.sleep-choices {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.sleep-choices legend {
+  margin-bottom: 0.25rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
 /* Tasks: one row each, its state first. */
 .review .wish-task {
   background: var(--surface);

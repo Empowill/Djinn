@@ -1331,3 +1331,68 @@ test("an urgent task shows so while it is to run or runs, never a watcher nor an
     false,
   );
 });
+
+test("a question asleep waits for its conditions, out of the open ones; woken, it comes first, the first woken first", () => {
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const sleep = (wakeTime) => ({
+    conditions: [{ kind: f.SleepKind.TASK, code: "W1", taskId: "t1", url: "" }],
+    createTime: at(5),
+    ...(wakeTime && { wakeTime }),
+  });
+  const asked = [
+    { id: "q1", code: "Q01", text: "Brass?", createTime: at(10) },
+    {
+      id: "q2",
+      code: "Q02",
+      text: "Wick?",
+      createTime: at(20),
+      sleep: sleep(),
+    },
+    {
+      id: "q3",
+      code: "Q03",
+      text: "Glass?",
+      createTime: at(30),
+      sleep: sleep(at(60)),
+    },
+    {
+      id: "q4",
+      code: "Q04",
+      text: "Oil?",
+      createTime: at(40),
+      sleep: sleep(at(50)),
+    },
+    // Put off after it woke: back among the others, put off.
+    {
+      id: "q5",
+      code: "Q05",
+      text: "Lid?",
+      createTime: at(1),
+      sleep: sleep(at(50)),
+      laterTime: at(70),
+    },
+  ];
+  const d = detail([], asked);
+  assert.deepEqual(
+    f.openQuestions(lamp, d).map((q) => q.item.code),
+    ["Q04", "Q03", "Q01", "Q05"],
+  );
+  assert.deepEqual(
+    f.asleepQuestions(lamp, d).map((q) => q.item.code),
+    ["Q02"],
+  );
+  const plan = f.flightPlan([lamp], { w1: d });
+  assert.deepEqual(
+    plan.asleep.map((q) => q.item.code),
+    ["Q02"],
+  );
+  assert.ok(!plan.questions.some((q) => q.item.code === "Q02"));
+  // Answered, it waits for nothing.
+  assert.deepEqual(
+    f.asleepQuestions(
+      lamp,
+      detail([], [{ ...asked[1], answer: { choice: f.Choice.YES } }]),
+    ),
+    [],
+  );
+});
