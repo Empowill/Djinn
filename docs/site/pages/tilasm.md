@@ -13,7 +13,23 @@ whole of it. A comment is a draft: it stays in Djinn's store on this machine, su
 it. Edit one in place (Ctrl+Enter saves, Escape cancels); delete it at once, and **Undo** puts it back for five
 seconds. Your drafts are counted in gold on the tilasm's head, on its row and on the **Tilasms** tab.
 
-Comments on a passage or an element of the page, and sending your drafts to the Djinn in one go, come next.
+### Send them to the Djinn
+
+Nothing leaves until you send, and nothing costs before. At the foot of the column, write a last word on the whole
+tilasm if you like, then choose:
+
+- **Launch**: the Djinn launches the work the tilasm explains, as your comments change it. With no comment at all,
+  Launch is your yes to the question that links the tilasm: it gets its recommended option, as approving it would.
+- **Iterate**: the Djinn makes the tilasm's next version, as your comments say.
+
+A line confirms the send (Enter sends, Escape gives up). Every draft and your last word leave together, in one send:
+the Djinn reads them all at once, each with what it is on, and your choice.
+
+A tilasm greys its comments and both buttons once its work was launched, or while a task works on it or makes its
+next version; a line says why, and which task or question. A send the Djinn has not read yet holds the buttons only.
+Launch never goes twice: Djinn refuses it, whatever the window shows.
+
+Comments on a passage or an element of the page come next.
 
 > **This page is a sketch.** Its full guide, how to use it from the window and from the Djinn, what to expect and
 > the common mistakes, is being written.

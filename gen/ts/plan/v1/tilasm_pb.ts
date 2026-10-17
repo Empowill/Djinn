@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file plan/v1/tilasm.proto.
  */
 export const file_plan_v1_tilasm: GenFile = /*@__PURE__*/
-  fileDesc("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ARIWCgR0ZXh0GAMgASgJQgi6SAVyAxigHxIlCgZhbmNob3IYBCABKAsyFS5wbGFuLnYxLlRpbGFzbUFuY2hvchIYCgdmb2xsb3dzGAUgASgJQge6SARyAhgKEicKB2RlbGV0ZWQYBiABKAsyFi5wbGFuLnYxLlRpbGFzbUNvbW1lbnQiSgofVGlsYXNtU2VydmljZVB1dENvbW1lbnRSZXNwb25zZRInCgdjb21tZW50GAEgASgLMhYucGxhbi52MS5UaWxhc21Db21tZW50IjwKIVRpbGFzbVNlcnZpY2VEZWxldGVDb21tZW50UmVxdWVzdBIXCgJpZBgBIAEoCUILukgIyAEBcgOwAQEiTQoiVGlsYXNtU2VydmljZURlbGV0ZUNvbW1lbnRSZXNwb25zZRInCgdjb21tZW50GAEgASgLMhYucGxhbi52MS5UaWxhc21Db21tZW50IjcKGlRpbGFzbVNlcnZpY2VEcmFmdHNSZXF1ZXN0EhkKBHdpc2gYASABKAlCC7pICMgBAXIDsAEBIkcKG1RpbGFzbVNlcnZpY2VEcmFmdHNSZXNwb25zZRIoCghjb21tZW50cxgBIAMoCzIWLnBsYW4udjEuVGlsYXNtQ29tbWVudCJ8ChxUaWxhc21TZXJ2aWNlQ29tbWVudHNSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQESFQoEc2VuZBgDIAEoBUIHukgEGgIoACJdCh1UaWxhc21TZXJ2aWNlQ29tbWVudHNSZXNwb25zZRIMCgR0ZXh0GAEgASgJEi4KCGNvbW1lbnRzGAIgAygLMhYucGxhbi52MS5UaWxhc21Db21tZW50QgSQ9BgBIskBChdUaWxhc21TZXJ2aWNlUHV0UmVxdWVzdBIZCgRwYXRoGAEgASgJQgu6SAjIAQFyAxiAIBIWCgR3aXNoGAIgASgJQgi6SAVyA7ABARIXCgV0aXRsZRgDIAEoCUIIukgFcgMY6AcSKAoEY29kZRgEIAEoCUIaukgX2AEBchIyEF5bTGxdWzAtOV17MiwzfSQSHwoFY2l0ZXMYBSADKAlCELpIDZIBChBkIgZyBBABGEASFwoGYXV0aG9yGAYgASgJQge6SARyAhhkIk4KGFRpbGFzbVNlcnZpY2VQdXRSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRIRCglkaXJlY3RvcnkYAiABKAkiTwoYVGlsYXNtU2VydmljZUxpc3RSZXF1ZXN0EhkKBHdpc2gYASABKAlCC7pICNgBAXIDsAEBEhgKBnNlYXJjaBgCIAEoCUIIukgFcgMY6AciPQoZVGlsYXNtU2VydmljZUxpc3RSZXNwb25zZRIgCgd0aWxhc21zGAEgAygLMg8ucGxhbi52MS5UaWxhc20iegoXVGlsYXNtU2VydmljZUdldFJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABARIYCgd2ZXJzaW9uGAMgASgFQge6SAQaAigAIpcBChhUaWxhc21TZXJ2aWNlR2V0UmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20SDwoHdmVyc2lvbhgCIAEoBRIMCgR0ZXh0GAMgASgJEhEKCWRpcmVjdG9yeRgEIAEoCRINCgVmaWxlcxgFIAMoCRIMCgRsaW5rGAYgASgJEgsKA3VybBgHIAEoCSJhChhUaWxhc21TZXJ2aWNlT3BlblJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABASJaChlUaWxhc21TZXJ2aWNlT3BlblJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEgwKBGxpbmsYAiABKAkSDgoGd2luZG93GAMgASgIImQKG1RpbGFzbVNlcnZpY2VIaXN0b3J5UmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhkKBHdpc2gYAiABKAlCC7pICNgBAXIDsAEBIlsKHFRpbGFzbVNlcnZpY2VIaXN0b3J5UmVzcG9uc2USKAoIdmVyc2lvbnMYASADKAsyFi5wbGFuLnYxLlRpbGFzbVZlcnNpb24SEQoJZGlyZWN0b3J5GAIgASgJIpoBChtUaWxhc21TZXJ2aWNlUmVzdG9yZVJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIbCgd2ZXJzaW9uGAIgASgFQgq6SAfIAQEaAigBEhkKBHdpc2gYAyABKAlCC7pICNgBAXIDsAEBEhcKBmF1dGhvchgEIAEoCUIHukgEcgIYZCI/ChxUaWxhc21TZXJ2aWNlUmVzdG9yZVJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtInsKGlRpbGFzbVNlcnZpY2VFeHBvcnRSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQESFgoEZmlsZRgDIAEoCUIIukgFcgMYgCAiOQobVGlsYXNtU2VydmljZUV4cG9ydFJlc3BvbnNlEgwKBGZpbGUYASABKAkSDAoEc2l6ZRgCIAEoAyJoChpUaWxhc21TZXJ2aWNlSW1wb3J0UmVxdWVzdBIZCgRmaWxlGAEgASgJQgu6SAjIAQFyAxiAIBIWCgR3aXNoGAIgASgJQgi6SAVyA7ABARIXCgZhdXRob3IYAyABKAlCB7pIBHICGGQiPgobVGlsYXNtU2VydmljZUltcG9ydFJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtIpoBChtUaWxhc21TZXJ2aWNlUHV0RGF0YVJlcXVlc3QSGQoEd2lzaBgBIAEoCUILukgIyAEBcgOwAQESFgoEbmFtZRgCIAEoCUIIukgFcgMY6AcSLwoFZmlsZXMYAyADKAsyEy5wbGFuLnYxLlRpbGFzbUZpbGVCC7pICJIBBQgBEJBOEhcKBmF1dGhvchgEIAEoCUIHukgEcgIYZCJRChxUaWxhc21TZXJ2aWNlUHV0RGF0YVJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEhAKCGltcG9ydGVkGAIgASgIKl4KDENvbW1lbnRTdGF0ZRIdChlDT01NRU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASFwoTQ09NTUVOVF9TVEFURV9EUkFGVBABEhYKEkNPTU1FTlRfU1RBVEVfU0VOVBACKnkKDEFuY2hvclN0YXR1cxIdChlBTkNIT1JfU1RBVFVTX1VOU1BFQ0lGSUVEEAASFwoTQU5DSE9SX1NUQVRVU19GT1VORBABEhkKFUFOQ0hPUl9TVEFUVVNfQ0hBTkdFRBACEhYKEkFOQ0hPUl9TVEFUVVNfTE9TVBADMoEKCg1UaWxhc21TZXJ2aWNlElQKA1B1dBIgLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dFJlcXVlc3QaIS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXRSZXNwb25zZSIIyPMYAeDzGAESVgoETGlzdBIhLnBsYW4udjEuVGlsYXNtU2VydmljZUxpc3RSZXF1ZXN0GiIucGxhbi52MS5UaWxhc21TZXJ2aWNlTGlzdFJlc3BvbnNlIgeQAgHI8xgBElMKA0dldBIgLnBsYW4udjEuVGlsYXNtU2VydmljZUdldFJlcXVlc3QaIS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VHZXRSZXNwb25zZSIHkAIByPMYARJbCgRPcGVuEiEucGxhbi52MS5UaWxhc21TZXJ2aWNlT3BlblJlcXVlc3QaIi5wbGFuLnYxLlRpbGFzbVNlcnZpY2VPcGVuUmVzcG9uc2UiDMjzGAHY8xgB4PMYARJfCgdIaXN0b3J5EiQucGxhbi52MS5UaWxhc21TZXJ2aWNlSGlzdG9yeVJlcXVlc3QaJS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VIaXN0b3J5UmVzcG9uc2UiB5ACAcjzGAESYAoHUmVzdG9yZRIkLnBsYW4udjEuVGlsYXNtU2VydmljZVJlc3RvcmVSZXF1ZXN0GiUucGxhbi52MS5UaWxhc21TZXJ2aWNlUmVzdG9yZVJlc3BvbnNlIgjI8xgB4PMYARJdCgZFeHBvcnQSIy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VFeHBvcnRSZXF1ZXN0GiQucGxhbi52MS5UaWxhc21TZXJ2aWNlRXhwb3J0UmVzcG9uc2UiCMjzGAHg8xgCEl0KBkltcG9ydBIjLnBsYW4udjEuVGlsYXNtU2VydmljZUltcG9ydFJlcXVlc3QaJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VJbXBvcnRSZXNwb25zZSIIyPMYAeDzGAESYAoHUHV0RGF0YRIkLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dERhdGFSZXF1ZXN0GiUucGxhbi52MS5UaWxhc21TZXJ2aWNlUHV0RGF0YVJlc3BvbnNlIgjI8xgC4PMYARJiCghDb21tZW50cxIlLnBsYW4udjEuVGlsYXNtU2VydmljZUNvbW1lbnRzUmVxdWVzdBomLnBsYW4udjEuVGlsYXNtU2VydmljZUNvbW1lbnRzUmVzcG9uc2UiB5ACAcjzGAESaQoKUHV0Q29tbWVudBInLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dENvbW1lbnRSZXF1ZXN0GigucGxhbi52MS5UaWxhc21TZXJ2aWNlUHV0Q29tbWVudFJlc3BvbnNlIgjI8xgC4PMYARJyCg1EZWxldGVDb21tZW50EioucGxhbi52MS5UaWxhc21TZXJ2aWNlRGVsZXRlQ29tbWVudFJlcXVlc3QaKy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VEZWxldGVDb21tZW50UmVzcG9uc2UiCMjzGALg8xgBElwKBkRyYWZ0cxIjLnBsYW4udjEuVGlsYXNtU2VydmljZURyYWZ0c1JlcXVlc3QaJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VEcmFmdHNSZXNwb25zZSIHkAIByPMYAhoM6vMYCHRhbGlzbWFuQogBCgtjb20ucGxhbi52MUILVGlsYXNtUHJvdG9QAVovZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vcGxhbi92MTtwbGFudjGiAgNQWFiqAgdQbGFuLlYxygIHUGxhblxWMeICE1BsYW5cVjFcR1BCTWV0YWRhdGHqAghQbGFuOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
+  fileDesc("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CgZjaG9pY2UYBSABKA4yEy5wbGFuLnYxLlNlbmRDaG9pY2USEwoLcXVlc3Rpb25faWQYBiABKAkSLwoLY3JlYXRlX3RpbWUYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wOhfS8xgTCgl0aWxhc21faWQKBm51bWJlciJmCgpUaWxhc21Ib2xkEhEKCXRpbGFzbV9pZBgBIAEoCRIpCgZyZWFzb24YAiABKA4yGS5wbGFuLnYxLlRpbGFzbUhvbGRSZWFzb24SDAoEY29kZRgDIAEoCRIMCgRzZW5kGAQgASgFIosBCiBUaWxhc21TZXJ2aWNlU2VuZENvbW1lbnRzUmVxdWVzdBIeCgl0aWxhc21faWQYASABKAlCC7pICMgBAXIDsAEBEi8KBmNob2ljZRgCIAEoDjITLnBsYW4udjEuU2VuZENob2ljZUIKukgHggEEEAEgABIWCgR0ZXh0GAMgASgJQgi6SAVyAxigHyKCAQohVGlsYXNtU2VydmljZVNlbmRDb21tZW50c1Jlc3BvbnNlEiEKBHNlbmQYASABKAsyEy5wbGFuLnYxLlRpbGFzbVNlbmQSKAoIY29tbWVudHMYAiADKAsyFi5wbGFuLnYxLlRpbGFzbUNvbW1lbnQSEAoIYW5zd2VyZWQYAyABKAki2wEKHlRpbGFzbVNlcnZpY2VQdXRDb21tZW50UmVxdWVzdBIeCgl0aWxhc21faWQYASABKAlCC7pICMgBAXIDsAEBEhcKAmlkGAIgASgJQgu6SAjYAQFyA7ABARIWCgR0ZXh0GAMgASgJQgi6SAVyAxigHxIlCgZhbmNob3IYBCABKAsyFS5wbGFuLnYxLlRpbGFzbUFuY2hvchIYCgdmb2xsb3dzGAUgASgJQge6SARyAhgKEicKB2RlbGV0ZWQYBiABKAsyFi5wbGFuLnYxLlRpbGFzbUNvbW1lbnQiSgofVGlsYXNtU2VydmljZVB1dENvbW1lbnRSZXNwb25zZRInCgdjb21tZW50GAEgASgLMhYucGxhbi52MS5UaWxhc21Db21tZW50IjwKIVRpbGFzbVNlcnZpY2VEZWxldGVDb21tZW50UmVxdWVzdBIXCgJpZBgBIAEoCUILukgIyAEBcgOwAQEiTQoiVGlsYXNtU2VydmljZURlbGV0ZUNvbW1lbnRSZXNwb25zZRInCgdjb21tZW50GAEgASgLMhYucGxhbi52MS5UaWxhc21Db21tZW50IjcKGlRpbGFzbVNlcnZpY2VEcmFmdHNSZXF1ZXN0EhkKBHdpc2gYASABKAlCC7pICMgBAXIDsAEBImsKG1RpbGFzbVNlcnZpY2VEcmFmdHNSZXNwb25zZRIoCghjb21tZW50cxgBIAMoCzIWLnBsYW4udjEuVGlsYXNtQ29tbWVudBIiCgVob2xkcxgCIAMoCzITLnBsYW4udjEuVGlsYXNtSG9sZCJ8ChxUaWxhc21TZXJ2aWNlQ29tbWVudHNSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQESFQoEc2VuZBgDIAEoBUIHukgEGgIoACJdCh1UaWxhc21TZXJ2aWNlQ29tbWVudHNSZXNwb25zZRIMCgR0ZXh0GAEgASgJEi4KCGNvbW1lbnRzGAIgAygLMhYucGxhbi52MS5UaWxhc21Db21tZW50QgSQ9BgBIskBChdUaWxhc21TZXJ2aWNlUHV0UmVxdWVzdBIZCgRwYXRoGAEgASgJQgu6SAjIAQFyAxiAIBIWCgR3aXNoGAIgASgJQgi6SAVyA7ABARIXCgV0aXRsZRgDIAEoCUIIukgFcgMY6AcSKAoEY29kZRgEIAEoCUIaukgX2AEBchIyEF5bTGxdWzAtOV17MiwzfSQSHwoFY2l0ZXMYBSADKAlCELpIDZIBChBkIgZyBBABGEASFwoGYXV0aG9yGAYgASgJQge6SARyAhhkIk4KGFRpbGFzbVNlcnZpY2VQdXRSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRIRCglkaXJlY3RvcnkYAiABKAkiTwoYVGlsYXNtU2VydmljZUxpc3RSZXF1ZXN0EhkKBHdpc2gYASABKAlCC7pICNgBAXIDsAEBEhgKBnNlYXJjaBgCIAEoCUIIukgFcgMY6AciPQoZVGlsYXNtU2VydmljZUxpc3RSZXNwb25zZRIgCgd0aWxhc21zGAEgAygLMg8ucGxhbi52MS5UaWxhc20iegoXVGlsYXNtU2VydmljZUdldFJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABARIYCgd2ZXJzaW9uGAMgASgFQge6SAQaAigAIpcBChhUaWxhc21TZXJ2aWNlR2V0UmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20SDwoHdmVyc2lvbhgCIAEoBRIMCgR0ZXh0GAMgASgJEhEKCWRpcmVjdG9yeRgEIAEoCRINCgVmaWxlcxgFIAMoCRIMCgRsaW5rGAYgASgJEgsKA3VybBgHIAEoCSJhChhUaWxhc21TZXJ2aWNlT3BlblJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABASJaChlUaWxhc21TZXJ2aWNlT3BlblJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEgwKBGxpbmsYAiABKAkSDgoGd2luZG93GAMgASgIImQKG1RpbGFzbVNlcnZpY2VIaXN0b3J5UmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhkKBHdpc2gYAiABKAlCC7pICNgBAXIDsAEBIlsKHFRpbGFzbVNlcnZpY2VIaXN0b3J5UmVzcG9uc2USKAoIdmVyc2lvbnMYASADKAsyFi5wbGFuLnYxLlRpbGFzbVZlcnNpb24SEQoJZGlyZWN0b3J5GAIgASgJIpoBChtUaWxhc21TZXJ2aWNlUmVzdG9yZVJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIbCgd2ZXJzaW9uGAIgASgFQgq6SAfIAQEaAigBEhkKBHdpc2gYAyABKAlCC7pICNgBAXIDsAEBEhcKBmF1dGhvchgEIAEoCUIHukgEcgIYZCI/ChxUaWxhc21TZXJ2aWNlUmVzdG9yZVJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtInsKGlRpbGFzbVNlcnZpY2VFeHBvcnRSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQESFgoEZmlsZRgDIAEoCUIIukgFcgMYgCAiOQobVGlsYXNtU2VydmljZUV4cG9ydFJlc3BvbnNlEgwKBGZpbGUYASABKAkSDAoEc2l6ZRgCIAEoAyJoChpUaWxhc21TZXJ2aWNlSW1wb3J0UmVxdWVzdBIZCgRmaWxlGAEgASgJQgu6SAjIAQFyAxiAIBIWCgR3aXNoGAIgASgJQgi6SAVyA7ABARIXCgZhdXRob3IYAyABKAlCB7pIBHICGGQiPgobVGlsYXNtU2VydmljZUltcG9ydFJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtIpoBChtUaWxhc21TZXJ2aWNlUHV0RGF0YVJlcXVlc3QSGQoEd2lzaBgBIAEoCUILukgIyAEBcgOwAQESFgoEbmFtZRgCIAEoCUIIukgFcgMY6AcSLwoFZmlsZXMYAyADKAsyEy5wbGFuLnYxLlRpbGFzbUZpbGVCC7pICJIBBQgBEJBOEhcKBmF1dGhvchgEIAEoCUIHukgEcgIYZCJRChxUaWxhc21TZXJ2aWNlUHV0RGF0YVJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEhAKCGltcG9ydGVkGAIgASgIKl4KDENvbW1lbnRTdGF0ZRIdChlDT01NRU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASFwoTQ09NTUVOVF9TVEFURV9EUkFGVBABEhYKEkNPTU1FTlRfU1RBVEVfU0VOVBACKloKClNlbmRDaG9pY2USGwoXU0VORF9DSE9JQ0VfVU5TUEVDSUZJRUQQABIWChJTRU5EX0NIT0lDRV9MQVVOQ0gQARIXChNTRU5EX0NIT0lDRV9JVEVSQVRFEAIqsAEKEFRpbGFzbUhvbGRSZWFzb24SIgoeVElMQVNNX0hPTERfUkVBU09OX1VOU1BFQ0lGSUVEEAASHQoZVElMQVNNX0hPTERfUkVBU09OX1JFV09SSxABEhsKF1RJTEFTTV9IT0xEX1JFQVNPTl9XT1JLEAISHwobVElMQVNNX0hPTERfUkVBU09OX0xBVU5DSEVEEAMSGwoXVElMQVNNX0hPTERfUkVBU09OX1NFTlQQBCp5CgxBbmNob3JTdGF0dXMSHQoZQU5DSE9SX1NUQVRVU19VTlNQRUNJRklFRBAAEhcKE0FOQ0hPUl9TVEFUVVNfRk9VTkQQARIZChVBTkNIT1JfU1RBVFVTX0NIQU5HRUQQAhIWChJBTkNIT1JfU1RBVFVTX0xPU1QQAzLyCgoNVGlsYXNtU2VydmljZRJUCgNQdXQSIC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXRSZXF1ZXN0GiEucGxhbi52MS5UaWxhc21TZXJ2aWNlUHV0UmVzcG9uc2UiCMjzGAHg8xgBElYKBExpc3QSIS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VMaXN0UmVxdWVzdBoiLnBsYW4udjEuVGlsYXNtU2VydmljZUxpc3RSZXNwb25zZSIHkAIByPMYARJTCgNHZXQSIC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VHZXRSZXF1ZXN0GiEucGxhbi52MS5UaWxhc21TZXJ2aWNlR2V0UmVzcG9uc2UiB5ACAcjzGAESWwoET3BlbhIhLnBsYW4udjEuVGlsYXNtU2VydmljZU9wZW5SZXF1ZXN0GiIucGxhbi52MS5UaWxhc21TZXJ2aWNlT3BlblJlc3BvbnNlIgzI8xgB2PMYAeDzGAESXwoHSGlzdG9yeRIkLnBsYW4udjEuVGlsYXNtU2VydmljZUhpc3RvcnlSZXF1ZXN0GiUucGxhbi52MS5UaWxhc21TZXJ2aWNlSGlzdG9yeVJlc3BvbnNlIgeQAgHI8xgBEmAKB1Jlc3RvcmUSJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VSZXN0b3JlUmVxdWVzdBolLnBsYW4udjEuVGlsYXNtU2VydmljZVJlc3RvcmVSZXNwb25zZSIIyPMYAeDzGAESXQoGRXhwb3J0EiMucGxhbi52MS5UaWxhc21TZXJ2aWNlRXhwb3J0UmVxdWVzdBokLnBsYW4udjEuVGlsYXNtU2VydmljZUV4cG9ydFJlc3BvbnNlIgjI8xgB4PMYAhJdCgZJbXBvcnQSIy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VJbXBvcnRSZXF1ZXN0GiQucGxhbi52MS5UaWxhc21TZXJ2aWNlSW1wb3J0UmVzcG9uc2UiCMjzGAHg8xgBEmAKB1B1dERhdGESJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXREYXRhUmVxdWVzdBolLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dERhdGFSZXNwb25zZSIIyPMYAuDzGAESYgoIQ29tbWVudHMSJS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VDb21tZW50c1JlcXVlc3QaJi5wbGFuLnYxLlRpbGFzbVNlcnZpY2VDb21tZW50c1Jlc3BvbnNlIgeQAgHI8xgBEmkKClB1dENvbW1lbnQSJy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXRDb21tZW50UmVxdWVzdBooLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dENvbW1lbnRSZXNwb25zZSIIyPMYAuDzGAEScgoNRGVsZXRlQ29tbWVudBIqLnBsYW4udjEuVGlsYXNtU2VydmljZURlbGV0ZUNvbW1lbnRSZXF1ZXN0GisucGxhbi52MS5UaWxhc21TZXJ2aWNlRGVsZXRlQ29tbWVudFJlc3BvbnNlIgjI8xgC4PMYARJcCgZEcmFmdHMSIy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VEcmFmdHNSZXF1ZXN0GiQucGxhbi52MS5UaWxhc21TZXJ2aWNlRHJhZnRzUmVzcG9uc2UiB5ACAcjzGAISbwoMU2VuZENvbW1lbnRzEikucGxhbi52MS5UaWxhc21TZXJ2aWNlU2VuZENvbW1lbnRzUmVxdWVzdBoqLnBsYW4udjEuVGlsYXNtU2VydmljZVNlbmRDb21tZW50c1Jlc3BvbnNlIgjI8xgC4PMYARoM6vMYCHRhbGlzbWFuQogBCgtjb20ucGxhbi52MUILVGlsYXNtUHJvdG9QAVovZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vcGxhbi92MTtwbGFudjGiAgNQWFiqAgdQbGFuLlYxygIHUGxhblxWMeICE1BsYW5cVjFcR1BCTWV0YWRhdGHqAghQbGFuOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
 
 /**
  * A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out.
@@ -506,6 +506,180 @@ export const CommentReplySchema: GenMessage<CommentReply> = /*@__PURE__*/
   messageDesc(file_plan_v1_tilasm, 7);
 
 /**
+ * TilasmSend is one send of a tilasm's comments to the Djinn, from the window: what the developer chose. Kept so that a
+ * launch is never given twice, and so that the lead reads the choice with the comments.
+ *
+ * @generated from message plan.v1.TilasmSend
+ */
+export type TilasmSend = Message<"plan.v1.TilasmSend"> & {
+  /**
+   * Identifier, a UUIDv7.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * The tilasm sent on.
+   *
+   * @generated from field: string tilasm_id = 2;
+   */
+  tilasmId: string;
+
+  /**
+   * The wish of that tilasm.
+   *
+   * @generated from field: string wish_id = 3;
+   */
+  wishId: string;
+
+  /**
+   * 1, 2… within the tilasm: the comments it carried have it as their send.
+   *
+   * @generated from field: int32 number = 4;
+   */
+  number: number;
+
+  /**
+   * What the developer chose: launch the work with the comments, or iterate on the tilasm.
+   *
+   * @generated from field: plan.v1.SendChoice choice = 5;
+   */
+  choice: SendChoice;
+
+  /**
+   * The open question that linked the tilasm when it was sent, by identifier; empty when none did. A launch without
+   * a comment answered it with its recommended option.
+   *
+   * @generated from field: string question_id = 6;
+   */
+  questionId: string;
+
+  /**
+   * When it was sent.
+   *
+   * @generated from field: google.protobuf.Timestamp create_time = 7;
+   */
+  createTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message plan.v1.TilasmSend.
+ * Use `create(TilasmSendSchema)` to create a new message.
+ */
+export const TilasmSendSchema: GenMessage<TilasmSend> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 8);
+
+/**
+ * TilasmHold is why a tilasm takes no send for now, computed on every read from its tasks, questions and sends, never
+ * stored: the window greys its buttons, and its comments too unless a send waits.
+ *
+ * @generated from message plan.v1.TilasmHold
+ */
+export type TilasmHold = Message<"plan.v1.TilasmHold"> & {
+  /**
+   * The tilasm held.
+   *
+   * @generated from field: string tilasm_id = 1;
+   */
+  tilasmId: string;
+
+  /**
+   * Why.
+   *
+   * @generated from field: plan.v1.TilasmHoldReason reason = 2;
+   */
+  reason: TilasmHoldReason;
+
+  /**
+   * What holds it: the task's code (W12), the question's (Q29); empty for a launch that answered no question.
+   *
+   * @generated from field: string code = 3;
+   */
+  code: string;
+
+  /**
+   * The send that launched it, or that waits for the Djinn; 0 otherwise.
+   *
+   * @generated from field: int32 send = 4;
+   */
+  send: number;
+};
+
+/**
+ * Describes the message plan.v1.TilasmHold.
+ * Use `create(TilasmHoldSchema)` to create a new message.
+ */
+export const TilasmHoldSchema: GenMessage<TilasmHold> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 9);
+
+/**
+ * @generated from message plan.v1.TilasmServiceSendCommentsRequest
+ */
+export type TilasmServiceSendCommentsRequest = Message<"plan.v1.TilasmServiceSendCommentsRequest"> & {
+  /**
+   * The tilasm whose drafts to send.
+   *
+   * @generated from field: string tilasm_id = 1;
+   */
+  tilasmId: string;
+
+  /**
+   * Launch the work with the comments, or iterate on the tilasm.
+   *
+   * @generated from field: plan.v1.SendChoice choice = 2;
+   */
+  choice: SendChoice;
+
+  /**
+   * A comment on the whole tilasm, written above the buttons: it leaves with the drafts.
+   *
+   * @generated from field: string text = 3;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceSendCommentsRequest.
+ * Use `create(TilasmServiceSendCommentsRequestSchema)` to create a new message.
+ */
+export const TilasmServiceSendCommentsRequestSchema: GenMessage<TilasmServiceSendCommentsRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 10);
+
+/**
+ * @generated from message plan.v1.TilasmServiceSendCommentsResponse
+ */
+export type TilasmServiceSendCommentsResponse = Message<"plan.v1.TilasmServiceSendCommentsResponse"> & {
+  /**
+   * The send.
+   *
+   * @generated from field: plan.v1.TilasmSend send = 1;
+   */
+  send?: TilasmSend | undefined;
+
+  /**
+   * The comments it carried, by code.
+   *
+   * @generated from field: repeated plan.v1.TilasmComment comments = 2;
+   */
+  comments: TilasmComment[];
+
+  /**
+   * The question a launch without a comment answered, by code (Q29); empty when it answered none.
+   *
+   * @generated from field: string answered = 3;
+   */
+  answered: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceSendCommentsResponse.
+ * Use `create(TilasmServiceSendCommentsResponseSchema)` to create a new message.
+ */
+export const TilasmServiceSendCommentsResponseSchema: GenMessage<TilasmServiceSendCommentsResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 11);
+
+/**
  * @generated from message plan.v1.TilasmServicePutCommentRequest
  */
 export type TilasmServicePutCommentRequest = Message<"plan.v1.TilasmServicePutCommentRequest"> & {
@@ -558,7 +732,7 @@ export type TilasmServicePutCommentRequest = Message<"plan.v1.TilasmServicePutCo
  * Use `create(TilasmServicePutCommentRequestSchema)` to create a new message.
  */
 export const TilasmServicePutCommentRequestSchema: GenMessage<TilasmServicePutCommentRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 8);
+  messageDesc(file_plan_v1_tilasm, 12);
 
 /**
  * @generated from message plan.v1.TilasmServicePutCommentResponse
@@ -577,7 +751,7 @@ export type TilasmServicePutCommentResponse = Message<"plan.v1.TilasmServicePutC
  * Use `create(TilasmServicePutCommentResponseSchema)` to create a new message.
  */
 export const TilasmServicePutCommentResponseSchema: GenMessage<TilasmServicePutCommentResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 9);
+  messageDesc(file_plan_v1_tilasm, 13);
 
 /**
  * @generated from message plan.v1.TilasmServiceDeleteCommentRequest
@@ -596,7 +770,7 @@ export type TilasmServiceDeleteCommentRequest = Message<"plan.v1.TilasmServiceDe
  * Use `create(TilasmServiceDeleteCommentRequestSchema)` to create a new message.
  */
 export const TilasmServiceDeleteCommentRequestSchema: GenMessage<TilasmServiceDeleteCommentRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 10);
+  messageDesc(file_plan_v1_tilasm, 14);
 
 /**
  * @generated from message plan.v1.TilasmServiceDeleteCommentResponse
@@ -615,7 +789,7 @@ export type TilasmServiceDeleteCommentResponse = Message<"plan.v1.TilasmServiceD
  * Use `create(TilasmServiceDeleteCommentResponseSchema)` to create a new message.
  */
 export const TilasmServiceDeleteCommentResponseSchema: GenMessage<TilasmServiceDeleteCommentResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 11);
+  messageDesc(file_plan_v1_tilasm, 15);
 
 /**
  * @generated from message plan.v1.TilasmServiceDraftsRequest
@@ -634,7 +808,7 @@ export type TilasmServiceDraftsRequest = Message<"plan.v1.TilasmServiceDraftsReq
  * Use `create(TilasmServiceDraftsRequestSchema)` to create a new message.
  */
 export const TilasmServiceDraftsRequestSchema: GenMessage<TilasmServiceDraftsRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 12);
+  messageDesc(file_plan_v1_tilasm, 16);
 
 /**
  * @generated from message plan.v1.TilasmServiceDraftsResponse
@@ -646,6 +820,13 @@ export type TilasmServiceDraftsResponse = Message<"plan.v1.TilasmServiceDraftsRe
    * @generated from field: repeated plan.v1.TilasmComment comments = 1;
    */
   comments: TilasmComment[];
+
+  /**
+   * The tilasms of the wish that take no send for now, and why.
+   *
+   * @generated from field: repeated plan.v1.TilasmHold holds = 2;
+   */
+  holds: TilasmHold[];
 };
 
 /**
@@ -653,7 +834,7 @@ export type TilasmServiceDraftsResponse = Message<"plan.v1.TilasmServiceDraftsRe
  * Use `create(TilasmServiceDraftsResponseSchema)` to create a new message.
  */
 export const TilasmServiceDraftsResponseSchema: GenMessage<TilasmServiceDraftsResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 13);
+  messageDesc(file_plan_v1_tilasm, 17);
 
 /**
  * @generated from message plan.v1.TilasmServiceCommentsRequest
@@ -686,7 +867,7 @@ export type TilasmServiceCommentsRequest = Message<"plan.v1.TilasmServiceComment
  * Use `create(TilasmServiceCommentsRequestSchema)` to create a new message.
  */
 export const TilasmServiceCommentsRequestSchema: GenMessage<TilasmServiceCommentsRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 14);
+  messageDesc(file_plan_v1_tilasm, 18);
 
 /**
  * @generated from message plan.v1.TilasmServiceCommentsResponse
@@ -712,7 +893,7 @@ export type TilasmServiceCommentsResponse = Message<"plan.v1.TilasmServiceCommen
  * Use `create(TilasmServiceCommentsResponseSchema)` to create a new message.
  */
 export const TilasmServiceCommentsResponseSchema: GenMessage<TilasmServiceCommentsResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 15);
+  messageDesc(file_plan_v1_tilasm, 19);
 
 /**
  * @generated from message plan.v1.TilasmServicePutRequest
@@ -768,7 +949,7 @@ export type TilasmServicePutRequest = Message<"plan.v1.TilasmServicePutRequest">
  * Use `create(TilasmServicePutRequestSchema)` to create a new message.
  */
 export const TilasmServicePutRequestSchema: GenMessage<TilasmServicePutRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 16);
+  messageDesc(file_plan_v1_tilasm, 20);
 
 /**
  * @generated from message plan.v1.TilasmServicePutResponse
@@ -794,7 +975,7 @@ export type TilasmServicePutResponse = Message<"plan.v1.TilasmServicePutResponse
  * Use `create(TilasmServicePutResponseSchema)` to create a new message.
  */
 export const TilasmServicePutResponseSchema: GenMessage<TilasmServicePutResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 17);
+  messageDesc(file_plan_v1_tilasm, 21);
 
 /**
  * @generated from message plan.v1.TilasmServiceListRequest
@@ -821,7 +1002,7 @@ export type TilasmServiceListRequest = Message<"plan.v1.TilasmServiceListRequest
  * Use `create(TilasmServiceListRequestSchema)` to create a new message.
  */
 export const TilasmServiceListRequestSchema: GenMessage<TilasmServiceListRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 18);
+  messageDesc(file_plan_v1_tilasm, 22);
 
 /**
  * @generated from message plan.v1.TilasmServiceListResponse
@@ -840,7 +1021,7 @@ export type TilasmServiceListResponse = Message<"plan.v1.TilasmServiceListRespon
  * Use `create(TilasmServiceListResponseSchema)` to create a new message.
  */
 export const TilasmServiceListResponseSchema: GenMessage<TilasmServiceListResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 19);
+  messageDesc(file_plan_v1_tilasm, 23);
 
 /**
  * @generated from message plan.v1.TilasmServiceGetRequest
@@ -873,7 +1054,7 @@ export type TilasmServiceGetRequest = Message<"plan.v1.TilasmServiceGetRequest">
  * Use `create(TilasmServiceGetRequestSchema)` to create a new message.
  */
 export const TilasmServiceGetRequestSchema: GenMessage<TilasmServiceGetRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 20);
+  messageDesc(file_plan_v1_tilasm, 24);
 
 /**
  * @generated from message plan.v1.TilasmServiceGetResponse
@@ -937,7 +1118,7 @@ export type TilasmServiceGetResponse = Message<"plan.v1.TilasmServiceGetResponse
  * Use `create(TilasmServiceGetResponseSchema)` to create a new message.
  */
 export const TilasmServiceGetResponseSchema: GenMessage<TilasmServiceGetResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 21);
+  messageDesc(file_plan_v1_tilasm, 25);
 
 /**
  * @generated from message plan.v1.TilasmServiceOpenRequest
@@ -963,7 +1144,7 @@ export type TilasmServiceOpenRequest = Message<"plan.v1.TilasmServiceOpenRequest
  * Use `create(TilasmServiceOpenRequestSchema)` to create a new message.
  */
 export const TilasmServiceOpenRequestSchema: GenMessage<TilasmServiceOpenRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 22);
+  messageDesc(file_plan_v1_tilasm, 26);
 
 /**
  * @generated from message plan.v1.TilasmServiceOpenResponse
@@ -996,7 +1177,7 @@ export type TilasmServiceOpenResponse = Message<"plan.v1.TilasmServiceOpenRespon
  * Use `create(TilasmServiceOpenResponseSchema)` to create a new message.
  */
 export const TilasmServiceOpenResponseSchema: GenMessage<TilasmServiceOpenResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 23);
+  messageDesc(file_plan_v1_tilasm, 27);
 
 /**
  * @generated from message plan.v1.TilasmServiceHistoryRequest
@@ -1022,7 +1203,7 @@ export type TilasmServiceHistoryRequest = Message<"plan.v1.TilasmServiceHistoryR
  * Use `create(TilasmServiceHistoryRequestSchema)` to create a new message.
  */
 export const TilasmServiceHistoryRequestSchema: GenMessage<TilasmServiceHistoryRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 24);
+  messageDesc(file_plan_v1_tilasm, 28);
 
 /**
  * @generated from message plan.v1.TilasmServiceHistoryResponse
@@ -1048,7 +1229,7 @@ export type TilasmServiceHistoryResponse = Message<"plan.v1.TilasmServiceHistory
  * Use `create(TilasmServiceHistoryResponseSchema)` to create a new message.
  */
 export const TilasmServiceHistoryResponseSchema: GenMessage<TilasmServiceHistoryResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 25);
+  messageDesc(file_plan_v1_tilasm, 29);
 
 /**
  * @generated from message plan.v1.TilasmServiceRestoreRequest
@@ -1088,7 +1269,7 @@ export type TilasmServiceRestoreRequest = Message<"plan.v1.TilasmServiceRestoreR
  * Use `create(TilasmServiceRestoreRequestSchema)` to create a new message.
  */
 export const TilasmServiceRestoreRequestSchema: GenMessage<TilasmServiceRestoreRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 26);
+  messageDesc(file_plan_v1_tilasm, 30);
 
 /**
  * @generated from message plan.v1.TilasmServiceRestoreResponse
@@ -1107,7 +1288,7 @@ export type TilasmServiceRestoreResponse = Message<"plan.v1.TilasmServiceRestore
  * Use `create(TilasmServiceRestoreResponseSchema)` to create a new message.
  */
 export const TilasmServiceRestoreResponseSchema: GenMessage<TilasmServiceRestoreResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 27);
+  messageDesc(file_plan_v1_tilasm, 31);
 
 /**
  * @generated from message plan.v1.TilasmServiceExportRequest
@@ -1141,7 +1322,7 @@ export type TilasmServiceExportRequest = Message<"plan.v1.TilasmServiceExportReq
  * Use `create(TilasmServiceExportRequestSchema)` to create a new message.
  */
 export const TilasmServiceExportRequestSchema: GenMessage<TilasmServiceExportRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 28);
+  messageDesc(file_plan_v1_tilasm, 32);
 
 /**
  * @generated from message plan.v1.TilasmServiceExportResponse
@@ -1167,7 +1348,7 @@ export type TilasmServiceExportResponse = Message<"plan.v1.TilasmServiceExportRe
  * Use `create(TilasmServiceExportResponseSchema)` to create a new message.
  */
 export const TilasmServiceExportResponseSchema: GenMessage<TilasmServiceExportResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 29);
+  messageDesc(file_plan_v1_tilasm, 33);
 
 /**
  * @generated from message plan.v1.TilasmServiceImportRequest
@@ -1200,7 +1381,7 @@ export type TilasmServiceImportRequest = Message<"plan.v1.TilasmServiceImportReq
  * Use `create(TilasmServiceImportRequestSchema)` to create a new message.
  */
 export const TilasmServiceImportRequestSchema: GenMessage<TilasmServiceImportRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 30);
+  messageDesc(file_plan_v1_tilasm, 34);
 
 /**
  * @generated from message plan.v1.TilasmServiceImportResponse
@@ -1219,7 +1400,7 @@ export type TilasmServiceImportResponse = Message<"plan.v1.TilasmServiceImportRe
  * Use `create(TilasmServiceImportResponseSchema)` to create a new message.
  */
 export const TilasmServiceImportResponseSchema: GenMessage<TilasmServiceImportResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 31);
+  messageDesc(file_plan_v1_tilasm, 35);
 
 /**
  * @generated from message plan.v1.TilasmServicePutDataRequest
@@ -1259,7 +1440,7 @@ export type TilasmServicePutDataRequest = Message<"plan.v1.TilasmServicePutDataR
  * Use `create(TilasmServicePutDataRequestSchema)` to create a new message.
  */
 export const TilasmServicePutDataRequestSchema: GenMessage<TilasmServicePutDataRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 32);
+  messageDesc(file_plan_v1_tilasm, 36);
 
 /**
  * @generated from message plan.v1.TilasmServicePutDataResponse
@@ -1285,7 +1466,7 @@ export type TilasmServicePutDataResponse = Message<"plan.v1.TilasmServicePutData
  * Use `create(TilasmServicePutDataResponseSchema)` to create a new message.
  */
 export const TilasmServicePutDataResponseSchema: GenMessage<TilasmServicePutDataResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 33);
+  messageDesc(file_plan_v1_tilasm, 37);
 
 /**
  * CommentState is where a comment stands: written, or sent to the Djinn.
@@ -1320,6 +1501,89 @@ export enum CommentState {
  */
 export const CommentStateSchema: GenEnum<CommentState> = /*@__PURE__*/
   enumDesc(file_plan_v1_tilasm, 0);
+
+/**
+ * SendChoice is what the developer asks of the Djinn with a send of comments.
+ *
+ * @generated from enum plan.v1.SendChoice
+ */
+export enum SendChoice {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: SEND_CHOICE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Launch the work the tilasm explains, as the comments say. Without a comment, the open question that links the
+   * tilasm is answered with its recommended option.
+   *
+   * @generated from enum value: SEND_CHOICE_LAUNCH = 1;
+   */
+  LAUNCH = 1,
+
+  /**
+   * Iterate on the tilasm: its next version, as the comments say.
+   *
+   * @generated from enum value: SEND_CHOICE_ITERATE = 2;
+   */
+  ITERATE = 2,
+}
+
+/**
+ * Describes the enum plan.v1.SendChoice.
+ */
+export const SendChoiceSchema: GenEnum<SendChoice> = /*@__PURE__*/
+  enumDesc(file_plan_v1_tilasm, 1);
+
+/**
+ * TilasmHoldReason says why a tilasm takes no send.
+ *
+ * @generated from enum plan.v1.TilasmHoldReason
+ */
+export enum TilasmHoldReason {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A task that puts its next version (--code L01 in its prompt) runs or is planned.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_REWORK = 1;
+   */
+  REWORK = 1,
+
+  /**
+   * A task given it (--tilasm L01, its link in the prompt) runs or is planned.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_WORK = 2;
+   */
+  WORK = 2,
+
+  /**
+   * Its work was launched: a send chose to launch, or the question that links it was answered and none is open.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_LAUNCHED = 3;
+   */
+  LAUNCHED = 3,
+
+  /**
+   * A send waits for the Djinn to read it: only the send buttons wait.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_SENT = 4;
+   */
+  SENT = 4,
+}
+
+/**
+ * Describes the enum plan.v1.TilasmHoldReason.
+ */
+export const TilasmHoldReasonSchema: GenEnum<TilasmHoldReason> = /*@__PURE__*/
+  enumDesc(file_plan_v1_tilasm, 2);
 
 /**
  * AnchorStatus is how a comment's anchor was found again in a later version.
@@ -1360,7 +1624,7 @@ export enum AnchorStatus {
  * Describes the enum plan.v1.AnchorStatus.
  */
 export const AnchorStatusSchema: GenEnum<AnchorStatus> = /*@__PURE__*/
-  enumDesc(file_plan_v1_tilasm, 1);
+  enumDesc(file_plan_v1_tilasm, 3);
 
 /**
  * Tilasms, or talismans: the material that explains a wish, kept on this machine and linked from anywhere. A put
@@ -1502,6 +1766,19 @@ export const TilasmService: GenService<{
     methodKind: "unary";
     input: typeof TilasmServiceDraftsRequestSchema;
     output: typeof TilasmServiceDraftsResponseSchema;
+  },
+  /**
+   * Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
+   * explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
+   * comment answers the open question that links the tilasm with its recommended option, as approving it does. A
+   * tilasm held (TilasmHold) takes no send: a launch is never given twice.
+   *
+   * @generated from rpc plan.v1.TilasmService.SendComments
+   */
+  sendComments: {
+    methodKind: "unary";
+    input: typeof TilasmServiceSendCommentsRequestSchema;
+    output: typeof TilasmServiceSendCommentsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_plan_v1_tilasm, 0);

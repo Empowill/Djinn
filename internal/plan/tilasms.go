@@ -62,6 +62,10 @@ type Tilasms struct {
 	// URL is the local http address of a tilasm's latest version, by its identifier; empty, or nil, while Djinn serves
 	// no http.
 	URL func(id string) string
+	// Marks answers the question a launch without a comment approves; nil: such a launch is unavailable.
+	Marks *Marks
+	// Wake, when set, wakes the lead's watch once a send queued its event.
+	Wake func()
 }
 
 // TilasmDir is the folder of a tilasm in the data folder home: version n is in its folder v<n>.
@@ -1317,6 +1321,9 @@ func citing(all []*planv1.Tilasm, taskID string) []string {
 	return out
 }
 
+// tilasmContextHead opens what a worker's first prompt holds of the tilasms it is given, after the lead's words.
+const tilasmContextHead = "# Tilasms given as context\n"
+
 // tilasmPromptText is how much of a tilasm's text a worker's first prompt holds: the rest is in its files.
 const tilasmPromptText = 20000
 
@@ -1347,7 +1354,7 @@ func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, nam
 		return "", connect.NewError(connect.CodeUnavailable, errors.New("this server keeps no tilasms: run djinn up"))
 	}
 	var b strings.Builder
-	b.WriteString("# Tilasms given as context\n\n")
+	b.WriteString(tilasmContextHead + "\n")
 	b.WriteString("The material that explains this work, kept by Djinn outside the project: read its files where they " +
 		"are, and do not copy them into the project. `djinn tilasm get <code>` reads one again.\n")
 	for _, tilasm := range tilasms {

@@ -134,10 +134,15 @@ func (w *Wishes) Notify(ctx context.Context, e *planv1.LeadEvent) error {
 	if err := QueueLeadEvent(ctx, w.Store, e, w.now()); err != nil {
 		return err
 	}
+	w.Queued()
+	return nil
+}
+
+// Queued wakes the lead's watch, as Notify does, for an event another service stored in a transaction of its own.
+func (w *Wishes) Queued() {
 	l := w.leadWatch()
 	l.signal()
 	w.remindLead(l.timing.remind)
-	return nil
 }
 
 // notifyInPlace queues e for the lead as Notify does, in place of the waiting events replaces picks among those that

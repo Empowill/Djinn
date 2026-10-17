@@ -162,6 +162,66 @@ enum CommentState {
   COMMENT_STATE_SENT = 2;
 }
 
+// TilasmSend is one send of a tilasm's comments to the Djinn, from the window: what the developer chose. Kept so that a
+// launch is never given twice, and so that the lead reads the choice with the comments.
+message TilasmSend {
+  option (djinn.v1.unique) = {fields: ["tilasm_id", "number"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The tilasm sent on.
+  string tilasm_id = 2;
+  // The wish of that tilasm.
+  string wish_id = 3;
+  // 1, 2… within the tilasm: the comments it carried have it as their send.
+  int32 number = 4;
+  // What the developer chose: launch the work with the comments, or iterate on the tilasm.
+  SendChoice choice = 5;
+  // The open question that linked the tilasm when it was sent, by identifier; empty when none did. A launch without
+  // a comment answered it with its recommended option.
+  string question_id = 6;
+  // When it was sent.
+  google.protobuf.Timestamp create_time = 7;
+}
+
+// SendChoice is what the developer asks of the Djinn with a send of comments.
+enum SendChoice {
+  // Not set.
+  SEND_CHOICE_UNSPECIFIED = 0;
+  // Launch the work the tilasm explains, as the comments say. Without a comment, the open question that links the
+  // tilasm is answered with its recommended option.
+  SEND_CHOICE_LAUNCH = 1;
+  // Iterate on the tilasm: its next version, as the comments say.
+  SEND_CHOICE_ITERATE = 2;
+}
+
+// TilasmHold is why a tilasm takes no send for now, computed on every read from its tasks, questions and sends, never
+// stored: the window greys its buttons, and its comments too unless a send waits.
+message TilasmHold {
+  // The tilasm held.
+  string tilasm_id = 1;
+  // Why.
+  TilasmHoldReason reason = 2;
+  // What holds it: the task's code (W12), the question's (Q29); empty for a launch that answered no question.
+  string code = 3;
+  // The send that launched it, or that waits for the Djinn; 0 otherwise.
+  int32 send = 4;
+}
+
+// TilasmHoldReason says why a tilasm takes no send.
+enum TilasmHoldReason {
+  // Not set.
+  TILASM_HOLD_REASON_UNSPECIFIED = 0;
+  // A task that puts its next version (--code L01 in its prompt) runs or is planned.
+  TILASM_HOLD_REASON_REWORK = 1;
+  // A task given it (--tilasm L01, its link in the prompt) runs or is planned.
+  TILASM_HOLD_REASON_WORK = 2;
+  // Its work was launched: a send chose to launch, or the question that links it was answered and none is open.
+  TILASM_HOLD_REASON_LAUNCHED = 3;
+  // A send waits for the Djinn to read it: only the send buttons wait.
+  TILASM_HOLD_REASON_SENT = 4;
+}
+
 // AnchorStatus is how a comment's anchor was found again in a later version.
 enum AnchorStatus {
   // Not looked for yet.
@@ -249,6 +309,38 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
+  // explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
+  // comment answers the open question that links the tilasm with its recommended option, as approving it does. A
+  // tilasm held (TilasmHold) takes no send: a launch is never given twice.
+  rpc SendComments(TilasmServiceSendCommentsRequest) returns (TilasmServiceSendCommentsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+message TilasmServiceSendCommentsRequest {
+  // The tilasm whose drafts to send.
+  string tilasm_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Launch the work with the comments, or iterate on the tilasm.
+  SendChoice choice = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // A comment on the whole tilasm, written above the buttons: it leaves with the drafts.
+  string text = 3 [(buf.validate.field).string.max_len = 4000];
+}
+
+message TilasmServiceSendCommentsResponse {
+  // The send.
+  TilasmSend send = 1;
+  // The comments it carried, by code.
+  repeated TilasmComment comments = 2;
+  // The question a launch without a comment answered, by code (Q29); empty when it answered none.
+  string answered = 3;
 }
 
 message TilasmServicePutCommentRequest {
@@ -302,6 +394,8 @@ message TilasmServiceDraftsRequest {
 message TilasmServiceDraftsResponse {
   // The drafts, in the order they were written.
   repeated TilasmComment comments = 1;
+  // The tilasms of the wish that take no send for now, and why.
+  repeated TilasmHold holds = 2;
 }
 
 message TilasmServiceCommentsRequest {
