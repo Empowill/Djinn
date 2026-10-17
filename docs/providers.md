@@ -509,7 +509,7 @@ Tests: `TestIfritListensBetweenMessages` (the `two-turns` Claude fixture), `Test
 `TestIfritWarnsThenGoesOut`, `TestYourActivityKeepsItLit`, `TestLeadAndWorkersAreNoActivity`,
 `TestIfritOutLetsTheTurnEnd`, `TestSendRelightsAnIfrit`, `TestIfritOutAfterARestart` (`presence_test.go`);
 `TestServeRunsAndStops`, `TestServeStopCommandRunsWhenItGoesOut`, `TestServesComeBackOnRelight`,
-`TestServeFollowsTheWatchersRule` (`serve_test.go`); `TestIfritKeepsItsGate`, `TestIfritGateGoesBackWhenItGoesOut`
+`TestServeFollowsTheWatchersRule` (`serve_test.go`); `TestTake`, `TestService_Hold`
 (`internal/gate`); `TestIfritChecksBrief` (`internal/plan`).
 
 ## Claude
