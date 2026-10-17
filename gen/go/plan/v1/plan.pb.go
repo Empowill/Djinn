@@ -10338,7 +10338,8 @@ type ProjectServiceShowResponse struct {
 	// files resolve them. Their last runs are the project's check_runs.
 	Setup  string          `protobuf:"bytes,6,opt,name=setup,proto3" json:"setup,omitempty"`
 	Checks []*ProjectCheck `protobuf:"bytes,7,rep,name=checks,proto3" json:"checks,omitempty"`
-	// Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows.
+	// Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows. Each skill whose front matter
+	// breaks the YAML outside its metadata is one too: Djinn reads its metadata apart, and names the lines at fault.
 	Warnings []string `protobuf:"bytes,8,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	// The watcher commands you allow in the project for yourself (djinn project allow --watch), from your own file.
 	WatchCommands []string `protobuf:"bytes,9,rep,name=watch_commands,json=watchCommands,proto3" json:"watch_commands,omitempty"`

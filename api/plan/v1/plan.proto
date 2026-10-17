@@ -2420,7 +2420,8 @@ message ProjectServiceShowResponse {
   // files resolve them. Their last runs are the project's check_runs.
   string setup = 6;
   repeated ProjectCheck checks = 7;
-  // Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows.
+  // Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows. Each skill whose front matter
+  // breaks the YAML outside its metadata is one too: Djinn reads its metadata apart, and names the lines at fault.
   repeated string warnings = 8;
   // The watcher commands you allow in the project for yourself (djinn project allow --watch), from your own file.
   repeated string watch_commands = 9;

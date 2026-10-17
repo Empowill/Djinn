@@ -18,7 +18,6 @@ import (
 	"strings"
 	"unicode"
 
-	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -70,9 +69,10 @@ type djinnYAML struct {
 	Babysit *babysitYAML  `yaml:"babysit"`
 }
 
-// UnreadableSkillError is why Djinn cannot read what a skill's SKILL.md declares for it: its front matter is not YAML,
+// UnreadableSkillError is why Djinn cannot read what a skill's SKILL.md declares for it: its metadata is not YAML,
 // or its metadata.djinn is not what Djinn reads. Nothing of the skill counts for Djinn, neither template, source nor
-// babysit: a problem of the project that holds it, not a source of the inbox.
+// babysit: a problem of the project that holds it, not a source of the inbox. Another key of the front matter that
+// breaks the YAML is only a warning: skillFront reads metadata apart.
 type UnreadableSkillError struct{ Err error }
 
 func (e *UnreadableSkillError) Error() string { return e.Err.Error() }
@@ -81,21 +81,12 @@ func (e *UnreadableSkillError) Unwrap() error { return e.Err }
 // readDjinn reads metadata.djinn in the SKILL.md of the skill in dir: empty without it, an UnreadableSkillError when it
 // cannot be read.
 func readDjinn(dir string) (djinnYAML, error) {
-	front, err := frontMatter(filepath.Join(dir, SkillFile))
+	// Agent Skills lets a skill hold extra metadata; Djinn reads its own key only, and ignores the rest.
+	metadata, _, err := skillFront(dir)
 	if err != nil {
 		return djinnYAML{}, &UnreadableSkillError{Err: err}
 	}
-	if front == "" {
-		return djinnYAML{}, nil
-	}
-	// Agent Skills lets a skill hold extra metadata; Djinn reads its own key only, and ignores the rest.
-	var doc struct {
-		Metadata map[string]yaml.Node `yaml:"metadata"`
-	}
-	if err := yaml.Unmarshal([]byte(front), &doc); err != nil {
-		return djinnYAML{}, &UnreadableSkillError{Err: fmt.Errorf("%s: its front matter is not YAML: %w", SkillFile, err)}
-	}
-	node, ok := doc.Metadata["djinn"]
+	node, ok := metadata["djinn"]
 	if !ok {
 		return djinnYAML{}, nil
 	}

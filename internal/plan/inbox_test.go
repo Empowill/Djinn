@@ -251,14 +251,15 @@ func TestKeepSourceRun(t *testing.T) {
 	}
 }
 
-// TestUnreadableSkill: a skill whose front matter breaks the YAML, as dolmen's argument-hint lines did, is no source
-// of the inbox: the project's problems say Djinn cannot read it, and which line. Plugged in before it broke, it stays
-// listed with why, to be unplugged.
+// TestUnreadableSkill: a skill whose metadata breaks the YAML is no source of the inbox: the project's problems say
+// Djinn cannot read it, and why. One whose other key breaks it, as dolmen's argument-hint lines do, is a warning
+// only. Plugged in before it broke, it stays listed with why, to be unplugged.
 func TestUnreadableSkill(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)
 	dolmen := &planv1.Project{Id: store.NewID(), Name: "dolmen", Directory: t.TempDir()}
 	agentSkill(t, dolmen.GetDirectory(), "notion-ticket", "argument-hint: [bug|improvement] [description]\n")
+	agentSkill(t, dolmen.GetDirectory(), "broken-meta", "metadata:\n  djinn: [\n")
 	agentSkill(t, dolmen.GetDirectory(), "bad-djinn", "metadata:\n  djinn: [wish]\n")
 	agentSkill(t, dolmen.GetDirectory(), "mentions", "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n")
 	c.put(t, dolmen)
@@ -286,17 +287,21 @@ func TestUnreadableSkill(t *testing.T) {
 	if len(problems) != 2 ||
 		!strings.HasPrefix(problems[0], "the skill bad-djinn cannot be read: Djinn ignores its wish template, inbox "+
 			"source and babysit: SKILL.md: metadata.djinn: ") ||
-		!strings.HasPrefix(problems[1], "the skill notion-ticket cannot be read: Djinn ignores its wish template, "+
-			"inbox source and babysit: SKILL.md: its front matter is not YAML: yaml: line 2: ") {
+		!strings.HasPrefix(problems[1], "the skill broken-meta cannot be read: Djinn ignores its wish template, "+
+			"inbox source and babysit: SKILL.md: its front matter is not YAML: yaml: line ") {
 		t.Errorf("problems = %q", problems)
+	}
+	if warnings := show.Msg.GetWarnings(); !slices.Equal(warnings, []string{"the skill notion-ticket: SKILL.md: not " +
+		"YAML at line 4 (argument-hint: [bug|improvement] [description]): Djinn reads metadata apart; quoting the " +
+		"value fixes it"}) {
+		t.Errorf("warnings = %q", warnings)
 	}
 
 	// Plugged in, then broken: listed with why, and unplugged.
 	if _, err := c.inbox.Plug(ctx, connect.NewRequest(&planv1.InboxServicePlugRequest{Source: "mentions"})); err != nil {
 		t.Fatal(err)
 	}
-	agentSkill(t, dolmen.GetDirectory(), "mentions",
-		"argument-hint: [who] [what]\nmetadata:\n  djinn:\n    source:\n      watch: x\n")
+	agentSkill(t, dolmen.GetDirectory(), "mentions", "metadata:\n  djinn:\n    source:\n      watch: [x\n")
 	if got := listed(); len(got) != 1 ||
 		!strings.HasPrefix(got[0], "dolmen/mentions true|SKILL.md: its front matter is not YAML") {
 		t.Errorf("listed %q", got)

@@ -402,7 +402,7 @@ func (p *Projects) Show(
 	for _, err := range append(problems, SkillProblems(project.GetDirectory())...) {
 		out.Problems = append(out.Problems, err.Error())
 	}
-	out.Warnings = append(out.Warnings, warnings...)
+	out.Warnings = append(append(out.Warnings, warnings...), SkillWarnings(project.GetDirectory())...)
 	return connect.NewResponse(out), nil
 }
 

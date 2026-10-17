@@ -1,8 +1,10 @@
 package plan
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -176,4 +178,57 @@ func tree(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	return out
+}
+
+// TestSkillFrontApart: a front matter that Claude Code reads but that breaks the YAML outside metadata, as dolmen's
+// argument-hint lines do, is read all the same: metadata apart, and a warning that names the lines at fault. When
+// metadata itself breaks, the skill cannot be read.
+func TestSkillFrontApart(t *testing.T) {
+	dir := t.TempDir()
+	const source = "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n"
+	notion := writeSkill(t, dir, SkillFolders[0], "notion-ticket", "name: notion-ticket\ndescription: Tickets.\n"+
+		"user-invocable: true\nargument-hint: [bug|improvement] [description]\nallowed-tools:\n- Read\n- Write\n"+source+
+		"also: [a] [b]\n")
+	src, err := ReadSource(notion)
+	if err != nil || src == nil || src.Watch != "mentions --new" || src.Summary != "Tickets." {
+		t.Fatalf("ReadSource = %+v, %v", src, err)
+	}
+	_, warning, err := skillFront(notion)
+	if want := "SKILL.md: not YAML at line 5 (argument-hint: [bug|improvement] [description]), line 13 (also: [a] " +
+		"[b]): Djinn reads metadata apart; quoting the value fixes it"; err != nil || warning != want {
+		t.Errorf("skillFront = %q, %v; want %q", warning, err, want)
+	}
+
+	// No metadata: nothing for Djinn, still a warning.
+	open := writeSkill(t, dir, SkillFolders[0], "open-mr", "name: open-mr\nargument-hint: [ET-XXXX] [short title]\n")
+	if tmpl, err := ReadTemplate(open); tmpl != nil || err != nil {
+		t.Errorf("ReadTemplate = %v, %v; want none", tmpl, err)
+	}
+
+	// The front matter is fine: no warning.
+	writeSkill(t, dir, SkillFolders[0], "fine", "name: fine\nargument-hint: \"[a] [b]\"\n"+source)
+
+	// metadata breaks, or comes twice: unreadable, whatever the other keys.
+	for name, front := range map[string]string{
+		"meta-broken": "argument-hint: [a] [b]\nmetadata:\n  djinn: [\n",
+		"meta-twice":  "argument-hint: [a] [b]\n" + source + source,
+	} {
+		skill := writeSkill(t, dir, SkillFolders[0], name, front)
+		var unreadable *UnreadableSkillError
+		if _, err := ReadSource(skill); !errors.As(err, &unreadable) ||
+			!strings.HasPrefix(err.Error(), "SKILL.md: its front matter is not YAML: ") {
+			t.Errorf("%s: %v; want unreadable", name, err)
+		}
+	}
+
+	warnings := SkillWarnings(dir)
+	if len(warnings) != 2 || !strings.HasPrefix(warnings[0], "the skill notion-ticket: SKILL.md: not YAML at line 5 ") ||
+		warnings[1] != "the skill open-mr: SKILL.md: not YAML at line 3 (argument-hint: [ET-XXXX] [short title]): "+
+			"Djinn reads metadata apart; quoting the value fixes it" {
+		t.Errorf("warnings = %q", warnings)
+	}
+	if problems := SkillProblems(dir); len(problems) != 2 ||
+		!strings.Contains(problems[0].Error(), "meta-broken") || !strings.Contains(problems[1].Error(), "meta-twice") {
+		t.Errorf("problems = %v", problems)
+	}
 }

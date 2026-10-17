@@ -5151,7 +5151,8 @@ export type ProjectServiceShowResponse = Message<"plan.v1.ProjectServiceShowResp
   checks: ProjectCheck[];
 
   /**
-   * Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows.
+   * Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows. Each skill whose front matter
+   * breaks the YAML outside its metadata is one too: Djinn reads its metadata apart, and names the lines at fault.
    *
    * @generated from field: repeated string warnings = 8;
    */
