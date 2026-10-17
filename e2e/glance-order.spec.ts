@@ -378,7 +378,9 @@ test("the glance lists every worker in one order by state, its waiting work past
     );
     // The side panel counts the paused worker too, on its second line and on the folded rail.
     const nav = page.locator(".wish-nav").filter({ hasText: title });
-    await expect(nav.locator(".count-pill.tone-paused")).toHaveText("1");
+    await expect(nav.locator(".wish-counts .wish-sign.tone-paused")).toHaveText(
+      "1",
+    );
     await carpet.scrollIntoViewIfNeeded();
     await page.screenshot({
       path: path.join(shots, "glance-order-carpet-dark.png"),
@@ -405,7 +407,9 @@ test("the glance lists every worker in one order by state, its waiting work past
         "W63 plan",
         `${watcher.code} watch watch`,
       ]);
-    await expect(nav.locator(".count-pill.tone-paused")).toHaveCount(0);
+    await expect(
+      nav.locator(".wish-counts .wish-sign.tone-paused"),
+    ).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
     for (const id of spawned.reverse())
