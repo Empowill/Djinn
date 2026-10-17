@@ -63,6 +63,7 @@ func (h *Harness) mainPass(ctx context.Context) {
 		logx.L().Error("read the wishes", "loop", "main", "err", err)
 		return
 	}
+	fetched := map[string]error{} // main is fetched once a pass in each repository, by repository and ref (fetchedKey).
 	for _, wish := range wishes {
 		if s := wish.GetState(); s == planv1.WishState_WISH_STATE_PAUSED || s == planv1.WishState_WISH_STATE_GRANTED {
 			continue
@@ -71,8 +72,9 @@ func (h *Harness) mainPass(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			h.keepUp(ctx, wish, projectID, now)
+			h.keepUp(ctx, wish, projectID, now, fetched)
 		}
+		h.lookMerged(ctx, wish, now, fetched)
 	}
 }
 
@@ -128,7 +130,7 @@ func azimaMain(projectID string, edit func(*planv1.WishMain)) func(*planv1.Azima
 // keepUp merges the main branch of the project projectID into wish's integration branch there, and under the
 // per-azima push strategy into the branches of its azimas not done, when a look is due (now: whatever the cadence)
 // and main holds what the settings wait for.
-func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID string, now bool) {
+func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID string, now bool, fetched map[string]error) {
 	project, err := store.Get[*planv1.Project](ctx, h.store, projectID)
 	if err != nil || !project.GetGit() {
 		return
@@ -154,7 +156,6 @@ func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID strin
 		!slices.ContainsFunc(lines, func(l mainLine) bool { return l.branch == branch }) {
 		lines = slices.Insert(lines, 0, mainLine{wish: wish, project: project, branch: branch})
 	}
-	fetched := map[string]error{} // main is fetched once for every line of a look.
 	for _, l := range lines {
 		if ctx.Err() != nil {
 			return
@@ -164,7 +165,7 @@ func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID strin
 }
 
 // keepLineUp merges main into the branch of the line l when a look is due and main holds what the settings wait for;
-// fetched holds main's fetches already made in this look, by ref.
+// fetched holds main's fetches already made in this pass (fetchedKey).
 func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Settings, now bool, fetched map[string]error) {
 	branch := l.branch
 	state := h.lineState(ctx, l)
@@ -212,9 +213,9 @@ func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Sett
 		return
 	case err == nil:
 		var ok bool
-		if err, ok = fetched[ref]; !ok {
+		if err, ok = fetched[fetchedKey(repo, ref)]; !ok {
 			err = h.fetchMain(ctx, l.wish.GetId(), repo, ref)
-			fetched[ref] = err
+			fetched[fetchedKey(repo, ref)] = err
 		}
 	}
 	if err != nil {

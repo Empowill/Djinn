@@ -842,6 +842,16 @@ func azimaBranchText(t *planv1.Task) string {
 	return text
 }
 
+// MergedText says that the work of the azima t is all in its project's main branch (Azima.merged): "merged into main",
+// main as the project names it; empty when it is not.
+func MergedText(t *planv1.Task) string {
+	m := t.GetAzima().GetMerged()
+	if m == nil {
+		return ""
+	}
+	return "merged into " + cmp.Or(m.GetMainBranch(), "main")
+}
+
 // azimasBrief writes the plan's azimas as a graph, in their rank (AzimaOrder): the ones to work on, ready or blocked
 // with what they wait for, then those whose work is done and that wait for their proof, with who gives it, then the
 // done ones on one line; each with the tilasms that explain it, and, per azima (perAzima), its own branch and its pull
@@ -888,6 +898,9 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 		}
 		if perAzima {
 			text += "; " + azimaBranchText(t)
+		}
+		if m := MergedText(t); m != "" {
+			text += "; " + m
 		}
 		status[t] = text
 	}
@@ -939,6 +952,9 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 			if perAzima {
 				needs[i] += " (" + azimaBranchText(t) + ")"
 			}
+			if m := MergedText(t); m != "" {
+				needs[i] += " (" + m + ")"
+			}
 		}
 		fmt.Fprintf(b, "- Work done, waiting for its proof: %s.\n", strings.Join(needs, "; "))
 	}
@@ -946,11 +962,17 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 		names := make([]string, len(done))
 		for i, t := range done {
 			names[i] = t.GetCode()
+			if m := MergedText(t); m != "" {
+				names[i] += " (" + m + ")"
+			}
 			if ls := citing(tilasms, t.GetId()); len(ls) > 0 {
 				names[i] += " (explained by " + strings.Join(ls, ", ") + ")"
 			}
 		}
 		fmt.Fprintf(b, "- Done: %s.\n", strings.Join(names, ", "))
+	}
+	if AllMerged(tasks) {
+		b.WriteString("- Every azima is merged into main: propose to the developer to grant the wish.\n")
 	}
 	if len(drafts) > 0 {
 		names := make([]string, len(drafts))

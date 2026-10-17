@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ExternalLink,
   GitBranch,
+  GitMerge,
   Pencil,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import {
 } from "react";
 
 import {
+  type AzimaMerged,
   AzimaPrState,
   AzimaState,
   type ProjectSync,
@@ -209,6 +211,27 @@ function RenameButton({ onClick }: { onClick: () => void }) {
     >
       <Pencil size={13} aria-hidden="true" />
     </button>
+  );
+}
+
+// MergedMark is the small mark of an azima whose work is all in its project's main branch (Azima.merged, which Djinn
+// computes and clears once work is added to it): a full round, its border uniform, the merge glyph in it; how Djinn
+// found it on hover, by its request merged or by its commits in main.
+function MergedMark({ merged }: { merged: AzimaMerged }) {
+  const branch = merged.mainBranch || "main";
+  const label = t("azima.merged", { branch });
+  const how = merged.requestUrl
+    ? t("azima.merged_request", { url: merged.requestUrl })
+    : t("azima.merged_commits", { branch, sha: merged.mainSha.slice(0, 8) });
+  return (
+    <span
+      className="azima-merged"
+      role="img"
+      aria-label={label}
+      title={`${label}\n${how}`}
+    >
+      <GitMerge size={12} strokeWidth={2.5} aria-hidden="true" />
+    </span>
   );
 }
 
@@ -439,6 +462,7 @@ export const AzimaCard = memo(function AzimaCard({
               title={needs}
             />
             <span className="agent-code">{azima.code}</span>
+            {azima.azima?.merged && <MergedMark merged={azima.azima.merged} />}
             <strong title={facts}>{azima.title}</strong>
             <span className="azima-meta">
               {origin}

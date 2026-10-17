@@ -289,6 +289,16 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
     machine, a release or a real model gives the proof, never a worker. The brief lists these apart ("Work done,
     waiting for its proof: T01 needs a Mac, a person"); spawn no work for them. A box without needs is work left, and
     keeps its azima in progress;
+  - an azima is merged into main (`Azima.merged`, W192) once all its work is in its project's main branch, every work
+    task part of it finished, one at least done: its pull or merge request merged after the last of its work ended (the
+    done line of the watcher that babysits it, part of it, on its request's address or on what one of its tasks
+    opened; or the integration's look at the forge, no more often than before), or every commit of its own branch
+    and of its done tasks' branches, with the commit each was merged as, in the remote's main, fetched at most once a
+    `merge_main_minutes` by that look. A request closed without a merge never marks it. The lead hears a
+    `LEAD_EVENT_KIND_LANDED` line once it turns on, which says when every azima of the wish is merged: then propose
+    to the developer to grant the wish; the brief says "merged into main" on each, and "Every azima is merged into
+    main" once they all are. A work task spawned, grouped or started part of it clears the mark (its azima's events
+    say "no longer merged into main"); Djinn marks it again once that work is in main too;
   - re-sequence as the plan learns: `djinn task depend <task> --after … --also W6=W5,W3` replaces what several
     tasks wait for at once, all or none, `djinn task group <task> --part-of T07` its azima. Djinn refuses a cycle,
     through dependencies and azimas together, naming it, and then changes nothing. An azima absorbed into another is

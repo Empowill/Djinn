@@ -2675,6 +2675,12 @@ func (h *Harness) azimaPRPass(
 				}
 			}
 		case "MERGED":
+			// Found merged once its parts are done: its work is in main (merged.go), unless work was added since.
+			if azima.GetAzima().GetPr().GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_MERGED {
+				h.markMerged(ctx, azima.GetId(), &planv1.AzimaMerged{
+					Time: timestamppb.New(h.now()), RequestUrl: pr.URL, MainBranch: base,
+				})
+			}
 			h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_MERGED})
 			if azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 				_, err := h.Done(ctx, "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{

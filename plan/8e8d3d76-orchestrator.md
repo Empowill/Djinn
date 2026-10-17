@@ -309,6 +309,17 @@ Decide who does what, run each worker safely, and protect the machine.
   hover and in their card; the wish's head counts them apart ("3 done · 18 awaiting proof / 30 azimas"); the flying
   carpet lists the proofs a person can give (needs that name a person or a review) under "Proofs you can give", among
   what waits for you, never as work (`screens.test.mjs`, `data-flight.test.mjs`).
+- **An azima merged into main** (W192, 17/10): `Azima.merged`, computed by Djinn and stored with what it records of
+  the azima's branch, once all its work is in its project's main branch, every work task part of it finished and one
+  at least done: its pull or merge request merged after the last of its work ended (the done line of a watcher that
+  babysits it, or `azimaPRPass` finding it merged on the forge, no new forge call), or every commit of its branch and
+  of its done tasks' branches, with the commit each was merged as, in the remote's main, fetched at most once a
+  `merge_main_minutes` by the main pass (`lookMerged`, `internal/harness/merged.go`). A request closed without a
+  merge never sets it. A work task spawned, grouped or started part of it clears it (`reopenAzima`); its merge into
+  main sets it again. The lead hears one `LEAD_EVENT_KIND_LANDED` line as it turns on, which says when every azima of
+  the wish is merged, to propose the grant; the brief says "merged into main" on each, and the window a small round
+  mark with the merge glyph beside its code (`TestAzimaMergedIntoMain`, `TestAzimaMergedByItsWatcher`,
+  `TestBriefAzimas`, `screens.test.mjs`).
 - **A follow-up continues the task, it does not copy it** (W83: every resume through a fork left a duplicate):
   `djinn task continue <task> --prompt "…"` (`TaskService.Continue`) makes a done, failed, stopped or interrupted task
   `resuming` again, `Task.continuing` set: the scheduler starts it like any task (slots, dependencies, pressure, the

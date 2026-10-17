@@ -540,7 +540,7 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 				return err
 			}
 			if method == methodResume && task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && task.GetPartOf() != "" {
-				if err := reopenAzima(ctx, tx, task.GetPartOf(), task.GetCode()+" started"); err != nil {
+				if err := reopenAzima(ctx, tx, task.GetPartOf(), task, "started"); err != nil {
 					return err
 				}
 			}

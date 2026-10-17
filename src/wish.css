@@ -918,6 +918,18 @@
 .azima-actions .sync-line {
   max-width: 15rem;
 }
+/* Its work all in main: a small full round beside its code, its border uniform, the merge glyph in it. */
+.azima-merged {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  border: 1px solid var(--n-14);
+  background: var(--st-done);
+  color: var(--n-14);
+}
 .azima-pushed-status {
   font-size: var(--font-size-body);
   color: var(--st-done);

@@ -803,6 +803,9 @@ enum LeadEventKind {
   // An asleep question woke (Question.sleep): its conditions held, or the developer woke it. The lead checks that its
   // facts still hold (costs, the state of tasks and requests) and revises it if they changed.
   LEAD_EVENT_KIND_WOKE = 15;
+  // An azima's work is all in its project's main branch (Azima.merged turned on), once; its line says when every azima
+  // of the wish is, so that the lead proposes to grant the wish.
+  LEAD_EVENT_KIND_LANDED = 16;
 }
 
 // LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the
@@ -1565,6 +1568,24 @@ message Azima {
   // name. In a project whose settings name no check, Djinn merges the azima's work into it untested, as into a wish's
   // own branch; never into a branch Djinn named.
   bool named = 12;
+  // All its work is in the project's main branch: Djinn computes it (AzimaMerged), clears it as soon as a work task is
+  // added to the azima, and sets it again once that work is in main too. Unset otherwise.
+  AzimaMerged merged = 13;
+}
+
+// AzimaMerged says how Djinn found an azima's work all in its project's main branch, the branch it lands in: its pull
+// or merge request merged, as the watcher that babysits it printed its done line, or as Djinn read it on the forge,
+// after every work task part of it ended; or every commit of its branch and of its done work tasks reachable from the
+// remote's main, fetched. Only once every work task part of it is finished, one at least done.
+message AzimaMerged {
+  // When Djinn found it.
+  google.protobuf.Timestamp time = 1;
+  // The pull or merge request whose merge brought it: its web address. Empty when found by its commits.
+  string request_url = 2;
+  // The commit of main that holds every commit of the azima, when found by its commits.
+  string main_sha = 3;
+  // Main, as the person names it: main, master.
+  string main_branch = 4;
 }
 
 // AzimaState is where an azima stands.

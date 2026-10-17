@@ -9398,6 +9398,26 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
   );
   assert.match(mergedHtml, /<span class="azima-pushed-status">Pushed<\/span>/);
   assert.match(mergedHtml, /<span class="azima-pr-badge">PR merged<\/span>/);
+  assert.doesNotMatch(mergedHtml, /azima-merged/);
+
+  // Its work all in main (W192): a small mark beside its code, how Djinn found it on hover, per azima or not.
+  const markedHtml = (merged) =>
+    s.renderToStaticMarkup(
+      h(s.AzimaCard, {
+        azima: { ...taskT27, azima: { merged } },
+        parts: [],
+        tasks: new Map(),
+        render: () => null,
+      }),
+    );
+  assert.match(
+    markedHtml({ requestUrl: "https://github.com/acme/lamp/pull/7" }),
+    /<span class="agent-code">T27<\/span><span class="azima-merged" role="img" aria-label="Merged into main" title="Merged into main\nAll its work is in it: its pull request merged, https:\/\/github.com\/acme\/lamp\/pull\/7. A task added to it clears this mark."><svg[^>]*lucide-git-merge/,
+  );
+  assert.match(
+    markedHtml({ mainBranch: "master", mainSha: "53698aea52673bbd" }),
+    /aria-label="Merged into master" title="Merged into master\nAll its work is in it: every commit of its branch and of its tasks, at 53698aea. A task/,
+  );
 
   // A done azima whose commits main holds already, its remote branch left behind (W163): landed, never waiting for a
   // push, its sync to forget.

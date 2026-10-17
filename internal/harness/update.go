@@ -274,7 +274,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			}
 		}
 		if partOfGiven && newAzima != "" && task.GetPartOf() != newAzima {
-			if err := reopenAzima(ctx, tx, newAzima, task.GetCode()+" grouped"); err != nil {
+			if err := reopenAzima(ctx, tx, newAzima, task, "grouped"); err != nil {
 				return err
 			}
 		}

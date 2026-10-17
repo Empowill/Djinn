@@ -494,6 +494,9 @@ func TestBriefAzimas(t *testing.T) {
 	pending, done := planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE
 	t1 := azima("T1", "The data", done)
 	t2 := azima("T2", "The protos", done)
+	// Their work all in main (W192): by a request, and by its commits in a main named master.
+	t1.Azima = &planv1.Azima{Merged: &planv1.AzimaMerged{RequestUrl: "https://github.com/acme/lamp/pull/7"}}
+	t2.Azima = &planv1.Azima{Merged: &planv1.AzimaMerged{MainBranch: "master", MainSha: "53698aea"}}
 	t3 := azima("T3", "The window", pending, t1.GetId())
 	t4 := azima("T4", "The orchestrator", pending, t1.GetId(), t2.GetId())
 	t5 := azima("T5", "Spread the work", pending, t2.GetId(), t3.GetId(), t4.GetId())
@@ -559,7 +562,7 @@ func TestBriefAzimas(t *testing.T) {
 		"- **T4** The orchestrator: ready, in progress, 0 of 1 parts done, 1 running\n" +
 		"- **T13** Babysat: ready, watching (only a watcher runs), 1 of 2 parts done, 1 running\n" +
 		"- Work done, waiting for its proof: T11 needs a Windows machine, Clément's review; T12 needs a release, a person.\n" +
-		"- Done: T1, T2.\n" +
+		"- Done: T1 (merged into main), T2 (merged into master).\n" +
 		"- Drafts: T31 Spreading work — open with djinn task open T31 (explained by L01).\n"
 	if azimas != want {
 		t.Errorf("azimas =\n%s\nwant\n%s", azimas, want)
@@ -575,6 +578,37 @@ func TestBriefAzimas(t *testing.T) {
 	}
 	if !strings.Contains(brief.Stable, "--part-of <azima>") || !strings.Contains(brief.Stable, "djinn plan sync <wish>") {
 		t.Errorf("the rules leave the azimas out:\n%s", brief.Stable)
+	}
+	if strings.Contains(azimas, "Every azima is merged into main") {
+		t.Errorf("every azima said merged, though T3 is not:\n%s", azimas)
+	}
+
+	// Every azima but the draft merged into main: the brief says to propose the grant.
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actor, "test/put", t1); err != nil {
+			return err
+		}
+		for _, task := range []*planv1.Task{t3, t4, t5, t10, t11, t12, t13} {
+			task.Azima = &planv1.Azima{Merged: &planv1.AzimaMerged{MainBranch: "main"}}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if brief, err = BuildBrief(ctx, c.store, t.TempDir(), wishID); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{
+		"- **T3** The window: ready, open, 0 of 1 parts done; merged into main\n",
+		"T11 needs a Windows machine, Clément's review (merged into main);",
+		"- Every azima is merged into main: propose to the developer to grant the wish.\n",
+	} {
+		if !strings.Contains(brief.Moving, line) {
+			t.Errorf("brief lacks %q:\n%s", line, brief.Moving)
+		}
 	}
 }
 

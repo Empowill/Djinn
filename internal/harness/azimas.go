@@ -85,7 +85,7 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 			}
 		}
 		if task.PartOf != "" {
-			if err := reopenAzima(ctx, tx, task.PartOf, task.GetCode()+" spawned"); err != nil {
+			if err := reopenAzima(ctx, tx, task.PartOf, task, "spawned"); err != nil {
 				return err
 			}
 		}
@@ -102,8 +102,12 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 	return store.Get[*planv1.Task](ctx, h.store, task.GetId())
 }
 
-// reopenAzima reopens a closed azima and any closed azima it is part of, recording an event.
-func reopenAzima(ctx context.Context, tx *store.Tx, id, reason string) error {
+// reopenAzima reopens a closed azima and any closed azima it is part of, recording an event: part, part of the azima
+// id, was spawned, grouped into it or started (verb). Work, neither a watcher nor an azima, is not in main yet: each of
+// these azimas loses its mark (Azima.merged) until Djinn finds it there too.
+func reopenAzima(ctx context.Context, tx *store.Tx, id string, part *planv1.Task, verb string) error {
+	reason := part.GetCode() + " " + verb
+	unmerge := !plan.IsAzima(part) && !watching(part)
 	seen := map[string]bool{}
 	for id != "" && !seen[id] {
 		seen[id] = true
@@ -116,6 +120,14 @@ func reopenAzima(ctx context.Context, tx *store.Tx, id, reason string) error {
 		}
 		if !plan.IsAzima(a) {
 			break
+		}
+		if unmerge && a.GetAzima().GetMerged() != nil {
+			if err := unmergeAzima(ctx, tx, a, reason); err != nil {
+				return err
+			}
+			if a, err = store.Get[*planv1.Task](ctx, tx, id); err != nil {
+				return err
+			}
 		}
 		if a.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
 			a.Status = planv1.TaskStatus_TASK_STATUS_PENDING
