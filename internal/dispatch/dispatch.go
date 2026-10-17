@@ -934,8 +934,7 @@ func MemoryAt(res *planv1.Resources, percentile int) uint64 {
 //
 // Rationale: Agents (such as Claude Code or Antigravity) take 1 to 2 minutes during startup to
 // authenticate, inspect repository status, and spin up language servers. By 3 minutes, resident
-// memory stabilizes into representative peaks. This matches Djinn's machine idle threshold
-// (DefaultIdleThreshold = 3 * time.Minute).
+// memory stabilizes into representative peaks.
 const WorkerPeakWarmup = 3 * time.Minute
 
 // taskRunDuration returns how long a worker has run across all its runs up to now.

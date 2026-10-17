@@ -119,3 +119,30 @@ func TestNotMeasured(t *testing.T) {
 		t.Errorf("on %s, NotMeasured is %q", runtime.GOOS, NotMeasured)
 	}
 }
+
+// A worker's processes adopted out of Djinn's tree are Djinn's, and so are those they started in another cgroup (a
+// headless browser's scope); what is in Djinn's tree, or in no worker's scope, is not a stray (W253).
+func TestStrays(t *testing.T) {
+	procs := []proc{
+		{pid: 100, ppid: 1, pgrp: 100, own: time.Second, memory: 1},        // djinn up
+		{pid: 200, ppid: 100, pgrp: 200, own: 2 * time.Second, memory: 2},  // a worker, in its scope
+		{pid: 300, ppid: 8, pgrp: 300, own: 3 * time.Second, memory: 4},    // its loop, adopted by systemd
+		{pid: 301, ppid: 300, pgrp: 300, own: 5 * time.Second, memory: 8},  // what the loop started, elsewhere
+		{pid: 302, ppid: 301, pgrp: 300, own: 7 * time.Second, memory: 16}, // and below it
+		{pid: 400, ppid: 8, pgrp: 400, own: 11 * time.Second, memory: 32},  // the developer's browser
+	}
+	scoped := map[int]bool{200: true, 300: true}
+	cpu, memory := strays(procs, 100, scoped)
+	want := map[int]time.Duration{300: 3 * time.Second, 301: 5 * time.Second, 302: 7 * time.Second}
+	if len(cpu) != len(want) {
+		t.Fatalf("strays %v, want %v", cpu, want)
+	}
+	for pid, d := range want {
+		if cpu[pid] != d {
+			t.Errorf("stray %d: %v, want %v", pid, cpu[pid], d)
+		}
+	}
+	if memory != 28 {
+		t.Errorf("memory %d, want 28", memory)
+	}
+}

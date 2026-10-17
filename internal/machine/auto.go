@@ -1,42 +1,56 @@
 package machine
 
 import (
-	"cmp"
+	"math"
 	"sync"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 )
 
-// ActivitySignal returns true if the developer is actively working on the machine,
-// or false if the machine is at rest.
-type ActivitySignal func() bool
+// The auto mode's pace (W253). Once a beat it reads the load outside Djinn, averaged over the last AutoSmooth of
+// what the Hourglass already measured, and steps one notch at a time: down once that average stayed above its high
+// mark for AutoDownAfter, up once it stayed below its low marks for AutoUpAfter. Each step starts the wait again.
+const (
+	// AutoBeat is how often auto mode reads the outside load and decides; never faster.
+	AutoBeat = 20 * time.Second
+	// AutoSmooth is the span of the moving average a beat reads: a dip of a few seconds in a build does not break it.
+	AutoSmooth = time.Minute
+	// AutoDownAfter is how long the outside load stays above the high mark before auto lowers a notch.
+	AutoDownAfter = 2 * time.Minute
+	// AutoUpAfter is how long the outside load stays below the low marks before auto raises a notch.
+	AutoUpAfter = 10 * time.Minute
+)
 
-// SystemActivitySignal returns an ActivitySignal based on host CPU load and memory pressure.
-// Outside Djinn processes, CPU and memory load is the only reliable, unprivileged, cross-platform
-// signal across Linux (Wayland, X11, headless, SSH, containers), macOS, and Windows.
-func SystemActivitySignal(m *Monitor) ActivitySignal {
-	return func() bool {
-		if m == nil {
-			return false
-		}
-		s := m.Snapshot()
-		// PSI CPU pressure (Linux): tasks waited for CPU > 15% in last 10s.
-		if s.CPU != nil && s.CPU.Some > 15.0 {
-			return true
-		}
-		// Load average per core: load > 1.0 per core indicates active host processes.
-		if s.LoadKnown && s.Cores > 0 && s.Load1/float64(s.Cores) > 1.0 {
-			return true
-		}
-		// macOS memory pressure at the level that holds workers at the notch in effect: warning at Minimal, which
-		// keeps Auto there; critical from Medium up, which brings it down.
-		if s.MemoryLevel >= cmp.Or(m.Policy().MemoryLevel, MemoryCritical) {
-			return true
-		}
-		return false
-	}
+// AutoMarks are the outside loads, in percent of the machine, that auto mode steps at: above a high mark it lowers,
+// below every low mark it raises, in between it holds.
+type AutoMarks struct {
+	CPUHigh, CPULow       float64
+	MemoryHigh, MemoryLow float64
 }
+
+// DefaultAutoMarks come from the developer's machine (W253, 16 cores, 31 GB). Over 3 days of its history (below, every
+// 5 s), the CPU outside Djinn, as a minute's average, stayed under 14 % nine times out of ten and under 17 % 19 times
+// out of 20: the desktop, the browser, the window drawn. Played on those days, 30 and 15 took 4 steps down in 3
+// episodes (an IDE indexing on half the machine, a browser with containers, a video call) and kept auto at Max 98 % of
+// the time; 20 and 10 kept it at Minimal 30 % of the time. The memory outside Djinn (used memory, the kernel's and
+// shared memory included, beyond the Djinn line) stayed under 70 % over 5 days of the Hourglass, 36 % at the median: 70
+// lowers only past what it saw, 60 holds the climb at its top.
+var DefaultAutoMarks = AutoMarks{CPUHigh: 30, CPULow: 15, MemoryHigh: 70, MemoryLow: 60}
+
+// Outside is the machine's load outside Djinn: its CPU and memory beyond Djinn's own tree (the Hourglass's Djinn
+// line: djinn up, its window, its workers and all they started), in percent of the machine.
+type Outside struct {
+	CPU, Memory float64
+	// Whether each is measured: the machine's CPU is read on Linux, Djinn's memory on Linux and macOS.
+	CPUKnown, MemoryKnown bool
+}
+
+// OutsideSource reads the load outside Djinn measured after since, averaged (SeriesRecorder.Outside); false when
+// nothing was measured since.
+type OutsideSource func(since time.Time) (Outside, bool)
 
 // AutoOption configures an AutoController.
 type AutoOption func(*AutoController)
@@ -46,29 +60,14 @@ func WithAutoClock(clock func() time.Time) AutoOption {
 	return func(c *AutoController) { c.clock = clock }
 }
 
-// WithAutoSignal sets the activity signal function (used for testing with a fake signal).
-func WithAutoSignal(signal ActivitySignal) AutoOption {
-	return func(c *AutoController) { c.signal = signal }
+// WithAutoOutside sets what reads the load outside Djinn; without it, auto mode holds its notch.
+func WithAutoOutside(source OutsideSource) AutoOption {
+	return func(c *AutoController) { c.source = source }
 }
 
-// WithAutoIdleSource sets the desktop session idle time source.
-func WithAutoIdleSource(source IdleSource) AutoOption {
-	return func(c *AutoController) { c.idleSource = source }
-}
-
-// WithAutoActiveThreshold sets the maximum idle duration considered active keyboard or mouse input.
-func WithAutoActiveThreshold(d time.Duration) AutoOption {
-	return func(c *AutoController) { c.activeThreshold = d }
-}
-
-// WithAutoIdleThreshold sets the minimum idle duration before the user is considered at rest.
-func WithAutoIdleThreshold(d time.Duration) AutoOption {
-	return func(c *AutoController) { c.idleThreshold = d }
-}
-
-// WithAutoStepDuration sets the hysteresis minimum interval between notch changes.
-func WithAutoStepDuration(d time.Duration) AutoOption {
-	return func(c *AutoController) { c.stepDuration = d }
+// WithAutoMarks sets the marks auto mode steps at.
+func WithAutoMarks(marks AutoMarks) AutoOption {
+	return func(c *AutoController) { c.marks = marks }
 }
 
 // WithAutoOnChange sets a callback invoked whenever the effective notch changes.
@@ -86,41 +85,38 @@ func WithAutoChosen(notch djinnv1.LoadNotch) AutoOption {
 	}
 }
 
-type activityState int
+// autoSide is where the outside load stands against the marks.
+type autoSide int
 
 const (
-	activityWorking activityState = iota // active keyboard/mouse or heavy host load -> drop to Minimal
-	activityRest                         // idle for minutes and little host load -> climb (+1 notch)
-	activityHold                         // between active and idle thresholds with little load -> hold current notch
+	sideUnknown autoSide = iota // nothing measured
+	sideBetween
+	sideAbove // above a high mark
+	sideBelow // below every low mark
 )
 
-// AutoController manages the operating load notch in auto mode.
-// In auto mode, it dynamically moves between Minimal and the notch the developer chose,
-// based on developer activity: Minimal when working, slowly climbing towards the chosen notch at rest,
-// with hysteresis (no change more than once per step duration) to prevent oscillation.
+// AutoController manages the operating load notch in auto mode: between Minimal and the notch the developer chose,
+// from the load of the programs outside Djinn alone. Djinn's own work, and the developer watching it, never lower it:
+// the developer at the keyboard is no signal, they move the mouse precisely to watch Djinn (W253).
 //
-// Activity combines the desktop session's idle time (keyboard and mouse inactivity) with the
-// load of programs other than Djinn (CPU wait/load and memory pressure):
-// - Active at keyboard or mouse (< ActiveThreshold): drops notch directly to Minimal.
-// - Heavy host load from other programs: drops notch directly to Minimal.
-// - Idle for a few minutes (>= IdleThreshold) with little load: climbs (+1 notch per step duration).
-// - Where no desktop idle source is available: falls back to host load alone.
-//
-// In Auto mode, lowering the notch lowers CPU priority and stops starting new workers,
-// never pausing or terminating running workers (Decision Q124 (C)).
+// Once a beat (Tick, every AutoBeat) it reads the outside load's moving average over AutoSmooth. It lowers one notch
+// when that average stayed above a high mark for AutoDownAfter, raises one when it stayed below every low mark for
+// AutoUpAfter, and each step starts the wait again: never more than one step a beat, a short spike moves nothing, and
+// it comes back slowly. Lowering lowers the CPU priority and starts no new worker, never pausing a running one
+// (Decision Q124 (C)). The lead hears nothing of it: the bar shows why (Reason).
 type AutoController struct {
-	mu              sync.Mutex
-	isAuto          bool
-	chosen          djinnv1.LoadNotch
-	effective       djinnv1.LoadNotch
-	lastChange      time.Time
-	stepDuration    time.Duration
-	activeThreshold time.Duration
-	idleThreshold   time.Duration
-	clock           func() time.Time
-	signal          ActivitySignal
-	idleSource      IdleSource
-	onChange        func(djinnv1.LoadNotch)
+	mu        sync.Mutex
+	isAuto    bool
+	chosen    djinnv1.LoadNotch
+	effective djinnv1.LoadNotch
+	load      Outside   // the outside load the last beat read
+	side      autoSide  // where it stands against the marks
+	since     time.Time // the beat it came to that side, or the last step
+	reason    *djinnv1.LoadAutoReason
+	marks     AutoMarks
+	clock     func() time.Time
+	source    OutsideSource
+	onChange  func(djinnv1.LoadNotch)
 }
 
 // NewAutoController creates an AutoController with the given initial notch and options.
@@ -129,13 +125,10 @@ func NewAutoController(initial djinnv1.LoadNotch, opts ...AutoOption) *AutoContr
 		initial = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
 	}
 	c := &AutoController{
-		stepDuration:    DefaultAutoHysteresis,
-		activeThreshold: DefaultActiveThreshold,
-		idleThreshold:   DefaultIdleThreshold,
-		clock:           time.Now,
-		signal:          func() bool { return false },
-		chosen:          djinnv1.LoadNotch_LOAD_NOTCH_MAX,
-		effective:       djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+		marks:     DefaultAutoMarks,
+		clock:     time.Now,
+		chosen:    djinnv1.LoadNotch_LOAD_NOTCH_MAX,
+		effective: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -165,42 +158,19 @@ func (c *AutoController) Effective() djinnv1.LoadNotch {
 	return c.effective
 }
 
-// LastChange returns the time of the last notch change.
-func (c *AutoController) LastChange() time.Time {
+// Reason says why auto mode runs at its notch, for the bar; nil outside auto mode.
+func (c *AutoController) Reason() *djinnv1.LoadAutoReason {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.lastChange
+	if !c.isAuto || c.reason == nil {
+		return nil
+	}
+	return proto.CloneOf(c.reason)
 }
 
-func (c *AutoController) evalActivity() activityState {
-	if c.idleSource != nil {
-		if idle, ok := c.idleSource(); ok {
-			// Person typing or moving the mouse lowers the notch.
-			if idle < c.activeThreshold {
-				return activityWorking
-			}
-			// Load of programs other than Djinn.
-			if c.signal != nil && c.signal() {
-				return activityWorking
-			}
-			// Idle for a few minutes with little load raises it again.
-			if idle >= c.idleThreshold {
-				return activityRest
-			}
-			// Between active and idle thresholds with little load: neither drop nor raise.
-			return activityHold
-		}
-	}
-
-	// No desktop idle source available: host load alone, as today.
-	if c.signal != nil && c.signal() {
-		return activityWorking
-	}
-	return activityRest
-}
-
-// SetNotch updates the notch setting. If notch is LOAD_NOTCH_AUTO, auto mode is enabled;
-// if notch is a manual notch (Minimal to Overclock), auto mode is disabled and chosen is updated.
+// SetNotch updates the notch setting. If notch is LOAD_NOTCH_AUTO, auto mode is enabled, from the notch in effect
+// held between Minimal and the chosen one, the next beat deciding; a manual notch (Minimal to Overclock) disables it
+// and becomes the chosen one.
 func (c *AutoController) SetNotch(notch djinnv1.LoadNotch) (effective djinnv1.LoadNotch, changed bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -209,101 +179,159 @@ func (c *AutoController) SetNotch(notch djinnv1.LoadNotch) (effective djinnv1.Lo
 		notch = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
 	}
 
-	now := c.clock()
+	old := c.effective
 	if notch == djinnv1.LoadNotch_LOAD_NOTCH_AUTO {
 		c.isAuto = true
-		if c.chosen == djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
+		if NotchIndex(c.chosen) < 0 {
 			c.chosen = djinnv1.LoadNotch_LOAD_NOTCH_MAX
 		}
-		activity := c.evalActivity()
-		oldEffective := c.effective
-		if activity == activityWorking {
-			c.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
-		} else {
-			if NotchIndex(c.effective) < 0 {
-				c.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
-			} else if NotchIndex(c.effective) > NotchIndex(c.chosen) {
-				c.effective = c.chosen
-			}
+		if NotchIndex(c.effective) < 0 {
+			c.effective = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
 		}
-		c.lastChange = now
-		if c.effective != oldEffective {
-			changed = true
+		if NotchIndex(c.effective) > NotchIndex(c.chosen) {
+			c.effective = c.chosen
 		}
-		return c.effective, changed
+		c.reason = c.explain(c.clock())
+		return c.effective, c.effective != old
 	}
 
 	if NotchIndex(notch) >= 0 {
 		c.isAuto = false
 		c.chosen = notch
-		oldEffective := c.effective
 		c.effective = notch
-		c.lastChange = now
-		if c.effective != oldEffective {
-			changed = true
-		}
-		return c.effective, changed
+		return c.effective, c.effective != old
 	}
 
 	return c.effective, false
 }
 
-// Tick evaluates developer activity and updates the effective notch if hysteresis allows.
-// In auto mode:
-// - If developer is working (active typing/mouse or heavy load): drops fast directly to Minimal.
-// - If machine is at rest (idle for minutes with little load): climbs slowly (+1 notch per stepDuration) towards chosen notch.
-// - Never climbs above the notch the developer chose.
-// - No change is made if less than stepDuration has elapsed since the last change.
+// Tick is one beat: it reads the outside load, and in auto mode steps the notch one way if that load stayed past a
+// mark long enough. The beat reads even outside auto mode, so that switching to it starts from what was measured.
 func (c *AutoController) Tick() (bool, djinnv1.LoadNotch) {
 	c.mu.Lock()
-
+	now := c.clock()
+	c.sample(now)
 	if !c.isAuto {
 		eff := c.effective
 		c.mu.Unlock()
 		return false, eff
 	}
-
-	now := c.clock()
-	if !c.lastChange.IsZero() && now.Sub(c.lastChange) < c.stepDuration {
-		eff := c.effective
-		c.mu.Unlock()
-		return false, eff
-	}
-
-	var notify func(djinnv1.LoadNotch)
-	var changed bool
-
-	activity := c.evalActivity()
-	switch activity {
-	case activityWorking:
-		if c.effective != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-			c.effective = djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
-			c.lastChange = now
-			notify = c.onChange
-			changed = true
-		}
-	case activityRest:
-		curIdx := NotchIndex(c.effective)
-		chosenIdx := NotchIndex(c.chosen)
-		if chosenIdx < 0 {
-			chosenIdx = NotchIndex(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
-		}
-		if curIdx >= 0 && curIdx < chosenIdx {
-			c.effective = ManualNotches[curIdx+1]
-			c.lastChange = now
-			notify = c.onChange
-			changed = true
-		}
-	case activityHold:
-		// In hold state (between active and idle thresholds with little load), no notch change.
-	}
-
-	eff := c.effective
+	changed := c.step(now)
+	c.reason = c.explain(now)
+	eff, notify := c.effective, c.onChange
 	c.mu.Unlock()
 
-	if notify != nil {
+	if changed && notify != nil {
 		notify(eff)
 	}
-
 	return changed, eff
 }
+
+// sample reads the outside load's moving average, and notes when it came to its side of the marks.
+func (c *AutoController) sample(now time.Time) {
+	side := sideUnknown
+	c.load = Outside{}
+	if c.source != nil {
+		if o, ok := c.source(now.Add(-AutoSmooth)); ok && (o.CPUKnown || o.MemoryKnown) {
+			c.load = o
+			switch {
+			case c.high(o):
+				side = sideAbove
+			case c.low(o):
+				side = sideBelow
+			default:
+				side = sideBetween
+			}
+		}
+	}
+	if side != c.side || c.since.IsZero() {
+		c.side, c.since = side, now
+	}
+}
+
+// cpuHigh says whether the CPU outside Djinn is measured and above its high mark.
+func (c *AutoController) cpuHigh(o Outside) bool { return o.CPUKnown && o.CPU > c.marks.CPUHigh }
+
+// high says whether a load outside Djinn is above its high mark.
+func (c *AutoController) high(o Outside) bool {
+	return c.cpuHigh(o) || o.MemoryKnown && o.Memory > c.marks.MemoryHigh
+}
+
+// low says whether every load measured is below its low mark.
+func (c *AutoController) low(o Outside) bool {
+	return (!o.CPUKnown || o.CPU < c.marks.CPULow) && (!o.MemoryKnown || o.Memory < c.marks.MemoryLow)
+}
+
+// ceiling is the index of the chosen notch, Max when none is.
+func (c *AutoController) ceiling() int {
+	if i := NotchIndex(c.chosen); i >= 0 {
+		return i
+	}
+	return NotchIndex(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
+}
+
+// next is the notch the load's side leads to, and how long it must stay there for it; false when it leads nowhere.
+func (c *AutoController) next() (djinnv1.LoadNotch, time.Duration, bool) {
+	i := NotchIndex(c.effective)
+	switch {
+	case i < 0:
+	case c.side == sideAbove && i > 0:
+		return ManualNotches[i-1], AutoDownAfter, true
+	case c.side == sideBelow && i < c.ceiling():
+		return ManualNotches[i+1], AutoUpAfter, true
+	}
+	return c.effective, 0, false
+}
+
+// step moves the notch one way once the load stayed long enough on a side of the marks; the wait starts again.
+func (c *AutoController) step(now time.Time) bool {
+	n, after, ok := c.next()
+	if !ok || now.Sub(c.since) < after {
+		return false
+	}
+	c.effective, c.since = n, now
+	return true
+}
+
+// explain says why the notch is where it is, and what comes next if the load stays where it is.
+func (c *AutoController) explain(now time.Time) *djinnv1.LoadAutoReason {
+	r := &djinnv1.LoadAutoReason{Step: djinnv1.LoadAutoStep_LOAD_AUTO_STEP_HOLD, Notch: c.effective}
+	if c.side == sideUnknown {
+		return r
+	}
+	n, after, ok := c.next()
+	switch {
+	case ok && c.side == sideAbove:
+		r.Step, r.Notch = djinnv1.LoadAutoStep_LOAD_AUTO_STEP_LOWER, n
+	case ok:
+		r.Step, r.Notch = djinnv1.LoadAutoStep_LOAD_AUTO_STEP_RAISE, n
+	case c.side == sideAbove:
+		r.Step = djinnv1.LoadAutoStep_LOAD_AUTO_STEP_FLOOR
+	case c.side == sideBelow:
+		r.Step, r.Notch = djinnv1.LoadAutoStep_LOAD_AUTO_STEP_CEILING, c.chosen
+	}
+	stayed := now.Sub(c.since)
+	if ok {
+		r.InSeconds = seconds(max(after-stayed, 0))
+	}
+	// Memory is shown where it decides: above its high mark while the CPU is not, below its low mark with no CPU
+	// read, between the marks while the CPU is below its own.
+	o := c.load
+	switch c.side {
+	case sideAbove:
+		r.Memory = !c.cpuHigh(o)
+	case sideBelow:
+		r.Memory = !o.CPUKnown
+	default:
+		r.Memory = !o.CPUKnown || o.CPU < c.marks.CPULow
+	}
+	if r.Memory {
+		r.OutsidePercent = math.Round(o.Memory)
+	} else {
+		r.OutsidePercent = math.Round(o.CPU)
+	}
+	r.WindowSeconds = seconds(stayed)
+	return r
+}
+
+func seconds(d time.Duration) int32 { return int32(math.Round(d.Seconds())) }

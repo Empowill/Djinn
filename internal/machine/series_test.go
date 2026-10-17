@@ -232,3 +232,28 @@ func TestSeriesRecorderSelf(t *testing.T) {
 		t.Errorf("memory: itself %d, with what it started %d", last.GetSelfMemoryBytes(), last.GetDjinnMemoryBytes())
 	}
 }
+
+// The Djinn line counts its workers' strays from their second reading on: one just adopted, or gone, never counts
+// what it used before (W253).
+func TestSeriesStrays(t *testing.T) {
+	fsys := fstest.MapFS{"proc/stat": &fstest.MapFile{Data: []byte("cpu  100 0 0 900 0 0 0 0 0 0\n")}}
+	monitor := NewMonitor(DefaultPolicy(), func() (Snapshot, error) { return Snapshot{Cores: 1, MemoryTotal: 100}, nil })
+	tree := Group{Processes: 1, CPU: time.Second, Memory: 10}
+	rec := NewSeriesRecorder(monitor, func(int, string) (Group, error) { return tree, nil })
+	rec.SetFS(fsys)
+	strays := map[int]time.Duration{7: 10 * time.Second}
+	rec.ReadStrays(func() (map[int]time.Duration, uint64, error) { return strays, 5, nil })
+
+	rec.Sample()
+	time.Sleep(50 * time.Millisecond)
+	strays = map[int]time.Duration{7: 10*time.Second + 50*time.Millisecond, 8: time.Hour}
+	rec.Sample()
+	pts := rec.Points(time.Time{})
+	last := pts[len(pts)-1]
+	if last.GetDjinnCpuPercent() <= 0 || last.GetDjinnCpuPercent() > 100 {
+		t.Errorf("Djinn CPU %v %%, want stray 7's 50 ms over 50 ms or more, not stray 8's hour", last.GetDjinnCpuPercent())
+	}
+	if last.GetDjinnMemoryBytes() != 15 {
+		t.Errorf("Djinn memory %d, want the tree's 10 and the strays' 5", last.GetDjinnMemoryBytes())
+	}
+}

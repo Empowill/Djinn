@@ -30,7 +30,8 @@ type Group struct {
 // proc is one process, as a listing gives it.
 type proc struct {
 	pid, ppid, pgrp int
-	cpu             time.Duration
+	cpu             time.Duration // its own and that of the children it waited for
+	own             time.Duration // its own alone
 	memory          uint64
 }
 
@@ -96,19 +97,23 @@ func parseStat(b []byte, page uint64) (proc, error) {
 	if pgrp, err = n(2); err != nil {
 		return proc{}, err
 	}
-	var ticks int64
+	var ticks, own int64
 	for _, i := range []int{11, 12, 13, 14} {
 		t, err := n(i)
 		if err != nil {
 			return proc{}, err
 		}
 		ticks += t
+		if i < 13 {
+			own += t
+		}
 	}
 	if rss, err = n(21); err != nil {
 		return proc{}, err
 	}
 	p.ppid, p.pgrp = int(ppid), int(pgrp)
 	p.cpu = time.Duration(ticks) * time.Second / clockTicks
+	p.own = time.Duration(own) * time.Second / clockTicks
 	if rss > 0 {
 		p.memory = uint64(rss) * page
 	}
@@ -149,7 +154,7 @@ func parsePS(out []byte) ([]proc, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ps: %q: %w", sc.Text(), err)
 		}
-		procs = append(procs, proc{pid: n[0], ppid: n[1], pgrp: n[2], memory: uint64(max(n[3], 0)) << 10, cpu: cpu})
+		procs = append(procs, proc{pid: n[0], ppid: n[1], pgrp: n[2], memory: uint64(max(n[3], 0)) << 10, cpu: cpu, own: cpu})
 	}
 	return procs, sc.Err()
 }
@@ -300,4 +305,70 @@ func ReadWorker(pid int, cgroup string) (Group, error) {
 		return Group{}, listing.err
 	}
 	return g, listing.err
+}
+
+// ReadStrays reads the processes of the cgroups (the scopes of Djinn's running workers, Scope.Cgroup) that are out of
+// the tree of pid, and those they started: a worker's process whose parent ended is adopted by systemd, outside
+// Djinn's tree, and is still Djinn's work (W253: a worker's 32 busy loops, a load test of its own, and the headless
+// browsers of its end-to-end tests read as load outside Djinn). It gives each one's own CPU time, the children it
+// waited for left out (each is a stray of its own, counted once), from the same listing as ReadWorker, and their
+// resident memory summed.
+func ReadStrays(pid int, cgroups []string) (map[int]time.Duration, uint64, error) {
+	if len(cgroups) == 0 || NotMeasured != "" {
+		return nil, 0, nil
+	}
+	scoped := map[int]bool{}
+	for _, c := range cgroups {
+		pids, _ := CgroupPIDs(c) // Ended meanwhile: none.
+		for _, p := range pids {
+			scoped[p] = true
+		}
+	}
+	if len(scoped) == 0 {
+		return nil, 0, nil
+	}
+	listing.mu.Lock()
+	defer listing.mu.Unlock()
+	if now := time.Now(); now.Sub(listing.at) >= time.Second {
+		listing.procs, listing.err = listProcs()
+		listing.at = now
+	}
+	cpu, memory := strays(listing.procs, pid, scoped)
+	return cpu, memory, listing.err
+}
+
+// strays gives the own CPU time of each process of scoped out of the tree of pid, and of every process they started
+// (a headless browser moves to a scope of its own), and their resident memory summed.
+func strays(procs []proc, pid int, scoped map[int]bool) (map[int]time.Duration, uint64) {
+	tree := map[int]bool{}
+	for _, p := range GroupPIDs(procs, pid) {
+		tree[p] = true
+	}
+	parent := make(map[int]int, len(procs))
+	for _, p := range procs {
+		parent[p.pid] = p.ppid
+	}
+	known := map[int]bool{}
+	var stray func(p, depth int) bool
+	stray = func(p, depth int) bool {
+		if v, ok := known[p]; ok {
+			return v
+		}
+		v := false
+		if !tree[p] {
+			pp, ok := parent[p]
+			v = scoped[p] || ok && pp > 1 && pp != p && depth < 64 && stray(pp, depth+1)
+		}
+		known[p] = v
+		return v
+	}
+	cpu := map[int]time.Duration{}
+	var memory uint64
+	for _, p := range procs {
+		if stray(p.pid, 0) {
+			cpu[p.pid] = p.own
+			memory += p.memory
+		}
+	}
+	return cpu, memory
 }

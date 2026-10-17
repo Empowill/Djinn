@@ -676,8 +676,7 @@ test.describe("operating load slider", () => {
     const forecast = page.locator(".operating-load-forecast");
     const risk = forecast.locator(".operating-load-forecast-risk");
     const notes = forecast.locator(".operating-load-forecast-note");
-    const autoText =
-      /Auto: follows keyboard and mouse activity and system load/;
+    const autoText = /Auto: follows the load of the programs outside Djinn/;
 
     // Overclock previewed: the warning, inside the preview's width.
     await page.locator('.operating-load-notch[data-notch="overclock"]').hover();
@@ -752,7 +751,11 @@ test.describe("operating load slider", () => {
     djinn("load", "set", "auto");
     await expect(autoBtn).toHaveClass(/active/);
     await page.locator(".operating-load-slider").hover();
-    await expect(notes.last()).toContainText(autoText);
+    await expect(notes.filter({ hasText: autoText })).toHaveCount(1);
+    // And why auto runs at its notch, in one line (W253): measured every 20 s, not yet at first.
+    await expect(forecast.locator(".operating-load-auto-reason")).toHaveText(
+      /^Outside (load|memory) .*(holds|held at|up to|down to) (Minimal|Medium|High|Max)/,
+    );
 
     // No title anywhere in the gauge (W32); both texts stay in aria-description.
     await expect(page.locator(".operating-load [title]")).toHaveCount(0);

@@ -54,12 +54,15 @@ djinn up --browser    # no window: prints the URL to open in your browser
   scheduler allows there, every agent counted and watchers not, with the workers started by hand and those finishing
   their run above the limit; standard versus low CPU priority) and Memory
   (peak memory Djinn may engage against current usage and total machine RAM). The **Overclock** notch pushes up to
-  150 % of standard memory capacity with an amber visual pulse. In Auto mode, Djinn dynamically follows developer
-  activity: keyboard and mouse inactivity from the desktop session, combined with the CPU and memory load of programs
-  outside Djinn. When you type or move the mouse, or other programs put the machine under heavy load, the notch drops
-  directly to Minimal to yield the machine to you; when idle for a few minutes with little load, it slowly climbs back
-  towards your chosen ceiling. Where no session idle source is available (SSH, headless, unsupported desktop), it falls
-  back to host load alone. In Auto, lowering the notch lowers CPU priority and stops starting new workers, never
+  150 % of standard memory capacity with an amber visual pulse. In Auto mode, Djinn follows the load of the
+  programs outside it, never its own: the machine's CPU and memory beyond the Djinn line of the Hourglass (djinn up, its
+  window, its workers and every process they started, those a worker left behind and the browsers of its tests
+  included). Your presence is no signal: you move the mouse to watch Djinn. Every 20 seconds it reads the last minute's
+  average of that load; when it stays above 30 % of the CPU (or 70 % of the memory) for 2 minutes, the notch goes one
+  level down; when it stays below 15 % (and 60 %) for 10 minutes, one level up, towards your chosen ceiling; in between
+  it holds. Each step starts the wait again, so a short spike changes nothing and the climb back is slow. Hovering the
+  slider shows why, in one line: `Outside load 12 % for 5m: up to Max`; `djinn load get` gives it as `auto_reason`.
+  The lead hears nothing of these steps. In Auto, lowering the notch lowers CPU priority and stops starting new workers, never
   pausing running ones (Decision Q124 (C)). From the command line: `djinn load get`, `djinn load set minimal` (or any notch),
   and `djinn load watch`.
   Each notch engages a worker's memory at a percentile of its readings (a running worker at its own, a new one at the

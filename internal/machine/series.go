@@ -36,6 +36,10 @@ type SeriesRecorder struct {
 	readSelf       func() (Group, error) // Djinn's own process alone; nil: not read
 	lastSelfCPU    time.Duration
 	lastSelfAt     time.Time
+	readStrays     func() (map[int]time.Duration, uint64, error) // its workers' processes out of its tree; nil: none
+	lastStrays     map[int]time.Duration
+	cpuRead        bool     // the machine's CPU was read from /proc/stat: the points' CpuPercent is the machine's
+	memoryTotal    uint64   // the machine's memory, as the last sample read it
 	history        *History // nil: the samples are kept in memory only
 }
 
@@ -98,22 +102,38 @@ func (r *SeriesRecorder) Sample() {
 			}
 			r.lastTotalTicks = total
 			r.lastIdleTicks = idle
+			r.cpuRead = total > 0
 		}
 	}
 	if machineCPU == 0 && snap.CPU != nil && snap.CPU.Some > 0 {
 		machineCPU = snap.CPU.Some
 	}
 
-	// 2. Djinn process CPU % and memory.
+	// 2. Djinn process CPU % and memory: its tree, and its workers' processes adopted out of it (ReadStrays).
 	var djinnCPU float64
 	var djinnMem uint64
 	if r.readWorker != nil {
 		if g, err := r.readWorker(os.Getpid(), ""); err == nil {
 			djinnMem = g.Memory
+			var used time.Duration
+			if g.CPU >= r.lastDjinnCPU {
+				used = g.CPU - r.lastDjinnCPU
+			}
+			if r.readStrays != nil {
+				if strays, memory, err := r.readStrays(); err == nil {
+					djinnMem += memory
+					// Each stray from its last reading: one that ended, or was just adopted, counts from the next.
+					for pid, cpu := range strays {
+						if was, ok := r.lastStrays[pid]; ok && cpu > was {
+							used += cpu - was
+						}
+					}
+					r.lastStrays = strays
+				}
+			}
 			if !r.lastDjinnAt.IsZero() {
-				d := now.Sub(r.lastDjinnAt)
-				if d > 0 && g.CPU >= r.lastDjinnCPU {
-					djinnCPU = math.Round(float64(g.CPU-r.lastDjinnCPU)/float64(d)*1000) / 10
+				if d := now.Sub(r.lastDjinnAt); d > 0 {
+					djinnCPU = math.Round(float64(used)/float64(d)*1000) / 10
 				}
 			}
 			r.lastDjinnCPU = g.CPU
@@ -144,6 +164,7 @@ func (r *SeriesRecorder) Sample() {
 	selfCPU = math.Round(selfCPU/float64(cores)*10) / 10
 
 	// 3. Machine memory used.
+	r.memoryTotal = snap.MemoryTotal
 	var memUsed uint64
 	if snap.MemoryTotal >= snap.MemoryAvailable {
 		memUsed = snap.MemoryTotal - snap.MemoryAvailable
@@ -175,6 +196,14 @@ func (r *SeriesRecorder) ReadSelf(read func() (Group, error)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.readSelf = read
+}
+
+// ReadStrays reads, with read, the processes of Djinn's running workers adopted out of its tree (ReadStrays in djinn
+// up): the Djinn line counts them.
+func (r *SeriesRecorder) ReadStrays(read func() (map[int]time.Duration, uint64, error)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.readStrays = read
 }
 
 // Keep keeps each sample in h too, the store's series that outlive a restart.
@@ -211,6 +240,46 @@ func (r *SeriesRecorder) Points(cutoff time.Time) []*machinev1.MachinePoint {
 		}
 	}
 	return out
+}
+
+// Outside is the load outside Djinn over the points measured after since: the machine's CPU and memory beyond the
+// Djinn line, averaged; false when no point came since. It reads what the samples hold, nothing of the machine: the
+// auto mode's beat costs a walk of the last points.
+func (r *SeriesRecorder) Outside(since time.Time) (Outside, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	o := Outside{CPUKnown: r.cpuRead}
+	var n, measured int // the points, and those with Djinn's memory read
+	for i := 1; i <= len(r.buf); i++ {
+		j := r.head - i
+		if j < 0 {
+			if !r.full {
+				break
+			}
+			j += len(r.buf)
+		}
+		p := r.buf[j]
+		if p == nil || !p.GetTime().AsTime().After(since) {
+			break
+		}
+		n++
+		o.CPU += max(0, p.GetCpuPercent()-p.GetDjinnCpuPercent())
+		if r.memoryTotal > 0 && p.GetDjinnMemoryBytes() > 0 {
+			measured++
+			if p.GetMemoryBytes() > p.GetDjinnMemoryBytes() {
+				o.Memory += float64(p.GetMemoryBytes()-p.GetDjinnMemoryBytes()) / float64(r.memoryTotal) * 100
+			}
+		}
+	}
+	if n == 0 {
+		return Outside{}, false
+	}
+	o.CPU /= float64(n)
+	if measured > 0 {
+		o.Memory /= float64(measured)
+		o.MemoryKnown = true
+	}
+	return o, true
 }
 
 func parseProcStat(data []byte) (total, idle uint64) {

@@ -1,10 +1,15 @@
 import React, { useEffect, useSyncExternalStore } from "react";
 
-import { LoadNotch } from "../gen/ts/djinn/v1/load_pb";
+import {
+  type LoadAutoReason,
+  LoadAutoStep,
+  LoadNotch,
+} from "../gen/ts/djinn/v1/load_pb";
 import { IfritState } from "../gen/ts/plan/v1/plan_pb";
 import type { Clients } from "./data/client";
 import { type Djinn, useDjinn, useOptionalData } from "./data/djinn";
 import { ifritLit } from "./data/ifrit";
+import { span } from "./data/format";
 import { t } from "./i18n";
 import { ToneIcon } from "./status";
 import { still } from "./stillness";
@@ -33,6 +38,8 @@ interface LoadData {
   forcedWorkers: number;
   // Whether lowering the notch pauses the newest workers above it, or lets them finish their run.
   lowerPauses: boolean;
+  // Why auto mode runs at its notch (W253); undefined outside auto mode.
+  autoReason?: LoadAutoReason;
 }
 
 // The fields the server's Get and Watch both send about the workers.
@@ -41,13 +48,17 @@ interface WorkerFields {
   notchSlots: { notch: LoadNotch; slots: number }[];
   forcedWorkers: number;
   lowerPauses: boolean;
+  autoReason?: LoadAutoReason;
 }
 
 // workerFields reads them, keeping what the page knew when the server sends no slot (an older one).
 function workerFields(
   res: WorkerFields,
   data: LoadData,
-): Pick<LoadData, "slots" | "notchSlots" | "forcedWorkers" | "lowerPauses"> {
+): Pick<
+  LoadData,
+  "slots" | "notchSlots" | "forcedWorkers" | "lowerPauses" | "autoReason"
+> {
   const notchSlots: Partial<Record<LoadNotch, number>> = {};
   for (const n of res.notchSlots) notchSlots[n.notch] = n.slots;
   return {
@@ -55,6 +66,7 @@ function workerFields(
     notchSlots: res.notchSlots.length ? notchSlots : data.notchSlots,
     forcedWorkers: res.forcedWorkers,
     lowerPauses: res.lowerPauses,
+    autoReason: res.autoReason,
   };
 }
 
@@ -494,6 +506,33 @@ function notchTooltip(
   }
 }
 
+// autoReasonLine says in one line why auto runs at its notch: the load outside Djinn, how long it stayed on its side
+// of the marks, and the step it leads to (W253).
+export function autoReasonLine(reason: LoadAutoReason | undefined): string {
+  if (!reason) return "";
+  const notch = notchLabel(reason.notch);
+  if (!reason.windowSeconds) return t("load.auto_reason.unmeasured", { notch });
+  const params = {
+    what: t(reason.memory ? "load.auto_reason.memory" : "load.auto_reason.cpu"),
+    pct: Math.round(reason.outsidePercent),
+    time: span(reason.windowSeconds * 1000),
+    wait: span(reason.inSeconds * 1000),
+    notch,
+  };
+  switch (reason.step) {
+    case LoadAutoStep.LOWER:
+      return t("load.auto_reason.lower", params);
+    case LoadAutoStep.RAISE:
+      return t("load.auto_reason.raise", params);
+    case LoadAutoStep.CEILING:
+      return t("load.auto_reason.ceiling", params);
+    case LoadAutoStep.FLOOR:
+      return t("load.auto_reason.floor", params);
+    default:
+      return t("load.auto_reason.hold", params);
+  }
+}
+
 // nearestNotch is the index of the stop nearest a pointer at clientX over box, the stops' row: the stops stand at
 // even steps from its left end to its right end.
 function nearestNotch(clientX: number, box: { left: number; width: number }) {
@@ -806,7 +845,10 @@ const OperatingLoadAuto = React.memo(function OperatingLoadAuto() {
         <span
           className="operating-load-effective"
           data-effective={notchSlug(data.notch)}
-          aria-description={notchTooltip(LoadNotch.AUTO, data, chosen)}
+          aria-description={
+            autoReasonLine(data.autoReason) ||
+            notchTooltip(LoadNotch.AUTO, data, chosen)
+          }
         >
           ({notchLabel(data.notch)})
         </span>
@@ -999,6 +1041,11 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
             data,
             data.chosenNotch || LoadNotch.MEDIUM,
           )}
+        </div>
+      )}
+      {data.auto && data.autoReason && (
+        <div className="operating-load-forecast-note operating-load-auto-reason">
+          {autoReasonLine(data.autoReason)}
         </div>
       )}
     </div>
