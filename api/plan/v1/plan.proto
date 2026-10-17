@@ -1205,6 +1205,12 @@ message Task {
   // own rank among the wishes, and the gates serve it first after Djinn's merges and pushes. 0 for an azima never
   // ranked, a new one included: after the ranked ones, by code (plan.AzimaOrder). 0 for work.
   int32 rank = 71;
+  // The planned task waits for room on the machine alone: no slot is free (gates held outside the workers take slots),
+  // the machine is under pressure, or its memory is short, for it or for a task that goes first and that it waits
+  // behind (machine_wait, and the tasks queued after one the memory holds). False when a dependency, its integration
+  // branch's red push checks, a usage limit, a write scope, its wish or a question holds it. The window counts these
+  // tasks as waiting for a place.
+  bool room_wait = 72;
 }
 
 // TaskBabysit is the pull or merge request a watcher babysits.

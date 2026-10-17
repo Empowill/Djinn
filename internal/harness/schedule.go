@@ -305,7 +305,7 @@ func (h *Harness) schedule(ctx context.Context) {
 				}
 				continue
 			}
-			h.setWaiting(ctx, t, d.Why, d.Machine)
+			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room)
 		case d.Why != "":
 			if isMemoryShort(d.Why) {
 				if code, err := h.interruptPausedForMemory(ctx, t); err == nil && code != "" {
@@ -323,7 +323,7 @@ func (h *Harness) schedule(ctx context.Context) {
 					continue
 				}
 			}
-			h.setWaiting(ctx, t, d.Why, d.Machine)
+			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room)
 		default:
 			if err := h.launchPlanned(ctx, t); err != nil {
 				logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
@@ -499,22 +499,22 @@ func (h *Harness) GatesOutside(n func() (outside, merges int)) {
 	h.outside = n
 }
 
-// setWaiting records why a planned task waits, and whether for the machine alone, when the reason changed, with an
-// event.
-func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine bool) {
+// setWaiting records why a planned task waits, whether for the machine alone, and whether for room on it (behind a
+// task that goes first too), when the reason changed, with an event.
+func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine, room bool) {
 	why = grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why)))
-	if t.GetWaitReason() == why && t.GetMachineWait() == machine {
+	if t.GetWaitReason() == why && t.GetMachineWait() == machine && t.GetRoomWait() == room {
 		return
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason, t.MachineWait = why, machine
+	t.WaitReason, t.MachineWait, t.RoomWait = why, machine, room
 	h.writeAlone(ctx, actorHarness, methodWait, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
 }
 
 // failPlanned ends a planned task that never will start.
 func (h *Harness) failPlanned(ctx context.Context, t *planv1.Task, why string) {
 	t = proto.CloneOf(t)
-	t.Status, t.Error, t.WaitReason, t.MachineWait, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", false, timestamppb.Now()
+	t.Status, t.Error, t.WaitReason, t.MachineWait, t.RoomWait, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", false, false, timestamppb.Now()
 	h.writeAlone(ctx, actorHarness, methodEnd, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "failed: " + why})
 	h.wake() // Its own dependents fail in turn.
 }
@@ -583,7 +583,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		var err error
 		if settings, err = plan.LoadSettings(h.home, project); err != nil {
-			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false)
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false, false)
 			return nil
 		}
 		if !questionWorker(t) && t.GetReview() == nil && t.GetCorrection().GetFailure() == nil && len(t.GetDependsOn()) > 0 {
@@ -591,7 +591,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 				from := h.workerStartBranch(ctx, wish, project, settings, t)
 				if sha, realFrom, err := startPoint(ctx, project.GetDirectory(), from); err == nil {
 					if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), t, sha, realFrom); depWhy != "" {
-						h.setWaiting(ctx, t, depWhy, false)
+						h.setWaiting(ctx, t, depWhy, false, false)
 						return nil
 					}
 				}
@@ -614,7 +614,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		prompted = h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason, t.MachineWait = "", false
+	t.WaitReason, t.MachineWait, t.RoomWait = "", false, false
 	r, err := h.newRun(t)
 	if err != nil {
 		return err

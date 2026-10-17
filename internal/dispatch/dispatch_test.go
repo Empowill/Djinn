@@ -1284,7 +1284,8 @@ func TestLostProcessNotWritingNorEngaged(t *testing.T) {
 
 // TestMachineAlone: a decision says the task waits for the machine alone when slots, pressure or memory hold it, never
 // when its provider's usage limit, a push hold, a dependency or a task going first in the order does: djinn task start
-// frees the machine only.
+// frees the machine only. It waits for room (Task.room_wait, the window's count of workers waiting for a place) in the
+// same cases, and behind a task the memory holds too, never for a limit, a push hold or a dependency.
 func TestMachineAlone(t *testing.T) {
 	now := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
 	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1,
@@ -1312,12 +1313,12 @@ func TestMachineAlone(t *testing.T) {
 	}
 	for _, m := range []*Machine{{Slots: 4, Rule: "test", Pressure: "simulated"}, {Slots: 1, Running: 1, Rule: "test"}} {
 		got := pass(m)
-		if d := got["free"]; d.Why == "" || !d.Machine {
-			t.Errorf("%+v: free = %q, machine %v; want the machine alone", m, d.Why, d.Machine)
+		if d := got["free"]; d.Why == "" || !d.Machine || !d.Room {
+			t.Errorf("%+v: free = %q, machine %v, room %v; want the machine alone", m, d.Why, d.Machine, d.Room)
 		}
 		for _, id := range []string{"limit", "limited", "pushed", "after"} {
-			if d := got[id]; d.Why == "" || d.Machine {
-				t.Errorf("%+v: %s = %q, machine %v; want held by more than the machine", m, id, d.Why, d.Machine)
+			if d := got[id]; d.Why == "" || d.Machine || d.Room {
+				t.Errorf("%+v: %s = %q, machine %v, room %v; want held by more than the machine", m, id, d.Why, d.Machine, d.Room)
 			}
 		}
 	}
@@ -1328,11 +1329,16 @@ func TestMachineAlone(t *testing.T) {
 	tasks = append(tasks, task("next", planv1.Provider_PROVIDER_CODEX))
 	got := pass(&Machine{Slots: 4, Rule: "test", Available: 2 * machine.GiB, Total: 16 * machine.GiB,
 		Policy: machine.DefaultPolicy()})
-	if d := got["limited"]; d.Why == "" || !d.Machine {
-		t.Errorf("short of memory: %q, machine %v", d.Why, d.Machine)
+	if d := got["limited"]; d.Why == "" || !d.Machine || !d.Room {
+		t.Errorf("short of memory: %q, machine %v, room %v", d.Why, d.Machine, d.Room)
 	}
-	if d := got["next"]; !strings.Contains(d.Why, "limited goes first") || d.Machine {
-		t.Errorf("behind one short of memory: %q, machine %v", d.Why, d.Machine)
+	// Behind it, the next one waits for room all the same: not for the machine alone, which djinn task start frees.
+	if d := got["next"]; !strings.Contains(d.Why, "limited goes first") || d.Machine || !d.Room {
+		t.Errorf("behind one short of memory: %q, machine %v, room %v", d.Why, d.Machine, d.Room)
+	}
+	// A task that starts waits for nothing.
+	if d := pass(&Machine{Slots: 4, Rule: "test"})["next"]; d.Why != "" || d.Machine || d.Room {
+		t.Errorf("free machine: next = %q, machine %v, room %v", d.Why, d.Machine, d.Room)
 	}
 }
 

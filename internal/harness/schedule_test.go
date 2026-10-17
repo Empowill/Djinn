@@ -958,17 +958,18 @@ func TestDependencyWorkIntegration(t *testing.T) {
 }
 
 // TestStartAnyway: a planned task that waits for the machine alone says so, and starts at once when forced, under
-// pressure; one that waits for a dependency is refused, and keeps waiting.
+// pressure; one that waits for a dependency is refused, and keeps waiting. Only the first waits for room, the window's
+// place.
 func TestStartAnyway(t *testing.T) {
 	l := &limit{slots: 1, pressure: "simulated"}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, gitRepo(t))
 	held := e.mustSpawn(t, wishID, "Held", "text ok", nil)
-	if !held.GetMachineWait() || held.GetWaitReason() != "the machine is under pressure: simulated" {
+	if !held.GetMachineWait() || !held.GetRoomWait() || held.GetWaitReason() != "the machine is under pressure: simulated" {
 		t.Fatalf("under pressure: %v", held)
 	}
 	after := e.mustSpawn(t, wishID, "After", "text after", &planv1.TaskServiceSpawnRequest{DependsOn: []string{held.GetCode()}})
-	if after.GetMachineWait() {
+	if after.GetMachineWait() || after.GetRoomWait() {
 		t.Errorf("waits for a dependency, not for the machine: %v", after)
 	}
 	start := func(id string) (*planv1.Task, error) {
@@ -1007,7 +1008,7 @@ func TestStartAnyway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetStartTime() == nil || got.GetMachineWait() || got.GetWaitReason() != "" {
+	if got.GetStartTime() == nil || got.GetMachineWait() || got.GetRoomWait() || got.GetWaitReason() != "" {
 		t.Errorf("forced = %v", got)
 	}
 	if got := e.ended(t, held.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {

@@ -38,6 +38,7 @@ out when it is zero:
 | Orange | Questions waiting for your answer |
 | Blue | Workers running |
 | Merge | Work waiting to merge, no worker running |
+| Grey seat | Workers waiting for a place: a free slot, the machine's load or memory, or a [gate](#gates). A worker waiting for a gate still counts as running. A task held by a dependency, a red branch, a usage limit or a question is not counted |
 | Violet | Questions being investigated |
 | Wrench | Merges being fixed: agents correct them, nothing to do |
 | Teal | Watchers watching |
@@ -50,7 +51,8 @@ is then paused. **Make it the first active wish**, beside a paused wish, does it
 
 Ctrl+\ (Cmd+\ on macOS), or the button at the top, folds the side panel into a rail of icons; Djinn remembers it. In a
 narrow window, under 820 pixels, the panel keeps only its icons by itself: a wish with open questions then shows a
-raised hand in place of its icon.
+raised hand in place of its icon. On the rail, the grey seat and its count hang on the corner of a wish's icon while
+some of its workers wait for a place.
 
 ### The personal space
 

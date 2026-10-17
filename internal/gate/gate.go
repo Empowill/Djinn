@@ -589,6 +589,7 @@ type State struct {
 	Name, Holder, HolderTaskID string
 	Since, Until               time.Time // Until: when it is taken back at the latest; zero when not known
 	Waiting                    []string
+	WaitingTaskIDs             []string          // the tasks of the waiters, in the same order; a waiter outside any task left out
 	TakesSlot                  bool              // held outside a running worker
 	Ifrit                      bool              // held by a lit ifrit, until it goes out or ends
 	Use                        *planv1.Resources // what the holder's process uses; nil when not read
@@ -611,6 +612,9 @@ func (g *Gates) List() []State {
 	for _, w := range g.queue {
 		s := get(w.name)
 		s.Waiting = append(s.Waiting, w.who)
+		if w.taskID != "" {
+			s.WaitingTaskIDs = append(s.WaitingTaskIDs, w.taskID)
+		}
 	}
 	g.mu.Unlock()
 	out := make([]State, 0, len(byName))

@@ -2049,6 +2049,7 @@ html[data-motion="reduced"] .question-wisp {
 
 /* The side panel: each wish's state and counts. */
 .wish-tone {
+  position: relative;
   display: inline-flex;
   color: var(--tone);
   width: 0.875rem;

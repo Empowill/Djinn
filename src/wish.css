@@ -117,12 +117,34 @@
   display: none;
 }
 @media (max-width: 820px) {
-  .wish-tone.asks > :not(.wish-hand) {
+  .wish-tone.asks > :not(.wish-hand, .wish-place-corner) {
     display: none;
   }
   .wish-tone > .wish-hand {
     display: inline-flex;
     color: var(--tone);
+  }
+}
+/* The workers that wait for a place hang on the corner of the wish's icon, past its lower right, where the second line
+   hides: on the folded rail, and in a narrow window. Grey, a seat and the number, no border; absolute, so the row
+   keeps its height when the count comes and goes. */
+.wish-place-corner {
+  display: none;
+  position: absolute;
+  left: calc(100% - 0.0625rem);
+  bottom: -0.375rem;
+  align-items: center;
+  gap: 0.0625rem;
+  color: var(--st-planned);
+  font: 600 0.5625rem/1 var(--mono);
+  white-space: nowrap;
+}
+.sidebar-collapsed .wish-place-corner {
+  display: inline-flex;
+}
+@media (max-width: 820px) {
+  .wish-place-corner {
+    display: inline-flex;
   }
 }
 .wish-ready {

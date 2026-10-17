@@ -141,6 +141,9 @@ type Decision struct {
 	// It waits for the machine alone: no slot free, the machine under pressure, or its memory short. Forced
 	// (djinn task start), it may start. A task that waits for one going first before it does not.
 	Machine bool
+	// It waits for room on the machine: Machine, or a task the memory holds goes before it (Task.room_wait). Neither
+	// its wish, a dependency, a push hold, a usage limit nor a write scope holds it.
+	Room bool
 	// It waits for a slot alone: the machine is not under pressure and its memory holds it. An investigator pauses
 	// a work task for it (the harness's preemptForSlot): it takes that task's slot, never one more.
 	Slot bool
@@ -217,16 +220,17 @@ func (s *Situation) Pass() []Decision {
 	var out []Decision
 	for _, t := range s.Order() {
 		why, failed := s.Held(t)
-		machine, slot := false, false
+		machine, room, slot := false, false, false
 		if why == "" && failed == "" {
 			var first bool
 			if why, first, slot = s.full(t); why == "" {
 				s.Start(t)
 			}
-			machine = why != "" && !first
+			room = why != ""
+			machine = room && !first
 		}
 		out = append(out, Decision{Task: t, Why: why, Failed: failed, Commit: why != "" && s.awaitsCommit(t),
-			Machine: machine, Slot: slot})
+			Machine: machine, Room: room, Slot: slot})
 	}
 	return out
 }

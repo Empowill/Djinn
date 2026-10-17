@@ -80,8 +80,8 @@ func (s *service) List(
 	res := &machinev1.GateServiceListResponse{}
 	for _, st := range s.g.List() {
 		gate := &machinev1.Gate{
-			Name: st.Name, Holder: st.Holder, HolderTaskId: st.HolderTaskID, Waiting: st.Waiting, TakesSlot: st.TakesSlot,
-			Resources: st.Use, Ifrit: st.Ifrit,
+			Name: st.Name, Holder: st.Holder, HolderTaskId: st.HolderTaskID, Waiting: st.Waiting,
+			WaitingTaskIds: st.WaitingTaskIDs, TakesSlot: st.TakesSlot, Resources: st.Use, Ifrit: st.Ifrit,
 		}
 		if !st.Since.IsZero() {
 			gate.Since = timestamppb.New(st.Since)

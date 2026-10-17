@@ -315,6 +315,9 @@ message Gate {
   // Its holder is an ifrit (plan.v1.TaskKind TASK_KIND_IFRIT): it keeps the gate while it is lit, and gives it back when
   // it goes out, at expire_time at the latest, or ends.
   bool ifrit = 9;
+  // The tasks of those who wait for it, by identifier, the next one first: a waiter outside any task is left out. The
+  // window counts a task's worker that waits for a gate as waiting for a place.
+  repeated string waiting_task_ids = 10;
 }
 
 message GateServiceHoldRequest {

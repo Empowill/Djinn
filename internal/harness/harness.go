@@ -899,10 +899,10 @@ func (h *Harness) spawn(
 		return nil, plan.Status(err)
 	}
 	var why, failed string
-	var machine, slot bool
+	var machine, room, slot bool
 	for _, d := range sit.Pass() {
 		if d.Task == task {
-			why, failed, machine, slot = d.Why, d.Failed, d.Machine, d.Slot
+			why, failed, machine, room, slot = d.Why, d.Failed, d.Machine, d.Room, d.Slot
 		}
 	}
 	var preemptedCode string
@@ -916,7 +916,7 @@ func (h *Harness) spawn(
 				if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 					for _, d := range sit2.Pass() {
 						if d.Task == task {
-							why, failed, machine = d.Why, d.Failed, d.Machine
+							why, failed, machine, room = d.Why, d.Failed, d.Machine, d.Room
 						}
 					}
 				}
@@ -930,7 +930,7 @@ func (h *Harness) spawn(
 					if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 						for _, d := range sit2.Pass() {
 							if d.Task == task {
-								why, failed, machine = d.Why, d.Failed, d.Machine
+								why, failed, machine, room = d.Why, d.Failed, d.Machine, d.Room
 							}
 						}
 					}
@@ -939,7 +939,7 @@ func (h *Harness) spawn(
 		} else if slot {
 			// It takes the slot of the work task it pauses, never one more: none to pause, it waits for a slot.
 			if code, err := h.preemptForSlot(ctx, task); err == nil && code != "" {
-				preemptedCode, why, machine = code, "", false
+				preemptedCode, why, machine, room = code, "", false, false
 			}
 		}
 	} else if why != "" && isMemoryShort(why) {
@@ -951,7 +951,7 @@ func (h *Harness) spawn(
 			if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 				for _, d := range sit2.Pass() {
 					if d.Task == task {
-						why, failed, machine = d.Why, d.Failed, d.Machine
+						why, failed, machine, room = d.Why, d.Failed, d.Machine, d.Room
 					}
 				}
 			}
@@ -961,12 +961,12 @@ func (h *Harness) spawn(
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))
 	case settingsErr != nil:
-		why, machine = fmt.Sprintf("settings unreadable: %v", settingsErr), false
+		why, machine, room = fmt.Sprintf("settings unreadable: %v", settingsErr), false, false
 	case req.GetLater() && why == "":
 		why = "planned: it starts at the scheduler's next pass"
 	}
 	if why != "" {
-		task.MachineWait = machine
+		task.MachineWait, task.RoomWait = machine, room
 		return h.plan(ctx, procedure, req, task, parent, prompt, why)
 	}
 
@@ -1225,7 +1225,7 @@ func (h *Harness) launch(
 					_ = os.RemoveAll(skillsDir)
 					task.Branch, task.Worktree = "", ""
 					h.forgetWithoutWake(r)
-					h.setWaiting(ctx, task, depWhy, false)
+					h.setWaiting(ctx, task, depWhy, false, false)
 					return store.Get[*planv1.Task](ctx, h.store, task.GetId())
 				}
 				dir, err = addWorktreeFrom(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), sha)
@@ -2291,7 +2291,7 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 	if dispatch.Resuming(task) {
 		why = "stopped on request while it waited to resume"
 	}
-	task.Status, task.Error, task.WaitReason, task.MachineWait, task.ResumeAfter, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", false,
+	task.Status, task.Error, task.WaitReason, task.MachineWait, task.RoomWait, task.ResumeAfter, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", false, false,
 		nil, timestamppb.Now()
 	h.writeAlone(ctx, actorLocal, procedure, req, task.GetId(), task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "stopped: " + task.GetError()})
 	h.sched.Unlock()
