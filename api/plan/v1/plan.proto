@@ -104,6 +104,8 @@ enum ProjectNoticeTopic {
   PROJECT_NOTICE_TOPIC_BRANCH = 5;
   // An inbox source of the project's skills, as this machine decided it.
   PROJECT_NOTICE_TOPIC_SOURCE = 6;
+  // A change of the configuration on the reference branch, from the journal of changes (ConfigChange).
+  PROJECT_NOTICE_TOPIC_CHANGE = 7;
 }
 
 // ProjectNoticeAction is the one action that settles a project notice.
@@ -120,6 +122,9 @@ enum ProjectNoticeAction {
   PROJECT_NOTICE_ACTION_UNSUMMON_SKILL = 4;
   // Name the reference branch, a branch the repository holds, with main_branch in your own settings file.
   PROJECT_NOTICE_ACTION_NAME_BRANCH = 5;
+  // Read a change of the configuration on the reference branch, already applied, and mark it seen (djinn project
+  // acknowledge).
+  PROJECT_NOTICE_ACTION_ACKNOWLEDGE_CHANGE = 6;
 }
 
 // ProjectReference is a project's reference branch as Djinn finds it on this machine: the branch it keeps wishes up
@@ -137,6 +142,73 @@ message ProjectReference {
   SettingSource source = 4;
   // The branch your copy has checked out; empty when it is detached.
   string checked_out = 5;
+}
+
+// ConfigWatch is how Djinn watches a project's configuration on its reference branch, on this machine: every 5
+// minutes, and after each push of Djinn, it fetches that branch alone, then compares the digest of the .agents and
+// .claude/skills trees with the one of its last look. Kept in Djinn's data, never in the repository.
+message ConfigWatch {
+  option (djinn.v1.unique) = {fields: ["project_id"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project.
+  string project_id = 2;
+  // The ref Djinn read the configuration from, short: origin/main.
+  string ref = 3;
+  // The commit that ref pointed at, in full.
+  string commit = 4;
+  // The digest of the configuration's trees in that commit: the name of its folder in Djinn's cache.
+  string digest = 5;
+  // When Djinn first found that commit.
+  google.protobuf.Timestamp find_time = 6;
+  // Why the last fetch failed, as git said it; empty when it went well. Djinn then compares what the copy holds.
+  string fetch_error = 7;
+}
+
+// ConfigChange is one entry of a project's journal of configuration changes: a commit of its reference branch that
+// changed the .agents or .claude/skills trees, told in sentences. Djinn writes it when its watch finds the digest of
+// those trees changed (ConfigWatch); the change is already applied, since Djinn reads the configuration on that
+// branch. Kept in Djinn's data, on this machine.
+message ConfigChange {
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project.
+  string project_id = 2;
+  // The ref it came on, short: origin/main.
+  string ref = 3;
+  // The commit, in full; the newest one when the entry tells several.
+  string commit = 4;
+  // Its author, and its first line.
+  string author = 5;
+  string title = 6;
+  // When it was committed.
+  google.protobuf.Timestamp commit_time = 7;
+  // When Djinn found it.
+  google.protobuf.Timestamp find_time = 8;
+  // How many commits the entry tells: 1, more when Djinn told a long run of them at once, or when the reference
+  // branch itself changed.
+  int32 commits = 9;
+  // What changed, a sentence each.
+  repeated ConfigChangeLine lines = 10;
+  // Found by the first look at the project: told as history, nothing waits for you.
+  bool first_look = 11;
+  // When you marked it seen; unset while a line asks for your look and you have not.
+  google.protobuf.Timestamp seen_time = 12;
+}
+
+// ConfigChangeLine is one thing a configuration change did, in one sentence.
+message ConfigChangeLine {
+  // The part of the configuration it changed: settings, permissions, a skill, the reference branch.
+  ProjectNoticeTopic topic = 1;
+  // What it names there: a check, a skill, a source (<project>/<skill>), a branch.
+  string subject = 2;
+  // What changed, in one sentence.
+  string text = 3;
+  // A decision comes back to you: the change gives the workers more (a permission), changes what a skill makes or
+  // runs for Djinn (a wish template, a babysit, the command of a source plugged in here). The project's gear lights
+  // until you mark the change seen. A new source asks through its own notice, until you plug it in or say no.
+  bool asks = 4;
 }
 
 // ProjectSync says how a branch Djinn pushes stands against its remote target: a wish's integration branch, or an
@@ -2760,6 +2832,13 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
+  // permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
+  // them. They are applied already; djinn project show lists the journal of changes.
+  rpc Acknowledge(ProjectServiceAcknowledgeRequest) returns (ProjectServiceAcknowledgeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message ProjectServiceAddRequest {
@@ -2810,6 +2889,11 @@ message ProjectServiceShowResponse {
   // The project's reference branch; unset for a project outside Git, without a folder on this machine, or whose
   // repository holds no branch Djinn could take for it.
   ProjectReference reference = 12;
+  // How Djinn watches the configuration on the reference branch; unset before its first look, and for a project
+  // outside Git or without a remote.
+  ConfigWatch watch = 13;
+  // The journal of configuration changes on the reference branch, the newest first, the last 20.
+  repeated ConfigChange changes = 14;
   // The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
   // files resolve them. Their last runs are the project's check_runs.
   string setup = 6;
@@ -2997,6 +3081,26 @@ message ProjectServiceSetBranchRequest {
   // Take your choice back: the team's file names the reference branch again, else Djinn finds it (the remote's
   // default branch, else main, else master).
   bool unset = 3;
+}
+
+message ProjectServiceAcknowledgeRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The change, by its identifier or the start of its commit (7 characters at least); empty: every change that
+  // asks.
+  string change = 2 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.max_len = 64,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9-]*$"
+  ];
+}
+
+message ProjectServiceAcknowledgeResponse {
+  // The changes marked seen now.
+  repeated ConfigChange changes = 1;
 }
 
 message ProjectServiceSetBranchResponse {

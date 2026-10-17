@@ -69,6 +69,25 @@
 .config-line p + p {
   margin-top: 0.25rem;
 }
+/* An entry of the journal of changes: when, the commit and who above its title, then what it changed. One that
+   waits for your look has the flame, its lines that ask in the colour of what waits. */
+.config-change.waits > svg {
+  color: var(--st-failed);
+}
+.change-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+  font: var(--font-size-body, 0.75rem) var(--mono);
+  color: var(--n-8f);
+}
+.change-lines {
+  margin: 0.25rem 0 0.25rem 1rem;
+  list-style: disc;
+}
+.change-lines .asks {
+  color: var(--st-failed);
+}
 /* The reference branch you choose: the button that opens the list, then the list and where the choice is written. */
 .config-line > div > .button {
   margin-top: 0.375rem;
