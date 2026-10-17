@@ -12,6 +12,7 @@ import (
 // TestParseNetTCP: Linux's tables of sockets, as /proc/net/tcp and tcp6 print them: the sockets of the serve that
 // listen on the loopback or every interface, a port once.
 func TestParseNetTCP(t *testing.T) {
+	t.Parallel()
 	tcp := []byte(`  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
    0: 0100007F:1435 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 101 1 0000000000000000 100 0 0 10 0
    1: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 102 1 0000000000000000 100 0 0 10 0
@@ -33,6 +34,7 @@ func TestParseNetTCP(t *testing.T) {
 
 // TestParseLsof: macOS's sockets that listen, as lsof -Fn prints them.
 func TestParseLsof(t *testing.T) {
+	t.Parallel()
 	out := []byte("p501\nf12\nn127.0.0.1:5173\nf13\nn*:8080\np502\nf4\nn[::1]:8888\nf5\nn192.168.1.20:22\nf6\nn*:8080\n")
 	want := []listener{{"127.0.0.1", 5173}, {"0.0.0.0", 8080}, {"::1", 8888}}
 	if got := parseLsof(out); !slices.Equal(got, want) {
@@ -43,6 +45,7 @@ func TestParseLsof(t *testing.T) {
 // TestParseTCPTable: Windows' tables of sockets, as GetExtendedTcpTable gives them: those that listen, of the serve's
 // processes.
 func TestParseTCPTable(t *testing.T) {
+	t.Parallel()
 	row4 := func(state uint32, ip net.IP, port uint16, pid uint32) []byte {
 		b := make([]byte, 24)
 		binary.LittleEndian.PutUint32(b[0:], state)
@@ -74,6 +77,7 @@ func TestParseTCPTable(t *testing.T) {
 // TestMergePorts: a serve's ports are those it declares, first, with their names, then those its processes listen on,
 // by number; a declared port found keeps its name and takes its address.
 func TestMergePorts(t *testing.T) {
+	t.Parallel()
 	was := []*planv1.Port{
 		{Number: 8080, Label: "api", Declared: true},
 		{Number: 9999, Open: true}, // Found at the last reading, gone since.

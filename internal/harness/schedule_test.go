@@ -961,6 +961,7 @@ func TestDependencyWorkIntegration(t *testing.T) {
 // pressure; one that waits for a dependency is refused, and keeps waiting. Only the first waits for room, the window's
 // place.
 func TestStartAnyway(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 1, pressure: "simulated"}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, gitRepo(t))

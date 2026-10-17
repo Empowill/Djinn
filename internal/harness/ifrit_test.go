@@ -287,6 +287,7 @@ func TestSpawnIfrit(t *testing.T) {
 // TestIfritIdle: how long an ifrit stays lit without the developer is its own, else djinn up --ifrit-idle, else the
 // window's settings, else 30 minutes.
 func TestIfritIdle(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	own := &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{IdleMinutes: 60}}
 	plain := &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{}}

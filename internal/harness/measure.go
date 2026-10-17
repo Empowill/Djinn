@@ -120,7 +120,7 @@ func (h *Harness) measure(r *run, m *meter) {
 		TaskId: t.GetId(), WishId: t.GetWishId(), Code: t.GetCode(), Title: t.GetTitle(), Resources: res,
 	}
 	h.useMu.Lock()
-	t.Resources = res // Replaced at each reading, never changed: Uses shares it. Under useMu: lowestWorkTask copies t.
+	t.Resources = res // Replaced at each reading, never changed: Uses shares it.
 	r.use, r.resources = use, res
 	if !r.watcher { // Set as the run is made, never changed.
 		h.resident[r.id] = g.Memory
@@ -142,13 +142,6 @@ func (h *Harness) measure(r *run, m *meter) {
 		return
 	}
 	m.written, m.turns = res, t.GetTurns()
-}
-
-// copyRunning copies the task of a run, whose pump sets its resources at each reading: under useMu, as measure does.
-func (h *Harness) copyRunning(t *planv1.Task) *planv1.Task {
-	h.useMu.Lock()
-	defer h.useMu.Unlock()
-	return proto.CloneOf(t)
 }
 
 // worth says whether a reading moved enough from the one written to be written: a process more or less,

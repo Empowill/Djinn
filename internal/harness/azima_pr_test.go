@@ -202,6 +202,7 @@ func putTaskInDB(t *testing.T, db *store.Store, task *planv1.Task) {
 
 // TestAzimaPRDraftProposal tests PR proposal drafting from the azima goal and parts.
 func TestAzimaPRDraftProposal(t *testing.T) {
+	t.Parallel()
 	h := &Harness{}
 
 	// Case 1: Azima with ## Goal heading in description.
@@ -256,6 +257,7 @@ Some additional context here.`,
 // TestAzimaPRBaseIsMain: an azima's pull request targets main, as recorded when its branch was cut, else as the
 // project names it; never the branch of an azima it would wait for.
 func TestAzimaPRBaseIsMain(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	repo := gitRepo(t)
 	main := plan.CheckedOutBranch(ctx, repo)
@@ -575,6 +577,7 @@ func TestAzimaPRGlabReady(t *testing.T) {
 // TestBabysitPRWatchesEveryAzimaPR verifies that babysit-pr watcher watches every azima PR,
 // speaking only when something needs the lead, and exits once all are merged.
 func TestBabysitPRWatchesEveryAzimaPR(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("watch.sh is a POSIX shell script")
 	}

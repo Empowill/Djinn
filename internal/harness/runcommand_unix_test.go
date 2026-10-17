@@ -16,6 +16,7 @@ import (
 // TestRunCommandEndsWithWhatItStarted: a project's check stopped as Djinn stops ends at once with the test runner it
 // started, which held its output: Djinn's shutdown waited on it for as long as the tests ran (W504).
 func TestRunCommandEndsWithWhatItStarted(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child")
 	ctx, cancel := context.WithCancel(t.Context())

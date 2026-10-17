@@ -14,10 +14,18 @@ the code does not say by itself; remove one when a change makes it false.
   open their stores with `synchronous(NORMAL)` (`durability`, under `go test` or `DJINN_TEST=1`). *Sign:* a CPU
   profile far shorter than the test; `-test.trace`, then `go tool trace -pprof=syscall`, shows `Tx.Commit`. `strace
   -c` hides it: it counts the CPU time of a syscall, not its wait. *Where:* `internal/store/store.go`.
-- **Making the harness tests parallel is not one line each.** W124 made 160 serial `internal/harness` tests parallel:
-  the package went from 127 s to about 60 s and passed three times, but under `-race` 40 tests failed against 5
-  (deadlines missed, and the scheduler's known race on `run.task` in `copyRunning`). A test with parallel subtests
-  stays serial: queued behind the others, `TestReleaseFit` took 21 s. *Where:* `internal/harness`.
+- **The harness tests run in parallel; a few cannot.** W182 made 171 serial `internal/harness` tests parallel (the
+  package from about 110 s to about 55 s, `-race` from 8 min to 5). Stay serial: a test that sets the environment
+  (`t.Setenv` panics after `t.Parallel`: a fake `gh` on `PATH`, `HOME`), one that sets a hook every worker reaches
+  (`setPriorityFn`), and one with parallel subtests: queued behind the whole package, `TestReleaseFit` took 17 s.
+  *Sign:* passes alone, red in a loaded full run under `-race`: a wait on a duration, or a fake clock started before
+  something made with the real time (an integration test's clock now starts once its wish is made: the first task
+  merged looked older than the wish, and no push was due). *Where:* `internal/harness`.
+- **The scheduler reads a copy of a run's task.** The pump changes `r.task` without a lock; a reader apart from the
+  pump (`lowestWorkTask`, `resumeNotchPaused`, `lowestPausedWorkTask`) reads `r.shown`, the copy `writeAs` publishes
+  under `h.mu` (W182: a data race under `-race`). *Do:* a new reader outside the pump reads `r.shown`; a test that
+  changes what the scheduler sees replaces `r.shown` (`shownAs`), once the worker said its session. *Where:*
+  `internal/harness/harness.go`.
 - **`jq` is slow in test fakes.** jq 1.6 costs ~57 ms a run: a fake `gh`/`glab` that runs it per call made a test
   last 1.5 s (W148). *Do:* run jq once per command over all its data files (`input_filename` before each line) and
   cache the answers, or answer in Go with no jq at all. *Where:* `internal/harness/babysit_pr_test.go`,

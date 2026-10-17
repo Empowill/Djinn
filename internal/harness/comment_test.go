@@ -669,6 +669,7 @@ func Sub(a, b int) int {
 // TestCommentFile: the command line makes a comment's file absolute from the folder it runs in; a path inside the
 // task's worktree or its project's folder comes back relative to it, as the diff names it. Others stay as they were.
 func TestCommentFile(t *testing.T) {
+	t.Parallel()
 	worktree := filepath.Join(t.TempDir(), "w1")
 	project := filepath.Join(t.TempDir(), "lamp")
 	for _, c := range []struct{ file, want string }{

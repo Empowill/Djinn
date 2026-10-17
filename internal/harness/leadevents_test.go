@@ -139,6 +139,7 @@ func restartEvents(t *testing.T, e *env) []string {
 }
 
 func TestRestartLine(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		version                                 string
 		interrupted, resumed, watchers, orphans []string

@@ -208,6 +208,7 @@ type run struct {
 	ending             bool                 // djinn task done closed the ifrit's input (doneIfrit): it ends done, never out
 	final              bool                 // the task is getting its final status: an answer waits for done instead
 	answers            []*planv1.Question   // answers to the task's edit question, for the pump to apply
+	shown              *planv1.Task         // a copy of task as last written, replaced, never changed: what the scheduler reads of it (W182)
 	use                *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one; guarded by Harness.useMu
 	samples            *workerRing          // recent measurement samples (measure.go); guarded by Harness.useMu
 	resources          *planv1.Resources    // the task's resources as its pump last set them, for the readers apart from the pump; guarded by Harness.useMu
@@ -249,7 +250,7 @@ type run struct {
 // It fails when Djinn is stopping, or when the task already runs.
 func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 	r := &run{
-		id: task.GetId(), wish: task.GetWishId(), task: task, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
+		id: task.GetId(), wish: task.GetWishId(), task: task, shown: proto.CloneOf(task), base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}), timers: make(chan struct{}, 1),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
 		light: questionWorker(task), requestedModel: task.GetModel(),
@@ -1877,7 +1878,7 @@ func (h *Harness) end(r *run, res Result) {
 		setIfrit(t, state, listened)
 		t.Ifrit.OutTime, t.Ifrit.WarnTime = nil, nil
 	}
-	// Under useMu, as measure sets them (lowestWorkTask copies the task). A copy: the reading is shared with what the
+	// Under useMu, as measure sets them. A copy: the reading is shared with what the
 	// workers use (Uses, RunsSeries), which never changes it.
 	h.useMu.Lock()
 	if t.Resources != nil {
@@ -2164,10 +2165,18 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 	if err != nil {
 		return nil, err
 	}
+	// The scheduler reads a copy: the pump changes its task without a lock (W182).
+	var shown *planv1.Task
+	if pt, ok := task.(*planv1.Task); ok && pt.GetId() == r.id {
+		shown = proto.CloneOf(pt)
+	}
 	h.mu.Lock()
 	r.lastActivity = h.now()
 	if r.task != nil {
 		r.task.LastActivityTime = timestamppb.New(r.lastActivity)
+	}
+	if shown != nil {
+		r.shown = shown
 	}
 	h.mu.Unlock()
 	h.publish(r, te)

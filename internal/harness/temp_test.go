@@ -14,6 +14,7 @@ import (
 // TestStartSweepsCutWrites: djinn up removes, as it starts, the temporary files writes a kill cut left in Djinn's own
 // folders, the plan folder of a project and the tilasms' folder, and nothing else.
 func TestStartSweepsCutWrites(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	repo := t.TempDir()
 	put := func(path string) string {

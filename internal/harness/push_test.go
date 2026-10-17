@@ -122,6 +122,7 @@ func (in *integration) later(d time.Duration) {
 // failed part has not ended, as its state says (plan.FillAzimas): its other part committed waits for the next push.
 func TestPushAtAnAzimasEnd(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -167,6 +168,7 @@ func TestPushAtAnAzimasEnd(t *testing.T) {
 // it never holds the azima's push: its committed correction pushes the branch; a work part still running holds it.
 func TestPushPastAnAzimasWatcher(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	for _, c := range []struct {
 		name   string
 		other  planv1.Provider
@@ -211,6 +213,7 @@ func TestPushPastAnAzimasWatcher(t *testing.T) {
 // three tasks within the hour.
 func TestPushAfterThreeTasksAndAnHour(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -240,6 +243,7 @@ func TestPushAfterThreeTasksAndAnHour(t *testing.T) {
 // pass, with the work committed meanwhile.
 func TestPushAskMode(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -287,6 +291,7 @@ func TestPushAskMode(t *testing.T) {
 // in, it passes.
 func TestARefusedPushIsNotForced(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	// Someone else pushed to origin meanwhile.
@@ -381,6 +386,7 @@ func TestMainBehindTheRemoteCatchesUp(t *testing.T) {
 // integration worktree, and says each step and what it waits for.
 func TestABuildIsProposed(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	var built []Built
 	in := integrating(t, WithBuilt(func(b Built) { built = append(built, b) }))
 	in.remote(t)
@@ -440,6 +446,7 @@ func TestABuildIsProposed(t *testing.T) {
 // TestNoRemoteNoPush: a repository without a remote pushes nothing, and says nothing about it.
 func TestNoRemoteNoPush(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	azima := in.azima(t, in.wishID, "Letters")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
@@ -450,6 +457,7 @@ func TestNoRemoteNoPush(t *testing.T) {
 }
 
 func TestPushDue(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	task := func(code string, status planv1.TaskStatus, state planv1.IntegrationState, partOf string) *planv1.Task {
 		return &planv1.Task{
@@ -507,6 +515,7 @@ func TestPushDue(t *testing.T) {
 }
 
 func TestCommittedSince(t *testing.T) {
+	t.Parallel()
 	push := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	committed := func(code, project string, at time.Time) *planv1.Task {
 		return &planv1.Task{Id: code, Code: code, ProjectId: project, Integration: &planv1.TaskIntegration{
@@ -529,6 +538,7 @@ func TestCommittedSince(t *testing.T) {
 // automatically at an azima's end or on the cadence, and no push question is asked.
 func TestPushOnDemandNeverPushesOnAzimaOrCadence(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -571,6 +581,7 @@ func TestPushOnDemandNeverPushesOnAzimaOrCadence(t *testing.T) {
 // when remote is ahead (asking refusal question), and returns an error when already up to date.
 func TestPushMethod(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
 	bare := in.remote(t)
@@ -646,6 +657,7 @@ func TestPushMethod(t *testing.T) {
 // TestPushSync: computes ahead and behind commit counts between integration branch and remote tracking ref.
 func TestPushSync(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 
@@ -709,6 +721,7 @@ func (in *integration) syncOf(t *testing.T, project *planv1.Project, branch stri
 // syncs leave it out, until a new commit on it waits for a push again; a branch with commits to push is never forgotten.
 func TestPushSyncLandedInMain(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.remote(t)
 	ctx := t.Context()
@@ -797,6 +810,7 @@ func TestPushSyncLandedInMain(t *testing.T) {
 // button pushes that branch alone.
 func TestPushSyncs(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	ctx := t.Context()

@@ -80,6 +80,7 @@ func TestDepend(t *testing.T) {
 // pass started W5 first, the spawn is refused, saying where W5 stands, and makes nothing.
 func TestSpawnBlocksWhilePassesRun(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	l := &limit{}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, nativeFolder(t)) // Outside Git: no worktree to make, the test stays fast.
@@ -141,6 +142,7 @@ func TestSpawnBlocksWhilePassesRun(t *testing.T) {
 // for a task that has started, saying where it stands, and for one that would close a cycle, naming it.
 func TestSpawnAfterAndBlocks(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	l := &limit{slots: 1}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, nativeFolder(t))
@@ -209,6 +211,7 @@ func TestSpawnAfterAndBlocks(t *testing.T) {
 // TestDependSeveral: depend sets several tasks at once, all or none: one cyclic edge among them changes nothing.
 func TestDependSeveral(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, nativeFolder(t))
 	later := &planv1.TaskServiceSpawnRequest{Later: true}
