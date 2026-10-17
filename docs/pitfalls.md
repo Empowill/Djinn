@@ -208,6 +208,17 @@ the code does not say by itself; remove one when a change makes it false.
   `Directory` at a missing folder (Git=false alone still let the push checks make a worktree in the real repository,
   W504); run with its own `DJINN_HOME`, a fake agent first on `PATH` and `DJINN_QUESTION_WORKERS=off`.
 
+## Agents' permissions
+
+- **Claude refuses a `#` line inside a quoted argument, whatever Djinn allows.** Claude Code's "newline-hash" check
+  refuses a Bash call where an argument holds a newline then `#`, indented or not; in `dontAsk` it reads "Permission
+  to use Bash has been denied because Claude Code is running in don't ask mode", as a missing rule does, while
+  `commandAllowed` says yes. A question's shape puts a `# …` comment above each command: W80 of wish Dew 13 oct could
+  not revise Q32 (W153). *Do:* pass multi-line text through a file the agent writes (an investigator's
+  `--context-file`, `questionContextFile`); try a rule for real with `claude -p --permission-mode dontAsk --settings
+  …`, a fake `djinn` first on `PATH`, a scratch folder and Haiku: under a cent. *Where:*
+  `internal/harness/question.go`, `internal/harness/question_context_test.go`.
+
 ## Store and sqlite
 
 - **`Put` without `Journal` stores nothing.** `store.Tx` refuses a `Put` before `tx.Journal`: an ignored error there

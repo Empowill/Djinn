@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -231,13 +233,36 @@ func (h *Harness) startQuestionWorker(
 	if err != nil {
 		return nil, err
 	}
-	title, prompt := investigatorPrompt(q, note, retryText(before), brief.Moving, tasks...)
 	provider, model, _ := questionProvider(settings)
-	task := &planv1.Task{Role: role, Question: q.GetCode()}
+	task := &planv1.Task{Id: store.NewID(), Role: role, Question: q.GetCode()}
+	contextFile := ""
+	if writesDirs(provider) {
+		contextFile = questionContextFile(h.home, task.GetId())
+	}
+	title, prompt := investigatorPrompt(q, note, retryText(before), brief.Moving, contextFile, tasks...)
 	return h.spawn(ctx, methodQuestion, &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: title, Prompt: prompt, Provider: provider,
 		Model: model, MaxBudgetUsd: settings.QuestionBudgetUSD,
 	}, task)
+}
+
+// questionContextFile is where the question worker taskID writes the context of its revision, which it passes with
+// --context-file: in its own folder under Djinn's data folder, the one it may write in (questionWriteDirs).
+func questionContextFile(home, taskID string) string {
+	return filepath.Join(scratchDir(home, taskID), "context.md")
+}
+
+// questionWriteDirs are the folders the worker of t may write in besides its permissions: a question worker's own
+// folder, which it makes, for its context file (questionContextFile); none for another task.
+func (h *Harness) questionWriteDirs(t *planv1.Task) ([]string, error) {
+	if t.GetAccess() != planv1.TaskAccess_TASK_ACCESS_DJINN {
+		return nil, nil
+	}
+	dir := scratchDir(h.home, t.GetId())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("create the task's folder: %w", err)
+	}
+	return []string{dir}, nil
 }
 
 // questionProvider returns the provider and model for a question worker given the project's settings,
@@ -417,24 +442,33 @@ func writeQuestionHistory(b *strings.Builder, q *planv1.Question) {
 // questionAccess tells a question worker how to work within its access (TASK_ACCESS_DJINN): its agent refuses a
 // call that joins anything to a djinn command, since every part of a compound command must be allowed, and reads
 // files with its own tools. Workers that took a refused form for a refused Bash gave up without doing anything.
-const questionAccess = "## How to work within your access\n\n" +
-	"You read files, search the web and fetch pages, and run djinn's inspection/revision commands (`djinn wish brief`, " +
-	"`djinn task list`, `djinn task get`, `djinn question list`, `djinn block list`, `djinn tilasm list`, " +
-	"`djinn tilasm get`, `djinn task spawn`, `djinn question revise`) and read-only git inspection commands " +
-	"(`git log`, `git show`, `git diff`, `git status`, `git branch`, `git rev-parse`, `git ls-tree`): nothing else.\n\n" +
-	"- Run each `djinn …` or `git …` command alone, in a Bash call of its own: no pipe (`|`), no `;`, no `&&` nor `||`, no " +
-	"redirection (`>`, `2>`, `<<`), no `$(…)`, no `cd` before it. A call that joins anything to a command is " +
-	"refused whole. Read a command's whole output rather than filtering it.\n" +
-	"- Read files with your Read, Grep and Glob tools, and search or fetch the web with your web tools (WebSearch " +
-	"and WebFetch, or search_web and read_url_content), never with cat, grep, sed, head, find or curl in Bash.\n" +
-	"- Write the values of `--title`, `--prompt`, `--context`, `--recommendation`, `--options`… between double quotes, " +
-	"with no backtick nor `$` inside: there they would run a command, and the call is refused. Never start a line " +
-	"inside a quoted argument with `#` at column zero (indent `#` comments inside a `~~~` block with a leading space, " +
-	"` # …`, or keep lines plain), as a newline followed immediately by `#` inside quotes is refused by the shell " +
-	"filter; or pass `--context-file <path>` to read the context from a file when Markdown headers (`#`), arrows " +
-	"(`->`) or parentheses would be rejected by shell static filters. Write an inner double quote `\\\"`.\n" +
-	"- A refused call means that this form of the command is refused, not that Bash is: run the djinn command again, " +
-	"alone and plain. Never end on a refusal: a question worker that did nothing after one has failed.\n\n"
+// contextFile is the file it writes the context of its revision in, when its agent may write there; "" otherwise.
+func questionAccess(contextFile string) string {
+	context := "- Pass the context with `--context \"…\"`, between double quotes like the other values.\n"
+	if contextFile != "" {
+		// Claude Code refuses a newline followed by # inside a quoted argument, whatever its allow rules say: W80 of
+		// wish Dew 13 oct, an investigator, could not revise Q32 with a # comment above each command (W153).
+		context = "- Write the context in a file, never in `--context`: Claude Code refuses a quoted argument where a " +
+			"line starts with `#`, however indented, whatever Djinn allows, and the shape above puts a `# …` comment " +
+			"above each command. Write the whole context with your Write tool in `" + contextFile + "`, the one file " +
+			"you may write, then pass `--context-file \"" + contextFile + "\"`; write it again before each revision.\n"
+	}
+	return "## How to work within your access\n\n" +
+		"You read files, search the web and fetch pages, and run djinn's inspection/revision commands (`djinn wish brief`, " +
+		"`djinn task list`, `djinn task get`, `djinn question list`, `djinn block list`, `djinn tilasm list`, " +
+		"`djinn tilasm get`, `djinn task spawn`, `djinn question revise`) and read-only git inspection commands " +
+		"(`git log`, `git show`, `git diff`, `git status`, `git branch`, `git rev-parse`, `git ls-tree`): nothing else.\n\n" +
+		"- Run each `djinn …` or `git …` command alone, in a Bash call of its own: no pipe (`|`), no `;`, no `&&` nor " +
+		"`||`, no redirection (`>`, `2>`, `<<`), no `$(…)`, no `cd` before it. A call that joins anything to a command " +
+		"is refused whole. Read a command's whole output rather than filtering it.\n" +
+		"- Read files with your Read, Grep and Glob tools, and search or fetch the web with your web tools (WebSearch " +
+		"and WebFetch, or search_web and read_url_content), never with cat, grep, sed, head, find or curl in Bash.\n" +
+		"- Write the values of `--title`, `--prompt`, `--recommendation`, `--options`… between double quotes, with no " +
+		"backtick nor `$` inside: there they would run a command, and the call is refused. Write an inner double " +
+		"quote `\\\"`.\n" + context +
+		"- A refused call means that this form of the command is refused, not that Bash is: run the djinn command again, " +
+		"alone and plain. Never end on a refusal: a question worker that did nothing after one has failed.\n\n"
+}
 
 // retryText tells the worker that starts again in the place of before, which gave up after a refusal, what was
 // refused; nothing without before.
@@ -448,9 +482,15 @@ func retryText(before *planv1.Task) string {
 }
 
 // investigatorPrompt is the title and the prompt of the investigator of q, which the developer wants to know more
-// about, with their note; retry says why it starts again, if it does.
-func investigatorPrompt(q *planv1.Question, note, retry, brief string, tasks ...*planv1.Task) (title, prompt string) {
+// about, with their note; retry says why it starts again, if it does. contextFile is where it writes its context, when
+// its agent may write there (questionContextFile); "" otherwise.
+func investigatorPrompt(q *planv1.Question, note, retry, brief, contextFile string, tasks ...*planv1.Task) (title, prompt string) {
 	code, wish := q.GetCode(), q.GetWishId()
+	revise := fmt.Sprintf("`djinn question revise %s --wish-id %s --context \"…\" --recommendation \"…\"`", code, wish)
+	if contextFile != "" {
+		revise = fmt.Sprintf("write the context in `%s`, then `djinn question revise %s --wish-id %s --context-file "+
+			"\"%s\" --recommendation \"…\"`", contextFile, code, wish, contextFile)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are a question worker of Djinn. Before answering %s in wish %s, the developer wants to know "+
 		"more. Your one job: find out, then revise the question so that it waits for the developer again. You write "+
@@ -471,8 +511,7 @@ func investigatorPrompt(q *planv1.Question, note, retry, brief string, tasks ...
 		"`djinn task list --wish-id %[2]s`, `djinn task get <task>`, `djinn question list --wish-id %[2]s`, "+
 		"`djinn block list %[2]s`, `djinn tilasm list --wish %[2]s`, `djinn tilasm get <tilasm> --wish %[2]s`), to "+
 		"answer what the developer asks.\n"+
-		"3. Revise the question: `djinn question revise %[1]s --wish-id %[2]s --context \"…\" --recommendation \"…\"` "+
-		"(or `--context-file <path>`), and `--options \"…\"` (each one, up to four) when the options change. The "+
+		"3. Revise the question: %[4]s, and `--options \"…\"` (each one, up to four) when the options change. The "+
 		"context says what you found and what each option costs, in the shape below; Djinn keeps the former version "+
 		"in the question's rounds, so write the current context only, never the earlier versions. Keep it short: what you found "+
 		"to choose with full light, an analysis, a comparison, a mockup, goes in a tilasm that lays out the possible "+
@@ -482,10 +521,10 @@ func investigatorPrompt(q *planv1.Question, note, retry, brief string, tasks ...
 		"it once made. Set `--before \"…\"` only when the answer is needed before something, `--before \"\"` when "+
 		"it can wait: never to get it seen.\n"+
 		"4. Revise it once, at the end, even if you found little: the question waits for you until you do.\n"+
-		"5. End with one line: what you found.\n\n", code, wish, q.GetText())
+		"5. End with one line: what you found.\n\n", code, wish, q.GetText(), revise)
 	b.WriteString("## The shape of the context\n\n" + plan.QuestionShape + " Rewrite the former context into this " +
 		"shape even where you found nothing new.\n\n")
-	b.WriteString(questionAccess + retry + "## Where the wish stands\n\n" + brief)
+	b.WriteString(questionAccess(contextFile) + retry + "## Where the wish stands\n\n" + brief)
 	return code + ": enlighten", b.String()
 }
 

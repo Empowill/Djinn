@@ -105,7 +105,14 @@ Read, Grep and Glob read it (`code.claude.com/docs/en/permissions`, read 2026-10
 command must be allowed: `djinn task list … | grep …` is refused whole. Its prompt says so: each `djinn` command alone
 in its own Bash call, files read with Read, Grep and Glob, the web searched with its web tools, and a refusal is of
 that form, not of Bash. One that ends without doing anything after a refusal fails, and Djinn starts it again once
-(`internal/harness/question.go`).
+(`internal/harness/question.go`). Claude Code also refuses, whatever its allow rules, a quoted argument where a
+line starts with `#`, indented or not (its "newline-hash" check, 2.1.300 to 2.1.302 at least): the shape of a
+question puts a `# …` comment above each command, and W80 of wish Dew 13 oct could not revise Q32 (W153). So a Claude
+question worker writes in one folder, its own under Djinn's data folder (`tasks/<id>`, `Spec.WriteDirs`, translated to
+`Edit(//…/**)` and `Write(//…/**)` with the edit denials dropped; `dontAsk` refuses a write anywhere else), and its
+prompt says to write the context whole in `context.md` there, then revise with `--context-file`. Verified on
+2026-10-17 with claude 2.1.302 in `dontAsk`: the write and the revision run, the inline `--context` form is refused,
+a write in the project or beside the folder is refused.
 
 **What counts as agent configuration** (rule 4), at the root of the project's folder, file names compared without
 regard to case: for every agent, `AGENTS.md` and an `.agents` folder; for Claude, `CLAUDE.md`, `CLAUDE.local.md`,

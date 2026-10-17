@@ -1254,6 +1254,11 @@ func (h *Harness) launch(
 		MaxBudgetUSD: task.GetMaxBudgetUsd(), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
 		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(),
 	}
+	var err error
+	if spec.WriteDirs, err = h.questionWriteDirs(task); err != nil {
+		h.finish(r, Result{ExitCode: -1, Err: err})
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: %w", task.GetCode(), err))
+	}
 	if task.GetForkOf() != "" {
 		where += ", forked from " + forkText(task.GetForkOf())
 	}
@@ -1277,7 +1282,7 @@ func (h *Harness) launch(
 		text = "started " + short(task.GetProvider()) + how + " " + where + ": " + questionStart(task) + "; " +
 			accessText(task, nil)
 	}
-	err := h.start(r, provider, spec, text)
+	err = h.start(r, provider, spec, text)
 	if err != nil && r.light && questionWorker(task) && task.GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
 		if claudeProvider, ok := h.providers[planv1.Provider_PROVIDER_CLAUDE]; ok {
 			origProvider := task.GetProvider()

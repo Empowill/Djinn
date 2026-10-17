@@ -422,6 +422,10 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: model, MaxBudgetUSD: budget,
 		Resume: t.GetSessionId(), Prompt: line,
 	}
+	var err error
+	if spec.WriteDirs, err = h.questionWriteDirs(t); err != nil {
+		return err
+	}
 	how := ", resuming its session"
 	providerChanged := priorProvider != planv1.Provider_PROVIDER_UNSPECIFIED && priorProvider != t.GetProvider()
 	switch {

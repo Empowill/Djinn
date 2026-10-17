@@ -18,6 +18,9 @@ type Provider interface {
 	Start(ctx context.Context, spec Spec) (Worker, error)
 }
 
+// writesDirs tells whether the workers of kind may write in Spec.WriteDirs.
+func writesDirs(kind planv1.Provider) bool { return kind == planv1.Provider_PROVIDER_CLAUDE }
+
 // Spec is what a worker is started with.
 type Spec struct {
 	// TaskID is the task the worker works on.
@@ -83,7 +86,7 @@ type Spec struct {
 	MaxTurns int
 	// WriteDirs are folders the agent may write in even without Permissions.Edit, and ReadDirs folders it may read
 	// outside its own: the driven lead's folder, where it writes plan files and tilasms, and Djinn's data folder.
-	// Claude only, so far.
+	// Claude only, so far (writesDirs).
 	WriteDirs, ReadDirs []string
 	// Track, when set, is told of each process the worker starts, its PID, the cgroup of its scope and its mark
 	// (markVar), as it starts; what it returns is called once the process, and what it left running, ended. Djinn
