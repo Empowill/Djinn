@@ -14,7 +14,8 @@ as true as these marks:
 | `--before "…"` | the answer is needed before something (a merge, a release) | needed before that |
 | neither | the question can wait | can wait, last |
 
-A question a waiting task needs is blocking anyway, whatever its marks: Djinn sees the task wait on it. A `--move`
+A question a waiting task needs is blocking anyway, whatever its marks: Djinn sees the task wait on it, as for a
+worker's `--wait` question ([[worker-blocking-questions]]). A `--move`
 without `--before` is a move that can wait.
 
 **Why:** on 16/10/2026 the developer set it as a rule of arbitration (Q13's note): the bar loses its worth when what

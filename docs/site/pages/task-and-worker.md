@@ -27,7 +27,8 @@ The Djinn plans the tasks and spawns them; you follow them, answer their questio
    waits.
 3. **Running.** Djinn makes its worktree and its branch, from the wish's branch, and starts the worker on its prompt.
 4. **Ended.** The worker's turn ends. Done, its work goes in line to be merged; failed or stopped, it stays as it is
-   until someone decides.
+   until someone decides. A worker that asked you a blocking question ends its turn but not its task: the task waits
+   for your answer, then goes on (see [A worker in doubt](#task-and-worker-a-worker-in-doubt) below).
 5. **Merged.** Djinn merges the work into the wish's branch, runs the project's checks, and commits it. The worktree
    goes; the branch stays.
 
@@ -45,7 +46,7 @@ The status is one colour, one icon and one word:
 | Planned | Not started yet: it waits, and its card says why |
 | Running | Its worker works |
 | Paused | Its worker holds still where it is, and frees its slot |
-| Waits for your answer | Its worker read the project and may not edit it: it waits for your yes |
+| Waits for your answer | Its worker stopped on a question only you can answer: one it asked you, or whether it may edit the project. No slot is taken meanwhile |
 | Waiting for the limit | Its agent's usage limit is reached: it resumes once the limit resets |
 | Resuming | Djinn starts it again by itself, after a restart or a limit |
 | Interrupted | Cut short when Djinn stopped: Djinn resumes it at its next start, when it can |
@@ -136,14 +137,39 @@ button brings you back where you were; a click in the side panel closes the diff
 A worker that holds or waits for a gate cannot be paused: wait, or stop it. Stopping a planned task stops it for good,
 and the tasks that come after it fail with it: to drop a task, ask the Djinn to cancel it instead.
 
+## A worker in doubt
+
+A worker decides alone on what is its own: names, internals, what a test settles, what a decision of the wish settles
+already. When it meets a real doubt, two valid designs whose consequences you will see, where a wrong pick throws
+away the work that follows, it asks you a **blocking question**, and stops:
+
+1. It commits all the work that does not depend on your answer, asks the question, and ends its turn, saying what
+   waits for the answer.
+2. Its task **waits for your answer**, the question under it. Its slot is free for other work; its worktree, its
+   branch, its conversation and the files it writes are kept. The tasks that come after it wait too, their card
+   saying "waits for Q51". The question is blocking: it leads **What waits for you**.
+3. You answer it. The task goes back in line: it starts again as soon as a slot is free, never before, its branch
+   first brought up to date with the wish's.
+4. Its worker goes on in its own conversation, told the decision in a line: "Decision Q51: Drop the cache (B), keep it
+   small. Go on with your task."
+
+The Djinn hears of each blocking question. It answers one itself only when a decision of the wish or its plan already
+settles it, saying so in the note; it may enrich the question for you; a new choice stays yours. A restart of Djinn
+loses nothing: the waiting task has no worker to stop.
+
+A question that does not block works otherwise: the worker goes on with its own pick. Answered while it still works,
+your decision is passed to it between two of its steps; answered later, it goes to the Djinn, which continues the task
+if your answer changes something. A worker asks at most one blocking question at a time and two in all, and three that
+do not block: past them, it decides, and says so in its final note.
+
 ## Tasks from the Djinn
 
 The window follows tasks; the Djinn makes them. Ask it in words, and it uses these:
 
 - **Spawn** a task, with its title and prompt, its project, its agent and model, its budget, the azima it is part of,
   what it comes after, and the planned tasks it comes before. It may be only planned, to start when it is ready.
-- **Continue** a task no worker runs, done, failed, stopped or cut short: a new turn of its own session, in its own
-  worktree and branch, with a new prompt. Refused while it runs (send it a message instead), when its worktree is gone,
+- **Continue** a task no worker runs, done, failed, stopped, cut short, or waiting for a blocking question its worker
+  asked: a new turn of its own session, in its own worktree and branch, with a new prompt. Refused while it runs (send it a message instead), when its worktree is gone,
   when its session cannot be resumed, or when its wish is granted.
 - **Fork** a task: a new task whose worker starts from a copy of that task's conversation, with a session of its own.
   The Djinn may fork its own conversation the same way. Claude and Codex fork; Antigravity cannot. Forking a task that

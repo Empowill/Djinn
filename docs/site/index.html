@@ -270,7 +270,8 @@
                   that fails, or whose permissions refused a call, is the Djinn's, never yours: it takes it up again or
                   closes it, and asks you only for a right it lacks, naming the command that grants it. A worker stalled, or
                   failed for a reason a new turn may get past, shows a small arrow beside its code, and the Djinn hears the
-                  command that relaunches it.
+                  command that relaunches it. A worker in real doubt asks you with <code>djinn question ask --wait</code>,
+                  then ends its turn: its task waits for you without a slot, and your answer continues it with the decision.
                 </p>
               </article>
               <article class="card word" id="word-investigations">
@@ -291,7 +292,9 @@
                   <span class="chip ghost">Launches</span>; <span class="chip ghost">Enlighten me</span> sends one to dig first, then revise
                   the question. A revised question shows its current version only; <span class="chip ghost">Versions (3)</span>,
                   in its corner, opens the earlier ones below it, to read. <span class="chip ghost">Sleep</span> puts one away until
-                  tasks are over, requests merged or a date comes; it then wakes first, checked by the Djinn. An answered question is a decision: who took it, and the tasks it led to, stay in the
+                  tasks are over, requests merged or a date comes; it then wakes first, checked by the Djinn. A worker's
+                  blocking question holds its task, which waits for you: your answer sends it back to work, with your
+                  decision, once a slot is free. An answered question is a decision: who took it, and the tasks it led to, stay in the
                   Decisions tab.
                 </p>
               </article>

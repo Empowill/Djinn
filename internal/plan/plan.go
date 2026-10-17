@@ -185,8 +185,9 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle,
 		Workers: o.workers, LaunchPlan: o.launch}
 	if o.leads != nil {
-		questions.NoteEdited = wishes.NoteEdited             // The lead learns an answer's new note, once.
-		questions.Woke = append(questions.Woke, wishes.Woke) // And a question woken by hand, to check it.
+		questions.NoteEdited = wishes.NoteEdited                // The lead learns an answer's new note, once.
+		questions.Woke = append(questions.Woke, wishes.Woke)    // And a question woken by hand, to check it.
+		questions.Asked = append(questions.Asked, wishes.Asked) // And a worker's blocking question, to answer it if it may.
 	}
 	p, h = planv1connect.NewQuestionServiceHandler(questions, opt)
 	out[p] = h
@@ -1073,6 +1074,8 @@ type Questions struct {
 	Enlightened []func(ctx context.Context, q *planv1.Question, note string)
 	// Woke are called with a question woken by hand once it is stored (Sleep): the scheduler tells of the others.
 	Woke []func(ctx context.Context, q *planv1.Question)
+	// Asked are called with a question once it is stored: the lead hears of a blocking one (Wishes.Asked).
+	Asked []func(ctx context.Context, q *planv1.Question)
 	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
 	// stored, if anything: a question that routes a request files it, or makes its wish.
 	Settle Settle
@@ -1139,10 +1142,15 @@ func (q *Questions) Ask(
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
 		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
 		Icon: req.Msg.GetIcon(), TaskId: req.Msg.GetTaskId(), Before: strings.TrimSpace(req.Msg.GetBefore()),
-		Move: req.Msg.GetMove(),
+		Move: req.Msg.GetMove(), Wait: req.Msg.GetWait(),
 	}
 	if err := checkIcon(question.GetIcon()); err != nil {
 		return nil, err
+	}
+	caller := CallerFromContext(ctx)
+	if question.GetWait() && (caller == nil || question.GetTaskId() == "") {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(
+			"--wait is for a worker, about its own task: a question of the lead or the developer blocks no worker"))
 	}
 	err := write(ctx, q.Store, req.Spec(), m, func(tx *store.Tx) error {
 		if _, err := store.Get[*planv1.Wish](ctx, tx, question.GetWishId()); err != nil {
@@ -1158,6 +1166,18 @@ func (q *Questions) Ask(
 		if err := setPlans(ctx, tx, question, m.GetPlan(), false); err != nil {
 			return err
 		}
+		if caller != nil && question.GetTaskId() != "" {
+			task, err := store.Get[*planv1.Task](ctx, tx, question.GetTaskId())
+			if err != nil {
+				return err
+			}
+			if err := askedBy(ctx, tx, task, question, question.GetWait()); err != nil {
+				return err
+			}
+			if question.GetWait() && question.GetAboutTaskId() == "" {
+				question.AboutTaskId = task.GetId() // The window shows it with the task that waits for it.
+			}
+		}
 		if len(m.GetSleepUntil()) > 0 {
 			if err := sleepUntil(ctx, tx, question, m.GetSleepUntil(), question.GetCreateTime().AsTime()); err != nil {
 				return err
@@ -1167,6 +1187,9 @@ func (q *Questions) Ask(
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, f := range q.Asked {
+		f(ctx, proto.CloneOf(question))
 	}
 	return connect.NewResponse(&planv1.QuestionServiceAskResponse{
 		Question: question, Warnings: ContextWarnings(question.GetContext()),

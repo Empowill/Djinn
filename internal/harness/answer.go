@@ -32,7 +32,8 @@ const (
 // allowed to edit the project's files and to run no command, through the scheduler when no worker runs it; a no
 // leaves it reading only. When Djinn asked it about work that failed to integrate, it settles that work
 // (answerIntegration); about a push, it pushes or waits (answerPush). The task the chosen option planned it launches, or
-// leaves to the lead (answerPlan). Any other answer is a decision for the wish's
+// leaves to the lead (answerPlan). The worker that asked it gets the decision: sent while it runs, or its task, which
+// waits on its blocking question, continued with it (answerAsker). Any other answer is a decision for the wish's
 // lead to turn into tasks, or for the principal lead when the wish has no lead. Only the first answer counts. The plan
 // services call it once the answer is stored. It says what Djinn did with the answer, for the lead; "" when the
 // answer is the lead's to act on.
@@ -52,6 +53,9 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 		did = append(did, d)
 	}
 	if d, ok := h.answerPlan(ctx, q); ok {
+		did = append(did, d)
+	}
+	if d, ok := h.answerAsker(ctx, q); ok {
 		did = append(did, d)
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"edit_question_id": q.GetId()})

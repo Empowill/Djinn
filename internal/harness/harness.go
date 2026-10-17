@@ -716,6 +716,8 @@ func runReason(t *planv1.Task, r *run) string {
 		return "failed"
 	case planv1.TaskStatus_TASK_STATUS_DONE:
 		return "done"
+	case planv1.TaskStatus_TASK_STATUS_WAITING:
+		return "waiting"
 	default:
 		return "done"
 	}
@@ -1192,7 +1194,24 @@ const workerMoveRule = "A question to the developer is only for a decision or a 
 // workerWaitRule (W80): a worker that ends its turn on a run still going ends its task, and Djinn removes the worktree
 // the run writes to.
 const workerWaitRule = "Never end a turn while a long run you started is going (a benchmark, a build, a background command, a monitor): your task ends with your turn, and Djinn removes its worktree. Wait for it in the foreground, in commands under 9 minutes each (`sleep`, then read its output), until it ends; then report what it gave."
-const workerRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule
+
+// workerDoubtRule (W260, decision Q50): a worker in real doubt asks a blocking question and ends its turn, its task
+// continued with the decision; otherwise it decides, and says so. One blocking question at a time, plan.BlockingCap in
+// all, plan.FreeCap that do not block: the questions service refuses more.
+const workerDoubtRule = "Ask a blocking question (`djinn question ask --wait`) only in real doubt: two valid designs " +
+	"whose consequences the developer will see (the interface, a behaviour, data, a cost), where a wrong pick throws " +
+	"away the work that follows. Decide alone on naming, internals, what a test settles, and what a decision of the " +
+	"wish settles already: read the wish's questions first (`djinn question list`). Before you ask with --wait, commit " +
+	"all the work that does not depend on the answer; then end your turn, saying what waits for it: Djinn frees your " +
+	"slot, keeps your worktree and session, and continues your task with \"Decision Qnn: ...\" once answered. A " +
+	"choice you made that the developer may want to revisit is a question without --wait: go on with your pick. One " +
+	"blocking question at a time, two per task, and three that do not block; past them, decide, and say it in your " +
+	"final note."
+const workerRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule + " " +
+	workerDoubtRule
+
+// investigationRules are an investigation's: a worker's, but for the blocking question, as it ends with its question.
+const investigationRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule
 
 // ifritRule (T51, Q11) is how an ifrit works: a turn per request, then it listens; Djinn runs what lasts, and keeps it
 // alive. It replaces workerWaitRule, whose wait in the foreground would hold its turn open.
@@ -1215,7 +1234,7 @@ func briefed(r *run, prompt string, readOnly bool) string {
 		rules = ifritRules
 	}
 	if dispatch.Investigation(r.task) {
-		rules = investigationRule(r.task) + " " + rules
+		rules = investigationRule(r.task) + " " + investigationRules
 	}
 	edits := r.task.GetBranch() != "" && !readOnly
 	if r.ifrit && !edits && r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
@@ -2018,6 +2037,17 @@ func (h *Harness) end(r *run, res Result) {
 	default:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_DONE, ""
 	}
+	// A worker that asked a blocking question ends its turn, not its task: the task waits on the question, its slot
+	// free; answered while it ran without the decision reaching it, the task continues with it at once.
+	var decision *planv1.Question
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !r.light && !r.watcher {
+		if q := h.waitOn(context.Background(), t); q != nil {
+			waitOnQuestion(t, q)
+			if q.GetAnswer() != nil {
+				decision = q
+			}
+		}
+	}
 	if !r.watcher {
 		t.Refused = r.refusals
 	}
@@ -2056,6 +2086,8 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	text := short(t.GetStatus())
 	switch {
+	case t.GetWaitQuestionId() != "" && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING:
+		text = "waiting: " + t.GetError() + "; its slot is free, and the answer continues it with the decision"
 	case preemptedWhy != "":
 		text = "resuming: " + preemptedWhy
 	case shelved:
@@ -2123,6 +2155,9 @@ func (h *Harness) end(r *run, res Result) {
 	// The links to the summoned skills go with the worker; a worker started again makes them anew.
 	_ = os.RemoveAll(skillsDir(h.home, r.id))
 	h.forget(r)
+	if decision != nil {
+		h.decideLater(t, decision)
+	}
 }
 
 // classifyFailure determines whether a worker's failure was caused by the provider's environment or by its work.

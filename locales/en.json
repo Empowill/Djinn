@@ -510,6 +510,7 @@
   "page.action_attach": "Project {project} is not on this machine yet: djinn project add <folder> attaches it.",
   "page.action_ready": "Every task is finished and no question is open: Djinn proposes to grant this wish. Grant it when it is done for you: djinn wish grant {wish}.",
   "page.action_waiting": "{task} waits for your answer to {question} before it may edit.",
+  "page.action_waiting_question": "{task} waits for your answer to {question}: the answer continues it.",
   "page.action_waiting_unknown": "{task} waits for your answer before it may edit.",
   "page.actions": "Waiting for you",
   "page.actions_sub": "What only you can do, the most urgent first.",

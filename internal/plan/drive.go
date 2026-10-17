@@ -472,6 +472,7 @@ func DrivenRules(projects []*planv1.Project, home string) string {
 		"- **Never ask the developer to check.** A check, a measure, a log, a CI result, a command to run goes to a " +
 		"task or a watcher, never to the developer. A question is only for a decision or a move only a person can " +
 		"make.\n" +
+		"- **A worker's blocking question waits for the developer.** " + WaitingQuestionRule + "\n" +
 		"- **Refused calls are yours, rights stay explicit.** An `ended` or `failed` event names the calls a worker's " +
 		"permissions refused: continue the task otherwise, or close it as seen (`djinn task done <task> --note " +
 		"\"…\"`) and spawn it again where a right already covers them. A new right is one `--move` question naming " +

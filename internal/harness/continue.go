@@ -23,8 +23,9 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// Continue plans again a task no worker runs, done, failed, stopped or cut short: its next worker resumes its own
-// session, in its own worktree, on the prompt. It starts in this call when the scheduler would start it; otherwise
+// Continue plans again a task no worker runs, done, failed, stopped, cut short, or waiting on the blocking question its
+// worker asked (the answer continues it so, with the decision: answerAsker): its next worker resumes its own session,
+// in its own worktree, on the prompt. It starts in this call when the scheduler would start it; otherwise
 // it waits, with the reason, and the scheduler starts it. Refused while the task runs or is planned, when it
 // continues in a fork, when its worktree is gone, or when its agent cannot resume a session. A running worker the
 // scheduler flagged stalled is the exception: it is ended and continued on its session (continueStalled).
@@ -80,6 +81,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	// Its own resumes count again from none: a person asked for this turn.
 	t.Status, t.Error, t.ResumeAfter, t.Resumes, t.Closed, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", nil, 0, nil, true
 	t.WaitReason = ""
+	t.WaitQuestionId = "" // Continued, it no longer waits on its blocking question: the answer finds it running.
 	if foreignModel(t.GetProvider(), t.GetModel()) {
 		t.Model = DefaultModel(t.GetProvider())
 	}
@@ -144,7 +146,7 @@ func (h *Harness) continuable(ctx context.Context, t *planv1.Task, running bool)
 	switch s := t.GetStatus(); {
 	case running || s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED:
 		return refuse("runs: send it a message instead (djinn task send)")
-	case s == planv1.TaskStatus_TASK_STATUS_WAITING:
+	case s == planv1.TaskStatus_TASK_STATUS_WAITING && t.GetWaitQuestionId() == "":
 		return refuse("waits for the answer to its edit question")
 	case planned(t) || s == planv1.TaskStatus_TASK_STATUS_PENDING:
 		return refuse("has not started: it starts by itself, or djinn task stop drops it")
