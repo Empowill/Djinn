@@ -132,8 +132,11 @@ func TestTaskWatchLastReturns(t *testing.T) {
 	if e.get(t, task.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Fatal("the task no longer runs: the test proves nothing")
 	}
-	short, stop := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	// A cancel, not a deadline: connect hands a deadline to the server, which then ends the stream cleanly a moment
+	// before the client's own timer marks short as done.
+	short, stop := context.WithCancel(t.Context())
 	defer stop()
+	time.AfterFunc(300*time.Millisecond, stop)
 	watch(short, &planv1.TaskServiceWatchRequest{Last: 2, Follow: true})
 	if short.Err() == nil {
 		t.Error("--last 2 --follow returned before the task ended")

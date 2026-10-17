@@ -32,6 +32,11 @@ the code does not say by itself; remove one when a change makes it false.
   where yours printed `"comments": [` (W187). *Sign:* a test on JSON text green in your worktree, red in the push
   check. *Do:* print through `indentedJSON` (compact protojson, then `json.Indent`), or compare parsed JSON;
   reproduce by appending a few bytes to a `go test -c` binary. *Where:* `internal/cli/cli.go`.
+- **A deadline on a watch ends it on the server first.** connect sends a context's deadline to the server, whose
+  handler then ends the stream cleanly a moment before the client's own timer fires: a test that checks `ctx.Err()`
+  after a watch with `context.WithTimeout` reads nil about one time in three (W201, `TestTaskWatchLastReturns`).
+  *Sign:* a watch that "returned before the task ended" with no stream error, the test as long as its timeout. *Do:*
+  `context.WithCancel` and `time.AfterFunc(d, cancel)`: a cancel stays on the client. *Where:* `internal/harness`.
 - **A test goroutine that outlives its test kills the package.** A tick that called `t.Error` after the test returned
   hit a closed store, then panicked ("Log in goroutine after … has completed"), ending the test binary (W530,
   `TestLeadWatchSettleIsCapped`). *Sign:* `FAIL <package>` with no `--- FAIL` line; slowtests names the tests left
