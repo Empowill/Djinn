@@ -220,7 +220,8 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   `correction_attempts`). If the correction fails, or its attempts are spent, or none can start, Djinn tells the lead
   (a move event, no question to the developer): retry a correction, drop the work, or leave it waiting. While the push
   is held, the wish's new tasks in the project wait (`waits for feat/x to be green again`), corrections and
-  investigators aside. A correction stopped on request stays the correction for ten minutes, time to continue it on
+  investigators aside; so they do while any correction repairs the branch (`waits for W9 to settle the conflict in
+  feat/x`). A correction stopped on request stays the correction for ten minutes, time to continue it on
   another agent. New work committed, or the branch moved since its checks were red (even pushed by hand), runs the
   push checks again: green, the hold lifts.
 - **The setup** makes the integration worktree, and the install worktree, ready before the first command there (a

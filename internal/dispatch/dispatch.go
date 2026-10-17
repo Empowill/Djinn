@@ -144,8 +144,8 @@ type Decision struct {
 	// It waits for room on the machine: Machine, or a task the memory holds goes before it (Task.room_wait). Neither
 	// its wish, a dependency, a push hold, a usage limit nor a write scope holds it.
 	Room bool
-	// It waits for a slot alone: the machine is not under pressure and its memory holds it. An investigator pauses
-	// a work task for it (the harness's preemptForSlot): it takes that task's slot, never one more.
+	// It waits for a slot alone: the machine is not under pressure and its memory holds it. An investigator, a merge
+	// or a repair pauses a work task for it (the harness's preemptForSlot): it takes that task's slot, never one more.
 	Slot bool
 }
 
@@ -602,26 +602,79 @@ func pushCheckHeld(p *planv1.WishPush) (sha, check string) {
 	return sha, check
 }
 
-// pushHeld tells whether t waits because the push of its wish's integration branch is held on red push checks. A
-// correction, a question worker and an urgent task, which the lead marks to repair the branch, never do.
+// pushHeld tells why t, a task that starts a worker, waits for its wish's integration branch in its project: the push
+// is held on red push checks, or a merge into the branch is in conflict or red and a correction repairs it (Q44, W233:
+// a new worker would start from the branch without that work, its own merge conflicting in turn); "" when neither
+// holds it. A correction, a review, a question worker and an urgent task, which the lead marks to repair the branch,
+// never wait; neither do the workers Djinn resumes, nor, for a repair, a watcher, which starts from no branch. The
+// workers already running go on.
 func (s *Situation) pushHeld(t *planv1.Task) string {
-	if t.GetCorrection() != nil || QuestionWorker(t) || Urgent(t) {
+	if plan.IsMerge(t) || QuestionWorker(t) || Urgent(t) {
 		return ""
 	}
 	wish := s.wishes[t.GetWishId()]
 	if wish == nil || t.GetProjectId() == "" {
 		return ""
 	}
-	p := plan.PushStateOf(wish, t.GetProjectId())
-	if p == nil || p.GetHeld() == "" || p.GetUnchecked() {
+	if p := plan.PushStateOf(wish, t.GetProjectId()); p != nil && p.GetHeld() != "" && !p.GetUnchecked() && p.GetCorrectedBy() != t.GetId() {
+		sha, check := pushCheckHeld(p)
+		return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", s.integrationBranch(t), sha, check)
+	}
+	if Resuming(t) || Watcher(t) {
 		return ""
 	}
-	if p.GetCorrectedBy() == t.GetId() {
-		return ""
+	for _, c := range s.tasks {
+		if c.GetWishId() == t.GetWishId() && strings.EqualFold(c.GetProjectId(), t.GetProjectId()) && repairing(c) {
+			return fmt.Sprintf("waits for %s to %s", c.GetCode(), s.repairs(c))
+		}
 	}
-	branch := s.integrationBranch(t)
-	sha, check := pushCheckHeld(p)
-	return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", branch, sha, check)
+	return ""
+}
+
+// repairing tells whether c, a correction worker, still repairs its branch: it is planned, runs or waits to, or it
+// ended done and its work waits to be merged, or reviewed (the harness's repairing, without the stop's grace). One
+// that failed, was cancelled, stopped or cut short is over, the correction after it, if any, repairing.
+func repairing(c *planv1.Task) bool {
+	if c.GetCorrection() == nil {
+		return false
+	}
+	switch c.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_CANCELLED, planv1.TaskStatus_TASK_STATUS_STOPPED,
+		planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+		return false
+	case planv1.TaskStatus_TASK_STATUS_DONE:
+		switch in := c.GetIntegration(); in.GetState() {
+		case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
+			return true
+		case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+			return in.GetReviewedBy() != ""
+		}
+		return false
+	}
+	return true
+}
+
+// repairs says what c, a correction worker repairing a branch, does to it: "settle the conflict in feat/qol", "settle
+// the merge of main into feat/qol", "repair the red checks of feat/qol".
+func (s *Situation) repairs(c *planv1.Task) string {
+	f := c.GetCorrection().GetFailure()
+	branch := ""
+	for _, id := range f.GetTaskIds() {
+		if d := s.byID[id]; d != nil && d.GetIntegration().GetBranch() != "" {
+			branch = d.GetIntegration().GetBranch()
+			break
+		}
+	}
+	branch = cmp.Or(branch, s.integrationBranch(c))
+	switch {
+	case f.GetMainSha() != "":
+		return "settle the merge of main into " + branch
+	case f.GetState() == planv1.IntegrationState_INTEGRATION_STATE_CONFLICT:
+		return "settle the conflict in " + branch
+	case f.GetState() == planv1.IntegrationState_INTEGRATION_STATE_RED:
+		return "repair the red checks of " + branch
+	}
+	return "repair " + branch
 }
 
 // forkedAs is the task that took over d: d itself, or, when d was cut short and resumed as a fork of its session
@@ -678,7 +731,8 @@ func provider(t *planv1.Task) string { return Provider(t) }
 // full says why the task's worker may not start now, or "" when it may: a slot is free, and the memory holds a worker
 // of its provider; an urgent task always may. Once the memory holds a task, the ones after it wait for it: they keep their order.
 // first tells that the task waits for one before it in that order, not for the machine: djinn task start never jumps it.
-// slot tells that it waits for a slot alone, its memory holding it: an investigator may take a paused task's slot.
+// slot tells that it waits for a slot alone, its memory holding it: an investigator, a merge or a repair may take the
+// slot of a work task it pauses.
 func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 	m := s.machine
 	if m == nil || Watcher(t) { // A watcher sleeps until its command prints: no slot.
@@ -691,9 +745,10 @@ func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 		return "the machine is under pressure: " + m.Pressure, false, false
 	}
 	// A slot each for the workers running, the ones this pass started, the gates held outside them, and the paused
-	// workers that resume first.
+	// workers that resume first, except before an investigator, a merge or a repair.
+	takes := t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR || plan.IsMerge(t)
 	resuming := m.Resuming
-	if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+	if takes {
 		resuming = 0
 	}
 	// One slot kept for the merges and pushes, on a machine of more than one, unless a merge's gate already takes it.
@@ -724,11 +779,12 @@ func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 			workers += fmt.Sprintf(", %d paused workers resume first", resuming)
 		}
 		why = workers + ", the most this machine holds (" + m.Rule + ")"
-		if t.GetRole() != planv1.TaskRole_TASK_ROLE_INVESTIGATOR && !Ifrit(t) {
+		if !takes && !Ifrit(t) {
 			return why, false, false
 		}
-		// An investigator may take the slot of a work task it pauses, and an ifrit starts beyond the slots: only where
-		// the memory holds it.
+		// An investigator, a merge or a repair may take the slot of a work task it pauses (W233: a merge before any
+		// work, which would start on the branch it settles), and an ifrit starts beyond the slots: only where the
+		// memory holds it.
 		if room, first := s.room(t); room != "" || Ifrit(t) {
 			return room, first, false
 		}

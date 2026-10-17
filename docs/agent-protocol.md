@@ -307,7 +307,11 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   for minor overlaps). Large work is cut into small steps, each merged and green before the next starts. A task starts
   from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine), since a
   task started there carries that branch into the next merge (W399 brought the replay sink's node_modules link into
-  feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct.
+  feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct. While a
+  correction repairs the wish's branch (a conflict, red checks, main's merge), Djinn starts no new worker of the wish in
+  that project (`waits for W225 to settle the conflict in feat/qol`): reviews, the urgent task and investigators aside,
+  the running workers going on. Corrections and reviews take a slot at once, pausing the lowest work task: never
+  `djinn task start` them, and never spawn around the hold.
 - **Watchers.** To wait on something outside, the Djinn spawns a watcher instead of polling:
   `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model
   and no slot, and each new paragraph it prints wakes the Djinn. `--restart` starts again a command that exits on each
@@ -361,4 +365,6 @@ a model: every provider case is a recorded stream, replayed through the real pro
 The scheduler starts planned and resuming tasks in a strict 5-tier dispatch order (investigators and converters first,
 then corrections and reviews, resumed work tasks, work tasks unblocking others on the critical path, and other work tasks).
 When slots are full or memory is short, investigators preempt the lowest-priority work task: pausing it or interrupting
-it to resume later without spending a resume attempt. Details: [scheduler order and preemption](providers.md#the-schedulers-order-and-preemption).
+it to resume later without spending a resume attempt. On a full machine, corrections and reviews pause it the same way
+for its slot (W233). While a correction repairs a wish's integration branch, no new worker of the wish starts in that
+project (`dispatch.pushHeld`): reviews, urgent tasks and question workers aside. Details: [scheduler order and preemption](providers.md#the-schedulers-order-and-preemption).

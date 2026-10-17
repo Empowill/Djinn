@@ -349,9 +349,9 @@ An investigator is never held behind a waiting work task. If memory is short, it
 
 ### Preemption for investigators
 When an investigator cannot start, Djinn makes room:
-- **No free slot**: Djinn pauses the running work task of lowest priority (the last wish by rank, then the most recently started), starts the investigator, and resumes the paused task as soon as the investigator ends.
+- **No free slot**: Djinn pauses the running work task of lowest priority (the last wish by rank, then the most recently started), starts the investigator, and resumes the paused task as soon as the investigator ends. A correction or a review (a merge in conflict, red checks, work left not committed) does the same (W233): it goes before the paused workers that resume, takes the slot of the work task it pauses, and lets it resume when it ends; under pressure, or when no work task can be paused, it waits.
 - **Memory short**: A pause frees the slot and CPU but not the memory held by the stopped process. When memory blocks an investigator, Djinn interrupts the running work task of lowest priority so that it resumes later in its session or conversation (`plan.CanResume`), entering status `RESUMING` with the reason `"made room for Qxx: enlighten"`, without spending a resume attempt.
-- **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
+- **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never an urgent task, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
 
 ### Memory a worker is engaged at
 

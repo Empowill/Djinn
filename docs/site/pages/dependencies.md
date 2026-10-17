@@ -77,6 +77,9 @@ A dependency is one reason among others. A planned task may also wait because:
   with the reason, and offers **Start anyway**;
 - **its provider's usage limit** is reached: **Waiting for the limit**;
 - **the wish's branch is red** after its push checks, until it is green again;
+- **a merge of the wish is in conflict or red**, and its correction repairs the branch: the task waits until the
+  correction's work is in, so that it starts from the repaired branch
+  ([One repair at a time](#merges-and-corrections-one-repair-at-a-time));
 - **its write scope is taken**: outside Git only, two tasks of a project whose folders overlap never run together.
 
 These waits are about the machine and the moment, not about the plan: they never make a dependency.

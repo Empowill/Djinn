@@ -161,8 +161,9 @@ running, is woken and continued on its session; after three wakes in a row, its 
 
 ## Urgent tasks
 
-A task waits its turn: the tasks Djinn resumes and the corrections first, then the ones others wait for, then the
-oldest. When something blocks the wish, the Djinn may mark the one task that unblocks it **urgent**: the repair of an
+A task waits its turn: the corrections and reviews first, then the tasks Djinn resumes, then the ones others wait
+for, then the oldest. A correction or a review never waits for a place: on a full machine Djinn pauses the work task
+that comes last to give it its place, and resumes that task once it ends. When something blocks the wish, the Djinn may mark the one task that unblocks it **urgent**: the repair of an
 integration branch whose push checks stay red after Djinn's corrections, or the task a stuck chain waits for. Its card
 and its line in the tree then carry a small **Urgent** label, and:
 

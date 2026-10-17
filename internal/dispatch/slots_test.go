@@ -13,7 +13,8 @@ import (
 )
 
 // kinds is one planned task of each kind the scheduler starts, in the order it serves them (Order), and a watcher:
-// every agent takes a slot, the watcher none (W577).
+// every agent takes a slot, the watcher none (W577). The correction repairs another project's branch: one of repo
+// would hold its new work (W233).
 func kinds(at time.Time) []*planv1.Task {
 	task := func(code string, edit func(*planv1.Task)) *planv1.Task {
 		t := &planv1.Task{Id: code, WishId: "w", Code: code, Title: code, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
@@ -25,7 +26,7 @@ func kinds(at time.Time) []*planv1.Task {
 	}
 	return []*planv1.Task{
 		task("investigator", func(t *planv1.Task) { t.Role = planv1.TaskRole_TASK_ROLE_INVESTIGATOR }),
-		task("correction", func(t *planv1.Task) { t.Correction = &planv1.TaskCorrection{Attempt: 1} }),
+		task("correction", func(t *planv1.Task) { t.Correction, t.ProjectId = &planv1.TaskCorrection{Attempt: 1}, "fix" }),
 		task("review", func(t *planv1.Task) { t.Review = &planv1.TaskReview{Attempt: 1} }),
 		task("restarted", func(t *planv1.Task) { t.Status = planv1.TaskStatus_TASK_STATUS_RESUMING }),
 		task("unblocks", nil),
@@ -41,7 +42,7 @@ func kinds(at time.Time) []*planv1.Task {
 // a task Djinn resumes after a restart, work that unblocks another, a merge task, plain work, and a watcher. The pass
 // starts exactly the free slots' worth of agents, the first ones in the order, never one more; the watcher starts
 // whatever the machine; under pressure no agent starts; each agent that waits says the machine holds it, and only the
-// investigator, which may take a paused task's slot, waits for a slot alone.
+// investigator, the correction and the review, which may take a paused task's slot (W233), wait for a slot alone.
 func TestSlotsHoldForEveryKind(t *testing.T) {
 	at := time.Date(2026, 10, 14, 1, 0, 0, 0, time.UTC)
 	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
@@ -74,7 +75,7 @@ func TestSlotsHoldForEveryKind(t *testing.T) {
 								started = append(started, id)
 							case !d.Machine:
 								t.Errorf("%s waits for more than the machine: %s", id, d.Why)
-							case d.Slot != (id == "investigator" && pressure == ""):
+							case d.Slot != (slices.Contains([]string{"investigator", "correction", "review"}, id) && pressure == ""):
 								t.Errorf("%s: Slot = %v (%s)", id, d.Slot, d.Why)
 							}
 						}

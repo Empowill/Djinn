@@ -156,7 +156,7 @@ type Harness struct {
 	builtFrom    map[string]string            // by project id: the branch the running binary was built from (compare.go)
 	runs         map[string]*run              // by task id
 	changed      chan struct{}                // closed at the next change of a task without worker (notifyLocked)
-	preempted    map[string]string            // investigator task ID -> paused work task ID, guarded by mu
+	preempted    map[string]string            // investigator or merge task ID -> paused work task ID, guarded by mu
 	goos         func() string                // runtime.GOOS; nil: runtime.GOOS
 	aliasesMu    sync.RWMutex
 	aliases      map[string]string // alias -> model ID
@@ -910,7 +910,8 @@ func (h *Harness) spawn(
 		}
 	}
 	var preemptedCode string
-	if task.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+	switch {
+	case task.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
 		if why != "" && isMemoryShort(why) {
 			if code, err := h.interruptPausedForMemory(ctx, task); err == nil && code != "" {
 				preemptedCode = code
@@ -946,7 +947,12 @@ func (h *Harness) spawn(
 				preemptedCode, why, machine, room = code, "", false, false
 			}
 		}
-	} else if why != "" && isMemoryShort(why) {
+	case slot && plan.IsMerge(task):
+		// A merge or a repair takes the slot of the work task it pauses, as an investigator does (W233).
+		if code, err := h.preemptForSlot(ctx, task); err == nil && code != "" {
+			preemptedCode, why, machine, room = code, "", false, false
+		}
+	case why != "" && isMemoryShort(why):
 		if code, err := h.interruptPausedForMemory(ctx, task); err == nil && code != "" {
 			preemptedCode = code
 			if fresh, err3 := store.List[*planv1.Task](ctx, h.store, nil); err3 == nil {
@@ -2031,6 +2037,7 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	if t.GetCorrection() != nil || t.GetReview() != nil {
 		h.kickIntegrate()
+		h.unpausePreempted(t) // The work task it paused for its slot resumes once that slot is free.
 	}
 	if r.light {
 		h.questionEnded(t) // The lead learns what it did, before the task's watchers let go, as a watcher's lead does.
