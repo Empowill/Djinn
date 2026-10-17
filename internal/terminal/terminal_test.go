@@ -314,31 +314,36 @@ func TestHeldSpaceArrivesAsRepeats(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := output(t, term, 0, contains("ready"))
-	for range repeats {
+	// The time each space is typed, on the clock the program reads too. Its reads are compared with these, not with
+	// one another: a program late on one read, under load, then reads the next one sooner, and nothing was batched.
+	typed := make([]int64, repeats)
+	for i := range repeats {
+		typed[i] = time.Now().UnixMicro()
 		if err := term.Write([]byte(" ")); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(every)
 	}
 	out = output(t, term, uint64(len(out)), contains("done"))
-	// One line a read: the byte count of the read and the milliseconds since the first.
+	// One line a read: the byte count of the read and when it came, in microseconds since the epoch.
 	reads := regexp.MustCompile(`read (\d+) at (\d+)`).FindAllStringSubmatch(out, -1)
 	if len(reads) != repeats {
 		t.Fatalf("the program read %d times, want %d single spaces:\n%s", len(reads), repeats, out)
 	}
-	prev := -1
+	var late int64
 	for i, r := range reads {
 		n, _ := strconv.Atoi(r[1])
-		at, _ := strconv.Atoi(r[2])
+		at, _ := strconv.ParseInt(r[2], 10, 64)
 		if n != 1 {
 			t.Fatalf("read %d got %d bytes, want one space at a time", i, n)
 		}
-		if prev >= 0 && at-prev < int(every/time.Millisecond)/2 {
-			t.Fatalf("read %d came %d ms after the previous one: batched, not as typed", i, at-prev)
+		if i+1 < repeats && at >= typed[i+1] {
+			t.Fatalf("read %d came %d ms after the next space was typed: held back, not as typed",
+				i, (at-typed[i+1])/1000)
 		}
-		prev = at
+		late = max(late, at-typed[i])
 	}
-	t.Logf("%d spaces in %d ms, one read each", repeats, prev)
+	t.Logf("%d spaces, one read each, at most %d ms after they were typed", repeats, late/1000)
 }
 
 // TestHelperProcess is the program the tests run in a terminal, not a test: with spaces, it puts its terminal in raw
@@ -354,18 +359,15 @@ func TestHelperProcess(t *testing.T) {
 	}
 	defer rawterm.Restore(0, state) //nolint:errcheck // Restored by hand before the exit below.
 	fmt.Print("ready\r\n")
-	var first time.Time
 	b := make([]byte, 64)
 	for count := 0; count < 20; {
 		n, err := os.Stdin.Read(b)
 		if err != nil {
 			os.Exit(1) //nolint:gocritic // The pseudo-terminal goes with this process.
 		}
-		if first.IsZero() {
-			first = time.Now()
-		}
+		at := time.Now().UnixMicro()
 		count += bytes.Count(b[:n], []byte(" "))
-		fmt.Printf("read %d at %d\r\n", n, time.Since(first).Milliseconds())
+		fmt.Printf("read %d at %d\r\n", n, at)
 	}
 	fmt.Print("done\r\n")
 	rawterm.Restore(0, state) //nolint:errcheck // Exits next: nothing to report it to.
