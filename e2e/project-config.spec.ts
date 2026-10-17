@@ -95,6 +95,12 @@ test("a project's configuration says what to fix first, its reference branch, wh
   git(folder, "checkout", "-q", "-b", "feature");
   const commit = git(folder, "rev-parse", "--short=7", "HEAD");
   djinn("project", "add", folder, "--name", "lantern");
+  // The folder as Djinn stored it, which the window shows: on Windows its long name, where the temporary folder may
+  // give a short one (RUNNER~1) that realpathSync keeps.
+  const directory: string = JSON.parse(
+    djinn("project", "list", "--json"),
+  ).projects.find((p: { name: string }) => p.name === "lantern").directory;
+  expect(path.basename(directory)).toBe(path.basename(folder));
 
   await page.goto(process.env.DJINN_URL!);
   await page
@@ -133,7 +139,7 @@ test("a project's configuration says what to fix first, its reference branch, wh
   await expect(team).toHaveText("the team's file");
   await expect(team).toHaveAttribute(
     "title",
-    path.join(folder, ".agents", "settings.txtpb"),
+    path.join(directory, ".agents", "settings.txtpb"),
   );
   const settings = boxes.filter({
     has: page.locator("h3", { hasText: "Settings" }),

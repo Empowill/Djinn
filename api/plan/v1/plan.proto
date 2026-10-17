@@ -45,6 +45,10 @@ message Project {
   // How many things of its configuration wait for you to fix, computed on every read: the notices of kind to fix
   // that djinn project show lists.
   int32 to_fix = 13;
+  // The first thing to fix in one sentence, the text of its notice, computed on every read; empty when nothing waits.
+  // The inbox's line of the project says it from its first paint: a sentence that came later would grow the line,
+  // and move what is read below it.
+  string first_fix = 14;
 
   // The one sync of the integration branch of a single wish, which syncs replaced.
   reserved 9;

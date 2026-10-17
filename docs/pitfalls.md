@@ -110,6 +110,11 @@ the code does not say by itself; remove one when a change makes it false.
 - **A watcher repeating itself wakes no one.** A paragraph equal to the last one (or, first after a start, to the
   task's `last_line`) is dropped. *Sign:* a check that fails again on a new push goes unreported. *Do:* make each
   paragraph name what it is about (head commit, job link). *Where:* `internal/harness/watch.go`.
+- **A watcher's paragraphs are cut by a silence, on the clock.** `Watch.Quiet` (50 ms in `fastWatch`) of silence ends
+  a paragraph: two lines a fake prints 100 ms apart came as one paragraph on a busy macOS runner, its first line the
+  task's `last_line`, so nothing changed (W270, `TestWatcherResumedSaysItOnce`, 1 failure in 41 macOS runs). *Sign:*
+  a task "stays" on its old `last_line` until the test's timeout. *Do:* print two paragraphs of a fake at least
+  300 ms apart. *Where:* `internal/harness/watch_test.go`.
 - **The command line fills a field from one input only through a oneof of scalars.** A message member in that oneof
   silently breaks the command (help says "Expects an RFC 3339 time"); and any string field named `file`, `path`,
   `directory` (or `*_file`…) is made absolute from the caller's folder (W9). *Do:* add a scalar member with a
@@ -135,7 +140,14 @@ the code does not say by itself; remove one when a change makes it false.
 - **All specs share one djinn.** `e2e/global-setup.ts` starts one `djinn up --browser`; specs leave wishes and
   terminals behind (W32). *Sign:* a spec passes alone and fails in the full run. *Do:* reproduce with the spec
   before it (`npx playwright test --config e2e/playwright.config.ts e2e/decision-log.spec.ts e2e/<spec>`), and make
-  the spec create its own state (`djinn wish make --json` through `bin/djinn-e2e`).
+  the spec create its own state (`djinn wish make --json` through `bin/djinn-e2e`). A spec that fails half way
+  leaves its state too: `project-config` failed on Windows before it said no to its source, and the flying carpet of
+  every later spec held an inbox line for it (W270). Fix the first red spec before the ones after it.
+- **Content that grows above a read item moves the scroll offset.** The browser keeps the item on screen
+  (`overflow-anchor`), so `scrollTop` grows by what was added above: the inbox line of a project fetched its sentence
+  after its first paint, and on Windows the longer sentence took a second line, 21 px (W270, `tilasms.spec.ts`). *Do:*
+  render an item with its final text (`Project.first_fix`); to reproduce, delay the call with `page.route` and narrow
+  the viewport until the text wraps.
 - **A reload gets the last minute's show.** `ui.Service` replays the last `Present` (wish and terminal) to a window
   that starts watching within a minute; since W501 not one whose wish was deleted, but another spec's live wish
   still lands (W477). *Do:* `djinn open djinn://wish/<id>` before `page.goto`; to switch themes, set
@@ -201,6 +213,9 @@ the code does not say by itself; remove one when a change makes it false.
   `strace -f -qq -e trace=execve -e signal=none -o out.s`, then `grep -c execve out.s`; cut spawns (`passMemo` keeps
   git answers for an integration pass). Mark tests that only check Djinn's logic portable (`testx.Portable`,
   [CONTRIBUTING.md](../CONTRIBUTING.md)).
+- **`fstest.TestFS` on `os.DirFS` checks the disk, not your `fs.FS`.** On the Windows runner a folder's listing says
+  size 0 and its `Stat` 4096 (`docs/site/fonts`, `pages`): `TestFS` failed there only (W270). *Do:* test an `fs.FS`
+  wrapper on the files read into an `fstest.MapFS`, as Djinn embeds them (`embedded` in `internal/docsite`).
 - **A file without build tag may use helpers that do not build on Windows.** `prompt_test.go` used helpers of a
   `//go:build !windows` test file: the Windows test package did not compile, Linux and the lint saw nothing (W484).
   *Do:* after a merge or a test move, run `GOOS=windows go vet -tags headless ./...` and
@@ -215,7 +230,7 @@ the code does not say by itself; remove one when a change makes it false.
   (`ProjectService.Add`), and a shell that finds `$PWD` wrong prints the resolved path from `pwd` (W159: a test
   compared a notice's file to the raw temporary folder; a serve's `pwd` printed `/private/var` until `startCommand`
   set `PWD`; W208: git names a worktree by its resolved path; an e2e spec's `realpathSync` keeps `RUNNER~1` where
-  Djinn stores `runneradmin`). *Sign:* passes on Linux, fails on macOS and Windows with the same path written two
+  Djinn stores `runneradmin`; W270: `project-config.spec.ts` made the same mistake after W208's fix). *Sign:* passes on Linux, fails on macOS and Windows with the same path written two
   ways. *Do:* compare to `project.GetDirectory()`, or the path Djinn gave; resolve a folder you make with
   `filepath.EvalSymlinks`; to reproduce on Linux, set `TMPDIR` to a symbolic link (only `/private/` gets the macOS
   treatment in `aliases`). In e2e, never put a path in a CSS attribute selector: a Windows path's backslashes are CSS

@@ -77,6 +77,16 @@ func countToFix(notices []*planv1.ProjectNotice) int32 {
 	return n
 }
 
+// firstFix is the sentence of the first of notices that waits for you; empty when none does.
+func firstFix(notices []*planv1.ProjectNotice) string {
+	for _, notice := range notices {
+		if notice.GetKind() == toFix {
+			return notice.GetText()
+		}
+	}
+	return ""
+}
+
 // settingsNotices are what Djinn finds in the settings files files: one it cannot read, and what it ignores in
 // those it reads.
 func settingsNotices(files []settingsRead) []*planv1.ProjectNotice {
