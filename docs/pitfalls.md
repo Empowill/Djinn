@@ -268,6 +268,10 @@ the code does not say by itself; remove one when a change makes it false.
   reproduce it; needs `runtime.LockOSThread`). `ReadWorker` returns an empty `Group` then (W537). *Do:* loop over
   fresh processes to reproduce races: `-count=N` in one process hides them behind the 1 s listing cache. *Where:*
   `internal/machine/group.go`.
+- **A process a loop starts again is not always there.** A worker's tree counted from its cgroup (`cgroup.procs`) holds
+  a `sleep 0.05` of a shell loop only between its starts: one reading in a few fell between two and counted 2 processes
+  of 3 (W212); reading for 300 ms fails every time. *Do:* count a process that lasts (a long `sleep` started once).
+  *Where:* `TestScopeTakesTheTree`.
 - **A `djinn-sentinel` shell per running harness is expected.** Since W514 Djinn records each child under
   `$DJINN_HOME/run/`, stops a dead djinn's leftovers at start, and a `/bin/sh … djinn-sentinel` kills the groups
   when Djinn dies: it is not an orphan. *Where:* `internal/harness/orphans_unix.go`.
