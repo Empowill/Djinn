@@ -25,6 +25,7 @@ import { HOURGLASS, Hourglass } from "./hourglass";
 import { HeldGates } from "./ifrit";
 import { t } from "./i18n";
 import { platformShortcut, TooltipButton } from "./tooltip";
+import { useInboxCount } from "./inbox";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
 import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
@@ -73,7 +74,7 @@ export function WishApp() {
   const loaded = useData((s) => s.loaded);
   const live = useData((s) => s.live);
   const error = useData((s) => s.error);
-  const inbox = useData((s) => s.inbox.length);
+  const inbox = useInboxCount();
   const [selected, setSelected] = useState(() => stored("djinn.wish"));
   // Keep a just-created wish renderable for the same commit as MakeWish leaves, so the shared action surface can
   // animate into the wish view while the next store list is still in flight.

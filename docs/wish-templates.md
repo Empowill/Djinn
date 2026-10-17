@@ -213,17 +213,20 @@ turns the automatic watcher off; `--babysit` still works.
 A merge request assigned to you, a mention in a thread: a skill may also declare a **source**, a command that prints
 what comes from outside. Djinn runs it, and each item it prints becomes a card in the inbox, at the top of the flying
 carpet, with the route Djinn proposes, as for a request handed over: a wish to file it in, or a new one, from the
-skill's template when the item matches it. Nothing is made until you click; "Dismiss" sets an item aside.
+skill's template when the item matches it. The card says what Djinn will do with the recommended choice (a template
+with a watcher: a wish whose watcher starts at once), and under each choice what it changes. Nothing is made until you
+click; "Dismiss", the last choice, sets an item aside. The inbox shows only what waits for you: empty, it is hidden.
 
 **A source runs only once you plug it in, on your machine.** Declaring one in a skill runs nothing: a clone of the
-repository polls no forge by itself. The empty inbox lists the sources your projects' skills declare, each with its
-command and a "Plug in" button ("Unplug" once plugged in); `djinn inbox sources`, `djinn inbox plug <source>` and
-`djinn inbox unplug <source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or
+repository polls no forge by itself. Each project's panel lists the sources its skills declare ("Inbox sources, on
+this machine"), each with its summary, its last run, its command and a "Plug in" button ("Unplug" once plugged in),
+what the button does written under it; `djinn inbox sources`, `djinn inbox plug <source>` and `djinn inbox unplug
+<source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or
 by its skill alone when one project holds it. Whether it is plugged in lives in Djinn's data on this machine, never in
 the repository. Unplugged, its command stops; the items it brought stay. A skill whose front matter is not YAML, or
 whose `metadata.djinn` Djinn cannot read, is no source: its project's problems name it, in the project's panel and in
 `djinn project show`, and Djinn ignores its template, source and babysit until it is fixed. One plugged in before it
-broke stays listed with why, so that it can be unplugged.
+broke stays listed with why, so that it can be unplugged: the inbox shows it as a failing source.
 
 ```yaml
 ---
@@ -270,7 +273,10 @@ its blocks.
 items that run printed (those the inbox had already included), and, when it failed, why (its exit code and the last
 lines of its error output, or why it could not start: a command the project's permissions do not list), how many runs
 failed in a row and since when. A run that goes well clears the failure. `djinn inbox sources` shows it, under
-`last_run`, beside the source's `summary`; unplugging the source forgets it.
+`last_run`, beside the source's `summary`; unplugging the source forgets it. While a source plugged in fails, the inbox
+shows a card "Djinn's configuration": the error, since when and how many runs, what Djinn does meanwhile (it runs it
+again every `every`), and two choices, fixing the cause on this machine (recommended: the first run that goes well
+takes the card away) or unplugging it. The side panel counts it with the items.
 
 **What Djinn never does.** It never writes to the source: the command's input is closed, and no answer runs a command.
 It never comments, reacts, marks as read nor replies on your behalf. It stores no token: the command logs in by its own
@@ -300,4 +306,5 @@ say again after a restart, a fake `gh` on the `PATH`), and `e2e/wish-template.sp
 inbox: `TestReadSource`, `TestSources`, `TestKeepSourceRun`, `TestOwnSource`, `TestInbox`, `TestItemKey`
 (`internal/plan/inbox_test.go`), `TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceFails`, `TestSourceUnplugged`
 (`internal/harness/watch_source_test.go`),
-`TestInboxPlug` (`cmd/djinn/inbox_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from the inbox).
+`TestInboxPlug` (`cmd/djinn/inbox_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from its project's panel, and a failing one, unplugged from its
+card).

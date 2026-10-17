@@ -182,7 +182,7 @@ one lead per wish keeps the lead of the first active wish as the Djinn.
 **Flying carpet**, at the top of the side panel, or Ctrl+1 (Cmd+1 on macOS), shows every active wish together:
 
 - a bar at the top while something waits for you, the most blocking first; a click takes you there;
-- the [inbox](#the-inbox), when a source found something;
+- the [inbox](#the-inbox), when a source found something, or one you plugged in fails;
 - each wish at a glance: its questions, what runs, or `READY`;
 - what waits for you, in every wish: open questions, workers that wait for your answer before they edit, wishes
   Djinn proposes to grant, and the **Proofs you can give** (see [azimas](#azimas)). A worker that failed, refused
@@ -539,11 +539,21 @@ opens](wish-templates.md#babysitting-what-a-task-opens).
 
 ## The inbox
 
-A skill may also declare a *source*: a command that prints what comes from outside, like the merge requests assigned
-to you. Each item becomes a card in the **Inbox**, at the top of the flying carpet, with where Djinn proposes to send it:
-a wish to file it in, or a new one. The side panel counts the new items, and the window shows each one as a system
-notification. Nothing is made until you click; **Rub the lamp** takes the recommended route, **Dismiss** sets the item
-aside for good. Djinn only reads a source: it never comments, reacts or replies. `djinn inbox list` lists the items.
+The **Inbox**, at the top of the flying carpet, holds what waits for you outside any wish; empty, it is hidden. A skill
+may declare a *source*: a command that prints what comes from outside, like the merge requests assigned to you. Each
+item becomes a card. Every card says three things, in this order: its kind (**Request**, **Djinn's configuration**)
+and the fact; what Djinn will do once you hand it over (a wish that follows it with its skill's watcher, a block filed
+in a wish, a new wish); and, under each choice, what that choice changes. A request's choices are where Djinn proposes
+to send it, the recommended one first and marked, then **Dismiss**, which sets it aside for good. The side panel counts
+the cards, and the window shows each new item as a system notification. Nothing is made until you click; **Rub the
+lamp** takes the recommended choice. Djinn only reads a source: it never comments, reacts or replies. `djinn inbox
+list` lists the items.
+
+The sources live in their project's panel, under "Inbox sources, on this machine": what each reads, how its last run
+went, and **Plug in** or **Unplug**, with what it does written under the button. A source runs only once plugged in, on
+this machine. One you plugged in that fails gets a card of the kind **Djinn's configuration**: the error, since when,
+how many runs failed in a row. Djinn runs it again on its own, and the first run that goes well takes the card away;
+its other choice unplugs it.
 A skill whose front matter Djinn cannot read (a line that breaks the YAML, like `argument-hint: [a] [b]`) is not
 listed as a source: it is one of the project's problems, at the top of its panel and in `djinn project show`, with
 the line at fault. Until it is fixed, Djinn ignores what it declares. Details: [the
