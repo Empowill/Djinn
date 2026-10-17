@@ -92,7 +92,8 @@ instead.
 - **A task's events** say each gate it asked for, waited for and why, took, and gave back.
 - **The Hourglass** draws the gates held over time, hatched while a command waits for one, and lists what each command
   cost and how long it waited.
-- **The project's view** lists the checks with how each last ran: on which commit, when, in how long, or why it failed.
+- **The project's configuration** lists the checks with how each last ran: on which commit, when, in how long, or why
+  it failed.
 
 Djinn's command line lists, per command, what it cost: CPU time, peak memory, duration.
 Its list of gates marks a lit ifrit's gates with the time they go back at the latest, and the Djinn's brief says who

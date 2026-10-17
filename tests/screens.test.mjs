@@ -75,14 +75,16 @@ export {
   spent,
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
+export { FolderField, MakeWish, ShortcutField } from "@/src/wish-dialogs.tsx";
 export {
-  FolderField,
-  MakeWish,
+  NoticeLine,
   ProjectChecks,
   ProjectPanel,
-  ShortcutField,
+  ProjectSettings,
+  ReferenceBranch,
+  SkillLine,
   WatchCommands,
-} from "@/src/wish-dialogs.tsx";
+} from "@/src/project-panel.tsx";
 export {
   LastPushes,
   LeadButton,
@@ -4358,7 +4360,10 @@ test("a project's panel lists the sources its skills declare: what each reads, h
     );
   };
   const html = await render(sources);
-  assert.match(html, /<h3>Inbox sources, on this machine<\/h3>/);
+  assert.match(
+    html,
+    /<h3>Inbox sources<span class="config-from">on this machine<\/span><\/h3>/,
+  );
   const rows = html
     .split('<li class="inbox-source-row">')
     .slice(1)
@@ -8187,6 +8192,216 @@ test("a project's panel lists the watcher commands you allow", () => {
     }),
   );
   assert.doesNotMatch(none, /Take back/);
+});
+
+// The project's configuration panel (W148): a thing to fix says what it is, the error as read, and what settles it,
+// a button never alone and never in the accent colour; the reference branch says its ref, commit and where its name
+// comes from; each skill says its role for Djinn; each setting where it comes from, those at the default folded.
+test("a project's configuration says what to fix, its reference branch, each skill's role and where each setting comes from", () => {
+  const render = (el) => s.renderToStaticMarkup(el);
+  const unreadable = render(
+    h(s.NoticeLine, {
+      notice: {
+        kind: s.ProjectNoticeKind.TO_FIX,
+        topic: s.ProjectNoticeTopic.SKILL,
+        subject: "notion-ticket",
+        text: "Djinn cannot read the skill notion-ticket.",
+        detail: "yaml: line 3: did not find expected key",
+        action: s.ProjectNoticeAction.FIX_FILE,
+        file: "/tmp/dolmen/.agents/skills/notion-ticket/SKILL.md",
+        command: "",
+      },
+      busy: false,
+      onAct() {},
+    }),
+  );
+  assert.match(unreadable, /^<div class="notice to-fix">/);
+  assert.match(
+    unreadable,
+    /<span>Djinn cannot read the skill notion-ticket\.<\/span><\/p><pre class="notice-detail">yaml: line 3: did not find expected key<\/pre>/,
+  );
+  assert.match(
+    unreadable,
+    /To fix in <span class="command"><code>\/tmp\/dolmen\/\.agents\/skills\/notion-ticket\/SKILL\.md<\/code>/,
+  );
+  assert.doesNotMatch(unreadable, /From a terminal/);
+
+  const acted = [];
+  const offered = render(
+    h(s.NoticeLine, {
+      notice: {
+        kind: s.ProjectNoticeKind.TO_FIX,
+        topic: s.ProjectNoticeTopic.SOURCE,
+        subject: "djinn/babysit-pr",
+        text: "The skill babysit-pr offers an inbox source this machine has not decided on.",
+        detail: "",
+        action: s.ProjectNoticeAction.PLUG_SOURCE,
+        file: "",
+        command: "djinn inbox plug djinn/babysit-pr",
+      },
+      busy: false,
+      onAct: (plug) => acted.push(plug),
+    }),
+  );
+  assert.doesNotMatch(offered, /notice-detail|button accent/);
+  assert.match(
+    offered,
+    /<div class="notice-choice"><button type="button" class="button small secondary">.*Plug in<\/button><p>Its command runs on this machine; each item it prints becomes a card in the inbox\.<\/p><\/div><div class="notice-choice"><button type="button" class="button small secondary">.*Say no<\/button><p>It runs nothing on this machine, and the project stops asking\.<\/p><\/div>/,
+  );
+  assert.match(
+    offered,
+    /From a terminal: <span class="command"><code>djinn inbox plug djinn\/babysit-pr<\/code>/,
+  );
+
+  const shown = {
+    repositoryFile: "/tmp/djinn/.agents/settings.txtpb",
+    developerFile: "/home/you/.config/djinn/projects/p1/settings.txtpb",
+  };
+  const reference = render(
+    h(s.ReferenceBranch, {
+      reference: {
+        branch: "main",
+        ref: "origin/main",
+        commit: "0458f74c0ffee",
+        source: s.SettingSource.DEFAULT,
+        checkedOut: "feature",
+      },
+      missing: false,
+      notices: [
+        {
+          kind: s.ProjectNoticeKind.INFORMATION,
+          topic: s.ProjectNoticeTopic.BRANCH,
+          text: "Your copy has feature checked out, not the reference branch origin/main.",
+        },
+      ],
+      shown,
+    }),
+  );
+  assert.match(
+    reference,
+    /<strong>Reference branch<\/strong><p><code>main<\/code> origin\/main at 0458f74 <span class="config-from">Djinn(?:'|&#x27;)s default<\/span><\/p>/,
+  );
+  assert.match(reference, /pull requests aim at it/);
+  assert.match(
+    reference,
+    /<p>Your copy has feature checked out, not the reference branch origin\/main\.<\/p>/,
+  );
+  const named = render(
+    h(s.ReferenceBranch, {
+      reference: {
+        branch: "dev",
+        ref: "origin/dev",
+        commit: "",
+        source: s.SettingSource.DEVELOPER,
+        checkedOut: "dev",
+      },
+      missing: true,
+      notices: [],
+      shown,
+    }),
+  );
+  assert.match(
+    named,
+    /<code>dev<\/code> origin\/dev, not in this copy yet <span class="config-from" title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span>/,
+  );
+  assert.match(
+    render(h(s.ReferenceBranch, { missing: true, notices: [], shown })),
+    /None found: see “To fix”\./,
+  );
+  assert.equal(
+    render(h(s.ReferenceBranch, { missing: false, notices: [], shown })),
+    "",
+  );
+
+  const project = { id: "p1", name: "djinn", directory: "/tmp/djinn" };
+  const skill = (extra) =>
+    render(
+      h(s.SkillLine, {
+        project,
+        toFix: false,
+        skill: {
+          project: "djinn",
+          name: "babysit-pr",
+          source: "",
+          directory: "/tmp/djinn/.agents/skills/babysit-pr",
+          description: "Babysits a pull request.",
+          missing: "",
+          template: "",
+          inboxSource: "",
+          babysit: "",
+          ...extra,
+        },
+      }),
+    );
+  assert.match(
+    skill({
+      template: "Babysit PR #{number}",
+      inboxSource: "sh inbox.sh",
+      babysit: "sh watch.sh {number}",
+    }),
+    /<strong>babysit-pr<\/strong><span class="config-from">\.agents\/skills<\/span><p>Babysits a pull request\.<\/p><p class="skill-role">Wish template “Babysit PR #\{number\}” · Inbox source · Babysits the project(?:'|&#x27;)s pull requests<\/p>/,
+  );
+  assert.match(
+    skill({}),
+    /<p class="skill-role">Know-how for the workers: no wish template, inbox source nor babysit for Djinn\.<\/p>/,
+  );
+  assert.match(
+    render(
+      h(s.SkillLine, {
+        project,
+        toFix: true,
+        skill: {
+          name: "notion-ticket",
+          source: "",
+          directory: "/tmp/djinn/.claude/skills/notion-ticket",
+          description: "",
+          missing: "",
+        },
+      }),
+    ),
+    /<span class="config-from">\.claude\/skills<\/span>.*<p class="skill-role to-fix">Djinn cannot use all of it: see “To fix”\.<\/p>/,
+  );
+  const summoned = skill({
+    source: "dolmen/recette",
+    name: "recette",
+    directory: "/tmp/dolmen/.agents/skills/recette",
+  });
+  assert.match(
+    summoned,
+    /<span class="badge muted">from dolmen\/recette<\/span>/,
+  );
+  assert.doesNotMatch(summoned, /config-from/);
+
+  const settings = render(
+    h(s.ProjectSettings, {
+      shown,
+      settings: [
+        {
+          name: "provider",
+          value: "claude",
+          source: s.SettingSource.DEVELOPER,
+        },
+        { name: "model", value: "", source: s.SettingSource.DEFAULT },
+        {
+          name: "checks",
+          value: "lint: go tool task lint (commit)",
+          source: s.SettingSource.REPOSITORY,
+        },
+        { name: "babysit", value: "true", source: s.SettingSource.DEFAULT },
+        {
+          name: "merge_main",
+          value: "release",
+          source: s.SettingSource.REPOSITORY,
+        },
+      ],
+    }),
+  );
+  // The checks have their own part of the panel; the settings a file sets come first, the defaults folded.
+  assert.doesNotMatch(settings, /lint: go tool task lint/);
+  assert.match(
+    settings,
+    /<div class="config-setting"><code>provider<\/code><span class="">claude<\/span><span class="config-from" title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span><\/div><div class="config-setting"><code>merge_main<\/code><span class="">release<\/span><span class="config-from" title="\/tmp\/djinn\/\.agents\/settings\.txtpb">the team(?:'|&#x27;)s file<\/span><\/div><details class="config-more"><summary>2 more at Djinn(?:'|&#x27;)s default<\/summary><div class="config-setting"><code>model<\/code><span class="muted-text">not set<\/span>/,
+  );
 });
 
 // An opened azima, as the Tasks tab shows it: built from what the lamp sends, its parts as the tab renders any task.

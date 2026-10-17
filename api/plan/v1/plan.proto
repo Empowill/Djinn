@@ -118,6 +118,23 @@ enum ProjectNoticeAction {
   PROJECT_NOTICE_ACTION_NAME_BRANCH = 5;
 }
 
+// ProjectReference is a project's reference branch as Djinn finds it on this machine: the branch it keeps wishes up
+// to date with and pull requests aim at, the commit it points at, where its name comes from, and the branch your copy
+// has checked out.
+message ProjectReference {
+  // The branch: main.
+  string branch = 1;
+  // The ref Djinn merges it from, short: origin/main, or main in a repository without a remote.
+  string ref = 2;
+  // The commit that ref points at, in full; empty when the repository does not hold it (a notice says so).
+  string commit = 3;
+  // Where its name comes from: Djinn's default (the remote's default branch, else main, else master), or the
+  // main_branch setting of the team's file or of yours.
+  SettingSource source = 4;
+  // The branch your copy has checked out; empty when it is detached.
+  string checked_out = 5;
+}
+
 // ProjectSync says how a branch Djinn pushes stands against its remote target: a wish's integration branch, or an
 // azima's own branch.
 message ProjectSync {
@@ -2529,6 +2546,9 @@ message ProjectServiceShowResponse {
   // of its settings, and the project's tasks do not spawn until it is fixed. A skill whose front matter breaks the
   // YAML outside its metadata is an information: Djinn reads its metadata apart, and names the lines at fault.
   repeated ProjectNotice notices = 11;
+  // The project's reference branch; unset for a project outside Git, without a folder on this machine, or whose
+  // repository holds no branch Djinn could take for it.
+  ProjectReference reference = 12;
   // The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
   // files resolve them. Their last runs are the project's check_runs.
   string setup = 6;

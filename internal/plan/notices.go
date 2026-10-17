@@ -156,6 +156,27 @@ func (p *Projects) branchNotices(ctx context.Context, project *planv1.Project, n
 	}}
 }
 
+// projectReference is project's reference branch, from name, its main_branch setting that from sets: the branch,
+// the ref Djinn merges it from, the commit it points at and the branch the project's folder has checked out. Nil
+// outside Git, and when Djinn finds no branch to take for it.
+func (p *Projects) projectReference(
+	ctx context.Context, project *planv1.Project, name string, from planv1.SettingSource,
+) *planv1.ProjectReference {
+	if p.Pusher == nil || !project.GetGit() || project.GetDirectory() == "" {
+		return nil
+	}
+	branch, ref, err := p.Pusher.Reference(ctx, project, name)
+	if branch == "" {
+		return nil
+	}
+	out := &planv1.ProjectReference{Branch: branch, Ref: shortRef(ref), Source: from}
+	if err == nil {
+		out.Commit, _ = gitOut(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+	}
+	out.CheckedOut, _ = gitOut(ctx, project.GetDirectory(), "symbolic-ref", "--quiet", "--short", "HEAD")
+	return out
+}
+
 // shortRef is ref without refs/remotes/ nor refs/heads/: origin/main, main.
 func shortRef(ref string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(ref, "refs/remotes/"), "refs/heads/")

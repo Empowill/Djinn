@@ -198,7 +198,8 @@ func TestProjectNotices(t *testing.T) {
 }
 
 // TestProjectNoticesBranch (W146): a reference branch Djinn does not find is a thing to fix, named with
-// main_branch; a copy with another branch checked out is an information.
+// main_branch; a copy with another branch checked out is an information. The panel reads the reference itself (W148):
+// its branch, the ref and commit Djinn merges it from, where its name comes from and the branch the copy has out.
 func TestProjectNoticesBranch(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
@@ -213,18 +214,39 @@ func TestProjectNoticesBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	project := add.Msg.GetProject()
+	var reference *planv1.ProjectReference
 	show := func() []*planv1.ProjectNotice {
 		t.Helper()
 		res, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: project.GetName()}))
 		if err != nil {
 			t.Fatal(err)
 		}
+		reference = res.Msg.GetReference()
 		return res.Msg.GetNotices()
 	}
 	n := show()
 	if got := noticeLines(n); !slices.Equal(got, []string{"INFORMATION BRANCH feature UNSPECIFIED"}) ||
 		!strings.Contains(n[0].GetText(), "not the reference branch origin/main") {
 		t.Errorf("on feature: %v", n)
+	}
+	if reference.GetBranch() != "main" || reference.GetRef() != "origin/main" || reference.GetCommit() != "" ||
+		reference.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEFAULT || reference.GetCheckedOut() != "feature" {
+		t.Errorf("reference on feature, origin/main not fetched: %v", reference)
+	}
+	for _, args := range [][]string{
+		{"-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "first"},
+		{"update-ref", "refs/remotes/origin/main", "HEAD"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	head, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if show(); reference.GetCommit() != strings.TrimSpace(string(head)) {
+		t.Errorf("reference commit %q, want %q", reference.GetCommit(), head)
 	}
 
 	if out, err := exec.Command("git", "-C", dir, "symbolic-ref", "HEAD", "refs/heads/main").CombinedOutput(); err != nil {
@@ -240,5 +262,8 @@ func TestProjectNoticesBranch(t *testing.T) {
 	if got := noticeLines(n); !slices.Equal(got, []string{"TO_FIX BRANCH dev NAME_BRANCH"}) ||
 		n[0].GetFile() != filepath.Join(dir, SettingsFile) || !strings.Contains(n[0].GetDetail(), "origin/dev") {
 		t.Errorf("dev missing: %v", n)
+	}
+	if reference != nil {
+		t.Errorf("reference when none is found: %v", reference)
 	}
 }

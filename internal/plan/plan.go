@@ -406,6 +406,7 @@ func (p *Projects) Show(
 	out := &planv1.ProjectServiceShowResponse{
 		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
 		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands, Notices: notices,
+		Reference: p.projectReference(ctx, project, settings.MainBranch, settings.MainBranchFrom),
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
 	return connect.NewResponse(out), nil

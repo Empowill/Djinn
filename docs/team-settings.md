@@ -156,8 +156,8 @@ developer_file: /home/me/.config/djinn/projects/01a1…/settings.txtpb
 ## A file Djinn cannot read
 
 A malformed file, a value out of range, two checks of one name: Djinn still starts, and `djinn project show` lists the
-problem under `notices`, a thing to fix with the file and the line, as the project's view in the window does. The
-other file still shows. A task spawned in the project waits, saying `settings unreadable: …`, and starts once you fix
+problem under `notices`, a thing to fix with the file and the line, as the project's configuration in the window
+does. The other file still shows. A task spawned in the project waits, saying `settings unreadable: …`, and starts once you fix
 it; merges there wait too: a team's budget never silently vanishes. An unknown field, which a newer Djinn may know, is
 only an information: the line is ignored.
 
@@ -178,6 +178,12 @@ on every read: the things to fix first, then the information. Each notice has a 
 | `source` | A source this machine has not decided on: plug it in, or unplug it to say no | A source plugged in that no skill declares any more |
 
 `djinn project list` gives each project's `to_fix`, the number of things to fix.
+
+`djinn project show` also gives the project's `reference`, its reference branch as Djinn finds it: the `branch`, the
+`ref` Djinn merges it from (`origin/main`), the `commit` that ref points at (empty when the repository does not hold
+it yet), the `source` of its name (`SETTING_SOURCE_DEFAULT` for the remote's default branch, else `main`, else `master`;
+otherwise the file whose `main_branch` names it) and the branch your copy has `checked_out`. The project's
+configuration in the window shows the same, with each setting and where it comes from.
 
 ## No secret, ever
 
@@ -228,8 +234,8 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
 - **Targeted tests (`test_one`)**: when a project names `test_one` (such as `test_one: "go tool task test-pkg -- {pkg}"`),
   Djinn includes the command template in the project's checks brief. Workers run the commit checks before they end,
   and then only the targeted tests covering what they changed, leaving the push checks (such as the full test suite) for Djinn.
-- `djinn project show <project>` and the project's view in the window list the setup and the checks, each with its
-  last run: the commit it checked, when, how long, and why it failed.
+- `djinn project show <project>` and the project's configuration in the window list the setup and the checks, each
+  with its last run: the commit it checked, when, how long, and why it failed.
 
 A check's name is letters, digits, `-` and `_`; two checks never share a name, case ignored. `test: "make test"`, the
 former single test command, still works: it is the check `test` at `commit`, unless the file names a check `test`.
