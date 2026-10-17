@@ -96,6 +96,13 @@ A tilasm greys its comments and both buttons once its work was launched, or whil
 next version; a line says why, and which task or question. A send the Djinn has not read yet holds the buttons only.
 Launch never goes twice: Djinn refuses it, whatever the window shows.
 
+### The Djinn's replies
+
+A sent comment keeps its card, in its place, marked sent; it no longer changes. The Djinn replies to each one: what
+it did with it, or why not, and the tasks it made of it, named under the reply. A comment it did not understand gets
+a reply that asks. The card then reads **Replied**. Until each comment has its reply, the wish's brief reminds the
+Djinn which ones wait; your drafts never show there.
+
 Comments on a passage or an element of the page come next.
 
 ## Making one yourself

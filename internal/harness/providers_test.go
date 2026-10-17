@@ -103,6 +103,23 @@ func catalog() []catalogCase {
 					t.Errorf("session = %q", ev.SessionID)
 				}
 			}},
+		{provider: "claude", fixture: "lead-comments",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, _ string) {
+				// The lead's batch on a send of comments: a reply per comment, its cost as claude counts it.
+				replies := 0
+				for _, ev := range events {
+					if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL && strings.Contains(ev.Text, "djinn tilasm reply L01 C") {
+						replies++
+					}
+				}
+				if replies != 4 {
+					t.Errorf("%d replies, want 4", replies)
+				}
+				if u := event(t, events, "USAGE").Usage; u.GetCostUsd() != 0.6187598000000001 {
+					t.Errorf("usage = %v", u)
+				}
+			}},
 		{provider: "claude", fixture: "lead-batch",
 			spec: Spec{SystemPrompt: "# Leading in Djinn", MaxTurns: 60, WriteDirs: []string{"/d/lead"}, ReadDirs: []string{"/d"},
 				Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}, Mode: djinnv1.Mode_MODE_LISTED}},

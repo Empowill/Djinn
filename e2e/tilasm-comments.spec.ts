@@ -178,7 +178,8 @@ test("drafts on the whole tilasm are written, edited, deleted with an Undo, and 
 
 // The foot of the column (decision Q29): a last word on the whole tilasm, then Iterate or Launch, each confirmed in a
 // line that Escape gives up and Enter sends. Iterate sends the drafts and the last word in one send, which holds the
-// buttons until the Djinn reads it. Launch without a comment answers the question that links the tilasm with its
+// buttons until the Djinn reads it; the sent cards keep their place, and the reply djinn tilasm reply writes shows under
+// its card, with the task it names. Launch without a comment answers the question that links the tilasm with its
 // recommended option; the tilasm, launched, greys its comments and its buttons, with a line that says why.
 test("the comments leave in one send, Iterate or Launch, and a launched tilasm greys", async ({
   page,
@@ -270,7 +271,13 @@ test("the comments leave in one send, Iterate or Launch, and a launched tilasm g
   await expect(
     page.getByText("Send 1 left for the Djinn: it makes the next version."),
   ).toBeVisible();
-  await expect(column.locator(".tilasm-comment")).toHaveCount(0);
+  // The sent comments keep their cards, which no longer change.
+  const cards = column.locator(".tilasm-comment");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0)).toContainText("C1");
+  await expect(cards.nth(0)).toContainText("Sent · send 1");
+  await expect(cards.nth(1)).toContainText("And say what a granted wish does.");
+  await expect(column.getByRole("button", { name: "Edit C1" })).toHaveCount(0);
   await expect(word).toHaveValue("");
   // Until the Djinn reads it, the send holds the buttons, not the comments.
   await expect(column).toContainText("Send 1 waits for the Djinn to read it.");
@@ -285,6 +292,50 @@ test("the comments leave in one send, Iterate or Launch, and a launched tilasm g
     "2 comments · iterate: put its next version with them",
   );
   expect(read).toContain("And say what a granted wish does.");
+
+  // The Djinn's reply, written by the command, shows under its card with the task it made of the comment.
+  const azima = JSON.parse(
+    djinn(
+      "task",
+      "spawn",
+      wishId,
+      "--kind",
+      "azima",
+      "--title",
+      "Paused wishes",
+      "--json",
+    ),
+  ).task.code as string;
+  const replied = JSON.parse(
+    djinn(
+      "tilasm",
+      "reply",
+      "L01",
+      "C1",
+      "--wish",
+      wishId,
+      "--text",
+      "A paused wish keeps its notices: the next version says so.",
+      "--task",
+      azima,
+      "--json",
+    ),
+  ) as { unanswered?: number };
+  expect(replied.unanswered).toBe(1);
+  const reply = cards.nth(0).getByRole("note", { name: "The reply to C1" });
+  await expect(reply).toContainText("Reply from the Djinn");
+  await expect(reply).toContainText(
+    "A paused wish keeps its notices: the next version says so.",
+  );
+  await expect(reply).toContainText(`Tasks: ${azima}`);
+  await expect(cards.nth(0)).toContainText("Replied");
+  await expect(cards.nth(1)).toContainText("Sent · send 1");
+  await expect(cards.nth(1).getByRole("note")).toHaveCount(0);
+  expect(djinn("tilasm", "comments", "L01", "--wish", wishId)).toContain(
+    "1 without a reply.",
+  );
+  await cards.nth(0).evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await page.screenshot({ path: path.join(shots, "tilasm-reply.png") });
 
   // L02: Launch without a comment is a yes to the question that links it.
   await view.getByRole("button", { name: "Close the tilasm" }).click();

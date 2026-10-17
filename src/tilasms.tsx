@@ -36,7 +36,7 @@ import {
   type TilasmHold,
 } from "../gen/ts/plan/v1/tilasm_pb";
 import { message } from "./data/client";
-import { draftCounts, draftsOn } from "./data/comments";
+import { draftCounts, draftsOn, sentOn } from "./data/comments";
 import { later } from "./data/decisions";
 import { useClients, useStore } from "./data/djinn";
 import { compareCodes } from "./data/flight";
@@ -82,6 +82,7 @@ export function TilasmsTab({
   tilasms,
   drafts = [],
   holds = [],
+  sent = [],
   tasks,
   onToast,
 }: {
@@ -94,6 +95,8 @@ export function TilasmsTab({
   drafts?: readonly TilasmComment[];
   // Why some take no send for now, as the server computes it.
   holds?: readonly TilasmHold[];
+  // The comments sent on them, with the Djinn's replies.
+  sent?: readonly TilasmComment[];
   tasks: readonly Task[];
   onToast: (text: string) => void;
 }) {
@@ -180,6 +183,7 @@ export function TilasmsTab({
       tilasms={found ?? tilasms}
       drafts={drafts}
       holds={holds}
+      sent={sent}
       comments={comments}
       onCommentError={(error) => onToast(message(error))}
       count={tilasms.length}
@@ -233,6 +237,7 @@ export function TilasmList({
   tilasms,
   drafts = [],
   holds = [],
+  sent = [],
   comments,
   onCommentError = () => {},
   count,
@@ -254,6 +259,8 @@ export function TilasmList({
   drafts?: readonly TilasmComment[];
   // Why some take no send for now.
   holds?: readonly TilasmHold[];
+  // The comments sent on them, with the Djinn's replies.
+  sent?: readonly TilasmComment[];
   // What writes them; without it, the open tilasm shows no comments.
   comments?: CommentWrites;
   onCommentError?: (error: unknown) => void;
@@ -342,6 +349,8 @@ export function TilasmList({
             onOpen("");
           }}
           drafts={draftsOn(drafts, open.id)}
+          sent={sentOn(sent, open.id)}
+          codes={codes}
           hold={holds.find((h) => h.tilasmId === open.id)}
           comments={comments}
           onCommentError={onCommentError}
@@ -453,6 +462,8 @@ export function TilasmFrame({
   onClose,
   over = false,
   drafts = [],
+  sent = [],
+  codes,
   hold,
   comments,
   onCommentError = () => {},
@@ -466,6 +477,10 @@ export function TilasmFrame({
   over?: boolean;
   // The developer's drafts on it, in the order written.
   drafts?: readonly TilasmComment[];
+  // The comments sent on it, with the Djinn's replies, in the order written.
+  sent?: readonly TilasmComment[];
+  // The codes of the wish's tasks, by id: those a reply names.
+  codes?: ReadonlyMap<string, string>;
   // Why it takes no send for now; none: it does.
   hold?: TilasmHold;
   // What writes them: the Comments column shows beside the frame, on demand; without it, none.
@@ -557,6 +572,8 @@ export function TilasmFrame({
           code={tilasm.code}
           version={latest(tilasm)}
           drafts={drafts}
+          sent={sent}
+          codes={codes}
           hold={hold}
           writes={comments}
           onError={onCommentError}

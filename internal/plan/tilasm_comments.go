@@ -121,7 +121,7 @@ func sendChoices(ctx context.Context, r store.Reader, tilasm *planv1.Tilasm) (ma
 
 // commentsText lays out the comments sent on a tilasm for the lead: the tilasm, then each send with what the developer
 // chose (choices, by send), then each comment with what it is on, so that it reads them without reading the tilasm
-// again.
+// again, and last how many wait for a reply.
 func commentsText(
 	tilasm *planv1.Tilasm, sent []*planv1.TilasmComment, taskCodes map[string]string, choices map[int32]string,
 ) string {
@@ -173,6 +173,16 @@ func commentsText(
 			}
 			b.WriteString(indent(head+": "+r.GetText()) + "\n")
 		}
+	}
+	waiting := 0
+	for _, c := range sent {
+		if c.GetReply() == nil {
+			waiting++
+		}
+	}
+	if waiting > 0 {
+		fmt.Fprintf(&b, "\n%d without a reply. Reply to each: djinn tilasm reply %s <C> --text \"…\" [--task W60]\n",
+			waiting, tilasm.GetCode())
 	}
 	return b.String()
 }
@@ -372,8 +382,18 @@ func (t *Tilasms) Drafts(
 	if err != nil {
 		return nil, Status(err)
 	}
-	drafts := slices.DeleteFunc(all, func(c *planv1.TilasmComment) bool {
-		return c.GetState() != planv1.CommentState_COMMENT_STATE_DRAFT
+	var drafts, sent []*planv1.TilasmComment
+	for _, c := range all {
+		switch c.GetState() {
+		case planv1.CommentState_COMMENT_STATE_DRAFT:
+			drafts = append(drafts, c)
+		case planv1.CommentState_COMMENT_STATE_SENT:
+			sent = append(sent, c)
+		}
+	}
+	slices.SortFunc(sent, func(a, b *planv1.TilasmComment) int {
+		return cmp.Or(strings.Compare(a.GetTilasmId(), b.GetTilasmId()), cmp.Compare(a.GetSend(), b.GetSend()),
+			cmp.Compare(commentNumber(a.GetCode()), commentNumber(b.GetCode())))
 	})
 	tilasms, err := store.List[*planv1.Tilasm](ctx, t.Store, store.Where{"wish_id": req.Msg.GetWish()})
 	if err != nil {
@@ -383,7 +403,7 @@ func (t *Tilasms) Drafts(
 	if err != nil {
 		return nil, Status(err)
 	}
-	res := &planv1.TilasmServiceDraftsResponse{Comments: drafts}
+	res := &planv1.TilasmServiceDraftsResponse{Comments: drafts, Sent: sent}
 	for _, tilasm := range tilasms {
 		if h := holds[tilasm.GetId()]; h != nil {
 			res.Holds = append(res.Holds, h)

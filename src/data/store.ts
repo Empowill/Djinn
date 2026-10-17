@@ -58,6 +58,8 @@ export interface WishDetail {
   drafts: TilasmComment[];
   // Why some of its tilasms take no send for now, read with the drafts: computed by the server.
   holds: TilasmHold[];
+  // The comments sent on its tilasms, with the Djinn's replies, read with the drafts.
+  sent: TilasmComment[];
   // Read at least once.
   loaded: boolean;
   // Totals from the server for paginated lists.
@@ -143,6 +145,7 @@ const EMPTY_DETAIL: WishDetail = {
   tilasms: [],
   drafts: [],
   holds: [],
+  sent: [],
   loaded: false,
   loadedKinds: new Set<Change>(),
 };
@@ -784,7 +787,8 @@ export function createStore(
           const res = await clients.tilasms
             .drafts({ wish: wishId }, call)
             .catch((error: unknown) => {
-              if (unimplemented(error)) return { comments: [], holds: [] };
+              if (unimplemented(error))
+                return { comments: [], holds: [], sent: [] };
               throw error;
             });
           into.drafts = reconcile(
@@ -799,6 +803,7 @@ export function createStore(
               equals(TilasmHoldSchema, h, prevDetail.holds[i]),
             );
           into.holds = same ? prevDetail.holds : res.holds;
+          into.sent = reconcile(TilasmCommentSchema, prevDetail.sent, res.sent);
         });
     }
     await Promise.all(reads);
@@ -815,6 +820,7 @@ export function createStore(
       const tilasms = got.tilasms ?? prevDetail.tilasms;
       const drafts = got.drafts ?? prevDetail.drafts;
       const holds = got.holds ?? prevDetail.holds;
+      const sent = got.sent ?? prevDetail.sent;
       const tasksTotal =
         got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
       const questionsTotal =
@@ -858,6 +864,7 @@ export function createStore(
         tilasms === prevDetail.tilasms &&
         drafts === prevDetail.drafts &&
         holds === prevDetail.holds &&
+        sent === prevDetail.sent &&
         tasksTotal === prevDetail.tasksTotal &&
         questionsTotal === prevDetail.questionsTotal &&
         blocksTotal === prevDetail.blocksTotal &&
@@ -875,6 +882,7 @@ export function createStore(
         tilasms,
         drafts,
         holds,
+        sent,
         loaded: true,
         tasksTotal,
         questionsTotal,
