@@ -68,12 +68,16 @@ func CleanVersions(ctx context.Context, s *store.Store) error {
 // methodCleanVersions journals CleanVersions; the request is the question, cleaned.
 const methodCleanVersions = "plan/clean-versions"
 
-// Investigating tells an open question whose last round is a request to investigate: it waits for the lead's
-// revision, not for the developer.
+// Investigating tells an open question whose last round is a request to investigate or an iteration on its mockup
+// (Iterating): it waits for the revision of its investigator, of its mockup task or of the lead, not for the
+// developer.
 func Investigating(q *planv1.Question) bool {
 	rounds := q.GetRounds()
-	return q.GetAnswer() == nil && q.GetWithdrawal() == nil && len(rounds) > 0 &&
-		rounds[len(rounds)-1].GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN
+	if q.GetAnswer() != nil || q.GetWithdrawal() != nil || len(rounds) == 0 {
+		return false
+	}
+	k := rounds[len(rounds)-1].GetKind()
+	return k == planv1.RoundKind_ROUND_KIND_ENLIGHTEN || k == planv1.RoundKind_ROUND_KIND_ITERATE
 }
 
 // Enlighten records a request to investigate an open question, with what to dig into.

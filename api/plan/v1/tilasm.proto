@@ -425,6 +425,12 @@ message TilasmServiceSendCommentsResponse {
   repeated TilasmComment comments = 2;
   // The question a launch without a comment answered, by code (Q29); empty when it answered none.
   string answered = 3;
+  // The question an iterate send started an iteration round on, by code (Q61), when an option of that open question
+  // linking the tilasm plans a mockup within its rounds (ROUND_KIND_ITERATE): the mockup task reads the comments, no
+  // comments event goes to the lead. Empty otherwise.
+  string iterated = 4;
+  // The mockup task the iteration started, by code (W301); empty when none started, the lead told instead.
+  string iterate = 5;
 }
 
 message TilasmServicePutCommentRequest {

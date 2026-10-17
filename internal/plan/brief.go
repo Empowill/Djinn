@@ -105,15 +105,18 @@ const IfritRule = "- **An ifrit for live iteration (Q11).** An ifrit is a worker
 	"--note \"…\"`: its work integrates like a task's, through the commit checks (`djinn lead notes ifrit`).\n"
 
 // InvestigationRule is how the lead uses an investigation (W213): a short study or audit, served first, that ends in a
-// tilasm and a question and whose commits are never merged; a mockup is urgent work for feedback instead.
+// tilasm and a question and whose commits are never merged; a prototype is urgent work for feedback instead, and a
+// design the developer reviews version after version is a mockup (W268).
 const InvestigationRule = "- **An investigation to align fast.** A study or an audit the developer and you need to decide " +
 	"(why the tests flake, what a change would cost, where a design stands) goes to an investigation: `djinn task " +
 	"spawn <wish> --kind investigation --title \"…\" --prompt \"…\"` (`--minutes 40`, `--max-budget-usd 15` past its " +
 	"25 minutes and $10). It goes before the planned work, takes a slot even on a full machine (it pauses a work " +
 	"task meanwhile, one or two at once per machine), starts on a red branch, reads and runs everything, and ends in a " +
 	"tilasm and a question to the developer; at its limit Djinn asks it to publish what it has. Djinn never merges " +
-	"its commits: anything that must merge, a mockup the developer judges by running it included, is work " +
-	"(`--feedback` when they wait for it), never an investigation.\n"
+	"its commits: anything that must merge, a prototype the developer judges by running it included, is work " +
+	"(`--feedback` when they wait for it), never an investigation. A design the developer reviews as a tilasm, " +
+	"version after version, is a mockup (`--kind mockup`, same frame, no hold applies): ask its question with a " +
+	"mockup option to iterate and a work option to build (`djinn lead notes planned-options`).\n"
 
 // briefRules are Djinn's rules for whoever leads the wishes. They name no wish: every lead reads the same text.
 func briefRules(projects []*planv1.Project, home string) string {
@@ -265,7 +268,9 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"per option, header lines named as spawn's flags, then the prompt (`djinn lead notes planned-options`). An " +
 		"answer without a note launches a plan with no `--after` nor `--blocks` at once (\"W40 launched as planned\"); " +
 		"a note or a dependency leaves it to you, the plan and its tasks' states under the answer's line: settle it in " +
-		"one command, `djinn question launch <question>`, as it is or with spawn's flags in place of the plan's.\n" +
+		"one command, `djinn question launch <question>`, as it is or with spawn's flags in place of the plan's. A " +
+		"plan of `kind: mockup` iterates instead (`rounds: 3`): its answer starts a mockup task that puts the tilasm's " +
+		"next version and revises the question; past its rounds, the answer and its note come to you.\n" +
 		"- **Djinn acts on the developer's answers.** You turn each answer without a launched plan into tasks yourself, " +
 		"in one pass, placing them in the graph (azimas, --after, --blocks), and check what an investigator revised. " +
 		"\"Enlighten me\" starts \"Q03: enlighten\": it reads, then revises the question. You are told when it " +
@@ -531,13 +536,19 @@ func ifritWaitsBrief(b *strings.Builder, t *planv1.Task, waits map[string][]stri
 		strings.Join(who, "; "), t.GetCode(), t.GetCode())
 }
 
-// investigationTag marks an investigation's line in the brief, after its title: " [investigation]"; "" for any
-// other task.
+// investigationTag marks an investigation's or a mockup's line in the brief, after its title: " [investigation]",
+// " [mockup of Q61]"; "" for any other task.
 func investigationTag(t *planv1.Task) string {
-	if t.GetKind() != planv1.TaskKind_TASK_KIND_INVESTIGATION {
-		return ""
+	switch t.GetKind() {
+	case planv1.TaskKind_TASK_KIND_INVESTIGATION:
+		return " [investigation]"
+	case planv1.TaskKind_TASK_KIND_MOCKUP:
+		if q := t.GetQuestion(); q != "" {
+			return " [mockup of " + q + "]"
+		}
+		return " [mockup]"
 	}
-	return " [investigation]"
+	return ""
 }
 
 // ifritWord says, on a running task's line, that it is an ifrit and where it stands: working on a request or

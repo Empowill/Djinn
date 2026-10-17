@@ -83,10 +83,10 @@ func (h *Harness) pushRepairOf(p *planv1.WishPush, wishID, projectID string, tas
 func (h *Harness) claimRepair(req *planv1.TaskServiceSpawnRequest, wish *planv1.Wish, project *planv1.Project, task *planv1.Task,
 	tasks []*planv1.Task,
 ) error {
-	work := task.GetProvider() != planv1.Provider_PROVIDER_WATCH && !dispatch.Investigation(task) && !dispatch.Ifrit(task)
+	work := task.GetProvider() != planv1.Provider_PROVIDER_WATCH && !dispatch.ChangesNoCode(task) && !dispatch.Ifrit(task)
 	if !work {
 		if req.GetRepair() {
-			return connect.NewError(connect.CodeInvalidArgument, errors.New("--repair is for work: a watcher, an ifrit or an investigation repairs no branch"))
+			return connect.NewError(connect.CodeInvalidArgument, errors.New("--repair is for work: a watcher, an ifrit, an investigation or a mockup repairs no branch"))
 		}
 		return nil
 	}

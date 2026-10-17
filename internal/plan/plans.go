@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -27,9 +28,9 @@ const (
 	planPromptClip = 400
 )
 
-// planKeys are the header keys of a plan's text: djinn task spawn's flags, and the option.
+// planKeys are the header keys of a plan's text: djinn task spawn's flags, the option, and a mockup's rounds.
 var planKeys = []string{"option", "title", "prompt", "project-id", "provider", "model", "part-of", "after", "blocks",
-	"tilasm", "kind"}
+	"tilasm", "kind", "rounds"}
 
 // LaunchPlan spawns the task p plans for the answered question q, its decision q, and records it in q's plan: the
 // harness does it, once the plan holds.
@@ -86,6 +87,12 @@ func ParsePlan(text string) (*planv1.PlannedTask, error) {
 			var n int32
 			n, err = enumWord(planv1.TaskKind_value, "TASK_KIND_", key, value)
 			p.Kind = planv1.TaskKind(n)
+		case "rounds":
+			n, convErr := strconv.Atoi(value)
+			if convErr != nil || n < 1 || n > maxMockupRounds {
+				err = fmt.Errorf("plan rounds %q is not a number from 1 to %d", value, maxMockupRounds)
+			}
+			p.Rounds = uint32(max(n, 0))
 		default:
 			return nil, fmt.Errorf("plan key %q is none of %s", key, strings.Join(planKeys, ", "))
 		}
@@ -219,6 +226,10 @@ func fillPlan(ctx context.Context, r store.Reader, q *planv1.Question, p *planv1
 		return invalid("the plan for %s has a prompt longer than 200000 characters", letter)
 	case len([]rune(p.GetModel())) > 200:
 		return invalid("the plan for %s has a model longer than 200 characters", letter)
+	case p.GetRounds() > 0 && !IsMockupPlan(p):
+		return invalid("the plan for %s gives rounds, which are a mockup's: kind: mockup", letter)
+	case IsMockupPlan(p) && p.GetRounds() > maxMockupRounds:
+		return invalid("the plan for %s gives %d rounds: at most %d", letter, p.GetRounds(), maxMockupRounds)
 	}
 	wish, err := store.Get[*planv1.Wish](ctx, r, q.GetWishId())
 	if err != nil {
@@ -262,12 +273,16 @@ func fillPlan(ctx context.Context, r store.Reader, q *planv1.Question, p *planv1
 	var tilasms []string
 	for _, list := range p.GetTilasm() {
 		for _, name := range planNames(list) {
-			tilasm, err := wishTilasm(ctx, r, q.GetWishId(), name)
+			tilasm, pin, err := pinnedTilasm(ctx, r, q.GetWishId(), name)
 			if err != nil {
 				return err
 			}
-			if !slices.Contains(tilasms, tilasm.GetId()) {
-				tilasms = append(tilasms, tilasm.GetId())
+			id := tilasm.GetId()
+			if pin > 0 {
+				id = fmt.Sprintf("%s@%d", id, pin) // The plan gives that version, whatever comes after it.
+			}
+			if !slices.Contains(tilasms, id) {
+				tilasms = append(tilasms, id)
 			}
 		}
 	}
@@ -414,6 +429,9 @@ func RevisionDetail(ctx context.Context, r store.Reader, q *planv1.Question) (st
 	if k := p.GetKind(); k != planv1.TaskKind_TASK_KIND_UNSPECIFIED && k != planv1.TaskKind_TASK_KIND_WORK {
 		traits = append(traits, strings.ToLower(strings.TrimPrefix(k.String(), "TASK_KIND_")))
 	}
+	if IsMockupPlan(p) {
+		traits = append(traits, fmt.Sprintf("version %d of %d", Tour(q), MockupRounds(p)))
+	}
 	if p.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || p.GetModel() != "" {
 		agent := strings.ToLower(strings.TrimPrefix(p.GetProvider().String(), "PROVIDER_"))
 		if p.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED {
@@ -424,10 +442,14 @@ func RevisionDetail(ctx context.Context, r store.Reader, q *planv1.Question) (st
 	if id := p.GetPartOf(); id != "" {
 		traits = append(traits, "part of "+cmp.Or(taskIn(tasks, id).GetCode(), id))
 	}
-	for _, id := range p.GetTilasm() {
+	for _, name := range p.GetTilasm() {
+		id, pin, pinned := strings.Cut(name, "@")
 		code := id
 		if tilasm, err := store.Get[*planv1.Tilasm](ctx, r, id); err == nil {
 			code = tilasm.GetCode()
+		}
+		if pinned {
+			code += " v" + pin
 		}
 		traits = append(traits, "tilasm "+code)
 	}

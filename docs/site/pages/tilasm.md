@@ -101,7 +101,9 @@ tilasm if you like, then choose:
 
 - **Launch**: the Djinn launches the work the tilasm explains, as your comments change it. With no comment at all,
   Launch is your yes to the question that links the tilasm: it gets its recommended option, as approving it would.
-- **Iterate**: the Djinn makes the tilasm's next version, as your comments say.
+- **Iterate**: the Djinn makes the tilasm's next version, as your comments say. When the open question that links it
+  iterates on it with a [mockup](#mockup) option, your send starts that iteration: its mockup task reads your
+  comments, and the question comes back with the next version.
 
 A line confirms the send (Enter sends, Escape gives up). Every draft and your last word leave together, in one send:
 the Djinn reads them all at once, each with what it is on, and your choice.

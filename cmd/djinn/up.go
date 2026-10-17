@@ -636,7 +636,7 @@ func services(
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
 	language := render.SystemLanguage()
 	out := plan.Handlers(db, append([]plan.Option{plan.WithAnswered(h.Answered), plan.WithEnlightened(h.Enlightened),
-		plan.WithLaunch(h.LaunchPlan), plan.WithLeads(leads{terminals, uiSvc}),
+		plan.WithIterated(h.Iterated), plan.WithLaunch(h.LaunchPlan), plan.WithLeads(leads{terminals, uiSvc}),
 		plan.WithPages(pages), plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home),
 		plan.WithWorkers(h), plan.WithPusher(h), plan.WithFillModels(h.FillModels), plan.WithClock(h.Now)}, more...)...)
 	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a

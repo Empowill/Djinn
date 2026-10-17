@@ -77,7 +77,7 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 		text += ": " + n
 	}
 	var unmerged bool
-	if task.GetBranch() != "" && !dispatch.Investigation(task) { // An investigation's commits are never merged.
+	if task.GetBranch() != "" && !dispatch.ChangesNoCode(task) { // An investigation's or a mockup's commits are never merged.
 		wish, _ := store.Get[*planv1.Wish](ctx, h.store, task.GetWishId())
 		project, _ := store.Get[*planv1.Project](ctx, h.store, task.GetProjectId())
 		if project != nil && project.GetGit() {

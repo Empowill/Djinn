@@ -198,15 +198,25 @@ func Investigation(t *planv1.Task) bool {
 	return t.GetKind() == planv1.TaskKind_TASK_KIND_INVESTIGATION
 }
 
+// Mockup tells whether the task is a mockup task (TASK_KIND_MOCKUP): framed like an investigation, it puts a tilasm's
+// next version, then revises the question it iterates on (Task.question).
+func Mockup(t *planv1.Task) bool { return t.GetKind() == planv1.TaskKind_TASK_KIND_MOCKUP }
+
+// ChangesNoCode tells whether the task's work never reaches its project's code: an investigation or a mockup, whose
+// commits Djinn never merges. The other workers' state holds none of them: neither its wish's red push checks, nor a
+// merge in conflict or its repair (pushHeld), nor the merge freeze while a branch is repaired (it merges nothing), nor
+// a write scope; and its work never holds a task that depends on it once done.
+func ChangesNoCode(t *planv1.Task) bool { return Investigation(t) || Mockup(t) }
+
 // ServedFirst tells whether the task is served before the planned work, and may take, on a full machine, the slot of a
-// work task it pauses (Decision.Slot): an investigator (Enlighten me) or an investigation. Neither is held by the paused
-// workers that resume first, nor preempted itself.
+// work task it pauses (Decision.Slot): an investigator (Enlighten me), an investigation or a mockup. None is held by
+// the paused workers that resume first, nor preempted itself.
 func ServedFirst(t *planv1.Task) bool {
-	return t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR || Investigation(t)
+	return t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR || ChangesNoCode(t)
 }
 
-// InvestigationCap is how many investigations run at once on a machine of slots: one on a machine of three slots or
-// fewer, two above, so that they never take more than a third of the work's slots, and never starve it.
+// InvestigationCap is how many investigations and mockups run at once on a machine of slots: one on a machine of three
+// slots or fewer, two above, so that they never take more than a third of the work's slots, and never starve it.
 func InvestigationCap(slots int) int {
 	if slots <= 3 {
 		return 1
@@ -277,7 +287,7 @@ func (s *Situation) Pass() []Decision {
 
 // Order is the planned tasks in the strict tiered order, the urgent tasks before all (Urgent), a repair before a task
 // for feedback:
-//  1. Investigator workers (Enlighten me), followed by answer workers, then investigations;
+//  1. Investigator workers (Enlighten me), followed by answer workers, then investigations and mockups;
 //  2. Correction workers, followed by review workers;
 //  3. Resumed work tasks (RESUMING: limits, restarts, preemptions);
 //  4. Work tasks: the first wish of the rank first, then the work of the first azima of its rank (Task.rank, work of
@@ -341,7 +351,7 @@ func taskPriority(t *planv1.Task, depCounts map[string]int) (level int, sub int)
 		return 1, 0
 	case QuestionWorker(t):
 		return 1, 1
-	case Investigation(t):
+	case ChangesNoCode(t):
 		return 1, 2
 	case t.GetCorrection() != nil:
 		return 2, 0
@@ -356,7 +366,7 @@ func taskPriority(t *planv1.Task, depCounts map[string]int) (level int, sub int)
 
 // isWaitingWorkTask tells whether a task is a planned or waiting work task in the dependency graph.
 func isWaitingWorkTask(t *planv1.Task) bool {
-	if plan.IsAzima(t) || Watcher(t) || QuestionWorker(t) || Investigation(t) {
+	if plan.IsAzima(t) || Watcher(t) || QuestionWorker(t) || ChangesNoCode(t) {
 		return false
 	}
 	return Planned(t) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING
@@ -470,8 +480,8 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 				}
 				continue
 			}
-			// An investigation's work never reaches the branch (Investigation): done, it is done.
-			if !plan.IsAzima(d) && !Investigation(d) && !integrationDropped(d) && d.GetBranch() != "" &&
+			// An investigation's or a mockup's work never reaches the branch (ChangesNoCode): done, it is done.
+			if !plan.IsAzima(d) && !ChangesNoCode(d) && !integrationDropped(d) && d.GetBranch() != "" &&
 				d.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 				if !s.workMerged(d) && why == "" {
 					intBranch := s.integrationBranch(d)
@@ -517,8 +527,8 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 	if Watcher(t) {
 		return "", "" // It sleeps until its command prints: no slot, and it writes nothing.
 	}
-	// In Git, worktrees separate the writers; a question worker writes nothing.
-	if id := t.GetProjectId(); id != "" && !s.git[id] && !QuestionWorker(t) {
+	// In Git, worktrees separate the writers; a question worker writes nothing, nor does work that changes no code.
+	if id := t.GetProjectId(); id != "" && !s.git[id] && !QuestionWorker(t) && !ChangesNoCode(t) {
 		for _, o := range s.tasks {
 			if o.GetId() == t.GetId() || o.GetProjectId() != id || !s.writing(o) {
 				continue
@@ -675,10 +685,11 @@ func pushCheckHeld(p *planv1.WishPush) (sha, check string) {
 // is held on red push checks, or a merge into the branch is in conflict or red and a correction repairs it (Q44, W233:
 // a new worker would start from the branch without that work, its own merge conflicting in turn); "" when neither
 // holds it. A correction, a review, a question worker, an urgent task, which the lead marks to repair the branch or for
-// quick feedback, and an investigation, whose work is never merged, never wait; neither do the workers Djinn resumes,
+// quick feedback, and an investigation or a mockup, whose work is never merged (ChangesNoCode), never wait; neither do
+// the workers Djinn resumes,
 // nor, for a repair, a watcher, which starts from no branch. The workers already running go on.
 func (s *Situation) pushHeld(t *planv1.Task) string {
-	if plan.IsMerge(t) || QuestionWorker(t) || Urgent(t) || Investigation(t) {
+	if plan.IsMerge(t) || QuestionWorker(t) || Urgent(t) || ChangesNoCode(t) {
 		return ""
 	}
 	wish := s.wishes[t.GetWishId()]
@@ -813,9 +824,9 @@ func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 	if m.Pressure != "" {
 		return "the machine is under pressure: " + m.Pressure, false, false
 	}
-	if Investigation(t) {
+	if ChangesNoCode(t) {
 		if n, most := s.investigations(), InvestigationCap(m.Slots); n >= most {
-			return fmt.Sprintf("%s run, the most investigations this machine runs at once (%d of %d slots)",
+			return fmt.Sprintf("%s run, the most investigations this machine runs at once, mockups counted (%d of %d slots)",
 				plural(n, "investigation"), most, m.Slots), false, false
 		}
 	}
@@ -869,11 +880,12 @@ func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 	return room, first, false
 }
 
-// investigations counts the investigations that run now, or that this pass started: InvestigationCap bounds them.
+// investigations counts the investigations and the mockups that run now, or that this pass started: InvestigationCap
+// bounds them.
 func (s *Situation) investigations() int {
 	n := 0
 	for _, o := range s.tasks {
-		if Investigation(o) && (s.taskRunning(o) || s.started[o.GetId()]) {
+		if ChangesNoCode(o) && (s.taskRunning(o) || s.started[o.GetId()]) {
 			n++
 		}
 	}
@@ -900,6 +912,8 @@ func (s *Situation) room(t *planv1.Task) (why string, first bool) {
 			return "an investigator goes first: " + s.shortWhy, true
 		case Investigation(s.short):
 			return fmt.Sprintf("the investigation %s goes first: %s", s.short.GetCode(), s.shortWhy), true
+		case Mockup(s.short):
+			return fmt.Sprintf("the mockup %s goes first: %s", s.short.GetCode(), s.shortWhy), true
 		case s.short.GetCorrection() != nil:
 			return "a correction goes first: " + s.shortWhy, true
 		case s.short.GetReview() != nil:

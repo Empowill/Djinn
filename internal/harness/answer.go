@@ -157,6 +157,9 @@ func (h *Harness) answerPlan(ctx context.Context, q *planv1.Question) (string, b
 	if id := p.GetTaskId(); id != "" {
 		return fmt.Sprintf("Its plan launched %s before", h.taskCode(ctx, id)), true
 	}
+	if plan.IsMockupPlan(p) {
+		return mockupPast(q, p), true // Within its rounds, the answer was an iteration (plan.Iterates).
+	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
 	if err != nil {
 		return fmt.Sprintf("Djinn could not read the plan's tasks (%v): %s launches it", err, plan.LaunchCommand(q)), true
@@ -173,10 +176,22 @@ func (h *Harness) answerPlan(ctx context.Context, q *planv1.Question) (string, b
 		return fmt.Sprintf("Its plan could not launch (%v): %s launches it edited", err, plan.LaunchCommand(q)), true
 	}
 	did := task.GetCode() + " launched as planned"
+	if v := h.approved(ctx, q); v != "" {
+		did += ", " + v
+	}
 	if former := h.formerPlans(ctx, q); former != "" {
 		did += "; " + former
 	}
 	return did, true
+}
+
+// approved says which tilasm versions the launched plan of q's answer pins (approvedVersions); "" when none.
+func (h *Harness) approved(ctx context.Context, q *planv1.Question) string {
+	cur, err := store.Get[*planv1.Question](ctx, h.store, q.GetId())
+	if err != nil {
+		return ""
+	}
+	return approvedVersions(ctx, h.store, plan.ChosenPlan(cur).GetTilasm())
 }
 
 // formerPlans says which tasks the plans of q's other options launched, after the developer changed their answer:
@@ -217,16 +232,18 @@ func (h *Harness) LaunchPlan(ctx context.Context, q *planv1.Question, p *planv1.
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the plan of %s was launched already: %s",
 			cur.GetCode(), h.taskCode(ctx, cur.GetPlans()[i].GetTaskId())))
 	}
+	// The tilasms it is given are the versions the developer saw when they chose it: what they approved (W268).
+	tilasms := pinned(ctx, h.store, cur, p.GetTilasm())
 	task, err := h.Spawn(ctx, planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
 		WishId: cur.GetWishId(), Title: p.GetTitle(), Prompt: p.GetPrompt(), ProjectId: p.GetProjectId(),
 		Provider: p.GetProvider(), Model: p.GetModel(), PartOf: p.GetPartOf(), After: p.GetAfter(),
-		Blocks: p.GetBlocks(), Tilasm: p.GetTilasm(), Kind: p.GetKind(), Decision: cur.GetCode(),
+		Blocks: p.GetBlocks(), Tilasm: tilasms, Kind: p.GetKind(), Decision: cur.GetCode(),
 	})
 	if err != nil {
 		return nil, err
 	}
 	launched := proto.CloneOf(p)
-	launched.TaskId = task.GetId()
+	launched.TaskId, launched.Tilasm = task.GetId(), tilasms
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		cur, err := store.Get[*planv1.Question](ctx, tx, q.GetId())
 		if err != nil {

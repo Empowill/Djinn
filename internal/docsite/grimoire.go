@@ -71,6 +71,7 @@ var Nav = []Group{
 		{"dependencies", "docs.page_dependencies"},
 		{"watcher", "docs.page_watcher"},
 		{"investigation", "docs.page_investigation"},
+		{"mockup", "docs.page_mockup"},
 		{"decision", "docs.page_decision"},
 		{"block", "docs.page_block"},
 	}},

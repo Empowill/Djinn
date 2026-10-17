@@ -13574,3 +13574,24 @@ test("the sleep dialog offers the wish's tasks not over and the requests not mer
     /<button type="submit" class="button accent" disabled="">/,
   );
 });
+
+test("a question iterating on its mockup waits for its mockup task, not for you: folded as one being investigated (W268)", () => {
+  const card = live(s.WishQuestion, {
+    question: {
+      id: "q1",
+      code: "Q61",
+      text: "Do the typed options suit you?",
+      options: ["Iterate", "Build", "Other"],
+      recommendation: "A: one more version.",
+      rounds: [
+        { kind: s.RoundKind.ITERATE, note: "Bigger icons", option: s.Choice.A },
+      ],
+    },
+    onAnswer: async () => {},
+    onEnlighten: async () => {},
+  });
+  const folded = card.html();
+  assert.match(folded, /question-card investigating {2}folded/);
+  assert.match(folded, /You asked: Bigger icons/);
+  assert.doesNotMatch(folded, /<textarea/);
+});

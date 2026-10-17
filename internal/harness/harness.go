@@ -896,6 +896,11 @@ func (h *Harness) spawn(
 	if err := investigationSpawn(req, kind, project, task); err != nil {
 		return nil, err
 	}
+	if made == nil {
+		if task.Question, err = mockupQuestion(ctx, h.store, req); err != nil {
+			return nil, err
+		}
+	}
 	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
 	}
@@ -1210,7 +1215,8 @@ const workerDoubtRule = "Ask a blocking question (`djinn question ask --wait`) o
 const workerRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule + " " +
 	workerDoubtRule
 
-// investigationRules are an investigation's: a worker's, but for the blocking question, as it ends with its question.
+// investigationRules are an investigation's or a mockup's: a worker's, but for the blocking question, as it ends with
+// its question.
 const investigationRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule
 
 // ifritRule (T51, Q11) is how an ifrit works: a turn per request, then it listens; Djinn runs what lasts, and keeps it
@@ -1233,8 +1239,11 @@ func briefed(r *run, prompt string, readOnly bool) string {
 	if r.ifrit {
 		rules = ifritRules
 	}
-	if dispatch.Investigation(r.task) {
+	switch {
+	case dispatch.Investigation(r.task):
 		rules = investigationRule(r.task) + " " + investigationRules
+	case dispatch.Mockup(r.task):
+		rules = mockupRule(r.task) + " " + investigationRules
 	}
 	edits := r.task.GetBranch() != "" && !readOnly
 	if r.ifrit && !edits && r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
@@ -2052,7 +2061,7 @@ func (h *Harness) end(r *run, res Result) {
 		t.Refused = r.refusals
 	}
 	integrate, left := h.pendIntegration(t)
-	if dispatch.Investigation(t) {
+	if dispatch.ChangesNoCode(t) {
 		h.unpausePreempted(t) // The work task it paused for its slot resumes first.
 	}
 	why := t.GetError()
@@ -2138,11 +2147,13 @@ func (h *Harness) end(r *run, res Result) {
 			h.tellSilent(t, silentWhy, integrate) // Its one line: done, or continued once.
 		}
 		h.babysitOpened(proto.CloneOf(t))
+	case iterates(t) && !relaunched:
+		h.mockupEnded(t) // Its one line, as an investigator's: the version it put, the question it revised or not.
 	case !r.light && !watching(t) && !relaunched: // Relaunched, its lead or the developer asked for it.
 		h.workerEnded(t)
 		h.babysitOpened(proto.CloneOf(t))
 	}
-	if tellsDone(t) && toldDoneAtEnd(t, integrate) {
+	if tellsDone(t) && toldDoneAtEnd(t, integrate) && !iterates(t) {
 		h.tellDone(context.Background(), t, notIntegrated(left), silentWhy)
 	}
 	if t.GetCorrection() != nil || t.GetReview() != nil {

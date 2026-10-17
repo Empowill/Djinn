@@ -58,6 +58,7 @@ type Pusher interface {
 type Option func(*options)
 
 type options struct {
+	iterated        []IterateHook
 	leads           Leads
 	pages           *Pages
 	language        string
@@ -183,8 +184,9 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
 	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle,
-		Workers: o.workers, LaunchPlan: o.launch}
+		Workers: o.workers, LaunchPlan: o.launch, Iterated: o.iterated}
 	if o.leads != nil {
+		questions.Wishes = wishes                               // The lead learns of an iteration no mockup task took on.
 		questions.NoteEdited = wishes.NoteEdited                // The lead learns an answer's new note, once.
 		questions.Woke = append(questions.Woke, wishes.Woke)    // And a question woken by hand, to check it.
 		questions.Asked = append(questions.Asked, wishes.Asked) // And a worker's blocking question, to answer it if it may.
@@ -205,7 +207,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes}, opt)
 	out[p] = h
-	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Marks: marks, Wake: wishes.Queued}
+	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Marks: marks, Wake: wishes.Queued, Questions: questions}
 	p, h = planv1connect.NewTilasmServiceHandler(tilasms, opt)
 	out[p] = h
 	out[server.TilasmPrefix] = tilasms.Files()
@@ -1083,6 +1085,11 @@ type Questions struct {
 	Workers WishWorkers
 	// LaunchPlan, when set, launches the task an answered question's option planned (Launch).
 	LaunchPlan LaunchPlan
+	// Iterated are called with a question once an iteration round is stored on it: the harness starts its mockup
+	// task, and says its code.
+	Iterated []IterateHook
+	// Wishes, when set, tells the lead of an iteration no mockup task took on.
+	Wishes *Wishes
 }
 
 // AnswerHook is called with a question once its answer is stored. It says what it did with the answer, for the
@@ -1256,6 +1263,7 @@ func (q *Questions) Answer(
 	// note only (incident Q253: a window that kept the card open sent the same answer 37 times, the lead got each).
 	var was *planv1.Answer
 	var same, edited bool
+	var iteration *planv1.Round
 	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
 		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
@@ -1292,6 +1300,14 @@ func (q *Questions) Answer(
 				actor = planv1.Closer_CLOSER_DEVELOPER
 			}
 		}
+		if p := Iterates(question, choice); p != nil {
+			// An option that plans a mockup, within its rounds: no answer, an iteration (W268).
+			if iteration, err = iterationRound(ctx, tx, question, p, req.Msg.GetNote(), 0); err != nil {
+				return err
+			}
+			question.Rounds = append(question.Rounds, iteration)
+			return tx.Put(question)
+		}
 		was = question.GetAnswer()
 		if was.GetChoice() == choice && was.GetActor() == actor && was.GetTaskId() == taskID {
 			if was.GetNote() == req.Msg.GetNote() {
@@ -1320,6 +1336,12 @@ func (q *Questions) Answer(
 		return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 	case err != nil:
 		return nil, err
+	case iteration != nil:
+		q.iterated(ctx, question, iteration)
+		if fresh, err := store.Get[*planv1.Question](ctx, q.Store, question.GetId()); err == nil {
+			question = fresh // Its round names the mockup task that took it on.
+		}
+		return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 	case edited:
 		if q.NoteEdited != nil {
 			q.NoteEdited(ctx, proto.CloneOf(question), was.GetNote())

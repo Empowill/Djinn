@@ -48,6 +48,8 @@ func askedBy(ctx context.Context, tx store.Reader, task *planv1.Task, question *
 		switch {
 		case task.GetRole() != planv1.TaskRole_TASK_ROLE_UNSPECIFIED || task.GetKind() == planv1.TaskKind_TASK_KIND_INVESTIGATION:
 			return refuse("an investigation ends with its question: ask it without --wait")
+		case task.GetKind() == planv1.TaskKind_TASK_KIND_MOCKUP:
+			return refuse("a mockup ends with its question, or its revision: ask it without --wait")
 		case task.GetKind() == planv1.TaskKind_TASK_KIND_IFRIT || task.GetProvider() == planv1.Provider_PROVIDER_WATCH ||
 			IsAzima(task):
 			return refuse("only a work task waits for an answer: ask it without --wait")

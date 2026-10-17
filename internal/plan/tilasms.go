@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -66,6 +67,9 @@ type Tilasms struct {
 	Marks *Marks
 	// Wake, when set, wakes the lead's watch once a send queued its event.
 	Wake func()
+	// Questions, when set, iterates on the question whose mockup option iterates on a tilasm its comments are sent
+	// on to iterate (Questions.iterated).
+	Questions *Questions
 }
 
 // TilasmDir is the folder of a tilasm in the data folder home: version n is in its folder v<n>.
@@ -1336,14 +1340,16 @@ const tilasmPromptFiles = 20
 // Djinn's data folder. Empty for no name.
 func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, names []string) (string, error) {
 	var tilasms []*planv1.Tilasm
+	pins := map[string]int32{}
 	for _, list := range names {
 		for _, name := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
-			tilasm, err := wishTilasm(ctx, r, wishID, name)
+			tilasm, pin, err := pinnedTilasm(ctx, r, wishID, name)
 			if err != nil {
 				return "", err
 			}
 			if !slices.ContainsFunc(tilasms, func(t *planv1.Tilasm) bool { return t.GetId() == tilasm.GetId() }) {
 				tilasms = append(tilasms, tilasm)
+				pins[tilasm.GetId()] = pin
 			}
 		}
 	}
@@ -1358,7 +1364,7 @@ func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, nam
 	b.WriteString("The material that explains this work, kept by Djinn outside the project: read its files where they " +
 		"are, and do not copy them into the project. `djinn tilasm get <code>` reads one again.\n")
 	for _, tilasm := range tilasms {
-		n, err := pickVersion(tilasm, 0)
+		n, err := pickVersion(tilasm, pins[tilasm.GetId()])
 		if err != nil {
 			return "", err
 		}
@@ -1391,6 +1397,25 @@ func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, nam
 		}
 	}
 	return b.String(), nil
+}
+
+// pinnedTilasm is the tilasm of the wish a name gives (wishTilasm), and the version it pins after an @: L18@2, L18@v2,
+// or its identifier@2; 0 when it pins none, for its latest.
+func pinnedTilasm(ctx context.Context, r store.Reader, wishID, name string) (*planv1.Tilasm, int32, error) {
+	base, at, pinned := strings.Cut(name, "@")
+	tilasm, err := wishTilasm(ctx, r, wishID, base)
+	if err != nil || !pinned {
+		return tilasm, 0, err
+	}
+	n, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(at), "v"), 10, 32)
+	if err != nil || n < 1 {
+		return nil, 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"tilasm %s pins no version: write %s@2 for its version 2", name, base))
+	}
+	if _, err := pickVersion(tilasm, int32(n)); err != nil {
+		return nil, 0, err
+	}
+	return tilasm, int32(n), nil
 }
 
 // wishTilasm is the tilasm of the wish named by its code, any case, or its identifier; another wish's is refused.

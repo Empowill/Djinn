@@ -100,7 +100,8 @@ func (h *Harness) startInvestigator(ctx context.Context, q *planv1.Question, not
 	}
 }
 
-// ResumeInvestigations follows up each request to investigate that was left without one: djinn up stopped, or hung
+// ResumeInvestigations follows up each request to investigate, or iteration on a mockup (resumeIteration), that was
+// left without one: djinn up stopped, or hung
 // until it was made to quit, between storing the request and starting its investigator or telling the lead, and the
 // question stayed under investigation with no one on it (W536). Each one gets its investigator now, or else the
 // lead's event, once: a request that an investigator took on, or the lead heard of, is followed up already. djinn
@@ -140,6 +141,9 @@ func (h *Harness) resumeInvestigation(ctx context.Context, q *planv1.Question) e
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
 	if err != nil || wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
 		return err
+	}
+	if asked.GetKind() == planv1.RoundKind_ROUND_KIND_ITERATE {
+		return h.resumeIteration(ctx, q, asked)
 	}
 	if followed, err := h.investigationFollowed(ctx, q, asked); err != nil || followed {
 		return err
@@ -426,6 +430,13 @@ func writeQuestionHistory(b *strings.Builder, q *planv1.Question) {
 				note = "(no note)"
 			}
 			fmt.Fprintf(b, "### Round %d — Enlighten request (Tour %d)\n- Note: %s\n\n", i+1, revNum, note)
+		case planv1.RoundKind_ROUND_KIND_ITERATE:
+			note := cmp.Or(strings.TrimSpace(r.GetNote()), "(no note)")
+			if r.GetSend() > 0 {
+				note += fmt.Sprintf(" (comments of send %d)", r.GetSend())
+			}
+			fmt.Fprintf(b, "### Round %d — Iteration on the mockup, option %s, from version %d (Tour %d)\n- Note: %s\n\n",
+				i+1, strings.TrimPrefix(r.GetOption().String(), "CHOICE_"), r.GetVersion(), revNum, note)
 		case planv1.RoundKind_ROUND_KIND_REVISE:
 			revNum++
 			opts, ctx, rec := revisionAfter(q, rounds, i)
