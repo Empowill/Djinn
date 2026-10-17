@@ -2712,8 +2712,9 @@ export type Task = Message<"plan.v1.Task"> & {
   ifrit?: TaskIfrit | undefined;
 
   /**
-   * The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish, or for
-   * the developer's quick feedback (feedback): while planned, it goes before every other planned task, a repair before
+   * The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish, or the
+   * lead or the developer (the toggle on its card in the window) for the developer's quick feedback (feedback): the
+   * mark goes on and off while the task is planned, waits, is paused or runs, and its run keeps it. While planned, it goes before every other planned task, a repair before
    * a feedback task, takes a slot even on a full machine (as djinn task start does) and is not held by its integration
    * branch's red push checks. At most one task of a wish is urgent of each class while it is to run or runs: one
    * repair, one feedback (dispatch.Urgent, dispatch.UrgentOf).
