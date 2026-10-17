@@ -325,6 +325,11 @@ the code does not say by itself; remove one when a change makes it false.
 
 - **`Put` without `Journal` stores nothing.** `store.Tx` refuses a `Put` before `tx.Journal`: an ignored error there
   means nothing was written. *Where:* `internal/store`.
+- **A gate event written past `putEvents` is not counted.** A task's gate wait is the `GateWait` kept beside it,
+  counted as `putEvents` writes each gate event (`plan.CountGate`); a task list never reads the events again (W283).
+  *Sign:* a task's waiting gate stays short of its gate events, or a test's gate events written with `tx.Put` count
+  only until its first fill. *Do:* write a task's events through `putEvents`, or call `plan.CountGate` before the
+  `Put`; delete the `GateWait` with its task. *Where:* `internal/plan/times.go`, `internal/harness/harness.go`.
 - **Read the real database read-only.** No `sqlite3` on the machine: a throwaway Go program with `modernc.org/sqlite`
   and `file:<path>?mode=ro`, decoding payloads with `gen/go/plan/v1`. The `command` table (the journal: seq, actor,
   at, method, request) tells a freeze (calls journaled, follow-ups missing) from a crash (`harness/recover` at the

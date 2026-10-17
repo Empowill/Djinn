@@ -1970,6 +1970,19 @@ message TaskEvent {
   google.protobuf.Timestamp create_time = 8;
 }
 
+// GateWait is what a task's gate events add up to, kept beside the task: Djinn counts each gate event as it writes
+// it, so a task's waiting_gate reads this, never the task's events, after a start as before it. A task from before it
+// has none: its gate events are counted once, at its first read, and kept. Apart from the task, as the copy of its
+// task a run holds would write over it.
+message GateWait {
+  // The task's identifier.
+  string id = 1;
+  // By gate, when the task asked it and has not taken it yet.
+  map<string, google.protobuf.Timestamp> asked = 2;
+  // The time between each gate asked and taken.
+  google.protobuf.Duration waited = 3;
+}
+
 // Choice is an answer to a question: YES for a question without options, or the letter of an option.
 enum Choice {
   // No choice.

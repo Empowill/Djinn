@@ -2,9 +2,9 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -26,13 +27,8 @@ func FillTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, now ti
 		return nil
 	}
 
-	for _, t := range tasks {
-		if IsAzima(t) {
-			continue
-		}
-		if err := fillLeafTimes(ctx, s, t, now); err != nil {
-			return err
-		}
+	if err := fillLeavesTimes(ctx, s, tasks, now); err != nil {
+		return err
 	}
 
 	if !slices.ContainsFunc(tasks, IsAzima) {
@@ -59,14 +55,14 @@ func FillTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, now ti
 				for _, t := range wishTasks {
 					taskMap[t.GetId()] = t
 				}
+				var others []*planv1.Task
 				for _, t := range all {
 					if _, exists := taskMap[t.GetId()]; !exists {
-						if !IsAzima(t) {
-							_ = fillLeafTimes(ctx, s, t, now)
-						}
+						others = append(others, t)
 						taskMap[t.GetId()] = t
 					}
 				}
+				_ = fillLeavesTimes(ctx, s, others, now)
 				wishTasks = make([]*planv1.Task, 0, len(taskMap))
 				for _, t := range taskMap {
 					wishTasks = append(wishTasks, t)
@@ -80,7 +76,31 @@ func FillTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, now ti
 	return nil
 }
 
-func fillLeafTimes(ctx context.Context, s *store.Store, t *planv1.Task, now time.Time) error {
+// fillLeavesTimes sets the times of the tasks that are not azimas, with the gate waits of those that started.
+func fillLeavesTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, now time.Time) error {
+	var started []*planv1.Task
+	for _, t := range tasks {
+		if !IsAzima(t) && t.GetId() != "" && (t.FirstStartTime != nil || t.StartTime != nil) {
+			started = append(started, t)
+		}
+	}
+	var waits map[string]*planv1.GateWait
+	if s != nil && len(started) > 0 {
+		var err error
+		if waits, err = gateWaits(ctx, s, started); err != nil {
+			return err
+		}
+	}
+	for _, t := range tasks {
+		if !IsAzima(t) {
+			fillLeafTimes(t, waits[t.GetId()], now)
+		}
+	}
+	return nil
+}
+
+// fillLeafTimes sets the times of t, a task that is not an azima, w its gate wait.
+func fillLeafTimes(t *planv1.Task, w *planv1.GateWait, now time.Time) {
 	var firstStart time.Time
 	if t.FirstStartTime != nil {
 		firstStart = t.FirstStartTime.AsTime()
@@ -113,7 +133,7 @@ func fillLeafTimes(ctx context.Context, s *store.Store, t *planv1.Task, now time
 		t.Running = durationpb.New(0)
 		t.WaitingGate = durationpb.New(0)
 		t.Paused = durationpb.New(0)
-		return nil
+		return
 	}
 
 	var totalRunDuration time.Duration
@@ -151,10 +171,7 @@ func fillLeafTimes(ctx context.Context, s *store.Store, t *planv1.Task, now time
 		}
 	}
 
-	var gateWait time.Duration
-	if s != nil && t.GetId() != "" {
-		gateWait = waitedGates(ctx, s, t, now)
-	}
+	gateWait := waited(w, t, now)
 
 	if gateWait > totalRunDuration {
 		gateWait = totalRunDuration
@@ -182,8 +199,6 @@ func fillLeafTimes(ctx context.Context, s *store.Store, t *planv1.Task, now time
 		paused = 0
 	}
 	t.Paused = durationpb.New(paused)
-
-	return nil
 }
 
 func fillWishAzimaTimes(tasks []*planv1.Task) {
@@ -244,86 +259,140 @@ func fillWishAzimaTimes(tasks []*planv1.Task) {
 	}
 }
 
-// gateTallies keeps, by store and task, what the task's gate events add up to: its events only grow, so a fill reads
-// the ones past the last it read, never all of them again (W504: a task list read every event of every task, half a
-// gigabyte, while the command line waited for the store).
-var gateTallies sync.Map // gateKey -> *gateTally
-
-// gateKey is a task of a store: the store held keeps its address from being reused by another.
-type gateKey struct {
-	s    *store.Store
-	task string
-}
-
-// gateTally is the gate events of a task read so far.
-type gateTally struct {
-	mu     sync.Mutex
-	seq    int64                // the last event read past
-	asked  map[string]time.Time // by gate, asked and not taken yet
-	waited time.Duration        // between each gate asked and taken
-}
-
 // gateKind is the encoded kind of a gate event: the store skips, without decoding them, the events that lack it.
 var gateKind = func() []byte {
 	b, _ := proto.Marshal(&planv1.TaskEvent{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_GATE})
 	return b
 }()
 
-// waitedGates is how long task t waited for its gates: between each gate asked and taken, and since a gate asked
-// still not taken while it runs. It reads the gate events past those it read before; the error of a read leaves the
-// last tally.
-func waitedGates(ctx context.Context, s *store.Store, t *planv1.Task, now time.Time) time.Duration {
-	v, _ := gateTallies.LoadOrStore(gateKey{s, t.GetId()}, &gateTally{asked: map[string]time.Time{}})
-	tally := v.(*gateTally)
-	tally.mu.Lock()
-	defer tally.mu.Unlock()
-	var last int64
-	err := store.Latest(ctx, s, store.Where{"task_id": t.GetId()}, func(ev *planv1.TaskEvent) bool {
-		last = ev.GetSeq()
-		return false
-	})
-	if err == nil && last > tally.seq {
-		events, err := store.ListAfter[*planv1.TaskEvent](ctx, s, store.Where{"task_id": t.GetId()},
-			store.After{Field: "seq", From: tally.seq, Contains: [][]byte{gateKind, []byte("gate ")}})
-		if err == nil {
-			for _, ev := range events {
-				if ev.GetSeq() <= last { // Those past it are read with the events around them, next time.
-					tally.add(ev)
-				}
-			}
-			tally.seq = last
+// Who counts the gate events of a task from before GateWait, as the journal records it.
+const (
+	gateActor  = "harness"
+	gateMethod = "harness/gate-wait" // a task's gate wait was counted from its events; the request is the count
+)
+
+// CountGate counts ev, an event about to be written in tx, in the gate wait of its task. Djinn writes every event of
+// a task through it (harness putEvents): the gate wait kept stays the sum of the task's gate events, which a task list
+// then never reads (W283). A task from before it gets its count from the events written before ev.
+func CountGate(ctx context.Context, tx *store.Tx, ev *planv1.TaskEvent) error {
+	if ev.GetKind() != planv1.TaskEventKind_TASK_EVENT_KIND_GATE {
+		return nil
+	}
+	w, kept, err := gateWait(ctx, tx, ev.GetTaskId())
+	if err != nil {
+		return err
+	}
+	if !addGate(w, ev) && kept {
+		return nil
+	}
+	return tx.Put(w)
+}
+
+// gateWaits is the gate wait of each task, by id. Those from before GateWait are counted from their gate events, then
+// kept, all in one transaction: the first list after an update reads their events once, and never again. Should
+// keeping them fail, the list still has their count, and the next counts them again.
+func gateWaits(ctx context.Context, s *store.Store, tasks []*planv1.Task) (map[string]*planv1.GateWait, error) {
+	waits := make(map[string]*planv1.GateWait, len(tasks))
+	var counted []*planv1.GateWait
+	for _, t := range tasks {
+		w, kept, err := gateWait(ctx, s, t.GetId())
+		if err != nil {
+			return nil, err
+		}
+		waits[t.GetId()] = w
+		if !kept {
+			counted = append(counted, w)
 		}
 	}
-	wait := tally.waited
+	if len(counted) == 0 {
+		return waits, nil
+	}
+	err := s.Tx(ctx, func(tx *store.Tx) error {
+		for _, w := range counted {
+			// A gate event written since counted all the task's events itself (CountGate): its count stands.
+			if kept, err := store.Get[*planv1.GateWait](ctx, tx, w.GetId()); err == nil {
+				waits[w.GetId()] = kept
+				continue
+			} else if !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+			if err := tx.Journal(gateActor, gateMethod, w); err != nil {
+				return err
+			}
+			if err := tx.Put(w); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		logx.L().Warn("keep the gate waits counted from the events", "tasks", len(counted), "err", err)
+	}
+	return waits, nil
+}
+
+// gateWait is the gate wait kept for the task, kept true; or, for a task from before GateWait, the count of its gate
+// events, not kept yet.
+func gateWait(ctx context.Context, r store.Reader, taskID string) (*planv1.GateWait, bool, error) {
+	w, err := store.Get[*planv1.GateWait](ctx, r, taskID)
+	if err == nil {
+		return w, true, nil
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return nil, false, err
+	}
+	events, err := store.ListAfter[*planv1.TaskEvent](ctx, r, store.Where{"task_id": taskID},
+		store.After{Field: "seq", Contains: [][]byte{gateKind, []byte("gate ")}})
+	if err != nil {
+		return nil, false, err
+	}
+	w = &planv1.GateWait{Id: taskID}
+	for _, ev := range events {
+		addGate(w, ev)
+	}
+	return w, false, nil
+}
+
+// waited is how long a task waited for its gates, from its gate wait w: between each gate asked and taken, and,
+// while it runs, since each gate asked still not taken.
+func waited(w *planv1.GateWait, t *planv1.Task, now time.Time) time.Duration {
+	wait := w.GetWaited().AsDuration()
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
-		for _, askedTime := range tally.asked {
-			if now.After(askedTime) {
-				wait += now.Sub(askedTime)
+		for _, asked := range w.GetAsked() {
+			if at := asked.AsTime(); now.After(at) {
+				wait += now.Sub(at)
 			}
 		}
 	}
 	return wait
 }
 
-// add counts ev, if it is a gate asked or taken.
-func (g *gateTally) add(ev *planv1.TaskEvent) {
+// addGate counts ev in w, if it is a gate asked or taken; it says whether w changed.
+func addGate(w *planv1.GateWait, ev *planv1.TaskEvent) bool {
 	if ev.GetKind() != planv1.TaskEventKind_TASK_EVENT_KIND_GATE {
-		return
+		return false
 	}
 	name, action, ok := strings.Cut(strings.TrimPrefix(ev.GetText(), "gate "), ": ")
 	if !ok || !strings.HasPrefix(ev.GetText(), "gate ") {
-		return
+		return false
 	}
-	at := ev.GetCreateTime().AsTime()
 	switch action {
 	case "asked":
-		g.asked[name] = at
-	case "taken":
-		if askedTime, ok := g.asked[name]; ok {
-			if at.After(askedTime) {
-				g.waited += at.Sub(askedTime)
-			}
-			delete(g.asked, name)
+		if w.Asked == nil {
+			w.Asked = map[string]*timestamppb.Timestamp{}
 		}
+		w.Asked[name] = ev.GetCreateTime()
+		return true
+	case "taken":
+		asked, ok := w.GetAsked()[name]
+		if !ok {
+			return false
+		}
+		if at, askedAt := ev.GetCreateTime().AsTime(), asked.AsTime(); at.After(askedAt) {
+			w.Waited = durationpb.New(w.GetWaited().AsDuration() + at.Sub(askedAt))
+		}
+		delete(w.Asked, name)
+		return true
 	}
+	return false
 }

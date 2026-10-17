@@ -2387,7 +2387,8 @@ func newEvent(taskID string, ev Event) *planv1.TaskEvent {
 // putEvents writes the events in tx, each at the position after its task's last event. It is the one place that
 // numbers a task's events: the store has one connection, so a transaction reads the last position no other writer
 // can take before it commits. A run that counted its events apart gave one position to two events when a gate's note
-// or an integration step was written beside it, and the second was lost (W534).
+// or an integration step was written beside it, and the second was lost (W534). It counts a gate event in its
+// task's gate wait (plan.CountGate).
 func putEvents(ctx context.Context, tx *store.Tx, events ...*planv1.TaskEvent) error {
 	for _, e := range events {
 		seq, err := lastSeq(ctx, tx, e.GetTaskId())
@@ -2395,6 +2396,9 @@ func putEvents(ctx context.Context, tx *store.Tx, events ...*planv1.TaskEvent) e
 			return err
 		}
 		e.Seq = seq + 1
+		if err := plan.CountGate(ctx, tx, e); err != nil {
+			return err
+		}
 		if err := tx.Put(e); err != nil {
 			return err
 		}

@@ -848,7 +848,7 @@ func forget(ctx context.Context, tx *store.Tx, wishID string) error {
 		for _, e := range events {
 			all = append(all, e)
 		}
-		all = append(all, t)
+		all = append(all, &planv1.GateWait{Id: t.GetId()}, t)
 	}
 	questions, err := store.List[*planv1.Question](ctx, tx, where)
 	if err != nil {

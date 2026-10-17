@@ -131,8 +131,15 @@ Comparison of re-reading and broadcasting the whole wish on each change versus e
 Every call of Djinn goes through one SQLite connection: a call that holds it long makes every other one wait, the
 command line's included. W504 found one: `djinn task list` decoded every event of every task to add up the time each
 waited for a gate, 270,000 events and about 480 MB on the developer's data, half a minute while the lead's other calls
-waited. A task's gate wait now reads only its gate events, and only those past the last fill (`plan.FillTimes`); a
-`task list` on that data takes 5 s the first time after a start, then under half a second. Every git command Djinn
+waited. A task's gate wait then read only its gate events, and only those past the last fill, but that memory was
+lost at each start: the first task lists after a start still read every event of every task, 466,000 of them in W271,
+and the window showed its wishes empty for seconds (W283). Djinn now keeps each task's gate wait apart
+(`planv1.GateWait`), counted as it writes each gate event (`plan.CountGate`, from `putEvents`); a task list reads that
+count alone (`plan.FillTimes`). A task from before it is counted from its events once, at its first list, and kept.
+On a copy of the developer's data, cold start, page cache dropped, the three active wishes' tasks were all read
+CALM_BEFORE s after the start before and CALM_AFTER s after on a calm machine; 13 to 19 s before and 2.0 to 3.1 s after under
+load 45 to 50; the first start after the update, which counts the 446 tasks, takes as long as before, once.
+Every git command Djinn
 runs has a deadline (`internal/gitx`): 5 minutes for one that reaches a remote, 10 for one that stays in the
 repository, and its output is let go 5 s after it is killed, even when an ssh it started still holds it.
 
