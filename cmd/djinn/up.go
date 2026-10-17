@@ -265,6 +265,9 @@ func runUp(args []string) (restart bool, err error) {
 	seriesRec := machine.NewSeriesRecorder(monitor, machine.ReadWorker)
 	seriesRec.Keep(history)
 	seriesRec.ReadSelf(machine.ReadSelf)
+	seriesRec.ReadStrays(func() (map[int]time.Duration, uint64, error) {
+		return machine.ReadStrays(os.Getpid(), workers.Cgroups())
+	})
 	seriesRec.Sample()
 	go func() {
 		defer logx.Crash("series")
@@ -465,6 +468,7 @@ func runUp(args []string) (restart bool, err error) {
 		machine.WithLoadForcedWorkers(workers.Forced),
 		machine.WithLoadLowerPauses(workers.LowerPauses),
 		machine.WithLoadWorkerForecast(workers.WorkerForecast),
+		machine.WithLoadOutside(seriesRec.Outside),
 		machine.WithLoadStreamer(func(stream func(context.Context, func(*djinnv1.LoadServiceWatchResponse) error) error) {
 			uiSvc.WatchLoad = stream
 		}),

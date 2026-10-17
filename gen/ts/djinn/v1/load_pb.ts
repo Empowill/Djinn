@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/load.proto.
  */
 export const file_djinn_v1_load: GenFile = /*@__PURE__*/
-  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3Qi+gMKFkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSDAoEYXV0bxgCIAEoCBISCgpiYXNlX3Nsb3RzGAMgASgFEhcKD3J1bm5pbmdfd29ya2VycxgEIAEoBRIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBSABKAQSKQoMY2hvc2VuX25vdGNoGAYgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYByABKAQSHQoVd29ya2VyX2ZvcmVjYXN0X2J5dGVzGAggASgEEhgKEGJpbmRpbmdfcmVzb3VyY2UYCSABKAkSEQoJY3B1X3Nsb3RzGAogASgFEhQKDG1lbW9yeV9zbG90cxgLIAEoBRIWCg5wYXVzZWRfd29ya2VycxgMIAEoBRIZChF3b3JrZXJfcGVyY2VudGlsZRgNIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgOIAEoCRINCgVzbG90cxgPIAEoBRItCgtub3RjaF9zbG90cxgQIAMoCzIYLmRqaW5uLnYxLkxvYWROb3RjaFNsb3RzEhYKDmZvcmNlZF93b3JrZXJzGBEgASgFEhQKDGxvd2VyX3BhdXNlcxgSIAEoCCJKChVMb2FkU2VydmljZVNldFJlcXVlc3QSMQoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2hCDbpICsgBAYIBBBABIAAidQoWTG9hZFNlcnZpY2VTZXRSZXNwb25zZRIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIMCgRhdXRvGAIgASgIEikKDGNob3Nlbl9ub3RjaBgDIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaCIZChdMb2FkU2VydmljZVdhdGNoUmVxdWVzdCK3BAoYTG9hZFNlcnZpY2VXYXRjaFJlc3BvbnNlEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEhwKFGVuZ2FnZWRfbWVtb3J5X2J5dGVzGAIgASgEEhsKE3dvcmtlcl9tZW1vcnlfYnl0ZXMYAyABKAQSGgoSbWVtb3J5X3RvdGFsX2J5dGVzGAQgASgEEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYBSABKAQSDAoEYXV0bxgGIAEoCBISCgpiYXNlX3Nsb3RzGAcgASgFEhcKD3J1bm5pbmdfd29ya2VycxgIIAEoBRIpCgxjaG9zZW5fbm90Y2gYCSABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSHQoVd29ya2VyX2ZvcmVjYXN0X2J5dGVzGAogASgEEhgKEGJpbmRpbmdfcmVzb3VyY2UYCyABKAkSEQoJY3B1X3Nsb3RzGAwgASgFEhQKDG1lbW9yeV9zbG90cxgNIAEoBRIWCg5wYXVzZWRfd29ya2VycxgOIAEoBRIZChF3b3JrZXJfcGVyY2VudGlsZRgPIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgQIAEoCRINCgVzbG90cxgRIAEoBRItCgtub3RjaF9zbG90cxgSIAMoCzIYLmRqaW5uLnYxLkxvYWROb3RjaFNsb3RzEhYKDmZvcmNlZF93b3JrZXJzGBMgASgFEhQKDGxvd2VyX3BhdXNlcxgUIAEoCCJDCg5Mb2FkTm90Y2hTbG90cxIiCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBINCgVzbG90cxgCIAEoBSrIAQoJTG9hZE5vdGNoEhoKFkxPQURfTk9UQ0hfVU5TUEVDSUZJRUQQABIWChJMT0FEX05PVENIX01JTklNQUwQARIYChBMT0FEX05PVENIX0xJR0hUEAIaAggBEhUKEUxPQURfTk9UQ0hfTUVESVVNEAMSEwoPTE9BRF9OT1RDSF9ISUdIEAQSEgoOTE9BRF9OT1RDSF9NQVgQBRITCg9MT0FEX05PVENIX0FVVE8QBhIYChRMT0FEX05PVENIX09WRVJDTE9DSxAHMowCCgtMb2FkU2VydmljZRJRCgNHZXQSHy5kamlubi52MS5Mb2FkU2VydmljZUdldFJlcXVlc3QaIC5kamlubi52MS5Mb2FkU2VydmljZUdldFJlc3BvbnNlIgeQAgHI8xgBElIKA1NldBIfLmRqaW5uLnYxLkxvYWRTZXJ2aWNlU2V0UmVxdWVzdBogLmRqaW5uLnYxLkxvYWRTZXJ2aWNlU2V0UmVzcG9uc2UiCMjzGAHg8xgBElYKBVdhdGNoEiEuZGppbm4udjEuTG9hZFNlcnZpY2VXYXRjaFJlcXVlc3QaIi5kamlubi52MS5Mb2FkU2VydmljZVdhdGNoUmVzcG9uc2UiBMjzGAEwAUKNAQoMY29tLmRqaW5uLnYxQglMb2FkUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("ChNkamlubi92MS9sb2FkLnByb3RvEghkamlubi52MSIXChVMb2FkU2VydmljZUdldFJlcXVlc3QiqQQKFkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSDAoEYXV0bxgCIAEoCBISCgpiYXNlX3Nsb3RzGAMgASgFEhcKD3J1bm5pbmdfd29ya2VycxgEIAEoBRIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBSABKAQSKQoMY2hvc2VuX25vdGNoGAYgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEh4KFm1lbW9yeV9hdmFpbGFibGVfYnl0ZXMYByABKAQSHQoVd29ya2VyX2ZvcmVjYXN0X2J5dGVzGAggASgEEhgKEGJpbmRpbmdfcmVzb3VyY2UYCSABKAkSEQoJY3B1X3Nsb3RzGAogASgFEhQKDG1lbW9yeV9zbG90cxgLIAEoBRIWCg5wYXVzZWRfd29ya2VycxgMIAEoBRIZChF3b3JrZXJfcGVyY2VudGlsZRgNIAEoBRIZChF3b3JrZXJfZW5nYWdlZF9hdBgOIAEoCRINCgVzbG90cxgPIAEoBRItCgtub3RjaF9zbG90cxgQIAMoCzIYLmRqaW5uLnYxLkxvYWROb3RjaFNsb3RzEhYKDmZvcmNlZF93b3JrZXJzGBEgASgFEhQKDGxvd2VyX3BhdXNlcxgSIAEoCBItCgthdXRvX3JlYXNvbhgTIAEoCzIYLmRqaW5uLnYxLkxvYWRBdXRvUmVhc29uIkoKFUxvYWRTZXJ2aWNlU2V0UmVxdWVzdBIxCgVub3RjaBgBIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaEINukgKyAEBggEEEAEgACJ1ChZMb2FkU2VydmljZVNldFJlc3BvbnNlEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEgwKBGF1dG8YAiABKAgSKQoMY2hvc2VuX25vdGNoGAMgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoIhkKF0xvYWRTZXJ2aWNlV2F0Y2hSZXF1ZXN0IuYEChhMb2FkU2VydmljZVdhdGNoUmVzcG9uc2USIgoFbm90Y2gYASABKA4yEy5kamlubi52MS5Mb2FkTm90Y2gSHAoUZW5nYWdlZF9tZW1vcnlfYnl0ZXMYAiABKAQSGwoTd29ya2VyX21lbW9yeV9ieXRlcxgDIAEoBBIaChJtZW1vcnlfdG90YWxfYnl0ZXMYBCABKAQSHgoWbWVtb3J5X2F2YWlsYWJsZV9ieXRlcxgFIAEoBBIMCgRhdXRvGAYgASgIEhIKCmJhc2Vfc2xvdHMYByABKAUSFwoPcnVubmluZ193b3JrZXJzGAggASgFEikKDGNob3Nlbl9ub3RjaBgJIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBIdChV3b3JrZXJfZm9yZWNhc3RfYnl0ZXMYCiABKAQSGAoQYmluZGluZ19yZXNvdXJjZRgLIAEoCRIRCgljcHVfc2xvdHMYDCABKAUSFAoMbWVtb3J5X3Nsb3RzGA0gASgFEhYKDnBhdXNlZF93b3JrZXJzGA4gASgFEhkKEXdvcmtlcl9wZXJjZW50aWxlGA8gASgFEhkKEXdvcmtlcl9lbmdhZ2VkX2F0GBAgASgJEg0KBXNsb3RzGBEgASgFEi0KC25vdGNoX3Nsb3RzGBIgAygLMhguZGppbm4udjEuTG9hZE5vdGNoU2xvdHMSFgoOZm9yY2VkX3dvcmtlcnMYEyABKAUSFAoMbG93ZXJfcGF1c2VzGBQgASgIEi0KC2F1dG9fcmVhc29uGBUgASgLMhguZGppbm4udjEuTG9hZEF1dG9SZWFzb24irwEKDkxvYWRBdXRvUmVhc29uEhcKD291dHNpZGVfcGVyY2VudBgBIAEoARIOCgZtZW1vcnkYAiABKAgSFgoOd2luZG93X3NlY29uZHMYAyABKAUSJAoEc3RlcBgEIAEoDjIWLmRqaW5uLnYxLkxvYWRBdXRvU3RlcBIiCgVub3RjaBgFIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaBISCgppbl9zZWNvbmRzGAYgASgFIkMKDkxvYWROb3RjaFNsb3RzEiIKBW5vdGNoGAEgASgOMhMuZGppbm4udjEuTG9hZE5vdGNoEg0KBXNsb3RzGAIgASgFKsgBCglMb2FkTm90Y2gSGgoWTE9BRF9OT1RDSF9VTlNQRUNJRklFRBAAEhYKEkxPQURfTk9UQ0hfTUlOSU1BTBABEhgKEExPQURfTk9UQ0hfTElHSFQQAhoCCAESFQoRTE9BRF9OT1RDSF9NRURJVU0QAxITCg9MT0FEX05PVENIX0hJR0gQBBISCg5MT0FEX05PVENIX01BWBAFEhMKD0xPQURfTk9UQ0hfQVVUTxAGEhgKFExPQURfTk9UQ0hfT1ZFUkNMT0NLEAcqsQEKDExvYWRBdXRvU3RlcBIeChpMT0FEX0FVVE9fU1RFUF9VTlNQRUNJRklFRBAAEhcKE0xPQURfQVVUT19TVEVQX0hPTEQQARIYChRMT0FEX0FVVE9fU1RFUF9MT1dFUhACEhgKFExPQURfQVVUT19TVEVQX1JBSVNFEAMSGgoWTE9BRF9BVVRPX1NURVBfQ0VJTElORxAEEhgKFExPQURfQVVUT19TVEVQX0ZMT09SEAUyjAIKC0xvYWRTZXJ2aWNlElEKA0dldBIfLmRqaW5uLnYxLkxvYWRTZXJ2aWNlR2V0UmVxdWVzdBogLmRqaW5uLnYxLkxvYWRTZXJ2aWNlR2V0UmVzcG9uc2UiB5ACAcjzGAESUgoDU2V0Eh8uZGppbm4udjEuTG9hZFNlcnZpY2VTZXRSZXF1ZXN0GiAuZGppbm4udjEuTG9hZFNlcnZpY2VTZXRSZXNwb25zZSIIyPMYAeDzGAESVgoFV2F0Y2gSIS5kamlubi52MS5Mb2FkU2VydmljZVdhdGNoUmVxdWVzdBoiLmRqaW5uLnYxLkxvYWRTZXJ2aWNlV2F0Y2hSZXNwb25zZSIEyPMYATABQo0BCgxjb20uZGppbm4udjFCCUxvYWRQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9kamlubi92MTtkamlubnYxogIDRFhYqgIIRGppbm4uVjHKAghEamlublxWMeICFERqaW5uXFYxXEdQQk1ldGFkYXRh6gIJRGppbm46OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options]);
 
 /**
  * @generated from message djinn.v1.LoadServiceGetRequest
@@ -163,6 +163,13 @@ export type LoadServiceGetResponse = Message<"djinn.v1.LoadServiceGetResponse"> 
    * @generated from field: bool lower_pauses = 18;
    */
   lowerPauses: boolean;
+
+  /**
+   * Why auto mode runs at its notch; unset outside auto mode.
+   *
+   * @generated from field: djinn.v1.LoadAutoReason auto_reason = 19;
+   */
+  autoReason?: LoadAutoReason | undefined;
 };
 
 /**
@@ -381,6 +388,13 @@ export type LoadServiceWatchResponse = Message<"djinn.v1.LoadServiceWatchRespons
    * @generated from field: bool lower_pauses = 20;
    */
   lowerPauses: boolean;
+
+  /**
+   * Why auto mode runs at its notch; unset outside auto mode.
+   *
+   * @generated from field: djinn.v1.LoadAutoReason auto_reason = 21;
+   */
+  autoReason?: LoadAutoReason | undefined;
 };
 
 /**
@@ -389,6 +403,66 @@ export type LoadServiceWatchResponse = Message<"djinn.v1.LoadServiceWatchRespons
  */
 export const LoadServiceWatchResponseSchema: GenMessage<LoadServiceWatchResponse> = /*@__PURE__*/
   messageDesc(file_djinn_v1_load, 5);
+
+/**
+ * LoadAutoReason says why auto mode runs at its notch: the load outside Djinn (the machine's CPU and memory beyond
+ * Djinn's own tree, as the Hourglass splits it), read every 20 seconds and averaged.
+ *
+ * @generated from message djinn.v1.LoadAutoReason
+ */
+export type LoadAutoReason = Message<"djinn.v1.LoadAutoReason"> & {
+  /**
+   * The load outside Djinn, averaged over window_seconds, in percent of the machine: its CPU, or its memory when
+   * memory is set.
+   *
+   * @generated from field: double outside_percent = 1;
+   */
+  outsidePercent: number;
+
+  /**
+   * Whether outside_percent is the memory, where it decides, rather than the CPU.
+   *
+   * @generated from field: bool memory = 2;
+   */
+  memory: boolean;
+
+  /**
+   * The span of the average, in seconds: 2 minutes against the high mark, up to 10 against the low ones; 0 when
+   * nothing is measured yet.
+   *
+   * @generated from field: int32 window_seconds = 3;
+   */
+  windowSeconds: number;
+
+  /**
+   * What auto mode does next if the load stays where it is.
+   *
+   * @generated from field: djinn.v1.LoadAutoStep step = 4;
+   */
+  step: LoadAutoStep;
+
+  /**
+   * The notch of that step: the next one when lowering or raising, the chosen one at the ceiling, the one in effect
+   * otherwise.
+   *
+   * @generated from field: djinn.v1.LoadNotch notch = 5;
+   */
+  notch: LoadNotch;
+
+  /**
+   * Seconds before that step if the load stays where it is; 0 when holding.
+   *
+   * @generated from field: int32 in_seconds = 6;
+   */
+  inSeconds: number;
+};
+
+/**
+ * Describes the message djinn.v1.LoadAutoReason.
+ * Use `create(LoadAutoReasonSchema)` to create a new message.
+ */
+export const LoadAutoReasonSchema: GenMessage<LoadAutoReason> = /*@__PURE__*/
+  messageDesc(file_djinn_v1_load, 6);
 
 /**
  * LoadNotchSlots is the most workers a notch lets run on the machine now.
@@ -416,7 +490,7 @@ export type LoadNotchSlots = Message<"djinn.v1.LoadNotchSlots"> & {
  * Use `create(LoadNotchSlotsSchema)` to create a new message.
  */
 export const LoadNotchSlotsSchema: GenMessage<LoadNotchSlots> = /*@__PURE__*/
-  messageDesc(file_djinn_v1_load, 6);
+  messageDesc(file_djinn_v1_load, 7);
 
 /**
  * LoadNotch is the operating load slider notch that controls how much of the machine Djinn uses.
@@ -468,7 +542,7 @@ export enum LoadNotch {
   MAX = 5,
 
   /**
-   * Auto load: adapts operating load between minimal and chosen notch based on developer activity.
+   * Auto load: adapts operating load between minimal and the chosen notch to the load outside Djinn.
    *
    * @generated from enum value: LOAD_NOTCH_AUTO = 6;
    */
@@ -487,6 +561,61 @@ export enum LoadNotch {
  */
 export const LoadNotchSchema: GenEnum<LoadNotch> = /*@__PURE__*/
   enumDesc(file_djinn_v1_load, 0);
+
+/**
+ * LoadAutoStep is what auto mode does with its notch, from the load outside Djinn against its marks.
+ *
+ * @generated from enum djinn.v1.LoadAutoStep
+ */
+export enum LoadAutoStep {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: LOAD_AUTO_STEP_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Between the marks, or nothing measured yet: auto keeps its notch.
+   *
+   * @generated from enum value: LOAD_AUTO_STEP_HOLD = 1;
+   */
+  HOLD = 1,
+
+  /**
+   * Above the high mark: one notch down once that load stayed there 2 minutes.
+   *
+   * @generated from enum value: LOAD_AUTO_STEP_LOWER = 2;
+   */
+  LOWER = 2,
+
+  /**
+   * Below the low marks: one notch up once that load stayed there 10 minutes.
+   *
+   * @generated from enum value: LOAD_AUTO_STEP_RAISE = 3;
+   */
+  RAISE = 3,
+
+  /**
+   * Below the low marks at the chosen notch: auto runs up to it.
+   *
+   * @generated from enum value: LOAD_AUTO_STEP_CEILING = 4;
+   */
+  CEILING = 4,
+
+  /**
+   * Above the high mark at Minimal: auto goes no lower.
+   *
+   * @generated from enum value: LOAD_AUTO_STEP_FLOOR = 5;
+   */
+  FLOOR = 5,
+}
+
+/**
+ * Describes the enum djinn.v1.LoadAutoStep.
+ */
+export const LoadAutoStepSchema: GenEnum<LoadAutoStep> = /*@__PURE__*/
+  enumDesc(file_djinn_v1_load, 1);
 
 /**
  * LoadService gets and sets the machine's operating load notch.

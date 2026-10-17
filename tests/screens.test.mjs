@@ -181,7 +181,7 @@ export {
   nearestNotch,
   stopAt,
 } from "@/src/operating-load.tsx";
-export { LoadNotch } from "@/gen/ts/djinn/v1/load_pb.ts";
+export { LoadAutoStep, LoadNotch } from "@/gen/ts/djinn/v1/load_pb.ts";
 export { HeldGates } from "@/src/ifrit.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
@@ -11091,7 +11091,7 @@ test("operating load: the preview warns of Overclock's risk and explains Auto (W
   const risk =
     /Risk: Djinn will saturate CPU and memory; other applications may slow down or be terminated\./;
   const auto =
-    /Auto: follows keyboard and mouse activity and system load, stepping down to Minimal while you work and climbing towards High when idle\./;
+    /Auto: follows the load of the programs outside Djinn, never Djinn&#x27;s own work nor your presence: one level down when that load stays high for 2 minutes, one level up towards High when it stays low for 10\./;
   const notes = () =>
     live(s.OperatingLoadForecast, {})
       .all("operating-load-forecast-note")
@@ -11150,7 +11150,58 @@ test("operating load: the preview warns of Overclock's risk and explains Auto (W
     found = notes();
     assert.equal(found.length, 2);
     assert.match(found[0][1], risk);
-    assert.match(found[1][1], /climbing towards Overclock when idle/);
+    assert.match(
+      found[1][1],
+      /one level up towards Overclock when it stays low/,
+    );
+
+    // And why auto runs at its notch, in one line (W253).
+    s.loadManager.setSnapshot({
+      ...base,
+      auto: true,
+      notch: N.MAX,
+      chosenNotch: N.MAX,
+      autoReason: {
+        outsidePercent: 12,
+        memory: false,
+        windowSeconds: 300,
+        step: s.LoadAutoStep.CEILING,
+        notch: N.MAX,
+        inSeconds: 0,
+      },
+    });
+    found = notes();
+    assert.equal(found.length, 2);
+    assert.match(found[1][0], /\boperating-load-auto-reason\b/);
+    assert.equal(found[1][1], "Outside load 12 % for 5m: up to Max");
+    s.loadManager.setSnapshot({
+      ...base,
+      auto: true,
+      notch: N.MEDIUM,
+      chosenNotch: N.MAX,
+      autoReason: {
+        outsidePercent: 64,
+        memory: false,
+        windowSeconds: 40,
+        step: s.LoadAutoStep.LOWER,
+        notch: N.MINIMAL,
+        inSeconds: 80,
+      },
+    });
+    assert.equal(
+      notes()[1][1],
+      "Outside load 64 % for 40s: down to Minimal in 1m20s",
+    );
+    assert.match(
+      s.renderToStaticMarkup(h(s.OperatingLoad)),
+      /data-effective="medium" aria-description="Outside load 64 % for 40s: down to Minimal in 1m20s"/,
+    );
+    s.loadManager.setSnapshot({
+      ...base,
+      auto: true,
+      notch: N.OVERCLOCK,
+      chosenNotch: N.OVERCLOCK,
+    });
 
     // Both stay in aria-description, and no title anywhere (W32).
     const html = s.renderToStaticMarkup(h(s.OperatingLoad));
@@ -11161,7 +11212,7 @@ test("operating load: the preview warns of Overclock's risk and explains Auto (W
     );
     assert.match(
       html,
-      /aria-description="Auto: follows keyboard and mouse activity/,
+      /aria-description="Auto: follows the load of the programs outside Djinn/,
     );
   } finally {
     s.loadManager.setPreviewNotch(null);

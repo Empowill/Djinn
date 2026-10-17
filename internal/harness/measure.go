@@ -213,6 +213,20 @@ func (h *Harness) Uses() []*machinev1.WorkerUse {
 	return out
 }
 
+// Cgroups returns the cgroups of the running workers' scopes (machine.Scope.Cgroup): the Hourglass counts their
+// processes adopted out of Djinn's tree as Djinn's (machine.ReadStrays).
+func (h *Harness) Cgroups() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for _, r := range h.runs {
+		if r.cgroup != "" {
+			out = append(out, r.cgroup)
+		}
+	}
+	return out
+}
+
 // WorkerMemory calculates engaged memory (sum of peak forecasts) and actual worker resident memory
 // across running workers.
 func (h *Harness) WorkerMemory(ctx context.Context, p machine.Policy) (engaged, actual uint64, err error) {
