@@ -451,6 +451,15 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			spec.Prompt = line // It holds the first prompt already.
 		}
 	}
+	// What was sent to its last worker and never read: told with its prompt, received once it says something.
+	unread, err := unreceived(h.ctx, h.store, t.GetId())
+	if err != nil {
+		return err
+	}
+	if len(unread) > 0 {
+		spec.Prompt += "\n\n" + unreceivedText(unread)
+		r.unread = unread
+	}
 	// Its branch first brought up to date with the branch its work merges into, when that one moved (uptodate.go).
 	stale := h.behindTarget(h.ctx, r, t, project)
 	if stale != nil {
