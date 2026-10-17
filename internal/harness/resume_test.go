@@ -356,13 +356,14 @@ func (p *scriptStepProvider) Start(ctx context.Context, spec Spec) (Worker, erro
 	return Fake{}.Start(ctx, spec)
 }
 
-// untilText waits until the task has recorded an event containing text.
+// untilText waits until the task has recorded an event containing text. Its prompt is what it was told, not what it
+// said: a fake's script "text working" holds the text it will say before it says it.
 func (e *env) untilText(t *testing.T, id, text string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		for _, ev := range e.storedEvents(t, id) {
-			if strings.Contains(ev.GetText(), text) {
+			if ev.GetKind() != planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT && strings.Contains(ev.GetText(), text) {
 				return
 			}
 		}
