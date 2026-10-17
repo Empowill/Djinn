@@ -23,7 +23,6 @@ import {
   Send,
   Terminal,
 } from "lucide-react";
-import { AnimatePresence } from "motion/react";
 import {
   type FormEvent,
   type ReactNode,
@@ -82,7 +81,7 @@ import { language, t } from "./i18n";
 import { IfritCountdown, IfritGates, IfritLinks, KeepLit } from "./ifrit";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge, ToneIcon } from "./status";
-import { type DiffDrawerView, TaskDiffDrawer } from "./diff";
+import { type DiffView, TaskReview } from "./diff";
 import {
   costTitle,
   resourcesDetail,
@@ -843,8 +842,26 @@ function TaskBody({
   onTurnComments?: (task: Task) => Promise<unknown>;
 }) {
   const [showLogs, setShowLogs] = useState(false);
-  // The drawer of the task's diffs, open on its committed work or on its worktree; null while closed.
-  const [diff, setDiff] = useState<DiffDrawerView | null>(null);
+  // The review of the task's diffs, full size over the main shell, on its committed work or on its worktree; null
+  // while closed. The button that opened it takes the focus back once it closes.
+  const [diff, setDiff] = useState<{
+    view: DiffView;
+    shell: HTMLElement;
+  } | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const openDiff = (view: DiffView, from: HTMLElement) => {
+    opener.current = from;
+    setDiff({
+      view,
+      shell: from.closest<HTMLElement>(".main-shell") ?? document.body,
+    });
+  };
+  // Once the review is gone and what it covered given back (its effects end before this one runs).
+  useEffect(() => {
+    if (diff) return;
+    opener.current?.focus({ preventScroll: true });
+    opener.current = null;
+  }, [diff]);
   const events = useTaskEvents(task.id, task.status, showLogs);
   const box = useRef<HTMLDivElement>(null);
   // Keep the newest event in sight while the worker runs, inside the box: the page stays where it is.
@@ -947,32 +964,32 @@ function TaskBody({
         <button
           type="button"
           className="button secondary small wish-task-diff-button"
-          aria-haspopup="dialog"
-          onClick={() => setDiff("committed")}
+          onClick={(e) => openDiff("committed", e.currentTarget)}
         >
           {t("task.see_diff")}
         </button>
         <button
           type="button"
           className="button secondary small wish-task-worktree-button"
-          aria-haspopup="dialog"
           disabled={!task.worktree}
           title={task.worktree ? undefined : t("task.no_worktree")}
-          onClick={() => setDiff("uncommitted")}
+          onClick={(e) => openDiff("uncommitted", e.currentTarget)}
         >
           {t("task.see_worktree")}
         </button>
       </div>
-      <AnimatePresence>
-        {diff && (
-          <TaskDiffDrawer
-            task={task}
-            view={diff}
-            onView={setDiff}
-            onClose={() => setDiff(null)}
-          />
-        )}
-      </AnimatePresence>
+      {diff && (
+        <TaskReview
+          task={task}
+          view={diff.view}
+          shell={diff.shell}
+          onView={(view) => setDiff({ ...diff, view })}
+          onClose={(back) => {
+            if (!back) opener.current = null;
+            setDiff(null);
+          }}
+        />
+      )}
     </div>
   );
 }

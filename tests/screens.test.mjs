@@ -3079,7 +3079,7 @@ test("a task card shows its prompt on hover, and opened shows prompt and no logs
   // A task with no worktree has no uncommitted files to show: the button says why it is off.
   assert.match(
     opened,
-    /<button type="button" class="button secondary small wish-task-worktree-button" aria-haspopup="dialog" disabled="" title="This task has no worktree">See uncommitted files<\/button>/,
+    /<button type="button" class="button secondary small wish-task-worktree-button" disabled="" title="This task has no worktree">See uncommitted files<\/button>/,
   );
   const withWorktree = s.renderToStaticMarkup(
     h(s.WishTask, {
@@ -3089,10 +3089,10 @@ test("a task card shows its prompt on hover, and opened shows prompt and no logs
     }),
   );
   assert.doesNotMatch(withWorktree, /disabled=""[^>]*>See uncommitted files/);
-  // Logs and diff are deferred: containers are not rendered until toggled, the diff's drawer until a button opens it.
+  // Logs and diff are deferred: containers are not rendered until toggled, the diff's review until a button opens it.
   assert.doesNotMatch(opened, /class="wish-task-events"/);
   assert.doesNotMatch(opened, /task-diff-view/);
-  assert.doesNotMatch(opened, /diff-drawer/);
+  assert.doesNotMatch(opened, /task-review/);
 });
 
 test("diff views render unified and split diffs with Chroma syntax tokens and hunk headers", () => {
@@ -4972,7 +4972,7 @@ test("a tilasm over a view is the same frame, full size from the start, with no 
   // Laid over the view, it takes no room in it: no head, no room left in the page.
   assert.match(
     html,
-    /^<section class="tilasm-view over" aria-label="Model"><iframe/,
+    /^<section class="tilasm-view over full-over" aria-label="Model"><iframe/,
   );
   assert.doesNotMatch(
     html,
@@ -5252,7 +5252,7 @@ test("a tilasm opened from a question covers the view full size, which stays mou
       await settle();
       const over = main.children.at(-1);
       assert.equal(over.nodeName, "SECTION");
-      assert.equal(over.attributes.class, "tilasm-view over");
+      assert.equal(over.attributes.class, "tilasm-view over full-over");
       const frame = over.children[0];
       assert.equal(frame.nodeName, "IFRAME");
       assert.equal(frame.attributes.src, `/tilasm/${id}/`);

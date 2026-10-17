@@ -1,4 +1,4 @@
-/* Diff inspection views: file list, unified and side-by-side diff viewers. */
+/* Diff inspection views: the tree of the files changed, unified and side-by-side diff viewers. */
 
 /* A task card's two buttons: its committed diff, and what its worktree holds not committed. */
 .wish-task-diff-actions {
@@ -18,26 +18,20 @@
   margin-bottom: var(--space-2);
 }
 
-/* The drawer of a task's diffs, from the right of the window: square, a straight separator on its left edge. */
-.diff-drawer-backdrop {
-  justify-content: flex-end;
-  align-items: stretch;
-  padding: 0;
-  overflow: hidden;
-  backdrop-filter: blur(3px);
-}
-
-.diff-drawer {
+/* A task's diffs full size over the main shell (.full-over): its head, then the tree and the diffs filling the rest.
+   Square, a straight separator under its head. */
+.task-review {
   display: flex;
   flex-direction: column;
-  width: min(92.5rem, 92vw);
-  height: 100%;
-  background: var(--n-19);
-  border-left: 1px solid var(--n-38);
-  box-shadow: -1.5rem 0 5rem color-mix(in srgb, var(--shadow) 60%, transparent);
+  background: var(--n-14);
 }
 
-.diff-drawer-head {
+/* It takes the focus a click on nothing focusable leaves, unmarked. */
+.task-review:focus {
+  outline: none;
+}
+
+.task-review-head {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -45,7 +39,7 @@
   border-bottom: 1px solid var(--n-25);
 }
 
-.diff-drawer-title {
+.task-review-title {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
@@ -53,7 +47,7 @@
   min-width: 0;
 }
 
-.diff-drawer-title h2 {
+.task-review-title h2 {
   font-size: 1rem;
   color: var(--n-eb);
   overflow: hidden;
@@ -61,76 +55,48 @@
   white-space: nowrap;
 }
 
-.diff-drawer-tabs {
+.task-review-tabs {
   display: inline-flex;
+  flex: none;
   gap: var(--space-1);
 }
 
-.diff-drawer-body {
+.task-review-body {
   flex: 1;
   min-height: 0;
+}
+
+/* Full size, the view has no card around it: the tree and the diffs reach the edges. */
+.task-review .task-diff-view {
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.task-review .task-diff-view.diff-state {
+  height: auto;
   padding: var(--space-3) var(--space-4);
 }
 
-/* In the drawer, the files make a column on the left, the file's diff fills the rest, each scrolling on its own. */
-.diff-drawer .task-diff-view {
-  display: grid;
-  grid-template-columns: minmax(12.5rem, 18.75rem) minmax(0, 1fr);
-  gap: var(--space-3);
-  height: 100%;
-  margin: 0;
-}
-
-.diff-drawer .task-diff-view.diff-state {
-  display: block;
-  height: auto;
-}
-
-.diff-drawer .diff-file-list {
-  flex-direction: column;
-  flex-wrap: nowrap;
-  margin: 0;
-  padding: 0 var(--space-3) 0 0;
-  border-bottom: 0;
-  border-right: 1px solid var(--n-25);
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.diff-drawer .diff-file-btn {
-  flex-wrap: wrap;
-  text-align: left;
-}
-
-.diff-drawer .diff-file-path {
-  max-width: 100%;
-}
-
-.diff-drawer .single-file-diff {
-  min-height: 0;
-  overflow: auto;
-}
-
-/* The file's diff scrolls as one: its parts keep their height, the file's name and modes stay on top. */
-.diff-drawer .single-file-diff > * {
-  flex-shrink: 0;
-}
-
-.diff-drawer .diff-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--n-14);
-}
-
+/* In a list (the Review tab), the view is a card as high as its diffs, up to most of the window, the tree and the
+   diffs scrolling inside it. */
 .task-diff-view {
+  container: diff / inline-size;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-height: min(70vh, 45rem);
   margin-top: var(--space-2);
   margin-bottom: var(--space-3);
   background: var(--n-14);
   border: 1px solid var(--n-25);
   border-radius: var(--radius-sm);
-  padding: var(--space-3);
+  overflow: hidden;
   font-size: var(--font-size-body);
+  --diff-line: calc(var(--font-size-body) * 1.5);
 }
 
 .diff-loading,
@@ -145,54 +111,164 @@
   color: var(--danger);
 }
 
-/* File list tabs */
-.diff-file-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--n-25);
+/* The tree on the left, the diffs on the right; each scrolls on its own. */
+.diff-review {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: minmax(13rem, 20rem) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
-.diff-file-btn {
-  display: inline-flex;
+.diff-tree {
+  position: relative;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) 0;
+  border-right: 1px solid var(--n-25);
+}
+
+/* Narrow, the tree goes above the diffs, a few rows high. */
+@container diff (max-width: 45rem) {
+  .diff-review {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .diff-tree {
+    max-height: 9rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--n-25);
+  }
+}
+
+.diff-tree-row {
+  display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  background: var(--n-1c);
-  color: var(--n-de);
-  border: 1px solid var(--n-2a);
-  border-radius: var(--radius-sm);
+  gap: var(--space-1);
+  min-height: 1.625rem;
+  padding-right: var(--space-2);
+  color: var(--n-c4);
   font-family: var(--mono);
   font-size: var(--font-size-body);
+  white-space: nowrap;
   cursor: pointer;
-  transition:
-    background 0.1s ease,
-    border-color 0.1s ease;
 }
 
-.diff-file-btn:hover {
+.diff-tree-row:hover {
+  background: var(--n-1c);
+}
+
+.diff-tree-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.diff-tree-row.current {
   background: var(--n-25);
-  border-color: var(--n-38);
-}
-
-.diff-file-btn.active {
-  background: var(--n-28);
-  border-color: var(--accent);
   color: var(--n-ff);
 }
 
+.diff-tree-row.folder {
+  color: var(--n-de);
+}
+
+.diff-tree-chevron {
+  flex: none;
+  width: 0.75rem;
+  color: var(--n-88);
+  transition: transform 0.12s ease;
+}
+
+.diff-tree-row[aria-expanded="true"] > .diff-tree-chevron {
+  transform: rotate(90deg);
+}
+
+.diff-tree-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-tree-files {
+  flex: none;
+  color: var(--n-88);
+  font-family: var(--sans);
+}
+
+.diff-tree-row > .diff-counts {
+  margin-left: auto;
+  padding-left: var(--space-2);
+}
+
+.diff-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.diff-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--n-22);
+  color: var(--n-c4);
+}
+
+.diff-bar > .diff-mode-toggle {
+  margin-left: auto;
+}
+
+.diff-files {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.diff-files:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* A file's part: its name stays on top while its lines scroll by. */
+.diff-file {
+  padding-bottom: var(--space-3);
+}
+
+.diff-file-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  background: var(--n-14);
+}
+
 .diff-file-path {
-  max-width: 20rem;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: var(--font-size-body);
+  color: var(--n-ff);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.diff-file-counts {
+.diff-file-show {
+  margin-left: auto;
+}
+
+.diff-counts {
   display: inline-flex;
+  flex: none;
   gap: var(--space-1);
+  font-family: var(--mono);
 }
 
 .diff-count-add {
@@ -203,8 +279,9 @@
   color: var(--term-red);
 }
 
-.diff-file-flags {
+.diff-flags {
   display: inline-flex;
+  flex: none;
   gap: var(--space-1);
 }
 
@@ -214,31 +291,6 @@
   border-radius: 0.125rem;
   background: var(--n-2a);
   color: var(--n-88);
-}
-
-/* Single file diff section */
-.single-file-diff {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.diff-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--n-22);
-}
-
-.diff-toolbar-title {
-  font-family: var(--mono);
-  font-size: var(--font-size-body);
-  color: var(--n-ff);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .diff-mode-toggle {

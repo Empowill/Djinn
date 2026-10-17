@@ -1938,6 +1938,16 @@ html[data-motion="reduced"] *::after {
 .main-shell {
   position: relative;
 }
+/* A view full size over the main shell, beside the side panel: a tilasm a link opens, a task's diff
+   (full-size.ts). Laid over it, the view underneath keeps its place, its layout and its scroll. */
+.main-shell > .full-over {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
 
 .thinking-avatar {
   display: inline-flex;

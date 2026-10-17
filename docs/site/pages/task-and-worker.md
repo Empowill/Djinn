@@ -120,11 +120,18 @@ On the card:
 | **Stop the worker** | Ends it; a planned task stops before it starts | Running, paused, planned or resuming |
 | **Mark done** | Closes the task, with why in a few words | No worker runs it, and it is not done nor cancelled |
 | **Start anyway** | Starts it now, beyond the load bar | Planned, waiting for the machine only |
-| **See the diff** | The task's committed work, file by file, where you may comment on a line | Any task |
+| **See the diff** | The task's committed work, full size beside the side panel, where you may comment on a line | Any task |
 | **See uncommitted files** | What its worktree holds not committed | A task with a worktree |
 | **Turn comments into work** | Sends your comments on its diff to be done: the task continues, or a correction task starts | An ended task with comments not sent |
 
 A comment on a line of a running task's diff goes straight to its worker as an instruction.
+
+The diff opens full size beside the side panel; the page under it stays as it was. On its left, the files the task
+changes, grouped by folder: each folder counts its files and the lines added and removed under it, and a chain of
+folders that each hold one folder reads as one row. Open the folders that matter first. A click on a file, or Enter,
+scrolls the diff to it, and the tree follows the diff as you scroll; the arrows move in the tree, Right and Left open
+and close a folder. Up to twenty files, every folder starts open; beyond, they start closed. Escape or the close
+button brings you back where you were; a click in the side panel closes the diff and goes where it leads.
 
 A worker that holds or waits for a gate cannot be paused: wait, or stop it. Stopping a planned task stops it for good,
 and the tasks that come after it fail with it: to drop a task, ask the Djinn to cancel it instead.
