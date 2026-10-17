@@ -101,8 +101,8 @@ func startCommand(
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	mark := rand.Text()
-	// Last, so that it replaces the mark of whatever started Djinn.
-	cmd.Env = append(append(append(os.Environ(), pwdEntry(dir)...), env...), markEntry(mark))
+	// Last, so that it replaces the mark of whatever started Djinn. Its Go builds are trimmed (goenv.go).
+	cmd.Env = append(trimmedGoFlags(append(append(os.Environ(), pwdEntry(dir)...), env...)), markEntry(mark))
 	ownGroup(cmd, lowPriority)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

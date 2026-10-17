@@ -353,6 +353,12 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
 		return nil, plan.ErrUpToDate
 	}
+	if !unchecked && h.diskGuard(ctx) {
+		// Almost no space left: checks would fail on the disk, not on the code. They run once space comes back
+		// (disk.go).
+		run.clear(ctx)
+		return nil, errDiskFull
+	}
 	var cmd, held, out string
 	var red *planv1.CheckRun
 	var seen *planv1.IntegrationFailure // Red on this very tree already: not checked again, unless the person asks (W245).
@@ -383,6 +389,13 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 			h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s at %s failed on the network (%s); "+
 				"Djinn runs them again once it is back, with no correction", branch, short8(sha), headline(held)))
 			return nil, errNetworkDown
+		}
+		if held != "" && strings.Contains(out+held, "no space left on device") && h.diskGuard(ctx) {
+			// The disk filled up while they ran: nothing held, no correction; they run once space comes back.
+			run.clear(ctx)
+			h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s at %s ran out of disk space; "+
+				"Djinn runs them again once space comes back, with no correction", branch, short8(sha)))
+			return nil, errDiskFull
 		}
 	}
 	// What the checks found is acted on with no merge landing meanwhile: the branch still at sha, or the checks moot;
@@ -1093,6 +1106,9 @@ func logPush(err error, args ...any) {
 		return
 	case errors.Is(err, errNetworkDown):
 		logx.L().Info("push waits for the network", append(append([]any{"loop", "push"}, args...), "err", err)...)
+		return
+	case errors.Is(err, errDiskFull):
+		logx.L().Info("push waits for disk space", append(append([]any{"loop", "push"}, args...), "err", err)...)
 		return
 	}
 	logx.L().Warn("push failed", append(append([]any{"loop", "push"}, args...), "err", err)...)
