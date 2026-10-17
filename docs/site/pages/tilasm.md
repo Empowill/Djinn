@@ -76,9 +76,17 @@ That is what lets you open any tilasm safely, whoever made it.
 
 Read a tilasm and say what it calls for where you read it. **Comments** (the speech bubble on its head, with the count
 of your drafts) opens a column beside the frame, full size too; **On the whole tilasm** writes a comment on the
-whole of it. A comment is a draft: it stays in Djinn's store on this machine, survives a restart, and no agent reads
-it. Edit one in place (Ctrl+Enter saves, Escape cancels); delete it at once, and **Undo** puts it back for five
-seconds. Your drafts are counted in gold on the tilasm's head, on its row and on the **Tilasms** tab.
+whole of it. To comment a passage, select it in the page, as to copy it: a **Comment** button shows under it, and
+Ctrl+Alt+M does the same. The card keeps the passage and the heading above it, and the passage stays highlighted in
+gold in the page, again after a reload. A comment is a draft: it stays in Djinn's store on this machine, survives a
+restart, and no agent reads it. Edit one in place (Ctrl+Enter saves, Escape cancels); delete it at once, and **Undo**
+puts it back for five seconds. Your drafts are counted in gold on the tilasm's head, on its row and on the
+**Tilasms** tab.
+
+The page stays out of Djinn's reach: Djinn adds a small script to each page it serves, never to the tilasm's files,
+which tells the window what you select and highlights the passages, through the one channel a sandboxed frame keeps.
+A tilasm that sets a content security policy of its own, in a meta tag, may refuse that script: its page reads as
+before, and you comment the whole of it.
 
 ### Send them to the Djinn
 
@@ -96,7 +104,7 @@ A tilasm greys its comments and both buttons once its work was launched, or whil
 next version; a line says why, and which task or question. A send the Djinn has not read yet holds the buttons only.
 Launch never goes twice: Djinn refuses it, whatever the window shows.
 
-Comments on a passage or an element of the page come next.
+Comments on an element of the page, and a passage found again in the next version, come next.
 
 ## Making one yourself
 

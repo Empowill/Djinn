@@ -466,3 +466,26 @@
   color: var(--sand);
   font: 600 var(--font-size-body) var(--mono);
 }
+/* A passage a comment is on, as the developer selected it: three lines at most. */
+.tilasm-comment-quote {
+  display: -webkit-box;
+  margin: 0.25rem 0 0;
+  padding: 0 0 0 0.5rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  border-left: 2px solid color-mix(in srgb, var(--sand) 70%, transparent);
+  color: var(--muted);
+  font-size: var(--font-size-body);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+/* The Comment button under a passage selected in the frame: in the window, over the frame, where the frame says. */
+.tilasm-pick {
+  position: fixed;
+  z-index: 32;
+  gap: 0.3125rem;
+  box-shadow: 0 0.125rem 0.5rem
+    color-mix(in srgb, var(--shadow) 30%, transparent);
+}
