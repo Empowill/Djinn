@@ -107,6 +107,40 @@ test("a new card is written, saved once it says something, or given up", () => {
   assert.equal(c.canSave(c.emptyColumn), false);
 });
 
+test("a new card on a passage keeps it until saved, and takes another passage with what is typed", () => {
+  const passage = {
+    page: "index.html",
+    exact: "two seconds",
+    prefix: "waits ",
+    suffix: ".",
+    start: 40,
+    end: 51,
+    label: "§ Grouping",
+  };
+  let s = c.column(c.emptyColumn, { type: "write", passage });
+  assert.deepEqual(s, { editing: c.NEW, text: "", passage });
+  s = c.column(s, { type: "type", text: "Say where it comes from." });
+  assert.equal(c.column(s, { type: "write", passage }), s);
+  const other = { ...passage, exact: "one line", start: 80, end: 88 };
+  assert.deepEqual(c.column(s, { type: "write", passage: other }), {
+    editing: c.NEW,
+    text: "Say where it comes from.",
+    passage: other,
+  });
+  // "On the whole tilasm" puts the card on the whole of it.
+  assert.deepEqual(c.column(s, { type: "write" }), {
+    editing: c.NEW,
+    text: "Say where it comes from.",
+  });
+  assert.deepEqual(c.column(s, { type: "saved" }), { editing: "", text: "" });
+  assert.deepEqual(c.column(s, { type: "cancel" }), { editing: "", text: "" });
+  // Editing a draft leaves the passage of the new card.
+  assert.deepEqual(c.column(s, { type: "edit", comment: c1 }), {
+    editing: c1.id,
+    text: "First.",
+  });
+});
+
 test("a draft is edited in place from its text", () => {
   let s = c.column(c.emptyColumn, { type: "edit", comment: c1 });
   assert.deepEqual(s, { editing: c1.id, text: "First." });

@@ -8,7 +8,8 @@
 // covers the main shell, the side panel beside it; leaving puts the tab back as it was, the frame never reloaded. The
 // same frame opens over any view, full size, as a link in a question asks (tilasm-over.tsx). Beside the frame in the
 // tab, full size too, the developer's draft comments on it (tilasm-comments.tsx): counted on its head, on its row and
-// on the tab.
+// on the tab. A passage selected in the frame is commented from a button over it, its drafts highlighted in the page
+// (tilasm-passages.tsx).
 import {
   Download,
   FolderInput,
@@ -35,6 +36,8 @@ import {
   type TilasmComment,
   type TilasmHold,
 } from "../gen/ts/plan/v1/tilasm_pb";
+import type { Passage } from "./data/bridge";
+import { marksOf } from "./data/bridge";
 import { message } from "./data/client";
 import { draftCounts, draftsOn } from "./data/comments";
 import { later } from "./data/decisions";
@@ -54,6 +57,7 @@ import {
   CommentsColumn,
   DraftDot,
 } from "./tilasm-comments";
+import { CommentPick, usePassages } from "./tilasm-passages";
 import { memory } from "./usage";
 
 import "./tilasms.css";
@@ -142,8 +146,8 @@ export function TilasmsTab({
   // Each write reads the drafts again before it resolves: the card shows what was stored, never what it held before.
   const reread = () => store.changed(wishId, [Change.TILASM]);
   const comments: CommentWrites = {
-    put: async (tilasmId, text, id) => {
-      await clients.tilasms.putComment({ tilasmId, id, text });
+    put: async (tilasmId, text, id, passage) => {
+      await clients.tilasms.putComment({ tilasmId, id, text, anchor: passage });
       await reread();
     },
     remove: async (comment) => {
@@ -475,6 +479,18 @@ export function TilasmFrame({
   const [commenting, setCommenting] = useState(false);
   const column = comments !== undefined && commenting && !over;
   const frame = useRef<HTMLIFrameElement>(null);
+  // A passage the developer asked to comment, until the column takes it; the one being written, highlighted.
+  const [ask, setAsk] = useState<Passage>();
+  const [writing, setWriting] = useState<Passage>();
+  const passages = usePassages(
+    frame,
+    comments !== undefined && !over,
+    marksOf(drafts, writing),
+    (passage) => {
+      setCommenting(true);
+      setAsk(passage);
+    },
+  );
   const enter = useRef<HTMLButtonElement>(null);
   const leave = useRef<HTMLButtonElement>(null);
   useFullSize(
@@ -561,6 +577,16 @@ export function TilasmFrame({
           writes={comments}
           onError={onCommentError}
           onClose={() => setCommenting(false)}
+          ask={ask}
+          onAsked={() => setAsk(undefined)}
+          onWriting={setWriting}
+        />
+      )}
+      {passages.selected && (
+        <CommentPick
+          frame={frame}
+          at={passages.selected.at}
+          onPick={passages.pick}
         />
       )}
       {full && toggle("tilasm-full-comments")}
@@ -625,9 +651,9 @@ function useFullSize(
   }, [full, frame, enter, leave]);
 }
 
-// What stays in reach beside the full-size frame, should it show after the frame went full size: the Comments column
-// and its button.
-const KEPT = ".tilasm-comments, [data-full-keep]";
+// What stays in reach beside the full-size frame, should it show after the frame went full size: the Comments column,
+// its button, and the Comment button over a passage.
+const KEPT = ".tilasm-comments, .tilasm-pick, [data-full-keep]";
 
 // cover makes inert what the elements kept lie over in the main shell: every element there that holds none of them,
 // and is none of KEPT. It returns what gives them back.

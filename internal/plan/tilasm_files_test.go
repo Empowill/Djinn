@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -128,6 +129,117 @@ func TestTilasmFilesServeTheLatestVersionWithTheirPolicy(t *testing.T) {
 	}
 	if res, _ := fetch(t, http.MethodGet, base+"/js/app.mjs"); res.StatusCode != http.StatusNotFound {
 		t.Errorf("a file of the earlier version only = %d, want 404", res.StatusCode)
+	}
+}
+
+// Each HTML page ends with the bridge's tag as Djinn serves it, and nothing else changes: the tilasm's other files, its
+// export and what djinn tilasm get reads are its files byte for byte, and the policy is the same for the page, its
+// files and the bridge.
+func TestTilasmFilesEndEachPageWithTheBridge(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t, WithHome(t.TempDir()))
+	wish := c.wish(t)
+	files := map[string]string{
+		"index.html": page("Model", "v1"), "notes/more.htm": "<p>more</p>", "app.js": "console.log(1);",
+		"img/a.svg": "<svg/>", "bridge.js": "// the tilasm's own", "data.json": `{"a":1}`,
+	}
+	tilasm := putTilasm(t, c, &planv1.TilasmServicePutRequest{Wish: wish, Path: folder(t, files)}).GetTilasm()
+	base := c.url + "/tilasm/" + tilasm.GetId()
+	origin := strings.TrimSuffix(c.url, "/")
+	policy := tilasmPolicy(strings.TrimPrefix(origin, "http://"))
+	if !strings.HasSuffix(bridgeTag, "<script src=\"/tilasm/bridge.js\"></script>\n") {
+		t.Fatalf("bridgeTag = %q", bridgeTag)
+	}
+
+	for address, want := range map[string]string{
+		"/":               files["index.html"] + bridgeTag,
+		"/index.html":     files["index.html"] + bridgeTag,
+		"/notes/more.htm": files["notes/more.htm"] + bridgeTag,
+		"/notes/":         "",
+		"/app.js":         files["app.js"],
+		"/img/a.svg":      files["img/a.svg"],
+		"/bridge.js":      files["bridge.js"],
+		"/data.json":      files["data.json"],
+	} {
+		res, body := fetch(t, http.MethodGet, base+address)
+		if want == "" {
+			if res.StatusCode != http.StatusNotFound {
+				t.Errorf("GET %s = %d, want 404", address, res.StatusCode)
+			}
+			continue
+		}
+		if res.StatusCode != http.StatusOK || body != want || res.Header.Get("Content-Security-Policy") != policy {
+			t.Errorf("GET %s = %d %q, policy %q; want %q", address, res.StatusCode, body, res.Header.Get("Content-Security-Policy"), want)
+		}
+	}
+	// A request for part of a page counts the tag in.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/notes/more.htm", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Range", "bytes=5-")
+	if res, err := http.DefaultClient.Do(req); err != nil {
+		t.Fatal(err)
+	} else {
+		body, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if string(body) != (files["notes/more.htm"] + bridgeTag)[5:] {
+			t.Errorf("a range of the page = %q", body)
+		}
+	}
+
+	// The bridge itself, under the tilasms' prefix, before any identifier; the same policy.
+	res, body := fetch(t, http.MethodGet, c.url+"/tilasm/bridge.js")
+	if res.StatusCode != http.StatusOK || body != string(tilasmBridge) ||
+		res.Header.Get("Content-Type") != "text/javascript; charset=utf-8" ||
+		res.Header.Get("Content-Security-Policy") != policy || res.Header.Get("Etag") != bridgeETag {
+		t.Fatalf("GET /tilasm/bridge.js = %d %q %q", res.StatusCode, res.Header.Get("Content-Type"), res.Header.Get("Etag"))
+	}
+	if !strings.HasPrefix(body, "// The bridge between") || !strings.Contains(body, `"use strict"`) {
+		t.Errorf("the bridge served = %.80q", body)
+	}
+	// ASCII only: a tilasm's page that names no charset reads the script as windows-1252.
+	for i, c := range tilasmBridge {
+		if c >= 0x80 {
+			t.Fatalf("the bridge holds a byte past ASCII at %d: %q", i, tilasmBridge[max(0, i-20):i+5])
+		}
+	}
+
+	// Its files as they are: the export, and the text and files djinn tilasm get reads.
+	exported, err := c.tilasms.Export(ctx, connect.NewRequest(&planv1.TilasmServiceExportRequest{
+		Tilasm: ref("L01"), File: filepath.Join(t.TempDir(), "model.zip"),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zip := zipped(t, exported.Msg.GetFile())
+	for name, content := range files {
+		if zip[name] != content {
+			t.Errorf("the export's %s = %q, want %q", name, zip[name], content)
+		}
+	}
+	read, err := c.tilasms.Get(ctx, connect.NewRequest(&planv1.TilasmServiceGetRequest{Tilasm: ref("L01"), Wish: wish}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(read.Msg.GetText(), "bridge") || strings.Contains(read.Msg.GetText(), "script") {
+		t.Errorf("djinn tilasm get reads the bridge: %q", read.Msg.GetText())
+	}
+	for name, content := range files {
+		if b, err := os.ReadFile(filepath.Join(read.Msg.GetDirectory(), filepath.FromSlash(name))); err != nil || string(b) != content {
+			t.Errorf("the stored %s = %q %v, want %q", name, b, err, content)
+		}
+	}
+}
+
+// The policy is the one before the bridge: it already lets a tilasm load a script from the server's origin.
+func TestTilasmPolicyUnchangedByTheBridge(t *testing.T) {
+	const want = "default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; " +
+		"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; " +
+		"media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self'; connect-src 'none'; " +
+		"object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts"
+	if TilasmPolicy != want {
+		t.Errorf("TilasmPolicy = %q, want %q", TilasmPolicy, want)
 	}
 }
 

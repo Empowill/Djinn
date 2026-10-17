@@ -304,6 +304,16 @@ func TestGuardTilasmFrame(t *testing.T) {
 	if server.FrameKey(token, id) != server.FrameKey(token, strings.ToUpper(id)) || server.FrameKey("other", id) == key {
 		t.Error("the key follows the token and the tilasm, case ignored")
 	}
+	// The bridge, the same for every tilasm, loads in the frame with neither the cookie nor a key; it is only read.
+	if rec, _ := get(t, h, server.TilasmBridge, http.Header{"Origin": {"null"}}); rec.Code != http.StatusOK ||
+		served[len(served)-1] != server.TilasmBridge {
+		t.Errorf("the bridge: %d, served %v", rec.Code, served)
+	}
+	req = httptest.NewRequest(http.MethodPost, server.TilasmBridge, nil)
+	rec = httptest.NewRecorder()
+	if h.ServeHTTP(rec, req); rec.Code != http.StatusUnauthorized {
+		t.Errorf("POST to the bridge: %d, want 401", rec.Code)
+	}
 }
 
 // TestStream runs the count through a real HTTP server and the guard, as the browser mode does.

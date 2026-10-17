@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -203,9 +206,26 @@ var tilasmTypes = map[string]string{
 	".md":    "text/plain; charset=utf-8",
 }
 
+// tilasmBridge is the script Djinn appends to each HTML page of a tilasm it serves, never to its files (L08): in the
+// sandboxed frame, it tells the window the passage the developer selects, and highlights the passages commented.
+//
+//go:embed tilasm_bridge.js
+var tilasmBridge []byte
+
+// bridgeTag is what ends each HTML page of a tilasm as Djinn serves it: the bridge, from the server's own origin, which
+// the policy already lets a tilasm load (script-src 'self').
+const bridgeTag = "\n<script src=\"" + server.TilasmBridge + "\"></script>\n"
+
+// bridgeETag names the bridge by its content: a new Djinn's is never taken for the one the browser kept.
+var bridgeETag = func() string {
+	sum := sha256.Sum256(tilasmBridge)
+	return fmt.Sprintf(`"%x"`, sum[:8])
+}()
+
 // Files serves the latest version of each tilasm at server.TilasmPrefix: /tilasm/<id>/ is its index.html, and its
 // other files are under it, by their paths. Every answer carries tilasmPolicy. A folder serves its index.html, never a
-// listing.
+// listing. An HTML page ends with the bridge's tag (bridgeTag), its other files are served as they are, and
+// server.TilasmBridge serves the bridge.
 func (t *Tilasms) Files() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -218,6 +238,12 @@ func (t *Tilasms) Files() http.Handler {
 		h.Set("Access-Control-Allow-Origin", "*")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "a tilasm's files are read only", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.URL.Path == server.TilasmBridge {
+			h.Set("Content-Type", tilasmTypes[".js"])
+			h.Set("Etag", bridgeETag)
+			http.ServeContent(w, r, "bridge.js", time.Time{}, bytes.NewReader(tilasmBridge))
 			return
 		}
 		id, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, server.TilasmPrefix), "/")
@@ -274,6 +300,15 @@ func (t *Tilasms) Files() http.Handler {
 		if typ := cmp.Or(tilasmTypes[ext], mime.TypeByExtension(ext)); typ != "" {
 			h.Set("Content-Type", typ)
 		}
-		http.ServeContent(w, r, name, info.ModTime(), f.(io.ReadSeeker)) // os.DirFS opens an *os.File.
+		if !isHTMLFile(name) {
+			http.ServeContent(w, r, name, info.ModTime(), f.(io.ReadSeeker)) // os.DirFS opens an *os.File.
+			return
+		}
+		page, err := io.ReadAll(f)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.ServeContent(w, r, name, info.ModTime(), bytes.NewReader(append(page, bridgeTag...)))
 	})
 }
