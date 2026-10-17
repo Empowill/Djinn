@@ -490,9 +490,12 @@ func DrivenRules(projects []*planv1.Project, home string) string {
 		"from its context. Djinn tells a worker started again to rebase onto its target first: never ask for it.\n" +
 		"- **The plan is a graph of azimas.** An azima (`T07`) carries one clear goal; spawn each task `--part-of " +
 		"<azima>`, `--after` only the tasks whose result it needs, `--blocks W5` to put it before a planned task. " +
-		"Tasks that touch the same files, protos or tests go one after the other; the others run side by side. Look " +
-		"for the azima new work belongs to before opening one. Never spawn while the wish's integration points at " +
-		"another branch.\n" +
+		"You own the wish's DAG: before a spawn, read the open work (`djinn task list --wish-id <wish> --open --short`) " +
+		"and its overlaps (`djinn task overlaps <wish>`). Work on files an open task touches goes to that task " +
+		"(`djinn task update` while planned, `djinn task send` while it runs) or `--after` it, never beside it; give " +
+		"`--write-scopes` when you know the paths; big work is a chain of small steps, not a fan. The others run side " +
+		"by side. Look for the azima new work belongs to before opening one. Never spawn while the wish's integration " +
+		"points at another branch.\n" +
 		"- **Operational decisions are yours.** A merge still failing after its corrections, a held push, a conflict " +
 		"come to you as events: retry a correction, drop the work (`djinn task done <task> --drop`, `djinn task " +
 		"cancel`), re-sequence (`djinn task depend`), or leave it waiting.\n" +

@@ -108,6 +108,12 @@ func (s *Tasks) List(
 	if req.Msg.GetLive() {
 		tasks = slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return !liveTask(t) })
 	}
+	if req.Msg.GetOpen() {
+		tasks = slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return !openTask(t) })
+	}
+	if statuses := req.Msg.GetStatus(); len(statuses) > 0 {
+		tasks = slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return !slices.Contains(statuses, t.GetStatus()) })
+	}
 	page, nextToken, total, err := plan.Paginate(tasks, req.Msg.GetPageSize(), req.Msg.GetPageToken())
 	if err != nil {
 		return nil, err
@@ -138,15 +144,35 @@ func liveTask(t *planv1.Task) bool {
 	case planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return false
 	case planv1.TaskStatus_TASK_STATUS_DONE:
-		switch t.GetIntegration().GetState() {
-		case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING,
-			planv1.IntegrationState_INTEGRATION_STATE_RED, planv1.IntegrationState_INTEGRATION_STATE_CONFLICT,
-			planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
-			return true
-		}
-		return false
+		return doneNotMerged(t)
 	}
 	return true
+}
+
+// doneNotMerged tells done work still on its way into its branch: merging, waiting to merge, its merge failed or its
+// work left not committed.
+func doneNotMerged(t *planv1.Task) bool {
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		return false
+	}
+	switch t.GetIntegration().GetState() {
+	case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING,
+		planv1.IntegrationState_INTEGRATION_STATE_RED, planv1.IntegrationState_INTEGRATION_STATE_CONFLICT,
+		planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+		return true
+	}
+	return false
+}
+
+// openTask tells a task of the open work (TaskServiceListRequest.open): one that runs or will, not one of the past.
+func openTask(t *planv1.Task) bool {
+	switch t.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING,
+		planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_RESUMING,
+		planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+		return true
+	}
+	return false
 }
 
 // shortTask is t in the few fields that say where it stands, for djinn task list --short: a lead reads them without
@@ -158,6 +184,16 @@ func shortTask(t *planv1.Task) *planv1.Task {
 		CreateTime: t.GetCreateTime(), StartTime: t.GetStartTime(), EndTime: t.GetEndTime(), Urgent: t.GetUrgent(),
 		Feedback: t.GetFeedback(),
 	}
+}
+
+func (s *Tasks) Overlaps(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceOverlapsRequest],
+) (*connect.Response[planv1.TaskServiceOverlapsResponse], error) {
+	res, err := s.h.Overlaps(ctx, req.Msg.GetWishId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	return connect.NewResponse(res), nil
 }
 
 func (s *Tasks) Get(

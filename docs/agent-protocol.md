@@ -21,7 +21,7 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
 - **The Djinn runs each command alone.** A pipe, a chain (`&&`, `||`, `;`), a loop, a redirection or a substitution
   around a `djinn` command makes the developer approve it by hand: the first message, the brief and the note
   `direct-commands` forbid them, and flags replace them (`djinn brief --wishes`, `djinn lead notes a,b` or `--all`,
-  `djinn task list --short`, `djinn task watch --last 5`).
+  `djinn task list --short`, `djinn task list --open`, `djinn task watch --last 5`).
 - **A wish describes itself.** Its description is a few lines: what it is for, its scope, where it goes.
   `djinn wish describe <wish> --text "…"` sets it; the developer edits it in the wish's head, under its title (a
   click, saved when the field is left). Until someone writes one, the title stands for it.
@@ -316,20 +316,22 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
     deleted (`djinn task delete`) only once its parts are regrouped, and a task only once no task waits for it (rewire
     them first, in one `--also`): Djinn names them; its code is never given again. `--depends-on` is the former
     name of `--after`, still read.
-- **Keep the graph free of conflicts.** The Djinn keeps the graph of tasks and azimas so that workers do not collide,
-  along an iterative and de-risked path. Tasks that touch the same files, protos, generated files or the same tests go
-  one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side, but never chain
-  tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe: estimate impacted packages and files at a
-  high level (without reading code) and maximize parallelism in the DAG so multiple workers run concurrently, adding
-  `--after` only between tasks that directly target the same file or proto (Djinn already has merge conflict resolution
-  for minor overlaps). Large work is cut into small steps, each merged and green before the next starts. A task starts
-  from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine), since a
-  task started there carries that branch into the next merge (W399 brought the replay sink's node_modules link into
-  feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct. While a
-  correction repairs the wish's branch (a conflict, red checks, main's merge), Djinn starts no new worker of the wish in
-  that project (`waits for W225 to settle the conflict in feat/qol`): reviews, the urgent task and investigators aside,
-  the running workers going on. Corrections and reviews take a slot at once, pausing the lowest work task: never
-  `djinn task start` them, and never spawn around the hold.
+- **The Djinn owns the wish's DAG (W230).** Before each spawn it reads what runs and what comes
+  (`djinn task list --wish-id <wish> --open --short`; `--status running --status pending` for precise states) and the
+  files that work touches (`djinn task overlaps <wish>`: a running, waiting or done-not-merged task's diff against its
+  merge-base with the branch it merges into, untracked files included; a planned task's write scopes, or "paths
+  unknown"; the pairs of tasks that touch the same files, generated files aside). `djinn wish brief` carries the same
+  overlaps in a short Overlaps section. Work on files an open task touches goes to that task (`djinn task update
+  <task> --prompt` while planned, `djinn task send` while it runs) or `--after` it, never beside it; the Djinn gives
+  `--write-scopes` when it knows the paths; big work is a chain of small steps, each merged and green before the next,
+  never a fan on the same packages, while work on other files runs side by side (never a naive line `W1 -> W2 -> W3`
+  just to be safe). A task starts from the integrated branch: never spawn while the wish's integration points at
+  another branch (a quarantine; W399 brought the replay sink's node_modules link into feat/wails-go on 11/10). A
+  conflict or a red merge is a signal to re-sequence, not only to correct. While a correction repairs the wish's branch
+  (a conflict, red checks, main's merge), Djinn starts no new worker of the wish in that project (`waits for W225 to
+  settle the conflict in feat/qol`): reviews, the urgent task and investigators aside, the running workers going on.
+  Corrections and reviews take a slot at once, pausing the lowest work task: never `djinn task start` them, and never
+  spawn around the hold.
 - **Watchers.** To wait on something outside, the Djinn spawns a watcher instead of polling:
   `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model
   and no slot, and each new paragraph it prints wakes the Djinn. `--restart` starts again a command that exits on each

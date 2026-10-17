@@ -222,6 +222,8 @@ const (
 	TaskServiceSpawnProcedure = "/plan.v1.TaskService/Spawn"
 	// TaskServiceListProcedure is the fully-qualified name of the TaskService's List RPC.
 	TaskServiceListProcedure = "/plan.v1.TaskService/List"
+	// TaskServiceOverlapsProcedure is the fully-qualified name of the TaskService's Overlaps RPC.
+	TaskServiceOverlapsProcedure = "/plan.v1.TaskService/Overlaps"
 	// TaskServiceGetProcedure is the fully-qualified name of the TaskService's Get RPC.
 	TaskServiceGetProcedure = "/plan.v1.TaskService/Get"
 	// TaskServiceDiffProcedure is the fully-qualified name of the TaskService's Diff RPC.
@@ -3048,6 +3050,12 @@ type TaskServiceClient interface {
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
+	// The files the open work of a wish touches, and where tasks touch the same ones: what the lead reads before it
+	// spawns, to bundle or order work on the same files instead of running it side by side. A running, paused, waiting
+	// or cut short task, or a done one not merged yet, touches what its worktree changed from its base (its merge-base
+	// with the branch it merges into, untracked files included); a planned one, its write scopes, or paths unknown.
+	// Generated files are left out of the overlaps: Djinn makes them again on a conflict.
+	Overlaps(context.Context, *connect.Request[v1.TaskServiceOverlapsRequest]) (*connect.Response[v1.TaskServiceOverlapsResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
 	// File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
@@ -3153,6 +3161,13 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+TaskServiceListProcedure,
 			connect.WithSchema(taskServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		overlaps: connect.NewClient[v1.TaskServiceOverlapsRequest, v1.TaskServiceOverlapsResponse](
+			httpClient,
+			baseURL+TaskServiceOverlapsProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Overlaps")),
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
@@ -3297,6 +3312,7 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 type taskServiceClient struct {
 	spawn        *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
 	list         *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
+	overlaps     *connect.Client[v1.TaskServiceOverlapsRequest, v1.TaskServiceOverlapsResponse]
 	get          *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
 	diff         *connect.Client[v1.TaskServiceDiffRequest, v1.TaskServiceDiffResponse]
 	stop         *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
@@ -3329,6 +3345,11 @@ func (c *taskServiceClient) Spawn(ctx context.Context, req *connect.Request[v1.T
 // List calls plan.v1.TaskService.List.
 func (c *taskServiceClient) List(ctx context.Context, req *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error) {
 	return c.list.CallUnary(ctx, req)
+}
+
+// Overlaps calls plan.v1.TaskService.Overlaps.
+func (c *taskServiceClient) Overlaps(ctx context.Context, req *connect.Request[v1.TaskServiceOverlapsRequest]) (*connect.Response[v1.TaskServiceOverlapsResponse], error) {
+	return c.overlaps.CallUnary(ctx, req)
 }
 
 // Get calls plan.v1.TaskService.Get.
@@ -3450,6 +3471,12 @@ type TaskServiceHandler interface {
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
+	// The files the open work of a wish touches, and where tasks touch the same ones: what the lead reads before it
+	// spawns, to bundle or order work on the same files instead of running it side by side. A running, paused, waiting
+	// or cut short task, or a done one not merged yet, touches what its worktree changed from its base (its merge-base
+	// with the branch it merges into, untracked files included); a planned one, its write scopes, or paths unknown.
+	// Generated files are left out of the overlaps: Djinn makes them again on a conflict.
+	Overlaps(context.Context, *connect.Request[v1.TaskServiceOverlapsRequest]) (*connect.Response[v1.TaskServiceOverlapsResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
 	// File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
@@ -3551,6 +3578,13 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		TaskServiceListProcedure,
 		svc.List,
 		connect.WithSchema(taskServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceOverlapsHandler := connect.NewUnaryHandler(
+		TaskServiceOverlapsProcedure,
+		svc.Overlaps,
+		connect.WithSchema(taskServiceMethods.ByName("Overlaps")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
@@ -3694,6 +3728,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceSpawnHandler.ServeHTTP(w, r)
 		case TaskServiceListProcedure:
 			taskServiceListHandler.ServeHTTP(w, r)
+		case TaskServiceOverlapsProcedure:
+			taskServiceOverlapsHandler.ServeHTTP(w, r)
 		case TaskServiceGetProcedure:
 			taskServiceGetHandler.ServeHTTP(w, r)
 		case TaskServiceDiffProcedure:
@@ -3753,6 +3789,10 @@ func (UnimplementedTaskServiceHandler) Spawn(context.Context, *connect.Request[v
 
 func (UnimplementedTaskServiceHandler) List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.List is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Overlaps(context.Context, *connect.Request[v1.TaskServiceOverlapsRequest]) (*connect.Response[v1.TaskServiceOverlapsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Overlaps is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error) {

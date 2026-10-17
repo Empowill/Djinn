@@ -262,6 +262,15 @@
                   <code>djinn task move &lt;azima&gt; --wish &lt;wish&gt;</code>.
                 </p>
               </article>
+              <article class="card word" id="word-overlaps">
+                <h3><a href="#dependencies-overlaps-what-runs-on-the-same-files">Overlaps</a></h3>
+                <p>
+                  The Djinn owns each wish's graph. Before it sends a worker, it reads what runs and what comes,
+                  <code>djinn task list --wish-id &lt;wish&gt; --open --short</code>, and which open tasks touch the same
+                  files, <code>djinn task overlaps &lt;wish&gt;</code>: a running task's changes, a planned one's write scopes.
+                  New work on those files joins the task that has them, or comes after it; never beside it.
+                </p>
+              </article>
               <article class="card word" id="word-workers">
                 <h3><a href="#task-and-worker">Workers</a></h3>
                 <p>

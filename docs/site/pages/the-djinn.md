@@ -27,7 +27,9 @@ Every new session of the Djinn starts from its brief, which Djinn writes from it
 - **The projects' own rules**: the instructions each project holds, which it reads before it works there.
 
 When it turns to one wish, the Djinn reads that wish's own brief: its finished work, its latest decisions, what you
-marked read, its latest blocks and its tilasms.
+marked read, its latest blocks and its tilasms, and the open tasks that touch the same files
+([overlaps](#dependencies-overlaps-what-runs-on-the-same-files)): before it sends a worker, new work on those files
+joins the task that has them or comes after it.
 
 ## Talking with the Djinn
 

@@ -130,13 +130,10 @@ func TestBrief(t *testing.T) {
 		// An azima carries one clear goal, and new work finds its azima first.
 		"**An azima carries one clear goal**", "rephrase its goal (its plan file's Goal and its title",
 		"open a new azima only for a will no existing one carries",
-		// The graph of tasks and azimas is kept free of conflicts.
-		"**Keep the graph free of conflicts.**",
-		"keep the graph of tasks and azimas so that workers do not collide, along an iterative and de-risked path",
-		"Tasks that touch the same files, protos, generated files or the same tests go one after the other",
-		"never side by side",
-		"Large work is cut into small steps, each merged and green before the next starts",
-		"never spawn while the wish's integration points at another branch (a quarantine)",
+		// The lead owns the wish's DAG: it reads the open work and its overlaps before it spawns.
+		"**You own the wish's DAG (W230).**", "`djinn task list --wish-id <wish> --open --short`",
+		"`djinn task overlaps <wish>`", "never run beside it",
+		"never spawn while the wish's integration points at another branch (a quarantine",
 		"W399 brought the replay sink's node_modules link into feat/wails-go on 11/10",
 		"A conflict or a red merge is a signal to re-sequence, not only to correct",
 		// When Djinn misbehaves, the lead stops the damage alone and may revert a faulty merge.
@@ -741,23 +738,30 @@ func TestBriefInstallQuestionsRule(t *testing.T) {
 	}
 }
 
-// TestBriefConflictsRule: the lead's rule in briefRules includes keeping the graph free of conflicts.
+// TestBriefConflictsRule: the lead owns the wish's DAG (W230): before a spawn it reads the open work and the files it
+// touches; work on the same files is bundled or ordered, never side by side; big work is a chain, not a fan.
 func TestBriefConflictsRule(t *testing.T) {
 	rules := briefRules(nil, "")
 	for _, want := range []string{
-		"**Keep the graph free of conflicts.**",
-		"keep the graph of tasks and azimas so that workers do not collide, along an iterative and de-risked path",
-		"Tasks that touch the same files, protos, generated files or the same tests go one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side",
+		"**You own the wish's DAG (W230).** Whether two workers collide is your plan's doing, not Djinn's.",
+		"`djinn task list --wish-id <wish> --open --short`", "`djinn task overlaps <wish>`",
+		"Work on files an open task touches is never run beside it: send it to that task (`djinn task update " +
+			"<task> --prompt` while planned, `djinn task send <task> \"…\"` while it runs), or spawn it `--after` that task.",
+		"Give `--write-scopes` when you know the paths",
+		"Big work is a chain of small steps, each `--after` the one before",
 		"never chain tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe",
-		"maximize parallelism in the DAG so multiple workers run concurrently",
-		"Large work is cut into small steps, each merged and green before the next starts",
-		"A task starts from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine)",
+		"W174 `--after W160`",
+		"A task starts from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine",
 		"W399 brought the replay sink's node_modules link into feat/wails-go on 11/10",
 		"A conflict or a red merge is a signal to re-sequence, not only to correct",
+		"`--open` for what runs and what comes",
 	} {
 		if !strings.Contains(rules, want) {
 			t.Errorf("briefRules lacks %q:\n%s", want, rules)
 		}
+	}
+	if strings.Contains(rules, "Keep the graph free of conflicts") {
+		t.Error("briefRules still holds the rule W230 replaced")
 	}
 }
 

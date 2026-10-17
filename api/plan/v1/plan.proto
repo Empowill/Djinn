@@ -4883,6 +4883,15 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // The files the open work of a wish touches, and where tasks touch the same ones: what the lead reads before it
+  // spawns, to bundle or order work on the same files instead of running it side by side. A running, paused, waiting
+  // or cut short task, or a done one not merged yet, touches what its worktree changed from its base (its merge-base
+  // with the branch it merges into, untracked files included); a planned one, its write scopes, or paths unknown.
+  // Generated files are left out of the overlaps: Djinn makes them again on a conflict.
+  rpc Overlaps(TaskServiceOverlapsRequest) returns (TaskServiceOverlapsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Show a task.
   rpc Get(TaskServiceGetRequest) returns (TaskServiceGetResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -5201,6 +5210,18 @@ message TaskServiceListRequest {
   // to merge, its merge failed or its work left not committed). Few, whatever the wish's size: the window reads them
   // with the first page, so that a wish's glance shows its waiting work from the start.
   bool live = 7;
+  // Only the open work: what runs and what comes, without the past. Running, paused, resuming, waiting for an answer,
+  // cut short, and planned (pending) tasks; done, failed, stopped and cancelled ones are left out. With --short, where
+  // the wish stands before a spawn.
+  bool open = 8;
+  // Only the tasks in these states: --status running --status pending. With --open, the tasks both keep.
+  repeated TaskStatus status = 9 [
+    (buf.validate.field).repeated.max_items = 10,
+    (buf.validate.field).repeated.items.enum = {
+      defined_only: true
+      not_in: [0]
+    }
+  ];
 }
 
 message TaskServiceListResponse {
@@ -5210,6 +5231,65 @@ message TaskServiceListResponse {
   string next_page_token = 2;
   // Total number of tasks matching the request.
   int32 total = 3;
+}
+
+message TaskServiceOverlapsRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServiceOverlapsResponse {
+  // The open work and its files, then the overlaps, in a few lines.
+  string text = 1;
+  // Each open task of the wish in a project, and the paths it touches.
+  repeated TaskFiles tasks = 2 [(djinn.v1.json_only) = true];
+  // Each pair of open tasks that touch the same paths.
+  repeated TaskOverlap overlaps = 3 [(djinn.v1.json_only) = true];
+}
+
+// TaskFilesSource says where the paths an open task touches come from.
+enum TaskFilesSource {
+  // Not set.
+  TASK_FILES_SOURCE_UNSPECIFIED = 0;
+  // Its worktree's or its branch's diff against its base: the task ran.
+  TASK_FILES_SOURCE_DIFF = 1;
+  // The write scopes it was given: planned.
+  TASK_FILES_SOURCE_WRITE_SCOPES = 2;
+  // Nothing tells: planned without write scopes, or its worktree and branch are gone.
+  TASK_FILES_SOURCE_UNKNOWN = 3;
+}
+
+// TaskFiles is an open task and the paths it touches, as TaskService.Overlaps reads them.
+message TaskFiles {
+  // The task.
+  string task_id = 1;
+  // Its code, W12.
+  string code = 2;
+  // What it does.
+  string title = 3;
+  // Where it stands.
+  TaskStatus status = 4;
+  // Its project.
+  string project_id = 5;
+  // Where its paths come from.
+  TaskFilesSource source = 6;
+  // The files it changed, generated files left out, or the scopes it writes; relative to the repository's root.
+  repeated string paths = 7;
+  // The commit its diff starts from, for a diff.
+  string base = 8;
+}
+
+// TaskOverlap is two open tasks of a project that touch the same paths.
+message TaskOverlap {
+  // The two tasks, by identifier: the one made first, first.
+  repeated string task_ids = 1;
+  // Their codes, in the same order.
+  repeated string codes = 2;
+  // The paths both touch: a file, or a write scope that holds the other's files.
+  repeated string paths = 3;
 }
 
 message TaskServiceGetRequest {
