@@ -116,11 +116,12 @@ dark. The eye opens and goes where to look now:
 | --- | --- |
 | In the margin of a question, watching it | You just arrived: the question that matters most, one a worker waits for, then one needed before something, then the oldest |
 | In the margin of a question, reading it | The question you went to, by a click or the arrows |
-| On **Write to the Djinn**, which it lights a little | No question is open |
+| On **Write to the Djinn**, in the round porthole on its left | No question is open |
 | Home, in the seal | A page with none of those; closed while the lead is stopped; pale while Djinn's stream is cut |
 
 From one place to the next it flies on a curve, slowly enough to be followed, and lands in the margin: at rest, it
-covers nothing and scrolls with what it watches. It never moves while you type in a field, press a mouse button, scroll
+covers nothing and scrolls with what it watches. It flies under Write to the Djinn, never over it: there its porthole
+opens, the eye behind it blinks, and the message icon comes back when it leaves. It never moves while you type in a field, press a mouse button, scroll
 or read a dialog, nor while the window is in the background: it waits, then goes to the last place asked. It never takes
 the focus or a click. Its flame shines while something waits for you: a question a worker waits for, a worker waiting,
 a lit ifrit. With less motion asked by the system, it fades out and in, without flying.

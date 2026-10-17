@@ -208,7 +208,17 @@ export function LeadMessage({
         tone="secondary"
         expanded={open}
         className="workspace-action-lead"
-        perch={<EyePerch name="pill" />}
+        perch={
+          // The socket on the pill's left, a porthole of the seal's emerald: its icon at rest, the eye when it listens,
+          // behind two halves that part for it (djinn-eye.css).
+          <span className="lead-socket">
+            <EyePerch name="pill" opens />
+            <span className="lead-socket-upper" />
+            <span className="lead-socket-lower" />
+            <MessageSquare size={14} aria-hidden="true" />
+            <span className="lead-socket-ring" />
+          </span>
+        }
       >
         {open ? (
           <div
@@ -319,12 +329,12 @@ export function LeadMessage({
             className="workspace-action-control"
             onClick={() => setOpen(true)}
             label={t("lead_message.open")}
+            tooltip=""
             shortcut={shortcut.label}
             aria-keyshortcuts={shortcut.aria}
             aria-expanded={false}
             aria-controls={`${id}-panel`}
           >
-            <MessageSquare size={15} aria-hidden="true" />
             <span>{t("lead_message.open")}</span>
           </TooltipButton>
         )}
