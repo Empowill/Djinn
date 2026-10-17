@@ -943,7 +943,14 @@ func TestBriefUnderstandAnswerRule(t *testing.T) {
 func TestBriefCancelRule(t *testing.T) {
 	rules := briefRules(nil, "")
 	want := "a task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note \"…\"` " +
-		"stops its worker, removes its worktree (its branch stays) and drops its work from integration"
+		"stops its worker, removes its worktree (its branch stays), drops its work from integration and takes it out of " +
+		"the window's lists"
+	if !strings.Contains(rules, want) {
+		t.Errorf("briefRules lacks %q:\n%s", want, rules)
+	}
+	// W370: a task ended on purpose is cancelled, never left stopped; stop is only to continue at once.
+	want = "a task you end on purpose (a watcher no longer needed, a task made useless) is cancelled, never left stopped or " +
+		"paused, which the window lists as waiting: `djinn task stop` only for a worker you continue at once"
 	if !strings.Contains(rules, want) {
 		t.Errorf("briefRules lacks %q:\n%s", want, rules)
 	}
