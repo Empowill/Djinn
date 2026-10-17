@@ -15,13 +15,15 @@ export {
   fixerOf,
   gateWaiters,
   isTaskMerging,
-  placeWaitOf,
   runningOf,
   span,
   taskFinished,
   taskStatusText,
   taskTime,
   taskTone,
+  waitCount,
+  waitsOf,
+  waitText,
   wishTone,
 } from "@/src/data/format.ts";
 export * from "@/src/data/ifrit.ts";
@@ -385,8 +387,9 @@ test("work that merges counts as running: a worker at work, not a watcher", () =
   );
 });
 
-test("a wish's workers waiting for a place: room on the machine or a gate, never a dependency, a limit or a question", () => {
+test("a wish's workers that wait, by what holds them: the server's hold, never the reason's text", () => {
   const S = f.TaskStatus;
+  const H = f.TaskHold;
   const task = (id, status, extra = {}) => ({ id, status, ...extra });
   const tasks = [
     // Planned, the server says each waits for room: no slot, the machine's load or memory, or behind one that goes
@@ -394,29 +397,63 @@ test("a wish's workers waiting for a place: room on the machine or a gate, never
     task("slot", S.PENDING, {
       roomWait: true,
       machineWait: true,
+      hold: H.PLACE,
       waitReason: "2 workers run, the most this machine holds (test)",
     }),
     task("behind", S.PENDING, {
       roomWait: true,
+      hold: H.PLACE,
       waitReason: "W1 goes first: the memory would not hold it",
     }),
-    task("resumed", S.RESUMING, { roomWait: true }),
-    // Held by more than the machine: the server says so, whatever the text reads (a dependency's wait reason that
+    task("resumed", S.RESUMING, { roomWait: true, hold: H.PLACE }),
+    // Not judged yet by the scheduler's pass: it waits its turn, a place.
+    task("spawned", S.PENDING, {
+      waitReason: "planned: it starts at the scheduler's next pass",
+    }),
+    // Held by more than the machine: the hold says what, whatever the text reads (a dependency's wait reason that
     // names the machine is still a dependency).
     task("dependency", S.PENDING, {
+      hold: H.DEPENDENCY,
       waitReason: "waits for W1 (the most this machine holds)",
     }),
     task("red", S.PENDING, {
+      hold: H.PUSH,
       waitReason: "waits for djinn/w to be green again",
     }),
-    task("limit", S.RESUMING, { waitReason: "claude waits for its limit" }),
-    task("question", S.WAITING),
-    // A running worker counts when it waits for a gate, not when it works.
+    task("limit", S.RESUMING, {
+      hold: H.LIMIT,
+      waitReason: "claude waits for its limit",
+    }),
+    // The network down sets roomWait too: its hold says the network.
+    task("network", S.PENDING, {
+      roomWait: true,
+      machineWait: true,
+      hold: H.NETWORK,
+      waitReason: "network down since 15:12",
+    }),
+    task("answer", S.PENDING, {
+      hold: H.QUESTION,
+      waitReason: "waits for Q51, which W1 waits for",
+    }),
+    // Not counted: its worker waits for your answer (the hand counts it), its wish is paused, an azima, a watcher, a
+    // planned task with nothing to wait for, a stale flag on one that left the plan.
+    task("question", S.WAITING, { waitQuestionId: "q1" }),
+    task("shelved", S.PENDING, {
+      hold: H.WISH,
+      waitReason: "its wish is paused",
+    }),
+    task("azima", S.PENDING, { kind: f.TaskKind.AZIMA, hold: H.DEPENDENCY }),
+    task("watch", S.PENDING, {
+      provider: f.Provider.WATCH,
+      hold: H.DEPENDENCY,
+      waitReason: "waits for W2 (running)",
+    }),
+    task("imported", S.PENDING),
+    task("done", S.DONE, { roomWait: true, hold: H.PLACE }),
+    task("ran", S.RUNNING, { roomWait: true, hold: H.PUSH }),
+    // A running worker counts for a place when it waits for a gate, not when it works.
     task("gated", S.RUNNING),
     task("working", S.RUNNING),
-    // A stale flag on a task that left the plan counts nothing.
-    task("done", S.DONE, { roomWait: true }),
-    task("ran", S.RUNNING, { roomWait: true }),
   ];
   const waiting = f.gateWaiters([
     { waitingTaskIds: ["gated", "elsewhere"] },
@@ -426,41 +463,88 @@ test("a wish's workers waiting for a place: room on the machine or a gate, never
   // One string, sorted and without repeats: the store's selector keeps it while the gates stay.
   assert.equal(waiting, "elsewhere gated");
   assert.equal(f.gateWaiters([]), "");
-  assert.equal(f.placeWaitOf(tasks, waiting), 4);
-  assert.equal(f.placeWaitOf(tasks), 3);
+  const waits = f.waitsOf(tasks, waiting);
+  assert.deepEqual(waits, {
+    place: 5,
+    push: 1,
+    dependency: 1,
+    limit: 2,
+    question: 1,
+  });
+  assert.equal(f.waitCount(waits), 10);
+  assert.equal(
+    f.waitText(waits),
+    "10 workers wait: 5 for a place (a free slot, the machine's load or memory, a gate); 1 for the push checks of " +
+      "the branch to be green; 1 for a dependency; 2 for a usage limit or the network; 1 for the answer to a question",
+  );
+  assert.equal(f.waitCount(f.waitsOf(tasks)), 9);
+  // A reason at zero is left out.
+  const one = f.waitsOf([tasks[0]]);
+  assert.equal(f.waitCount(one), 1);
+  assert.equal(
+    f.waitText(one),
+    "1 worker waits: 1 for a place (a free slot, the machine's load or memory, a gate)",
+  );
   // None waits: zero, which the side panel hides.
-  assert.equal(f.placeWaitOf([task("working", S.RUNNING)], ""), 0);
-  assert.equal(f.placeWaitOf([]), 0);
+  assert.equal(f.waitCount(f.waitsOf([task("working", S.RUNNING)], "")), 0);
+  assert.equal(f.waitCount(f.waitsOf([])), 0);
+  assert.equal(f.waitCount(undefined), 0);
 });
 
-test("the seat counts the one task waiting for the machine, not the planned ones a red branch or a dependency holds (W329)", () => {
+test("the seat counts every task of Djinn QoL that waits, the red branch's and the dependencies' too (W329, W334)", () => {
   const S = f.TaskStatus;
+  const H = f.TaskHold;
   const task = (id, status, extra = {}) => ({ id, status, ...extra });
   const many = (n, make) => Array.from({ length: n }, (_, i) => make(i));
-  // Djinn QoL as its live tasks read when the seat said 1: 33 planned or resumed tasks wait, one of them for a place.
+  // Djinn QoL as its live tasks read when the seat said 1: 32 planned or resumed tasks wait, one of them for a place,
+  // 8 for feat/qol to be green, 23 for a dependency.
   const red =
     "waits for feat/qol to be green again (push checks red at de18f949: test)";
   const tasks = [
     task("W328", S.PENDING, {
       roomWait: true,
       machineWait: true,
+      hold: H.PLACE,
       waitReason: "load minimal commits up to 3.6 GiB of memory",
     }),
-    ...many(6, (i) => task(`red${i}`, S.PENDING, { waitReason: red })),
-    ...many(2, (i) => task(`resumed${i}`, S.RESUMING, { waitReason: red })),
+    ...many(6, (i) =>
+      task(`red${i}`, S.PENDING, { hold: H.PUSH, waitReason: red }),
+    ),
+    ...many(2, (i) =>
+      task(`resumed${i}`, S.RESUMING, { hold: H.PUSH, waitReason: red }),
+    ),
     ...many(23, (i) =>
-      task(`dep${i}`, S.PENDING, { waitReason: `waits for W${i} (pending)` }),
+      task(`dep${i}`, S.PENDING, {
+        hold: H.DEPENDENCY,
+        waitReason: `waits for W${i} (pending)`,
+      }),
     ),
     // Azimas are planned, never run by a worker.
-    ...many(25, (i) => task(`azima${i}`, S.PENDING)),
+    ...many(25, (i) =>
+      task(`azima${i}`, S.PENDING, { kind: f.TaskKind.AZIMA }),
+    ),
     task("W329", S.RUNNING),
   ];
-  assert.equal(f.placeWaitOf(tasks, ""), 1);
-  // The others are counted once their hold lifts and only the machine holds them: the server flags each one.
-  const green = tasks.map((t) =>
-    t.waitReason === red ? { ...t, roomWait: true, waitReason: "" } : t,
+  const waits = f.waitsOf(tasks, "");
+  assert.equal(f.waitCount(waits), 32);
+  assert.deepEqual(waits, {
+    place: 1,
+    push: 8,
+    dependency: 23,
+    limit: 0,
+    question: 0,
+  });
+  assert.equal(
+    f.waitText(waits),
+    "32 workers wait: 1 for a place (a free slot, the machine's load or memory, a gate); 8 for the push checks of " +
+      "the branch to be green; 23 for a dependency",
   );
-  assert.equal(f.placeWaitOf(green, ""), 9);
+  // Once the branch is green, the same tasks wait for a place: the count stays, its split moves.
+  const green = tasks.map((t) =>
+    t.hold === H.PUSH ? { ...t, roomWait: true, hold: H.PLACE } : t,
+  );
+  assert.equal(f.waitCount(f.waitsOf(green, "")), 32);
+  assert.equal(f.waitsOf(green, "").place, 9);
 });
 
 test("a failed merge is being fixed while its correction works, failed when none does", () => {

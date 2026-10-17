@@ -316,7 +316,7 @@ func (h *Harness) schedule(ctx context.Context) {
 				}
 				continue
 			}
-			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room)
+			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room, d.Hold)
 		case d.Why != "":
 			if isMemoryShort(d.Why) {
 				if code, err := h.interruptPausedForMemory(ctx, t); err == nil && code != "" {
@@ -334,7 +334,7 @@ func (h *Harness) schedule(ctx context.Context) {
 					continue
 				}
 			}
-			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room)
+			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room, d.Hold)
 		default:
 			if err := h.launchPlanned(ctx, t); err != nil {
 				logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
@@ -517,22 +517,22 @@ func (h *Harness) GatesOutside(n func() (outside, merges int)) {
 	h.outside = n
 }
 
-// setWaiting records why a planned task waits, whether for the machine alone, and whether for room on it (behind a
-// task that goes first too), when the reason changed, with an event.
-func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine, room bool) {
+// setWaiting records why a planned task waits, whether for the machine alone, whether for room on it (behind a task
+// that goes first too), and what holds it, when one changed, with an event.
+func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine, room bool, hold planv1.TaskHold) {
 	why = networkWhy(t, grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why))))
-	if t.GetWaitReason() == why && t.GetMachineWait() == machine && t.GetRoomWait() == room {
+	if t.GetWaitReason() == why && t.GetMachineWait() == machine && t.GetRoomWait() == room && t.GetHold() == hold {
 		return
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason, t.MachineWait, t.RoomWait = why, machine, room
+	t.WaitReason, t.MachineWait, t.RoomWait, t.Hold = why, machine, room, hold
 	h.writeAlone(ctx, actorHarness, methodWait, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
 }
 
 // failPlanned ends a planned task that never will start.
 func (h *Harness) failPlanned(ctx context.Context, t *planv1.Task, why string) {
 	t = proto.CloneOf(t)
-	t.Status, t.Error, t.WaitReason, t.MachineWait, t.RoomWait, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", false, false, timestamppb.Now()
+	t.Status, t.Error, t.WaitReason, t.MachineWait, t.RoomWait, t.Hold, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", false, false, 0, timestamppb.Now()
 	h.writeAlone(ctx, actorHarness, methodEnd, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "failed: " + why})
 	h.wake() // Its own dependents fail in turn.
 }
@@ -601,7 +601,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		var err error
 		if settings, err = plan.LoadSettings(h.home, project); err != nil {
-			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false, false)
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false, false, 0)
 			return nil
 		}
 		if !questionWorker(t) && t.GetReview() == nil && t.GetCorrection().GetFailure() == nil && len(t.GetDependsOn()) > 0 {
@@ -609,7 +609,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 				from := h.workerStartBranch(ctx, wish, project, settings, t)
 				if sha, shown, err := h.startPoint(ctx, project, from); err == nil {
 					if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), t, sha, cmp.Or(from, shown)); depWhy != "" {
-						h.setWaiting(ctx, t, depWhy, false, false)
+						h.setWaiting(ctx, t, depWhy, false, false, planv1.TaskHold_TASK_HOLD_DEPENDENCY)
 						return nil
 					}
 				}
@@ -632,7 +632,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		prompted = h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason, t.MachineWait, t.RoomWait = "", false, false
+	t.WaitReason, t.MachineWait, t.RoomWait, t.Hold = "", false, false, 0
 	r, err := h.newRun(t)
 	if err != nil {
 		return err
