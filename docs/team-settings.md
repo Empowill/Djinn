@@ -44,6 +44,20 @@ reads them again only when a fetch moves the reference branch. A message about a
 without a remote, or whose reference branch is not fetched yet, keeps its folder as the source. Your own file is always
 read in Djinn's data folder.
 
+Djinn watches that branch for you: every 5 minutes, and after each of its pushes, it fetches the reference branch alone
+(no tags), then compares the digest of the `.agents` and `.claude/skills` trees with the one of its last look; nothing
+is read again while it has not moved. When it has, each commit of the branch that changed those trees (following first
+parents, the merges into it included) becomes an entry of the project's journal of changes, told in sentences: a check
+new, gone or changed, the setup, the reference branch the file names, the other settings by name; the commands the
+permissions allow or deny, editing, the network, the mode; each skill new, gone or changed, and what changed in it (its
+wish template, inbox source, babysit, description, instructions, files); the other files of `.agents`. Past 20 commits
+in one look, the older ones are told together; a change of the reference branch itself is told as one entry, the whole
+difference. The first look tells the last 5 commits that changed the configuration as history. The journal keeps the
+50 newest entries per project, in Djinn's data, on this machine.
+
+A change is applied as soon as it is fetched. Those that give the workers more, or change what a skill makes or runs for
+Djinn, wait for your look (see the `change` topic below).
+
 | Setting          | What it sets, when a task names none                                   | Not set                    |
 | ---------------- | ---------------------------------------------------------------------- | -------------------------- |
 | `provider`       | The agent of the project's workers: claude, codex, antigravity, fake.  | claude                     |
@@ -189,6 +203,7 @@ on every read: the things to fix first, then the information. Each notice has a 
 | `setup` | The setup's last run failed, with the command it still is | |
 | `skill` | A `SKILL.md` Djinn cannot read; a wish template, inbox source or babysit it cannot use; a summoned skill it no longer finds | |
 | `source` | A source this machine has not decided on: plug it in, or unplug it to say no | A source plugged in that no skill declares any more |
+| `change` | A change on the reference branch that waits for your look: a command allowed or no longer denied, editing, the network or the auto mode turned on, a wish template or a babysit new or changed, the command of a source plugged in on this machine changed. `djinn project acknowledge <project>` marks them seen; the notice's `command` names one by its commit | |
 
 `djinn project list` gives each project's `to_fix`, the number of things to fix.
 
@@ -197,6 +212,13 @@ on every read: the things to fix first, then the information. Each notice has a 
 it yet), the `source` of its name (`SETTING_SOURCE_DEFAULT` for the remote's default branch, else `main`, else `master`;
 otherwise the file whose `main_branch` names it) and the branch your copy has `checked_out`. The project's
 configuration in the window shows the same, with each setting and where it comes from.
+
+It gives the `watch` too, how Djinn last looked at the reference branch: the `ref`, the `commit` and the `digest` of
+the configuration's trees there, when Djinn found that commit (`find_time`) and why the last fetch failed
+(`fetch_error`, as git said it; empty when it went well). Then `changes`, the journal, the newest first, the last 20:
+each with the `commit` (the newest when it tells several, `commits` says how many), its `author`, `title` and
+`commit_time`, its `lines` (a `topic`, a `subject`, a sentence in `text`, and `asks` when it calls for your look),
+`first_look` for the history the first look told, and the `seen_time` once you marked it seen.
 
 `djinn project set-branch <project> <branch>` chooses the reference branch for you: it writes `main_branch` in your own
 file, never in the repository's, so nothing is committed behind the team, and yours wins over the team's. It refuses a

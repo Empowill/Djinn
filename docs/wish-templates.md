@@ -23,7 +23,12 @@ lines: nothing to code per template.
 
 In the skill's `SKILL.md`, under `metadata.djinn.wish` (Agent Skills lets a skill hold extra metadata; other tools
 ignore Djinn's key). Djinn reads the skills on the project's reference branch, at the last fetch, like the rest of its
-configuration ([team settings](team-settings.md#where-djinn-reads-it)): a skill counts once pushed and fetched.
+configuration ([team settings](team-settings.md#where-djinn-reads-it)): a skill counts once pushed and fetched. Djinn
+fetches that branch every 5 minutes and tells each change of a skill in the project's journal of changes; a wish template
+or a babysit new or changed waits for your look, the project's gear red, until you mark it seen (`djinn project
+acknowledge <project>`): choosing a template starts its watcher, and a babysit runs on each pull request a task opens. A
+new inbox source asks through its own line, until you plug it in or say no; the command of a source you plugged in that
+changes waits for your look too, since it runs another command on your machine.
 
 ```yaml
 ---

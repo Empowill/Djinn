@@ -62,6 +62,7 @@ for you first:
 | Checks | The setup and the checks Djinn runs on finished work, where each comes from, and how each last ran: passed on which commit, when, in how long, or why it failed. |
 | Inbox sources | The sources its skills declare on this machine: what each reads, how its last run went, and **Plug in** or **Unplug**, with what that does. See [Inbox](#inbox). |
 | Skills | The project's skills, the folder each lives in, and those it uses from another project, marked **from** that project. Each says its role for Djinn: the wish template it offers, the inbox source it declares, the babysit of the project's pull requests; or know-how for the workers alone. A skill Djinn cannot read, or cannot use in part, sends you to To fix. |
+| What changed on the reference branch | The journal of changes: each commit of the reference branch that changed the configuration, when, which and who, and what it changed in sentences. One that waits for your look has the flame and **Seen**; the others say they were applied. When Djinn could not fetch the branch, it says why, as git said it. See below. |
 | Push cadence | **Standard** or **On demand**, where it comes from, and each branch Djinn pushes that differs from its remote, with a button to push it. See [Push](#push). |
 | Settings | Every other setting, its value and where it comes from: those a file sets first, those at Djinn's default folded under them. Hovering where a value comes from shows the file. |
 | Watcher commands you allow | The commands a [watcher](#watcher) may run here for you, with **Allow** and **Take back**. |
@@ -85,7 +86,8 @@ leaves the gear grey: you read it on opening the configuration.
 - **Things to fix**: a settings file or the permissions Djinn cannot read; no reference branch found, or the one the
   settings name missing from the repository; the setup that failed its last run; a skill whose header Djinn cannot
   read, or whose wish template, inbox source or babysit it cannot use; a summoned skill no longer found; an inbox
-  source this machine has not decided on, plugged in or said no to.
+  source this machine has not decided on, plugged in or said no to; a change on the reference branch that waits for
+  your look.
 - **Information**: a field a newer Djinn knows, ignored; your copy on another branch than the reference branch, which
   does not change the configuration Djinn reads; a source plugged in that no skill declares any more; a line of a skill's
   header that breaks its format, which Claude Code reads anyway and Djinn reads around.
@@ -172,6 +174,22 @@ permissions and the skills. A branch checked out in your folder, or a change not
 runs the project with; a fix counts once pushed and fetched, and a message about a file Djinn cannot read names the
 branch it read it on. The commands still run in the project's folder. A project outside Git, without a remote, or whose
 reference branch is not fetched yet, is read in its folder.
+
+### The watch on the reference branch
+
+Every five minutes, and after each of its pushes, Djinn fetches the reference branch of each project, that branch alone,
+and compares the digest of its agents folder and its Claude skills folder with the one of its last look: nothing is read
+again while it has not moved. When it has, each commit that changed them becomes an entry of the project's journal of
+changes, told in sentences: a new check before a push, a setting changed, two more commands the workers may run, a new
+skill with a wish template. Past twenty commits in one look, the older ones are told together; a change of the
+reference branch itself is one entry, the whole difference. The first look tells the last five as history.
+
+A change is applied as soon as Djinn fetches it. The gear lights only when a decision comes back to you: the
+permissions give the workers more (a command allowed or no longer denied, editing, the network, the agent's own auto
+mode), a skill's wish template or babysit is new or changed, or a source you plugged in on this machine runs another
+command. Mark it **Seen**, in the journal or under To fix, or acknowledge it from the command line: the gear goes out.
+A new source asks through its own line, until you plug it in or say no. A new check, a skill's new instructions or a
+setting changed only show in the journal.
 
 ### A file Djinn cannot read
 

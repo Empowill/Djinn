@@ -410,6 +410,7 @@ func runUp(args []string) (restart bool, err error) {
 		return ""
 	}
 	workers.Integrate()
+	workers.WatchConfig()
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
 	uiSvc.Window = !browser

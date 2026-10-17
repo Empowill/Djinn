@@ -101,7 +101,15 @@ Click a project to see its configuration, as Djinn reads it on this machine. Wha
 say no to, a skill to unsummon). Then its reference branch (the ref and commit Djinn merges, and where its name comes
 from): in Git with a remote, Djinn reads the project's settings, permissions and skills on it, at the last fetch, not
 in your copy; **Change** chooses another among the remote's branches, written in your own file, never in the repository
-(`djinn project set-branch <project> dev`, `--unset` takes it back). Then its checks, the inbox sources of this machine, its skills with the role each has for Djinn (a wish template, an
+(`djinn project set-branch <project> dev`, `--unset` takes it back). Djinn watches that branch: every 5 minutes, and
+after each of its pushes, it fetches it alone and compares the digest of `.agents` and `.claude/skills` with its last
+look; when they moved, the panel's **What changed on origin/main** tells each commit that changed them, who and when,
+in sentences ("New check e2e before a push", "Permissions: 1 more command the workers may run: curl", "New skill
+open-pr, with a wish template"). A change is applied as soon as it is fetched. One that gives the workers more (a
+command allowed, editing, the network, the auto mode), or changes what a skill makes or runs for Djinn (a wish
+template, a babysit, the command of a source you plugged in), is a thing to fix until you mark it **Seen**
+(`djinn project acknowledge <project>`, or `djinn project acknowledge <project> <commit>` for one); a new source asks
+through its own line, until you plug it in or say no. A failed fetch is said there, as git said it. Then its checks, the inbox sources of this machine, its skills with the role each has for Djinn (a wish template, an
 inbox source, a babysit, or know-how for the workers alone), its push cadence, and every other setting with where it
 comes from: Djinn's default, the team's file or yours. Skills summoned from another project show "from app".
 `djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app without a copy.
@@ -587,7 +595,9 @@ A project with things to fix has its gear, beside its name in the side panel, re
 the side panel is folded), its tooltip counting them, and one line in the inbox under the cards: **Project** and its
 name, how many things, the first of them in a sentence, and **Open its configuration**. The gear and the line open the
 same panel, as a click on the name does; the detail stays there. Once nothing is left to fix, the gear turns grey and
-the line goes.
+the line goes. A change on the reference branch lights the gear only when a decision comes back to you (a permission
+given, a wish template or babysit changed, a source plugged in here that runs another command, a new source); a new
+check, a skill's new instructions or a setting changed are applied and only told in the panel's journal.
 
 ## Team settings and integration
 

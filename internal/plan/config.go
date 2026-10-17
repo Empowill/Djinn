@@ -254,24 +254,9 @@ func readConfig(ctx context.Context, home, folder, common, devFile string) (Conf
 	if err != nil {
 		return c, err
 	}
-	dev, _ := ReadSettings(devFile)
-	name, team := dev.GetMainBranch(), false
-	ref := repo.reference(name)
-	if ref == "" {
-		return c, nil // no remote: the project's folder
-	}
-	if name == "" {
-		// The team may name another branch in the default branch's tree.
-		if sha := repo.refs[ref]; sha != "" {
-			dir, err := extractConfig(ctx, home, folder, sha)
-			if err != nil {
-				return c, err
-			}
-			if s, _ := ReadSettings(filepath.Join(dir, SettingsFile)); s.GetMainBranch() != "" {
-				name, team = s.GetMainBranch(), true
-				ref = repo.reference(name)
-			}
-		}
+	ref, team, err := resolveReference(ctx, home, folder, devFile, repo)
+	if err != nil || ref == "" {
+		return c, err // no remote: the project's folder
 	}
 	sha := repo.refs[ref]
 	if sha == "" {
@@ -281,11 +266,50 @@ func readConfig(ctx context.Context, home, folder, common, devFile string) (Conf
 	if err != nil {
 		return c, err
 	}
-	c = Config{Dir: dir, Folder: folder, Ref: shortRef(ref), Commit: sha}
-	if team {
-		c.TeamBranch = name
+	return Config{Dir: dir, Folder: folder, Ref: shortRef(ref), Commit: sha, TeamBranch: team}, nil
+}
+
+// resolveReference is the remote ref of the reference branch of the project in folder, as repo holds its refs, devFile
+// the developer's settings file, fetched or not: the branch devFile names, else the one the team's file names in the
+// default branch's tree (team), else the default branch. Empty without a remote.
+func resolveReference(ctx context.Context, home, folder, devFile string, repo gitRefs) (ref, team string, err error) {
+	dev, _ := ReadSettings(devFile)
+	name := dev.GetMainBranch()
+	ref = repo.reference(name)
+	if ref == "" || name != "" {
+		return ref, "", nil
 	}
-	return c, nil
+	// The team may name another branch in the default branch's tree.
+	if sha := repo.refs[ref]; sha != "" {
+		dir, err := extractConfig(ctx, home, folder, sha)
+		if err != nil {
+			return "", "", err
+		}
+		if s, _ := ReadSettings(filepath.Join(dir, SettingsFile)); s.GetMainBranch() != "" {
+			return repo.reference(s.GetMainBranch()), s.GetMainBranch(), nil
+		}
+	}
+	return ref, "", nil
+}
+
+// ConfigReference is the remote ref Djinn reads project's configuration from once it is fetched
+// (refs/remotes/origin/main), as ProjectConfig finds it, home its data folder: empty outside Git, without a remote or
+// without a branch to take.
+func ConfigReference(ctx context.Context, home string, project *planv1.Project) (string, error) {
+	folder := project.GetDirectory()
+	if folder == "" || home == "" || !project.GetGit() {
+		return "", nil
+	}
+	common, ok := gitCommonDir(folder)
+	if !ok || !mayHaveRemote(common) {
+		return "", nil
+	}
+	repo, err := readRefs(ctx, folder)
+	if err != nil {
+		return "", err
+	}
+	ref, _, err := resolveReference(ctx, home, folder, DeveloperSettingsFile(home, project.GetId()), repo)
+	return ref, err
 }
 
 // mayHaveRemote tells whether the repository whose common folder is common may have a remote: its configuration
