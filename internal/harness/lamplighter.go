@@ -118,21 +118,21 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 			continue
 		}
 
-		// An investigation is asked to publish at its time limit or its budget, and stopped past a grace.
-		if dispatch.Investigation(t) {
+		// An investigation or a mockup is asked to publish at its time limit or its budget, and stopped past a grace.
+		if dispatch.ChangesNoCode(t) {
 			ask, stop := h.investigationDue(t, r, now)
 			if stop != "" {
 				r.stopping, r.stoppingReason = true, stop
 				worker := r.worker
 				h.mu.Unlock()
-				logx.L().Info("lamplighter stops an investigation", "task", t.GetCode(), "why", stop)
+				logx.L().Info("lamplighter stops an investigation or a mockup", "task", t.GetCode(), "why", stop)
 				if worker != nil {
 					worker.Stop()
 				}
 				continue
 			}
 			if ask != "" {
-				go h.askToPublish(r, t.GetCode(), ask)
+				go h.askToPublish(r, t, ask)
 			}
 		}
 

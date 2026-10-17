@@ -8,8 +8,10 @@ its code is never merged.
 ## When the Djinn launches one
 
 For a study or an audit whose answer is a decision of yours: a measure, a comparison, a review of a part of the code.
-Never for what must land in the branch: a fix, a feature, or a mockup you judge by running it are work. A mockup or a
-change you asked to see quickly is urgent work for your feedback instead ([Task and worker](#task-and-worker)).
+Never for what must land in the branch: a fix, a feature, or a prototype you judge by running it are work. A
+prototype or a change you asked to see quickly is urgent work for your feedback instead
+([Task and worker](#task-and-worker)); a design you review as a tilasm, version after version, is a
+[mockup](#mockup).
 
 ## How it runs
 
@@ -19,8 +21,8 @@ branch: Djinn never merges it, and the line that tells the Djinn it ended says s
 
 **Served first.** It goes before the planned work of its wish. On a full machine it takes the slot of a work task it
 pauses, which resumes first once it ends, as an investigator of a question does. At most one runs at once on a machine
-of three slots or fewer, two above, so that studies never starve the work. Red push checks on the wish's branch do
-not hold it: it merges nothing.
+of three slots or fewer, two above, mockups counted, so that studies never starve the work. Red push checks on the
+wish's branch do not hold it, nor a merge in conflict and its repair: it merges nothing.
 
 **Short.** It has twenty-five minutes of work and ten dollars by default; the Djinn may give it more or less when it
 launches it. At either, Djinn sends it a message asking it to publish what it has, its tilasm as it stands and its
@@ -38,10 +40,12 @@ Its tilasm opens from the question it asked, in the wish's Tilasms tab.
 
 - **Answer its question.** The investigation ends with it: what you choose becomes work.
 - **Its branch stays.** What it tried is on its branch, if you want to look; cancelling it removes its worktree.
-- **Not for a mockup.** A mockup runs code you judge, and that code should land: it is urgent work for your feedback.
+- **Not for a prototype.** A prototype runs code you judge, and that code should land: it is urgent work for your
+  feedback. A design you only look at is a [mockup](#mockup), which shares this frame.
 
 ## Read next
 
 - [Tilasm](#tilasm): what an investigation publishes.
 - [Enlighten me](#enlighten): the investigator a question starts.
+- [Mockup](#mockup): the same frame, for a design you iterate on.
 - [Task and worker](#task-and-worker): urgent tasks, for a repair or your feedback.

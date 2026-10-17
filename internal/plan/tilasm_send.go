@@ -20,14 +20,17 @@ import (
 
 // The send of a tilasm's comments (L08, step 6, decision Q29): every draft at once, with a comment on the whole tilasm
 // written above the buttons, and the developer's choice, launch or iterate. One lead event per send; a launch without
-// a comment answers the question that links the tilasm instead, as its approval does. A tilasm held takes no send.
+// a comment answers the question that links the tilasm instead, as its approval does. An iterate send on a tilasm that
+// a mockup option of the open question linking it iterates on (W268) records that question's iteration round instead:
+// the mockup task reads the comments, as when the developer answers that option. A tilasm held takes no send.
 
 func (t *Tilasms) SendComments(
 	ctx context.Context, req *connect.Request[planv1.TilasmServiceSendCommentsRequest],
 ) (*connect.Response[planv1.TilasmServiceSendCommentsResponse], error) {
 	m := req.Msg
 	res := &planv1.TilasmServiceSendCommentsResponse{}
-	var answered *planv1.Question
+	var answered, iterating *planv1.Question
+	var iteration *planv1.Round
 	var then func(context.Context)
 	queued := false
 	err := write(ctx, t.Store, req.Spec(), m, func(tx *store.Tx) error {
@@ -102,6 +105,16 @@ func (t *Tilasms) SendComments(
 			answered, res.Answered = question, question.GetCode()
 			return tx.Put(question)
 		}
+		if p := MockupOption(question, tilasm.GetId()); p != nil && m.GetChoice() == planv1.SendChoice_SEND_CHOICE_ITERATE &&
+			t.Questions != nil {
+			if iteration, err = iterationRound(ctx, tx, question, p, "", send.GetNumber()); err != nil {
+				return err
+			}
+			iteration.TilasmId, iteration.Version = tilasm.GetId(), latestVersion(tilasm)
+			question.Rounds = append(question.Rounds, iteration)
+			iterating, res.Iterated = question, question.GetCode()
+			return tx.Put(question)
+		}
 		queued = true
 		return tx.Put(&planv1.LeadEvent{
 			Id: store.NewID(), CreateTime: now, Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_COMMENTS,
@@ -113,6 +126,9 @@ func (t *Tilasms) SendComments(
 	}
 	if answered != nil {
 		t.Marks.approved(ctx, answered, then)
+	}
+	if iterating != nil {
+		res.Iterate = t.Questions.iterated(ctx, iterating, iteration)
 	}
 	if queued && t.Wake != nil {
 		t.Wake()
@@ -271,8 +287,8 @@ func tilasmHolds(ctx context.Context, r store.Reader, wishID string, tilasms []*
 	}
 	tasks = slices.DeleteFunc(tasks, func(task *planv1.Task) bool {
 		kind := task.GetKind()
-		return !slices.Contains(holdingStatus, task.GetStatus()) ||
-			(kind != planv1.TaskKind_TASK_KIND_WORK && kind != planv1.TaskKind_TASK_KIND_UNSPECIFIED)
+		return !slices.Contains(holdingStatus, task.GetStatus()) || (kind != planv1.TaskKind_TASK_KIND_WORK &&
+			kind != planv1.TaskKind_TASK_KIND_UNSPECIFIED && kind != planv1.TaskKind_TASK_KIND_MOCKUP)
 	})
 	slices.SortFunc(tasks, func(a, b *planv1.Task) int { return CompareCodes(a.GetCode(), b.GetCode()) })
 	questions, err := store.List[*planv1.Question](ctx, r, where)
@@ -313,6 +329,14 @@ func tilasmHold(
 		case planv1.TilasmHoldReason_TILASM_HOLD_REASON_WORK:
 			if work == nil {
 				work = &planv1.TilasmHold{Reason: planv1.TilasmHoldReason_TILASM_HOLD_REASON_WORK, Code: task.GetCode()}
+			}
+		}
+	}
+	// A mockup task that iterates on it for an open question puts its next version (W268): the round names it.
+	for _, q := range questions {
+		if r := Iterating(q); r != nil && strings.EqualFold(r.GetTilasmId(), tilasm.GetId()) {
+			if i := slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == r.GetTaskId() }); i >= 0 {
+				return &planv1.TilasmHold{Reason: planv1.TilasmHoldReason_TILASM_HOLD_REASON_REWORK, Code: tasks[i].GetCode()}
 			}
 		}
 	}

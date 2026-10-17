@@ -87,7 +87,7 @@ func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, o
 	}
 	mux := http.NewServeMux()
 	for prefix, handler := range plan.Handlers(db, plan.WithAnswered(answered), plan.WithEnlightened(h.Enlightened),
-		plan.WithWorkers(h), plan.WithLaunch(h.LaunchPlan)) {
+		plan.WithIterated(h.Iterated), plan.WithWorkers(h), plan.WithLaunch(h.LaunchPlan)) {
 		mux.Handle(prefix, handler)
 	}
 	mux.Handle(Handler(h))

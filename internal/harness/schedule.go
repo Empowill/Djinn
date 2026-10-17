@@ -308,7 +308,7 @@ func (h *Harness) schedule(ctx context.Context) {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
 		case d.Slot && (dispatch.ServedFirst(t) || plan.IsMerge(t)):
-			// An investigator, an investigation, a merge or a repair takes the slot of the work task it pauses, never one
+			// An investigator, an investigation, a mockup, a merge or a repair takes the slot of the work task it pauses, never one
 			// more: none to pause, it waits.
 			if code, err := h.preemptForSlot(ctx, t); err == nil && code != "" {
 				if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {

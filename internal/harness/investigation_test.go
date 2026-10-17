@@ -150,7 +150,7 @@ func TestInvestigationCap(t *testing.T) {
 	second := e.mustSpawn(t, wishID, "Audit the merges", "text audited",
 		&planv1.TaskServiceSpawnRequest{Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION})
 	if second.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
-		!strings.Contains(second.GetWaitReason(), "the most investigations this machine runs at once (1 of 3 slots)") {
+		!strings.Contains(second.GetWaitReason(), "the most investigations this machine runs at once, mockups counted (1 of 3 slots)") {
 		t.Fatalf("second = %v; want it waiting for the cap", second)
 	}
 	work := e.mustSpawn(t, wishID, "Work", "text worked", nil)

@@ -1678,7 +1678,13 @@ type TilasmServiceSendCommentsResponse struct {
 	// The comments it carried, by code.
 	Comments []*TilasmComment `protobuf:"bytes,2,rep,name=comments,proto3" json:"comments,omitempty"`
 	// The question a launch without a comment answered, by code (Q29); empty when it answered none.
-	Answered      string `protobuf:"bytes,3,opt,name=answered,proto3" json:"answered,omitempty"`
+	Answered string `protobuf:"bytes,3,opt,name=answered,proto3" json:"answered,omitempty"`
+	// The question an iterate send started an iteration round on, by code (Q61), when an option of that open question
+	// linking the tilasm plans a mockup within its rounds (ROUND_KIND_ITERATE): the mockup task reads the comments, no
+	// comments event goes to the lead. Empty otherwise.
+	Iterated string `protobuf:"bytes,4,opt,name=iterated,proto3" json:"iterated,omitempty"`
+	// The mockup task the iteration started, by code (W301); empty when none started, the lead told instead.
+	Iterate       string `protobuf:"bytes,5,opt,name=iterate,proto3" json:"iterate,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1730,6 +1736,20 @@ func (x *TilasmServiceSendCommentsResponse) GetComments() []*TilasmComment {
 func (x *TilasmServiceSendCommentsResponse) GetAnswered() string {
 	if x != nil {
 		return x.Answered
+	}
+	return ""
+}
+
+func (x *TilasmServiceSendCommentsResponse) GetIterated() string {
+	if x != nil {
+		return x.Iterated
+	}
+	return ""
+}
+
+func (x *TilasmServiceSendCommentsResponse) GetIterate() string {
+	if x != nil {
+		return x.Iterate
 	}
 	return ""
 }
@@ -3434,11 +3454,13 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\ttilasm_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\btilasmId\x127\n" +
 	"\x06choice\x18\x02 \x01(\x0e2\x13.plan.v1.SendChoiceB\n" +
 	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x06choice\x12\x1c\n" +
-	"\x04text\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xa0\x1fR\x04text\"\x9c\x01\n" +
+	"\x04text\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xa0\x1fR\x04text\"\xd2\x01\n" +
 	"!TilasmServiceSendCommentsResponse\x12'\n" +
 	"\x04send\x18\x01 \x01(\v2\x13.plan.v1.TilasmSendR\x04send\x122\n" +
 	"\bcomments\x18\x02 \x03(\v2\x16.plan.v1.TilasmCommentR\bcomments\x12\x1a\n" +
-	"\banswered\x18\x03 \x01(\tR\banswered\"\x89\x02\n" +
+	"\banswered\x18\x03 \x01(\tR\banswered\x12\x1a\n" +
+	"\biterated\x18\x04 \x01(\tR\biterated\x12\x18\n" +
+	"\aiterate\x18\x05 \x01(\tR\aiterate\"\x89\x02\n" +
 	"\x1eTilasmServicePutCommentRequest\x12(\n" +
 	"\ttilasm_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\btilasmId\x12\x1b\n" +
 	"\x02id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x02id\x12\x1c\n" +

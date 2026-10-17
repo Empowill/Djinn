@@ -155,8 +155,11 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || t.GetBranch() == "" || plan.IsAzima(t) {
 		return false, ""
 	}
-	if dispatch.Investigation(t) {
-		return false, investigationLeft // Said whether its branch holds commits or not: no integration, ever.
+	if dispatch.ChangesNoCode(t) { // Said whether its branch holds commits or not: no integration, ever.
+		if dispatch.Mockup(t) {
+			return false, mockupLeft
+		}
+		return false, investigationLeft
 	}
 	ctx := context.Background()
 	project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
@@ -276,7 +279,7 @@ func notIntegrated(left string) string {
 	switch left {
 	case "", nothingToMerge:
 		return left
-	case investigationLeft:
+	case investigationLeft, mockupLeft:
 		return "integration none: " + left
 	}
 	return "not integrated: " + left

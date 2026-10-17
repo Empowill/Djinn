@@ -132,7 +132,10 @@ it:
 - **A planned option.** On an option that says **Launches:**, picking it without a note launches that task at once,
   if it waits on no other task and holds none back. A note, or such a link, goes to the Djinn first, which launches
   the task as planned or adjusted to it. The decision then links the task it launched, on its own line: **Launched
-  as planned**.
+  as planned**. It is given the tilasms of its plan at the version you saw when you answered.
+- **An option that iterates on a mockup.** When its plan is a [mockup](#mockup), picking it is no answer: the question
+  stays open, one version further, and a mockup task puts the tilasm's next version with your note, then brings the
+  question back. At the plan's last version, the answer goes to the Djinn instead.
 - **A worker's request to edit.** Your yes lets the waiting worker go on.
 - **Djinn's own moves**, below.
 

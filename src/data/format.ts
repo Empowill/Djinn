@@ -924,14 +924,14 @@ export function usd(cost: number): string {
   }).format(cost);
 }
 
-// investigating tells an open question whose last round asks to investigate: it waits for the lead, not for you. The
-// lamp reads it the same way (plan.Investigating).
+// investigating tells an open question whose last round asks to investigate, or iterates on its mockup: it waits for
+// the lead or a worker, not for you. The lamp reads it the same way (plan.Investigating).
 export function investigating(question: Question): boolean {
   const last = question.rounds?.at(-1);
   return (
     !question.answer &&
     !question.withdrawal &&
-    last?.kind === RoundKind.ENLIGHTEN
+    (last?.kind === RoundKind.ENLIGHTEN || last?.kind === RoundKind.ITERATE)
   );
 }
 
@@ -955,7 +955,10 @@ export function questionVersions(question: Question): QuestionVersion[] {
   let time = question.createTime;
   let asked: string[] = [];
   for (const round of question.rounds ?? []) {
-    if (round.kind === RoundKind.ENLIGHTEN) {
+    if (
+      round.kind === RoundKind.ENLIGHTEN ||
+      round.kind === RoundKind.ITERATE
+    ) {
       if (round.note.trim()) asked.push(round.note.trim());
     } else if (round.kind === RoundKind.REVISE) {
       out.push({

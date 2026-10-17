@@ -1265,7 +1265,8 @@ message Task {
   // What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
   // question worker takes a slot of the machine like any agent and runs in its project's folder, reading.
   TaskRole role = 44;
-  // The code of the question a question worker works on (Q52); empty for any other task.
+  // The code of the question a question worker works on (Q52), or that a mockup task iterates on; empty for any
+  // other task.
   string question = 45 [(buf.validate.field).string.max_len = 64];
   // For a review worker, which Djinn starts by itself when a task's worktree holds changes not committed: what it
   // reviews. It works in that task's worktree, on its branch, and its branch integrates like any task's.
@@ -1341,8 +1342,8 @@ message Task {
   // or to relaunch after a failure Djinn does not repair by itself. Unset while the worker is well, and for a task
   // stopped on request, failed for good, done or not started: those are never flagged.
   TaskHealth health = 73;
-  // For an investigation (TASK_KIND_INVESTIGATION): its time limit, and when Djinn asked it to publish. Unset for any
-  // other task.
+  // For an investigation or a mockup (TASK_KIND_INVESTIGATION, TASK_KIND_MOCKUP): its time limit, and when Djinn
+  // asked it to publish. Unset for any other task.
   TaskInvestigation investigation = 74;
   // With urgent: the task answers a request of the developer for quick feedback (a mockup, a prototype or a change they
   // asked to see), not a repair (djinn task spawn --feedback). It is urgent work, merged like any; a repair of the wish
@@ -1625,11 +1626,20 @@ enum TaskKind {
   // An investigation: a short study or audit the lead launches to align with the developer fast, which ends in a
   // tilasm and a question. A worker in a worktree of its project, in Git: it reads everything, runs commands and
   // tests, and writes tilasms, blocks and questions, but Djinn never merges its commits (no integration, said in its
-  // ENDED line). A mockup, which runs code the developer judges, is urgent work for feedback instead (Task.feedback). Served first: before its wish's planned work, and given a slot even on a
+  // ENDED line). A prototype, which runs code the developer judges, is urgent work for feedback instead
+  // (Task.feedback); a mockup that only shows is TASK_KIND_MOCKUP. Served first: before its wish's planned work, and given a slot even on a
   // full machine (the slot of a work task it pauses, as an investigator does), at most a few at once on the machine
   // (dispatch.InvestigationCap); never held by its integration branch's red push checks. Short: at its time limit or
   // its budget (Task.investigation), Djinn asks it to publish what it has, then stops it if it goes on.
   TASK_KIND_INVESTIGATION = 4;
+  // A mockup: framed like an investigation (served first, its time limit and budget in Task.investigation, its
+  // commits never merged), its work is a tilasm: it writes mockup files in its worktree and puts them as a version of
+  // a tilasm, then revises the question it iterates on (Task.question). It changes no code of its project, so none of
+  // the holds of the other workers' state apply to it (dispatch.ChangesNoCode): its wish's red push checks, a merge in
+  // conflict or its repair, a write scope. Djinn starts one when the developer answers the option of a question whose
+  // plan is a mockup (kind: mockup), within its rounds (Round ROUND_KIND_ITERATE); the lead spawns one with --kind
+  // mockup. Unlike an investigation it may be marked urgent, for the developer's feedback.
+  TASK_KIND_MOCKUP = 5;
 }
 
 // TaskInvestigation is what bounds an investigation (TASK_KIND_INVESTIGATION). Its budget is Task.max_budget_usd.
@@ -2128,6 +2138,10 @@ message PlannedTask {
   // The task launched from it, by Djinn on the answer or by the lead; empty until then. The plan is then the task
   // as it was launched.
   string task_id = 13;
+  // For a mockup plan (kind mockup): how many versions of its tilasm the developer reviews from the question, the
+  // first one included; 0 for 3. Answering the option starts an iteration while the question is at an earlier one;
+  // at the last, the answer goes to the lead, who reads the versions and asks again.
+  uint32 rounds = 14;
 }
 
 // PlannedDependency is a task a planned task comes after or blocks, as it stood when the task was planned.
@@ -2240,8 +2254,16 @@ message Round {
   repeated string options = 6;
   // For a revision, the recommendation before it.
   string recommendation = 7;
-  // For a revision, the task whose worker revised it; empty when the lead did.
+  // For a revision, the task whose worker revised it; empty when the lead did. For an iteration, the mockup task that
+  // took it on; empty while none did, the lead told instead.
   string task_id = 8;
+  // For an iteration, the option whose mockup plan it follows.
+  Choice option = 9;
+  // For an iteration, the tilasm it iterates on, and the version the developer saw.
+  string tilasm_id = 10;
+  int32 version = 11;
+  // For an iteration started by sending comments on the tilasm, the number of that send; 0 for an answer.
+  int32 send = 12;
 }
 
 // What a round is.
@@ -2252,6 +2274,10 @@ enum RoundKind {
   ROUND_KIND_ENLIGHTEN = 1;
   // The lead revised the question after investigating.
   ROUND_KIND_REVISE = 2;
+  // The developer answered an option whose plan is a mockup (PlannedTask.kind TASK_KIND_MOCKUP), within its rounds, or
+  // sent comments to iterate on the tilasm such a question links: no answer is stored, a mockup task puts the
+  // tilasm's next version with the note and the comments, then revises the question, which waits for it meanwhile.
+  ROUND_KIND_ITERATE = 3;
 }
 
 // A mark the developer puts on a question: read, or approved as it is. The lead reads the marks in the wish's brief
@@ -2624,7 +2650,8 @@ message QuestionServiceAnswerRequest {
 }
 
 message QuestionServiceAnswerResponse {
-  // The question, now a decision.
+  // The question, now a decision; still open, with an iteration as its last round, when the answer chose an option
+  // whose plan is a mockup within its rounds (ROUND_KIND_ITERATE): the round names the mockup task Djinn started.
   Question question = 1;
 }
 
@@ -5066,7 +5093,8 @@ message TaskServiceSpawnRequest {
   // What the task is; by default work, for a worker. azima makes an azima (T1, T2…): no worker, no prompt, never
   // scheduled; work is spawned part of it. ifrit makes an ifrit: an agent that stays lit while you are there, to
   // iterate with you through the lead (djinn task send), in a project. investigation makes a short study or audit that
-  // ends in a tilasm and a question, served first, its commits never merged (--minutes, --max-budget-usd).
+  // ends in a tilasm and a question, served first, its commits never merged (--minutes, --max-budget-usd). mockup
+  // makes a mockup task, framed like an investigation, that puts a tilasm's next version.
   TaskKind kind = 16 [(buf.validate.field).enum.defined_only = true];
   // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
   // Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
@@ -5112,8 +5140,8 @@ message TaskServiceSpawnRequest {
   // goes before the wish's other planned tasks, takes a slot even on a full machine, and starts while the push checks
   // are red. One urgent repair per wish at a time: refused, naming it, while another is to run or runs.
   bool urgent = 24;
-  // For an investigation (--kind investigation): its time limit in minutes of work, 5 to 240; by default 25. At it,
-  // Djinn asks it to publish what it has; its budget is --max-budget-usd, by default 10.
+  // For an investigation or a mockup (--kind investigation, --kind mockup): its time limit in minutes of work, 5 to
+  // 240; by default 25. At it, Djinn asks it to publish what it has; its budget is --max-budget-usd, by default 10.
   uint32 minutes = 25 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).uint32 = {
@@ -5121,9 +5149,9 @@ message TaskServiceSpawnRequest {
       lte: 240
     }
   ];
-  // Mark the task urgent for the developer's quick feedback (a mockup, a prototype or a change they asked to see):
-  // urgent work as --urgent makes it, merged like any, after the wish's urgent repair. One urgent feedback task per
-  // wish at a time, beside one repair.
+  // Mark the task urgent for the developer's quick feedback (a prototype or a change they asked to see): urgent work
+  // as --urgent makes it, merged like any, after the wish's urgent repair; a mockup (--kind mockup) so marked goes
+  // first too, never merged. One urgent feedback task per wish at a time, beside one repair.
   bool feedback = 26;
   // The task repairs the red push checks of the wish's integration branch in its project: Djinn takes it as their
   // correction, starts no correction of its own while it runs, and lets it start while the push is held. A title or
@@ -5131,6 +5159,9 @@ message TaskServiceSpawnRequest {
   // when the push checks are not red, and, naming it, while another correction of the same red runs: one repair per
   // red per wish.
   bool repair = 27;
+  // For a mockup (--kind mockup): the open question of the wish it iterates on, by code (Q61): it puts the next
+  // version of the tilasm the question links, then revises it, and the lead hears what it did when it ends.
+  string question = 28 [(buf.validate.field).string.max_len = 64];
 }
 
 message TaskServiceSpawnResponse {

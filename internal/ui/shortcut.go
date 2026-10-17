@@ -248,7 +248,11 @@ func waiting(q *planv1.Question) bool {
 		return false
 	}
 	rounds := q.GetRounds()
-	return len(rounds) == 0 || rounds[len(rounds)-1].GetKind() != planv1.RoundKind_ROUND_KIND_ENLIGHTEN
+	if len(rounds) == 0 {
+		return true
+	}
+	k := rounds[len(rounds)-1].GetKind() // A request to investigate, or an iteration on its mockup, waits for a revision.
+	return k != planv1.RoundKind_ROUND_KIND_ENLIGHTEN && k != planv1.RoundKind_ROUND_KIND_ITERATE
 }
 
 // modifiers are the names a chord's modifiers may have, lowercase, and the name each one is written with. Cmd is

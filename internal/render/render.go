@@ -361,8 +361,11 @@ func build(in Input) (*view, error) {
 		}
 		for _, r := range q.GetRounds() {
 			label := "page.round_revise"
-			if r.GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
+			switch r.GetKind() {
+			case planv1.RoundKind_ROUND_KIND_ENLIGHTEN:
 				label = "page.round_enlighten"
+			case planv1.RoundKind_ROUND_KIND_ITERATE:
+				label = "page.round_iterate"
 			}
 			text := tr(label)
 			if by := tasks[r.GetTaskId()]; by != nil && r.GetKind() == planv1.RoundKind_ROUND_KIND_REVISE {
@@ -370,7 +373,7 @@ func build(in Input) (*view, error) {
 			}
 			cq.Rounds = append(cq.Rounds, round{At: at(r.GetCreateTime()), Label: text, Note: r.GetNote()})
 		}
-		if rounds := q.GetRounds(); len(rounds) > 0 && rounds[len(rounds)-1].GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
+		if rounds := q.GetRounds(); len(rounds) > 0 && waitsForRevision(rounds[len(rounds)-1]) {
 			cq.Investigating = true
 			cq.Class, cq.Level = "dig", tr("page.investigating")
 		}
@@ -1259,4 +1262,10 @@ func duration(d time.Duration) string {
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	}
 	return fmt.Sprintf("%dh%02d", int(d.Hours()), int(d.Minutes())%60)
+}
+
+// waitsForRevision tells whether r, an open question's last round, makes it wait for a revision, not for the
+// developer: a request to investigate, or an iteration on its mockup (plan.Investigating).
+func waitsForRevision(r *planv1.Round) bool {
+	return r.GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN || r.GetKind() == planv1.RoundKind_ROUND_KIND_ITERATE
 }
