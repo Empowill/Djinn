@@ -1382,6 +1382,21 @@ test("an urgent task shows so while it is to run or runs, never a watcher nor an
   );
 });
 
+test("an investigation shows its kind, a task urgent for feedback stays urgent (W213)", () => {
+  const task = (extra) =>
+    f.create(f.TaskSchema, {
+      code: "W3",
+      status: f.TaskStatus.RUNNING,
+      ...extra,
+    });
+  assert.equal(
+    f.isInvestigation(task({ kind: f.TaskKind.INVESTIGATION })),
+    true,
+  );
+  assert.equal(f.isInvestigation(task({ kind: f.TaskKind.WORK })), false);
+  assert.equal(f.isUrgent(task({ urgent: true, feedback: true })), true);
+});
+
 test("a question asleep waits for its conditions, out of the open ones; woken, it comes first, the first woken first", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const sleep = (wakeTime) => ({

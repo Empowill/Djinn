@@ -25,12 +25,22 @@ const runRenderSpec = args.some(
 // The cases that run the creation page's smoke solver (tag @solver) wait about a minute for its first glyphs on a
 // software WebGL2: they run on demand too, `go tool task e2e -- e2e/wish-composer.spec.ts --grep @solver`.
 const runSolver = args.some((arg) => arg.includes("@solver"));
+// The cases whose point is a time budget (tag @budget: milliseconds a key, a chunk, a frame takes) measure the machine
+// as much as Djinn: other workers' load fails them whatever the change, so the push check leaves them out (W181). They
+// run on demand, `go tool task e2e -- --grep @budget`, and with the spec that holds them when it is named.
+const runBudget = args.some(
+  (arg) => arg.includes("@budget") || /\.spec\.ts/.test(arg),
+);
+const left = [
+  ...(runSolver ? [] : [/@solver/]),
+  ...(runBudget ? [] : [/@budget/]),
+];
 
 export default defineConfig({
   testDir: ".",
   testMatch: /.*\.spec\.ts/,
   testIgnore: runRenderSpec ? undefined : [/.*wish-render\.spec\.ts/],
-  grepInvert: runSolver ? undefined : /@solver/,
+  grepInvert: left.length ? left : undefined,
   outputDir: "../test-results/e2e",
   globalSetup: "./global-setup.ts",
   timeout: 30_000,

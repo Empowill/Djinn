@@ -156,6 +156,11 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
     to open the wish, switch tabs, show a change arriving) against millisecond budgets. A story that touches the window
     (interface under the UI folder, the stream it reads, the server calls it makes) runs this spec before it ends;
     other stories do not. Kept out of the default `go tool task e2e` run.
+  - **Time budgets:** the cases tagged `@budget` hold the window to milliseconds (the Grimoire's scroll, a key in the
+    terminal, a note typed on a question, a long diff's chunks). Other workers' load fails them whatever the change,
+    so the default run and the push check leave them out. A story that touches what one measures runs it on a quiet
+    machine: `go tool task e2e -- --grep @budget`, or its spec named alone (`go tool task e2e -- e2e/docs.spec.ts`),
+    which runs its budget too.
   - **The creation page's smoke:** the cases tagged `@solver` run its WebGL2 solver, which takes about a minute to
     show glyphs on the software WebGL2 of a headless browser; `go tool task e2e -- e2e/wish-composer.spec.ts --grep
     @solver` (or `e2e/theme.spec.ts`) runs them, the default run leaves them out. A story that changes the smoke runs
@@ -169,11 +174,12 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
     shared with the build's `tsc -b`): a lint again reads only the files that changed; `npm ci` empties it.
 - `go tool task gen`: code from the protos, and the descriptors the command line embeds.
 - `go tool task docs`: the Grimoire, Djinn's documentation, into `bin/docs` (open `bin/docs/index.html`, offline):
-  its splash page, then its book, a navigation on the left with Introduction first, a page per concept, and the
-  command line. Its sources are in [`docs/site`](docs/site): one Markdown file per page in `docs/site/pages`, in
+  its navigation on the left from the first view, beside it its splash page, then Introduction, a page per concept,
+  and the command line; each page is a script of its own, `pages/<slug>.js`, that the site loads when the page is
+  opened, the others in idle time. Its sources are in [`docs/site`](docs/site): one Markdown file per page in `docs/site/pages`, in
   English and with no code (Djinn is used without code), each listed in `Nav` (`internal/docsite/grimoire.go`) with
   its title's locale key; `TestGrimoire` fails on a page missing from either. `djinn up` serves it at `/docs/`, and
-  the settings open it, its navigation in the window's language. The Command line tab has nothing to regenerate by hand: `djinn up` and `go tool task docs`
+  the side panel's Grimoire shows it as a page of the window, its navigation in the window's language. The Command line tab has nothing to regenerate by hand: `djinn up` and `go tool task docs`
   fill it from the command tree djinn is built from (`internal/cli`), so a method added to a proto, or a flag, is
   there at once. A command written by hand in `cmd/djinn` takes its entry in `cli.Builtins`, which is its `--help`
   too; `TestEveryCommandIsDocumented` fails on one that runs without it.

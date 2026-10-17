@@ -382,7 +382,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return errors.New("its worktree is gone: it cannot be resumed")
 		}
 	}
-	budget := t.GetMaxBudgetUsd()
+	budget := providerBudget(t)
 	if budget > 0 {
 		if budget -= t.GetUsage().GetCostUsd(); budget <= 0 {
 			return fmt.Errorf("its budget of $%.2f is spent", t.GetMaxBudgetUsd())

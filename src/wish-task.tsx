@@ -24,7 +24,6 @@ import {
   Send,
   Terminal,
 } from "lucide-react";
-import { AnimatePresence } from "motion/react";
 import {
   type FormEvent,
   type ReactNode,
@@ -53,7 +52,7 @@ import {
   useTaskEvents,
   useTaskPrompt,
 } from "./data/djinn";
-import { isMerge, isUrgent } from "./data/flight";
+import { isInvestigation, isMerge, isUrgent } from "./data/flight";
 import {
   ifritGates,
   ifritLinks,
@@ -84,7 +83,7 @@ import { language, t } from "./i18n";
 import { IfritCountdown, IfritGates, IfritLinks, KeepLit } from "./ifrit";
 import { MarkdownBody } from "./markdown-body";
 import { StatusBadge, ToneIcon } from "./status";
-import { type DiffDrawerView, TaskDiffDrawer } from "./diff";
+import { type DiffView, TaskReview } from "./diff";
 import {
   costTitle,
   resourcesDetail,
@@ -359,7 +358,8 @@ export const WishTask = memo(function WishTask({
               title={cancelledText(task) ?? activity ?? undefined}
             />
             {isMerge(task) && <MergeLabel task={task} codes={codes} />}
-            {isUrgent(task) && <UrgentLabel />}
+            {isUrgent(task) && <UrgentLabel feedback={task.feedback} />}
+            {isInvestigation(task) && <InvestigationLabel />}
             <span className="agent-code">{task.code}</span>
             <HealthMark task={task} />
             {/* Cut to the room left: the whole title shows on hover. */}
@@ -643,7 +643,6 @@ export function MergeLabel({
   );
 }
 
-// UrgentLabel marks a task the lead made urgent to unblock the wish (isUrgent): it passes the queue.
 // HealthMark marks a worker the scheduler flagged to relaunch (Task.health, W188): stalled, or failed for a reason a
 // new turn may get past. Its tooltip says why, and the command that relaunches it. Nothing for any other task.
 export function HealthMark({ task }: { task: Task }) {
@@ -670,10 +669,28 @@ export function HealthMark({ task }: { task: Task }) {
   );
 }
 
-export function UrgentLabel() {
+// UrgentLabel marks a task the lead made urgent (isUrgent): to unblock the wish, or for the developer's quick feedback
+// (a mockup, a change they wait to see). Either passes the queue, a repair first.
+export function UrgentLabel({ feedback }: { feedback: boolean }) {
   return (
-    <span className="urgent-label" title={t("task.urgent_detail")}>
-      {t("task.urgent")}
+    <span
+      className="urgent-label"
+      title={t(feedback ? "task.feedback_detail" : "task.urgent_detail")}
+    >
+      {t(feedback ? "task.feedback" : "task.urgent")}
+    </span>
+  );
+}
+
+// InvestigationLabel marks a study or audit the lead launched to align with the developer (isInvestigation): served
+// first, it ends in a tilasm and a question, and its commits are never merged.
+export function InvestigationLabel() {
+  return (
+    <span
+      className="investigation-label"
+      title={t("task.investigation_detail")}
+    >
+      {t("task.investigation")}
     </span>
   );
 }
@@ -872,8 +889,26 @@ function TaskBody({
   onTurnComments?: (task: Task) => Promise<unknown>;
 }) {
   const [showLogs, setShowLogs] = useState(false);
-  // The drawer of the task's diffs, open on its committed work or on its worktree; null while closed.
-  const [diff, setDiff] = useState<DiffDrawerView | null>(null);
+  // The review of the task's diffs, full size over the main shell, on its committed work or on its worktree; null
+  // while closed. The button that opened it takes the focus back once it closes.
+  const [diff, setDiff] = useState<{
+    view: DiffView;
+    shell: HTMLElement;
+  } | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const openDiff = (view: DiffView, from: HTMLElement) => {
+    opener.current = from;
+    setDiff({
+      view,
+      shell: from.closest<HTMLElement>(".main-shell") ?? document.body,
+    });
+  };
+  // Once the review is gone and what it covered given back (its effects end before this one runs).
+  useEffect(() => {
+    if (diff) return;
+    opener.current?.focus({ preventScroll: true });
+    opener.current = null;
+  }, [diff]);
   const events = useTaskEvents(task.id, task.status, showLogs);
   const box = useRef<HTMLDivElement>(null);
   // Keep the newest event in sight while the worker runs, inside the box: the page stays where it is.
@@ -976,32 +1011,32 @@ function TaskBody({
         <button
           type="button"
           className="button secondary small wish-task-diff-button"
-          aria-haspopup="dialog"
-          onClick={() => setDiff("committed")}
+          onClick={(e) => openDiff("committed", e.currentTarget)}
         >
           {t("task.see_diff")}
         </button>
         <button
           type="button"
           className="button secondary small wish-task-worktree-button"
-          aria-haspopup="dialog"
           disabled={!task.worktree}
           title={task.worktree ? undefined : t("task.no_worktree")}
-          onClick={() => setDiff("uncommitted")}
+          onClick={(e) => openDiff("uncommitted", e.currentTarget)}
         >
           {t("task.see_worktree")}
         </button>
       </div>
-      <AnimatePresence>
-        {diff && (
-          <TaskDiffDrawer
-            task={task}
-            view={diff}
-            onView={setDiff}
-            onClose={() => setDiff(null)}
-          />
-        )}
-      </AnimatePresence>
+      {diff && (
+        <TaskReview
+          task={task}
+          view={diff.view}
+          shell={diff.shell}
+          onView={(view) => setDiff({ ...diff, view })}
+          onClose={(back) => {
+            if (!back) opener.current = null;
+            setDiff(null);
+          }}
+        />
+      )}
     </div>
   );
 }

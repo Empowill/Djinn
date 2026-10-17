@@ -160,6 +160,7 @@ export {
   HourglassLine,
   HourglassSections,
 } from "@/src/hourglass.tsx";
+export { Docs, GRIMOIRE } from "@/src/docs.tsx";
 export {
   TaskDiffView,
   UnifiedView,
@@ -3177,7 +3178,7 @@ test("a task card shows its prompt on hover, and opened shows prompt and no logs
   // A task with no worktree has no uncommitted files to show: the button says why it is off.
   assert.match(
     opened,
-    /<button type="button" class="button secondary small wish-task-worktree-button" aria-haspopup="dialog" disabled="" title="This task has no worktree">See uncommitted files<\/button>/,
+    /<button type="button" class="button secondary small wish-task-worktree-button" disabled="" title="This task has no worktree">See uncommitted files<\/button>/,
   );
   const withWorktree = s.renderToStaticMarkup(
     h(s.WishTask, {
@@ -3187,10 +3188,10 @@ test("a task card shows its prompt on hover, and opened shows prompt and no logs
     }),
   );
   assert.doesNotMatch(withWorktree, /disabled=""[^>]*>See uncommitted files/);
-  // Logs and diff are deferred: containers are not rendered until toggled, the diff's drawer until a button opens it.
+  // Logs and diff are deferred: containers are not rendered until toggled, the diff's review until a button opens it.
   assert.doesNotMatch(opened, /class="wish-task-events"/);
   assert.doesNotMatch(opened, /task-diff-view/);
-  assert.doesNotMatch(opened, /diff-drawer/);
+  assert.doesNotMatch(opened, /task-review/);
 });
 
 test("diff views render unified and split diffs with Chroma syntax tokens and hunk headers", () => {
@@ -5073,7 +5074,7 @@ test("a tilasm over a view is the same frame, full size from the start, with no 
   // Laid over the view, it takes no room in it: no head, no room left in the page.
   assert.match(
     html,
-    /^<section class="tilasm-view over" aria-label="Model"><iframe/,
+    /^<section class="tilasm-view over full-over" aria-label="Model"><iframe/,
   );
   assert.doesNotMatch(
     html,
@@ -5352,7 +5353,7 @@ test("a tilasm opened from a question covers the view full size, which stays mou
       await settle();
       const over = main.children.at(-1);
       assert.equal(over.nodeName, "SECTION");
-      assert.equal(over.attributes.class, "tilasm-view over");
+      assert.equal(over.attributes.class, "tilasm-view over full-over");
       const frame = over.children[0];
       assert.equal(frame.nodeName, "IFRAME");
       assert.equal(frame.attributes.src, `/tilasm/${id}/`);
@@ -10227,18 +10228,20 @@ test("the side panel's Hourglass sits at the bottom of the menu, after the wishe
 });
 
 // The Grimoire, the documentation (W89), sits just under the Hourglass, before the profile; its tooltip says
-// Documentation, and folded to its book it keeps its name and its tooltip.
-test("the side panel's Grimoire sits under the Hourglass, opens the documentation, and reads folded too", (t) => {
+// Documentation, and folded to its book it keeps its name and its tooltip. It is a page like the Hourglass (W165):
+// selected while it shows.
+test("the side panel's Grimoire sits under the Hourglass, shows the documentation as a page, and reads folded too", (t) => {
   globalThis.__DJINN_MAC__ = false;
   t.after(() => delete globalThis.__DJINN_MAC__);
-  const sidebar = (collapsed, onOpenDocs) =>
+  const sidebar = (collapsed, onSelectGrimoire, grimoireSelected = false) =>
     s.renderToStaticMarkup(
       h(s.WishSidebar, {
         wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
         projects: [],
         onSelectPlan() {},
         onSelectHourglass() {},
-        onOpenDocs,
+        grimoireSelected,
+        onSelectGrimoire,
         selectedWishId: "",
         selectedProjectId: "",
         collapsed,
@@ -10255,15 +10258,43 @@ test("the side panel's Grimoire sits under the Hourglass, opens the documentatio
   assert.ok(glass >= 0 && grimoire > glass, open);
   assert.match(
     open,
-    /<button class="nav-item grimoire-nav" title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><span>Grimoire<\/span><\/button>$/,
+    /<button class="nav-item grimoire-nav " title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><span>Grimoire<\/span><\/button>$/,
+  );
+  // Shown, it is the entry selected.
+  assert.match(
+    sidebar(false, () => {}, true),
+    /<button class="nav-item grimoire-nav selected" title="Documentation"/,
   );
   // Folded: the book alone, its name and its tooltip kept.
   assert.match(
     sidebar(true, () => {}),
-    /<button class="nav-item grimoire-nav" title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><\/button>$/,
+    /<button class="nav-item grimoire-nav " title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><\/button>$/,
   );
   // No way to the documentation, no entry.
   assert.doesNotMatch(sidebar(false), /grimoire-nav/);
+});
+
+// The Grimoire is a page of the window, as the Hourglass (W165): its header, then the site in a frame that fills the
+// page, in the window's theme and language, under the window's header rather than its own; never a dialog.
+test("the Grimoire is a page of the window, its site in a frame, no dialog", (t) => {
+  // The page the window has: its theme and its text size, which the frame's address carries.
+  const page = globalThis.document;
+  globalThis.document = {
+    documentElement: { dataset: { theme: "light", textSize: "compact" } },
+  };
+  t.after(() => (globalThis.document = page));
+  const { djinn } = hourglassDjinn();
+  const html = s.renderToStaticMarkup(h(s.DjinnProvider, { djinn }, h(s.Docs)));
+  assert.equal(s.GRIMOIRE, "grimoire");
+  assert.match(
+    html,
+    /^<div class="wish-view grimoire"><header class="topbar page-header"><div class="breadcrumbs"><strong>Grimoire<\/strong><\/div>/,
+  );
+  assert.match(
+    html,
+    /<iframe class="grimoire-frame" title="Grimoire" src="\/docs\/\?theme=light&amp;lang=en&amp;embedded=1&amp;text=compact"><\/iframe><\/div>$/,
+  );
+  assert.doesNotMatch(html, /role="dialog"|modal|aria-modal/);
 });
 
 // Ctrl+1 and Ctrl+2 (Q254) are the key's place: the digit row, whatever it types (& and e acute on AZERTY), or the numpad;

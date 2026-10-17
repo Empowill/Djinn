@@ -130,6 +130,17 @@ Decide who does what, run each worker safely, and protect the machine.
   (`TestHealthStalled`, `TestHealthAfterTurn`, `TestHealthLimitReset`, `TestHealthAccountChanged`,
   `TestHealthRetriable`, `TestRetriable` in `internal/harness`; `TestAccountFingerprint` in `internal/ui`;
   `tests/screens.test.mjs`: "a worker the scheduler flagged to relaunch shows a mark")
+- [x] Investigations and urgent feedback (W213, 17/10/2026): a study or an audit is an investigation (`djinn task spawn
+  --kind investigation`), a worker in a worktree whose commits are never merged ("integration none" in its ENDED line),
+  served first as an investigator is (before planned work, the slot of a work task it pauses, not held by red push
+  checks), at most one at once on a machine of three slots or fewer, two above; at its time limit (25 minutes,
+  `--minutes`) or its budget ($10, `--max-budget-usd`) Djinn asks it to publish its tilasm and question, then stops it
+  10 minutes later. A mockup or a change the developer waits to see is urgent work for feedback (`--feedback`): one per
+  wish beside one urgent repair, the repair first. (`TestInvestigationServedFirst`, `TestInvestigationCap`,
+  `TestInvestigationAskedToPublish`, `TestInvestigationSpawnRefusals`, `TestUrgentFeedbackBesideRepair`,
+  `TestClaudeSpent` in `internal/harness`; `TestInvestigationServedFirst`, `TestInvestigationCap`,
+  `TestInvestigationDependency`, `TestUrgentRepairAndFeedback` in `internal/dispatch`; `TestBriefMarksInvestigations`
+  in `internal/plan`)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 

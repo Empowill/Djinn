@@ -19,18 +19,26 @@ import (
 	"github.com/empowill/djinn/locales"
 )
 
-// The Grimoire is the documentation behind the splash page: a navigation on the left, its pages beside it. Each page is
-// a Markdown file of docs/site/pages, written in English, with no code: Djinn is used without code. The navigation's
-// words are locale keys, shown in the window's language (site.js reads ?lang=).
+// The Grimoire is the documentation: a navigation on the left, and beside it the splash page, then the page the reader
+// opens. Each page is a Markdown file of docs/site/pages, written in English, with no code: Djinn is used without code.
+// The navigation's words are locale keys, shown in the window's language (site.js reads ?lang=).
+//
+// index.html holds the splash, the navigation and an empty shell per page, nothing more: the pages, 9,000 elements with
+// the Command line, took four seconds to read in the window's engine before the splash showed. Each page is a script
+// of its own, pages/<slug>.js, that hands its HTML to site.js: loaded when the reader opens the page, the others in idle
+// time, and put in the page only when it is opened. A script, not a fetch: the site opens from a file too, where a
+// fetch is refused and a script loads.
 const (
 	// NavMarker is where index.html takes the navigation.
 	NavMarker = "<!-- djinn:nav -->"
-	// PagesMarker is where index.html takes the pages, before the Command line's.
+	// PagesMarker is where index.html takes the pages' shells, before the Command line's.
 	PagesMarker = "<!-- djinn:pages -->"
 	// LabelsMarker is where index.html takes the navigation's words in every language, as JSON.
 	LabelsMarker = "<!-- djinn:labels -->"
-	// pagesDir holds one Markdown file per page, named by its slug.
+	// pagesDir holds one Markdown file per page, named by its slug, and, as djinn serves the site, its script.
 	pagesDir = "pages"
+	// scriptExt ends the name of a page's script: pages/<slug>.js.
+	scriptExt = ".js"
 	// commandsSlug is the Command line's page: the reference of the commands, built by Commands, not a Markdown file.
 	commandsSlug = "commands"
 )
@@ -62,6 +70,7 @@ var Nav = []Group{
 		{"task-and-worker", "docs.page_task_and_worker"},
 		{"dependencies", "docs.page_dependencies"},
 		{"watcher", "docs.page_watcher"},
+		{"investigation", "docs.page_investigation"},
 		{"decision", "docs.page_decision"},
 		{"block", "docs.page_block"},
 	}},
@@ -100,7 +109,7 @@ var Nav = []Group{
 
 // chrome are the keys of the site's own words, outside the navigation's groups and pages: index.html marks each element
 // that shows one with data-text (its text) or data-title (its tooltip).
-var chrome = []string{"docs.title", "docs.subtitle", "docs.open", "docs.on_this_page", "docs.previous", "docs.next"}
+var chrome = []string{"docs.title", "docs.subtitle", "docs.on_this_page", "docs.previous", "docs.next"}
 
 //go:embed grimoire.html
 var grimoireTemplate string
@@ -129,23 +138,48 @@ type section struct {
 	Title string
 }
 
-// Pages renders every page of Nav from site's pages folder, in order; the Command line's stays the commands' own.
-func Pages(site fs.FS) ([]byte, error) {
-	var all []Page
+// all is every page of Nav, in reading order.
+func all() []Page {
+	var pages []Page
 	for _, g := range Nav {
-		all = append(all, g.Pages...)
+		pages = append(pages, g.Pages...)
 	}
-	var out []written
-	for i, p := range all {
+	return pages
+}
+
+// Shells are the pages' empty sections, in index.html: what the navigation links to, filled by site.js from each
+// page's script when the reader opens it. The Command line's is index.html's own.
+func Shells() []byte {
+	var shells []Page
+	for _, p := range all() {
+		if p.Slug != commandsSlug {
+			shells = append(shells, p)
+		}
+	}
+	var b bytes.Buffer
+	if err := grimoire.ExecuteTemplate(&b, "shells", shells); err != nil {
+		panic(err) // The template and its data are fixed: a test executes it.
+	}
+	return b.Bytes()
+}
+
+// PageHTML is what a page's shell takes: the page rendered from site's pages folder, with what is on it and the pages
+// around it; the Command line's reference for its own. An unknown slug is fs.ErrNotExist.
+func PageHTML(site fs.FS, slug string) ([]byte, error) {
+	if slug == commandsSlug {
+		return Commands(), nil
+	}
+	pages := all()
+	for i, p := range pages {
+		if p.Slug != slug {
+			continue
+		}
 		w := written{Page: p}
 		if i > 0 {
-			w.Prev = &all[i-1]
+			w.Prev = &pages[i-1]
 		}
-		if i+1 < len(all) {
-			w.Next = &all[i+1]
-		}
-		if p.Slug == commandsSlug {
-			continue
+		if i+1 < len(pages) {
+			w.Next = &pages[i+1]
 		}
 		src, err := fs.ReadFile(site, pagesDir+"/"+p.Slug+".md")
 		if err != nil {
@@ -154,11 +188,51 @@ func Pages(site fs.FS) ([]byte, error) {
 		if err := w.render(src); err != nil {
 			return nil, fmt.Errorf("%s/%s.md: %w", pagesDir, p.Slug, err)
 		}
-		out = append(out, w)
+		var b bytes.Buffer
+		err = grimoire.ExecuteTemplate(&b, "page", w)
+		return b.Bytes(), err
+	}
+	return nil, fs.ErrNotExist
+}
+
+// PageScript is a page's script, pages/<slug>.js: it hands the page's HTML to site.js. Its text is ASCII: a browser may
+// read a script with no charset as Latin-1.
+func PageScript(site fs.FS, slug string) ([]byte, error) {
+	page, err := PageHTML(site, slug)
+	if err != nil {
+		return nil, err
 	}
 	var b bytes.Buffer
-	err := grimoire.ExecuteTemplate(&b, "pages", out)
-	return b.Bytes(), err
+	b.WriteString("grimoire.page(")
+	for _, v := range []string{slug, string(page)} {
+		e := json.NewEncoder(&b)
+		e.SetEscapeHTML(false) // A file of its own: no script element to close.
+		if err := e.Encode(v); err != nil {
+			return nil, err
+		}
+		b.Truncate(b.Len() - 1) // Encode ends with a newline.
+		b.WriteString(", ")
+	}
+	b.Truncate(b.Len() - 2)
+	b.WriteString(");\n")
+	return ascii(b.Bytes()), nil
+}
+
+// ascii writes every character of a script outside ASCII as a JavaScript escape: they are all inside strings.
+func ascii(b []byte) []byte {
+	var out bytes.Buffer
+	for _, r := range string(b) {
+		switch {
+		case r < 0x80:
+			out.WriteRune(r)
+		case r <= 0xffff:
+			fmt.Fprintf(&out, `\u%04x`, r)
+		default:
+			r -= 0x10000
+			fmt.Fprintf(&out, `\u%04x\u%04x`, 0xd800+(r>>10), 0xdc00+(r&0x3ff))
+		}
+	}
+	return out.Bytes()
 }
 
 // render reads a page's Markdown: its first heading is its title, its second-level headings its sections, each with
