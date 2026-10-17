@@ -24,13 +24,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import {
-  type DragEvent,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type DragEvent, useEffect, useRef, useState } from "react";
 
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
 import {
@@ -60,6 +54,7 @@ import {
   entriesOf,
   readDrop,
 } from "./data/tilasms";
+import { useFullSize } from "./full-size";
 import { t } from "./i18n";
 import {
   type CommentWrites,
@@ -617,7 +612,7 @@ export function TilasmFrame({
     );
   return (
     <section
-      className={`tilasm-view${over ? " over" : full ? " full" : ""}${column ? " commenting" : ""}${dotted ? " dotted" : ""}`}
+      className={`tilasm-view${over ? " over full-over" : full ? " full" : ""}${column ? " commenting" : ""}${dotted ? " dotted" : ""}`}
       aria-label={tilasm.title}
     >
       {!over && (
@@ -736,71 +731,4 @@ export function TilasmFrame({
       )}
     </section>
   );
-}
-
-// useFullSize keeps the page under the full-size frame out of reach of the keyboard and gives the focus to the button
-// that leaves; Escape leaves too, unless a dialog takes it (a key pressed in the frame stays in the frame's document).
-// Once left, the focus goes back to the button that entered, if there is one. The page never scrolls for it.
-function useFullSize(
-  full: boolean,
-  frame: RefObject<HTMLIFrameElement | null>,
-  enter: RefObject<HTMLButtonElement | null>,
-  leave: RefObject<HTMLButtonElement | null>,
-  onLeave: () => void,
-) {
-  const was = useRef(false);
-  // The last onLeave given: a new one at each render covers and uncovers nothing.
-  const leaving = useRef(onLeave);
-  leaving.current = onLeave;
-  useEffect(() => {
-    if (!full) {
-      if (was.current) enter.current?.focus({ preventScroll: true });
-      was.current = false;
-      return;
-    }
-    was.current = true;
-    const uncover = cover(frame.current, leave.current);
-    leave.current?.focus({ preventScroll: true });
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (
-        event.target instanceof Element &&
-        event.target.closest('dialog, [role="dialog"]')
-      )
-        return;
-      event.preventDefault();
-      leaving.current();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      uncover();
-    };
-  }, [full, frame, enter, leave]);
-}
-
-// What stays in reach beside the full-size frame, should it show after the frame went full size: the Comments column,
-// its button, the margin of dots, and the Comment button over a passage.
-const KEPT = ".tilasm-comments, .tilasm-pick, .tilasm-margin, [data-full-keep]";
-
-// cover makes inert what the elements kept lie over in the main shell: every element there that holds none of them,
-// and is none of KEPT. It returns what gives them back.
-function cover(...keep: (HTMLElement | null)[]): () => void {
-  const kept = keep.filter((el) => el !== null);
-  const shell = kept[0]?.closest(".main-shell");
-  const made: HTMLElement[] = [];
-  for (let at = kept[0]?.parentElement; at && shell; at = at.parentElement) {
-    for (const child of at.children)
-      if (
-        child instanceof HTMLElement &&
-        !child.inert &&
-        !child.matches(KEPT) &&
-        !kept.some((el) => child.contains(el))
-      ) {
-        child.inert = true;
-        made.push(child);
-      }
-    if (at === shell) break;
-  }
-  return () => made.forEach((el) => (el.inert = false));
 }
