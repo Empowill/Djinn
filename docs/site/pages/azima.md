@@ -31,17 +31,30 @@ running and waiting), its time and what it waits for. An azima whose work still 
 finished parts fold behind a line that counts them, such as **Show the 3 finished**. Click an azima to open its
 card: its description, its parts, its branch when it has one, and what validating it takes.
 
-The order holds still from one look to the next, so that an azima stays where you left it:
+The azimas not done yet show in their **rank**, the first first, whatever their state: the order their work starts
+in (see below). The drafts fold behind **Later**, and the done ones at the end, each in their rank too. The order holds
+still from one look to the next: an azima moves only when you or the Djinn rank it, never with time or with counts that
+change every minute.
 
-1. the azimas that move, a worker running or a watcher watching;
-2. those that wait for you, to validate;
-3. the ready ones not started yet;
-4. the blocked ones, waiting for others;
-5. the drafts, folded behind **Later**;
-6. the done ones, folded at the end.
+## Rank: which azima comes first
 
-Within each group, azimas follow the plan's order, by code; never an order by time or by counts that change every
-minute.
+Within a wish, the azimas have a rank, as the wishes have one among themselves. **The first azima has priority**: when
+the machine is short, the waiting work of the first azimas starts first, and their heavy commands take the
+[gates](#gates) first, right after Djinn's own merges and pushes. The wish's own rank still comes first: the work of
+the first wish goes before any azima of the second.
+
+- **Change a rank** by dragging an azima by its grip, on the left of its heading, or with Alt+Arrow on the grip. A thin
+  line shows where it will land.
+- **The Djinn ranks them too**: it puts an azima first, or just before or after another one, when the plan changes.
+- **A new azima goes last.** An azima never ranked comes after the ranked ones, by code; the first ranking of a wish
+  ranks them all.
+- **Work part of no azima** comes after the azimas' work of its wish.
+
+Among the work of one azima, the task that unblocks the most others goes first, then the oldest. A rank orders what
+waits; it never makes a task wait: only [dependencies](#dependencies) do.
+
+> **Example.** T04, "The export button", must ship before T02, "The PDF rendering", which the plan made first. You drag
+> T04 above T02: as soon as a slot frees, T04's planned task starts, and T02's waits its turn.
 
 ## The states of an azima
 
@@ -125,6 +138,7 @@ The Djinn makes and keeps the azimas. Ask it in words:
 - **Make an azima**, with its goal and description, as a draft for later or open now, after the azimas it follows.
 - **Open a draft**, **rename** an azima, or **rewrite its description**, written back to its plan file when it has one.
 - **Put a task in an azima**, or take it out: a grouping, never a wait.
+- **Rank an azima** first, or just before or after another one.
 - **Move an azima** to another wish, with its parts, before they start.
 - **Name its branch** after the project's convention, under the per-azima strategy.
 - **Close an azima** whose goal holds, as Validate does.
@@ -151,7 +165,8 @@ once its work is done.
 ## Good to know
 
 - **Azimas are for reading the plan.** You do not have to manage them: the Djinn makes, regroups and fills them.
-- **Order comes from dependencies, not from azimas.** If one part must wait for another, that is a dependency.
+- **Waiting comes from dependencies, priority from ranks.** If one part must wait for another, that is a dependency;
+  if one goal matters more now, rank its azima higher.
 - **Validate on evidence.** An azima's state To validate means the work is done, not that the goal holds.
 - **Drafts keep the present clear.** Work for later waits as a draft instead of crowding what runs.
 - **An azima after another orders goals, not work.** To make a task wait for a goal, it comes after that azima, and

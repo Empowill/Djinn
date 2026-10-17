@@ -120,7 +120,8 @@ What the Djinn can do, and what Djinn refuses:
 
 - **Say the order, not the timing.** "B after A" is a dependency; "do A first" in a prompt is not, and the scheduler
   will not read it.
-- **Group with azimas, order with dependencies.** Putting tasks in the same azima does not sequence them.
+- **Group with azimas, order with dependencies.** Putting tasks in the same azima does not sequence them; ranking an
+  azima higher only starts its waiting work first.
 - **Few dependencies, more speed.** Each one makes a task wait; add those the work needs, no more.
 - **A failed dependency holds its dependents.** Look at the failed task first: continue it, or mark it done if its
   work is there, and they go on.

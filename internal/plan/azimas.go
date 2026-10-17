@@ -11,6 +11,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -570,6 +571,46 @@ func CompareCodes(a, b string) int {
 	pa, na := split(a)
 	pb, nb := split(b)
 	return cmp.Or(strings.Compare(pa, pb), cmp.Compare(na, nb), strings.Compare(a, b))
+}
+
+// AzimaOrder returns the azimas among tasks in their rank (Task.rank): the ranked ones first, from rank 1, then those
+// never ranked, a new one included, by code; a stable sort keeps the order of tasks between equals. Give it the tasks
+// of one wish: the ranks of two wishes do not compare.
+func AzimaOrder(tasks []*planv1.Task) []*planv1.Task {
+	var out []*planv1.Task
+	for _, t := range tasks {
+		if IsAzima(t) {
+			out = append(out, t)
+		}
+	}
+	rank := func(t *planv1.Task) int32 {
+		if t.GetRank() <= 0 {
+			return math.MaxInt32
+		}
+		return t.GetRank()
+	}
+	slices.SortStableFunc(out, func(a, b *planv1.Task) int {
+		return cmp.Or(cmp.Compare(rank(a), rank(b)), CompareCodes(a.GetCode(), b.GetCode()))
+	})
+	return out
+}
+
+// AzimaPlaces gives each azima among tasks, of every wish, its place among the azimas of its wish in their rank
+// (AzimaOrder), from 0 for the first.
+func AzimaPlaces(tasks []*planv1.Task) map[string]int {
+	byWish := map[string][]*planv1.Task{}
+	for _, t := range tasks {
+		if IsAzima(t) {
+			byWish[t.GetWishId()] = append(byWish[t.GetWishId()], t)
+		}
+	}
+	out := map[string]int{}
+	for _, azimas := range byWish {
+		for i, a := range AzimaOrder(azimas) {
+			out[a.GetId()] = i
+		}
+	}
+	return out
 }
 
 // PlanDir is the folder of a project that holds its plan files.

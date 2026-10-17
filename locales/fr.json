@@ -80,6 +80,7 @@
   "azima.progress.other": "{done} sur {count} parties terminées",
   "azima.progress_parts": "{done} terminées, {running} en cours, {waiting} en attente",
   "azima.pushed": "Poussée",
+  "azima.rank": "{rank}. {code} (glissez, ou Alt+Flèche, pour changer son rang : le travail des premières azimas part en premier)",
   "azima.rename": "Renommer cette azima",
   "azima.state_awaiting_proof": "À valider",
   "azima.state_done": "Terminée",

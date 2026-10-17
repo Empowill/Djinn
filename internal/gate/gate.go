@@ -1,7 +1,7 @@
 // Package gate grants the gates: shared resources (code generation, the local stack, an end-to-end run, a paid
 // model run) that one holder uses at a time, granted only while the machine is not under pressure and has the memory
 // the command peaked at. Djinn's own requests to merge a task's work, settle a merge or check a push go first, the
-// first come first; then the others, the first wish of the rank first (Q26). A holder keeps its gate until it gives it
+// first come first; then the others, the first wish of the rank first (Q26), then the work of its first azima (Task.rank). A holder keeps its gate until it gives it
 // back, its connection ends, its process ends or its timeout passes: none is taken back for a request that goes first.
 // A lit ifrit's gate has no timeout: it is held until the ifrit goes out or ends, at its out time at the latest (T51),
 // and goes to no one first for it. A gate held outside a running worker takes a worker's slot.
@@ -27,12 +27,15 @@ import (
 	"github.com/empowill/djinn/internal/machine"
 )
 
-// Tasks is what the gates need from the tasks: to name a holder, to rank waiters by their wish, to tell a task's
+// Tasks is what the gates need from the tasks: to name a holder, to rank waiters by their wish and their azima, to tell a task's
 // events, whether a task's worker runs, which holds its gates in its own slot, and whether a task is a lit ifrit, which
 // holds its gates until it goes out or ends. The harness is one.
 type Tasks interface {
 	Describe(ctx context.Context, taskID string) (string, error)
 	Ranks(ctx context.Context, taskIDs []string) map[string]int
+	// Places gives the position of each task's azima among the azimas of its wish (Task.rank), from 0; a task part of
+	// no azima, or unknown, is not in the map.
+	Places(ctx context.Context, taskIDs []string) map[string]int
 	Note(taskID string, ev harness.Event)
 	Works(taskID string) bool
 	// Ifrit tells whether the task is an ifrit lit now, and when it goes out unless the developer comes back (zero:
@@ -418,7 +421,8 @@ func (g *Gates) Outside() (n, merges int) {
 
 // pass grants each free gate to its first waiter, unless the machine is under pressure or lacks the memory the
 // waiter's command peaked at; it tells every other waiter why it waits. Djinn's merges and pushes come first, the
-// first come first; then the others, the first wish of the rank first, then the first come. A waiter for a merge or a
+// first come first; then the others, the first wish of the rank first, then the first azima of its rank, then the first
+// come. A waiter for a merge or a
 // push that cannot have its gate yet keeps it from the others; within a class, one the memory holds goes before one it
 // does not.
 func (g *Gates) pass(ctx context.Context) {
@@ -436,15 +440,21 @@ func (g *Gates) pass(ctx context.Context) {
 		}
 	}
 	g.mu.Unlock()
-	ranks := map[string]int{}
+	ranks, places := map[string]int{}, map[string]int{}
 	if g.tasks != nil && len(ids) > 0 {
-		ranks = g.tasks.Ranks(ctx, ids)
+		ranks, places = g.tasks.Ranks(ctx, ids), g.tasks.Places(ctx, ids)
 	}
 	rank := func(w *waiter) int {
 		if r, ok := ranks[w.taskID]; ok {
 			return r
 		}
-		return len(ranks) + 1 // Outside any task, or unknown: after the ranked wishes.
+		return math.MaxInt // Outside any task, or unknown: after the ranked wishes.
+	}
+	place := func(w *waiter) int {
+		if p, ok := places[w.taskID]; ok {
+			return p
+		}
+		return math.MaxInt // Part of no azima: after the ranked azimas of its wish.
 	}
 
 	g.mu.Lock()
@@ -464,7 +474,7 @@ func (g *Gates) pass(ctx context.Context) {
 		case a.first:
 			return cmp.Compare(a.seq, b.seq)
 		}
-		return cmp.Or(cmp.Compare(rank(a), rank(b)), cmp.Compare(a.seq, b.seq))
+		return cmp.Or(cmp.Compare(rank(a), rank(b)), cmp.Compare(place(a), place(b)), cmp.Compare(a.seq, b.seq))
 	})
 	// The merges and pushes that wait for each gate in this pass, and why the first of them waits.
 	merges, mergeWhy, mergeCause := map[string]int{}, map[string]string{}, map[string]string{}

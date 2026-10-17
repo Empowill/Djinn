@@ -228,6 +228,7 @@ export const AzimaCard = memo(function AzimaCard({
   onRename,
   renaming: startRenaming = false,
   nest = noNest,
+  grip,
 }: {
   azima: Task;
   // The work part of it, in the order to show: merges nested under the task they serve left out.
@@ -257,6 +258,8 @@ export const AzimaCard = memo(function AzimaCard({
   renaming?: boolean;
   // Where the merges of its wish show: a part whose merge still runs moves with it.
   nest?: MergeNest;
+  // The grip it is dragged by to change its rank, on the left of its heading (azima-rank.tsx).
+  grip?: ReactNode;
 }) {
   const state = azimaState(azima, parts);
   // The part in sight, or the one a merge in sight sits under.
@@ -407,6 +410,7 @@ export const AzimaCard = memo(function AzimaCard({
       aria-label={`${azima.code} ${azima.title}`}
     >
       <div className="azima-row">
+        {grip}
         {renaming ? (
           <div className="azima-heading">
             <StatusBadge

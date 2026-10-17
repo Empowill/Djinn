@@ -246,6 +246,8 @@ const (
 	TaskServiceOpenProcedure = "/plan.v1.TaskService/Open"
 	// TaskServiceMoveProcedure is the fully-qualified name of the TaskService's Move RPC.
 	TaskServiceMoveProcedure = "/plan.v1.TaskService/Move"
+	// TaskServiceRankProcedure is the fully-qualified name of the TaskService's Rank RPC.
+	TaskServiceRankProcedure = "/plan.v1.TaskService/Rank"
 	// TaskServiceCommentProcedure is the fully-qualified name of the TaskService's Comment RPC.
 	TaskServiceCommentProcedure = "/plan.v1.TaskService/Comment"
 	// TaskServiceTurnCommentsProcedure is the fully-qualified name of the TaskService's TurnComments
@@ -2900,7 +2902,7 @@ type TaskServiceClient interface {
 	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
 	// provider, model, prompt (for its next continue), azima, and integration (none clears it, pending puts its work back in
 	// line), never its dependencies once it ran. An azima changes its title, whatever its state, written back to its plan
-	// file's heading when it has one; or its branch, alone.
+	// file's heading when it has one; or its branch, alone; or its rank among the wish's azimas, alone.
 	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
@@ -2908,6 +2910,11 @@ type TaskServiceClient interface {
 	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
 	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
 	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
+	// Rank an azima among the azimas of its wish: first (--top), or just before or after another one (--before T46,
+	// --after T46). Djinn starts the waiting work of the first azimas first, within the wish's own rank among the wishes,
+	// and the gates serve it first after Djinn's merges and pushes. A new azima goes last; djinn task update --rank gives
+	// a place by number.
+	Rank(context.Context, *connect.Request[v1.TaskServiceRankRequest]) (*connect.Response[v1.TaskServiceRankResponse], error)
 	// Comment on a line or range of lines of a task's diff: stored on the task with its file, line range, commit, and
 	// excerpt. While the task's worker runs, the comment is sent to it as an instruction (djinn task send); otherwise it
 	// waits for TaskService.TurnComments.
@@ -3058,6 +3065,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Move")),
 			connect.WithClientOptions(opts...),
 		),
+		rank: connect.NewClient[v1.TaskServiceRankRequest, v1.TaskServiceRankResponse](
+			httpClient,
+			baseURL+TaskServiceRankProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Rank")),
+			connect.WithClientOptions(opts...),
+		),
 		comment: connect.NewClient[v1.TaskServiceCommentRequest, v1.TaskServiceCommentResponse](
 			httpClient,
 			baseURL+TaskServiceCommentProcedure,
@@ -3096,6 +3109,7 @@ type taskServiceClient struct {
 	describe     *connect.Client[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse]
 	open         *connect.Client[v1.TaskServiceOpenRequest, v1.TaskServiceOpenResponse]
 	move         *connect.Client[v1.TaskServiceMoveRequest, v1.TaskServiceMoveResponse]
+	rank         *connect.Client[v1.TaskServiceRankRequest, v1.TaskServiceRankResponse]
 	comment      *connect.Client[v1.TaskServiceCommentRequest, v1.TaskServiceCommentResponse]
 	turnComments *connect.Client[v1.TaskServiceTurnCommentsRequest, v1.TaskServiceTurnCommentsResponse]
 }
@@ -3205,6 +3219,11 @@ func (c *taskServiceClient) Move(ctx context.Context, req *connect.Request[v1.Ta
 	return c.move.CallUnary(ctx, req)
 }
 
+// Rank calls plan.v1.TaskService.Rank.
+func (c *taskServiceClient) Rank(ctx context.Context, req *connect.Request[v1.TaskServiceRankRequest]) (*connect.Response[v1.TaskServiceRankResponse], error) {
+	return c.rank.CallUnary(ctx, req)
+}
+
 // Comment calls plan.v1.TaskService.Comment.
 func (c *taskServiceClient) Comment(ctx context.Context, req *connect.Request[v1.TaskServiceCommentRequest]) (*connect.Response[v1.TaskServiceCommentResponse], error) {
 	return c.comment.CallUnary(ctx, req)
@@ -3284,7 +3303,7 @@ type TaskServiceHandler interface {
 	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
 	// provider, model, prompt (for its next continue), azima, and integration (none clears it, pending puts its work back in
 	// line), never its dependencies once it ran. An azima changes its title, whatever its state, written back to its plan
-	// file's heading when it has one; or its branch, alone.
+	// file's heading when it has one; or its branch, alone; or its rank among the wish's azimas, alone.
 	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
@@ -3292,6 +3311,11 @@ type TaskServiceHandler interface {
 	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
 	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
 	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
+	// Rank an azima among the azimas of its wish: first (--top), or just before or after another one (--before T46,
+	// --after T46). Djinn starts the waiting work of the first azimas first, within the wish's own rank among the wishes,
+	// and the gates serve it first after Djinn's merges and pushes. A new azima goes last; djinn task update --rank gives
+	// a place by number.
+	Rank(context.Context, *connect.Request[v1.TaskServiceRankRequest]) (*connect.Response[v1.TaskServiceRankResponse], error)
 	// Comment on a line or range of lines of a task's diff: stored on the task with its file, line range, commit, and
 	// excerpt. While the task's worker runs, the comment is sent to it as an instruction (djinn task send); otherwise it
 	// waits for TaskService.TurnComments.
@@ -3438,6 +3462,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Move")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceRankHandler := connect.NewUnaryHandler(
+		TaskServiceRankProcedure,
+		svc.Rank,
+		connect.WithSchema(taskServiceMethods.ByName("Rank")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceCommentHandler := connect.NewUnaryHandler(
 		TaskServiceCommentProcedure,
 		svc.Comment,
@@ -3494,6 +3524,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceOpenHandler.ServeHTTP(w, r)
 		case TaskServiceMoveProcedure:
 			taskServiceMoveHandler.ServeHTTP(w, r)
+		case TaskServiceRankProcedure:
+			taskServiceRankHandler.ServeHTTP(w, r)
 		case TaskServiceCommentProcedure:
 			taskServiceCommentHandler.ServeHTTP(w, r)
 		case TaskServiceTurnCommentsProcedure:
@@ -3589,6 +3621,10 @@ func (UnimplementedTaskServiceHandler) Open(context.Context, *connect.Request[v1
 
 func (UnimplementedTaskServiceHandler) Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Move is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Rank(context.Context, *connect.Request[v1.TaskServiceRankRequest]) (*connect.Response[v1.TaskServiceRankResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Rank is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Comment(context.Context, *connect.Request[v1.TaskServiceCommentRequest]) (*connect.Response[v1.TaskServiceCommentResponse], error) {
