@@ -41,14 +41,24 @@ func (h *Harness) toLead(ctx context.Context, kind planv1.LeadEventKind, wishID,
 // toLeadNote is toLead with the note the event carries whole (LeadEvent.note): a worker's final note. A line typed in
 // the terminal goes without it.
 func (h *Harness) toLeadNote(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line, note string) error {
+	return h.toLeadEvent(ctx, &planv1.LeadEvent{Kind: kind, WishId: wishID, Code: code, Text: line, Note: note})
+}
+
+// toLeadEvent queues e for its wish's lead. A line typed in the terminal goes with its detail after it, on the same
+// line, without its note.
+func (h *Harness) toLeadEvent(ctx context.Context, e *planv1.LeadEvent) error {
 	h.mu.Lock()
 	tell, notify := h.tell, h.notifyLead
 	h.mu.Unlock()
 	switch {
 	case notify != nil:
-		return notify(ctx, &planv1.LeadEvent{Kind: kind, WishId: wishID, Code: code, Text: line, Note: note})
+		return notify(ctx, e)
 	case tell != nil:
-		return tell(ctx, wishID, line)
+		line := e.GetText()
+		if d := e.GetDetail(); d != "" {
+			line += " " + strings.Join(strings.Fields(d), " ")
+		}
+		return tell(ctx, e.GetWishId(), line)
 	}
 	return nil
 }

@@ -1580,7 +1580,7 @@ export type LeadEvent = Message<"plan.v1.LeadEvent"> & {
 
   /**
    * What the digest prints in full under its line, when one line cannot carry it: the task an answer's option planned,
-   * its dependencies' states, and how to launch it.
+   * its dependencies' states, and how to launch it; what a review worker committed and left, and why.
    *
    * @generated from field: string detail = 9;
    */

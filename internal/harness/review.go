@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"google.golang.org/protobuf/proto"
@@ -21,12 +22,15 @@ import (
 // Review (T07): a task whose worktree holds changes not committed is not merged, and nothing commits them blindly:
 // debug output, scratch files or artifacts would go in with the work. Djinn starts a review worker by itself: a work
 // task part of the same azima, of the task's provider, in that task's worktree and on its branch, the files and their
-// diff in its first prompt. It commits what belongs to the task and drops the rest; its branch then integrates like any
-// task's, and the reviewed work with it. Past the project's correction_attempts, Djinn asks the person.
+// diff in its first prompt. It judges each path: it commits what belongs to the task, leaves the rest where it is, not
+// committed, and ends its final note with what it committed, what it left and why. Its branch then integrates like any
+// task's, the reviewed work with it, the paths it named as left staying in the worktree; a path it left without naming
+// it there starts another review. Past the project's correction_attempts, Djinn asks the person.
 
-// How much of a task's prompt, and of the diff of its work not committed, a review worker's first prompt holds.
+// How much of a task's prompt, of its worker's final note, and of the diff of its work not committed, a review worker's first prompt holds.
 const (
 	maxReviewPrompt = 4 << 10
+	maxReviewNote   = 4 << 10
 	maxReviewDiff   = 12 << 10
 )
 
@@ -95,7 +99,18 @@ func (h *Harness) reviewUncommitted(
 			clean = append(clean, t)
 			continue
 		}
-		// A review whose own work is left not committed: the next one reviews the same work, its attempts counted.
+		if t.GetReview() != nil {
+			// What a review worker left and named in its final note it left on purpose: the work integrates without it.
+			if left := statusPaths(status); len(unnamed(h.finalNote(ctx, t.GetId()), left)) == 0 {
+				h.Note(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: fmt.Sprintf(
+					"integration: %s left not committed, as its note says: %s; its worktree keeps them", t.GetCode(),
+					strings.Join(left, ", "))})
+				clean = append(clean, t)
+				continue
+			}
+		}
+		// A review whose own work is left not committed, a path not named: the next one reviews the same work, its
+		// attempts counted.
 		group := []*planv1.Task{t}
 		var attempts int32
 		if r := t.GetReview(); r != nil {
@@ -175,11 +190,16 @@ func (h *Harness) spawnReview(
 	if err != nil {
 		prompt = "(" + err.Error() + ")"
 	}
+	var unsaid []string // What the review before this one left without naming it.
+	if last := group[len(group)-1]; last.GetReview() != nil {
+		unsaid = unnamed(h.finalNote(ctx, last.GetId()), statusPaths(status))
+	}
 	review := &planv1.TaskReview{TaskIds: ids(group), Attempt: attempt}
 	azima, note := h.azimaOf(ctx, from)
 	r, err := h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: mergeTitle(servedTasks(ctx, h.store, group), "work left not committed"),
-		Prompt:   reviewPrompt(from, prompt, status, uncommittedDiff(ctx, from.GetWorktree(), status), branch, settings, attempt),
+		Prompt: reviewPrompt(from, prompt, h.finalNote(ctx, from.GetId()), status, uncommittedDiff(ctx, from.GetWorktree(), status),
+			branch, settings, attempt, unsaid),
 		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: azima,
 	}, &planv1.Task{Review: review, Branch: from.GetBranch(), Worktree: from.GetWorktree()})
 	if err == nil && note != "" {
@@ -189,23 +209,161 @@ func (h *Harness) spawnReview(
 }
 
 // reviewPrompt is the first prompt of the attempt-th review worker of the work from left not committed, as status and
-// diff say it, on its way into branch: the task, its files, what to keep and what to drop.
-func reviewPrompt(from *planv1.Task, prompt string, status []string, diff, branch string, settings plan.Settings, attempt int32) string {
+// diff say it, on its way into branch, note the final note of from's worker: the task, its files, how to judge each
+// one, and the line its final note ends with. unsaid are the paths the review before it left without naming them.
+func reviewPrompt(
+	from *planv1.Task, prompt, note string, status []string, diff, branch string, settings plan.Settings, attempt int32,
+	unsaid []string,
+) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Djinn does not integrate the work of %s into %s as it is: its worktree, where you are, on its branch %s, "+
-		"holds changes no commit has. Djinn commits nothing blindly: you judge them.\n\n", from.GetCode(), branch, from.GetBranch())
+		"holds changes no commit has. Djinn commits nothing blindly: you judge them, path by path. Your work is that commit, "+
+		"not the task's: do not redo it or go on with it.\n\n", from.GetCode(), branch, from.GetBranch())
 	fmt.Fprintf(&b, "The task, %s: %s. Its prompt:\n\n%s\n\n", from.GetCode(), from.GetTitle(), indent(clipTo(prompt, maxReviewPrompt)))
-	fmt.Fprintf(&b, "The files not committed (`git status --porcelain`):\n\n%s\n\n", indent(strings.Join(status, "\n")))
+	if note == "" {
+		note = "(none)"
+	}
+	fmt.Fprintf(&b, "Its worker's final note:\n\n%s\n\n", indent(clipTo(note, maxReviewNote)))
+	lines := make([]string, len(status))
+	for i, s := range status {
+		lines[i] = s
+		if hint := pathHint(s); hint != "" {
+			lines[i] += "  (" + hint + ")"
+		}
+	}
+	fmt.Fprintf(&b, "The paths not committed (`git status --porcelain`, the project's .gitignore applied):\n\n%s\n\n",
+		indent(strings.Join(lines, "\n")))
 	fmt.Fprintf(&b, "Their diff, against the branch's last commit:\n\n%s\n\n", indent(diff))
-	fmt.Fprintf(&b, "Commit what belongs to the task, with a message in the repository's style (`git log` shows it). Revert "+
-		"(`git restore`) or delete what does not: debug output, scratch files, build artifacts. Leave nothing not committed: "+
-		"`git status --porcelain` prints nothing when you end. Do not push: Djinn integrates the branch like any task's, its "+
-		"commit checks (%s) run through their gates. End with one line saying what you kept, what you dropped, and why.",
-		settings.CommitGates())
+	fmt.Fprintf(&b, "Judge each path:\n"+
+		"- Commit what belongs to the task's change: what its prompt asks for, what its final note describes, the tests "+
+		"and documentation of it. A worker may leave real work not committed, even saying it commits nothing: commit it.\n"+
+		"- Leave out what does not: scratch files, local probes, screenshots, logs, test and build outputs, generated files "+
+		"the project does not track, env files, keys and other secrets, files of a kind the project ignores elsewhere. "+
+		"When in doubt, leave it out and say so.\n"+
+		"- Stage each path by its name (`git add -- <path>`), never all at once: `git add -A`, `git add .` and "+
+		"`git commit -a` are refused. A file that mixes the change with debug lines: edit them out, then commit it.\n"+
+		"- Leave what you leave out where it is, not committed: do not delete, revert or stash it (no `git clean`, "+
+		"`git stash`, nor `git restore` of its changes). Djinn integrates your commit and keeps the worktree with what you "+
+		"left. What your own checks write (a log, a test output) is yours to delete.\n"+
+		"- Commit with a message in the repository's style (`git log` shows it). Do not push: Djinn integrates the branch "+
+		"like any task's, its commit checks (%s) run through their gates.\n\n", settings.CommitGates())
+	b.WriteString("End your final note with this line, alone, which the lead reads:\n\n" +
+		"    Committed: <path>, <path>. Left: <path> (why), <path> (why).\n\n" +
+		"Write `Committed: nothing.` or `Left: nothing.` when so. Name after `Left:` each path you leave, or a folder of them " +
+		"ending with a slash: a path left without its name there is not judged, and Djinn starts another review.")
 	if attempt > 1 {
 		fmt.Fprintf(&b, "\n\nThis is attempt %d: the review before yours left changes not committed.", attempt)
 	}
+	if len(unsaid) > 0 {
+		fmt.Fprintf(&b, "\n\nThe review before yours left these paths not committed without naming them after Left: in its "+
+			"final note: %s.", strings.Join(unsaid, ", "))
+	}
 	return b.String()
+}
+
+// unnamed are the paths a review worker's final note does not say it left, in their order: named after the Left: of
+// its report (reviewReport). A path it says it committed, still not committed, is not one it left.
+func unnamed(note string, paths []string) []string {
+	_, left, _ := strings.Cut(reviewReport(note), "Left:")
+	var out []string
+	for _, p := range paths {
+		if !named(left, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// named tells whether note names path, from the repository's root or from one of its folders down (src/b.txt names
+// app/src/b.txt, from the project's folder), or names a folder holding it, ending with a slash (test-results/).
+func named(note, path string) bool {
+	parts := strings.Split(path, "/")
+	for i := range parts {
+		if namesPath(note, strings.Join(parts[i:], "/")) {
+			return true
+		}
+		for j := i + 1; j < len(parts); j++ {
+			if namesPath(note, strings.Join(parts[i:j], "/")+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// namesPath tells whether text holds name as a whole path: not part of a longer one; a sentence's full stop after it
+// aside.
+func namesPath(text, name string) bool {
+	for from := 0; ; {
+		i := strings.Index(text[from:], name)
+		if i < 0 {
+			return false
+		}
+		start, end := from+i, from+i+len(name)
+		from = start + 1
+		if start > 0 && pathByte(text[start-1]) {
+			continue
+		}
+		if strings.HasSuffix(name, "/") || end == len(text) || !pathByte(text[end]) {
+			return true
+		}
+		if text[end] == '.' && (end+1 == len(text) || !pathByte(text[end+1])) {
+			return true
+		}
+	}
+}
+
+// pathByte tells whether c may be part of a path, as a note writes it.
+func pathByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("_-./@+~", c) >= 0 ||
+		c >= 0x80
+}
+
+// Kinds of names a review worker weighs before committing a file: secrets, outputs, pictures.
+var (
+	secretNames = []string{".env", ".netrc", ".pgpass", "credentials.json", "id_rsa", "id_ecdsa", "id_ed25519"}
+	secretExts  = []string{".pem", ".key", ".p12", ".pfx", ".jks", ".keystore"}
+	sampleExts  = []string{".example", ".sample", ".template", ".dist"}
+	outputDirs  = []string{"node_modules", "test-results", "playwright-report", "coverage", "dist", "build", "out", "tmp",
+		"temp", ".cache", "__pycache__", ".pytest_cache", "target"}
+	outputExts = []string{".log", ".out", ".prof", ".pprof", ".trace", ".orig", ".rej", ".swp", ".tmp", ".bak"}
+	imageExts  = []string{".png", ".jpg", ".jpeg", ".gif", ".webp", ".webm", ".mp4", ".mov"}
+)
+
+// pathHint says what the name of a file a status line adds suggests, for the review worker to weigh: a secret, an
+// output, a picture; "" for a tracked file, or a name that suggests nothing.
+func pathHint(status string) string {
+	if !strings.HasPrefix(status, "??") && status[0] != 'A' {
+		return ""
+	}
+	path, _, _ := strings.Cut(status[3:], " <- ")
+	base := filepath.Base(path)
+	ext := strings.ToLower(filepath.Ext(base))
+	switch {
+	case slices.Contains(sampleExts, ext):
+		return ""
+	case slices.ContainsFunc(secretNames, func(n string) bool { return base == n || strings.HasPrefix(base, n+".") }),
+		slices.Contains(secretExts, ext):
+		return "a secret or an env file: never commit it"
+	case slices.ContainsFunc(strings.Split(path, "/")[:strings.Count(path, "/")], func(d string) bool {
+		return slices.Contains(outputDirs, d)
+	}), slices.Contains(outputExts, ext):
+		return "a build or test output, a log or a leftover: leave it out unless the change makes it"
+	case slices.Contains(imageExts, ext):
+		return "an image or a video: a screenshot, unless the change uses it"
+	}
+	return ""
+}
+
+// reviewReport is what a review worker's final note ends with, saying what it committed and what it left and why:
+// from its last "Committed:" on, in one line, its bold marks aside; "" when it wrote none.
+func reviewReport(note string) string {
+	note = strings.ReplaceAll(note, "**", "")
+	i := strings.LastIndex(note, "Committed:")
+	if i < 0 {
+		return ""
+	}
+	return strings.Join(strings.Fields(note[i:]), " ")
 }
 
 // uncommittedDiff is what the worktree wt holds not committed, status saying which files, as a diff clipped to

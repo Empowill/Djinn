@@ -160,12 +160,22 @@ Djinn commits nothing blindly. Before merging a task, a correction's included, i
 changed or added that no commit took, ignored files aside.
 
 When there are some, the task says **To review**: its changes are not committed, not merged. A **review worker** starts
-by itself, in that task's worktree and on its branch, with the task's instructions, the files and their changes. It
-commits what belongs to the task, in the repository's style, removes the rest (debug output, scratch files, build
-leftovers), and ends saying what it kept, what it dropped, and why. Its branch then lands like any task's, and the task
-says **reviewed by** that worker.
+by itself, in that task's worktree and on its branch, with the task's instructions, its worker's final note, the files
+and their changes. It judges each file:
 
-A review counts as an attempt, as a correction does.
+- **It commits what belongs to the task's change**, file by file, in the repository's style: the work the task asked
+  for, its tests and documentation, even when the task's worker forgot to commit it.
+- **It leaves the rest where it is**, not committed: scratch files, probes, screenshots, test and build outputs, env
+  files and secrets. When in doubt, it leaves the file out and says so. It never takes everything at once, never
+  deletes nor stashes what it leaves.
+- **Its final note ends with one line** naming what it committed, what it left, and why. You and the Djinn read it under
+  the line that says the work merged.
+
+Its branch then lands like any task's, and the task says **reviewed by** that worker. The worktree stays, with what was
+left in it, for you to look at.
+
+A review counts as an attempt, as a correction does. A file the review leaves without naming it in that line was not
+judged: another review starts.
 
 ## When Djinn does not merge
 
@@ -186,7 +196,8 @@ A review counts as an attempt, as a correction does.
   is not run again: the merge goes faster.
 - **A correction is a task like any other.** It shows in the Tasks tab, part of the same azima, and you can follow it,
   send it a word, or stop it.
-- **Uncommitted work is not lost.** It is reviewed, not dropped: a review worker decides what belongs to the task.
+- **Uncommitted work is not lost.** It is reviewed, not dropped: a review worker decides what belongs to the task, and
+  what it leaves out stays in the worktree.
 - **A failed merge holds the branch while it is repaired.** The tasks that depend on it wait; the work that ends
   meanwhile waits in line, and merges as one batch once the correction is in.
 
