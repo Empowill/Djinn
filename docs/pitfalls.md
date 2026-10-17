@@ -142,6 +142,12 @@ the code does not say by itself; remove one when a change makes it false.
 - **A test that pushes must be a Go test.** In a worker, Bash refuses any command holding `git push`, and the
   worker's git config makes pushes from the project's repository and worktrees fail (W281); other repositories push
   fine. *Do:* prove push behaviour with a temporary repository in a Go test. *Where:* `internal/harness/guard.go`.
+- **A Go build cache emptied under a run fails it with no failing test.** The machine's `~/.cache/go-build` is shared
+  by every worker and grows to hundreds of GB; when it is emptied while `go test` or `go vet` runs, packages fail to
+  build (W299: a red push check on feat/qol, no code at fault). *Sign:* `package runtime/pprof is not in std`,
+  `could not import fmt (open …/go-build/…-d: no such file or directory)`, on standard or third-party packages.
+  *Do:* `du -sh ~/.cache/go-build` (a few MB after a wipe), then `go vet -tags headless ./...` again once nothing
+  deletes: green, the code is sound. Never empty the cache yourself: other workers build from it.
 
 ## Interface tests
 
