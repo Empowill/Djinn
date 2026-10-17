@@ -290,9 +290,10 @@ func (d *LeadDriver) attempt(
 		Account: seat.GetAccount(), SessionId: store.NewID(), Attempt: attempt, WishIds: wishes,
 		State: planv1.LeadBatchState_LEAD_BATCH_STATE_RUNNING, PromptChars: int32(len(prompt)),
 	}
+	titles := plan.DigestTitles(ctx, s, events)
 	for _, e := range events {
 		b.EventIds = append(b.EventIds, e.GetId())
-		b.Events = append(b.Events, plan.DigestLine(e))
+		b.Events = append(b.Events, plan.DigestLine(e, titles[e.GetWishId()]))
 	}
 	if err := plan.PutLeadBatch(ctx, s, b); err != nil {
 		return seat, nil, err

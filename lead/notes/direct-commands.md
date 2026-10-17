@@ -16,8 +16,10 @@ Each need has a direct flag instead:
 | `djinn brief \| head -n 200`, `djinn brief \| sed -n ...` | `djinn brief --wishes`: where the wishes stand, without the rules |
 | `for n in a b; do djinn lead notes "$n"; done` | `djinn lead notes a,b`, or `djinn lead notes --all` |
 | `djinn task list --wish-id <wish> \| grep ...` | `djinn task list --wish-id <wish> --short` (`--failed`, `--page-size`) |
-| `djinn task watch <task> \| tail` | `djinn task watch <task> --last 5`: its last events, its final note among them |
+| `djinn task watch <task> \| tail`, `timeout 5 djinn task watch ...` | `djinn task watch <task> --last 5`: its last events, its final note among them, at once even while it runs |
 | `djinn question list ... \| grep` | `djinn question list --wish-id <wish> --open`, or the brief's open questions |
+| `djinn question list --wish-id <wish>` to read one answer | `djinn question get <question> --wish-id <wish>`: that question as it stands, its answer and note |
+| `djinn task watch <task>` for a note the digest cuts | `djinn lead event <event>`, the command the digest prints under the cut note |
 | `cat > f <<'EOF'` then `"$(cat f)"` | `--context '...'` in single quotes ([[question-context-heredoc]]) |
 
 **Why:** on 15/10/2026 an Antigravity lead's `run_command` kept only the end of `djinn brief` (about 260 lines, its

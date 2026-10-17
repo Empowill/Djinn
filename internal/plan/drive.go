@@ -372,8 +372,8 @@ func LeadPacket(
 	return b.String(), nil
 }
 
-// eventEntry is an event of a batch whole: its kind and code, its wish by title and identifier, its text and detail
-// uncut.
+// eventEntry is an event of a batch whole: its kind and code, its wish by title and identifier, its text, its note
+// and its detail uncut.
 func eventEntry(e *planv1.LeadEvent, titles map[string]string) string {
 	var b strings.Builder
 	kind := strings.ToLower(strings.TrimPrefix(e.GetKind().String(), "LEAD_EVENT_KIND_"))
@@ -391,6 +391,13 @@ func eventEntry(e *planv1.LeadEvent, titles map[string]string) string {
 	}
 	fmt.Fprintf(&b, " · %s\n\n", when(e.GetCreateTime().AsTime()))
 	b.WriteString(strings.TrimSpace(strings.TrimPrefix(e.GetText(), "Djinn: ")) + "\n\n")
+	if note := strings.TrimSpace(e.GetNote()); note != "" && !strings.Contains(oneLine(e.GetText()), oneLine(note)) {
+		b.WriteString("The note, whole:\n\n")
+		for line := range strings.SplitSeq(note, "\n") {
+			b.WriteString(strings.TrimRight("> "+line, " ") + "\n")
+		}
+		b.WriteString("\n")
+	}
 	if detail := strings.TrimSpace(e.GetDetail()); detail != "" {
 		b.WriteString(detail + "\n\n")
 	}

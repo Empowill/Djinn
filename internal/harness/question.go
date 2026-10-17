@@ -515,8 +515,8 @@ func (h *Harness) questionEnded(t *planv1.Task) {
 	}()
 }
 
-// tellEnd tells the lead of t's wish what the question worker t did; retry is the worker Djinn started again in its
-// place, if any.
+// tellEnd tells the lead of t's wish what the question worker t did, its final note whole apart; retry is the worker
+// Djinn started again in its place, if any.
 func (h *Harness) tellEnd(t *planv1.Task, retry string) {
 	h.mu.Lock()
 	told := h.tell != nil || h.notifyLead != nil
@@ -528,7 +528,8 @@ func (h *Harness) tellEnd(t *planv1.Task, retry string) {
 	defer cancel()
 	line, err := h.questionEndLineOf(ctx, t, retry)
 	if err == nil {
-		err = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line)
+		err = h.toLeadNote(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line,
+			h.finalNote(ctx, t.GetId()))
 	}
 	if err != nil && !errors.Is(err, plan.ErrNoLead) {
 		h.Note(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "the lead was not told: " + err.Error()})
@@ -770,7 +771,7 @@ func questionEndLine(t *planv1.Task, tasks []*planv1.Task, questions []*planv1.Q
 	case t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
 		line += fmt.Sprintf(" Check what is left of %s: djinn wish brief %s has the context.", code, wish)
 	case len(spawned) > 0:
-		line += " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task or a watcher that verifies it, never to the developer; when it leaves an uncertainty (a choice it made in the developer's place, a partial result, a step it skipped, 'to validate'), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too. Withdraw the open questions its work made needless."
+		line += " Check every task that ends: read its final note (under its line in your watch's digest, or djinn task watch <task> --last 5): what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task or a watcher that verifies it, never to the developer; when it leaves an uncertainty (a choice it made in the developer's place, a partial result, a step it skipped, 'to validate'), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too. Withdraw the open questions its work made needless."
 	}
 	return line
 }

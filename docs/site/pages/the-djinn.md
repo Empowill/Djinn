@@ -145,6 +145,10 @@ template. See [Skills and templates](#skills-and-templates).
   Djinn does not run says **Waiting for the Djinn**, and reaches it once it starts.
 - **It waits for events, not for you.** Between turns, the Djinn waits for what it must act on: an answer, a task
   that ends, a watcher that speaks.
+- **It reads each event whole.** Task and question codes count within a wish, so two wishes can each have a W74:
+  every event names its wish beside its code. A task's final note and the note of your answer come whole with their
+  event, a very long note up to a screen or two, with the command that prints the rest. To read one question and its
+  answer, or the last words of a task that still runs, the Djinn has a command that prints only them, at once.
 
 ## Common mistakes
 

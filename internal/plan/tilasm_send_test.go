@@ -180,7 +180,7 @@ func TestTilasmSendIterate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if line := "- L01 comments: v1, 4 comments (2 general, 1 on a passage, 1 on an element), iterate"; !strings.Contains(digest.Msg.GetText(), line) {
+	if line := "- L01 [Try Djinn on itself] comments: v1, 4 comments (2 general, 1 on a passage, 1 on an element), iterate"; !strings.Contains(digest.Msg.GetText(), line) {
 		t.Errorf("djinn lead watch --timeout 0s:\n%s\nwant %q", digest.Msg.GetText(), line)
 	}
 	drafts, err := f.c.tilasms.Drafts(ctx, connect.NewRequest(&planv1.TilasmServiceDraftsRequest{Wish: f.wish}))
@@ -391,7 +391,7 @@ func TestSendLineFits(t *testing.T) {
 				send := &planv1.TilasmSend{Number: 999, Choice: choice}
 				e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_COMMENTS, Code: "L123",
 					Text: SendLine(tilasm, send, comments[:n], question)}
-				line := DigestLine(e)
+				line := DigestLine(e, "")
 				if !DigestKeeps(e) || utf8.RuneCountInString(strings.TrimPrefix(line, "L123 comments: ")) > digestLineMax {
 					t.Errorf("%d comments, %s: the digest cuts %q", n, choice, line)
 				}

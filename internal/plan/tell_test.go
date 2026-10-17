@@ -492,7 +492,7 @@ func TestOneAnswerReachesTheLeadOnce(t *testing.T) {
 	if got := told(t, c.store); !slices.Equal(got, want) {
 		t.Errorf("queued\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if d := digest(); strings.Count(d, "Q01 answer:") != 1 || !strings.Contains(d, "1 event for the lead") {
+	if d := digest(); strings.Count(d, "Q01 [Name the page] answer:") != 1 || !strings.Contains(d, "1 event for the lead") {
 		t.Errorf("digest:\n%s\nwant one answer event", d)
 	}
 	if hooks != 1 {

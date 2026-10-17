@@ -123,7 +123,7 @@ func TestRefusedCallsToldAndCarried(t *testing.T) {
 	if lines[0] != want {
 		t.Errorf("ended event\n got %s\nwant %s", lines[0], want)
 	}
-	digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: task.GetCode(), Text: lines[0]})
+	digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: task.GetCode(), Text: lines[0]}, "")
 	if !strings.Contains(digest, command) {
 		t.Errorf("the digest cuts the command: %s", digest)
 	}
@@ -155,7 +155,7 @@ func TestDoneLine(t *testing.T) {
 		if got != c.want {
 			t.Errorf("doneLine\n got %s\nwant %s", got, c.want)
 		}
-		digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: c.task.GetCode(), Text: got})
+		digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: c.task.GetCode(), Text: got}, "")
 		if c.wantDigest && !strings.Contains(digest, "djinn wish allow "+wishID+" --mode auto") {
 			t.Errorf("the digest cuts the command: %s", digest)
 		}
@@ -242,5 +242,31 @@ func TestClaudeAllowsDjinn(t *testing.T) {
 		if got := claudeAllowsDjinn(t.TempDir(), dir); got != want {
 			t.Errorf("claudeAllowsDjinn(home %s) = %v, want %v", settings, got, want)
 		}
+	}
+}
+
+// TestDoneCarriesTheWholeNote: the lead's event of a task done carries the worker's final note whole, apart from its
+// line, which keeps the first line: the digest cut it at 160 characters, and the lead read the rest with task watch
+// (16/10/2026).
+func TestDoneCarriesTheWholeNote(t *testing.T) {
+	t.Parallel()
+	e := up(t, t.TempDir())
+	queue := &leadQueue{}
+	e.h.NotifyLead(queue.notify)
+	wishID, _ := e.wish(t, fakeProject(t, ""))
+	task := e.ended(t, e.spawn(t, wishID, "text working").GetId())
+	note := "Added djinn question get.\n\nLeft to verify:\n- the Windows build"
+	e.h.Note(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: note + "\n"})
+	e.h.tellDone(t.Context(), task, "")
+	events := queue.all()
+	if len(events) == 0 {
+		t.Fatal("no event for the lead")
+	}
+	last := events[len(events)-1]
+	if last.GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED || last.GetNote() != note {
+		t.Errorf("event %v, want its note whole: %q", last, note)
+	}
+	if want := "Djinn: " + task.GetCode() + " done: Added djinn question get."; last.GetText() != want {
+		t.Errorf("line %q, want %q", last.GetText(), want)
 	}
 }

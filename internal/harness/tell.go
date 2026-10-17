@@ -35,12 +35,18 @@ func (h *Harness) NotifyLead(notify NotifyFunc) {
 // toLead hands an event of kind about code in wishID to the lead: queued with NotifyLead's function, or else typed
 // with TellLeads'. ErrNoLead-like errors are the caller's to ignore; with neither function, nothing happens.
 func (h *Harness) toLead(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line string) error {
+	return h.toLeadNote(ctx, kind, wishID, code, line, "")
+}
+
+// toLeadNote is toLead with the note the event carries whole (LeadEvent.note): a worker's final note. A line typed in
+// the terminal goes without it.
+func (h *Harness) toLeadNote(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line, note string) error {
 	h.mu.Lock()
 	tell, notify := h.tell, h.notifyLead
 	h.mu.Unlock()
 	switch {
 	case notify != nil:
-		return notify(ctx, &planv1.LeadEvent{Kind: kind, WishId: wishID, Code: code, Text: line})
+		return notify(ctx, &planv1.LeadEvent{Kind: kind, WishId: wishID, Code: code, Text: line, Note: note})
 	case tell != nil:
 		return tell(ctx, wishID, line)
 	}
