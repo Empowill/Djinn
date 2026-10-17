@@ -119,6 +119,12 @@ merge. One repair runs on a branch at a time:
 - **A new failure waits its turn.** Push checks that go red while a correction runs keep the push held, and start no
   second correction; work you ask Djinn to correct again waits for the one that runs, then merges alone.
 - **It starts on a red branch.** A correction never waits for the branch to be green: it is what makes it green again.
+- **Running workers take the repaired branch.** Once the repair's work is in, checked, and no other correction repairs
+  the branch, each running worker of the wish whose branch lacks the new work gets one message: merge the branch now,
+  its commits listed, settle any conflict with your own changes in mind, run the tests you touched, then go on. Djinn
+  never merges in a worker's folder, and never writes to it in the middle of a step: a worker running a command gets
+  the message once the command has returned. A merge with no repair before it tells no worker: they take that work
+  when they end.
 
 ### When corrections run out
 

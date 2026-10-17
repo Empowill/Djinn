@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -17,6 +19,10 @@ type message struct {
 	procedure string
 	req       *planv1.TaskServiceSendRequest
 	reply     chan sent
+	actor     string // who the journal says sent it; "" for the person (actorLocal)
+	// betweenTurns holds the message while a tool call of the worker has no result yet: the pump writes it once the
+	// worker's turn is over (take). It is answered at once all the same, with no event while held.
+	betweenTurns bool
 }
 
 // sent is what delivering a message gave: its event, or why it was not delivered.
@@ -77,6 +83,29 @@ func (h *Harness) sendTo(ctx context.Context, r *run, code string, m *message) (
 	return res.event, res.err
 }
 
+// take is what the pump does with m: it delivers it, or holds it when it waits for the worker's turn to be over
+// (betweenTurns) and a tool call of the worker has no result yet. A newer message held replaces the one before.
+func (h *Harness) take(r *run, m *message) sent {
+	if m.betweenTurns && r.tools > 0 {
+		r.held = m
+		return sent{}
+	}
+	return h.deliver(r, m)
+}
+
+// turnOver delivers the message held for the end of the worker's turn, now that no tool call of the worker waits for
+// its result; the pump calls it.
+func (h *Harness) turnOver(r *run) {
+	m := r.held
+	if m == nil || r.tools > 0 {
+		return
+	}
+	r.held = nil
+	if res := h.deliver(r, m); res.err != nil {
+		logx.L().Info("a message held for the end of a turn is lost", "task", r.task.GetCode(), "err", res.err)
+	}
+}
+
 // deliver writes a message on the worker's input, then records it; the pump calls it. An ifrit going out takes none.
 func (h *Harness) deliver(r *run, m *message) sent {
 	h.mu.Lock()
@@ -92,7 +121,7 @@ func (h *Harness) deliver(r *run, m *message) sent {
 		}
 		return sent{err: connect.NewError(code, fmt.Errorf("task %s: %w", r.task.GetCode(), err))}
 	}
-	ev, err := h.writeAs(r, actorLocal, m.procedure, m.req, nil,
+	ev, err := h.writeAs(r, cmp.Or(m.actor, actorLocal), m.procedure, m.req, nil,
 		Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_MESSAGE, Text: m.req.GetText()})
 	if err != nil {
 		return sent{err: plan.Status(fmt.Errorf("the worker has the message, but it is not recorded: %w", err))}

@@ -228,7 +228,9 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   Djinn's own checks are in [`.agents/settings.txtpb`](.agents/settings.txtpb): the lint at commit, the tests at push.
   `djinn project show <project>` and the window's project view list them with their last runs.
   `djinn wish set-integration <wish-id> --branch feat/x` names the branch. A conflict in code, or a red check, start a
-  correction worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. A task
+  correction worker on the failed merge, part of the same azima; past `correction_attempts` (2), Djinn asks you. Once a
+  repair's work is in, each running worker whose branch lacks the integration branch's commits is told, between two of
+  its turns, to merge it itself (Djinn never merges in a worker's worktree). A task
   whose worktree holds changes not committed is not merged, and nothing commits them blindly: a review worker, in that
   worktree, commits what belongs to the task and drops the rest, then its work integrates; past the same attempts,
   Djinn asks you. A task waits for
