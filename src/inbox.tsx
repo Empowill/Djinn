@@ -2,17 +2,21 @@
 // what Djinn will do once you hand it over; under each choice, what that choice changes. Two kinds of card: a request
 // a source printed (a merge request assigned to you, a mention), with the route Djinn proposes, the recommended
 // destination first, and "Dismiss" last; and a source plugged in on this machine that fails, with how to fix it or
-// unplug it. Nothing is made until you click, and Djinn never answers a source. Empty, the inbox is hidden: the
-// sources themselves live in their project's panel (InboxSources), plugged in there. The cards come as they arrived,
-// the oldest first: a new one comes after the others and moves none of them while you read (AGENTS.md, Interface).
+// unplug it. Nothing is made until you click, and Djinn never answers a source. Under the cards, one line per project
+// whose configuration has something for you to fix (Project.to_fix): its gear in the menu turns red, and the line opens
+// the same panel; the detail stays there, never twice. Empty, the inbox is hidden: the sources themselves live in their
+// project's panel (InboxSources), plugged in there. The cards come as they arrived, the oldest first: a new one comes
+// after the others and moves none of them while you read (AGENTS.md, Interface).
 import { timestampMs } from "@bufbuild/protobuf/wkt";
-import { Inbox as InboxIcon, Lamp, Plug, Unplug } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { Inbox as InboxIcon, Lamp, Plug, Settings, Unplug } from "lucide-react";
+import { memo, useEffect, useMemo, useState } from "react";
 
 import {
   Change,
   type InboxItem,
   type InboxSource,
+  type Project,
+  ProjectNoticeKind,
   type RouteOption,
   RouteKind,
 } from "../gen/ts/plan/v1/plan_pb";
@@ -20,6 +24,7 @@ import { message } from "./data/client";
 import { useClients, useData, useStore } from "./data/djinn";
 import { choiceOf, letter, when } from "./data/format";
 import { t } from "./i18n";
+import { ProjectFlame } from "./wish-sidebar";
 import "./inbox.css";
 
 // byArrival orders inbox items as they arrived, the oldest first.
@@ -34,26 +39,35 @@ export function failing(src: InboxSource): boolean {
   return src.plugged && (!!src.error || (src.lastRun?.failures ?? 0) > 0);
 }
 
-// useInboxCount is how many cards the inbox shows: the items that wait, and the sources that fail.
+// useInboxCount is how many cards the inbox shows: the items that wait, the sources that fail, and the projects with
+// something to fix.
 export function useInboxCount(): number {
   return useData(
-    (s) => s.inbox.length + s.sources.reduce((n, x) => n + +failing(x), 0),
+    (s) =>
+      s.inbox.length +
+      s.sources.reduce((n, x) => n + +failing(x), 0) +
+      s.projects.reduce((n, p) => n + +(p.toFix > 0), 0),
   );
 }
 
 export function Inbox({
   onOpen,
+  onOpenProject,
   onToast,
 }: {
   // Shows the wish an item went to.
   onOpen: (wishId: string) => void;
+  // Opens a project's panel, as its gear does.
+  onOpenProject?: (projectId: string) => void;
   onToast: (text: string) => void;
 }) {
   const newest = useData((s) => s.inbox);
   const items = useMemo(() => [...newest].sort(byArrival), [newest]);
   const sources = useData((s) => s.sources);
   const broken = useMemo(() => sources.filter(failing), [sources]);
-  const count = items.length + broken.length;
+  const projects = useData((s) => s.projects);
+  const red = useMemo(() => projects.filter((p) => p.toFix > 0), [projects]);
+  const count = items.length + broken.length + red.length;
   if (!count) return null;
   return (
     <section className="inbox" aria-label={t("inbox.title")}>
@@ -76,6 +90,13 @@ export function Inbox({
         ))}
         {broken.map((src) => (
           <SourceCard key={src.name} src={src} onToast={onToast} />
+        ))}
+        {red.map((project) => (
+          <ProjectLine
+            key={project.id}
+            project={project}
+            onOpenProject={onOpenProject}
+          />
         ))}
       </div>
     </section>
@@ -445,6 +466,64 @@ const SourceCard = memo(function SourceCard({
           </button>
         </div>
       </div>
+    </article>
+  );
+});
+
+// ProjectLine is a project whose configuration has something for you to fix, in one line: its red gear, its name and
+// how many things, the first of them in one sentence as Djinn finds it (ProjectService.Show), and the button that opens
+// its panel, where each one is said with what settles it.
+const ProjectLine = memo(function ProjectLine({
+  project,
+  onOpenProject,
+}: {
+  project: Project;
+  onOpenProject?: (projectId: string) => void;
+}) {
+  const clients = useClients();
+  const [first, setFirst] = useState("");
+  useEffect(() => {
+    let live = true;
+    clients.projects
+      .show({ project: project.id })
+      .then(
+        (res) =>
+          live &&
+          setFirst(
+            res.notices.find((n) => n.kind === ProjectNoticeKind.TO_FIX)
+              ?.text ?? "",
+          ),
+      )
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [clients, project.id, project.toFix]);
+  return (
+    <article className="question-card inbox-card inbox-project">
+      <span className="inbox-project-gear" aria-hidden="true">
+        <Settings size={16} />
+        <ProjectFlame />
+      </span>
+      <div className="inbox-project-text">
+        <span className="question-meta">
+          <span className="inbox-kind">
+            {t("inbox.kind_project", { project: project.name })}
+          </span>
+          <span className="inbox-project-count">
+            {t("project.to_fix", { count: project.toFix })}
+          </span>
+        </span>
+        <p>{first || t("inbox.project_detail")}</p>
+      </div>
+      {onOpenProject && (
+        <button
+          className="button small secondary"
+          onClick={() => onOpenProject(project.id)}
+        >
+          {t("inbox.project_open")}
+        </button>
+      )}
     </article>
   );
 });

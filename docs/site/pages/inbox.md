@@ -1,8 +1,8 @@
 # Inbox
 
 The **Inbox**, at the top of the flying carpet, holds what waits for you outside any wish: the requests a source found,
-and a source of this machine that fails. Empty, it is hidden. Nothing is made until you click, and Djinn only reads a
-source, never answers it.
+a source of this machine that fails, and one line per project with something to fix. Empty, it is hidden. Nothing is
+made until you click, and Djinn only reads a source, never answers it.
 
 ## A card in three sentences
 
@@ -33,6 +33,13 @@ error its command gave. While it fails, what it reads no longer comes. Djinn run
 run that goes well takes the card away. Its two ways out: fix the cause on this machine, recommended (a tool to log in
 to, a missing command), or **Unplug it on this machine**; its items stay. A source whose skill Djinn cannot read gets
 the same card, until the skill is fixed.
+
+## A project with something to fix
+
+A project whose configuration has something for you to fix, a skill Djinn cannot read, a source no one decided on,
+takes one line under the cards: **Project** and its name, how many things, the first of them in one sentence, and
+**Open its configuration**, which opens its panel, as its red gear in the side panel does. The detail and its actions
+stay in the panel, never twice. Once nothing is left to fix, the line goes and the gear turns grey.
 
 ## Read next
 

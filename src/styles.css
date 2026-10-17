@@ -113,6 +113,10 @@ svg {
 }
 /* An icon's size is in pixels, its width and height attributes: in rem, it follows the text size. No weight: any rule
    that sizes an icon still wins. tests/styles.test.cjs checks each size the components give has its rule. */
+:where(svg.lucide[width="8"]) {
+  width: 0.5rem;
+  height: 0.5rem;
+}
 :where(svg.lucide[width="11"]) {
   width: 0.6875rem;
   height: 0.6875rem;
@@ -1565,7 +1569,8 @@ html[data-still] .machine *,
 html[data-still] .wave-line,
 html[data-still] .sync-spinner,
 html[data-still] .wish-creation-spinner,
-html[data-still] .wish-composer-caret {
+html[data-still] .wish-composer-caret,
+html[data-still] .project-flame-glyph {
   animation-play-state: paused !important;
 }
 html[data-still] .operating-load * {
@@ -2041,6 +2046,62 @@ html[data-motion="reduced"] *::after {
 .project-list {
   gap: 0.75rem;
 }
+/* A project's gear opens its panel: grey like its terminal while all is well, red with a small flame while its
+   configuration has something for you to fix. */
+.project-nav-main > button.project-gear {
+  position: relative;
+}
+.project-nav-main > button.project-gear.hot {
+  color: var(--st-failed);
+}
+.project-nav-main > button.project-gear.hot:hover {
+  background: color-mix(in srgb, var(--st-failed) 14%, transparent);
+  color: var(--st-failed);
+}
+.project-folder {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+/* The flame: a full round on the corner of the gear, or of the folder on the folded rail, its border uniform. */
+.project-flame {
+  position: absolute;
+  right: 0.0625rem;
+  top: 0.0625rem;
+  width: 0.8125rem;
+  height: 0.8125rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--n-14);
+  background: var(--st-failed);
+  color: var(--n-14);
+  pointer-events: none;
+}
+.project-folder .project-flame {
+  right: -0.375rem;
+  top: -0.3125rem;
+}
+/* It flickers by transform and opacity alone, which the engine composes without painting. */
+.project-flame-glyph {
+  display: inline-flex;
+  animation: project-flame 1.6s ease-in-out infinite alternate;
+}
+@keyframes project-flame {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(-0.5px) scale(1.08);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-flame-glyph {
+    animation: none;
+  }
+}
 .project-nav {
   display: flex;
   flex-direction: column;
@@ -2164,7 +2225,8 @@ html[data-motion="reduced"] *::after {
   font: inherit;
   font-size: var(--font-size-body, 0.75rem);
 }
-.project-select span {
+/* Its name; never the folder, whose flame sticks out. */
+.project-select > span:not(.project-folder) {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;

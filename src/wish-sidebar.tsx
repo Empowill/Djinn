@@ -1,8 +1,9 @@
 // The side panel's lists, read from the services: the flying carpet's entry with what waits for you there (questions,
 // new inbox items), the wishes, the active ones by rank and how many of the three places they take, then the paused
 // ones and the granted ones, each list in its own order; the projects, each with its branches out of sync with their
-// remote (project-sync.tsx); the Hourglass's entry at the bottom (the live metrics, hourglass.tsx), and under it the
-// Grimoire's, the documentation (docs.tsx), before the profile. The wishes' list shows the active ones, each with its counts on a second line, and three rows more;
+// remote (project-sync.tsx) and its gear, which opens its panel and turns red with a small flame when its
+// configuration has something for you to fix (Project.to_fix); the Hourglass's entry at the bottom (the live metrics,
+// hourglass.tsx), and under it the Grimoire's, the documentation (docs.tsx), before the profile. The wishes' list shows the active ones, each with its counts on a second line, and three rows more;
 // it scrolls under the pointer. Every wish is dragged by its grip, on its left, or moved with Alt+Arrow, within its
 // list; while it is dragged, a thin line shows where it would land. A paused or granted wish dropped among the active
 // ones, or sent first with its button, becomes active there (Q01): three being active, the last one is paused, first
@@ -12,6 +13,7 @@ import {
   BookMarked,
   ChevronDown,
   ChevronRight,
+  Flame,
   Folder,
   FolderOpen,
   GitMerge,
@@ -21,6 +23,7 @@ import {
   MessageCircleQuestion,
   Plane,
   Plus,
+  Settings,
   Sparkles,
   SquareTerminal,
   Upload,
@@ -505,10 +508,19 @@ export function WishSidebar({
             <div className="project-nav-main">
               <button
                 className="project-select"
-                title={project.directory || t("project.no_folder")}
+                title={
+                  (project.directory || t("project.no_folder")) +
+                  (project.toFix
+                    ? ` · ${t("project.to_fix", { count: project.toFix })}`
+                    : "")
+                }
                 onClick={() => onSelectProject(project.id)}
               >
-                <FolderOpen size={collapsed ? 16 : 15} />
+                <span className="project-folder">
+                  <FolderOpen size={collapsed ? 16 : 15} />
+                  {/* Folded to the rail, the gear is gone: its flame passes onto the folder. */}
+                  {collapsed && project.toFix > 0 && <ProjectFlame />}
+                </span>
                 {!collapsed && <span>{project.name}</span>}
               </button>
               {openTerminal && project.directory && !collapsed && (
@@ -524,6 +536,9 @@ export function WishSidebar({
                 >
                   <SquareTerminal size={13} />
                 </button>
+              )}
+              {!collapsed && (
+                <ProjectGear project={project} onOpen={onSelectProject} />
               )}
             </div>
             {!collapsed && (
@@ -573,5 +588,46 @@ export function WishSidebar({
         </button>
       )}
     </>
+  );
+}
+
+// ProjectFlame is the small flame of a project whose configuration has something for you to fix: a full round on the
+// corner of its gear, or of its folder once the side panel is folded. It flickers by transform and opacity only, and
+// stands still in a window at rest (styles.css, html[data-still]).
+export function ProjectFlame() {
+  return (
+    <span className="project-flame" aria-hidden="true">
+      <span className="project-flame-glyph">
+        <Flame size={8} fill="currentColor" />
+      </span>
+    </span>
+  );
+}
+
+// ProjectGear opens a project's panel, as its name does; grey while all is well, red with its flame while its
+// configuration has something for you to fix, which its tooltip counts.
+export function ProjectGear({
+  project,
+  onOpen,
+}: {
+  project: Project;
+  onOpen: (id: string) => void;
+}) {
+  const label = project.toFix
+    ? t("sidebar.project_gear_fix", {
+        project: project.name,
+        count: project.toFix,
+      })
+    : t("sidebar.project_gear", { project: project.name });
+  return (
+    <button
+      className={`icon-button project-gear ${project.toFix ? "hot" : ""}`}
+      onClick={() => onOpen(project.id)}
+      title={label}
+      aria-label={label}
+    >
+      <Settings size={14} />
+      {project.toFix > 0 && <ProjectFlame />}
+    </button>
   );
 }

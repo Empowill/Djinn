@@ -451,6 +451,7 @@ export function WishApp() {
               <FlightPlan
                 wishes={active}
                 onOpen={setSelected}
+                onOpenProject={setProjectId}
                 onToast={setToast}
                 onSetupAgents={() => setModal("agents")}
               />

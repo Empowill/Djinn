@@ -74,12 +74,15 @@ const noTasks: readonly Task[] = [];
 export function FlightPlan({
   wishes,
   onOpen,
+  onOpenProject,
   onToast,
   onSetupAgents,
 }: {
   // The active wishes, by rank.
   wishes: Wish[];
   onOpen: (wishId: string) => void;
+  // Opens a project's panel, from its line in the inbox.
+  onOpenProject?: (projectId: string) => void;
   onToast: (text: string) => void;
   onSetupAgents?: () => void;
 }) {
@@ -673,7 +676,13 @@ export function FlightPlan({
               aside={<SpentLine spent={flightPlanSpent} />}
             />
           )}
-          {view === "main" && <Inbox onOpen={onOpen} onToast={onToast} />}
+          {view === "main" && (
+            <Inbox
+              onOpen={onOpen}
+              onOpenProject={onOpenProject}
+              onToast={onToast}
+            />
+          )}
           {view === "main" && (
             <>
               <div className="main-columns">
