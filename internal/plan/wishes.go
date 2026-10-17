@@ -360,6 +360,9 @@ func (w *Wishes) Delete(
 					return err
 				}
 			}
+			if err := tx.Delete(&planv1.GateWait{Id: t.GetId()}); err != nil {
+				return err
+			}
 			if err := tx.Delete(t); err != nil {
 				return err
 			}

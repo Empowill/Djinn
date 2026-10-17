@@ -37,7 +37,7 @@ func Entities() []proto.Message {
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
 		&planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{}, &planv1.Lead{},
 		&planv1.LeadEvent{}, &planv1.TilasmComment{}, &planv1.SourceRun{}, &planv1.LeadBatch{}, &planv1.TilasmSend{},
-		&planv1.DeclinedSource{}, &planv1.ConfigWatch{}, &planv1.ConfigChange{},
+		&planv1.DeclinedSource{}, &planv1.ConfigWatch{}, &planv1.ConfigChange{}, &planv1.GateWait{},
 	}
 }
 
