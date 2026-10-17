@@ -77,13 +77,14 @@ type Spec struct {
 	// ends (Event.Ifrit).
 	Listen bool
 	// SystemPrompt, when set, is added to the agent's own system prompt, the same text for every session that gets
-	// it: the rules of the lead Djinn drives (decision Q31). Claude only, so far; the others ignore it.
+	// it: the rules of the lead Djinn drives (decision Q31). Claude's appended system prompt, Codex's developer
+	// instructions; Antigravity ignores it, and cannot lead (plan.LeadAgent).
 	SystemPrompt string
 	// MaxTurns caps the model turns of the run, when the provider can enforce it; 0 for no cap.
 	MaxTurns int
 	// WriteDirs are folders the agent may write in even without Permissions.Edit, and ReadDirs folders it may read
 	// outside its own: the driven lead's folder, where it writes plan files and tilasms, and Djinn's data folder.
-	// Claude only, so far.
+	// Claude's folder rules; Codex's workspace-write sandbox on them (it reads everywhere already).
 	WriteDirs, ReadDirs []string
 	// Track, when set, is told of each process the worker starts, its PID, the cgroup of its scope and its mark
 	// (markVar), as it starts; what it returns is called once the process, and what it left running, ended. Djinn

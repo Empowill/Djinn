@@ -6,7 +6,8 @@
 // pull request, a CI run). A question is a line when it holds up its wish (holdsUp, as on its card): blocking (red) or
 // needed before something (orange, under its before words); one that can wait is in the questions column alone. A
 // choice the lead's agent shows in its terminal (an approval, a folder to trust) is blocking too: its options are
-// buttons that answer it there. Each lit ifrit has a band right after that choice, the one with the latest activity
+// buttons that answer it there. A usage limit the lead Djinn drives hit is blocking too: its moves are buttons that
+// take the lead to another agent or account, the developer's choice, never Djinn's. Each lit ifrit has a band right after that choice, the one with the latest activity
 // first: its links, its countdown once Djinn warned it goes out, the first line of its last reply, then its own
 // questions and the lead's questions about it that hold up their wish, which leave the lines below; without a lit
 // ifrit, the order is the one above.
@@ -19,7 +20,10 @@ import {
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import {
+  type Account,
+  type LeadLimit,
   type LeadPrompt,
+  Provider,
   type Task,
   TaskStatus,
   type Wish,
@@ -40,6 +44,7 @@ import { mainLink } from "./data/links";
 import { t } from "./i18n";
 import { IfritCountdown, IfritLinks, KeepLit } from "./ifrit";
 import { MoveLink } from "./link";
+import { seatName } from "./wish-head";
 import { ToneIcon } from "./status";
 
 // How much a line holds up: a question workers wait on, a move only the developer can make, a question needed
@@ -61,6 +66,8 @@ export interface Attention {
   origin?: ReactNode;
   // The choice the lead's agent shows, for its line: its options answer it.
   prompt?: LeadPrompt;
+  // The usage limit the driven lead hit, for its line, and the accounts that name its moves: each moves the lead.
+  limit?: { limit: LeadLimit; accounts: Account[] };
   // A move's main link, where the developer acts: a button beside its line.
   link?: string;
   // A lit ifrit's band: the ifrit, and the lines of its questions and of the lead's questions about it.
@@ -100,6 +107,7 @@ export function attentionOf(
   origin?: (wish: Wish) => ReactNode,
   prompt?: LeadPrompt,
   ifrits: readonly Item<Task>[] = [],
+  limit?: { limit: LeadLimit; accounts: Account[] },
 ): Attention[] {
   const out: Attention[] = [];
   // The band each question goes to, by its id, and who asked it.
@@ -139,6 +147,26 @@ export function attentionOf(
       code: "",
       text: prompt.title || t("lead_prompt.title"),
       prompt,
+    });
+  if (limit)
+    out.push({
+      key: "lead-limit",
+      level: "blocking",
+      label: t("lead_limit.label"),
+      target: "lead-limit",
+      wishId: "",
+      code: "",
+      text: t("lead_limit.text", {
+        seat: seatName(
+          {
+            provider: limit.limit.seat?.provider ?? Provider.CLAUDE,
+            account: limit.limit.seat?.account ?? "",
+          },
+          limit.accounts,
+        ),
+        limit: limit.limit.text,
+      }),
+      limit,
     });
   for (const question of [...questions].sort(byAsked)) {
     const { wish, item, blocking } = question;
@@ -204,9 +232,9 @@ export function attentionOf(
       origin: origin?.(wish),
     });
   out.sort(urgent);
-  // The lead's choice stays first: until it is made, the lead relays nothing to any ifrit.
-  const first = out[0]?.prompt ? 1 : 0;
-  out.splice(first, 0, ...bands.values());
+  // The lead's choice, or its limit, stays first: until it is made, the lead relays nothing to any ifrit.
+  const first = out.findIndex((line) => !line.prompt && !line.limit);
+  out.splice(first < 0 ? out.length : first, 0, ...bands.values());
   return out;
 }
 
@@ -339,6 +367,12 @@ export function AttentionBar({
             return (
               <li key={item.key}>
                 <LeadPromptItem item={item} prompt={item.prompt} />
+              </li>
+            );
+          if (item.limit)
+            return (
+              <li key={item.key}>
+                <LeadLimitItem item={item} limit={item.limit} />
               </li>
             );
           if (item.band)
@@ -528,6 +562,78 @@ function LeadPromptItem({
           </button>
         ))}
       </div>
+      {error && (
+        <p className="attention-prompt-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// LeadLimitItem is the line of a usage limit the lead Djinn drives hit: what stopped it, and a button per seat it may
+// move to (LeadService.Move), the developer's one click; without any, how its events wait. The line goes once a batch
+// ends its turn, or the lead moves.
+function LeadLimitItem({
+  item,
+  limit: { limit, accounts },
+}: {
+  item: Attention;
+  limit: { limit: LeadLimit; accounts: Account[] };
+}) {
+  const clients = useClients();
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const move = async (index: number) => {
+    const seat = limit.moves[index];
+    if (!seat) return;
+    setSending(true);
+    setError("");
+    try {
+      await clients.lead.move({
+        provider: seat.provider,
+        model: seat.model,
+        account: seat.account,
+      });
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <div
+      id="lead-limit"
+      className={`attention-item attention-prompt level-${item.level}`}
+    >
+      <div className="attention-prompt-head">
+        <span className="attention-level">
+          <TerminalSquare size={14} aria-hidden="true" />
+          {item.label}
+        </span>
+        <span className="attention-text">{item.text}</span>
+      </div>
+      {limit.moves.length > 0 ? (
+        <div
+          className="attention-prompt-options"
+          role="group"
+          aria-label={item.text}
+          title={t("lead_limit.detail")}
+        >
+          {limit.moves.map((seat, index) => (
+            <button
+              key={`${seat.provider}/${seat.account}`}
+              className="button secondary small"
+              disabled={sending}
+              onClick={() => void move(index)}
+            >
+              {t("lead_limit.move", { seat: seatName(seat, accounts) })}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="attention-prompt-lines">{t("lead_limit.none")}</p>
+      )}
       {error && (
         <p className="attention-prompt-error" role="alert">
           {error}

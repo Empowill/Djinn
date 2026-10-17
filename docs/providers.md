@@ -833,6 +833,54 @@ use a personal or licensed account.
 | Token limit retry       | `antigravity/token-limit.jsonl`                   | by hand, from W281    | partial output `[cut]`, token limit prompt continued; done on second turn |
 | Three retries failed    | `antigravity/retry-failed.jsonl`                  | by hand               | three retry prompts continued in a row; fourth fails the task       |
 
+## The lead's seat and the accounts
+
+The lead Djinn drives runs on a **seat**: an agent, a model and an account, chosen by the developer and kept in
+`settings.json` (`ui.v1.Settings.lead`) until changed (W132, decision Q31). Each batch reads it as it starts, so a move
+takes effect at the next batch, which carries the lead's journal like any other; the batch records its agent, model and
+account. The moves: `djinn lead move --provider codex --model <model> --account <name>` (the whole seat: an empty model
+is the agent's default, an empty account its own sign-in; without `--provider`, the current agent), or the lead's menu
+in the window (the arrow beside **Talk to the Djinn**), which lists each agent on its own sign-in then on each account,
+and the model.
+
+**Which agents may lead.** Claude: its rules in `--append-system-prompt` (W131). Codex: its rules as the thread's
+`developerInstructions`, and the lead's folder, without `edit`, as its `workspace-write` sandbox (the other folders it
+may write in as `writableRoots`, a file change inside them accepted); Djinn answers its command approvals by the lead's
+commands, as for a worker. **Built, not tried on a real run:** a Codex batch; `--max-turns` has no Codex equivalent,
+the 30-minute timeout guards it. Antigravity cannot lead: agy takes no instructions beside the prompt and refuses a
+session that may not edit every file of its folder; `djinn lead move --provider antigravity` is refused.
+
+**A usage limit is the developer's move.** A batch that hits a limit (Claude's `rate_limit_event` `rejected`, or a
+limit in its error, as for a worker) is not tried again on the same seat: Djinn moves the lead nowhere by itself. It
+shows the limit beside **Talk to the Djinn** and first in the attention bar, with a button per seat it may move to: the
+other accounts of the same agent first (its model kept), then the other agents on their own sign-in and on each account,
+only those installed whose status command does not say signed out. A click is `LeadService.Move`: the waiting events
+go to the new seat at once. Without a move, the events, newer ones too, wait for the reset the agent gave (15 minutes
+when it gave none), then go to the same seat; **Talk to the Djinn** tries the same seat at once.
+
+### Several subscriptions at once
+
+An **account** is a folder of the agent's own where it keeps its configuration, sessions and login, beside its
+default one: `djinn lead add-account work --provider claude [--label Work] [--config-directory <folder>]` names it,
+makes the folder (`~/.claude-work` or `~/.codex-work` by default; never Djinn's data folder, the home folder, nor the
+agent's default folder), and prints the command that signs it in there once. `djinn lead accounts` lists them;
+`djinn lead remove-account work` forgets one and leaves its folder and its login as they are (refused while the lead
+runs on it). The window's agents setup shows each account under its agent, where it stands, and runs its sign-in in a
+terminal of the panel. Djinn passes the folder's variable to the sessions it starts on the account and to the status
+check; it never reads nor stores a token.
+
+| Agent       | Variable            | What it moves, by its documentation (read 17/10/2026)                                                                                                                                                                                                                                     | Sign in, status                                                       |
+| ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Claude Code | `CLAUDE_CONFIG_DIR` | "Each directory has its own settings, session history, and claude.ai login or API key" (`code.claude.com/docs/en/authentication`, Log in with multiple accounts); on Linux its `.credentials.json`, on macOS a Keychain entry keyed to the folder                                          | `claude auth login`; `claude auth status` exits 0 signed in, 1 not    |
+| Codex       | `CODEX_HOME`        | "Codex stores its local state under CODEX_HOME" with `config.toml` and `auth.json` (`developers.openai.com/codex/config-advanced`); its keyring entry is keyed to the folder's path (`codex-rs/login/src/auth/storage.rs`, source only)                                                     | `codex login`; `codex login status` exits 0 when credentials are present |
+| Antigravity | none documented     | its settings in `~/.gemini/antigravity-cli`, its token in the system's keyring (a file on Linux without a session bus); no variable moves them (`antigravity.google/docs`, `agy --help` 1.3.5)                                                                                              | no account: changing `HOME` would move everything, untried             |
+
+**Caveats, from the same documentation.** For Claude, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and
+`CLAUDE_CODE_OAUTH_TOKEN` win over a folder's login: a session or a check on an account clears them. A Claude Console
+sign-in without an API key is kept outside the folder: two Console sign-ins are not kept apart. Codex's IDE extension
+and desktop app share the default folder's login. **Verified** in tests on fake agents only: the variable reaches each
+session and each status check; no real sign-in was made.
+
 ## Tokens and cost estimates across providers
 
 Every task, wish, and the flying carpet show token counts (input, output, cache read, thinking) and an estimated cost computed from an embedded price table (`internal/usage/prices.yaml`), marked "estimated, prices of <table date>".

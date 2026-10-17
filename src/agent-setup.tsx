@@ -1,11 +1,14 @@
 // The setup of the agents: one line per agent, where it stands, and one button for its next step, which says what it
 // does on hover. Install and sign in run the agent's own command in a terminal of the panel, so nobody opens a
 // terminal of theirs; once the command ends, Djinn checks again. Shown in the settings, from the lead's menu, and by
-// itself when the window opens with no agent ready.
-import { Download, LogIn, RefreshCw, Square } from "lucide-react";
+// itself when the window opens with no agent ready. Under each agent, its accounts: a sign-in each in a folder of the
+// agent's own, signed in once by the agent's own command, for the lead to move to; Djinn keeps no token.
+import { Download, LogIn, Plus, RefreshCw, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Provider } from "../gen/ts/plan/v1/plan_pb";
 import {
+  type AccountSetup,
   type Provider as AgentEnvironment,
   ProviderState,
   type UiServiceGetEnvironmentResponse,
@@ -146,11 +149,13 @@ export function AgentSetupPanel({ agents }: { agents: Agents }) {
             agent={agent}
             checking={checking}
             busy={running}
-            step={step?.agentId === agent.id ? step : undefined}
+            step={step}
             onRun={run}
             onEnded={ended}
+            onChanged={check}
           />
         ))}
+        {env && <AddAccount onAdded={check} />}
       </div>
       <button
         type="button"
@@ -173,6 +178,7 @@ function AgentRow({
   step,
   onRun,
   onEnded,
+  onChanged,
 }: {
   agent: AgentEnvironment;
   checking: boolean;
@@ -180,6 +186,7 @@ function AgentRow({
   step?: Step;
   onRun: (agentId: string, kind: Step["kind"], line: string) => void;
   onEnded: () => void;
+  onChanged: () => void;
 }) {
   const state = agentStates[agent.state] ?? agentStates[ProviderState.UNKNOWN];
   const next = nextStep(agent);
@@ -218,7 +225,166 @@ function AgentRow({
           </button>
         )}
       </div>
-      {step && <StepTerminal key={step.name} step={step} onEnded={onEnded} />}
+      {step?.agentId === agent.id && (
+        <StepTerminal key={step.name} step={step} onEnded={onEnded} />
+      )}
+      {agent.accounts.map((setup) => (
+        <AccountRow
+          key={setup.account?.name}
+          agent={agent}
+          setup={setup}
+          busy={busy || checking}
+          step={step}
+          onRun={onRun}
+          onEnded={onEnded}
+          onChanged={onChanged}
+        />
+      ))}
+    </>
+  );
+}
+
+// AccountRow is an account of an agent: its label and folder, where it stands, its sign-in in its own folder, and a
+// button that forgets it, its folder left as it is.
+function AccountRow({
+  agent,
+  setup,
+  busy,
+  step,
+  onRun,
+  onEnded,
+  onChanged,
+}: {
+  agent: AgentEnvironment;
+  setup: AccountSetup;
+  busy: boolean;
+  step?: Step;
+  onRun: (agentId: string, kind: Step["kind"], line: string) => void;
+  onEnded: () => void;
+  onChanged: () => void;
+}) {
+  const clients = useDjinn()?.clients;
+  const [error, setError] = useState("");
+  const account = setup.account;
+  if (!account) return null;
+  const id = `${agent.id}/${account.name}`;
+  const state = agentStates[setup.state] ?? agentStates[ProviderState.UNKNOWN];
+  const signIn =
+    agent.available &&
+    setup.state !== ProviderState.READY &&
+    Boolean(setup.loginCommand);
+  const forget = () => {
+    setError("");
+    clients?.lead
+      .removeAccount({ name: account.name })
+      .then(onChanged)
+      .catch((err) => setError(message(err)));
+  };
+  return (
+    <>
+      <div
+        className="provider-setting provider-account"
+        data-account={account.name}
+        title={account.configDirectory}
+      >
+        <span className="provider-glyph">↳</span>
+        <div>
+          <h3>{account.label || account.name}</h3>
+          <code>{account.configDirectory}</code>
+        </div>
+        <span className="status-text">
+          <span className={`status-dot ${state.dot}`} />
+          {t(state.label)}
+        </span>
+        {signIn && (
+          <button
+            type="button"
+            className="button small accent"
+            title={`${t("agents.account_login_detail")}\n${setup.loginCommand}`}
+            disabled={busy}
+            onClick={() => onRun(id, "login", setup.loginCommand)}
+          >
+            <LogIn size={13} />
+            {t("agents.login")}
+          </button>
+        )}
+        <button
+          type="button"
+          className="button secondary small"
+          title={t("agents.account_forget_detail")}
+          aria-label={t("agents.account_forget")}
+          disabled={busy}
+          onClick={forget}
+        >
+          <X size={13} />
+        </button>
+      </div>
+      {error && <p role="alert">{error}</p>}
+      {step?.agentId === id && (
+        <StepTerminal key={step.name} step={step} onEnded={onEnded} />
+      )}
+    </>
+  );
+}
+
+// AddAccount names an account of Claude Code or Codex: Djinn makes its folder, beside the agent's own, and the
+// account's line offers its sign-in.
+function AddAccount({ onAdded }: { onAdded: () => void }) {
+  const clients = useDjinn()?.clients;
+  const [provider, setProvider] = useState(Provider.CLAUDE);
+  const [name, setName] = useState("");
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState("");
+  const add = () => {
+    setError("");
+    clients?.lead
+      .addAccount({ name: name.trim(), provider, label: label.trim() })
+      .then(() => {
+        setName("");
+        setLabel("");
+        onAdded();
+      })
+      .catch((err) => setError(message(err)));
+  };
+  return (
+    <>
+      <form
+        className="provider-setting account-add"
+        title={t("agents.account_detail")}
+        onSubmit={(event) => {
+          event.preventDefault();
+          add();
+        }}
+      >
+        <span className="provider-glyph">+</span>
+        <select
+          aria-label={t("agents.account_agent")}
+          value={provider}
+          onChange={(event) => setProvider(Number(event.target.value))}
+        >
+          <option value={Provider.CLAUDE}>Claude Code</option>
+          <option value={Provider.CODEX}>Codex</option>
+        </select>
+        <input
+          aria-label={t("agents.account_name")}
+          placeholder={t("agents.account_name")}
+          value={name}
+          pattern="[a-z0-9][a-z0-9\-]{0,31}"
+          required
+          onChange={(event) => setName(event.target.value)}
+        />
+        <input
+          aria-label={t("agents.account_label")}
+          placeholder={t("agents.account_label")}
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+        />
+        <button type="submit" className="button secondary small">
+          <Plus size={13} />
+          {t("agents.account_add")}
+        </button>
+      </form>
+      {error && <p role="alert">{error}</p>}
     </>
   );
 }

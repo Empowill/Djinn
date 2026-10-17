@@ -56,7 +56,12 @@ import { Glance } from "./glance";
 import { WishTask } from "./wish-task";
 import { HourglassLine } from "./hourglass";
 import { PageHeader } from "./page-header";
-import { LeadButton, leadTrouble, recordedAgent } from "./wish-head";
+import {
+  LeadButton,
+  leadTrouble,
+  recordedAgent,
+  type SeatChoice,
+} from "./wish-head";
 import {
   GrantCard,
   InvestigatingSection,
@@ -83,6 +88,7 @@ export function FlightPlan({
   const leadExit = useData((s) => s.leadExit);
   const leadStartError = useData((s) => s.leadStartError);
   const leadPrompt = useData((s) => s.leadPrompt);
+  const leadDrive = useData((s) => s.leadDrive);
   const allWishes = useData((s) => s.wishes);
   const projectById = useMemo(
     () => new Map(projects.map((p) => [p.id, p])),
@@ -131,6 +137,10 @@ export function FlightPlan({
         renderAttentionOrigin,
         leadPrompt,
         ifrits,
+        leadDrive?.limit && {
+          limit: leadDrive.limit,
+          accounts: leadDrive.accounts,
+        },
       ),
     [
       plan.questions,
@@ -140,6 +150,7 @@ export function FlightPlan({
       renderAttentionOrigin,
       leadPrompt,
       ifrits,
+      leadDrive,
     ],
   );
   const [view, setView] = useState<View>("main");
@@ -559,6 +570,18 @@ export function FlightPlan({
       () => note,
     );
   };
+  // moveLead moves the lead Djinn drives to another seat; what Djinn says of it shows as a toast.
+  const moveLead = (seat: SeatChoice) => {
+    let note = "";
+    return act(
+      "",
+      async () => {
+        ({ note } = await clients.lead.move(seat));
+      },
+      [Change.WISH],
+      () => note,
+    );
+  };
   const trouble = leadTrouble(leadExit, leadStartError);
   const handleTaskFocus = useCallback(
     (id: string) => show("tasks", id),
@@ -580,6 +603,8 @@ export function FlightPlan({
             onLead={() => quiet(resumeLead())}
             onPick={(provider) => quiet(resumeLead(provider))}
             onSetup={onSetupAgents}
+            drive={leadDrive}
+            onMove={(seat) => quiet(moveLead(seat))}
           />
         }
       >

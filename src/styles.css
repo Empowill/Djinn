@@ -1289,6 +1289,15 @@ html[data-theme="light"] .wordmark-period {
   color: var(--n-b6);
 }
 
+.provider-setting.provider-account {
+  padding-left: 2.25rem;
+}
+.account-add input,
+.account-add select {
+  flex: 1;
+  min-width: 0;
+}
+
 .agent-setup-intro {
   font-size: var(--font-size-body, 0.75rem);
   color: var(--n-a9);

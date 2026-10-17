@@ -87,6 +87,18 @@ driven setting on, in the settings file of Djinn's data folder, read when Djinn 
 - **A failed batch** gets one new session. Failed again, it shows beside **Lead** in the window and its events wait:
   the next event, or a click on **Lead**, starts a session for them.
 
+- **Where it runs.** The Djinn runs on a seat you choose: an agent (Claude Code or Codex), a model, an account. The
+  arrow beside **Talk to the Djinn** lists each agent on its own sign-in, then on each of its accounts, and the model:
+  one click moves the Djinn there, and the command line does the same. The next batch starts there with the lead's
+  journal, and the Djinn stays there until you move it again. Antigravity cannot lead yet.
+- **A limit is your call.** When the Djinn hits its subscription's limit, Djinn does not move it by itself: the
+  limit shows first in the attention bar, with a button for each agent or account signed in on this machine. One
+  click sends the waiting events there. Without a click, they wait for the limit to reset.
+- **Several subscriptions on one machine.** An account is a folder of the agent's own, beside its default one, where
+  it keeps its login: Claude Code's configuration folder, Codex's home. Name one in the agents' setup or with the
+  command line, sign in there once with the agent's own command, in the panel's terminal; Djinn keeps no token, only
+  the folder. Antigravity has no such folder.
+
 A batch costs about $0.16 to $0.22 on Opus 5.5, as Claude Code counts it, measured on 16/10/2026: about 18,600 tokens
 of rules, tools and system prompt read from the cache the last session wrote, and the batch's own message written to
 it.

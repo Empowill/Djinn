@@ -176,6 +176,15 @@ const (
 	LeadServiceTellProcedure = "/plan.v1.LeadService/Tell"
 	// LeadServiceJournalProcedure is the fully-qualified name of the LeadService's Journal RPC.
 	LeadServiceJournalProcedure = "/plan.v1.LeadService/Journal"
+	// LeadServiceMoveProcedure is the fully-qualified name of the LeadService's Move RPC.
+	LeadServiceMoveProcedure = "/plan.v1.LeadService/Move"
+	// LeadServiceAccountsProcedure is the fully-qualified name of the LeadService's Accounts RPC.
+	LeadServiceAccountsProcedure = "/plan.v1.LeadService/Accounts"
+	// LeadServiceAddAccountProcedure is the fully-qualified name of the LeadService's AddAccount RPC.
+	LeadServiceAddAccountProcedure = "/plan.v1.LeadService/AddAccount"
+	// LeadServiceRemoveAccountProcedure is the fully-qualified name of the LeadService's RemoveAccount
+	// RPC.
+	LeadServiceRemoveAccountProcedure = "/plan.v1.LeadService/RemoveAccount"
 	// LeadServiceChooseProcedure is the fully-qualified name of the LeadService's Choose RPC.
 	LeadServiceChooseProcedure = "/plan.v1.LeadService/Choose"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
@@ -2030,6 +2039,20 @@ type LeadServiceClient interface {
 	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
 	// prompt carries the latest entries of its wishes; this prints them for the developer.
 	Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error)
+	// Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
+	// journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
+	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
+	// batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
+	Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error)
+	// The accounts of the agents on this machine, the seat of the lead, and for each account the command that signs
+	// it in, once, in its own folder.
+	Accounts(context.Context, *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error)
+	// Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
+	// unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
+	AddAccount(context.Context, *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error)
+	// Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
+	// while the lead runs on it.
+	RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
@@ -2099,6 +2122,31 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		move: connect.NewClient[v1.LeadServiceMoveRequest, v1.LeadServiceMoveResponse](
+			httpClient,
+			baseURL+LeadServiceMoveProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Move")),
+			connect.WithClientOptions(opts...),
+		),
+		accounts: connect.NewClient[v1.LeadServiceAccountsRequest, v1.LeadServiceAccountsResponse](
+			httpClient,
+			baseURL+LeadServiceAccountsProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Accounts")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		addAccount: connect.NewClient[v1.LeadServiceAddAccountRequest, v1.LeadServiceAddAccountResponse](
+			httpClient,
+			baseURL+LeadServiceAddAccountProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("AddAccount")),
+			connect.WithClientOptions(opts...),
+		),
+		removeAccount: connect.NewClient[v1.LeadServiceRemoveAccountRequest, v1.LeadServiceRemoveAccountResponse](
+			httpClient,
+			baseURL+LeadServiceRemoveAccountProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("RemoveAccount")),
+			connect.WithClientOptions(opts...),
+		),
 		choose: connect.NewClient[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse](
 			httpClient,
 			baseURL+LeadServiceChooseProcedure,
@@ -2110,15 +2158,19 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // leadServiceClient implements LeadServiceClient.
 type leadServiceClient struct {
-	set     *connect.Client[v1.LeadServiceSetRequest, v1.LeadServiceSetResponse]
-	resume  *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
-	get     *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
-	brief   *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
-	notes   *connect.Client[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse]
-	watch   *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
-	tell    *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
-	journal *connect.Client[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse]
-	choose  *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
+	set           *connect.Client[v1.LeadServiceSetRequest, v1.LeadServiceSetResponse]
+	resume        *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
+	get           *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
+	brief         *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
+	notes         *connect.Client[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse]
+	watch         *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
+	tell          *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
+	journal       *connect.Client[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse]
+	move          *connect.Client[v1.LeadServiceMoveRequest, v1.LeadServiceMoveResponse]
+	accounts      *connect.Client[v1.LeadServiceAccountsRequest, v1.LeadServiceAccountsResponse]
+	addAccount    *connect.Client[v1.LeadServiceAddAccountRequest, v1.LeadServiceAddAccountResponse]
+	removeAccount *connect.Client[v1.LeadServiceRemoveAccountRequest, v1.LeadServiceRemoveAccountResponse]
+	choose        *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -2159,6 +2211,26 @@ func (c *leadServiceClient) Tell(ctx context.Context, req *connect.Request[v1.Le
 // Journal calls plan.v1.LeadService.Journal.
 func (c *leadServiceClient) Journal(ctx context.Context, req *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error) {
 	return c.journal.CallUnary(ctx, req)
+}
+
+// Move calls plan.v1.LeadService.Move.
+func (c *leadServiceClient) Move(ctx context.Context, req *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error) {
+	return c.move.CallUnary(ctx, req)
+}
+
+// Accounts calls plan.v1.LeadService.Accounts.
+func (c *leadServiceClient) Accounts(ctx context.Context, req *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error) {
+	return c.accounts.CallUnary(ctx, req)
+}
+
+// AddAccount calls plan.v1.LeadService.AddAccount.
+func (c *leadServiceClient) AddAccount(ctx context.Context, req *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error) {
+	return c.addAccount.CallUnary(ctx, req)
+}
+
+// RemoveAccount calls plan.v1.LeadService.RemoveAccount.
+func (c *leadServiceClient) RemoveAccount(ctx context.Context, req *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error) {
+	return c.removeAccount.CallUnary(ctx, req)
 }
 
 // Choose calls plan.v1.LeadService.Choose.
@@ -2215,6 +2287,20 @@ type LeadServiceHandler interface {
 	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
 	// prompt carries the latest entries of its wishes; this prints them for the developer.
 	Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error)
+	// Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
+	// journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
+	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
+	// batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
+	Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error)
+	// The accounts of the agents on this machine, the seat of the lead, and for each account the command that signs
+	// it in, once, in its own folder.
+	Accounts(context.Context, *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error)
+	// Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
+	// unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
+	AddAccount(context.Context, *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error)
+	// Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
+	// while the lead runs on it.
+	RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
@@ -2280,6 +2366,31 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceMoveHandler := connect.NewUnaryHandler(
+		LeadServiceMoveProcedure,
+		svc.Move,
+		connect.WithSchema(leadServiceMethods.ByName("Move")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceAccountsHandler := connect.NewUnaryHandler(
+		LeadServiceAccountsProcedure,
+		svc.Accounts,
+		connect.WithSchema(leadServiceMethods.ByName("Accounts")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceAddAccountHandler := connect.NewUnaryHandler(
+		LeadServiceAddAccountProcedure,
+		svc.AddAccount,
+		connect.WithSchema(leadServiceMethods.ByName("AddAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceRemoveAccountHandler := connect.NewUnaryHandler(
+		LeadServiceRemoveAccountProcedure,
+		svc.RemoveAccount,
+		connect.WithSchema(leadServiceMethods.ByName("RemoveAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceChooseHandler := connect.NewUnaryHandler(
 		LeadServiceChooseProcedure,
 		svc.Choose,
@@ -2304,6 +2415,14 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceTellHandler.ServeHTTP(w, r)
 		case LeadServiceJournalProcedure:
 			leadServiceJournalHandler.ServeHTTP(w, r)
+		case LeadServiceMoveProcedure:
+			leadServiceMoveHandler.ServeHTTP(w, r)
+		case LeadServiceAccountsProcedure:
+			leadServiceAccountsHandler.ServeHTTP(w, r)
+		case LeadServiceAddAccountProcedure:
+			leadServiceAddAccountHandler.ServeHTTP(w, r)
+		case LeadServiceRemoveAccountProcedure:
+			leadServiceRemoveAccountHandler.ServeHTTP(w, r)
 		case LeadServiceChooseProcedure:
 			leadServiceChooseHandler.ServeHTTP(w, r)
 		default:
@@ -2345,6 +2464,22 @@ func (UnimplementedLeadServiceHandler) Tell(context.Context, *connect.Request[v1
 
 func (UnimplementedLeadServiceHandler) Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Journal is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Move is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Accounts(context.Context, *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Accounts is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) AddAccount(context.Context, *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.AddAccount is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.RemoveAccount is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {

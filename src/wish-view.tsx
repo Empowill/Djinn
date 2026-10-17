@@ -142,6 +142,7 @@ import {
   WishTitle,
   leadTrouble,
   recordedAgent,
+  type SeatChoice,
 } from "./wish-head";
 import { LeadMessage } from "./lead-message";
 import { PageHeader, PageHeaderAction } from "./page-header";
@@ -186,6 +187,7 @@ export function WishView({
   const allWishes = useData((s) => s.wishes);
   const leadRecord = useData((s) => s.lead);
   const leadPrompt = useData((s) => s.leadPrompt);
+  const leadDrive = useData((s) => s.leadDrive);
   const leadExit = useData((s) => s.leadExit);
   const leadStartError = useData((s) => s.leadStartError);
   const pausable = usePausable();
@@ -763,6 +765,17 @@ export function WishView({
     );
   };
   const lead = (provider?: Provider) => quiet(resumeLead(provider));
+  // moveLead moves the lead Djinn drives to another seat; what Djinn says of it shows as a toast.
+  const moveLead = (seat: SeatChoice) => {
+    let note = "";
+    return act(
+      async () => {
+        ({ note } = await clients.lead.move(seat));
+      },
+      [Change.WISH],
+      () => note,
+    );
+  };
   const attention = attentionOf(
     [...open, ...waitingLead],
     waiting,
@@ -770,6 +783,10 @@ export function WishView({
     undefined,
     leadPrompt,
     ifrits,
+    leadDrive?.limit && {
+      limit: leadDrive.limit,
+      accounts: leadDrive.accounts,
+    },
   );
   // What the wish's tabs show of the bar's lines: the open questions, the waiting workers and the grant in the
   // first tab, the answered questions in the decisions.
@@ -859,6 +876,8 @@ export function WishView({
               onLead={() => lead()}
               onPick={(provider) => lead(provider)}
               onSetup={onSetupAgents}
+              drive={leadDrive}
+              onMove={(seat) => quiet(moveLead(seat))}
             />
             <PageHeaderAction
               label={t("app.share")}

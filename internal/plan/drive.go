@@ -53,6 +53,7 @@ type LeadDrive struct {
 	mu      sync.Mutex
 	batch   *planv1.LeadBatch // the batch that runs, or else the last one
 	failure string            // why the last batch failed twice; empty once a batch ends its turn
+	limit   *planv1.LeadLimit // the usage limit the last batch hit; nil once a batch ends its turn, or the lead moves
 	retry   chan struct{}     // closed when the developer asks to try the waiting events again
 	changed func()            // tells the window that the lead changed
 }
@@ -88,7 +89,7 @@ func (d *LeadDrive) SetBatch(b *planv1.LeadBatch) {
 	d.mu.Lock()
 	d.batch = proto.CloneOf(b)
 	if b.GetState() == planv1.LeadBatchState_LEAD_BATCH_STATE_DONE {
-		d.failure = ""
+		d.failure, d.limit = "", nil
 	}
 	changed := d.changed
 	d.mu.Unlock()
@@ -276,6 +277,9 @@ func JournalEntry(b *planv1.LeadBatch) string {
 	who := providerName(b.GetProvider())
 	if b.GetModel() != "" {
 		who += " " + b.GetModel()
+	}
+	if b.GetAccount() != "" {
+		who += " (account " + b.GetAccount() + ")"
 	}
 	state := strings.ToLower(strings.TrimPrefix(b.GetState().String(), "LEAD_BATCH_STATE_"))
 	fmt.Fprintf(&s, "### %s · %s, session `%s`, attempt %d · %s", when(b.GetStartTime().AsTime()), who,
