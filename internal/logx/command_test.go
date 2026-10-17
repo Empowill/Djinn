@@ -52,34 +52,35 @@ func TestRan(t *testing.T) {
 	defer cancel()
 	<-expired.Done()
 	for _, tc := range []struct {
-		name  string
-		ctx   context.Context
-		cmd   func(ctx context.Context) *exec.Cmd
-		start time.Time
-		want  []string
+		name string
+		ctx  context.Context
+		cmd  func(ctx context.Context) *exec.Cmd
+		took time.Duration // How long the command took, apart from how long it ran here.
+		want []string
 	}{
 		{"fast success", context.Background(), func(ctx context.Context) *exec.Cmd {
 			cmd := exec.CommandContext(ctx, exe, "-test.run=^$")
 			cmd.Dir = t.TempDir()
 			return cmd
-		}, time.Now(), []string{"level=DEBUG msg=command argv=\"" + filepath.Base(exe) + " -test.run=^$\"", "exit=0"}},
+		}, 0, []string{"level=DEBUG msg=command argv=\"" + filepath.Base(exe) + " -test.run=^$\"", "exit=0"}},
 		{"slow success", context.Background(), func(ctx context.Context) *exec.Cmd {
 			return exec.CommandContext(ctx, exe, "-test.run=^$")
-		}, time.Now().Add(-2 * Slow), []string{"level=WARN msg=command", "took=2"}},
+		}, 2 * Slow, []string{"level=WARN msg=command", "took=2"}},
 		{"failure", context.Background(), func(ctx context.Context) *exec.Cmd {
 			return exec.CommandContext(ctx, exe, "-test.run=^$", "-test.count=x")
-		}, time.Now(), []string{"level=INFO msg=command", "exit=2"}},
+		}, 0, []string{"level=INFO msg=command", "exit=2"}},
 		{"not run", context.Background(), func(ctx context.Context) *exec.Cmd {
 			return exec.CommandContext(ctx, filepath.Join(t.TempDir(), "missing"))
-		}, time.Now(), []string{"level=ERROR msg=command", "exit=-1", "err="}},
+		}, 0, []string{"level=ERROR msg=command", "exit=-1", "err="}},
 		{"deadline", expired, func(ctx context.Context) *exec.Cmd {
 			return exec.CommandContext(ctx, exe, "-test.run=^$")
-		}, time.Now(), []string{"level=WARN msg=command", "timeout=true"}},
+		}, 0, []string{"level=WARN msg=command", "timeout=true"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := capture(t)
 			cmd := tc.cmd(tc.ctx)
-			Ran(tc.ctx, cmd, tc.start, cmd.Run())
+			err := cmd.Run() // A test binary may take a second to start under -race: the start is taken after it.
+			Ran(tc.ctx, cmd, time.Now().Add(-tc.took), err)
 			lines := strings.Split(strings.TrimSpace(b.String()), "\n")
 			s := lines[len(lines)-1]
 			for _, want := range tc.want {
