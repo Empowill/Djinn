@@ -921,7 +921,7 @@
   "settings.notifications_unavailable": "Not available here: on macOS, Djinn shows them when it runs from its app.",
   "settings.presence": "The Djinn's eye",
   "settings.presence_alive": "Alive",
-  "settings.presence_detail": "The seal opens into an eye that rests where to look now: the question that matters, the one you read, or Write to the Djinn. Discreet keeps it in the seal.",
+  "settings.presence_detail": "The seal opens into an eye that rests by what has the focus: the question you read, a tab, or Write to the Djinn. Discreet keeps it in the seal.",
   "settings.presence_discreet": "Discreet",
   "settings.presence_none": "None",
   "settings.shortcut": "Global shortcut",

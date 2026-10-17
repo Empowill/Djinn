@@ -2,25 +2,16 @@
 // what the window already knows; the path it flies from one place to the next; and how long the calm gate holds it.
 // Pure, so the Node tests read it without a page.
 
-// How present the Djinn is, a choice of the personal space: alive (the eye goes where to look), discreet (it stays in the
+// How present the Djinn is, a choice of the personal space: alive (the eye goes where the focus is), discreet (it stays in the
 // seal and only changes its state), or none.
 export type Presence = "alive" | "discreet" | "none";
 
 export const presences: readonly Presence[] = ["alive", "discreet", "none"];
 
-// The eye's moods: asleep (the lead is stopped), restarting (Djinn's stream is cut), resting (home, awake), watching (the
-// question that matters, before you go to one), reading (the question you went to), listening (Write to the Djinn).
+// The eye's moods: asleep (the lead is stopped), restarting (Djinn's stream is cut), resting (home, awake), reading (a
+// question has the focus), watching (a tab has it), listening (Write to the Djinn).
 export type Mood =
   "asleep" | "restarting" | "resting" | "watching" | "reading" | "listening";
-
-// What the questions column says: the question open, whether the developer went to it, the one that matters most (a
-// worker waits for it, else it is needed before something, else the oldest), and whether one holds up a worker.
-export interface EyeColumn {
-  current?: string;
-  chosen: boolean;
-  matters?: string;
-  blocking: boolean;
-}
 
 export interface EyeSignals {
   presence: Presence;
@@ -28,11 +19,14 @@ export interface EyeSignals {
   live: boolean;
   // The page's lead is stopped, or could not start; undefined on a page without one.
   stopped?: boolean;
-  column?: EyeColumn;
+  // A question of the page holds up a worker.
+  blocking: boolean;
   // Something else waits for the developer on the page: a worker waiting, a lit ifrit.
   needs: boolean;
-  // The places shown now: "home" (the seal), "pill" (Write to the Djinn), "q:<question id>".
+  // The places shown now: "home" (the seal), "pill" (Write to the Djinn), "q:<question id>", "tab:<view>".
   perches: ReadonlySet<string>;
+  // The place of the element that has the focus, if it has one: its question, Write to the Djinn, its tab.
+  focus?: string;
 }
 
 export interface EyeTarget {
@@ -44,44 +38,35 @@ export interface EyeTarget {
 }
 
 export const questionPerch = (id: string) => `q:${id}`;
+export const tabPerch = (view: string) => `tab:${view}`;
 
-// eyeTarget is where the eye rests and how: home while the stream is cut or the lead stopped; at the question you went
-// to; else at the one that matters; with no question open, on Write to the Djinn; with none of those shown, home.
+// eyeTarget is where the eye rests and how: home while the stream is cut or the lead stopped; else by the element that
+// has the focus, and only there (W259): its question, Write to the Djinn, its tab. With the focus on nothing that has a
+// place, it listens on Write to the Djinn, the Djinn's own place; with that not shown, home.
 export function eyeTarget(s: EyeSignals): EyeTarget {
   if (s.presence === "none")
     return { perch: "", mood: "resting", shine: false };
   const home = s.perches.has("home") ? "home" : "";
   if (!s.live) return { perch: home, mood: "restarting", shine: false };
   if (s.stopped) return { perch: home, mood: "asleep", shine: false };
-  const shine = s.needs || !!s.column?.blocking;
+  const shine = s.needs || s.blocking;
   if (s.presence === "alive") {
-    const column = s.column;
-    if (column?.current) {
-      const id = column.chosen
-        ? column.current
-        : (column.matters ?? column.current);
-      if (s.perches.has(questionPerch(id)))
-        return {
-          perch: questionPerch(id),
-          mood: column.chosen ? "reading" : "watching",
-          shine,
-        };
-    }
+    if (s.focus && s.perches.has(s.focus))
+      return { perch: s.focus, mood: moodAt(s.focus), shine };
     if (s.perches.has("pill"))
       return { perch: "pill", mood: "listening", shine };
   }
   return { perch: home, mood: "resting", shine };
 }
 
-// mattersMost is the question the eye watches before you go to one: the first of the most urgent (urgency 0 holds up
-// a worker, then a move only you can make, then one needed before something, then one that can wait).
-export function mattersMost(
-  questions: readonly { id: string; urgency: number }[],
-): string | undefined {
-  let best: { id: string; urgency: number } | undefined;
-  for (const q of questions) if (!best || q.urgency < best.urgency) best = q;
-  return best?.id;
-}
+const moodAt = (perch: string): Mood =>
+  perch.startsWith("q:")
+    ? "reading"
+    : perch.startsWith("tab:")
+      ? "watching"
+      : perch === "pill"
+        ? "listening"
+        : "resting";
 
 export interface Point {
   x: number;
@@ -147,8 +132,9 @@ export function flight(
   };
 }
 
-// What holds the eye where it is: the developer typing (a field has the focus), a mouse button down, a dialog open,
-// the window at rest; a scroll or a key a moment ago; a flight not landed.
+// What holds the eye where it is: the developer typing (a field has the focus, and the eye is not on its way to that
+// field's place), a mouse button down, a dialog open, the window at rest; a scroll or a key a moment ago; a flight not
+// landed.
 export interface Calm {
   now: number;
   typing: boolean;

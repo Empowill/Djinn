@@ -16,8 +16,8 @@
 // then your pick is cleared (wish-question.tsx), then the focus leaves the column, where ↓ brings it back. With the
 // focus nowhere, the open question takes the other keys as if it had it, and the focus with them. Space and the page
 // keys scroll a long question: the arrows stay with the questions.
-// A click on the wish in the side panel brings the page back to the question that had the focus last, if it is the one
-// open, its title at the top of the view, and gives it the focus again (land).
+// A click on the wish in the side panel gives the focus to its first question, which opens (land): the developer answers
+// or scrolls from the keyboard at once, and the Djinn's eye, which rests by the focus, reads it with them (W259).
 import { Moon } from "lucide-react";
 import {
   type ReactNode,
@@ -31,10 +31,9 @@ import {
 } from "react";
 
 import type { Choice, Question, Wish } from "../gen/ts/plan/v1/plan_pb";
-import { mattersMost } from "./data/eye";
-import { byAsked, type OpenQuestion, urgency } from "./data/flight";
+import { byAsked, type OpenQuestion } from "./data/flight";
 import { sleepTexts } from "./data/format";
-import { useEyeColumn } from "./djinn-eye";
+import { useEyeBlocking } from "./djinn-eye";
 import { t } from "./i18n";
 import {
   type QuestionKey,
@@ -154,9 +153,8 @@ export function QuestionColumn({
   // On the flying carpet: each group is headed by its wish's title, which opens the wish.
   headings?: boolean;
   onOpenWish?: (wishId: string) => void;
-  // Filled with what brings the page back to the question that had the focus last, once the wish is clicked in the
-  // side panel (which took the focus): it scrolls its title to the top of the view and gives it the focus again, and
-  // says whether there was one.
+  // Filled with what lands on the first question once the wish is clicked in the side panel (which took the focus): it
+  // opens and takes the focus, the page scrolled only if none of it is in sight; says whether there was one.
   land?: RefObject<(() => boolean) | undefined>;
   noLead?: boolean;
   onAnswer: (
@@ -197,33 +195,22 @@ export function QuestionColumn({
         : order.includes(opened)
           ? opened
           : heir(seen.current, order, opened);
-  // The Djinn's eye watches the question that matters most until you go to one, then reads the one you went to.
-  const { matters, blocking } = useMemo(() => {
-    const all = groups.flatMap((g) => g.questions);
-    return {
-      matters: mattersMost(
-        all.map((q) => ({ id: q.item.id, urgency: urgency(q) })),
-      ),
-      blocking: all.some((q) => q.blocking.length > 0),
-    };
-  }, [groups]);
-  useEyeColumn({
-    current,
-    chosen: typeof chosen === "string",
-    matters,
-    blocking,
-  });
+  // A question that holds up a worker lets the Djinn's eye's flame shine.
+  useEyeBlocking(
+    useMemo(
+      () => groups.some((g) => g.questions.some((q) => q.blocking.length > 0)),
+      [groups],
+    ),
+  );
   const column = useRef<HTMLElement>(null);
   const keys: QuestionKeys = useRef<(e: QuestionKey) => void>(undefined);
-  // Whether the question that opens takes the focus: it was gone to (its title to the top of the view), or the open
-  // one left with the focus in it.
-  const follow = useRef(false);
+  // Whether the question that opens takes the focus: it was gone to (its title to the top of the view), landed on (seen
+  // where it is), or the open one left with the focus in it.
+  const follow = useRef<"title" | "take">(undefined);
   const shown = useRef(current);
-  // The question that had the focus last, until Escape takes it out of the column.
-  const held = useRef<string>(undefined);
 
-  const select = useCallback((id: string) => {
-    follow.current = true;
+  const select = useCallback((id: string, how: "title" | "take" = "title") => {
+    follow.current = how;
     setChosen(id);
   }, []);
 
@@ -237,8 +224,12 @@ export function QuestionColumn({
     const left = was !== undefined && was !== current && !order.includes(was);
     const moved = follow.current;
     if (!moved && !(left && focusHere(column.current))) return;
-    follow.current = false;
+    follow.current = undefined;
     if (current === undefined) return;
+    if (moved === "take") {
+      take(current);
+      return;
+    }
     const element = document.getElementById(`question-${current}`);
     if (!element) return;
     if (document.activeElement !== element)
@@ -255,18 +246,17 @@ export function QuestionColumn({
   useLayoutEffect(() => {
     if (!land) return;
     land.current = () => {
-      const { current } = state.current;
-      if (current === undefined || held.current !== current) return false;
-      const element = document.getElementById(`question-${current}`);
-      if (!element) return false;
-      element.focus({ preventScroll: true });
-      toTitle(element);
+      const { order, current } = state.current;
+      const first = order[0];
+      if (first === undefined) return false;
+      if (first === current) take(first);
+      else select(first, "take");
       return true;
     };
     return () => {
       land.current = undefined;
     };
-  }, [land]);
+  }, [land, select]);
 
   // Put off, the open question goes to the bottom of its wish's list: the one that came after it opens, as when it
   // leaves (the last stays open). Given its place back, it stays open and the page follows it there.
@@ -364,8 +354,7 @@ export function QuestionColumn({
       }
       if (move !== "leave" || e.defaultPrevented) return;
       e.preventDefault();
-      follow.current = false;
-      held.current = undefined;
+      follow.current = undefined;
       setChosen(null);
       if (inside && document.activeElement instanceof HTMLElement)
         document.activeElement.blur();
@@ -407,11 +396,6 @@ export function QuestionColumn({
       id="questions"
       ref={column}
       aria-label={t("question.column")}
-      onFocus={(e) => {
-        const row = e.target.closest(".question-row");
-        if (row?.id.startsWith("question-"))
-          held.current = row.id.slice("question-".length);
-      }}
     >
       <h2 className="question-column-label">{t("question.column")}</h2>
       {groups.length === 0 && (

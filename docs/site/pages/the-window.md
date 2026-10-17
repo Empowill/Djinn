@@ -49,8 +49,8 @@ out when it is zero:
 | #3 | Its rank, never a count |
 
 A click on a wish opens it on its first tab, its questions, the page at their top; even the wish already shown, from
-another tab or a tilasm open full size, which closes. If a question had the focus, the page comes back to it and gives
-it the focus again.
+another tab or a tilasm open full size, which closes. Its first question opens with the focus: answer it, or scroll it,
+from the keyboard at once.
 
 Drag a wish by its grip, on its left, or press Alt+Up or Alt+Down on it, to change its rank; a thin line shows where it
 will land. Drop a paused or granted wish among the active ones to make it active at that rank: the last active wish
@@ -110,20 +110,21 @@ levels are in [Question and move](#question-and-move).
 
 The seal at the top of the side panel is the Djinn's eye, drawn from it: its eight-pointed star for the iris, its
 saffron flame for the pupil. Solar and wide open in the light theme, a mocking demon with a half-lowered lid in the
-dark. The eye opens and goes where to look now:
+dark. The eye opens and rests by what has the focus, the element your keys act on, and only there:
 
 | Where it rests | When |
 | --- | --- |
-| In the margin of a question, watching it | You just arrived: the question that matters most, one a worker waits for, then one needed before something, then the oldest |
-| In the margin of a question, reading it | The question you went to, by a click or the arrows |
-| On **Write to the Djinn**, in the round porthole on its left | No question is open |
+| In the margin of a question, reading it | The question has the focus: the first one when you click the wish, the one you go to by a click or the arrows |
+| Under a tab, looking up at it | The tab has the focus |
+| On **Write to the Djinn**, in the round porthole on its left | The pill or its field has the focus, or nothing that has a place does |
 | Home, in the seal | A page with none of those; closed while the lead is stopped; pale while Djinn's stream is cut |
 
 From one place to the next it flies on a curve, slowly enough to be followed, and lands in the margin: at rest, it
 covers nothing and scrolls with what it watches. It flies under Write to the Djinn, never over it: there its porthole
-opens, the eye behind it blinks, and the message icon comes back when it leaves. It never moves while you type in a field, press a mouse button, scroll
-or read a dialog, nor while the window is in the background: it waits, then goes to the last place asked. It never takes
-the focus or a click. Its flame shines while something waits for you: a question a worker waits for, a worker waiting,
+opens, the eye behind it blinks, and the message icon comes back when it leaves. Open, the pill keeps the porthole on
+the left of your text. It never moves while you type in a field, but to that field's place, press a mouse button,
+scroll or read a dialog, nor while the window is in the background: it waits, then goes to the last place asked. It
+never takes the focus or a click. Its flame shines while something waits for you: a question a worker waits for, a worker waiting,
 a lit ifrit. With less motion asked by the system, it fades out and in, without flying.
 
 In the personal space, **The Djinn's eye** chooses **Alive**, **Discreet**, where it stays in the seal and only
@@ -240,7 +241,7 @@ The **global shortcut**, set in Connections & preferences, brings Djinn forward 
 - **Reading the rank as a count.** The last figure of a wish's line, #3, is its rank.
 - **Leaving the Hourglass open to keep figures.** It reads only while it shows; Djinn records the machine's history
   anyway, for a week, across restarts.
-- **Waiting for the eye to move while you type.** It waits on purpose: it goes once you leave the field.
+- **Waiting for the eye to move while you type.** It waits on purpose: it stays by the field you type in.
 - **Closing the window to stop the work.** Closing the window pauses nothing: active wishes go on while Djinn runs.
   Pause a wish to stop its workers.
 

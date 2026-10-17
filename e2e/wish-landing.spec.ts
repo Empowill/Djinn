@@ -1,10 +1,10 @@
 // A click on a wish in the side panel lands on its first tab, the questions (W174): even on the wish shown, from a
 // tilasm a question opened full size over its page, from the Tilasms tab's tilasm full size, from each other tab, the
-// side panel open or folded to its rail. The page lands at its top, or at the question that had the focus, its title
-// at the top of the view and the focus on it again. A click on another wish opens it on its questions too. Twice:
+// side panel open or folded to its rail. The page lands at its top, its first question open with the focus (W259), even
+// when another had it. A click on another wish opens it on its questions too. Twice:
 // with Chromium's own scroll anchoring, and with the script that stands in for it where WebKit lacks it (the window on
 // Linux), which must not bring the page back.
-import { type Page, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -31,35 +31,6 @@ const LONG = Array.from(
   { length: 30 },
   (_, i) => `Paragraph ${i + 1} on the wick, the oil and the flame.`,
 ).join("\n\n");
-
-// Where a question's title stands below the top of the view, under the bar of what waits for you: read two frames
-// after the click, then again later, so a scroll that brings the page back is caught.
-async function titleOnTop(page: Page, text: string) {
-  const row = page
-    .locator(".question-column .question-row")
-    .filter({ hasText: text });
-  await expect(row).toHaveClass(/current/);
-  await expect(row).toBeFocused();
-  for (let i = 0; i < 2; i++) {
-    const at = await row.evaluate(async (el) => {
-      const frame = () => new Promise((r) => requestAnimationFrame(r));
-      await frame();
-      await frame();
-      const scroll = el.closest(".mission-scroll")!;
-      const bar = scroll.querySelector(":scope > .attention-bar");
-      const top = bar
-        ? bar.getBoundingClientRect().bottom
-        : scroll.getBoundingClientRect().top;
-      return (
-        el.querySelector(".question-row-title")!.getBoundingClientRect().top -
-        top
-      );
-    });
-    expect(at, `${text}'s title below the top`).toBeGreaterThanOrEqual(0);
-    expect(at, `${text}'s title at the top`).toBeLessThan(40);
-    await page.waitForTimeout(300);
-  }
-}
 
 for (const engine of ["native", "script"] as const)
   test(`a click on a wish in the side panel brings back its questions (${engine})`, async ({
@@ -130,11 +101,14 @@ for (const engine of ["native", "script"] as const)
       const column = view.locator(".question-column");
       const rows = column.locator(".question-row");
       const scrollTop = () => scroller.evaluate((el) => el.scrollTop);
-      // Landed: the first tab, its questions, nothing over it, the page at its top and kept there.
+      // Landed: the first tab, its questions, the first open with the focus, nothing over it, the page at its top and
+      // kept there.
       const landed = async () => {
         await expect(main).toHaveAttribute("aria-selected", "true");
         await expect(rows).toHaveCount(2);
         await expect(rows.first()).toContainText(wick);
+        await expect(rows.first()).toHaveClass(/current/);
+        await expect(rows.first()).toBeFocused();
         await expect(over).toHaveCount(0);
         await expect(page.locator(".tilasm-view.full")).toHaveCount(0);
         await expect(view).toHaveJSProperty("inert", false);
@@ -150,14 +124,15 @@ for (const engine of ["native", "script"] as const)
       await expect(page.locator(".hero h1")).toHaveText(title);
       await landed();
 
-      // On its questions already, read down the page, nothing focused: back to the top.
+      // On its questions already, the second open and focused, read down the page: back to the top, on the first.
+      await page.keyboard.press("ArrowDown");
+      await expect(rows.nth(1)).toBeFocused();
       await scrollDown();
       expect(await scrollTop()).toBeGreaterThan(0);
       await nav.click();
       await landed();
 
-      // A tilasm the open question links to, full size over the page: the click closes it, and the page comes back
-      // to the question that had the focus (the link's), its title at the top, the focus on it again.
+      // A tilasm the open question links to, full size over the page: the click closes it, and the page lands.
       const link = rows
         .filter({ hasText: wick })
         .locator(".question-context")
@@ -169,10 +144,7 @@ for (const engine of ["native", "script"] as const)
       await expect(view).toHaveJSProperty("inert", true);
       await scroller.evaluate((el) => el.scrollBy(0, 900));
       await nav.click();
-      await expect(over).toHaveCount(0);
-      await expect(view).toHaveJSProperty("inert", false);
-      await expect(main).toHaveAttribute("aria-selected", "true");
-      await titleOnTop(page, wick);
+      await landed();
 
       // The Tilasms tab, its tilasm full size: the click closes it and lands on the questions; the tab shows its
       // list again afterwards, the tilasm not reopened.
@@ -231,6 +203,7 @@ for (const engine of ["native", "script"] as const)
       await expect(page.locator(".hero h1")).toHaveText(other);
       await expect(main).toHaveAttribute("aria-selected", "true");
       await expect(rows).toHaveCount(1);
+      await expect(rows.first()).toBeFocused();
       await page.locator("#view-tab-decisions").click();
       await nav.click();
       await expect(page.locator(".hero h1")).toHaveText(title);

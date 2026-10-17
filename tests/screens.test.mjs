@@ -2336,7 +2336,7 @@ test("a wish's reports are notes for agents, with no section nor count of their 
   // The For agents tab holds it with the other blocks.
   assert.match(
     html,
-    /id="view-tab-agents" aria-selected="false" class="discreet">For agents<span class="count">2<\/span>/,
+    /id="view-tab-agents" aria-selected="false" class="discreet"><span class="djinn-eye-perch" data-perch="tab:agents" aria-hidden="true"><\/span>For agents<span class="count">2<\/span>/,
   );
 });
 
@@ -2569,11 +2569,11 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   // The tasks have a tab of their own, with their count: the wish's tab does not show them.
   assert.match(
     html,
-    /role="tab" id="view-tab-main" aria-selected="true" class="active">Wish<\/button>/,
+    /role="tab" id="view-tab-main" aria-selected="true" class="active"><span class="djinn-eye-perch" data-perch="tab:main" aria-hidden="true"><\/span>Wish<\/button>/,
   );
   assert.match(
     html,
-    /role="tab" id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">2<\/span>/,
+    /role="tab" id="view-tab-tasks" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:tasks" aria-hidden="true"><\/span>Tasks<span class="count">2<\/span>/,
   );
   assert.doesNotMatch(html, /Trim the wick|Light the wick/);
   // No notes: the blocks for agents have the last tab, discreet, with their count: neither the decision nor the log.
@@ -2583,12 +2583,12 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   );
   assert.match(
     html,
-    /id="view-tab-tilasms".*role="tab" id="view-tab-agents" aria-selected="false" class="discreet">For agents<span class="count">1<\/span><\/button><\/div>/,
+    /id="view-tab-tilasms".*role="tab" id="view-tab-agents" aria-selected="false" class="discreet"><span class="djinn-eye-perch" data-perch="tab:agents" aria-hidden="true"><\/span>For agents<span class="count">1<\/span><\/button><\/div>/,
   );
   // The answered question and the decision block are in the Decisions tab, apart, with no mark.
   assert.match(
     html,
-    /role="tab" id="view-tab-decisions" aria-selected="false" class="">Decisions<span class="count">2<\/span>/,
+    /role="tab" id="view-tab-decisions" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:decisions" aria-hidden="true"><\/span>Decisions<span class="count">2<\/span>/,
   );
   assert.doesNotMatch(html, /Light it tonight\?/);
   // Nothing waits for an answer: no yes/no card waiting.
@@ -4169,7 +4169,7 @@ test("the flying carpet merges the active wishes: their questions, the blocking 
   assert.doesNotMatch(html, /focused on this wish/);
   assert.match(
     html,
-    /<div class="lead-message">[^]*?aria-keyshortcuts="[^"]*I"[^]*?<span>Write to the Djinn<\/span><\/button>/,
+    /<div class="lead-message" data-eye-place="">[^]*?aria-keyshortcuts="[^"]*I"[^]*?<span>Write to the Djinn<\/span><\/button>/,
   );
   // The blocking question of the second wish comes before the free one of the first, each marked with its wish.
   const blocking = html.indexOf("May W2 pour?");
@@ -4185,11 +4185,11 @@ test("the flying carpet merges the active wishes: their questions, the blocking 
   assert.match(html, /W2 waits for your answer to Q01 before it may edit\./);
   assert.match(
     html,
-    /id="view-tab-tasks"[^>]*>Tasks<span class="count">3<\/span>/,
+    /id="view-tab-tasks"[^>]*><span class="djinn-eye-perch" data-perch="tab:tasks" aria-hidden="true"><\/span>Tasks<span class="count">3<\/span>/,
   );
   assert.match(
     html,
-    /id="view-tab-decisions"[^>]*>Decisions<span class="count">1<\/span>/,
+    /id="view-tab-decisions"[^>]*><span class="djinn-eye-perch" data-perch="tab:decisions" aria-hidden="true"><\/span>Decisions<span class="count">1<\/span>/,
   );
   assert.doesNotMatch(html, /Tonight\?/);
   // On the right, the glance (Decision Q08): the worker that runs, and nothing else of the wishes, not what they
@@ -5035,7 +5035,7 @@ test("a tilasm's draft comments are counted in gold on its head, its row and the
     );
   assert.match(
     tabs(2),
-    /id="view-tab-tilasms"[^>]*>Tilasms<span class="count">2<\/span><span class="draft-dot" title="2 draft comments" aria-label="2 draft comments">2<\/span><\/button>/,
+    /id="view-tab-tilasms"[^>]*><span class="djinn-eye-perch" data-perch="tab:tilasms" aria-hidden="true"><\/span>Tilasms<span class="count">2<\/span><span class="draft-dot" title="2 draft comments" aria-label="2 draft comments">2<\/span><\/button>/,
   );
   assert.doesNotMatch(tabs(0), /draft-dot/);
 });
@@ -5566,7 +5566,7 @@ test("a wish's view has a Tilasms tab beside Tasks and Decisions, with its count
   );
   assert.match(
     html,
-    /id="view-tab-decisions".*id="view-tab-tilasms" aria-selected="false" class="">Tilasms<span class="count">1<\/span>/,
+    /id="view-tab-decisions".*id="view-tab-tilasms" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:tilasms" aria-hidden="true"><\/span>Tilasms<span class="count">1<\/span>/,
   );
 });
 
@@ -6829,7 +6829,7 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
   assert.doesNotMatch(plan, /The same scenario runs on macOS/);
   assert.match(
     plan,
-    /id="view-tab-tasks"[^>]*>Tasks<span class="count">2<\/span>/,
+    /id="view-tab-tasks"[^>]*><span class="djinn-eye-perch" data-perch="tab:tasks" aria-hidden="true"><\/span>Tasks<span class="count">2<\/span>/,
   );
   const fp = s.flightPlan([lamp], {
     [wishId]: { tasks, questions: [], blocks: [], loaded: true },
@@ -7428,7 +7428,7 @@ test("regression W507: a wish without a project shows its task, its rank as a ra
   // (a) The Tasks tab counts it.
   assert.match(
     html,
-    /id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">1<\/span>/,
+    /id="view-tab-tasks" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:tasks" aria-hidden="true"><\/span>Tasks<span class="count">1<\/span>/,
   );
 
   // (a) In the Tasks tab, a task part of no azima shows, folded under Finished once done, a clean Done whether its
@@ -11982,7 +11982,7 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
   );
   assert.match(
     tabs,
-    /id="view-tab-tasks".*id="view-tab-review" aria-selected="true" class="active">Review<span class="count">3<\/span>.*id="view-tab-decisions"/,
+    /id="view-tab-tasks".*id="view-tab-review" aria-selected="true" class="active"><span class="djinn-eye-perch" data-perch="tab:review" aria-hidden="true"><\/span>Review<span class="count">3<\/span>.*id="view-tab-decisions"/,
   );
   // The flying carpet has no Review tab.
   assert.doesNotMatch(

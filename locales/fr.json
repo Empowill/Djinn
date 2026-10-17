@@ -921,7 +921,7 @@
   "settings.notifications_unavailable": "Indisponibles ici : sur macOS, Djinn les affiche quand il tourne depuis son app.",
   "settings.presence": "L’œil du Djinn",
   "settings.presence_alive": "Vivant",
-  "settings.presence_detail": "Le sceau s’ouvre en un œil qui se pose là où regarder : la question qui compte, celle que vous lisez, ou Écrire au Djinn. Discret le garde dans le sceau.",
+  "settings.presence_detail": "Le sceau s’ouvre en un œil qui se pose là où est le focus : la question que vous lisez, un onglet, ou Écrire au Djinn. Discret le garde dans le sceau.",
   "settings.presence_discreet": "Discret",
   "settings.presence_none": "Aucun",
   "settings.shortcut": "Raccourci global",

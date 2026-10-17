@@ -95,7 +95,8 @@ marked, the first active wish by rank is principal.
 
 A wish opens on its **Wish** tab: what waits for you (**Your move**), the questions being investigated, the journal
 (**Show the commands**), and the **Rights** of its workers in each project. A click on the wish in the side panel
-always brings this tab back, from any other tab or a tilasm open full size. Beside it:
+always brings this tab back, from any other tab or a tilasm open full size, its first question open with the focus.
+Beside it:
 
 - **Tasks**: what moves or waits first, then the azimas with the work part of each.
 - **Review**: the merged work, a line per task, to mark reviewed.
