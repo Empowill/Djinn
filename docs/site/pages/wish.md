@@ -77,7 +77,7 @@ The side panel lists the active wishes by rank, the first first. **The first wis
 short, its workers start first, and its heavy commands take the [gates](#gates) first. Within a wish, its
 [azimas](#azima) have a rank of their own, which orders its work the same way.
 
-- **Change a rank** by dragging a wish by its grip, on its left, or with Alt+Arrow. A thin line shows where it will land.
+- **Change a rank** by dragging a wish by its row, or with Alt+Arrow. A thin line shows where it will land.
 - **Make a paused wish active** by dropping it among the active ones: it takes that rank, and if three are active the
   last one is paused. **Make it the first active wish**, beside a paused wish, puts it first at once.
 - **The paused and the granted wishes** follow the active ones, each list in its own order, which you change the same

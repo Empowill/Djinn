@@ -166,8 +166,10 @@ test("a lit ifrit shows on its wish in vermilion, its band first in what waits f
       "4 things wait for you",
     );
 
-    // The wish bar: the flame with its count on the second line, and the wish's vermilion tone.
-    await expect(row.locator(".wish-tone")).toHaveClass(/tone-ifrit/);
+    // The wish bar: the logo's flame first on the second line.
+    await expect(
+      row.locator(".wish-counts .wish-sign.tone-ifrit"),
+    ).toBeVisible();
     await expect(row.getByRole("img", { name: "1 ifrit lit" })).toBeVisible();
     // The wish's head: its badge and the word of its state.
     await expect(
@@ -199,7 +201,7 @@ test("a lit ifrit shows on its wish in vermilion, its band first in what waits f
     // Finished, it ends: no band, no flame on its wish, and its card is no longer lit.
     await finish.click();
     await expect(band).toHaveCount(0, { timeout: 20_000 });
-    await expect(row.locator(".wish-tone")).not.toHaveClass(/tone-ifrit/);
+    await expect(row.locator(".wish-sign.tone-ifrit")).toHaveCount(0);
     await expect(card).not.toHaveClass(/tone-ifrit/);
     expect(errors).toEqual([]);
   } finally {

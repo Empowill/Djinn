@@ -1,4 +1,4 @@
-// The wish bar's drag and drop (Q01): every wish is dragged by its grip, on the left of its row; while it is dragged, a
+// The wish bar's drag and drop (Q01): every wish is dragged by its row; while it is dragged, a
 // thin line shows where it would land. A paused wish dropped among the paused ones changes place there, an order the
 // server keeps; dropped among the active ones, it becomes active at that rank, and the last active wish is paused,
 // first among the paused ones.
@@ -104,11 +104,10 @@ test("a paused wish is dragged among the paused ones, then among the active ones
     );
   await expect.poll(shown).toEqual([a1, a2, a3, p3, p2, p1]);
 
-  // The grip is on the left of each row, before the wish's icon.
+  // No grip: the row itself is dragged, the wish's icon first on it.
   for (const title of [a1, p1]) {
-    const grip = (await row(title).locator(".wish-grip").boundingBox())!;
-    const icon = (await row(title).locator(".wish-tone").boundingBox())!;
-    expect(grip.x + grip.width).toBeLessThanOrEqual(icon.x + 1);
+    await expect(row(title).locator(".wish-grip")).toHaveCount(0);
+    await expect(row(title).locator("svg.wish-icon")).toBeVisible();
   }
 
   // P1 dropped above P3: first among the paused, for the server too; nothing becomes active.

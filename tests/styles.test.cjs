@@ -241,6 +241,126 @@ test("the wish icons' colours keep their contrast on the menu and stay apart fro
     );
 });
 
+// A wish's row in the side panel (L21): each state of its second line, its title and its rank read at 4.5:1 on the menu,
+// at rest, under the hover's veil, and on a selected row's ground, which takes no veil, in both themes; the grey of a
+// resting wish's icon and of a mark reads at 3:1, a graphic's level, on the same grounds.
+test("a wish's row keeps its contrast at rest, hovered and selected, in the dark and the light theme", () => {
+  const read = (file, selector) => {
+    const css = fs.readFileSync(path.join(root, file), "utf8");
+    const start = css.indexOf(selector + " {");
+    return Object.fromEntries(
+      [
+        ...css
+          .slice(start, css.indexOf("\n}", start))
+          .matchAll(/--([\w-]+):\s*(#[0-9a-f]{6}|\d+%|var\(--[\w-]+\));/g),
+      ].map((m) => [m[1], m[2]]),
+    );
+  };
+  const wish = fs.readFileSync(path.join(root, "wish.css"), "utf8");
+  const review = fs.readFileSync(path.join(root, "review.css"), "utf8");
+  // The grounds as the stylesheets give them: the menu's, the selected row's (no veil on it), the veil's strength.
+  assert.match(
+    fs.readFileSync(path.join(root, "styles.css"), "utf8"),
+    /\.mission-nav\.selected \{\s*background: var\(--n-1e\);/,
+  );
+  assert.match(
+    review,
+    /html\[data-theme="light"\] \.mission-nav\.selected,\nhtml\[data-theme="light"\] \.nav-item\.selected \{\s*background: var\(--line\);/,
+  );
+  assert.match(
+    review,
+    /html\[data-theme="light"\] \.sidebar \{\s*background: #f0f0f3;/,
+  );
+  assert.match(
+    wish,
+    /\.mission-nav\.wish-nav\.selected::after \{\s*opacity: 0;/,
+  );
+  assert.match(
+    wish,
+    /\.wish-nav\.rest \.wish-icon \{\s*--il-line: var\(--wi-rest\);\s*--il-gild: var\(--wi-rest\);/,
+  );
+  assert.match(review, /\.wish-mark \{\s*color: var\(--wi-rest\);/);
+  const dark = {
+    ...read("styles.css", ":root"),
+    ...read("review.css", ":root"),
+    ...read("theme.css", ":root"),
+  };
+  const themes = {
+    dark: { theme: dark, menu: "n-14", selected: "n-1e", rank: "muted" },
+    light: {
+      theme: {
+        ...dark,
+        ...read("styles.css", 'html[data-theme="light"]'),
+        ...read("review.css", 'html[data-theme="light"]'),
+        ...read("theme.css", 'html[data-theme="light"]'),
+      },
+      menu: "#f0f0f3",
+      selected: "line",
+      rank: "n-a9",
+    },
+  };
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const lum = (c) => {
+    const [r, g, b] = c.map((v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+  for (const [name, { theme, menu, selected, rank }] of Object.entries(
+    themes,
+  )) {
+    const value = (token) => {
+      if (token.startsWith("#")) return token;
+      const v = theme[token];
+      assert.ok(v, `${name}: --${token} is set`);
+      const ref = /^var\(--([\w-]+)\)$/.exec(v);
+      return ref ? value(ref[1]) : v;
+    };
+    const colour = (token) => rgb(value(token));
+    const strength = parseFloat(value("hover-strength")) / 100;
+    const veil = colour("n-ff");
+    const rest = colour(menu);
+    const grounds = {
+      rest,
+      hovered: rest.map((v, i) => veil[i] * strength + v * (1 - strength)),
+      selected: colour(selected),
+    };
+    const texts = [
+      "st-ifrit",
+      "st-waiting",
+      "st-running",
+      "st-investigating",
+      "st-paused",
+      "st-planned",
+      "st-watching",
+      "st-proof",
+      "n-9c",
+      "n-e7",
+      rank,
+    ];
+    if (name === "light") texts.push("muted", "text");
+    for (const [ground, back] of Object.entries(grounds)) {
+      for (const text of texts) {
+        const r = ratio(colour(text), back);
+        assert.ok(
+          r >= 4.5,
+          `${name}: --${text} ${ground} reads at ${r.toFixed(2)}:1`,
+        );
+      }
+      const r = ratio(colour("wi-rest"), back);
+      assert.ok(
+        r >= 3,
+        `${name}: --wi-rest ${ground} reads at ${r.toFixed(2)}:1`,
+      );
+    }
+  }
+});
+
 // Every surface follows the theme through the tokens of theme.css. The light ramp lifts the texts to 4.5:1 on the page
 // and on a card, in order; the terminal's colours read at 4.5:1 on its light ground; the family of what waits and the
 // danger colour read on their grounds in both themes. Clément's dim greys (65 to 88) stay quiet in the dark theme.

@@ -27,26 +27,12 @@
   letter-spacing: 0.02em;
 }
 
-/* The side panel: ranks, the three places, the sub-lists. Each wish is dragged by its grip, on its left: dim until the
-   pointer is on the row; 12px of icon in 8px, as its dots are narrow, close to the wish's icon. */
+/* The side panel: ranks, the three places, the sub-lists. Each wish is dragged by its row. */
 .wish-nav[draggable="true"] {
   cursor: grab;
 }
 .wish-nav.dragged {
   opacity: 0.4;
-}
-.wish-grip {
-  display: inline-flex;
-  flex-shrink: 0;
-  justify-content: center;
-  width: 0.5rem;
-  margin: 0 -0.25rem;
-  color: var(--muted-dim);
-  opacity: 0.5;
-}
-.wish-nav:hover .wish-grip,
-.wish-nav:focus-visible .wish-grip {
-  opacity: 1;
 }
 /* Where a dragged wish would land: a thin line between two wishes, over the edge they share. */
 .wish-drop-line {
@@ -68,6 +54,7 @@
   font: var(--font-size-body) var(--mono);
   color: var(--muted);
 }
+/* --muted stays under 4.5:1 on a hovered row of the light menu (L17): its darker grey. */
 html[data-theme="light"] .mission-nav .wish-counts .wish-rank {
   color: var(--n-a9);
 }
@@ -78,15 +65,64 @@ html[data-theme="light"] .mission-nav .wish-counts .wish-rank {
 }
 .sidebar-section-label.sub {
   width: 100%;
+  height: 2.0625rem;
   justify-content: flex-start;
   gap: var(--space-1);
   padding: 0.75rem 0.625rem 0.375rem;
   font-size: var(--font-size-body);
   letter-spacing: 0.5px;
-  color: var(--muted-dim);
+  color: var(--muted);
 }
-/* An active wish takes a second line: its counts and its rank, under the title, past the grip (8px, less 8px of margins,
-   and the 9px gap) and the icon (14px and the 9px gap). Four counts at once wrap rather than hide the rank. */
+/* A wish's row is built around its icon (wish-icon.tsx, L09 v6), 24px, the size of the bank's grid, at the same place
+   folded or unfolded: 1.3125rem from the side panel's edge (its padding, --sidebar-pad, and the row's), the same top in
+   its row, the rows above it (styles.css) and the row itself as tall in both. Folded, an active wish keeps the room of
+   its second line under the icon, where its dots hang; the sub-lists keep their labels' room (wish-sidebar.tsx). */
+.mission-nav.wish-nav {
+  padding: 0.625rem;
+  padding-left: calc(1.3125rem - var(--sidebar-pad));
+}
+/* Folded, the row is the icon and its padding on both sides, its ground centred on it, whatever room a scroll bar takes. */
+.sidebar-collapsed .mission-nav.wish-nav {
+  justify-content: flex-start;
+  width: calc(1.5rem + 2 * (1.3125rem - var(--sidebar-pad)));
+  padding: 0.625rem calc(1.3125rem - var(--sidebar-pad));
+}
+.sidebar-collapsed .mission-nav.wish-nav.ranked {
+  padding-bottom: calc(0.625rem + 0.3125rem + 1.125rem);
+}
+/* Folded, the list reaches the side panel's edges, its padding in their place, and starts under its label: the marks on
+   the icons' corners are not cut, and the icons do not move. */
+.sidebar-collapsed .wish-list {
+  margin: 0 calc(-1 * var(--sidebar-pad));
+  padding-inline: var(--sidebar-pad);
+}
+.sidebar-collapsed .wish-drop-line {
+  left: 1rem;
+  right: 1rem;
+}
+@media (max-width: 820px) {
+  .mission-nav.wish-nav {
+    justify-content: flex-start;
+    width: calc(1.5rem + 2 * (1.3125rem - var(--sidebar-pad)));
+    padding: 0.625rem calc(1.3125rem - var(--sidebar-pad));
+  }
+  .mission-nav.wish-nav.ranked {
+    padding-bottom: calc(0.625rem + 0.3125rem + 1.125rem);
+  }
+  .wish-list {
+    margin-inline: calc(-1 * var(--sidebar-pad));
+    padding-inline: var(--sidebar-pad);
+  }
+}
+/* Selected, a row keeps its ground and takes no hover's tint (L21): its title is bolder and its icon's ink brighter. */
+.mission-nav.wish-nav.selected::after {
+  opacity: 0;
+}
+.mission-nav.wish-nav.selected > .wish-title {
+  font-weight: 500;
+}
+/* An active wish takes a second line: its states and its rank, under the title, past the icon (24px and the 9px gap).
+   Four states at once wrap rather than hide the rank. */
 .wish-nav.counted {
   flex-wrap: wrap;
   row-gap: 0.3125rem;
@@ -99,48 +135,54 @@ html[data-theme="light"] .mission-nav .wish-counts .wish-rank {
   gap: 0.25rem 0.625rem;
   min-width: 0;
   min-height: 1.125rem;
-  padding-left: 2rem;
+  padding-left: 2.0625rem;
+  font: var(--font-size-body) var(--mono);
 }
-/* On that line a count is its icon and its number in its state's colour, with no pill around it: four fit beside the
-   rank. The rank, light, closes the line. */
-.mission-nav .wish-counts .count-pill {
+/* On that line a state is its glyph and its number in its state's colour, with no pill around it (wish-sidebar.tsx,
+   Sign): what runs a full dot, the questions the small hand, a lit ifrit the logo's flame. The rank closes the line. */
+.wish-sign {
+  display: inline-flex;
+  align-items: center;
   gap: 0.25rem;
-  padding: 0;
-  border: 0;
-  background: none;
+  color: var(--tone);
+  font: var(--font-size-body) var(--mono);
+  white-space: nowrap;
+}
+.wish-sign b {
+  font-weight: 600;
+}
+.wish-sign-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.wish-sign .waiting-hand {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+.wish-sign .ifrit-flame {
+  width: 0.75rem;
+  height: 0.8125rem;
 }
 .mission-nav .wish-counts .wish-rank {
   padding: 0;
   border: 0;
   background: none;
+  color: var(--muted);
 }
-/* A wish's own icon (wish-icon.tsx), with its marks: shown on the folded rail, and under 820px wide, where the bar
-   narrows to its icons by CSS alone, unfolded (styles.css), its second line hidden; the state's icon (.wish-tone)
-   shows the rest of the time. Absolute marks, so the row keeps its height when a count comes and goes. */
+/* A wish's own icon, with its marks: the hand, the flame, the dots and the corners show on the folded rail, and under
+   820px wide, where the bar narrows to its icons by CSS alone, unfolded (styles.css), its second line hidden. Unfolded,
+   the second line says them. Absolute marks, so the row keeps its height when a count comes and goes. */
 .wish-emblem {
   position: relative;
-  display: none;
+  display: inline-flex;
   flex: 0 0 auto;
   --halo: var(--n-14);
 }
-.sidebar-collapsed .wish-emblem {
-  display: inline-flex;
-}
-.sidebar-collapsed .wish-tone {
-  display: none;
-}
-.sidebar-collapsed .mission-nav.wish-nav {
-  padding: 0.8125rem;
-}
-@media (max-width: 820px) {
-  .wish-emblem {
-    display: inline-flex;
-  }
-  .mission-nav > .wish-tone {
+@media not all and (max-width: 820px) {
+  .app:not(.sidebar-collapsed) .wish-nav > .wish-emblem > :not(.wish-icon) {
     display: none;
-  }
-  .mission-nav.wish-nav {
-    padding: 0.8125rem;
   }
 }
 .mission-nav.selected .wish-emblem {
@@ -149,9 +191,55 @@ html[data-theme="light"] .mission-nav .wish-counts .wish-rank {
 .nav-item.selected .wish-emblem {
   --halo: var(--n-28);
 }
-/* The line of an icon in the title's ink goes to the selected title's. */
+/* The line of an icon in the title's ink goes to the selected title's. A paused or granted wish's icon gives up its
+   duo: line and gilding in one grey, the mark's. */
 .mission-nav.selected .wish-icon {
-  --wi-ink: var(--n-f6);
+  --wi-ink: var(--wi-ink-selected);
+}
+.wish-nav.rest .wish-icon {
+  --il-line: var(--wi-rest);
+  --il-gild: var(--wi-rest);
+}
+/* The states move when the menu folds or unfolds, the icon never (styles.css, .sidebar-glide): unfolding, the second
+   line comes out from the icon's side; folding, the marks rise from it onto the icon's corners. By transform and
+   opacity only, once; with reduced motion, a fade. */
+.sidebar-glide .wish-counts {
+  animation: wish-states-open 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sidebar-glide.sidebar-collapsed .wish-emblem > :not(svg) {
+  animation: wish-states-fold 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes wish-states-open {
+  from {
+    opacity: 0;
+    transform: translateX(-0.75rem);
+  }
+}
+@keyframes wish-states-fold {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+@keyframes wish-states-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-glide .wish-counts,
+  .sidebar-glide.sidebar-collapsed .wish-emblem > :not(svg) {
+    animation-name: wish-states-fade !important;
+    animation-duration: 180ms !important;
+  }
+}
+html[data-motion="reduced"] .sidebar-glide .wish-counts,
+html[data-motion="reduced"]
+  .sidebar-glide.sidebar-collapsed
+  .wish-emblem
+  > :not(svg) {
+  animation-name: wish-states-fade !important;
+  animation-duration: 180ms !important;
 }
 /* The hand and the flame without background (L09 v6, Q57 C2): a halo of the row's colour keeps them apart from the
    icon, no pill, no disc. The hand and the questions' count on its upper right, the flame on its upper left. */
@@ -191,6 +279,10 @@ html[data-theme="light"] .mission-nav .wish-counts .wish-rank {
 }
 .ifrit-flame-core {
   fill: var(--ifrit-core);
+}
+/* On a wish's icon, 24px, the hand overlaps its upper right corner by 6px, as it did the icons of 20px. */
+.wish-nav .wish-hand-corner {
+  left: calc(100% - 0.375rem);
 }
 /* Under the icon, a dot for what works, merges included, and one for what investigates: never a number. */
 .wish-acts {
@@ -238,7 +330,7 @@ html[data-theme="light"] .mission-nav .wish-counts .wish-rank {
 .wish-list {
   position: relative;
   flex: 0 1 auto;
-  max-height: calc(3 * 3.875rem + 2.0625rem + 3 * 2.4375rem);
+  max-height: calc(3 * 4.1875rem + 2.0625rem + 3 * 2.75rem);
   overflow-y: hidden;
   scrollbar-gutter: stable;
 }

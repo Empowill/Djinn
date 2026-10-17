@@ -216,14 +216,16 @@ button {
   min-height: 33.75rem;
   overflow: hidden;
 }
+/* Its side padding is a variable the wishes' rows read, so that their icons keep their place whatever it is (wish.css). */
 .sidebar {
+  --sidebar-pad: 0.875rem;
   width: var(--sidebar-width);
   flex-shrink: 0;
   background: var(--n-14);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  padding: 0 0.875rem;
+  padding: 0 var(--sidebar-pad);
 }
 .sidebar-brand {
   height: 4.9375rem;
@@ -373,6 +375,13 @@ html[data-theme="light"] .wordmark-period {
   background: var(--n-28);
   color: var(--n-e7);
 }
+/* The rows above the wishes' list are as tall folded as unfolded: the wishes' icons keep their place (wish.css). */
+.new-mission,
+.sidebar .nav-item,
+.sidebar-content > .sidebar-section-label {
+  flex-shrink: 0;
+  height: 2.5rem;
+}
 .nav-counter {
   margin-left: auto;
   margin-block: -0.1875rem;
@@ -462,7 +471,7 @@ html[data-theme="light"] .wordmark-period {
   --sidebar-width: 4.1875rem;
 }
 .sidebar-collapsed .sidebar {
-  padding: 0 0.625rem;
+  --sidebar-pad: 0.625rem;
 }
 .sidebar-collapsed .sidebar-brand {
   padding: 0 0.625rem;
@@ -1603,7 +1612,7 @@ html[data-still] .operating-load * {
     --sidebar-width: 12.3125rem;
   }
   .sidebar {
-    padding: 0 0.6875rem;
+    --sidebar-pad: 0.6875rem;
   }
   .version-tag {
     font-size: var(--font-size-body, 0.75rem);
@@ -1725,7 +1734,7 @@ html[data-still] .operating-load * {
     --sidebar-width: 4.1875rem;
   }
   .sidebar {
-    padding: 0 0.625rem;
+    --sidebar-pad: 0.625rem;
   }
   .sidebar-brand-main .brand {
     font-size: 0;
@@ -1737,7 +1746,6 @@ html[data-still] .operating-load * {
   .sidebar-section-label,
   .sidebar .nav-item > span,
   .mission-nav > .wish-title,
-  .mission-nav > .wish-grip,
   .mission-nav > small,
   .mission-nav > .wish-counts,
   .profile > span:nth-child(2),
@@ -2361,11 +2369,10 @@ html.native-mac .app .page-header {
 html:not(.native-mac) .sidebar {
   padding-top: 1.75rem;
 }
+/* Its width only: a padding gliding too would move the wishes' icons, which keep their place (wish.css). */
 .sidebar {
   width: var(--sidebar-width);
-  transition:
-    width 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    padding 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .sidebar-brand {
   flex: 0 0 4.9375rem;
@@ -2378,13 +2385,30 @@ html:not(.native-mac) .sidebar {
   flex-direction: column;
   overflow: hidden;
 }
+/* Folded, or narrowed under 820px, it reaches the side panel's edges, its padding in their place: the small hand and its
+   count on an icon's corner pass the rail's column and are not cut. */
+.sidebar-collapsed .sidebar-content {
+  margin-inline: calc(-1 * var(--sidebar-pad));
+  padding-inline: var(--sidebar-pad);
+}
+@media (max-width: 820px) {
+  .sidebar-content {
+    margin-inline: calc(-1 * var(--sidebar-pad));
+    padding-inline: var(--sidebar-pad);
+  }
+}
 /* Folded, the sidebar narrows to its rail of icons and counts; unfolded, back to its labels. Its content glides in
-   from the left as the width changes, the next state drawn at once rather than labels squeezed in a narrow column.
-   The two names alternate so that each fold plays the glide again. */
-.sidebar-glide .sidebar-content {
+   from the left as the width changes, the next state drawn at once rather than labels squeezed in a narrow column;
+   but for the wishes' icons, which stay where they are, and their states, which move on their own (wish.css). The
+   two names alternate so that each fold plays the glide again. */
+.sidebar-glide .sidebar-content > :not(.wish-list),
+.sidebar-glide .wish-list > :not(.wish-nav, .wish-row),
+.sidebar-glide .wish-row > .wish-first,
+.sidebar-glide .wish-nav > .wish-title {
   animation: sidebar-glide-open 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.sidebar-glide.sidebar-collapsed .sidebar-content {
+.sidebar-glide.sidebar-collapsed .sidebar-content > :not(.wish-list),
+.sidebar-glide.sidebar-collapsed .wish-list > :not(.wish-nav, .wish-row) {
   animation-name: sidebar-glide-fold;
 }
 @keyframes sidebar-glide-open {

@@ -351,14 +351,20 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.match(html, /1 granted/);
   // Granted wishes stay folded until asked.
   assert.doesNotMatch(html, /Light it/);
-  // Every wish shown is dragged by its grip, on the left of its row: the active ones to a new rank, a paused one among
-  // them or among the paused ones (Q01).
+  // Every wish shown is dragged by its row, no grip on it: the active ones to a new rank, a paused one among them or
+  // among the paused ones (Q01). The row starts with the wish's icon, 24px, in place of the grip and the state's icon.
   assert.equal(html.match(/draggable="true"/g).length, 3);
+  assert.doesNotMatch(html, /wish-grip|lucide-grip-vertical|wish-tone/);
   assert.equal(
     html.match(
-      /draggable="true"><span class="wish-grip" aria-hidden="true"><svg[^>]*lucide-grip-vertical/g,
+      /draggable="true"><span class="wish-emblem"><svg class="lucide wish-icon[^"]*" width="24" height="24"/g,
     ).length,
     3,
+  );
+  // A paused or granted wish rests: its icon in one grey (wish.css), no second line.
+  assert.match(
+    html,
+    /class="mission-nav wish-nav[^"]*\brest\b[^"]*" title="Trim the wick/,
   );
   assert.match(
     html,
@@ -377,8 +383,7 @@ test("the side panel ranks the active wishes, counts the three places, and folds
     html,
     /<span class="wish-title">Trim the wick<\/span><\/button>/,
   );
-  // A wish ready to grant says it there, its icon the clipboard to check, not a raised hand.
-  assert.match(html, /wish-tone tone-proof/);
+  // A wish ready to grant says it there, before its rank.
   assert.match(html, />ready to grant<\/span><small class="wish-rank">/);
   // Each wish says at a glance what waits and what runs: an icon and a count, with their words, on its second line.
   const sidebar = (
@@ -402,22 +407,33 @@ test("the side panel ranks the active wishes, counts the three places, and folds
     );
   const counted = sidebar(false);
   const row = counted.slice(counted.indexOf("wish-nav"));
-  assert.match(row, /aria-label="2 questions wait for your answer."/);
-  assert.match(row, /aria-label="1 running"[^>]*><span class="live-dot"/);
-  // A watcher is counted apart: it waits for its command to print, it does not work.
-  assert.match(row, /count-pill tone-watching" title="1 watching"/);
+  // The questions: the small hand and their count, no bubble, no pill; what runs, a full dot and its count, no live
+  // ring (no infinite animation).
+  assert.match(
+    row,
+    /<span class="wish-sign tone-waiting" title="2 questions wait for your answer." aria-label="2 questions wait for your answer." role="img"><svg class="lucide waiting-hand"[^>]*>.*?<\/svg><b>2<\/b><\/span>/,
+  );
+  assert.match(
+    row,
+    /<span class="wish-sign tone-running" title="1 running" aria-label="1 running" role="img"><span class="wish-sign-dot"><\/span><b>1<\/b><\/span>/,
+  );
+  assert.doesNotMatch(
+    row,
+    /live-dot|count-pill|lucide-message-circle-question/,
+  );
+  // A watcher is counted apart, its eye: it waits for its command to print, it does not work.
+  assert.match(
+    row,
+    /wish-sign tone-watching" title="1 watching"[^>]*><svg[^>]*lucide-eye/,
+  );
   // What waits for you first, then what works, then what watches, then the rank.
   const at = (text) => row.indexOf(text);
   assert.ok(at('title="2 questions') < at('title="1 running"'));
   assert.ok(at('title="1 running"') < at('title="1 watching"'));
   assert.ok(at('title="1 watching"') < at("wish-rank"));
-  // The questions have their count: no raised hand repeats it beside the title, nor on the count (Q01). The state's
-  // icon says what the wish does.
-  assert.match(row, /wish-tone tone-running"/);
-  assert.match(row, /lucide-message-circle-question/);
-  assert.doesNotMatch(row, /lucide-hand/);
-  // The wish's own icon waits for a window under 820px wide, whose CSS hides the second line and the state's icon: the
-  // wish's mark (it has no icon yet), the small hand and its count on its corner, a blue dot under it.
+  // The wish's own icon is drawn unfolded too, its marks with it, which only the folded rail and a window under 820px
+  // wide show (wish.css): the wish's mark (it has no icon yet), the small hand and its count on its corner, a blue dot
+  // under it.
   assert.match(
     row,
     /<span class="wish-emblem"><svg[^>]*class="lucide wish-icon wish-mark"[^>]*>(?:(?!<\/svg>).)*<\/svg>/,
@@ -435,10 +451,16 @@ test("the side panel ranks the active wishes, counts the three places, and folds
     sidebar(false, { questions: 0, running: 1, watching: 0, merging: 0 }),
     /wish-hand-corner|waiting-hand/,
   );
-  // Folded to the rail, the wish's icon is all that shows, with its hand and its dot: no state's icon, no count.
+  // Folded to the rail, the wish's icon is all that shows, the same, with its hand and its dot: no second line.
   const rail = sidebar(true);
-  assert.doesNotMatch(rail, /wish-tone/);
-  assert.match(rail, /wish-emblem/);
+  assert.match(
+    rail,
+    /wish-emblem"><svg class="lucide wish-icon wish-mark" width="24" height="24"/,
+  );
+  assert.match(
+    counted,
+    /wish-emblem"><svg class="lucide wish-icon wish-mark" width="24" height="24"/,
+  );
   assert.match(rail, /wish-hand-corner/);
   assert.match(rail, /wish-act tone-running/);
   assert.doesNotMatch(rail, /wish-counts/);
@@ -483,12 +505,12 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.match(
     placeRow,
     new RegExp(
-      `<span class="count-pill tone-planned" title="${placeTitle}" aria-label="${placeTitle}" role="img"><svg[^>]*lucide-armchair[^>]*>.*?</svg><b>2</b></span>`,
+      `<span class="wish-sign tone-planned" title="${placeTitle}" aria-label="${placeTitle}" role="img"><svg[^>]*lucide-armchair[^>]*>.*?</svg><b>2</b></span>`,
     ),
   );
   const placeAt = (text) => placeRow.indexOf(text);
-  assert.ok(placeAt('title="1 running"') < placeAt("count-pill tone-planned"));
-  assert.ok(placeAt("count-pill tone-planned") < placeAt('title="1 watching"'));
+  assert.ok(placeAt('title="1 running"') < placeAt("wish-sign tone-planned"));
+  assert.ok(placeAt("wish-sign tone-planned") < placeAt('title="1 watching"'));
   const placedRail = sidebar(true, {
     questions: 0,
     running: 1,
@@ -528,7 +550,7 @@ test("the side panel ranks the active wishes, counts the three places, and folds
       onNewProject() {},
     }),
   );
-  assert.match(watched, /wish-tone tone-watching/);
+  assert.match(watched, /wish-sign tone-watching/);
   assert.doesNotMatch(watched, /running/);
   assert.match(html, />lamp</);
 });
@@ -6088,18 +6110,24 @@ test("an investigator at work shows violet, apart from the running workers, wher
     );
   const pill = (tone, label) =>
     new RegExp(`count-pill tone-${tone}" title="${label}"`);
+  const sign = (tone, label) =>
+    new RegExp(
+      `wish-sign tone-${tone}" title="${label}"[^>]*><span class="wish-sign-dot">`,
+    );
   const investigating =
     "1 investigating: a worker finds out more on a question, for you";
-  // The second line counts the worker blue and the investigator violet, apart; the wish works, blue.
+  // The second line counts the worker blue and the investigator violet, apart, each a full dot, the worker first.
   const side = sidebar(both);
-  assert.match(side, pill("running", "1 running"));
-  assert.match(side, pill("investigating", investigating));
-  assert.match(side, /wish-tone tone-running/);
+  assert.match(side, sign("running", "1 running"));
+  assert.match(side, sign("investigating", investigating));
+  assert.ok(
+    side.indexOf("wish-sign tone-running") <
+      side.indexOf("wish-sign tone-investigating"),
+  );
   // The investigator alone: violet, and no worker runs.
   const sideAlone = sidebar(alone);
-  assert.match(sideAlone, pill("investigating", investigating));
+  assert.match(sideAlone, sign("investigating", investigating));
   assert.doesNotMatch(sideAlone, /tone-running/);
-  assert.match(sideAlone, /wish-tone tone-investigating/);
   // Nothing investigates: no violet count.
   assert.doesNotMatch(sidebar([worker]), /tone-investigating/);
 
@@ -6242,7 +6270,9 @@ test("a failed merge an agent fixes shows orange, naming its correction, everywh
   const detail = "1 merge being fixed: an agent corrects it, nothing to do";
   assert.match(
     sidebar(fixing),
-    new RegExp(`count-pill tone-fixing" title="${detail}"`),
+    new RegExp(
+      `wish-sign tone-fixing" title="${detail}"[^>]*><svg[^>]*lucide-wrench`,
+    ),
   );
   assert.doesNotMatch(sidebar(failed), /tone-fixing/);
 
@@ -12444,7 +12474,7 @@ test("the glance lists every worker in one order by state: in progress, paused, 
     );
   assert.match(
     side(false),
-    /<span class="count-pill tone-paused" title="4 workers paused: stopped, their work kept until they go on"[^>]*><svg[^>]*lucide-circle-pause[\s\S]*?<b>4<\/b>/,
+    /<span class="wish-sign tone-paused" title="4 workers paused: stopped, their work kept until they go on"[^>]*><svg[^>]*lucide-circle-pause[\s\S]*?<b>4<\/b>/,
   );
   assert.match(
     side(true),
@@ -13060,17 +13090,17 @@ test("a lit ifrit shows plainly on its wish: a flame and its count on the bar's 
         onNewProject() {},
       }),
     );
-  // The flame with its count comes first on the second line; the worker is counted alone; the wish turns vermilion,
-  // with a flame, before the questions' gold.
+  // The logo's flame comes first on the second line, without a disc, and with no number for one ifrit alone; the
+  // worker is counted alone, then the questions' hand.
   const side = sidebar([front, worker], 1);
   assert.match(
     side,
-    /<span class="wish-counts"><span class="count-pill tone-ifrit" title="1 ifrit lit" aria-label="1 ifrit lit" role="img"><svg[^>]*lucide-flame[^>]*><path[^>]*><\/path><\/svg><b>1<\/b><\/span>/,
+    /<span class="wish-counts"><span class="wish-sign tone-ifrit" title="1 ifrit lit" aria-label="1 ifrit lit" role="img"><svg class="lucide ifrit-flame"[^>]*>(?:(?!<\/svg>).)*<\/svg><\/span>/,
   );
-  assert.match(side, /count-pill tone-running" title="1 running"/);
-  assert.match(
-    side,
-    /<span class="wish-tone tone-ifrit"><svg[^>]*fill="currentColor"[^>]*lucide-flame/,
+  assert.match(side, /wish-sign tone-running" title="1 running"/);
+  assert.ok(
+    side.indexOf("wish-sign tone-ifrit") <
+      side.indexOf("wish-sign tone-waiting"),
   );
   // Where the bar folds to its icons, the logo's flame on the icon's corner, without a disc.
   assert.match(

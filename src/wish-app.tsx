@@ -99,8 +99,9 @@ export function WishApp() {
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.sidebar.collapsed") === "1",
   );
-  // The sidebar glides only once folded or unfolded by hand, never as the page opens.
-  const [glide, setGlide] = useState(false);
+  // The sidebar glides only once folded or unfolded by hand, never as the page opens, and for the glide's time only:
+  // a wish's states coming later appear without it. A count of the folds, so that a second fold keeps the glide.
+  const [glide, setGlide] = useState(0);
   const [modal, setModal] = useState<Modal>(null);
   const [making, setMaking] = useState(false);
   const [projectId, setProjectId] = useState("");
@@ -118,9 +119,14 @@ export function WishApp() {
   const closeToast = useCallback(() => setToast(""), []);
   const closeMake = useCallback(() => setModal(null), []);
   const toggleSidebar = useCallback(() => {
-    setGlide(true);
+    setGlide((n) => n + 1);
     setCollapsed((value) => !value);
   }, []);
+  useEffect(() => {
+    if (!glide) return;
+    const timer = window.setTimeout(() => setGlide(0), 400);
+    return () => window.clearTimeout(timer);
+  }, [glide]);
   // showPage shows a page of the window instead of a wish: the flying carpet (PLAN), the Hourglass (HOURGLASS) or the
   // Grimoire (GRIMOIRE), by the side panel or by the keyboard (PAGES).
   const showPage = useCallback((page: string) => {

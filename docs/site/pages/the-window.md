@@ -31,38 +31,43 @@ From top to bottom:
 ### The wish bar
 
 The wish bar lists the active wishes by rank, the first first, then the **Paused** ones, then the granted ones,
-folded under their count. Each active wish shows its state's icon and title, and a second line of counts, each left
-out when it is zero:
+folded under their count. Each wish shows its own icon, then its title. The icon is an illuminated drawing, a fine
+line and its small filled ornaments, in two colours of the logo (emerald, saffron, mint, or the title's ink); a paused
+or granted wish's icon is grey. The Djinn chooses it for the wish's subject from a bank of 108 icons, in twelve
+families, and its lead can change it with the wish icon command; the wish icons command searches the bank by a word, in
+English or in French. Until it has one, a wish shows its mark, a small grey sigil drawn from its identifier, the same
+in every window.
 
-| Count | What it says |
+An active wish takes a second line, its signs in one order, each left out when it is zero, each in its state's colour:
+
+| Sign | What it says |
 | --- | --- |
-| Flame | Ifrits lit |
-| Orange | Questions waiting for your answer |
-| Blue | Workers running |
+| Vermilion flame | An ifrit is lit; a number when more than one is |
+| Small yellow hand and a number | Questions waiting for your answer |
+| Blue dot and a number | Workers running |
 | Merge | Work waiting to merge, no worker running |
-| Grey seat | Workers waiting for a place: a free slot, the machine's load or memory, or a [gate](#gates). A worker waiting for a gate still counts as running. A task held by a dependency, a red branch, a usage limit or a question is not counted |
-| Violet | Questions being investigated |
-| Grey pause | Workers paused: stopped by you or the lead, put out, or cut short by a restart or a usage limit until Djinn resumes them; their work is kept |
+| Violet dot and a number | Questions being investigated |
 | Wrench | Merges being fixed: agents correct them, nothing to do |
-| Teal | Watchers watching |
+| Grey pause | Workers paused: stopped by you or the lead, put out, or cut short by a restart or a usage limit until Djinn resumes them; their work is kept |
+| Grey seat | Workers waiting for a place: a free slot, the machine's load or memory, or a [gate](#gates). A worker waiting for a gate still counts as running. A task held by a dependency, a red branch, a usage limit or a question is not counted |
+| Teal eye | Watchers watching |
 | Ready to grant | The wish is done for you to grant |
 | #3 | Its rank, never a count |
+
+Hovering a wish tints it; the wish shown keeps its ground, its title bolder.
 
 A click on a wish opens it on its first tab, its questions, the page at their top; even the wish already shown, from
 another tab or a tilasm open full size, which closes. If a question had the focus, the page comes back to it and gives
 it the focus again.
 
-Drag a wish by its grip, on its left, or press Alt+Up or Alt+Down on it, to change its rank; a thin line shows where it
-will land. Drop a paused or granted wish among the active ones to make it active at that rank: the last active wish
-is then paused. **Make it the first active wish**, beside a paused wish, does it in one click. See [Wish](#wish).
+Drag a wish by its row, or press Alt+Up or Alt+Down on it, to change its rank; a thin line shows where it will land.
+Drop a paused or granted wish among the active ones to make it active at that rank: the last active wish is then
+paused. **Make it the first active wish**, beside a paused wish, does it in one click. See [Wish](#wish).
 
 Ctrl+\ (Cmd+\ on macOS), or the button at the top, folds the side panel into a rail of icons; Djinn remembers it. In a
-narrow window, under 820 pixels, the panel keeps only its icons by itself, the same way. On the rail each wish shows
-its own icon instead of its state's: an illuminated drawing, a fine line and its small filled ornaments, in two colours
-of the logo (emerald, saffron, mint, or the title's ink). The Djinn chooses it for the wish's subject from a bank of 108
-icons, in twelve families, and its lead can change it with the wish icon command; the wish icons command searches the
-bank by a word, in English or in French. Until it has one, a wish shows its mark, a small grey sigil drawn from its
-identifier, the same in every window. Around the icon, the signs of what goes on, never on a background:
+narrow window, under 820 pixels, the panel keeps only its icons by itself, the same way. Each wish's icon stays where
+it is, at the same size, when the panel folds or unfolds; only its signs move, from the second line onto the icon's
+corners, and back. On the rail, never on a background:
 
 | Sign | What it says |
 | --- | --- |
