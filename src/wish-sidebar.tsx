@@ -4,8 +4,8 @@
 // remote (project-sync.tsx) and its gear, which opens its panel and turns red with a small flame when its
 // configuration has something for you to fix (Project.to_fix); the Hourglass's entry at the bottom (the live metrics,
 // hourglass.tsx), and under it the Grimoire's, the documentation (docs.tsx), a page like the Hourglass, before the profile. The wishes' list shows the active ones, each with its counts on a second line, and three rows more;
-// it scrolls under the pointer. Every wish is dragged by its grip, on its left, or moved with Alt+Arrow, within its
-// list; while it is dragged, a thin line shows where it would land. A paused or granted wish dropped among the active
+// it scrolls under the pointer. Every wish is dragged by its row, or moved with Alt+Arrow, within its list; while it is
+// dragged, a thin line shows where it would land. A paused or granted wish dropped among the active
 // ones, or sent first with its button, becomes active there (Q01): three being active, the last one is paused, first
 // among the paused ones.
 import {
@@ -15,14 +15,14 @@ import {
   ChevronDown,
   CirclePause,
   ChevronRight,
+  Eye,
   Flame,
   Folder,
   FolderOpen,
   GitMerge,
-  GripVertical,
   Hourglass,
   Inbox,
-  MessageCircleQuestion,
+  type LucideIcon,
   Plane,
   Plus,
   Settings,
@@ -31,16 +31,22 @@ import {
   Upload,
   Wrench,
 } from "lucide-react";
-import { type DragEvent, type KeyboardEvent, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useRef,
+  useState,
+} from "react";
 
 import type { Project, ProjectSync, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { WishState } from "../gen/ts/plan/v1/plan_pb";
-import { MAX_ACTIVE, isActive, wishTone } from "./data/format";
+import { MAX_ACTIVE, type Tone, isActive } from "./data/format";
 import { t } from "./i18n";
 import { useOpenTerminal } from "./lead-terminal";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, usePageShortcut } from "./page-keys";
 import { SyncLines } from "./project-sync";
-import { CountPill, IfritFlame, ToneIcon, WaitingHand } from "./status";
+import { CountPill, IfritFlame, WaitingHand } from "./status";
 import { WishIcon } from "./wish-icon";
 
 // The wishes' lists: a wish is dragged within its own, and from any into the active one.
@@ -217,22 +223,16 @@ export function WishSidebar({
       watching: 0,
       merging: 0,
     };
-    const tone = wishTone(
-      wish,
-      count.questions,
-      count.running + count.merging,
-      count.watching,
-      count.investigating,
-      count.ifrits,
-    );
-    // Unfolded, an active wish takes a second line under its title: its lit ifrits' flame, then what waits for you,
-    // then what works, then what waits for a place, then what investigates, then what is paused, then what watches, a
-    // count at zero left out, and its rank at the end. Its state's icon then says what it does: the questions have their
-    // count, and no raised hand repeats it (Q01). Folded to the rail (or narrowed by its width alone, styles.css, 820px,
-    // the second line hidden), the wish shows its own icon of the bank, or its grey mark (L09 v6): a small hand and the
-    // questions' count on its upper right, a lit ifrit's flame on its upper left, both without background; under it a
-    // blue dot while workers run or merge, a violet one while an investigation runs, never a number; the workers
-    // waiting for a place hang on its lower right corner, the paused ones on its lower left (wish.css).
+    // Each wish shows its own icon of the bank, or its grey mark (L09 v6), at the same place and size folded or
+    // unfolded: the row is built around it, and only its states move when the menu folds (wish.css). A paused or
+    // granted wish's icon gives up its colours, one grey. Unfolded, an active wish takes a second line under its title,
+    // in one order: its lit ifrits' flame, the small hand and the questions that wait for you, what runs by kind (work,
+    // merges, investigations, repairs), what is paused, what waits for a place, what watches, then ready to grant, a
+    // count at zero left out, and its rank at the end. Folded to the rail (or narrowed by its width alone, styles.css,
+    // 820px, the second line hidden), the same states sit on the icon's corners, without background: the hand and the
+    // questions' count on its upper right, a lit ifrit's flame on its upper left; under it a blue dot while workers run
+    // or merge, a violet one while an investigation runs, never a number; the workers waiting for a place hang on its
+    // lower right corner, the paused ones on its lower left.
     const counted = !!rank && !collapsed;
     const working = count.running + count.merging;
     const ifritLabel = t("wish.ifrits_lit", { count: count.ifrits ?? 0 });
@@ -249,18 +249,6 @@ export function WishSidebar({
       .join(" · ");
     const placeLabel = t("plan.place_wait", { count: count.placeWait ?? 0 });
     const pausedLabel = t("plan.paused", { count: count.paused ?? 0 });
-    const shown =
-      tone === "waiting" && counted
-        ? wish.ready
-          ? "proof"
-          : wishTone(
-              wish,
-              0,
-              count.running + count.merging,
-              count.watching,
-              count.investigating,
-            )
-        : tone;
     // Alt+Arrow moves a wish one step within its list: its rank, or its place among the paused or granted ones.
     const keys = (event: KeyboardEvent) => {
       if (!event.altKey) return;
@@ -285,7 +273,7 @@ export function WishSidebar({
       <button
         key={wish.id}
         {...(wrapped ? {} : target)}
-        className={`mission-nav wish-nav ${wish.id === selectedWishId ? "selected" : ""} ${dragged === wish.id ? "dragged" : ""} ${counted ? "counted" : ""}`}
+        className={`mission-nav wish-nav ${wish.id === selectedWishId ? "selected" : ""} ${dragged === wish.id ? "dragged" : ""} ${rank ? "ranked" : "rest"} ${counted ? "counted" : ""}`}
         onClick={() => onSelectWish(wish.id)}
         onKeyDown={keys}
         title={
@@ -304,18 +292,8 @@ export function WishSidebar({
           setLanding(undefined);
         }}
       >
-        {!collapsed && (
-          <span className="wish-grip" aria-hidden="true">
-            <GripVertical size={12} />
-          </span>
-        )}
-        {!collapsed && (
-          <span className={`wish-tone tone-${shown}`}>
-            <ToneIcon tone={shown} size={12} />
-          </span>
-        )}
         <span className="wish-emblem">
-          <WishIcon wish={wish} size={rank ? 20 : 16} />
+          <WishIcon wish={wish} size={24} />
           {!!rank && !!count.ifrits && (
             <span
               className="wish-flame-corner"
@@ -379,45 +357,34 @@ export function WishSidebar({
             {counted && (
               <span className="wish-counts">
                 {!!count.ifrits && (
-                  <CountPill
-                    tone="ifrit"
-                    count={count.ifrits}
-                    label={t("wish.ifrits_lit", { count: count.ifrits })}
-                  />
+                  <Sign tone="ifrit" label={ifritLabel}>
+                    <IfritFlame />
+                    {count.ifrits > 1 && <b>{count.ifrits}</b>}
+                  </Sign>
                 )}
                 {count.questions > 0 && (
-                  <CountPill
-                    tone="waiting"
-                    icon={MessageCircleQuestion}
-                    count={count.questions}
-                    label={t("wish.questions_wait", { count: count.questions })}
-                  />
+                  <Sign tone="waiting" label={questionsLabel}>
+                    <WaitingHand />
+                    <b>{count.questions}</b>
+                  </Sign>
                 )}
                 {count.running > 0 && (
-                  <CountPill
+                  <Sign
                     tone="running"
                     count={count.running}
                     label={t("plan.running", { count: count.running })}
                   />
                 )}
                 {count.merging > 0 && (
-                  <CountPill
+                  <Sign
                     tone="running"
                     icon={GitMerge}
                     count={count.merging}
                     label={t("plan.merging_detail", { count: count.merging })}
                   />
                 )}
-                {!!count.placeWait && (
-                  <CountPill
-                    tone="planned"
-                    icon={Armchair}
-                    count={count.placeWait}
-                    label={placeLabel}
-                  />
-                )}
                 {!!count.investigating && (
-                  <CountPill
+                  <Sign
                     tone="investigating"
                     count={count.investigating}
                     label={t("plan.investigating_detail", {
@@ -425,24 +392,34 @@ export function WishSidebar({
                     })}
                   />
                 )}
-                {!!count.paused && (
-                  <CountPill
-                    tone="paused"
-                    count={count.paused}
-                    label={pausedLabel}
-                  />
-                )}
                 {!!count.fixing && (
-                  <CountPill
+                  <Sign
                     tone="fixing"
                     icon={Wrench}
                     count={count.fixing}
                     label={t("plan.fixing_detail", { count: count.fixing })}
                   />
                 )}
+                {!!count.paused && (
+                  <Sign
+                    tone="paused"
+                    icon={CirclePause}
+                    count={count.paused}
+                    label={pausedLabel}
+                  />
+                )}
+                {!!count.placeWait && (
+                  <Sign
+                    tone="planned"
+                    icon={Armchair}
+                    count={count.placeWait}
+                    label={placeLabel}
+                  />
+                )}
                 {count.watching > 0 && (
-                  <CountPill
+                  <Sign
                     tone="watching"
+                    icon={Eye}
                     count={count.watching}
                     label={t("plan.watching", { count: count.watching })}
                   />
@@ -455,7 +432,7 @@ export function WishSidebar({
                     {t("sidebar.ready")}
                   </span>
                 )}
-                {/* A rank, never a count: "#3" after the pills, which count (W507). */}
+                {/* A rank, never a count: "#3" after the signs, which count (W507). */}
                 <small className="wish-rank">#{rank}</small>
               </span>
             )}
@@ -522,11 +499,13 @@ export function WishSidebar({
               <Plane size={15} />
               <span>{t("plan.title")}</span>
               {waits > 0 && (
-                <CountPill
+                <Sign
                   tone="waiting"
-                  count={waits}
                   label={t("wish.questions_wait", { count: waits })}
-                />
+                >
+                  <WaitingHand />
+                  <b>{waits}</b>
+                </Sign>
               )}
               {inbox > 0 && (
                 <CountPill
@@ -576,19 +555,20 @@ export function WishSidebar({
             {t("sidebar.no_active")}
           </p>
         )}
+        {/* Folded, the sub-lists' labels keep their place, empty: no wish's icon moves when the menu folds. */}
         {paused.length > 0 && (
           <>
-            {!collapsed && (
-              <div className="sidebar-section-label sub">
-                <span>{t("sidebar.paused")}</span>
-              </div>
-            )}
+            <div className="sidebar-section-label sub">
+              {!collapsed && <span>{t("sidebar.paused")}</span>}
+            </div>
             {paused.map((wish) => item(wish))}
           </>
         )}
         {granted.length > 0 && (
           <>
-            {!collapsed && (
+            {collapsed ? (
+              <div className="sidebar-section-label sub" />
+            ) : (
               <button
                 className="sidebar-section-label sub"
                 onClick={() => setShowGranted(!showGranted)}
@@ -714,6 +694,44 @@ export function WishSidebar({
         </button>
       )}
     </>
+  );
+}
+
+// Sign is a state on a wish's second line, or the flying carpet's: its glyph and its number in its state's colour
+// (review.css), no pill around it, and its words for whoever cannot see the colour. A full dot when no glyph is given:
+// what runs.
+function Sign({
+  tone,
+  label,
+  count,
+  icon: Icon,
+  children,
+}: {
+  tone: Tone;
+  label: string;
+  count?: number;
+  icon?: LucideIcon;
+  // The glyph and the number, when they are not a lucide icon and a count: the hand, the flame.
+  children?: ReactNode;
+}) {
+  return (
+    <span
+      className={`wish-sign tone-${tone}`}
+      title={label}
+      aria-label={label}
+      role="img"
+    >
+      {children ?? (
+        <>
+          {Icon ? (
+            <Icon size={12} aria-hidden="true" />
+          ) : (
+            <span className="wish-sign-dot" />
+          )}
+          <b>{count}</b>
+        </>
+      )}
+    </span>
   );
 }
 

@@ -1,6 +1,6 @@
 // The wish bar under 820px wide: the CSS narrows it to its icons, the wish unfolded, and hides an active wish's second
-// line and its state's icon; the wish's own icon shows, as on the folded rail (L09 v6), with the small hand and the
-// questions' count on its corner. Wider, the hand stays hidden and the count says it on the second line.
+// line; the wish's own icon shows, as on the folded rail (L09 v6), with the small hand and the questions' count on its
+// corner. Wider, the icon is the same, the hand on its corner stays hidden and the second line says the count.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -35,25 +35,24 @@ test("under 820px wide, an active wish with open questions shows its icon and th
     await page.setViewportSize({ width: 1200, height: 800 });
     await page.goto(process.env.DJINN_URL!);
     const row = page.locator(`.wish-list .wish-nav[title*="${title}"]`);
-    const tone = row.locator(".wish-tone");
     const icon = row.locator(".wish-emblem");
     const hand = icon.locator(".wish-hand-corner");
-    const count = row.locator(".wish-counts .count-pill.tone-waiting");
+    const count = row.locator(".wish-counts .wish-sign.tone-waiting");
 
-    // Wide: the count says the question on the second line; the hand stays hidden.
+    // Wide: the second line says the question, the small hand and its count; the hand on the icon stays hidden.
     await expect(count).toBeVisible();
     await expect(count).toHaveText("1");
+    await expect(count.locator("svg.waiting-hand")).toBeVisible();
     await expect(hand).toBeHidden();
-    await expect(tone).toBeVisible();
+    await expect(icon.locator("svg.wish-mark")).toBeVisible();
 
     for (const theme of ["light", "dark"] as const) {
       await page.evaluate((v) => {
         document.documentElement.dataset.theme = v;
       }, theme);
       await page.setViewportSize({ width: 800, height: 800 });
-      // Narrow: the second line and the state's icon hide; the wish's mark shows, the hand and its count on its corner.
+      // Narrow: the second line hides; the wish's mark shows, the hand and its count on its corner.
       await expect(row.locator(".wish-counts")).toBeHidden();
-      await expect(tone).toBeHidden();
       await expect(icon.locator("svg.wish-mark")).toBeVisible();
       await expect(hand).toBeVisible();
       await expect(hand.locator("svg.waiting-hand")).toBeVisible();
