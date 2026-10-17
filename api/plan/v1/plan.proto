@@ -2481,6 +2481,13 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Pull a branch Djinn pushes that is behind its remote: fetch it, then bring it up to the remote's, a fast-forward
+  // only, your clean checkout of it following. Refused, saying why, when it has diverged from the remote's, when your
+  // checkout of it has changes not committed, or while work merges into it. Nothing is ever forced.
+  rpc Pull(ProjectServicePullRequest) returns (ProjectServicePullResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // List the local branches of a project's repository a wish's work may land in, the latest commit first: those
   // Djinn made for its tasks' worktrees left out.
   rpc Branches(ProjectServiceBranchesRequest) returns (ProjectServiceBranchesResponse) {
@@ -2652,6 +2659,36 @@ message ProjectServiceForgetSyncRequest {
 }
 
 message ProjectServiceForgetSyncResponse {}
+
+message ProjectServicePullRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // Only this branch, among the project's syncs (Project.syncs); a refusal is then an error. Empty: every one of them
+  // behind its remote, each refusal said in its pull.
+  optional string branch = 2 [(buf.validate.field).string.max_len = 255];
+}
+
+message ProjectServicePullResponse {
+  // Each branch Djinn tried to bring up to its remote's, in the order of the project's syncs.
+  repeated BranchPull pulls = 1;
+}
+
+// BranchPull is how a pull left one branch.
+message BranchPull {
+  // The branch, as the project's syncs name it.
+  string branch = 1;
+  // The remote's branch it was compared with, <remote>/<name>.
+  string remote = 2;
+  // The commit the branch was on before, when it moved.
+  string old_sha = 3;
+  // The commit it is on now, the remote's, when it moved; empty when it did not.
+  string sha = 4;
+  // Why it was left as it is: it diverged from the remote's, or your checkout of it has changes not committed.
+  string refused = 5;
+}
 
 message ProjectServiceBranchesRequest {
   // The project, by name (case ignored) or identifier.

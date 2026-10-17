@@ -95,6 +95,8 @@ const (
 	// ProjectServiceForgetSyncProcedure is the fully-qualified name of the ProjectService's ForgetSync
 	// RPC.
 	ProjectServiceForgetSyncProcedure = "/plan.v1.ProjectService/ForgetSync"
+	// ProjectServicePullProcedure is the fully-qualified name of the ProjectService's Pull RPC.
+	ProjectServicePullProcedure = "/plan.v1.ProjectService/Pull"
 	// ProjectServiceBranchesProcedure is the fully-qualified name of the ProjectService's Branches RPC.
 	ProjectServiceBranchesProcedure = "/plan.v1.ProjectService/Branches"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
@@ -631,6 +633,10 @@ type ProjectServiceClient interface {
 	// Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
 	// syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
 	ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error)
+	// Pull a branch Djinn pushes that is behind its remote: fetch it, then bring it up to the remote's, a fast-forward
+	// only, your clean checkout of it following. Refused, saying why, when it has diverged from the remote's, when your
+	// checkout of it has changes not committed, or while work merges into it. Nothing is ever forced.
+	Pull(context.Context, *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
 	// Djinn made for its tasks' worktrees left out.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
@@ -697,6 +703,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("ForgetSync")),
 			connect.WithClientOptions(opts...),
 		),
+		pull: connect.NewClient[v1.ProjectServicePullRequest, v1.ProjectServicePullResponse](
+			httpClient,
+			baseURL+ProjectServicePullProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Pull")),
+			connect.WithClientOptions(opts...),
+		),
 		branches: connect.NewClient[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse](
 			httpClient,
 			baseURL+ProjectServiceBranchesProcedure,
@@ -717,6 +729,7 @@ type projectServiceClient struct {
 	pushStrategy *connect.Client[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse]
 	allow        *connect.Client[v1.ProjectServiceAllowRequest, v1.ProjectServiceAllowResponse]
 	forgetSync   *connect.Client[v1.ProjectServiceForgetSyncRequest, v1.ProjectServiceForgetSyncResponse]
+	pull         *connect.Client[v1.ProjectServicePullRequest, v1.ProjectServicePullResponse]
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
 }
 
@@ -760,6 +773,11 @@ func (c *projectServiceClient) ForgetSync(ctx context.Context, req *connect.Requ
 	return c.forgetSync.CallUnary(ctx, req)
 }
 
+// Pull calls plan.v1.ProjectService.Pull.
+func (c *projectServiceClient) Pull(ctx context.Context, req *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error) {
+	return c.pull.CallUnary(ctx, req)
+}
+
 // Branches calls plan.v1.ProjectService.Branches.
 func (c *projectServiceClient) Branches(ctx context.Context, req *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error) {
 	return c.branches.CallUnary(ctx, req)
@@ -787,6 +805,10 @@ type ProjectServiceHandler interface {
 	// Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
 	// syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
 	ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error)
+	// Pull a branch Djinn pushes that is behind its remote: fetch it, then bring it up to the remote's, a fast-forward
+	// only, your clean checkout of it following. Refused, saying why, when it has diverged from the remote's, when your
+	// checkout of it has changes not committed, or while work merges into it. Nothing is ever forced.
+	Pull(context.Context, *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
 	// Djinn made for its tasks' worktrees left out.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
@@ -849,6 +871,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("ForgetSync")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServicePullHandler := connect.NewUnaryHandler(
+		ProjectServicePullProcedure,
+		svc.Pull,
+		connect.WithSchema(projectServiceMethods.ByName("Pull")),
+		connect.WithHandlerOptions(opts...),
+	)
 	projectServiceBranchesHandler := connect.NewUnaryHandler(
 		ProjectServiceBranchesProcedure,
 		svc.Branches,
@@ -874,6 +902,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceAllowHandler.ServeHTTP(w, r)
 		case ProjectServiceForgetSyncProcedure:
 			projectServiceForgetSyncHandler.ServeHTTP(w, r)
+		case ProjectServicePullProcedure:
+			projectServicePullHandler.ServeHTTP(w, r)
 		case ProjectServiceBranchesProcedure:
 			projectServiceBranchesHandler.ServeHTTP(w, r)
 		default:
@@ -915,6 +945,10 @@ func (UnimplementedProjectServiceHandler) Allow(context.Context, *connect.Reques
 
 func (UnimplementedProjectServiceHandler) ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.ForgetSync is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Pull(context.Context, *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Pull is not implemented"))
 }
 
 func (UnimplementedProjectServiceHandler) Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error) {

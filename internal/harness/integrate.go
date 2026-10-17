@@ -408,10 +408,9 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		}
 	}
 	if why == "" {
-		// Merged into a branch whose remote holds commits it lacks, the work could not be pushed (remote_branch.go).
-		if why = apart(ctx, project.GetDirectory(), settings, branch); why != "" {
-			h.tellApart(ctx, wish, why)
-		}
+		// Merged into a branch whose remote holds commits it lacks, the work could not be pushed: the branch is brought
+		// up to the remote's first, or nothing merges (remote_branch.go).
+		why = h.catchUp(ctx, wish, project.GetDirectory(), branch, true)
 	}
 	if why != "" {
 		h.settleIntegration(ctx, batch, pending(branch, why), "integration: waiting: "+why, nil)

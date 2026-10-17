@@ -90,6 +90,7 @@ export function WishSidebar({
   onReorder,
   onNewProject,
   onPush,
+  onPull,
   onImportWish,
   importDisabled = false,
 }: {
@@ -119,6 +120,8 @@ export function WishSidebar({
   onNewProject: () => void;
   // Pushes one branch of the project, out of sync with its remote.
   onPush?: (projectId: string, sync: ProjectSync) => Promise<unknown> | void;
+  // Pulls a branch behind its remote, a fast-forward only; a refusal says why on its line.
+  onPull?: (projectId: string, sync: ProjectSync) => Promise<unknown> | void;
   onImportWish?: () => void;
   importDisabled?: boolean;
 }) {
@@ -530,6 +533,7 @@ export function WishSidebar({
               <SyncLines
                 syncs={project.syncs}
                 onPush={onPush && ((sync) => onPush(project.id, sync))}
+                onPull={onPull && ((sync) => onPull(project.id, sync))}
               />
             )}
           </div>

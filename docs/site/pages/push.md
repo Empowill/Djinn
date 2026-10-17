@@ -82,6 +82,27 @@ While a push runs, the line follows it, whoever started it, you or Djinn:
 
 One push runs at a time; the other buttons wait meanwhile.
 
+## Pulling yourself
+
+A branch's line counts with **↓** the commits its remote holds that it lacks, as Git last fetched it. When it has any, a
+pull button sits beside the push button, *Pull feat/invoice-pdf: bring it up to origin/feat/invoice-pdf, a fast-forward
+only* on hover. It fetches the branch, then moves it to the remote's copy; your checkout of it follows when it is clean.
+The line then reads as the branch now stands.
+
+A pull never merges, never rebases and never forces. Djinn refuses it, with a cross on the line and the reason on hover,
+when:
+
+- the branch **has diverged** from the remote's: each holds commits the other lacks; align them by hand;
+- **your checkout of the branch has changes not committed**: commit them or put them aside, then pull again;
+- **work is being merged into it**: pull once that merge has ended.
+
+The command line does the same with the project's pull command, given the project, and a branch to pull only that
+one; without a branch, it pulls every branch Djinn pushes in the project that is behind, and says why for each one it
+refused.
+
+Djinn does this by itself before each merge into a branch: see
+[When the remote moved on](#integration-branch-when-the-remote-moved-on).
+
 ## Where it pushes
 
 Djinn pushes to the branch's upstream when it has one, else to **origin**, else to the repository's only remote. A
@@ -137,8 +158,9 @@ refused the push of feat/invoice-pdf: … Djinn never forces a push: what should
 
 The top of the wish says **The remote refused the last push: Djinn asks you**, with Git's words on hover.
 
-When the remote's copy of the branch holds commits the local branch lacks, as Git last fetched it, Djinn neither
-pushes it nor merges more work into it until a person aligns them. See [Integration branch](#integration-branch).
+When the remote's copy of the branch holds commits the local branch lacks, Djinn brings the branch up to it when it
+can, a fast-forward; when the two have diverged, Djinn neither pushes it nor merges more work into it until a person
+aligns them. See [When the remote moved on](#integration-branch-when-the-remote-moved-on).
 
 ## After a push
 

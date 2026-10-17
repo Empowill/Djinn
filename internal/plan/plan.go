@@ -44,12 +44,13 @@ func Entities() []proto.Message {
 const actor = "local"
 
 // Pusher pushes a wish's branches, all or only one, computes how far each branch it pushes in a project is out of
-// sync with its remote, forgets one that landed, and finds a project's reference branch: from name, its main_branch setting, the branch and the
+// sync with its remote, forgets one that landed, pulls those behind their remote, and finds a project's reference branch: from name, its main_branch setting, the branch and the
 // ref Djinn merges it from (refs/remotes/origin/main), or why the repository holds none.
 type Pusher interface {
 	Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error)
 	Syncs(ctx context.Context, project *planv1.Project) ([]*planv1.ProjectSync, error)
 	ForgetSync(ctx context.Context, project *planv1.Project, branch string) error
+	Pull(ctx context.Context, project *planv1.Project, branch string) ([]*planv1.BranchPull, error)
 	Reference(ctx context.Context, project *planv1.Project, name string) (branch, ref string, err error)
 }
 
@@ -560,6 +561,27 @@ func (p *Projects) ForgetSync(
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewResponse(&planv1.ProjectServiceForgetSyncResponse{}), nil
+}
+
+// Pull brings a branch Djinn pushes, or every one, up to its remote's when it is behind it: a fast-forward only.
+func (p *Projects) Pull(
+	ctx context.Context, req *connect.Request[planv1.ProjectServicePullRequest],
+) (*connect.Response[planv1.ProjectServicePullResponse], error) {
+	if p.Pusher == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("pull is unavailable"))
+	}
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	pulls, err := p.Pusher.Pull(ctx, project, req.Msg.GetBranch())
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&planv1.ProjectServicePullResponse{Pulls: pulls}), nil
 }
 
 // Branches lists the local branches of a project's repository, the latest commit first, without the branches of

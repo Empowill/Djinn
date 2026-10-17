@@ -8099,6 +8099,54 @@ test("regression W489: a stale ↑3 pushed again says 'up to date' quietly on it
   );
 });
 
+test("W164: a branch behind its remote has a pull button; a refused pull says why with a cross on its line", async () => {
+  const pulls = [];
+  let answer = {};
+  const lines = live(s.SyncLines, {
+    syncs: [projectSync("feat/x", 0, 2), projectSync("feat/y", 3, 0)],
+    onPush() {},
+    onPull: (sync) => {
+      pulls.push(sync.branch);
+      return answer instanceof Error
+        ? Promise.reject(answer)
+        : Promise.resolve(answer);
+    },
+  });
+  const first = () => lines.all(s.SyncLine)[0].props;
+  const [behind, ahead] = lines.all(s.SyncLine).map((x) => x.props);
+  const html = s.renderToStaticMarkup(h(s.SyncLine, behind));
+  assert.match(
+    html,
+    /<button type="button" class="icon-button sync-push sync-pull" title="Pull feat\/x: bring it up to origin\/feat\/x, a fast-forward only"/,
+  );
+  // Ahead only: nothing to pull, no pull button.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(h(s.SyncLine, ahead)),
+    /sync-pull/,
+  );
+
+  // While it pulls, every other button waits.
+  behind.onPull();
+  assert.equal(first().pulling, true);
+  assert.equal(
+    lines.all(s.SyncLine)[1].props.busy,
+    "A pull is running: wait for it to end",
+  );
+  await lines.settle();
+  assert.deepEqual(pulls, ["feat/x"]);
+  assert.equal(first().refused, "");
+
+  answer = new Error(
+    "feat/x has diverged from origin/feat/x (ahead 1, behind 2): Djinn merges nothing into it",
+  );
+  first().onPull();
+  await lines.settle();
+  assert.match(
+    s.renderToStaticMarkup(h(s.SyncLine, first())),
+    /class="sync-status failed" role="img" title="The pull was refused\n?feat\/x has diverged from origin\/feat\/x \(ahead 1, behind 2\)/,
+  );
+});
+
 test("the project panel displays the push cadence setting, out-of-sync status, and push button", () => {
   const p1 = {
     id: "p1",

@@ -726,6 +726,17 @@ export function ProjectPanel({
           .catch(() => undefined),
       );
 
+  // A pull says on its sync line why it was refused; pulled, the line follows the branch.
+  const handlePull = (sync: ProjectSync) =>
+    clients.projects
+      .pull({ project: project.id, branch: sync.branch })
+      .finally(() =>
+        clients.projects
+          .show({ project: project.id })
+          .then(setShown)
+          .catch(() => undefined),
+      );
+
   // A watcher command allowed or taken back: the commands the answer lists replace the shown ones.
   const handleAllow = async (watch: string, revoke: boolean) => {
     try {
@@ -802,7 +813,7 @@ export function ProjectPanel({
                 ? t("project.push_on_demand_detail")
                 : t("project.push_standard_detail")}
             </p>
-            <SyncLines syncs={syncs} onPush={handlePush} />
+            <SyncLines syncs={syncs} onPush={handlePush} onPull={handlePull} />
           </div>
           <div className="project-push-actions">
             <div

@@ -321,13 +321,11 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		}
 		return nil, fmt.Errorf("repository %s has no remote", repo)
 	}
-	// The remote's branch holds commits this one lacks: git would refuse the push, and Djinn never forces one.
-	if settings, err := plan.LoadSettings(h.home, project); err == nil {
-		if why := apart(ctx, repo, settings, branch); why != "" {
-			h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
-			h.tellApart(ctx, wish, why)
-			return nil, errors.New(why)
-		}
+	// The remote's branch holds commits this one lacks: brought up to it when behind, as this repository last saw it;
+	// else git would refuse the push, and Djinn never forces one (remote_branch.go).
+	if why := h.catchUp(ctx, wish, repo, branch, false); why != "" {
+		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
+		return nil, errors.New(why)
 	}
 	titles, count, ahead, err := unpushed(ctx, repo, branch, remote)
 	if err != nil {
