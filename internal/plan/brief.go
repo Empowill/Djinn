@@ -86,7 +86,9 @@ const DirectCommandsRule = "Run each `djinn` command alone, as one direct comman
 // DirectFlags are the flags that replace what a lead would pipe or loop over.
 const DirectFlags = "Flags replace them: `djinn brief --wishes` for the wishes alone, `djinn lead notes a,b` or " +
 	"`--all` for several notes, `djinn task list --wish-id <wish> --short` for where the tasks stand, " +
-	"`djinn task watch <task> --last 5` for a task's final note, `djinn question list --wish-id <wish> --open`."
+	"`djinn task watch <task> --last 5` for a task's final note (it returns at once, the task running or not), " +
+	"`djinn question get <question> --wish-id <wish>` for one question, its answer and note, " +
+	"`djinn question list --wish-id <wish> --open`."
 
 // briefRules are Djinn's rules for whoever leads the wishes. They name no wish: every lead reads the same text.
 func briefRules(projects []*planv1.Project, home string) string {
@@ -224,7 +226,8 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"note, how they fit together) is unclear to you. Ask again, a new question that quotes what you did not " +
 		"understand, even on a question they answered.\n" +
 		LeadWatchRule() +
-		"- **Check every task that ends.** Read its final note (`djinn task watch <task>`, or its line in your watch's digest): " +
+		"- **Check every task that ends.** Read its final note (under its line in your watch's digest, or " +
+		"`djinn task watch <task> --last 5`): " +
 		"what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task or a " +
 		"watcher that verifies it, never to the developer; when it leaves an uncertainty (a choice it made in the " +
 		"developer's place, a partial result, a step it skipped, 'to validate'), ask the developer a question about " +
@@ -295,7 +298,9 @@ func leadCommandsBrief(driven bool) string {
 		"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
 		"developer can make, with `--before` when it cannot wait. The bar \"N things wait for you\" is for what " +
 		"cannot wait: never mark a question that can wait to get it seen, never leave a real blocker unmarked " +
-		"(`djinn lead notes blocking-or-can-wait`); `djinn question list --wish-id <wish> --open`. `--plan-file a.md` " +
+		"(`djinn lead notes blocking-or-can-wait`); `djinn question list --wish-id <wish> --open`; " +
+		"`djinn question get <question> --wish-id <wish>`, one question as it stands, its answer and note, " +
+		"`--wish-id` needed only when its code is in several wishes. `--plan-file a.md` " +
 		"plans an option's task (repeat it per option; `djinn question revise --plan-file` replaces one); " +
 		"`djinn question launch <question> [--title …] [--after …]` launches the chosen option's plan.\n" +
 		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
@@ -309,7 +314,8 @@ func leadCommandsBrief(driven bool) string {
 		"`djinn task group <task> --part-of T07` sets its azima; " +
 		"`djinn plan sync <wish>` reads the azimas from the projects' plan files and writes their `after:` lines back; " +
 		"`djinn task list --wish-id <wish> --short` (a few lines per task; `--failed`, `--page-size`); `djinn task watch " +
-		"<task>`, `--last 5` for its last events only, its final note among them; " +
+		"<task>` follows a task until it ends; `--last 5` for its last events only, its final note among them, at " +
+		"once, whether the task runs, waits or ended (`--follow` to go on following it); " +
 		"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
 		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima, integration (none clears it, --force if unmerged); never its dependencies once it ran; alias `set-agent`); `djinn task done <task> [--drop] --note " +
 		"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported; unmerged commits queue for merging unless --drop) once its work is done " +
@@ -364,8 +370,12 @@ func LeadWatchRule() string {
 	return "- **Wait on `djinn lead watch`, not on typed lines (Decision Q191).** What you must act on (a task that " +
 		"ended or failed, a merge, an answer or an \"Enlighten me\", the developer's approval of a decision you or a " +
 		"worker took, a move left to you, Djinn restarted) waits in your queue. " +
-		"`djinn lead watch` blocks until something waits, then prints a digest, a line per event (details: " +
-		"`djinn task watch <task>`, `djinn wish brief <wish>`), and a cursor. Keep one watch running: start it when you " +
+		"`djinn lead watch` blocks until something waits, then prints a digest: a line per event, its code with its " +
+		"wish's short title (`W76 [Djinn QoL]`: codes repeat across wishes, never act on a code without its wish); " +
+		"under it the final note of a task that ended or the note of an answer, whole up to a screen or two " +
+		"(`djinn lead event <event>` prints the rest); the wishes' identifiers; and a cursor. Details: `djinn task " +
+		"watch <task> --last 5`, `djinn question get <question> --wish-id <wish>`, `djinn wish brief <wish>`. Keep " +
+		"one watch running: start it when you " +
 		"start; when it ends, whatever it printed, start the next one first, `djinn lead watch --after <cursor>` with " +
 		"the cursor it printed, which acknowledges those events, then act on them. An event you never acknowledged comes " +
 		"back: nothing is lost if your session is. While your watch runs Djinn types nothing in your terminal; when " +

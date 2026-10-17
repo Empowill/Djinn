@@ -1305,6 +1305,21 @@ func (q *Questions) List(
 	}), nil
 }
 
+// Get returns one question as it stands: its rounds keep who asked to investigate and why, not what each revision
+// replaced, which can weigh many times the question.
+func (q *Questions) Get(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceGetRequest],
+) (*connect.Response[planv1.QuestionServiceGetResponse], error) {
+	question, err := find(ctx, q.Store, req.Msg.GetQuestion(), req.Msg.GetWishId())
+	if err != nil {
+		return nil, Status(err)
+	}
+	for _, r := range question.GetRounds() {
+		r.Context, r.Options, r.Recommendation = "", nil, ""
+	}
+	return connect.NewResponse(&planv1.QuestionServiceGetResponse{Question: question}), nil
+}
+
 // Move moves an open question to another wish, optionally along with tasks that name it as their decision.
 func (q *Questions) Move(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceMoveRequest],

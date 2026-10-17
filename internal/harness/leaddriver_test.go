@@ -285,7 +285,7 @@ func TestLeadSecondBatchStartsFresh(t *testing.T) {
 		t.Fatalf("no journal:\n%s", second.Prompt)
 	}
 	for _, want := range []string{"session `" + first.TaskID + "`", "claude claude-opus-5-5", "attempt 1 · done",
-		"$0.12", "- W3 ended: ended: the parser works", "`djinn question ask Q5`", "Said at the end: Asked Q5 about the cache"} {
+		"$0.12", "- W3 [Faster checkout] ended: ended: the parser works", "`djinn question ask Q5`", "Said at the end: Asked Q5 about the cache"} {
 		if !strings.Contains(journal, want) {
 			t.Errorf("the journal lacks %q:\n%s", want, journal)
 		}

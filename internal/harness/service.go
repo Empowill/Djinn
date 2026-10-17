@@ -210,6 +210,13 @@ func (s *Tasks) Watch(
 	if err := protovalidate.Validate(req.Msg); err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	send := func(ev *planv1.TaskEvent) error {
+		if !req.Msg.GetRaw() && ev.GetRaw() != "" {
+			ev = proto.CloneOf(ev)
+			ev.Raw = ""
+		}
+		return stream.Send(&planv1.TaskServiceWatchResponse{Event: ev})
+	}
 	after := req.Msg.GetAfterSeq()
 	if n := int(req.Msg.GetLast()); n > 0 {
 		from, err := s.h.lastEventsFrom(ctx, req.Msg.GetTaskId(), n)
@@ -217,14 +224,13 @@ func (s *Tasks) Watch(
 			return err
 		}
 		after = max(after, from)
-	}
-	return s.h.Watch(ctx, req.Msg.GetTaskId(), after, func(ev *planv1.TaskEvent) error {
-		if !req.Msg.GetRaw() && ev.GetRaw() != "" {
-			ev = proto.CloneOf(ev)
-			ev.Raw = ""
+		if !req.Msg.GetFollow() {
+			// A look at its last events, a final note among them: a running worker or a watcher that runs for days
+			// would hold the reader until it ends.
+			return s.h.Stored(ctx, req.Msg.GetTaskId(), after, send)
 		}
-		return stream.Send(&planv1.TaskServiceWatchResponse{Event: ev})
-	})
+	}
+	return s.h.Watch(ctx, req.Msg.GetTaskId(), after, send)
 }
 
 func (s *Tasks) Clean(

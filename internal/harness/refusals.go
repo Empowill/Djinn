@@ -132,14 +132,16 @@ func toldDoneAtEnd(t *planv1.Task, integrate bool) bool {
 }
 
 // tellDone tells the lead of t's wish that its work worker ended done, with the first line of its final note and the
-// calls its permissions refused; why, when not empty, says what came of its work ("nothing to merge").
+// calls its permissions refused, its final note whole apart; why, when not empty, says what came of its work
+// ("nothing to merge").
 func (h *Harness) tellDone(ctx context.Context, t *planv1.Task, why string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	wish, _ := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
-	line := doneLine(t, wish, h.finalNote(ctx, t.GetId()), why)
-	if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line); err != nil &&
-		!errors.Is(err, plan.ErrNoLead) {
+	note := h.finalNote(ctx, t.GetId())
+	line := doneLine(t, wish, firstLine(note), why)
+	if err := h.toLeadNote(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line,
+		note); err != nil && !errors.Is(err, plan.ErrNoLead) {
 		logx.L().Warn("tell the lead a task is done", "wish", t.GetWishId(), "task", t.GetCode(), "err", err)
 	}
 }
@@ -168,8 +170,8 @@ func doneLine(t *planv1.Task, wish *planv1.Wish, note, why string) string {
 	return line + ": " + note
 }
 
-// finalNote is the first line of the last thing the worker of the task wrote, where it says what it did; "" when it
-// wrote nothing.
+// finalNote is the last thing the worker of the task wrote, where it says what it did, whole; "" when it wrote
+// nothing.
 func (h *Harness) finalNote(ctx context.Context, taskID string) string {
 	var last string
 	err := store.Latest(ctx, h.store, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
@@ -181,7 +183,7 @@ func (h *Harness) finalNote(ctx context.Context, taskID string) string {
 	if err != nil {
 		return ""
 	}
-	return firstLine(last)
+	return strings.TrimSpace(last)
 }
 
 // spawnNote says what the spawner of t should know of where it runs: with its agent's own configuration (access

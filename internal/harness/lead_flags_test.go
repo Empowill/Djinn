@@ -1,7 +1,9 @@
 package harness
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -40,7 +42,7 @@ func TestTaskListShort(t *testing.T) {
 	}
 }
 
-// TestTaskWatchLast: djinn task watch --last n starts at the last n events stored, the final note among them, in
+// TestTaskWatchLast: djinn task watch --last n gives the last n events stored, the final note among them, in
 // place of a pipe through tail.
 func TestTaskWatchLast(t *testing.T) {
 	testx.Portable(t)
@@ -87,5 +89,53 @@ func TestTaskWatchLast(t *testing.T) {
 	// --after-seq still wins when it is further.
 	if got := watch(&planv1.TaskServiceWatchRequest{Last: 1000, AfterSeq: all[len(all)-2].GetSeq()}); len(got) != 1 {
 		t.Errorf("--last with --after-seq = %v", eventKinds(got))
+	}
+}
+
+// TestTaskWatchLastReturns: djinn task watch --last n returns at once on a task that runs, where a watch follows it
+// until it ends: the lead's look at a watcher that runs for days held it until its tool gave up (16/10/2026). With
+// --follow, it follows.
+func TestTaskWatchLastReturns(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, fakeProject(t, ""))
+	task := e.spawn(t, wishID, "text working\nwait")
+	e.untilText(t, task.GetId(), "working")
+	watch := func(ctx context.Context, req *planv1.TaskServiceWatchRequest) []*planv1.TaskEvent {
+		t.Helper()
+		req.TaskId = task.GetId()
+		s, err := e.tasks.Watch(ctx, connect.NewRequest(req))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		var out []*planv1.TaskEvent
+		for s.Receive() {
+			out = append(out, s.Msg().GetEvent())
+		}
+		return out
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	got := watch(ctx, &planv1.TaskServiceWatchRequest{Last: 2})
+	if ctx.Err() != nil {
+		t.Fatalf("--last 2 on a running task followed it until the timeout")
+	}
+	if len(got) != 2 || got[len(got)-1].GetText() != "working" {
+		t.Errorf("--last 2 = %v, want the last 2 events, its text last", eventKinds(got))
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("--last 2 took %s", d)
+	}
+	if e.get(t, task.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		t.Fatal("the task no longer runs: the test proves nothing")
+	}
+	short, stop := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer stop()
+	watch(short, &planv1.TaskServiceWatchRequest{Last: 2, Follow: true})
+	if short.Err() == nil {
+		t.Error("--last 2 --follow returned before the task ended")
 	}
 }

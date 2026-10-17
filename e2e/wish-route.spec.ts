@@ -88,7 +88,7 @@ test("a request routed to a new wish makes it, the window opens it, and the one 
 
   // The one lead is told where the request went, by its queue (decision Q191): its watch prints the answer.
   expect(leadWatch(session, "--timeout", "15s").digest).toContain(
-    `${asked.question.code} answer: answered: the request went to the new wish "${title}"`,
+    `${asked.question.code} [Route from here] answer: answered: the request went to the new wish "${title}"`,
   );
   // No second lead: the lead's terminal is the only one that runs claude, on its own session.
   const claudes = (await runningTerminals()).filter((t) =>

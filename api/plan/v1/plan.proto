@@ -682,6 +682,10 @@ message LeadEvent {
   // What the digest prints in full under its line, when one line cannot carry it: the task an answer's option planned,
   // its dependencies' states, and how to launch it.
   string detail = 9;
+  // What the event's line cuts and the lead must read whole: the final note of the task that ended, the note of the
+  // answer. A digest prints it under its line, cut past a few screens with the command that prints it whole (djinn
+  // lead event); a driven lead's batch carries it whole.
+  string note = 10;
 }
 
 // LeadEventKind says what a lead event is about.
@@ -1905,6 +1909,13 @@ service QuestionService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // One question as it stands now: its text, context, options and recommendation, its answer and note, or its
+  // withdrawal; of its rounds, who asked to investigate and why, without what each revision replaced. Reads one
+  // decision's note without listing every question of a wish.
+  rpc Get(QuestionServiceGetRequest) returns (QuestionServiceGetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
   rpc Enlighten(QuestionServiceEnlightenRequest) returns (QuestionServiceEnlightenResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -2199,6 +2210,21 @@ message QuestionServiceListResponse {
   string next_page_token = 2;
   // Total number of questions matching the request.
   int32 total = 3;
+}
+
+message QuestionServiceGetRequest {
+  // The question: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message QuestionServiceGetResponse {
+  // The question, its current version only.
+  Question question = 1;
 }
 
 message QuestionServiceMoveRequest {
@@ -3577,8 +3603,9 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
-  // Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
-  // few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
+  // Wait for the events the lead must act on, and print them as one digest: a line per event (its code and its wish,
+  // its kind, a few words), under it the final note of a task or the note of an answer, whole up to a few screens
+  // (djinn lead event prints it all), then the wishes' identifiers and the cursor to pass next. It blocks until
   // an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
   // most) so that a burst, like an integration pass merging several tasks, comes as one digest; then it returns.
   // Called again with --after the cursor, it acknowledges every event up to it for this session, then waits for the
@@ -3590,6 +3617,12 @@ service LeadService {
   rpc Watch(LeadServiceWatchRequest) returns (LeadServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // One of the lead's events whole, waiting or acknowledged within the week: its line uncut, the note of the task or
+  // the answer it is about, and its detail. A digest names it with the event's identifier when it cuts a note.
+  rpc Event(LeadServiceEventRequest) returns (LeadServiceEventResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
   // queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
@@ -3722,6 +3755,19 @@ message LeadServiceWatchRequest {
 
 message LeadServiceWatchResponse {
   // The digest: a line per event, then the cursor and the command to run next.
+  string text = 1;
+}
+
+message LeadServiceEventRequest {
+  // The event, by identifier: the digest prints it.
+  string id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message LeadServiceEventResponse {
+  // The event whole: its kind and code, its wish, its line, its note and its detail.
   string text = 1;
 }
 
@@ -4069,7 +4115,8 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Follow a task's events as they come, from the first one or after a position; ends with the task.
+  // Follow a task's events as they come, from the first one or after a position; ends with the task. With --last, its
+  // last events only, at once: it returns without following a task that runs or waits, unless --follow.
   rpc Watch(TaskServiceWatchRequest) returns (stream TaskServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
@@ -4578,12 +4625,15 @@ message TaskServiceWatchRequest {
   int64 after_seq = 2 [(buf.validate.field).int64.gte = 0];
   // Also send each event's raw line from the provider.
   bool raw = 3;
-  // Only the last events already stored, this many (a task that ended: its final note is among them), then the ones
-  // that come. Not set: from the first one, or after after_seq.
+  // Only the last events already stored, this many (a task that ended: its final note is among them), then return
+  // at once, whether the task runs, waits or ended. Not set: from the first one, or after after_seq, following the
+  // task until it ends.
   int32 last = 4 [(buf.validate.field).int32 = {
     gte: 0
     lte: 1000
   }];
+  // With --last, follow the task after its last events, until it ends, as a watch without --last does.
+  bool follow = 5;
 }
 
 message TaskServiceWatchResponse {

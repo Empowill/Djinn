@@ -68,7 +68,7 @@ func digestKeeps(t *testing.T, q *planv1.Question, did string) {
 	q.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_A}
 	e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, Code: q.GetCode(), Text: plan.AnswerLine(q, did)}
 	if !plan.DigestKeeps(e) {
-		t.Errorf("the lead's digest cuts %q", plan.DigestLine(e))
+		t.Errorf("the lead's digest cuts %q", plan.DigestLine(e, ""))
 	}
 }
 

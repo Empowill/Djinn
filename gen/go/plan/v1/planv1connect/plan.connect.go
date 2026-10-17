@@ -61,6 +61,8 @@ const (
 	QuestionServiceAnswerProcedure = "/plan.v1.QuestionService/Answer"
 	// QuestionServiceListProcedure is the fully-qualified name of the QuestionService's List RPC.
 	QuestionServiceListProcedure = "/plan.v1.QuestionService/List"
+	// QuestionServiceGetProcedure is the fully-qualified name of the QuestionService's Get RPC.
+	QuestionServiceGetProcedure = "/plan.v1.QuestionService/Get"
 	// QuestionServiceEnlightenProcedure is the fully-qualified name of the QuestionService's Enlighten
 	// RPC.
 	QuestionServiceEnlightenProcedure = "/plan.v1.QuestionService/Enlighten"
@@ -172,6 +174,8 @@ const (
 	LeadServiceNotesProcedure = "/plan.v1.LeadService/Notes"
 	// LeadServiceWatchProcedure is the fully-qualified name of the LeadService's Watch RPC.
 	LeadServiceWatchProcedure = "/plan.v1.LeadService/Watch"
+	// LeadServiceEventProcedure is the fully-qualified name of the LeadService's Event RPC.
+	LeadServiceEventProcedure = "/plan.v1.LeadService/Event"
 	// LeadServiceTellProcedure is the fully-qualified name of the LeadService's Tell RPC.
 	LeadServiceTellProcedure = "/plan.v1.LeadService/Tell"
 	// LeadServiceJournalProcedure is the fully-qualified name of the LeadService's Journal RPC.
@@ -255,6 +259,10 @@ type QuestionServiceClient interface {
 	Answer(context.Context, *connect.Request[v1.QuestionServiceAnswerRequest]) (*connect.Response[v1.QuestionServiceAnswerResponse], error)
 	// List questions, the most recent last.
 	List(context.Context, *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error)
+	// One question as it stands now: its text, context, options and recommendation, its answer and note, or its
+	// withdrawal; of its rounds, who asked to investigate and why, without what each revision replaced. Reads one
+	// decision's note without listing every question of a wish.
+	Get(context.Context, *connect.Request[v1.QuestionServiceGetRequest]) (*connect.Response[v1.QuestionServiceGetResponse], error)
 	// Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
 	Enlighten(context.Context, *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error)
 	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
@@ -305,6 +313,13 @@ func NewQuestionServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		get: connect.NewClient[v1.QuestionServiceGetRequest, v1.QuestionServiceGetResponse](
+			httpClient,
+			baseURL+QuestionServiceGetProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Get")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		enlighten: connect.NewClient[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse](
 			httpClient,
 			baseURL+QuestionServiceEnlightenProcedure,
@@ -349,6 +364,7 @@ type questionServiceClient struct {
 	ask       *connect.Client[v1.QuestionServiceAskRequest, v1.QuestionServiceAskResponse]
 	answer    *connect.Client[v1.QuestionServiceAnswerRequest, v1.QuestionServiceAnswerResponse]
 	list      *connect.Client[v1.QuestionServiceListRequest, v1.QuestionServiceListResponse]
+	get       *connect.Client[v1.QuestionServiceGetRequest, v1.QuestionServiceGetResponse]
 	enlighten *connect.Client[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse]
 	revise    *connect.Client[v1.QuestionServiceReviseRequest, v1.QuestionServiceReviseResponse]
 	move      *connect.Client[v1.QuestionServiceMoveRequest, v1.QuestionServiceMoveResponse]
@@ -370,6 +386,11 @@ func (c *questionServiceClient) Answer(ctx context.Context, req *connect.Request
 // List calls plan.v1.QuestionService.List.
 func (c *questionServiceClient) List(ctx context.Context, req *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error) {
 	return c.list.CallUnary(ctx, req)
+}
+
+// Get calls plan.v1.QuestionService.Get.
+func (c *questionServiceClient) Get(ctx context.Context, req *connect.Request[v1.QuestionServiceGetRequest]) (*connect.Response[v1.QuestionServiceGetResponse], error) {
+	return c.get.CallUnary(ctx, req)
 }
 
 // Enlighten calls plan.v1.QuestionService.Enlighten.
@@ -410,6 +431,10 @@ type QuestionServiceHandler interface {
 	Answer(context.Context, *connect.Request[v1.QuestionServiceAnswerRequest]) (*connect.Response[v1.QuestionServiceAnswerResponse], error)
 	// List questions, the most recent last.
 	List(context.Context, *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error)
+	// One question as it stands now: its text, context, options and recommendation, its answer and note, or its
+	// withdrawal; of its rounds, who asked to investigate and why, without what each revision replaced. Reads one
+	// decision's note without listing every question of a wish.
+	Get(context.Context, *connect.Request[v1.QuestionServiceGetRequest]) (*connect.Response[v1.QuestionServiceGetResponse], error)
 	// Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
 	Enlighten(context.Context, *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error)
 	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
@@ -453,6 +478,13 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 		QuestionServiceListProcedure,
 		svc.List,
 		connect.WithSchema(questionServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	questionServiceGetHandler := connect.NewUnaryHandler(
+		QuestionServiceGetProcedure,
+		svc.Get,
+		connect.WithSchema(questionServiceMethods.ByName("Get")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
@@ -500,6 +532,8 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 			questionServiceAnswerHandler.ServeHTTP(w, r)
 		case QuestionServiceListProcedure:
 			questionServiceListHandler.ServeHTTP(w, r)
+		case QuestionServiceGetProcedure:
+			questionServiceGetHandler.ServeHTTP(w, r)
 		case QuestionServiceEnlightenProcedure:
 			questionServiceEnlightenHandler.ServeHTTP(w, r)
 		case QuestionServiceReviseProcedure:
@@ -531,6 +565,10 @@ func (UnimplementedQuestionServiceHandler) Answer(context.Context, *connect.Requ
 
 func (UnimplementedQuestionServiceHandler) List(context.Context, *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.List is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Get(context.Context, *connect.Request[v1.QuestionServiceGetRequest]) (*connect.Response[v1.QuestionServiceGetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Get is not implemented"))
 }
 
 func (UnimplementedQuestionServiceHandler) Enlighten(context.Context, *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error) {
@@ -2008,8 +2046,9 @@ type LeadServiceClient interface {
 	// reads a note before it acts in its area; to add or fix
 	// one, a lead that may change Djinn spawns a task that edits lead/notes.
 	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
-	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
-	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
+	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code and its wish,
+	// its kind, a few words), under it the final note of a task or the note of an answer, whole up to a few screens
+	// (djinn lead event prints it all), then the wishes' identifiers and the cursor to pass next. It blocks until
 	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
 	// most) so that a burst, like an integration pass merging several tasks, comes as one digest; then it returns.
 	// Called again with --after the cursor, it acknowledges every event up to it for this session, then waits for the
@@ -2019,6 +2058,9 @@ type LeadServiceClient interface {
 	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent). Refused while Djinn
 	// drives the lead: Djinn hands each batch to a session of its own.
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
+	// One of the lead's events whole, waiting or acknowledged within the week: its line uncut, the note of the task or
+	// the answer it is about, and its detail. A digest names it with the event's identifier when it cuts a note.
+	Event(context.Context, *connect.Request[v1.LeadServiceEventRequest]) (*connect.Response[v1.LeadServiceEventResponse], error)
 	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
@@ -2086,6 +2128,13 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("Watch")),
 			connect.WithClientOptions(opts...),
 		),
+		event: connect.NewClient[v1.LeadServiceEventRequest, v1.LeadServiceEventResponse](
+			httpClient,
+			baseURL+LeadServiceEventProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Event")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		tell: connect.NewClient[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse](
 			httpClient,
 			baseURL+LeadServiceTellProcedure,
@@ -2116,6 +2165,7 @@ type leadServiceClient struct {
 	brief   *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
 	notes   *connect.Client[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse]
 	watch   *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
+	event   *connect.Client[v1.LeadServiceEventRequest, v1.LeadServiceEventResponse]
 	tell    *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
 	journal *connect.Client[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse]
 	choose  *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
@@ -2149,6 +2199,11 @@ func (c *leadServiceClient) Notes(ctx context.Context, req *connect.Request[v1.L
 // Watch calls plan.v1.LeadService.Watch.
 func (c *leadServiceClient) Watch(ctx context.Context, req *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {
 	return c.watch.CallUnary(ctx, req)
+}
+
+// Event calls plan.v1.LeadService.Event.
+func (c *leadServiceClient) Event(ctx context.Context, req *connect.Request[v1.LeadServiceEventRequest]) (*connect.Response[v1.LeadServiceEventResponse], error) {
+	return c.event.CallUnary(ctx, req)
 }
 
 // Tell calls plan.v1.LeadService.Tell.
@@ -2193,8 +2248,9 @@ type LeadServiceHandler interface {
 	// reads a note before it acts in its area; to add or fix
 	// one, a lead that may change Djinn spawns a task that edits lead/notes.
 	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
-	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
-	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
+	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code and its wish,
+	// its kind, a few words), under it the final note of a task or the note of an answer, whole up to a few screens
+	// (djinn lead event prints it all), then the wishes' identifiers and the cursor to pass next. It blocks until
 	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
 	// most) so that a burst, like an integration pass merging several tasks, comes as one digest; then it returns.
 	// Called again with --after the cursor, it acknowledges every event up to it for this session, then waits for the
@@ -2204,6 +2260,9 @@ type LeadServiceHandler interface {
 	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent). Refused while Djinn
 	// drives the lead: Djinn hands each batch to a session of its own.
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
+	// One of the lead's events whole, waiting or acknowledged within the week: its line uncut, the note of the task or
+	// the answer it is about, and its detail. A digest names it with the event's identifier when it cuts a note.
+	Event(context.Context, *connect.Request[v1.LeadServiceEventRequest]) (*connect.Response[v1.LeadServiceEventResponse], error)
 	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
@@ -2267,6 +2326,13 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("Watch")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceEventHandler := connect.NewUnaryHandler(
+		LeadServiceEventProcedure,
+		svc.Event,
+		connect.WithSchema(leadServiceMethods.ByName("Event")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceTellHandler := connect.NewUnaryHandler(
 		LeadServiceTellProcedure,
 		svc.Tell,
@@ -2300,6 +2366,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceNotesHandler.ServeHTTP(w, r)
 		case LeadServiceWatchProcedure:
 			leadServiceWatchHandler.ServeHTTP(w, r)
+		case LeadServiceEventProcedure:
+			leadServiceEventHandler.ServeHTTP(w, r)
 		case LeadServiceTellProcedure:
 			leadServiceTellHandler.ServeHTTP(w, r)
 		case LeadServiceJournalProcedure:
@@ -2337,6 +2405,10 @@ func (UnimplementedLeadServiceHandler) Notes(context.Context, *connect.Request[v
 
 func (UnimplementedLeadServiceHandler) Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Watch is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Event(context.Context, *connect.Request[v1.LeadServiceEventRequest]) (*connect.Response[v1.LeadServiceEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Event is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
@@ -2615,7 +2687,8 @@ type TaskServiceClient interface {
 	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting. Its worker takes a slot
 	// all the same, beyond what the load bar lets run: the bar counts it among the workers started by hand.
 	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
-	// Follow a task's events as they come, from the first one or after a position; ends with the task.
+	// Follow a task's events as they come, from the first one or after a position; ends with the task. With --last, its
+	// last events only, at once: it returns without following a task that runs or waits, unless --follow.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
@@ -2998,7 +3071,8 @@ type TaskServiceHandler interface {
 	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting. Its worker takes a slot
 	// all the same, beyond what the load bar lets run: the bar counts it among the workers started by hand.
 	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
-	// Follow a task's events as they come, from the first one or after a position; ends with the task.
+	// Follow a task's events as they come, from the first one or after a position; ends with the task. With --last, its
+	// last events only, at once: it returns without following a task that runs or waits, unless --follow.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)

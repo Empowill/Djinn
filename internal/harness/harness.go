@@ -2470,6 +2470,24 @@ func (h *Harness) lastEventsFrom(ctx context.Context, taskID string, n int) (int
 	return from, nil
 }
 
+// Stored sends the task's events stored after the position after, then returns: it follows no task, running or not.
+func (h *Harness) Stored(ctx context.Context, taskID string, after int64, send func(*planv1.TaskEvent) error) error {
+	if _, err := store.Get[*planv1.Task](ctx, h.store, taskID); err != nil {
+		return plan.Status(err)
+	}
+	events, err := store.ListAfter[*planv1.TaskEvent](ctx, h.store, store.Where{"task_id": taskID},
+		store.After{Field: "seq", From: after})
+	if err != nil {
+		return plan.Status(err)
+	}
+	for _, ev := range events {
+		if err := send(ev); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Watch sends the task's events after the position after, as they come, until the task has ended and all its
 // events are sent, or ctx ends.
 func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send func(*planv1.TaskEvent) error) error {

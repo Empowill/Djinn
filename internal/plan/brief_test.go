@@ -126,7 +126,7 @@ func TestBrief(t *testing.T) {
 		"Every move only the developer can make (push a tag, merge or open a pull request, create a release",
 		"--move",
 		"**Check every task that ends.**",
-		"Read its final note (`djinn task watch <task>`, or its line in your watch's digest)",
+		"Read its final note (under its line in your watch's digest, or `djinn task watch <task> --last 5`)",
 		// An azima carries one clear goal, and new work finds its azima first.
 		"**An azima carries one clear goal**", "rephrase its goal (its plan file's Goal and its title",
 		"open a new azima only for a will no existing one carries",
@@ -1056,7 +1056,7 @@ func TestStartLineRunsCommandsAlone(t *testing.T) {
 	}
 	rules := briefRules(nil, "")
 	for _, want := range []string{DirectCommandsRule, DirectFlags, "`djinn brief --wishes`", "`djinn lead notes --all`",
-		"`djinn task list --wish-id <wish> --short`", "`djinn task watch <task>`, `--last 5`"} {
+		"`djinn task list --wish-id <wish> --short`", "`djinn task watch <task>` follows a task until it ends; `--last 5`", "`djinn question get <question> --wish-id <wish>`"} {
 		if !strings.Contains(rules, want) {
 			t.Errorf("briefRules lacks %q", want)
 		}
