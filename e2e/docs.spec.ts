@@ -238,9 +238,9 @@ test("the Grimoire's navigation is in the language asked", async ({ page }) => {
 // The Grimoire is a page of the window, as the Hourglass (W165): the side panel's entry, just under the Hourglass, shows
 // it in the main view, never a dialog over it; the side panel stays at hand, and back and forward move between the
 // pages read. It was so slow to scroll in the window that it seemed to reload: a blur as wide as the window under smoke
-// that drifted, drawn again on every frame (W144). The frame scrolls at the pace of the screen, is never reloaded by a
-// scroll or a click, and nothing blurs what moves behind it.
-test("the Grimoire opens from the menu as a page of the window, not a modal, in its theme and language, and it scrolls without stalling", async ({
+// that drifted, drawn again on every frame (W144). The frame is never reloaded by a scroll or a click, and nothing
+// blurs what moves behind it; that it scrolls at the pace of the screen is the next test's budget.
+test("the Grimoire opens from the menu as a page of the window, not a modal, in its theme and language, and a scroll keeps it loaded", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
@@ -320,29 +320,8 @@ test("the Grimoire opens from the menu as a page of the window, not a modal, in 
           ).length,
     ),
   ).toBe(0);
-  // A dozen frames of scrolling: their median stays far under the quarter of a second each took. A stalling page
-  // stalls every try; other workers' gates load the machine for a while only (W177, W75): the best of five tries.
-  const median = await site.evaluate(async () => {
-    const tryOnce = () =>
-      new Promise<number>((resolve) => {
-        window.scrollTo(0, 0);
-        const gaps: number[] = [];
-        let last = performance.now();
-        const step = (now: number) => {
-          gaps.push(now - last);
-          last = now;
-          window.scrollBy(0, 120);
-          if (gaps.length < 12) requestAnimationFrame(step);
-          else resolve(gaps.sort((a, b) => a - b)[6]);
-        };
-        requestAnimationFrame(step);
-      });
-    let best = Infinity;
-    for (let i = 0; i < 5 && best >= 100; i++)
-      best = Math.min(best, await tryOnce());
-    return best;
-  });
-  expect(median).toBeLessThan(100);
+  // A scroll, as the reader's.
+  await site.evaluate(() => window.scrollBy(0, 1_200));
 
   // The book, a page and a command move in the page: the page stays the one loaded.
   await nav.getByRole("link", { name: "Introduction" }).click();
@@ -401,3 +380,41 @@ test("the Grimoire opens from the menu as a page of the window, not a modal, in 
   await page.getByRole("button", { name: "Expand the navigation" }).click();
   await expect(page.locator(".app.sidebar-collapsed")).toHaveCount(0);
 });
+
+// The frame scrolls at the pace of the screen (W144): a time budget, run on demand (playwright.config.ts).
+test(
+  "the Grimoire scrolls without stalling",
+  { tag: "@budget" },
+  async ({ page }) => {
+    await page.goto(djinnURL());
+    await page.getByRole("button", { name: "Grimoire", exact: true }).click();
+    const frame = page.frameLocator('iframe[title="Grimoire"]');
+    await expect(
+      frame.getByRole("heading", { level: 1, name: "Grimoire" }),
+    ).toBeVisible();
+    const site = frame.locator("html");
+    // A dozen frames of scrolling: their median stays far under the quarter of a second each took. A stalling page
+    // stalls every try; other workers' gates load the machine for a while only (W177, W75): the best of five tries.
+    const median = await site.evaluate(async () => {
+      const tryOnce = () =>
+        new Promise<number>((resolve) => {
+          window.scrollTo(0, 0);
+          const gaps: number[] = [];
+          let last = performance.now();
+          const step = (now: number) => {
+            gaps.push(now - last);
+            last = now;
+            window.scrollBy(0, 120);
+            if (gaps.length < 12) requestAnimationFrame(step);
+            else resolve(gaps.sort((a, b) => a - b)[6]);
+          };
+          requestAnimationFrame(step);
+        });
+      let best = Infinity;
+      for (let i = 0; i < 5 && best >= 100; i++)
+        best = Math.min(best, await tryOnce());
+      return best;
+    });
+    expect(median).toBeLessThan(100);
+  },
+);
