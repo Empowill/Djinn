@@ -4,12 +4,20 @@ import { X } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";
 
 import icon from "../build/icon.svg";
+import { EyePerch } from "./djinn-eye";
 import { t } from "./i18n";
 import { Wordmark } from "./wordmark";
 
 // The mark is the app's icon, the one drawing the dock and the window show (build/icon.svg),
 // paired with its high-contrast light-ground twin (build/icon-light.svg).
-export function Brand({ small = false }: { small?: boolean }) {
+// With eye, the seal is the home of the Djinn's eye (djinn-eye.tsx): the side panel's.
+export function Brand({
+  small = false,
+  eye = false,
+}: {
+  small?: boolean;
+  eye?: boolean;
+}) {
   return (
     <span className={`brand ${small ? "small" : ""}`}>
       <span className="brand-mark">
@@ -84,6 +92,7 @@ export function Brand({ small = false }: { small?: boolean }) {
             />
           </g>
         </svg>
+        {eye && <EyePerch name="home" />}
       </span>
       {!small && <Wordmark />}
     </span>

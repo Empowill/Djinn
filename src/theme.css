@@ -73,6 +73,21 @@
   --smoke-ascii-5: #f5c978;
   --smoke-ascii-6: #f0b24a;
   --smoke-ascii-7: #63cbb0;
+  /* The Djinn's eye (djinn-eye.tsx), drawn from the seal: its malachite line and ticks, its emerald grounds, its
+     saffron flame. In the dark, the mocking demon: a lid half lowered, the flame thin as a slit. */
+  --eye-line: #43c29f;
+  --eye-ray: #74d4b8;
+  --eye-white: #16382f;
+  --eye-star: #102922;
+  --eye-iris: #0b1f1a;
+  --eye-flame: #f0b24a;
+  --eye-flame-in: #fce0a2;
+  --eye-flame-edge: #f0b24a;
+  --eye-lid: #0b1714;
+  --eye-shine: #ffb547;
+  --eye-slit: 0.62;
+  --eye-lid-down: 1;
+  --eye-rays: 0;
   /* The terminal: xterm's own colours in the dark theme. */
   --term-bg: #111111;
   --term-fg: #e7e7e7;
@@ -181,4 +196,18 @@ html[data-theme="light"] {
   --term-bright-magenta: #a1309b;
   --term-bright-cyan: #0f7c86;
   --term-bright-white: #2e2e32;
+  /* In the light, the solar eye: wide open, its rays the seal's ticks, a round flame. */
+  --eye-line: #0f594a;
+  --eye-ray: #146b5a;
+  --eye-white: #f4f8f6;
+  --eye-star: #e5f2ed;
+  --eye-iris: #d6e9e3;
+  --eye-flame: #c88214;
+  --eye-flame-in: #f0b24a;
+  --eye-flame-edge: #7a4b00;
+  --eye-lid: #e5f2ed;
+  --eye-shine: #e09a1a;
+  --eye-slit: 1;
+  --eye-lid-down: 0;
+  --eye-rays: 1;
 }

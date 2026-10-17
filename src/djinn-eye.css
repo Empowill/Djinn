@@ -1,0 +1,235 @@
+/* The Djinn's eye (djinn-eye.tsx): its layers, its moods, its perches. Every move is a transform or an opacity, which
+   the engine composes without painting (W513); the drawings inside are SVG that never animate. The costume is the
+   theme's (theme.css, --eye-*). */
+.djinn-eye {
+  position: absolute;
+  left: -0.6875rem;
+  top: -0.40625rem;
+  width: 1.375rem;
+  height: 0.8125rem;
+  pointer-events: none;
+  transform: scale(var(--djinn-eye-scale, 1));
+  transition:
+    transform 0.32s cubic-bezier(0.3, 0.7, 0.2, 1),
+    opacity 0.2s ease;
+}
+.djinn-eye svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.djinn-eye-ball,
+.djinn-eye-socket,
+.djinn-eye-iris {
+  position: absolute;
+  inset: 0;
+}
+.djinn-eye-ball {
+  transition:
+    transform 0.16s ease-out,
+    opacity 0.16s;
+}
+/* The almond of the eye, in percents: it follows the text size. */
+.djinn-eye-socket {
+  clip-path: polygon(
+    4.5% 50%,
+    8.4% 42.2%,
+    12.9% 35.5%,
+    18.1% 29.8%,
+    23.9% 25.1%,
+    30% 21.5%,
+    36.5% 18.9%,
+    43.2% 17.3%,
+    50% 16.8%,
+    56.8% 17.3%,
+    63.5% 18.9%,
+    70% 21.5%,
+    76.1% 25.1%,
+    81.9% 29.8%,
+    87.1% 35.5%,
+    91.6% 42.2%,
+    95.5% 50%,
+    91.6% 57.8%,
+    87.1% 64.5%,
+    81.9% 70.2%,
+    76.1% 74.9%,
+    70% 78.5%,
+    63.5% 81.1%,
+    56.8% 82.7%,
+    50% 83.2%,
+    43.2% 82.7%,
+    36.5% 81.1%,
+    30% 78.5%,
+    23.9% 74.9%,
+    18.1% 70.2%,
+    12.9% 64.5%,
+    8.4% 57.8%
+  );
+}
+.djinn-eye-iris {
+  transition: transform 0.28s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.djinn-eye-flame {
+  transform-box: fill-box;
+  transform-origin: 50% 60%;
+  transform: scaleX(var(--eye-slit));
+}
+.djinn-eye-lid {
+  opacity: var(--eye-lid-down);
+}
+.djinn-eye-rays {
+  opacity: var(--eye-rays);
+}
+.djinn-eye-closed {
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+/* Where it looks: the text of the question it reads, a little up to Write to the Djinn, where it flies. */
+.djinn-eye[data-mood="watching"] .djinn-eye-iris {
+  transform: translateX(0.0625rem);
+}
+.djinn-eye[data-mood="reading"] .djinn-eye-iris {
+  transform: translateX(0.125rem);
+}
+.djinn-eye[data-mood="listening"] .djinn-eye-iris {
+  transform: translateY(-0.0625rem);
+}
+.djinn-eye[data-flying] .djinn-eye-iris {
+  transform: translate(var(--djinn-eye-look-x, 0), var(--djinn-eye-look-y, 0));
+}
+.djinn-eye[data-blink] .djinn-eye-ball {
+  transform: scaleY(0.1);
+  transition-duration: 0.11s;
+}
+.djinn-eye[data-mood="asleep"] .djinn-eye-ball {
+  opacity: 0;
+}
+.djinn-eye[data-mood="asleep"] .djinn-eye-closed {
+  opacity: 1;
+}
+.djinn-eye[data-mood="restarting"] {
+  opacity: 0.35;
+}
+/* The flame shines while something waits for the developer: a glow that breathes three times as it lights (and as
+   the eye lands), then stays, steady. No loop: once lit, the engine draws nothing (W160 measured an endless breath at
+   5 % of a core in WebKitGTK). Its breaths pause with the window at rest (styles.css, html[data-still]). */
+.djinn-eye-shine {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: -0.75rem 0 0 -0.75rem;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--eye-shine) 90%, transparent),
+    color-mix(in srgb, var(--eye-shine) 35%, transparent) 50%,
+    transparent
+  );
+}
+.djinn-eye[data-shine] .djinn-eye-shine {
+  opacity: 0.6;
+  transform: scale(0.9);
+  animation: djinn-eye-shine 1.3s ease-in-out 6 alternate;
+}
+@keyframes djinn-eye-shine {
+  from {
+    opacity: 0.6;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .djinn-eye[data-shine] .djinn-eye-shine {
+    animation: none;
+  }
+}
+html[data-motion="reduced"] .djinn-eye[data-shine] .djinn-eye-shine {
+  animation: none;
+}
+
+/* The layer it flies in, above the page, below the dialogs: it holds nothing else and takes no pointer. */
+.djinn-eye-flight {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+}
+.djinn-eye-flight > .djinn-eye {
+  left: 0;
+  top: 0;
+  transition: none;
+}
+
+/* The perches: a point the eye is centred on, each with its scale. */
+.djinn-eye-perch {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+/* Home, the centre of the seal: the eye as wide as the seal's star. */
+.brand-mark {
+  position: relative;
+}
+.brand-mark > .djinn-eye-perch {
+  --djinn-eye-scale: 0.82;
+}
+.brand.small .brand-mark > .djinn-eye-perch {
+  --djinn-eye-scale: 0.68;
+}
+/* A question of the column: the middle of the page's margin on its left, by its first line. */
+.review .question-card.question-row {
+  position: relative;
+}
+.question-row > .djinn-eye-perch {
+  left: -1.03125rem;
+  top: 1.0625rem;
+}
+/* Write to the Djinn: in place of the pill's icon, which steps aside, and lighting the pill a little from there. Open,
+   the pill is the developer's: the eye waits out of sight. */
+.workspace-action > .djinn-eye-perch {
+  left: 1.53125rem;
+  z-index: 1;
+  --djinn-eye-scale: 0.85;
+  transition: opacity 0.16s;
+}
+.workspace-action.is-expanded > .djinn-eye-perch {
+  opacity: 0;
+}
+.workspace-action-control > .lucide {
+  transition: opacity 0.16s;
+}
+.workspace-action:not(.is-expanded):has(> .djinn-eye-perch > .djinn-eye)
+  .workspace-action-control
+  > .lucide {
+  opacity: 0;
+}
+.workspace-action-surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  background: radial-gradient(
+    circle at 1.53125rem 50%,
+    color-mix(in srgb, var(--eye-shine) 20%, transparent),
+    transparent 60%
+  );
+}
+.workspace-action:not(.is-expanded):has(
+    > .djinn-eye-perch > .djinn-eye[data-mood="listening"]
+  )
+  .workspace-action-surface::after {
+  opacity: 1;
+}

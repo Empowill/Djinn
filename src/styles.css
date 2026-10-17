@@ -1570,7 +1570,8 @@ html[data-still] .wave-line,
 html[data-still] .sync-spinner,
 html[data-still] .wish-creation-spinner,
 html[data-still] .wish-composer-caret,
-html[data-still] .project-flame-glyph {
+html[data-still] .project-flame-glyph,
+html[data-still] .djinn-eye-shine {
   animation-play-state: paused !important;
 }
 html[data-still] .operating-load * {

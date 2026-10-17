@@ -79,6 +79,8 @@ import {
 } from "./data/format";
 import { mainLink } from "./data/links";
 import { placeTaken } from "./scroll-anchor";
+import { questionPerch } from "./data/eye";
+import { EyePerch } from "./djinn-eye";
 import { t } from "./i18n";
 import { CommandText } from "./copy-command";
 import { MoveLink } from "./link";
@@ -696,6 +698,7 @@ export const WishQuestion = memo(function WishQuestion({
         exit={{ opacity: 0, x: 30 }}
         transition={{ duration: 0.25 }}
       >
+        <EyePerch name={questionPerch(q.id)} />
         <span className="question-id">{q.code}</span>
         <div className="question-row-head">
           <h3 className="question-row-title">
