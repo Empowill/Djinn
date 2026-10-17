@@ -687,6 +687,8 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 
 	// Now that push checks have passed and push succeeded, wDep starts running and finishes!
 	wDep = in.until(t, wDep.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	writeFile(t, wDep.GetWorktree(), "app/src/dep.txt", "dep\n") // Work of its own: one without is not merged (W196).
+	commitAll(t, wDep.GetWorktree(), "Dependent adds dep.txt")
 	in.release(t, wDep.GetId())
 	in.ended(t, wDep.GetId())
 	in.pass(t, time.Second)

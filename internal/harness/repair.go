@@ -65,7 +65,7 @@ func (h *Harness) laneOf(ctx context.Context, wish *planv1.Wish, project *planv1
 		return ""
 	}
 	if !settings.Integrates() {
-		if branch, why := h.uncheckedBranch(ctx, wish, project, settings, t); why == "" {
+		if branch, err := h.uncheckedBranch(ctx, wish, project, settings, t); err == nil {
 			return branch
 		}
 		return ""

@@ -46,7 +46,8 @@ func twoProjects(t *testing.T, e *env) (wishID, projectID string) {
 
 // TestDoneWithoutCommitTellsTheLeadOnce replays W1 of wish Dew (12/10/2026): a worker of a new wish, in its second
 // project, with its agent's own configuration, that commits nothing and ends done. Its project names no check, so no
-// merge ever told its end: the lead heard nothing for an hour. Now it hears it once, with the worker's final note.
+// merge ever told its end: the lead heard nothing for an hour. Now it hears it once, with the worker's final note, and
+// that its work brought nothing to merge (W196).
 func TestDoneWithoutCommitTellsTheLeadOnce(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir())
@@ -70,7 +71,7 @@ func TestDoneWithoutCommitTellsTheLeadOnce(t *testing.T) {
 	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_NATIVE {
 		t.Fatalf("task %v, access %v: want done, native", got.GetStatus(), got.GetAccess())
 	}
-	want := []string{"Djinn: " + task.GetCode() + " done: The rest of the report."}
+	want := []string{"Djinn: " + task.GetCode() + " done, nothing to merge: no commit of its own. Its final note: The rest of the report."}
 	if lines := endedEvents(queue, task.GetCode()); !slices.Equal(lines, want) {
 		t.Errorf("ended events %q, want %q", lines, want)
 	}

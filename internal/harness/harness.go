@@ -2014,7 +2014,7 @@ func (h *Harness) end(r *run, res Result) {
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 		h.kickIntegrate()
 	}
-	if left != "" {
+	if left != "" && left != nothingToMerge { // Work that brings nothing: its end's line says it (tellDone).
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: none: " + left})
 	}
 	switch {

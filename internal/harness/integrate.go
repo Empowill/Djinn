@@ -157,6 +157,9 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 	if err != nil || !project.GetGit() {
 		return false, ""
 	}
+	if why := nothingOfItsOwn(ctx, project.GetDirectory(), t); why != "" {
+		return false, why
+	}
 	settings, err := plan.LoadSettings(h.home, project)
 	if err != nil {
 		t.Integration = &planv1.TaskIntegration{
@@ -171,12 +174,13 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 		if err != nil {
 			return false, ""
 		}
-		if _, why := h.uncheckedBranch(ctx, wish, project, settings, t); why != "" {
+		// Work held out of its azima's branch waits, as in a checked project (heldOutError).
+		if _, err := h.uncheckedBranch(ctx, wish, project, settings, t); err != nil && !errors.As(err, new(*heldOutError)) {
 			into := cmp.Or(plan.IntegrationBranchOf(wish, project.GetId()), plan.CheckedOutBranch(ctx, project.GetDirectory()))
 			if !branchHoldsUnmergedCommits(ctx, project.GetDirectory(), t.GetBranch(), into) {
 				return false, ""
 			}
-			return false, why
+			return false, err.Error()
 		}
 	}
 	t.Integration = &planv1.TaskIntegration{
@@ -187,34 +191,82 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 
 // uncheckedBranch is the branch Djinn merges the work of t, a task of wish, into in project, a project whose settings
 // name no check: the wish's own integration branch there, as djinn wish set-integration names it; per azima, the
-// branch the developer named for t's azima (djinn task update <azima> --branch), cut from main if it was deleted since;
-// merged as any work, no check run (W4 of wish Dew, 12/10/2026). Otherwise "" and why the work stays out: Djinn commits
-// nothing untested into the project's main branch, nor into an azima's branch Djinn named, which lands there.
-func (h *Harness) uncheckedBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) (string, string) {
+// branch the developer named for t's azima (djinn task update <azima> --branch); merged as any work, no check run (W4
+// of wish Dew, 12/10/2026). Otherwise "" and why the work stays out: Djinn commits nothing untested into the project's
+// main branch, nor into an azima's branch Djinn named, which lands there; a *heldOutError when the work waits, its azima
+// done or its branch deleted (the lead told).
+func (h *Harness) uncheckedBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) (string, error) {
 	if strat, _ := plan.ResolveWishPushStrategy(wish, settings); strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
 		if azima, err := h.taskAzima(ctx, t); err == nil && azima.GetAzima().GetNamed() {
-			branch, err := h.azimaBranch(ctx, project, settings, azima)
+			branch, err := h.azimaBranchFor(ctx, wish, project, settings, azima)
 			if err != nil {
-				return "", err.Error()
+				return "", err
 			}
-			return branch, ""
+			return branch, nil
 		}
-		return "", errNoChecks.Error() + ", and Djinn merges no untested work into a branch it named for an azima"
+		return "", errors.New(errNoChecks.Error() + ", and Djinn merges no untested work into a branch it named for an azima")
 	}
 	branch := plan.IntegrationBranchOf(wish, project.GetId())
 	if branch != "" {
 		if main, _, err := resolveMainSha(ctx, project.GetDirectory(), settings); err == nil && !strings.EqualFold(main, branch) {
-			return branch, ""
+			return branch, nil
 		}
 	}
-	return "", errNoChecks.Error() + ", and untested work goes only to a wish's own branch (djinn wish set-integration --create-branch)"
+	return "", errors.New(errNoChecks.Error() + ", and untested work goes only to a wish's own branch (djinn wish set-integration --create-branch)")
+}
+
+// nothingOfItsOwn says why the work of t, a done task, has nothing to merge: its branch holds no commit beyond the one
+// it started from, and its worktree nothing not committed; "" when it has work. Such a task is not merged, and no merge
+// commit is made for it (W196: task W103 of wish Dew 13 oct, 17/10/2026, deleted branches and committed nothing, yet
+// Djinn made its azima's deleted branch again, an empty merge in it, and pushed it). A review or a correction worker
+// merges the work it reviews or corrects: never left out here.
+func nothingOfItsOwn(ctx context.Context, repo string, t *planv1.Task) string {
+	if t.GetReview() != nil || t.GetCorrection() != nil || !branchHasNoCommits(ctx, repo, t.GetBranch()) {
+		return ""
+	}
+	if status, err := uncommitted(ctx, t); err != nil || len(status) > 0 {
+		return "" // Changes not committed: a review worker judges them (reviewUncommitted).
+	}
+	return nothingToMerge
+}
+
+// nothingToMerge is why a done task with no commit of its own is not merged, told as it is in its end's line.
+const nothingToMerge = "nothing to merge: no commit of its own"
+
+// leaveOut takes the work of t, waiting to be merged, out of the integration for why: no record left, as a task Djinn
+// does not integrate, said in an event, and its end told to the lead with why.
+func (h *Harness) leaveOut(ctx context.Context, t *planv1.Task, why string) {
+	ctx = context.WithoutCancel(ctx)
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		cur, err := store.Get[*planv1.Task](ctx, tx, t.GetId())
+		if err != nil {
+			return err
+		}
+		cur.Integration = nil
+		if err := tx.Journal(actorHarness, methodIntegrate, cur); err != nil {
+			return err
+		}
+		if err := tx.Put(cur); err != nil {
+			return err
+		}
+		return putEvents(ctx, tx, newEvent(cur.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: none: " + why}))
+	})
+	if err != nil {
+		logx.L().Error("record the integration", "loop", "integrate", "task", t.GetCode(), "err", err)
+		return
+	}
+	h.notify()
+	if tellsDone(t) && !toldDoneAtEnd(t, true) {
+		h.tellDone(ctx, t, notIntegrated(why))
+	}
 }
 
 // notIntegrated is what the lead hears of a done task's work left out of its wish's branch, for the reason left; ""
-// when none.
+// when none. Work that brings nothing is not said left out: there is nothing to merge.
 func notIntegrated(left string) string {
-	if left == "" {
-		return ""
+	switch left {
+	case "", nothingToMerge:
+		return left
 	}
 	return "not integrated: " + left
 }
@@ -275,6 +327,11 @@ func (h *Harness) integratePass(ctx context.Context) {
 		if err := errors.Join(err1, err2); err != nil {
 			logx.L().Error("read the wish and the project", "loop", "integrate", "task", t.GetCode(), "wish", t.GetWishId(),
 				"project", t.GetProjectId(), "err", err)
+			continue
+		}
+		// Work queued before Djinn left out a task with no commit of its own (pendIntegration) never takes a branch.
+		if why := nothingOfItsOwn(ctx, project.GetDirectory(), t); why != "" {
+			h.leaveOut(ctx, t, why)
 			continue
 		}
 		branch := h.laneOf(ctx, wish, project, t)
@@ -398,8 +455,12 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	case err != nil:
 		why = fmt.Sprintf("settings unreadable: %v", err)
 	case !settings.Integrates():
-		if branch, why = h.uncheckedBranch(ctx, wish, project, settings, batch[0]); why != "" {
-			branch = plan.IntegrationBranchOf(wish, project.GetId())
+		var err error
+		if branch, err = h.uncheckedBranch(ctx, wish, project, settings, batch[0]); err != nil {
+			branch, why = plan.IntegrationBranchOf(wish, project.GetId()), err.Error()
+			if held := (*heldOutError)(nil); errors.As(err, &held) {
+				branch = held.branch
+			}
 		}
 	default:
 		branch, why, ok = h.targetBranch(ctx, wish, project, settings, batch)
@@ -436,29 +497,12 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		if head == "" {
 			head, _ = git(ctx, project.GetDirectory(), "rev-parse", "HEAD")
 		}
-		var noWork, mergedAlready []*planv1.Task
-		for _, t := range alreadyIn {
-			if t.GetReview() == nil && t.GetCorrection() == nil && branchHasNoCommits(ctx, project.GetDirectory(), t.GetBranch()) {
-				noWork = append(noWork, t)
-			} else {
-				mergedAlready = append(mergedAlready, t)
-			}
-		}
-		text := "integration: committed: " + branch + " holds the work already, at " + short8(head)
-		if len(noWork) > 0 {
-			h.settleIntegration(ctx, noWork, &planv1.TaskIntegration{
-				State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
-				Branch: branch,
-			}, text, nil)
-		}
 		committed := &planv1.TaskIntegration{
 			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
 			Branch: branch,
 			Sha:    head,
 		}
-		if len(mergedAlready) > 0 {
-			h.settleIntegration(ctx, mergedAlready, committed, text, nil)
-		}
+		h.settleIntegration(ctx, alreadyIn, committed, "integration: committed: "+branch+" holds the work already, at "+short8(head), nil)
 		settled := append(slices.Clone(alreadyIn), h.settleReviewed(ctx, alreadyIn, committed)...)
 		settled = append(settled, h.settleCorrected(ctx, settled, committed)...)
 		h.settleMain(ctx, wish, project, settled, committed)
@@ -1147,6 +1191,7 @@ func (h *Harness) mergeAndTest(
 	keep, done := gitx.Uncut(ctx)
 	defer done()
 	var merged []*planv1.Task
+	empty := false // A merge that changed nothing was undone.
 	for _, t := range batch {
 		base, err := git(ctx, wt, "rev-parse", "HEAD")
 		if err != nil {
@@ -1164,6 +1209,11 @@ func (h *Harness) mergeAndTest(
 		}
 		_, err = git(keep, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, t.GetBranch())
 		if err == nil {
+			if emptyMerge(keep, wt, base) {
+				h.integrationStep(ctx, t, "integration: "+t.GetBranch()+" changes nothing in "+branch+": no merge commit")
+				empty = true
+				continue
+			}
 			h.integrationStep(ctx, t, "integration: merged "+t.GetBranch())
 			merged = append(merged, t)
 			continue
@@ -1202,11 +1252,19 @@ func (h *Harness) mergeAndTest(
 			}
 			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, why, conflict(conflicts))
 		}
+		if emptyMerge(keep, wt, base) {
+			h.integrationStep(ctx, t, "integration: "+t.GetBranch()+" changes nothing in "+branch+": no merge commit")
+			empty = true
+			continue
+		}
 		h.integrationStep(ctx, t, fmt.Sprintf("integration: merged %s; its conflict, only in generated files (%s), settled by %s",
 			t.GetBranch(), strings.Join(conflicts, ", "), settings.Generate))
 		merged = append(merged, t)
 	}
 	if len(merged) == 0 {
+		if empty {
+			return old, nil, "", left // Nothing merged moves the branch: it holds the work already.
+		}
 		return "", nil, "", left
 	}
 	sha, err = git(ctx, wt, "rev-parse", "HEAD")
@@ -1446,6 +1504,18 @@ func integrationWorktree(ctx context.Context, repo, wt, old string) (string, str
 	}
 	_, err = git(ctx, repo, "worktree", "add", "--quiet", "--detach", wt, old)
 	return dir, prefix, err
+}
+
+// emptyMerge tells whether the merge just committed in the worktree wt changes nothing from base, the commit it was
+// made on; it is then undone: no merge commit without a change is ever made (W196).
+func emptyMerge(ctx context.Context, wt, base string) bool {
+	tree, err1 := git(ctx, wt, "rev-parse", "HEAD^{tree}")
+	before, err2 := git(ctx, wt, "rev-parse", base+"^{tree}")
+	if err1 != nil || err2 != nil || tree != before {
+		return false
+	}
+	_, err := git(ctx, wt, "reset", "--quiet", "--hard", base)
+	return err == nil
 }
 
 // samePath tells whether a and b are the same folder, symbolic links resolved.
@@ -2155,7 +2225,8 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 // targetBranch determines the branch to merge the batch into:
 // When the push strategy is azima, each azima gets its own integration branch (djinn/<azima code>-<slug of title>),
 // cut from main if it does not exist yet (azimaBranch). A task with no azima goes to the wish's own integration branch.
-// In per-wish mode, it returns the wish's integration branch as today.
+// In per-wish mode, it returns the wish's integration branch as today. Work held out of its azima's branch, the azima
+// done or its branch deleted, gets that branch and why it waits (azimaBranchFor).
 func (h *Harness) targetBranch(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
 ) (branch, why string, ok bool) {
@@ -2172,7 +2243,10 @@ func (h *Harness) targetBranch(
 		b, why := h.integrationBranch(ctx, wish, project)
 		return b, why, true
 	}
-	if branch, err = h.azimaBranch(ctx, project, settings, azima); err != nil {
+	if branch, err = h.azimaBranchFor(ctx, wish, project, settings, azima); err != nil {
+		if held := (*heldOutError)(nil); errors.As(err, &held) {
+			return held.branch, held.why, true
+		}
 		return "", err.Error(), false
 	}
 	return branch, "", true

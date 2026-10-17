@@ -22,18 +22,21 @@ A worker's work counts once it is in the wish's branch, checked:
 1. **The worker ends done.** Its work is **waiting to be committed**.
 2. **In batches.** Djinn takes the finished tasks waiting for the same branch together, in the order they ended: one
    **batch**, checked once. A task that ends while a batch is checked goes with the next one.
-3. **It looks for work left behind.** A worktree that still holds changes not committed is not merged: see
+3. **It leaves out work with nothing of its own.** A task whose branch holds no commit beyond the one it started from
+   is not merged: its end says *nothing to merge*. A merge that would change nothing is undone: Djinn never makes an
+   empty merge commit.
+4. **It looks for work left behind.** A worktree that still holds changes not committed is not merged: see
    [Work left not committed](#merges-and-corrections-work-left-not-committed).
-4. **It merges** the tasks' branches into the integration branch, one on top of the other, in its own worktree under
+5. **It merges** the tasks' branches into the integration branch, one on top of the other, in its own worktree under
    its data folder, never in your folder. A merge commit records each branch. A branch that conflicts **leaves the
    batch**: its merge is undone, the others go on without it, and it merges alone right after them.
-5. **It makes the worktree ready**, when the project names a setup, such as installing dependencies, and something it
+6. **It makes the worktree ready**, when the project names a setup, such as installing dependencies, and something it
    depends on changed.
-6. **It runs the commit checks** once for the batch, each through the [gate](#gates) of its name, in the order the
+7. **It runs the commit checks** once for the batch, each through the [gate](#gates) of its name, in the order the
    settings give them.
-7. **Green**: the branch moves to the merge. The batch's tasks are **committed**, with its commit; their worktrees are
+8. **Green**: the branch moves to the merge. The batch's tasks are **committed**, with its commit; their worktrees are
    removed, their branches kept. Your checkout of the branch follows when it is clean.
-8. **Red, or a conflict**: the branch stays as it was, the tasks say what failed, and a correction worker starts: one
+9. **Red, or a conflict**: the branch stays as it was, the tasks say what failed, and a correction worker starts: one
    for the whole red batch, or one for the branch that conflicts. While it works, nothing else merges into the branch:
    see [One repair at a time](#merges-and-corrections-one-repair-at-a-time).
 

@@ -674,7 +674,8 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 	azimas := h.wishAzimas(ctx, wish)
 	for _, azima := range azimas {
 		branch := azimaBranchName(azima)
-		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
+		// A done azima's branch is never pushed by itself (W196); its sync line still shows what the remote lacks.
+		if commitOf(ctx, repo, "refs/heads/"+branch) == "" || azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
 			continue
 		}
 		if strings.HasSuffix(state.GetHeld(), "; left to the lead") && state.GetFailedSha() == commitOf(ctx, repo, "refs/heads/"+branch) {
@@ -728,8 +729,8 @@ func (h *Harness) pushAzimaApproved(ctx context.Context, wish *planv1.Wish, proj
 	azimas := h.wishAzimas(ctx, wish)
 	for _, azima := range azimas {
 		branch := azimaBranchName(azima)
-		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
-			continue
+		if commitOf(ctx, repo, "refs/heads/"+branch) == "" || azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			continue // A done azima's branch is never pushed but by its name (pushOne, W196).
 		}
 		since := h.lastBranchPush(ctx, repo, wish, p, branch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), branch, since)
@@ -779,8 +780,8 @@ func (h *Harness) pushAzima(ctx context.Context, wish *planv1.Wish, project *pla
 	azimas := h.wishAzimas(ctx, wish)
 	for _, azima := range azimas {
 		branch := azimaBranchName(azima)
-		if commitOf(ctx, repo, "refs/heads/"+branch) == "" {
-			continue
+		if commitOf(ctx, repo, "refs/heads/"+branch) == "" || azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+			continue // A done azima's branch is never pushed but by its name (pushOne).
 		}
 		since := h.lastBranchPush(ctx, repo, wish, pushState(wish, project.GetId()), branch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), branch, since)
