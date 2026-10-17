@@ -5655,7 +5655,13 @@ type Task struct {
 	// (djinn task rank, a drag in the window). Djinn starts the waiting work of the first azimas first, within its wish's
 	// own rank among the wishes, and the gates serve it first after Djinn's merges and pushes. 0 for an azima never
 	// ranked, a new one included: after the ranked ones, by code (plan.AzimaOrder). 0 for work.
-	Rank          int32 `protobuf:"varint,71,opt,name=rank,proto3" json:"rank,omitempty"`
+	Rank int32 `protobuf:"varint,71,opt,name=rank,proto3" json:"rank,omitempty"`
+	// The planned task waits for room on the machine alone: no slot is free (gates held outside the workers take slots),
+	// the machine is under pressure, or its memory is short, for it or for a task that goes first and that it waits
+	// behind (machine_wait, and the tasks queued after one the memory holds). False when a dependency, its integration
+	// branch's red push checks, a usage limit, a write scope, its wish or a question holds it. The window counts these
+	// tasks as waiting for a place.
+	RoomWait      bool `protobuf:"varint,72,opt,name=room_wait,json=roomWait,proto3" json:"room_wait,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6185,6 +6191,13 @@ func (x *Task) GetRank() int32 {
 		return x.Rank
 	}
 	return 0
+}
+
+func (x *Task) GetRoomWait() bool {
+	if x != nil {
+		return x.RoomWait
+	}
+	return false
 }
 
 // TaskBabysit is the pull or merge request a watcher babysits.
@@ -23970,7 +23983,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
 	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\x12'\n" +
-	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xeb\x15\n" +
+	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\x88\x16\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -24055,7 +24068,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\ababysit\x18D \x01(\v2\x14.plan.v1.TaskBabysitR\ababysit\x12(\n" +
 	"\x05ifrit\x18E \x01(\v2\x12.plan.v1.TaskIfritR\x05ifrit\x12\x16\n" +
 	"\x06urgent\x18F \x01(\bR\x06urgent\x12\x12\n" +
-	"\x04rank\x18G \x01(\x05R\x04rank:\x13\xd2\xf3\x18\x0f\n" +
+	"\x04rank\x18G \x01(\x05R\x04rank\x12\x1b\n" +
+	"\troom_wait\x18H \x01(\bR\broomWait:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\xc0\x01\n" +
 	"\vTaskBabysit\x12\x10\n" +

@@ -219,7 +219,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	}
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		if _, err := plan.LoadSettings(h.home, project); err != nil {
-			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false)
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false, false)
 			return nil
 		}
 	}
@@ -242,7 +242,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		by = byLost
 	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
-	t.Status, t.WaitReason, t.MachineWait, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", false, nil
+	t.Status, t.WaitReason, t.MachineWait, t.RoomWait, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", false, false, nil
 	switch by {
 	case byContinue:
 		t.Continuing = false // Cut short again, it resumes as any task does.

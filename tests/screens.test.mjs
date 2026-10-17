@@ -429,6 +429,50 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.doesNotMatch(rail, /wish-hand/);
   assert.doesNotMatch(rail, /wish-counts/);
   assert.doesNotMatch(rail, /wish-grip/);
+  // The workers that wait for a place: a grey seat and their number, after what works and before what watches; on the
+  // rail, where no count shows, they hang on the corner of the wish's icon. None waits: neither shows.
+  const placed = sidebar(false, {
+    questions: 0,
+    running: 1,
+    watching: 1,
+    merging: 0,
+    placeWait: 2,
+  });
+  const placeRow = placed.slice(placed.indexOf("wish-nav"));
+  const placeTitle =
+    "2 wait for a place: a free slot, the machine&#x27;s load or memory, or a gate";
+  assert.match(
+    placeRow,
+    new RegExp(
+      `<span class="count-pill tone-planned" title="${placeTitle}" aria-label="${placeTitle}" role="img"><svg[^>]*lucide-armchair[^>]*>.*?</svg><b>2</b></span>`,
+    ),
+  );
+  const placeAt = (text) => placeRow.indexOf(text);
+  assert.ok(placeAt('title="1 running"') < placeAt("count-pill tone-planned"));
+  assert.ok(placeAt("count-pill tone-planned") < placeAt('title="1 watching"'));
+  const placedRail = sidebar(true, {
+    questions: 0,
+    running: 1,
+    watching: 0,
+    merging: 0,
+    placeWait: 3,
+  });
+  assert.doesNotMatch(placedRail, /wish-counts/);
+  assert.match(
+    placedRail,
+    /<span class="wish-place-corner" title="3 wait for a place: [^"]*" aria-label="3 wait for a place: [^"]*" role="img"><svg[^>]*lucide-armchair[^>]*>.*?<\/svg><b>3<\/b><\/span><\/span>/,
+  );
+  for (const collapsed of [false, true])
+    assert.doesNotMatch(
+      sidebar(collapsed, {
+        questions: 0,
+        running: 1,
+        watching: 0,
+        merging: 0,
+        placeWait: 0,
+      }),
+      /lucide-armchair|wish-place-corner|wait for a place/,
+    );
   // A wish whose only process is a watcher is watching, not running.
   const watched = s.renderToStaticMarkup(
     h(s.WishSidebar, {

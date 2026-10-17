@@ -162,8 +162,8 @@ func TestLoadBarLevels(t *testing.T) {
 			for _, tk := range tasks {
 				got := e.get(t, tk.GetId())
 				if got.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING &&
-					(!got.GetMachineWait() || !strings.Contains(got.GetWaitReason(), "the most this machine holds")) {
-					t.Errorf("%s waits: %q (machine %v)", got.GetCode(), got.GetWaitReason(), got.GetMachineWait())
+					(!got.GetMachineWait() || !got.GetRoomWait() || !strings.Contains(got.GetWaitReason(), "the most this machine holds")) {
+					t.Errorf("%s waits: %q (machine %v, room %v)", got.GetCode(), got.GetWaitReason(), got.GetMachineWait(), got.GetRoomWait())
 				}
 			}
 			if n := e.statuses(t, tasks)[planv1.TaskStatus_TASK_STATUS_PENDING]; n != 6-slots {

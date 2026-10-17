@@ -9,6 +9,7 @@
 // ones, or sent first with its button, becomes active there (Q01): three being active, the last one is paused, first
 // among the paused ones.
 import {
+  Armchair,
   ArrowUpToLine,
   BookMarked,
   ChevronDown,
@@ -72,6 +73,8 @@ export interface WishCounts {
   fixing?: number;
   // Lit ifrits (runningOf), apart from the running ones: a vermilion flame, and the wish's tone.
   ifrits?: number;
+  // Workers that wait for a place (placeWaitOf): a free slot, the machine's load or memory, a gate. Grey, with a seat.
+  placeWait?: number;
 }
 
 export function WishSidebar({
@@ -217,11 +220,13 @@ export function WishSidebar({
       count.ifrits,
     );
     // Unfolded, an active wish takes a second line under its title: its lit ifrits' flame, then what waits for you,
-    // then what works, then what investigates, then what watches, a count at zero left out, and its rank at the end. Its icon then says what it
-    // does: the questions have their count, and no raised hand repeats it (Q01). Folded to the rail, the icon is all
-    // that shows: it keeps the hand. A narrow window folds the bar by its width alone (styles.css, 820px), the second
-    // line hidden: the row carries the hand, which shows only then, in place of the icon.
+    // then what works, then what waits for a place, then what investigates, then what watches, a count at zero left
+    // out, and its rank at the end. Its icon then says what it does: the questions have their count, and no raised hand
+    // repeats it (Q01). Folded to the rail, the icon is all that shows: it keeps the hand, and the workers waiting for a
+    // place hang on its corner. A narrow window folds the bar by its width alone (styles.css, 820px), the second line
+    // hidden: the row carries the hand, which shows only then, in place of the icon, and the corner's count (wish.css).
     const counted = !!rank && !collapsed;
+    const placeLabel = t("plan.place_wait", { count: count.placeWait ?? 0 });
     const shown =
       tone === "waiting" && counted
         ? wish.ready
@@ -291,6 +296,17 @@ export function WishSidebar({
               <ToneIcon tone={tone} size={12} />
             </span>
           )}
+          {!!rank && !!count.placeWait && (
+            <span
+              className="wish-place-corner"
+              title={placeLabel}
+              aria-label={placeLabel}
+              role="img"
+            >
+              <Armchair size={8} aria-hidden="true" />
+              <b>{count.placeWait}</b>
+            </span>
+          )}
         </span>
         {!collapsed && (
           <>
@@ -325,6 +341,14 @@ export function WishSidebar({
                     icon={GitMerge}
                     count={count.merging}
                     label={t("plan.merging_detail", { count: count.merging })}
+                  />
+                )}
+                {!!count.placeWait && (
+                  <CountPill
+                    tone="planned"
+                    icon={Armchair}
+                    count={count.placeWait}
+                    label={placeLabel}
                   />
                 )}
                 {!!count.investigating && (

@@ -5,6 +5,7 @@ import {
   timestampMs,
 } from "@bufbuild/protobuf/wkt";
 
+import type { Gate } from "../../gen/ts/machine/v1/machine_pb";
 import {
   Allowance,
   AzimaState,
@@ -653,6 +654,39 @@ export function runningOf(
     fixing,
     ifrits,
   };
+}
+
+// placeWaitOf counts a wish's tasks whose workers wait for a place: the planned ones that would start now but wait for
+// room on the machine (Task.roomWait: no free slot, a gate held outside the workers taking one, the machine under
+// pressure or its memory short, maybe behind a task that goes first), and the running workers that wait for a gate
+// (gateWaiters), still counted among the running. Not those a dependency, a red integration branch, a usage limit, a
+// write scope or a question holds: the server tells them apart, never the window from a wait reason's text.
+export function placeWaitOf(
+  tasks: (Pick<Task, "id" | "status"> & Partial<Pick<Task, "roomWait">>)[],
+  gateWaiting = "",
+): number {
+  const gated = new Set(gateWaiting.split(" "));
+  return tasks.filter((task) => {
+    switch (task.status) {
+      case TaskStatus.PENDING:
+      case TaskStatus.RESUMING:
+        return !!task.roomWait;
+      case TaskStatus.RUNNING:
+        return gated.has(task.id);
+      default:
+        return false;
+    }
+  }).length;
+}
+
+// gateWaiters names the tasks that wait for a gate (Gate.waitingTaskIds), sorted, in a single string: a selector of
+// the store gives the same value while they stay, and the gates read every few seconds draw nothing again.
+export function gateWaiters(
+  gates: readonly Pick<Gate, "waitingTaskIds">[],
+): string {
+  return [...new Set(gates.flatMap((gate) => gate.waitingTaskIds))]
+    .sort()
+    .join(" ");
 }
 
 export function taskFinished(status: TaskStatus): boolean {

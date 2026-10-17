@@ -13,7 +13,9 @@ export {
   cancelledText,
   deletedText,
   fixerOf,
+  gateWaiters,
   isTaskMerging,
+  placeWaitOf,
   runningOf,
   span,
   taskFinished,
@@ -380,6 +382,54 @@ test("work that merges counts as running: a worker at work, not a watcher", () =
       ifrits: 0,
     },
   );
+});
+
+test("a wish's workers waiting for a place: room on the machine or a gate, never a dependency, a limit or a question", () => {
+  const S = f.TaskStatus;
+  const task = (id, status, extra = {}) => ({ id, status, ...extra });
+  const tasks = [
+    // Planned, the server says each waits for room: no slot, the machine's load or memory, or behind one that goes
+    // first. A task Djinn resumes waits for room the same way.
+    task("slot", S.PENDING, {
+      roomWait: true,
+      machineWait: true,
+      waitReason: "2 workers run, the most this machine holds (test)",
+    }),
+    task("behind", S.PENDING, {
+      roomWait: true,
+      waitReason: "W1 goes first: the memory would not hold it",
+    }),
+    task("resumed", S.RESUMING, { roomWait: true }),
+    // Held by more than the machine: the server says so, whatever the text reads (a dependency's wait reason that
+    // names the machine is still a dependency).
+    task("dependency", S.PENDING, {
+      waitReason: "waits for W1 (the most this machine holds)",
+    }),
+    task("red", S.PENDING, {
+      waitReason: "waits for djinn/w to be green again",
+    }),
+    task("limit", S.RESUMING, { waitReason: "claude waits for its limit" }),
+    task("question", S.WAITING),
+    // A running worker counts when it waits for a gate, not when it works.
+    task("gated", S.RUNNING),
+    task("working", S.RUNNING),
+    // A stale flag on a task that left the plan counts nothing.
+    task("done", S.DONE, { roomWait: true }),
+    task("ran", S.RUNNING, { roomWait: true }),
+  ];
+  const waiting = f.gateWaiters([
+    { waitingTaskIds: ["gated", "elsewhere"] },
+    { waitingTaskIds: [] },
+    { waitingTaskIds: ["gated"] },
+  ]);
+  // One string, sorted and without repeats: the store's selector keeps it while the gates stay.
+  assert.equal(waiting, "elsewhere gated");
+  assert.equal(f.gateWaiters([]), "");
+  assert.equal(f.placeWaitOf(tasks, waiting), 4);
+  assert.equal(f.placeWaitOf(tasks), 3);
+  // None waits: zero, which the side panel hides.
+  assert.equal(f.placeWaitOf([task("working", S.RUNNING)], ""), 0);
+  assert.equal(f.placeWaitOf([]), 0);
 });
 
 test("a failed merge is being fixed while its correction works, failed when none does", () => {

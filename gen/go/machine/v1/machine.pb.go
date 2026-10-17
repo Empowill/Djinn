@@ -1472,9 +1472,12 @@ type Gate struct {
 	ExpireTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expire_time,json=expireTime,proto3" json:"expire_time,omitempty"`
 	// Its holder is an ifrit (plan.v1.TaskKind TASK_KIND_IFRIT): it keeps the gate while it is lit, and gives it back when
 	// it goes out, at expire_time at the latest, or ends.
-	Ifrit         bool `protobuf:"varint,9,opt,name=ifrit,proto3" json:"ifrit,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Ifrit bool `protobuf:"varint,9,opt,name=ifrit,proto3" json:"ifrit,omitempty"`
+	// The tasks of those who wait for it, by identifier, the next one first: a waiter outside any task is left out. The
+	// window counts a task's worker that waits for a gate as waiting for a place.
+	WaitingTaskIds []string `protobuf:"bytes,10,rep,name=waiting_task_ids,json=waitingTaskIds,proto3" json:"waiting_task_ids,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Gate) Reset() {
@@ -1568,6 +1571,13 @@ func (x *Gate) GetIfrit() bool {
 		return x.Ifrit
 	}
 	return false
+}
+
+func (x *Gate) GetWaitingTaskIds() []string {
+	if x != nil {
+		return x.WaitingTaskIds
+	}
+	return nil
 }
 
 type GateServiceHoldRequest struct {
@@ -2442,7 +2452,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x04gate\x18\b \x01(\tR\x04gate\x12\x17\n" +
 	"\atask_id\x18\t \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04tree\x18\n" +
-	" \x01(\tR\x04tree\"\xc8\x02\n" +
+	" \x01(\tR\x04tree\"\xf2\x02\n" +
 	"\x04Gate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12$\n" +
@@ -2454,7 +2464,9 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\tresources\x18\a \x01(\v2\x12.plan.v1.ResourcesR\tresources\x12;\n" +
 	"\vexpire_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"expireTime\x12\x14\n" +
-	"\x05ifrit\x18\t \x01(\bR\x05ifrit\"\x90\x02\n" +
+	"\x05ifrit\x18\t \x01(\bR\x05ifrit\x12(\n" +
+	"\x10waiting_task_ids\x18\n" +
+	" \x03(\tR\x0ewaitingTaskIds\"\x90\x02\n" +
 	"\x16GateServiceHoldRequest\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$\xc8\x01\x01r\x1f2\x1d^[A-Za-z][A-Za-z0-9_-]{0,39}$R\x04name\x12$\n" +
 	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1c\n" +

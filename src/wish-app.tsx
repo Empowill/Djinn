@@ -19,7 +19,13 @@ import {
 } from "./data/djinn";
 import { importWish } from "./data/exchange";
 import { followPresence } from "./data/presence";
-import { isActive, runningOf, waitsForYou } from "./data/format";
+import {
+  gateWaiters,
+  isActive,
+  placeWaitOf,
+  runningOf,
+  waitsForYou,
+} from "./data/format";
 import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
@@ -222,12 +228,14 @@ export function WishApp() {
   // The active wishes are always read: the flying carpet and the side panel count what waits in each.
   const active = wishes.filter(isActive);
   const details = useWishDetails(active.map((w) => w.id));
+  const gateWaiting = useData((s) => gateWaiters(s.gates));
   const counts = Object.fromEntries(
     active.map((w) => [
       w.id,
       {
         questions: details[w.id]?.questions.filter(waitsForYou).length ?? 0,
         ...runningOf(details[w.id]?.tasks ?? []),
+        placeWait: placeWaitOf(details[w.id]?.tasks ?? [], gateWaiting),
       },
     ]),
   );

@@ -237,7 +237,8 @@ func TestOneAtATime(t *testing.T) {
 	notGranted(t, second, "a held gate")
 	other, _ := take(t, g, "e2e", "")
 	await(t, other, "another gate")
-	if l := g.List(); len(l) != 2 || l[0].Name != "codegen" || l[0].HolderTaskID != "W1" || !slices.Equal(l[0].Waiting, []string{"W2"}) {
+	if l := g.List(); len(l) != 2 || l[0].Name != "codegen" || l[0].HolderTaskID != "W1" || !slices.Equal(l[0].Waiting, []string{"W2"}) ||
+		!slices.Equal(l[0].WaitingTaskIDs, []string{"W2"}) || l[1].WaitingTaskIDs != nil {
 		t.Errorf("list = %+v", l)
 	}
 	// What a task holds, a worker that waits holding nothing; the holder outside any task is no task's.
