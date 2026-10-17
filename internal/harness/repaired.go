@@ -67,13 +67,7 @@ func repairedText(branch string, repairs, subjects []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Djinn: the integration branch %s is green again: %s repaired it. It holds work your branch lacks:\n",
 		branch, strings.Join(repairs, ", "))
-	for i, s := range subjects {
-		if i == repairedSubjects {
-			fmt.Fprintf(&b, "- and %d more\n", len(subjects)-i)
-			break
-		}
-		fmt.Fprintf(&b, "- %s\n", s)
-	}
+	cameIn(&b, subjects)
 	fmt.Fprintf(&b, "Merge it into your branch now: commit what you have in progress, then git merge %s (never a rebase). "+
 		"Resolve any conflict with your own changes in mind, run the tests that cover what you touched, then go on with "+
 		"your task.", branch)
