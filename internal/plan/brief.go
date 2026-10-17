@@ -104,6 +104,17 @@ const IfritRule = "- **An ifrit for live iteration (Q11).** An ifrit is a worker
 	"without the developer's word. Once the developer judges its work good, finish it, `djinn task done <ifrit> " +
 	"--note \"…\"`: its work integrates like a task's, through the commit checks (`djinn lead notes ifrit`).\n"
 
+// InvestigationRule is how the lead uses an investigation (W213): a short study or audit, served first, that ends in a
+// tilasm and a question and whose commits are never merged; a mockup is urgent work for feedback instead.
+const InvestigationRule = "- **An investigation to align fast.** A study or an audit the developer and you need to decide " +
+	"(why the tests flake, what a change would cost, where a design stands) goes to an investigation: `djinn task " +
+	"spawn <wish> --kind investigation --title \"…\" --prompt \"…\"` (`--minutes 40`, `--max-budget-usd 15` past its " +
+	"25 minutes and $10). It goes before the planned work, takes a slot even on a full machine (it pauses a work " +
+	"task meanwhile, one or two at once per machine), starts on a red branch, reads and runs everything, and ends in a " +
+	"tilasm and a question to the developer; at its limit Djinn asks it to publish what it has. Djinn never merges " +
+	"its commits: anything that must merge, a mockup the developer judges by running it included, is work " +
+	"(`--feedback` when they wait for it), never an investigation.\n"
+
 // briefRules are Djinn's rules for whoever leads the wishes. They name no wish: every lead reads the same text.
 func briefRules(projects []*planv1.Project, home string) string {
 	return "# Leading in Djinn\n\n" +
@@ -215,11 +226,14 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
 		"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
 		"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
-		"- **Urgent is for unblocking only.** `--urgent` (at its spawn, or `djinn task update <task> --urgent`) makes a " +
-		"task pass every waiting task, take a slot even on a full machine, and start while the push checks are red: " +
-		"use it for the task that repairs a red integration branch Djinn's corrections gave up on, or for the one a " +
-		"stuck chain waits for; never to hurry ordinary work. One urgent task per wish at a time: Djinn refuses a " +
-		"second, naming the first (`--urgent=false` takes the mark off).\n" +
+		"- **Urgent is for a repair, or for the developer's quick feedback.** An urgent task passes every waiting " +
+		"task, takes a slot even on a full machine, and starts while the push checks are red. `--urgent` (at its " +
+		"spawn, or `djinn task update <task> --urgent`) is a repair, always first: the task that repairs a red " +
+		"integration branch Djinn's corrections gave up on, or the one a stuck chain waits for. `--feedback` is urgent " +
+		"work the developer waits to see: a mockup, a prototype, a change they asked to judge quickly; it runs code and " +
+		"merges like any task, after the repair. One of each per wish at a time: Djinn refuses a second of a class, " +
+		"naming the first (`--urgent=false`, `--feedback=false` take the mark off). Never to hurry ordinary work.\n" +
+		InvestigationRule +
 		"- **Keep the graph free of conflicts.** Your role is to keep the graph of tasks and azimas so that workers " +
 		"do not collide, along an iterative and de-risked path. Tasks that touch the same files, protos, generated files " +
 		"or the same tests go one after the other (`--after`, or `--write-scopes` when the project uses them), never side " +
@@ -346,7 +360,7 @@ func leadCommandsBrief(driven bool) string {
 		"`djinn question launch <question> [--title …] [--after …]` launches the chosen option's plan.\n" +
 		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
 		"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`, " +
-		"`--urgent`, `--kind ifrit` with `--idle-minutes`); " +
+		"`--urgent`, `--feedback`, `--kind ifrit` with `--idle-minutes`, `--kind investigation` with `--minutes`); " +
 		"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima (`--draft`, `--description \"…\"`); " +
 		"`djinn task describe <azima> --text \"…\"` revises its description; " +
 		"`djinn task open <azima>` turns a draft open; " +
@@ -506,6 +520,15 @@ func ifritWaitsBrief(b *strings.Builder, t *planv1.Task, waits map[string][]stri
 	fmt.Fprintf(b, "  - Waiting for the gates this ifrit holds until the developer leaves Djinn: %s. "+
 		"Offer the developer to end it (`djinn task done %s`) or stop it (`djinn task stop %s`).\n",
 		strings.Join(who, "; "), t.GetCode(), t.GetCode())
+}
+
+// investigationTag marks an investigation's line in the brief, after its title: " [investigation]"; "" for any
+// other task.
+func investigationTag(t *planv1.Task) string {
+	if t.GetKind() != planv1.TaskKind_TASK_KIND_INVESTIGATION {
+		return ""
+	}
+	return " [investigation]"
 }
 
 // ifritWord says, on a running task's line, that it is an ifrit and where it stands: working on a request or
@@ -710,7 +733,7 @@ func movingBrief(
 			if t.GetModel() != "" {
 				name += " · " + t.GetModel()
 			}
-			fmt.Fprintf(&b, "- **%s** %s (%s%s", t.GetCode(), clipLine(t.GetTitle()), name, ifritWord(t))
+			fmt.Fprintf(&b, "- **%s** %s%s (%s%s", t.GetCode(), clipLine(t.GetTitle()), investigationTag(t), name, ifritWord(t))
 			if e := codes[t.GetPartOf()]; e != "" {
 				b.WriteString(", part of " + e)
 			}
@@ -728,7 +751,7 @@ func movingBrief(
 	if len(waiting) > 0 {
 		b.WriteString("\n## Waiting\n\n")
 		for _, t := range waiting {
-			fmt.Fprintf(&b, "- **%s** %s", t.GetCode(), clipLine(t.GetTitle()))
+			fmt.Fprintf(&b, "- **%s** %s%s", t.GetCode(), clipLine(t.GetTitle()), investigationTag(t))
 			if e := codes[t.GetPartOf()]; e != "" {
 				b.WriteString(" (part of " + e + ")")
 			}
@@ -750,7 +773,7 @@ func movingBrief(
 			if t.GetKind() == planv1.TaskKind_TASK_KIND_IFRIT && t.GetIfrit().GetState() == planv1.IfritState_IFRIT_STATE_OUT {
 				word = "an ifrit " + clipLine(t.GetError()) + ", lit again by a message only at the developer's word"
 			}
-			fmt.Fprintf(&b, "- **%s** %s: %s", t.GetCode(), clipLine(t.GetTitle()), word)
+			fmt.Fprintf(&b, "- **%s** %s%s: %s", t.GetCode(), clipLine(t.GetTitle()), investigationTag(t), word)
 			if c := t.GetClosed(); c != nil {
 				b.WriteString(", closed by the " + CloserWord(c.GetActor()))
 				if n := clipLine(c.GetNote()); n != "" {
@@ -1452,7 +1475,7 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 			if t.GetModel() != "" {
 				name += " · " + t.GetModel()
 			}
-			fmt.Fprintf(b, "- **%s** %s (%s%s", t.GetCode(), clipLine(t.GetTitle()), name, ifritWord(t))
+			fmt.Fprintf(b, "- **%s** %s%s (%s%s", t.GetCode(), clipLine(t.GetTitle()), investigationTag(t), name, ifritWord(t))
 			if e := codes[t.GetPartOf()]; e != "" {
 				b.WriteString(", part of " + e)
 			}
@@ -1469,7 +1492,7 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 	if len(waiting) > 0 {
 		b.WriteString("\n## Waiting\n\n")
 		for _, t := range waiting {
-			fmt.Fprintf(b, "- **%s** %s", t.GetCode(), clipLine(t.GetTitle()))
+			fmt.Fprintf(b, "- **%s** %s%s", t.GetCode(), clipLine(t.GetTitle()), investigationTag(t))
 			if e := codes[t.GetPartOf()]; e != "" {
 				b.WriteString(" (part of " + e + ")")
 			}

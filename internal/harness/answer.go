@@ -427,7 +427,7 @@ func (h *Harness) again(r *run) error {
 	if err != nil {
 		return err
 	}
-	budget := t.GetMaxBudgetUsd()
+	budget := providerBudget(t)
 	if budget > 0 {
 		if budget -= t.GetUsage().GetCostUsd(); budget <= 0 {
 			return fmt.Errorf("its budget of $%.2f is spent", t.GetMaxBudgetUsd())

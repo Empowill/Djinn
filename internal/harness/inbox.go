@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/logx"
@@ -23,6 +24,8 @@ type message struct {
 	// betweenTurns holds the message while a tool call of the worker has no result yet: the pump writes it once the
 	// worker's turn is over (take). It is answered at once all the same, with no event while held.
 	betweenTurns bool
+	// publish is set on Djinn's message that asks an investigation to publish (askToPublish): what it reached.
+	publish string
 }
 
 // sent is what delivering a message gave: its event, or why it was not delivered.
@@ -121,7 +124,11 @@ func (h *Harness) deliver(r *run, m *message) sent {
 		}
 		return sent{err: connect.NewError(code, fmt.Errorf("task %s: %w", r.task.GetCode(), err))}
 	}
-	ev, err := h.writeAs(r, cmp.Or(m.actor, actorLocal), m.procedure, m.req, nil,
+	actor, task := cmp.Or(m.actor, actorLocal), proto.Message(nil)
+	if m.publish != "" {
+		actor, task = actorHarness, published(r, m.publish, h.now())
+	}
+	ev, err := h.writeAs(r, actor, m.procedure, m.req, task,
 		Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_MESSAGE, Text: m.req.GetText()})
 	if err != nil {
 		return sent{err: plan.Status(fmt.Errorf("the worker has the message, but it is not recorded: %w", err))}

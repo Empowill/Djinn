@@ -129,6 +129,7 @@ func shortTask(t *planv1.Task) *planv1.Task {
 		Id: t.GetId(), Code: t.GetCode(), Title: t.GetTitle(), Status: t.GetStatus(), Kind: t.GetKind(),
 		Provider: t.GetProvider(), PartOf: t.GetPartOf(), DependsOn: t.GetDependsOn(), WaitReason: t.GetWaitReason(),
 		CreateTime: t.GetCreateTime(), StartTime: t.GetStartTime(), EndTime: t.GetEndTime(), Urgent: t.GetUrgent(),
+		Feedback: t.GetFeedback(),
 	}
 }
 

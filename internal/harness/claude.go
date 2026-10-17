@@ -13,6 +13,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/usage"
 )
 
 // Claude runs Claude Code: `claude -p` reading and writing stream-json, one JSON message per line. The process
@@ -216,6 +217,11 @@ type claudeParser struct {
 	message   string // the id of the last assistant message
 	turns     int    // assistant messages so far
 	counted   bool   // a turn is counted that no event has said yet
+	// What the run spent so far, estimated from the usage of each assistant message (a subagent's too), the last line
+	// of each message counting: claude says its cost at a result only (claudeSpent).
+	costs  map[string]float64
+	spent  float64
+	unsaid bool // spent changed since an event said it
 }
 
 func (p *claudeParser) toolRunning() bool {
@@ -232,6 +238,10 @@ func (p *claudeParser) stdout(raw string) ([]Event, *turnEnd) {
 		if p.counted && len(events) > 0 {
 			events[0].Turns, p.counted = p.turns, false
 		}
+		p.estimate(raw)
+		if p.unsaid && len(events) > 0 {
+			events[0].Spent, p.unsaid = p.spent, false
+		}
 		for _, ev := range events {
 			switch ev.Kind {
 			case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL:
@@ -247,6 +257,50 @@ func (p *claudeParser) stdout(raw string) ([]Event, *turnEnd) {
 		}
 	}
 	return events, end
+}
+
+// claudeSpent is what Djinn reads of an assistant line to estimate what it cost.
+type claudeSpent struct {
+	Type    string `json:"type"`
+	Message *struct {
+		ID    string `json:"id"`
+		Model string `json:"model"`
+		Usage *struct {
+			InputTokens              int64 `json:"input_tokens"`
+			OutputTokens             int64 `json:"output_tokens"`
+			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+		} `json:"usage"`
+	} `json:"message"`
+}
+
+// estimate adds what the assistant line raw cost to what the run spent, at the prices Djinn knows (internal/usage): the
+// lines of one message repeat its usage, the last one the largest, so each message counts once, at its last line. A
+// line of no message, or of a model Djinn has no price for, changes nothing.
+func (p *claudeParser) estimate(raw string) {
+	if !strings.HasPrefix(raw, `{"type":"assistant"`) {
+		return
+	}
+	var m claudeSpent
+	if json.Unmarshal([]byte(raw), &m) != nil || m.Message == nil || m.Message.Usage == nil || m.Message.ID == "" {
+		return
+	}
+	table, err := usage.DefaultTable()
+	if err != nil {
+		return
+	}
+	u := m.Message.Usage
+	cost, priced, _ := table.Estimate(&planv1.Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+		CacheReadTokens: u.CacheReadInputTokens, CacheWriteTokens: u.CacheCreationInputTokens}, m.Message.Model,
+		planv1.Provider_PROVIDER_CLAUDE)
+	if !priced {
+		return
+	}
+	if p.costs == nil {
+		p.costs = map[string]float64{}
+	}
+	p.spent += cost - p.costs[m.Message.ID]
+	p.costs[m.Message.ID], p.unsaid = cost, true
 }
 
 func (*claudeParser) stderr(raw string) []Event {

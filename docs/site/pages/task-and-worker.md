@@ -167,17 +167,25 @@ a small circular arrow beside its code: the Djinn relaunches it by continuing it
 
 A task waits its turn: the corrections and reviews first, then the tasks Djinn resumes, then the ones others wait
 for, then the oldest. A correction or a review never waits for a place: on a full machine Djinn pauses the work task
-that comes last to give it its place, and resumes that task once it ends. When something blocks the wish, the Djinn may mark the one task that unblocks it **urgent**: the repair of an
-integration branch whose push checks stay red after Djinn's corrections, or the task a stuck chain waits for. Its card
-and its line in the tree then carry a small **Urgent** label, and:
+that comes last to give it its place, and resumes that task once it ends. Two kinds of task may pass that line, marked
+**urgent** by the Djinn:
 
-- it goes before every task that waits, whatever their age;
-- it takes a place even when the machine is full, as **Start anyway** does, and the load bar counts it among the
+- **A repair**, which unblocks the wish: the repair of an integration branch whose push checks stay red after Djinn's
+  corrections, or the task a stuck chain waits for. Its card and its line in the tree carry a small **Urgent** label.
+- **Your quick feedback**: a mockup, a prototype or a change you asked to see soon. It is work like any, merged
+  through the checks; its label says **Feedback**.
+
+An urgent task:
+
+- goes before every task that waits, whatever their age, a repair before a feedback task;
+- takes a place even when the machine is full, as **Start anyway** does, and the load bar counts it among the
   workers started by hand;
-- it starts while the push checks are red: nothing else could make the branch green again.
+- starts while the push checks are red.
 
-One task of a wish is urgent at a time: the Djinn cannot mark a second one while the first is to run or runs. Ask the
-Djinn for it; the window has no switch for it. Urgent is for unblocking only, never to hurry ordinary work.
+One task of each kind may be urgent at a time in a wish: a repair and a feedback task together, never two of the same
+kind. Ask the Djinn for it; the window has no switch for it. Urgent is never to hurry ordinary work. A study or an
+audit that ends in a decision of yours is an [investigation](#investigation) instead: served first too, its code
+never merged.
 
 ## Good to know
 
