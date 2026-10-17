@@ -42,7 +42,7 @@ for (const scheme of ["dark", "light"] as const) {
     await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
 
     // The splash: the page the documentation was, titled Grimoire.
-    // One assertion per list, not per item: the trace snapshots the page at each step (docs/pitfalls.md, W248). A
+    // One assertion per list, not per item: each step costs, more so on a loaded machine (docs/pitfalls.md, W248). A
     // role locator leaves out what is hidden; the names come in any order.
     const splash = page.locator("#welcome");
     await expect(
