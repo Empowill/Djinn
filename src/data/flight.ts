@@ -18,11 +18,13 @@ import {
 } from "../../gen/ts/plan/v1/plan_pb";
 import { type Decision, decisionsOf, later } from "./decisions";
 import {
+  asleep,
   investigating,
   isOpen,
   isTaskMerging,
   waitsForYou,
   watcherRuns,
+  woken,
 } from "./format";
 import { estimateCost, getPriceTable } from "./prices";
 import { reportOf, reportsOf } from "./reports";
@@ -68,10 +70,15 @@ export function placeOf(question: Question): number {
 }
 
 // byAsked orders questions as they were asked, the oldest first: a new one always comes below, and a revision, which
-// keeps its creation time, never moves one. One put off for later goes below those asked before, and stays there.
-// The window lists them so (AGENTS.md, Interface); its urgency shows on each.
+// keeps its creation time, never moves one. One put off for later goes below those asked before, and stays there; one
+// that woke from its sleep comes first, the first woken first (render.ByPlace). The window lists them so (AGENTS.md,
+// Interface); its urgency shows on each.
 export function byAsked(a: Item<Question>, b: Item<Question>): number {
+  const wa = woken(a.item);
+  const wb = woken(b.item);
+  if (wa !== wb) return wa ? -1 : 1;
   return (
+    (wa ? time(a.item.sleep?.wakeTime) - time(b.item.sleep?.wakeTime) : 0) ||
     placeOf(a.item) - placeOf(b.item) ||
     (a.item.id < b.item.id ? -1 : a.item.id > b.item.id ? 1 : 0)
   );
@@ -92,6 +99,8 @@ export interface FlightPlan {
   waitingLead: OpenQuestion[];
   // The questions you asked to investigate: they wait for the lead.
   investigating: OpenQuestion[];
+  // The questions asleep until their conditions hold: they wait for them, out of the questions column.
+  asleep: OpenQuestion[];
   waiting: Waiting[];
   // The wishes Djinn proposes to grant.
   ready: Wish[];
@@ -517,6 +526,14 @@ export function openQuestions(wish: Wish, detail: WishDetail): OpenQuestion[] {
   return questionsWhere(wish, detail, waitsForYou);
 }
 
+// asleepQuestions are a wish's open questions asleep until their conditions hold, in the order they were asked.
+export function asleepQuestions(
+  wish: Wish,
+  detail: WishDetail,
+): OpenQuestion[] {
+  return questionsWhere(wish, detail, asleep);
+}
+
 export function investigatingQuestions(
   wish: Wish,
   detail: WishDetail,
@@ -597,6 +614,7 @@ export function flightPlan(
     questions: [],
     waitingLead: [],
     investigating: [],
+    asleep: [],
     waiting: [],
     ready: [],
     running: [],
@@ -616,6 +634,7 @@ export function flightPlan(
     plan.questions.push(...openQuestions(wish, detail));
     plan.waitingLead.push(...waitingLeadQuestions(wish, detail));
     plan.investigating.push(...investigatingQuestions(wish, detail));
+    plan.asleep.push(...asleepQuestions(wish, detail));
     plan.waiting.push(...waitingTasks(wish, detail));
     for (const item of detail.tasks) {
       if (

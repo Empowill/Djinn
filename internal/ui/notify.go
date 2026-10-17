@@ -15,6 +15,7 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
 )
@@ -227,7 +228,7 @@ func (n *Notices) committed(changes []proto.Message) {
 	for _, m := range changes {
 		switch m := m.(type) {
 		case *planv1.Question:
-			if !n.moved(m.GetId(), fmt.Sprint(m.GetAnswer() != nil)) {
+			if !n.moved(m.GetId(), fmt.Sprint(m.GetAnswer() != nil, render.Asleep(m))) {
 				continue
 			}
 		case *planv1.Task:
@@ -265,7 +266,9 @@ func (n *Notices) follow(ctx context.Context, m proto.Message) error {
 	switch m := m.(type) {
 	case *planv1.Question:
 		wishID = m.GetWishId()
-		if m.GetAnswer() == nil && recent(m.GetCreateTime()) {
+		// An asleep question waits for its conditions: it is news once it wakes.
+		woke := m.GetSleep().GetWakeTime()
+		if m.GetAnswer() == nil && !render.Asleep(m) && (recent(m.GetCreateTime()) || recent(woke)) {
 			err = n.question(ctx, m)
 		}
 	case *planv1.Task:

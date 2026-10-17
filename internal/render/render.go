@@ -147,17 +147,20 @@ type view struct {
 	Counts    []count // the tasks by status
 	Contents  []link  // the sections present, in their order
 	Questions []question
-	Actions   []action
-	Running   []task // the workers running now
-	Finished  []task // the work finished, folded under them
-	Tasks     []task // what needs an eye: waiting, cut short, failed
-	Planned   []task
-	Decisions []decision // the latest ones
-	Older     []decision // the decisions before them, folded
-	Blocks    []block
-	Notes     []notes // the blocks as shown: alone, or gathered in a run of one kind
-	Journal   []entry // the latest entries
-	Earlier   []entry // the entries before them, folded
+	// Asleep counts the open questions asleep until their conditions hold (Question.sleep), and says it.
+	Asleep     int
+	AsleepLine string
+	Actions    []action
+	Running    []task // the workers running now
+	Finished   []task // the work finished, folded under them
+	Tasks      []task // what needs an eye: waiting, cut short, failed
+	Planned    []task
+	Decisions  []decision // the latest ones
+	Older      []decision // the decisions before them, folded
+	Blocks     []block
+	Notes      []notes // the blocks as shown: alone, or gathered in a run of one kind
+	Journal    []entry // the latest entries
+	Earlier    []entry // the entries before them, folded
 	// JournalCut says how many entries the page left out.
 	JournalCut string
 	Events     []event // the workers' latest events
@@ -319,9 +322,14 @@ func build(in Input) (*view, error) {
 	blocking := Blocked(exp.GetTasks())
 
 	// Open questions, the blocking ones first, then those needed before something, then those that can wait; each in
-	// the order they were asked, or put off for later (Place). Decisions, the latest first.
+	// the order they were asked, or put off for later (Place), a woken one first. An asleep one waits for its
+	// conditions, not for the developer: counted apart. Decisions, the latest first.
 	for _, q := range slices.SortedStableFunc(slices.Values(exp.GetQuestions()), ByPlace) {
 		if q.GetAnswer() != nil || q.GetWithdrawal() != nil {
+			continue
+		}
+		if Asleep(q) {
+			v.Asleep++
 			continue
 		}
 		cq := question{
@@ -369,6 +377,9 @@ func build(in Input) (*view, error) {
 		v.Questions = append(v.Questions, cq)
 	}
 	slices.SortStableFunc(v.Questions, func(a, b question) int { return cmp.Compare(a.Urgency, b.Urgency) })
+	if v.Asleep > 0 {
+		v.AsleepLine = tr("page.asleep", "count", fmt.Sprint(v.Asleep))
+	}
 	if len(v.Questions) == 1 {
 		v.Questions[0].Open = true
 	}
@@ -1205,6 +1216,15 @@ func summary(
 			return strings.TrimSpace(code + " --clear")
 		}
 		return code
+	case *planv1.QuestionServiceSleepRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		if m.GetWake() {
+			return strings.TrimSpace(code + " --wake")
+		}
+		return strings.TrimSpace(code + " " + strings.Join(m.GetUntil(), ", "))
 	case *planv1.BlockServicePutRequest:
 		return strings.TrimSpace(m.GetKind() + " " + m.GetTitle())
 	case *planv1.TaskServiceSpawnRequest:

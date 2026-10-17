@@ -23,6 +23,8 @@ import {
   PushStrategy,
   type Question,
   RoundKind,
+  type SleepCondition,
+  SleepKind,
   type Task,
   TaskKind,
   TaskRole,
@@ -65,9 +67,9 @@ export function when(ts?: Timestamp): string {
   });
 }
 
-// askedWhen says when a question was asked, when it was last revised and when you put it off for later: the day and
-// month in figures, the hour (asked 16/10 at 10:24 · revised at 10:31 · put off at 10:40), a later day said only when
-// it is another. "" when it has no time.
+// askedWhen says when a question was asked, when it was last revised, when it woke from its sleep and when you put it
+// off for later: the day and month in figures, the hour (asked 16/10 at 10:24 · revised at 10:31 · woke at 10:35 ·
+// put off at 10:40), a later day said only when it is another. "" when it has no time.
 export function askedWhen(question: Question): string {
   const asked = date(question.createTime);
   if (!asked) return "";
@@ -81,6 +83,7 @@ export function askedWhen(question: Question): string {
     .find((r) => r.kind === RoundKind.REVISE);
   const revised = question.revision > 0 ? date(last?.createTime) : undefined;
   const later = date(question.laterTime);
+  const woke = date(question.sleep?.wakeTime);
   const words = (d: Date, at: TextKey, on: TextKey) =>
     d.toDateString() === asked.toDateString()
       ? t(at, { time: hour(d) })
@@ -88,6 +91,7 @@ export function askedWhen(question: Question): string {
   return [
     out,
     revised && words(revised, "question.revised_at", "question.revised_on"),
+    woke && words(woke, "question.woke_at", "question.woke_on"),
     later && words(later, "question.later_at", "question.later_on"),
   ]
     .filter(Boolean)
@@ -798,9 +802,61 @@ export function questionVersions(question: Question): QuestionVersion[] {
   return out;
 }
 
-// waitsForYou tells an open question that waits for your answer.
+// waitsForYou tells an open question that waits for your answer: not one being investigated, nor one asleep.
 export function waitsForYou(question: Question): boolean {
-  return isOpen(question) && !investigating(question);
+  return isOpen(question) && !investigating(question) && !asleep(question);
+}
+
+// asleep tells an open question put to sleep until its conditions hold, not woken yet (Question.sleep): it waits for
+// them, not for you. The lamp reads it the same way (render.Asleep).
+export function asleep(question: Question): boolean {
+  return isOpen(question) && !!question.sleep && !question.sleep.wakeTime;
+}
+
+// woken tells an open question that woke from its sleep and that you did not put off since: it comes first in its
+// wish's list (render.Woken).
+export function woken(question: Question): boolean {
+  const woke = question.sleep?.wakeTime;
+  if (!isOpen(question) || !woke) return false;
+  return (
+    !question.laterTime || timestampMs(question.laterTime) < timestampMs(woke)
+  );
+}
+
+// sleepText says a condition an asleep question waits for, in a few words: W12 over, W45's request merged, 20/10 at
+// 09:00.
+export function sleepText(condition: SleepCondition): string {
+  switch (condition.kind) {
+    case SleepKind.TASK:
+      return t("sleep.task", { code: condition.code });
+    case SleepKind.MERGED:
+      return condition.url
+        ? t("sleep.merged_url", { url: condition.url })
+        : t("sleep.merged", { code: condition.code });
+    case SleepKind.TIME: {
+      const d = date(condition.time);
+      if (!d) return "";
+      return t("sleep.time", {
+        day: d.toLocaleDateString(language, {
+          day: "2-digit",
+          month: "2-digit",
+        }),
+        time: d.toLocaleTimeString(language, {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      });
+    }
+  }
+  return "";
+}
+
+// sleepTexts says every condition a question sleeps until, all of which must hold.
+export function sleepTexts(question: Question): string {
+  return (question.sleep?.conditions ?? [])
+    .map(sleepText)
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // markOf is the mark of a kind on a question or a block, if it has one.

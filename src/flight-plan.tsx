@@ -46,7 +46,11 @@ import {
   proofWords,
   useStickyRoom,
 } from "./azima";
-import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
+import {
+  MoveQuestionDialog,
+  SleepQuestionDialog,
+  WithdrawQuestionDialog,
+} from "./wish-dialogs";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { OperatingLoad } from "./operating-load";
 import { SpentLine } from "./usage";
@@ -106,8 +110,17 @@ export function FlightPlan({
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
   useStickyRoom(scrollRef, false);
-  const { clients, act, quiet, answer, enlighten, move, withdraw, later } =
-    useWrites(onToast);
+  const {
+    clients,
+    act,
+    quiet,
+    answer,
+    enlighten,
+    move,
+    withdraw,
+    later,
+    sleep,
+  } = useWrites(onToast);
   const waits =
     plan.questions.length +
     plan.waitingLead.length +
@@ -180,6 +193,13 @@ export function FlightPlan({
     (question: Question) =>
       later(question.wishId, question.id, !!question.laterTime),
     [later],
+  );
+  const [sleepingQuestion, setSleepingQuestion] = useState<Question | null>(
+    null,
+  );
+  const wakeQuestion = useCallback(
+    (question: Question) => sleep(question.wishId, question.id, [], true),
+    [sleep],
   );
   // The questions column, one group per wish (question-column.tsx).
   const questionsByWish = useMemo(
@@ -687,6 +707,9 @@ export function FlightPlan({
                     onMove={moveQuestion}
                     onWithdraw={withdrawQuestion}
                     onLater={laterQuestion}
+                    onSleep={setSleepingQuestion}
+                    asleep={plan.asleep}
+                    onWake={wakeQuestion}
                   />
                   {plan.waiting.length +
                     plan.proofs.length +
@@ -805,6 +828,15 @@ export function FlightPlan({
           currentWishId={movingQuestion.wishId}
           onClose={() => setMovingQuestion(null)}
           onMove={move}
+        />
+      )}
+      {sleepingQuestion && (
+        <SleepQuestionDialog
+          question={sleepingQuestion}
+          tasks={details[sleepingQuestion.wishId]?.tasks ?? []}
+          currentWishId={sleepingQuestion.wishId}
+          onClose={() => setSleepingQuestion(null)}
+          onSleep={sleep}
         />
       )}
       {withdrawingQuestion && (

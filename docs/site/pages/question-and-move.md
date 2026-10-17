@@ -71,8 +71,9 @@ A click takes you to the line's card. A question that can wait is not in the bar
 
 The questions column holds every open question waiting for you, those that can wait included, as they were asked:
 the oldest first, each card with its own level. On the flying carpet it groups them by wish, each under its wish's
-title; in a wish, it holds that wish's own. Below it come **Your move**, the workers that wait for you and the wish
-ready to grant, then the questions **Being investigated**.
+title; in a wish, it holds that wish's own. A question woken from its sleep comes first; those asleep are out of it,
+counted in a grey line below. Below it come **Your move**, the workers that wait for you and the wish ready to grant,
+then the questions **Being investigated**.
 
 ### The focused question
 
@@ -135,6 +136,28 @@ comes below it. The card says when you put it off, and the next question opens.
 Later changes the order only, never the level: a blocking question put off still blocks, and still leads the bar. The
 same button, pressed again, gives the question back its place. A question being investigated has no Later.
 
+## Asleep until
+
+**Sleep**, the moon beside Later, puts a question away until something happens: it waits for what you tick, all of
+it, and wakes on its own once all of it holds.
+
+| You can wait for | It holds when |
+| --- | --- |
+| Tasks of the wish | Each is over: done, stopped or cancelled; an azima, closed |
+| Pull or merge requests | Each is merged, as the watcher that babysits it says |
+| A day and an hour | The time has come |
+| Other conditions | Typed in a line: a task's code, merged with a task's code, a date, or a delay such as 3d |
+
+Asleep, the question leaves the column, the bar and the notifications. Below the column, a grey line counts the
+questions asleep; a click lists them, each with what it waits for and a **Wake** button that brings it back now.
+
+Djinn checks the conditions each time its scheduler looks at the plan. When they hold, the question wakes: the Djinn
+is told first, checks that its facts still hold (a cost, the state of tasks and requests) and revises it if they
+changed. It then comes first in its wish's list, its grey line saying when it woke, and a notification tells you.
+
+The Djinn uses it too: a question to bring back once the requests are merged, or after a date, sleeps until then
+rather than waiting in its memory.
+
 ## Moving a question
 
 **Move to another wish**, in the card's corner, moves a question that belongs elsewhere. Choose the wish; **Tasks
@@ -180,6 +203,8 @@ Any other move, asked by the Djinn or a worker, is noted: you make it, and the D
 - **Treating a grey card as urgent.** A blocking question holds a worker; one that can wait can wait for tomorrow. The
   bar shows you only what holds a wish up.
 - **Putting off a blocking question.** Later moves it down the list; its worker still waits.
+- **Putting to sleep what you could answer now.** A question asleep holds nothing up while it sleeps; one a worker
+  waits on should be answered, not put away.
 - **Guessing rather than asking for light.** Enlighten me costs an investigator's time and a little of your agent's
   budget, not yours, and the question comes back better.
 

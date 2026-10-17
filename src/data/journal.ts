@@ -106,6 +106,16 @@ function summary(command: Command, exp: WishExport): string {
           : (ref?.value ?? "");
       return r.clear ? `${code} --clear`.trim() : code;
     }
+    case "plan.v1.QuestionServiceSleepRequest": {
+      const ref = (r.question as { ref?: { case?: string; value?: string } })
+        ?.ref;
+      const code =
+        ref?.case === "id"
+          ? (exp.questions.find((q) => q.id === ref.value)?.code ?? "")
+          : (ref?.value ?? "");
+      if (r.wake) return `${code} --wake`.trim();
+      return `${code} ${((r.until as string[]) ?? []).join(", ")}`.trim();
+    }
     case "plan.v1.BlockServicePutRequest":
       return `${String(r.kind ?? "")} ${String(r.title ?? "")}`.trim();
     case "plan.v1.WishServiceAllowRequest": {

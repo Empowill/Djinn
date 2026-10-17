@@ -79,6 +79,17 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   `djinn question later <question> [--clear]` puts an open question off (the window's Later): Djinn stores the time
   (`later_time`), and the window, the page and the brief list a wish's open questions by the later of when each was
   asked and when it was put off (`render.Place`, `byAsked`), oldest first; `--clear` gives it its place back.
+- **Asleep questions (Decision Q33).** `djinn question sleep <question> --until …` (or `--sleep-until` on `ask` and
+  `revise`) stores typed conditions (`Question.sleep`, `SleepCondition`), all to hold: a task of the wish over, by code
+  (done, stopped, cancelled or deleted; an azima, closed); `merged:W45`, a request merged as Djinn knows it (the
+  babysit watcher W45, the one babysitting what W45 opened, or azima W45's pull request; a request's address says the
+  same), the watcher's done line stamping `TaskBabysit.done_time`; a time (`2026-10-20`, `2026-10-20T09:00`, RFC 3339)
+  or a delay (`3d`, `2h`). Conditions that all hold already are refused. An asleep question is out of the window's
+  column, the bar, the notifications and the brief's open questions (listed apart, `render.Asleep`). The scheduler's
+  pass (`wakeQuestions`), reading the questions only while one may sleep, wakes each whose conditions hold: it sets
+  `wake_time`, drops `later_time`, journals `harness/wake`, and queues a `LEAD_EVENT_KIND_WOKE` event for the lead,
+  who checks the question's facts and revises it if they changed; woken, it lists first (`render.Woken`, `byAsked`).
+  `--wake` wakes it by hand (`by_hand`), with the same event.
 - **Planned options (Decision Q25).** An option may carry the task it launches: `djinn question ask --plan-file
   <file>`, one per option, header lines named as `djinn task spawn`'s flags (`option`, `title`, `project-id`,
   `provider`, `model`, `part-of`, `after`, `blocks`, `tilasm`, `kind`), then a blank line and the prompt

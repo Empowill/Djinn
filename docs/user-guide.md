@@ -427,6 +427,15 @@ bottom of its wish's list with the clock in its top right corner, next to Move (
 Djinn keeps when you put it off, so it stays below the questions asked before, for the Djinn too, and a new question
 still comes below it. The same button, pressed, gives it its place back (`--clear`).
 
+A question that matters only once something happens sleeps until then: the moon beside Later asks what it waits for,
+all of it to hold, the wish's tasks over (an azima closed), its pull or merge requests merged (as their babysit
+watcher says), a time, or conditions typed (`djinn question sleep <question> --until W12,merged:W45,2026-10-20`; a
+delay like `3d` works too; `djinn question ask` and `revise` take `--sleep-until`). Asleep, it leaves the questions
+column and the bar: a grey **N questions asleep** below the column lists them on demand, each with what it waits for
+and **Wake**, which wakes it now (`--wake`). Djinn checks the conditions at each pass of its scheduler; once they all
+hold, the question wakes: the Djinn is told to check that its facts still hold (costs, tasks, requests) and revises it
+if they changed, and it comes first in its wish's list, its grey line saying when it woke. A notification tells you.
+
 **From anywhere.** In the window, a question asked in an active wish also shows as a system notification: a click
 shows the wish, a button answers it (one per option, or **Yes**). The browser shows none; on macOS, notifications need
 the app bundle. The **Global shortcut**, in Connections & preferences, brings Djinn forward on the wish with the

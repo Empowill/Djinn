@@ -20,7 +20,8 @@
 // when it was asked, and revised. Small buttons sit in its top right corner: Versions (3), once revised, opens its
 // earlier versions below it, to read, the current one staying what the card shows first (W114); Later sends it to the
 // bottom of its list, where it stays (Djinn keeps when, Question.laterTime), and, pressed, gives it its place back;
-// Move takes it to another wish.
+// Sleep puts it out of the list until conditions hold (Question.sleep), and Djinn wakes it to the top; Move takes it
+// to another wish.
 // An option that launches a task once picked (Question.plans, decision Q25) says so on one grey line under its text:
 // Launches: its title, and the azima it belongs to. Always one line, cut short, it never moves the card.
 // A gesture shows, by key or by click: its button stays pressed a moment and the answer leaves as it comes back up,
@@ -38,6 +39,7 @@ import {
   History,
   Lamp,
   Lightbulb,
+  Moon,
 } from "lucide-react";
 import { timestampMs } from "@bufbuild/protobuf/wkt";
 import { motion } from "motion/react";
@@ -115,6 +117,7 @@ export const WishQuestion = memo(function WishQuestion({
   onMove,
   onWithdraw,
   onLater,
+  onSleep,
 }: {
   question: Question;
   // Where the question comes from, in the flying carpet of several wishes: its wish.
@@ -147,6 +150,8 @@ export const WishQuestion = memo(function WishQuestion({
   onWithdraw?: (question: Question) => void;
   // Puts an open question off for later, to the bottom of its list, or gives it its place back when it is.
   onLater?: (question: Question) => void;
+  // Puts an open question to sleep until conditions hold: out of the list until then.
+  onSleep?: (question: Question) => void;
 }) {
   const answered = !!q.answer;
   const withdrawn = isWithdrawn(q);
@@ -630,6 +635,17 @@ export const WishQuestion = memo(function WishQuestion({
       )}
     </TooltipButton>
   );
+  // Sleep, beside it: until tasks are over, requests merged or a time comes (SleepQuestionDialog).
+  const sleep = onSleep && (
+    <TooltipButton
+      label={t("question.sleep")}
+      tooltip={t("question.sleep_detail")}
+      className="question-corner-button question-sleep"
+      onClick={() => onSleep(q)}
+    >
+      <Moon size={14} aria-hidden="true" />
+    </TooltipButton>
+  );
   // Versions (3): the current version and the two before it, which the button opens below the question.
   const versionsButton = versions.length > 0 && (
     <button
@@ -646,10 +662,11 @@ export const WishQuestion = memo(function WishQuestion({
   const earlier = showVersions && versions.length > 0 && (
     <Versions versions={versions} />
   );
-  const corner = (later || move || versionsButton) && (
+  const corner = (later || sleep || move || versionsButton) && (
     <div className="question-corner">
       {versionsButton}
       {later}
+      {sleep}
       {move}
     </div>
   );

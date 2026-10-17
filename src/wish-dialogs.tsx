@@ -6,6 +6,7 @@ import {
   Folder,
   FolderOpen,
   LoaderCircle,
+  Moon,
   Search,
 } from "lucide-react";
 import {
@@ -32,6 +33,11 @@ import {
   type ProjectSync,
   type Question,
   type Skill,
+  AzimaState,
+  type Task,
+  TaskKind,
+  TaskRole,
+  TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import {
@@ -1418,6 +1424,173 @@ export function WithdrawQuestionDialog({
             disabled={busy}
           >
             {t("question.withdraw_confirm")}
+          </button>
+        </div>
+      </form>
+    </ModalFrame>
+  );
+}
+
+// sleepTasks are the tasks of a wish a question can sleep until, those not over yet (plan.over): work and azimas,
+// never a question's worker nor a watcher.
+export function sleepTasks(tasks: readonly Task[]): Task[] {
+  return tasks.filter((task) => {
+    if (task.role !== TaskRole.UNSPECIFIED || task.babysit) return false;
+    switch (task.status) {
+      case TaskStatus.DONE:
+        return (
+          task.kind === TaskKind.AZIMA && task.azima?.state !== AzimaState.DONE
+        );
+      case TaskStatus.STOPPED:
+      case TaskStatus.CANCELLED:
+        return false;
+    }
+    return true;
+  });
+}
+
+// sleepRequests are the pull or merge requests a question can sleep until: those a watcher of the wish babysits, not
+// merged yet.
+export function sleepRequests(tasks: readonly Task[]): Task[] {
+  return tasks.filter((task) => task.babysit?.url && !task.babysit.doneTime);
+}
+
+// sleepUntil is what a question sleeps until, as djinn question sleep --until takes it: the tasks over, the requests
+// merged, the time, and what you typed besides.
+export function sleepUntil(
+  tasks: readonly string[],
+  requests: readonly string[],
+  at: string,
+  other: string,
+): string[] {
+  return [
+    ...tasks,
+    ...requests.map((code) => `merged:${code}`),
+    ...(at ? [at] : []),
+    ...other
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean),
+  ];
+}
+
+// SleepQuestionDialog puts an open question to sleep until what you tick holds, all of it: tasks over, requests
+// merged, a time. It leaves the questions column until then; Djinn wakes it, the Djinn checks it, and it comes first.
+export function SleepQuestionDialog({
+  question,
+  tasks,
+  currentWishId,
+  onClose,
+  onSleep,
+}: {
+  question: Question;
+  // The tasks of its wish.
+  tasks: readonly Task[];
+  currentWishId: string;
+  onClose: () => void;
+  onSleep: (wishId: string, id: string, until: string[]) => Promise<unknown>;
+}) {
+  const open = useMemo(() => sleepTasks(tasks), [tasks]);
+  const requests = useMemo(() => sleepRequests(tasks), [tasks]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [merged, setMerged] = useState<string[]>([]);
+  const [at, setAt] = useState("");
+  const [other, setOther] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const until = sleepUntil(picked, merged, at, other);
+  const toggle = (list: string[], code: string) =>
+    list.includes(code) ? list.filter((c) => c !== code) : [...list, code];
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (until.length === 0) return;
+    setBusy(true);
+    try {
+      await onSleep(currentWishId, question.id, until);
+      onClose();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalFrame
+      title={t("question.sleep_dialog_title", { code: question.code })}
+      eyebrow={question.text}
+      onClose={onClose}
+    >
+      <form className="form-fields sleep-form" onSubmit={(e) => void submit(e)}>
+        <p className="muted-text">{t("question.sleep_dialog_hint")}</p>
+        {open.length > 0 && (
+          <fieldset className="sleep-choices">
+            <legend>{t("question.sleep_tasks")}</legend>
+            {open.map((task) => (
+              <label className="wish-project-choice" key={task.id}>
+                <input
+                  type="checkbox"
+                  checked={picked.includes(task.code)}
+                  onChange={() => setPicked(toggle(picked, task.code))}
+                  disabled={busy}
+                />
+                <span>
+                  <b>{task.code}</b> {task.title}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {requests.length > 0 && (
+          <fieldset className="sleep-choices">
+            <legend>{t("question.sleep_requests")}</legend>
+            {requests.map((task) => (
+              <label className="wish-project-choice" key={task.id}>
+                <input
+                  type="checkbox"
+                  checked={merged.includes(task.code)}
+                  onChange={() => setMerged(toggle(merged, task.code))}
+                  disabled={busy}
+                />
+                <span>
+                  <b>{task.code}</b> {task.babysit?.url}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <label>
+          <span>{t("question.sleep_time")}</span>
+          <input
+            type="datetime-local"
+            value={at}
+            onChange={(e) => setAt(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <label>
+          <span>{t("question.sleep_other")}</span>
+          <input
+            type="text"
+            value={other}
+            onChange={(e) => setOther(e.target.value)}
+            placeholder="W12, merged:W45, 3d"
+            disabled={busy}
+          />
+        </label>
+        {error && <p className="login-message">{error}</p>}
+        <div className="modal-footer">
+          <button type="button" className="button secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="submit"
+            className="button accent"
+            disabled={busy || until.length === 0}
+          >
+            <Moon size={14} aria-hidden="true" />
+            {t("question.sleep_confirm")}
           </button>
         </div>
       </form>

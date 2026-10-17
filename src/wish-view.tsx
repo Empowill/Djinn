@@ -57,6 +57,7 @@ import {
   azimaGroups,
   codeMapOf,
   forkedAs,
+  asleepQuestions,
   investigatingQuestions,
   isAzima,
   mergeNest,
@@ -112,7 +113,11 @@ import {
   MoveAzimaDialog,
   useStickyRoom,
 } from "./azima";
-import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
+import {
+  MoveQuestionDialog,
+  SleepQuestionDialog,
+  WithdrawQuestionDialog,
+} from "./wish-dialogs";
 import {
   kindsForView,
   LayoutToggle,
@@ -212,6 +217,7 @@ export function WishView({
   const allDetails = useData((s) => s.details);
   const waitingLead = waitingLeadQuestions(wish, detail);
   const digging = investigatingQuestions(wish, detail);
+  const sleeping = asleepQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
   const codes = codeMapOf(detail.tasks);
   // Read again only when the wish's questions, blocks or tasks change, not at every render of the screen.
@@ -229,13 +235,14 @@ export function WishView({
     const withdrawnCount = detail.questions.filter(isWithdrawn).length;
     const answeredCount = Math.max(
       0,
-      detail.questionsTotal - open.length - withdrawnCount,
+      detail.questionsTotal - open.length - sleeping.length - withdrawnCount,
     );
     const decisionBlocksCount = detail.blocks.filter(isDecisionBlock).length;
     return Math.max(decisionItems.length, answeredCount + decisionBlocksCount);
   }, [
     detail.questionsTotal,
     open.length,
+    sleeping.length,
     detail.questions,
     detail.blocks,
     decisionItems.length,
@@ -361,7 +368,15 @@ export function WishView({
     move,
     withdraw,
     later,
+    sleep,
   } = useWrites(onToast);
+  const [sleepingQuestion, setSleepingQuestion] = useState<Question | null>(
+    null,
+  );
+  const wakeQuestion = useCallback(
+    (q: Question) => sleep(q.wishId, q.id, [], true),
+    [sleep],
+  );
   const act = useCallback(
     (
       run: () => Promise<unknown>,
@@ -969,6 +984,15 @@ export function WishView({
           onMove={move}
         />
       )}
+      {sleepingQuestion && (
+        <SleepQuestionDialog
+          question={sleepingQuestion}
+          tasks={detail.tasks}
+          currentWishId={wish.id}
+          onClose={() => setSleepingQuestion(null)}
+          onSleep={sleep}
+        />
+      )}
       {withdrawingQuestion && (
         <WithdrawQuestionDialog
           question={withdrawingQuestion}
@@ -1272,6 +1296,9 @@ export function WishView({
                   onMove={setMovingQuestion}
                   onWithdraw={setWithdrawingQuestion}
                   onLater={handleQuestionLater}
+                  onSleep={setSleepingQuestion}
+                  asleep={sleeping}
+                  onWake={wakeQuestion}
                 />
                 {(waiting.length > 0 || wish.ready) && (
                   <section
