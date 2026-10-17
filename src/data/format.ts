@@ -36,7 +36,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { type TextKey, language, t } from "../i18n";
-import { onStillness, still } from "../stillness";
+import { keepLive } from "../stillness";
 import { ifritLit, ifritOut, ifritWord, isIfrit } from "./ifrit";
 
 // A djinn grants three wishes at a time, never more. The lamp refuses a fourth; the page only says so beforehand.
@@ -421,25 +421,15 @@ export function azimaTime(
   };
 }
 
-// useNow is the time now, read again every period while on: a duration shown stays current. A window at rest
-// (stillness.ts) stops the clock, and reads the time again as it wakes.
+// useNow is the time now, read again every period while on: a duration shown stays current, the window focused or
+// not (keepLive in stillness.ts). A hidden window reads it seldom, and again as it shows.
 export function useNow(on: boolean, period = 1_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!on) return;
-    let id: ReturnType<typeof setInterval> | undefined;
-    const tick = () => {
-      clearInterval(id);
-      id = undefined;
-      setNow(Date.now());
-      if (!still()) id = setInterval(() => setNow(Date.now()), period);
-    };
+    const tick = () => setNow(Date.now());
     tick();
-    const stop = onStillness(tick);
-    return () => {
-      stop();
-      clearInterval(id);
-    };
+    return keepLive(tick, period);
   }, [on, period]);
   return now;
 }
