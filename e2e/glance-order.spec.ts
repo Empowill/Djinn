@@ -180,7 +180,9 @@ test("the glance lists every worker in one order by state, its waiting work past
     return task;
   };
   // Each worker is waited for at work before the next starts: they begin in this order. One that waits for a slot
-  // (the machine counts the workers it runs), or that Djinn resumes once one frees, is started anyway (task start).
+  // (the machine counts the workers it runs), or that Djinn resumes once one frees, is started anyway (task start);
+  // one Djinn paused to make room for the investigator is resumed by hand (task resume). Either way it is forced: no
+  // later worker pauses it, however few slots the machine has (W343).
   const running = async (id: string, state = "TASK_STATUS_RUNNING") =>
     expect
       .poll(
@@ -195,6 +197,15 @@ test("the glance lists every worker in one order by state, its waiting work past
               djinn("task", "start", id);
             } catch {
               // It waits for something else: said below.
+            }
+          if (
+            state === "TASK_STATUS_RUNNING" &&
+            t.status === "TASK_STATUS_PAUSED"
+          )
+            try {
+              djinn("task", "resume", id);
+            } catch {
+              // Resumed already: read again below.
             }
           return t.status === state
             ? state
@@ -241,11 +252,7 @@ test("the glance lists every worker in one order by state, its waiting work past
           const tasks: Task[] =
             JSON.parse(djinn("task", "list", "--wish-id", wishId, "--json"))
               .tasks ?? [];
-          const found = tasks.find(
-            (t) =>
-              t.role === "TASK_ROLE_INVESTIGATOR" &&
-              t.status === "TASK_STATUS_RUNNING",
-          );
+          const found = tasks.find((t) => t.role === "TASK_ROLE_INVESTIGATOR");
           investigator = found?.code ?? "";
           investigatorId = found?.id ?? "";
           return investigator;
@@ -254,6 +261,10 @@ test("the glance lists every worker in one order by state, its waiting work past
       )
       .not.toBe("");
     spawned.push(investigatorId);
+    // On a machine of few slots, the investigator takes the work's slot and pauses it (preemptForSlot), or, the work
+    // started by hand, waits for a slot: both are at work, the work keeping its first start, the first of the glance.
+    await running(investigatorId);
+    await running(work.id);
     const ifrit = spawn(
       "--kind",
       "ifrit",
