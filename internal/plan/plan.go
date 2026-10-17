@@ -27,6 +27,7 @@ import (
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
+	"github.com/empowill/djinn/wishicons"
 )
 
 // Entities are the messages the store keeps: those of plan.v1, and what each command of a project costs.
@@ -1015,6 +1016,45 @@ func (w *Wishes) Rename(
 		return nil, Status(err)
 	}
 	return connect.NewResponse(&planv1.WishServiceRenameResponse{Wish: wish}), nil
+}
+
+// Icon sets the wish's icon, a name of the bank, in place of what it had; empty takes it back to its mark. A name
+// outside the bank is refused, with how to find one.
+func (w *Wishes) Icon(
+	ctx context.Context, req *connect.Request[planv1.WishServiceIconRequest],
+) (*connect.Response[planv1.WishServiceIconResponse], error) {
+	name := strings.ToLower(strings.TrimSpace(req.Msg.GetName()))
+	if name != "" && !wishicons.Known(name) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"%q is not an icon of the bank: djinn wish icons --search <word> lists those that fit a word", name))
+	}
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		wish.Icon = name
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceIconResponse{Wish: wish}), nil
+}
+
+// Icons lists the bank of wish icons, or the icons whose words hold every word searched.
+func (w *Wishes) Icons(
+	_ context.Context, req *connect.Request[planv1.WishServiceIconsRequest],
+) (*connect.Response[planv1.WishServiceIconsResponse], error) {
+	var icons []*planv1.WishIcon
+	for _, icon := range wishicons.Search(req.Msg.GetSearch()) {
+		icons = append(icons, &planv1.WishIcon{Name: icon.Name, Family: icon.Family, Words: icon.En, WordsFr: icon.Fr})
+	}
+	return connect.NewResponse(&planv1.WishServiceIconsResponse{Icons: icons}), nil
 }
 
 // AddProject adds a project, named or by identifier, to the wish, with its integration branch there as Make records

@@ -40,7 +40,8 @@ import { t } from "./i18n";
 import { useOpenTerminal } from "./lead-terminal";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, usePageShortcut } from "./page-keys";
 import { SyncLines } from "./project-sync";
-import { CountPill, ToneIcon } from "./status";
+import { CountPill, IfritFlame, ToneIcon, WaitingHand } from "./status";
+import { WishIcon } from "./wish-icon";
 
 // The wishes' lists: a wish is dragged within its own, and from any into the active one.
 type Zone = "active" | "paused" | "granted";
@@ -226,11 +227,26 @@ export function WishSidebar({
     );
     // Unfolded, an active wish takes a second line under its title: its lit ifrits' flame, then what waits for you,
     // then what works, then what waits for a place, then what investigates, then what is paused, then what watches, a
-    // count at zero left out, and its rank at the end. Its icon then says what it does: the questions have their count,
-    // and no raised hand repeats it (Q01). Folded to the rail, the icon is all that shows: it keeps the hand, the workers
-    // waiting for a place hang on its lower corner, and the paused ones on its upper corner. A narrow window folds the bar by its width alone (styles.css, 820px), the second line
-    // hidden: the row carries the hand, which shows only then, in place of the icon, and the corner's count (wish.css).
+    // count at zero left out, and its rank at the end. Its state's icon then says what it does: the questions have their
+    // count, and no raised hand repeats it (Q01). Folded to the rail (or narrowed by its width alone, styles.css, 820px,
+    // the second line hidden), the wish shows its own icon of the bank, or its grey mark (L09 v6): a small hand and the
+    // questions' count on its upper right, a lit ifrit's flame on its upper left, both without background; under it a
+    // blue dot while workers run or merge, a violet one while an investigation runs, never a number; the workers
+    // waiting for a place hang on its lower right corner, the paused ones on its lower left (wish.css).
     const counted = !!rank && !collapsed;
+    const working = count.running + count.merging;
+    const ifritLabel = t("wish.ifrits_lit", { count: count.ifrits ?? 0 });
+    const questionsLabel = t("wish.questions_wait", {
+      count: count.questions,
+    });
+    const actsLabel = [
+      count.running > 0 && t("plan.running", { count: count.running }),
+      count.merging > 0 && t("plan.merging_detail", { count: count.merging }),
+      !!count.investigating &&
+        t("plan.investigating_detail", { count: count.investigating }),
+    ]
+      .filter(Boolean)
+      .join(" · ");
     const placeLabel = t("plan.place_wait", { count: count.placeWait ?? 0 });
     const pausedLabel = t("plan.paused", { count: count.paused ?? 0 });
     const shown =
@@ -293,13 +309,45 @@ export function WishSidebar({
             <GripVertical size={12} />
           </span>
         )}
-        <span
-          className={`wish-tone tone-${shown} ${shown !== tone ? "asks" : ""}`}
-        >
-          <ToneIcon tone={shown} size={12} />
-          {shown !== tone && (
-            <span className={`wish-hand tone-${tone}`}>
-              <ToneIcon tone={tone} size={12} />
+        {!collapsed && (
+          <span className={`wish-tone tone-${shown}`}>
+            <ToneIcon tone={shown} size={12} />
+          </span>
+        )}
+        <span className="wish-emblem">
+          <WishIcon wish={wish} size={rank ? 20 : 16} />
+          {!!rank && !!count.ifrits && (
+            <span
+              className="wish-flame-corner"
+              title={ifritLabel}
+              aria-label={ifritLabel}
+              role="img"
+            >
+              <IfritFlame />
+            </span>
+          )}
+          {!!rank && count.questions > 0 && (
+            <span
+              className="wish-hand-corner"
+              title={questionsLabel}
+              aria-label={questionsLabel}
+              role="img"
+            >
+              <WaitingHand />
+              <b>{count.questions}</b>
+            </span>
+          )}
+          {!!rank && (working > 0 || !!count.investigating) && (
+            <span
+              className="wish-acts"
+              title={actsLabel}
+              aria-label={actsLabel}
+              role="img"
+            >
+              {working > 0 && <span className="wish-act tone-running" />}
+              {!!count.investigating && (
+                <span className="wish-act tone-investigating" />
+              )}
             </span>
           )}
           {!!rank && !!count.placeWait && (
@@ -435,6 +483,12 @@ export function WishSidebar({
     (sum, w) => sum + (counts[w.id]?.questions ?? 0),
     0,
   );
+  const carpetLabel = [
+    waits > 0 && t("wish.questions_wait", { count: waits }),
+    inbox > 0 && t("sidebar.inbox_new", { count: inbox }),
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <>
       {onSelectPlan && (active.length > 0 || inbox > 0) && (
@@ -447,22 +501,42 @@ export function WishSidebar({
           })}
           aria-keyshortcuts={carpetKey.aria}
         >
-          <Plane size={15} />
-          {!collapsed && <span>{t("plan.title")}</span>}
-          {waits > 0 && (
-            <CountPill
-              tone="waiting"
-              count={waits}
-              label={t("wish.questions_wait", { count: waits })}
-            />
-          )}
-          {inbox > 0 && (
-            <CountPill
-              tone="waiting"
-              icon={Inbox}
-              count={inbox}
-              label={t("sidebar.inbox_new", { count: inbox })}
-            />
+          {collapsed ? (
+            // Folded, what waits for you there is the small hand and its count on the plane's corner (L09 v6).
+            <span className="wish-emblem">
+              <Plane size={15} />
+              {waits + inbox > 0 && (
+                <span
+                  className="wish-hand-corner"
+                  title={carpetLabel}
+                  aria-label={carpetLabel}
+                  role="img"
+                >
+                  <WaitingHand />
+                  <b>{waits + inbox}</b>
+                </span>
+              )}
+            </span>
+          ) : (
+            <>
+              <Plane size={15} />
+              <span>{t("plan.title")}</span>
+              {waits > 0 && (
+                <CountPill
+                  tone="waiting"
+                  count={waits}
+                  label={t("wish.questions_wait", { count: waits })}
+                />
+              )}
+              {inbox > 0 && (
+                <CountPill
+                  tone="waiting"
+                  icon={Inbox}
+                  count={inbox}
+                  label={t("sidebar.inbox_new", { count: inbox })}
+                />
+              )}
+            </>
           )}
         </button>
       )}

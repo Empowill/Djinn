@@ -356,6 +356,9 @@ func leadCommandsBrief(driven bool) string {
 		"- `djinn wish brief <wish>`: one wish's brief, up to date.\n" +
 		"- `djinn wish describe <wish> --text \"…\"`: the wish's description, a few lines: what it is for, its scope, " +
 		"where it goes. The developer edits it in the window too.\n" +
+		"- `djinn wish icon <wish> --name <name>`: the wish's icon in the window's menu, a name of the bank that says its " +
+		"subject; `djinn wish icons --search <word>` finds them by a word, English or French. A wish without one shows " +
+		"a grey mark until you choose.\n" +
 		"- `djinn question ask \"🔐 <question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔐` " +
 		"(the emoji its title starts with); `--before \"before the merge\"` says what the answer is needed before, without it the " +
 		"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
@@ -685,6 +688,11 @@ func movingBrief(
 		b.WriteString("\nFirst, write a concise title in the developer's language, using the language of the complete " +
 			"original request above when no preference is given, then run " +
 			"`djinn wish rename <wish> \"<title>\"`. The current title is provisional; keep the original request whole.\n")
+	}
+	if wish.GetIcon() == "" {
+		fmt.Fprintf(&b, "\nThis wish has no icon in the window's menu yet: once it has its title, choose the icon of the "+
+			"bank that says its subject (`djinn wish icons --search <word>`, a word of its title), then "+
+			"`djinn wish icon %s --name <name>`.\n", wish.GetId())
 	}
 
 	codes := map[string]string{}

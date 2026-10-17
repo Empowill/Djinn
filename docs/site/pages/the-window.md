@@ -57,9 +57,21 @@ will land. Drop a paused or granted wish among the active ones to make it active
 is then paused. **Make it the first active wish**, beside a paused wish, does it in one click. See [Wish](#wish).
 
 Ctrl+\ (Cmd+\ on macOS), or the button at the top, folds the side panel into a rail of icons; Djinn remembers it. In a
-narrow window, under 820 pixels, the panel keeps only its icons by itself: a wish with open questions then shows a
-raised hand in place of its icon. On the rail, the grey seat and its count hang on the lower corner of a wish's icon
-while some of its workers wait for a place, and the grey pause and its count on its upper corner while some are paused.
+narrow window, under 820 pixels, the panel keeps only its icons by itself, the same way. On the rail each wish shows
+its own icon instead of its state's: an illuminated drawing, a fine line and its small filled ornaments, in two colours
+of the logo (emerald, saffron, mint, or the title's ink). The Djinn chooses it for the wish's subject from a bank of 108
+icons, in twelve families, and its lead can change it with the wish icon command; the wish icons command searches the
+bank by a word, in English or in French. Until it has one, a wish shows its mark, a small grey sigil drawn from its
+identifier, the same in every window. Around the icon, the signs of what goes on, never on a background:
+
+| Sign | What it says |
+| --- | --- |
+| Small yellow hand and a number, upper right | Questions waiting for your answer |
+| Vermilion flame, upper left | An ifrit is lit |
+| Blue dot, under it | Workers running, or work merging |
+| Violet dot, under it | Questions being investigated |
+| Grey seat and a number, lower right | Workers waiting for a place |
+| Grey pause and a number, lower left | Workers paused |
 
 ### The personal space
 

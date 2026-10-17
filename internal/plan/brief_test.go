@@ -564,6 +564,53 @@ func TestDescribe(t *testing.T) {
 	}
 }
 
+// TestWishIcon: a wish's icon is a name of the bank, set in place of what it had and taken back to its mark by an empty
+// one; a name outside the bank is refused. Until it has one, its brief asks the Djinn to choose it.
+func TestWishIcon(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	id := c.wish(t)
+	brief := func() string {
+		res, err := c.wishes.Brief(ctx, connect.NewRequest(&planv1.WishServiceBriefRequest{WishId: id}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetText()
+	}
+	ask := "This wish has no icon in the window's menu yet"
+	if !strings.Contains(brief(), ask) || !strings.Contains(brief(), "djinn wish icon "+id+" --name <name>") {
+		t.Errorf("the brief of a wish without an icon does not ask for one:\n%s", brief())
+	}
+	icon := func(name string) (*planv1.Wish, error) {
+		res, err := c.wishes.Icon(ctx, connect.NewRequest(&planv1.WishServiceIconRequest{WishId: id, Name: name}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetWish(), nil
+	}
+	if wish, err := icon(" Lamp "); err != nil || wish.GetIcon() != "lamp" {
+		t.Fatalf("icon = %v, %v", wish, err)
+	}
+	listed, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
+	if err != nil || listed.Msg.GetWishes()[0].GetIcon() != "lamp" {
+		t.Errorf("listed = %v, %v", listed, err)
+	}
+	if strings.Contains(brief(), ask) {
+		t.Error("the brief asks for an icon the wish has")
+	}
+	if _, err := icon("hand"); code(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "djinn wish icons") {
+		t.Errorf("an icon outside the bank: %v", err)
+	}
+	if wish, err := icon(""); err != nil || wish.GetIcon() != "" {
+		t.Errorf("icon(\"\") = %v, %v; want the mark back", wish, err)
+	}
+	res, err := c.wishes.Icons(ctx, connect.NewRequest(&planv1.WishServiceIconsRequest{Search: "theme"}))
+	if err != nil || len(res.Msg.GetIcons()) != 1 || res.Msg.GetIcons()[0].GetName() != "palette" ||
+		res.Msg.GetIcons()[0].GetWordsFr() == "" {
+		t.Errorf("icons --search theme = %v, %v", res, err)
+	}
+}
+
 // TestBriefOrder: djinn wish brief says where the wish stands on its own, in this order: the description, the azimas,
 // what runs and waits, the open questions, the latest decisions and blocks, the last lead and when a lead last
 // acted; then how to lead it.
