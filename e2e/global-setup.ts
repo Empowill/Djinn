@@ -12,6 +12,15 @@ const binary = path.resolve(
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
 
+// Where the djinn's logs go before its data directory is removed: a push check's djinn that died mid-run left
+// nothing to say why, every spec after it refused (W248).
+const kept = path.resolve(__dirname, "../test-results/e2e/djinn-logs");
+
+// keepLogs copies the djinn's logs (djinn.log, crash.txt, goroutine dumps) out of its data directory.
+function keepLogs(home: string) {
+  fs.cpSync(path.join(home, "logs"), kept, { recursive: true, force: true });
+}
+
 export default async function globalSetup() {
   delete process.env.DJINN_ADDR;
   // A data directory of its own: the tests never touch the developer's state nor the address of their djinn.
@@ -50,8 +59,17 @@ export default async function globalSetup() {
       ...(process.platform === "win32" ? {} : { SHELL: "/bin/sh" }),
     },
   });
+  // The teardown stops it: an end before that fails every spec after it, so it is said at once and kept. Said at the
+  // teardown, the line would push a failed spec's name out of the last lines a push check keeps.
+  let stopping = false;
   const exited = new Promise<number | null>((resolve) =>
-    djinn.once("exit", (code) => resolve(code)),
+    djinn.once("exit", (code, signal) => {
+      const line = `djinn exited at ${new Date().toISOString()}: code ${code}, signal ${signal}\n`;
+      fs.mkdirSync(kept, { recursive: true });
+      fs.appendFileSync(path.join(kept, "exit.txt"), line);
+      if (!stopping) process.stderr.write(line);
+      resolve(code);
+    }),
   );
 
   const url = await new Promise<string>((resolve, reject) => {
@@ -107,8 +125,10 @@ export default async function globalSetup() {
     if (process.platform === "win32") {
       // Windows sends another process no signal: djinn ends at once, as after a crash. A process it started may
       // still hold a file of its data directory a moment.
+      stopping = true;
       djinn.kill();
       await exited;
+      keepLogs(home);
       fs.rmSync(home, {
         recursive: true,
         force: true,
@@ -117,8 +137,10 @@ export default async function globalSetup() {
       });
       return;
     }
+    stopping = true;
     djinn.kill("SIGINT");
     const code = await exited;
+    keepLogs(home);
     fs.rmSync(home, { recursive: true, force: true });
     if (code !== 0) throw new Error(`djinn exited with ${code} on SIGINT`);
   };

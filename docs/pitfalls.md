@@ -178,6 +178,10 @@ the code does not say by itself; remove one when a change makes it false.
   assertion, each step in the trace a few hundred ms. *Do:* one assertion over a list (`expect.poll` on a role
   locator's `allInnerTexts()`) rather than one per item, and a long spec in parts; measure with `--trace off` against
   the default.
+- **Every spec after one point refuses: the specs' djinn ended.** `ERR_CONNECTION_REFUSED`, "djinn is not running
+  … no …/server.addr": the shared djinn of the suite is gone, and each spec after it fails (W248: a push check at
+  56a98a21, from the tilasms spec on). *Do:* read `test-results/e2e/djinn-logs/` (`exit.txt` says when and how it
+  ended; its `djinn.log` and `crash.txt`, which the teardown keeps).
 - **Two Playwright runs in one worktree erase each other's traces.** `go tool task test` runs the e2e too; beside
   `go tool task e2e` (or a second agent in the same worktree) both write `test-results/`. *Sign:*
   `ENOENT … .playwright-artifacts-0/traces/*.trace`. *Do:* one run at a time.
