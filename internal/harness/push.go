@@ -307,12 +307,16 @@ func (h *Harness) push(ctx context.Context, wish *planv1.Wish, project *planv1.P
 }
 
 // pushBranch pushes branch of wish in project to its remote: the commit it is at, once its push checks pass on it.
-// A merge that moves the branch meanwhile makes them moot (errMoot): nothing is pushed nor held (push_apart.go).
+// A merge that moves the branch meanwhile makes them moot (errMoot): nothing is pushed nor held (push_apart.go). So
+// does work queued for the branch, unless approved: ctx cancelled with a *queuedError stops the push checks at once.
 func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch string, committed []*planv1.Task, why string, approved bool) (*planv1.IntegrationPush, error) {
 	pushing := ctx // git push stops with djinn up: an approval waits for the next start.
 	ctx = context.WithoutCancel(ctx)
 	h.pushMu.Lock()
 	defer h.pushMu.Unlock()
+	if err := h.pushQueuedStop(ctx, pushing, committed, branch, ""); err != nil {
+		return nil, err // Queued while it waited for the push worktree.
+	}
 	run := h.startPushRun(wish.GetId(), project.GetId(), branch)
 	defer run.stop()
 	repo := project.GetDirectory()
@@ -362,8 +366,11 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 				})
 		}
 		if stopped || pushing.Err() != nil {
-			h.cut(doing)
 			run.clear(ctx)
+			if err := h.pushQueuedStop(ctx, pushing, committed, branch, sha); err != nil {
+				return nil, err
+			}
+			h.cut(doing)
 			return nil, pushing.Err()
 		}
 	}
@@ -391,6 +398,18 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 			branch, short8(sha), short8(tip), again))
 		return nil, mootError(branch, sha, tip)
 	}
+	if !approved {
+		// Work queued at the end of the checks, before its look stopped them: moot all the same.
+		if queued := h.pushQueued(ctx, wish.GetId(), project.GetId(), branch); len(queued) > 0 {
+			run.clear(ctx)
+			err := &queuedError{branch: branch, codes: queued}
+			h.pushSteps(ctx, committed, queuedStep(err, sha))
+			return nil, err
+		}
+	}
+	// Past this look, work queued stops the push no more: only djinn up stopping does.
+	pushing, done := h.pastTheQueue(pushing)
+	defer done()
 	if cur, err := store.Get[*planv1.Wish](ctx, h.store, wish.GetId()); err == nil {
 		wish, state = cur, pushState(cur, project.GetId()) // As it stands now, the checks run.
 	}

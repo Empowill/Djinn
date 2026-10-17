@@ -137,12 +137,14 @@ func (h *Harness) Integrate() {
 	})
 }
 
-// kickIntegrate asks the integration for a pass: a task's work waits.
+// kickIntegrate asks the integration for a pass: a task's work waits. The pushes run apart look whether it is queued for
+// their branch (queueMoved).
 func (h *Harness) kickIntegrate() {
 	select {
 	case h.integrateKick <- struct{}{}:
 	default:
 	}
+	h.queueMoved()
 }
 
 // pendIntegration marks the work of t, a task its worker just finished, as waiting to be merged, when Djinn
@@ -1467,6 +1469,7 @@ func (h *Harness) settleIntegration(
 		logx.L().Error("record the integration", "loop", "integrate", "task", codes(batch), "err", err)
 	}
 	h.notify()
+	h.queueMoved()
 	for _, b := range batch {
 		if len(b.GetComments()) > 0 {
 			if _, err := h.checkCommentsResolution(ctx, b); err != nil {

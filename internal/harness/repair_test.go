@@ -235,8 +235,8 @@ func TestConflictLeavesTheBatch(t *testing.T) {
 	}
 }
 
-// TestPushWaitsForTheQueue (W126, Q39 A): a push due waits for the work queued to merge into its branch, and goes once
-// it is merged and checked; a queue that does not empty holds it pushQueueCap at most, then it goes.
+// TestPushWaitsForTheQueue (W126, Q39 A, W281): a push due waits for the work queued to merge into its branch, and goes
+// once it is merged and checked, however long that takes: a correction at work past 15 minutes still holds it.
 func TestPushWaitsForTheQueue(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -255,15 +255,21 @@ func TestPushWaitsForTheQueue(t *testing.T) {
 	if len(pushes) != 1 || in.remoteTip(t, bare) != in.tip(t) || !slices.Contains(pushes[0].GetTaskIds(), w2.GetId()) {
 		t.Fatalf("pushes %v; want one, with W2's work", pushes)
 	}
-	want := "a push of " + in.branch + " is due (the azima " + letters.GetCode() + " ends); it waits for W2 to merge, 15 minutes at most"
+	want := "a push of " + in.branch + " is due (the azima " + letters.GetCode() + " ends); it waits for W2 to merge"
 	if _, texts := in.integration(t, w1); !slices.Contains(texts, want) {
 		t.Errorf("W1's events %q lack %q", texts, want)
 	}
 
-	// W3 ends Numbers, while W4 stays queued: the push waits, then goes past the cap without W4.
+	// W3 ends Numbers while W4, which conflicts with it, is corrected: the push waits for the correction, past 15
+	// minutes and an hour; its work in, the push goes with it.
+	in.correctWith(func(dir, _ string) string {
+		writeFile(t, dir, "src/3.txt", "3 and 4\n")
+		commitAll(t, dir, "Settle 3.txt") // Which concludes the merge.
+		return "wait\ntext settled"
+	})
 	numbers := in.azima(t, in.wishID, "Numbers")
 	w3 := in.finished(t, "W3", map[string]string{"app/src/3.txt": "3\n"}, func(task *planv1.Task) { task.PartOf = numbers.GetId() })
-	in.finished(t, "W4", map[string]string{"app/src/4.txt": "4\n"})
+	w4 := in.finished(t, "W4", map[string]string{"app/src/3.txt": "4\n"})
 	wish, err1 := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
 	project, err2 := store.Get[*planv1.Project](t.Context(), in.db, in.projectID)
 	if err1 != nil || err2 != nil {
@@ -273,23 +279,80 @@ func TestPushWaitsForTheQueue(t *testing.T) {
 		t.Fatalf("W3 not committed: %s", in.states(t, w3))
 	}
 	pushed := in.remoteTip(t, bare)
-	for _, d := range []time.Duration{0, 10 * time.Minute} {
+	in.pass(t, 0)
+	got, _ := in.integration(t, w4)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_CONFLICT || got.GetCorrectedBy() == "" {
+		t.Fatalf("W4's integration %v; want a conflict, corrected", got)
+	}
+	fix := in.until(t, got.GetCorrectedBy(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	for _, d := range []time.Duration{16 * time.Minute, time.Hour} {
 		in.mu.Lock()
 		in.now = in.now.Add(d)
 		in.mu.Unlock()
 		in.h.pushIfDue(t.Context(), in.wishID, project)
 		in.h.waitPushes()
 		if got := in.remoteTip(t, bare); got != pushed {
-			t.Fatalf("pushed after %s while W4 is queued", d)
+			t.Fatalf("pushed %s later while %s corrects W4", d, fix.GetCode())
 		}
 	}
-	in.mu.Lock()
-	in.now = in.now.Add(6 * time.Minute)
-	in.mu.Unlock()
-	in.h.pushIfDue(t.Context(), in.wishID, project)
-	in.h.waitPushes()
+	want = "a push of " + in.branch + " is due (the azima " + numbers.GetCode() + " ends); it waits for " + fix.GetCode() + " to merge"
+	if _, texts := in.integration(t, w3); !slices.Contains(texts, want) {
+		t.Errorf("W3's events %q lack %q", texts, want)
+	}
+	in.release(t, fix.GetId())
+	in.ended(t, fix.GetId())
+	in.pass(t, time.Second)
+	if got := in.states(t, fix, w4); got != fix.GetCode()+" COMMITTED, W4 COMMITTED" {
+		t.Fatalf("after the correction: %s", got)
+	}
 	if got := in.remoteTip(t, bare); got != in.tip(t) {
-		t.Errorf("past the cap: origin at %s; want the branch's tip %s", got, in.tip(t))
+		t.Errorf("origin at %s; want the branch's tip %s, with the correction", got, in.tip(t))
+	}
+}
+
+// TestPushWaitsForAReview (W281): work left not committed is queued while its review worker is at work: a push due
+// waits for the review's work to merge, and brings it with the work it reviewed.
+func TestPushWaitsForAReview(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	in := integrating(t)
+	bare := in.remote(t)
+	pushed := in.remoteTip(t, bare)
+	in.correctWith(func(dir, _ string) string {
+		commitAll(t, dir, "Add b")
+		return "wait\ntext Committed: src/b.txt."
+	})
+	letters := in.azima(t, in.wishID, "Letters")
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = letters.GetId() })
+	w3 := in.finished(t, "W3", nil)
+	in.leave(t, w3, map[string]string{"app/src/b.txt": "b\n"})
+
+	// W1 ends Letters while W3's work, left not committed, is reviewed: the push waits for the review.
+	in.pass(t, 0)
+	got, _ := in.integration(t, w3)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED || got.GetReviewedBy() == "" {
+		t.Fatalf("W3's integration %v; want reviewed", got)
+	}
+	review := in.until(t, got.GetReviewedBy(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	in.pass(t, time.Minute)
+	if got := in.states(t, w1); got != "W1 COMMITTED" || in.remoteTip(t, bare) != pushed || len(in.pushes(t)) != 0 {
+		t.Fatalf("%s; pushes %v while %s reviews W3", got, in.pushes(t), review.GetCode())
+	}
+	want := "a push of " + in.branch + " is due (the azima " + letters.GetCode() + " ends); it waits for " + review.GetCode() + " to merge"
+	if _, texts := in.integration(t, w1); !slices.Contains(texts, want) {
+		t.Errorf("W1's events %q lack %q", texts, want)
+	}
+
+	// The review's work merges, W3's with it: the push goes, once, with both.
+	in.release(t, review.GetId())
+	in.ended(t, review.GetId())
+	in.pass(t, time.Second)
+	if got := in.states(t, review, w3); got != review.GetCode()+" COMMITTED, W3 COMMITTED" {
+		t.Fatalf("after the review: %s", got)
+	}
+	pushes := in.pushes(t)
+	if len(pushes) != 1 || in.remoteTip(t, bare) != in.tip(t) || !slices.Contains(pushes[0].GetTaskIds(), w3.GetId()) {
+		t.Errorf("pushes %v; want one, with W3's work", pushes)
 	}
 }
 
