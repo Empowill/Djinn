@@ -164,7 +164,8 @@ for (const scheme of ["dark", "light"] as const) {
     await expect(page.locator("#group-tilasm")).toBeVisible();
     await expect(page.locator("#group-wish")).toBeHidden();
     await expect(page.locator("#cmd-tilasm-put")).toBeVisible();
-    await page.getByRole("searchbox").fill("no such command");
+    // A word no command holds: plain words like "such" turn up in the help of new commands.
+    await page.getByRole("searchbox").fill("xyzzy");
     await expect(page.getByText("No command matches.")).toBeVisible();
     await page.getByRole("searchbox").fill("");
     await expect(page.locator("#group-wish")).toBeVisible();
