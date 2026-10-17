@@ -385,11 +385,11 @@ func (s *LeadService) Get(
 	res := &planv1.LeadServiceGetResponse{Lead: lead, StartError: s.Wishes.leadFailure.get()}
 	if d := s.Wishes.drive(); d != nil {
 		// No terminal: the lead is the batches Djinn drives, and why the last one failed twice, if it did.
-		res.Driven, res.Batch, res.StartError = true, d.Batch(), d.Failure()
-		if lead == nil {
-			res.Lead = &planv1.Lead{Id: "lead", Provider: planv1.Provider_PROVIDER_CLAUDE,
-				SessionId: res.GetBatch().GetSessionId(), Directory: LeadFolder(s.Wishes.home())}
-		}
+		res.Driven, res.Batch, res.StartError, res.Limit = true, d.Batch(), d.Failure(), d.LeadLimit()
+		res.Seat, res.Accounts = ReadLeadSeat(s.Wishes.home()), ReadAccounts(s.Wishes.home())
+		// The lead is where its batches run: the window marks that agent in the lead's menu.
+		res.Lead = &planv1.Lead{Id: "lead", Provider: res.GetSeat().GetProvider(),
+			SessionId: res.GetBatch().GetSessionId(), Directory: LeadFolder(s.Wishes.home())}
 		return connect.NewResponse(res), nil
 	}
 	// The choice the lead shows comes with it: the window shows it in its attention bar, whatever page is open. So

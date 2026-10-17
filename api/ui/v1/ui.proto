@@ -6,6 +6,7 @@ package ui.v1;
 import "buf/validate/validate.proto";
 import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
+import "plan/v1/plan.proto";
 
 // What the window needs to show and follow the plan.
 service UiService {
@@ -139,6 +140,11 @@ message Settings {
   // its prompt; no terminal, no djinn lead watch. Unset or false: the lead runs in its terminal, as before, until the
   // driven lead is proven. djinn up reads it as it starts.
   optional bool lead_driven = 4;
+  // The accounts of the agents on this machine, each a folder of the agent's own where it keeps its login (djinn lead
+  // add-account). No token: the login stays the agent's.
+  repeated plan.v1.Account accounts = 5;
+  // Where the lead Djinn drives runs (djinn lead move). Unset: Claude, its default model and sign-in.
+  plan.v1.LeadSeat lead = 6;
 }
 
 // An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
@@ -160,6 +166,18 @@ message Provider {
   string install_command = 7;
   // The command line that signs the agent in, from its official documentation.
   string login_command = 8;
+  // The agent's accounts on this machine beside its default sign-in, each checked in its own folder.
+  repeated AccountSetup accounts = 9;
+}
+
+// AccountSetup is where an account of an agent stands, and how to sign it in.
+message AccountSetup {
+  // The account.
+  plan.v1.Account account = 1;
+  // Whether it is signed in: the agent's status command, run with the account's folder.
+  ProviderState state = 2;
+  // The command line that signs it in, in its folder, through the user's shell.
+  string login_command = 3;
 }
 
 // ProviderState is whether an agent command line is installed and signed in.

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -639,7 +640,9 @@ func TestJSONOnly(t *testing.T) {
 		t.Errorf("request = %v", got)
 	}
 	code, out, errs = run("--json", "tilasm", "comments", "L01")
-	if code != 0 || !strings.Contains(out, `"comments": [`) || !strings.Contains(out, `"text": "Say what a wish holds."`) {
+	// protojson puts one or two spaces after a colon, by the binary's hash: either is the same JSON.
+	if code != 0 || !regexp.MustCompile(`"comments":\s+\[`).MatchString(out) ||
+		!regexp.MustCompile(`"text":\s+"Say what a wish holds."`).MatchString(out) {
 		t.Errorf("djinn --json tilasm comments L01: code %d, stdout:\n%s\nstderr: %s", code, out, errs)
 	}
 }

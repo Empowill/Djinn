@@ -737,6 +737,19 @@ func TestProviderArgs(t *testing.T) {
 		!strings.Contains(string(b), `"sandboxPolicy":{"excludeSlashTmp":false,"excludeTmpdirEnvVar":false,"networkAccess":true,"type":"workspaceWrite","writableRoots":[]}`) {
 		t.Errorf("an auto turn with edit and network: %s", b)
 	}
+	// The driven lead (W132): its rules are codex's developer instructions, and its folders to write in, without edit,
+	// open the workspace-write sandbox on them alone.
+	lead := Spec{Dir: "/home/d/lead", SystemPrompt: "The driven lead's rules", WriteDirs: []string{"/home/d/lead", "/home/d/plans"},
+		Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}}}
+	if _, params := (Codex{}).threadRequest(lead); params["developerInstructions"] != "The driven lead's rules" ||
+		params["sandbox"] != "workspace-write" || params["approvalPolicy"] != "untrusted" {
+		t.Errorf("the lead's thread: %v", params)
+	}
+	turn = (Codex{}).turnParams(lead, "th", "hi")
+	if b, _ := json.Marshal(turn); !strings.Contains(string(b), `"type":"workspaceWrite","writableRoots":["/home/d/plans"]`) ||
+		!strings.Contains(string(b), `"networkAccess":false`) {
+		t.Errorf("the lead's turn: %s", b)
+	}
 	turn = (Codex{}).turnParams(Spec{Dir: "/w", Permissions: &djinnv1.Permissions{}}, "th", "hi")
 	if b, _ := json.Marshal(turn); !strings.Contains(string(b), `"approvalPolicy":"untrusted"`) ||
 		!strings.Contains(string(b), `"sandboxPolicy":{"networkAccess":false,"type":"readOnly"}`) || strings.Contains(string(b), "approvalsReviewer") {

@@ -143,7 +143,9 @@ func driveLead(t *testing.T, agent *leadAgent, set ...func(*LeadDriver)) *leadBe
 	b.drive = plan.DriveLead(db, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	d := &LeadDriver{Wishes: b.wishes, Provider: agent, Home: home, RetryAfter: time.Millisecond}
+	// No test runs an agent's status command: no seat is offered after a limit, unless a test says so.
+	d := &LeadDriver{Wishes: b.wishes, Provider: agent, Home: home, RetryAfter: time.Millisecond,
+		Ready: func(context.Context, *planv1.LeadSeat, *planv1.Account) bool { return false }}
 	for _, f := range set {
 		f(d)
 	}
@@ -385,19 +387,18 @@ func TestLeadFailedBatchRetriedOnceThenReported(t *testing.T) {
 	waitFor(t, "the report cleared", func() bool { return b.drive.Failure() == "" && len(b.waiting(t)) == 0 })
 }
 
-// TestLeadRetriedByLead: after a reported failure, Lead (LeadService.Resume) sends the waiting events to a new
-// session at once, and opens no terminal.
+// TestLeadRetriedByLead: after a reported limit, which no second session tries, Lead (LeadService.Resume) sends the
+// waiting events to a new session at once, on the same seat, and opens no terminal.
 func TestLeadRetriedByLead(t *testing.T) {
 	t.Parallel()
 	b := driveLead(t, newLeadAgent(func(n int) ([]Event, error) {
-		if n < 2 {
+		if n < 1 {
 			return nil, errors.New("You've hit your session limit")
 		}
 		return leadTurn("djinn brief", ""), nil
 	}))
 	b.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W2", "W2 ended")
 	b.started(t, 0)
-	b.started(t, 1)
 	waitFor(t, "the failure reported", func() bool { return b.drive.Failure() != "" })
 	res, err := (&plan.LeadService{Wishes: b.wishes}).Resume(t.Context(),
 		connect.NewRequest(&planv1.LeadServiceResumeRequest{}))
@@ -407,8 +408,8 @@ func TestLeadRetriedByLead(t *testing.T) {
 	if res.Msg.GetTerminal() != "" || !strings.Contains(res.Msg.GetNote(), "Djinn drives the lead") {
 		t.Errorf("Resume = %v", res.Msg)
 	}
-	if third := b.started(t, 2); !strings.Contains(third.Prompt, "### W2 ended") {
-		t.Errorf("the retried batch:\n%s", third.Prompt)
+	if again := b.started(t, 1); !strings.Contains(again.Prompt, "### W2 ended") {
+		t.Errorf("the retried batch:\n%s", again.Prompt)
 	}
 }
 
