@@ -86,7 +86,7 @@ levels are in [Question and move](#question-and-move).
 ## The workers glance
 
 **What runs**, beside the questions, says what each wish's workers are doing, in a line each: a mark, the task's code
-and title, and what it waits on.
+and title, and what it waits on. A click on a line opens its task.
 
 | Mark | What it means |
 | --- | --- |
@@ -97,9 +97,23 @@ and title, and what it waits on.
 | Flame | A lit [ifrit](#ifrit) |
 | Eye | The wish's watchers, in one line, with the requests they watch |
 
-On the flying carpet each wish has its title and counts, "1 running, 2 to come"; a legend names only the marks shown.
-It stays in view while a long question scrolls. In a narrow page it shrinks to a line per wish, a dot per worker, and
-comes before the questions.
+Below its workers, each wish shows the work on its way into its branch, and the workers that repair it:
+
+| Mark | What it means |
+| --- | --- |
+| Blue merge arrow | A batch being merged: which tasks, into which branch, the check it runs (lint, test) through the gate of its name, and for how long; or that it waits for its gate |
+| Grey merge arrow | A task's work waiting in line, in the order Djinn merges it, with why when something holds it |
+| Blue cloud | The push checks running, or the push itself, and for how long |
+| Salmon cloud, crossed | A push its checks hold: which check went red, and which tests failed |
+| Wrench | A repair worker: blue at work, grey to come; it settles a conflict, makes red checks or the push checks pass, settles main's merge, or commits work a worker left not committed |
+
+A click on a line opens its task in the Tasks tab. A held push opens what failed: the check, its command, the end of
+its output, and the correction at work, which opens in turn. See [Merges and corrections](#merges-and-corrections).
+
+On the flying carpet each wish has its title and counts, "1 running, 2 to come, 1 merging, push held, 1 repair"; a
+legend names only the marks shown. It stays in view while a long question scrolls. In a narrow page it shrinks to a
+line per wish, a dot per worker, a wrench per repair worker, one arrow for the merges and one cloud for a held push,
+and comes before the questions. Nothing in it loops: a time shown counts on only while the window is in front.
 
 ## The Hourglass
 

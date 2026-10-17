@@ -1219,7 +1219,10 @@ func (h *Harness) mergeAndTest(
 			&planv1.IntegrationFailure{Base: sha, Command: command, Output: tail(out), TaskIds: ids(merged)})
 	}
 	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, merged, sha, wt, dir, func(c *planv1.ProjectCheck) {
-		h.integrationStep(ctx, merged[0], fmt.Sprintf("integration: checking %s: %s (%s)", codes(merged), c.GetName(), c.GetCommand()))
+		// The window shows the check that runs, and since when (TaskIntegration.check).
+		h.settleIntegration(ctx, merged, &planv1.TaskIntegration{
+			State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, Branch: branch, Check: c.GetName(),
+		}, fmt.Sprintf("integration: checking %s: %s (%s)", codes(merged), c.GetName(), c.GetCommand()), nil)
 		h.setDoing(fmt.Sprintf("the integration of %s into %s, checking %s", codes(merged), branch, c.GetName()))
 	})
 	switch {
@@ -1373,7 +1376,8 @@ func (h *Harness) settleIntegration(
 func sameIntegration(a, b *planv1.TaskIntegration) bool {
 	return a.GetState() == b.GetState() && a.GetBranch() == b.GetBranch() && a.GetSha() == b.GetSha() && a.GetReason() == b.GetReason() &&
 		a.GetCorrectedBy() == b.GetCorrectedBy() && a.GetReviewedBy() == b.GetReviewedBy() && a.GetAttempts() == b.GetAttempts() &&
-		a.GetQuestionId() == b.GetQuestionId() && a.GetAlone() == b.GetAlone() && proto.Equal(a.GetFailure(), b.GetFailure())
+		a.GetQuestionId() == b.GetQuestionId() && a.GetAlone() == b.GetAlone() && a.GetCheck() == b.GetCheck() &&
+		proto.Equal(a.GetFailure(), b.GetFailure())
 }
 
 // ids lists the tasks' identifiers.

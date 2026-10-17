@@ -194,7 +194,8 @@ export function FlightPlan({
       ]),
     [plan.questions, plan.decisions, plan.waiting, plan.ready, ifrits],
   );
-  const { reach } = useReach(show, shown);
+  const { reach, to } = useReach(show, shown);
+  const openTask = useCallback((task: Task) => to(`task-${task.id}`), [to]);
 
   const wishById = useMemo(
     () => new Map(wishes.map((w) => [w.id, w])),
@@ -734,6 +735,7 @@ export function FlightPlan({
                     tasksOf={details}
                     all={allWishes.length > 0 ? allWishes : wishes}
                     onOpenWish={onOpen}
+                    onOpenTask={openTask}
                   />
                 )}
               </div>
