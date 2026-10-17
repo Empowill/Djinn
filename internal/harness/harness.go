@@ -135,6 +135,7 @@ type Harness struct {
 	pushWaits        map[string]time.Time     // by wish/project/branch: since when a push due waits for merges (repair.go); owned by the integration's pass
 	mainNow          atomic.Bool              // a release was found: the next pass looks at main whatever the cadence
 	toldApart        map[string]bool          // by wish and what was told the lead of a branch apart from its remote's (remote_branch.go), guarded by mu
+	mergedLooks      map[string]time.Time     // by repository, when Djinn last fetched main to find azimas merged into it (merged.go), guarded by mu
 
 	// The workers' health (health.go), judged by the scheduler's pass: guarded by sched.
 	accountOf AccountFunc                     // nil: no agent's account is read
@@ -293,7 +294,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
-		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]time.Time{}, toldApart: map[string]bool{},
+		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]time.Time{}, toldApart: map[string]bool{}, mergedLooks: map[string]time.Time{},
 		pushJobs:  map[string]chan struct{}{},
 		installed: map[string]string{}, preempted: map[string]string{}, aliases: map[string]string{},
 		resident: map[string]uint64{},
@@ -1030,7 +1031,7 @@ func (h *Harness) spawn(
 			return err
 		}
 		if task.PartOf != "" {
-			if err := reopenAzima(ctx, tx, task.PartOf, task.Code+" spawned"); err != nil {
+			if err := reopenAzima(ctx, tx, task.PartOf, task, "spawned"); err != nil {
 				return err
 			}
 		}
@@ -1099,7 +1100,7 @@ func (h *Harness) plan(
 			return err
 		}
 		if task.PartOf != "" {
-			if err := reopenAzima(ctx, tx, task.PartOf, task.Code+" spawned"); err != nil {
+			if err := reopenAzima(ctx, tx, task.PartOf, task, "spawned"); err != nil {
 				return err
 			}
 		}
@@ -2190,14 +2191,12 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 			}
 		}
 		if method == methodStart || (method == methodHold && ev.Text == "resumed") {
-			var partOf, code string
+			part := r.task
 			if pt, ok := task.(*planv1.Task); ok && pt != nil {
-				partOf, code = pt.GetPartOf(), pt.GetCode()
-			} else if r.task != nil {
-				partOf, code = r.task.GetPartOf(), r.task.GetCode()
+				part = pt
 			}
-			if partOf != "" {
-				if err := reopenAzima(context.Background(), tx, partOf, code+" started"); err != nil {
+			if partOf := part.GetPartOf(); partOf != "" {
+				if err := reopenAzima(context.Background(), tx, partOf, part, "started"); err != nil {
 					return err
 				}
 			}

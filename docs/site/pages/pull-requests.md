@@ -91,7 +91,9 @@ The request is yours from the draft on:
 - **Merge it** when it is approved and green. Per azima, Djinn tells you when the request can be merged and its checks
   are green, *Pull request #12 for T07 is ready to merge?*, and only notes your answer: the merge is still yours.
 
-Once merged, an azima's card shows **PR merged**, and the azima is done. Per wish, a question still proposing the
+Once merged, an azima's card shows **PR merged**, and the azima is done; once the watcher said it is merged, or main
+holds every commit of its work, a small mark shows beside its code: **Merged into main**. A task added to the azima
+afterwards clears it until that work is in main too (see Azima). Per wish, a question still proposing the
 request closes by itself once main holds the branch.
 
 The **Review** tab is another review: Djinn's own record of each task's merged work, which you mark reviewed as you
