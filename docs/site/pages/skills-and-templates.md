@@ -72,7 +72,8 @@ Only a project's own skills babysit, never a summoned one, and a project's setti
 
 A skill may declare a source: a command that prints what comes from outside, the merge requests assigned to you, a
 mention in a thread. Each item becomes a card in the [inbox](#inbox), with the route Djinn proposes. A source runs only
-once you plug it in, on this machine: declaring one in a repository runs nothing on a teammate's Djinn. Djinn only
+once you plug it in, on this machine, from its project's panel: declaring one in a repository runs nothing on a
+teammate's Djinn. Djinn only
 reads a source; it never answers, comments or reacts.
 
 ## What to expect
@@ -93,7 +94,7 @@ reads a source; it never answers, comments or reacts.
 - **Expecting a summoned skill to babysit.** Babysitting reads the project's own skills only.
 - **A refused watcher.** A watcher whose command no rule allows fails at its start, and its error says what would let
   it run. A command you typed by hand is not "declared" even if it starts the same way.
-- **Declaring a source and waiting for items.** It runs once plugged in, from the inbox, on your machine.
+- **Declaring a source and waiting for items.** It runs once plugged in, from its project's panel, on your machine.
 
 ## Read next
 

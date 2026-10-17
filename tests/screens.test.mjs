@@ -4093,7 +4093,7 @@ test("the flying carpet hides its empty sections", async () => {
   assert.match(html, /Nothing waits for you, and nothing runs\./);
 });
 
-test("the inbox shows each item with its proposed route, the recommended destination first", async () => {
+test("an inbox card says its kind and the fact, what Djinn will do, and what each choice changes under it; Dismiss is the last choice", async () => {
   const lamp = wish(
     "01a11833-a440-7479-a067-52615c91da71",
     "Ship the lamp",
@@ -4115,7 +4115,11 @@ test("the inbox shows each item with its proposed route, the recommended destina
           title: "Babysit !12",
           projectIds: ["p1"],
           reason: "the skill babysit-mr makes this wish",
-          template: { skill: "babysit-mr", projectId: "p1" },
+          template: {
+            skill: "babysit-mr",
+            projectId: "p1",
+            watch: "mrwatch -mr 12",
+          },
         },
         { kind: s.RouteKind.FILE, wishId: lamp.id, title: lamp.title },
       ],
@@ -4129,7 +4133,15 @@ test("the inbox shows each item with its proposed route, the recommended destina
     service(s.InboxService, {
       list: () => ({ items: [item] }),
       sources: () => ({
-        sources: [{ name: "gong/babysit-mr", skill: "babysit-mr" }],
+        sources: [
+          {
+            name: "gong/babysit-mr",
+            skill: "babysit-mr",
+            project: "gong",
+            plugged: true,
+            every: "5m0s",
+          },
+        ],
       }),
     });
     service(s.TaskService, { list: () => ({ tasks: [] }) });
@@ -4150,23 +4162,42 @@ test("the inbox shows each item with its proposed route, the recommended destina
     ),
   );
   assert.match(html, /Inbox/);
-  assert.match(html, /From babysit-mr/);
+  // 1. Its kind, then the fact.
+  assert.match(
+    html,
+    /<span class="inbox-kind">Request<\/span><span class="inbox-source">read by babysit-mr on this machine<\/span>/,
+  );
   assert.match(html, /<h3>Babysit !12 · Fix the wick<\/h3>/);
+  // 2. What Djinn will do with the recommended destination.
+  assert.match(
+    html,
+    /<p class="inbox-will">If you hand it to Djinn, a wish follows it with the skill babysit-mr: its watcher starts at once/,
+  );
+  // 3. Under each choice, what it changes; Dismiss last, with its own.
   const made = html.indexOf(
     "New wish “Babysit !12”, in gong, from the skill babysit-mr",
   );
   const filed = html.indexOf("File it in “Ship the lamp”");
-  assert.ok(made > 0 && filed > made);
-  assert.match(html, /Rub the lamp/);
-  assert.match(html, /Dismiss/);
-  // The sources fold under the items.
+  const dismissed = html.indexOf(">Dismiss<");
+  assert.ok(made > 0 && filed > made && dismissed > filed);
   assert.match(
     html,
-    /<details class="inbox-sources-fold"><summary>Sources \(1\)<\/summary>/,
+    /from the skill babysit-mr<\/p><p class="inbox-effect">Its watcher starts at once and tells the lead each change; workers, and so tokens, only when the lead starts them\.<\/p>/,
   );
+  assert.match(
+    html,
+    /File it in “Ship the lamp”<\/p><p class="inbox-effect">Its lead receives it as a block and decides; nothing starts by itself\.<\/p>/,
+  );
+  assert.match(
+    html,
+    /<strong class="option-letter">C<\/strong><p>Dismiss<\/p><p class="inbox-effect">It will not come back here; nothing is said or marked at the source\.<\/p>/,
+  );
+  assert.match(html, /Rub the lamp · A/);
+  // The sources are not listed in the inbox: their project's panel holds them.
+  assert.doesNotMatch(html, /inbox-source-row|Plug in|Unplug/);
 });
 
-test("the empty inbox lists the sources the skills declare, each with Plug in or Unplug; without any, it is hidden", async () => {
+test("the inbox hides when nothing waits, however many sources the skills declare; a plugged-in source that fails gets a card", async () => {
   const lamp = wish(
     "01a11833-a440-7479-a067-52615c91da71",
     "Ship the lamp",
@@ -4199,16 +4230,96 @@ test("the empty inbox lists the sources the skills declare, each with Plug in or
       ),
     );
   };
+  const unplugged = {
+    name: "djinn/babysit-pr",
+    skill: "babysit-pr",
+    project: "djinn",
+    watch: "sh .agents/skills/babysit-pr/inbox.sh",
+    every: "5m0s",
+  };
+  const fine = {
+    name: "gong/mentions",
+    skill: "mentions",
+    project: "gong",
+    watch: "mentions --new",
+    every: "1h0m0s",
+    plugged: true,
+    lastRun: { endTime: { seconds: 1_760_000_000n, nanos: 0 }, items: 2 },
+  };
+  const broke = {
+    ...unplugged,
+    plugged: true,
+    summary: "The pull requests assigned to you, read with gh.",
+    lastRun: {
+      endTime: { seconds: 1_760_000_600n, nanos: 0 },
+      failingSince: { seconds: 1_760_000_000n, nanos: 0 },
+      failures: 7,
+      error:
+        "exit status 4: gh: To get started with GitHub CLI, please run: gh auth login",
+    },
+  };
 
   assert.doesNotMatch(await render([]), /Inbox/);
+  // Declared, unplugged or running well: nothing to decide, no inbox.
+  assert.doesNotMatch(await render([unplugged, fine]), /Inbox|inbox/);
 
-  const html = await render([
+  const html = await render([broke, fine]);
+  assert.match(html, /<span class="count">1<\/span>/);
+  assert.equal(html.split("inbox-source-card").length - 1, 1);
+  // 1. Its kind, since when and how many runs, then the fact and the error.
+  assert.match(
+    html,
+    /<span class="inbox-kind">Djinn(?:'|&#x27;)s configuration<\/span><span class="inbox-when">since [^<]+<\/span><span class="inbox-when">7 failed runs in a row<\/span>/,
+  );
+  assert.match(
+    html,
+    /<h3>The source djinn\/babysit-pr fails on this machine<\/h3><pre class="inbox-error">exit status 4: gh: To get started/,
+  );
+  assert.match(
+    html,
+    /It reads: The pull requests assigned to you, read with gh\./,
+  );
+  // 2. What Djinn does meanwhile.
+  assert.match(html, /Djinn runs it again every 5m on its own/);
+  // 3. The two ways out: fix it, recommended, with no button; unplug it.
+  assert.match(
+    html,
+    /<div class="option selected inbox-fix"><strong class="option-letter">A<\/strong><p>Fix the cause on this machine<\/p><p class="inbox-effect">[^<]+<\/p><span class="option-recommended">Recommended<\/span><\/div>/,
+  );
+  assert.match(
+    html,
+    /<button class="option"><strong class="option-letter">B<\/strong><p>Unplug it on this machine<\/p><p class="inbox-effect">Its command stops and this card goes/,
+  );
+
+  // A source plugged in before its skill broke cannot run: its card says why, and how to fix it.
+  const cannot = await render([
     {
-      name: "djinn/babysit-pr",
-      skill: "babysit-pr",
-      project: "djinn",
-      watch: "sh .agents/skills/babysit-pr/inbox.sh",
+      name: "gong/noisy",
+      skill: "noisy",
+      project: "gong",
+      plugged: true,
+      error: "metadata.djinn.source.every: 10s is too often",
+    },
+  ]);
+  assert.match(
+    cannot,
+    /<h3>The source gong\/noisy cannot run on this machine<\/h3><pre class="inbox-error">metadata.djinn.source.every: 10s is too often<\/pre>/,
+  );
+  assert.match(cannot, /<p>Fix its skill<\/p>/);
+  assert.doesNotMatch(cannot, /failed run/);
+});
+
+test("a project's panel lists the sources its skills declare: what each reads, how it stands, and Plug in or Unplug with what it does", async () => {
+  const p1 = { id: "p1", name: "gong", git: true, directory: "/tmp/gong" };
+  const sources = [
+    {
+      name: "gong/babysit-mr",
+      skill: "babysit-mr",
+      project: "gong",
+      watch: "sh .agents/skills/babysit-mr/assigned.sh",
       every: "5m0s",
+      summary:
+        "The merge requests of this project assigned to you, read with glab.",
     },
     {
       name: "gong/mentions",
@@ -4217,6 +4328,7 @@ test("the empty inbox lists the sources the skills declare, each with Plug in or
       watch: "mentions --new",
       every: "1h0m0s",
       plugged: true,
+      lastRun: { endTime: { seconds: 1_760_000_000n, nanos: 0 }, items: 2 },
     },
     {
       name: "gong/noisy",
@@ -4224,29 +4336,64 @@ test("the empty inbox lists the sources the skills declare, each with Plug in or
       project: "gong",
       error: "metadata.djinn.source.every: 10s is too often",
     },
-  ]);
-  assert.match(html, /Inbox/);
-  assert.match(
-    html,
-    /Djinn reads only the sources you plug in, on this machine/,
-  );
+    { name: "bell/other", skill: "other", project: "bell", every: "5m0s" },
+  ];
+  const render = async (list) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.ProjectService, { show: () => ({ project: p1 }) });
+      service(s.SkillService, { list: () => ({ skills: [] }) });
+      service(s.InboxService, {
+        list: () => ({ items: [] }),
+        sources: () => ({ sources: list }),
+      });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    await djinn.store.changed("", [s.Change.INBOX]);
+    return s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.ProjectPanel, { project: p1, onClose() {} }),
+      ),
+    );
+  };
+  const html = await render(sources);
+  assert.match(html, /<h3>Inbox sources, on this machine<\/h3>/);
   const rows = html
     .split('<li class="inbox-source-row">')
     .slice(1)
     .map((row) => row.slice(0, row.indexOf("</li>")));
+  // Only this project's sources.
   assert.equal(rows.length, 3);
-  assert.match(rows[0], /djinn\/babysit-pr/);
+  assert.match(rows[0], /<strong>babysit-mr<\/strong>/);
   assert.match(
     rows[0],
-    /<code>sh .agents\/skills\/babysit-pr\/inbox.sh<\/code>/,
+    /<p>The merge requests of this project assigned to you, read with glab\.<\/p>/,
   );
   assert.match(rows[0], /Unplugged: runs nothing/);
-  assert.match(rows[0], />Plug in<\/button>/);
-  assert.match(rows[1], /Plugged in, every 1h/);
+  assert.match(
+    rows[0],
+    /<code>sh .agents\/skills\/babysit-mr\/assigned.sh<\/code>/,
+  );
+  // No setting's button in the accent colour: none is recommended.
+  assert.match(
+    rows[0],
+    /class="button small secondary"[^>]*>.*Plug in<\/button>/,
+  );
+  assert.match(
+    rows[0],
+    /<p>Runs this command every 5m on this machine, logged in by its own tool; each item it prints becomes a card in the inbox\.<\/p>/,
+  );
+  assert.match(rows[1], /Plugged in, every 1h · last run [^<]+: 2 items/);
   assert.match(rows[1], />Unplug<\/button>/);
   // A source that cannot run says why, and offers nothing to plug in.
   assert.match(rows[2], /10s is too often/);
   assert.doesNotMatch(rows[2], /<button/);
+
+  assert.match(
+    await render([]),
+    /No skill of this project declares a source\./,
+  );
 });
 
 test("the folder of a new project has a folder dialog's button only when the window has one", () => {

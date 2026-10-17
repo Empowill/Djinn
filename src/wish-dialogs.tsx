@@ -42,9 +42,10 @@ import {
 import { AgentSetupPanel, needsSetup, useAgents } from "./agent-setup";
 import { CommandText } from "./copy-command";
 import { message } from "./data/client";
-import { useClients, useDjinn, useOptionalData } from "./data/djinn";
+import { useClients, useData, useDjinn, useOptionalData } from "./data/djinn";
 import { MAX_ACTIVE, noLead, span, when } from "./data/format";
 import { Brand, ModalFrame } from "./frame";
+import { InboxSources } from "./inbox";
 import { SyncLines } from "./project-sync";
 import {
   chosenLanguage,
@@ -689,6 +690,11 @@ export function ProjectPanel({
   const [skills, setSkills] = useState<Skill[] | undefined>();
   const [shown, setShown] = useState<ProjectServiceShowResponse>();
   const [error, setError] = useState("");
+  const allSources = useData((s) => s.sources);
+  const sources = useMemo(
+    () => allSources.filter((src) => src.project === project.name),
+    [allSources, project.name],
+  );
 
   useEffect(() => {
     let live = true;
@@ -850,6 +856,10 @@ export function ProjectPanel({
         onAllow={(watch) => handleAllow(watch, false)}
         onRevoke={(watch) => handleAllow(watch, true)}
       />
+      <div className="settings-divider" />
+      <h3>{t("project.sources")}</h3>
+      <p className="muted-text">{t("project.sources_detail")}</p>
+      <InboxSources sources={sources} onToast={(text) => onToast?.(text)} />
       <div className="settings-divider" />
       <h3>{t("project.skills")}</h3>
       {error && <p className="login-message">{error}</p>}

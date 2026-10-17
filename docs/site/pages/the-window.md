@@ -17,7 +17,7 @@ From top to bottom:
 
 - **New wish**, Ctrl+N (Cmd+N on macOS).
 - **Flying carpet**, Ctrl+1, while a wish is active or the inbox has news: every active wish together. Its counts say
-  how many questions wait for you across them, and how many items wait in the inbox.
+  how many questions wait for you across them, and how many cards wait in the inbox.
 - **Wishes**, with how many are active out of three: the wish bar, below.
 - **Projects**, with + to create one. Each project opens its panel; its terminal button opens a terminal at its root,
   and a line shows each of its branches out of step with its remote.
@@ -63,7 +63,7 @@ The flying carpet shows every active wish at a glance. Its head holds the load g
 - **What waits for you**, the bar at the top, while something does: what keeps a wish from moving forward, the most
   blocking first. A click takes you to it. See [Question and move](#question-and-move).
 - Its tabs: the flying carpet itself, then **Tasks** and **Decisions** of every active wish together.
-- The [inbox](#inbox), when a source found something.
+- The [inbox](#inbox), when a source found something, or one of yours fails.
 - The questions column on the left, the workers glance on the right.
 - A last line, how many workers run and the memory used, with **See it live in the Hourglass**.
 

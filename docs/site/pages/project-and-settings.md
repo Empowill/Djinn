@@ -59,6 +59,7 @@ A click on a project in the side panel opens its view:
 | Push cadence | **Standard** or **On demand**, and each branch Djinn pushes that differs from its remote, with a button to push it. See [Push](#push). |
 | Checks | What Djinn runs on finished work, and how each last ran: passed on which commit, when, in how long, or why it failed. |
 | Watcher commands you allow | The commands a [watcher](#watcher) may run here for you, with **Allow** and **Take back**. |
+| Inbox sources, on this machine | The sources its skills declare: what each reads, how its last run went, and **Plug in** or **Unplug**, with what that does. See [Inbox](#inbox). |
 | Skills | The project's skills, and those it uses from another project, marked **from** that project. |
 
 The side panel also shows, under each project, the branches waiting to be pushed, and a button that opens a terminal
