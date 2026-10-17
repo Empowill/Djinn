@@ -157,10 +157,10 @@ func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, ki
 	}
 }
 
-// wantedSource is a source and the folder its command runs in.
+// wantedSource is a source, the folder its command runs in, and the folder its project's permissions are read in.
 type wantedSource struct {
-	src *plan.Source
-	dir string
+	src         *plan.Source
+	dir, config string
 }
 
 // readSources reads the sources the projects' skills declare and this machine plugged in, by what makes each one run
@@ -172,18 +172,20 @@ func (h *Harness) readSources() (map[string]wantedSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	srcs, err := plan.Sources(ctx, h.store, projects)
+	srcs, err := plan.Sources(ctx, h.store, h.home, projects)
 	if err != nil {
 		return nil, err
 	}
-	dirs := map[string]string{}
+	byID := map[string]*planv1.Project{}
 	for _, p := range projects {
-		dirs[p.GetId()] = p.GetDirectory()
+		byID[p.GetId()] = p
 	}
 	out := map[string]wantedSource{}
 	for _, s := range srcs {
-		key := fmt.Sprintf("%s\x00%s\x00%s\x00%s", s.Dir, s.ProjectID, s.Watch, s.Every)
-		out[key] = wantedSource{src: s, dir: dirs[s.ProjectID]}
+		// The skill, not its folder: a folder of the cache changes with any change of the project's configuration.
+		key := fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s", s.HolderID, s.Skill, s.ProjectID, s.Watch, s.Every)
+		p := byID[s.ProjectID]
+		out[key] = wantedSource{src: s, dir: p.GetDirectory(), config: plan.ConfigDir(h.home, p)}
 	}
 	return out, nil
 }
@@ -191,7 +193,7 @@ func (h *Harness) readSources() (map[string]wantedSource, error) {
 // startSource starts the command of a source, as a watcher that starts it again every s.Every, and gives each item
 // it prints to receive. Where the project lists the commands its workers may run, the command must be one of them.
 func (h *Harness) startSource(c Watch, s wantedSource, receive ReceiveFunc) (*sourceRun, error) {
-	perms, err := LoadPermissions(s.dir)
+	perms, err := LoadPermissions(s.config)
 	if err != nil {
 		return nil, err
 	}

@@ -721,7 +721,7 @@
   "project.reference_at": "{ref} at {commit}",
   "project.reference_change": "Change",
   "project.reference_choose": "Choose",
-  "project.reference_detail": "Djinn keeps the wishes up to date with it (merge_main), cuts azimas from it, and pull requests aim at it.",
+  "project.reference_detail": "Djinn reads the project's configuration on it once fetched (settings, permissions, skills), keeps the wishes up to date with it (merge_main), cuts azimas from it, and pull requests aim at it.",
   "project.reference_none": "None found: see “To fix”.",
   "project.reference_not_fetched": "{ref}, not in this copy yet",
   "project.reference_pick": "Pick a branch",

@@ -76,10 +76,11 @@ Djinn decides when it spawns a task, and records the outcome in the task's `acce
    (`WISH_AUTO`). It weighs over the project's configuration: when the project has `.agents/permissions.txtpb`,
    the allowance decides editing and the mode, and the commands, denied commands and network stay the file's;
    an allowance never adds a command nor the network.
-3. **`.agents/permissions.txtpb`** in the project's folder: Djinn translates it for the agent (`AGENTS`). The
+3. **`.agents/permissions.txtpb`** of the project: Djinn translates it for the agent (`AGENTS`). The
    agent's own configuration files still apply on top, as the agent applies them by itself; what Djinn passes
-   never allows more than the file. Djinn reads the file in the project's folder, not in the task's worktree: a
-   worker that edits its own copy does not change its rights. An invalid file refuses the spawn, and says why.
+   never allows more than the file. Djinn reads the file on the project's reference branch, at the last fetch (in
+   the project's folder outside Git or without a remote: see [team settings](team-settings.md#where-djinn-reads-it)),
+   never in the task's worktree: a worker that edits its own copy does not change its rights. An invalid file refuses the spawn, and says why.
 4. **The agent's own configuration** (`NATIVE`, decision Q34): in a Git repository, or in a folder that holds an
    agent configuration file. Djinn passes no permission setting. In a Git repository without any configuration,
    the agent's defaults decide: Claude, Codex and Antigravity then refuse edits that would need an approval,

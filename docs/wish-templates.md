@@ -22,7 +22,8 @@ lines: nothing to code per template.
 ## Declare one
 
 In the skill's `SKILL.md`, under `metadata.djinn.wish` (Agent Skills lets a skill hold extra metadata; other tools
-ignore Djinn's key):
+ignore Djinn's key). Djinn reads the skills on the project's reference branch, at the last fetch, like the rest of its
+configuration ([team settings](team-settings.md#where-djinn-reads-it)): a skill counts once pushed and fetched.
 
 ```yaml
 ---

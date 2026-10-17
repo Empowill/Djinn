@@ -17,6 +17,7 @@ import (
 
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/fsx"
@@ -43,6 +44,12 @@ func ReadSettings(path string) (*planv1.ProjectSettings, error) {
 // something that looks like a secret is refused, comments included, without repeating it. Any unknown fields are discarded,
 // logged once as warnings, and returned in warnings.
 func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, error) {
+	return readSettingsNamed(path, path)
+}
+
+// readSettingsNamed is ReadSettingsWithWarnings, its messages naming the file name: where Djinn read it from, a
+// reference branch's tree.
+func readSettingsNamed(path, name string) (*planv1.ProjectSettings, []string, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, nil
@@ -51,10 +58,10 @@ func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, e
 		return nil, nil, err
 	}
 	if line, why := secretIn(b); line > 0 {
-		return nil, nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", path, line, why)
+		return nil, nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", name, line, why)
 	}
 	if line, key := removedKeyIn(b); line > 0 {
-		return nil, nil, fmt.Errorf("%s: line %d names %s: this key was removed; delete the line", path, line, key)
+		return nil, nil, fmt.Errorf("%s: line %d names %s: this key was removed; delete the line", name, line, key)
 	}
 	s := &planv1.ProjectSettings{}
 	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
@@ -69,22 +76,22 @@ func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, e
 	unknowns := FindUnknownFields(normalized, s)
 	var warnings []string
 	for _, u := range unknowns {
-		warnings = append(warnings, WarnUnknownField(path, u))
+		warnings = append(warnings, WarnUnknownField(name, u))
 	}
 	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
 	if err := opts.Unmarshal(normalized, s); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
 	if err := protovalidate.Validate(s); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
 	seen := map[string]bool{}
 	for _, c := range s.GetChecks() {
-		name := strings.ToLower(c.GetName())
-		if seen[name] {
-			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", path, c.GetName())
+		lower := strings.ToLower(c.GetName())
+		if seen[lower] {
+			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", name, c.GetName())
 		}
-		seen[name] = true
+		seen[lower] = true
 	}
 	return s, warnings, nil
 }
@@ -442,24 +449,39 @@ func readSettingsFiles(home string, project *planv1.Project) []settingsRead {
 		return nil
 	}
 	repoFile, devFile := settingsFiles(home, project)
+	config := ProjectConfig(home, project)
 	var out []settingsRead
 	for _, f := range []settingsRead{{path: repoFile, team: true}, {path: devFile}} {
 		if f.path == "" {
 			continue
 		}
+		read, name := f.path, f.path
+		if f.team {
+			// The team's file is read where Djinn reads the project's configuration: the reference branch's tree.
+			read = filepath.Join(config.Dir, SettingsFile)
+			name = config.Named(read)
+		}
 		var w []string
-		f.settings, w, f.err = ReadSettingsWithWarnings(f.path)
+		f.settings, w, f.err = readSettingsNamed(read, name)
 		for _, text := range w {
 			f.warnings = append(f.warnings, settingsWarning{text: text})
 		}
+		if f.err == nil && f.team && config.TeamBranch != "" && f.settings.GetMainBranch() == "" {
+			// The default branch's tree named the reference branch, whose own tree does not: it stays the reference.
+			if f.settings == nil {
+				f.settings = &planv1.ProjectSettings{}
+			}
+			f.settings = proto.CloneOf(f.settings)
+			f.settings.MainBranch = &config.TeamBranch
+		}
 		if f.err == nil && f.team {
 			if len(f.settings.GetWatchCommands()) > 0 {
-				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: f.path + ": watch_commands is " +
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": watch_commands is " +
 					"ignored: a developer allows a watcher command in their own file (djinn project allow --watch), the " +
 					"repository lists its commands in .agents/permissions.txtpb"})
 			}
 			if len(f.settings.GetServeCommands()) > 0 {
-				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: f.path + ": serve_commands is " +
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": serve_commands is " +
 					"ignored: a developer allows a serve command in their own file (djinn project allow --serve), the " +
 					"repository lists its commands in .agents/permissions.txtpb"})
 			}

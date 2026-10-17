@@ -49,7 +49,7 @@ func (h *Harness) watchPermissions(
 			return command, perms, how, nil
 		}
 	}
-	return "", nil, "", watchRefusal(project, command, perms)
+	return "", nil, "", watchRefusal(h.home, project, command, perms)
 }
 
 // declaredWatch is the skill of the project that declares the command of the watcher t, as Djinn builds it from the
@@ -59,7 +59,7 @@ func (h *Harness) watchPermissions(
 // the skill's watch makes it.
 func (h *Harness) declaredWatch(ctx context.Context, t *planv1.Task, project *planv1.Project, command string) string {
 	if b := t.GetBabysit(); b.GetNumber() > 0 {
-		if s, err := plan.FindSkill(project.GetDirectory(), b.GetSkill()); err == nil {
+		if s, err := plan.FindProjectSkill(h.home, project, b.GetSkill()); err == nil {
 			n := int(b.GetNumber())
 			if decl, err := plan.ReadBabysit(s.Dir); err == nil && decl != nil {
 				if built, err := h.watchCommand(t, decl.Fill(n, babysitStatePath(h.home, t.GetId(), decl.Skill, n))); err == nil && command == built {
@@ -76,7 +76,7 @@ func (h *Harness) declaredWatch(ctx context.Context, t *planv1.Task, project *pl
 	if built, err := h.watchCommand(t, tmpl.GetWatch()); err != nil || command != built {
 		return ""
 	}
-	if s, err := plan.FindSkill(project.GetDirectory(), tmpl.GetSkill()); err == nil {
+	if s, err := plan.FindProjectSkill(h.home, project, tmpl.GetSkill()); err == nil {
 		if decl, err := plan.ReadTemplate(s.Dir); err == nil && decl != nil && decl.Builds(tmpl.GetWatch()) {
 			return decl.Skill
 		}
@@ -86,21 +86,21 @@ func (h *Harness) declaredWatch(ctx context.Context, t *planv1.Task, project *pl
 
 // watchRefusal says why a watcher cannot run command in project under perms, and how it could: from the declaration
 // of a skill of the project (A), or allowed by the developer for themselves (B), with the exact command.
-func watchRefusal(project *planv1.Project, command string, perms *djinnv1.Permissions) error {
+func watchRefusal(home string, project *planv1.Project, command string, perms *djinnv1.Permissions) error {
 	name, file := project.GetName(), filepath.ToSlash(PermissionsFile)
 	if matchesPrefix(command, perms.GetDeniedCommands()) {
 		return fmt.Errorf("%s's %s denies %q, and its denied commands win over any allowance: a watcher cannot run it",
 			name, file, command)
 	}
 	var b strings.Builder
-	if declared, _ := LoadPermissions(project.GetDirectory()); declared != nil {
+	if declared, _ := LoadPermissions(plan.ConfigDir(home, project)); declared != nil {
 		fmt.Fprintf(&b, "%s's %s does not list %q among the commands its workers run without review", name, file, command)
 	} else {
 		fmt.Fprintf(&b, "%s lists no command its workers run without review (it has no %s, and a wish's allowance adds "+
 			"none), so it does not let them run %q", name, file, command)
 	}
 	b.WriteString(", and a watcher has no reviewer. ")
-	if declared := projectWatches(project); len(declared) > 0 {
+	if declared := projectWatches(home, project); len(declared) > 0 {
 		fmt.Fprintf(&b, "Djinn runs a command a skill of %s declares, as it builds it, without review: %s; this "+
 			"command is not one of them. ", name, strings.Join(declared, "; "))
 	} else {
@@ -113,9 +113,9 @@ func watchRefusal(project *planv1.Project, command string, perms *djinnv1.Permis
 }
 
 // projectWatches lists the watcher commands the project's own skills declare, each with how Djinn starts it.
-func projectWatches(project *planv1.Project) []string {
+func projectWatches(home string, project *planv1.Project) []string {
 	var out []string
-	for _, s := range plan.ProjectSkills(project.GetDirectory()) {
+	for _, s := range plan.ProjectSkills(plan.ConfigDir(home, project)) {
 		if b, err := plan.ReadBabysit(s.Dir); err == nil && b != nil {
 			out = append(out, fmt.Sprintf("%q, the babysit of the skill %s, on a request Djinn finds (a task opens it, "+
 				"or djinn task spawn --babysit)", b.Watch, s.Name))

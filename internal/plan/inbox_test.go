@@ -97,7 +97,7 @@ func TestSources(t *testing.T) {
 	c.put(t, gong, bell, lamp)
 	running := func() []string {
 		t.Helper()
-		srcs, err := Sources(ctx, c.store, []*planv1.Project{bell, gong, lamp})
+		srcs, err := Sources(ctx, c.store, "", []*planv1.Project{bell, gong, lamp})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -313,7 +313,7 @@ func TestUnreadableSkill(t *testing.T) {
 		!strings.HasPrefix(got[0], "dolmen/mentions true|SKILL.md: its front matter is not YAML") {
 		t.Errorf("listed %q", got)
 	}
-	if srcs, err := Sources(ctx, c.store, []*planv1.Project{dolmen}); err != nil || len(srcs) != 0 {
+	if srcs, err := Sources(ctx, c.store, "", []*planv1.Project{dolmen}); err != nil || len(srcs) != 0 {
 		t.Errorf("running %v, %v; want none", srcs, err)
 	}
 	unplug := &planv1.InboxServiceUnplugRequest{Source: "dolmen/mentions"}
@@ -375,7 +375,7 @@ esac
 	c := serve(t)
 	djinn := &planv1.Project{Id: store.NewID(), Name: "djinn", Directory: root, Git: true}
 	c.put(t, djinn)
-	srcs, err := declaredSources(ctx, c.store, []*planv1.Project{djinn})
+	srcs, err := declaredSources(ctx, c.store, "", []*planv1.Project{djinn})
 	if err != nil || len(srcs) != 1 || srcs[0].Name() != "djinn/babysit-pr" || srcs[0].Plugged {
 		t.Fatalf("sources = %v, %v", srcs, err)
 	}
@@ -420,7 +420,7 @@ func TestInbox(t *testing.T) {
 	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
-	srcs, err := declaredSources(ctx, c.store, []*planv1.Project{gong})
+	srcs, err := declaredSources(ctx, c.store, "", []*planv1.Project{gong})
 	if err != nil || len(srcs) != 1 {
 		t.Fatalf("sources = %v, %v", srcs, err)
 	}

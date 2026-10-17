@@ -152,13 +152,21 @@ func TestOpenMRWithTheProjectSkill(t *testing.T) {
 	t.Parallel()
 	forge := &fakeForge{created: mrURL}
 	in, q, _, branch := proposedMR(t, forge, "provider: PROVIDER_FAKE\n")
-	skill := filepath.Join(in.repo, "app", ".agents", "skills", "open-mr-acme")
+	// A teammate pushes the skill on the reference branch, which Djinn reads it on once fetched (W150).
+	bare := in.git(t, in.repo, "remote", "get-url", "origin")
+	mate := filepath.Join(t.TempDir(), "mate")
+	in.git(t, in.repo, "clone", "--quiet", "--branch", in.branch, bare, mate)
+	skill := filepath.Join(mate, "app", ".agents", "skills", "open-mr-acme")
 	if err := os.MkdirAll(skill, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: open-mr-acme\ndescription: Open a MR.\n---\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	in.git(t, mate, "add", ".")
+	in.git(t, mate, "-c", "user.name=Mate", "-c", "user.email=mate@example.com", "commit", "--quiet", "-m", "The skill")
+	in.git(t, mate, "push", "--quiet", "origin", in.branch)
+	in.git(t, in.repo, "fetch", "--quiet", "origin")
 
 	did := in.answer(t, q, planv1.Choice_CHOICE_A)
 	tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
@@ -212,7 +220,7 @@ func TestOpenSkill(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if got := openSkill(&planv1.Project{Directory: dir}); got != want {
+		if got := openSkill("", &planv1.Project{Directory: dir}); got != want {
 			t.Errorf("skills %s: %q, want %q", names, got, want)
 		}
 	}

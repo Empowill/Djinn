@@ -989,7 +989,7 @@ func (h *Harness) serveAllowed(ctx context.Context, t *planv1.Task, commands ...
 	if err != nil {
 		return fmt.Errorf("the ifrit's wish: %w", err)
 	}
-	access, declared, err := decideAccess(project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
+	access, declared, err := decideAccess(h.home, project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
 	if err != nil {
 		return fmt.Errorf("project %s: %w", project.GetName(), err)
 	}

@@ -637,7 +637,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		if wish, err = store.Get[*planv1.Wish](ctx, tx, t.GetWishId()); err != nil {
 			return err
 		}
-		if prep, err = prepare(ctx, tx, t, wish, project); err != nil {
+		if prep, err = prepare(ctx, tx, h.home, t, wish, project); err != nil {
 			return err
 		}
 		if err := tx.Journal(actorHarness, methodSchedule, t); err != nil {

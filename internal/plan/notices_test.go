@@ -263,7 +263,9 @@ func TestProjectNoticesBranch(t *testing.T) {
 		t.Errorf("on main: %v, want nothing", noticeLines(n))
 	}
 
+	// Djinn reads the team's file on the reference branch (W150): it names dev there.
 	writeSettings(t, filepath.Join(dir, SettingsFile), "main_branch: \"dev\"\n")
+	commitAs(t, dir, "refs/remotes/origin/main")
 	pusher.err = errors.New("the repository holds no origin/dev: fetch it, or name another branch")
 	n = show()
 	if got := noticeLines(n); !slices.Equal(got, []string{"TO_FIX BRANCH dev NAME_BRANCH"}) ||
@@ -314,6 +316,7 @@ func TestProjectSetBranch(t *testing.T) {
 	project := add.Msg.GetProject()
 	team := filepath.Join(dir, SettingsFile)
 	writeSettings(t, team, "main_branch: \"main\"\n")
+	commitAs(t, dir, "refs/remotes/origin/main") // Djinn reads the team's file on the reference branch (W150).
 
 	listed, err := c.projects.Branches(ctx, connect.NewRequest(&planv1.ProjectServiceBranchesRequest{
 		Project: project.GetName(), Reference: true,

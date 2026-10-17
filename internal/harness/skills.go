@@ -23,7 +23,7 @@ func (h *Harness) summoned(ctx context.Context, project *planv1.Project, taskID 
 	if project == nil || len(project.GetSummons()) == 0 {
 		return nil, "", nil
 	}
-	found, err := plan.SummonedSkills(ctx, h.store, project)
+	found, err := plan.SummonedSkills(ctx, h.store, h.home, project)
 	if err != nil {
 		return nil, "", []string{"summoned skills not read: " + err.Error()}
 	}

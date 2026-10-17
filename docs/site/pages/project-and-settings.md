@@ -57,7 +57,7 @@ for you first:
 | Part | What it shows |
 | --- | --- |
 | To fix | In red, first, only when something waits for you: what Djinn finds that you must settle, each in one sentence, the error as Djinn read it, and what settles it. A source to decide on has its two choices, **Plug in** and **Say no**, each with what it changes; a summoned skill no longer found has **Unsummon**; a file to correct names the file; a command that does it is there to copy. See below. |
-| Reference branch | The branch Djinn keeps the wishes up to date with, that azimas are cut from and that pull requests aim at: its name, the ref Djinn merges it from and the commit it points at, and where its name comes from (Djinn's default, the team's file or yours). When your copy has another branch checked out, a line says so. **Change** lists the remote's branches as your copy last fetched them; **Choose** writes the one you pick in your own file, never in the repository, and when the choice is yours the list offers to take it back. See below. |
+| Reference branch | The branch Djinn reads the project's configuration on, keeps the wishes up to date with, that azimas are cut from and that pull requests aim at: its name, the ref Djinn merges it from and the commit it points at, and where its name comes from (Djinn's default, the team's file or yours). When your copy has another branch checked out, a line says so. **Change** lists the remote's branches as your copy last fetched them; **Choose** writes the one you pick in your own file, never in the repository, and when the choice is yours the list offers to take it back. See below. |
 | Worth knowing | The information Djinn finds: nothing waits for you. |
 | Checks | The setup and the checks Djinn runs on finished work, where each comes from, and how each last ran: passed on which commit, when, in how long, or why it failed. |
 | Inbox sources | The sources its skills declare on this machine: what each reads, how its last run went, and **Plug in** or **Unplug**, with what that does. See [Inbox](#inbox). |
@@ -86,8 +86,8 @@ leaves the gear grey: you read it on opening the configuration.
   settings name missing from the repository; the setup that failed its last run; a skill whose header Djinn cannot
   read, or whose wish template, inbox source or babysit it cannot use; a summoned skill no longer found; an inbox
   source this machine has not decided on, plugged in or said no to.
-- **Information**: a field a newer Djinn knows, ignored; your copy on another branch than the reference branch, where
-  Djinn reads the configuration for now; a source plugged in that no skill declares any more; a line of a skill's
+- **Information**: a field a newer Djinn knows, ignored; your copy on another branch than the reference branch, which
+  does not change the configuration Djinn reads; a source plugged in that no skill declares any more; a line of a skill's
   header that breaks its format, which Claude Code reads anyway and Djinn reads around.
 
 Unplugging a source, even one never plugged in, says no to it: its project no longer asks. Plugging it in forgets the
@@ -166,6 +166,12 @@ Djinn's command line: it goes to your own file, so nothing is committed behind t
 Djinn refuses a branch the repository does not hold, on its remote when there is one: fetch it first. Taking your
 choice back gives the team's file its say again, else Djinn's default. A team that follows dev names it in the
 repository's file, for everyone.
+
+Djinn reads the project's configuration on the reference branch, as your copy last fetched it: the team's settings, the
+permissions and the skills. A branch checked out in your folder, or a change not pushed yet, does not change what Djinn
+runs the project with; a fix counts once pushed and fetched, and a message about a file Djinn cannot read names the
+branch it read it on. The commands still run in the project's folder. A project outside Git, without a remote, or whose
+reference branch is not fetched yet, is read in its folder.
 
 ### A file Djinn cannot read
 

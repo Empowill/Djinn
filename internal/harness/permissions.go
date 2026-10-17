@@ -162,11 +162,13 @@ func existsFold(dir, name string) bool {
 // (docs/providers.md): outside any project, read-only; the wish's allowance; the project's .agents/permissions.txtpb
 // when it has one; the agent's own configuration in a Git repository, or in a folder holding agent configuration
 // files; otherwise, read-only until the developer allows editing.
-func decideAccess(project *planv1.Project, kind planv1.Provider, allowance planv1.Allowance) (planv1.TaskAccess, *djinnv1.Permissions, error) {
+func decideAccess(
+	home string, project *planv1.Project, kind planv1.Provider, allowance planv1.Allowance,
+) (planv1.TaskAccess, *djinnv1.Permissions, error) {
 	if project == nil {
 		return planv1.TaskAccess_TASK_ACCESS_READ_ONLY, nil, nil
 	}
-	p, err := LoadPermissions(project.GetDirectory())
+	p, err := LoadPermissions(plan.ConfigDir(home, project))
 	switch {
 	case err != nil:
 		return planv1.TaskAccess_TASK_ACCESS_UNSPECIFIED, nil, err

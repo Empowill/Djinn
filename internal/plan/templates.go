@@ -184,10 +184,10 @@ func quoteWord(s string) string {
 
 // Templates are the wish templates of the skills the projects use, their own then those they summon, in the
 // projects' order then by name. A template that cannot be used is left out.
-func Templates(ctx context.Context, r store.Reader, projects []*planv1.Project) ([]*Template, error) {
+func Templates(ctx context.Context, r store.Reader, home string, projects []*planv1.Project) ([]*Template, error) {
 	var out []*Template
 	for _, p := range projects {
-		dirs, err := usedSkills(ctx, r, p)
+		dirs, err := usedSkills(ctx, r, home, p)
 		if err != nil {
 			return nil, err
 		}
@@ -310,7 +310,7 @@ func (w *Wishes) startTemplate(ctx context.Context, wish *planv1.Wish) string {
 	}
 	skill := fmt.Sprintf("the skill %s", t.GetSkill())
 	if p, err := store.Get[*planv1.Project](ctx, w.Store, t.GetProjectId()); err == nil {
-		if dir := usedSkill(ctx, w.Store, p, t.GetSkill()); dir != "" {
+		if dir := usedSkill(ctx, w.Store, w.home(), p, t.GetSkill()); dir != "" {
 			skill = fmt.Sprintf("the skill %s (%s)", t.GetSkill(), filepath.Join(dir, SkillFile))
 		}
 	}
@@ -339,11 +339,11 @@ func (w *Wishes) startTemplate(ctx context.Context, wish *planv1.Wish) string {
 }
 
 // usedSkill is the folder of the skill name that project uses, its own or summoned; empty when it is not found.
-func usedSkill(ctx context.Context, r store.Reader, project *planv1.Project, name string) string {
-	if s, err := FindSkill(project.GetDirectory(), name); err == nil {
+func usedSkill(ctx context.Context, r store.Reader, home string, project *planv1.Project, name string) string {
+	if s, err := FindProjectSkill(home, project, name); err == nil {
 		return s.Dir
 	}
-	summoned, _ := SummonedSkills(ctx, r, project)
+	summoned, _ := SummonedSkills(ctx, r, home, project)
 	for _, s := range summoned {
 		if s.Missing == "" && strings.EqualFold(s.Name, name) {
 			return s.Dir
