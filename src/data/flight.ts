@@ -19,6 +19,7 @@ import {
 import { type Decision, decisionsOf, later } from "./decisions";
 import {
   asleep,
+  date as dateOf,
   investigating,
   isOpen,
   isTaskMerging,
@@ -437,6 +438,21 @@ export function compareCodes(a: string, b: string): number {
   const [pa, na] = split(a);
   const [pb, nb] = split(b);
   return pa < pb ? -1 : pa > pb ? 1 : na - nb || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+// compareWorkers orders workers inside a state of the lists of what runs: the one begun first above, then by code,
+// those never begun last. A worker that starts or ends never moves the others under the reader.
+export function compareWorkers(
+  a: Pick<Task, "code"> & Partial<Pick<Task, "firstStartTime" | "startTime">>,
+  b: Pick<Task, "code"> & Partial<Pick<Task, "firstStartTime" | "startTime">>,
+): number {
+  const begun = (x: typeof a) =>
+    dateOf(x.firstStartTime)?.getTime() ??
+    dateOf(x.startTime)?.getTime() ??
+    Infinity;
+  const [x, y] = [begun(a), begun(b)];
+  if (x !== y) return x < y ? -1 : 1;
+  return compareCodes(a.code, b.code);
 }
 
 // compareRanks orders the azimas of a wish in their rank (Task.rank), as the lead or the developer set it: the ranked

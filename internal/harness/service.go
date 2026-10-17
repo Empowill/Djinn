@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"net/http"
+	"slices"
 	"time"
 
 	"buf.build/go/protovalidate"
@@ -102,6 +103,9 @@ func (s *Tasks) List(
 		}
 		tasks = filtered
 	}
+	if req.Msg.GetLive() {
+		tasks = slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return !liveTask(t) })
+	}
 	page, nextToken, total, err := plan.Paginate(tasks, req.Msg.GetPageSize(), req.Msg.GetPageToken())
 	if err != nil {
 		return nil, err
@@ -120,6 +124,27 @@ func (s *Tasks) List(
 		NextPageToken: nextToken,
 		Total:         total,
 	}), nil
+}
+
+// liveTask tells a task the lists of what runs read (TaskServiceListRequest.live): one not done nor cancelled, an
+// azima, or done work still on its way into its branch.
+func liveTask(t *planv1.Task) bool {
+	if t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
+		return true
+	}
+	switch t.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_CANCELLED:
+		return false
+	case planv1.TaskStatus_TASK_STATUS_DONE:
+		switch t.GetIntegration().GetState() {
+		case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING,
+			planv1.IntegrationState_INTEGRATION_STATE_RED, planv1.IntegrationState_INTEGRATION_STATE_CONFLICT,
+			planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+			return true
+		}
+		return false
+	}
+	return true
 }
 
 // shortTask is t in the few fields that say where it stands, for djinn task list --short: a lead reads them without

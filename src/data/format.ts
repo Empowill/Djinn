@@ -710,6 +710,7 @@ export function fixerOf<T extends Fixable>(
 // running" at a level that runs 6). Djinn is at work on it all the same: a wish's tone counts it as running. Work whose
 // merge failed and that a correction fixes (fixerOf) is counted apart too: its correction runs, and counts with the
 // running. A lit ifrit is counted apart as well (ifritLit): it stays lit while you are there, at work or listening.
+// A worker stopped and not ended is counted apart too (workerPhase: paused): its work is kept, and it goes on.
 export interface Running {
   running: number;
   investigating: number;
@@ -717,15 +718,61 @@ export interface Running {
   merging: number;
   fixing: number;
   ifrits: number;
+  paused: number;
+}
+
+// WorkerPhase is where a worker stands in the lists of what runs (the glance of the questions page and of a wish, the
+// side panel's counts): at work, a lit ifrit included, listening or lit again; paused, its worker stopped with its work
+// kept until it goes on (held still or stopped on request, by you or the lead, put out, cut short by a restart or by
+// its provider's usage limit until Djinn resumes it); or to come, planned. Done, cancelled, failed, waiting for your
+// answer, an azima, and one cut short that a fork took over (taken, forkedAs) are in none: undefined.
+export type WorkerPhase = "run" | "paused" | "coming";
+
+export function workerPhase(
+  task: Pick<Task, "status"> & Partial<Pick<Task, "kind" | "ifrit">>,
+  taken = false,
+): WorkerPhase | undefined {
+  if (task.kind === TaskKind.AZIMA) return undefined;
+  if (ifritLit(task)) return "run";
+  switch (task.status) {
+    case TaskStatus.RUNNING:
+      return "run";
+    case TaskStatus.PAUSED:
+    case TaskStatus.STOPPED:
+    case TaskStatus.RESUMING:
+      return "paused";
+    case TaskStatus.INTERRUPTED:
+      return taken ? undefined : "paused";
+    case TaskStatus.PENDING:
+      return "coming";
+    default:
+      return undefined;
+  }
+}
+
+// takenOver are the codes of the tasks a fork took over (forkedAs), among tasks: a task cut short and continued as
+// another is no longer a worker of its own.
+export function takenOver(
+  tasks: readonly Partial<Pick<Task, "forkOf">>[],
+): Set<string> {
+  return new Set(tasks.map((x) => x.forkOf ?? "").filter(Boolean));
 }
 
 export function runningOf(
   tasks: (Pick<Task, "status"> &
     Partial<
-      Pick<Task, "id" | "provider" | "integration" | "role" | "kind" | "ifrit">
-    >)[],
+      Pick<
+        Task,
+        "id" | "provider" | "integration" | "role" | "kind" | "ifrit" | "code"
+      >
+    > &
+    Partial<Pick<Task, "forkOf">>)[],
 ): Running {
   const ifrits = tasks.filter(ifritLit).length;
+  const taken = takenOver(tasks);
+  const paused = tasks.filter(
+    (task) => workerPhase(task, taken.has(task.code ?? "")) === "paused",
+  ).length;
   const live = tasks.filter(
     (task) => task.status === TaskStatus.RUNNING && !isIfrit(task),
   );
@@ -742,6 +789,7 @@ export function runningOf(
     merging,
     fixing,
     ifrits,
+    paused,
   };
 }
 

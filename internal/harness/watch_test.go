@@ -624,3 +624,45 @@ func TestWatcherFinishes(t *testing.T) {
 		t.Errorf("stopped watcher = %v", got)
 	}
 }
+
+// TestWatcherLineTime: a watcher's task says since when its state line holds (Task.last_line_time, the window's "GREEN
+// · 12m"): the same line said again at each run keeps its time, another line takes the time it came.
+func TestWatcherLineTime(t *testing.T) {
+	t.Parallel()
+	clock := &fakeClock{at: time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)}
+	e := up(t, t.TempDir(), WithClock(clock.now), WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+	dir := t.TempDir()
+
+	same := filepath.Join(dir, "same")
+	task, err := e.spawnWatch(t, wishID, watchCommand("say:GREEN", "count:"+same, "exit:0"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "GREEN" }).GetLastLineTime()
+	if !first.AsTime().Equal(clock.now()) {
+		t.Fatalf("GREEN since %v, want %v", first.AsTime(), clock.now())
+	}
+	clock.set(clock.now().Add(time.Hour))
+	// Run 4 printed: the paragraph of run 3, GREEN again, reached the task an hour later on the clock.
+	e.until(t, task.GetId(), func(*planv1.Task) bool {
+		b, _ := os.ReadFile(same)
+		n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+		return n >= 4
+	})
+	if got := e.get(t, task.GetId()).GetLastLineTime(); !got.AsTime().Equal(first.AsTime()) {
+		t.Errorf("GREEN said again moved its time: %v, want %v", got.AsTime(), first.AsTime())
+	}
+
+	changing := filepath.Join(dir, "changing")
+	other, err := e.spawnWatch(t, wishID, watchCommand("count:"+changing, "exit:0"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.until(t, other.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 1" })
+	clock.set(clock.now().Add(time.Hour))
+	got := e.until(t, other.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 3" }).GetLastLineTime()
+	if !got.AsTime().Equal(clock.now()) {
+		t.Errorf("run 3 since %v, want %v", got.AsTime(), clock.now())
+	}
+}

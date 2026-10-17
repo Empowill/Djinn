@@ -1343,5 +1343,11 @@
   "sleep.task": "{code} over",
   "sleep.merged": "{code}'s request merged",
   "sleep.merged_url": "{url} merged",
-  "sleep.time": "{day} at {time}"
+  "sleep.time": "{day} at {time}",
+  "glance.legend_paused": "paused",
+  "glance.paused.one": "{count} paused",
+  "glance.paused.other": "{count} paused",
+  "glance.resumes_at": "resumes after {time}, once its usage limit resets",
+  "plan.paused.one": "{count} worker paused: stopped, its work kept until it goes on",
+  "plan.paused.other": "{count} workers paused: stopped, their work kept until they go on"
 }

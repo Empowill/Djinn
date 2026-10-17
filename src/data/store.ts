@@ -703,9 +703,30 @@ export function createStore(
       if (kinds.has(Change.TASK))
         attemptKind(wishId, Change.TASK, async () => {
           const res = await clients.tasks.list({ wishId }, call);
+          // Past the first page, the tasks the lists of what runs read come too (live): the glance shows a wish's
+          // waiting work from the start, not once the Tasks tab read further (W219).
+          let live: Task[] = [];
+          // Page after page, but never the same page twice.
+          const seen = new Set<string>();
+          let token = "";
+          while (res.nextPageToken && !seen.has(token)) {
+            seen.add(token);
+            const page = await clients.tasks.list(
+              { wishId, live: true, pageSize: 200, pageToken: token },
+              call,
+            );
+            live = live.concat(page.tasks);
+            token = page.nextPageToken;
+            if (!token) break;
+          }
+          const liveIds = new Set(live.map((x) => x.id));
           // The read goes as far as the tasks shown went, as for the questions: after a restart, an enlighten task
-          // ended meanwhile past the first page shows ended, not running as it was (incident Q274, W544).
-          const furthest = prevDetail.tasks.at(-1)?.id ?? "";
+          // ended meanwhile past the first page shows ended, not running as it was (incident Q274, W544). The live
+          // ones read already are not that far: only those read by a page, or that are live no longer.
+          const furthest = prevDetail.tasks.reduce(
+            (far, x) => (!liveIds.has(x.id) && x.id > far ? x.id : far),
+            "",
+          );
           let allTasks = res.tasks;
           let next = res.nextPageToken;
           while (next && (allTasks.at(-1)?.id ?? "") < furthest) {
@@ -715,6 +736,12 @@ export function createStore(
             );
             allTasks = allTasks.concat(page.tasks);
             next = page.nextPageToken;
+          }
+          if (live.length) {
+            const paged = new Set(allTasks.map((x) => x.id));
+            allTasks = allTasks
+              .concat(live.filter((x) => !paged.has(x.id)))
+              .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
           }
           into.tasks = reconcile(TaskSchema, prevDetail.tasks, allTasks);
           into.tasksTotal = res.total;

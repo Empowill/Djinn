@@ -79,6 +79,13 @@ function server(data) {
       list: (req) => {
         count("tasks");
         if (data.listTasks) return data.listTasks(req);
+        if (req.live) {
+          const live = data.tasks.filter(
+            (t) =>
+              t.status !== TaskStatus.DONE && t.status !== TaskStatus.CANCELLED,
+          );
+          return { tasks: live, total: live.length, nextPageToken: "" };
+        }
         return {
           tasks: data.tasks,
           total: data.tasksTotal ?? data.tasks.length,
@@ -548,6 +555,7 @@ test("loadMore fetches the next page and merges items", async () => {
   const task2 = { id: `${taskId}2`, wishId, code: "T02", title: "Task 2" };
   let asked = 0;
   data.listTasks = (req) => {
+    if (req.live) return { tasks: [], total: 0, nextPageToken: "" };
     if (req.pageToken === "token-p2") {
       asked = req.pageSize;
       return {
@@ -577,12 +585,13 @@ test("loadMore fetches the next page and merges items", async () => {
   assert.equal(state1.tasks[0].id, task1.id);
   assert.equal(state1.tasksTotal, 2);
   assert.equal(state1.tasksNextToken, "token-p2");
-  assert.equal(reads.tasks, 1);
+  // The first page, and the live tasks past it (W219): none here.
+  assert.equal(reads.tasks, 2);
 
   // The tree of the Tasks tab reads the rest by pages of the most tasks a page holds.
   await store.loadMore(wishId, Change.TASK, 200);
   const state2 = store.getState().details[wishId];
-  assert.equal(reads.tasks, 2);
+  assert.equal(reads.tasks, 3);
   assert.equal(asked, 200);
   assert.equal(state2.tasks.length, 2);
   assert.deepEqual(
@@ -594,7 +603,7 @@ test("loadMore fetches the next page and merges items", async () => {
 
   // Calling loadMore when nextToken is empty does nothing
   await store.loadMore(wishId, Change.TASK);
-  assert.equal(reads.tasks, 2);
+  assert.equal(reads.tasks, 3);
 
   stop();
 });
@@ -1454,6 +1463,84 @@ test("a watch back after djinn restarted reads the open questions again: one rev
   assert.ok(reads.questions > before);
 });
 
+// W219: on arriving on a wish, its glance showed the running workers (the watch brings them as they change) but not the
+// waiting ones past the first page of its tasks, until the Tasks tab read further. The first read brings the live
+// tasks too, whatever page they sit on, and a read again goes no further than the pages read.
+test("the first read of a wish's tasks brings its waiting work past the first page", async () => {
+  const data = sample();
+  const old = [
+    {
+      id: "t1",
+      wishId,
+      code: "W1",
+      title: "Old work",
+      status: TaskStatus.DONE,
+    },
+    {
+      id: "t2",
+      wishId,
+      code: "W2",
+      title: "Old work",
+      status: TaskStatus.DONE,
+    },
+  ];
+  const later = {
+    id: "t3",
+    wishId,
+    code: "W3",
+    title: "Merged",
+    status: TaskStatus.DONE,
+  };
+  const waiting = {
+    id: "t4",
+    wishId,
+    code: "W4",
+    title: "Waits on W5",
+    status: TaskStatus.PENDING,
+    dependsOn: ["t5"],
+  };
+  const running = {
+    id: "t5",
+    wishId,
+    code: "W5",
+    title: "Runs",
+    status: TaskStatus.RUNNING,
+  };
+  const asked = [];
+  data.listTasks = (req) => {
+    asked.push(req.live ? "live" : req.pageToken || "first");
+    if (req.live)
+      return { tasks: [waiting, running], total: 2, nextPageToken: "" };
+    return req.pageToken
+      ? { tasks: [later, waiting, running], total: 5, nextPageToken: "" }
+      : { tasks: old, total: 5, nextPageToken: "p2" };
+  };
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId, [Change.TASK]);
+  const state = await until(store, (s) =>
+    s.details[wishId]?.loadedKinds.has(Change.TASK),
+  );
+  assert.deepEqual(
+    state.details[wishId].tasks.map((t) => t.code),
+    ["W1", "W2", "W4", "W5"],
+  );
+  assert.equal(state.details[wishId].tasksNextToken, "p2");
+  // Read again: the live ones are not a reason to read every page.
+  await store.changed(wishId, [Change.TASK]);
+  stop();
+  assert.deepEqual(asked, ["first", "live", "first", "live"]);
+  // The Tasks tab reads further, and the tasks keep their order.
+  await store.loadMore(wishId, Change.TASK);
+  assert.deepEqual(
+    store.getState().details[wishId].tasks.map((t) => t.code),
+    ["W1", "W2", "W3", "W4", "W5"],
+  );
+});
+
 // Incident Q274, second case: after a restart the window kept W544, the enlighten task of Q254, running, and Q254
 // under investigation; W544 had ended, and Q254 was answered. W544 sat past the first page of the wish's tasks: the
 // read after the watch came back went no further than that page.
@@ -1471,9 +1558,15 @@ test("an enlighten task that ended while djinn was away shows ended after the wa
     status: TaskStatus.RUNNING,
   };
   data.listTasks = (req) =>
-    req.pageToken
-      ? { tasks: [w544], total: 3, nextPageToken: "" }
-      : { tasks: old, total: 3, nextPageToken: "p2" };
+    req.live
+      ? {
+          tasks: w544.status === TaskStatus.RUNNING ? [w544] : [],
+          total: 1,
+          nextPageToken: "",
+        }
+      : req.pageToken
+        ? { tasks: [w544], total: 3, nextPageToken: "" }
+        : { tasks: old, total: 3, nextPageToken: "p2" };
   const { store, stop, watch, reads } = await investigated(data);
   await store.loadMore(wishId, Change.TASK);
   const status = (s) =>

@@ -11871,11 +11871,14 @@ test("MakeWish requires an active lead before a wish can be created", async () =
   assert.match(exitedPage.html(), /djinn lead resume/);
 });
 
-// The glance (Decision Q08, mockup L04 v2): beside the questions, each wish's workers running now and to come, nothing
-// else. A filled dot runs, blue; an investigator runs violet, apart; a circle waits on a task, under it in the same
-// wish, else naming it and its wish; a dotted circle is planned; the watchers fold into one line.
-test("the glance shows each wish's workers: running, investigating apart, waiting under their task or across wishes, planned, watchers folded", async () => {
+// The glance (Decision Q08, mockup L04 v2, W219): beside the questions and on a wish's page, each wish's workers in
+// one order whatever their kind: what is in progress on top, the one begun first above (work, investigation,
+// investigator, lit ifrit), then the paused ones, a circled pause with why on hover, then what waits (under the task it
+// waits on when that one waits too, else naming it and its wish), then what is planned; an urgent task carries its
+// label. Below them, the watchers, a line each, with what they said last, since when, and the request they watch.
+test("the glance lists every worker in one order by state: in progress, paused, waiting, planned; then the watchers", async () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const nowS = Math.floor(Date.now() / 1000);
   const lamp = wish(
     "01a1440a-0000-7000-8000-000000000001",
     "Ship the lamp",
@@ -11900,22 +11903,33 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
   });
   const L = (code, status, extra) => task(lamp.id, code, status, extra);
   const id = (wishId, code) => `${wishId.slice(-1)}-${code}`;
+  const begun = (seconds) => ({ firstStartTime: at(seconds) });
   const tasks = {
     [lamp.id]: [
       L("T1", s.TaskStatus.PENDING, {
         kind: s.TaskKind.AZIMA,
-        azima: { state: s.AzimaState.IN_PROGRESS },
+        azima: {
+          state: s.AzimaState.IN_PROGRESS,
+          pr: { url: "https://github.com/acme/lamp/pull/40" },
+        },
       }),
-      L("W1", s.TaskStatus.RUNNING, { partOf: id(lamp.id, "T1") }),
-      // W3 waits on W2, which waits on W1: a staircase under W1.
+      // Running, begun at 100; it forks W17, cut short.
+      L("W1", s.TaskStatus.RUNNING, {
+        partOf: id(lamp.id, "T1"),
+        forkOf: "W17",
+        ...begun(100),
+      }),
+      // W3 waits on W2, which waits on W1, running: W2 names W1 in its own place, W3 sits under W2.
       L("W3", s.TaskStatus.PENDING, { dependsOn: [id(lamp.id, "W2")] }),
       L("W2", s.TaskStatus.PENDING, { dependsOn: [id(lamp.id, "W1")] }),
       // W4's dependency is done: planned.
       L("W4", s.TaskStatus.PENDING, { dependsOn: [id(lamp.id, "W10")] }),
       L("W5", s.TaskStatus.PENDING, { dependsOn: [id(qol.id, "W26")] }),
+      // The investigator began before W1: above it.
       L("W6", s.TaskStatus.RUNNING, {
         role: s.TaskRole.INVESTIGATOR,
         question: "Q4",
+        ...begun(50),
       }),
       L("W7", s.TaskStatus.RUNNING, {
         provider: s.Provider.WATCH,
@@ -11923,15 +11937,51 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
           url: "https://gitlab.com/acme/lamp/-/merge_requests/3",
           number: 3,
         },
+        lastLine: "GREEN",
+        lastLineTime: at(nowS - 720),
+        ...begun(10),
       }),
+      // Its request is its azima's.
       L("W8", s.TaskStatus.RUNNING, {
         provider: s.Provider.WATCH,
-        babysit: { url: "https://github.com/acme/lamp/pull/12", number: 12 },
+        partOf: id(lamp.id, "T1"),
+        lastLine: "CI_FAILED",
+        ...begun(20),
       }),
-      L("W9", s.TaskStatus.RUNNING, { provider: s.Provider.WATCH }),
+      L("W9", s.TaskStatus.STOPPED, {
+        provider: s.Provider.WATCH,
+        error: "stopped on request",
+        ...begun(5),
+      }),
       L("W10", s.TaskStatus.DONE, { endTime: at(5) }),
       L("W11", s.TaskStatus.FAILED, { endTime: at(5) }),
       L("W12", s.TaskStatus.WAITING),
+      // A lit ifrit, listening; an urgent task; an investigation: all in progress, by when they began.
+      L("W13", s.TaskStatus.RUNNING, {
+        kind: s.TaskKind.IFRIT,
+        ifrit: { state: s.IfritState.LISTENING },
+        ...begun(200),
+      }),
+      L("W20", s.TaskStatus.RUNNING, { urgent: true, ...begun(300) }),
+      L("W21", s.TaskStatus.RUNNING, {
+        kind: s.TaskKind.INVESTIGATION,
+        ...begun(250),
+      }),
+      // Paused: held still, stopped on request, its provider's limit to wait for; cut short and forked: gone.
+      L("W14", s.TaskStatus.PAUSED, {
+        runs: [{ reason: "pause" }],
+        ...begun(20),
+      }),
+      L("W15", s.TaskStatus.STOPPED, {
+        error: "stopped on request",
+        ...begun(30),
+      }),
+      L("W16", s.TaskStatus.RESUMING, {
+        resumeAfter: at(nowS + 3600),
+        ...begun(10),
+      }),
+      L("W17", s.TaskStatus.INTERRUPTED, begun(5)),
+      L("W18", s.TaskStatus.CANCELLED, begun(5)),
     ],
     [qol.id]: [task(qol.id, "W26", s.TaskStatus.RUNNING)],
   };
@@ -11945,7 +11995,6 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
     (x) => all.find((t) => t.id === x),
     (x) => titles.get(x),
   );
-  // Work running first, each waiting task under the one it waits on, then what waits across wishes, then planned.
   assert.deepEqual(
     glance.rows.map((r) => [
       r.task.code,
@@ -11955,23 +12004,26 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
       r.afterWish ?? "",
     ]),
     [
+      ["W6", "investigate", 0, "", ""],
       ["W1", "run", 0, "", ""],
-      ["W2", "wait", 1, "W1", ""],
-      ["W3", "wait", 2, "W2", ""],
+      ["W13", "run", 0, "", ""],
+      ["W21", "run", 0, "", ""],
+      ["W20", "run", 0, "", ""],
+      ["W16", "paused", 0, "", ""],
+      ["W14", "paused", 0, "", ""],
+      ["W15", "paused", 0, "", ""],
+      ["W2", "wait", 0, "W1", ""],
+      ["W3", "wait", 1, "W2", ""],
       ["W5", "wait", 0, "W26", "Djinn QoL"],
       ["W4", "plan", 0, "", ""],
     ],
   );
   assert.deepEqual(
-    glance.investigators.map((r) => [r.task.code, r.state]),
-    [["W6", "investigate"]],
-  );
-  assert.deepEqual(
-    glance.watchers.map((x) => [x.code, s.forgeMark(x)]),
+    glance.watchers.map((x) => [x.task.code, x.state, x.url]),
     [
-      ["W7", "!3"],
-      ["W8", "#12"],
-      ["W9", ""],
+      ["W7", "watch", "https://gitlab.com/acme/lamp/-/merge_requests/3"],
+      ["W8", "watch", "https://github.com/acme/lamp/pull/40"],
+      ["W9", "paused", ""],
     ],
   );
   // A dependency no wish read holds nothing back: planned.
@@ -11983,6 +12035,12 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
   assert.deepEqual(
     lone.rows.map((r) => r.state),
     ["plan"],
+  );
+  // The side panel counts the same: 4 paused (3 workers and a watcher), W17 forked into W1 none.
+  const counted = s.runningOf(tasks[lamp.id]);
+  assert.deepEqual(
+    [counted.running, counted.investigating, counted.ifrits, counted.paused],
+    [3, 1, 1, 4],
   );
 
   const transport = s.createRouterTransport(({ service }) => {
@@ -12001,7 +12059,7 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
   const render = (node) =>
     s.renderToStaticMarkup(h(s.DjinnProvider, { djinn }, node));
 
-  // The flying carpet: each active wish under its title, which opens it, with its counts.
+  // The flying carpet: each active wish under its title, which opens it, with its counts, each worker once.
   const plan = render(
     h(s.FlightPlan, { wishes: [lamp, qol], onOpen() {}, onToast() {} }),
   );
@@ -12009,26 +12067,85 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
   assert.match(plan, /<section class="glance" aria-label="What runs">/);
   assert.match(
     plan,
-    /<button type="button" title="Open this wish">Ship the lamp<\/button><span class="glance-count">1 running · 1 investigating · 4 to come · 3 watching<\/span>/,
+    /<button type="button" title="Open this wish">Ship the lamp<\/button><span class="glance-count">1 ifrit lit · 3 running · 1 investigating · 4 paused · 4 to come · 2 watching<\/span>/,
   );
   assert.match(
     plan,
     /<button type="button" title="Open this wish">Djinn QoL<\/button><span class="glance-count">1 running<\/span>/,
   );
-  // Running blue, its waiting tasks under it.
+  // One list, in the glance's order: no list of investigators apart.
+  const wide = plan.slice(
+    plan.indexOf('class="glance-wide"'),
+    plan.indexOf('class="glance-narrow"'),
+  );
+  const lampPart = wide.slice(0, wide.indexOf("Djinn QoL</button>"));
+  assert.doesNotMatch(plan, /glance-investigators/);
+  assert.deepEqual(
+    [
+      ...lampPart.matchAll(
+        /class="glance-row ([a-z ]+)" title="[^"·]+· (W\d+) /g,
+      ),
+    ].map((m) => `${m[2]} ${m[1]}`),
+    [
+      "W6 investigate",
+      "W1 run",
+      "W13 run",
+      "W21 run",
+      "W20 run",
+      "W16 paused",
+      "W14 paused",
+      "W15 paused",
+      "W2 wait",
+      "W3 wait child",
+      "W5 wait",
+      "W4 plan",
+      "W7 watch watch",
+      "W8 watch watch",
+      "W9 watch paused",
+    ],
+  );
+  // Running blue; the investigator violet, naming its question; the lit ifrit's flame.
   assert.match(
     plan,
     /<li class="glance-item"><button type="button" class="glance-row run" title="Running · W1 Task W1"><span class="glance-dot run" role="img" aria-label="Running"><\/span><span class="glance-code">W1<\/span>/,
   );
   assert.match(
     plan,
-    /<li class="glance-item"><button type="button" class="glance-row wait child" title="Waits · W2 Task W2" style="--depth:1">[\s\S]*?<span class="glance-after">waits on W1<\/span>/,
+    /class="glance-row investigate" title="Investigating · W6 Task W6"><span class="glance-dot investigate"[\s\S]*?<span class="glance-after">on Q4<\/span>/,
   );
   assert.match(
     plan,
-    /<li class="glance-item"><button type="button" class="glance-row wait child" title="Waits · W3 Task W3" style="--depth:2">/,
+    /class="glance-row run" title="[^"]+ · W13 Task W13"><span class="glance-flame tone-ifrit"/,
   );
-  // Across wishes: the task and its wish.
+  // An urgent task and an investigation carry the tasks view's labels.
+  assert.match(
+    plan,
+    /title="Running · W20 Task W20">[\s\S]*?<span class="glance-title"><span class="urgent-label" title="[^"]+">Urgent<\/span>Task W20/,
+  );
+  assert.match(
+    plan,
+    /title="Running · W21 Task W21">[\s\S]*?<span class="glance-title"><span class="investigation-label" title="[^"]+">Investigation<\/span>Task W21/,
+  );
+  // Paused: a circled pause, its word, and why on hover.
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row paused" title="Stopped · W15 Task W15\nstopped on request"><span class="glance-pause tone-paused" role="img" aria-label="Stopped"><svg[^>]*lucide-circle-pause[\s\S]*?<span class="glance-after">Stopped<\/span>/,
+  );
+  assert.match(plan, /title="Paused · W14 Task W14\npause"/);
+  assert.match(
+    plan,
+    /title="[^"]+ · W16 Task W16\nresumes after \d\d:\d\d[^"]*, once its usage limit resets"/,
+  );
+  assert.doesNotMatch(plan, /title="[^"]*· (W17|W18) /);
+  // Waiting: W2 names W1, at work, in its own place; W3 under W2.
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row wait" title="Waits · W2 Task W2">[\s\S]*?<span class="glance-after">waits on W1<\/span>/,
+  );
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row wait child" title="Waits · W3 Task W3" style="--depth:1">/,
+  );
   assert.match(
     plan,
     /<li class="glance-item"><button type="button" class="glance-row wait" title="Waits · W5 Task W5">[\s\S]*?<span class="glance-after">waits on W26 · Djinn QoL<\/span>/,
@@ -12037,31 +12154,36 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
     plan,
     /<li class="glance-item"><button type="button" class="glance-row plan" title="Planned · W4 Task W4"><span class="glance-dot plan"/,
   );
-  // The investigator apart, violet, naming its question.
+  // The watchers, unfolded: what they said last, since when, and their request, a link out.
   assert.match(
     plan,
-    /<ul class="glance-list glance-investigators"><li class="glance-item"><button type="button" class="glance-row investigate" title="Investigating · W6 Task W6"><span class="glance-dot investigate"[\s\S]*?<span class="glance-after">on Q4<\/span>/,
+    /<li class="glance-item glance-watcher watch"><button type="button" class="glance-row watch watch" title="Watching · W7 Task W7"><span class="glance-eye tone-watching" role="img" aria-label="Watching"><svg[^>]*lucide-eye[\s\S]*?<span class="glance-code">W7<\/span><span class="glance-title"><span class="glance-watch-line">GREEN<\/span><span class="glance-since">12m<\/span><\/span><\/button><a href="https:\/\/gitlab.com\/acme\/lamp\/-\/merge_requests\/3" class="glance-link" target="_blank" rel="noopener noreferrer">!3<svg[^>]*lucide-external-link/,
   );
-  // The watchers fold into one line: how many, and the requests they watch.
   assert.match(
     plan,
-    /<li class="glance-watch" title="W7 Task W7\nW8 Task W8\nW9 Task W9">[\s\S]*?3 watching<span class="glance-marks"><span>!3<\/span><span>#12<\/span><\/span>/,
+    /<span class="glance-watch-line">CI_FAILED<\/span>[\s\S]*?<a href="https:\/\/github.com\/acme\/lamp\/pull\/40" class="glance-link"[^>]*>PR #40<svg/,
   );
-  assert.equal((plan.match(/glance-watch"/g) ?? []).length, 1);
-  assert.doesNotMatch(plan, /glance-row[^"]*" title="[^"]*W7 /);
+  assert.match(
+    plan,
+    /class="glance-row watch paused" title="Stopped · W9 Task W9\nstopped on request"><span class="glance-pause tone-paused"/,
+  );
+  assert.doesNotMatch(
+    plan,
+    /glance-row[^"]*" title="[^"]*· W9 [^"]*"[^>]*>[\s\S]{0,400}glance-link/,
+  );
   // Done, failed, waiting for your answer, azimas: not in the glance.
   assert.doesNotMatch(plan, /title="[^"]*· (W10|W11|W12|T1) /);
   // Gold is for what waits on you: never in the glance.
   assert.doesNotMatch(plan, /glance[^"]*waiting/);
-  // The legend names the states shown.
+  // The legend names the states shown, the pause among them.
   assert.match(
     plan,
-    /<p class="glance-legend">.*running.*investigating.*waits on a task.*planned.*watches<\/span><\/p>/,
+    /<p class="glance-legend">.*running.*investigating.*<span class="glance-pause tone-paused" aria-hidden="true">.*paused.*waits on a task.*planned.*watches<\/span><\/p>/,
   );
-  // Narrow: one line per wish, a dot per worker, the watchers counted.
+  // Narrow: one line per wish, a mark per worker in the same order, the watchers counted, the paused one marked.
   assert.match(
     plan,
-    /<button type="button" class="glance-line" title="Open this wish"><span class="name">Ship the lamp<\/span><span class="glance-line-marks">(<span class="glance-dot (run|wait|plan|investigate)" role="img" aria-label="[^"]+" title="[^"]+"><\/span>){6}<span class="glance-line-watch" title="3 watching">/,
+    /<button type="button" class="glance-line" title="Open this wish"><span class="name">Ship the lamp<\/span><span class="glance-line-marks">(<span class="glance-(dot (run|wait|plan|investigate)|flame tone-ifrit|pause tone-paused)" role="img" aria-label="[^"]+" title="[^"]+">(<svg[\s\S]*?<\/svg>)?<\/span>){12}<span class="glance-line-watch" title="2 watching">/,
   );
 
   // A wish's page: the wish alone, without its title; the task across wishes still names its wish.
@@ -12069,6 +12191,7 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
   assert.match(view, /<section class="glance" aria-label="What runs">/);
   assert.doesNotMatch(view, /glance-head|Djinn QoL<\/button>/);
   assert.match(view, /waits on W26 · Djinn QoL/);
+  assert.match(view, /class="glance-row paused" title="Stopped · W15 /);
   assert.match(
     view,
     /<div class="glance-line"><span class="name">Ship the lamp<\/span>/,
@@ -12076,16 +12199,38 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
   // Its journal and rights below both columns.
   assert.match(view, /<div class="main-after">/);
 
+  // The side panel counts the paused workers, beside the others, and on the folded rail's corner.
+  const side = (collapsed) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [lamp],
+        projects: [],
+        counts: { [lamp.id]: { questions: 0, merging: 0, ...counted } },
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  assert.match(
+    side(false),
+    /<span class="count-pill tone-paused" title="4 workers paused: stopped, their work kept until they go on"[^>]*><svg[^>]*lucide-circle-pause[\s\S]*?<b>4<\/b>/,
+  );
+  assert.match(
+    side(true),
+    /<span class="wish-paused-corner" title="4 workers paused: [^"]+" aria-label="[^"]+" role="img"><svg[^>]*lucide-circle-pause[\s\S]*?<b>4<\/b><\/span>/,
+  );
+
   // A wish where nothing runs or is planned says so.
   const quiet = s.glanceOf(
     [],
     () => undefined,
     () => undefined,
   );
-  assert.deepEqual(
-    [quiet.rows, quiet.investigators, quiet.watchers],
-    [[], [], []],
-  );
+  assert.deepEqual([quiet.rows, quiet.watchers], [[], []]);
   const calm = wish(
     "01a1440a-0000-7000-8000-000000000003",
     "Calm",

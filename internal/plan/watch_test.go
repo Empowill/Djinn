@@ -281,7 +281,10 @@ func TestWatchSendsTheTasksThatChanged(t *testing.T) {
 	all := tasks(t, c, wish, "T1", "W1", "W2")
 	azima, w1, w2 := all["T1"], all["W1"], all["W2"]
 	w1.PartOf, w2.PartOf = azima.GetId(), azima.GetId()
-	putAll(t, c, w1, w2, &planv1.Tilasm{Id: store.NewID(), WishId: wish, Code: "L01", Cites: []string{w1.GetId()}})
+	// What Djinn records of the azima comes with it: its pull request (W219, the window's link to it).
+	pr := &planv1.AzimaPr{Url: "https://github.com/acme/lamp/pull/40", State: planv1.AzimaPrState_AZIMA_PR_STATE_OPEN}
+	azima.Azima = &planv1.Azima{Pr: pr}
+	putAll(t, c, azima, w1, w2, &planv1.Tilasm{Id: store.NewID(), WishId: wish, Code: "L01", Cites: []string{w1.GetId()}})
 	s := watch(t, c.wishes, wish)
 
 	w1.Status = planv1.TaskStatus_TASK_STATUS_RUNNING
@@ -292,8 +295,8 @@ func TestWatchSendsTheTasksThatChanged(t *testing.T) {
 		t.Fatalf("first change: tasks %v, want T1 and W1", got)
 	}
 	if got := msg.GetChanged().GetTasks()[0].GetAzima(); got.GetState() != planv1.AzimaState_AZIMA_STATE_IN_PROGRESS ||
-		got.GetPartsRunning() != 1 {
-		t.Fatalf("azima %v, want in progress with a part running", got)
+		got.GetPartsRunning() != 1 || !proto.Equal(got.GetPr(), pr) {
+		t.Fatalf("azima %v, want in progress with a part running, and its pull request", got)
 	}
 	if got := msg.GetChanged().GetTasks()[1].GetTilasms(); !slices.Equal(got, []string{"L01"}) {
 		t.Fatalf("W1's tilasms %v, want L01", got)

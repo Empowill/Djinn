@@ -114,16 +114,7 @@ func FillAzimas(tasks []*planv1.Task) {
 			Ready:  true,
 			Branch: AzimaBranchName(t),
 		}
-		// What Djinn records of its branch and pull request stays: its branch is cut from main, never from another's.
-		if existing := t.GetAzima(); existing != nil {
-			e.Sync = existing.GetSync()
-			e.Pr = existing.GetPr()
-			e.Main = existing.GetMain()
-			e.Merged = existing.GetMerged()
-			if existing.GetCutFrom() != "" {
-				e.CutFrom, e.BaseBranch, e.Named = existing.GetCutFrom(), existing.GetBaseBranch(), existing.GetNamed()
-			}
-		}
+		KeepAzimaRecord(e, t.GetAzima())
 		// A merge counts with the original task it serves (MergeHost): it runs, its original runs.
 		running := map[string]bool{}
 		for _, p := range parts[t.GetId()] {
@@ -533,6 +524,22 @@ func AllMerged(tasks []*planv1.Task) bool {
 }
 
 // WithAzimas is tasks with Task.azima set on their azimas, as clones: the store's own messages stay as they are.
+// KeepAzimaRecord copies into e, an azima's state as computed from its parts, what Djinn records of its branch and its
+// pull request, as recorded stores it: the branch's sync, the pull request, main's state, its merge into main, and what
+// its branch was cut from (from main, never from another's).
+func KeepAzimaRecord(e, recorded *planv1.Azima) {
+	if e == nil || recorded == nil {
+		return
+	}
+	e.Sync = recorded.GetSync()
+	e.Pr = recorded.GetPr()
+	e.Main = recorded.GetMain()
+	e.Merged = recorded.GetMerged()
+	if recorded.GetCutFrom() != "" {
+		e.CutFrom, e.BaseBranch, e.Named = recorded.GetCutFrom(), recorded.GetBaseBranch(), recorded.GetNamed()
+	}
+}
+
 func WithAzimas(tasks []*planv1.Task) []*planv1.Task {
 	if !slices.ContainsFunc(tasks, IsAzima) {
 		return tasks

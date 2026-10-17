@@ -380,6 +380,7 @@ test("work that merges counts as running: a worker at work, not a watcher", () =
       merging: 2,
       fixing: 0,
       ifrits: 0,
+      paused: 0,
     },
   );
 });
@@ -532,6 +533,7 @@ test("a failed merge is being fixed while its correction works, failed when none
       merging: 0,
       fixing: 1,
       ifrits: 0,
+      paused: 0,
     },
   );
 });
@@ -763,6 +765,7 @@ test("an investigator at work has its own tone and count, apart from the running
       merging: 0,
       fixing: 0,
       ifrits: 0,
+      paused: 0,
     },
   );
 });
@@ -1203,7 +1206,8 @@ test("an ifrit lit, at work, warned or out: its tone, its word, and its count ap
   // A work task is no ifrit, whatever its fields.
   assert.equal(f.taskTone({ status: S.RUNNING, ifrit: lit.ifrit }), "running");
 
-  // Counted apart: the workers running are the work alone; one put out counts nowhere.
+  // Counted apart: the workers running are the work alone; one put out counts with the paused workers, its work kept
+  // until a message lights it again (W219).
   assert.deepEqual(f.runningOf([working, lit, out, { status: S.RUNNING }]), {
     running: 1,
     investigating: 0,
@@ -1211,6 +1215,7 @@ test("an ifrit lit, at work, warned or out: its tone, its word, and its count ap
     merging: 0,
     fixing: 0,
     ifrits: 2,
+    paused: 1,
   });
   // Its wish takes its tone before what waits, after a paused or granted wish's.
   const w = { state: f.WishState.ACTIVE, ready: true };

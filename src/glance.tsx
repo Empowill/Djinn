@@ -1,7 +1,12 @@
-// The glance (Decision Q08, mockup L04 v2): beside the questions column, each wish's workers, running now and to come,
-// nothing else. A filled dot runs, blue; an investigator (the worker Enlighten me starts) runs violet, apart; a circle
-// waits on a task, listed under it when that task is of the same wish and shown here, else it names it ("waits on W26
-// · Djinn QoL"); a dotted circle is planned; a lit ifrit is a vermilion flame, with the word of its state. The watchers (watch providers, babysits) fold into one line per wish.
+// The glance (Decision Q08, mockup L04 v2): beside the questions column, and on a wish's page, each wish's workers,
+// running now, paused and to come, nothing else, in one order whatever their kind (compareGlance, W219): what is in
+// progress on top, the one begun first above (a filled dot, blue; an investigator, the worker Enlighten me starts,
+// violet; a lit ifrit a vermilion flame with the word of its state), then the paused ones (a circled pause, the reason
+// on hover: stopped by you or the lead, cut short by a restart or a usage limit until Djinn resumes it), then what waits
+// on a task (a circle, listed under that task when it waits too, else naming it: "waits on W26 · Djinn QoL"), then what
+// is planned (a dotted circle). An urgent task carries its label, as in the tasks view. Below them the watchers
+// (watch providers, babysits), a line each: what they said last and since when, and the request they watch, a click
+// away in the browser.
 // Below them, the work on its way into the wish's branch (W137): the batch being merged and the check it runs, with its
 // gate and time, the merges waiting in line, the push checks running or a push they hold, and the repair workers
 // (corrections of a merge, of main's merge or of the push checks, reviews of work left not committed), a wrench in
@@ -10,7 +15,14 @@
 // narrow view it comes above the questions, one line per wish. Read from the tasks the window already has: the
 // details of the active wishes, which the window always reads.
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { CloudOff, CloudUpload, Eye, GitMerge, Wrench } from "lucide-react";
+import {
+  CloudOff,
+  CloudUpload,
+  ExternalLink,
+  Eye,
+  GitMerge,
+  Wrench,
+} from "lucide-react";
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 
 import type { Gate } from "../gen/ts/machine/v1/machine_pb";
@@ -26,19 +38,59 @@ import {
   type WishPush,
 } from "../gen/ts/plan/v1/plan_pb";
 import { useOptionalData } from "./data/djinn";
-import { compareCodes, isAzima } from "./data/flight";
-import { date, firstLine, gitReason, span, useNow } from "./data/format";
-import { ifritLit, ifritWord } from "./data/ifrit";
+import {
+  compareCodes,
+  compareWorkers,
+  isAzima,
+  isInvestigation,
+  isUrgent,
+} from "./data/flight";
+import {
+  date,
+  firstLine,
+  gitReason,
+  span,
+  takenOver,
+  taskStatusText,
+  useNow,
+  workerPhase,
+} from "./data/format";
+import { ifritLit, ifritOut, ifritWord } from "./data/ifrit";
 import { ModalFrame } from "./frame";
-import { type TextKey, t } from "./i18n";
+import { type TextKey, language, t } from "./i18n";
+import { Link, linkLabel } from "./link";
 import { ToneIcon } from "./status";
+import { InvestigationLabel, UrgentLabel } from "./wish-task";
 
-export type GlanceState = "run" | "investigate" | "wait" | "plan";
+// A worker's state in the glance: at work (blue, or a lit ifrit's flame), investigating (violet), paused (its worker
+// stopped, its work kept: workerPhase), waiting on a task, or planned.
+export type GlanceState = "run" | "investigate" | "paused" | "wait" | "plan";
+
+// glanceRank is the one order of the glance's workers, whatever their kind (work, investigation, investigator, ifrit,
+// repair): what is in progress on top, then what is paused, then what waits on a task, then what is planned.
+const glanceRank: Record<GlanceState, number> = {
+  run: 0,
+  investigate: 0,
+  paused: 1,
+  wait: 2,
+  plan: 3,
+};
+
+// compareGlance orders two rows of the glance: by state (glanceRank), then the one begun first (compareWorkers).
+export function compareGlance(
+  a: { task: Task; state: GlanceState },
+  b: { task: Task; state: GlanceState },
+): number {
+  return (
+    glanceRank[a.state] - glanceRank[b.state] || compareWorkers(a.task, b.task)
+  );
+}
 
 export interface GlanceRow {
   task: Task;
   state: GlanceState;
-  // How deep it is listed under the task it waits on, of the same wish: 0 for none, 2 under a task that waits too.
+  // How deep it is listed under the task it waits on, waiting too, of the same wish: 0 for none, 2 under a task that
+  // waits on another.
   depth: number;
   // The task it waits on, by code, and that task's wish when it is another.
   after?: string;
@@ -52,10 +104,20 @@ export type RepairKind = "conflict" | "red" | "main" | "push" | "review";
 export interface RepairRow {
   task: Task;
   kind: RepairKind;
-  // At work, waiting on a task, or planned.
-  state: "run" | "wait" | "plan";
+  // At work, paused, waiting on a task, or planned.
+  state: "run" | "paused" | "wait" | "plan";
   // The tasks whose work it repairs, by code.
   of: string[];
+}
+
+// WatchRow is a watcher (a babysit of a pull or merge request, any watch command): the request it watches, the first
+// line of what it said last (GREEN, CI_FAILED, NEW_NOTES) and since when that line holds.
+export interface WatchRow {
+  task: Task;
+  // Watching, or paused (its command stopped, kept), or planned.
+  state: "watch" | "paused" | "plan";
+  // The request's web address: the babysit's, else its azima's pull request; "" when none is known.
+  url: string;
 }
 
 // MergeRow is a line of the work on its way into the wish's branch: a batch being merged, with the commit check it runs;
@@ -88,23 +150,16 @@ export type MergeRow =
   | { kind: "queued"; branch: string; task: Task; reason: string };
 
 export interface WishGlance {
-  // Work running, then what waits or is planned, each waiting task under the one it waits on.
+  // Every worker but the watchers and the repair workers, in one order (compareGlance): at work, investigators, lit
+  // ifrits and investigations included, then the paused ones, then what waits, each waiting task under the one it waits
+  // on when that one waits too, then what is planned.
   rows: GlanceRow[];
-  // Investigators, apart: running (violet) or about to.
-  investigators: GlanceRow[];
-  // Watchers and babysits, folded into one line.
-  watchers: Task[];
+  // Watchers and babysits, each on its line with its request, below the workers: they watch, they do no work.
+  watchers: WatchRow[];
   // The work on its way into the wish's branch: merging, pushing, held, then waiting in line.
   merges: MergeRow[];
-  // The repair workers, apart from the others.
+  // The repair workers, apart from the others, in the same order.
   repairs: RepairRow[];
-}
-
-// coming tells a task a worker will run later: planned, or resumed by Djinn once its limit resets.
-function coming(task: Task): boolean {
-  return (
-    task.status === TaskStatus.PENDING || task.status === TaskStatus.RESUMING
-  );
 }
 
 // holds tells whether a dependency still holds a task back, as Djinn's scheduler reads it: an azima until marked done,
@@ -120,6 +175,14 @@ function holds(dep: Task): boolean {
 
 const byCode = (a: Task, b: Task) => compareCodes(a.code, b.code);
 
+// watchUrl is the web address of the request a watcher watches: its babysit's, found as it starts, else the pull
+// request of the azima it is part of; "" when neither says.
+function watchUrl(task: Task, byId: (id: string) => Task | undefined): string {
+  if (task.babysit?.url) return task.babysit.url;
+  const azima = task.partOf ? byId(task.partOf) : undefined;
+  return azima?.azima?.pr?.url ?? "";
+}
+
 // glanceOf is one wish's glance, from its tasks. find gives a task of any wish read, by id (a dependency across
 // wishes); wishTitle the title of a wish. A dependency no wish read holds nothing back here.
 // wish, when given, brings its pushes: the push checks running, a held push, its corrections.
@@ -129,81 +192,78 @@ export function glanceOf(
   wishTitle: (id: string) => string | undefined,
   wish?: Wish,
 ): WishGlance {
-  const watchers = tasks
-    .filter(
-      (x) =>
-        x.provider === Provider.WATCH &&
-        (x.status === TaskStatus.RUNNING || coming(x)),
-    )
-    .sort(byCode);
-  const workers = tasks.filter(
-    (x) => !isAzima(x) && x.provider !== Provider.WATCH,
-  );
-  const live = workers.filter(
-    (x) => x.status === TaskStatus.RUNNING || coming(x),
-  );
-  const investigators = live
-    .filter((x) => x.role === TaskRole.INVESTIGATOR)
-    .sort(byCode)
-    .map((task): GlanceRow => ({
-      task,
-      state: task.status === TaskStatus.RUNNING ? "investigate" : "plan",
-      depth: 0,
-    }));
   const byId = (id: string) => tasks.find((x) => x.id === id) ?? find(id);
+  const taken = takenOver(tasks);
+  const phase = (task: Task) => workerPhase(task, taken.has(task.code));
+  const watchers = tasks
+    .filter((x) => x.provider === Provider.WATCH && phase(x))
+    .map((task): WatchRow => ({
+      task,
+      state:
+        phase(task) === "run"
+          ? "watch"
+          : phase(task) === "paused"
+            ? "paused"
+            : "plan",
+      url: watchUrl(task, byId),
+    }))
+    .sort(
+      (a, b) =>
+        Number(a.state !== "watch") - Number(b.state !== "watch") ||
+        Number(a.state === "plan") - Number(b.state === "plan") ||
+        compareWorkers(a.task, b.task),
+    );
+  const live = tasks.filter(
+    (x) => !isAzima(x) && x.provider !== Provider.WATCH && phase(x),
+  );
   const opened = (task: Task) =>
     (task.dependsOn ?? [])
       .map(byId)
       .filter((dep): dep is Task => !!dep && holds(dep));
+  // A worker's state: at work (an investigator investigates), paused, or to come, waiting on a task or planned.
+  const stateOf = (task: Task): GlanceState => {
+    switch (phase(task)) {
+      case "run":
+        return task.role === TaskRole.INVESTIGATOR && !ifritLit(task)
+          ? "investigate"
+          : "run";
+      case "paused":
+        return "paused";
+      default:
+        return opened(task).length ? "wait" : "plan";
+    }
+  };
   const repairs: RepairRow[] = [];
   const work: Task[] = [];
   for (const task of live) {
-    if (task.role === TaskRole.INVESTIGATOR) continue;
     const kind = repairKind(task, wish);
     if (!kind) {
       work.push(task);
       continue;
     }
+    const state = stateOf(task);
     repairs.push({
       task,
       kind,
-      state:
-        task.status === TaskStatus.RUNNING
-          ? "run"
-          : opened(task).length
-            ? "wait"
-            : "plan",
+      state: state === "investigate" ? "run" : state,
       of: (task.review?.taskIds ?? task.correction?.failure?.taskIds ?? [])
         .map((id) => byId(id)?.code)
         .filter((code): code is string => !!code),
     });
   }
-  repairs.sort(
-    (a, b) =>
-      Number(b.state === "run") - Number(a.state === "run") ||
-      byCode(a.task, b.task),
-  );
-  const shown = new Set(work.map((x) => x.id));
-  const parentOf = new Map<string, string>();
+  repairs.sort(compareGlance);
   const rowOf = new Map<string, GlanceRow>();
   for (const task of work) {
-    if (task.status === TaskStatus.RUNNING) {
-      rowOf.set(task.id, { task, state: "run", depth: 0 });
+    const state = stateOf(task);
+    if (state !== "wait") {
+      rowOf.set(task.id, { task, state, depth: 0 });
       continue;
     }
     const open = opened(task);
-    if (!open.length) {
-      rowOf.set(task.id, { task, state: "plan", depth: 0 });
-      continue;
-    }
-    const under = open.find(
-      (dep) => dep.wishId === task.wishId && shown.has(dep.id),
-    );
-    const dep = under ?? open[0];
-    if (under) parentOf.set(task.id, under.id);
+    const dep = open[0];
     rowOf.set(task.id, {
       task,
-      state: "wait",
+      state,
       depth: 0,
       after: dep.code,
       afterWish:
@@ -211,6 +271,20 @@ export function glanceOf(
           ? (wishTitle(dep.wishId) ?? "")
           : undefined,
     });
+  }
+  // A waiting task is listed under a task it waits on when that one is of its wish and waits too, so that nothing
+  // waiting comes between the workers at work: one waiting on a running or planned task names it in its own place.
+  const parentOf = new Map<string, string>();
+  for (const row of rowOf.values()) {
+    if (row.state !== "wait") continue;
+    const under = opened(row.task).find(
+      (dep) =>
+        dep.wishId === row.task.wishId && rowOf.get(dep.id)?.state === "wait",
+    );
+    if (!under) continue;
+    parentOf.set(row.task.id, under.id);
+    row.after = under.code;
+    row.afterWish = undefined;
   }
   const kids = new Map<string, GlanceRow[]>();
   for (const [id, parent] of parentOf) {
@@ -224,22 +298,15 @@ export function glanceOf(
     if (placed.has(row.task.id)) return;
     placed.add(row.task.id);
     rows.push(depth ? { ...row, depth } : row);
-    for (const kid of (kids.get(row.task.id) ?? []).sort((a, b) =>
-      byCode(a.task, b.task),
-    ))
+    for (const kid of (kids.get(row.task.id) ?? []).sort(compareGlance))
       place(kid, depth + 1);
   };
-  const order: GlanceState[] = ["run", "wait", "plan"];
-  const all = [...rowOf.values()].sort(
-    (a, b) =>
-      order.indexOf(a.state) - order.indexOf(b.state) || byCode(a.task, b.task),
-  );
+  const all = [...rowOf.values()].sort(compareGlance);
   for (const row of all) if (!parentOf.has(row.task.id)) place(row, 0);
   // A loop of dependencies has no root: its tasks still show.
   for (const row of all) place(row, 0);
   return {
     rows,
-    investigators,
     watchers,
     merges: mergesOf(tasks, wish),
     repairs,
@@ -361,19 +428,20 @@ export function forgeMark(task: Task): string {
   return `${task.babysit?.url.includes("/merge_requests/") ? "!" : "#"}${number}`;
 }
 
-// glanceCounts says, in words, what a wish's glance holds.
+// glanceCounts says, in words, what a wish's glance holds: each worker counted once, in its state.
 export function glanceCounts(glance: WishGlance): string {
   const ifrits = glance.rows.filter((r) => ifritLit(r.task)).length;
   const running = glance.rows.filter((r) => r.state === "run").length - ifrits;
-  const investigating = glance.investigators.filter(
+  const investigating = glance.rows.filter(
     (r) => r.state === "investigate",
   ).length;
-  const later =
-    glance.rows.length -
-    running -
-    ifrits +
-    glance.investigators.length -
-    investigating;
+  const paused =
+    glance.rows.filter((r) => r.state === "paused").length +
+    glance.watchers.filter((r) => r.state === "paused").length;
+  const later = glance.rows.filter(
+    (r) => r.state === "wait" || r.state === "plan",
+  ).length;
+  const watching = glance.watchers.filter((r) => r.state === "watch").length;
   const merging = glance.merges.reduce(
     (n, m) => n + (m.kind === "merging" ? m.tasks.length : 0),
     0,
@@ -385,9 +453,9 @@ export function glanceCounts(glance: WishGlance): string {
   if (running) parts.push(t("plan.running", { count: running }));
   if (investigating)
     parts.push(t("plan.investigating", { count: investigating }));
+  if (paused) parts.push(t("glance.paused", { count: paused }));
   if (later) parts.push(t("glance.coming", { count: later }));
-  if (glance.watchers.length)
-    parts.push(t("plan.watching", { count: glance.watchers.length }));
+  if (watching) parts.push(t("plan.watching", { count: watching }));
   if (merging) parts.push(t("glance.merging", { count: merging }));
   if (queued) parts.push(t("glance.to_merge", { count: queued }));
   if (held) parts.push(t("glance.push_held"));
@@ -399,6 +467,7 @@ export function glanceCounts(glance: WishGlance): string {
 const stateWords: Record<GlanceState, () => string> = {
   run: () => t("task.status_running"),
   investigate: () => t("task.status_investigating"),
+  paused: () => t("task.status_paused"),
   wait: () => t("glance.waits"),
   plan: () => t("task.status_pending"),
 };
@@ -406,6 +475,7 @@ const stateWords: Record<GlanceState, () => string> = {
 const legendKeys: Record<GlanceState, TextKey> = {
   run: "glance.legend_run",
   investigate: "glance.legend_investigate",
+  paused: "glance.legend_paused",
   wait: "glance.legend_wait",
   plan: "glance.legend_plan",
 };
@@ -433,7 +503,48 @@ function repairWords(row: RepairRow): string {
   }
 }
 
-// Dot is a worker's mark: its state's dot, or a lit ifrit's flame.
+// pausedWord says where a paused worker stands: paused, stopped, put out, cut short, waiting for its limit.
+function pausedWord(task: Task): string {
+  return taskStatusText(task);
+}
+
+// pausedWhy says why a worker is paused, as Djinn recorded it: why it stopped, what it waits for, when its usage
+// limit resets, or why its last run ended; "" when nothing says.
+function pausedWhy(task: Task): string {
+  const resume = date(task.resumeAfter);
+  return (
+    task.error ||
+    task.waitReason ||
+    (resume
+      ? t("glance.resumes_at", {
+          time: resume.toLocaleTimeString(language, {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        })
+      : "") ||
+    (task.runs ?? []).at(-1)?.reason ||
+    ""
+  );
+}
+
+// Pause is the mark of a paused worker, in Djinn's glyphs: a circled pause, or an ifrit's outlined flame once put out.
+function Pause({ task, title }: { task?: Task; title?: string }) {
+  const tone = task && ifritOut(task) ? "out" : "paused";
+  return (
+    <span
+      className={`glance-pause tone-${tone}`}
+      role={task ? "img" : undefined}
+      aria-label={task ? pausedWord(task) : undefined}
+      aria-hidden={task ? undefined : true}
+      title={title}
+    >
+      <ToneIcon tone={tone} size={12} />
+    </span>
+  );
+}
+
+// Dot is a worker's mark: its state's dot, a lit ifrit's flame, or a paused worker's pause.
 function Dot({
   state,
   title,
@@ -443,6 +554,7 @@ function Dot({
   title?: string;
   task?: Task;
 }) {
+  if (state === "paused") return <Pause task={task} title={title} />;
   if (task && ifritLit(task))
     return (
       <span
@@ -531,6 +643,16 @@ function Line({
   );
 }
 
+// Labels are a task's labels, as the tasks view shows them: urgent (or for quick feedback), an investigation.
+function Labels({ task }: { task: Task }) {
+  return (
+    <>
+      {isUrgent(task) && <UrgentLabel feedback={task.feedback} />}
+      {isInvestigation(task) && <InvestigationLabel />}
+    </>
+  );
+}
+
 function Row({
   row,
   onOpenTask,
@@ -540,11 +662,16 @@ function Row({
 }) {
   const { task, state, after, afterWish } = row;
   const investigator = task.role === TaskRole.INVESTIGATOR;
-  const word = ifritLit(task) ? ifritWord(task) : stateWords[state]();
+  const word = ifritLit(task)
+    ? ifritWord(task)
+    : state === "paused"
+      ? pausedWord(task)
+      : stateWords[state]();
+  const why = state === "paused" ? pausedWhy(task) : "";
   return (
     <Line
       className={`glance-row ${state}${row.depth ? " child" : ""}`}
-      title={`${word} · ${task.code} ${task.title}`}
+      title={`${word} · ${task.code} ${task.title}${why ? `\n${why}` : ""}`}
       style={
         row.depth ? ({ "--depth": row.depth } as CSSProperties) : undefined
       }
@@ -553,7 +680,11 @@ function Row({
       <Dot state={state} task={task} />
       <span className="glance-code">{task.code}</span>
       <span className="glance-title">
+        <Labels task={task} />
         {task.title}
+        {state === "paused" && (
+          <span className="glance-after">{pausedWord(task)}</span>
+        )}
         {after && (
           <span className="glance-after">
             {afterWish
@@ -738,12 +869,13 @@ function RepairItem({
   onOpenTask?: (task: Task) => void;
 }) {
   const { task, state } = row;
-  const word = stateWords[state]();
+  const word = state === "paused" ? pausedWord(task) : stateWords[state]();
+  const why = state === "paused" ? pausedWhy(task) : "";
   const attempt = task.correction?.attempt ?? task.review?.attempt ?? 0;
   return (
     <Line
       className={`glance-row glance-repair ${state}`}
-      title={`${word} · ${task.code} ${task.title}`}
+      title={`${word} · ${task.code} ${task.title}${why ? `\n${why}` : ""}`}
       onOpen={onOpenTask && (() => onOpenTask(task))}
     >
       <Mark
@@ -753,6 +885,7 @@ function RepairItem({
       />
       <span className="glance-code">{task.code}</span>
       <span className="glance-title">
+        <Labels task={task} />
         {repairWords(row)}
         <span className="glance-after">
           {attempt > 1 ? t("glance.attempt", { word, attempt }) : word}
@@ -814,24 +947,70 @@ function HeldDialog({
   );
 }
 
-function Watchers({ watchers }: { watchers: Task[] }) {
-  const marks = watchers.map(forgeMark).filter(Boolean);
-  return (
-    <li
-      className="glance-watch"
-      title={watchers.map((w) => `${w.code} ${w.title}`).join("\n")}
-    >
-      <Eye size={13} aria-hidden="true" />
-      <span>
-        {t("plan.watching", { count: watchers.length })}
-        {marks.length > 0 && (
-          <span className="glance-marks">
-            {marks.map((mark) => (
-              <span key={mark}>{mark}</span>
-            ))}
-          </span>
+// WatchItem is a watcher's line: its eye (a pause once stopped), its code, the first line of what it said last and since
+// when it says so, and the request it watches, which opens in the browser. The line opens its task.
+function WatchItem({
+  row,
+  onOpenTask,
+}: {
+  row: WatchRow;
+  onOpenTask?: (task: Task) => void;
+}) {
+  const { task, state, url } = row;
+  const word =
+    state === "paused"
+      ? pausedWord(task)
+      : state === "plan"
+        ? stateWords.plan()
+        : t("task.status_watching");
+  const why = state === "paused" ? pausedWhy(task) : "";
+  const line = task.lastLine || task.title;
+  const inside = (
+    <>
+      {state === "watch" ? (
+        <span className="glance-eye tone-watching" role="img" aria-label={word}>
+          <Eye size={12} aria-hidden="true" />
+        </span>
+      ) : state === "paused" ? (
+        <Pause task={task} />
+      ) : (
+        <Dot state="plan" />
+      )}
+      <span className="glance-code">{task.code}</span>
+      <span className="glance-title">
+        <span className="glance-watch-line">{line}</span>
+        {task.lastLine && (
+          <Since since={task.lastLineTime ?? task.lastActivityTime} />
+        )}
+        {state === "paused" && (
+          <span className="glance-after">{pausedWord(task)}</span>
         )}
       </span>
+    </>
+  );
+  const title = `${word} · ${task.code} ${task.title}${why ? `\n${why}` : ""}`;
+  return (
+    <li className={`glance-item glance-watcher ${state}`}>
+      {onOpenTask ? (
+        <button
+          type="button"
+          className={`glance-row watch ${state}`}
+          title={title}
+          onClick={() => onOpenTask(task)}
+        >
+          {inside}
+        </button>
+      ) : (
+        <span className={`glance-row watch ${state}`} title={title}>
+          {inside}
+        </span>
+      )}
+      {url && (
+        <Link href={url} className="glance-link">
+          {forgeMark(task) || linkLabel(url)}
+          <ExternalLink size={11} aria-hidden="true" />
+        </Link>
+      )}
     </li>
   );
 }
@@ -856,14 +1035,8 @@ function GlanceTree({
   onOpenTask?: (task: Task) => void;
   onOpenHeld: (row: MergeRow & { kind: "held" }) => void;
 }) {
-  const { rows, investigators, watchers, merges, repairs } = glance;
-  if (
-    !rows.length &&
-    !investigators.length &&
-    !watchers.length &&
-    !merges.length &&
-    !repairs.length
-  )
+  const { rows, watchers, merges, repairs } = glance;
+  if (!rows.length && !watchers.length && !merges.length && !repairs.length)
     return (
       <ul className="glance-list">
         <li className="glance-quiet">{t("glance.quiet")}</li>
@@ -878,16 +1051,11 @@ function GlanceTree({
           ))}
         </ul>
       )}
-      {investigators.length > 0 && (
-        <ul className="glance-list glance-investigators">
-          {investigators.map((row) => (
-            <Row key={row.task.id} row={row} onOpenTask={onOpenTask} />
-          ))}
-        </ul>
-      )}
       {watchers.length > 0 && (
-        <ul className="glance-list">
-          <Watchers watchers={watchers} />
+        <ul className="glance-list glance-watchers">
+          {watchers.map((row) => (
+            <WatchItem key={row.task.id} row={row} onOpenTask={onOpenTask} />
+          ))}
         </ul>
       )}
       {merges.length + repairs.length > 0 && (
@@ -923,7 +1091,8 @@ function GlanceLine({
   glance: WishGlance;
   onOpen?: () => void;
 }) {
-  const dots = [...glance.rows, ...glance.investigators];
+  const dots = glance.rows;
+  const watching = glance.watchers.filter((w) => w.state === "watch").length;
   const merging = glance.merges.filter(
     (m) => m.kind === "merging" || m.kind === "pushing",
   ).length;
@@ -944,15 +1113,24 @@ function GlanceLine({
           title={`${row.task.code} ${row.task.title}`}
         />
       ))}
-      {glance.watchers.length > 0 && (
+      {watching > 0 && (
         <span
           className="glance-line-watch"
-          title={t("plan.watching", { count: glance.watchers.length })}
+          title={t("plan.watching", { count: watching })}
         >
           <Eye size={12} aria-hidden="true" />
-          {glance.watchers.length}
+          {watching}
         </span>
       )}
+      {glance.watchers
+        .filter((w) => w.state === "paused")
+        .map((row) => (
+          <Pause
+            key={row.task.id}
+            task={row.task}
+            title={`${row.task.code} ${row.task.title}`}
+          />
+        ))}
       {glance.repairs.map((row) => (
         <Mark
           key={row.task.id}
@@ -970,7 +1148,6 @@ function GlanceLine({
           title={glanceCounts({
             ...glance,
             rows: [],
-            investigators: [],
             watchers: [],
             repairs: [],
           })}
@@ -1044,9 +1221,11 @@ export function Glance({
   const headings = !!onOpenWish;
   const present = new Set<Present>();
   for (const { glance } of glances) {
-    for (const row of [...glance.rows, ...glance.investigators])
-      present.add(row.state);
-    if (glance.watchers.length) present.add("watch");
+    for (const row of glance.rows) present.add(row.state);
+    for (const row of glance.watchers)
+      present.add(row.state === "watch" ? "watch" : row.state);
+    for (const row of glance.repairs)
+      if (row.state === "paused") present.add("paused");
     for (const row of glance.merges)
       present.add(row.kind === "pushing" ? "merging" : row.kind);
     if (glance.repairs.length) present.add("repair");
@@ -1078,11 +1257,18 @@ export function Glance({
         ))}
         {present.size > 0 && (
           <p className="glance-legend">
-            {(["run", "investigate", "wait", "plan"] as const)
+            {(["run", "investigate", "paused", "wait", "plan"] as const)
               .filter((state) => present.has(state))
               .map((state) => (
                 <span key={state}>
-                  <span className={`glance-dot ${state}`} aria-hidden="true" />
+                  {state === "paused" ? (
+                    <Pause />
+                  ) : (
+                    <span
+                      className={`glance-dot ${state}`}
+                      aria-hidden="true"
+                    />
+                  )}
                   {t(legendKeys[state])}
                 </span>
               ))}

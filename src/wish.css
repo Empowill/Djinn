@@ -117,7 +117,7 @@
   display: none;
 }
 @media (max-width: 820px) {
-  .wish-tone.asks > :not(.wish-hand, .wish-place-corner) {
+  .wish-tone.asks > :not(.wish-hand, .wish-place-corner, .wish-paused-corner) {
     display: none;
   }
   .wish-tone > .wish-hand {
@@ -139,11 +139,25 @@
   font: 600 0.5625rem/1 var(--mono);
   white-space: nowrap;
 }
-.sidebar-collapsed .wish-place-corner {
+/* The paused workers, the same way on the upper corner: a circled pause and the number. */
+.wish-paused-corner {
+  display: none;
+  position: absolute;
+  left: calc(100% - 0.0625rem);
+  top: -0.375rem;
+  align-items: center;
+  gap: 0.0625rem;
+  color: var(--st-paused);
+  font: 600 0.5625rem/1 var(--mono);
+  white-space: nowrap;
+}
+.sidebar-collapsed .wish-place-corner,
+.sidebar-collapsed .wish-paused-corner {
   display: inline-flex;
 }
 @media (max-width: 820px) {
-  .wish-place-corner {
+  .wish-place-corner,
+  .wish-paused-corner {
     display: inline-flex;
   }
 }
