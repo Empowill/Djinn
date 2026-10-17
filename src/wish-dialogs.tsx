@@ -771,14 +771,9 @@ export function ProjectPanel({
       onClose={onClose}
       wide
     >
-      {shown?.problems?.map((p) => (
-        <p className="login-message" key={p}>
-          {p}
-        </p>
-      ))}
-      {shown?.warnings?.map((w) => (
-        <p className="login-message" key={w}>
-          {w}
+      {shown?.notices?.map((n) => (
+        <p className="login-message" key={`${n.subject} ${n.text}`}>
+          {n.detail ? `${n.text} ${n.detail}` : n.text}
         </p>
       ))}
       <div className="setting-row">

@@ -1062,9 +1062,11 @@ type InboxServiceClient interface {
 	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
 	// List the sources the projects' skills declare, plugged in or not on this machine.
 	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
-	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool. A
+	// no you said to it is forgotten.
 	Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error)
-	// Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+	// Unplug a source, on this machine, or say no to one never plugged in: its command stops and runs no more, and its
+	// project no longer asks whether to plug it in. Its items stay.
 	Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error)
 }
 
@@ -1171,9 +1173,11 @@ type InboxServiceHandler interface {
 	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
 	// List the sources the projects' skills declare, plugged in or not on this machine.
 	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
-	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool. A
+	// no you said to it is forgotten.
 	Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error)
-	// Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+	// Unplug a source, on this machine, or say no to one never plugged in: its command stops and runs no more, and its
+	// project no longer asks whether to plug it in. Its items stay.
 	Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error)
 }
 

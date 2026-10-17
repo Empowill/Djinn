@@ -42,10 +42,80 @@ message Project {
   // How each branch Djinn pushes in the project stands against its remote, computed on every read: the integration
   // branch of each active or paused wish there, then the own branch of each of their azimas, once the branch exists.
   repeated ProjectSync syncs = 12;
+  // How many things of its configuration wait for you to fix, computed on every read: the notices of kind to fix
+  // that djinn project show lists.
+  int32 to_fix = 13;
 
   // The one sync of the integration branch of a single wish, which syncs replaced.
   reserved 9;
   reserved "sync";
+}
+
+// ProjectNotice is one thing Djinn finds in a project's configuration as this machine reads it, computed on every
+// read and never stored: a thing to fix, that waits for you, or an information. It says what it is in one sentence,
+// and the one action that settles it.
+message ProjectNotice {
+  // To fix, or information.
+  ProjectNoticeKind kind = 1;
+  // The part of the configuration it comes from.
+  ProjectNoticeTopic topic = 2;
+  // What it names there: a file (.agents/settings.txtpb), a skill, a source (<project>/<skill>), a branch
+  // (origin/main).
+  string subject = 3;
+  // What it is, and what it changes, in one sentence.
+  string text = 4;
+  // The error as Djinn read it, the line at fault and all; empty when the sentence says it all.
+  string detail = 5;
+  // The one action that settles it; unspecified for an information that needs none.
+  ProjectNoticeAction action = 6;
+  // The file the action changes, absolute; empty when it changes none.
+  string file = 7;
+  // The command line that does the action, when one does: djinn inbox plug djinn/babysit-pr. Empty otherwise.
+  string command = 8;
+}
+
+// ProjectNoticeKind says whether a project notice waits for you.
+enum ProjectNoticeKind {
+  // Not set.
+  PROJECT_NOTICE_KIND_UNSPECIFIED = 0;
+  // A decision or a problem that waits for you: Project.to_fix counts them.
+  PROJECT_NOTICE_KIND_TO_FIX = 1;
+  // Worth knowing; nothing waits for you.
+  PROJECT_NOTICE_KIND_INFORMATION = 2;
+}
+
+// ProjectNoticeTopic is the part of a project's configuration a notice comes from.
+enum ProjectNoticeTopic {
+  // Not set.
+  PROJECT_NOTICE_TOPIC_UNSPECIFIED = 0;
+  // A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder.
+  PROJECT_NOTICE_TOPIC_SETTINGS = 1;
+  // The project's .agents/permissions.txtpb.
+  PROJECT_NOTICE_TOPIC_PERMISSIONS = 2;
+  // A skill the project holds or summons: its SKILL.md, its wish template, inbox source and babysit.
+  PROJECT_NOTICE_TOPIC_SKILL = 3;
+  // The setup command, by its last run.
+  PROJECT_NOTICE_TOPIC_SETUP = 4;
+  // The reference branch (main_branch), and the branch your copy has checked out.
+  PROJECT_NOTICE_TOPIC_BRANCH = 5;
+  // An inbox source of the project's skills, as this machine decided it.
+  PROJECT_NOTICE_TOPIC_SOURCE = 6;
+}
+
+// ProjectNoticeAction is the one action that settles a project notice.
+enum ProjectNoticeAction {
+  // None: an information to read.
+  PROJECT_NOTICE_ACTION_UNSPECIFIED = 0;
+  // Correct the file it names: by hand, or by a worker.
+  PROJECT_NOTICE_ACTION_FIX_FILE = 1;
+  // Decide on this machine whether the source runs: plug it in (djinn inbox plug), or unplug it to say no.
+  PROJECT_NOTICE_ACTION_PLUG_SOURCE = 2;
+  // Unplug the source: it runs nothing.
+  PROJECT_NOTICE_ACTION_UNPLUG_SOURCE = 3;
+  // Unsummon the skill: it is no longer found.
+  PROJECT_NOTICE_ACTION_UNSUMMON_SKILL = 4;
+  // Name the reference branch, a branch the repository holds, with main_branch in your own settings file.
+  PROJECT_NOTICE_ACTION_NAME_BRANCH = 5;
 }
 
 // ProjectSync says how a branch Djinn pushes stands against its remote target: a wish's integration branch, or an
@@ -2453,21 +2523,24 @@ message ProjectServiceShowResponse {
   string repository_file = 3;
   // Your own file, in Djinn's data folder. It wins over the team's, setting by setting.
   string developer_file = 4;
-  // Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is
-  // fixed. Each skill of the project whose SKILL.md Djinn cannot read is one too: its wish template, inbox source and
-  // babysit are ignored until it is fixed, and it is no source of the inbox.
-  repeated string problems = 5;
+  // What Djinn finds in the project's configuration, things to fix first, then information: drawn from its settings
+  // files, its permissions, its skills (their wish template, inbox source and babysit), its setup's last run, its
+  // reference branch and the sources this machine has not decided on. A settings file Djinn cannot read shows none
+  // of its settings, and the project's tasks do not spawn until it is fixed. A skill whose front matter breaks the
+  // YAML outside its metadata is an information: Djinn reads its metadata apart, and names the lines at fault.
+  repeated ProjectNotice notices = 11;
   // The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
   // files resolve them. Their last runs are the project's check_runs.
   string setup = 6;
   repeated ProjectCheck checks = 7;
-  // Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows. Each skill whose front matter
-  // breaks the YAML outside its metadata is one too: Djinn reads its metadata apart, and names the lines at fault.
-  repeated string warnings = 8;
   // The watcher commands you allow in the project for yourself (djinn project allow --watch), from your own file.
   repeated string watch_commands = 9;
   // The serve commands you allow in the project for yourself (djinn project allow --serve), from your own file.
   repeated string serve_commands = 10;
+
+  // The free-text problems and warnings, which notices replaced.
+  reserved 5, 8;
+  reserved "problems", "warnings";
 }
 
 message ProjectServicePushRequest {
@@ -2750,6 +2823,9 @@ message InboxSource {
   string summary = 8;
   // Its last run on this machine; unset before its first, and once it is unplugged.
   SourceRun last_run = 9;
+  // You said no to it on this machine (djinn inbox unplug): it runs nothing, and its project no longer asks whether
+  // to plug it in.
+  bool declined = 10;
 }
 
 // The last run of an inbox source on this machine. It lives in Djinn's data, never in a repository; unplugging the
@@ -2791,6 +2867,21 @@ message PluggedSource {
   google.protobuf.Timestamp create_time = 4;
 }
 
+// A source you said no to on this machine, by unplugging it, plugged in or not: its project no longer asks whether to
+// plug it in. It lives in Djinn's data, never in a repository; plugging the source in again forgets it.
+message DeclinedSource {
+  option (djinn.v1.unique) = {fields: ["project_id", "skill"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project that holds the skill.
+  string project_id = 2;
+  // The skill's folder name.
+  string skill = 3;
+  // When you said no.
+  google.protobuf.Timestamp create_time = 4;
+}
+
 // The inbox: what comes from outside, proposed as requests. A source is a command a skill declares in its SKILL.md
 // (metadata.djinn.source), run like a watcher, logged in by its own tool: Djinn holds no token. A source runs only
 // once you plug it in, on this machine. Each paragraph it prints becomes an item with its proposed route; nothing is
@@ -2817,12 +2908,14 @@ service InboxService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
-  // Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+  // Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool. A
+  // no you said to it is forgotten.
   rpc Plug(InboxServicePlugRequest) returns (InboxServicePlugResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+  // Unplug a source, on this machine, or say no to one never plugged in: its command stops and runs no more, and its
+  // project no longer asks whether to plug it in. Its items stay.
   rpc Unplug(InboxServiceUnplugRequest) returns (InboxServiceUnplugResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_DELETE;

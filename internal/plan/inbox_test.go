@@ -251,9 +251,9 @@ func TestKeepSourceRun(t *testing.T) {
 	}
 }
 
-// TestUnreadableSkill: a skill whose metadata breaks the YAML is no source of the inbox: the project's problems say
-// Djinn cannot read it, and why. One whose other key breaks it, as dolmen's argument-hint lines do, is a warning
-// only. Plugged in before it broke, it stays listed with why, to be unplugged.
+// TestUnreadableSkill: a skill whose metadata breaks the YAML is no source of the inbox: the project's notices say
+// Djinn cannot read it, and why. One whose other key breaks it, as dolmen's argument-hint lines do, is an
+// information only. Plugged in before it broke, it stays listed with why, to be unplugged.
 func TestUnreadableSkill(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)
@@ -283,18 +283,25 @@ func TestUnreadableSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	problems := show.Msg.GetProblems()
-	if len(problems) != 2 ||
-		!strings.HasPrefix(problems[0], "the skill bad-djinn cannot be read: Djinn ignores its wish template, inbox "+
-			"source and babysit: SKILL.md: metadata.djinn: ") ||
-		!strings.HasPrefix(problems[1], "the skill broken-meta cannot be read: Djinn ignores its wish template, "+
-			"inbox source and babysit: SKILL.md: its front matter is not YAML: yaml: line ") {
-		t.Errorf("problems = %q", problems)
+	var unreadable, warned []string
+	for _, n := range show.Msg.GetNotices() {
+		if n.GetTopic() != planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SKILL {
+			continue
+		}
+		if n.GetKind() == planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX {
+			unreadable = append(unreadable, n.GetSubject()+": "+n.GetDetail())
+		} else {
+			warned = append(warned, n.GetSubject()+": "+n.GetDetail())
+		}
 	}
-	if warnings := show.Msg.GetWarnings(); !slices.Equal(warnings, []string{"the skill notion-ticket: SKILL.md: not " +
-		"YAML at line 4 (argument-hint: [bug|improvement] [description]): Djinn reads metadata apart; quoting the " +
-		"value fixes it"}) {
-		t.Errorf("warnings = %q", warnings)
+	if len(unreadable) != 2 ||
+		!strings.HasPrefix(unreadable[0], "bad-djinn: SKILL.md: metadata.djinn: ") ||
+		!strings.HasPrefix(unreadable[1], "broken-meta: SKILL.md: its front matter is not YAML: yaml: line ") {
+		t.Errorf("unreadable skills = %q", unreadable)
+	}
+	if !slices.Equal(warned, []string{"notion-ticket: SKILL.md: not YAML at line 4 (argument-hint: [bug|improvement] " +
+		"[description]): Djinn reads metadata apart; quoting the value fixes it"}) {
+		t.Errorf("skills read apart = %q", warned)
 	}
 
 	// Plugged in, then broken: listed with why, and unplugged.

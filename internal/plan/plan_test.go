@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -487,6 +488,11 @@ func (p *testPusher) ForgetSync(ctx context.Context, project *planv1.Project, br
 		}
 	}
 	return fmt.Errorf("%w: %s", store.ErrNotFound, branch)
+}
+
+// Reference finds main, as a repository with a remote holds it.
+func (p *testPusher) Reference(ctx context.Context, project *planv1.Project, name string) (string, string, error) {
+	return cmp.Or(name, "main"), "refs/remotes/origin/" + cmp.Or(name, "main"), nil
 }
 
 func TestProjectPushAndSetPush(t *testing.T) {
