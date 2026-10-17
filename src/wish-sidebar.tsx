@@ -3,7 +3,7 @@
 // ones and the granted ones, each list in its own order; the projects, each with its branches out of sync with their
 // remote (project-sync.tsx) and its gear, which opens its panel and turns red with a small flame when its
 // configuration has something for you to fix (Project.to_fix); the Hourglass's entry at the bottom (the live metrics,
-// hourglass.tsx), and under it the Grimoire's, the documentation (docs.tsx), before the profile. The wishes' list shows the active ones, each with its counts on a second line, and three rows more;
+// hourglass.tsx), and under it the Grimoire's, the documentation (docs.tsx), a page like the Hourglass, before the profile. The wishes' list shows the active ones, each with its counts on a second line, and three rows more;
 // it scrolls under the pointer. Every wish is dragged by its grip, on its left, or moved with Alt+Arrow, within its
 // list; while it is dragged, a thin line shows where it would land. A paused or granted wish dropped among the active
 // ones, or sent first with its button, becomes active there (Q01): three being active, the last one is paused, first
@@ -86,7 +86,8 @@ export function WishSidebar({
   onSelectPlan,
   hourglassSelected = false,
   onSelectHourglass,
-  onOpenDocs,
+  grimoireSelected = false,
+  onSelectGrimoire,
   selectedWishId,
   selectedProjectId,
   collapsed,
@@ -112,8 +113,9 @@ export function WishSidebar({
   // The Hourglass, the live metrics, shows.
   hourglassSelected?: boolean;
   onSelectHourglass?: () => void;
-  // The Grimoire, the documentation, opens over the window.
-  onOpenDocs?: () => void;
+  // The Grimoire, the documentation, shows.
+  grimoireSelected?: boolean;
+  onSelectGrimoire?: () => void;
   selectedWishId: string;
   selectedProjectId: string;
   collapsed: boolean;
@@ -604,10 +606,10 @@ export function WishSidebar({
         </button>
       )}
       {/* Its tooltip says Documentation in every language: folded to its book, it still reads as the documentation. */}
-      {onOpenDocs && (
+      {onSelectGrimoire && (
         <button
-          className="nav-item grimoire-nav"
-          onClick={onOpenDocs}
+          className={`nav-item grimoire-nav ${grimoireSelected ? "selected" : ""}`}
+          onClick={onSelectGrimoire}
           title={t("docs.subtitle")}
           aria-label={t("sidebar.grimoire")}
         >

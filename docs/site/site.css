@@ -352,9 +352,13 @@ h3 {
   border-bottom: 1px solid var(--line);
 }
 
-/* Shown in Djinn's window, whose close button sits at the end of the bar. */
+/* Shown in Djinn's window, a page under the window's own header: no bar of its own; the window sets the theme. */
+.embedded {
+  --bar-height: 0px;
+}
+
 .embedded .bar {
-  padding-right: 4.5rem;
+  display: none;
 }
 
 .brand {
@@ -382,36 +386,14 @@ h3 {
   letter-spacing: 0.06em;
 }
 
-.bar-open:focus-visible,
 .theme-toggle:focus-visible,
 .button:focus-visible {
   outline: 2px solid var(--brass);
   outline-offset: 3px;
 }
 
-/* The way into the book, on the splash; the book has its navigation. */
-.bar-open {
-  margin-left: auto;
-  padding: 0.5rem 1.125rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 62.4375rem;
-  background: var(--panel);
-  color: var(--brass-text);
-  font: 500 0.92rem/1 var(--sans);
-  letter-spacing: 0.04em;
-  text-decoration: none;
-  transition: background-color 0.3s var(--ease);
-}
-
-.bar-open:hover {
-  background: var(--smoke-a);
-}
-
-.reading .bar-open {
-  visibility: hidden;
-}
-
 .theme-toggle {
+  margin-left: auto;
   display: grid;
   place-items: center;
   width: 2.5rem;
@@ -450,7 +432,6 @@ h3 {
 /* The splash page. */
 /* Hidden wins over the display of the book's pages. */
 .splash[hidden],
-.book[hidden],
 .page[hidden] {
   display: none !important;
 }
@@ -1151,8 +1132,8 @@ h3 {
   transform: none;
 }
 
-/* The book: its navigation on the left, the page beside it, what is on the page on the right where the window is
-   wide. Rounded elements take a border on every side or none. */
+/* The book: its navigation on the left from the first view, the splash or the page beside it, what is on the page on
+   the right where the window is wide. Rounded elements take a border on every side or none. */
 .book {
   display: grid;
   grid-template-columns: 17rem minmax(0, 1fr);
@@ -1170,12 +1151,15 @@ h3 {
   font-size: 0.93rem;
 }
 
-.nav-title {
+/* The navigation's title leads to the splash page, current while it shows. */
+.book-nav .nav-title {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 0.25rem 0.625rem;
-  margin: 0 0 1.625rem;
+  margin: 0 0 1.25rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--ink);
   font: 600 1.7rem/1 var(--serif);
 }
 
@@ -1695,6 +1679,10 @@ h3 {
   }
   .book-nav {
     padding-bottom: 0;
+  }
+  /* On a narrow screen the splash comes first, the navigation under it. */
+  html:not(.reading) .book-nav {
+    order: 1;
   }
   .page-turn {
     grid-template-columns: 1fr;

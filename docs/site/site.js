@@ -1,5 +1,6 @@
-// The Grimoire: the splash page or the book, whichever the address names; in the book, the page it names, Introduction
-// when it names none of them; the navigation's words in the reader's language; the theme; the splash's chapters
+// The Grimoire: its navigation on the left from the first view, and beside it the splash page or the page the address
+// names, Introduction when it names none of them; each page filled from its script when first opened, the others'
+// scripts loaded in idle time; the navigation's words in the reader's language; the theme; the splash's chapters
 // revealed as they come into view; and the search of the command line, which only hides what does not match: the
 // reference itself is plain HTML.
 (function () {
@@ -8,14 +9,17 @@
   root.classList.add("js");
 
   var welcome = document.getElementById("welcome");
-  var book = document.querySelector(".book");
   var pages = Array.prototype.slice.call(document.querySelectorAll(".page"));
-  var links = Array.prototype.slice.call(document.querySelectorAll(".book-nav a"));
+  var nav = document.querySelector(".book-nav");
+  var links = Array.prototype.slice.call(nav.querySelectorAll("a"));
   var commands = document.getElementById("commands");
+  var introduction = document.getElementById("introduction");
 
   // The words of the navigation and of the site's own chrome, in the language the window passes (?lang=), else the
   // browser's; the pages stay in English. The page as written is English, and stays so when the labels are missing.
-  function translate() {
+  var language = "en";
+  var texts = null;
+  (function () {
     var labels;
     try {
       labels = JSON.parse(document.getElementById("labels").textContent);
@@ -23,7 +27,6 @@
       return;
     }
     var asked = [new URLSearchParams(location.search).get("lang")].concat(navigator.languages || [navigator.language]);
-    var language = "en";
     for (var i = 0; i < asked.length; i++) {
       var base = String(asked[i] || "")
         .toLowerCase()
@@ -33,18 +36,22 @@
         break;
       }
     }
-    var texts = labels[language];
+    texts = labels[language] || null;
+  })();
+
+  // translate puts the reader's words in what root holds: the page at start, a page when it is filled.
+  function translate(root) {
     if (language === "en" || !texts) return;
-    Array.prototype.forEach.call(document.querySelectorAll("[data-text]"), function (e) {
+    Array.prototype.forEach.call(root.querySelectorAll("[data-text]"), function (e) {
       var text = texts[e.dataset.text];
       if (!text) return;
       e.textContent = text;
       e.lang = language;
     });
-    Array.prototype.forEach.call(document.querySelectorAll("[data-title]"), function (e) {
+    Array.prototype.forEach.call(root.querySelectorAll("[data-title]"), function (e) {
       if (texts[e.dataset.title]) e.title = texts[e.dataset.title];
     });
-    Array.prototype.forEach.call(document.querySelectorAll("[data-label]"), function (e) {
+    Array.prototype.forEach.call(root.querySelectorAll("[data-label]"), function (e) {
       if (texts[e.dataset.label]) e.setAttribute("aria-label", texts[e.dataset.label]);
     });
   }
@@ -55,36 +62,122 @@
     toggle.setAttribute("aria-label", theme === "dark" ? "Switch to the light theme" : "Switch to the dark theme");
   }
 
+  // The pages' HTML their scripts handed over, by slug, until each is put in its shell; the scripts asked for; the page
+  // shown, which its script fills as it arrives.
+  var arrived = {};
+  var asked = {};
+  var shown = null;
+
+  // A page's script, pages/<slug>.js, calls this with the page's HTML.
+  window.grimoire = {
+    page: function (slug, html) {
+      arrived[slug] = html;
+      if (shown && shown.id === slug) route();
+    },
+  };
+
+  // load adds a page's script, once; done runs when it has loaded or failed. A failed one is asked again next time.
+  function load(slug, done) {
+    if (asked[slug]) return;
+    asked[slug] = true;
+    var script = document.createElement("script");
+    script.src = "pages/" + slug + ".js";
+    script.onload = done || null;
+    script.onerror = function () {
+      delete asked[slug];
+      script.remove();
+      if (done) done();
+    };
+    document.head.appendChild(script);
+  }
+
+  // slot is where a page takes its HTML, while it is still empty: the page itself, or the Command line's reference.
+  function slot(page) {
+    return page.hasAttribute("data-slot") ? page : page.querySelector("[data-slot]");
+  }
+
+  // fill puts a page's HTML in its shell, or asks for its script: true once the page is there.
+  function fill(page) {
+    var into = slot(page);
+    if (!into) return true;
+    if (arrived[page.id] === undefined) {
+      load(page.id);
+      return false;
+    }
+    into.innerHTML = arrived[page.id];
+    delete arrived[page.id];
+    into.removeAttribute("data-slot");
+    translate(into);
+    if (page === commands) filter();
+    return true;
+  }
+
+  // owner is the page an id belongs to when the page is not filled yet: a section's id starts with its page's slug
+  // (wish-paused-wishes), the longest slug that fits (push-strategy-… is Push strategy's, not Push's); a command's, a
+  // group's and the global flags' are the Command line's. internal/docsite checks that every id reads so.
+  function owner(id) {
+    if (/^(cmd|group)-/.test(id) || id === "global-flags") return commands;
+    var best = null;
+    pages.forEach(function (p) {
+      if (id.indexOf(p.id + "-") === 0 && (!best || p.id.length > best.id.length)) best = p;
+    });
+    return best;
+  }
+
   // A hash names the splash or a place in it (#lamp), a page of the book (#wish), or a place in a page: a section
-  // (#wish-paused-wishes), a command (#cmd-wish-make). No hash is the splash; a hash nothing has is Introduction.
+  // (#wish-paused-wishes), a command (#cmd-wish-make). No hash is the splash; a hash nothing has is Introduction. A
+  // page not filled yet shows empty until its script arrives, then the place is reached.
   function route() {
     var id = decodeURIComponent(location.hash.slice(1));
     var target = id ? document.getElementById(id) : welcome;
-    if (!target) target = document.getElementById("introduction");
-    var page = welcome.contains(target) ? null : target.closest(".page");
+    var page = target ? (welcome.contains(target) ? null : target.closest(".page")) : owner(id);
+    if (!target && !page) target = page = introduction;
+    shown = page;
+    var filled = !page || fill(page);
+    if (page && (!target || !page.contains(target))) target = filled ? document.getElementById(id) || page : page;
     welcome.hidden = !!page;
-    book.hidden = !page;
     root.classList.toggle("reading", !!page);
     pages.forEach(function (p) {
       p.hidden = p !== page;
     });
+    var href = "#" + (page ? page.id : "welcome");
     links.forEach(function (a) {
-      if (page && a.getAttribute("href") === "#" + page.id) a.setAttribute("aria-current", "page");
+      if (a.getAttribute("href") === href) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     });
     // A command is reached at once: the reference is long, and nothing in it moves.
     if (target !== welcome && target !== page) {
       target.scrollIntoView(page === commands ? { behavior: "instant" } : undefined);
     } else window.scrollTo({ top: 0, behavior: "instant" });
-    if (page) {
-      var current = book.querySelector('.book-nav a[aria-current="page"]');
-      if (current) current.scrollIntoView({ block: "nearest" });
-    }
+    // The navigation shows its current entry where it scrolls by itself, beside the page; where it does not, under the
+    // splash on a narrow screen, the page stays where it is.
+    var current = nav.querySelector('a[aria-current="page"]');
+    if (current && nav.scrollHeight > nav.clientHeight) current.scrollIntoView({ block: "nearest" });
+  }
+
+  // Once the first view has loaded, the other pages' scripts load in idle time, one after the other: a page opened
+  // later shows at once. Their HTML waits as text; only the page opened is put in the document.
+  // The smoke's animation may leave no idle time at all: a second at most between two scripts.
+  function idle(f) {
+    if (window.requestIdleCallback) window.requestIdleCallback(f, { timeout: 1000 });
+    else setTimeout(f, 50);
+  }
+  var tried = {};
+  function preload() {
+    var next = pages.filter(function (p) {
+      return slot(p) && !asked[p.id] && !tried[p.id] && arrived[p.id] === undefined;
+    })[0];
+    if (!next) return;
+    tried[next.id] = true;
+    load(next.id, function () {
+      idle(preload);
+    });
   }
 
   // The search keeps the commands whose text holds every word typed, and the groups that keep one.
   var search = document.querySelector(".cli-search input");
   function filter() {
+    if (slot(commands)) return;
     var words = search.value.toLowerCase().split(/\s+/).filter(Boolean);
     var shown = 0;
     Array.prototype.forEach.call(commands.querySelectorAll(".cli-group[data-group]"), function (group) {
@@ -154,7 +247,12 @@
   }
 
   window.addEventListener("hashchange", route);
-  translate();
+  translate(document);
   paint();
   route();
+  if (document.readyState === "complete") idle(preload);
+  else
+    window.addEventListener("load", function () {
+      idle(preload);
+    });
 })();

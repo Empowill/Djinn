@@ -1,5 +1,5 @@
 // The theme, set before the page paints: ?theme= (the window passes its own), else the one chosen here, else the
-// system's. site.js switches it. ?embedded=1 says the window shows the page, its close button over the bar's end;
+// system's. site.js switches it. ?embedded=1 says the window shows the page, under its own header: the bar hides;
 // ?text= is the window's text size, which site.css scales the page by.
 (function () {
   "use strict";
