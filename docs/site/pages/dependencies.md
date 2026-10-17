@@ -84,6 +84,26 @@ A dependency is one reason among others. A planned task may also wait because:
 
 These waits are about the machine and the moment, not about the plan: they never make a dependency.
 
+## Overlaps: what runs on the same files
+
+Two workers that change the same file side by side make a merge conflict, and a correction worker to repair it. The
+Djinn owns each wish's graph, so it checks before it sends a worker:
+
+- **What runs and what comes.** The task list command, with its open filter, gives the running, paused, resuming,
+  waiting and planned tasks of a wish, without the past; its status filter keeps the states named.
+- **Which files each open task touches.** The task overlaps command gives, for each open task, the files it changed
+  so far (its worktree against the commit it started from, untracked files included), or, for a planned task, the
+  paths its write scopes name; a planned task without write scopes shows its paths as unknown. Then it pairs the tasks
+  that touch the same files. Generated files are left out: Djinn makes them again on a conflict. The wish's brief
+  carries the same overlaps, short.
+
+New work on files an open task touches joins that task (its prompt while it is planned, an instruction while it
+runs), or comes after it; it never runs beside it. Big work goes as a chain of small steps, each merged before the
+next. Work on other files still runs side by side.
+
+> **Example.** Two tasks changed the same screen side by side, and a third had changed it too; both merges conflicted,
+> and two correction workers repaired them. The second task coming after the first would have merged clean.
+
 ## Seeing the graph in the window
 
 In the wish's **Tasks** tab, **How the tasks show** has two layouts:

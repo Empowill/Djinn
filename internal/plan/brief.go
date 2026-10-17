@@ -257,21 +257,25 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"While a correction of that red runs, Djinn's or yours, Djinn refuses another repair, naming it: follow that " +
 		"one, or stop it first.\n" +
 		InvestigationRule +
-		"- **Keep the graph free of conflicts.** Your role is to keep the graph of tasks and azimas so that workers " +
-		"do not collide, along an iterative and de-risked path. Tasks that touch the same files, protos, generated files " +
-		"or the same tests go one after the other (`--after`, or `--write-scopes` when the project uses them), never side " +
-		"by side, but never chain tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe: estimate " +
-		"impacted packages and files at a high level (without reading code) and maximize parallelism in the DAG so " +
-		"multiple workers run concurrently, adding `--after` only between tasks that directly target the same file or " +
-		"proto (Djinn already has merge conflict resolution for minor overlaps). Large work is cut into small steps, each " +
-		"merged and green before the next starts. A task starts from " +
-		"the integrated branch: never spawn while the wish's integration points at another branch (a quarantine), since " +
-		"a task started there carries that branch into the next merge (W399 brought the replay sink's node_modules link into " +
-		"feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct. While a " +
-		"correction repairs the wish's branch (a conflict, red checks, main's merge), Djinn starts no new worker of the " +
-		"wish in that project (`waits for W225 to settle the conflict in feat/qol`): reviews, the urgent task and " +
-		"investigators aside, the running workers going on. Corrections and reviews take a slot at once, pausing the " +
-		"lowest work task: never `djinn task start` them, and never spawn around the hold.\n" +
+		"- **You own the wish's DAG (W230).** Whether two workers collide is your plan's doing, not Djinn's. Before " +
+		"each spawn, read what runs and what comes, `djinn task list --wish-id <wish> --open --short`, and the files " +
+		"it touches, `djinn task overlaps <wish>` (the wish brief's Overlaps section says the same, short). Then:\n" +
+		"  - Work on files an open task touches is never run beside it: send it to that task (`djinn task update " +
+		"<task> --prompt` while planned, `djinn task send <task> \"…\"` while it runs), or spawn it `--after` that task. " +
+		"Asked for several changes on one screen or file, make them one task.\n" +
+		"  - Give `--write-scopes` when you know the paths (`--write-scopes src/question-column.tsx --write-scopes " +
+		"internal/plan`): a planned task without them shows its paths as unknown, and no overlap can be seen.\n" +
+		"  - Big work is a chain of small steps, each `--after` the one before and merged green before the next, never " +
+		"a fan of tasks on the same packages. Work on other files still runs side by side: never chain tasks in a " +
+		"naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe.\n" +
+		"  - Example, 17/10: W160 (the Djinn's eye) and W174 (a click brings back a wish's first tab) ran side by " +
+		"side on `src/question-column.tsx`, which W154 also changed; both merges conflicted there, and W237 and W238 " +
+		"repaired them. W174 `--after W160`, W160 after W154, would have merged clean.\n" +
+		"  - A task starts from the integrated branch: never spawn while the wish's integration points at another " +
+		"branch (a quarantine; W399 brought the replay sink's node_modules link into feat/wails-go on 11/10). A " +
+		"conflict or a red merge is a signal to re-sequence, not only to correct. While a correction repairs the " +
+		"wish's branch, Djinn starts no new worker of the wish there (`waits for W225 to settle the conflict in " +
+		"feat/qol`): never `djinn task start` a correction, never spawn around the hold.\n" +
 		"- **Operational decisions are yours (Decision Q196).** Djinn's operational questions (a merge still " +
 		"failing after its corrections, a held push, a conflict, a main merge that fails) go to you as an event, " +
 		"never as a question to the developer. You decide: retry a correction, drop the work (`djinn task done <task> --drop` " +
@@ -401,7 +405,9 @@ func leadCommandsBrief(driven bool) string {
 		"all or none; " +
 		"`djinn task group <task> --part-of T07` sets its azima; " +
 		"`djinn plan sync <wish>` reads the azimas from the projects' plan files and writes their `after:` lines back; " +
-		"`djinn task list --wish-id <wish> --short` (a few lines per task; `--failed`, `--page-size`); `djinn task watch " +
+		"`djinn task list --wish-id <wish> --short` (a few lines per task; `--open` for what runs and what comes, " +
+		"`--status running --status pending` for those states, `--failed`, `--page-size`); `djinn task overlaps <wish>` " +
+		"(the files each open task touches, and the tasks that touch the same ones); `djinn task watch " +
 		"<task>` follows a task until it ends; `--last 5` for its last events only, its final note among them, at " +
 		"once, whether the task runs, waits or ended (`--follow` to go on following it); " +
 		"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
@@ -487,6 +493,10 @@ func LeadWatchRule() string {
 func BuildBrief(ctx context.Context, r store.Reader, home, wishID string, leads ...Leads) (Brief, error) {
 	return buildBrief(ctx, r, home, wishID, nil)
 }
+
+// Overlaps writes the Overlaps section of a wish's brief: the open tasks that touch the same files, read from their
+// worktrees; empty when none do. djinn up gives the harness's (harness.Harness.OverlapsBrief).
+type Overlaps func(ctx context.Context, wishID string) string
 
 // IfritWaits names, by the task of each lit ifrit, who waits for a gate it holds: "W15 (Its title): go tool task
 // e2e, for stack". djinn up gives the gates' (gate.Gates.IfritWaits).
@@ -1272,6 +1282,11 @@ func (w *Wishes) Brief(
 	brief, err := buildBrief(ctx, w.Store, w.home(), req.Msg.GetWishId(), w.ifritWaits())
 	if err != nil {
 		return nil, Status(err)
+	}
+	if w.Overlaps != nil {
+		if section := w.Overlaps(ctx, req.Msg.GetWishId()); section != "" {
+			brief.Moving += "\n" + section
+		}
 	}
 	return connect.NewResponse(&planv1.WishServiceBriefResponse{Text: brief.Text()}), nil
 }

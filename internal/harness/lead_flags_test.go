@@ -2,12 +2,15 @@ package harness
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
 
@@ -140,5 +143,66 @@ func TestTaskWatchLastReturns(t *testing.T) {
 	watch(short, &planv1.TaskServiceWatchRequest{Last: 2, Follow: true})
 	if short.Err() == nil {
 		t.Error("--last 2 --follow returned before the task ended")
+	}
+}
+
+// TestTaskListOpen: djinn task list --open gives what runs and what comes, without the past, and --status the tasks in
+// the states named, so that the lead sees the open work of a wish before it spawns (W230).
+func TestTaskListOpen(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e := up(t, t.TempDir())
+	wishID, projectID := e.wish(t, fakeProject(t, ""))
+	for code, status := range map[string]planv1.TaskStatus{
+		"W1": planv1.TaskStatus_TASK_STATUS_RUNNING, "W2": planv1.TaskStatus_TASK_STATUS_PAUSED,
+		"W3": planv1.TaskStatus_TASK_STATUS_RESUMING, "W4": planv1.TaskStatus_TASK_STATUS_PENDING,
+		"W5": planv1.TaskStatus_TASK_STATUS_WAITING, "W6": planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
+		"W7": planv1.TaskStatus_TASK_STATUS_DONE, "W8": planv1.TaskStatus_TASK_STATUS_FAILED,
+		"W9": planv1.TaskStatus_TASK_STATUS_STOPPED, "W10": planv1.TaskStatus_TASK_STATUS_CANCELLED,
+	} {
+		err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+			if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
+				return err
+			}
+			return tx.Put(&planv1.Task{Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: code,
+				Title: "Task " + code, Status: status, CreateTime: timestamppb.Now()})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	list := func(req *planv1.TaskServiceListRequest) []string {
+		t.Helper()
+		req.WishId, req.Short = wishID, true
+		res, err := e.tasks.List(t.Context(), connect.NewRequest(req))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var codes []string
+		for _, task := range res.Msg.GetTasks() {
+			codes = append(codes, task.GetCode())
+		}
+		slices.Sort(codes)
+		return codes
+	}
+	if got, want := list(&planv1.TaskServiceListRequest{Open: true}), []string{"W1", "W2", "W3", "W4", "W5", "W6"}; !slices.Equal(got, want) {
+		t.Errorf("list --open = %v, want %v", got, want)
+	}
+	running, pending := planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PENDING
+	failed := planv1.TaskStatus_TASK_STATUS_FAILED
+	if got, want := list(&planv1.TaskServiceListRequest{Status: []planv1.TaskStatus{running, pending, failed}}), []string{"W1", "W4", "W8"}; !slices.Equal(got, want) {
+		t.Errorf("list --status running,pending,failed = %v, want %v", got, want)
+	}
+	if got, want := list(&planv1.TaskServiceListRequest{Open: true, Status: []planv1.TaskStatus{running, failed}}), []string{"W1"}; !slices.Equal(got, want) {
+		t.Errorf("list --open --status running,failed = %v, want %v: both filters keep a task", got, want)
+	}
+	if got := list(&planv1.TaskServiceListRequest{}); len(got) != 10 {
+		t.Errorf("list = %v, want all 10 tasks", got)
+	}
+	_, err := e.tasks.List(t.Context(), connect.NewRequest(&planv1.TaskServiceListRequest{
+		Status: []planv1.TaskStatus{planv1.TaskStatus_TASK_STATUS_UNSPECIFIED},
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("list --status unspecified: %v, want invalid argument", err)
 	}
 }

@@ -79,6 +79,7 @@ type options struct {
 	fillModels      func(context.Context, []*planv1.Task)
 	clock           func() time.Time
 	ifritWaits      IfritWaits
+	overlaps        Overlaps
 }
 
 // WithLeadFailed gives LeadService.Get why the lead could not start before the services ran, as djinn up resumes it:
@@ -156,6 +157,11 @@ func WithIfritWaits(waits IfritWaits) Option {
 	return func(o *options) { o.ifritWaits = waits }
 }
 
+// WithOverlaps gives a wish's brief its Overlaps section: the open tasks that touch the same files.
+func WithOverlaps(overlaps Overlaps) Option {
+	return func(o *options) { o.overlaps = overlaps }
+}
+
 // Handlers returns the Connect handlers of the plan services, by path prefix.
 func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	var o options
@@ -167,7 +173,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home, Pusher: o.pusher}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
-		Workers: o.workers, Home: o.home, Load: o.load, FillModels: o.fillModels, Clock: o.clock, IfritWaits: o.ifritWaits}
+		Workers: o.workers, Home: o.home, Load: o.load, FillModels: o.fillModels, Clock: o.clock, IfritWaits: o.ifritWaits,
+		Overlaps: o.overlaps}
 	if o.loadBroadcaster != nil {
 		*o.loadBroadcaster = wishes.ChangeLoad
 	}
@@ -854,6 +861,8 @@ type Wishes struct {
 	Clock func() time.Time
 	// IfritWaits says who waits for the gates the lit ifrits hold, in the briefs; nil where djinn up runs no gates.
 	IfritWaits IfritWaits
+	// Overlaps writes a wish's Overlaps section, from its tasks' worktrees; nil where djinn up runs no tasks.
+	Overlaps Overlaps
 
 	watch       watchers    // the open Watch streams
 	leadFailure leadFailure // why the lead's last start failed, for LeadService.Get
