@@ -281,6 +281,7 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 	}
 	h.wakeQuestions(ctx, tasks)
+	h.judge(ctx, tasks)
 	if !slices.ContainsFunc(tasks, planned) {
 		return
 	}

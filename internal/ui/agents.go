@@ -3,6 +3,9 @@ package ui
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -177,6 +180,54 @@ func run(ctx context.Context, command string, args []string, path string, env []
 	err := cmd.Run()
 	logx.Ran(ctx, cmd, start, err)
 	return err
+}
+
+// Account is a fingerprint of the account provider's agent is signed in with on this machine, in its own folder:
+// what its status command prints of it (claude auth status: its email, organization and way of signing in, as JSON;
+// codex login status: its line), hashed at once. Empty when the agent documents no status command, is missing or
+// signed out. Djinn keeps the fingerprint alone, never the account's name: the scheduler compares two of them to see
+// that the account changed while a task waits for the usage limit of the one before (harness.WithAccount).
+func Account(ctx context.Context, provider planv1.Provider) string {
+	for _, a := range agents {
+		if agentProviders[a.id] != provider || a.status == nil {
+			continue
+		}
+		path := launchPath()
+		command, err := machine.LookPath(a.program, path)
+		if err != nil {
+			return ""
+		}
+		var out bytes.Buffer
+		if run(ctx, command, a.status, path, nil, &out) != nil {
+			return "" // Signed out, or no answer.
+		}
+		return accountFingerprint(out.Bytes())
+	}
+	return ""
+}
+
+// accountFingerprint hashes what names the account in a status command's output: the fields of Claude's JSON that
+// name it, else the whole output.
+func accountFingerprint(out []byte) string {
+	var status struct {
+		LoggedIn    *bool  `json:"loggedIn"`
+		Email       string `json:"email"`
+		OrgID       string `json:"orgId"`
+		AuthMethod  string `json:"authMethod"`
+		APIProvider string `json:"apiProvider"`
+	}
+	text := strings.TrimSpace(string(out))
+	if json.Unmarshal(out, &status) == nil && status.LoggedIn != nil {
+		if !*status.LoggedIn {
+			return ""
+		}
+		text = strings.Join([]string{status.Email, status.OrgID, status.AuthMethod, status.APIProvider}, "\x00")
+	}
+	if text == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:8])
 }
 
 var versionPattern = regexp.MustCompile(`\d+(\.\d+)+[0-9A-Za-z.+-]*`)

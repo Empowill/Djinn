@@ -122,6 +122,14 @@ Decide who does what, run each worker safely, and protect the machine.
   resumes when memory is short; gate holders, correction/review workers, and Windows pausing are excluded.
   (`TestStrict5TierOrder`, `TestInvestigatorPriorityAndMemory` in `internal/dispatch`; `TestPreemptForSlot`,
   `TestPreemptForMemory`, `TestPreemptExclusions`, `TestPreemptWindowsNeverPauses` in `internal/harness`)
+- [x] The scheduler judges each work task's health on every pass (W188): well, stalled (silent 10 minutes, 30 after
+  its turn's result, its processes under 5% of a core), waiting for its limit, limit lifted (reset passed or account
+  changed: resumed at once, the lead told once), retriable (a crash, a stop of Djinn, a limit since lifted); stopped on
+  request or failed for good is never flagged. A flagged task tells its lead once per change, in one `health` line
+  with `djinn task continue`, which also ends and continues a stalled worker; the window marks it beside its code.
+  (`TestHealthStalled`, `TestHealthAfterTurn`, `TestHealthLimitReset`, `TestHealthAccountChanged`,
+  `TestHealthRetriable`, `TestRetriable` in `internal/harness`; `TestAccountFingerprint` in `internal/ui`;
+  `tests/screens.test.mjs`: "a worker the scheduler flagged to relaunch shows a mark")
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -366,6 +374,19 @@ Decide who does what, run each worker safely, and protect the machine.
   tasks back, subsequent tasks wait behind them with specific wait reasons ("an investigator goes first: …", "a correction goes first: …",
   etc.). When an investigator cannot start: if slots are full, it pauses the lowest running work task; if memory is short, it
   interrupts it to RESUMING ("made room for Qxx: enlighten", spending no resume count, only for providers supporting resume).
+
+- **A worker's health** (W188, 17/10/2026): the lead checked by hand whether a worker was well (W90), and twice had to
+  be told to relaunch workers a limit stopped after the developer signed the agent in with another account (W90 and
+  W124 of 17/10, stopped until 04:00 at 00:29, credentials changed at 00:58, continued by hand at 01:00). The scheduler
+  now judges from what Djinn knew already (last activity, the CPU readings, gates, `resume_after`, the error) and keeps
+  the class on `Task.health`, written only when it changes. Thresholds from the history of this machine's workers
+  (7 to 17/10: 330 817 gaps between two events; 118 past 5 min, 64 past 10, 47 past 15; every gap at 5% of a core or
+  more was a command at work; the idle ones were an API outage, Lamplighter wakes, and waits for background work after
+  a turn's result, 10 to 25 minutes). The retriable errors are the ones seen there ("claude ended before the end of
+  its turn", "The stream was interrupted", "network issue", "API error", output token limit, a malformed call, a lost
+  process, a stop of Djinn, a usage limit); a failure the Lamplighter gave up on stays final. A failure the scheduler
+  flags is told in its `health` line only, not a second time as `failed`. The Lamplighter is unchanged: its CPU test
+  ("any CPU used") never ends a live claude, which the stall flag now covers for the lead.
 
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`; built (`branch`, `TestBranchFromSettings`).*

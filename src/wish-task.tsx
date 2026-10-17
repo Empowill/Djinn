@@ -19,6 +19,7 @@ import {
   MessageSquare,
   MessageSquarePlus,
   Play,
+  RotateCcw,
   ScrollText,
   Send,
   Terminal,
@@ -35,6 +36,7 @@ import {
 
 import {
   Closer,
+  HealthState,
   IntegrationState,
   type Project,
   Provider,
@@ -359,6 +361,7 @@ export const WishTask = memo(function WishTask({
             {isMerge(task) && <MergeLabel task={task} codes={codes} />}
             {isUrgent(task) && <UrgentLabel />}
             <span className="agent-code">{task.code}</span>
+            <HealthMark task={task} />
             {/* Cut to the room left: the whole title shows on hover. */}
             <span className="task-title-wrap">
               <strong className="task-title">{task.title}</strong>
@@ -641,6 +644,32 @@ export function MergeLabel({
 }
 
 // UrgentLabel marks a task the lead made urgent to unblock the wish (isUrgent): it passes the queue.
+// HealthMark marks a worker the scheduler flagged to relaunch (Task.health, W188): stalled, or failed for a reason a
+// new turn may get past. Its tooltip says why, and the command that relaunches it. Nothing for any other task.
+export function HealthMark({ task }: { task: Task }) {
+  const state = task.health?.state;
+  if (state !== HealthState.STALLED && state !== HealthState.RETRIABLE) {
+    return null;
+  }
+  const stalled = state === HealthState.STALLED;
+  const label = t(stalled ? "task.health_stalled" : "task.health_retriable");
+  const title = t("task.health_detail", {
+    what: label,
+    reason: task.health?.reason ?? "",
+    command: `djinn task continue ${task.id}`,
+  });
+  return (
+    <span
+      className={`health-mark ${stalled ? "stalled" : "retriable"}`}
+      role="img"
+      aria-label={label}
+      title={title}
+    >
+      <RotateCcw size={12} />
+    </span>
+  );
+}
+
 export function UrgentLabel() {
   return (
     <span className="urgent-label" title={t("task.urgent_detail")}>

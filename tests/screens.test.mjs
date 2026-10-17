@@ -2328,6 +2328,48 @@ test("a question of a wish without a lead session says no lead is told: open, th
   );
 });
 
+test("a worker the scheduler flagged to relaunch shows a mark beside its code, with why and the command (W188)", () => {
+  const card = (status, health) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "01a14710-0169-7580-8e84-704c8214cdb5",
+          code: "W1",
+          title: "Trim the wick",
+          status,
+          provider: s.Provider.CLAUDE,
+          health,
+        },
+        onStop() {},
+        async onSend() {},
+      }),
+    );
+  const stalled = card(s.TaskStatus.RUNNING, {
+    state: s.HealthState.STALLED,
+    reason: "silent 12 min, CPU 1%",
+  });
+  assert.match(
+    stalled,
+    /<span class="agent-code">W1<\/span><span class="health-mark stalled" role="img" aria-label="Stalled" title="Stalled: silent 12 min, CPU 1%. The lead relaunches it with: djinn task continue 01a14710-0169-7580-8e84-704c8214cdb5">/,
+  );
+  const retriable = card(s.TaskStatus.FAILED, {
+    state: s.HealthState.RETRIABLE,
+    reason: "a crash: claude ended before the end of its turn",
+  });
+  assert.match(
+    retriable,
+    /class="health-mark retriable" role="img" aria-label="Can be relaunched" title="Can be relaunched: a crash: claude ended before the end of its turn\./,
+  );
+  // Waiting for its limit, past a limit Djinn resumes it from, or well: no mark.
+  for (const health of [
+    { state: s.HealthState.LIMITED, reason: "the account's session limit" },
+    { state: s.HealthState.LIMIT_LIFTED, reason: "its account changed" },
+    undefined,
+  ]) {
+    assert.doesNotMatch(card(s.TaskStatus.RESUMING, health), /health-mark/);
+  }
+});
+
 test("a running worker pauses from its card, a paused one resumes; none where djinn cannot pause", () => {
   const card = (status, provider, onHold) =>
     s.renderToStaticMarkup(
