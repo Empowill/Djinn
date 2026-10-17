@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/logx"
@@ -152,6 +153,9 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || t.GetBranch() == "" || plan.IsAzima(t) {
 		return false, ""
 	}
+	if dispatch.Investigation(t) {
+		return false, investigationLeft // Said whether its branch holds commits or not: no integration, ever.
+	}
 	ctx := context.Background()
 	project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
 	if err != nil || !project.GetGit() {
@@ -213,8 +217,11 @@ func (h *Harness) uncheckedBranch(ctx context.Context, wish *planv1.Wish, projec
 // notIntegrated is what the lead hears of a done task's work left out of its wish's branch, for the reason left; ""
 // when none.
 func notIntegrated(left string) string {
-	if left == "" {
+	switch left {
+	case "":
 		return ""
+	case investigationLeft:
+		return "integration none: " + left
 	}
 	return "not integrated: " + left
 }

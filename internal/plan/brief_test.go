@@ -1384,3 +1384,52 @@ func TestBriefLeadsAnIfrit(t *testing.T) {
 		}
 	}
 }
+
+// TestBriefMarksInvestigations (W213): the lead's brief marks an investigation's line, running, waiting or finished,
+// and its rules say when to spawn one, and when a task is urgent work for feedback instead.
+func TestBriefMarksInvestigations(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Studies"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	start := timestamppb.New(time.Date(2026, 10, 17, 11, 0, 0, 0, time.UTC))
+	inv := func(code, title string, status planv1.TaskStatus) *planv1.Task {
+		return &planv1.Task{Id: store.NewID(), WishId: wishID, Code: code, Title: title, Status: status, StartTime: start,
+			Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION, Scheduled: true}
+	}
+	tasks := []*planv1.Task{inv("W1", "Study the flakes", planv1.TaskStatus_TASK_STATUS_RUNNING),
+		inv("W2", "Audit the gates", planv1.TaskStatus_TASK_STATUS_PENDING), inv("W3", "Audit the merges", planv1.TaskStatus_TASK_STATUS_DONE)}
+	tasks[1].StartTime, tasks[2].EndTime = nil, start
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, task := range tasks {
+			if err := tx.Journal(actor, "test/put", task); err != nil {
+				return err
+			}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"**W1** Study the flakes [investigation] (claude", "**W2** Audit the gates [investigation]:",
+		"**W3** Audit the merges [investigation]: done"} {
+		if !strings.Contains(brief.Moving, want) {
+			t.Errorf("the brief lacks %q:\n%s", want, brief.Moving)
+		}
+	}
+	rules := briefRules(nil, "")
+	for _, want := range []string{"--kind investigation", "--feedback", "a mockup", "is a repair, always first"} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("the lead's rules lack %q", want)
+		}
+	}
+}

@@ -1198,16 +1198,24 @@ message Task {
   TaskBabysit babysit = 68;
   // For an ifrit (TASK_KIND_IFRIT): where it stands, its timers and its serves. Unset for any other task.
   TaskIfrit ifrit = 69;
-  // The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish: while
-  // planned, it goes before every other planned task, takes a slot even on a full machine (as djinn task start does)
-  // and is not held by its integration branch's red push checks. At most one task of a wish is urgent while it is to
-  // run or runs (dispatch.Urgent).
+  // The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish, or for
+  // the developer's quick feedback (feedback): while planned, it goes before every other planned task, a repair before
+  // a feedback task, takes a slot even on a full machine (as djinn task start does) and is not held by its integration
+  // branch's red push checks. At most one task of a wish is urgent of each class while it is to run or runs: one
+  // repair, one feedback (dispatch.Urgent, dispatch.UrgentOf).
   bool urgent = 70;
   // For an azima: its place among the azimas of its wish, from 1 for the first, as the lead or the developer ranks them
   // (djinn task rank, a drag in the window). Djinn starts the waiting work of the first azimas first, within its wish's
   // own rank among the wishes, and the gates serve it first after Djinn's merges and pushes. 0 for an azima never
   // ranked, a new one included: after the ranked ones, by code (plan.AzimaOrder). 0 for work.
   int32 rank = 71;
+  // For an investigation (TASK_KIND_INVESTIGATION): its time limit, and when Djinn asked it to publish. Unset for any
+  // other task.
+  TaskInvestigation investigation = 72;
+  // With urgent: the task answers a request of the developer for quick feedback (a mockup, a prototype or a change they
+  // asked to see), not a repair (djinn task spawn --feedback). It is urgent work, merged like any; a repair of the wish
+  // goes before it, and one of each may be urgent at once.
+  bool feedback = 73;
 }
 
 // TaskBabysit is the pull or merge request a watcher babysits.
@@ -1436,6 +1444,27 @@ enum TaskKind {
   // serves. Djinn puts it out once the developer leaves Djinn alone (Task.ifrit), and a message lights it again, in
   // the same session and worktree. Done, its work integrates like any task's.
   TASK_KIND_IFRIT = 3;
+  // An investigation: a short study or audit the lead launches to align with the developer fast, which ends in a
+  // tilasm and a question. A worker in a worktree of its project, in Git: it reads everything, runs commands and
+  // tests, and writes tilasms, blocks and questions, but Djinn never merges its commits (no integration, said in its
+  // ENDED line). A mockup, which runs code the developer judges, is urgent work for feedback instead (Task.feedback). Served first: before its wish's planned work, and given a slot even on a
+  // full machine (the slot of a work task it pauses, as an investigator does), at most a few at once on the machine
+  // (dispatch.InvestigationCap); never held by its integration branch's red push checks. Short: at its time limit or
+  // its budget (Task.investigation), Djinn asks it to publish what it has, then stops it if it goes on.
+  TASK_KIND_INVESTIGATION = 4;
+}
+
+// TaskInvestigation is what bounds an investigation (TASK_KIND_INVESTIGATION). Its budget is Task.max_budget_usd.
+message TaskInvestigation {
+  // Its time limit in minutes of work (its runs, as the Lamplighter counts them), as spawned (--minutes); 0 for
+  // Djinn's default (harness.DefaultInvestigationMinutes).
+  uint32 minutes = 1;
+  // When Djinn last asked it to publish what it has (a tilasm, a question) and end, at its time limit or its budget;
+  // unset before. Past a grace from then, the Lamplighter stops it. A run started again (a restart of Djinn, a
+  // continue) past its limit is asked again at once, and has the grace again.
+  google.protobuf.Timestamp publish_time = 2;
+  // Why it was asked: "time limit 25m", "budget $10.00".
+  string publish_why = 3;
 }
 
 // TaskIfrit is where an ifrit stands (TASK_KIND_IFRIT).
@@ -4705,7 +4734,8 @@ message TaskServiceSpawnRequest {
   string part_of = 15 [(buf.validate.field).string.max_len = 64];
   // What the task is; by default work, for a worker. azima makes an azima (T1, T2…): no worker, no prompt, never
   // scheduled; work is spawned part of it. ifrit makes an ifrit: an agent that stays lit while you are there, to
-  // iterate with you through the lead (djinn task send), in a project.
+  // iterate with you through the lead (djinn task send), in a project. investigation makes a short study or audit that
+  // ends in a tilasm and a question, served first, its commits never merged (--minutes, --max-budget-usd).
   TaskKind kind = 16 [(buf.validate.field).enum.defined_only = true];
   // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
   // Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
@@ -4749,8 +4779,21 @@ message TaskServiceSpawnRequest {
   ];
   // Mark the task urgent, to unblock the wish (a repair of its red integration branch, a task a chain waits for): it
   // goes before the wish's other planned tasks, takes a slot even on a full machine, and starts while the push checks
-  // are red. One urgent task per wish at a time: refused, naming it, while another is to run or runs.
+  // are red. One urgent repair per wish at a time: refused, naming it, while another is to run or runs.
   bool urgent = 24;
+  // For an investigation (--kind investigation): its time limit in minutes of work, 5 to 240; by default 25. At it,
+  // Djinn asks it to publish what it has; its budget is --max-budget-usd, by default 10.
+  uint32 minutes = 25 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).uint32 = {
+      gte: 5
+      lte: 240
+    }
+  ];
+  // Mark the task urgent for the developer's quick feedback (a mockup, a prototype or a change they asked to see):
+  // urgent work as --urgent makes it, merged like any, after the wish's urgent repair. One urgent feedback task per
+  // wish at a time, beside one repair.
+  bool feedback = 26;
 }
 
 message TaskServiceSpawnResponse {
@@ -5271,12 +5314,16 @@ message TaskServiceUpdateRequest {
     min_len: 1
     max_len: 250
   }];
-  // Mark the task urgent (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an azima, a
-  // watcher, a task that has ended, and while another task of the wish is urgent, which the refusal names.
+  // Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an
+  // azima, a watcher, a task that has ended, and while another task of the wish is an urgent repair, which the refusal
+  // names.
   optional bool urgent = 14;
   // An azima's place among the azimas of its wish, from 1 for the first; beyond the last, it goes last (djinn task rank
   // places it before or after another). Goes alone; refused on a work task.
   optional int32 rank = 15 [(buf.validate.field).int32.gte = 1];
+  // Mark the task urgent for the developer's quick feedback (as djinn task spawn --feedback), or no longer with
+  // --feedback=false. Refused as --urgent is, while another task of the wish is urgent for feedback.
+  optional bool feedback = 16;
 }
 
 message TaskServiceUpdateResponse {

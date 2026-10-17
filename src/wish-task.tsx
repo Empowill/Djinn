@@ -51,7 +51,7 @@ import {
   useTaskEvents,
   useTaskPrompt,
 } from "./data/djinn";
-import { isMerge, isUrgent } from "./data/flight";
+import { isInvestigation, isMerge, isUrgent } from "./data/flight";
 import {
   ifritGates,
   ifritLinks,
@@ -357,7 +357,8 @@ export const WishTask = memo(function WishTask({
               title={cancelledText(task) ?? activity ?? undefined}
             />
             {isMerge(task) && <MergeLabel task={task} codes={codes} />}
-            {isUrgent(task) && <UrgentLabel />}
+            {isUrgent(task) && <UrgentLabel feedback={task.feedback} />}
+            {isInvestigation(task) && <InvestigationLabel />}
             <span className="agent-code">{task.code}</span>
             {/* Cut to the room left: the whole title shows on hover. */}
             <span className="task-title-wrap">
@@ -640,11 +641,28 @@ export function MergeLabel({
   );
 }
 
-// UrgentLabel marks a task the lead made urgent to unblock the wish (isUrgent): it passes the queue.
-export function UrgentLabel() {
+// UrgentLabel marks a task the lead made urgent (isUrgent): to unblock the wish, or for the developer's quick feedback
+// (a mockup, a change they wait to see). Either passes the queue, a repair first.
+export function UrgentLabel({ feedback }: { feedback: boolean }) {
   return (
-    <span className="urgent-label" title={t("task.urgent_detail")}>
-      {t("task.urgent")}
+    <span
+      className="urgent-label"
+      title={t(feedback ? "task.feedback_detail" : "task.urgent_detail")}
+    >
+      {t(feedback ? "task.feedback" : "task.urgent")}
+    </span>
+  );
+}
+
+// InvestigationLabel marks a study or audit the lead launched to align with the developer (isInvestigation): served
+// first, it ends in a tilasm and a question, and its commits are never merged.
+export function InvestigationLabel() {
+  return (
+    <span
+      className="investigation-label"
+      title={t("task.investigation_detail")}
+    >
+      {t("task.investigation")}
     </span>
   );
 }

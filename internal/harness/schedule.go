@@ -301,8 +301,9 @@ func (h *Harness) schedule(ctx context.Context) {
 		switch t := d.Task; {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
-		case d.Slot && t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
-			// An investigator takes the slot of the work task it pauses, never one more: none to pause, it waits.
+		case d.Slot && dispatch.ServedFirst(t):
+			// An investigator or an investigation takes the slot of the work task it pauses, never one more: none to
+			// pause, it waits.
 			if code, err := h.preemptForSlot(ctx, t); err == nil && code != "" {
 				if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
 					logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
@@ -319,7 +320,7 @@ func (h *Harness) schedule(ctx context.Context) {
 					continue
 				}
 			}
-			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && isMemoryShort(d.Why) {
+			if dispatch.ServedFirst(t) && isMemoryShort(d.Why) {
 				if code, err := h.preemptForMemory(ctx, t); err == nil && code != "" {
 					if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
 						logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
