@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -183,12 +184,13 @@ func (w *watchWorker) Cgroup() string {
 	return w.proc.cgroup
 }
 
-// Pause stops the command where it is; between two runs, the next one waits.
+// Pause stops the command where it is; between two runs, the next one waits. A command that just ended, not yet
+// cleared (running), is between two runs.
 func (w *watchWorker) Pause() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.proc != nil {
-		if err := w.proc.Pause(); err != nil {
+		if err := w.proc.Pause(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			return err
 		}
 	}
@@ -203,7 +205,7 @@ func (w *watchWorker) Resume() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.proc != nil {
-		if err := w.proc.Resume(); err != nil {
+		if err := w.proc.Resume(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			return err
 		}
 	}

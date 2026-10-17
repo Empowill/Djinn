@@ -358,6 +358,37 @@ func TestWatcher(t *testing.T) {
 	e.ended(t, agent.GetId())
 }
 
+// TestWatcherPausedAsARunEnds: a pause or a resume that comes as a run's command ends, gone but not yet cleared,
+// holds or frees the next run as between two runs, instead of failing with "os: process already finished" (TestWatcher
+// on macOS, W159). Windows cannot pause a worker yet (pause_test.go).
+func TestWatcherPausedAsARunEnds(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot pause a worker")
+	}
+	t.Parallel()
+	p, err := startCommand(t.TempDir(), "true", nil, nil, nil, Grace, false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range p.lines {
+	}
+	<-p.done
+	w := &watchWorker{}
+	w.running(p)
+	if err := w.Pause(); err != nil {
+		t.Fatalf("paused as its run ended: %v", err)
+	}
+	if w.held == nil {
+		t.Errorf("paused as its run ended, the next run is not held")
+	}
+	if err := w.Resume(); err != nil {
+		t.Fatalf("resumed as its run ended: %v", err)
+	}
+	if w.held != nil {
+		t.Errorf("resumed as its run ended, the next run is still held")
+	}
+}
+
 // TestWatcherEnds: without --restart, the watcher ends with its command, done, and the lead learns it has ended; a
 // command that dies at each start fails the task. --restart is for a watcher only, and a watcher needs a project.
 func TestWatcherEnds(t *testing.T) {

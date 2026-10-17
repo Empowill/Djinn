@@ -178,6 +178,13 @@ the code does not say by itself; remove one when a change makes it false.
   while `setpriority` lands: the child kept the parent's nice (macOS CI, Linux cannot reproduce it). *Do:* set a
   child's priority before exec (`nice -n`, `lowCommand`); never combine `nice` with a `setpriority` on the same
   process. *Where:* `internal/harness/process_unix.go`.
+- **On macOS `t.TempDir()` is not the path Djinn stores.** It gives `/var/folders/…`, a link to `/private/var/…`;
+  on Windows CI it gives `C:\Users\RUNNER~1\…`, a short name. A project's folder is stored with its links resolved
+  (`ProjectService.Add`), and a shell that finds `$PWD` wrong prints the resolved path from `pwd` (W159: a test
+  compared a notice's file to the raw temporary folder; a serve's `pwd` printed `/private/var` until `startCommand`
+  set `PWD`). *Sign:* passes on Linux, fails on macOS and Windows with the same path written two ways. *Do:* compare
+  to `project.GetDirectory()`, or the path Djinn gave; to reproduce on Linux, set `TMPDIR` to a symbolic link (only
+  `/private/` gets the macOS treatment in `aliases`). *Where:* `internal/plan/plan.go`, `internal/plan/exchange.go`.
 
 ## Processes
 
