@@ -1,10 +1,12 @@
 // The developer's comments on a tilasm, as the Comments column beside its frame shows them (L08, flow A): drafts that
-// reach no agent until they are sent. The column writes one on the whole tilasm, edits a draft in place and deletes it
-// with an Undo that stands five seconds. What the column holds between two renders is a reducer, tested with node.
+// reach no agent until they are sent. The column writes one on the whole tilasm or on a passage selected in the frame,
+// edits a draft in place and deletes it with an Undo that stands five seconds. What the column holds between two
+// renders is a reducer, tested with node.
 import {
   CommentState,
   type TilasmComment,
 } from "../../gen/ts/plan/v1/tilasm_pb";
+import type { Passage } from "./bridge";
 
 // How long a deleted draft can be put back.
 export const UNDO_MS = 5000;
@@ -47,6 +49,8 @@ export interface Column {
   editing: string;
   // Its text, as typed.
   text: string;
+  // The passage a new comment is on; none for the whole tilasm.
+  passage?: Passage;
   // The draft deleted last, while its Undo stands, until that time in milliseconds.
   undo?: { comment: TilasmComment; until: number };
 }
@@ -57,8 +61,9 @@ export const NEW = "new";
 export const emptyColumn: Column = { editing: "", text: "" };
 
 export type ColumnAction =
-  // "On the whole tilasm": a new card, below the others.
-  | { type: "write" }
+  // "On the whole tilasm", or Comment on a passage: a new card, below the others. A card being written takes the
+  // passage, and keeps its text.
+  | { type: "write"; passage?: Passage }
   // A draft opened for editing, with its text.
   | { type: "edit"; comment: TilasmComment }
   | { type: "type"; text: string }
@@ -75,13 +80,19 @@ export type ColumnAction =
 
 export function column(state: Column, action: ColumnAction): Column {
   switch (action.type) {
-    case "write":
-      if (state.editing === NEW) return state;
-      return { ...state, editing: NEW, text: "" };
+    case "write": {
+      if (state.editing === NEW && state.passage === action.passage)
+        return state;
+      const next =
+        state.editing === NEW ? state : { ...state, editing: NEW, text: "" };
+      return action.passage
+        ? { ...next, passage: action.passage }
+        : unanchored(next);
+    }
     case "edit":
       if (state.editing === action.comment.id) return state;
       return {
-        ...state,
+        ...unanchored(state),
         editing: action.comment.id,
         text: action.comment.text,
       };
@@ -89,12 +100,11 @@ export function column(state: Column, action: ColumnAction): Column {
       return { ...state, text: action.text };
     case "cancel":
     case "saved":
-      return { ...state, editing: "", text: "" };
+      return { ...unanchored(state), editing: "", text: "" };
     case "deleted": {
       const editing = state.editing === action.comment.id;
       return {
-        editing: editing ? "" : state.editing,
-        text: editing ? "" : state.text,
+        ...(editing ? { editing: "", text: "" } : state),
         undo: { comment: action.comment, until: action.now + UNDO_MS },
       };
     }
@@ -105,6 +115,12 @@ export function column(state: Column, action: ColumnAction): Column {
         ? { ...state, undo: undefined }
         : state;
   }
+}
+
+// unanchored is a column whose card is on no passage.
+function unanchored(state: Column): Column {
+  const { passage: _, ...rest } = state;
+  return rest;
 }
 
 // canSave tells whether the card being written can be stored: a comment says something.

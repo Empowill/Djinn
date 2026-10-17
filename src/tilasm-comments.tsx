@@ -1,11 +1,13 @@
 // The Comments column beside a tilasm's frame (L08, flow A): the developer's drafts on it, in the order written, the
-// new one below. "On the whole tilasm" writes one; a draft is edited in place (Ctrl+Enter saves, Escape cancels) and
+// new one below. "On the whole tilasm" writes one, the Comment button over a passage selected in the frame another, on
+// that passage (tilasm-passages.tsx), its quote on its card; a draft is edited in place (Ctrl+Enter saves, Escape cancels) and
 // deleted at once, with an Undo that stands five seconds instead of a dialog. A draft stays in Djinn's store and
 // reaches no agent. Its model is src/data/comments.ts.
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
 
 import type { TilasmComment } from "../gen/ts/plan/v1/tilasm_pb";
+import type { Passage } from "./data/bridge";
 import {
   type AnchorKind,
   NEW,
@@ -18,20 +20,30 @@ import { t } from "./i18n";
 
 // What the column asks of the store; each resolves once the drafts shown are read again.
 export interface CommentWrites {
-  // Stores a draft's text on a tilasm: a new one on the whole of it without an identifier.
-  put: (tilasmId: string, text: string, id?: string) => Promise<void>;
+  // Stores a draft's text on a tilasm: a new one without an identifier, on the passage given or the whole tilasm.
+  put: (
+    tilasmId: string,
+    text: string,
+    id?: string,
+    passage?: Passage,
+  ) => Promise<void>;
   // Deletes a draft; it resolves to the draft deleted, for its Undo.
   remove: (comment: TilasmComment) => Promise<TilasmComment>;
   // Puts back a draft deleted.
   putBack: (comment: TilasmComment) => Promise<void>;
 }
 
-const anchorText = (kind: AnchorKind) =>
+const anchorText = (kind: AnchorKind, label = "") =>
   kind === "passage"
-    ? t("tilasms.comment_anchor_passage")
+    ? label || t("tilasms.comment_anchor_passage")
     : kind === "element"
-      ? t("tilasms.comment_anchor_element")
+      ? label || t("tilasms.comment_anchor_element")
       : t("tilasms.comment_anchor_whole");
+
+// Quote is the passage a card is on, as the developer selected it.
+const Quote = ({ text }: { text: string }) => (
+  <blockquote className="tilasm-comment-quote">{text}</blockquote>
+);
 
 export function CommentsColumn({
   tilasmId,
@@ -39,6 +51,9 @@ export function CommentsColumn({
   writes,
   onError,
   onClose,
+  ask,
+  onAsked = () => {},
+  onWriting = () => {},
 }: {
   tilasmId: string;
   // The tilasm's drafts, in the order written.
@@ -46,9 +61,26 @@ export function CommentsColumn({
   writes: CommentWrites;
   onError: (error: unknown) => void;
   onClose: () => void;
+  // A passage the developer asked to comment: a new card on it, then onAsked.
+  ask?: Passage;
+  onAsked?: () => void;
+  // The passage of the new card being written, to highlight in the frame; undefined once there is none.
+  onWriting?: (passage?: Passage) => void;
 }) {
   const [state, dispatch] = useReducer(column, emptyColumn);
   const [busy, setBusy] = useState(false);
+  const asked = useRef(onAsked);
+  asked.current = onAsked;
+  useEffect(() => {
+    if (!ask) return;
+    dispatch({ type: "write", passage: ask });
+    asked.current();
+  }, [ask]);
+  const writing = state.editing === NEW ? state.passage : undefined;
+  const told = useRef(onWriting);
+  told.current = onWriting;
+  useEffect(() => told.current(writing), [writing]);
+  useEffect(() => () => told.current(undefined), []);
   // The Undo goes once its time is past.
   const until = state.undo?.until;
   useEffect(() => {
@@ -69,7 +101,7 @@ export function CommentsColumn({
     if (!canSave(state) || busy) return;
     const id = state.editing === NEW ? undefined : state.editing;
     act(async () => {
-      await writes.put(tilasmId, state.text, id);
+      await writes.put(tilasmId, state.text, id, state.passage);
       dispatch({ type: "saved" });
     });
   };
@@ -121,7 +153,7 @@ export function CommentsColumn({
               <div className="tilasm-comment-head">
                 <span className="tilasm-code">{comment.code}</span>
                 <span className="tilasm-comment-anchor">
-                  {anchorText(anchorKind(comment))}
+                  {anchorText(anchorKind(comment), comment.anchor?.label)}
                 </span>
                 <span className="tilasm-comment-state">
                   {t("tilasms.comment_draft")}
@@ -165,6 +197,7 @@ export function CommentsColumn({
                   </span>
                 )}
               </div>
+              {comment.anchor?.exact && <Quote text={comment.anchor.exact} />}
               {state.editing === comment.id ? (
                 editor(t("tilasms.comment_edit", { code: comment.code }))
               ) : (
@@ -173,13 +206,24 @@ export function CommentsColumn({
             </li>
           ))}
           {state.editing === NEW && (
-            <li className="tilasm-comment">
+            // A new passage asked for focuses the card again.
+            <li
+              key={`new-${state.passage?.start ?? ""}-${state.passage?.end ?? ""}`}
+              className="tilasm-comment"
+            >
               <div className="tilasm-comment-head">
                 <span className="tilasm-comment-anchor">
-                  {t("tilasms.comment_anchor_whole")}
+                  {state.passage
+                    ? anchorText("passage", state.passage.label)
+                    : t("tilasms.comment_anchor_whole")}
                 </span>
               </div>
-              {editor(t("tilasms.comment_label"))}
+              {state.passage && <Quote text={state.passage.exact} />}
+              {editor(
+                state.passage
+                  ? t("tilasms.comment_label_passage")
+                  : t("tilasms.comment_label"),
+              )}
             </li>
           )}
         </ol>
