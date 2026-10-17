@@ -169,7 +169,9 @@ its output, and the correction at work, which opens in turn. See [Merges and cor
 On the flying carpet each wish has its title and counts, "1 running, 2 to come, 1 merging, push held, 1 repair"; a
 legend names only the marks shown. It stays in view while a long question scrolls. In a narrow page it shrinks to a
 line per wish, a dot per worker, a wrench per repair worker, one arrow for the merges and one cloud for a held push,
-and comes before the questions. Nothing in it loops: a time shown counts on only while the window is in front.
+and comes before the questions. Nothing in it loops. With another window in front, what loops elsewhere in the
+window pauses, never what it shows: times count on, the load bar and the counts stay current. A hidden or minimised
+window reads them about once a minute, and catches up as it shows.
 
 ## The Hourglass
 
