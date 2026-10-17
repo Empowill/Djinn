@@ -162,15 +162,17 @@ export function TooltipButton({
         {children}
       </button>
       {open &&
+        (tooltip || shortcut) &&
         createPortal(
           <div
             ref={tooltipRef}
             id={tooltipId}
             role="tooltip"
-            className="app-tooltip"
+            // No words, its shortcut alone: a small pill.
+            className={tooltip ? "app-tooltip" : "app-tooltip key-only"}
             style={position ?? { visibility: "hidden" }}
           >
-            <span>{tooltip}</span>
+            {tooltip && <span>{tooltip}</span>}
             {shortcut && <kbd className="key-hint">{shortcut}</kbd>}
           </div>,
           document.body,

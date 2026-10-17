@@ -2425,6 +2425,15 @@ html:not(.native-mac) .sidebar {
   flex: 0 0 auto;
   white-space: nowrap;
 }
+/* A tooltip of a shortcut alone (Write to the Djinn): a small pill, the key its only text, with no box of its own. */
+.app-tooltip.key-only {
+  padding: 0.25rem 0.5625rem;
+  border-radius: 62.4375rem;
+}
+.app-tooltip.key-only .key-hint {
+  padding: 0;
+  border: 0;
+}
 
 /* The hover, proposal 1 Calm of L17: a tint of the text's ink (--hover-tint, theme.css) fades in, in the shape of the
    element, and nothing moves. One rule per family, each a pseudo-element faded by its opacity alone, with no border: an
@@ -2459,6 +2468,9 @@ html:not(.native-mac) .sidebar {
   .project-section-label button,
   .wish-creation-back,
   .operating-load-stop,
+  .workspace-action-leading,
+  .workspace-action-send,
+  .workspace-action-close,
   .review .question-row .option-letter,
   .view-tabs > button:not(.active)
 ) {
@@ -2487,6 +2499,7 @@ html:not(.native-mac) .sidebar {
   .profile,
   button.glance-row,
   .lead-terminal-bar button,
+  .workspace-action-lead:not(.is-expanded) > .workspace-action-content,
   .review .question-row .option-letter
 )::after {
   content: "";
@@ -2506,7 +2519,10 @@ html:not(.native-mac) .sidebar {
   .project-section-label button,
   .wish-creation-back,
   .question-corner-button:not(.question-versions),
-  .operating-load-stop
+  .operating-load-stop,
+  .workspace-action-leading,
+  .workspace-action-send,
+  .workspace-action-close
 )::after {
   content: "";
   position: absolute;
@@ -2556,6 +2572,10 @@ html:not(.native-mac) .sidebar {
     .project-section-label button,
     .wish-creation-back,
     .operating-load-stop,
+    .workspace-action-lead:not(.is-expanded) > .workspace-action-content,
+    .workspace-action-leading,
+    .workspace-action-send:not(:disabled),
+    .workspace-action-close,
     .view-tabs > button
   ):hover::after,
 :where(.review .question-row .option:hover .option-letter)::after {

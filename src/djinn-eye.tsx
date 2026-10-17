@@ -113,8 +113,10 @@ const perches = new Map<string, HTMLElement>();
 // What the eye does when its perch leaves the page under it.
 let perchLeaves: ((perch: HTMLElement) => void) | undefined;
 
-// EyePerch is a place the eye may rest: an empty point, laid out by its stylesheet, that the eye is centred on.
-export function EyePerch({ name }: { name: string }) {
+// EyePerch is a place the eye may rest: an empty point, laid out by its stylesheet, that the eye is centred on. A perch
+// that opens for it (the socket of Write to the Djinn) shows it behind a porthole that opens as it lands: the eye blinks
+// once it is open.
+export function EyePerch({ name, opens }: { name: string; opens?: boolean }) {
   const ref = useCallback(
     (element: HTMLSpanElement | null) => {
       if (!element) return;
@@ -133,6 +135,7 @@ export function EyePerch({ name }: { name: string }) {
       ref={ref}
       className="djinn-eye-perch"
       data-perch={name}
+      data-opens={opens ? "" : undefined}
       aria-hidden="true"
     />
   );
@@ -188,6 +191,34 @@ const BLINK_MIN = 9_000;
 const BLINK_SPREAD = 11_000;
 const BLINK = 110;
 const FADE = 120;
+// The porthole of a perch that opens takes this long to open (djinn-eye.css, .lead-socket), then the eye blinks.
+const OPENED = 640;
+
+// passUnder clips the flight layer out of the surfaces the eye flies under (workspace-action.tsx, data-eye-under): a
+// path of the window with a hole in each one's rounded shape, read once as the flight starts, which none of them leaves.
+function passUnder(layer: HTMLElement) {
+  const holes = [...document.querySelectorAll<HTMLElement>("[data-eye-under]")]
+    .filter(shown)
+    .map((element) => {
+      const {
+        left: x,
+        top: y,
+        width: w,
+        height: h,
+      } = element.getBoundingClientRect();
+      const r = Math.min(
+        parseFloat(getComputedStyle(element).borderTopLeftRadius) || 0,
+        w / 2,
+        h / 2,
+      );
+      const arc = (toX: number, toY: number) =>
+        `A${r} ${r} 0 0 1 ${toX} ${toY}`;
+      return `M${x + r} ${y}H${x + w - r}${arc(x + w, y + r)}V${y + h - r}${arc(x + w - r, y + h)}H${x + r}${arc(x, y + h - r)}V${y + r}${arc(x + r, y)}Z`;
+    });
+  layer.style.clipPath = holes.length
+    ? `path(evenodd, "M0 0H${window.innerWidth}V${window.innerHeight}H0Z${holes.join("")}")`
+    : "";
+}
 
 // Eye moves one element, built once, between the perches and the flight layer.
 class Eye {
@@ -199,6 +230,7 @@ class Eye {
   private pressed = false;
   private timer?: ReturnType<typeof setTimeout>;
   private blinkTimer?: ReturnType<typeof setTimeout>;
+  private openTimer?: ReturnType<typeof setTimeout>;
   private readonly layer: HTMLDivElement;
   private readonly stops: (() => void)[] = [];
 
@@ -257,6 +289,7 @@ class Eye {
   stop() {
     clearTimeout(this.timer);
     clearTimeout(this.blinkTimer);
+    clearTimeout(this.openTimer);
     this.flying?.cancel();
     this.stops.forEach((stop) => stop());
     signalListeners.delete(this.schedule);
@@ -363,8 +396,12 @@ class Eye {
     this.el.style.removeProperty("--djinn-eye-look-x");
     this.el.style.removeProperty("--djinn-eye-look-y");
     delete this.el.dataset.flying;
+    this.layer.style.clipPath = "";
     this.parked = undefined;
     this.show(target);
+    clearTimeout(this.openTimer);
+    if (perch.hasAttribute("data-opens"))
+      this.openTimer = setTimeout(() => this.blink(), OPENED);
   }
 
   private move(target: EyeTarget) {
@@ -415,6 +452,7 @@ class Eye {
     this.el.style.setProperty("--djinn-eye-look-x", `${(2 * dx) / look}px`);
     this.el.style.setProperty("--djinn-eye-look-y", `${dy / look}px`);
     this.el.dataset.flying = "";
+    passUnder(this.layer);
     this.layer.appendChild(this.el);
     this.el.style.transform = "";
     const w = this.el.offsetWidth;
@@ -432,7 +470,10 @@ class Eye {
       this.flying = undefined;
       // Its perch may have gone while it flew: the next schedule finds another.
       if (to.isConnected) this.land(to, target);
-      else this.leave(this.layer);
+      else {
+        this.layer.style.clipPath = "";
+        this.leave(this.layer);
+      }
       anim.cancel();
       this.schedule();
     };

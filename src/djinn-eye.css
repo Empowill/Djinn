@@ -196,41 +196,104 @@ html[data-motion="reduced"] .djinn-eye[data-shine] .djinn-eye-shine {
   left: -1.03125rem;
   top: 1.0625rem;
 }
-/* Write to the Djinn: in place of the pill's icon, which steps aside, and lighting the pill a little from there. Open,
-   the pill is the developer's: the eye waits out of sight. */
-.workspace-action > .djinn-eye-perch {
-  left: 1.53125rem;
+/* Write to the Djinn (L19 proposal 1, Lampe; Q58 C): a socket on the pill's left, a porthole of the seal's emerald, holds
+   the message icon at rest. The eye flies in under the pill (djinn-eye.tsx clips its flight there) and lands behind the
+   porthole, which opens: the icon fades, its two halves part like lids, its ring lights, then the eye blinks (OPENED).
+   Open, the pill is the developer's: the socket and the eye wait out of sight. Transforms and opacities, once each: with
+   less motion asked, the halves fade. */
+.workspace-action-perch {
+  position: absolute;
+  left: 1.375rem;
+  top: 50%;
   z-index: 1;
-  --djinn-eye-scale: 0.85;
+  width: 0;
+  height: 0;
+  pointer-events: none;
   transition: opacity 0.16s;
 }
-.workspace-action.is-expanded > .djinn-eye-perch {
+.workspace-action.is-expanded > .workspace-action-perch {
   opacity: 0;
 }
-.workspace-action-control > .lucide {
-  transition: opacity 0.16s;
+.lead-socket {
+  position: absolute;
+  left: -1.0625rem;
+  top: -1.0625rem;
+  width: 2.125rem;
+  height: 2.125rem;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 50%;
+  background: var(--pill-socket);
+  color: var(--eye-line);
 }
-.workspace-action:not(.is-expanded):has(> .djinn-eye-perch > .djinn-eye)
-  .workspace-action-control
-  > .lucide {
-  opacity: 0;
+.lead-socket > .djinn-eye-perch {
+  --djinn-eye-scale: 1;
 }
-.workspace-action-surface::after {
-  content: "";
+.lead-socket-upper,
+.lead-socket-lower {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: var(--pill-socket);
+  transition: transform 0.24s ease-in;
+}
+.lead-socket-upper {
+  top: 0;
+}
+.lead-socket-lower {
+  bottom: 0;
+}
+.lead-socket > .lucide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: -0.4375rem 0 0 -0.4375rem;
+  transition: opacity 0.16s 0.2s;
+}
+.lead-socket-ring {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
+  border: 0.09375rem solid var(--eye-line);
+  border-radius: 50%;
   opacity: 0;
   transition: opacity 0.6s ease;
-  background: radial-gradient(
-    circle at 1.53125rem 50%,
-    color-mix(in srgb, var(--eye-shine) 20%, transparent),
-    transparent 60%
-  );
 }
-.workspace-action:not(.is-expanded):has(
-    > .djinn-eye-perch > .djinn-eye[data-mood="listening"]
-  )
-  .workspace-action-surface::after {
+/* The halves part as far as the eye is tall, slowly enough to be seen: past it, they would move unseen on the ground. */
+.lead-socket:has(.djinn-eye) > .lead-socket-upper {
+  transform: translateY(-55%);
+}
+.lead-socket:has(.djinn-eye) > .lead-socket-lower {
+  transform: translateY(55%);
+}
+.lead-socket:has(.djinn-eye) > :is(.lead-socket-upper, .lead-socket-lower) {
+  transition: transform 0.5s cubic-bezier(0.45, 0, 0.25, 1) 0.08s;
+}
+.lead-socket:has(.djinn-eye) > .lucide {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.lead-socket:has(.djinn-eye) > .lead-socket-ring {
   opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lead-socket > :is(.lead-socket-upper, .lead-socket-lower),
+  .lead-socket:has(.djinn-eye) > :is(.lead-socket-upper, .lead-socket-lower) {
+    transform: none;
+    transition: opacity 0.2s ease;
+  }
+  .lead-socket:has(.djinn-eye) > :is(.lead-socket-upper, .lead-socket-lower) {
+    opacity: 0;
+  }
+}
+html[data-motion="reduced"]
+  .lead-socket
+  > :is(.lead-socket-upper, .lead-socket-lower) {
+  transform: none;
+  transition: opacity 0.2s ease;
+}
+html[data-motion="reduced"]
+  .lead-socket:has(.djinn-eye)
+  > :is(.lead-socket-upper, .lead-socket-lower) {
+  opacity: 0;
 }
