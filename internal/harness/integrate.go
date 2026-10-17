@@ -360,11 +360,12 @@ func (h *Harness) integratePass(ctx context.Context) {
 	// Decision Q173: repeated lines of one kind within a pass go out as one line per (wishID, branch).
 	if len(merged) > 0 {
 		type mergeGroup struct {
-			wishID string
-			branch string
-			codes  []string
-			sha    string
-			moves  []string
+			wishID  string
+			branch  string
+			codes   []string
+			sha     string
+			moves   []string
+			reviews []string
 		}
 		var groups []*mergeGroup
 		groupIndex := make(map[string]int)
@@ -374,11 +375,12 @@ func (h *Harness) integratePass(ctx context.Context) {
 			if !ok {
 				groupIndex[key] = len(groups)
 				groups = append(groups, &mergeGroup{
-					wishID: m.wishID,
-					branch: m.branch,
-					codes:  slices.Clone(m.codes),
-					sha:    m.sha,
-					moves:  slices.Clone(m.moves),
+					wishID:  m.wishID,
+					branch:  m.branch,
+					codes:   slices.Clone(m.codes),
+					sha:     m.sha,
+					moves:   slices.Clone(m.moves),
+					reviews: slices.Clone(m.reviews),
 				})
 			} else {
 				g := groups[idx]
@@ -393,11 +395,13 @@ func (h *Harness) integratePass(ctx context.Context) {
 						g.moves = append(g.moves, mv)
 					}
 				}
+				g.reviews = append(g.reviews, m.reviews...)
 			}
 		}
 		for _, g := range groups {
 			leadLine := leadMergeLine(strings.Join(g.codes, ", "), g.branch, g.sha, g.moves)
-			h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, g.wishID, strings.Join(g.codes, ", "), leadLine)
+			h.tellLeadDetail(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, g.wishID, strings.Join(g.codes, ", "), leadLine,
+				strings.Join(g.reviews, "\n"))
 		}
 	}
 	for _, pass := range []struct {
@@ -429,13 +433,15 @@ type tested struct {
 	ids      []string
 }
 
-// mergedBatch is a batch committed to a branch in an integration pass.
+// mergedBatch is a batch committed to a branch in an integration pass, with what its review workers say of their
+// commit (reviewLine).
 type mergedBatch struct {
-	wishID string
-	branch string
-	codes  []string
-	sha    string
-	moves  []string
+	wishID  string
+	branch  string
+	codes   []string
+	sha     string
+	moves   []string
+	reviews []string
 }
 
 // taskBatchCodes returns the slice of codes for the tasks in batch.
@@ -546,6 +552,12 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	for _, t := range settled {
 		h.dropWorktree(ctx, project, t)
 	}
+	var reviews []string
+	for _, t := range batch {
+		if t.GetReview() != nil {
+			reviews = append(reviews, h.reviewLine(ctx, t))
+		}
+	}
 	if commit == nil || commit.GetOldSha() == in.GetSha() {
 		// Decision Q173: no merge line for a batch that moves nothing; its tasks' ends are told once all the same.
 		h.tellNothingMerged(ctx, batch, branch)
@@ -556,22 +568,51 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	moves := h.handleMergeMoves(ctx, wish, project, branch, oldSha, in.GetSha())
 	h.wake() // The tasks that waited for this work to be committed may start, from it.
 	return true, &mergedBatch{
-		wishID: wish.GetId(),
-		branch: branch,
-		codes:  taskBatchCodes(batch),
-		sha:    in.GetSha(),
-		moves:  moves,
+		wishID:  wish.GetId(),
+		branch:  branch,
+		codes:   taskBatchCodes(batch),
+		sha:     in.GetSha(),
+		moves:   moves,
+		reviews: reviews,
 	}
 }
 
 // tellNothingMerged tells the lead that the work workers of batch ended done, their work bringing nothing to branch:
-// no merge line tells it (incident W1 of wish Dew, 12/10/2026). One told when it ended is not told again.
+// no merge line tells it (incident W1 of wish Dew, 12/10/2026). One told when it ended is not told again. A review
+// worker's end comes with what it committed and left (reviewLine).
 func (h *Harness) tellNothingMerged(ctx context.Context, batch []*planv1.Task, branch string) {
 	for _, t := range batch {
-		if tellsDone(t) && !toldDoneAtEnd(t, true) {
+		switch {
+		case t.GetReview() != nil:
+			h.tellLeadDetail(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(),
+				"Djinn: "+t.GetCode()+" done, nothing to merge into "+branch+".", h.reviewLine(ctx, t))
+		case tellsDone(t) && !toldDoneAtEnd(t, true):
 			h.tellDone(ctx, t, "nothing to merge into "+branch)
 		}
 	}
+}
+
+// reviewLine is what the lead reads of review worker r's end: the work it reviewed, the line of its final note that
+// says what it committed and what it left and why (reviewReport), or that it says nothing of it, and the worktree that
+// keeps what it left.
+func (h *Harness) reviewLine(ctx context.Context, r *planv1.Task) string {
+	line := r.GetCode() + " reviewed the work left not committed"
+	if served := taskCodes(ctx, h.store, r.GetReview().GetTaskIds()); served != "" {
+		line = r.GetCode() + " reviewed the work " + served + " left not committed"
+	}
+	note := h.finalNote(ctx, r.GetId())
+	switch report := reviewReport(note); {
+	case report != "":
+		line += ": " + report
+	case note != "":
+		line += "; its final note says nothing of what it committed and left, it begins: " + firstLine(note)
+	default:
+		line += "; it left no final note."
+	}
+	if left, err := uncommitted(ctx, r); err == nil && len(left) > 0 {
+		line += " Its worktree keeps what it left: " + r.GetWorktree()
+	}
+	return line
 }
 
 // dropWorktree removes the worktree of t, whose work is committed, as djinn task clean does: its branch stays. A
@@ -1773,9 +1814,15 @@ func tail(out string) string {
 // tellLead hands the lead of wishID an event of kind about code, in line (toLead).
 // What it tells already happened: djinn up stopping does not cancel the telling, or the lead never learns it.
 func (h *Harness) tellLead(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line string) {
+	h.tellLeadDetail(ctx, kind, wishID, code, line, "")
+}
+
+// tellLeadDetail is tellLead with what the lead reads whole under the line (LeadEvent.detail).
+func (h *Harness) tellLeadDetail(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line, detail string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	if err := h.toLead(ctx, kind, wishID, code, line); err != nil && !errors.Is(err, plan.ErrNoLead) {
+	e := &planv1.LeadEvent{Kind: kind, WishId: wishID, Code: code, Text: line, Detail: detail}
+	if err := h.toLeadEvent(ctx, e); err != nil && !errors.Is(err, plan.ErrNoLead) {
 		logx.L().Error("tell the lead", "wish", wishID, "task", code, "kind", kind.String(), "err", err)
 	}
 }

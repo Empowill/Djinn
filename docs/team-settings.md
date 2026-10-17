@@ -285,13 +285,19 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
    worker's included, Djinn looks at its worktree (`git status --porcelain`, untracked files included, the project's
    `.gitignore` applying). Clean, it merges as above. With changes, the task is **uncommitted**: a **review worker**
    starts by itself, a work task part of the same azima, of the task's provider, in that task's worktree and on its
-   branch, the task's title and prompt, the files and their diff (clipped) in its first prompt. It commits what
-   belongs to the task, with a message in the repository's style, reverts or deletes the rest (debug output, scratch
-   files, artifacts), and ends with a line saying what it kept, what it dropped, and why. Its branch then integrates
-   like any task's, and the task says `uncommitted: reviewed by W5`. A review that fails, or leaves changes in turn,
+   branch, the task's title, prompt and final note, the files (with a hint for a name that suggests a secret, an
+   output or a screenshot) and their diff (clipped) in its first prompt. It judges each path: it commits what belongs
+   to the task's change, staged by name, with a message in the repository's style, real work the task's worker forgot
+   to commit included; it leaves the rest where it is, not committed (scratch files, probes, screenshots, outputs,
+   generated files the project does not track, env files and secrets), and when in doubt leaves it out. Its final note
+   ends with `Committed: <paths>. Left: <path> (why), …`. Its branch then integrates like any task's, without what it
+   left, and the task says `uncommitted: reviewed by W5`; its worktree stays, holding what was left, and the lead reads
+   that line under the merge line. A path the review leaves without naming it after `Left:` in that line (whole, from a
+   folder of the project down, or by a folder ending with `/`) is not judged; a review that fails, or leaves such a path,
    counts as an attempt; past `correction_attempts`, Djinn tells the lead, as above. Review and correction workers may run
-   `git add`, `git commit`, `git restore`, `git rm` and `git clean` besides the project's `commands`; its
-   `denied_commands` still win.
+   `git status`, `git diff`, `git log`, `git add`, `git commit`, `git restore` and `git rm` besides the project's
+   `commands`, a correction worker `git clean` too; its `denied_commands` still win. A review worker is denied
+   `git add -A`, `git add --all`, `git add .`, `git add -u`, `git commit -a`, `git clean` and `git stash`.
 
 In a project whose settings name no check, Djinn does the same, no check run, when the wish has a branch of its own
 there (`djinn wish set-integration <wish> --branch feat/x --create-branch`), neither the project's main branch nor an

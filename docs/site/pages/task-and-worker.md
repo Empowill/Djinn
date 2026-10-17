@@ -94,7 +94,7 @@ tilasm; read anything in its wish; and run its heavy commands under the project'
 
 **Committing** is Djinn's: a worker leaves its work in its worktree, and when it ends done, Djinn merges it. When a
 worker leaves changes not committed, Djinn starts a review worker in the same worktree, which commits what belongs to
-the task and drops the rest.
+the task, leaves the rest where it is, and says which files it left and why.
 
 **What it is told.** Besides its prompt, a worker that edits is told the project's checks, to run them before it ends,
 never to make a wish, a question or a task in your Djinn to try something, and to ask you only for a decision or a

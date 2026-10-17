@@ -4898,7 +4898,7 @@ type LeadEvent struct {
 	// When it was acknowledged.
 	AckTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=ack_time,json=ackTime,proto3" json:"ack_time,omitempty"`
 	// What the digest prints in full under its line, when one line cannot carry it: the task an answer's option planned,
-	// its dependencies' states, and how to launch it.
+	// its dependencies' states, and how to launch it; what a review worker committed and left, and why.
 	Detail string `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
 	// What the event's line cuts and the lead must read whole: the final note of the task that ended, the note of the
 	// answer. A digest prints it under its line, cut past a few screens with the command that prints it whole (djinn

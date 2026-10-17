@@ -73,16 +73,30 @@ func LeadPermissions() *djinnv1.Permissions {
 // commit. The project's denied_commands still win.
 var commitCommands = []string{"git status", "git diff", "git log", "git add", "git commit", "git restore", "git rm", "git clean"}
 
-// withCommit is perms with commitCommands for t when it is a correction or a review worker that may edit; perms as it
-// is otherwise.
+// reviewDenied are what a review worker may not run: it stages each path it judges by its name, and leaves what it
+// leaves out where it is, never staged all at once, removed or stashed.
+var reviewDenied = []string{
+	"git add -A", "git add --all", "git add .", "git add -u", "git add --update", "git commit -a", "git commit -am",
+	"git commit --all", "git clean", "git stash",
+}
+
+// withCommit is perms with commitCommands for t when it is a correction or a review worker that may edit, a review
+// worker denied reviewDenied; perms as it is otherwise.
 func withCommit(t *planv1.Task, perms *djinnv1.Permissions) *djinnv1.Permissions {
 	if perms == nil || !perms.GetEdit() || t.GetCorrection() == nil && t.GetReview() == nil {
 		return perms
 	}
 	perms = proto.CloneOf(perms)
 	for _, c := range commitCommands {
-		if !slices.Contains(perms.GetCommands(), c) {
+		if !slices.Contains(perms.GetCommands(), c) && (t.GetReview() == nil || !slices.Contains(reviewDenied, c)) {
 			perms.Commands = append(perms.Commands, c)
+		}
+	}
+	if t.GetReview() != nil {
+		for _, c := range reviewDenied {
+			if !slices.Contains(perms.GetDeniedCommands(), c) {
+				perms.DeniedCommands = append(perms.DeniedCommands, c)
+			}
 		}
 	}
 	return perms
