@@ -30,6 +30,8 @@ var frenchAllowed = map[string]string{
 	"locales/french_test.go":            "this test, which names the signs of French",
 	"internal/harness/worktree.go":      "folds accented letters out of branch names",
 	"internal/harness/worktree_test.go": "checks that folding on an accented title",
+	"lead/tones/light.md":               "the solar Djinn's tone quotes its French turns, for questions in French",
+	"lead/tones/dark.md":                "the demon's tone quotes its French turns, for questions in French",
 }
 
 // frenchQuoted are the words a file may hold anywhere: a person's name, the French words a plan decides on.

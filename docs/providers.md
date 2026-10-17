@@ -546,6 +546,16 @@ cold start $0.21 (26,522 tokens written), a one-command batch $0.16, a question 
 claude counts them; L10 estimated $0.12 to $0.21. The price table's estimate of the $0.16 batch is $0.11: it prices
 a cache write at 5 minutes (5 $ a million tokens), `claude -p` writes them for an hour (8 $).
 
+**The Djinn's tone (decision Q36, W156).** The page sends the theme it shows with `UiService.View` (`ShownTheme`,
+`system` resolved by the page), Djinn keeps the last one in `settings.json` (`shownTheme`), and `plan.LeadPacket`
+reads it as the batch starts: a `## Your tone` section with the one tone of that theme, from `lead/tones/light.md` or
+`lead/tones/dark.md`, one line each. The limits of every tone are a rule of `plan.DrivenRules` (version 2), the same
+text whatever the theme, so the system prompt's cache still serves every session. **Measured** on real calls (claude
+-p, Opus 5.5, 17/10/2026, the difference in input tokens with and without the text): the rule 283 tokens, the light
+section 127, the dark one 145. Per batch: the section written once to the hour cache (127 to 145 × 8 $ a million,
+about $0.001) and read by the session's later calls; the rule read from the cache by each call (283 × 0.20 $ a
+million, about $0.00006 a call). Under $0.002 a batch, about 1 % of the $0.16 batch. No theme said: no section.
+
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.
 

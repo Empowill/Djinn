@@ -6,6 +6,8 @@ import { AnimatePresence, LayoutGroup } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Change, type ProjectSync, type Wish } from "../gen/ts/plan/v1/plan_pb";
+import { ShownTheme } from "../gen/ts/ui/v1/ui_pb";
+import { useShownTheme } from "./theme";
 import { message } from "./data/client";
 import {
   useClients,
@@ -245,10 +247,17 @@ export function WishApp() {
   const shownId = wish?.id ?? "";
   const newWishShortcut = platformShortcut("N");
   const sidebarShortcut = platformShortcut("\\");
-  // djinn sends no notification for the wish shown while the window is in front.
+  // djinn sends no notification for the wish shown while the window is in front; the theme shown, the system's
+  // resolved, sets the Djinn's tone.
+  const theme = useShownTheme();
   useEffect(() => {
-    void clients.ui.view({ wishId: shownId }).catch(() => undefined);
-  }, [clients, shownId]);
+    void clients.ui
+      .view({
+        wishId: shownId,
+        theme: theme === "light" ? ShownTheme.LIGHT : ShownTheme.DARK,
+      })
+      .catch(() => undefined);
+  }, [clients, shownId, theme]);
   // A key, a click or a scroll in the window in front says the developer is there: it keeps their ifrits lit.
   useEffect(
     () =>

@@ -103,6 +103,26 @@ A batch costs about $0.16 to $0.22 on Opus 5.5, as Claude Code counts it, measur
 of rules, tools and system prompt read from the cache the last session wrote, and the batch's own message written to
 it.
 
+### Its tone follows the theme
+
+The driven Djinn speaks in the tone of the theme the window shows (decision Q36): the solar Djinn in the light theme,
+warm, the good news first, with puns of light and lamps; the mocking demon of the lamp in the dark theme, dry and a
+little ironic, its recommendations offered as pacts with no fine print.
+
+- **What the window shows.** The window tells Djinn the theme it shows, the system's resolved: with the system's
+  theme, the Djinn turns solar when your desktop turns light. The last window to say it wins, and Djinn keeps it
+  across restarts. Until a window says it, the Djinn stays plain.
+- **Read as each batch starts.** A batch speaks in the tone of the theme shown as it starts; a question already asked
+  keeps the tone it was written in.
+- **Only the tone changes.** The humour lives in a question's title, the end of its recommendation and one short
+  aside; never in the facts, the numbers, the commands, the options, a right, an incident or bad news, nor in what
+  leaves Djinn: a commit, a pull request, a message for a colleague or a customer. Workers stay plain.
+- **Yours to edit.** Each tone is one line of its own file, in the lead folder of Djinn's repository, beside the lead
+  notes: the solar one in the light file, the demon in the dark one.
+- **What it costs.** Measured on Opus 5.5 on 17/10/2026: the tone in a batch's message is 127 tokens in light, 145 in
+  dark, written to the cache once a batch; the rule that bounds both, 283 tokens of the rules, is read from the
+  cache. Together, less than $0.002 a batch, about 1 % of one.
+
 ## What it decides alone
 
 The Djinn runs the work without asking you for what an agent can do:

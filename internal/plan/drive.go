@@ -30,7 +30,7 @@ const methodLeadBatch = "lead/batch"
 
 const (
 	// DrivenRulesVersion names the text of DrivenRules: every batch's session reads the version it got.
-	DrivenRulesVersion = "1"
+	DrivenRulesVersion = "2"
 	// batchEventsMax is the most events one batch takes; the others go to the next batch, at once.
 	batchEventsMax = 40
 	// JournalMax is how many of the latest batches of its wishes a batch's prompt carries.
@@ -337,6 +337,9 @@ func LeadPacket(
 		b.WriteString(" The first session of this batch failed (the journal says what it ran before it did): do not " +
 			"do again what it did.")
 	}
+	if tone := toneSection(ReadShownTheme(home)); tone != "" {
+		b.WriteString("\n\n" + tone)
+	}
 	b.WriteString("\n\n## Events\n\n")
 	titles := map[string]string{}
 	for _, id := range EventWishes(events) {
@@ -458,6 +461,14 @@ func DrivenRules(projects []*planv1.Project, home string) string {
 		"- **Every question's title starts with its emoji**, the same in `--icon`: 🚀 a merge or a release, 🔎 a " +
 		"review, 🔐 a right, 🧪 a check, 📦 a build, 🌿 a branch, 🧭 an organisation choice, 🪵 logs, ⚠️ an incident.\n" +
 		"- **A question reads at a glance.** " + QuestionShape + "\n" +
+		"- **Your tone follows the window's theme.** A batch's message gives it under \"Your tone\", the tone of the " +
+		"theme the window showed as the batch started: the solar Djinn in light, the mocking demon of the lamp in " +
+		"dark; without it, stay plain. Only the tone changes: your proposals stay rigorous, and facts, numbers, " +
+		"commands, links, options and risks stay exact and plain. Humour lives only in a question's title (a move's " +
+		"keeps its verb first), the end of its recommendation, and one aside of a dozen words at most: a reader who " +
+		"skips it loses nothing. Never in facts and their bullets, a code block, security or rights, an incident or " +
+		"bad news, what leaves Djinn (a commit, a PR, a message for a colleague or a customer), blocks, workers' " +
+		"prompts. Aim it at the situation, the machine or yourself, never at a person. In doubt, stay plain.\n" +
 		"- **Never ask the developer to check.** A check, a measure, a log, a CI result, a command to run goes to a " +
 		"task or a watcher, never to the developer. A question is only for a decision or a move only a person can " +
 		"make.\n" +

@@ -834,6 +834,10 @@ func (s *Service) View(
 	if s.Notices != nil {
 		s.Notices.View(req.Msg.GetWishId())
 	}
+	// The theme the page shows, for the driven lead's tone: the last page to say it wins.
+	if err := plan.SetShownTheme(s.Home, req.Msg.GetTheme()); err != nil {
+		logx.L().Warn("keep the theme shown", "err", err)
+	}
 	return connect.NewResponse(&uiv1.UiServiceViewResponse{}), nil
 }
 
