@@ -317,6 +317,41 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Write where the window found the anchors of a tilasm's comments in its latest version, from the window: found,
+  // changed or lost, on drafts and sent comments alike, whose words do not change. A version that is no longer the
+  // latest places nothing: the window places the comments again in the next one.
+  rpc PlaceComments(TilasmServicePlaceCommentsRequest) returns (TilasmServicePlaceCommentsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+message TilasmServicePlaceCommentsRequest {
+  // The tilasm whose comments were placed.
+  string tilasm_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The version of the page they were looked for in.
+  int32 version = 2 [(buf.validate.field).int32.gte = 1];
+  // Each comment placed, with how its anchor stands there.
+  repeated CommentPlace places = 3 [(buf.validate.field).repeated.max_items = 10000];
+}
+
+// CommentPlace is how a comment's anchor stands in a version of its tilasm.
+message CommentPlace {
+  // The comment.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // Found, changed or lost.
+  AnchorStatus status = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+}
+
+message TilasmServicePlaceCommentsResponse {
+  // The comments whose anchor took a new status, as stored.
+  repeated TilasmComment comments = 1;
 }
 
 message TilasmServiceSendCommentsRequest {

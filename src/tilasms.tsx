@@ -9,8 +9,11 @@
 // same frame opens over any view, full size, as a link in a question asks (tilasm-over.tsx). Beside the frame in the
 // tab, full size too, the developer's draft comments on it (tilasm-comments.tsx): counted on its head, on its row and
 // on the tab. A passage selected in the frame is commented from a button over it, its drafts highlighted in the page
-// (tilasm-passages.tsx).
+// (tilasm-passages.tsx); Aim mode comments an element, and numbered dots in a margin beside the frame stand at the
+// height of each anchor (tilasm-margin.tsx). A new version places the anchors again: the window writes where each
+// stands, found, changed or lost.
 import {
+  Crosshair,
   Download,
   FolderInput,
   History,
@@ -31,15 +34,15 @@ import {
 
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
 import {
+  AnchorStatus,
   SendChoice,
   type Tilasm,
   type TilasmComment,
   type TilasmHold,
 } from "../gen/ts/plan/v1/tilasm_pb";
-import type { Passage } from "./data/bridge";
-import { marksOf } from "./data/bridge";
+import { type Pick, marksOf } from "./data/bridge";
 import { message } from "./data/client";
-import { draftCounts, draftsOn } from "./data/comments";
+import { draftCounts, draftsOn, placesToWrite } from "./data/comments";
 import { later } from "./data/decisions";
 import { useClients, useStore } from "./data/djinn";
 import { compareCodes } from "./data/flight";
@@ -57,6 +60,7 @@ import {
   CommentsColumn,
   DraftDot,
 } from "./tilasm-comments";
+import { AimBox, Margin, useAim, usePlaced } from "./tilasm-margin";
 import { CommentPick, usePassages } from "./tilasm-passages";
 import { memory } from "./usage";
 
@@ -146,8 +150,12 @@ export function TilasmsTab({
   // Each write reads the drafts again before it resolves: the card shows what was stored, never what it held before.
   const reread = () => store.changed(wishId, [Change.TILASM]);
   const comments: CommentWrites = {
-    put: async (tilasmId, text, id, passage) => {
-      await clients.tilasms.putComment({ tilasmId, id, text, anchor: passage });
+    put: async (tilasmId, text, id, anchor) => {
+      await clients.tilasms.putComment({ tilasmId, id, text, anchor });
+      await reread();
+    },
+    place: async (tilasmId, version, places) => {
+      await clients.tilasms.placeComments({ tilasmId, version, places });
       await reread();
     },
     remove: async (comment) => {
@@ -477,20 +485,73 @@ export function TilasmFrame({
   onCommentError?: (error: unknown) => void;
 }) {
   const [commenting, setCommenting] = useState(false);
-  const column = comments !== undefined && commenting && !over;
+  const enabled = comments !== undefined && !over;
+  const column = enabled && commenting;
   const frame = useRef<HTMLIFrameElement>(null);
-  // A passage the developer asked to comment, until the column takes it; the one being written, highlighted.
-  const [ask, setAsk] = useState<Passage>();
-  const [writing, setWriting] = useState<Passage>();
+  const version = latest(tilasm);
+  // What the developer asked to comment, until the column takes it; what the card being written is on, highlighted.
+  const [ask, setAsk] = useState<Pick>();
+  const [writing, setWriting] = useState<Pick>();
+  // The card open from its dot, and the detached draft waiting for a passage or an element to be on.
+  const [active, setActive] = useState("");
+  const [reattaching, setReattaching] = useState("");
+  const [aiming, setAiming] = useState(false);
+  const picked = (pick: Pick) => {
+    const draft = drafts.find((c) => c.id === reattaching);
+    setReattaching("");
+    if (draft && comments) {
+      // Reattached: on the version shown, where it is found.
+      comments
+        .put(tilasm.id, draft.text, draft.id, {
+          ...pick,
+          status: AnchorStatus.FOUND,
+          statusVersion: version,
+        })
+        .catch(onCommentError);
+      return;
+    }
+    setCommenting(true);
+    setAsk(pick);
+  };
   const passages = usePassages(
     frame,
-    comments !== undefined && !over,
-    marksOf(drafts, writing),
-    (passage) => {
-      setCommenting(true);
-      setAsk(passage);
-    },
+    enabled,
+    marksOf(drafts, writing, active),
+    version,
+    picked,
   );
+  const hover = useAim(frame, enabled, aiming, setAiming, picked);
+  const placed = usePlaced(frame, enabled, version);
+  // Placed in a later version than they were written on: where each stands is written once, for the cards and the lead.
+  const toWrite = enabled ? placesToWrite(drafts, placed, version) : [];
+  const writeKey = toWrite.length > 0 ? JSON.stringify(toWrite) : "";
+  const placing = useRef({ comments, onCommentError, tilasmId: tilasm.id });
+  placing.current = { comments, onCommentError, tilasmId: tilasm.id };
+  useEffect(() => {
+    if (!writeKey) return;
+    const {
+      comments: writes,
+      onCommentError: failed,
+      tilasmId,
+    } = placing.current;
+    writes
+      ?.place(
+        tilasmId,
+        version,
+        JSON.parse(writeKey) as ReturnType<typeof placesToWrite>,
+      )
+      .catch(failed);
+  }, [writeKey, version]);
+  const reveal = (id: string) =>
+    frame.current?.contentWindow?.postMessage(
+      { djinn: "tilasm", type: "reveal", id },
+      "*",
+    );
+  const dotted =
+    enabled &&
+    drafts.some(
+      (c) => c.anchor?.exact || c.anchor?.path || c.anchor?.elementId,
+    );
   const enter = useRef<HTMLButtonElement>(null);
   const leave = useRef<HTMLButtonElement>(null);
   useFullSize(
@@ -500,9 +561,24 @@ export function TilasmFrame({
     leave,
     over ? onClose : () => onFull(false),
   );
+  const aim = (className: string) =>
+    enabled && (
+      <button
+        type="button"
+        className={`${className ? "icon-button" : "text-button"} tilasm-aim${className ? ` ${className}` : ""}`}
+        aria-pressed={aiming}
+        title={t("tilasms.aim_title")}
+        aria-label={className ? t("tilasms.aim") : undefined}
+        aria-keyshortcuts="Escape"
+        data-full-keep={className ? "" : undefined}
+        onClick={() => setAiming(!aiming)}
+      >
+        <Crosshair size={13} aria-hidden="true" />
+        {!className && t("tilasms.aim")}
+      </button>
+    );
   const toggle = (className: string) =>
-    comments !== undefined &&
-    !over && (
+    enabled && (
       <button
         type="button"
         className={`icon-button tilasm-comments-toggle${className ? ` ${className}` : ""}`}
@@ -520,7 +596,7 @@ export function TilasmFrame({
     );
   return (
     <section
-      className={`tilasm-view${over ? " over" : full ? " full" : ""}${column ? " commenting" : ""}`}
+      className={`tilasm-view${over ? " over" : full ? " full" : ""}${column ? " commenting" : ""}${dotted ? " dotted" : ""}`}
       aria-label={tilasm.title}
     >
       {!over && (
@@ -539,6 +615,7 @@ export function TilasmFrame({
             <Maximize2 size={13} aria-hidden="true" />
             {t("tilasms.full")}
           </button>
+          {aim("")}
           {toggle("")}
           <button
             type="button"
@@ -566,6 +643,17 @@ export function TilasmFrame({
           by the same class that takes the frame out, so the page never lays out without both. Over a view, the frame
           takes no room. */}
       {!over && <div className="tilasm-frame-room" />}
+      {dotted && (
+        <Margin
+          comments={drafts}
+          placed={placed}
+          active={active}
+          onDot={(id) => {
+            setCommenting(true);
+            setActive(id);
+          }}
+        />
+      )}
       {column && (
         <CommentsColumn
           key={tilasm.id}
@@ -580,15 +668,32 @@ export function TilasmFrame({
           ask={ask}
           onAsked={() => setAsk(undefined)}
           onWriting={setWriting}
+          placed={placed}
+          active={active}
+          onActive={(id) => {
+            setActive(id);
+            reveal(id);
+          }}
+          reattaching={reattaching}
+          onReattach={setReattaching}
         />
       )}
       {passages.selected && (
         <CommentPick
           frame={frame}
           at={passages.selected.at}
+          label={
+            reattaching
+              ? t("tilasms.reattach_pick", {
+                  code: drafts.find((c) => c.id === reattaching)?.code ?? "",
+                })
+              : undefined
+          }
           onPick={passages.pick}
         />
       )}
+      {hover && <AimBox frame={frame} at={hover} />}
+      {full && aim("tilasm-full-aim")}
       {full && toggle("tilasm-full-comments")}
       {(full || over) && (
         <button
@@ -652,8 +757,8 @@ function useFullSize(
 }
 
 // What stays in reach beside the full-size frame, should it show after the frame went full size: the Comments column,
-// its button, and the Comment button over a passage.
-const KEPT = ".tilasm-comments, .tilasm-pick, [data-full-keep]";
+// its button, the margin of dots, and the Comment button over a passage.
+const KEPT = ".tilasm-comments, .tilasm-pick, .tilasm-margin, [data-full-keep]";
 
 // cover makes inert what the elements kept lie over in the main shell: every element there that holds none of them,
 // and is none of KEPT. It returns what gives them back.

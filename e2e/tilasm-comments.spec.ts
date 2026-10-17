@@ -380,9 +380,9 @@ const highlighted = (frame: Frame) =>
     ),
   );
 
-// drag selects an element's text with the mouse, from its first character to its last, as the developer does. The
+// bring puts an element of the frame in sight, near the top of the frame, and returns where it stands once still. The
 // terminal panel covers the bottom of the view: the frame and the element come near the top first.
-async function drag(page: Page, target: Locator) {
+async function bring(page: Page, target: Locator) {
   await page
     .locator("iframe.tilasm-frame")
     .evaluate((el) => el.scrollIntoView({ block: "start" }));
@@ -400,6 +400,12 @@ async function drag(page: Page, target: Locator) {
       return box.y === was.y && box.x === was.x;
     })
     .toBe(true);
+  return box;
+}
+
+// drag selects an element's text with the mouse, from its first character to its last, as the developer does.
+async function drag(page: Page, target: Locator) {
+  const box = await bring(page, target);
   const y = box.y + box.height / 2;
   await page.mouse.move(box.x + 1, y);
   await page.mouse.down();
@@ -601,5 +607,294 @@ test("a tilasm's own policy in a meta tag decides whether the bridge loads; the 
   await expect(inFrame.locator("body")).toHaveAttribute("data-own", "ran");
   await drag(page, inFrame.locator("#me"));
   await expect(pick).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+const figurePage = `<!doctype html><title>Notices of the lead</title>
+<style>body { font: 16px/1.6 sans-serif; margin: 2rem; padding-bottom: 150vh; } figure { margin: 1rem 0; }</style>
+<h1>Notices of the lead</h1>
+<p>Notices that come in less than <span id="two">two seconds</span> leave together.</p>
+<figure id="path"><svg viewBox="0 0 420 90" width="420" height="90"><rect x="6" y="24" width="110" height="40" rx="8"
+fill="none" stroke="black"/><text x="20" y="48">task done</text><text x="200" y="48">lead queue</text></svg>
+<figcaption>Figure 1 - The path of a notice</figcaption></figure>
+<table><tr><th>Notice</th><th>Wait</th></tr><tr id="failure"><td>Failure</td><td>none</td></tr></table>
+<p><a id="link" href="#elsewhere">A link the page follows</a></p>`;
+
+test("Aim mode comments an element, Escape leaves it in the window or the frame, and a dot opens its card", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const { view } = await putPage(
+    page,
+    `Aim at a figure ${randomUUID().slice(0, 8)}`,
+    figurePage,
+  );
+  const frame = await frameOf(page);
+  const inFrame = page.frameLocator("iframe.tilasm-frame");
+  await expect(inFrame.locator("h1")).toBeVisible();
+  const aim = view.locator(".tilasm-view-head").getByRole("button", {
+    name: "Aim at an element",
+  });
+  const box = page.locator(".tilasm-aim-box");
+
+  // Escape in the window leaves Aim mode; full size, it leaves Aim mode alone.
+  await aim.click();
+  await expect(aim).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(aim).toHaveAttribute("aria-pressed", "false");
+  await view.getByRole("button", { name: "Full size" }).click();
+  await expect(view).toHaveClass(/\bfull\b/);
+  const fullAim = view.locator(".tilasm-full-aim");
+  await fullAim.click();
+  await expect(fullAim).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(fullAim).toHaveAttribute("aria-pressed", "false");
+  await expect(view).toHaveClass(/\bfull\b/);
+  await page.keyboard.press("Escape");
+  await expect(view).not.toHaveClass(/\bfull\b/);
+
+  // In Aim mode, the block under the mouse is framed over the frame: the figure, for its drawing.
+  await aim.click();
+  const figure = inFrame.locator("#path");
+  const at = await bring(page, figure);
+  await page.mouse.move(at.x + 60, at.y + 40);
+  await expect(box).toBeVisible();
+  const framed = (await box.boundingBox())!;
+  expect(Math.abs(framed.y - at.y)).toBeLessThan(6);
+  expect(Math.abs(framed.height - at.height)).toBeLessThan(8);
+  // A table row is a block of its own.
+  const row = (await inFrame.locator("#failure").boundingBox())!;
+  await page.mouse.move(row.x + 10, row.y + row.height / 2);
+  await expect
+    .poll(async () => Math.round((await box.boundingBox())?.height ?? 0))
+    .toBeLessThan(Math.round(row.height) + 8);
+  // Escape pressed in the frame leaves Aim mode too.
+  await page.locator("iframe.tilasm-frame").focus();
+  await page.keyboard.press("Escape");
+  await expect(aim).toHaveAttribute("aria-pressed", "false");
+  await expect(box).toHaveCount(0);
+
+  // A click in Aim mode takes the element and nothing of the page's own: the link is not followed.
+  await aim.click();
+  const link = await bring(page, inFrame.locator("#link"));
+  await page.mouse.click(link.x + 5, link.y + link.height / 2);
+  const column = view.getByRole("complementary", { name: "Comments" });
+  const editor = column.getByRole("textbox", {
+    name: "Your comment on the element",
+  });
+  await expect(editor).toBeFocused();
+  expect(await frame.evaluate(() => location.hash)).toBe("");
+  await editor.press("Escape");
+
+  // The figure, clicked on its drawing: a card on it, labelled by its caption.
+  await aim.click();
+  const figureAt = await bring(page, figure);
+  await page.mouse.click(figureAt.x + 60, figureAt.y + 40);
+  await expect(aim).toHaveAttribute("aria-pressed", "false");
+  await expect(editor).toBeFocused();
+  const cards = column.locator(".tilasm-comment");
+  await expect(cards.last()).toContainText(
+    "figure: Figure 1 - The path of a notice",
+  );
+  await editor.fill("The arrow to the window is missing.");
+  await editor.press("Control+Enter");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("C1");
+  await expect(cards.first()).toContainText(
+    "figure: Figure 1 - The path of a notice",
+  );
+  // Its text highlighted, gold, adding nothing to the page.
+  await expect
+    .poll(async () => (await highlighted(frame))["djinn-draft"].join(" "))
+    .toContain("Figure 1 - The path of a notice");
+
+  // A passage too: two dots in the margin, at the heights of their anchors.
+  await drag(page, inFrame.locator("#two"));
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await column
+    .getByRole("textbox", { name: "Your comment on the passage" })
+    .fill("Say where two seconds comes from.");
+  await page.keyboard.press("Control+Enter");
+  await expect(cards).toHaveCount(2);
+  const margin = view.getByRole("group", { name: "Comments in the page" });
+  const dot = (code: string) =>
+    margin.getByRole("button", { name: `Open ${code}` });
+  await expect(dot("C1")).toBeVisible();
+  await expect(dot("C2")).toBeVisible();
+  await bring(page, figure);
+  await expect
+    .poll(async () => {
+      const d = (await dot("C1").boundingBox())!;
+      const f = (await figure.boundingBox())!;
+      return Math.abs(d.y - f.y) < 4;
+    })
+    .toBe(true);
+  await page.screenshot({ path: path.join(shots, "tilasm-margin-dots.png") });
+
+  // The page scrolls: a dot whose anchor leaves the frame goes, and comes back with it.
+  await frame.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(dot("C1")).toHaveCount(0);
+  await expect(dot("C2")).toHaveCount(0);
+
+  // A click on a card's anchor shows it in the page: its dot is back.
+  await cards
+    .first()
+    .getByRole("button", { name: "figure: Figure 1 - The path of a notice" })
+    .click();
+  await expect(dot("C1")).toBeVisible();
+  await expect(cards.first()).toHaveClass(/\bactive\b/);
+
+  // The column closed, a click on a dot opens it on its card.
+  await column.getByRole("button", { name: "Close the comments" }).click();
+  await expect(column).toHaveCount(0);
+  await bring(page, inFrame.locator("#two"));
+  await dot("C2").click();
+  await expect(column).toBeVisible();
+  await expect(cards.nth(1)).toHaveClass(/\bactive\b/);
+  await expect(cards.first()).not.toHaveClass(/\bactive\b/);
+  await expect(dot("C2")).toHaveClass(/\bactive\b/);
+  expect(errors).toEqual([]);
+});
+
+// Two versions of a tilasm (the mockup's pairs, L08): v2 moves the digest line, rewords the failure line, drops the
+// line on read notices, and draws an arrow into the figure.
+const versionPage = (
+  v: 1 | 2,
+) => `<!doctype html><title>Notices of the lead</title>
+<style>body { font: 14px/1.6 sans-serif; margin: 1rem; padding-bottom: 120vh; } span { white-space: nowrap; }</style>
+<h1>Notices of the lead</h1>
+${v === 2 ? "<h2>Paused wish</h2><p>The notices of a paused wish wait for it to resume.</p>" : ""}
+<h2>Grouping</h2>
+<p>They leave <span id="digest">in one line of the digest</span>.</p>
+<p>A failure: <span id="burst">${v === 1 ? "it leaves alone and at once" : "it leaves alone and without delay"}</span>.</p>
+<h2>Display</h2>
+<p>${v === 1 ? 'A notice read goes <span id="ten">after ten seconds</span>.' : 'A notice read stays in the <span id="journal">wish journal</span>.'}</p>
+<figure id="${v === 1 ? "path" : "path-v2"}"><svg viewBox="0 0 420 90" width="420" height="90"><text x="20" y="48">task done</text>
+<text x="200" y="48">lead queue</text>${v === 2 ? '<text x="320" y="48">window</text>' : ""}</svg>
+<figcaption>Figure 1 - The path of a notice${v === 2 ? ", up to the window" : ""}</figcaption></figure>`;
+
+test("a new version put with --code finds each comment found, changed or lost, and a detached one is reattached", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const title = `Anchors across versions ${randomUUID().slice(0, 8)}`;
+  const { wishId, view } = await putPage(page, title, versionPage(1));
+  const inFrame = page.frameLocator("iframe.tilasm-frame");
+  await expect(inFrame.locator("h1")).toBeVisible();
+  const column = view.getByRole("complementary", { name: "Comments" });
+  const cards = column.locator(".tilasm-comment");
+  const pick = page.getByRole("button", { name: "Comment", exact: true });
+  const comment = async (id: string, text: string) => {
+    await drag(page, inFrame.locator(`#${id}`));
+    await pick.click();
+    const editor = column.getByRole("textbox", {
+      name: "Your comment on the passage",
+    });
+    await editor.fill(text);
+    await editor.press("Control+Enter");
+    await expect(editor).toHaveCount(0);
+  };
+  await comment("digest", "Say the watch's two seconds.");
+  await comment("burst", "Even mid-turn?");
+  await comment("ten", "Ten seconds is short.");
+  await view
+    .locator(".tilasm-view-head")
+    .getByRole("button", { name: "Aim at an element" })
+    .click();
+  const figure = await bring(page, inFrame.locator("figure"));
+  await page.mouse.click(figure.x + 60, figure.y + 40);
+  const element = column.getByRole("textbox", {
+    name: "Your comment on the element",
+  });
+  await element.fill("The arrow to the window is missing.");
+  await element.press("Control+Enter");
+  await expect(cards).toHaveCount(4);
+  // On the version they were written on, no card says where it stands.
+  await expect(column.locator(".tilasm-comment-status")).toHaveCount(0);
+
+  // The next version, put by a command as a task does: the frame loads it, and finds each anchor again.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-versions-"));
+  try {
+    fs.writeFileSync(path.join(dir, "index.html"), versionPage(2));
+    djinn("tilasm", "put", dir, "--wish", wishId, "--code", "L01");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  await expect(view.locator(".tilasm-view-head")).toContainText("v2");
+  const card = (code: string) =>
+    cards.filter({ has: page.locator(".tilasm-code", { hasText: code }) });
+  const detached = column.getByRole("region", { name: "Detached" });
+  // C1, moved below the new section: found, nothing to say.
+  await expect(card("C3")).toContainText("Gone from v2: no longer in the page");
+  await expect(card("C1").locator(".tilasm-comment-status")).toHaveCount(0);
+  // C2, reworded: the new passage above, the one it was on below it.
+  await expect(card("C2")).toContainText("Changed in v2");
+  await expect(card("C2").locator(".tilasm-comment-quote")).toHaveText([
+    "it leaves alone and without delay",
+    "it leaves alone and at once",
+  ]);
+  // C3, its line dropped: under Detached, its quote struck, last.
+  await expect(detached.locator(".tilasm-comment")).toHaveCount(1);
+  await expect(detached).toContainText("C3");
+  await expect(detached.locator(".tilasm-comment-quote.lost")).toHaveText(
+    "after ten seconds",
+  );
+  await expect(cards.last()).toContainText("C3");
+  // C4, the figure with its arrow: changed, with what it is now.
+  await expect(card("C4")).toContainText(
+    "Changed in v2: figure: Figure 1 - The path of a notice, up to the window",
+  );
+  // The highlights follow: the moved passage, the reworded one, the figure; none for the lost one.
+  const frame = await frameOf(page);
+  await expect
+    .poll(async () => (await highlighted(frame))["djinn-draft"].sort())
+    .toEqual([
+      "in one line of the digest",
+      "it leaves alone and without delay",
+      expect.stringContaining("up to the window"),
+    ]);
+  // No dot for the lost one.
+  const margin = view.getByRole("group", { name: "Comments in the page" });
+  await bring(page, inFrame.locator("#digest"));
+  await expect(margin.getByRole("button", { name: "Open C1" })).toBeVisible();
+  await expect(margin.getByRole("button", { name: "Open C3" })).toHaveCount(0);
+  await page.screenshot({ path: path.join(shots, "tilasm-reanchored.png") });
+
+  // Written in Djinn's store: after a reload, the cards say the same.
+  await page.reload();
+  await page.locator(".wish-nav").filter({ hasText: title }).click();
+  await page.getByRole("tab", { name: /^Tilasms/ }).click();
+  await page
+    .getByRole("tabpanel", { name: "Tilasms" })
+    .locator(".tilasm-title")
+    .click();
+  await view.locator(".tilasm-view-head .tilasm-comments-toggle").click();
+  await expect(detached).toContainText("C3");
+  await expect(card("C2")).toContainText("Changed in v2");
+  await expect(card("C4")).toContainText("Changed in v2");
+
+  // Reattach C3: on a passage selected in the new version, it leaves Detached.
+  await card("C3").getByRole("button", { name: "Reattach C3" }).click();
+  await expect(card("C3")).toContainText(
+    "Select a passage or aim at an element in the page.",
+  );
+  await drag(page, inFrame.locator("#journal"));
+  const reattach = page
+    .getByRole("button", { name: "Reattach C3" })
+    .and(page.locator(".tilasm-pick"));
+  await reattach.click();
+  await expect(detached).toHaveCount(0);
+  await expect(card("C3").locator(".tilasm-comment-quote")).toHaveText(
+    "wish journal",
+  );
+  await expect(card("C3").locator(".tilasm-comment-status")).toHaveCount(0);
+  await expect(card("C3")).toContainText("Ten seconds is short.");
+  await expect
+    .poll(async () => (await highlighted(await frameOf(page)))["djinn-draft"])
+    .toContain("wish journal");
   expect(errors).toEqual([]);
 });

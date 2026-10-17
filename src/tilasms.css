@@ -252,23 +252,50 @@
 }
 /* The Comments column beside the frame (L08): the frame narrows for it, and the column never covers the text but on a
    narrow view. A square element in the rounded view: a straight separator on its left. Its height is the frame's. */
+/* Between them, the margin of dots (L08, step 4), once a comment is on the page: as square, a straight separator on its
+   left too. */
 .tilasm-view {
   --tilasm-comments-width: 20rem;
+  --tilasm-margin-width: 0px;
+  --tilasm-column-width: 0px;
+  /* What stands right of the frame: the full-size buttons keep left of it. */
+  --tilasm-side: calc(var(--tilasm-column-width) + var(--tilasm-margin-width));
+}
+.tilasm-view.dotted {
+  --tilasm-margin-width: 1.75rem;
 }
 .tilasm-view.commenting {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--tilasm-comments-width);
+  --tilasm-column-width: var(--tilasm-comments-width);
 }
-.tilasm-view.commenting > .tilasm-view-head {
+.tilasm-view.commenting,
+.tilasm-view.dotted {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--tilasm-margin-width) var(
+      --tilasm-column-width
+    );
+}
+.tilasm-view.commenting > .tilasm-view-head,
+.tilasm-view.dotted > .tilasm-view-head {
   grid-column: 1 / -1;
 }
 .tilasm-view.commenting > .tilasm-frame,
-.tilasm-view.commenting > .tilasm-frame-room {
+.tilasm-view.commenting > .tilasm-frame-room,
+.tilasm-view.dotted > .tilasm-frame,
+.tilasm-view.dotted > .tilasm-frame-room {
   grid-column: 1;
   grid-row: 2;
 }
-.tilasm-comments {
+.tilasm-margin {
   grid-column: 2;
+  grid-row: 2;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+.tilasm-comments {
+  grid-column: 3;
   grid-row: 2;
   display: flex;
   flex-direction: column;
@@ -280,7 +307,7 @@
 /* Under 900 px, it slides over the right of the frame. */
 @container main (max-width: 899px) {
   .tilasm-view.commenting:not(.full) {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) var(--tilasm-margin-width);
   }
   .tilasm-view.commenting:not(.full) > .tilasm-comments {
     grid-column: 1;
@@ -293,8 +320,17 @@
 }
 /* Full size, the column stands at the right of the main shell and the frame narrows beside it. */
 /* A frame stretches by its width alone: left and right set, it keeps the 300 px of a replaced element. */
-.tilasms.has-open .tilasm-view.full.commenting > .tilasm-frame {
-  width: calc(100% - var(--tilasm-comments-width));
+.tilasms.has-open .tilasm-view.full.commenting > .tilasm-frame,
+.tilasms.has-open .tilasm-view.full.dotted > .tilasm-frame {
+  width: calc(100% - var(--tilasm-side));
+}
+.tilasm-view.full > .tilasm-margin {
+  position: absolute;
+  top: 0;
+  right: var(--tilasm-column-width);
+  bottom: 0;
+  z-index: 30;
+  width: var(--tilasm-margin-width);
 }
 .tilasm-view.full > .tilasm-comments {
   position: absolute;
@@ -305,21 +341,28 @@
   width: var(--tilasm-comments-width);
   contain: none;
 }
-.tilasm-full-comments {
+.tilasm-full-comments,
+.tilasm-full-aim {
   position: absolute;
   top: 0.5rem;
-  right: 3rem;
+  right: calc(var(--tilasm-side) + 3rem);
   z-index: 31;
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: 0 0.125rem 0.5rem
     color-mix(in srgb, var(--shadow) 25%, transparent);
 }
-.tilasm-view.full.commenting > .tilasm-full-leave {
-  right: calc(var(--tilasm-comments-width) + 0.5rem);
+.tilasm-full-aim {
+  right: calc(var(--tilasm-side) + 5.75rem);
 }
-.tilasm-view.full.commenting > .tilasm-full-comments {
-  right: calc(var(--tilasm-comments-width) + 3rem);
+.tilasm-view.full > .tilasm-full-leave {
+  right: calc(var(--tilasm-side) + 0.5rem);
+}
+.tilasm-aim {
+  flex: none;
+}
+.tilasm-aim[aria-pressed="true"] {
+  color: var(--accent);
 }
 .tilasm-comments-toggle {
   flex: none;
@@ -488,4 +531,88 @@
   gap: 0.3125rem;
   box-shadow: 0 0.125rem 0.5rem
     color-mix(in srgb, var(--shadow) 30%, transparent);
+}
+/* Aim mode frames the block under the mouse, in the window over the frame: square, as the block may be. */
+.tilasm-aim-box {
+  position: fixed;
+  z-index: 32;
+  box-sizing: border-box;
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+}
+/* A dot of the margin, at the height of its anchor in the frame: gold for a draft, blue once sent. */
+.tilasm-dot {
+  position: absolute;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.25rem;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--sand) 60%, transparent);
+  border-radius: 0.625rem;
+  background: color-mix(in srgb, var(--sand) 18%, var(--surface));
+  color: var(--sand);
+  font: 600 0.6875rem var(--mono);
+}
+.tilasm-dot.sent {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--accent);
+}
+.tilasm-dot:hover,
+.tilasm-dot.active {
+  border-color: var(--sand);
+  background: var(--sand);
+  color: var(--bg);
+}
+/* The card open from its dot: its border all round, stronger. */
+.tilasm-comment.active {
+  border-color: color-mix(in srgb, var(--sand) 70%, transparent);
+}
+button.tilasm-comment-anchor {
+  justify-content: flex-start;
+  padding: 0;
+  text-align: left;
+}
+button.tilasm-comment-anchor:hover {
+  color: var(--text);
+}
+/* Where an anchor stands in a later version: changed, or gone. */
+.tilasm-comment-status {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.tilasm-comment-quote.was {
+  opacity: 0.7;
+}
+.tilasm-comment-quote.lost {
+  text-decoration: line-through;
+}
+/* The comments a later version lost, under their heading, below the others. */
+.tilasm-detached {
+  margin-top: 0.875rem;
+}
+.tilasm-detached h3 {
+  margin: 0 0 0.375rem;
+  color: var(--muted);
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+.tilasm-reattach-button {
+  margin-top: 0.125rem;
+}
+.tilasm-reattach {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  color: var(--sand);
+  font-size: var(--font-size-body);
 }

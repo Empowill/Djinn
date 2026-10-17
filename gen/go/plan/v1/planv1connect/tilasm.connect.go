@@ -64,6 +64,9 @@ const (
 	// TilasmServiceSendCommentsProcedure is the fully-qualified name of the TilasmService's
 	// SendComments RPC.
 	TilasmServiceSendCommentsProcedure = "/plan.v1.TilasmService/SendComments"
+	// TilasmServicePlaceCommentsProcedure is the fully-qualified name of the TilasmService's
+	// PlaceComments RPC.
+	TilasmServicePlaceCommentsProcedure = "/plan.v1.TilasmService/PlaceComments"
 )
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
@@ -103,6 +106,10 @@ type TilasmServiceClient interface {
 	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
 	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
 	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
+	// Write where the window found the anchors of a tilasm's comments in its latest version, from the window: found,
+	// changed or lost, on drafts and sent comments alike, whose words do not change. A version that is no longer the
+	// latest places nothing: the window places the comments again in the next one.
+	PlaceComments(context.Context, *connect.Request[v1.TilasmServicePlaceCommentsRequest]) (*connect.Response[v1.TilasmServicePlaceCommentsResponse], error)
 }
 
 // NewTilasmServiceClient constructs a client for the plan.v1.TilasmService service. By default, it
@@ -205,6 +212,12 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(tilasmServiceMethods.ByName("SendComments")),
 			connect.WithClientOptions(opts...),
 		),
+		placeComments: connect.NewClient[v1.TilasmServicePlaceCommentsRequest, v1.TilasmServicePlaceCommentsResponse](
+			httpClient,
+			baseURL+TilasmServicePlaceCommentsProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("PlaceComments")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -224,6 +237,7 @@ type tilasmServiceClient struct {
 	deleteComment *connect.Client[v1.TilasmServiceDeleteCommentRequest, v1.TilasmServiceDeleteCommentResponse]
 	drafts        *connect.Client[v1.TilasmServiceDraftsRequest, v1.TilasmServiceDraftsResponse]
 	sendComments  *connect.Client[v1.TilasmServiceSendCommentsRequest, v1.TilasmServiceSendCommentsResponse]
+	placeComments *connect.Client[v1.TilasmServicePlaceCommentsRequest, v1.TilasmServicePlaceCommentsResponse]
 }
 
 // Put calls plan.v1.TilasmService.Put.
@@ -296,6 +310,11 @@ func (c *tilasmServiceClient) SendComments(ctx context.Context, req *connect.Req
 	return c.sendComments.CallUnary(ctx, req)
 }
 
+// PlaceComments calls plan.v1.TilasmService.PlaceComments.
+func (c *tilasmServiceClient) PlaceComments(ctx context.Context, req *connect.Request[v1.TilasmServicePlaceCommentsRequest]) (*connect.Response[v1.TilasmServicePlaceCommentsResponse], error) {
+	return c.placeComments.CallUnary(ctx, req)
+}
+
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
 	// Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
@@ -333,6 +352,10 @@ type TilasmServiceHandler interface {
 	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
 	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
 	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
+	// Write where the window found the anchors of a tilasm's comments in its latest version, from the window: found,
+	// changed or lost, on drafts and sent comments alike, whose words do not change. A version that is no longer the
+	// latest places nothing: the window places the comments again in the next one.
+	PlaceComments(context.Context, *connect.Request[v1.TilasmServicePlaceCommentsRequest]) (*connect.Response[v1.TilasmServicePlaceCommentsResponse], error)
 }
 
 // NewTilasmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -431,6 +454,12 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(tilasmServiceMethods.ByName("SendComments")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServicePlaceCommentsHandler := connect.NewUnaryHandler(
+		TilasmServicePlaceCommentsProcedure,
+		svc.PlaceComments,
+		connect.WithSchema(tilasmServiceMethods.ByName("PlaceComments")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TilasmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TilasmServicePutProcedure:
@@ -461,6 +490,8 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceDraftsHandler.ServeHTTP(w, r)
 		case TilasmServiceSendCommentsProcedure:
 			tilasmServiceSendCommentsHandler.ServeHTTP(w, r)
+		case TilasmServicePlaceCommentsProcedure:
+			tilasmServicePlaceCommentsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -524,4 +555,8 @@ func (UnimplementedTilasmServiceHandler) Drafts(context.Context, *connect.Reques
 
 func (UnimplementedTilasmServiceHandler) SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.SendComments is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) PlaceComments(context.Context, *connect.Request[v1.TilasmServicePlaceCommentsRequest]) (*connect.Response[v1.TilasmServicePlaceCommentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.PlaceComments is not implemented"))
 }

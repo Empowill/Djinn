@@ -10,6 +10,7 @@ const c = await bundle(
   `export * from "@/src/data/comments.ts";
 export { create } from "@bufbuild/protobuf";
 export {
+  AnchorStatus,
   CommentState,
   TilasmCommentSchema,
   TilasmHoldReason,
@@ -107,7 +108,7 @@ test("a new card is written, saved once it says something, or given up", () => {
   assert.equal(c.canSave(c.emptyColumn), false);
 });
 
-test("a new card on a passage keeps it until saved, and takes another passage with what is typed", () => {
+test("a new card on a passage or an element keeps it until saved, and takes another with what is typed", () => {
   const passage = {
     page: "index.html",
     exact: "two seconds",
@@ -117,15 +118,28 @@ test("a new card on a passage keeps it until saved, and takes another passage wi
     end: 51,
     label: "§ Grouping",
   };
-  let s = c.column(c.emptyColumn, { type: "write", passage });
-  assert.deepEqual(s, { editing: c.NEW, text: "", passage });
+  let s = c.column(c.emptyColumn, { type: "write", anchor: passage });
+  assert.deepEqual(s, { editing: c.NEW, text: "", anchor: passage });
   s = c.column(s, { type: "type", text: "Say where it comes from." });
-  assert.equal(c.column(s, { type: "write", passage }), s);
+  assert.equal(c.column(s, { type: "write", anchor: passage }), s);
   const other = { ...passage, exact: "one line", start: 80, end: 88 };
-  assert.deepEqual(c.column(s, { type: "write", passage: other }), {
+  assert.deepEqual(c.column(s, { type: "write", anchor: other }), {
     editing: c.NEW,
     text: "Say where it comes from.",
-    passage: other,
+    anchor: other,
+  });
+  // An element aimed at takes the card, with what is typed.
+  const figure = {
+    page: "index.html",
+    elementId: "",
+    path: "figure:nth-of-type(1)",
+    fingerprint: "The path of a notice",
+    label: "figure: The path of a notice",
+  };
+  assert.deepEqual(c.column(s, { type: "write", anchor: figure }), {
+    editing: c.NEW,
+    text: "Say where it comes from.",
+    anchor: figure,
   });
   // "On the whole tilasm" puts the card on the whole of it.
   assert.deepEqual(c.column(s, { type: "write" }), {
@@ -134,7 +148,7 @@ test("a new card on a passage keeps it until saved, and takes another passage wi
   });
   assert.deepEqual(c.column(s, { type: "saved" }), { editing: "", text: "" });
   assert.deepEqual(c.column(s, { type: "cancel" }), { editing: "", text: "" });
-  // Editing a draft leaves the passage of the new card.
+  // Editing a draft leaves what the new card was on.
   assert.deepEqual(c.column(s, { type: "edit", comment: c1 }), {
     editing: c1.id,
     text: "First.",
@@ -221,4 +235,127 @@ test("the foot sends the drafts and the last word, unless the tilasm is held", (
     iterate: false,
     greyed: false,
   });
+});
+
+// A draft written on version 1, with its anchor as a later version placed it.
+const placedDraft = (n, anchor, version = 1) =>
+  c.create(c.TilasmCommentSchema, {
+    id: `01a14600-0000-7000-8000-00000000010${n}`,
+    tilasmId: L01,
+    code: `C${n}`,
+    text: `Draft ${n}.`,
+    state: c.CommentState.DRAFT,
+    version,
+    anchor,
+  });
+
+test("a draft a later version lost waits under Detached, each group in the order written", () => {
+  const found = placedDraft(1, {
+    exact: "two seconds",
+    status: c.AnchorStatus.FOUND,
+    statusVersion: 2,
+  });
+  const lost = placedDraft(2, {
+    exact: "ten seconds",
+    status: c.AnchorStatus.LOST,
+    statusVersion: 2,
+  });
+  const changed = placedDraft(3, {
+    path: "figure:nth-of-type(1)",
+    status: c.AnchorStatus.CHANGED,
+    statusVersion: 2,
+  });
+  const lostToo = placedDraft(4, {
+    path: "table:nth-of-type(1)",
+    status: c.AnchorStatus.LOST,
+    statusVersion: 2,
+  });
+  const groups = c.columnGroups([c1, found, lost, changed, lostToo]);
+  assert.deepEqual(
+    groups.attached.map((d) => d.code),
+    ["C1", "C1", "C3"],
+  );
+  assert.deepEqual(
+    groups.detached.map((d) => d.code),
+    ["C2", "C4"],
+  );
+  assert.equal(c.detached(lost), true);
+  assert.equal(c.detached(c1), false);
+});
+
+test("the window writes where each anchor stands once per later version, for those the frame placed", () => {
+  const passage = { exact: "two seconds" };
+  const onV1 = placedDraft(1, passage);
+  const onV2 = placedDraft(2, passage, 2);
+  const placedOnV2 = placedDraft(3, {
+    ...passage,
+    status: c.AnchorStatus.CHANGED,
+    statusVersion: 2,
+  });
+  const placedOnEarlier = placedDraft(4, {
+    ...passage,
+    status: c.AnchorStatus.LOST,
+    statusVersion: 1,
+  });
+  const otherPage = placedDraft(5, { ...passage, page: "notes.html" });
+  const placed = [
+    { id: onV1.id, status: "changed", top: 3, bottom: 20 },
+    { id: onV2.id, status: "found", top: 30, bottom: 40 },
+    { id: placedOnV2.id, status: "changed" },
+    { id: placedOnEarlier.id, status: "found", top: 50, bottom: 60 },
+    { id: c1.id, status: "lost" },
+  ];
+  assert.deepEqual(
+    c.placesToWrite(
+      [onV1, onV2, placedOnV2, placedOnEarlier, otherPage, c1],
+      placed,
+      2,
+    ),
+    [
+      { id: onV1.id, status: c.AnchorStatus.CHANGED },
+      { id: placedOnEarlier.id, status: c.AnchorStatus.FOUND },
+    ],
+  );
+  // Once written, nothing more to write.
+  assert.deepEqual(c.placesToWrite([placedOnV2], placed, 2), []);
+  assert.deepEqual(c.placesToWrite([onV1], [], 2), []);
+});
+
+test("the dots stand at their anchors' heights, stacked on one line, only within the frame", () => {
+  const drafts = [1, 2, 3, 4, 5].map((n) => placedDraft(n, { exact: "x" }));
+  const sentOne = c.create(c.TilasmCommentSchema, {
+    ...drafts[4],
+    state: c.CommentState.SENT,
+  });
+  const dots = c.dotsOf(
+    [...drafts.slice(0, 4), sentOne],
+    [
+      { id: drafts[1].id, status: "found", top: 100, bottom: 118 },
+      { id: drafts[0].id, status: "found", top: 100, bottom: 118 },
+      { id: drafts[2].id, status: "changed", top: -40, bottom: -10 },
+      { id: drafts[3].id, status: "lost" },
+      { id: sentOne.id, status: "found", top: -5, bottom: 12 },
+      { id: "elsewhere", status: "found", top: 10, bottom: 20 },
+    ],
+    400,
+    22,
+  );
+  assert.deepEqual(
+    dots.map((d) => [d.code, d.top, d.sent]),
+    [
+      ["C5", 0, true],
+      ["C2", 100, false],
+      ["C1", 122, false],
+    ],
+  );
+  // Past the bottom, a dot does not show.
+  assert.deepEqual(
+    c.dotsOf(
+      drafts,
+      [{ id: drafts[0].id, status: "found", top: 390, bottom: 410 }],
+      400,
+      22,
+    ),
+    [],
+  );
 });

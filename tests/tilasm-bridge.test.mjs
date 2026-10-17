@@ -1,7 +1,8 @@
-// The quotes of a tilasm's passages (L08, step 3). The bridge Djinn appends to a tilasm's pages
-// (internal/plan/tilasm_bridge.js) lays out the page's text, quotes a selection and finds a quote again; run without a
-// document, it hands those pure functions over. The window reads what the bridge sends, and sends it the anchors to
-// highlight (src/data/bridge.ts). Run with `go tool task test-ui`.
+// The quotes of a tilasm's passages and its elements (L08, steps 3 to 5). The bridge Djinn appends to a tilasm's pages
+// (internal/plan/tilasm_bridge.js) lays out the page's text, quotes a selection and finds a quote or an element again,
+// in a later version too: found, changed or lost. Run without a document, it hands those pure functions over. The
+// window reads what the bridge sends, and sends it the anchors to place and highlight (src/data/bridge.ts). Run with
+// `go tool task test-ui`.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -121,9 +122,182 @@ test("a quote is found again where it is, by its context when it is there twice,
   };
   assert.equal(b.locate(twice, near).start, 18);
   assert.equal(b.locate(twice, { ...near, start: 0 }).start, 2);
-  // Gone from the page: not found, until the step that finds changed passages.
+  // Gone from the page: not found; relocate looks for it changed.
   assert.equal(b.locate(text, { ...q, exact: "three seconds" }), null);
   assert.equal(b.locate(text, { ...q, exact: "" }), null);
+});
+
+// The mockup's example tilasm (L08), in two versions: v4 adds a section on paused wishes above, moves Grouping below
+// Display, rewords the failure line, drops the line on read notices, and draws the arrow to the window.
+const v3 = [
+  "Notices of the lead: specification",
+  "Djinn tells the lead when a task ends, fails or merges. This page groups those notices by wish.",
+  "Grouping",
+  "The notices of one wish that come in less than two seconds leave together, in a single line of the digest.",
+  "A failure notice never waits: it leaves alone and at once, even in the middle of a burst.",
+  "Display",
+  "The window shows how many notices wait in the wish's tab.",
+  "A notice read leaves the attention bar after ten seconds.",
+  "task done file of the lead watch",
+  "Figure 1 - The path of a notice",
+  "Cost",
+  "No notice wakes the lead while it works: the watch keeps them.",
+].join("\n");
+const v4 = [
+  "Notices of the lead: specification",
+  "Djinn tells the lead when a task ends, fails or merges. This page groups those notices by wish.",
+  "Paused wish",
+  "The notices of a paused wish wait for it to resume, but failures.",
+  "Display",
+  "The window shows how many notices wait in the wish's tab.",
+  "A notice read stays in the wish's journal.",
+  "task done file of the lead watch to the window",
+  "Figure 1 - The path of a notice, up to the window",
+  "Grouping",
+  "The notices of one wish that come in less than two seconds leave together, in a single line of the digest.",
+  "A failure notice never waits: it leaves alone and without delay, even in the middle of a burst.",
+  "Cost",
+  "No notice wakes the lead while it works: the watch keeps them.",
+].join("\n");
+const quoted = (text, exact) => {
+  const start = text.indexOf(exact);
+  assert.ok(start >= 0, exact);
+  return b.quote(text, start, start + exact.length);
+};
+const relocated = (text, anchor) => {
+  const r = b.relocate(text, anchor);
+  return r.status === "lost"
+    ? ["lost"]
+    : [r.status, text.slice(r.start, r.end)];
+};
+
+test("a new version finds a passage moved, changed, or lost: the mockup's pairs", () => {
+  // Moved below Display, word for word: found where it went.
+  const moved = quoted(v3, "in a single line of the digest");
+  const found = b.relocate(v4, moved);
+  assert.equal(found.status, "found");
+  assert.equal(found.start, v4.indexOf("in a single line of the digest"));
+  // Reworded: the run of its words that shares most of them, without the words at its ends it did not have.
+  assert.deepEqual(
+    relocated(
+      v4,
+      quoted(v3, "it leaves alone and at once, even in the middle of a burst"),
+    ),
+    [
+      "changed",
+      "it leaves alone and without delay, even in the middle of a burst",
+    ],
+  );
+  // Its last words replaced: as many words stand in for them, within the block.
+  assert.deepEqual(
+    relocated("A failure: it leaves alone and without delay.\nDisplay", {
+      exact: "it leaves alone and at once",
+      start: 11,
+    }),
+    ["changed", "it leaves alone and without delay"],
+  );
+  assert.deepEqual(
+    relocated("A failure: it leaves alone and\nDisplay settings", {
+      exact: "it leaves alone and at once",
+      start: 11,
+    }),
+    ["changed", "it leaves alone and"],
+  );
+  // Dropped: nothing shares enough of its words.
+  assert.deepEqual(relocated(v4, quoted(v3, "after ten seconds")), ["lost"]);
+  // The same page finds every quote as it was.
+  for (const exact of ["after ten seconds", "two seconds leave together"])
+    assert.equal(b.relocate(v3, quoted(v3, exact)).status, "found");
+});
+
+test("a changed passage keeps at least 60 % of its words, whatever their case and punctuation", () => {
+  const anchor = { exact: "one two three four five", start: 0 };
+  // Its last two words replaced: the two that stand in for them come with it, not the one after.
+  assert.deepEqual(relocated("x One, two; THREE six seven y", anchor), [
+    "changed",
+    "One, two; THREE six seven",
+  ]);
+  // Two words of five: lost.
+  assert.deepEqual(relocated("x one two six seven eight y", anchor), ["lost"]);
+  // Letters beyond ASCII are letters: the word stays whole.
+  assert.deepEqual(
+    relocated("a jalape\u00f1o pepper, roasted", {
+      exact: "jalape\u00f1o peppers, roasted",
+    }),
+    ["changed", "jalape\u00f1o pepper, roasted"],
+  );
+  // A word repeated counts as often as the quote has it.
+  assert.deepEqual(relocated("wait wait wait wait", { exact: "wait for it" }), [
+    "lost",
+  ]);
+  // Two runs as close: the nearest to where it was.
+  const twice = "red green blue\nred green gold\nred green gold";
+  const near = b.relocate(twice, {
+    exact: "red green black",
+    start: twice.lastIndexOf("red"),
+  });
+  assert.equal(near.status, "changed");
+  assert.equal(near.start, twice.lastIndexOf("red"));
+  // Nothing to look for, or nowhere: lost.
+  assert.deepEqual(relocated("text", { exact: "  ,; " }), ["lost"]);
+  assert.deepEqual(relocated("", { exact: "word" }), ["lost"]);
+});
+
+test("a new version finds an element by its id, its words at its path or elsewhere, changed, or lost", () => {
+  const el = (path, fingerprint, id = "") => ({
+    id,
+    path,
+    tag: path.split(">").pop().trim().split(":")[0],
+    fingerprint,
+  });
+  const figure = {
+    elementId: "",
+    path: "figure:nth-of-type(1)",
+    fingerprint:
+      "task done file of the lead watch Figure 1 - The path of a notice",
+  };
+  // The mockup's figure, which v4 draws an arrow into and captions longer: changed.
+  const v4figure = el(
+    "figure:nth-of-type(1)",
+    "task done file of the lead watch to the window Figure 1 - The path of a notice, up to the window",
+  );
+  assert.deepEqual(
+    { ...b.findElement([v4figure], figure) },
+    {
+      status: "changed",
+      index: 0,
+      score: 1,
+    },
+  );
+  // Moved after another figure, its words the same: found where it went.
+  const other = el("figure:nth-of-type(1)", "A table of waits");
+  const moved = el(
+    "figure:nth-of-type(2)",
+    "Task done, file of the lead: watch. Figure 1 - the path of a notice",
+  );
+  assert.equal(b.findElement([other, moved], figure).index, 1);
+  assert.equal(b.findElement([other, moved], figure).status, "found");
+  // Its id finds it, whatever its words.
+  const byId = { ...figure, elementId: "path" };
+  assert.deepEqual(
+    {
+      ...b.findElement(
+        [other, el("figure:nth-of-type(2)", "New words", "path")],
+        byId,
+      ),
+    },
+    {
+      status: "found",
+      index: 1,
+    },
+  );
+  // A paragraph is never found for a figure, and words too far are lost.
+  assert.equal(
+    b.findElement([el("p:nth-of-type(1)", figure.fingerprint)], figure).status,
+    "lost",
+  );
+  assert.equal(b.findElement([other], figure).status, "lost");
+  assert.equal(b.findElement([], figure).status, "lost");
 });
 
 test("a selection quoted from the pieces is found again in the same page", () => {
@@ -171,6 +345,13 @@ const passage = {
   label: "§ Grouping",
 };
 const at = { left: 10, top: 20, right: 110, bottom: 38 };
+const element = {
+  page: "index.html",
+  elementId: "",
+  path: "section:nth-of-type(2) > figure:nth-of-type(1)",
+  fingerprint: "task done lead queue watch Figure 1 - The path of a notice",
+  label: "figure: Figure 1 - The path of a notice",
+};
 
 test("the window takes from the frame only what the bridge sends", () => {
   assert.deepEqual(
@@ -201,6 +382,31 @@ test("the window takes from the frame only what the bridge sends", () => {
       type: "key",
       name: "comment",
     },
+  );
+  assert.deepEqual(
+    w.fromFrame({ djinn: "tilasm", type: "key", name: "escape" }),
+    { type: "key", name: "escape" },
+  );
+  assert.deepEqual(
+    w.fromFrame({ djinn: "tilasm", type: "element", hover: at }),
+    { type: "element", hover: at },
+  );
+  assert.deepEqual(
+    w.fromFrame({ djinn: "tilasm", type: "element", hover: null }),
+    { type: "element", hover: null },
+  );
+  assert.deepEqual(
+    w.fromFrame({ djinn: "tilasm", type: "element", element, at }),
+    { type: "element", element, at },
+  );
+  const anchors = [
+    { id: "a", status: "found", top: 12, bottom: 30 },
+    { id: "b", status: "changed", top: -40, bottom: -20, now: "sent alone" },
+    { id: "c", status: "lost" },
+  ];
+  assert.deepEqual(
+    w.fromFrame({ djinn: "tilasm", type: "placed", version: 4, anchors }),
+    { type: "placed", version: 4, anchors },
   );
   // Only the fields it knows are kept.
   const extra = w.fromFrame({
@@ -241,6 +447,46 @@ test("the window refuses a message of another shape, or a quote longer than an a
     sel(passage, { ...at, top: "20" }),
     sel(passage, null),
     { djinn: "tilasm", type: "selection", passage },
+    { djinn: "tilasm", type: "element", hover: { ...at, left: NaN } },
+    { djinn: "tilasm", type: "element", element },
+    { djinn: "tilasm", type: "element", element: { ...element, path: "" }, at },
+    {
+      djinn: "tilasm",
+      type: "element",
+      element: { ...element, fingerprint: "x".repeat(2001) },
+      at,
+    },
+    { djinn: "tilasm", type: "element", element: { ...element, label: 1 }, at },
+    { djinn: "tilasm", type: "placed", anchors: [] },
+    { djinn: "tilasm", type: "placed", version: -1, anchors: [] },
+    { djinn: "tilasm", type: "placed", version: 2, anchors: {} },
+    {
+      djinn: "tilasm",
+      type: "placed",
+      version: 2,
+      anchors: [{ id: "a", status: "moved" }],
+    },
+    {
+      djinn: "tilasm",
+      type: "placed",
+      version: 2,
+      anchors: [{ id: "a", status: "found", top: 3 }],
+    },
+    {
+      djinn: "tilasm",
+      type: "placed",
+      version: 2,
+      anchors: [{ id: "a", status: "changed", now: "x".repeat(2001) }],
+    },
+    {
+      djinn: "tilasm",
+      type: "placed",
+      version: 2,
+      anchors: Array.from({ length: 10001 }, () => ({
+        id: "a",
+        status: "lost",
+      })),
+    },
   ])
     assert.equal(w.fromFrame(data), null, JSON.stringify(data)?.slice(0, 80));
   assert.notEqual(
@@ -265,16 +511,27 @@ test("the marks are the anchors of the comments on a passage, and of the card be
       comment("b", w.CommentState.DRAFT),
       comment("c", w.CommentState.DRAFT, { elementId: "fig", label: "figure" }),
       comment("d", w.CommentState.SENT, { ...passage, page: "notes.html" }),
+      comment("e", w.CommentState.DRAFT, { ...element, page: "" }),
     ],
     { ...passage, exact: "notice" },
+    "e",
   );
   assert.deepEqual(
-    marks.map((m) => [m.id, m.state, m.page, m.exact]),
+    marks.map((m) => [m.id, m.state, m.page, m.exact, m.elementId, m.path]),
     [
-      ["a", "draft", "index.html", "two seconds"],
-      ["d", "sent", "notes.html", "two seconds"],
-      ["", "writing", "index.html", "notice"],
+      ["a", "draft", "index.html", "two seconds", "", ""],
+      ["c", "draft", "index.html", "", "fig", ""],
+      ["d", "sent", "notes.html", "two seconds", "", ""],
+      ["e", "active", "index.html", "", "", element.path],
+      ["", "writing", "index.html", "notice", "", ""],
     ],
+  );
+  // The card being written on an element.
+  assert.deepEqual(
+    w
+      .marksOf([], element)
+      .map((m) => [m.state, m.exact, m.path, m.fingerprint]),
+    [["writing", "", element.path, element.fingerprint]],
   );
   assert.ok(!JSON.stringify(marks).includes("secret"));
   assert.deepEqual(w.marksOf([]), []);

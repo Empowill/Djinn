@@ -391,3 +391,46 @@ func (t *Tilasms) Drafts(
 	}
 	return connect.NewResponse(res), nil
 }
+
+func (t *Tilasms) PlaceComments(
+	ctx context.Context, req *connect.Request[planv1.TilasmServicePlaceCommentsRequest],
+) (*connect.Response[planv1.TilasmServicePlaceCommentsResponse], error) {
+	m := req.Msg
+	res := &planv1.TilasmServicePlaceCommentsResponse{}
+	err := write(ctx, t.Store, req.Spec(), m, func(tx *store.Tx) error {
+		tilasm, err := store.Get[*planv1.Tilasm](ctx, tx, m.GetTilasmId())
+		if err != nil {
+			return err
+		}
+		// The window read an earlier version: what it found there no longer says where the comments stand.
+		if m.GetVersion() != latestVersion(tilasm) {
+			return nil
+		}
+		for _, p := range m.GetPlaces() {
+			comment, err := store.Get[*planv1.TilasmComment](ctx, tx, p.GetId())
+			if err != nil {
+				return err
+			}
+			if comment.GetTilasmId() != tilasm.GetId() {
+				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is on another tilasm than %s", comment.GetCode(), tilasm.GetCode()))
+			}
+			a := comment.GetAnchor()
+			if a == nil {
+				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is on the whole tilasm: it has no place", comment.GetCode()))
+			}
+			if a.GetStatus() == p.GetStatus() && a.GetStatusVersion() == m.GetVersion() {
+				continue
+			}
+			a.Status, a.StatusVersion = p.GetStatus(), m.GetVersion()
+			if err := tx.Put(comment); err != nil {
+				return err
+			}
+			res.Comments = append(res.Comments, comment)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(res), nil
+}
