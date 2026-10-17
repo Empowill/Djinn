@@ -156,10 +156,28 @@ developer_file: /home/me/.config/djinn/projects/01a1…/settings.txtpb
 ## A file Djinn cannot read
 
 A malformed file, a value out of range, two checks of one name: Djinn still starts, and `djinn project show` lists the
-problem under `problems`, with the file and the line, as the project's view in the window does. The other file still
-shows. A task spawned in the project waits, saying `settings unreadable: …`, and starts once you fix it; merges there
-wait too: a team's budget never silently vanishes. An unknown field, which a newer Djinn may know, is only a warning
-(`warnings`): the line is ignored.
+problem under `notices`, a thing to fix with the file and the line, as the project's view in the window does. The
+other file still shows. A task spawned in the project waits, saying `settings unreadable: …`, and starts once you fix
+it; merges there wait too: a team's budget never silently vanishes. An unknown field, which a newer Djinn may know, is
+only an information: the line is ignored.
+
+## What Djinn finds in a project
+
+`djinn project show` lists, under `notices`, what Djinn finds in the project's configuration on this machine, computed
+on every read: the things to fix first, then the information. Each notice has a `kind` (`to fix` or `information`), a
+`topic`, the `subject` it names, one sentence (`text`), the error as read (`detail`), and one `action`, with the
+`file` it changes or the `command` that does it.
+
+| Topic | To fix | Information |
+| --- | --- | --- |
+| `settings` | A file Djinn cannot read | A field a newer Djinn knows; `watch_commands` or `serve_commands` in the team's file |
+| `permissions` | `.agents/permissions.txtpb` Djinn cannot read: no worker, watcher nor source starts | A field a newer Djinn knows |
+| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out |
+| `setup` | The setup's last run failed, with the command it still is | |
+| `skill` | A `SKILL.md` Djinn cannot read; a wish template, inbox source or babysit it cannot use; a summoned skill it no longer finds | |
+| `source` | A source this machine has not decided on: plug it in, or unplug it to say no | A source plugged in that no skill declares any more |
+
+`djinn project list` gives each project's `to_fix`, the number of things to fix.
 
 ## No secret, ever
 

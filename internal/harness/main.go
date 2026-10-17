@@ -612,6 +612,20 @@ func findMain(ctx context.Context, repo, name string) (main, ref string, err err
 	return "", "", errors.New("the project has no main branch: name it with main_branch in its settings")
 }
 
+// Reference is the project's reference branch, from name, its main_branch setting, as mainRef finds it, and the ref
+// Djinn merges it from; an error when the repository does not hold that ref, nor finds any.
+func (h *Harness) Reference(ctx context.Context, project *planv1.Project, name string) (branch, ref string, err error) {
+	repo := project.GetDirectory()
+	if branch, ref, err = findMain(ctx, repo, name); err != nil {
+		return "", "", err
+	}
+	if _, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", ref+"^{commit}"); err != nil {
+		short := strings.TrimPrefix(strings.TrimPrefix(ref, "refs/remotes/"), "refs/heads/")
+		return branch, ref, fmt.Errorf("the repository holds no %s: fetch it, or name another branch", short)
+	}
+	return branch, ref, nil
+}
+
 // reTagClash matches git's error line when a tag fetch is rejected because it would clobber an existing local tag.
 var reTagClash = regexp.MustCompile(`!\s+\[rejected\]\s+(\S+)\s+->\s+(\S+)\s+\(would clobber existing tag\)`)
 

@@ -53,7 +53,7 @@ A click on a project in the side panel opens its view:
 
 | Part | What it shows |
 | --- | --- |
-| Problems | In red at the top: a settings file Djinn cannot read, and what it ignored. |
+| Notices | In red at the top: what Djinn finds in the project's configuration, things to fix first. See below. |
 | Folder | Its path, and whether it is a Git repository. |
 | Remote | Where Djinn pushes, when the repository has one. |
 | Push cadence | **Standard** or **On demand**, and each branch Djinn pushes that differs from its remote, with a button to push it. See [Push](#push). |
@@ -66,6 +66,24 @@ The side panel also shows, under each project, the branches waiting to be pushed
 at the project's root.
 
 Nothing removes or renames a project once added.
+
+## What Djinn finds in a project
+
+Djinn reads a project's configuration each time it shows the project, and says what it finds in a list: things to fix,
+which wait for you, then information. Each one says what it is in one sentence, and the one action that settles it: a
+file to correct, a source to decide on, a skill to unsummon, a reference branch to name. The projects list carries the
+number of things to fix.
+
+- **Things to fix**: a settings file or the permissions Djinn cannot read; no reference branch found, or the one the
+  settings name missing from the repository; the setup that failed its last run; a skill whose header Djinn cannot
+  read, or whose wish template, inbox source or babysit it cannot use; a summoned skill no longer found; an inbox
+  source this machine has not decided on, plugged in or said no to.
+- **Information**: a field a newer Djinn knows, ignored; your copy on another branch than the reference branch, where
+  Djinn reads the configuration for now; a source plugged in that no skill declares any more; a line of a skill's
+  header that breaks its format, which Claude Code reads anyway and Djinn reads around.
+
+Unplugging a source, even one never plugged in, says no to it: its project no longer asks. Plugging it in forgets the
+no. The command line's project details list the same notices.
 
 ## Settings: the team's file and yours
 
@@ -134,11 +152,11 @@ check**: Djinn merges finished work only into a wish's own branch, untested, nev
 ### A file Djinn cannot read
 
 A file that does not parse, a value out of range, two checks of the same name: Djinn still starts, and the project's
-view shows the problem in red, with the file and the line. New tasks in the project wait, saying **settings
+view shows it in red, a thing to fix with the file and the line. New tasks in the project wait, saying **settings
 unreadable** and why, and start once the file is fixed; Djinn holds the merges there meanwhile. A team's budget never
 silently vanishes.
 
-A setting this Djinn does not know, written by a newer one, is only a warning: Djinn ignores that line.
+A setting this Djinn does not know, written by a newer one, is only an information: Djinn ignores that line.
 
 ### No secret, ever
 

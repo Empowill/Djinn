@@ -223,12 +223,14 @@ this machine"), each with its summary, its last run, its command and a "Plug in"
 what the button does written under it; `djinn inbox sources`, `djinn inbox plug <source>` and `djinn inbox unplug
 <source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or
 by its skill alone when one project holds it. Whether it is plugged in lives in Djinn's data on this machine, never in
-the repository. Unplugged, its command stops; the items it brought stay. A skill whose `metadata` is not YAML, or
-whose `metadata.djinn` Djinn cannot read, is no source: its project's problems name it, in the project's panel and in
-`djinn project show`, and Djinn ignores its template, source and babysit until it is fixed. One plugged in before it
-broke stays listed with why, so that it can be unplugged: the inbox shows it as a failing source. Another key of the
-front matter that breaks the YAML, like `argument-hint: [a] [b]` (Claude Code reads it anyway), is only a warning in
-the same places, with its line: Djinn reads `metadata` apart from it. Quoting the value fixes it.
+the repository. Unplugged, its command stops; the items it brought stay. Unplugging a source never plugged in says no to
+it: a source neither plugged in nor said no to is a thing to fix of its project (`djinn project show`), until you
+decide; plugging it in forgets the no. A skill whose `metadata` is not YAML, or whose `metadata.djinn` Djinn cannot
+read, is no source: its project's notices name it, in the project's panel and in `djinn project show`, and Djinn
+ignores its template, source and babysit until it is fixed. One plugged in before it broke stays listed with why, so
+that it can be unplugged: the inbox shows it as a failing source. Another key of the front matter that breaks the
+YAML, like `argument-hint: [a] [b]` (Claude Code reads it anyway), is only an information in the same places, with its
+line: Djinn reads `metadata` apart from it. Quoting the value fixes it.
 
 ```yaml
 ---

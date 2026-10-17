@@ -555,13 +555,14 @@ list` lists the items.
 
 The sources live in their project's panel, under "Inbox sources, on this machine": what each reads, how its last run
 went, and **Plug in** or **Unplug**, with what it does written under the button. A source runs only once plugged in, on
-this machine. One you plugged in that fails gets a card of the kind **Djinn's configuration**: the error, since when,
-how many runs failed in a row. Djinn runs it again on its own, and the first run that goes well takes the card away;
-its other choice unplugs it.
-A skill whose `metadata` Djinn cannot read is not listed as a source: it is one of the project's problems, at the top
-of its panel and in `djinn project show`. Until it is fixed, Djinn ignores what it declares. Another line that breaks
-the YAML, like `argument-hint: [a] [b]`, which Claude Code reads anyway, is only a warning there, with the line at
-fault: Djinn reads `metadata` apart from it. Details: [the
+this machine; one this machine has not decided on is one of the project's things to fix, until you plug it in or
+unplug it to say no. One you plugged in that fails gets a card of the kind **Djinn's configuration**: the error, since
+when, how many runs failed in a row. Djinn runs it again on its own, and the first run that goes well takes the card
+away; its other choice unplugs it.
+A skill whose `metadata` Djinn cannot read is not listed as a source: it is one of the project's things to fix, at the
+top of its panel and in `djinn project show`. Until it is fixed, Djinn ignores what it declares. Another line that
+breaks the YAML, like `argument-hint: [a] [b]`, which Claude Code reads anyway, is only an information there, with the
+line at fault: Djinn reads `metadata` apart from it. Details: [the
 inbox](wish-templates.md#the-inbox-what-comes-from-outside).
 
 ## Team settings and integration

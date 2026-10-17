@@ -196,18 +196,6 @@ func shortLine(text string) string {
 	return line
 }
 
-// SkillWarnings say which skills of the project folder dir have a front matter that is not YAML, which Djinn reads
-// all the same: metadata apart from the lines that break it. None when dir is empty.
-func SkillWarnings(dir string) []string {
-	var out []string
-	for _, s := range ProjectSkills(dir) {
-		if _, warning, err := skillFront(s.Dir); err == nil && warning != "" {
-			out = append(out, "the skill "+s.Name+": "+warning)
-		}
-	}
-	return out
-}
-
 func unquote(s string) string {
 	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
 		return s[1 : len(s)-1]

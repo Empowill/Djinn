@@ -221,14 +221,9 @@ func TestSkillFrontApart(t *testing.T) {
 		}
 	}
 
-	warnings := SkillWarnings(dir)
-	if len(warnings) != 2 || !strings.HasPrefix(warnings[0], "the skill notion-ticket: SKILL.md: not YAML at line 5 ") ||
-		warnings[1] != "the skill open-mr: SKILL.md: not YAML at line 3 (argument-hint: [ET-XXXX] [short title]): "+
-			"Djinn reads metadata apart; quoting the value fixes it" {
-		t.Errorf("warnings = %q", warnings)
-	}
-	if problems := SkillProblems(dir); len(problems) != 2 ||
-		!strings.Contains(problems[0].Error(), "meta-broken") || !strings.Contains(problems[1].Error(), "meta-twice") {
-		t.Errorf("problems = %v", problems)
+	_, warning, err = skillFront(open)
+	if want := "SKILL.md: not YAML at line 3 (argument-hint: [ET-XXXX] [short title]): Djinn reads metadata apart; " +
+		"quoting the value fixes it"; err != nil || warning != want {
+		t.Errorf("skillFront(open-mr) = %q, %v; want %q", warning, err, want)
 	}
 }

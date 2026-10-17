@@ -97,20 +97,6 @@ func readDjinn(dir string) (djinnYAML, error) {
 	return djinn, nil
 }
 
-// SkillProblems say which skills of the project folder dir Djinn cannot read, and why: what they declare for Djinn
-// is ignored until they are fixed. None when dir is empty.
-func SkillProblems(dir string) []error {
-	var out []error
-	for _, s := range ProjectSkills(dir) {
-		var unreadable *UnreadableSkillError
-		if _, err := readDjinn(s.Dir); errors.As(err, &unreadable) {
-			out = append(out, fmt.Errorf("the skill %s cannot be read: Djinn ignores its wish template, inbox "+
-				"source and babysit: %w", s.Name, unreadable.Err))
-		}
-	}
-	return out
-}
-
 // parseTemplate checks a template: a title and a match are required, the match must compile, every placeholder
 // must be a group of the match, and a done line needs a watcher.
 func parseTemplate(skill, dir string, y templateYAML) (*Template, error) {

@@ -566,3 +566,18 @@ func TestMainCorrectionCancelled(t *testing.T) {
 		t.Errorf("after main merge succeeded, state: %v", state)
 	}
 }
+
+// TestReference (W146): the reference branch is the one main_branch names, else the repository's main or master; a
+// branch named that the repository does not hold is an error that names it.
+func TestReference(t *testing.T) {
+	repo := gitRepo(t)
+	project := &planv1.Project{Directory: repo, Git: true}
+	h := &Harness{}
+	branch, ref, err := h.Reference(t.Context(), project, "")
+	if err != nil || (branch != "main" && branch != "master") || ref != "refs/heads/"+branch {
+		t.Errorf("unnamed: %s, %s, %v; want the local main or master", branch, ref, err)
+	}
+	if _, _, err := h.Reference(t.Context(), project, "dev"); err == nil || !strings.Contains(err.Error(), "holds no dev") {
+		t.Errorf("dev, which the repository does not hold: %v", err)
+	}
+}
