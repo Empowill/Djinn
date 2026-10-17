@@ -156,6 +156,11 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
     to open the wish, switch tabs, show a change arriving) against millisecond budgets. A story that touches the window
     (interface under the UI folder, the stream it reads, the server calls it makes) runs this spec before it ends;
     other stories do not. Kept out of the default `go tool task e2e` run.
+  - **Time budgets:** the cases tagged `@budget` hold the window to milliseconds (the Grimoire's scroll, a key in the
+    terminal, a note typed on a question, a long diff's chunks). Other workers' load fails them whatever the change,
+    so the default run and the push check leave them out. A story that touches what one measures runs it on a quiet
+    machine: `go tool task e2e -- --grep @budget`, or its spec named alone (`go tool task e2e -- e2e/docs.spec.ts`),
+    which runs its budget too.
   - **The creation page's smoke:** the cases tagged `@solver` run its WebGL2 solver, which takes about a minute to
     show glyphs on the software WebGL2 of a headless browser; `go tool task e2e -- e2e/wish-composer.spec.ts --grep
     @solver` (or `e2e/theme.spec.ts`) runs them, the default run leaves them out. A story that changes the smoke runs

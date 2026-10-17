@@ -133,36 +133,38 @@ test("a reopened window finds the terminal and its output", async ({
   }
 });
 
-test("a key reaches the terminal in well under a key repeat", async ({
-  page,
-}) => {
-  await page.goto(djinnURL());
-  await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
-  // The page's own requests, one after the other as the terminal sends keys: Connect in JSON, same origin, the
-  // session cookie.
-  const mean = await page.evaluate(async () => {
-    const call = async (method: string, body: object) => {
-      const res = await fetch(`/terminal.v1.TerminalService/${method}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+test(
+  "a key reaches the terminal in well under a key repeat",
+  { tag: "@budget" },
+  async ({ page }) => {
+    await page.goto(djinnURL());
+    await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
+    // The page's own requests, one after the other as the terminal sends keys: Connect in JSON, same origin, the
+    // session cookie.
+    const mean = await page.evaluate(async () => {
+      const call = async (method: string, body: object) => {
+        const res = await fetch(`/terminal.v1.TerminalService/${method}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`${method}: ${res.status}`);
+        return res.json();
+      };
+      const { terminal } = await call("Open", {
+        name: "main",
+        cols: 80,
+        rows: 24,
       });
-      if (!res.ok) throw new Error(`${method}: ${res.status}`);
-      return res.json();
-    };
-    const { terminal } = await call("Open", {
-      name: "main",
-      cols: 80,
-      rows: 24,
+      const n = 200;
+      const start = performance.now();
+      for (let i = 0; i < n; i++) await call("Write", { id: terminal.id });
+      return (performance.now() - start) / n;
     });
-    const n = 200;
-    const start = performance.now();
-    for (let i = 0; i < n; i++) await call("Write", { id: terminal.id });
-    return (performance.now() - start) / n;
-  });
-  console.log(`write round trip over loopback HTTP: ${mean.toFixed(2)} ms`);
-  expect(mean).toBeLessThan(15);
-});
+    console.log(`write round trip over loopback HTTP: ${mean.toFixed(2)} ms`);
+    expect(mean).toBeLessThan(15);
+  },
+);
 
 // agy (Antigravity) 1.3.2 opens with queries to the terminal (XTVERSION, DA1, DECRQM 2026 and 2027, OSC 11), then
 // draws its logo, and goes on once the answers come. A fake agy prints the first frame the real one wrote in Djinn's
