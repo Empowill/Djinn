@@ -182,13 +182,14 @@ func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Sett
 	}
 	repo := l.project.GetDirectory()
 	key := l.key()
-	// Main merged into a branch whose remote holds commits it lacks could not be pushed (remote_branch.go).
-	if why := apart(ctx, repo, settings, branch); why != "" {
+	// Main merged into a branch whose remote holds commits it lacks could not be pushed: the branch is brought up to
+	// the remote's first, as this repository last saw it, fetched when a look is due; or main waits (remote_branch.go).
+	due := now || state.GetCheckTime() == nil || h.now().Sub(state.GetCheckTime().AsTime()) >= settings.MergeMainEvery
+	if why := h.catchUp(ctx, l.wish, repo, branch, due); why != "" {
 		h.editLine(ctx, l, func(m *planv1.WishMain) { m.Held = why })
-		h.tellApart(ctx, l.wish, why)
 		return
 	}
-	if last := state.GetCheckTime(); !now && last != nil && h.now().Sub(last.AsTime()) < settings.MergeMainEvery {
+	if !due {
 		// Not time to look at main yet; a merge tested green moves the branch as soon as it can.
 		if t, ok := h.mainTested[key]; ok {
 			if old, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {

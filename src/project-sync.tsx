@@ -1,10 +1,13 @@
 // The branches Djinn pushes that are out of sync with their remote, one short line each: the branch, then ↑ the
 // commits to push and ↓ those the remote has that it lacks; what it belongs to and the full sentence on hover; a small
-// button pushes it. The side panel's project row, the azima card and the project dialog read them alike.
+// button pushes it, another pulls one behind its remote, a fast-forward only. The side panel's project row, the azima
+// card and the project dialog read them alike. A pull Djinn refuses, the branch diverged or its checkout holding
+// changes, says why with a cross on its line.
 // A push shows on its line until it ends, as the server records it (ProjectSync.push), whoever started it: a spinner
 // while its push checks and git push run, a check mark a few seconds once pushed, a cross with the reason when its
 // checks hold it or it failed.
 import {
+  ArrowDownToLine,
   ArrowUpFromLine,
   Check,
   ChevronDown,
@@ -171,6 +174,29 @@ export function usePushes(
   return { pushing, outcomes, push };
 }
 
+// usePulls runs the window's pulls of a list of lines, one at a time: which branch pulls now, and why each one
+// refused was refused, until it is pulled again.
+export function usePulls(
+  onPull?: (sync: ProjectSync) => Promise<unknown> | void,
+) {
+  const [pulling, setPulling] = useState("");
+  const [refusals, setRefusals] = useState<Record<string, string>>({});
+  const pull = async (sync: ProjectSync) => {
+    if (!onPull || pulling) return;
+    setPulling(sync.branch);
+    let refused = "";
+    try {
+      await onPull(sync);
+    } catch (err) {
+      refused = message(err);
+    } finally {
+      setRefusals((all) => ({ ...all, [sync.branch]: refused }));
+      setPulling("");
+    }
+  };
+  return { pulling, refusals, pull };
+}
+
 // useShownTick renders again when the check mark of a line among syncs is due to go.
 function useShownTick(syncs: readonly ProjectSync[], now?: number) {
   const [tick, setTick] = useState(0);
@@ -202,7 +228,8 @@ export function syncTitle(sync: ProjectSync): string {
 }
 
 // SyncLine is one branch's line. busy is why its button waits: a push runs; pushing: its own, the window's. outcome
-// is what the window's push of it answered; now, for tests, the time its check mark is measured against.
+// is what the window's push of it answered; now, for tests, the time its check mark is measured against. pulling: the
+// window's pull of it runs; refused: why Djinn refused its last pull.
 export function SyncLine({
   sync,
   busy = "",
@@ -210,6 +237,9 @@ export function SyncLine({
   outcome,
   now,
   onPush,
+  pulling = false,
+  refused = "",
+  onPull,
 }: {
   sync: ProjectSync;
   busy?: string;
@@ -217,6 +247,9 @@ export function SyncLine({
   outcome?: PushOutcome;
   now?: number;
   onPush?: () => void;
+  pulling?: boolean;
+  refused?: string;
+  onPull?: () => void;
 }) {
   useShownTick([sync], now);
   const status = pushStatus(sync, outcome, pushing, now);
@@ -228,6 +261,14 @@ export function SyncLine({
   // checks pass, even with the branch pushed by hand.
   const pushable =
     sync.ahead > 0 || status.kind === "held" || status.kind === "running";
+  const pullLabel = pulling
+    ? t("project.pulling_branch", { branch: sync.branch })
+    : busy ||
+      t("project.pull_branch", {
+        branch: sync.branch,
+        remote: sync.remote || "origin",
+        target: sync.target || sync.branch,
+      });
   return (
     <div className="sync-line" title={syncTitle(sync)}>
       <span className="sync-branch">{sync.branch}</span>
@@ -251,6 +292,35 @@ export function SyncLine({
         >
           {status.kind === "pushed" ? <Check size={12} /> : <X size={12} />}
         </span>
+      )}
+      {refused && (
+        <span
+          className="sync-status failed"
+          role="img"
+          title={[t("project.pull_refused"), refused].join("\n")}
+          aria-label={[t("project.pull_refused"), refused].join("\n")}
+        >
+          <X size={12} />
+        </span>
+      )}
+      {onPull && sync.behind > 0 && (
+        <button
+          type="button"
+          className="icon-button sync-push sync-pull"
+          disabled={Boolean(busy) || running || pulling}
+          title={pullLabel}
+          aria-label={pullLabel}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPull();
+          }}
+        >
+          {pulling ? (
+            <LoaderCircle className="sync-spinner" size={12} />
+          ) : (
+            <ArrowDownToLine size={12} />
+          )}
+        </button>
       )}
       {onPush && pushable && (
         <button
@@ -276,17 +346,20 @@ export function SyncLine({
 }
 
 // SyncLines lists the branches out of sync among syncs, or whose push runs or just ended, in their order; more than
-// three fold behind the first two. While one pushes, every button waits.
+// three fold behind the first two. While one pushes or pulls, every button waits.
 export function SyncLines({
   syncs,
   now,
   onPush,
+  onPull,
 }: {
   syncs?: readonly ProjectSync[];
   now?: number;
   onPush?: (sync: ProjectSync) => Promise<unknown> | void;
+  onPull?: (sync: ProjectSync) => Promise<unknown> | void;
 }) {
   const { pushing, outcomes, push } = usePushes(onPush);
+  const { pulling, refusals, pull } = usePulls(onPull);
   const [open, setOpen] = useState(false);
   const all = syncs ?? [];
   useShownTick(all, now);
@@ -300,7 +373,9 @@ export function SyncLines({
       ? t("project.pushing_branch", { branch: sync.branch })
       : running && !isPushRunning(sync)
         ? t("project.push_running")
-        : "";
+        : pulling && pulling !== sync.branch
+          ? t("project.pull_running")
+          : "";
   return (
     <div className="sync-lines">
       {shown.map((sync) => (
@@ -312,6 +387,9 @@ export function SyncLines({
           outcome={outcomes[sync.branch]}
           now={now}
           onPush={onPush && (() => void push(sync))}
+          pulling={pulling === sync.branch}
+          refused={refusals[sync.branch]}
+          onPull={onPull && (() => void pull(sync))}
         />
       ))}
       {folds && (

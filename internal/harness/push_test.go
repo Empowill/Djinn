@@ -297,6 +297,9 @@ func TestARefusedPushIsNotForced(t *testing.T) {
 	in.git(t, other, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit", "--quiet", "-m", "Theirs")
 	in.git(t, other, "push", "--quiet", "origin", in.branch)
 	theirs := in.remoteTip(t, bare)
+	// Djinn cannot fetch from origin, which takes pushes: it merges on main as it last saw it, and git refuses the push.
+	in.git(t, in.repo, "remote", "set-url", "--push", "origin", bare)
+	in.git(t, in.repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
 
 	azima := in.azima(t, in.wishID, "Letters")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
@@ -325,7 +328,8 @@ func TestARefusedPushIsNotForced(t *testing.T) {
 	}
 
 	// The person brings origin's commit in: pushed.
-	in.git(t, in.repo, "pull", "--quiet", "--no-rebase", "--no-edit", "origin", in.branch)
+	in.git(t, in.repo, "pull", "--quiet", "--no-rebase", "--no-edit", bare, in.branch)
+	in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+in.branch, theirs)
 	in.answer(t, again, planv1.Choice_CHOICE_A)
 	in.pass(t, 0)
 	if got := in.remoteTip(t, bare); got != in.tip(t) {
@@ -333,6 +337,41 @@ func TestARefusedPushIsNotForced(t *testing.T) {
 	}
 	if s := in.pushState(t); s.GetRefused() != "" || s.GetQuestionId() != "" || s.GetLast().GetOldSha() != theirs {
 		t.Errorf("after the push: %v", s)
+	}
+}
+
+// TestMainBehindTheRemoteCatchesUp (W164): main, the wish's integration branch, behind origin's after someone else's
+// push, is fetched and brought up to it, the person's clean checkout following, before the work merges on top: the
+// push then goes, never forced.
+func TestMainBehindTheRemoteCatchesUp(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare := in.remote(t)
+	other := filepath.Join(t.TempDir(), "other")
+	in.git(t, in.repo, "clone", "--quiet", "--branch", in.branch, bare, other)
+	writeFile(t, other, "NEWS", "theirs\n")
+	in.git(t, other, "add", "NEWS")
+	in.git(t, other, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit", "--quiet", "-m", "Theirs")
+	in.git(t, other, "push", "--quiet", "origin", in.branch)
+	theirs := in.remoteTip(t, bare)
+
+	azima := in.azima(t, in.wishID, "Letters")
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	in.pass(t, 0)
+	if got := in.get(t, w1.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		t.Fatalf("W1's integration %v, want committed", got)
+	}
+	if !isAncestor(t.Context(), in.repo, theirs, in.tip(t)) {
+		t.Errorf("%s at %s lacks origin's %s", in.branch, in.tip(t), theirs)
+	}
+	if got := in.remoteTip(t, bare); got != in.tip(t) {
+		t.Errorf("origin at %s, want pushed at %s", got, in.tip(t))
+	}
+	if got := in.git(t, in.repo, "status", "--porcelain", "--untracked-files=no"); got != "" {
+		t.Errorf("the person's checkout reads %q, want following, clean", got)
+	}
+	if got := in.git(t, in.repo, "show", "HEAD:NEWS"); got != "theirs" {
+		t.Errorf("NEWS reads %q in the checkout's HEAD, want origin's", got)
 	}
 }
 

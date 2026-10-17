@@ -303,6 +303,14 @@ export function WishApp() {
     [clients, data],
   );
 
+  const pullProject = useCallback(
+    (id: string, sync: ProjectSync) =>
+      clients.projects
+        .pull({ project: id, branch: sync.branch })
+        .finally(() => void data.changed("", [Change.PROJECT])),
+    [clients, data],
+  );
+
   return (
     <div
       className={`app wish-app ${collapsed ? "sidebar-collapsed" : ""} ${glide ? "sidebar-glide" : ""}`}
@@ -406,6 +414,7 @@ export function WishApp() {
             onReorder={reorder}
             onNewProject={() => setModal("project")}
             onPush={pushProject}
+            onPull={pullProject}
             onImportWish={() => importRef.current?.click()}
             importDisabled={!loaded}
           />

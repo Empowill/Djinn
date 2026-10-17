@@ -12,13 +12,16 @@ type passMemo struct {
 	mu      sync.Mutex
 	remotes map[string]remoteConfig // by repository
 	mains   map[string][2]string    // mainRef's main and ref, by repository and main_branch setting
+	fetched map[string]bool         // the branches catchUp fetched, by repository and branch
 }
 
 type passMemoKey struct{}
 
 // withPassMemo is ctx keeping what passMemo keeps until ctx ends.
 func withPassMemo(ctx context.Context) context.Context {
-	return context.WithValue(ctx, passMemoKey{}, &passMemo{remotes: map[string]remoteConfig{}, mains: map[string][2]string{}})
+	return context.WithValue(ctx, passMemoKey{}, &passMemo{
+		remotes: map[string]remoteConfig{}, mains: map[string][2]string{}, fetched: map[string]bool{},
+	})
 }
 
 // passMemoOf is the memo of ctx's pass, nil out of a pass.
@@ -63,4 +66,17 @@ func (m *passMemo) keepMain(repo, name, main, ref string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mains[repo+"\x00"+name] = [2]string{main, ref}
+}
+
+// fetchDue tells whether catchUp fetches branch of repo: once a pass, every time out of a pass.
+func (m *passMemo) fetchDue(repo, branch string) bool {
+	if m == nil {
+		return true
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := repo + "\x00" + branch
+	due := !m.fetched[key]
+	m.fetched[key] = true
+	return due
 }

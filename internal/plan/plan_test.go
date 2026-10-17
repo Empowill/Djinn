@@ -490,6 +490,62 @@ func (p *testPusher) ForgetSync(ctx context.Context, project *planv1.Project, br
 	return fmt.Errorf("%w: %s", store.ErrNotFound, branch)
 }
 
+// Pull pulls a branch among Syncs behind its remote, refusing one that diverged; every one behind without branch.
+func (p *testPusher) Pull(ctx context.Context, project *planv1.Project, branch string) ([]*planv1.BranchPull, error) {
+	syncs, _ := p.Syncs(ctx, project)
+	var pulls []*planv1.BranchPull
+	for _, s := range syncs {
+		if (branch != "" && s.GetBranch() != branch) || s.GetBehind() == 0 {
+			continue
+		}
+		pull := &planv1.BranchPull{Branch: s.GetBranch(), Remote: s.GetRemote() + "/" + s.GetTarget(), Sha: "abc"}
+		if s.GetAhead() > 0 {
+			pull.Sha, pull.Refused = "", s.GetBranch()+" has diverged"
+		}
+		if branch != "" && pull.GetRefused() != "" {
+			return nil, errors.New(pull.GetRefused())
+		}
+		pulls = append(pulls, pull)
+	}
+	if branch != "" && !slices.ContainsFunc(syncs, func(s *planv1.ProjectSync) bool { return s.GetBranch() == branch }) {
+		return nil, fmt.Errorf("%w: %s", store.ErrNotFound, branch)
+	}
+	return pulls, nil
+}
+
+// TestProjectPull: the window's Pull reaches the pusher; a branch that diverged is refused saying why, one Djinn does
+// not push is not found; without a branch, each refusal is said in its pull.
+func TestProjectPull(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t, WithHome(t.TempDir()), WithPusher(&testPusher{}))
+	p, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := p.Msg.GetProject().GetName()
+	pull := func(branch *string) (*planv1.ProjectServicePullResponse, error) {
+		res, err := c.projects.Pull(ctx, connect.NewRequest(&planv1.ProjectServicePullRequest{Project: name, Branch: branch}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	if _, err := pull(proto.String("feat/x")); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "feat/x has diverged") {
+		t.Errorf("Pull of a branch that diverged: %v, want failed precondition saying so", err)
+	}
+	if _, err := pull(proto.String("feat/none")); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("Pull of no branch Djinn pushes: %v, want not found", err)
+	}
+	all, err := pull(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := all.GetPulls(); len(got) != 1 || got[0].GetBranch() != "feat/x" || got[0].GetRefused() == "" {
+		t.Errorf("Pull of every branch: %v, want feat/x refused", got)
+	}
+}
+
 // Reference finds main, as a repository with a remote holds it.
 func (p *testPusher) Reference(ctx context.Context, project *planv1.Project, name string) (string, string, error) {
 	return cmp.Or(name, "main"), "refs/remotes/origin/" + cmp.Or(name, "main"), nil

@@ -110,10 +110,23 @@ their place. A merge needs no model; a model only settles a conflict, when there
 
 ## When the remote moved on
 
-When the remote's copy of the branch holds commits the local branch lacks, a teammate's push for instance, Djinn
-merges nothing more into it and pushes it no more: it would have to force the push. The work waits, saying the branch
-has diverged from the remote's and how to align them by hand: merge the remote's commits into it, or reset it to the
-remote's if its own are not wanted. The Djinn hears it once. Once the branches agree, the work merges again.
+A teammate may push to the branch too. Before Djinn merges work, or main, into a branch, main included, it fetches the
+remote's copy of that branch, then:
+
+- **The branch is behind the remote's**, holding nothing the remote lacks: Djinn brings it up to the remote's, a
+  fast-forward, and merges the work on top. Your checkout of the branch follows when it is clean.
+- **Your checkout of the branch has changes not committed**: Djinn leaves your files alone, and the branch with them.
+  The work waits, saying so, and the Djinn hears it; once you commit them or put them aside, the branch catches up and
+  the work merges.
+- **The branch has diverged**, each side holding commits the other lacks: Djinn merges nothing more into it and pushes
+  it no more, as it would have to force the push. The work waits, saying the branch has diverged and how to align them
+  by hand: merge the remote's commits into it, or reset it to the remote's if its own are not wanted. The Djinn hears
+  it once. Once the branches agree, the work merges again.
+
+Djinn never forces and never rebases. A remote that does not answer within half a minute holds no merge: Djinn then
+compares with the remote's copy as Git last fetched it.
+
+You can bring a branch up to its remote yourself: see [Pulling yourself](#push-pulling-yourself).
 
 ## Good to know
 
