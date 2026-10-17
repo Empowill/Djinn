@@ -1549,10 +1549,11 @@ test("the questions column groups the open questions by wish, the first open in 
   assert.ok(
     rows[0].indexOf(">Enlighten me<kbd") < rows[0].indexOf("Rub the lamp"),
   );
-  // The others are closed: their code, their title, how much they hold up, out of the tab order; no body.
+  // The others are closed: their code, their title, how much they hold up, out of the tab order; no body. Each has a
+  // perch for the Djinn's eye, empty, hidden from screen readers.
   assert.match(
     rows[1],
-    /^q2" class="question-card question-row closed can-wait" tabindex="-1"[^>]*><span class="question-id">Q02<\/span><div class="question-row-head"><h3 class="question-row-title">Which glass\?<\/h3><p class="question-row-meta"><span class="status-badge tone-later">.*Can wait<\/span><\/span><span>2 options<\/span><span class="revised-badge">Revised ×2<\/span><\/p><\/div><\/article>/,
+    /^q2" class="question-card question-row closed can-wait" tabindex="-1"[^>]*><span class="djinn-eye-perch" data-perch="q:q2" aria-hidden="true"><\/span><span class="question-id">Q02<\/span><div class="question-row-head"><h3 class="question-row-title">Which glass\?<\/h3><p class="question-row-meta"><span class="status-badge tone-later">.*Can wait<\/span><\/span><span>2 options<\/span><span class="revised-badge">Revised ×2<\/span><\/p><\/div><\/article>/,
   );
   assert.doesNotMatch(
     rows[1] + rows[2],

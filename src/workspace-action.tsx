@@ -18,12 +18,15 @@ export function WorkspaceAction({
   expanded = false,
   className = "",
   layoutId = ACTION_LAYOUT_ID,
+  perch,
 }: {
   children: ReactNode;
   tone: WorkspaceActionTone;
   expanded?: boolean;
   className?: string;
   layoutId?: string;
+  // A place on the surface, outside its content: the Djinn's eye rests there (djinn-eye.tsx).
+  perch?: ReactNode;
 }) {
   const reducedMotion = useReducedMotion();
   const transition = reducedMotion
@@ -58,6 +61,7 @@ export function WorkspaceAction({
           aria-hidden="true"
         />
       </div>
+      {perch}
       <motion.div
         layout="position"
         transition={transition}

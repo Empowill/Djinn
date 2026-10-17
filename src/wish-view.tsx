@@ -147,6 +147,7 @@ import {
   type SeatChoice,
 } from "./wish-head";
 import { LeadMessage } from "./lead-message";
+import { useEyeNeeds } from "./djinn-eye";
 import { PageHeader, PageHeaderAction } from "./page-header";
 import { TooltipButton } from "./tooltip";
 
@@ -255,6 +256,8 @@ export function WishView({
     [detail.tasks],
   );
   const ifritNow = useNow(ifrits.length > 0, 15_000);
+  // A worker waiting or an ifrit lit: the Djinn's eye lets its flame shine.
+  useEyeNeeds(waiting.length > 0 || ifrits.length > 0);
   const done = workDoneCount(detail.tasks);
   // The azimas' progress, then the work's: the azimas are not counted as tasks.
   const azimaProgress = azimasDone(detail.tasks);

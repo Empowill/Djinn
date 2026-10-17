@@ -34,6 +34,7 @@ import { WishSidebar } from "./wish-sidebar";
 import { startWishSmokePrewarm } from "./wish-smoke";
 import { TilasmOver } from "./tilasm-over";
 import { type Opening, type Reaching, WishView } from "./wish-view";
+import { DjinnEye } from "./djinn-eye";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, pageDigit } from "./page-keys";
@@ -359,7 +360,7 @@ export function WishApp() {
       >
         <div className="sidebar-brand">
           <div className="sidebar-brand-main">
-            <Brand small={collapsed} />
+            <Brand small={collapsed} eye />
             {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
           </div>
         </div>
@@ -502,6 +503,7 @@ export function WishApp() {
         )}
       </AnimatePresence>
       <Toast text={toast} onClose={closeToast} />
+      <DjinnEye live={live} />
       <input
         type="file"
         accept=".json,.djinn"

@@ -52,9 +52,9 @@ raised hand in place of its icon.
 
 ### The personal space
 
-The **personal space**, at the bottom of the side panel, keeps your own settings: the language, the theme and the
-text size. Compact and Very compact shrink the whole window, its spacing with its text, to see more at once; Large
-grows it. The documentation opens in the window's theme and text size.
+The **personal space**, at the bottom of the side panel, keeps your own settings: the language, the theme, the text
+size and the Djinn's eye. Compact and Very compact shrink the whole window, its spacing with its text, to see more at
+once; Large grows it. The documentation opens in the window's theme and text size.
 
 ## The flying carpet
 
@@ -82,6 +82,28 @@ One question is open in full, the others fold to two lines. The arrows move from
 the keys answer it. When the open one is answered, the one below opens. Below the column come **Your move**, the
 workers that wait for you and the wishes ready to grant, then the questions **Being investigated**. The keys and the
 levels are in [Question and move](#question-and-move).
+
+## The Djinn's eye
+
+The seal at the top of the side panel is the Djinn's eye, drawn from it: its eight-pointed star for the iris, its
+saffron flame for the pupil. Solar and wide open in the light theme, a mocking demon with a half-lowered lid in the
+dark. The eye opens and goes where to look now:
+
+| Where it rests | When |
+| --- | --- |
+| In the margin of a question, watching it | You just arrived: the question that matters most, one a worker waits for, then one needed before something, then the oldest |
+| In the margin of a question, reading it | The question you went to, by a click or the arrows |
+| On **Write to the Djinn**, which it lights a little | No question is open |
+| Home, in the seal | A page with none of those; closed while the lead is stopped; pale while Djinn's stream is cut |
+
+From one place to the next it flies on a curve, slowly enough to be followed, and lands in the margin: at rest, it
+covers nothing and scrolls with what it watches. It never moves while you type in a field, press a mouse button, scroll
+or read a dialog, nor while the window is in the background: it waits, then goes to the last place asked. It never takes
+the focus or a click. Its flame shines while something waits for you: a question a worker waits for, a worker waiting,
+a lit ifrit. With less motion asked by the system, it fades out and in, without flying.
+
+In the personal space, **The Djinn's eye** chooses **Alive**, **Discreet**, where it stays in the seal and only
+changes its state, or **None**.
 
 ## The workers glance
 
@@ -183,6 +205,7 @@ The **global shortcut**, set in Connections & preferences, brings Djinn forward 
 - **Reading the rank as a count.** The last figure of a wish's line, #3, is its rank.
 - **Leaving the Hourglass open to keep figures.** It reads only while it shows; Djinn records the machine's history
   anyway, for a week, across restarts.
+- **Waiting for the eye to move while you type.** It waits on purpose: it goes once you leave the field.
 - **Closing the window to stop the work.** Closing the window pauses nothing: active wishes go on while Djinn runs.
   Pause a wish to stop its workers.
 

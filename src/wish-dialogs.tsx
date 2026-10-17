@@ -64,6 +64,8 @@ import {
   textSizes,
 } from "./text-size";
 import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
+import { type Presence, presences } from "./data/eye";
+import { setPresence, usePresence } from "./djinn-eye";
 import { WishComposer } from "./wish-composer";
 import { WishDropdown } from "./wish-dropdown";
 import { leadTrouble } from "./wish-head";
@@ -1165,6 +1167,12 @@ function NotificationSetting() {
   );
 }
 
+const presenceLabel: Record<Presence, TextKey> = {
+  alive: "settings.presence_alive",
+  discreet: "settings.presence_discreet",
+  none: "settings.presence_none",
+};
+
 const textSizeLabel: Record<TextSize, TextKey> = {
   large: "settings.text_size_large",
   "": "settings.text_size_default",
@@ -1173,13 +1181,14 @@ const textSizeLabel: Record<TextSize, TextKey> = {
 };
 
 // Settings: the agents djinn finds on this machine, the system notifications, the language, the theme and the text size
-// of the page, and the global shortcut. The documentation, the Grimoire, has its own entry in the side panel (W89).
+// of the page, the Djinn's eye, and the global shortcut. The documentation, the Grimoire, has its own entry in the side panel (W89).
 export function Settings({ onClose }: { onClose: () => void }) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
   const agents = useAgents();
   const [theme, setTheme] = useState<Theme>(chosenTheme);
   const [textSize, setTextSize] = useState<TextSize>(chosenTextSize);
+  const presence = usePresence();
   useEffect(() => {
     let live = true;
     clients.ui
@@ -1257,6 +1266,23 @@ export function Settings({ onClose }: { onClose: () => void }) {
           {textSizes.map((size) => (
             <option key={size} value={size}>
               {t(textSizeLabel[size])}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="setting-row">
+        <div>
+          <strong>{t("settings.presence")}</strong>
+          <p>{t("settings.presence_detail")}</p>
+        </div>
+        <select
+          value={presence}
+          aria-label={t("settings.presence")}
+          onChange={(e) => setPresence(e.target.value as Presence)}
+        >
+          {presences.map((value) => (
+            <option key={value} value={value}>
+              {t(presenceLabel[value])}
             </option>
           ))}
         </select>

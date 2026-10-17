@@ -26,7 +26,9 @@ import {
 } from "react";
 
 import type { Choice, Question, Wish } from "../gen/ts/plan/v1/plan_pb";
-import { byAsked, type OpenQuestion } from "./data/flight";
+import { mattersMost } from "./data/eye";
+import { byAsked, type OpenQuestion, urgency } from "./data/flight";
+import { useEyeColumn } from "./djinn-eye";
 import { t } from "./i18n";
 import {
   type QuestionKey,
@@ -176,6 +178,22 @@ export function QuestionColumn({
         : order.includes(opened)
           ? opened
           : heir(seen.current, order, opened);
+  // The Djinn's eye watches the question that matters most until you go to one, then reads the one you went to.
+  const { matters, blocking } = useMemo(() => {
+    const all = groups.flatMap((g) => g.questions);
+    return {
+      matters: mattersMost(
+        all.map((q) => ({ id: q.item.id, urgency: urgency(q) })),
+      ),
+      blocking: all.some((q) => q.blocking.length > 0),
+    };
+  }, [groups]);
+  useEyeColumn({
+    current,
+    chosen: typeof chosen === "string",
+    matters,
+    blocking,
+  });
   const column = useRef<HTMLElement>(null);
   const keys: QuestionKeys = useRef<(e: QuestionKey) => void>(undefined);
   // Whether the question that opens takes the focus: it was gone to (its title to the top of the view), or the open

@@ -35,6 +35,7 @@ import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { Inbox } from "./inbox";
 import { LeadMessage } from "./lead-message";
+import { useEyeNeeds } from "./djinn-eye";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
 import { StatusBadge } from "./status";
@@ -128,6 +129,8 @@ export function FlightPlan({
       ),
     [wishes, details],
   );
+  // A worker waiting or an ifrit lit: the Djinn's eye lets its flame shine.
+  useEyeNeeds(plan.waiting.length > 0 || ifrits.length > 0);
   const attention = useMemo(
     () =>
       attentionOf(

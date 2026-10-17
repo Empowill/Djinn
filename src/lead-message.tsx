@@ -15,6 +15,7 @@ import {
 
 import { message } from "./data/client";
 import { useClients, useStore } from "./data/djinn";
+import { EyePerch, useEyeLead } from "./djinn-eye";
 import { t } from "./i18n";
 import { useInstructionDraft } from "./instruction-draft";
 import { platformShortcut, TooltipButton } from "./tooltip";
@@ -42,6 +43,7 @@ export function LeadMessage({
   // The last text was refused, the lead not running in its terminal: the pill offers to start it too.
   const [refused, setRefused] = useState(false);
   const offline = stopped || refused;
+  useEyeLead(offline);
   const box = useRef<HTMLTextAreaElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const restoreFocus = useRef(false);
@@ -206,6 +208,7 @@ export function LeadMessage({
         tone="secondary"
         expanded={open}
         className="workspace-action-lead"
+        perch={<EyePerch name="pill" />}
       >
         {open ? (
           <div
