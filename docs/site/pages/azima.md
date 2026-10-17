@@ -67,6 +67,8 @@ waits; it never makes a task wait: only [dependencies](#dependencies) do.
 | To validate | Its work is finished, and nothing is left for Djinn: it waits for a proof only a person, a machine, a release or a real model can give. | Check, then **Validate** |
 | Done | Validated, its pull request merged, or its plan file says done or has every box ticked. | Nothing |
 
+Apart from its state, an azima whose work is all in main carries a mark, **Merged into main**, told below.
+
 > **Why "To validate" and not "Done"?** Djinn knows when the work of an azima is finished; it cannot know whether its
 > goal holds on a real machine, with a real model, after a real release. That proof is yours, or the person's you ask.
 
@@ -126,6 +128,25 @@ djinn/T07-the-orchestrator):
   on demand, a push button beside the branch pushes it when it is ahead of its remote.
 - A project whose branches follow a convention, a ticket's key for instance, can give an azima a branch name of its
   own; a branch that exists already is adopted as it is.
+
+## Merged into main
+
+Once all the work of an azima is in its project's main branch, a small green mark with the merge sign shows beside
+its code, in the Tasks tab and in the flying carpet; hover it to read how Djinn found it. Djinn sets it by itself, once
+every task part of the azima is finished:
+
+- **Its pull or merge request is merged**, as the watcher that babysits it says, after the last of its work ended. A
+  request closed without a merge never sets it.
+- **Or every commit of its work is in main**: the azima's own branch and the branches of its done tasks, all in the
+  remote's main, which Djinn fetches at the pace it looks at main.
+
+Djinn asks the forge nothing more for it than the watchers and the pull request's card already do. A task added to the
+azima clears the mark: its work is not in main yet. Once it is, the mark comes back. The Djinn hears each mark as it
+turns on, and when every azima of the wish carries it, it proposes to you to grant the wish.
+
+> **Example.** T04, "The export button", has its pull request merged: its mark shows. A reviewer asks for one more fix;
+> the Djinn adds a task to T04, and the mark goes. The fix lands in main through a second pull request, and the mark
+> comes back. Every azima of the wish now carries it: the Djinn asks you whether to grant the wish.
 
 Under the per-azima strategy, **no azima waits for another**: each branch holds main and its own work, nothing else.
 Djinn refuses to make one azima come after another, and refuses the switch to per azima while azimas depend on each

@@ -119,6 +119,7 @@ func FillAzimas(tasks []*planv1.Task) {
 			e.Sync = existing.GetSync()
 			e.Pr = existing.GetPr()
 			e.Main = existing.GetMain()
+			e.Merged = existing.GetMerged()
 			if existing.GetCutFrom() != "" {
 				e.CutFrom, e.BaseBranch, e.Named = existing.GetCutFrom(), existing.GetBaseBranch(), existing.GetNamed()
 			}
@@ -509,6 +510,26 @@ func Finished(t *planv1.Task) bool {
 		return true
 	}
 	return false
+}
+
+// Settled tells a task of work finished whose work is neither merging nor failed to merge: an azima waits for it no
+// more.
+func Settled(t *planv1.Task) bool { return Finished(t) && !taskMergingOrFailed(t) }
+
+// AllMerged tells whether every azima of a wish among tasks, drafts left out, has its work all in main (Azima.merged),
+// one at least.
+func AllMerged(tasks []*planv1.Task) bool {
+	n := 0
+	for _, t := range tasks {
+		if !IsAzima(t) || t.GetDraft() {
+			continue
+		}
+		if t.GetAzima().GetMerged() == nil {
+			return false
+		}
+		n++
+	}
+	return n > 0
 }
 
 // WithAzimas is tasks with Task.azima set on their azimas, as clones: the store's own messages stay as they are.

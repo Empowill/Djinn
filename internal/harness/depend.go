@@ -215,7 +215,7 @@ func (h *Harness) Group(ctx context.Context, procedure string, req *planv1.TaskS
 			return err
 		}
 		if azima != "" && task.GetPartOf() != azima {
-			if err := reopenAzima(ctx, tx, azima, task.GetCode()+" grouped"); err != nil {
+			if err := reopenAzima(ctx, tx, azima, task, "grouped"); err != nil {
 				return err
 			}
 		}
