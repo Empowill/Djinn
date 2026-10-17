@@ -445,7 +445,7 @@ func TestInvestigatorPromptFullHistory(t *testing.T) {
 		{Id: "t-wait", Code: "W12", Title: "Implement investigator fix", Status: planv1.TaskStatus_TASK_STATUS_WAITING, Decision: "Q45"},
 		{Id: "t-edit", Code: "W13", Title: "Paused on edit", Status: planv1.TaskStatus_TASK_STATUS_PAUSED, EditQuestionId: "q-id-1"},
 	}
-	title, prompt := investigatorPrompt(q, "Third enlighten note: verify blocked tasks too.", "", "Moving brief.", tasks...)
+	title, prompt := investigatorPrompt(q, "Third enlighten note: verify blocked tasks too.", "", "Moving brief.", "", tasks...)
 	if title != "Q45: enlighten" {
 		t.Errorf("title = %q, want Q45: enlighten", title)
 	}
@@ -469,7 +469,7 @@ func TestInvestigatorPromptFullHistory(t *testing.T) {
 		"Tour 2 revised context.",
 		"### Round 5 — Enlighten request (Tour 2)\n- Note: Third enlighten note: verify blocked tasks too.",
 		"Stay anchored to the original subject from Tour 0 (`Q45: How should investigator workers inspect git and history?`)",
-		"--context-file <path>",
+		"`djinn question revise Q45 --wish-id w-id-1 --context \"…\" --recommendation \"…\"`",
 		"git branch",
 		"git rev-parse",
 		"git ls-tree",
