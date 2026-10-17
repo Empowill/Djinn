@@ -734,7 +734,11 @@ test.describe("operating load slider", () => {
       expect(colours.colour).toBe(colours.danger);
       // The theme's colours glide: shoot once they stand.
       await forecast.evaluate((el) =>
-        Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)),
+        Promise.all(
+          el
+            .getAnimations({ subtree: true })
+            .map((a) => a.finished.catch(() => {})),
+        ),
       );
       await forecast.screenshot({
         path: path.join(outDir, `notch-risk-${theme}.png`),
