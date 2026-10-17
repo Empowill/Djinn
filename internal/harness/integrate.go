@@ -2412,21 +2412,21 @@ func (h *Harness) azimaBranchesOf(ctx context.Context, wish *planv1.Wish, projec
 	return branches
 }
 
-// resolveMainSha finds the project's main branch name and sha.
+// resolveMainSha finds the project's reference branch, as mainRef names it from the main_branch setting, and its
+// commit: the remote's when it holds the local one's, else whichever the repository holds. A repository where mainRef
+// finds none gives its local main or master, else its HEAD.
 func resolveMainSha(ctx context.Context, repo string, settings plan.Settings) (name, sha string, err error) {
-	mainName := settings.MainBranch
-	if mainName == "" {
-		if m, _, err := mainRef(ctx, repo, ""); err == nil {
-			mainName = m
-		} else {
-			mainName = "main"
-		}
-	}
-	localSha := commitOf(ctx, repo, "refs/heads/"+mainName)
-	if localSha == "" && mainName != "master" {
-		if mSha := commitOf(ctx, repo, "refs/heads/master"); mSha != "" {
-			localSha = mSha
-			mainName = "master"
+	mainName, _, err := mainRef(ctx, repo, settings.MainBranch)
+	localSha := ""
+	if err == nil {
+		localSha = commitOf(ctx, repo, "refs/heads/"+mainName)
+	} else {
+		// A remote that holds neither its HEAD, nor main, nor master: Djinn's default names, in the copy.
+		for _, name := range []string{"main", "master"} {
+			if localSha = commitOf(ctx, repo, "refs/heads/"+name); localSha != "" {
+				mainName = name
+				break
+			}
 		}
 	}
 	var remoteSha string
@@ -2448,7 +2448,7 @@ func resolveMainSha(ctx context.Context, repo string, settings plan.Settings) (n
 	if headSha := commitOf(ctx, repo, "HEAD"); headSha != "" {
 		return "HEAD", headSha, nil
 	}
-	return "", "", errors.New("the project has no main branch: name it with main_branch in its settings")
+	return "", "", errors.New("the project has no main branch: name it with djinn project set-branch, or main_branch in its settings")
 }
 
 // workerStartBranch determines the branch or ref a worker starts from: under the per-azima push strategy, the branch
@@ -2562,7 +2562,8 @@ func (h *Harness) draftAzimaPR(ctx context.Context, azima *planv1.Task, parts []
 }
 
 // azimaPRBase is the branch an azima's pull request targets: main, the one recorded when its branch was cut, else the
-// project's main branch as Djinn names it. Never another azima's branch, and never changed once the PR is open.
+// project's reference branch as Djinn names it (resolveMainSha); "" when there is none. Never another azima's branch,
+// and never changed once the PR is open.
 func azimaPRBase(ctx context.Context, repo string, settings plan.Settings, azima *planv1.Task) string {
 	if base := azima.GetAzima().GetBaseBranch(); base != "" && azima.GetAzima().GetCutFrom() != "" {
 		return base
@@ -2570,7 +2571,7 @@ func azimaPRBase(ctx context.Context, repo string, settings plan.Settings, azima
 	if main, _, err := resolveMainSha(ctx, repo, settings); err == nil && main != "HEAD" {
 		return main
 	}
-	return cmp.Or(settings.MainBranch, "main")
+	return settings.MainBranch
 }
 
 // detectForge detects whether the project remote uses GitLab ("glab") or GitHub ("gh").
@@ -2756,7 +2757,7 @@ func (h *Harness) azimaPRPass(
 			proposed := hasQuestion(func(q *planv1.Question) bool {
 				return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "pull request")
 			})
-			if !proposed {
+			if !proposed && base != "" { // no reference branch for it to aim at: a notice of the project says so
 				title, desc := h.draftAzimaPR(ctx, azima, parts)
 				q := &planv1.Question{
 					WishId:    wish.GetId(),

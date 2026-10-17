@@ -46,7 +46,7 @@ install: "go tool task install"
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
 | `install`        | The command that installs the integration branch once pushed, in the project's folder: the window proposes it. | none: nothing proposed |
 | `install_questions` | When Djinn asks the developer to install builds: `always` (default), `when_needed` (only when necessary, stating why; for projects whose builds install automatically after each push), `never`. | `always` |
-| `main_branch`    | The project's main branch, which Djinn merges into each wish's integration branch: see [keeping up with main](#keeping-up-with-main). | the remote's default branch, else `main`, else `master` |
+| `main_branch`    | The project's main branch, its reference branch, which Djinn merges into each wish's integration branch: see [keeping up with main](#keeping-up-with-main). `djinn project set-branch <project> <branch>` writes it in your own file (`--unset` takes it back), as does **Change** under the reference branch of the project's configuration in the window; a team that follows another branch than the remote's default names it here, for everyone. | the remote's default branch, else `main`, else `master` |
 | `merge_main`     | When Djinn merges it: `MERGE_MAIN_RELEASE` (once main holds a release the branch lacks), `MERGE_MAIN_COMMIT` (once it holds any commit the branch lacks), `MERGE_MAIN_OFF`. | at each release |
 | `merge_main_minutes` | How often, in minutes, Djinn fetches main to look at it, at most. A release the running Djinn finds makes it look at once. | `60` |
 | `install_releases` | For the project a Djinn built from a checkout comes from: a newer release installs by itself while that checkout is on main. `false`: it is only offered. | on |
@@ -184,6 +184,14 @@ on every read: the things to fix first, then the information. Each notice has a 
 it yet), the `source` of its name (`SETTING_SOURCE_DEFAULT` for the remote's default branch, else `main`, else `master`;
 otherwise the file whose `main_branch` names it) and the branch your copy has `checked_out`. The project's
 configuration in the window shows the same, with each setting and where it comes from.
+
+`djinn project set-branch <project> <branch>` chooses the reference branch for you: it writes `main_branch` in your own
+file, never in the repository's, so nothing is committed behind the team, and yours wins over the team's. It refuses a
+branch the repository does not hold, on its remote when it has one (fetch it first), and a project outside Git.
+`djinn project set-branch <project> --unset` takes your choice back: the team's file names the branch again, else
+Djinn's default does. The project's configuration in the window does the same with **Change** under its reference
+branch, which lists the remote's branches as your copy last fetched them (`djinn project branches <project>
+--reference`).
 
 ## No secret, ever
 
@@ -493,8 +501,9 @@ main simply moves to main's commit:
 1. **When it looks.** At most every `merge_main_minutes` (an hour by default), and at once when the running Djinn finds
    a new release, Djinn fetches main from its remote, with the tags, through git with your own credentials, never
    prompting for them; a repository without a remote looks at its local main. Main is `main_branch`, else the remote's
-   default branch (`origin/HEAD`, as a clone records it), else `main`, else `master`. A wish whose integration branch is
-   main itself has nothing to merge.
+   default branch (`origin/HEAD`, as a clone records it), else `main`, else `master`; the same branch is the one an
+   azima's branch is cut from and its pull request aims at, never `main` in place of the one named. A wish whose
+   integration branch is main itself has nothing to merge.
 2. **When it merges.** By default (`MERGE_MAIN_RELEASE`), once main holds a release the branch lacks: a tag `v1.2.3`
    whose commit, or the commit it sits on, is in main (`task release` puts the built interface in a commit of its own
    on top of main, off any branch: that commit never comes in). `MERGE_MAIN_COMMIT` merges as soon as main holds any

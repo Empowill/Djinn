@@ -108,6 +108,9 @@ func (h *Harness) proposedRequest(ctx context.Context, q *planv1.Question) (*ope
 	if o.azima != nil {
 		parts, _ := h.azimaTasks(ctx, wish.GetId(), o.azima.GetId())
 		o.branch, o.base = azimaBranchName(o.azima), azimaPRBase(ctx, repo, settings, o.azima)
+		if o.base == "" {
+			return nil, errors.New("the project has no main branch: name it with djinn project set-branch, or main_branch in its settings")
+		}
 		o.title, o.body = h.draftAzimaPR(ctx, o.azima, parts)
 		return o, nil
 	}

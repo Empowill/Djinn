@@ -101,6 +101,9 @@ const (
 	ProjectServicePullProcedure = "/plan.v1.ProjectService/Pull"
 	// ProjectServiceBranchesProcedure is the fully-qualified name of the ProjectService's Branches RPC.
 	ProjectServiceBranchesProcedure = "/plan.v1.ProjectService/Branches"
+	// ProjectServiceSetBranchProcedure is the fully-qualified name of the ProjectService's SetBranch
+	// RPC.
+	ProjectServiceSetBranchProcedure = "/plan.v1.ProjectService/SetBranch"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -672,8 +675,13 @@ type ProjectServiceClient interface {
 	// checkout of it has changes not committed, or while work merges into it. Nothing is ever forced.
 	Pull(context.Context, *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
-	// Djinn made for its tasks' worktrees left out.
+	// Djinn made for its tasks' worktrees left out. With --reference, those the reference branch may name.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
+	// Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
+	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
+	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -750,6 +758,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		setBranch: connect.NewClient[v1.ProjectServiceSetBranchRequest, v1.ProjectServiceSetBranchResponse](
+			httpClient,
+			baseURL+ProjectServiceSetBranchProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("SetBranch")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -765,6 +779,7 @@ type projectServiceClient struct {
 	forgetSync   *connect.Client[v1.ProjectServiceForgetSyncRequest, v1.ProjectServiceForgetSyncResponse]
 	pull         *connect.Client[v1.ProjectServicePullRequest, v1.ProjectServicePullResponse]
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
+	setBranch    *connect.Client[v1.ProjectServiceSetBranchRequest, v1.ProjectServiceSetBranchResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -817,6 +832,11 @@ func (c *projectServiceClient) Branches(ctx context.Context, req *connect.Reques
 	return c.branches.CallUnary(ctx, req)
 }
 
+// SetBranch calls plan.v1.ProjectService.SetBranch.
+func (c *projectServiceClient) SetBranch(ctx context.Context, req *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error) {
+	return c.setBranch.CallUnary(ctx, req)
+}
+
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
@@ -844,8 +864,13 @@ type ProjectServiceHandler interface {
 	// checkout of it has changes not committed, or while work merges into it. Nothing is ever forced.
 	Pull(context.Context, *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
-	// Djinn made for its tasks' worktrees left out.
+	// Djinn made for its tasks' worktrees left out. With --reference, those the reference branch may name.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
+	// Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
+	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
+	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -918,6 +943,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceSetBranchHandler := connect.NewUnaryHandler(
+		ProjectServiceSetBranchProcedure,
+		svc.SetBranch,
+		connect.WithSchema(projectServiceMethods.ByName("SetBranch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceAddProcedure:
@@ -940,6 +971,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServicePullHandler.ServeHTTP(w, r)
 		case ProjectServiceBranchesProcedure:
 			projectServiceBranchesHandler.ServeHTTP(w, r)
+		case ProjectServiceSetBranchProcedure:
+			projectServiceSetBranchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -987,6 +1020,10 @@ func (UnimplementedProjectServiceHandler) Pull(context.Context, *connect.Request
 
 func (UnimplementedProjectServiceHandler) Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Branches is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetBranch is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.
