@@ -187,10 +187,15 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   - a watcher waking the Djinn;
   - Djinn restarted: `Djinn: restarted on version v1.4.0: 2 workers interrupted (W12, W14), resumed by Djinn: W12; not
     resumed, the move is yours: W14.`
+  - the network went down, or came back (W285), one `network` line each, of no wish: `Djinn: the network is down since
+    15:12 (Could not resolve host: github.com); Djinn holds its outside work and resumes it once back.`, then `Djinn: the
+    network is back (down from 15:12, 28 min); Djinn resumes, one per pass: paused W12; cut W14.` Nothing to do in
+    between: Djinn pauses and resumes the workers, holds and reruns the push checks that failed on the network itself;
+    a failure or a red check during an outage is never the code's.
   Everything else goes to the journal and the window.
 - **The Djinn's events wait in a queue; the Djinn watches it (Decision Q191).** Each of these is a `LeadEvent` in the
   store, with an id (a UUIDv7), a time, a kind (`ended`, `failed`, `merged`, `answer`, `enlighten`, `move`, `restart`,
-  `watch`, `request`, `approved`), the wish and the code it is about, and its line; one queue for the Djinn, whatever the wish
+  `watch`, `request`, `approved`, `network`…), the wish and the code it is about, and its line; one queue for the Djinn, whatever the wish
   (`internal/plan/leadwatch.go`). `djinn lead watch [--after <cursor>] [--timeout 1h]` blocks until an event waits,
   lets the events settle (2 seconds of quiet, 10 at most: the lines of one integration pass, or a failure and the
   correction Djinn starts for it, come within a second or two, and one digest is one turn of the Djinn instead of

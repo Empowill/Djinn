@@ -48,7 +48,7 @@ The status is one colour, one icon and one word:
 | Paused | Its worker holds still where it is, and frees its slot |
 | Waits for your answer | Its worker stopped on a question only you can answer: one it asked you, or whether it may edit the project. No slot is taken meanwhile |
 | Waiting for the limit | Its agent's usage limit is reached: it resumes once the limit resets |
-| Resuming | Djinn starts it again by itself, after a restart or a limit |
+| Resuming | Djinn starts it again by itself, after a restart, a limit or a network outage |
 | Interrupted | Cut short when Djinn stopped: Djinn resumes it at its next start, when it can |
 | Resumed as | It was continued in another task, named there |
 | Done | Its worker ended its turn normally |

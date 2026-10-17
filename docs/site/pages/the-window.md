@@ -195,7 +195,8 @@ The window's own keys never take a key typed in the terminal.
 ## The status bar and the update banner
 
 The status bar says whether the window is live with Djinn, or reconnecting, how many workers run of how many may, and
-the gates held. When the machine is under pressure, it says why.
+the gates held. When the machine is under pressure, it says why. While the network is down, it says so quietly,
+**network down since 15:12**; see [a network outage](#restarts-and-updates).
 
 When a newer Djinn is ready, a banner takes its own row at the very top of the window, over nothing. See
 [Restarts and updates](#restarts-and-updates).

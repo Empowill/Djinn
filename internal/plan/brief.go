@@ -201,6 +201,11 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"names the task, why, and the command that relaunches it (`djinn task continue <task>`, which also ends and " +
 		"continues a stalled worker): run it, unless what you know of the task says otherwise; never check a worker's " +
 		"health by hand first. A limit that \"lifted\" needs nothing: Djinn resumes those tasks by itself.\n" +
+		"- **A `network` event is Djinn riding an outage (W285).** Down: Djinn starts no worker, pauses the running " +
+		"ones, holds its pushes, fetches and forge calls, and sends the workers the outage cut back to resume. Back: it " +
+		"resumes them one per pass, repairs first, and runs once again the push checks that failed on the network. Do " +
+		"nothing in between: no continue, no repair, no question; a failure or a red check during an outage is the " +
+		"network's, never the code's.\n" +
 		"- **Review comments on a diff**: `djinn task comment <task> \"…\" --file <path> --line <n> [--end-line <n>]` " +
 		"goes to the task's running worker; once it has ended, `djinn task turn-comments <task>` continues it or " +
 		"spawns a correction task in its azima.\n" +

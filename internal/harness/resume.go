@@ -240,6 +240,8 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		by = byPreempt
 	case strings.HasPrefix(t.GetWaitReason(), whyLost):
 		by = byLost
+	case strings.HasPrefix(t.GetWaitReason(), whyNetworkDown):
+		by = byNetwork
 	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
 	t.Status, t.WaitReason, t.MachineWait, t.RoomWait, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", false, false, nil
@@ -248,6 +250,10 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		t.Continuing = false // Cut short again, it resumes as any task does.
 	case byLimit:
 		t.Resumes++
+	case byNetwork:
+		if end := t.GetEndTime(); end == nil || !h.netCut(end.AsTime()) {
+			t.Resumes++ // No outage confirmed when it was cut: a resume spent, as for a limit; an outage costs none.
+		}
 	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byLost:
 		// No resume spent.
 	}
@@ -412,6 +418,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		line = envReplayLine
 	case byPreempt:
 		line = preemptLine
+	case byNetwork:
+		line = networkLine
 	}
 	model := t.GetModel()
 	if foreignModel(t.GetProvider(), model) && !r.watcher {

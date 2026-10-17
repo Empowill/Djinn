@@ -141,6 +141,9 @@ type Harness struct {
 	accountOf AccountFunc                     // nil: no agent's account is read
 	accounts  map[planv1.Provider]accountSeen // each agent's account, as last read
 
+	// The network, as Djinn knows it (network.go).
+	net network
+
 	// Babysitting what tasks open (babysit.go).
 	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
 	babysitMu   sync.Mutex     // one watcher decided at a time
@@ -202,6 +205,8 @@ type run struct {
 	paused             bool                 // the worker holds still: it takes no slot
 	notchPaused        bool                 // paused by the operating load notch
 	slotPaused         bool                 // paused to give its slot to an investigator: resumed first when a slot frees
+	netPaused          bool                 // paused while the network is down: resumed once it is back (network.go)
+	inTool             bool                 // a tool call of the worker runs: the network does not pause it (network.go)
 	forced             bool                 // started or resumed by hand, whatever the slots (Harness.Forced)
 	holdWhy            string               // why the worker holds still (preemption or pause reason)
 	preemptedWhy       string               // if set, stopping to make room for an investigator
@@ -362,6 +367,7 @@ func (h *Harness) Close() {
 	}
 	h.wg.Wait()
 	h.babysitting.Wait()
+	h.net.wg.Wait()
 	h.children.close() // What the workers left running stops with them.
 	h.writeCuts()
 }
@@ -704,6 +710,9 @@ func runReason(t *planv1.Task, r *run) string {
 		}
 		if strings.Contains(strings.ToLower(t.GetWaitReason()), "preempt") {
 			return "preemption"
+		}
+		if networkWait(t) {
+			return "network"
 		}
 		return "limit"
 	case planv1.TaskStatus_TASK_STATUS_PAUSED:
@@ -1609,6 +1618,9 @@ func (h *Harness) drain(r *run) Result {
 			if !ok {
 				h.rebased(r)
 				r.unread, r.held, r.tools = nil, nil, 0 // A worker started again never had them.
+				h.mu.Lock()
+				r.inTool = false
+				h.mu.Unlock()
 				return r.worker.Wait()
 			}
 			h.record(r, ev)
@@ -1676,6 +1688,7 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
+		h.netSign(r.task.GetProvider(), ev.Text, true) // Its agent cannot reach its provider: the network may be down.
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && strings.TrimSpace(ev.Text) != "" && !strings.HasSuffix(ev.Text, " [cut]") {
 		r.answered = true
@@ -1723,6 +1736,11 @@ func (h *Harness) record(r *run, ev Event) {
 		r.tools = 0
 		h.turnOver(r)
 		h.resulted(r)
+	}
+	if inTool := r.tools > 0; inTool != r.inTool { // Read by the scheduler's pass under mu (pauseForNetwork).
+		h.mu.Lock()
+		r.inTool = inTool
+		h.mu.Unlock()
 	}
 	if ev.Ifrit == planv1.IfritState_IFRIT_STATE_LISTENING && r.ifrit {
 		h.ifritTimers(r) // Its turn ended: past its out time, it goes out now.
@@ -1987,6 +2005,8 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, out
 	case silentWhy != "":
 		endedSilent(t, silentWhy, silentNote)
+	case streamIdleEnd && !lamplighterEnd && h.netHolds():
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, streamIdleReason // The network cut it: networkCut.
 	case lamplighterEnd || streamIdleEnd:
 		why := streamIdleReason
 		if lamplighterEnd {
@@ -2058,6 +2078,7 @@ func (h *Harness) end(r *run, res Result) {
 	why := t.GetError()
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		h.limited(r, t)
+		h.networkCut(r, t, streamIdleEnd)
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		if cause, isEnv := classifyFailure(r, t, res); isEnv {
@@ -2102,6 +2123,8 @@ func (h *Harness) end(r *run, res Result) {
 		text = t.GetError() // It says out, and why.
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING:
 		text = "waiting: " + whyStoppedFirst
+	case networkWait(t):
+		text = "resuming: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it once the network is back"
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
 		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
 	case t.GetError() != "":
@@ -2538,13 +2561,14 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
 	}
 	r.paused = pause
-	byHarness := procedure == methodNotch || procedure == methodPreempt
+	byHarness := procedure == methodNotch || procedure == methodPreempt || procedure == methodNetwork
 	if pause {
 		r.notchPaused = (procedure == methodNotch)
 		r.slotPaused = (procedure == methodPreempt)
+		r.netPaused = (procedure == methodNetwork)
 	} else {
 		// Resumed by hand, it takes a slot whatever the others: the load bar shows it (Forced).
-		r.notchPaused, r.slotPaused, r.forced = false, false, !byHarness
+		r.notchPaused, r.slotPaused, r.netPaused, r.forced = false, false, false, !byHarness
 	}
 	if len(why) > 0 {
 		r.holdWhy = why[0]

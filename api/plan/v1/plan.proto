@@ -840,6 +840,11 @@ enum LeadEventKind {
   // The lead answers it only from a decision the wish already took or from its plan, or revises it to enrich it; a new
   // choice is the developer's.
   LEAD_EVENT_KIND_ASKED = 18;
+  // The network went down, or came back (W285): one line each, of no wish. Down, Djinn starts no worker, pauses the
+  // running ones between their turns, holds its pushes, fetches and forge calls, and sends the workers the outage cut
+  // back to resume; back, it resumes them one per pass, repairs first, and runs again once the push checks that failed
+  // on the network.
+  LEAD_EVENT_KIND_NETWORK = 19;
 }
 
 // LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the
@@ -1343,7 +1348,7 @@ message TaskRun {
   google.protobuf.Timestamp start_time = 1;
   // When this run ended; unset while running.
   google.protobuf.Timestamp end_time = 2;
-  // Why this run ended: done, limit, restart, pause, preemption, interrupted, etc.
+  // Why this run ended: done, limit, network, restart, pause, preemption, interrupted, etc.
   string reason = 3;
 }
 
