@@ -51,22 +51,27 @@ export function giveBack(back: Back, doc: Document = document) {
 }
 
 // TilasmOver holds the tilasm opened over the view, for the links within; view names the view shown: another one
-// closes the tilasm, and gives the focus back to nothing.
+// closes the tilasm, and gives the focus back to nothing, and so does a new landing (a wish clicked in the side panel,
+// even the one under the tilasm).
 export function TilasmOver({
   view,
+  landing,
   children,
 }: {
   view: string;
+  landing?: object;
   children: ReactNode;
 }) {
   const djinn = useDjinn();
   const [over, setOver] = useState<{
     tilasm: Tilasm;
     view: string;
+    landing?: object;
     back: Back;
   }>();
-  // The tilasm was opened over another view, now gone: it closes with it.
-  if (over && over.view !== view) setOver(undefined);
+  // The tilasm was opened over another view, now gone, or the wish was clicked since: it closes.
+  if (over && (over.view !== view || over.landing !== landing))
+    setOver(undefined);
   // Where the focus goes back once the frame is gone and its cover lifted (its effects end before this one runs).
   const returning = useRef<Back>(undefined);
   useEffect(() => {
@@ -84,11 +89,11 @@ export function TilasmOver({
         .get({ tilasm: { ref: { case: "id", value: id } } })
         .then((res) => {
           if (!res.tilasm) throw new Error("no tilasm");
-          setOver({ tilasm: res.tilasm, view, back });
+          setOver({ tilasm: res.tilasm, view, landing, back });
         })
         .catch(() => djinn.focus.show({ unknownLink: href }));
     },
-    [djinn, view],
+    [djinn, view, landing],
   );
   const close = useCallback(() => {
     returning.current = over?.back;

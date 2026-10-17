@@ -40,7 +40,12 @@ import { Docs } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
 import { startWishSmokePrewarm } from "./wish-smoke";
 import { TilasmOver } from "./tilasm-over";
-import { type Opening, type Reaching, WishView } from "./wish-view";
+import {
+  type Landing,
+  type Opening,
+  type Reaching,
+  WishView,
+} from "./wish-view";
 import { DjinnEye } from "./djinn-eye";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
@@ -104,6 +109,9 @@ export function WishApp() {
   const [opening, setOpening] = useState<Opening>();
   // The element a line of the attention bar asks to bring into sight, in its wish; a new object at each request.
   const [reaching, setReaching] = useState<Reaching>();
+  // The wish clicked in the side panel, even the one shown: its first tab, the questions, and nothing over it; a new
+  // object at each click.
+  const [landing, setLanding] = useState<Landing>();
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
   const closeMake = useCallback(() => setModal(null), []);
@@ -152,6 +160,7 @@ export function WishApp() {
   useEffect(() => {
     setOpening((o) => (o && o.wishId !== selected ? undefined : o));
     setReaching((r) => (r && r.wishId !== selected ? undefined : r));
+    setLanding((l) => (l && l.wishId !== selected ? undefined : l));
   }, [selected]);
   // The window opens with no agent ready (none installed and signed in, or of unknown sign-in): the setup of the agents
   // opens by itself. Otherwise it waits in the settings and the lead's menu.
@@ -418,6 +427,9 @@ export function WishApp() {
             onSelectWish={(id) => {
               setSelected(id);
               setModal(null);
+              setOpening(undefined);
+              setReaching(undefined);
+              setLanding({ wishId: id });
             }}
             onSelectProject={setProjectId}
             onMove={move}
@@ -450,7 +462,10 @@ export function WishApp() {
       </aside>
       <main className="main-shell">
         {/* A tilasm a question names opens over the view shown, which stays as it is under it. */}
-        <TilasmOver view={modal === "make" ? "make" : selected}>
+        <TilasmOver
+          view={modal === "make" ? "make" : selected}
+          landing={landing}
+        >
           <LayoutGroup id="workspace-action-group">
             {modal === "make" ? (
               <MakeWish
@@ -489,6 +504,7 @@ export function WishApp() {
                 wish={wish}
                 opening={opening?.wishId === wish.id ? opening : undefined}
                 reaching={reaching?.wishId === wish.id ? reaching : undefined}
+                landing={landing?.wishId === wish.id ? landing : undefined}
                 onToast={setToast}
                 onSetupAgents={() => setModal("agents")}
               />
