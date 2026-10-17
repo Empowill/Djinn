@@ -275,6 +275,7 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 		return
 	}
+	h.endSilent(tasks) // Before the Lamplighter: a worker silent after its result ends as its note says.
 	if h.lamplighter(ctx, tasks) {
 		if reloaded, err := store.List[*planv1.Task](ctx, h.store, nil); err == nil {
 			tasks = reloaded

@@ -168,6 +168,13 @@ running, is woken and continued on its session; after three wakes in a row, its 
 is never silent: its time held still does not count, its silence starts again from zero once it goes on, and it
 reads then what was sent to it meanwhile.
 
+A worker whose turn ended with its result, and that says nothing more for ten minutes with its processes idle, is
+stopped, whatever keeps it there: a call refused, a wait it sent to the background, a lost stream. If it had written
+its final note, its task ends **done**, and its committed work goes to the integration; otherwise it is continued once
+on its session, told to finish its task and write its final note, and fails if it falls silent so again. The Djinn
+hears it in one line either way. Work it sent to the background that keeps the processor busy, such as tests, keeps
+it running.
+
 A worker silent for ten minutes with its processes idle, or a task failed for a reason a new turn may get past, carries
 a small circular arrow beside its code: the Djinn relaunches it by continuing it. See
 [A worker's health](#restarts-and-updates).

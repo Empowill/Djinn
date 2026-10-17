@@ -1375,6 +1375,9 @@ message TaskCorrection {
   IntegrationFailure failure = 1;
   // Which attempt it is, from 1, for this failure: past the project's correction_attempts, Djinn asks the person.
   int32 attempt = 2;
+  // The lead spawned it to repair the red push checks (spawn --repair, or a title or prompt that names them), and
+  // Djinn took it as their correction instead of starting one of its own (W272): one repair per red.
+  bool adopted = 3;
 }
 
 // IntegrationFailure is a batch's merge or tests that failed, as a correction worker starts from it.
@@ -4928,6 +4931,12 @@ message TaskServiceSpawnRequest {
   // urgent work as --urgent makes it, merged like any, after the wish's urgent repair. One urgent feedback task per
   // wish at a time, beside one repair.
   bool feedback = 26;
+  // The task repairs the red push checks of the wish's integration branch in its project: Djinn takes it as their
+  // correction, starts no correction of its own while it runs, and lets it start while the push is held. A title or
+  // a prompt that names the red push checks (the failed commit with them) does the same without the flag. Refused
+  // when the push checks are not red, and, naming it, while another correction of the same red runs: one repair per
+  // red per wish.
+  bool repair = 27;
 }
 
 message TaskServiceSpawnResponse {

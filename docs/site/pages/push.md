@@ -135,7 +135,8 @@ When a push check is red, the push is **held**:
 - New tasks of the wish in that project wait, saying the branch must be green again first: nothing more piles onto a
   red branch. Corrections, investigators and [investigations](#investigation) still start, and so do the **urgent**
   tasks the Djinn marks: the one that repairs the branch once Djinn's corrections gave up on it, and one for your
-  quick feedback ([Task and worker](#task-and-worker)).
+  quick feedback ([Task and worker](#task-and-worker)). A repair of the red push checks the Djinn spawns starts too:
+  it becomes their correction (see below).
 - Djinn runs the push checks again when new work is committed, or when the branch moves, even by a push of yours.
   Green, the hold lifts and the push goes on.
 
@@ -148,6 +149,12 @@ it, the push stays held until that one's work is in (see
 [One repair at a time](#merges-and-corrections-one-repair-at-a-time)). The top of
 the wish says **The push is held, corrected by W9**. Its work lands like any task's, and its success has the push checks
 run again.
+
+**One repair per red.** A task the Djinn spawns to repair the red push checks, flagged as a repair or naming them in its
+title or its instructions with the commit they failed at, becomes their correction: Djinn starts none of its own while
+it runs, and the push waits for its work as for Djinn's own correction. While a correction of that red runs, Djinn's or
+the Djinn's, another repair of it is refused, naming the one at work. On 17/10/2026 the Djinn's own repair and a
+correction of Djinn's ran side by side on the same red, unseen by each other.
 
 Past the project's correction attempts, two by default, Djinn stops and hands it to the Djinn, the move being its own:
 retry a correction, drop the work, or leave it waiting. The Djinn decides, and asks you when it needs you. See

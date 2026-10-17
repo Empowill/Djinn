@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"buf.build/go/protovalidate"
@@ -66,7 +67,8 @@ func (s *Tasks) Spawn(
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: task, Note: s.h.spawnNote(ctx, task)}), nil
+	note := strings.TrimSpace(s.h.spawnRepairNote(ctx, task) + " " + s.h.spawnNote(ctx, task))
+	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: task, Note: note}), nil
 }
 
 func (s *Tasks) List(

@@ -6839,7 +6839,10 @@ type TaskCorrection struct {
 	// The failure, as its worktree starts from it.
 	Failure *IntegrationFailure `protobuf:"bytes,1,opt,name=failure,proto3" json:"failure,omitempty"`
 	// Which attempt it is, from 1, for this failure: past the project's correction_attempts, Djinn asks the person.
-	Attempt       int32 `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Attempt int32 `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	// The lead spawned it to repair the red push checks (spawn --repair, or a title or prompt that names them), and
+	// Djinn took it as their correction instead of starting one of its own (W272): one repair per red.
+	Adopted       bool `protobuf:"varint,3,opt,name=adopted,proto3" json:"adopted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6886,6 +6889,13 @@ func (x *TaskCorrection) GetAttempt() int32 {
 		return x.Attempt
 	}
 	return 0
+}
+
+func (x *TaskCorrection) GetAdopted() bool {
+	if x != nil {
+		return x.Adopted
+	}
+	return false
 }
 
 // IntegrationFailure is a batch's merge or tests that failed, as a correction worker starts from it.
@@ -20007,7 +20017,13 @@ type TaskServiceSpawnRequest struct {
 	// Mark the task urgent for the developer's quick feedback (a mockup, a prototype or a change they asked to see):
 	// urgent work as --urgent makes it, merged like any, after the wish's urgent repair. One urgent feedback task per
 	// wish at a time, beside one repair.
-	Feedback      bool `protobuf:"varint,26,opt,name=feedback,proto3" json:"feedback,omitempty"`
+	Feedback bool `protobuf:"varint,26,opt,name=feedback,proto3" json:"feedback,omitempty"`
+	// The task repairs the red push checks of the wish's integration branch in its project: Djinn takes it as their
+	// correction, starts no correction of its own while it runs, and lets it start while the push is held. A title or
+	// a prompt that names the red push checks (the failed commit with them) does the same without the flag. Refused
+	// when the push checks are not red, and, naming it, while another correction of the same red runs: one repair per
+	// red per wish.
+	Repair        bool `protobuf:"varint,27,opt,name=repair,proto3" json:"repair,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -20220,6 +20236,13 @@ func (x *TaskServiceSpawnRequest) GetMinutes() uint32 {
 func (x *TaskServiceSpawnRequest) GetFeedback() bool {
 	if x != nil {
 		return x.Feedback
+	}
+	return false
+}
+
+func (x *TaskServiceSpawnRequest) GetRepair() bool {
+	if x != nil {
+		return x.Repair
 	}
 	return false
 }
@@ -24661,10 +24684,11 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
 	"TaskReview\x12\x19\n" +
 	"\btask_ids\x18\x01 \x03(\tR\ataskIds\x12\x18\n" +
-	"\aattempt\x18\x02 \x01(\x05R\aattempt\"a\n" +
+	"\aattempt\x18\x02 \x01(\x05R\aattempt\"{\n" +
 	"\x0eTaskCorrection\x125\n" +
 	"\afailure\x18\x01 \x01(\v2\x1b.plan.v1.IntegrationFailureR\afailure\x12\x18\n" +
-	"\aattempt\x18\x02 \x01(\x05R\aattempt\"\x92\x02\n" +
+	"\aattempt\x18\x02 \x01(\x05R\aattempt\x12\x18\n" +
+	"\aadopted\x18\x03 \x01(\bR\aadopted\"\x92\x02\n" +
 	"\x12IntegrationFailure\x12/\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x19.plan.v1.IntegrationStateR\x05state\x12\x12\n" +
 	"\x04base\x18\x02 \x01(\tR\x04base\x12!\n" +
@@ -25640,7 +25664,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16MarkServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"@\n" +
 	"\x17MarkServiceListResponse\x12%\n" +
-	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xd6\b\n" +
+	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xee\b\n" +
 	"\x17TaskServiceSpawnRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12 \n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -25673,7 +25697,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06urgent\x18\x18 \x01(\bR\x06urgent\x12'\n" +
 	"\aminutes\x18\x19 \x01(\rB\r\xbaH\n" +
 	"\xd8\x01\x01*\x05\x18\xf0\x01(\x05R\aminutes\x12\x1a\n" +
-	"\bfeedback\x18\x1a \x01(\bR\bfeedback\"Q\n" +
+	"\bfeedback\x18\x1a \x01(\bR\bfeedback\x12\x16\n" +
+	"\x06repair\x18\x1b \x01(\bR\x06repair\"Q\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\x12\x12\n" +
 	"\x04note\x18\x02 \x01(\tR\x04note\"\xfe\x01\n" +

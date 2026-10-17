@@ -225,6 +225,10 @@ type run struct {
 	lastActivity       time.Time            // when the worker last produced an event (lamplighter.go)
 	lastKind           planv1.TaskEventKind // the kind of that event: after its turn's result, a worker may wait for its background work (health.go)
 	lastLamplighterCPU time.Duration        // CPU time used at the Lamplighter's previous check
+	resultAt           time.Time            // when the worker's turn ended with its result, said nothing of a new turn since; zero otherwise (silent.go)
+	resultNote         bool                 // that turn left a final note
+	silentWhy          string               // why Djinn stops the worker, silent after its result (silent.go)
+	silentNote         bool                 // it had written its final note: it ends done
 	lamplighterEnd     bool                 // the Lamplighter ended this worker
 	lamplighterReason  string               // why the Lamplighter ended it ("silent for N min")
 	wakePrompt         string               // what the woken worker is told, when not to continue (continueStalled)
@@ -765,14 +769,21 @@ func (h *Harness) cleanWarmLeftovers(ctx context.Context) {
 // write scope taken, no slot free, the machine under pressure), or planned for later, is created pending with the
 // reason, and the scheduler starts it as soon as it can. What the worker may do is decided when it starts
 // (prepare).
+// A task that repairs the wish's red push checks becomes their correction, or is refused while another one repairs
+// them (pushrepair.go).
 func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
-	return h.spawn(ctx, procedure, req, nil)
+	task, err := h.spawn(ctx, procedure, req, nil)
+	if err == nil && task.GetCorrection().GetAdopted() {
+		h.adoptRepair(ctx, task)
+	}
+	return task, err
 }
 
 // spawn is Spawn, of a task Djinn spawns by itself when made is set, with what made says it is for: a correction
 // worker (Task.correction), whose worktree starts on the failed merge, a review worker (Task.review), which works in
-// the worktree and on the branch of the task it reviews (made's), or a question worker (Task.role and question), which
-// reads in its project's folder.
+// the worktree and on the branch of the task it reviews (made's), a question worker (Task.role and question), which
+// reads in its project's folder, or nothing more (an empty task). Without made, the spawn comes from outside Djinn: a
+// repair of the red push checks is claimed (claimRepair).
 func (h *Harness) spawn(
 	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, made *planv1.Task,
 ) (*planv1.Task, error) {
@@ -909,6 +920,11 @@ func (h *Harness) spawn(
 	if req.GetUrgent() || req.GetFeedback() {
 		task.Urgent, task.Feedback = true, req.GetFeedback()
 		if err := refuseSecondUrgent(tasks, task); err != nil {
+			return nil, err
+		}
+	}
+	if made == nil {
+		if err := h.claimRepair(req, wish, project, task, tasks); err != nil {
 			return nil, err
 		}
 	}
@@ -1073,9 +1089,9 @@ func (h *Harness) spawn(
 }
 
 // spawner is who spawns task, as the journal records it: Djinn for a correction, a review or a question worker, or the
-// watcher of a request a task opened; the developer's side otherwise.
+// watcher of a request a task opened; the developer's side otherwise, a repair Djinn took as a correction included.
 func spawner(task *planv1.Task) string {
-	if task.GetCorrection() != nil || task.GetReview() != nil || questionWorker(task) || task.GetBabysit().GetUrl() != "" {
+	if (task.GetCorrection() != nil && !task.GetCorrection().GetAdopted()) || task.GetReview() != nil || questionWorker(task) || task.GetBabysit().GetUrl() != "" {
 		return actorHarness
 	}
 	return actorLocal
@@ -1362,6 +1378,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.mu.Lock()
 	r.startTime = now
 	r.lastActivity = now
+	r.resultAt, r.silentWhy, r.silentNote = time.Time{}, "", false
 	r.code = t.GetCode()
 	r.listenSince, r.listened = time.Time{}, t.GetIfrit().GetListened().AsDuration()
 	h.mu.Unlock()
@@ -1684,6 +1701,7 @@ func (h *Harness) record(r *run, ev Event) {
 	case planv1.TaskEventKind_TASK_EVENT_KIND_USAGE: // A turn's result says its usage: a call cut short has no result.
 		r.tools = 0
 		h.turnOver(r)
+		h.resulted(r)
 	}
 	if ev.Ifrit == planv1.IfritState_IFRIT_STATE_LISTENING && r.ifrit {
 		h.ifritTimers(r) // Its turn ended: past its out time, it goes out now.
@@ -1876,6 +1894,7 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	h.mu.Lock()
 	stopping, stoppingReason, shelved, preemptedWhy, lamplighterEnd, lamplighterReason := r.stopping, r.stoppingReason, r.shelved, r.preemptedWhy, r.lamplighterEnd, r.lamplighterReason
+	silentWhy, silentNote := r.silentWhy, r.silentNote
 	relaunched := r.relaunched
 	out := r.out
 	h.mu.Unlock()
@@ -1945,6 +1964,8 @@ func (h *Harness) end(r *run, res Result) {
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, cmp.Or(stoppingReason, "stopped on request")
 	case out != "":
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, out
+	case silentWhy != "":
+		endedSilent(t, silentWhy, silentNote)
 	case lamplighterEnd || streamIdleEnd:
 		why := streamIdleReason
 		if lamplighterEnd {
@@ -2021,6 +2042,9 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	reason := runReason(t, r)
+	if silentWhy != "" && t.GetContinuing() {
+		reason = runSilent
+	}
 	if len(t.Runs) > 0 {
 		last := t.Runs[len(t.Runs)-1]
 		if last.EndTime == nil {
@@ -2034,6 +2058,8 @@ func (h *Harness) end(r *run, res Result) {
 		text = "resuming: " + preemptedWhy
 	case shelved:
 		text = "resuming: " + whyWishPaused
+	case silentWhy != "":
+		text = silentText(t, silentWhy)
 	case lamplighterEnd && t.GetContinuing():
 		text = "resuming: " + lamplighterReason + "; continued"
 	case streamIdleEnd && t.GetContinuing():
@@ -2053,6 +2079,9 @@ func (h *Harness) end(r *run, res Result) {
 		h.mu.Unlock()
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	}
+	if silentWhy != "" && t.GetContinuing() {
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: finishPrompt})
+	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	if integrate {
 		text := "integration: pending, to be merged into the integration branch"
@@ -2070,12 +2099,17 @@ func (h *Harness) end(r *run, res Result) {
 		h.tellWatcherFailed(t)
 	case ifritOut(t):
 		h.tellOut(t)
+	case silentWhy != "" && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED:
+		if !tellsDone(t) || !toldDoneAtEnd(t, integrate) { // Else its done line says it.
+			h.tellSilent(t, silentWhy, integrate) // Its one line: done, or continued once.
+		}
+		h.babysitOpened(proto.CloneOf(t))
 	case !r.light && !watching(t) && !relaunched: // Relaunched, its lead or the developer asked for it.
 		h.workerEnded(t)
 		h.babysitOpened(proto.CloneOf(t))
 	}
 	if tellsDone(t) && toldDoneAtEnd(t, integrate) {
-		h.tellDone(context.Background(), t, notIntegrated(left))
+		h.tellDone(context.Background(), t, notIntegrated(left), silentWhy)
 	}
 	if t.GetCorrection() != nil || t.GetReview() != nil {
 		h.kickIntegrate()
@@ -2222,6 +2256,7 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 	}
 	h.mu.Lock()
 	r.lastActivity, r.lastKind = h.now(), te.GetKind()
+	r.said(te.GetKind())
 	if r.task != nil {
 		r.task.LastActivityTime = timestamppb.New(r.lastActivity)
 	}

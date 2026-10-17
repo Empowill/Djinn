@@ -122,6 +122,8 @@ merge. One repair runs on a branch at a time:
   once.
 - **A new failure waits its turn.** Push checks that go red while a correction runs keep the push held, and start no
   second correction; work you ask Djinn to correct again waits for the one that runs, then merges alone.
+- **The Djinn's repair counts.** A repair of the red push checks the Djinn spawns is taken as their correction, and a
+  second repair of the same red is refused, naming the one that runs ([Its correction](#push-its-correction)).
 - **It starts on a red branch.** A correction never waits for the branch to be green: it is what makes it green again.
 - **It takes a place at once.** A correction, and a review of work left not committed, go before every planned task,
   and never wait for a free place: on a full machine, Djinn pauses the running work task that comes last (the last wish,

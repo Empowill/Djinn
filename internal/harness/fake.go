@@ -31,6 +31,7 @@ import (
 //	sleep 5s              it works for a while
 //	wait                  it works until a message comes (Send), which it says back at the end as the others
 //	fail no tests         it fails with this reason
+//	error API Error: 500  it says an error and goes on, as claude does on a turn that failed (its process lives on)
 //	exit 2                its process exits with this code
 //	djinn task list       it runs Djinn's command line, as an agent does: this djinn, in its folder, with its task's
 //	                      environment ($DJINN_TASK_ID); "…" and '…' quote an argument
@@ -253,6 +254,8 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 			}
 			ev = fakeDjinn(ctx, spec, rest)
 			ev.Raw = raw
+		case "error":
+			ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, rest
 		case "fail":
 			emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: rest, Raw: raw})
 			w.res = Result{ExitCode: 1, Err: errors.New(rest)}
