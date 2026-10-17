@@ -213,8 +213,14 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	}
 
 	if urgentGiven {
-		// --feedback marks it urgent for feedback, or takes the mark off; --urgent alone marks it a repair.
-		t.Urgent, t.Feedback = req.GetUrgent() || req.GetFeedback(), req.GetFeedback()
+		// --feedback marks it urgent for feedback, or takes the mark off; --urgent alone marks it a repair. --feedback=false
+		// alone leaves a repair's mark: it takes off only the mark it names.
+		switch {
+		case req.Urgent == nil && !req.GetFeedback():
+			t.Urgent, t.Feedback = t.GetUrgent() && !t.GetFeedback(), false
+		default:
+			t.Urgent, t.Feedback = req.GetUrgent() || req.GetFeedback(), req.GetFeedback()
+		}
 		if t.GetUrgent() && !dispatch.Urgent(t) {
 			return nil, connect.NewError(connect.CodeFailedPrecondition,
 				fmt.Errorf("task %s is %s: only a task to run or running may be urgent", task.GetCode(), short(task.GetStatus())))

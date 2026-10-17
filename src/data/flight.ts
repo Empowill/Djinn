@@ -190,17 +190,33 @@ export function isMerge(task: Task): boolean {
   return !!task.correction || !!task.review;
 }
 
+// canUrge tells a task the developer may mark urgent, or whose urgent mark they may take off (djinn task update
+// --feedback, --urgent=false): work to run or running (urgeable). Not a merge, which Djinn serves first
+// already, an investigation, served first too, or an ifrit, which takes its place whatever the machine.
+export function canUrge(task: Task): boolean {
+  if (isMerge(task) || isInvestigation(task) || task.kind === TaskKind.IFRIT) {
+    return false;
+  }
+  return urgeable(task);
+}
+
 // isInvestigation tells a short study or audit the lead launched to align with the developer, whose commits are never
 // merged (internal/dispatch.Investigation): it is served first, and ends in a tilasm and a question.
 export function isInvestigation(task: Task): boolean {
   return task.kind === TaskKind.INVESTIGATION;
 }
 
-// isUrgent tells a task the lead marked urgent, to unblock its wish or for the developer's quick feedback
-// (task.feedback), while it is to run or runs: it passes the queue and takes a slot on a full machine
+// isUrgent tells a task the lead or the developer marked urgent, to unblock its wish or for the developer's quick
+// feedback (task.feedback), while it is to run or runs: it passes the queue and takes a slot on a full machine
 // (internal/dispatch.Urgent). A watcher or an azima never is.
 export function isUrgent(task: Task): boolean {
-  if (!task.urgent || task.provider === Provider.WATCH || isAzima(task)) {
+  return !!task.urgent && urgeable(task);
+}
+
+// urgeable tells a task that may carry the urgent mark: one to run or running (planned, resuming, running, paused,
+// waiting on its question), not a watcher or an azima, which take no slot.
+function urgeable(task: Task): boolean {
+  if (task.provider === Provider.WATCH || isAzima(task)) {
     return false;
   }
   switch (task.status) {

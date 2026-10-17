@@ -32,6 +32,7 @@ func mcpSessionEnv(t *testing.T, getenv func(string) string, requests ...string)
 	mux := http.NewServeMux()
 	mux.Handle(planv1connect.NewQuestionServiceHandler(questions{fake: f}))
 	mux.Handle(planv1connect.NewProjectServiceHandler(projects{fake: f}))
+	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	var out, errs bytes.Buffer
@@ -215,6 +216,28 @@ func TestMCPCallTool(t *testing.T) {
 	for id, code := range map[string]int{"5": rpcInvalidParams, "6": rpcMethodNotFound, "null": rpcParseError, "7": rpcInvalidParams} {
 		if e := answers[id].Error; e == nil || e.Code != code {
 			t.Errorf("answer %s: error %+v, want code %d", id, e, code)
+		}
+	}
+}
+
+// TestMCPUrgentMark (W234): task_update puts the urgent mark on and takes it off, as djinn task update --urgent and
+// --feedback do: a false is sent, not dropped, so that the mark comes off.
+func TestMCPUrgentMark(t *testing.T) {
+	f, answers := mcpSession(t,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"task_update","arguments":{"task_id":"`+taskID+`","urgent":false}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"task_update","arguments":{"task_id":"`+taskID+`","feedback":true}}}`,
+	)
+	for _, id := range []string{"1", "2"} {
+		if res := result[mcpCallResult](t, answers[id]); res.IsError {
+			t.Errorf("call %s: %+v", id, res)
+		}
+	}
+	for _, want := range []*planv1.TaskServiceUpdateRequest{
+		{TaskId: taskID, Urgent: proto.Bool(false)},
+		{TaskId: taskID, Feedback: proto.Bool(true)},
+	} {
+		if !slices.ContainsFunc(f.seen(), func(m proto.Message) bool { return proto.Equal(m, want) }) {
+			t.Errorf("the server did not receive %v: %v", want, f.seen())
 		}
 	}
 }

@@ -31,9 +31,10 @@ marked read, its latest blocks and its tilasms.
 
 ## Talking with the Djinn
 
-The Djinn talks to you only in the window, and only by [questions](#question-and-move). A report, a doubt, a "done as
-you asked" all come as a question in the wish they concern, often a yes or no with "OK, nothing to do" as an option.
-It writes nothing for you in its terminal: a line you type there is answered in the window.
+The Djinn talks to you only in the window, and only by [questions](#question-and-move). A report, a doubt, a choice, a
+"done as you asked" all come as a question in the wish they concern, often a yes or no with "OK, nothing to do" as an
+option. You never need to read its terminal: it writes one short line there at most, never a question, and a line you
+type there is answered in the window.
 
 You have three ways to reach it:
 

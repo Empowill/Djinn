@@ -2344,12 +2344,14 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 }
 
 // carry copies onto the run's copy of its task, before it is written, what is stored on the task from outside the
-// run while it runs: the comments on its diff, the developer's marks, the babysit Djinn found it does
-// (adoptBabysit), and the health the scheduler judged it by.
+// run while it runs: the comments on its diff, the developer's marks, its title and urgent mark (Update, W234), the
+// babysit Djinn found it does (adoptBabysit), and the health the scheduler judged it by.
 func carry(tx *store.Tx, t *planv1.Task) {
 	if stored, err := store.Get[*planv1.Task](context.Background(), tx, t.GetId()); err == nil {
 		t.Comments = stored.GetComments()
 		t.Marks = stored.GetMarks()
+		t.Title = stored.GetTitle()
+		t.Urgent, t.Feedback = stored.GetUrgent(), stored.GetFeedback()
 		// The health the scheduler judged this run by (health.go): one judged before it started is the last run's.
 		t.Health = nil
 		if health := stored.GetHealth(); health != nil && t.GetStartTime() != nil &&

@@ -227,7 +227,8 @@ func TestLeadBatchPrompt(t *testing.T) {
 			t.Errorf("the prompt lacks %q:\n%s", want, spec.Prompt)
 		}
 	}
-	for _, want := range []string{"driven lead, rules " + plan.DrivenRulesVersion, "Your last text reaches no one",
+	for _, want := range []string{"driven lead, rules " + plan.DrivenRulesVersion, "The developer reads none of your text",
+		"Every question, doubt or choice you have goes into a question (`djinn question ask`) in the wish concerned, never only into your text",
 		"A message is the developer's words", "Never run `djinn lead watch`"} {
 		if !strings.Contains(spec.SystemPrompt, want) {
 			t.Errorf("the rules lack %q", want)

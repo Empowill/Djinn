@@ -6143,8 +6143,9 @@ type Task struct {
 	Babysit *TaskBabysit `protobuf:"bytes,68,opt,name=babysit,proto3" json:"babysit,omitempty"`
 	// For an ifrit (TASK_KIND_IFRIT): where it stands, its timers and its serves. Unset for any other task.
 	Ifrit *TaskIfrit `protobuf:"bytes,69,opt,name=ifrit,proto3" json:"ifrit,omitempty"`
-	// The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish, or for
-	// the developer's quick feedback (feedback): while planned, it goes before every other planned task, a repair before
+	// The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish, or the
+	// lead or the developer (the toggle on its card in the window) for the developer's quick feedback (feedback): the
+	// mark goes on and off while the task is planned, waits, is paused or runs, and its run keeps it. While planned, it goes before every other planned task, a repair before
 	// a feedback task, takes a slot even on a full machine (as djinn task start does) and is not held by its integration
 	// branch's red push checks. At most one task of a wish is urgent of each class while it is to run or runs: one
 	// repair, one feedback (dispatch.Urgent, dispatch.UrgentOf).
@@ -23668,15 +23669,16 @@ type TaskServiceUpdateRequest struct {
 	// exist is cut from main under that name. Refused on a work task, while a merge runs into the azima's branch, and
 	// when the branch here has diverged from the remote's.
 	Branch *string `protobuf:"bytes,13,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
-	// Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an
-	// azima, a watcher, a task that has ended, and while another task of the wish is an urgent repair, which the refusal
-	// names.
+	// Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false, which takes either
+	// mark off. A task planned, waiting, paused or running takes it. Refused on an azima, a watcher, an investigation, a
+	// task that has ended, and while another task of the wish is an urgent repair, which the refusal names.
 	Urgent *bool `protobuf:"varint,14,opt,name=urgent,proto3,oneof" json:"urgent,omitempty"`
 	// An azima's place among the azimas of its wish, from 1 for the first; beyond the last, it goes last (djinn task rank
 	// places it before or after another). Goes alone; refused on a work task.
 	Rank *int32 `protobuf:"varint,15,opt,name=rank,proto3,oneof" json:"rank,omitempty"`
 	// Mark the task urgent for the developer's quick feedback (as djinn task spawn --feedback), or no longer with
-	// --feedback=false. Refused as --urgent is, while another task of the wish is urgent for feedback.
+	// --feedback=false, which leaves a repair's mark. Refused as --urgent is, while another task of the wish is urgent for
+	// feedback; an urgent repair of the wish does not refuse it.
 	Feedback      *bool `protobuf:"varint,16,opt,name=feedback,proto3,oneof" json:"feedback,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -2485,6 +2485,55 @@ test("a running worker pauses from its card, a paused one resumes; none where dj
   assert.match(windows, /aria-label="Stop the worker"/);
 });
 
+test("a task to run or running is made urgent from its card, its mark taken off the same way; not an ended one (W234)", () => {
+  const card = (task, onUrge) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Trim the wick",
+          provider: s.Provider.CLAUDE,
+          ...task,
+        },
+        onStop() {},
+        async onSend() {},
+        onUrge,
+      }),
+    );
+  const urge = () => {};
+  for (const status of [
+    s.TaskStatus.PENDING,
+    s.TaskStatus.WAITING,
+    s.TaskStatus.PAUSED,
+    s.TaskStatus.RUNNING,
+  ]) {
+    assert.match(
+      card({ status }, urge),
+      /<button class="icon-button " title="Make it urgent for your quick feedback: [^"]+" aria-label="Urgent" aria-pressed="false"><svg[^>]*lucide-zap/,
+      s.TaskStatus[status],
+    );
+    // Urgent, a repair or for feedback: the toggle is pressed, and takes the mark off.
+    for (const feedback of [false, true])
+      assert.match(
+        card({ status, urgent: true, feedback }, urge),
+        /<button class="icon-button active" title="Take its urgent mark off: it waits its turn again" aria-label="Urgent" aria-pressed="true">/,
+      );
+  }
+  for (const task of [
+    { status: s.TaskStatus.DONE },
+    { status: s.TaskStatus.FAILED, urgent: true },
+    { status: s.TaskStatus.RUNNING, provider: s.Provider.WATCH },
+    { status: s.TaskStatus.RUNNING, kind: s.TaskKind.INVESTIGATION },
+  ])
+    assert.doesNotMatch(card(task, urge), /aria-label="Urgent"/);
+  // Without onUrge, no toggle.
+  assert.doesNotMatch(
+    card({ status: s.TaskStatus.RUNNING }, undefined),
+    /aria-label="Urgent"/,
+  );
+});
+
 test("a wish's screen puts its questions first, proposes to grant it when ready, and leaves its blocks to the agents' tab", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da71";
   const ready = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1, {

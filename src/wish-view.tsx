@@ -399,6 +399,7 @@ export function WishView({
     answer,
     enlighten,
     review: markReviewed,
+    urge,
     move,
     withdraw,
     later,
@@ -466,6 +467,11 @@ export function WishView({
       );
     },
     [quiet, write, clients.tasks],
+  );
+
+  const handleUrge = useCallback(
+    (task: Task, urgent: boolean) => quiet(urge(task, urgent)),
+    [quiet, urge],
   );
 
   const handleDone = useCallback(
@@ -547,6 +553,7 @@ export function WishView({
           onStart={handleStart}
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
+          onUrge={handleUrge}
           onDone={handleDone}
           onRelight={handleRelight}
           onTurnComments={handleTurnComments}
@@ -570,6 +577,7 @@ export function WishView({
       handleSend,
       pausable,
       handleHold,
+      handleUrge,
       handleDone,
       handleRelight,
       handleTurnComments,

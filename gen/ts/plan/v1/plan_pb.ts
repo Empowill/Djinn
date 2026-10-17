@@ -2712,8 +2712,9 @@ export type Task = Message<"plan.v1.Task"> & {
   ifrit?: TaskIfrit | undefined;
 
   /**
-   * The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish, or for
-   * the developer's quick feedback (feedback): while planned, it goes before every other planned task, a repair before
+   * The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish, or the
+   * lead or the developer (the toggle on its card in the window) for the developer's quick feedback (feedback): the
+   * mark goes on and off while the task is planned, waits, is paused or runs, and its run keeps it. While planned, it goes before every other planned task, a repair before
    * a feedback task, takes a slot even on a full machine (as djinn task start does) and is not held by its integration
    * branch's red push checks. At most one task of a wish is urgent of each class while it is to run or runs: one
    * repair, one feedback (dispatch.Urgent, dispatch.UrgentOf).
@@ -12086,9 +12087,9 @@ export type TaskServiceUpdateRequest = Message<"plan.v1.TaskServiceUpdateRequest
   branch?: string | undefined;
 
   /**
-   * Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an
-   * azima, a watcher, a task that has ended, and while another task of the wish is an urgent repair, which the refusal
-   * names.
+   * Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false, which takes either
+   * mark off. A task planned, waiting, paused or running takes it. Refused on an azima, a watcher, an investigation, a
+   * task that has ended, and while another task of the wish is an urgent repair, which the refusal names.
    *
    * @generated from field: optional bool urgent = 14;
    */
@@ -12104,7 +12105,8 @@ export type TaskServiceUpdateRequest = Message<"plan.v1.TaskServiceUpdateRequest
 
   /**
    * Mark the task urgent for the developer's quick feedback (as djinn task spawn --feedback), or no longer with
-   * --feedback=false. Refused as --urgent is, while another task of the wish is urgent for feedback.
+   * --feedback=false, which leaves a repair's mark. Refused as --urgent is, while another task of the wish is urgent for
+   * feedback; an urgent repair of the wish does not refuse it.
    *
    * @generated from field: optional bool feedback = 16;
    */

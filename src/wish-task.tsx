@@ -23,6 +23,7 @@ import {
   ScrollText,
   Send,
   Terminal,
+  Zap,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -52,7 +53,7 @@ import {
   useTaskEvents,
   useTaskPrompt,
 } from "./data/djinn";
-import { isInvestigation, isMerge, isUrgent } from "./data/flight";
+import { canUrge, isInvestigation, isMerge, isUrgent } from "./data/flight";
 import {
   ifritGates,
   ifritLinks,
@@ -233,6 +234,7 @@ export const WishTask = memo(function WishTask({
   onStart,
   onSend,
   onHold,
+  onUrge,
   onDecision,
   onDone,
   onRelight,
@@ -262,6 +264,9 @@ export const WishTask = memo(function WishTask({
   onSend: (text: string, task: Task) => Promise<unknown>;
   // Pauses the task's worker (true) or lets it go on (false); none where djinn cannot pause one (Windows).
   onHold?: (pause: boolean, task: Task) => void;
+  // Marks the task urgent for the developer's quick feedback (true), or takes its urgent mark off (false); none where
+  // it cannot be done from here.
+  onUrge?: (task: Task, urgent: boolean) => void;
   onDecision?: (task: Task) => void;
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
   onDone?: (note: string, task: Task) => Promise<unknown>;
@@ -334,7 +339,9 @@ export const WishTask = memo(function WishTask({
       : t("ifrit.gate_wait_held", { gate: wait.gate, holder: wait.holder });
   }, "");
   const markable = !!onDone && closable(task) && !ifrit;
-  const hasActions = holdable || stoppable || markable;
+  const urgeable = !!onUrge && canUrge(task);
+  const urgent = isUrgent(task);
+  const hasActions = urgeable || holdable || stoppable || markable;
   const machineWait = task.status === TaskStatus.PENDING && task.machineWait;
   return (
     <article
@@ -412,6 +419,17 @@ export const WishTask = memo(function WishTask({
         </button>
         {hasActions && (
           <span className="wish-task-actions">
+            {urgeable && (
+              <button
+                className={`icon-button ${urgent ? "active" : ""}`}
+                onClick={() => onUrge?.(task, !urgent)}
+                title={t(urgent ? "task.unurge_detail" : "task.urge_detail")}
+                aria-label={t("task.urge")}
+                aria-pressed={urgent}
+              >
+                <Zap size={14} />
+              </button>
+            )}
             {holdable && (
               <button
                 className="icon-button"

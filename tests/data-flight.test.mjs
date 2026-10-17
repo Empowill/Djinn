@@ -1402,6 +1402,38 @@ test("an investigation shows its kind, a task urgent for feedback stays urgent (
   assert.equal(f.isUrgent(task({ urgent: true, feedback: true })), true);
 });
 
+test("a task to run or running may be made urgent or no longer, not a merge, an investigation or an ifrit (W234)", () => {
+  const task = (status, extra = {}) =>
+    f.create(f.TaskSchema, { code: "W4", status, ...extra });
+  for (const status of [
+    f.TaskStatus.PENDING,
+    f.TaskStatus.RESUMING,
+    f.TaskStatus.RUNNING,
+    f.TaskStatus.PAUSED,
+    f.TaskStatus.WAITING,
+  ])
+    assert.equal(f.canUrge(task(status)), true, f.TaskStatus[status]);
+  for (const status of [
+    f.TaskStatus.DONE,
+    f.TaskStatus.FAILED,
+    f.TaskStatus.STOPPED,
+  ])
+    assert.equal(f.canUrge(task(status)), false, f.TaskStatus[status]);
+  for (const extra of [
+    { provider: f.Provider.WATCH },
+    { kind: f.TaskKind.AZIMA },
+    { kind: f.TaskKind.INVESTIGATION },
+    { kind: f.TaskKind.IFRIT },
+    { correction: {} },
+    { review: {} },
+  ])
+    assert.equal(
+      f.canUrge(task(f.TaskStatus.PENDING, extra)),
+      false,
+      JSON.stringify(extra),
+    );
+});
+
 test("a question asleep waits for its conditions, out of the open ones; woken, it comes first, the first woken first", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const sleep = (wakeTime) => ({
