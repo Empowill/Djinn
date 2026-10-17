@@ -544,9 +544,10 @@ to you. Each item becomes a card in the **Inbox**, at the top of the flying carp
 a wish to file it in, or a new one. The side panel counts the new items, and the window shows each one as a system
 notification. Nothing is made until you click; **Rub the lamp** takes the recommended route, **Dismiss** sets the item
 aside for good. Djinn only reads a source: it never comments, reacts or replies. `djinn inbox list` lists the items.
-A skill whose front matter Djinn cannot read (a line that breaks the YAML, like `argument-hint: [a] [b]`) is not
-listed as a source: it is one of the project's problems, at the top of its panel and in `djinn project show`, with
-the line at fault. Until it is fixed, Djinn ignores what it declares. Details: [the
+A skill whose `metadata` Djinn cannot read is not listed as a source: it is one of the project's problems, at the top
+of its panel and in `djinn project show`. Until it is fixed, Djinn ignores what it declares. Another line that breaks
+the YAML, like `argument-hint: [a] [b]`, which Claude Code reads anyway, is only a warning there, with the line at
+fault: Djinn reads `metadata` apart from it. Details: [the
 inbox](wish-templates.md#the-inbox-what-comes-from-outside).
 
 ## Team settings and integration

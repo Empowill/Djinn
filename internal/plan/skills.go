@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -117,6 +118,94 @@ func Description(dir string) string {
 		return unquote(value)
 	}
 	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+// skillFront reads the metadata of the front matter of the SKILL.md of the skill in dir, by key: none without it.
+// Claude Code reads a front matter that is not YAML when one line breaks it, as `argument-hint: [a] [b]` does (YAML
+// opens a list there): Djinn then reads metadata apart from the other keys, and warning names the lines it skipped.
+// An error when metadata itself cannot be read.
+func skillFront(dir string) (metadata map[string]yaml.Node, warning string, err error) {
+	front, err := frontMatter(filepath.Join(dir, SkillFile))
+	if err != nil || front == "" {
+		return nil, "", err
+	}
+	var doc struct {
+		Metadata map[string]yaml.Node `yaml:"metadata"`
+	}
+	err = yaml.Unmarshal([]byte(front), &doc)
+	if err == nil {
+		return doc.Metadata, "", nil
+	}
+	notYAML := fmt.Errorf("%s: its front matter is not YAML: %w", SkillFile, err)
+	doc.Metadata = nil // What a type error let through.
+	found := false
+	var broken []string
+	for _, e := range frontEntries(front) {
+		var one struct {
+			Metadata *map[string]yaml.Node `yaml:"metadata"`
+		}
+		key, _, _ := strings.Cut(e.text, ":")
+		isMetadata := strings.Trim(strings.TrimSpace(key), `"'`) == "metadata"
+		switch err := yaml.Unmarshal([]byte(e.text), &one); {
+		case isMetadata && (err != nil || found):
+			return nil, "", notYAML // metadata itself breaks, or comes twice: nothing to read apart.
+		case err != nil:
+			broken = append(broken, fmt.Sprintf("line %d (%s)", e.line, shortLine(e.text)))
+		case isMetadata:
+			found = true
+			if one.Metadata != nil {
+				doc.Metadata = *one.Metadata
+			}
+		}
+	}
+	if len(broken) == 0 {
+		return doc.Metadata, notYAML.Error() + ": Djinn reads metadata apart", nil
+	}
+	return doc.Metadata, fmt.Sprintf("%s: not YAML at %s: Djinn reads metadata apart; quoting the value fixes it",
+		SkillFile, strings.Join(broken, ", ")), nil
+}
+
+// frontEntry is a key of a front matter at the top level, with the lines of its value.
+type frontEntry struct {
+	// line is where it starts in SKILL.md, from 1; text its lines.
+	line int
+	text string
+}
+
+// frontEntries cut front, a front matter, into its keys at the top level: a key starts at a line that is neither
+// indented, blank, a comment nor an item of a list, which may follow its key at the same indentation.
+func frontEntries(front string) []frontEntry {
+	var out []frontEntry
+	for i, line := range strings.SplitAfter(front, "\n") {
+		starts := line != "" && !strings.ContainsRune(" \t\r\n#", rune(line[0])) &&
+			line != "-\n" && !strings.HasPrefix(line, "- ")
+		if starts || len(out) == 0 {
+			out = append(out, frontEntry{line: i + 2}) // SKILL.md's first line is the ---.
+		}
+		out[len(out)-1].text += line
+	}
+	return out
+}
+
+// shortLine is the first line of text, cut to fit in a sentence.
+func shortLine(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+	if line = strings.TrimSpace(line); len([]rune(line)) > 60 {
+		line = string([]rune(line)[:60]) + "…"
+	}
+	return line
+}
+
+// SkillWarnings say which skills of the project folder dir have a front matter that is not YAML, which Djinn reads
+// all the same: metadata apart from the lines that break it. None when dir is empty.
+func SkillWarnings(dir string) []string {
+	var out []string
+	for _, s := range ProjectSkills(dir) {
+		if _, warning, err := skillFront(s.Dir); err == nil && warning != "" {
+			out = append(out, "the skill "+s.Name+": "+warning)
+		}
+	}
+	return out
 }
 
 func unquote(s string) string {
