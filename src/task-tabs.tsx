@@ -16,6 +16,7 @@ import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { tabPerch } from "./data/eye";
 import { EyePerch } from "./djinn-eye";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { DraftDot } from "./tilasm-comments";
 
 export type View =
@@ -298,7 +299,7 @@ export function TaskSections<T, A = never, D = never>({
           {aside}
         </div>
         {moving.length === 0 && (
-          <p className="muted-text">{t("tasks.none_live")}</p>
+          <EmptyState art="still">{t("tasks.none_live")}</EmptyState>
         )}
         {moving.length > 0 && (
           <div className="card-grid task-grid">{moving.map(render)}</div>

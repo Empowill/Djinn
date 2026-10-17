@@ -29,6 +29,8 @@ export {
   stepTo,
 } from "@/src/question-column.tsx";
 export { WaitingTasks, WishView } from "@/src/wish-view.tsx";
+export { EmptyState, QuestionsEmpty, sessionPick } from "@/src/empty-art.tsx";
+export { Machine } from "@/src/visuals.tsx";
 export {
   WishTask,
   TurnCommentsButton,
@@ -1757,7 +1759,80 @@ test("the questions column groups the open questions by wish, the first open in 
   const none = s.renderToStaticMarkup(
     h(s.QuestionColumn, { groups: [], onAnswer: async () => {} }),
   );
-  assert.match(none, /<p class="question-none">No open question\.<\/p>/);
+  // None open: the session's drawing above its sentence, the fact first (empty-art.tsx); the first without storage.
+  assert.match(
+    none,
+    /<div class="empty-state question-none"><svg class="empty-art empty-art-column" viewBox="0 0 200 130" fill="none" aria-hidden="true">.*<\/svg><p class="empty-state-text">No open question: nothing to ask you for now\.<\/p><\/div>/,
+  );
+  // Nothing waits and nothing runs: the Djinn asleep, and the sentence that says so.
+  const asleep = s.renderToStaticMarkup(
+    h(s.QuestionColumn, { groups: [], calm: true, onAnswer: async () => {} }),
+  );
+  assert.match(
+    asleep,
+    /<p class="empty-state-text">Nothing waits for you, and nothing runs: I rest above my lamp\.<\/p>/,
+  );
+  assert.doesNotMatch(asleep, /No open question/);
+});
+
+test("each empty state draws its drawing of the family above its sentence, the drawing hidden from readers, the pick kept for the session", () => {
+  const arts = {
+    calm: "empty-art-column",
+    still: "empty-art-column",
+    home: "empty-art-home",
+    tasks: "empty-art-wide",
+    decisions: "empty-art-wide",
+    review: "empty-art-wide",
+    agents: "empty-art-wide",
+    tilasms: "empty-art-wide",
+    nomatch: "empty-art-small",
+    comments: "empty-art-note",
+    terminal: "empty-art-terminal",
+    noproject: "empty-art-terminal",
+    clean: "empty-art-wide",
+    noworktree: "empty-art-wide",
+  };
+  for (const [art, size] of Object.entries(arts)) {
+    const html = s.renderToStaticMarkup(h(s.EmptyState, { art }, "The fact."));
+    assert.match(
+      html,
+      new RegExp(
+        `^<div class="empty-state"><svg class="empty-art ${size}" viewBox="[^"]+" fill="none" aria-hidden="true">.+</svg><p class="empty-state-text">The fact\\.</p></div>$`,
+      ),
+      art,
+    );
+    // No id to collide with another copy of the same drawing on the page.
+    assert.doesNotMatch(html, / id=/, art);
+  }
+  // Small: beside its sentence, for a narrow place; after it, a button or a second line.
+  assert.match(
+    s.renderToStaticMarkup(
+      h(
+        s.EmptyState,
+        { art: "nomatch", small: true, after: h("button", null, "Go") },
+        "None.",
+      ),
+    ),
+    /^<div class="empty-state small"><svg[^>]*>.+<\/svg><p class="empty-state-text">None\.<\/p><button>Go<\/button><\/div>$/,
+  );
+  // The variant is drawn once: the same at every call, whatever n asks.
+  assert.equal(s.sessionPick(5), s.sessionPick(5));
+  assert.equal(
+    s.renderToStaticMarkup(h(s.QuestionsEmpty)),
+    s.renderToStaticMarkup(h(s.QuestionsEmpty)),
+  );
+});
+
+test("the machine's screen shows the seal's flame, and smoke leaves its top only while workers run", () => {
+  const active = s.renderToStaticMarkup(h(s.Machine, { active: true }));
+  assert.match(
+    active,
+    /<g class="screen-symbol"><path d="M228 192C[^"]+" style="fill:var\(--eye-flame\)"><\/path>/,
+  );
+  assert.match(active, /class="machine-smoke"/);
+  const rest = s.renderToStaticMarkup(h(s.Machine, { active: false }));
+  assert.match(rest, /class="screen-symbol"/);
+  assert.doesNotMatch(rest, /machine-smoke/);
 });
 
 test("the questions column's keys: up and down across the groups stop at both ends, Escape leaves, the heir of an answered one", () => {
@@ -2719,7 +2794,10 @@ test("the For agents tab folds each block under its title and kind, with no mark
   const none = s.renderToStaticMarkup(
     h(s.AgentBlocks, { blocks: [], codes: new Map() }),
   );
-  assert.match(none, /No block for agents yet\./);
+  assert.match(
+    none,
+    /<div class="empty-state"><svg class="empty-art empty-art-wide"[^>]*>.*<\/svg><p class="empty-state-text">No block for agents yet: what they hand each other is written here\.<\/p><\/div>/,
+  );
 });
 
 const usage = (input, output, read, write, costUsd) => ({
@@ -4369,7 +4447,17 @@ test("the flying carpet hides its empty sections", async () => {
     ),
   );
   assert.doesNotMatch(html, /Your move|Who runs now|Spent/);
-  assert.match(html, /Nothing waits for you, and nothing runs\./);
+  // Said once, in the questions column, beside the Djinn asleep.
+  assert.equal(
+    html.match(
+      /Nothing waits for you, and nothing runs: I rest above my lamp\./g,
+    )?.length,
+    1,
+  );
+  assert.match(
+    html,
+    /<div class="empty-state question-none"><svg class="empty-art empty-art-column"/,
+  );
 });
 
 test("an inbox card says its kind and the fact, what Djinn will do, and what each choice changes under it; Dismiss is the last choice", async () => {
@@ -5035,7 +5123,7 @@ test("the Tilasms tab lists each tilasm newest first with its code, title, autho
     s.renderToStaticMarkup(
       h(s.TilasmList, { ...props, tilasms: [], count: 0 }),
     ),
-    /No tilasm yet: .*djinn tilasm put/,
+    /<p class="empty-state-text">No tilasm yet\. Drop an \.html file or a folder with an index\.html here; I can put one too\.<\/p><p class="empty-state-text">From the command line: djinn tilasm put\.<\/p>/,
   );
 });
 
@@ -7502,7 +7590,7 @@ test("regression W507: a wish without a project shows its task, its rank as a ra
   assert.doesNotMatch(html, /My wish is granted|id="grant-/);
   assert.doesNotMatch(
     html,
-    /waits? for you|with problems|refused|id="waiting-|tone-interrupted/,
+    /(?<!othing )waits? for you|with problems|refused|id="waiting-|tone-interrupted/,
   );
   // (a) The Tasks tab counts it.
   assert.match(
@@ -13646,7 +13734,7 @@ test("the questions asleep are a discreet count below the column, their list on 
   );
   assert.match(
     column,
-    /<p class="question-none">No open question\.<\/p><div class="question-asleep">/,
+    /<p class="empty-state-text">No open question: nothing to ask you for now\.<\/p><\/div><div class="question-asleep">/,
   );
 });
 

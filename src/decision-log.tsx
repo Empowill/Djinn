@@ -12,6 +12,7 @@ import { type ReactNode, memo, useEffect, useState } from "react";
 import { type Decision, BY_LEAD } from "./data/decisions";
 import { answerText, firstLine, launchedPlan, when } from "./data/format";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
 import { StatusBadge } from "./status";
@@ -71,7 +72,9 @@ export function DecisionLog<T extends { item: Decision }>({
         </h2>
         <p>{t("decision.detail")}</p>
       </div>
-      {items.length === 0 && <p className="muted-text">{t("decision.none")}</p>}
+      {items.length === 0 && (
+        <EmptyState art="decisions">{t("decision.none")}</EmptyState>
+      )}
       {items.length > 0 && (
         <div className="card-grid">
           {items.slice(0, shown).map((item) => (

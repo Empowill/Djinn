@@ -1011,3 +1011,15 @@ test("the focused question of the column, and it alone, shows a gold ring distin
       `${selector.trim()} draws no ring`,
     );
 });
+
+test("the empty states' drawings never loop, and move by transform and opacity alone", () => {
+  // Shown wherever a list is empty, often for hours: a loop there would draw frames while nothing changes
+  // (e2e/idle-frames.spec.ts), and WebKit repaints a whole SVG for any of its parts (W513).
+  const css = fs
+    .readFileSync(path.join(root, "empty-art.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(css, /infinite/);
+  for (const [, body] of css.matchAll(/@keyframes[^{]*\{([\s\S]*?\})\s*\}/g))
+    for (const [, property] of body.matchAll(/([a-z-]+)\s*:/g))
+      assert.ok(["opacity", "transform"].includes(property), property);
+});
