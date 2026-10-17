@@ -59,10 +59,10 @@ func TestUrgentPassesTheQueue(t *testing.T) {
 	// Done, it is history: the order and the slots are the others' again.
 	done := task("urgent", 0)
 	done.Urgent, done.Status = true, planv1.TaskStatus_TASK_STATUS_DONE
-	if Urgent(done) || UrgentOf([]*planv1.Task{done}, "w", "") != nil {
+	if Urgent(done) || UrgentOf([]*planv1.Task{done}, "w", "", false) != nil {
 		t.Error("a done task counts as urgent")
 	}
-	if UrgentOf(tasks, "w", "") != urgent || UrgentOf(tasks, "w", "urgent") != nil || UrgentOf(tasks, "other", "") != nil {
+	if UrgentOf(tasks, "w", "", false) != urgent || UrgentOf(tasks, "w", "urgent", false) != nil || UrgentOf(tasks, "other", "", false) != nil {
 		t.Error("UrgentOf does not find the wish's urgent task alone")
 	}
 }
@@ -89,5 +89,42 @@ func TestUrgentStartsOnARedBranch(t *testing.T) {
 	}
 	if why, failed := sit.Blocker(repair); why != "" || failed != "" {
 		t.Errorf("urgent repair: %q %q; want it started on the red branch", why, failed)
+	}
+}
+
+// TestUrgentRepairAndFeedback (W213): a repair and a task for the developer's quick feedback may be urgent at once in a
+// wish, one of each class; both pass the queue, the repair first, and both start on a full machine and a red branch.
+func TestUrgentRepairAndFeedback(t *testing.T) {
+	wish := &planv1.Wish{
+		Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE,
+		IntegrationBranches: []*planv1.IntegrationBranch{{ProjectId: "p", Branch: "feat/qol"}},
+		Pushes:              []*planv1.WishPush{{ProjectId: "p", Held: "at 0f2e0240, test: exit status 1", FailedSha: "0f2e02401234"}},
+	}
+	now := time.Date(2026, 10, 17, 11, 0, 0, 0, time.UTC)
+	task := func(id string, age time.Duration) *planv1.Task {
+		return &planv1.Task{Id: id, WishId: "w", ProjectId: "p", Code: id, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+			Scheduled: true, CreateTime: timestamppb.New(now.Add(-age))}
+	}
+	work, mockup, repair := task("work", time.Hour), task("mockup", 30*time.Minute), task("repair", 0)
+	mockup.Urgent, mockup.Feedback = true, true
+	repair.Urgent = true
+	tasks := []*planv1.Task{work, mockup, repair}
+	decisions := New(tasks, []*planv1.Wish{wish}, map[string]bool{"p": true}, &Machine{Slots: 1, Rule: "test", Running: 1}).At(now).Pass()
+	var order []string
+	for _, d := range decisions {
+		order = append(order, d.Task.GetId())
+		if urgent := d.Task.GetId() != "work"; urgent != (d.Why == "") {
+			t.Errorf("%s: why %q", d.Task.GetId(), d.Why)
+		}
+	}
+	if order[0] != "repair" || order[1] != "mockup" {
+		t.Errorf("order = %v; want the repair, then the feedback task, before the work", order)
+	}
+	if !Feedback(mockup) || Feedback(repair) {
+		t.Error("Feedback does not tell the feedback task from the repair")
+	}
+	if UrgentOf(tasks, "w", "", true) != mockup || UrgentOf(tasks, "w", "", false) != repair ||
+		UrgentOf(tasks, "w", "mockup", true) != nil {
+		t.Error("UrgentOf does not find each class's urgent task")
 	}
 }

@@ -190,6 +190,10 @@ type Event struct {
 	// Turns is how many model turns the worker took so far, on the first event of a new one: the Lamplighter's count
 	// grows as they come, not only at a result (num_turns).
 	Turns int
+	// Spent is what the worker spent so far in this run, in US dollars, as Djinn estimates it from the token counts its
+	// agent says as it goes, for an agent that says its cost at a result only (claude): an investigation is asked to
+	// publish at its budget before its provider cuts it (investigationDue).
+	Spent float64
 }
 
 // Result is how a worker ended.

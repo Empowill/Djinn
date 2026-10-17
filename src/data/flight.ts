@@ -184,8 +184,15 @@ export function isMerge(task: Task): boolean {
   return !!task.correction || !!task.review;
 }
 
-// isUrgent tells a task the lead marked urgent, to unblock its wish, while it is to run or runs: it passes the
-// queue and takes a slot on a full machine (internal/dispatch.Urgent). A watcher or an azima never is.
+// isInvestigation tells a short study or audit the lead launched to align with the developer, whose commits are never
+// merged (internal/dispatch.Investigation): it is served first, and ends in a tilasm and a question.
+export function isInvestigation(task: Task): boolean {
+  return task.kind === TaskKind.INVESTIGATION;
+}
+
+// isUrgent tells a task the lead marked urgent, to unblock its wish or for the developer's quick feedback
+// (task.feedback), while it is to run or runs: it passes the queue and takes a slot on a full machine
+// (internal/dispatch.Urgent). A watcher or an azima never is.
 export function isUrgent(task: Task): boolean {
   if (!task.urgent || task.provider === Provider.WATCH || isAzima(task)) {
     return false;

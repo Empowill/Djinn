@@ -9,6 +9,7 @@ import (
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -35,7 +36,7 @@ type candidate struct {
 // lowestWorkTask returns the running work task of lowest priority to preempt:
 // the last wish by rank, then the most recently started.
 // It never returns:
-// - an investigator or question worker;
+// - an investigator, a question worker or an investigation;
 // - a worker the developer started or resumed by hand (Forced);
 // - a correction or review worker, or an urgent task (W233);
 // - a task holding or waiting for a gate;
@@ -61,7 +62,7 @@ func (h *Harness) lowestWorkTask(ctx context.Context, forSlot bool) (*planv1.Tas
 		if t == nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 			continue
 		}
-		if questionWorker(t) || r.forced {
+		if questionWorker(t) || dispatch.Investigation(t) || r.forced {
 			continue
 		}
 		if t.GetCorrection() != nil || t.GetReview() != nil || t.GetUrgent() {

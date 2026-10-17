@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -21,7 +22,8 @@ import (
 // A task's seal is the set of constraints Djinn gives the worker of a task (docs/providers.md, "A task's seal"). Its
 // budgets are here, enforced by the Lamplighter: SilenceLimit, TaskMaxWallTime and TaskMaxTurns. The rest is decided
 // where it applies: the access and how each agent's sandbox applies it (decideAccess, accessSpec), the wakes
-// (maxWakes) and usage-limit resumes (maxResumes), the spending cap (Task.max_budget_usd), the push guard and the
+// (maxWakes) and usage-limit resumes (maxResumes), the spending cap (Task.max_budget_usd), an investigation's shorter
+// limits, at which it is asked to publish (investigationDue), the push guard and the
 // worker's identity (gitGuard, plan.WorkerGuard), the write scopes (dispatch), the load notch's CPU priority
 // (lowPriority) and the worker's memory ceiling (scopeFor), the slots and the gates.
 
@@ -114,6 +116,24 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 		if r.watcher {
 			h.mu.Unlock()
 			continue
+		}
+
+		// An investigation is asked to publish at its time limit or its budget, and stopped past a grace.
+		if dispatch.Investigation(t) {
+			ask, stop := h.investigationDue(t, r, now)
+			if stop != "" {
+				r.stopping, r.stoppingReason = true, stop
+				worker := r.worker
+				h.mu.Unlock()
+				logx.L().Info("lamplighter stops an investigation", "task", t.GetCode(), "why", stop)
+				if worker != nil {
+					worker.Stop()
+				}
+				continue
+			}
+			if ask != "" {
+				go h.askToPublish(r, t.GetCode(), ask)
+			}
 		}
 
 		// Budget per task: check wall time and turns against limits.

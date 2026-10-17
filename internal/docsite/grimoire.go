@@ -62,6 +62,7 @@ var Nav = []Group{
 		{"task-and-worker", "docs.page_task_and_worker"},
 		{"dependencies", "docs.page_dependencies"},
 		{"watcher", "docs.page_watcher"},
+		{"investigation", "docs.page_investigation"},
 		{"decision", "docs.page_decision"},
 		{"block", "docs.page_block"},
 	}},

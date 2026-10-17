@@ -228,6 +228,9 @@ type run struct {
 	lamplighterReason  string               // why the Lamplighter ended it ("silent for N min")
 	wakePrompt         string               // what the woken worker is told, when not to continue (continueStalled)
 	relaunched         bool                 // the lead or the developer relaunched it, stalled (continueStalled): woken whatever its wakes
+	publishAt          time.Time            // when the Lamplighter asked the investigation to publish in this run (investigation.go)
+	publishWhy         string               // what it reached then: its time limit or its budget
+	spent              float64              // what the task spent so far, its run's estimate (Event.Spent) included
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task           *planv1.Task
@@ -866,13 +869,16 @@ func (h *Harness) spawn(
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a watcher runs its command in a project: the wish has none"))
 		}
 		task.Restart = req.GetRestart()
-		if req.GetUrgent() {
+		if req.GetUrgent() || req.GetFeedback() {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--urgent is for an agent: a watcher takes no slot"))
 		}
 	} else if req.GetRestart() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--restart is for a watcher (--provider watch)"))
 	}
 	if err := ifritSpawn(req, kind, project, task); err != nil {
+		return nil, err
+	}
+	if err := investigationSpawn(req, kind, project, task); err != nil {
 		return nil, err
 	}
 	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
@@ -898,11 +904,11 @@ func (h *Harness) spawn(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	if req.GetUrgent() {
+	if req.GetUrgent() || req.GetFeedback() {
+		task.Urgent, task.Feedback = true, req.GetFeedback()
 		if err := refuseSecondUrgent(tasks, task); err != nil {
 			return nil, err
 		}
-		task.Urgent = true
 	}
 	for _, b := range blocked {
 		tasks[slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == b.GetId() })] = b
@@ -922,7 +928,7 @@ func (h *Harness) spawn(
 	}
 	var preemptedCode string
 	switch {
-	case task.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
+	case dispatch.ServedFirst(task):
 		if why != "" && isMemoryShort(why) {
 			if code, err := h.interruptPausedForMemory(ctx, task); err == nil && code != "" {
 				preemptedCode = code
@@ -1188,6 +1194,9 @@ func briefed(r *run, prompt string, readOnly bool) string {
 	if r.ifrit {
 		rules = ifritRules
 	}
+	if dispatch.Investigation(r.task) {
+		rules = investigationRule(r.task) + " " + rules
+	}
 	edits := r.task.GetBranch() != "" && !readOnly
 	if r.ifrit && !edits && r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
 		return prompt + "\n\n" + rules
@@ -1272,7 +1281,7 @@ func (h *Harness) launch(
 	}
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: model,
-		MaxBudgetUSD: task.GetMaxBudgetUsd(), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
+		MaxBudgetUSD: providerBudget(task), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
 		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(),
 	}
 	var err error
@@ -1606,6 +1615,11 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Turns > 0 {
 		h.setTurns(r, func(n int) int { return max(n, ev.Turns) })
+	}
+	if ev.Spent > 0 {
+		h.mu.Lock()
+		r.spent = r.base.GetCostUsd() + ev.Spent
+		h.mu.Unlock()
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE {
 		var uTurns int
@@ -1975,6 +1989,9 @@ func (h *Harness) end(r *run, res Result) {
 		t.Refused = r.refusals
 	}
 	integrate, left := h.pendIntegration(t)
+	if dispatch.Investigation(t) {
+		h.unpausePreempted(t) // The work task it paused for its slot resumes first.
+	}
 	why := t.GetError()
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		h.limited(r, t)
