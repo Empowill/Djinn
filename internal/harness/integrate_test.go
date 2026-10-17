@@ -50,6 +50,12 @@ func integrating(t *testing.T, opts ...Option) *integration {
 	in := &integration{repo: gitRepoWith(t, map[string]string{"app/gen/index.txt": "\n", "app/src/.keep": ""}), now: time.Now()}
 	in.env = up(t, t.TempDir(), append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate)}, opts...)...)
 	in.wishID, in.projectID = in.wish(t, filepath.Join(in.repo, "app"))
+	// The clock starts once the wish is made: the wish's time is the real one, and a task merged at the start
+	// time is pushed only when merged after the wish was made (lastPush). Made over a second after the start, under
+	// load or -race, the first task of a test was never pushed.
+	in.mu.Lock()
+	in.now = time.Now()
+	in.mu.Unlock()
 	in.branch = plan.CheckedOutBranch(t.Context(), in.repo)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\n")
