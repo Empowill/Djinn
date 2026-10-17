@@ -7,8 +7,8 @@
 // drop zone becomes a tilasm, or the new version of the one a .zip exported. The open one goes full size: its frame
 // covers the main shell, the side panel beside it; leaving puts the tab back as it was, the frame never reloaded. The
 // same frame opens over any view, full size, as a link in a question asks (tilasm-over.tsx). Beside the frame in the
-// tab, full size too, the developer's draft comments on it (tilasm-comments.tsx): counted on its head, on its row and
-// on the tab. A passage selected in the frame is commented from a button over it, its drafts highlighted in the page
+// tab, full size and over a view too, the developer's draft comments on it (tilasm-comments.tsx): counted on its head,
+// on its row and on the tab. A passage selected in the frame is commented from a button over it, its drafts highlighted in the page
 // (tilasm-passages.tsx); Aim mode comments an element, and numbered dots in a margin beside the frame stand at the
 // height of each anchor (tilasm-margin.tsx). A new version places the anchors again: the window writes where each
 // stands, found, changed or lost.
@@ -151,46 +151,7 @@ export function TilasmsTab({
   const ref = (tilasm: Tilasm) => ({
     ref: { case: "id" as const, value: tilasm.id },
   });
-  // Each write reads the drafts again before it resolves: the card shows what was stored, never what it held before.
-  const reread = () => store.changed(wishId, [Change.TILASM]);
-  const comments: CommentWrites = {
-    put: async (tilasmId, text, id, anchor) => {
-      await clients.tilasms.putComment({ tilasmId, id, text, anchor });
-      await reread();
-    },
-    place: async (tilasmId, version, places) => {
-      await clients.tilasms.placeComments({ tilasmId, version, places });
-      await reread();
-    },
-    remove: async (comment) => {
-      const res = await clients.tilasms.deleteComment({ id: comment.id });
-      await reread();
-      return res.comment ?? comment;
-    },
-    putBack: async (comment) => {
-      await clients.tilasms.putComment({
-        tilasmId: comment.tilasmId,
-        deleted: comment,
-      });
-      await reread();
-    },
-    send: async (tilasmId, choice, text) => {
-      const res = await clients.tilasms.sendComments({
-        tilasmId,
-        choice,
-        text,
-      });
-      await reread();
-      const send = res.send?.number ?? 0;
-      onToast(
-        res.answered
-          ? t("tilasms.sent_answered", { question: res.answered })
-          : choice === SendChoice.ITERATE
-            ? t("tilasms.sent_iterate", { send })
-            : t("tilasms.sent_launch", { send }),
-      );
-    },
-  };
+  const comments = useCommentWrites(wishId, onToast);
   return (
     <TilasmList
       tilasms={found ?? tilasms}
@@ -243,6 +204,56 @@ export function TilasmsTab({
       }}
     />
   );
+}
+
+// useCommentWrites is what writes the developer's comments on a wish's tilasms, in the Tilasms tab and over a view;
+// onToast tells what a send did.
+export function useCommentWrites(
+  wishId: string,
+  onToast: (text: string) => void,
+): CommentWrites {
+  const clients = useClients();
+  const store = useStore();
+  // Each write reads the drafts again before it resolves: the card shows what was stored, never what it held before.
+  const reread = () => store.changed(wishId, [Change.TILASM]);
+  return {
+    put: async (tilasmId, text, id, anchor) => {
+      await clients.tilasms.putComment({ tilasmId, id, text, anchor });
+      await reread();
+    },
+    place: async (tilasmId, version, places) => {
+      await clients.tilasms.placeComments({ tilasmId, version, places });
+      await reread();
+    },
+    remove: async (comment) => {
+      const res = await clients.tilasms.deleteComment({ id: comment.id });
+      await reread();
+      return res.comment ?? comment;
+    },
+    putBack: async (comment) => {
+      await clients.tilasms.putComment({
+        tilasmId: comment.tilasmId,
+        deleted: comment,
+      });
+      await reread();
+    },
+    send: async (tilasmId, choice, text) => {
+      const res = await clients.tilasms.sendComments({
+        tilasmId,
+        choice,
+        text,
+      });
+      await reread();
+      const send = res.send?.number ?? 0;
+      onToast(
+        res.answered
+          ? t("tilasms.sent_answered", { question: res.answered })
+          : choice === SendChoice.ITERATE
+            ? t("tilasms.sent_iterate", { send })
+            : t("tilasms.sent_launch", { send }),
+      );
+    },
+  };
 }
 
 // TilasmList is the tab as it shows, from what it is given.
@@ -467,7 +478,7 @@ export function TilasmList({
 
 // TilasmFrame is a tilasm in its frame. In the Tilasms tab, under its head, in the page, it goes full size and back;
 // over a view, as a link in a question opens it (tilasm-over.tsx), it is full size from the start, with no head, and
-// leaving it closes it.
+// leaving it closes it; it is commented there as in the tab, from the buttons it has full size.
 export function TilasmFrame({
   tilasm,
   full,
@@ -501,7 +512,7 @@ export function TilasmFrame({
   onCommentError?: (error: unknown) => void;
 }) {
   const [commenting, setCommenting] = useState(false);
-  const enabled = comments !== undefined && !over;
+  const enabled = comments !== undefined;
   const column = enabled && commenting;
   const frame = useRef<HTMLIFrameElement>(null);
   const version = latest(tilasm);

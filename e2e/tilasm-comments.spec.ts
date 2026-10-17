@@ -616,6 +616,116 @@ test("a passage selected in the frame with the mouse is commented from the Comme
   expect(errors).toEqual([]);
 });
 
+// A tilasm a question links to opens over the view (tilasm-over.tsx): it is commented there as in the Tilasms tab, a
+// passage selected, an element aimed at, in the same column beside the narrowed frame, and the drafts are the tab's.
+// Over a view, it took no comment until W276: L19, opened from its question, let nothing be selected to comment.
+test("a tilasm opened from a question's link is commented over the view, as in the Tilasms tab", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const title = `Comment over ${randomUUID().slice(0, 8)}`;
+  const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
+    .id as string;
+  made.push(wishId);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-over-"));
+  let id: string;
+  try {
+    fs.writeFileSync(path.join(dir, "index.html"), passagesPage);
+    id = JSON.parse(djinn("tilasm", "put", dir, "--wish", wishId, "--json"))
+      .tilasm.id as string;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  const href = `djinn://tilasm/${id}`;
+  const question = "Which wait for the notices?";
+  djinn(
+    "question",
+    "ask",
+    question,
+    wishId,
+    "--options",
+    "Two seconds",
+    "--options",
+    "Five seconds",
+    "--context",
+    `The notices: ${href}`,
+  );
+
+  await page.goto(process.env.DJINN_URL!);
+  await page.locator(".wish-nav").filter({ hasText: title }).click();
+  const link = page
+    .locator(".question-card")
+    .filter({ hasText: question })
+    .locator(".question-context")
+    .getByRole("link", { name: href });
+  await link.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await link.click();
+  const over = page.locator(".main-shell > .tilasm-view.over");
+  const inFrame = page.frameLocator(".tilasm-view.over iframe.tilasm-frame");
+  await expect(inFrame.locator("body")).toHaveAttribute("data-own", "ran");
+  const frame = await frameOf(page);
+
+  // The mouse selects a passage: the Comment button shows over the frame, and opens the column on its card, beside
+  // the frame, which narrows for it.
+  await drag(page, inFrame.locator("#two"));
+  const pick = page.getByRole("button", { name: "Comment", exact: true });
+  await expect(pick).toBeVisible();
+  await pick.click();
+  const column = over.getByRole("complementary", { name: "Comments" });
+  const editor = column.getByRole("textbox", {
+    name: "Your comment on the passage",
+  });
+  await expect(editor).toBeFocused();
+  const cards = column.locator(".tilasm-comment");
+  await expect(cards.last()).toContainText("§ Grouping");
+  await expect(cards.last().locator(".tilasm-comment-quote")).toHaveText(
+    "two seconds",
+  );
+  const box = over.locator("iframe.tilasm-frame");
+  await expect
+    .poll(async () => {
+      const f = await box.boundingBox();
+      const c = await column.boundingBox();
+      return f && c ? Math.round(c.x - (f.x + f.width)) : NaN;
+    })
+    .toBeGreaterThanOrEqual(0);
+  await editor.fill("Two seconds is the watch's: say so.");
+  await editor.press("Control+Enter");
+  await expect(cards).toHaveCount(1);
+  await expect(over.locator(".tilasm-comments-toggle")).toHaveAccessibleName(
+    "Comments · 1 draft comment",
+  );
+  await expect
+    .poll(() => highlighted(frame))
+    .toEqual({
+      "djinn-draft": ["two seconds"],
+      "djinn-writing": [],
+      "djinn-sent": [],
+    });
+  await page.screenshot({ path: path.join(shots, "tilasm-over-comments.png") });
+
+  // Aim mode too: a click on a heading takes it; Escape gives the card up and leaves the tilasm open.
+  await over.getByRole("button", { name: "Aim at an element" }).click();
+  const heading = await bring(page, inFrame.locator("h2").last());
+  await page.mouse.click(heading.x + 5, heading.y + heading.height / 2);
+  const onElement = column.getByRole("textbox", {
+    name: "Your comment on the element",
+  });
+  await expect(onElement).toBeFocused();
+  await onElement.press("Escape");
+  await expect(onElement).toHaveCount(0);
+  await expect(over).toBeVisible();
+
+  // Closed, the draft is the Tilasms tab's.
+  await over.getByRole("button", { name: "Close the tilasm" }).click();
+  await expect(over).toHaveCount(0);
+  const tab = page.getByRole("tab", { name: /^Tilasms/ });
+  await expect(tab.locator(".draft-dot")).toHaveText("1");
+  expect(errors).toEqual([]);
+});
+
 // A tilasm may declare its own policy in a meta tag: the browser applies both, and the bridge, a script from the
 // server's origin, loads only where both let it. Where it does not, the page still reads, and the whole tilasm is
 // still commented.

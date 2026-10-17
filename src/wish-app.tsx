@@ -471,6 +471,7 @@ export function WishApp() {
         <TilasmOver
           view={modal === "make" ? "make" : selected}
           landing={landing}
+          onToast={setToast}
         >
           <LayoutGroup id="workspace-action-group">
             {modal === "make" ? (
