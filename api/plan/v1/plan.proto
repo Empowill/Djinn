@@ -2974,8 +2974,12 @@ message ProjectServiceBranchesResponse {
   // The branches, without refs/heads/ (or the remote's name), the latest commit first; empty for a project outside
   // Git.
   repeated string branches = 1;
-  // The branch the project's checkout is on; empty when it is on none.
+  // The branch the project's checkout is on; empty when it is on none. Djinn takes nothing from it (W227): it is
+  // shown, never a default.
   string checked_out = 2;
+  // The project's reference branch, as Djinn names it: a wish that records no integration branch lands there, and a
+  // new branch made for one starts from it. Empty when Djinn finds none.
+  string reference = 3;
 }
 
 message ProjectServiceSetBranchRequest {

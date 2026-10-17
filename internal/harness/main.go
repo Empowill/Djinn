@@ -595,23 +595,7 @@ func findMain(ctx context.Context, repo, name string) (main, ref string, err err
 		}
 		return name, "refs/remotes/" + remote + "/" + target, nil
 	}
-	remote, _ := pushTarget(ctx, repo, "HEAD") // origin, else the only remote
-	if remote != "" {
-		if head, err := git(ctx, repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/"+remote+"/HEAD"); err == nil {
-			name := strings.TrimPrefix(head, remote+"/")
-			return name, "refs/remotes/" + remote + "/" + name, nil
-		}
-	}
-	for _, name := range []string{"main", "master"} {
-		if remote != "" {
-			if _, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/remotes/"+remote+"/"+name); err == nil {
-				return name, "refs/remotes/" + remote + "/" + name, nil
-			}
-		} else if _, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+name); err == nil {
-			return name, "refs/heads/" + name, nil
-		}
-	}
-	return "", "", errors.New("the project has no main branch: name it with djinn project set-branch, or main_branch in its settings")
+	return plan.DefaultReference(ctx, repo)
 }
 
 // Reference is the project's reference branch, from name, its main_branch setting, as mainRef finds it, and the ref

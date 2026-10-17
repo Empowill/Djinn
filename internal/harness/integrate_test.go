@@ -210,7 +210,7 @@ func (in *integration) finished(t *testing.T, code string, files map[string]stri
 	for _, o := range opts {
 		o(task)
 	}
-	if _, err := addWorktree(t.Context(), in.repo, task.GetWorktree(), task.GetBranch()); err != nil {
+	if _, err := addWorktreeFrom(t.Context(), in.repo, task.GetWorktree(), task.GetBranch(), "HEAD"); err != nil {
 		t.Fatal(err)
 	}
 	if len(files) > 0 {
@@ -307,7 +307,7 @@ func TestCommitABatch(t *testing.T) {
 	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
 	w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
 
-	// The wish recorded, when it was made, the branch the project's checkout was on.
+	// The wish recorded, when it was made, the project's reference branch: the one this copy is on.
 	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
 	if err != nil || plan.IntegrationBranchOf(wish, in.projectID) != in.branch || in.branch == "" {
 		t.Fatalf("the wish's integration branches: %v, %v; want %s", wish.GetIntegrationBranches(), err, in.branch)

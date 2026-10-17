@@ -12664,8 +12664,12 @@ type ProjectServiceBranchesResponse struct {
 	// The branches, without refs/heads/ (or the remote's name), the latest commit first; empty for a project outside
 	// Git.
 	Branches []string `protobuf:"bytes,1,rep,name=branches,proto3" json:"branches,omitempty"`
-	// The branch the project's checkout is on; empty when it is on none.
-	CheckedOut    string `protobuf:"bytes,2,opt,name=checked_out,json=checkedOut,proto3" json:"checked_out,omitempty"`
+	// The branch the project's checkout is on; empty when it is on none. Djinn takes nothing from it (W227): it is
+	// shown, never a default.
+	CheckedOut string `protobuf:"bytes,2,opt,name=checked_out,json=checkedOut,proto3" json:"checked_out,omitempty"`
+	// The project's reference branch, as Djinn names it: a wish that records no integration branch lands there, and a
+	// new branch made for one starts from it. Empty when Djinn finds none.
+	Reference     string `protobuf:"bytes,3,opt,name=reference,proto3" json:"reference,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -12710,6 +12714,13 @@ func (x *ProjectServiceBranchesResponse) GetBranches() []string {
 func (x *ProjectServiceBranchesResponse) GetCheckedOut() string {
 	if x != nil {
 		return x.CheckedOut
+	}
+	return ""
+}
+
+func (x *ProjectServiceBranchesResponse) GetReference() string {
+	if x != nil {
+		return x.Reference
 	}
 	return ""
 }
@@ -25536,11 +25547,12 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x1dProjectServiceBranchesRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x12\x1c\n" +
-	"\treference\x18\x02 \x01(\bR\treference\"]\n" +
+	"\treference\x18\x02 \x01(\bR\treference\"{\n" +
 	"\x1eProjectServiceBranchesResponse\x12\x1a\n" +
 	"\bbranches\x18\x01 \x03(\tR\bbranches\x12\x1f\n" +
 	"\vchecked_out\x18\x02 \x01(\tR\n" +
-	"checkedOut\"\x96\x01\n" +
+	"checkedOut\x12\x1c\n" +
+	"\treference\x18\x03 \x01(\tR\treference\"\x96\x01\n" +
 	"\x1eProjectServiceSetBranchRequest\x12$\n" +
 	"\aproject\x18\x01 \x01(\tB\n" +
 	"\xbaH\a\xc8\x01\x01r\x02\x18dR\aproject\x128\n" +

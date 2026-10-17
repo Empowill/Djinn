@@ -182,7 +182,10 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 		}
 		// Work held out of its azima's branch waits, as in a checked project (heldOutError).
 		if _, err := h.uncheckedBranch(ctx, wish, project, settings, t); err != nil && !errors.As(err, new(*heldOutError)) {
-			into := cmp.Or(plan.IntegrationBranchOf(wish, project.GetId()), plan.CheckedOutBranch(ctx, project.GetDirectory()))
+			into := plan.IntegrationBranchOf(wish, project.GetId())
+			if into == "" {
+				into, _ = plan.ReferenceName(ctx, h.home, project)
+			}
 			if !branchHoldsUnmergedCommits(ctx, project.GetDirectory(), t.GetBranch(), into) {
 				return false, ""
 			}
@@ -1068,15 +1071,16 @@ func (h *Harness) closeMove(ctx context.Context, q *planv1.Question, choice plan
 	return nil
 }
 
-// integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish made before
-// Djinn recorded it takes the branch the project's checkout is on now, recorded on the wish.
+// integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish that records
+// none takes the project's reference branch, recorded on the wish; never the branch the developer's copy has checked
+// out (W227).
 func (h *Harness) integrationBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (string, string) {
 	if b := plan.IntegrationBranchOf(wish, project.GetId()); b != "" {
 		return b, ""
 	}
-	b := plan.CheckedOutBranch(ctx, project.GetDirectory())
+	b, _ := plan.ReferenceName(ctx, h.home, project)
 	if b == "" {
-		return "", "the project's checkout is on no branch: name the integration branch with djinn wish set-integration"
+		return "", "the project has no reference branch: name the integration branch with djinn wish set-integration"
 	}
 	plan.SetIntegrationBranch(wish, project.GetId(), b)
 	ctx = context.WithoutCancel(ctx)
@@ -2449,8 +2453,10 @@ func (h *Harness) azimaBranchesOf(ctx context.Context, wish *planv1.Wish, projec
 }
 
 // resolveMainSha finds the project's reference branch, as mainRef names it from the main_branch setting, and its
-// commit: the remote's when it holds the local one's, else whichever the repository holds. A repository where mainRef
-// finds none gives its local main or master, else its HEAD.
+// commit: the remote's as this repository last fetched it, when it holds the branch; else the local branch, in a
+// repository without a remote or whose remote lacks it. A repository where mainRef finds none gives its local main or
+// master. Never the developer's HEAD, nor the branch their copy has checked out: without a reference branch, an error
+// says to name one (W227).
 func resolveMainSha(ctx context.Context, repo string, settings plan.Settings) (name, sha string, err error) {
 	mainName, _, err := mainRef(ctx, repo, settings.MainBranch)
 	localSha := ""
@@ -2470,25 +2476,53 @@ func resolveMainSha(ctx context.Context, repo string, settings plan.Settings) (n
 	if remote != "" && target != "" {
 		remoteSha = commitOf(ctx, repo, "refs/remotes/"+remote+"/"+target)
 	}
-	switch {
-	case localSha != "" && remoteSha != "":
-		if isAncestor(ctx, repo, localSha, remoteSha) {
-			return mainName, remoteSha, nil
-		}
-		return mainName, localSha, nil
-	case localSha != "":
-		return mainName, localSha, nil
-	case remoteSha != "":
-		return mainName, remoteSha, nil
-	}
-	if headSha := commitOf(ctx, repo, "HEAD"); headSha != "" {
-		return "HEAD", headSha, nil
+	if sha := cmp.Or(remoteSha, localSha); sha != "" {
+		return mainName, sha, nil
 	}
 	return "", "", errors.New("the project has no main branch: name it with djinn project set-branch, or main_branch in its settings")
 }
 
-// workerStartBranch determines the branch or ref a worker starts from: under the per-azima push strategy, the branch
-// of the task's azima, cut from main when its first part starts if it was not when the azima was made.
+// referenceFetchEvery is how often Djinn fetches a project's reference branch before a worker starts from it, or an
+// azima's branch is cut from it: once a minute at most, the remote's branch as last fetched in between.
+const referenceFetchEvery = time.Minute
+
+// referenceFetchTimeout is how long that fetch may take: a remote that does not answer holds no worker longer, the
+// branch then read as this repository last fetched it.
+const referenceFetchTimeout = 15 * time.Second
+
+// fetchReference fetches the reference branch of the repository holding repo, as mainRef names it from settings, from
+// its remote, when it was not fetched within referenceFetchEvery: what a worker starts from, and an azima's branch is cut
+// from, is the remote's branch, never what the copy last pulled. A failure is logged: the branch is then read as last
+// fetched.
+func (h *Harness) fetchReference(ctx context.Context, repo string, settings plan.Settings) {
+	_, ref, err := mainRef(ctx, repo, settings.MainBranch)
+	remoteBranch, ok := strings.CutPrefix(ref, "refs/remotes/")
+	if err != nil || !ok {
+		return
+	}
+	now := time.Now() // A pace of the network, not of the plan: the real clock.
+	h.mu.Lock()
+	due := now.Sub(h.referenceFetched[repo]) >= referenceFetchEvery
+	if due {
+		h.referenceFetched[repo] = now
+	}
+	h.mu.Unlock()
+	if !due {
+		return
+	}
+	remote, target, _ := strings.Cut(remoteBranch, "/")
+	fetching, cancel := context.WithTimeout(ctx, referenceFetchTimeout)
+	defer cancel()
+	if _, err := gitx.FetchBranch(fetching, repo, remote, target); err != nil {
+		logx.L().Warn("fetch the reference branch", "repo", repo, "ref", remoteBranch, "err", err)
+	}
+}
+
+// workerStartBranch is the branch a worker starts from, the one its work lands in (startPoint reads it): per wish, the
+// wish's integration branch; per azima, the branch of the task's azima, cut from the reference branch when its first
+// part starts if it was not when the azima was made, and for work of no azima the wish's integration branch, the
+// reference branch unless the developer named another. "" for a wish that records none: the reference branch then.
+// Never the branch the developer's copy has checked out (W227).
 func (h *Harness) workerStartBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) string {
 	strat, _ := plan.ResolveWishPushStrategy(wish, settings)
 	if strat != planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
@@ -2604,7 +2638,7 @@ func azimaPRBase(ctx context.Context, repo string, settings plan.Settings, azima
 	if base := azima.GetAzima().GetBaseBranch(); base != "" && azima.GetAzima().GetCutFrom() != "" {
 		return base
 	}
-	if main, _, err := resolveMainSha(ctx, repo, settings); err == nil && main != "HEAD" {
+	if main, _, err := resolveMainSha(ctx, repo, settings); err == nil {
 		return main
 	}
 	return settings.MainBranch

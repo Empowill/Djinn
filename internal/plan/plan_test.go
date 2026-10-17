@@ -362,8 +362,14 @@ func TestWishAddProject(t *testing.T) {
 	}
 	docs := add(t.TempDir())
 	app := gitRepo(t, "app", "https://example.com/acme/app.git")
-	if out, err := exec.Command("git", "-C", app, "symbolic-ref", "HEAD", "refs/heads/trunk").CombinedOutput(); err != nil {
-		t.Fatalf("git symbolic-ref: %v\n%s", err, out)
+	// The copy has another branch checked out, trunk: the wish takes main, the reference branch, never the copy's (W227).
+	for _, args := range [][]string{
+		{"-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "First"},
+		{"branch", "-M", "main"}, {"switch", "-q", "-c", "trunk"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", app}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
 	}
 	appProject := add(app)
 	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
@@ -381,7 +387,7 @@ func TestWishAddProject(t *testing.T) {
 		return res.Msg.GetWish(), nil
 	}
 
-	// By name, case ignored: the wish works in it, its integration branch the one the checkout is on, as Make sets it.
+	// By name, case ignored: the wish works in it, its integration branch the project's reference, as Make sets it.
 	wish, err := addTo("APP")
 	if err != nil {
 		t.Fatal(err)
@@ -389,8 +395,8 @@ func TestWishAddProject(t *testing.T) {
 	if got, want := wish.GetProjectIds(), []string{docs.GetId(), appProject.GetId()}; !slices.Equal(got, want) {
 		t.Errorf("projects = %v, want %v", got, want)
 	}
-	if got := IntegrationBranchOf(wish, appProject.GetId()); got != "trunk" {
-		t.Errorf("integration branch = %q, want trunk, the checked-out branch", got)
+	if got := IntegrationBranchOf(wish, appProject.GetId()); got != "main" {
+		t.Errorf("integration branch = %q, want main, the reference branch, not trunk the copy has checked out", got)
 	}
 
 	// Already in the wish, by identifier or name: refused, saying which.

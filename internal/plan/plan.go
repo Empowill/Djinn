@@ -604,6 +604,7 @@ func (p *Projects) Branches(
 		return connect.NewResponse(out), nil
 	}
 	out.CheckedOut = CheckedOutBranch(ctx, dir)
+	out.Reference, _ = ReferenceName(ctx, p.Home, project)
 	if req.Msg.GetReference() {
 		if remote := remoteName(ctx, dir); remote != "" {
 			if out.Branches, err = remoteBranches(ctx, dir, remote); err != nil {
@@ -820,7 +821,7 @@ func (w *Wishes) Make(
 	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
-		wish, err = makeWish(ctx, tx, req.Msg, w.Language)
+		wish, err = makeWish(ctx, tx, req.Msg, w.Home, w.Language)
 		return err
 	})
 	if err != nil {
@@ -852,7 +853,7 @@ func MadeLine(wish *planv1.Wish, provisional bool) string {
 
 // makeWish stores the wish req asks for in tx: last by rank among the active ones, or first among the paused ones,
 // with its request in a creation block. Its texts are in language. The caller journals the command, whose identifier the wish takes.
-func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, language string) (*planv1.Wish, error) {
+func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, home, language string) (*planv1.Wish, error) {
 	title := req.GetTitle()
 	if title == "" {
 		title = locales.T(language, "wish.provisional_title", nil)
@@ -885,7 +886,7 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 			wish.ProjectIds = append(wish.ProjectIds, project.GetId())
 		}
 	}
-	if err := integrationBranches(ctx, tx, wish); err != nil {
+	if err := integrationBranches(ctx, tx, home, wish); err != nil {
 		return nil, err
 	}
 	// A wish made paused comes first among the paused ones.
@@ -1058,7 +1059,7 @@ func (w *Wishes) Icons(
 }
 
 // AddProject adds a project, named or by identifier, to the wish, with its integration branch there as Make records
-// one: the branch the project's checkout is on. A project already in the wish is refused.
+// one: the project's reference branch. A project already in the wish is refused.
 func (w *Wishes) AddProject(
 	ctx context.Context, req *connect.Request[planv1.WishServiceAddProjectRequest],
 ) (*connect.Response[planv1.WishServiceAddProjectResponse], error) {
@@ -1077,7 +1078,7 @@ func (w *Wishes) AddProject(
 				project.GetName(), wish.GetTitle()))
 		}
 		wish.ProjectIds = append(wish.ProjectIds, project.GetId())
-		integrationBranch(ctx, wish, project)
+		integrationBranch(ctx, w.Home, wish, project)
 		return tx.Put(wish)
 	})
 	if err != nil {

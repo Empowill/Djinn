@@ -135,6 +135,7 @@ type Harness struct {
 	pushWaits        map[string]bool       // by wish/project/branch: a push due waits for merges, said (repair.go); owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 	toldApart        map[string]bool       // by wish and what was told the lead of a branch apart from its remote's (remote_branch.go), guarded by mu
+	referenceFetched map[string]time.Time  // by repository, when its reference branch was last fetched (fetchReference), guarded by mu
 	mergedLooks      map[string]time.Time  // by repository, when Djinn last fetched main to find azimas merged into it (merged.go), guarded by mu
 
 	// The workers' health (health.go), judged by the scheduler's pass: guarded by sched.
@@ -304,7 +305,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
-		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, mergedLooks: map[string]time.Time{},
+		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, referenceFetched: map[string]time.Time{}, mergedLooks: map[string]time.Time{},
 		pushJobs:  map[string]*pushJob{},
 		installed: map[string]string{}, preempted: map[string]string{}, aliases: map[string]string{},
 		resident: map[string]uint64{},
@@ -1297,8 +1298,8 @@ func (h *Harness) launch(
 		case f != nil:
 			dir, err = correctionWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), f)
 		default:
-			if sha, from, err = startPoint(ctx, project.GetDirectory(), r.from); err == nil {
-				if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), task, sha, r.from); depWhy != "" {
+			if sha, from, err = h.startPoint(ctx, project, r.from); err == nil {
+				if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), task, sha, cmp.Or(r.from, from)); depWhy != "" {
 					logx.L().Info("worktree not created: a dependency is not merged", "task", task.GetCode(), "why", depWhy)
 					_ = os.RemoveAll(skillsDir)
 					task.Branch, task.Worktree = "", ""

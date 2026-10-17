@@ -99,7 +99,8 @@ and their start event says why (`antigravity cannot run read-only: claude`). On 
 ## Branch names
 
 In a Git repository each worker edits its own worktree, on a new branch from the tip of its wish's
-[integration branch](#integration), or the project's `HEAD` when the wish has none. `branch` names it,
+[integration branch](#integration), or the project's reference branch when the wish has none, never your copy's `HEAD`
+([where a worker starts](#where-a-worker-starts)). `branch` names it,
 with three placeholders:
 
 | Placeholder | Becomes                                                                 | Task W1 "Fix the login page" |
@@ -136,8 +137,9 @@ other file says. Your `provider: PROVIDER_CODEX` never runs codex with the team'
 to a task of that provider: `--provider fake` gets no model from the files. Your file can lift the team's budget
 with `max_budget_usd: 0`; a task's flag cannot, as `0` there means "not given".
 
-Djinn reads both files each time a task is spawned, from the project's own folder (the branch checked out there),
-not from the task's worktree. A task keeps what it got: changing a file changes the next tasks only.
+Djinn reads both files each time a task is spawned, where [it reads the configuration](#where-djinn-reads-it), not from
+the task's worktree. A task keeps what it got: changing a file changes the next tasks only. No worker starts from what
+your copy has checked out, nor from its changes (W227, see [where a worker starts](#where-a-worker-starts)).
 
 ## See where each setting comes from
 
@@ -185,7 +187,7 @@ on every read: the things to fix first, then the information. Each notice has a 
 | --- | --- | --- |
 | `settings` | A file Djinn cannot read | A field a newer Djinn knows; `watch_commands` or `serve_commands` in the team's file |
 | `permissions` | `.agents/permissions.txtpb` Djinn cannot read: no worker, watcher nor source starts | A field a newer Djinn knows |
-| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out (Djinn reads the configuration on the reference branch all the same) |
+| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out (Djinn reads the configuration on the reference branch all the same, and starts no worker from your copy) |
 | `setup` | The setup's last run failed, with the command it still is | |
 | `skill` | A `SKILL.md` Djinn cannot read; a wish template, inbox source or babysit it cannot use; a summoned skill it no longer finds | |
 | `source` | A source this machine has not decided on: plug it in, or unplug it to say no | A source plugged in that no skill declares any more |
@@ -339,6 +341,29 @@ integration record can be cleared with `djinn task update <task> --integration n
 leaving it without an integration record so Djinn will not integrate it on its own. `djinn task update <task>
 --integration pending` puts the work of a done task without one back in line, as when its worker ended: once the
 wish has a branch of its own, say; refused, saying why, when Djinn would not integrate it.
+
+### Where a worker starts
+
+A worker's worktree starts from a commit Djinn names, never from your copy: not from what it has checked out, nor from
+its changes not committed (W227). By push strategy:
+
+| Strategy | A worker starts from |
+| --- | --- |
+| Per wish | The wish's integration branch, the reference branch unless you named another |
+| Per azima, part of an azima | The azima's branch, cut from the remote's reference branch when the azima is made (or its first part starts) |
+| Per azima, part of no azima | The wish's integration branch, as per wish: the branch that work lands in |
+
+The branch's local tip, unless the remote's copy holds commits it lacks and nothing of its own: the remote's then, as
+`from origin/main at 1a2b3c4d` says. A wish that records no integration branch starts from the reference branch. The
+reference branch is fetched first, at most once a minute, and read from the remote (`refs/remotes/origin/main`), the
+local branch only in a repository without a remote or whose remote lacks it; without one at all, the worker does not
+start and says why. Review and correction workers work where the work they review or correct is.
+
+The one case where Djinn touches your copy's files is the integration branch being the one it has checked out: Git's
+`HEAD` there is that branch, so it cannot move without the files following (moved alone, your copy would show the work
+undone, and your next commit would undo it). Clean, the copy follows by a fast-forward (a two-way `read-tree`, what
+`git merge --ff-only` does to the files); with changes not committed, the branch is not moved and the work waits,
+saying so. Djinn never checks out, resets or merges in your copy.
 
 ### Pushing
 
@@ -498,10 +523,12 @@ workers, naming them), or when the running build is broken (a crash or failed ch
 (set in Djinn's own settings: the window proposes each new build, to install or skip), no install questions are asked.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
-branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it, or
-the chip that names it in the wish's head, to a local branch (`djinn project branches <project>` lists them, Djinn's
-task branches left out) or to a new one made from it (`--create-branch`; from the remote's branch of that name when the
-remote holds one, an open pull request's). A change is refused while a merge into the
+project's reference branch when the wish was made (`main_branch`, else the remote's default branch, else `main`, else
+`master`), never the branch your copy has checked out (W227); `djinn wish set-integration <wish> --branch feat/x`
+changes it, or the chip that names it in the wish's head, to a local branch (`djinn project branches <project>` lists
+them, Djinn's task branches left out, with the reference branch) or to a new one made from it (`--create-branch`; from
+the remote's branch of that name when the remote holds one, an open pull request's; from the reference branch, the
+remote's, for a wish that records none). A change is refused while a merge into the
 branch runs (a batch merged and tested, a correction or review worker, main's merge settled), Djinn naming it. Per wish,
 a wish's work lands in that branch; per azima, an azima's work lands in main through its own branch and pull request.
 

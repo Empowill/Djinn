@@ -129,13 +129,8 @@ func checkIdentity(ctx context.Context, dir string) error {
 	return err
 }
 
-// addWorktree creates the worktree path of the repository holding dir, on a new branch from its HEAD. It returns
-// the folder the worker runs in: the project's own folder within the worktree.
-func addWorktree(ctx context.Context, dir, path, branch string) (string, error) {
-	return addWorktreeFrom(ctx, dir, path, branch, "HEAD")
-}
-
-// addWorktreeFrom is addWorktree, its branch starting from the commit from.
+// addWorktreeFrom creates the worktree path of the repository holding dir, on a new branch from the commit from. It
+// returns the folder the worker runs in: the project's own folder within the worktree.
 func addWorktreeFrom(ctx context.Context, dir, path, branch, from string) (string, error) {
 	prefix, err := git(ctx, dir, "rev-parse", "--show-prefix")
 	if err != nil {
@@ -190,17 +185,46 @@ func correctionWorktree(ctx context.Context, dir, path, branch string, f *planv1
 	return filepath.Join(path, filepath.FromSlash(prefix)), nil
 }
 
-// startPoint is the commit a task's worktree starts from in the repository holding dir: the tip of its wish's
-// integration branch there, integration, so that it builds on the work committed before it (T07); the checkout's
-// HEAD when the wish has none, or the branch is not in the repository. from is "" for HEAD.
-func startPoint(ctx context.Context, dir, integration string) (sha, from string, err error) {
-	if integration != "" {
-		if sha, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+integration+"^{commit}"); err == nil {
-			return sha, integration, nil
+// startPoint is the commit a task's worktree starts from in project, and the branch it says it starts from: the tip of
+// from, the branch its work lands in (its wish's integration branch, or its azima's), so that it builds on the work
+// committed before it (T07); the remote's branch of that name when this one is behind it, or missing here. Without
+// from, or a branch of that name, the project's reference branch, fetched first (resolveMainSha). Never the developer's
+// HEAD, nor their changes not committed: their copy is theirs (W227). An error when the project has no reference
+// branch either.
+func (h *Harness) startPoint(ctx context.Context, project *planv1.Project, from string) (sha, shown string, err error) {
+	repo := project.GetDirectory()
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil {
+		return "", "", fmt.Errorf("settings unreadable: %w", err)
+	}
+	if main, _, err := mainRef(ctx, repo, settings.MainBranch); err == nil && (from == "" || strings.EqualFold(from, main)) {
+		h.fetchReference(ctx, repo, settings)
+	}
+	if from != "" {
+		ours := commitOf(ctx, repo, "refs/heads/"+from)
+		theirs, remoteShown := "", ""
+		if remote, target := pushTarget(ctx, repo, from); remote != "" {
+			remoteShown = remote + "/" + target
+			theirs = commitOf(ctx, repo, "refs/remotes/"+remoteShown)
+		}
+		switch {
+		case ours != "" && theirs != "" && ours != theirs && isAncestor(ctx, repo, ours, theirs):
+			return theirs, remoteShown, nil
+		case ours != "":
+			return ours, from, nil
+		case theirs != "":
+			return theirs, remoteShown, nil
 		}
 	}
-	sha, err = git(ctx, dir, "rev-parse", "HEAD")
-	return sha, "", err
+	main, sha, err := resolveMainSha(ctx, repo, settings)
+	if err != nil {
+		return "", "", err
+	}
+	shown = main
+	if remote, target := pushTarget(ctx, repo, main); remote != "" && commitOf(ctx, repo, "refs/remotes/"+remote+"/"+target) == sha {
+		shown = remote + "/" + target
+	}
+	return sha, shown, nil
 }
 
 // removeWorktree removes the worktree path of the repository holding dir; its branch stays. Without force, git

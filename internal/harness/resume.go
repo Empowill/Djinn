@@ -332,6 +332,21 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	return nil
 }
 
+// taskStartBranch is the branch a worktree made again for t, a task of project, starts from: where its work lands, as
+// at its launch (workerStartBranch); "" when its wish or the project's settings cannot be read, the reference branch
+// then.
+func (h *Harness) taskStartBranch(ctx context.Context, project *planv1.Project, t *planv1.Task) string {
+	wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
+	if err != nil {
+		return ""
+	}
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil {
+		return ""
+	}
+	return h.workerStartBranch(ctx, wish, project, settings, t)
+}
+
 // resumeWorker starts the worker of a resumed task where its last one worked, by: byRestart, byLimit, or byContinue
 // with the prompt it was continued with. The caller owns the run's task.
 func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Project, prep prepared, prompt, by string, priorProvider planv1.Provider) error {
@@ -362,9 +377,9 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		dir = filepath.Join(t.GetWorktree(), filepath.FromSlash(prefix))
 		if _, err := os.Stat(dir); err != nil {
 			if by == byEnvReplay {
-				sha, _, _ := startPoint(h.ctx, project.GetDirectory(), "")
-				if sha == "" {
-					sha = "HEAD"
+				sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+				if err != nil {
+					return fmt.Errorf("create the worktree: %w", err)
 				}
 				if dir, err = addWorktreeFrom(h.ctx, project.GetDirectory(), t.GetWorktree(), t.GetBranch(), sha); err != nil {
 					return fmt.Errorf("create the worktree: %w", err)
@@ -376,11 +391,10 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case project.GetGit() && !r.light: // A question worker reads in the project's folder.
 		if by == byEnvReplay {
 			t.Worktree = worktreeDir(h.home, project.GetId(), t.GetId())
-			sha, _, _ := startPoint(h.ctx, project.GetDirectory(), "")
-			if sha == "" {
-				sha = "HEAD"
+			sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+			if err != nil {
+				return fmt.Errorf("create the worktree: %w", err)
 			}
-			var err error
 			if dir, err = addWorktreeFrom(h.ctx, project.GetDirectory(), t.GetWorktree(), t.GetBranch(), sha); err != nil {
 				return fmt.Errorf("create the worktree: %w", err)
 			}

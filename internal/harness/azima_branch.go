@@ -92,7 +92,7 @@ func azimaDoneWhy(azima *planv1.Task) string {
 }
 
 // azimaBranch is the branch of azima in project under the per-azima push strategy, cut from main's commit as Djinn
-// knows it (resolveMainSha) when it does not exist yet, and recorded on the azima when project is the azima's own; a
+// knows it, the remote's fetched first (resolveMainSha), when it does not exist yet, and recorded on the azima when project is the azima's own; a
 // branch the developer named is made from the remote's when the remote holds it. A branch that exists stays as it is:
 // never cut again, never rebased. One recorded on the azima, deleted since, is never made again: a *heldOutError says it,
 // until the developer names it again (djinn task update <azima> --branch).
@@ -122,6 +122,7 @@ func (h *Harness) azimaBranch(ctx context.Context, project *planv1.Project, sett
 			return branch, nil
 		}
 	}
+	h.fetchReference(ctx, repo, settings) // Cut from the remote's main as it is now, never from what the copy last pulled.
 	main, sha, err := resolveMainSha(ctx, repo, settings)
 	if err != nil {
 		return "", err
@@ -134,9 +135,6 @@ func (h *Harness) azimaBranch(ctx context.Context, project *planv1.Project, sett
 	}
 	logx.L().Info("azima branch cut", "azima", azima.GetCode(), "branch", branch, "from", main, "at", short8(sha))
 	if p := azima.GetProjectId(); p == "" || p == project.GetId() {
-		if main == "HEAD" {
-			main = "" // No main branch: the checkout's commit, landing nowhere named.
-		}
 		h.editAzima(ctx, azima.GetId(), func(e *planv1.Azima) { e.Branch, e.BaseBranch, e.CutFrom = branch, main, sha })
 	}
 	return branch, nil
@@ -319,9 +317,6 @@ func (h *Harness) nameAzimaBranch(ctx context.Context, procedure string, req *pl
 		}
 	}
 	base := main
-	if base == "HEAD" {
-		base = "" // No main branch: the checkout's commit, landing nowhere named.
-	}
 	var named *planv1.Task
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(plan.CallerActor(ctx), procedure, req); err != nil {
