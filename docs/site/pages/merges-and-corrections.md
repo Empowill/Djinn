@@ -119,6 +119,16 @@ merge. One repair runs on a branch at a time:
 - **A new failure waits its turn.** Push checks that go red while a correction runs keep the push held, and start no
   second correction; work you ask Djinn to correct again waits for the one that runs, then merges alone.
 - **It starts on a red branch.** A correction never waits for the branch to be green: it is what makes it green again.
+- **It takes a place at once.** A correction, and a review of work left not committed, go before every planned task,
+  and never wait for a free place: on a full machine, Djinn pauses the running work task that comes last (the last wish,
+  then the most recently started), gives its place to the correction, and resumes that task once the correction ends.
+  It never pauses another correction or review, an urgent task, an investigator, or a task started by hand.
+- **New workers wait.** While a merge of the wish is in conflict or red and its correction repairs the branch (it waits
+  to start, runs, or its work waits to go in), no new worker of the wish starts in that project: it would start from
+  a branch without that work, and its own merge would conflict in turn. Each says *waits for W225 to settle the
+  conflict in feat/qol* (or *to repair the red checks of*, *to settle the merge of main into*). The correction itself,
+  reviews, an **urgent** task and the investigators of questions still start, and the workers already running go on.
+  Once the correction's work is in, the work that waited starts, from the repaired branch.
 - **Running workers take the repaired branch.** Once the repair's work is in, checked, and no other correction repairs
   the branch, each running worker of the wish whose branch lacks the new work gets one message: merge the branch now,
   its commits listed, settle any conflict with your own changes in mind, run the tests you touched, then go on. Djinn

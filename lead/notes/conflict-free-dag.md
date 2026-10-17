@@ -1,6 +1,6 @@
 ---
 name: conflict-free-dag
-description: Keep the DAG free of conflicts while maximizing parallelism; never chain tasks in a sequential line, add --after only on shared files or protos, and never spawn from a redirected integration branch
+description: Keep the DAG free of conflicts while maximizing parallelism; never chain tasks in a sequential line, add --after only on shared files or protos, and never spawn from a redirected integration branch; Djinn itself holds a wish's new workers while a correction repairs its branch
 type: feedback
 ---
 
@@ -24,5 +24,16 @@ and planned tasks target: maximize parallelism so independent workers run side b
 tasks directly touch the same file or proto. Never chain tasks in a naive line just to be safe, and never spawn while
 the wish's integration branch is redirected (a quarantine). The brief's rule "Keep the graph free of conflicts" says
 the same; this note is why.
+
+Djinn enforces the repair side itself (W233, Q44 A, 17/10/2026): while a correction repairs the wish's integration
+branch in a project (a merge in conflict or red, main's merge; planned, running, or its work waiting to go in), no new
+worker of the wish starts there; each waits saying `waits for W225 to settle the conflict in feat/qol`. Reviews, the
+urgent task and investigators still start; running workers go on and take the repaired branch by message. Corrections
+and reviews take a slot at once, ahead of every planned task: on a full machine Djinn pauses the lowest work task
+(never a merge, an urgent task, an investigator or a task started by hand) and resumes it after. So: never
+`djinn task start` a correction, never mark ordinary work urgent to pass the hold, and use the wait to re-sequence what
+touches the conflicting files. That morning W217, W219, W220, W226 and W228 to W231 waited only for CPU while W225
+repaired feat/qol, and would have started on the broken branch; W223, W224 and W225 waited for a slot like any task
+while conflicts piled up, and the lead started them by hand.
 
 See also [[regression-test-per-incident]].

@@ -226,7 +226,11 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"merged and green before the next starts. A task starts from " +
 		"the integrated branch: never spawn while the wish's integration points at another branch (a quarantine), since " +
 		"a task started there carries that branch into the next merge (W399 brought the replay sink's node_modules link into " +
-		"feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct.\n" +
+		"feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct. While a " +
+		"correction repairs the wish's branch (a conflict, red checks, main's merge), Djinn starts no new worker of the " +
+		"wish in that project (`waits for W225 to settle the conflict in feat/qol`): reviews, the urgent task and " +
+		"investigators aside, the running workers going on. Corrections and reviews take a slot at once, pausing the " +
+		"lowest work task: never `djinn task start` them, and never spawn around the hold.\n" +
 		"- **Operational decisions are yours (Decision Q196).** Djinn's operational questions (a merge still " +
 		"failing after its corrections, a held push, a conflict, a main merge that fails) go to you as an event, " +
 		"never as a question to the developer. You decide: retry a correction, drop the work (`djinn task done <task> --drop` " +

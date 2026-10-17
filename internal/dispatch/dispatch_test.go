@@ -1206,8 +1206,16 @@ func TestPushHeld(t *testing.T) {
 		t.Errorf("otherProjTask: Blocker = (%q, %q); want empty", why, failed)
 	}
 
-	// Unchecked push lifts gate
+	// Unchecked push lifts gate; the corrections, still to run, repair the branch and hold its new work (W233)
 	wish.Pushes[0].Unchecked = true
+	sit = New(tasks, []*planv1.Wish{wish}, git, nil)
+	if why, _ := sit.Blocker(workTask); why != "waits for W2 to repair feat/wails-go" {
+		t.Errorf("unchecked push, corrections planned: Blocker = %q; want it held by W2", why)
+	}
+	for _, c := range []*planv1.Task{pushCorr, otherCorr} {
+		c.Status = planv1.TaskStatus_TASK_STATUS_DONE
+		c.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED}
+	}
 	sit = New(tasks, []*planv1.Wish{wish}, git, nil)
 	if why, failed := sit.Blocker(workTask); why != "" || failed != "" {
 		t.Errorf("unchecked push: Blocker = (%q, %q); want empty", why, failed)

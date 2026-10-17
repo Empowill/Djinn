@@ -235,6 +235,17 @@ func TestPreemptExclusions(t *testing.T) {
 		t.Errorf("review worker was chosen for preemption: %v", cand.GetCode())
 	}
 
+	// 5. Urgent task is never preempted (W233).
+	e.h.mu.Lock()
+	e.h.runs[task.GetId()].task.Review = nil
+	e.h.runs[task.GetId()].task.Urgent = true
+	e.h.mu.Unlock()
+
+	cand, _ = e.h.lowestWorkTask(t.Context(), true)
+	if cand != nil {
+		t.Errorf("urgent task was chosen for preemption: %v", cand.GetCode())
+	}
+
 	e.release(t, task.GetId())
 	e.ended(t, task.GetId())
 }
