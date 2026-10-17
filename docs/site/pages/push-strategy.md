@@ -65,6 +65,10 @@ djinn/T07-the-orchestrator.
 - **It lands in main** through its own pull request. Once the azima is done and main holds every commit of its branch,
   its card says **Landed in main**, even when the remote's copy of the branch lags behind: nothing waits for a push. The
   cross beside it forgets the branch's sync, until a new commit on it.
+- **Done, it takes no more work.** Djinn merges nothing more into a done azima's branch and never pushes it by itself.
+  Deleted, once its work landed, the branch is never made again, neither from main nor from the remote's copy. Work
+  done there since waits, saying why, and the Djinn hears it once: reopen the azima, naming its branch again for a
+  deleted one, or drop the work.
 
 ### An azima's pull request
 

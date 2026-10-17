@@ -170,7 +170,10 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   - a task ending without failure (the Djinn's cue to check its final note, revised questions, or spawned tasks),
     once: a work worker's end is its merge line; with nothing to merge, or in a project that integrates nothing, an
     `ended` event says it, with the first line of its final note (`W1 done: …`, incident W1 of wish Dew,
-    12/10/2026);
+    12/10/2026); a worker with no commit of its own is never merged, its line saying so (`W103 done, nothing to
+    merge: no commit of its own. …`, W196);
+  - work that waits out of its azima's branch, the azima done or its branch deleted: one `move` line, once (`azima T2
+    is done: …; reopen T2 or drop the work`), Djinn making no branch again and pushing nothing;
   - the calls a worker's permissions refused in its run (its `permission denied: …` events, counted on the task's
     `refused`), in its `ended` or `failed` event, with the command that would grant them, whole in the digest: `W1 done,
     6 commands refused (permission): djinn, ls, git, …; djinn wish allow <wish> --mode auto would let the agent judge

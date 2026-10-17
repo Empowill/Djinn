@@ -423,6 +423,13 @@ lead spends its tokens on mechanical work.
   developer, 10/10/2026: debug files, abandoned attempts or artifacts would go in too): a review worker judges it.
 - **A task waits for its dependencies to be integrated**, not only done, and its worktree starts from the integration
   branch, so it builds on their work.
+- **Nothing of its own, nothing merged; a done azima takes no more work** (W196, 17/10/2026: task W103 of wish Dew
+  13 oct, in azima T2, done and its work in main through another merge request, deleted T2's branch and made no
+  commit; Djinn made the branch again from the remote's stale copy, merged W103 into it as an empty merge commit and
+  pushed it). A task whose branch holds no commit beyond the one it started from is not merged, its end's line saying
+  "nothing to merge: no commit of its own"; a merge that changes nothing is undone, never committed. Djinn never makes
+  an azima's recorded branch again once it is deleted, nor merges into or pushes a done azima's branch by itself: the
+  work waits, the lead told once in one line, reopen the azima (name its branch again) or drop the work.
 - **The person decides what is theirs**: to install and restart on the new build (Djinn proposes it, with what
   changed), and the choices no worker can make.
 
@@ -453,6 +460,10 @@ lead spends its tokens on mechanical work.
   TestReviewACorrectionsWork, TestAReviewThatFailsAfterItsCommit)
 - [x] A task waits for its dependencies to be integrated, and starts from the integration branch.
   (TestWaitsForTheCommit, TestADependentStartsFromTheCommit)
+- [x] A task with no commit of its own is never merged, and no merge commit that changes nothing is made; a done
+  azima's branch is never made again nor pushed by itself, its work waiting, the lead told once; a live azima merges
+  and pushes as before. (TestNoCommitTaskIsNotMerged, TestEmptyMergeMakesNoCommit, TestNoOpBatchTellsTheEndOnly,
+  TestDoneAzimaBranchNotMadeAgain, TestLiveAzimaMergesAndPushes)
 - [x] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
   conflict, red), and propose installing once a batch is integrated. (TestWorkStands, TestBriefWorkStands, TestRun
   "where a task's work stands", the screens tests "the Tasks tab says where each task's work stands" and "the update

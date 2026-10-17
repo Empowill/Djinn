@@ -848,9 +848,9 @@ func TestOldTaskWithoutIntegrationRecordIsNotQueued(t *testing.T) {
 	}
 }
 
-// TestNoOpBatchTellsTheEndOnly verifies that a batch that does not move the branch
-// (its work was already in) tells no merge line (Decision Q173), but its task's end once:
-// no other line would (incident W1 of wish Dew, 12/10/2026).
+// TestNoOpBatchTellsTheEndOnly verifies that work queued with no commit of its own tells no merge line (Decision
+// Q173), but its task's end once: no other line would (incident W1 of wish Dew, 12/10/2026). It is not merged: no
+// record left, as for a task that ends so (W196).
 func TestNoOpBatchTellsTheEndOnly(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
@@ -869,19 +869,20 @@ func TestNoOpBatchTellsTheEndOnly(t *testing.T) {
 	}
 
 	told = nil
+	tip := in.tip(t)
 	// W2 finishes with no new files (worktree already matches branch HEAD)
 	w2 := in.finished(t, "W2", nil)
 	in.pass(t, 0)
-	if got := in.states(t, w2); got != "W2 COMMITTED" {
-		t.Fatalf("W2 state: %s", got)
+	if got, texts := in.integration(t, w2); got != nil || !slices.Equal(texts, []string{"none: " + nothingToMerge}) {
+		t.Fatalf("W2 integration %v, events %q; want none", got, texts)
 	}
 
-	want := []string{"Djinn: W2 done, nothing to merge into " + in.branch + ". It left no final note."}
+	want := []string{"Djinn: W2 done, " + nothingToMerge + ". It left no final note."}
 	if !slices.Equal(told, want) {
 		t.Errorf("told lines %q; want only %q for a no-op batch", told, want)
 	}
-	if gotW2, _ := in.integration(t, w2); gotW2.GetSha() != "" {
-		t.Errorf("W2 with no commits should have empty integration sha, got %q", gotW2.GetSha())
+	if now := in.tip(t); now != tip {
+		t.Errorf("the branch moved to %s from %s", now, tip)
 	}
 	diffRes, err := in.tasks.Diff(t.Context(), connect.NewRequest(&planv1.TaskServiceDiffRequest{
 		Task:   &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: "W2"}},

@@ -270,7 +270,11 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
    developer: "the work of W2 into feat/x failed: …. The move is yours: retry a correction, drop the work, or leave it
    waiting." The rest of the wish goes on. A correction worker stopped, and not continued within ten minutes, leaves
    the work failed (`Merge failed`), its event saying so.
-8. **Work not committed is not merged, and Djinn commits nothing blindly.** Before merging a task, a correction
+8. **Work with no commit of its own is not merged.** A task whose branch holds no commit beyond the one it started
+   from, its worktree clean, gets no integration: its `ended` line says `nothing to merge: no commit of its own`, and no
+   branch is made or moved for it. A merge that changes nothing, its branch's commits in the integration branch's
+   tree already, is undone: Djinn never makes an empty merge commit, and the task is committed at the branch as it is.
+9. **Work not committed is not merged, and Djinn commits nothing blindly.** Before merging a task, a correction
    worker's included, Djinn looks at its worktree (`git status --porcelain`, untracked files included, the project's
    `.gitignore` applying). Clean, it merges as above. With changes, the task is **uncommitted**: a **review worker**
    starts by itself, a work task part of the same azima, of the task's provider, in that task's worktree and on its
@@ -359,7 +363,8 @@ which works like a wish's integration branch:
   Djinn knows it, never another azima's branch. An azima made before its wish was switched gets its branch when its
   first part starts, or its first work is merged. Djinn records on the azima its branch, the main it lands in and the
   commit it was cut from (`djinn task get <azima> --json`: `azima.branch`, `azima.base_branch`, `azima.cut_from`); a
-  title changed later keeps the branch's name. It is never cut again while it exists, and never rebased.
+  title changed later keeps the branch's name. It is never cut again while it exists, and never rebased; deleted, it is
+  never made again by itself (a done azima, below).
 - **Its work merges into it** as a wish's does ([integration](#integration)); work of no azima goes to the wish's
   integration branch.
 - **It keeps up with main** by the same `merge_main` rules ([keeping up with main](#keeping-up-with-main)), where it
@@ -399,6 +404,14 @@ repository last fetched it (a teammate pushed to the pull request's branch), tak
 would push nothing there without forcing, and never forces. The work waits, saying why; the lead hears it once; once a
 person aligns the branches, the work merges. The project's main branch is kept up by its own rules
 ([keeping up with main](#keeping-up-with-main)).
+
+**A done azima, a deleted branch.** Work done in an azima after it is done is not merged: Djinn
+merges nothing more into a done azima's branch and never pushes it by itself (`djinn project push --branch` still
+pushes it when you ask). Nor does Djinn make an azima's branch again once it is deleted, here or wherever its work
+landed (in main through another merge request, say): not from main, not from the remote's copy. The work waits, saying
+why, and the lead hears it once, in one line: reopen the azima (for a deleted branch, name it again with
+`djinn task update <azima> --branch <name>`: made from the remote's when the remote holds it, else cut from main) or
+drop the work (`djinn task done <task> --drop`). A live azima whose branch is there merges and pushes as above.
 
 **Switching a wish to per azima when its work already lives on the wish's branch.** A wish that pushed per wish, one
 azima carrying its subject, has that azima's work merged into the wish's integration branch, `ET-1234-the-fix`, perhaps
