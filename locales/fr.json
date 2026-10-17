@@ -450,7 +450,7 @@
   "load.overclock_risk": "Risque : Djinn saturera le CPU et la mémoire ; les autres applications peuvent ralentir ou être arrêtées.",
   "load.priority_low": "priorité basse",
   "load.priority_standard": "priorité standard",
-  "load.tooltip.auto": "Auto : suit la charge des programmes hors du Djinn, jamais son propre travail ni votre présence : un niveau plus bas quand cette charge reste haute 2 minutes, un niveau plus haut vers {chosen} quand elle reste basse 10 minutes.",
+  "load.tooltip.auto": "Auto : suit la charge des programmes hors du Djinn, jamais son propre travail ni votre présence : un niveau plus bas quand cette charge reste haute 3 minutes, un niveau plus haut vers {chosen} quand elle reste basse 5 minutes.",
   "load.tooltip.high": "Élevé : jusqu'à {workers} workers, 80 % de la mémoire que Djinn peut engager, priorité CPU standard.",
   "load.tooltip.max": "Max : jusqu'à {workers} workers, 100 % de la mémoire que Djinn peut engager, priorité CPU standard.",
   "load.tooltip.medium": "Moyen : jusqu'à {workers} workers, 50 % de la mémoire que Djinn peut engager, priorité CPU basse.",

@@ -11435,7 +11435,7 @@ test("operating load: the preview warns of Overclock's risk and explains Auto (W
   const risk =
     /Risk: Djinn will saturate CPU and memory; other applications may slow down or be terminated\./;
   const auto =
-    /Auto: follows the load of the programs outside Djinn, never Djinn&#x27;s own work nor your presence: one level down when that load stays high for 2 minutes, one level up towards High when it stays low for 10\./;
+    /Auto: follows the load of the programs outside Djinn, never Djinn&#x27;s own work nor your presence: one level down when that load stays high for 3 minutes, one level up towards High when it stays low for 5\./;
   const notes = () =>
     live(s.OperatingLoadForecast, {})
       .all("operating-load-forecast-note")

@@ -169,7 +169,7 @@ type box struct {
 }
 
 // squeezed says the CPU pressure of a box under pressure.
-const squeezed = "the machine is under pressure: tasks waited for the CPU 80% of the last 10 s (50% at most)"
+const squeezed = "the machine is under pressure: tasks waited for the CPU 80% of the last 10 s (65% at most)"
 
 func calm() *box { return &box{free: 8 * machine.GiB} }
 

@@ -216,7 +216,7 @@ leave it, or fold its panel, and the reads stop. See [Machine and load](#machine
 
 **Operating load**, in the middle of each page's head, sets how much of the machine Djinn may take: **Minimal**,
 **Medium**, **High**, **Max** or **Overclock**, each allowing more workers and more memory, and **Auto**, which steps
-down to Minimal while you work at the keyboard and climbs back when you leave. Hover a notch, or reach it by the keys,
+down while the programs outside Djinn take the machine and climbs back once they leave it. Hover a notch, or reach it by the keys,
 to see what it would allow before you choose it: how many workers, how much memory, and which workers would pause.
 
 Lowering the load pauses the newest workers above its limit, and new tasks wait; the paused ones resume first once a

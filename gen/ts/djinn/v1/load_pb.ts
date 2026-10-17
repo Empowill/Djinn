@@ -576,21 +576,21 @@ export enum LoadAutoStep {
   UNSPECIFIED = 0,
 
   /**
-   * Between the marks, or nothing measured yet: auto keeps its notch.
+   * Between the marks, back within 5 points of the mark it passed, or nothing measured yet: auto keeps its notch.
    *
    * @generated from enum value: LOAD_AUTO_STEP_HOLD = 1;
    */
   HOLD = 1,
 
   /**
-   * Above the high mark: one notch down once that load stayed there 2 minutes.
+   * Above the high mark: one notch down once that load stayed there 3 minutes.
    *
    * @generated from enum value: LOAD_AUTO_STEP_LOWER = 2;
    */
   LOWER = 2,
 
   /**
-   * Below the low marks: one notch up once that load stayed there 10 minutes.
+   * Below the low marks: one notch up once that load stayed there 5 minutes.
    *
    * @generated from enum value: LOAD_AUTO_STEP_RAISE = 3;
    */

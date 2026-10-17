@@ -158,8 +158,9 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			MemoryPerWorker: 2 * GiB,
 			MemoryReserve:   2 * GiB,
 			MaxWorkers:      16,
-			// Strict PSI pressure thresholds: yields at the slightest resource contention.
-			CPUPressure:    25,
+			// Strict PSI pressure thresholds. The CPU's "some" counts the time one task waited for a core: on 16
+			// cores a go test's bursts of goroutines read 30 to 57 % on a machine half idle (W347), so 40.
+			CPUPressure:    40,
 			MemoryPressure: 5,
 			// Strict load and memory limits without PSI: back off at 1 load per core or <20% free RAM, or at
 			// macOS's warning.
@@ -189,7 +190,7 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			MemoryReserve:   2 * GiB,
 			MaxWorkers:      16,
 			// Tolerant PSI thresholds: permits temporary pressure spikes during parallel builds.
-			CPUPressure:    70,
+			CPUPressure:    80,
 			MemoryPressure: 15,
 			// Tolerant non-PSI thresholds: 3.0 load per core or <5% free RAM.
 			LoadPerCore: 3.0,
@@ -268,8 +269,8 @@ func NotchPolicy(notch djinnv1.LoadNotch) Policy {
 			MemoryPerWorker: 2 * GiB,
 			MemoryReserve:   2 * GiB,
 			MaxWorkers:      16,
-			// Standard PSI thresholds: 50% CPU wait, 10% memory wait.
-			CPUPressure:    50,
+			// Standard PSI thresholds: 65% CPU wait (above a test run's bursts, W347), 10% memory wait.
+			CPUPressure:    65,
 			MemoryPressure: 10,
 			// Standard non-PSI thresholds: 2.0 load per core or <10% free RAM, or macOS's critical.
 			LoadPerCore: 2.0,

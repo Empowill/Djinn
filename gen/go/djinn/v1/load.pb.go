@@ -105,11 +105,11 @@ type LoadAutoStep int32
 const (
 	// Not set.
 	LoadAutoStep_LOAD_AUTO_STEP_UNSPECIFIED LoadAutoStep = 0
-	// Between the marks, or nothing measured yet: auto keeps its notch.
+	// Between the marks, back within 5 points of the mark it passed, or nothing measured yet: auto keeps its notch.
 	LoadAutoStep_LOAD_AUTO_STEP_HOLD LoadAutoStep = 1
-	// Above the high mark: one notch down once that load stayed there 2 minutes.
+	// Above the high mark: one notch down once that load stayed there 3 minutes.
 	LoadAutoStep_LOAD_AUTO_STEP_LOWER LoadAutoStep = 2
-	// Below the low marks: one notch up once that load stayed there 10 minutes.
+	// Below the low marks: one notch up once that load stayed there 5 minutes.
 	LoadAutoStep_LOAD_AUTO_STEP_RAISE LoadAutoStep = 3
 	// Below the low marks at the chosen notch: auto runs up to it.
 	LoadAutoStep_LOAD_AUTO_STEP_CEILING LoadAutoStep = 4

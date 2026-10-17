@@ -213,8 +213,8 @@ func (h *Harness) Uses() []*machinev1.WorkerUse {
 	return out
 }
 
-// Cgroups returns the cgroups of the running workers' scopes (machine.Scope.Cgroup): the Hourglass counts their
-// processes adopted out of Djinn's tree as Djinn's (machine.ReadStrays).
+// Cgroups returns the cgroups of the running workers' scopes (machine.Scope.Cgroup): the Hourglass counts them, and
+// what their processes started out of them, as Djinn's (machine.ReadWork).
 func (h *Harness) Cgroups() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
