@@ -376,7 +376,7 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
       document
         .getAnimations()
         .filter((a) => a instanceof CSSTransition)
-        .map((a) => a.finished),
+        .map((a) => a.finished.catch(() => {})),
     );
   });
   await page.mouse.move(0, 0);

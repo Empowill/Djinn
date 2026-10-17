@@ -142,7 +142,7 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
               document
                 .getAnimations()
                 .filter((a) => a instanceof CSSTransition)
-                .map((a) => a.finished),
+                .map((a) => a.finished.catch(() => {})),
             );
           }, theme);
           await page.screenshot({

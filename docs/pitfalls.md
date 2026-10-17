@@ -140,8 +140,10 @@ the code does not say by itself; remove one when a change makes it false.
   that starts watching within a minute; since W501 not one whose wish was deleted, but another spec's live wish
   still lands (W477). *Do:* `djinn open djinn://wish/<id>` before `page.goto`; to switch themes, set
   `localStorage djinn.theme` and `documentElement.dataset.theme` in one `page.evaluate` and await the
-  `CSSTransition`s' `finished`. On a wrong page, read the error context's headings first ("Flight plan" has an
-  attention bar and a Tasks tab too). *Where:* `replay` in `internal/ui/ui.go`.
+  `CSSTransition`s' `finished`, each with `.catch(() => {})`: a transition another one replaces is cancelled, its
+  `finished` rejects, and the spec fails on "AbortError: The user aborted a request" (W263, `tilasms.spec.ts`). On a
+  wrong page, read the error context's headings first ("Flight plan" has an attention bar and a Tasks tab too).
+  *Where:* `replay` in `internal/ui/ui.go`.
 - **Live comes before the wishes are loaded.** The status bar says Live once the watch answers; the store's `loaded`
   follows 30–200 ms later, and the main view is an empty `.wish-view[aria-busy]` until then (W496). *Do:* wait on
   the element you act on (`toBeVisible`, `toBeFocused`), never on Live; to catch a remount, record elements with a

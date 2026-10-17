@@ -149,7 +149,7 @@ test("a failed merge an agent fixes shows orange and names its correction; red o
           document
             .getAnimations()
             .filter((a) => a instanceof CSSTransition)
-            .map((a) => a.finished),
+            .map((a) => a.finished.catch(() => {})),
         );
       }, theme);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
