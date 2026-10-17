@@ -294,6 +294,7 @@ func TestPushChecksHoldThePush(t *testing.T) {
 		if attempts == 1 {
 			return "wait\nfail could not fix tests"
 		}
+		fixTests(t, dir, "Fix the tests")
 		return "text push checks fixed"
 	})
 
@@ -431,8 +432,8 @@ func TestPushWithoutTheChecks(t *testing.T) {
 	}
 }
 
-// TestPushChecksCorrectionCleared: a push held with a correction whose integration record was cleared
-// runs its checks again on the next pass and pushes when green.
+// TestPushChecksCorrectionCleared: a push held with a correction whose integration record was cleared, the branch
+// fixed by hand meanwhile, runs its checks again on the next pass and pushes when green.
 func TestPushChecksCorrectionCleared(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -459,6 +460,7 @@ func TestPushChecksCorrectionCleared(t *testing.T) {
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
+	in.handCommit(t)
 
 	none := "none"
 	if _, err := in.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
@@ -481,8 +483,8 @@ func TestPushChecksCorrectionCleared(t *testing.T) {
 	}
 }
 
-// TestPushChecksCorrectionCancelled: a push held with a correction that was cancelled
-// clears its link, runs its checks again on the next pass and pushes when green.
+// TestPushChecksCorrectionCancelled: a push held with a correction that was cancelled, the branch fixed by hand
+// meanwhile, clears its link, runs its checks again on the next pass and pushes when green.
 func TestPushChecksCorrectionCancelled(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -524,6 +526,7 @@ func TestPushChecksCorrectionCancelled(t *testing.T) {
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
+	in.handCommit(t)
 
 	in.pass(t, time.Second)
 	tip := in.tip(t)
@@ -736,6 +739,7 @@ func TestPushHeldBlocksPlannedTasksUntilGreen(t *testing.T) {
 			in.mu.Lock()
 			in.testCode = 0
 			in.mu.Unlock()
+			fixTests(t, dir, "Fix the tests")
 			return "text push checks fixed"
 		}
 		return ""
@@ -879,6 +883,7 @@ func TestPushCorrectionStoppedThenContinued(t *testing.T) {
 		if starts == 1 {
 			return "wait\ntext stopped before this"
 		}
+		fixTests(t, dir, "Fix the tests")
 		return "text push checks fixed"
 	})
 
@@ -931,14 +936,21 @@ func TestPushCorrectionStoppedThenContinued(t *testing.T) {
 	}
 }
 
-// handCommit commits on the integration branch, as the developer does by hand, without changing its files: the push
-// checks' fake says whether they pass. It returns the new tip.
+// handCommit commits on the integration branch, as the developer does by hand, in its checkout: a file of its own, so
+// the tree changes (push checks are not run twice on a tree, W245); the push checks' fake says whether they pass. It
+// returns the new tip.
 func (in *integration) handCommit(t *testing.T) string {
 	t.Helper()
-	tip := in.tip(t)
-	sha := in.git(t, in.repo, "commit-tree", tip+"^{tree}", "-p", tip, "-m", "Fix the tests by hand")
-	in.git(t, in.repo, "update-ref", "refs/heads/"+in.branch, sha, tip)
-	return sha
+	fixTests(t, filepath.Join(in.repo, "app"), "Fix the tests by hand")
+	return in.tip(t)
+}
+
+// fixTests commits a fix in dir, a worktree or a folder of one, as a worker or the developer does: a file of its own,
+// which changes the tree; the push checks' fake says whether they pass.
+func fixTests(t *testing.T, dir, message string) {
+	t.Helper()
+	writeFile(t, dir, "FIXED.md", message+"\n")
+	commitAll(t, dir, message)
 }
 
 // withdraw withdraws the question q, as the lead does with djinn question withdraw.

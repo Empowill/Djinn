@@ -189,12 +189,16 @@ message CheckRun {
   bool passed = 8;
   // Its exit code; -1 when it could not run.
   int32 exit_code = 9;
-  // When it failed, why, and the end of its output.
+  // When it failed, why, and the end of its output (the whole of it in output_file).
   string reason = 10;
   string output = 11;
   // When it ended, and how long it took, in milliseconds.
   google.protobuf.Timestamp end_time = 12;
   int64 duration_ms = 13;
+  // When it failed, the file under Djinn's data folder that keeps its whole output (checks/ of its project), and the
+  // tests or specs its output names as failing.
+  string output_file = 14;
+  repeated string failed = 15;
 }
 
 // A skill a project summons from another project. It stays in its source, and the summoning project follows it:
@@ -586,7 +590,8 @@ message WishPush {
   bool approved = 5;
   // Why the project's push checks hold the push, at the branch's tip then; empty once they pass.
   string held = 6;
-  // How many times in a row they held it: at the second, or once no work is left to commit, Djinn asks.
+  // How many times in a row they ran red and held it. Push checks never run twice on the same tree: due again on it,
+  // or once no work is left to commit, Djinn starts a correction.
   int32 held_runs = 7;
   // The person said to push without the push checks: the next push skips them, once.
   bool unchecked = 8;
@@ -1402,6 +1407,10 @@ message IntegrationFailure {
   // For a merge of the project's main branch into the integration branch, main's commit merged: no task's work is in
   // it, and the correction's success records main as merged.
   string main_sha = 9;
+  // For a red check, or a setup that failed, the file that keeps its whole output (CheckRun.output_file), and the
+  // tests or specs its output names as failing: what the correction reads first.
+  string output_file = 10;
+  repeated string failed = 11;
 }
 
 // TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T07). When a

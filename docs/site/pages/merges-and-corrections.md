@@ -74,7 +74,7 @@ Each finished task says where its work stands, in the Tasks tab, on its card and
 | Committed into feat/invoice-pdf as 1a2b3c4d | In the branch, checked. |
 | **Merge failed** | A conflict or a red check, and no correction runs. |
 | Conflict, not committed | The merge conflicts: in which files, with which branch. |
-| Red tests, not committed | A commit check failed: its command, and the end of its output. |
+| Red tests, not committed | A commit check failed: its command, and the end of its output; its events give the file that keeps the whole of it. |
 | **Merge being fixed by W6** | A correction worker is on it. |
 | corrected by W6 | Committed, thanks to W6's correction. |
 | **To review**, Changes not committed, not merged | Its worktree held changes no commit took: a review worker sorts them out. |
@@ -97,7 +97,8 @@ and model. Its worktree is the failed merge itself:
 - **For a conflict**, the task's branch merged again, its conflicts left in place for the worker to settle.
 - **For a red check**, the merge as it was, the check failing on it.
 
-Its first instructions say what failed: the files in conflict, or the check's command and the end of its output. It is
+Its first instructions say what failed: the files in conflict, or the check's command, the end of its output, and the
+file that keeps the whole of it, with the tests it names as failing (see [Push](#push-the-whole-output)). It is
 told to commit its work. Its branch then lands like any task's, checked; when it passes, the failed task is committed
 with it, **corrected by** the correction.
 

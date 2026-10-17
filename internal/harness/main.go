@@ -374,7 +374,7 @@ func (h *Harness) mergeAndCheckMain(
 			return conflict(fmt.Sprintf("%s conflicts with %s in %s", shown, branch, strings.Join(conflicts, ", ")))
 		}
 		if why := h.settleGenerated(ctx, shown, "", wt, dir, settings.Generate, conflicts, func() string {
-			failed, _, _ := h.setUp(ctx, project, settings, wish.GetId(), "", wt, dir)
+			failed, _, _, _ := h.setUp(ctx, project, settings, wish.GetId(), "", wt, dir)
 			return failed
 		}); why != "" {
 			return conflict(why)
@@ -384,15 +384,15 @@ func (h *Harness) mergeAndCheckMain(
 	if err != nil {
 		return "", nil, err.Error()
 	}
-	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, nil, sha, wt, dir, func(*planv1.ProjectCheck) {})
+	command, why, out, run, stopped := h.commitChecks(ctx, wish, project, settings, nil, sha, wt, dir, func(*planv1.ProjectCheck) {})
 	switch {
 	case stopped != "":
 		return "", nil, stopped
 	case why != "":
-		return "", &planv1.IntegrationFailure{
+		return "", keptOutput(&planv1.IntegrationFailure{
 			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Base: sha, Command: command, Output: tail(out), Reason: why,
 			MainSha: mainSha,
-		}, ""
+		}, run), ""
 	}
 	return sha, nil, ""
 }

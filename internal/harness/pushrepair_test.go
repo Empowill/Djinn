@@ -20,7 +20,7 @@ func (in *integration) redAgain(t *testing.T, sha string) {
 	if err1 != nil || err2 != nil {
 		t.Fatal(err1, err2)
 	}
-	in.h.holdPush(t.Context(), wish, project, nil, in.branch, sha, "test", "test: test exited 1", ":\n--- FAIL: TestE2E")
+	in.h.holdPush(t.Context(), wish, project, nil, in.branch, sha, "test", "test: test exited 1", ":\n--- FAIL: TestE2E", nil)
 }
 
 // TestLeadRepairAdopted (W272, as on 17/10/2026: the lead's W248 repaired the red push checks of feat/qol, Djinn did
