@@ -15,8 +15,11 @@
 // then your pick is cleared (wish-question.tsx), then the focus leaves the column, where ↓ brings it back. With the
 // focus nowhere, the open question takes the other keys as if it had it, and the focus with them. Space and the page
 // keys scroll a long question: the arrows stay with the questions.
+// A click on the wish in the side panel brings the page back to the question that had the focus last, if it is the one
+// open, its title at the top of the view, and gives it the focus again (land).
 import {
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -136,12 +139,17 @@ export function QuestionColumn({
   onMove,
   onWithdraw,
   onLater,
+  land,
   children,
 }: {
   groups: QuestionGroup[];
   // On the flying carpet: each group is headed by its wish's title, which opens the wish.
   headings?: boolean;
   onOpenWish?: (wishId: string) => void;
+  // Filled with what brings the page back to the question that had the focus last, once the wish is clicked in the
+  // side panel (which took the focus): it scrolls its title to the top of the view and gives it the focus again, and
+  // says whether there was one.
+  land?: RefObject<(() => boolean) | undefined>;
   noLead?: boolean;
   onAnswer: (
     choice: Choice,
@@ -182,6 +190,8 @@ export function QuestionColumn({
   // one left with the focus in it.
   const follow = useRef(false);
   const shown = useRef(current);
+  // The question that had the focus last, until Escape takes it out of the column.
+  const held = useRef<string>(undefined);
 
   const select = useCallback((id: string) => {
     follow.current = true;
@@ -212,6 +222,22 @@ export function QuestionColumn({
   // nowhere, after a question left it.
   const state = useRef({ order, current });
   state.current = { order, current };
+
+  useLayoutEffect(() => {
+    if (!land) return;
+    land.current = () => {
+      const { current } = state.current;
+      if (current === undefined || held.current !== current) return false;
+      const element = document.getElementById(`question-${current}`);
+      if (!element) return false;
+      element.focus({ preventScroll: true });
+      toTitle(element);
+      return true;
+    };
+    return () => {
+      land.current = undefined;
+    };
+  }, [land]);
 
   // Put off, the open question goes to the bottom of its wish's list: the one that came after it opens, as when it
   // leaves (the last stays open). Given its place back, it stays open and the page follows it there.
@@ -310,6 +336,7 @@ export function QuestionColumn({
       if (move !== "leave" || e.defaultPrevented) return;
       e.preventDefault();
       follow.current = false;
+      held.current = undefined;
       setChosen(null);
       if (inside && document.activeElement instanceof HTMLElement)
         document.activeElement.blur();
@@ -351,6 +378,11 @@ export function QuestionColumn({
       id="questions"
       ref={column}
       aria-label={t("question.column")}
+      onFocus={(e) => {
+        const row = e.target.closest(".question-row");
+        if (row?.id.startsWith("question-"))
+          held.current = row.id.slice("question-".length);
+      }}
     >
       <h2 className="question-column-label">{t("question.column")}</h2>
       {groups.length === 0 && (

@@ -102,7 +102,7 @@ import { IfritBadge } from "./ifrit";
 import { useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
-import { useKeepPlace } from "./scroll-anchor";
+import { placeTaken, useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
 import { OperatingLoad } from "./operating-load";
 import { CountPill, StatusBadge } from "./status";
@@ -163,10 +163,17 @@ export interface Reaching {
   target: string;
 }
 
+// Landing is a click on the wish in the side panel: it brings back its first tab, the questions, from wherever the wish
+// was; a new object at each click.
+export interface Landing {
+  wishId: string;
+}
+
 export function WishView({
   wish,
   opening,
   reaching,
+  landing,
   onToast,
   onSetupAgents,
 }: {
@@ -175,6 +182,8 @@ export function WishView({
   opening?: Opening;
   // An element of the wish to bring into sight now, in its tab.
   reaching?: Reaching;
+  // The wish clicked in the side panel: its first tab now.
+  landing?: Landing;
   onToast: (text: string) => void;
   // Opens the setup of the agents, from the lead's menu.
   onSetupAgents?: () => void;
@@ -333,6 +342,26 @@ export function WishView({
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
+  // The wish clicked in the side panel: its first tab, a tilasm the Tilasms tab showed closed, and the page at the top,
+  // or at the question that had the focus, which takes it back (question-column.tsx). After the commit that drops a
+  // full-size tilasm, whose page under it is inert until then.
+  const land = useRef<() => boolean>(undefined);
+  const landed = useRef<Landing>(undefined);
+  useEffect(() => {
+    if (!landing || landed.current === landing) return;
+    if (view !== "main") {
+      setOpened(undefined);
+      show("main");
+      return;
+    }
+    landed.current = landing;
+    setOpened(undefined);
+    setFocus("");
+    const scroller = scrollRef.current;
+    if (land.current?.() || !scroller) return;
+    scroller.scrollTop = 0;
+    placeTaken(scroller);
+  }, [landing, view, show]);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !store) return;
@@ -1320,6 +1349,7 @@ export function WishView({
               <div className="main-moves">
                 <QuestionColumn
                   groups={questionGroup}
+                  land={land}
                   noLead={noLead(leadRecord)}
                   onAnswer={handleQuestionAnswer}
                   onEnlighten={handleQuestionEnlighten}

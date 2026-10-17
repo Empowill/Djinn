@@ -5056,7 +5056,7 @@ test("closing gives the focus back to the link, else the same link drawn again i
   ]);
 });
 
-test("a tilasm opened from a question covers the view full size, which stays mounted; closing lands back on the link, focus and scroll kept", async () => {
+test("a tilasm opened from a question covers the view full size, which stays mounted; closing lands back on the link, focus and scroll kept; a click on the wish in the side panel closes it", async () => {
   const container = setupMockDom();
   const doc = globalThis.document;
   // What the frame, its cover and the focus need of a DOM, on the test's own.
@@ -5193,43 +5193,42 @@ test("a tilasm opened from a question covers the view full size, which stays mou
     focus: { subscribe: () => () => {}, show: (focus) => shown.push(focus) },
   };
 
-  const root = s.createRoot(container);
-  try {
-    s.act(() =>
-      root.render(
+  // The window's main shell, the wish clicked last in the side panel given (landing).
+  const page = (landing) =>
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(
+        "main",
+        { className: "main-shell" },
         h(
-          s.DjinnProvider,
-          { djinn },
+          s.TilasmOver,
+          { view: "plan", landing },
           h(
-            "main",
-            { className: "main-shell" },
+            "div",
+            { className: "wish-view" },
             h(
-              s.TilasmOver,
-              { view: "plan" },
+              "div",
+              { className: "mission-scroll" },
               h(
-                "div",
-                { className: "wish-view" },
-                h(
-                  "div",
-                  { className: "mission-scroll" },
-                  h(
-                    "article",
-                    {
-                      id: "question-q1",
-                      className: "question-card question-row open current",
-                      tabIndex: 0,
-                    },
-                    h("p", null, "Read it first: ", h(s.Link, { href }, "L01")),
-                    h("button", { type: "button" }, "Yes"),
-                  ),
-                ),
+                "article",
+                {
+                  id: "question-q1",
+                  className: "question-card question-row open current",
+                  tabIndex: 0,
+                },
+                h("p", null, "Read it first: ", h(s.Link, { href }, "L01")),
+                h("button", { type: "button" }, "Yes"),
               ),
-              h("footer", { className: "app-statusbar" }),
             ),
           ),
+          h("footer", { className: "app-statusbar" }),
         ),
       ),
     );
+  const root = s.createRoot(container);
+  try {
+    s.act(() => root.render(page(undefined)));
     const main = container.children[0];
     const [view, footer] = main.children;
     const scroller = view.children[0];
@@ -5290,6 +5289,40 @@ test("a tilasm opened from a question covers the view full size, which stays mou
     // Every focus moved never scrolled.
     assert.ok(focused.length >= 4);
     assert.ok(focused.every((options) => options?.preventScroll === true));
+
+    // The wish clicked in the side panel, even the one under the tilasm (a new landing): it closes, the cover lifted.
+    s.act(() =>
+      props(link).onClick({
+        preventDefault() {},
+        stopPropagation() {},
+        currentTarget: link,
+      }),
+    );
+    await settle();
+    assert.equal(main.children.length, 3);
+    assert.equal(view.inert, true);
+    s.act(() => root.render(page({ wishId: "w1" })));
+    await settle();
+    assert.equal(main.children.length, 2);
+    assert.equal(view.inert, false);
+    assert.equal(footer.inert, false);
+    // Opened again after it, it stays until the next click.
+    s.act(() =>
+      props(link).onClick({
+        preventDefault() {},
+        stopPropagation() {},
+        currentTarget: link,
+      }),
+    );
+    await settle();
+    assert.equal(main.children.length, 3);
+    s.act(() =>
+      props(
+        main.children.at(-1).querySelectorAll(".tilasm-full-leave")[0],
+      ).onClick(),
+    );
+    await settle();
+    assert.equal(main.children.length, 2);
 
     // A tilasm not on this machine: the window says so, and nothing covers the view.
     const gone = `djinn://tilasm/${"0".repeat(8)}-0000-7000-8000-${"0".repeat(12)}`;

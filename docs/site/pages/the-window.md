@@ -44,6 +44,10 @@ out when it is zero:
 | Ready to grant | The wish is done for you to grant |
 | #3 | Its rank, never a count |
 
+A click on a wish opens it on its first tab, its questions, the page at their top; even the wish already shown, from
+another tab or a tilasm open full size, which closes. If a question had the focus, the page comes back to it and gives
+it the focus again.
+
 Drag a wish by its grip, on its left, or press Alt+Up or Alt+Down on it, to change its rank; a thin line shows where it
 will land. Drop a paused or granted wish among the active ones to make it active at that rank: the last active wish
 is then paused. **Make it the first active wish**, beside a paused wish, does it in one click. See [Wish](#wish).
