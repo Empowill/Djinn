@@ -574,3 +574,40 @@ func sentText(t *testing.T, input string) string {
 	}
 	return strings.Join(texts, "\n")
 }
+
+// TestLeadRepliesToEachCommentOnRecordedStream: on a real batch (testdata/claude/lead-comments.jsonl, W120), the lead
+// that gets a send of four comments reads them in one command, acts on them in the same batch, and replies to every
+// one with djinn tilasm reply, each once, after reading them.
+func TestLeadRepliesToEachCommentOnRecordedStream(t *testing.T) {
+	t.Parallel()
+	env, _, _ := fake{provider: "claude", fixture: "lead-comments"}.env(t)
+	b := driveLead(t, nil, func(d *LeadDriver) { d.Provider, d.Env = Claude{Command: os.Args[0]}, env })
+	b.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_COMMENTS, "L01",
+		"Djinn: L01 v1, 4 comments (2 general, 1 on a passage, 1 on an element), iterate: its next version with them: "+
+			"djinn tilasm comments L01 --send 1")
+	waitFor(t, "the batch done", func() bool { return len(b.waiting(t)) == 0 })
+	batch := b.batches(t)[0]
+	if batch.GetState() != planv1.LeadBatchState_LEAD_BATCH_STATE_DONE || batch.GetUsage().GetCostUsd() != 0.6187598000000001 {
+		t.Fatalf("batch = %v", batch)
+	}
+	commands := batch.GetCommands()
+	read := slices.IndexFunc(commands, func(c string) bool { return strings.HasPrefix(c, "djinn tilasm comments L01") })
+	if read != 0 {
+		t.Errorf("the comments are read at %d, want first: %q", read, commands)
+	}
+	if n := slices.IndexFunc(commands, func(c string) bool { return strings.HasPrefix(c, "djinn tilasm put ") }); n < 0 ||
+		!strings.Contains(commands[n], "--code L01") {
+		t.Errorf("no next version of L01 put: %q", commands)
+	}
+	for _, code := range []string{"C1", "C2", "C3", "C4"} {
+		var at []int
+		for i, c := range commands {
+			if strings.HasPrefix(c, "djinn tilasm reply L01 "+code+" --text ") {
+				at = append(at, i)
+			}
+		}
+		if len(at) != 1 || at[0] < read {
+			t.Errorf("%s replied at %v, want once after the read: %q", code, at, commands)
+		}
+	}
+}

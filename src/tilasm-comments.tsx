@@ -1,6 +1,7 @@
-// The Comments column beside a tilasm's frame (L08, flow A): the developer's drafts on it, in the order written, the
-// new one below. "On the whole tilasm" writes one, the Comment button over a passage selected in the frame another, on
-// that passage (tilasm-passages.tsx), its quote on its card; a draft is edited in place (Ctrl+Enter saves, Escape cancels) and
+// The Comments column beside a tilasm's frame (L08, flow A): the developer's comments on it, in the order written, the
+// new one below; a sent one keeps its place, with the Djinn's reply and the tasks it made of it under it. "On the whole
+// tilasm" writes one, the Comment button over a passage selected in the frame another, on that passage
+// (tilasm-passages.tsx), its quote on its card; a draft is edited in place (Ctrl+Enter saves, Escape cancels) and
 // deleted at once, with an Undo that stands five seconds instead of a dialog. A draft stays in Djinn's store and
 // reaches no agent until its foot sends them all (decision Q29): a last comment on the whole tilasm, then Launch or
 // Iterate, confirmed in a line. A tilasm held, as the server computes it, greys its buttons, and its comments when a
@@ -9,6 +10,7 @@ import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
 
 import {
+  CommentState,
   SendChoice,
   type TilasmComment,
   type TilasmHold,
@@ -20,6 +22,7 @@ import {
   NEW,
   anchorKind,
   canSave,
+  cards,
   column,
   emptyColumn,
   sendFoot,
@@ -78,6 +81,8 @@ export function CommentsColumn({
   code,
   version,
   drafts,
+  sent = [],
+  codes,
   hold,
   writes,
   onError,
@@ -92,6 +97,10 @@ export function CommentsColumn({
   version: number;
   // The tilasm's drafts, in the order written.
   drafts: readonly TilasmComment[];
+  // The comments sent on it, with the Djinn's replies.
+  sent?: readonly TilasmComment[];
+  // The codes of the wish's tasks, by id: those a reply names.
+  codes?: ReadonlyMap<string, string>;
   // Why it takes no send for now; none: it does.
   hold?: TilasmHold;
   writes: CommentWrites;
@@ -181,72 +190,78 @@ export function CommentsColumn({
         </button>
       </div>
       <div className="tilasm-comments-body">
-        {drafts.length === 0 && state.editing !== NEW && (
+        {drafts.length === 0 && sent.length === 0 && state.editing !== NEW && (
           <p className="muted-text">{t("tilasms.comments_none")}</p>
         )}
         <ol className="tilasm-comment-list">
-          {drafts.map((comment) => (
-            <li
-              key={comment.id}
-              id={`comment-${comment.id}`}
-              className="tilasm-comment"
-            >
-              <div className="tilasm-comment-head">
-                <span className="tilasm-code">{comment.code}</span>
-                <span className="tilasm-comment-anchor">
-                  {anchorText(anchorKind(comment), comment.anchor?.label)}
-                </span>
-                <span className="tilasm-comment-state">
-                  {t("tilasms.comment_draft")}
-                </span>
-                {state.editing !== comment.id && (
-                  <span className="tilasm-comment-actions">
-                    <button
-                      type="button"
-                      className="icon-button"
-                      disabled={greyed}
-                      title={t("tilasms.comment_edit", { code: comment.code })}
-                      aria-label={t("tilasms.comment_edit", {
-                        code: comment.code,
-                      })}
-                      onClick={() => dispatch({ type: "edit", comment })}
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button"
-                      disabled={busy || greyed}
-                      title={t("tilasms.comment_delete", {
-                        code: comment.code,
-                      })}
-                      aria-label={t("tilasms.comment_delete", {
-                        code: comment.code,
-                      })}
-                      onClick={() =>
-                        act(async () => {
-                          const deleted = await writes.remove(comment);
-                          dispatch({
-                            type: "deleted",
-                            comment: deleted,
-                            now: Date.now(),
-                          });
-                        })
-                      }
-                    >
-                      <Trash2 size={13} />
-                    </button>
+          {cards(drafts, sent).map((comment) =>
+            comment.state === CommentState.SENT ? (
+              <SentCard key={comment.id} comment={comment} codes={codes} />
+            ) : (
+              <li
+                key={comment.id}
+                id={`comment-${comment.id}`}
+                className="tilasm-comment"
+              >
+                <div className="tilasm-comment-head">
+                  <span className="tilasm-code">{comment.code}</span>
+                  <span className="tilasm-comment-anchor">
+                    {anchorText(anchorKind(comment), comment.anchor?.label)}
                   </span>
+                  <span className="tilasm-comment-state">
+                    {t("tilasms.comment_draft")}
+                  </span>
+                  {state.editing !== comment.id && (
+                    <span className="tilasm-comment-actions">
+                      <button
+                        type="button"
+                        className="icon-button"
+                        disabled={greyed}
+                        title={t("tilasms.comment_edit", {
+                          code: comment.code,
+                        })}
+                        aria-label={t("tilasms.comment_edit", {
+                          code: comment.code,
+                        })}
+                        onClick={() => dispatch({ type: "edit", comment })}
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        disabled={busy || greyed}
+                        title={t("tilasms.comment_delete", {
+                          code: comment.code,
+                        })}
+                        aria-label={t("tilasms.comment_delete", {
+                          code: comment.code,
+                        })}
+                        onClick={() =>
+                          act(async () => {
+                            const deleted = await writes.remove(comment);
+                            dispatch({
+                              type: "deleted",
+                              comment: deleted,
+                              now: Date.now(),
+                            });
+                          })
+                        }
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </span>
+                  )}
+                </div>
+                {comment.anchor?.exact && <Quote text={comment.anchor.exact} />}
+                {state.editing === comment.id ? (
+                  editor(t("tilasms.comment_edit", { code: comment.code }))
+                ) : (
+                  <p className="tilasm-comment-text">{comment.text}</p>
                 )}
-              </div>
-              {comment.anchor?.exact && <Quote text={comment.anchor.exact} />}
-              {state.editing === comment.id ? (
-                editor(t("tilasms.comment_edit", { code: comment.code }))
-              ) : (
-                <p className="tilasm-comment-text">{comment.text}</p>
-              )}
-            </li>
-          ))}
+              </li>
+            ),
+          )}
           {state.editing === NEW && (
             // A new passage asked for focuses the card again.
             <li
@@ -301,6 +316,55 @@ export function CommentsColumn({
         onError={onError}
       />
     </aside>
+  );
+}
+
+// SentCard is a comment sent: it no longer changes. The Djinn's reply shows under it once it came, with the tasks it
+// made of the comment.
+function SentCard({
+  comment,
+  codes,
+}: {
+  comment: TilasmComment;
+  codes?: ReadonlyMap<string, string>;
+}) {
+  const reply = comment.reply;
+  const tasks = reply?.taskIds.map((id) => codes?.get(id) ?? id.slice(0, 8));
+  return (
+    <li id={`comment-${comment.id}`} className="tilasm-comment sent">
+      <div className="tilasm-comment-head">
+        <span className="tilasm-code">{comment.code}</span>
+        <span className="tilasm-comment-anchor">
+          {anchorText(anchorKind(comment), comment.anchor?.label)}
+        </span>
+        <span className="tilasm-comment-state">
+          {reply
+            ? t("tilasms.comment_replied")
+            : t("tilasms.comment_sent", { send: comment.send })}
+        </span>
+      </div>
+      {comment.anchor?.exact && <Quote text={comment.anchor.exact} />}
+      <p className="tilasm-comment-text">{comment.text}</p>
+      {reply && (
+        <div
+          className="tilasm-comment-reply"
+          role="note"
+          aria-label={t("tilasms.reply_of", { code: comment.code })}
+        >
+          <span className="tilasm-comment-reply-head">
+            {reply.author && reply.author !== "lead"
+              ? t("tilasms.reply_from", { author: reply.author })
+              : t("tilasms.reply_from_djinn")}
+          </span>
+          <p className="tilasm-comment-text">{reply.text}</p>
+          {tasks && tasks.length > 0 && (
+            <span className="tilasm-comment-reply-tasks">
+              {t("tilasms.reply_tasks", { tasks: tasks.join(", ") })}
+            </span>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
 

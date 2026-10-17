@@ -59,6 +59,36 @@ test("a tilasm's drafts show in the order written, never a sent one nor another 
   assert.deepEqual(c.draftsOn([], L01), []);
 });
 
+test("the sent comments and the drafts make the cards, in the order written", () => {
+  const sentL02 = comment(
+    "01a14600-0000-7000-8000-000000000000",
+    L02,
+    "C2",
+    "Sent on L02.",
+    c.CommentState.SENT,
+  );
+  // A sent comment of another tilasm, or a draft read with the sent ones, is none of this tilasm's sent cards.
+  assert.deepEqual(
+    c.sentOn([sent, sentL02, c1], L01).map((d) => d.code),
+    ["C3"],
+  );
+  // C3 left with the first send, then C1 and C2 were written: a sent card keeps its place, a new draft comes below.
+  const early = comment(
+    "01a14600-0000-7000-8000-000000000000",
+    L01,
+    "C4",
+    "Sent first.",
+    c.CommentState.SENT,
+  );
+  assert.deepEqual(
+    c
+      .cards(c.draftsOn([c2, c1], L01), c.sentOn([sent, early], L01))
+      .map((d) => d.code),
+    ["C4", "C1", "C2", "C3"],
+  );
+  assert.deepEqual(c.cards([], []), []);
+});
+
 test("the drafts are counted by tilasm, for the head, the row and the tab", () => {
   const counts = c.draftCounts([c1, c2, c3, sent]);
   assert.equal(counts.get(L01), 2);

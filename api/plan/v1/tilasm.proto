@@ -304,7 +304,7 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // The draft comments on a wish's tilasms, for the window: no agent reads them.
+  // The draft comments on a wish's tilasms, for the window: no agent reads them. And those sent, with their replies.
   rpc Drafts(TilasmServiceDraftsRequest) returns (TilasmServiceDraftsResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -317,6 +317,44 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Reply to a comment the developer sent: what you did with it, or why not, and the tasks you made of it. Every sent
+  // comment gets one; its card shows it. A second reply replaces the first. A draft takes none: no agent reads it.
+  rpc Reply(TilasmServiceReplyRequest) returns (TilasmServiceReplyResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+message TilasmServiceReplyRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The comment, by its code within the tilasm (C3).
+  string comment = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[Cc][0-9]{1,4}$"
+  ];
+  // The reply: what you did with the comment, or why not; a question back when you did not understand it.
+  string text = 3 [(buf.validate.field).string.max_len = 4000];
+  // A task made of the comment, by code (W60) or identifier; repeat it for each.
+  repeated string task = 4 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 64
+  ];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Who replies: your task's code (W12) for a worker; lead by default.
+  string author = 6 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServiceReplyResponse {
+  // The comment, its reply in it.
+  TilasmComment comment = 1;
+  // How many comments of the tilasm sent still wait for a reply.
+  int32 unanswered = 2;
 }
 
 message TilasmServiceSendCommentsRequest {
@@ -396,6 +434,8 @@ message TilasmServiceDraftsResponse {
   repeated TilasmComment comments = 1;
   // The tilasms of the wish that take no send for now, and why.
   repeated TilasmHold holds = 2;
+  // The comments sent on them, with the Djinn's replies, for their cards: by send, then code.
+  repeated TilasmComment sent = 3;
 }
 
 message TilasmServiceCommentsRequest {

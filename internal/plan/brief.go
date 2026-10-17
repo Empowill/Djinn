@@ -269,12 +269,15 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"diagrams as inline SVG laid out by hand (boxes, labelled arrows, a legend), in colours that read in light and " +
 		"dark, never Mermaid. A tilasm reaches no network: everything it needs, fonts and scripts, is in its folder.\n" +
 		"- **The developer's comments on a tilasm come as one send**, a `comments` event (L01) with their choice: read " +
-		"them all, `djinn tilasm comments L01 --send <n>`, each with what it is on, then act in one pass, one task per " +
-		"change rather than one per comment. *Launch*: the work the tilasm explains, as the comments change it; the line " +
-		"names the open question that links it: answer it with its recommended option and a note naming the send, then " +
-		"launch its plan edited by the comments (`djinn question launch`), or spawn the tasks. *Iterate*: a task that " +
-		"puts the tilasm's next version as they say (`--tilasm L01`, its prompt naming `--code L01`). Djinn launched " +
-		"a launch without comments itself, by approving the question: no event then.\n" +
+		"them all, `djinn tilasm comments L01 --send <n>`, each with the passage or element it is on, then act in one " +
+		"pass, as on answers: tasks placed in the graph, one per change rather than one per comment. *Launch*: turn the " +
+		"comments into the planned work; the line names the open question that links the tilasm: answer it with its " +
+		"recommended option and a note naming the send, then launch its plan edited by the comments (`djinn question " +
+		"launch`), or spawn the tasks. *Iterate*: a task that puts the tilasm's next version as they say (`--tilasm " +
+		"L01`, its prompt naming `--code L01`). Then reply to every comment, `djinn tilasm reply L01 C3 --text \"…\" " +
+		"--task W60`: what you did, or why not, and the tasks made of it; the developer reads it under the comment, and " +
+		"the wish's brief names the comments still without one. A comment you do not understand gets a reply that " +
+		"asks, never a guess. Djinn launched a launch without comments itself, by approving the question: no event then.\n" +
 		"- **No secret, no local path** in the plan: name the project.\n" +
 		"- **Every request finds its wish.** A request that is not about the current wish goes through " +
 		"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to open a new wish, " +
@@ -360,7 +363,8 @@ func leadCommandsBrief(driven bool) string {
 		"- `djinn block put <wish> --kind decision --title \"…\" --content \"…\" --icon 🧱`; `djinn block list <wish>`.\n" +
 		"- `djinn tilasm put <folder> --wish <wish> --cites T07 --code L01`; `djinn tilasm list --wish <wish> --search " +
 		"\"…\"`; `djinn tilasm get <code>` (its text, the folder of its files); `djinn tilasm history <code>`, " +
-		"`djinn tilasm restore <code> <version>`.\n" +
+		"`djinn tilasm restore <code> <version>`; `djinn tilasm comments <code> --send <n>`, `djinn tilasm reply " +
+		"<code> <C> --text \"…\" --task W60`.\n" +
 		"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
 		"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you; " +
 		"`djinn question move <question> --wish <wish>` moves an open question to another wish (`--follow` moves tasks naming it as decision); " +
@@ -455,9 +459,14 @@ func buildBrief(ctx context.Context, r store.Reader, home, wishID string, waits 
 	if err != nil {
 		return Brief{}, err
 	}
+	unanswered, err := unansweredLines(ctx, r, wishID)
+	if err != nil {
+		return Brief{}, err
+	}
 	scrub := newScrubber(all, home, dataName)
 	exp = portable(exp, scrub)
-	return Brief{Stable: stableBrief(home, projects), Moving: movingBrief(exp, rank, ready, strategy, scrub.waits(waits))}, nil
+	moving := movingBrief(exp, rank, ready, strategy, scrub.waits(waits), unanswered)
+	return Brief{Stable: stableBrief(home, projects), Moving: moving}, nil
 }
 
 // waits is who waits for the gates of the ifrits, their commands' folders replaced.
@@ -563,9 +572,13 @@ func presentFiles(dir string, names []string) []string {
 	return out
 }
 
-// movingBrief is where the wish stands: its description, its azimas, what runs and waits, its tilasms, its open
-// questions, its latest decisions and blocks, and when a lead last acted. Empty sections are left out.
-func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1.PushStrategy, waits map[string][]string) string {
+// movingBrief is where the wish stands: its description, its azimas, what runs and waits, its tilasms and the
+// comments sent on them that wait for a reply (unanswered, by tilasm), its open questions, its latest decisions and
+// blocks, and when a lead last acted. Empty sections are left out.
+func movingBrief(
+	exp *planv1.WishExport, rank int32, ready bool, strategy planv1.PushStrategy, waits map[string][]string,
+	unanswered map[string]string,
+) string {
 	wish := exp.GetWish()
 	var b strings.Builder
 	fmt.Fprintf(&b, "# The wish: %s\n\n", oneLine(wish.GetTitle()))
@@ -741,7 +754,7 @@ func movingBrief(exp *planv1.WishExport, rank int32, ready bool, strategy planv1
 		}
 	}
 
-	tilasmsBrief(&b, exp.GetTilasms())
+	tilasmsBrief(&b, exp.GetTilasms(), unanswered)
 
 	var open, investigate []*planv1.Question
 	for _, q := range exp.GetQuestions() {
@@ -998,8 +1011,9 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 	}
 }
 
-// tilasmsBrief lists the wish's tilasms, in code order: each one's code, title, link and what it explains.
-func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport) {
+// tilasmsBrief lists the wish's tilasms, in code order: each one's code, title, link and what it explains; then a line
+// for each whose sent comments wait for a reply, from unanswered, by tilasm identifier.
+func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport, unanswered map[string]string) {
 	if len(tilasms) == 0 {
 		return
 	}
@@ -1017,6 +1031,13 @@ func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport) {
 	}
 	if n := len(tilasms) - briefTilasms; n > 0 {
 		fmt.Fprintf(b, "- And %d more: `djinn tilasm list --wish <wish>`.\n", n)
+	}
+	for _, t := range tilasms {
+		tilasm := t.GetTilasm()
+		if line := unanswered[tilasm.GetId()]; line != "" {
+			fmt.Fprintf(b, "- %s: %s: reply to each, `djinn tilasm reply %s <C> --text \"…\"`.\n",
+				tilasm.GetCode(), line, tilasm.GetCode())
+		}
 	}
 }
 

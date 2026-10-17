@@ -1,7 +1,7 @@
 // The developer's comments on a tilasm, as the Comments column beside its frame shows them (L08, flow A): drafts that
-// reach no agent until they are sent. The column writes one on the whole tilasm or on a passage selected in the frame,
-// edits a draft in place and deletes it with an Undo that stands five seconds. What the column holds between two
-// renders is a reducer, tested with node.
+// reach no agent until they are sent, then the sent ones with the Djinn's replies. The column writes one on the whole
+// tilasm or on a passage selected in the frame, edits a draft in place and deletes it with an Undo that stands five
+// seconds. What the column holds between two renders is a reducer, tested with node.
 import {
   CommentState,
   type TilasmComment,
@@ -22,6 +22,27 @@ export function draftsOn(
   return drafts
     .filter((c) => c.tilasmId === tilasmId && c.state === CommentState.DRAFT)
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+// sentOn are the comments sent on a tilasm, with the Djinn's replies, in the order they were written.
+export function sentOn(
+  sent: readonly TilasmComment[],
+  tilasmId: string,
+): TilasmComment[] {
+  return sent
+    .filter((c) => c.tilasmId === tilasmId && c.state === CommentState.SENT)
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+// cards are the column's cards: the comments sent and the drafts of a tilasm, in the order they were written, so that a
+// draft that leaves keeps its place as a sent card, and a new draft comes below.
+export function cards(
+  drafts: readonly TilasmComment[],
+  sent: readonly TilasmComment[],
+): TilasmComment[] {
+  return [...sent, ...drafts].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
 }
 
 // draftCounts counts the drafts of each tilasm, by its identifier: what the tab, the row and the head show.

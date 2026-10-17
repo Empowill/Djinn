@@ -64,6 +64,8 @@ const (
 	// TilasmServiceSendCommentsProcedure is the fully-qualified name of the TilasmService's
 	// SendComments RPC.
 	TilasmServiceSendCommentsProcedure = "/plan.v1.TilasmService/SendComments"
+	// TilasmServiceReplyProcedure is the fully-qualified name of the TilasmService's Reply RPC.
+	TilasmServiceReplyProcedure = "/plan.v1.TilasmService/Reply"
 )
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
@@ -96,13 +98,16 @@ type TilasmServiceClient interface {
 	PutComment(context.Context, *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error)
 	// Delete a draft comment, from the window; a sent one stays. It returns the draft, for the window's Undo to put back.
 	DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error)
-	// The draft comments on a wish's tilasms, for the window: no agent reads them.
+	// The draft comments on a wish's tilasms, for the window: no agent reads them. And those sent, with their replies.
 	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
 	// Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
 	// explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
 	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
 	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
 	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
+	// Reply to a comment the developer sent: what you did with it, or why not, and the tasks you made of it. Every sent
+	// comment gets one; its card shows it. A second reply replaces the first. A draft takes none: no agent reads it.
+	Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error)
 }
 
 // NewTilasmServiceClient constructs a client for the plan.v1.TilasmService service. By default, it
@@ -205,6 +210,12 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(tilasmServiceMethods.ByName("SendComments")),
 			connect.WithClientOptions(opts...),
 		),
+		reply: connect.NewClient[v1.TilasmServiceReplyRequest, v1.TilasmServiceReplyResponse](
+			httpClient,
+			baseURL+TilasmServiceReplyProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Reply")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -224,6 +235,7 @@ type tilasmServiceClient struct {
 	deleteComment *connect.Client[v1.TilasmServiceDeleteCommentRequest, v1.TilasmServiceDeleteCommentResponse]
 	drafts        *connect.Client[v1.TilasmServiceDraftsRequest, v1.TilasmServiceDraftsResponse]
 	sendComments  *connect.Client[v1.TilasmServiceSendCommentsRequest, v1.TilasmServiceSendCommentsResponse]
+	reply         *connect.Client[v1.TilasmServiceReplyRequest, v1.TilasmServiceReplyResponse]
 }
 
 // Put calls plan.v1.TilasmService.Put.
@@ -296,6 +308,11 @@ func (c *tilasmServiceClient) SendComments(ctx context.Context, req *connect.Req
 	return c.sendComments.CallUnary(ctx, req)
 }
 
+// Reply calls plan.v1.TilasmService.Reply.
+func (c *tilasmServiceClient) Reply(ctx context.Context, req *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error) {
+	return c.reply.CallUnary(ctx, req)
+}
+
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
 	// Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
@@ -326,13 +343,16 @@ type TilasmServiceHandler interface {
 	PutComment(context.Context, *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error)
 	// Delete a draft comment, from the window; a sent one stays. It returns the draft, for the window's Undo to put back.
 	DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error)
-	// The draft comments on a wish's tilasms, for the window: no agent reads them.
+	// The draft comments on a wish's tilasms, for the window: no agent reads them. And those sent, with their replies.
 	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
 	// Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
 	// explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
 	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
 	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
 	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
+	// Reply to a comment the developer sent: what you did with it, or why not, and the tasks you made of it. Every sent
+	// comment gets one; its card shows it. A second reply replaces the first. A draft takes none: no agent reads it.
+	Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error)
 }
 
 // NewTilasmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -431,6 +451,12 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(tilasmServiceMethods.ByName("SendComments")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServiceReplyHandler := connect.NewUnaryHandler(
+		TilasmServiceReplyProcedure,
+		svc.Reply,
+		connect.WithSchema(tilasmServiceMethods.ByName("Reply")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TilasmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TilasmServicePutProcedure:
@@ -461,6 +487,8 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceDraftsHandler.ServeHTTP(w, r)
 		case TilasmServiceSendCommentsProcedure:
 			tilasmServiceSendCommentsHandler.ServeHTTP(w, r)
+		case TilasmServiceReplyProcedure:
+			tilasmServiceReplyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -524,4 +552,8 @@ func (UnimplementedTilasmServiceHandler) Drafts(context.Context, *connect.Reques
 
 func (UnimplementedTilasmServiceHandler) SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.SendComments is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Reply is not implemented"))
 }
