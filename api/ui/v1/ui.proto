@@ -78,7 +78,8 @@ service UiService {
   rpc OpenNotificationSettings(UiServiceOpenNotificationSettingsRequest) returns (UiServiceOpenNotificationSettingsResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
-  // Say which wish the page shows: no notification comes for it while the window is in front.
+  // Say which wish the page shows, and its theme: no notification comes for that wish while the window is in front,
+  // and the driven lead takes the tone of that theme.
   rpc View(UiServiceViewRequest) returns (UiServiceViewResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
@@ -123,7 +124,7 @@ message Shortcut {
 }
 
 // The window's settings that Djinn acts on, in settings.json of the data directory. The page keeps its own (the
-// language, the theme).
+// language, the theme chosen); it tells Djinn the theme it shows (shown_theme).
 message Settings {
   // The global shortcut's chord. Unset: the default one. Empty: off.
   optional string shortcut = 1;
@@ -145,6 +146,19 @@ message Settings {
   repeated plan.v1.Account accounts = 5;
   // Where the lead Djinn drives runs (djinn lead move). Unset: Claude, its default model and sign-in.
   plan.v1.LeadSeat lead = 6;
+  // The theme the window shows, as the last page to say it did (UiService.View), kept across restarts: each batch of
+  // the driven lead speaks in its tone (decision Q36). Unset: no page said it yet, and the Djinn stays plain.
+  ShownTheme shown_theme = 7;
+}
+
+// ShownTheme is the theme a page shows: the system's resolved by the page, never "system".
+enum ShownTheme {
+  // Not known: no page said it.
+  SHOWN_THEME_UNSPECIFIED = 0;
+  // Dark: the Djinn is the mocking demon of the lamp.
+  SHOWN_THEME_DARK = 1;
+  // Light: the Djinn is the solar Djinn.
+  SHOWN_THEME_LIGHT = 2;
 }
 
 // An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
@@ -447,6 +461,9 @@ message UiServiceOpenNotificationSettingsResponse {}
 message UiServiceViewRequest {
   // The wish the page shows; empty for none (the flying carpet, a dialog of its own).
   string wish_id = 1 [(buf.validate.field).string.max_len = 64];
+  // The theme the page shows, sent again when it changes: Djinn keeps it for the driven lead's tone. Unset: the one
+  // kept stays.
+  ShownTheme theme = 2 [(buf.validate.field).enum.defined_only = true];
 }
 
 message UiServiceViewResponse {}

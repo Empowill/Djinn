@@ -28,6 +28,16 @@ const wishes = (): Wish[] =>
 
 const at = "2026-10-09T09:10:00Z";
 
+// shownTheme is the theme Djinn keeps as the one the window shows, from settings.json of its data folder.
+function shownTheme(): string {
+  try {
+    const file = path.join(process.env.DJINN_E2E_HOME!, "settings.json");
+    return JSON.parse(fs.readFileSync(file, "utf8")).shownTheme ?? "";
+  } catch {
+    return "";
+  }
+}
+
 async function choose(page: Page, value: "" | "dark" | "light") {
   await page.evaluate((v) => {
     if (v) localStorage.setItem("djinn.theme", v);
@@ -99,8 +109,11 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
     await page.goto(process.env.DJINN_URL!);
     await choose(page, "");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    // The page tells Djinn the theme it shows, the system's resolved: the Djinn's tone follows it (W156).
+    await expect.poll(shownTheme).toBe("SHOWN_THEME_LIGHT");
     await page.emulateMedia({ colorScheme: "dark" });
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect.poll(shownTheme).toBe("SHOWN_THEME_DARK");
 
     // Every ANSI colour, normal and bright, on the terminal.
     const empty = page.locator(".lead-terminal-empty button");

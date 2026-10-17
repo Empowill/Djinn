@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,9 +15,11 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/usage"
+	"github.com/empowill/djinn/lead/tones"
 )
 
 // leadAgent is a provider for the driven lead's tests: each session it starts plays the next step of play, and
@@ -229,6 +232,9 @@ func TestLeadBatchPrompt(t *testing.T) {
 		if !strings.Contains(spec.SystemPrompt, want) {
 			t.Errorf("the rules lack %q", want)
 		}
+	}
+	if strings.Contains(spec.Prompt, "## Your tone") {
+		t.Errorf("no page said its theme, yet the batch has a tone:\n%s", spec.Prompt)
 	}
 	if strings.Contains(spec.SystemPrompt, "djinn lead watch --after") || strings.Contains(spec.Prompt, "djinn lead watch --after") {
 		t.Errorf("a driven lead is told to watch")
@@ -493,4 +499,78 @@ func TestLeadBatchCostOnRecordedStream(t *testing.T) {
 	}
 	t.Logf("a batch: $%.4f as claude counts it, $%.4f estimated by the price table; %d tokens read from the cache, %d written",
 		u.GetCostUsd(), estimate, u.GetCacheReadTokens(), u.GetCacheWriteTokens())
+}
+
+// TestLeadToneFollowsTheThemeOnRecordedStream: each batch speaks in the tone of the theme the window showed as it
+// started (decision Q36, W156), on the stream of a real batch replayed through the real process path, never a model:
+// in light its message carries the solar Djinn's tone, in dark the demon's, never both; the rules that bound every
+// tone are in the system prompt, the same text either way.
+func TestLeadToneFollowsTheThemeOnRecordedStream(t *testing.T) {
+	t.Parallel()
+	env, args, input := fake{provider: "claude", fixture: "lead-batch"}.env(t)
+	b := driveLead(t, nil, func(d *LeadDriver) { d.Provider, d.Env = Claude{Command: os.Args[0]}, env })
+	var rules string
+	for n, step := range []struct {
+		theme     uiv1.ShownTheme
+		want, not string
+	}{
+		{uiv1.ShownTheme_SHOWN_THEME_LIGHT, tones.Light(), tones.Dark()},
+		{uiv1.ShownTheme_SHOWN_THEME_DARK, tones.Dark(), tones.Light()},
+	} {
+		if err := plan.SetShownTheme(b.home, step.theme); err != nil {
+			t.Fatal(err)
+		}
+		b.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_MESSAGE, "", "Withdraw the license question, I will decide later.")
+		waitFor(t, "the batch done", func() bool { return len(b.batches(t)) == n+1 && len(b.waiting(t)) == 0 })
+		message := sentText(t, input)
+		if !strings.Contains(message, "## Your tone") || !strings.Contains(message, step.want) || strings.Contains(message, step.not) {
+			t.Errorf("%v: the batch's message lacks its tone, or has the other:\n%s", step.theme, message)
+		}
+		got, err := os.ReadFile(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, system, _ := strings.Cut(string(got), "--append-system-prompt\n")
+		system, _, _ = strings.Cut(system, "\n--exclude-dynamic-system-prompt-sections")
+		if !strings.Contains(system, "Your tone follows the window's theme") || strings.Contains(system, step.want) {
+			t.Errorf("%v: the rules lack the tone's limits, or carry a tone:\n%s", step.theme, system)
+		}
+		if rules == "" {
+			rules = system
+		} else if system != rules {
+			t.Errorf("the rules changed with the theme: the cache of the last session no longer serves")
+		}
+	}
+}
+
+// sentText is every text of the messages a fake agent read, recorded in its input file as stream-json lines.
+func sentText(t *testing.T, input string) string {
+	t.Helper()
+	data, err := os.ReadFile(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var texts []string
+	var walk func(v any)
+	walk = func(v any) {
+		switch v := v.(type) {
+		case string:
+			texts = append(texts, v)
+		case []any:
+			for _, x := range v {
+				walk(x)
+			}
+		case map[string]any:
+			for _, x := range v {
+				walk(x)
+			}
+		}
+	}
+	for line := range strings.Lines(string(data)) {
+		var v any
+		if json.Unmarshal([]byte(line), &v) == nil {
+			walk(v)
+		}
+	}
+	return strings.Join(texts, "\n")
 }

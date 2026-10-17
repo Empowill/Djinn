@@ -19,6 +19,8 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/link"
+	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 func newService(t *testing.T) (*Service, *[]string) {
@@ -777,5 +779,34 @@ func TestNotificationsService(t *testing.T) {
 	s.Notices.mu.Unlock()
 	if viewing != "w1" {
 		t.Errorf("viewing = %q, want w1", viewing)
+	}
+}
+
+// TestViewKeepsTheThemeShown: the page says the theme it shows with View, the system's resolved; Djinn keeps the last
+// one said for the driven lead's tone, beside the other settings, and a View without a theme keeps it.
+func TestViewKeepsTheThemeShown(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newService(t)
+	if err := os.WriteFile(filepath.Join(s.Home, "settings.json"), []byte(`{"leadDriven": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	view := func(theme uiv1.ShownTheme) {
+		t.Helper()
+		if _, err := s.View(ctx, connect.NewRequest(&uiv1.UiServiceViewRequest{WishId: "w1", Theme: theme})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, step := range []struct{ sent, kept uiv1.ShownTheme }{
+		{uiv1.ShownTheme_SHOWN_THEME_LIGHT, uiv1.ShownTheme_SHOWN_THEME_LIGHT},
+		{uiv1.ShownTheme_SHOWN_THEME_UNSPECIFIED, uiv1.ShownTheme_SHOWN_THEME_LIGHT},
+		{uiv1.ShownTheme_SHOWN_THEME_DARK, uiv1.ShownTheme_SHOWN_THEME_DARK},
+	} {
+		view(step.sent)
+		if got := plan.ReadShownTheme(s.Home); got != step.kept {
+			t.Errorf("after %v, kept %v, want %v", step.sent, got, step.kept)
+		}
+	}
+	if !machine.ReadLeadDriven(s.Home) {
+		t.Errorf("the other settings are lost")
 	}
 }

@@ -115,7 +115,8 @@ type UiServiceClient interface {
 	// Open the system's notification settings, on Djinn where the system can: see
 	// UiServiceGetNotificationsResponse.settings.
 	OpenNotificationSettings(context.Context, *connect.Request[v1.UiServiceOpenNotificationSettingsRequest]) (*connect.Response[v1.UiServiceOpenNotificationSettingsResponse], error)
-	// Say which wish the page shows: no notification comes for it while the window is in front.
+	// Say which wish the page shows, and its theme: no notification comes for that wish while the window is in front,
+	// and the driven lead takes the tone of that theme.
 	View(context.Context, *connect.Request[v1.UiServiceViewRequest]) (*connect.Response[v1.UiServiceViewResponse], error)
 	// Say that the developer is there: a key, a click or a scroll in the window in front, sent at most every 30 seconds.
 	// It keeps the ifrits lit.
@@ -364,7 +365,8 @@ type UiServiceHandler interface {
 	// Open the system's notification settings, on Djinn where the system can: see
 	// UiServiceGetNotificationsResponse.settings.
 	OpenNotificationSettings(context.Context, *connect.Request[v1.UiServiceOpenNotificationSettingsRequest]) (*connect.Response[v1.UiServiceOpenNotificationSettingsResponse], error)
-	// Say which wish the page shows: no notification comes for it while the window is in front.
+	// Say which wish the page shows, and its theme: no notification comes for that wish while the window is in front,
+	// and the driven lead takes the tone of that theme.
 	View(context.Context, *connect.Request[v1.UiServiceViewRequest]) (*connect.Response[v1.UiServiceViewResponse], error)
 	// Say that the developer is there: a key, a click or a scroll in the window in front, sent at most every 30 seconds.
 	// It keeps the ifrits lit.
