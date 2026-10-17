@@ -433,6 +433,36 @@ test("a wish's workers waiting for a place: room on the machine or a gate, never
   assert.equal(f.placeWaitOf([]), 0);
 });
 
+test("the seat counts the one task waiting for the machine, not the planned ones a red branch or a dependency holds (W329)", () => {
+  const S = f.TaskStatus;
+  const task = (id, status, extra = {}) => ({ id, status, ...extra });
+  const many = (n, make) => Array.from({ length: n }, (_, i) => make(i));
+  // Djinn QoL as its live tasks read when the seat said 1: 33 planned or resumed tasks wait, one of them for a place.
+  const red =
+    "waits for feat/qol to be green again (push checks red at de18f949: test)";
+  const tasks = [
+    task("W328", S.PENDING, {
+      roomWait: true,
+      machineWait: true,
+      waitReason: "load minimal commits up to 3.6 GiB of memory",
+    }),
+    ...many(6, (i) => task(`red${i}`, S.PENDING, { waitReason: red })),
+    ...many(2, (i) => task(`resumed${i}`, S.RESUMING, { waitReason: red })),
+    ...many(23, (i) =>
+      task(`dep${i}`, S.PENDING, { waitReason: `waits for W${i} (pending)` }),
+    ),
+    // Azimas are planned, never run by a worker.
+    ...many(25, (i) => task(`azima${i}`, S.PENDING)),
+    task("W329", S.RUNNING),
+  ];
+  assert.equal(f.placeWaitOf(tasks, ""), 1);
+  // The others are counted once their hold lifts and only the machine holds them: the server flags each one.
+  const green = tasks.map((t) =>
+    t.waitReason === red ? { ...t, roomWait: true, waitReason: "" } : t,
+  );
+  assert.equal(f.placeWaitOf(green, ""), 9);
+});
+
 test("a failed merge is being fixed while its correction works, failed when none does", () => {
   const I = f.IntegrationState;
   const S = f.TaskStatus;
