@@ -141,7 +141,8 @@ func TestProjectNotices(t *testing.T) {
 				t.Errorf("the setup: file %s, detail %q; want %s, its reason", n.GetFile(), n.GetDetail(), devFile)
 			}
 		case "bad-djinn":
-			if n.GetFile() != filepath.Join(dir, SkillFolders[0], "bad-djinn", SkillFile) ||
+			// The project's folder, as Add resolved it: /private/var on macOS, the long name of RUNNER~1 on Windows.
+			if n.GetFile() != filepath.Join(project.GetDirectory(), SkillFolders[0], "bad-djinn", SkillFile) ||
 				!strings.HasPrefix(n.GetDetail(), "SKILL.md: metadata.djinn: ") {
 				t.Errorf("an unreadable skill: file %s, detail %q", n.GetFile(), n.GetDetail())
 			}

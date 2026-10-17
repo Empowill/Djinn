@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -58,6 +59,19 @@ func startProcess(
 	return startCommand(dir, name, args, env, scope, grace, false, lowPriority, track)
 }
 
+// pwdEntry is the PWD of a process started in dir, as exec sets it when it builds the environment itself (not on
+// Windows). Djinn's own would name Djinn's folder: a shell finds it wrong and takes the folder with its symbolic
+// links resolved (/private/var for /var on macOS), so its pwd is not dir.
+func pwdEntry(dir string) []string {
+	if dir == "" || runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+		return nil
+	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		return []string{"PWD=" + abs}
+	}
+	return nil
+}
+
 // startCommand is startProcess; with blanks, the empty lines of the output are lines too.
 func startCommand(
 	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool, lowPriority bool,
@@ -88,7 +102,7 @@ func startCommand(
 	cmd.Dir = dir
 	mark := rand.Text()
 	// Last, so that it replaces the mark of whatever started Djinn.
-	cmd.Env = append(append(os.Environ(), env...), markEntry(mark))
+	cmd.Env = append(append(append(os.Environ(), pwdEntry(dir)...), env...), markEntry(mark))
 	ownGroup(cmd, lowPriority)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
