@@ -1237,6 +1237,7 @@ export function WishView({
               tilasms={detail.tilasms}
               drafts={detail.drafts}
               holds={detail.holds}
+              sent={detail.sent}
               tasks={detail.tasks}
               onToast={onToast}
             />

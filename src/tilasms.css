@@ -381,8 +381,27 @@
   color: var(--sand);
   font-size: var(--font-size-body);
 }
+.tilasm-comment.sent .tilasm-comment-state {
+  color: var(--accent);
+}
 .tilasm-comment-actions {
   display: inline-flex;
+}
+/* The Djinn's reply under a sent comment: rounded without a border, on a softer ground. */
+.tilasm-comment-reply {
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  background: var(--surface-soft);
+}
+.tilasm-comment-reply-head,
+.tilasm-comment-reply-tasks {
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
+.tilasm-comment-reply-tasks {
+  display: block;
+  margin-top: 0.25rem;
 }
 .tilasm-comment-text {
   margin: 0.25rem 0 0;

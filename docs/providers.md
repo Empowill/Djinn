@@ -598,6 +598,7 @@ error subtype (`error_max_turns`, `error_during_execution`…) fails the turn ev
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
 | Message sent during the turn                  | `claude/mid-turn-message.jsonl`  | by hand, from W59's real result             | one result with `queued_turn_count` 0 answers both messages: the input is closed and the worker ends               |
 | A batch of the driven lead                    | `claude/lead-batch.jsonl`        | **real**, claude 2.1.301, Opus 5.5          | the rules in the system prompt, turns capped, the lead's folder writable without a deny of every edit; the batch's cost, $0.16, kept in the lead's journal (`TestLeadBatchCostOnRecordedStream`) |
+| Comments sent on a tilasm                     | `claude/lead-comments.jsonl`     | **real**, claude 2.1.302, Opus 5.5          | the driven lead reads the send in one command, acts in the same batch and replies to each comment once (`TestLeadRepliesToEachCommentOnRecordedStream`); $0.62 |
 | Session limit reached                         | `claude/session-limit.jsonl`     | **real**, claude 2.1.293                    | `rate_limit_event` `rejected` gives the limit and its `resetsAt`; error "You've hit your session limit · resets 7:20am (Europe/Paris)"; the task waits for the reset, then resumes |
 
 ## Codex
