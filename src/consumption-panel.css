@@ -2,9 +2,11 @@
    (resource-chart.tsx) draw with the series colours below, validated against both themes' surfaces. */
 
 .consumption-panel {
-  /* CPU and memory: one hue each, the same in every chart; the reference lines and Djinn's share are neutral ink. */
+  /* CPU and memory: one hue each, the same in every chart; the reference lines and Djinn's share are neutral ink. The
+     memory takes the saffron of the seal's flame, its area a neutral wash: a warm one turned brown on the dark ground
+     (L17). */
   --chart-cpu: #5b8def;
-  --chart-memory: #b8822a;
+  --chart-memory: var(--smoke-ascii-6);
   --chart-surface: var(--n-19);
   margin: var(--space-4, 1rem) 0;
   border: 1px solid var(--n-2a);
@@ -15,7 +17,6 @@
 
 html[data-theme="light"] .consumption-panel {
   --chart-cpu: #1d4ed8;
-  --chart-memory: #a35f00;
   background: var(--n-1c);
   border-color: var(--n-30);
 }
@@ -438,6 +439,11 @@ html[data-theme="light"] .range-pill.active {
   opacity: 0.12;
 }
 
+.resource-chart.memory .resource-chart-area {
+  fill: var(--n-ff);
+  opacity: 0.05;
+}
+
 .resource-chart-line {
   fill: none;
   stroke: var(--series);
@@ -668,21 +674,21 @@ html[data-theme="light"] .resource-chart-readout {
 }
 
 .provider-codex {
-  background: rgba(16, 163, 127, 0.12);
-  color: #10a37f;
-  border: 1px solid rgba(16, 163, 127, 0.3);
+  background: color-mix(in srgb, var(--term-green) 12%, transparent);
+  color: var(--term-green);
+  border: 1px solid color-mix(in srgb, var(--term-green) 30%, transparent);
 }
 
 .provider-antigravity {
-  background: rgba(29, 78, 216, 0.12);
+  background: color-mix(in srgb, var(--term-blue) 12%, transparent);
   color: var(--term-blue);
-  border: 1px solid rgba(29, 78, 216, 0.3);
+  border: 1px solid color-mix(in srgb, var(--term-blue) 30%, transparent);
 }
 
 .provider-watch {
-  background: rgba(6, 152, 154, 0.12);
+  background: color-mix(in srgb, var(--term-cyan) 12%, transparent);
   color: var(--term-cyan);
-  border: 1px solid rgba(6, 152, 154, 0.3);
+  border: 1px solid color-mix(in srgb, var(--term-cyan) 30%, transparent);
 }
 
 .provider-fake {
