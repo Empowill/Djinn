@@ -77,6 +77,10 @@ Each finished task says where its work stands, in the Tasks tab, on its card and
 The top of the wish counts them: **merging**, work waiting to merge with no worker running, and **being fixed**, merges
 an agent corrects, with nothing for you to do.
 
+Beside the questions, **What runs** follows it as it moves: the batch being merged, its check and for how long, the
+work waiting in line, a push its checks hold and the tests that failed, and the repair workers, a wrench in place of
+their dot. See [The window](#the-window).
+
 Once committed, each task's work shows in the **Review** tab, a line per task, to read and mark reviewed. See
 [Review](#review).
 

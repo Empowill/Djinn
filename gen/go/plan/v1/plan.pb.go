@@ -6328,7 +6328,10 @@ type TaskIntegration struct {
 	// For PENDING, its work merges in a batch of its own, once the batch of the others is in: its branch conflicted in a
 	// batch, or the correction of a red batch it was in failed and Djinn merges that batch's work one branch at a time to
 	// find what breaks the checks.
-	Alone         bool `protobuf:"varint,11,opt,name=alone,proto3" json:"alone,omitempty"`
+	Alone bool `protobuf:"varint,11,opt,name=alone,proto3" json:"alone,omitempty"`
+	// For INTEGRATING, the commit check that runs on the batch's merge, by name (lint, test), through the gate of its
+	// name, since update_time, its wait for the gate included; empty while Djinn merges or makes the worktree ready.
+	Check         string `protobuf:"bytes,12,opt,name=check,proto3" json:"check,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6438,6 +6441,13 @@ func (x *TaskIntegration) GetAlone() bool {
 		return x.Alone
 	}
 	return false
+}
+
+func (x *TaskIntegration) GetCheck() string {
+	if x != nil {
+		return x.Check
+	}
+	return ""
 }
 
 // IntegrationCommit is a batch of finished work committed into a wish's integration branch, as the journal records
@@ -22882,7 +22892,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06output\x18\x06 \x01(\tR\x06output\x12\x19\n" +
 	"\btask_ids\x18\a \x03(\tR\ataskIds\x12\x16\n" +
 	"\x06reason\x18\b \x01(\tR\x06reason\x12\x19\n" +
-	"\bmain_sha\x18\t \x01(\tR\amainSha\"\x8f\x03\n" +
+	"\bmain_sha\x18\t \x01(\tR\amainSha\"\xa5\x03\n" +
 	"\x0fTaskIntegration\x12/\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x19.plan.v1.IntegrationStateR\x05state\x12\x16\n" +
 	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x10\n" +
@@ -22898,7 +22908,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vreviewed_by\x18\n" +
 	" \x01(\tR\n" +
 	"reviewedBy\x12\x14\n" +
-	"\x05alone\x18\v \x01(\bR\x05alone\"\xb0\x01\n" +
+	"\x05alone\x18\v \x01(\bR\x05alone\x12\x14\n" +
+	"\x05check\x18\f \x01(\tR\x05check\"\xb0\x01\n" +
 	"\x11IntegrationCommit\x12\x17\n" +
 	"\awish_id\x18\x01 \x01(\tR\x06wishId\x12\x1d\n" +
 	"\n" +

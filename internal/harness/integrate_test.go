@@ -553,6 +553,44 @@ func TestIntegrateRedTests(t *testing.T) {
 	}
 }
 
+// TestIntegrationSaysItsCheck: while a batch's commit check runs, its tasks say which, since when: the window's
+// glance shows it beside the workers (W137). Once committed, no check is left said.
+func TestIntegrationSaysItsCheck(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+	wait := make(chan struct{})
+	in.mu.Lock()
+	in.testWait = wait
+	in.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		in.h.integratePass(t.Context())
+	}()
+	var got *planv1.TaskIntegration
+	eventually(t, func() bool {
+		got, _ = in.integration(t, w2)
+		return got.GetCheck() != ""
+	}, func() string { return got.String() })
+	for _, task := range []*planv1.Task{w1, w2} {
+		ti, _ := in.integration(t, task)
+		if ti.GetState() != planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING || ti.GetCheck() != "test" ||
+			ti.GetUpdateTime() == nil {
+			t.Errorf("%s while its check runs: %v; want integrating, the test check, since a time", task.GetCode(), ti)
+		}
+	}
+	close(wait)
+	<-done
+	if got := in.states(t, w1, w2); got != "W1 COMMITTED, W2 COMMITTED" {
+		t.Fatalf("after the check: %s", got)
+	}
+	if got, _ := in.integration(t, w1); got.GetCheck() != "" {
+		t.Errorf("committed, W1 still says the check %q", got.GetCheck())
+	}
+}
+
 func TestIntegrateLeavesADirtyCheckout(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)

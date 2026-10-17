@@ -49,7 +49,7 @@ export {
   fixerOf,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
-export { glanceOf, forgeMark } from "@/src/glance.tsx";
+export { glanceOf, forgeMark, failingTests } from "@/src/glance.tsx";
 export {
   attentionOf,
   AttentionBar,
@@ -3988,7 +3988,7 @@ test("the flying carpet merges the active wishes: their questions, the blocking 
   // spent (each wish's page and the Tasks tab say it).
   assert.match(
     html,
-    /<li class="glance-row run" title="Running · W1 Taste the oils">/,
+    /<li class="glance-item"><button type="button" class="glance-row run" title="Running · W1 Taste the oils">/,
   );
   assert.doesNotMatch(html, /Trim the wick|spent-price/);
 });
@@ -5718,7 +5718,10 @@ test("a failed merge an agent fixes shows orange, naming its correction, everywh
       status,
       dependsOn: [],
       createTime: at(11),
-      correction: { attempt: 1, failure: { taskIds: ["w1"] } },
+      correction: {
+        attempt: 1,
+        failure: { state: s.IntegrationState.CONFLICT, taskIds: ["w1"] },
+      },
     },
   ];
   const fixing = tasks(s.TaskStatus.RUNNING);
@@ -5812,14 +5815,17 @@ test("a failed merge an agent fixes shows orange, naming its correction, everywh
     new RegExp(`count-pill tone-fixing" title="${detail}"`),
   );
   assert.match(live.view, /<b>1<\/b>being fixed<\/span>/);
-  // The flying carpet's glance shows its correction at work, blue, as any worker.
+  // The flying carpet's glance shows its correction at work apart, a repair worker: a wrench in place of its dot,
+  // blue as any worker at work, saying what it repairs (W137).
   assert.match(
     live.plan,
-    /glance-row run" title="Running · W2 Correct the merge of W1"/,
+    /<button type="button" class="glance-row glance-repair run" title="Running · W2 Correct the merge of W1"><span class="glance-mark run" role="img" aria-label="repair worker · Running"[^>]*><svg[^>]*lucide-wrench[\s\S]*?<span class="glance-code">W2<\/span><span class="glance-title">settles the conflict of W1<span class="glance-after">Running<\/span>/,
   );
+  assert.doesNotMatch(live.plan, /glance-dot run/);
+  assert.match(live.plan, /glance-count">1 repair</);
   const dead = await page(failed);
   assert.doesNotMatch(dead.view, /tone-fixing/);
-  assert.doesNotMatch(dead.plan, /tone-fixing|glance-dot run/);
+  assert.doesNotMatch(dead.plan, /tone-fixing|glance-dot run|glance-repair/);
 });
 
 test("the update banner proposes to install a build committed, on one line, what changed unfolded on demand", () => {
@@ -11268,29 +11274,29 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
   // Running blue, its waiting tasks under it.
   assert.match(
     plan,
-    /<li class="glance-row run" title="Running · W1 Task W1"><span class="glance-dot run" role="img" aria-label="Running"><\/span><span class="glance-code">W1<\/span>/,
+    /<li class="glance-item"><button type="button" class="glance-row run" title="Running · W1 Task W1"><span class="glance-dot run" role="img" aria-label="Running"><\/span><span class="glance-code">W1<\/span>/,
   );
   assert.match(
     plan,
-    /<li class="glance-row wait child" title="Waits · W2 Task W2" style="--depth:1">[\s\S]*?<span class="glance-after">waits on W1<\/span>/,
+    /<li class="glance-item"><button type="button" class="glance-row wait child" title="Waits · W2 Task W2" style="--depth:1">[\s\S]*?<span class="glance-after">waits on W1<\/span>/,
   );
   assert.match(
     plan,
-    /<li class="glance-row wait child" title="Waits · W3 Task W3" style="--depth:2">/,
+    /<li class="glance-item"><button type="button" class="glance-row wait child" title="Waits · W3 Task W3" style="--depth:2">/,
   );
   // Across wishes: the task and its wish.
   assert.match(
     plan,
-    /<li class="glance-row wait" title="Waits · W5 Task W5">[\s\S]*?<span class="glance-after">waits on W26 · Djinn QoL<\/span>/,
+    /<li class="glance-item"><button type="button" class="glance-row wait" title="Waits · W5 Task W5">[\s\S]*?<span class="glance-after">waits on W26 · Djinn QoL<\/span>/,
   );
   assert.match(
     plan,
-    /<li class="glance-row plan" title="Planned · W4 Task W4"><span class="glance-dot plan"/,
+    /<li class="glance-item"><button type="button" class="glance-row plan" title="Planned · W4 Task W4"><span class="glance-dot plan"/,
   );
   // The investigator apart, violet, naming its question.
   assert.match(
     plan,
-    /<ul class="glance-list glance-investigators"><li class="glance-row investigate" title="Investigating · W6 Task W6"><span class="glance-dot investigate"[\s\S]*?<span class="glance-after">on Q4<\/span>/,
+    /<ul class="glance-list glance-investigators"><li class="glance-item"><button type="button" class="glance-row investigate" title="Investigating · W6 Task W6"><span class="glance-dot investigate"[\s\S]*?<span class="glance-after">on Q4<\/span>/,
   );
   // The watchers fold into one line: how many, and the requests they watch.
   assert.match(
@@ -11354,6 +11360,238 @@ test("the glance shows each wish's workers: running, investigating apart, waitin
     /<span class="glance-line-marks zero">nothing<\/span>/,
   );
   assert.doesNotMatch(calmPlan, /glance-legend/);
+});
+
+// Beside the workers, the work on its way into each wish's branch and the repair workers (W137): the batch merging with
+// the check it runs and for how long, a push the checks hold with the tests that failed, the merges waiting in line
+// in the order Djinn merges them, and the repair workers apart, a wrench in place of their dot.
+test("the glance shows the merges in progress, the queue, a held push and the repair workers", async () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const nowS = Math.floor(Date.now() / 1000);
+  const qolId = "01a1440a-0000-7000-8000-000000000011";
+  const lampId = "01a1440a-0000-7000-8000-000000000012";
+  const id = (code) => `q-${code}`;
+  const task = (code, status, extra = {}) => ({
+    id: id(code),
+    wishId: qolId,
+    projectId: "p1",
+    code,
+    title: `Task ${code}`,
+    status,
+    dependsOn: [],
+    createTime: at(1),
+    ...extra,
+  });
+  const done = (code, integration, extra = {}) =>
+    task(code, s.TaskStatus.DONE, {
+      endTime: at(10),
+      integration: { branch: "feat/qol", ...integration },
+      ...extra,
+    });
+  const tasks = [
+    done("W1", { state: s.IntegrationState.INTEGRATING }),
+    done("W2", {
+      state: s.IntegrationState.INTEGRATING,
+      check: "lint",
+      updateTime: at(nowS - 80),
+    }),
+    done(
+      "W3",
+      {
+        state: s.IntegrationState.PENDING,
+        reason: "waits for W9, which repairs feat/qol",
+      },
+      { endTime: at(20) },
+    ),
+    done("W4", { state: s.IntegrationState.PENDING, alone: true }),
+    done("W5", { state: s.IntegrationState.COMMITTED, sha: "abc" }),
+    done("W6", { state: s.IntegrationState.RED, correctedBy: id("W9") }),
+    done("W7", {
+      state: s.IntegrationState.UNCOMMITTED,
+      reviewedBy: id("W10"),
+    }),
+    task("W9", s.TaskStatus.RUNNING, {
+      correction: {
+        attempt: 2,
+        failure: { state: s.IntegrationState.RED, taskIds: [id("W6")] },
+      },
+    }),
+    task("W10", s.TaskStatus.PENDING, {
+      review: { attempt: 1, taskIds: [id("W7")] },
+    }),
+    task("W11", s.TaskStatus.RUNNING, {
+      correction: { attempt: 1, failure: { mainSha: "f00d" } },
+    }),
+    task("W12", s.TaskStatus.RUNNING, {
+      correction: {
+        attempt: 1,
+        failure: { state: s.IntegrationState.RED },
+      },
+    }),
+    task("W13", s.TaskStatus.RUNNING),
+  ];
+  const qol = wish(qolId, "Djinn QoL", s.WishState.ACTIVE, 1, {
+    pushes: [
+      {
+        projectId: "p1",
+        held: "test: go tool task test exited 1",
+        correctedBy: id("W12"),
+        failure: {
+          command: "go tool task test",
+          output: "ok  pkg/a\n--- FAIL: TestLogin\n--- FAIL: TestLogout\nFAIL",
+        },
+        run: { branch: "feat/qol", stage: s.PushStage.HELD, note: "test" },
+      },
+    ],
+  });
+  const lamp = wish(lampId, "Ship the lamp", s.WishState.ACTIVE, 2, {
+    pushes: [
+      {
+        projectId: "p2",
+        run: {
+          branch: "feat/lamp",
+          stage: s.PushStage.CHECKING,
+          check: "test",
+          startTime: at(nowS - 65),
+        },
+      },
+    ],
+  });
+
+  const glance = s.glanceOf(
+    tasks,
+    () => undefined,
+    () => undefined,
+    qol,
+  );
+  // The workers alone in the rows: the repair workers are apart.
+  assert.deepEqual(
+    glance.rows.map((r) => r.task.code),
+    ["W13"],
+  );
+  assert.deepEqual(
+    glance.merges.map((m) =>
+      m.kind === "merging"
+        ? [m.kind, m.branch, m.tasks.map((x) => x.code).join(","), m.check]
+        : m.kind === "held"
+          ? [m.kind, m.branch, m.tests.join(","), m.by?.code]
+          : m.kind === "queued"
+            ? [m.kind, m.task.code, m.reason]
+            : [m.kind],
+    ),
+    [
+      ["merging", "feat/qol", "W1,W2", "lint"],
+      ["held", "feat/qol", "TestLogin,TestLogout", "W12"],
+      // In the order Djinn merges them: the first ended first.
+      ["queued", "W4", "merges alone"],
+      ["queued", "W3", "waits for W9, which repairs feat/qol"],
+    ],
+  );
+  assert.deepEqual(
+    glance.repairs.map((r) => [r.task.code, r.kind, r.state, r.of.join(",")]),
+    [
+      ["W9", "red", "run", "W6"],
+      ["W11", "main", "run", ""],
+      ["W12", "push", "run", ""],
+      ["W10", "review", "plan", "W7"],
+    ],
+  );
+  // The tests a check's output names as failed.
+  assert.deepEqual(
+    s.failingTests("ok\n--- FAIL: TestA\n    --- FAIL: TestA/sub\nFAIL"),
+    ["TestA", "TestA/sub"],
+  );
+  assert.deepEqual(
+    s.failingTests(
+      "--- FAIL: TestA\nFailed: internal/harness TestA, internal/ui TestB\n",
+    ),
+    ["internal/harness TestA", "internal/ui TestB"],
+  );
+  assert.deepEqual(
+    s.failingTests(
+      "  1) [chromium] › e2e/glance.spec.ts:12:3 › the glance\n  ✘  2 [chromium] › e2e/wish-render.spec.ts:40:1 › opens (1.2s)",
+    ),
+    ["e2e/glance.spec.ts:12", "e2e/wish-render.spec.ts:40"],
+  );
+
+  const details = { [qolId]: tasks, [lampId]: [] };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [qol, lamp] }) });
+    service(s.TaskService, {
+      list: (req) => ({ tasks: details[req.wishId] ?? [] }),
+    });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const closes = [qol, lamp].map((w) => djinn.store.open(w.id));
+  await djinn.store.changed(qolId, [s.Change.WISH]);
+  await djinn.store.changed(lampId, [s.Change.WISH]);
+  closes.forEach((close) => close());
+  const plan = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.FlightPlan, { wishes: [qol, lamp], onOpen() {}, onToast() {} }),
+    ),
+  );
+  assert.match(
+    plan,
+    /Djinn QoL<\/button><span class="glance-count">1 running · 2 merging · 2 to merge · push held · 4 repairs<\/span>/,
+  );
+  assert.match(
+    plan,
+    /<ul class="glance-list glance-flow" aria-label="Merges and repairs">/,
+  );
+  // The batch merging, its check and for how long; a click opens its first task.
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row glance-merge merging" title="W1, W2 → feat\/qol\nW1 Task W1\nW2 Task W2"><span class="glance-mark run" role="img" aria-label="merging"><svg[^>]*lucide-git-merge[\s\S]*?<span class="glance-title glance-span">W1, W2 → feat\/qol<span class="glance-after" title="through the gate lint">checks lint<span class="glance-since">1m2\ds<\/span>/,
+  );
+  // The held push, salmon, the tests that failed.
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row glance-merge held" title="Push of feat\/qol held\ntest: go tool task test exited 1"><span class="glance-mark held" role="img" aria-label="push held"><svg[^>]*lucide-cloud-off[\s\S]*?Push of feat\/qol held<span class="glance-after">test red: TestLogin, TestLogout<\/span>/,
+  );
+  // The queue, its reasons.
+  assert.match(
+    plan,
+    /class="glance-row glance-merge queued" title="W4 Task W4\nmerges alone"><span class="glance-mark wait"[\s\S]*?W4 → feat\/qol<span class="glance-after">merges alone<\/span>[\s\S]*?W3 → feat\/qol<span class="glance-after">waits for W9, which repairs feat\/qol<\/span>/,
+  );
+  // The repair workers: a wrench, blue at work, grey to start, saying what each repairs.
+  assert.match(
+    plan,
+    /class="glance-row glance-repair run" title="Running · W9 Task W9"><span class="glance-mark run" role="img" aria-label="repair worker · Running"><svg[^>]*lucide-wrench[\s\S]*?<span class="glance-code">W9<\/span><span class="glance-title">makes the checks of W6 pass<span class="glance-after">Running · attempt 2<\/span>/,
+  );
+  assert.match(
+    plan,
+    /W11<\/span><span class="glance-title">settles the merge of main</,
+  );
+  assert.match(
+    plan,
+    /W12<\/span><span class="glance-title">makes the push checks pass</,
+  );
+  assert.match(
+    plan,
+    /class="glance-row glance-repair plan" title="Planned · W10 Task W10"><span class="glance-mark wait"[\s\S]*?commits the work W7 left not committed/,
+  );
+  // The push checks running on the other wish.
+  assert.match(
+    plan,
+    /class="glance-row glance-merge pushing" title="Push of feat\/lamp">[\s\S]*?Push of feat\/lamp<span class="glance-after">checks test<span class="glance-since">1m\ds<\/span>/,
+  );
+  // Gold is for what waits on you: never in the glance.
+  assert.doesNotMatch(plan, /glance[^"]*waiting/);
+  // The legend names them.
+  assert.match(
+    plan,
+    /<p class="glance-legend">.*running.*merging.*waits to merge.*push held.*repair worker<\/span><\/p>/,
+  );
+  // Narrow: a wrench per repair worker, one mark for the merges, one for the held push.
+  assert.match(
+    plan,
+    /<span class="name">Djinn QoL<\/span><span class="glance-line-marks"><span class="glance-dot run"[^>]*><\/span>(<span class="glance-mark (run|wait)" role="img" aria-label="repair worker" title="[^"]+"><svg[^>]*lucide-wrench[\s\S]*?<\/svg><\/span>){4}<span class="glance-mark run" role="img" aria-label="merging" title="2 merging · 2 to merge · push held">[\s\S]*?<span class="glance-mark held" role="img" aria-label="push held">/,
+  );
 });
 
 // Nothing moves under the reader (AGENTS.md, Interface): on a wish's page, a question asked later renders after the

@@ -732,6 +732,80 @@ button.attention-item:hover {
     animation: none;
   }
 }
+/* A line that opens its task: the row itself is the button, plain until hovered. */
+.glance-item {
+  display: block;
+}
+button.glance-row {
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  font-size: 0.78125rem;
+  text-align: left;
+  color: inherit;
+  border-radius: 0.25rem;
+}
+button.glance-row:hover .glance-title {
+  text-decoration: underline;
+  text-underline-offset: 0.1875rem;
+}
+button.glance-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The work on its way into the wish's branch, and the repair workers, below the workers: an icon in place of the dot,
+   in the same colours, blue at work, grey waiting; a push its checks hold, the salmon of what failed. */
+.glance-flow {
+  margin-top: 0.625rem;
+}
+.glance-mark {
+  display: inline-flex;
+  justify-self: center;
+  flex: none;
+  color: var(--st-planned);
+}
+.glance-mark.run {
+  color: var(--st-running);
+}
+.glance-mark.held {
+  color: var(--st-failed);
+}
+.glance-row .glance-span {
+  grid-column: 2 / -1;
+}
+.glance-merge.queued .glance-title,
+.glance-repair.wait .glance-title,
+.glance-repair.plan .glance-title {
+  color: var(--muted);
+}
+.glance-merge.held .glance-after {
+  color: var(--st-failed);
+}
+.glance-since {
+  margin-left: 0.375rem;
+  font: 400 0.75rem var(--mono);
+}
+.glance-held {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-width: 0;
+}
+.glance-held p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.glance-output {
+  margin: 0;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  font: 400 0.75rem/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .glance-legend {
   display: flex;
   flex-wrap: wrap;
@@ -750,6 +824,9 @@ button.attention-item:hover {
 .glance-legend .glance-dot {
   width: 0.5rem;
   height: 0.5rem;
+}
+.glance-line-marks .glance-mark {
+  margin: 0 0.0625rem;
 }
 /* Narrow: one line per wish, its name and a dot per worker. */
 .glance-line {

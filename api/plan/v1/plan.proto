@@ -1267,6 +1267,9 @@ message TaskIntegration {
   // batch, or the correction of a red batch it was in failed and Djinn merges that batch's work one branch at a time to
   // find what breaks the checks.
   bool alone = 11;
+  // For INTEGRATING, the commit check that runs on the batch's merge, by name (lint, test), through the gate of its
+  // name, since update_time, its wait for the gate included; empty while Djinn merges or makes the worktree ready.
+  string check = 12;
 }
 
 // IntegrationState is where a task's finished work stands on its way into its wish's integration branch.

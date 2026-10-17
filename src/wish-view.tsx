@@ -1321,6 +1321,7 @@ export function WishView({
                 wishes={glanceWish}
                 tasksOf={allDetails}
                 all={allWishes}
+                onOpenTask={(task) => to(`task-${task.id}`)}
               />
 
               <div className="main-after">
