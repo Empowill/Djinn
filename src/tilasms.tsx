@@ -60,6 +60,7 @@ import {
 } from "./data/tilasms";
 import { useFullSize } from "./full-size";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import {
   type CommentWrites,
   CommentsColumn,
@@ -418,9 +419,18 @@ export function TilasmList({
         />
       )}
       {count === 0 ? (
-        <p className="muted-text">{t("tilasms.none")}</p>
+        <EmptyState
+          art="tilasms"
+          after={
+            <p className="empty-state-text">{t("tilasms.none_command")}</p>
+          }
+        >
+          {t("tilasms.none")}
+        </EmptyState>
       ) : sorted.length === 0 ? (
-        <p className="muted-text">{t("tilasms.none_found", { search })}</p>
+        <EmptyState art="nomatch" small>
+          {t("tilasms.none_found", { search })}
+        </EmptyState>
       ) : (
         <ul className="tilasm-list" aria-label={t("tabs.tilasms")}>
           {sorted.map((tilasm) => (

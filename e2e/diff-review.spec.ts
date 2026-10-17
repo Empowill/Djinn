@@ -268,9 +268,11 @@ test("a task's diffs open full size beside the side panel, its files as a tree o
     git(worktree, "checkout", "--", "lamp.txt");
     fs.rmSync(path.join(worktree, "smoke.md"));
     await review.getByRole("button", { name: "Read the diff again" }).click();
-    await expect(review.locator(".diff-empty")).toHaveText(
+    // In the drawer, the sentence under the drawing of raked sand (empty-art.tsx).
+    await expect(review.locator(".diff-state .empty-state-text")).toHaveText(
       "The worktree is clean: nothing left uncommitted.",
     );
+    await expect(review.locator(".diff-state svg.empty-art")).toBeVisible();
 
     // A click in the side panel closes it and goes where it leads: the wish shown, on its questions, then the Hourglass.
     await page.locator(".wish-nav").filter({ hasText: title }).click();

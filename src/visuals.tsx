@@ -1,5 +1,6 @@
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import { useId, useState, useEffect } from "react";
+import { flamePaths } from "./empty-art";
 import { t } from "./i18n";
 
 type AgentStatus = "queued" | "running" | "blocked" | "done" | "error";
@@ -73,6 +74,9 @@ export function Orb({
     </span>
   );
 }
+// The flame on the machine's screen, its base low in the screen's middle.
+const flame = flamePaths(228, 192, 28);
+
 // How long the machine moves once the plan moved. Its animations repaint the whole drawing on each frame: WebKit
 // cannot compose the parts of an SVG, and a machine moving all the time took a third of a core at 4K (W513).
 const MACHINE_MOVES_MS = 8_000;
@@ -162,13 +166,16 @@ export function Machine({
         fill={`url(#screen${id})`}
         style={{ stroke: "var(--n-47)" }}
       />
-      <g
-        className="screen-symbol"
-        style={{ stroke: "var(--n-e7)" }}
-        strokeWidth="1.5"
-      >
-        <path d="m214 165 8 10-8 1m15 3 12 7" />
-        <path d="m202 188 51 29" opacity=".25" />
+      {/* The screen shows the seal's flame (Decision Q43 B, R2): the machine is the lamp's, its prompt a flame. */}
+      <g className="screen-symbol">
+        <path d={flame.outer} style={{ fill: "var(--eye-flame)" }} />
+        <path d={flame.inner} style={{ fill: "var(--eye-flame-in)" }} />
+        <path
+          d="m202 188 51 29"
+          style={{ stroke: "var(--n-e7)" }}
+          strokeWidth="1.5"
+          opacity=".25"
+        />
       </g>
       <g
         className="scanline"
@@ -201,6 +208,21 @@ export function Machine({
         d="m280 65 70 40-16 9-70-40Z"
         style={{ fill: "var(--n-1c)", stroke: "var(--n-4c)" }}
       />
+      {active && (
+        <g
+          className="machine-smoke"
+          style={{ stroke: "var(--smoke-ascii-2)" }}
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        >
+          <path d="M307 88c-12-10 8-20-2-32s8-22-4-30" />
+          <path
+            d="M314 84c-7-8 6-14 0-24"
+            style={{ stroke: "var(--smoke-ascii-4)" }}
+            opacity=".7"
+          />
+        </g>
+      )}
       <path
         d="m190 268 45-26 94 54-45 26Z"
         style={{ fill: "var(--n-25)", stroke: "var(--n-5e)" }}

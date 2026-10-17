@@ -34,6 +34,7 @@ import type { Choice, Question, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { byAsked, type OpenQuestion } from "./data/flight";
 import { sleepTexts } from "./data/format";
 import { useEyeBlocking } from "./djinn-eye";
+import { QuestionsEmpty } from "./empty-art";
 import { t } from "./i18n";
 import {
   type QuestionKey,
@@ -147,6 +148,7 @@ export function QuestionColumn({
   asleep = [],
   onWake,
   land,
+  calm = false,
   children,
 }: {
   groups: QuestionGroup[];
@@ -172,6 +174,9 @@ export function QuestionColumn({
   // The questions asleep, counted in a line below the others, listed on demand (AsleepQuestions), each woken by hand.
   asleep?: readonly OpenQuestion[];
   onWake?: (question: Question) => Promise<unknown>;
+  // Nothing waits and nothing runs: with no open question, the column shows the Djinn asleep instead of the session's
+  // drawing, because it is true then (empty-art.tsx).
+  calm?: boolean;
   // What else waits for you, below the questions: the workers that wait, the proofs, the grant.
   children?: ReactNode;
 }) {
@@ -398,9 +403,7 @@ export function QuestionColumn({
       aria-label={t("question.column")}
     >
       <h2 className="question-column-label">{t("question.column")}</h2>
-      {groups.length === 0 && (
-        <p className="question-none">{t("question.none")}</p>
-      )}
+      {groups.length === 0 && <QuestionsEmpty calm={calm} />}
       {groups.map(({ wish, questions }) => (
         <div className="question-group" key={wish.id}>
           {headings && (

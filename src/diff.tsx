@@ -40,6 +40,7 @@ import {
 } from "./data/diff-tree";
 import { useFullSize } from "./full-size";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { placeTaken, useKeepPlace } from "./scroll-anchor";
 import "./diff.css";
 
@@ -810,12 +811,15 @@ export const TaskDiffView = memo(function TaskDiffView({
   task,
   uncommitted = false,
   reads = 0,
+  drawn = false,
 }: {
   task: Task;
   // What the task's worktree holds not committed, instead of its committed work.
   uncommitted?: boolean;
   // How many times the diff was read again: each one reads it anew.
   reads?: number;
+  // In the drawer, where an empty diff has the room for its drawing (empty-art.tsx); inline in the Review, the line.
+  drawn?: boolean;
 }) {
   const djinn = useDjinn();
   const clients = djinn?.clients;
@@ -1031,7 +1035,13 @@ export const TaskDiffView = memo(function TaskDiffView({
         : t("diff.no_changes");
     return (
       <div className="task-diff-view diff-state">
-        <div className="diff-empty">{empty}</div>
+        {drawn ? (
+          <EmptyState art={noWorktree ? "noworktree" : "clean"}>
+            {empty}
+          </EmptyState>
+        ) : (
+          <div className="diff-empty">{empty}</div>
+        )}
       </div>
     );
   }
@@ -1238,6 +1248,7 @@ export function TaskReview({
           task={task}
           uncommitted={view === "uncommitted"}
           reads={reads}
+          drawn
         />
       </div>
     </section>,

@@ -95,7 +95,8 @@ The flying carpet shows every active wish at a glance. Its head holds the load g
 - The questions column on the left, the workers glance on the right.
 - A last line, how many workers run and the memory used, with **See it live in the Hourglass**.
 
-When nothing waits and nothing runs, it says so: **Nothing waits for you, and nothing runs.**
+When nothing waits and nothing runs, the questions column says so, beside the Djinn asleep above its lamp: **Nothing
+waits for you, and nothing runs.**
 
 A wish's own page has the same layout for that wish alone, under its tabs: Wish, Tasks, Review, Decisions, Tilasms and
 For agents. See [Wish](#wish).
@@ -110,6 +111,23 @@ One question is open in full, the others fold to two lines. The arrows move from
 the keys answer it. When the open one is answered, the one below opens. Below the column come **Your move**, the
 workers that wait for you and the wishes ready to grant, then the questions **Being investigated**. The keys and the
 levels are in [Question and move](#question-and-move).
+
+With no open question, the column shows a drawing of the Djinn's world above its sentence, which always starts with the
+fact: **No open question**. The window draws one of five at its start (the lamp, a blank scroll, the Djinn's eye, a clear
+sky over the dunes, the seal and its flame) and keeps it until it closes, on the flying carpet as in every wish. The
+Djinn sleeps there only when nothing waits and nothing runs.
+
+## Empty places
+
+A tab or a panel that has room and nothing to show draws a drawing of the same family above its sentence: the first
+launch and a window with no wish yet, a wish with no task, the Tasks with nothing moving (the lamp at rest), no
+decision, nothing to review, no block for agents, no tilasm or none that holds a search, no comment on a tilasm, the
+terminal with none open or no project, and the diff drawer with a clean worktree or none any more. One line weight,
+the theme's colours, nothing that loops: the smoke rises once as the place shows, then the drawing holds still. A line
+inside a bigger panel keeps its text alone.
+
+On the flying carpet and a wish's page, the machine at the top right shows the seal's flame on its screen; while workers
+run, smoke rises from its top.
 
 ## The Djinn's eye
 

@@ -42,6 +42,7 @@ import {
 } from "./data/comments";
 import { taskStatusText, taskTone, when } from "./data/format";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { StatusBadge } from "./status";
 
 // What the column asks of the store; each resolves once the drafts shown are read again.
@@ -383,7 +384,7 @@ export function CommentsColumn({
       <div ref={body} className="tilasm-comments-body">
         {origin && <p className="tilasm-comments-origin">{origin}</p>}
         {drafts.length === 0 && sent.length === 0 && state.editing !== NEW && (
-          <p className="muted-text">{t("tilasms.comments_none")}</p>
+          <EmptyState art="comments">{t("tilasms.comments_none")}</EmptyState>
         )}
         <ol className="tilasm-comment-list">
           {groups.attached.map(card)}
