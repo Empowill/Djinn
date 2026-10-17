@@ -636,17 +636,18 @@ func TestWatcherLineTime(t *testing.T) {
 	wishID, _ := e.wish(t, gitRepo(t))
 	dir := t.TempDir()
 
-	same := filepath.Join(dir, "same")
-	task, err := e.spawnWatch(t, wishID, watchCommand("say:GREEN", "count:"+same, "exit:0"), true)
+	// Its runs counted silently: a paragraph of one line, that a slow machine cannot split in two at a pause.
+	task, err := e.spawnWatch(t, wishID, watchCommand("keep:runs", "say:GREEN", "exit:0"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
+	same := filepath.Join(e.home, "watchers", task.GetId(), "runs")
 	first := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "GREEN" }).GetLastLineTime()
 	if !first.AsTime().Equal(clock.now()) {
 		t.Fatalf("GREEN since %v, want %v", first.AsTime(), clock.now())
 	}
 	clock.set(clock.now().Add(time.Hour))
-	// Run 4 printed: the paragraph of run 3, GREEN again, reached the task an hour later on the clock.
+	// Run 4 started: the paragraph of run 3, GREEN again, reached the task an hour later on the clock.
 	e.until(t, task.GetId(), func(*planv1.Task) bool {
 		b, _ := os.ReadFile(same)
 		n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
