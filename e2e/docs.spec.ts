@@ -29,7 +29,7 @@ function collectErrors(page: Page): string[] {
 }
 
 for (const scheme of ["dark", "light"] as const) {
-  test(`the Grimoire opens on its splash, then its book, its concepts and every command, ${scheme}`, async ({
+  test(`the Grimoire opens on its splash, then its book and its concepts, ${scheme}`, async ({
     page,
   }) => {
     const errors = collectErrors(page);
@@ -41,32 +41,41 @@ for (const scheme of ["dark", "light"] as const) {
     await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
 
     // The splash: the page the documentation was, titled Grimoire.
+    // One assertion per list, not per item: each step snapshots the whole book in the trace (docs/pitfalls.md, W248).
+    // A role locator leaves out what is hidden; the names come in any order.
     const splash = page.locator("#welcome");
     await expect(
       splash.getByRole("heading", { level: 1, name: "Grimoire" }),
     ).toBeVisible();
-    for (const name of [
-      "The lamp and the smoke",
-      "Wish for anything, except what no djinn can grant",
-      "The life of a wish",
-      "What you will meet",
-    ])
-      await expect(
-        splash.getByRole("heading", { level: 2, name }),
-      ).toBeVisible();
-    for (const name of [
-      "Azimas",
-      "Workers",
-      "Questions, and the lamp's rub",
-      "Gates",
-      "The machine",
-      "Tilasms",
-    ])
-      await expect(
+    await expect
+      .poll(() => splash.getByRole("heading", { level: 2 }).allInnerTexts())
+      .toEqual(
+        expect.arrayContaining([
+          "The lamp and the smoke",
+          "Wish for anything, except what no djinn can grant",
+          "The life of a wish",
+          "What you will meet",
+        ]),
+      );
+    await expect
+      .poll(() =>
         page
           .locator("#words")
-          .getByRole("heading", { level: 3, name: new RegExp(`^${name}`) }),
-      ).toBeVisible();
+          .getByRole("heading", { level: 3 })
+          .allInnerTexts(),
+      )
+      .toEqual(
+        expect.arrayContaining(
+          [
+            "Azimas",
+            "Workers",
+            "Questions, and the lamp's rub",
+            "Gates",
+            "The machine",
+            "Tilasms",
+          ].map((name) => expect.stringMatching(new RegExp(`^${name}`))),
+        ),
+      );
     await expect(page.locator(".book")).toBeHidden();
     await page.screenshot({
       path: path.join(shots, `docs-splash-${scheme}.png`),
@@ -86,26 +95,29 @@ for (const scheme of ["dark", "light"] as const) {
     await expect(
       page.getByRole("heading", { level: 1, name: "Introduction" }),
     ).toBeVisible();
-    for (const name of [
-      "Getting started",
-      "Wish",
-      "Azima",
-      "Task and worker",
-      "Watcher",
-      "Question and move",
-      "Decision",
-      "Block",
-      "Tilasm",
-      "Project and settings",
-      "Integration branch",
-      "Gates",
-      "Push strategy",
-      "Lead notes",
-      "Skills and templates",
-      "Ifrit",
-      "Command line",
-    ])
-      await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
+    await expect
+      .poll(() => nav.getByRole("link").allInnerTexts())
+      .toEqual(
+        expect.arrayContaining([
+          "Getting started",
+          "Wish",
+          "Azima",
+          "Task and worker",
+          "Watcher",
+          "Question and move",
+          "Decision",
+          "Block",
+          "Tilasm",
+          "Project and settings",
+          "Integration branch",
+          "Gates",
+          "Push strategy",
+          "Lead notes",
+          "Skills and templates",
+          "Ifrit",
+          "Command line",
+        ]),
+      );
     await page.screenshot({
       path: path.join(shots, `docs-introduction-${scheme}.png`),
     });
@@ -131,13 +143,23 @@ for (const scheme of ["dark", "light"] as const) {
     await page.screenshot({
       path: path.join(shots, `docs-azima-${scheme}.png`),
     });
+    expect(errors).toEqual([]);
+  });
 
+  // Apart from the splash and the concepts: each loads the whole book, which a loaded machine makes slow (W248).
+  test(`the Grimoire's book opens on Introduction at an address that names nothing, and lists every command, ${scheme}`, async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
+    await page.goto(djinnURL());
     // An address that names nothing opens the book on Introduction.
     await page.goto(djinnURL("/docs/") + "#no-such-page");
     await expect(
       page.getByRole("heading", { level: 1, name: "Introduction" }),
     ).toBeVisible();
 
+    const nav = page.getByRole("navigation", { name: "Grimoire" });
     await nav.getByRole("link", { name: "Command line" }).click();
     await expect(page).toHaveURL(/#commands$/);
     await expect(page.locator("#introduction")).toBeHidden();
@@ -172,7 +194,7 @@ for (const scheme of ["dark", "light"] as const) {
 
     // The brand leads back to the splash.
     await page.locator(".brand").click();
-    await expect(splash).toBeVisible();
+    await expect(page.locator("#welcome")).toBeVisible();
     await expect(page.locator(".book")).toBeHidden();
     expect(errors).toEqual([]);
   });

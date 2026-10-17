@@ -196,7 +196,12 @@ func runUp(args []string) (restart bool, err error) {
 	policy.WorkerMemory = uint64(workerMemory) << 20
 	policy.WorkerMemoryGuard = workerMemoryGuard
 	read := readMachine
-	if read == nil {
+	switch {
+	case read != nil:
+	case ui.StampedTestBuild() && os.Getenv("DJINN_TEST_MACHINE") == "calm":
+		// The e2e suite's djinn (e2e/playwright.config.ts): its fake workers start whatever the machine runs besides.
+		read = machine.Calm
+	default:
 		read = machine.Reader(home)
 	}
 	monitor := machine.NewMonitor(policy, read)

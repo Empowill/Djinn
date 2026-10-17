@@ -165,6 +165,17 @@ the code does not say by itself; remove one when a change makes it false.
 - **`docs.spec.ts` "scrolls without stalling" fails under load.** It measures scrolling smoothness, which other
   workers' gates break (W177); since W75 it keeps the best of five measures, as a stalling page stalls them all.
   *Do:* when it still is the only failure and the change does not touch the docs, rerun it alone and report both runs.
+- **A djinn under pressure starts no worker.** Over the notch's CPU or memory pressure, a djinn holds every new worker
+  and gate ("the machine is under pressure" in the task's wait reason): the fake tasks of a spec stayed pending past
+  its wait while other workers loaded the machine (W181). The e2e's djinns and `djinn up` in the Go tests read the
+  machine calm (`machine.Calm`, `DJINN_TEST_MACHINE=calm` on a test build). *Do:* a spec or test that starts a djinn
+  of its own keeps it; one that tests the pressure gives a fake reading instead.
+- **Each step of a spec costs a snapshot of the whole page.** The trace (`retain-on-failure`) records the DOM before
+  and after every action and assertion: on the Grimoire, every page of the book in one document (~10 000 elements),
+  that is ~70 ms a step on a quiet machine and four times more under other workers' load, so a spec of ~95 steps
+  passed its 30 s there (W248). *Sign:* a timeout with no failed assertion, each step in the trace a few hundred ms.
+  *Do:* one assertion over a list (`toContainText([...])` on a role locator) rather than one per item; measure with
+  `--trace off` against the default.
 - **Two Playwright runs in one worktree erase each other's traces.** `go tool task test` runs the e2e too; beside
   `go tool task e2e` (or a second agent in the same worktree) both write `test-results/`. *Sign:*
   `ENOENT … .playwright-artifacts-0/traces/*.trace`. *Do:* one run at a time.

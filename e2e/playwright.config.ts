@@ -11,6 +11,10 @@ delete process.env.DJINN_WISH_ID;
 delete process.env.DJINN_ADDR;
 delete process.env.DJINN_LEAD;
 process.env.DJINN_TEST = "1";
+// The specs' djinns read the machine calm, its cores and memory but no load nor pressure (machine.Calm): other
+// workers' builds and tests put the machine under pressure, and a djinn under pressure starts no worker, so the fake
+// tasks the specs wait for stayed pending (W181). Only a test build honours it.
+process.env.DJINN_TEST_MACHINE = "calm";
 
 // The render performance spec (e2e/wish-render.spec.ts) runs on demand on the real-size wish of W174:
 // `go tool task e2e -- e2e/wish-render.spec.ts` (or --grep @render). It is kept out of the default e2e run.
