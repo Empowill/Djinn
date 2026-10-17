@@ -74,6 +74,18 @@ func FindSkill(dir, name string) (SkillDir, error) {
 		filepath.ToSlash(SkillFolders[0]), filepath.ToSlash(SkillFolders[1]), dir)
 }
 
+// FindProjectSkill is the skill name of project, case ignored, where Djinn reads its configuration (ProjectConfig),
+// home its data folder.
+func FindProjectSkill(home string, project *planv1.Project, name string) (SkillDir, error) {
+	c := ProjectConfig(home, project)
+	s, err := FindSkill(c.Dir, name)
+	if err != nil && c.FromReference() {
+		return s, fmt.Errorf("no skill %s in %s nor %s of %s", name,
+			filepath.ToSlash(SkillFolders[0]), filepath.ToSlash(SkillFolders[1]), c.Ref)
+	}
+	return s, err
+}
+
 // isSkill tells whether dir is a folder, or a link to one, holding a SKILL.md.
 func isSkill(dir string) bool {
 	info, err := os.Stat(filepath.Join(dir, SkillFile))
@@ -212,10 +224,13 @@ type Summoned struct {
 	ProjectID string
 	// Missing says why the skill cannot be found; empty when it is.
 	Missing string
+	// Folder is its folder in its project's folder, where it is fixed: Dir, unless Djinn reads that project's
+	// configuration on its reference branch.
+	Folder string
 }
 
 // SummonedSkills are the skills project summons, each found in its source project or said missing.
-func SummonedSkills(ctx context.Context, r store.Reader, project *planv1.Project) ([]Summoned, error) {
+func SummonedSkills(ctx context.Context, r store.Reader, home string, project *planv1.Project) ([]Summoned, error) {
 	var out []Summoned
 	for _, s := range project.GetSummons() {
 		res := Summoned{
@@ -229,11 +244,11 @@ func SummonedSkills(ctx context.Context, r store.Reader, project *planv1.Project
 			return nil, err
 		default:
 			res.Source = src.GetName() + "/" + s.GetSkill()
-			found, err := FindSkill(src.GetDirectory(), s.GetSkill())
+			found, err := FindProjectSkill(home, src, s.GetSkill())
 			if err != nil {
 				res.Missing = err.Error()
 			} else {
-				res.SkillDir = found
+				res.SkillDir, res.Folder = found, ProjectConfig(home, src).Shown(found.Dir)
 			}
 		}
 		out = append(out, res)
@@ -245,6 +260,8 @@ func SummonedSkills(ctx context.Context, r store.Reader, project *planv1.Project
 type Skills struct {
 	planv1connect.UnimplementedSkillServiceHandler
 	Store *store.Store
+	// Home is Djinn's data folder, where it reads the projects' configuration (ConfigDir); empty: their folders.
+	Home string
 }
 
 func (k *Skills) Summon(
@@ -264,11 +281,11 @@ func (k *Skills) Summon(
 		if src.GetId() == into.GetId() {
 			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s holds the skill %s already: nothing to summon", into.GetName(), name))
 		}
-		found, err := FindSkill(src.GetDirectory(), name)
+		found, err := FindProjectSkill(k.Home, src, name)
 		if err != nil {
 			return connect.NewError(connect.CodeNotFound, fmt.Errorf("project %s: %w", src.GetName(), err))
 		}
-		if _, err := FindSkill(into.GetDirectory(), found.Name); err == nil {
+		if _, err := FindProjectSkill(k.Home, into, found.Name); err == nil {
 			return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("%s has a skill %s of its own", into.GetName(), found.Name))
 		}
 		for _, s := range into.GetSummons() {
@@ -313,12 +330,12 @@ func (k *Skills) List(
 	}
 	res := &planv1.SkillServiceListResponse{}
 	for _, p := range projects {
-		for _, s := range ProjectSkills(p.GetDirectory()) {
+		for _, s := range ProjectSkills(ConfigDir(k.Home, p)) {
 			res.Skills = append(res.Skills, withTemplate(&planv1.Skill{
 				Project: p.GetName(), Name: s.Name, Directory: s.Dir, Description: s.Description,
 			}))
 		}
-		summoned, err := SummonedSkills(ctx, k.Store, p)
+		summoned, err := SummonedSkills(ctx, k.Store, k.Home, p)
 		if err != nil {
 			return nil, Status(err)
 		}

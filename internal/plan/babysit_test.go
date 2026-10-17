@@ -56,13 +56,13 @@ func TestProjectBabysit(t *testing.T) {
 	babysitSkill(t, dir, "a-any", "    babysit:\n      watch: \"any {pr}\"\n")
 	babysitSkill(t, dir, "b-gitlab", "    babysit:\n      forge: gitlab\n      watch: \"lab {mr}\"\n")
 	project := &planv1.Project{Directory: dir}
-	if b := ProjectBabysit(project, ForgeGitLab); b == nil || b.Skill != "b-gitlab" {
+	if b := ProjectBabysit("", project, ForgeGitLab); b == nil || b.Skill != "b-gitlab" {
 		t.Errorf("gitlab: %+v, want b-gitlab", b)
 	}
-	if b := ProjectBabysit(project, ForgeGitHub); b == nil || b.Skill != "a-any" {
+	if b := ProjectBabysit("", project, ForgeGitHub); b == nil || b.Skill != "a-any" {
 		t.Errorf("github: %+v, want a-any", b)
 	}
-	if b := ProjectBabysit(&planv1.Project{Directory: t.TempDir()}, ForgeGitHub); b != nil {
+	if b := ProjectBabysit("", &planv1.Project{Directory: t.TempDir()}, ForgeGitHub); b != nil {
 		t.Errorf("no skill: %+v, want nil", b)
 	}
 }

@@ -31,6 +31,19 @@ test_one: "go tool task test-pkg -- {pkg}"
 install: "go tool task install"
 ```
 
+### Where Djinn reads it
+
+In a Git repository with a remote, Djinn reads the team's `.agents/settings.txtpb`, the project's
+`.agents/permissions.txtpb` and its skills (`.agents/skills`, `.claude/skills`) on the
+[reference branch](#keeping-up-with-main), in its tree at the last fetch (`origin/main`), not in your copy: a branch
+checked out in your folder, or a change you have not pushed, does not change the configuration Djinn runs the project
+with. Djinn extracts those folders once per digest of their trees into its data folder (`cache/config/<digest>`), and
+reads them again only when a fetch moves the reference branch. A message about a file it cannot read names it there
+(`origin/main:.agents/settings.txtpb`); you fix it in your copy, and it counts once pushed and fetched. The commands
+(the setup, the checks, the sources) still run in the project's folder or the wish's worktree. A project outside Git,
+without a remote, or whose reference branch is not fetched yet, keeps its folder as the source. Your own file is always
+read in Djinn's data folder.
+
 | Setting          | What it sets, when a task names none                                   | Not set                    |
 | ---------------- | ---------------------------------------------------------------------- | -------------------------- |
 | `provider`       | The agent of the project's workers: claude, codex, antigravity, fake.  | claude                     |
@@ -172,7 +185,7 @@ on every read: the things to fix first, then the information. Each notice has a 
 | --- | --- | --- |
 | `settings` | A file Djinn cannot read | A field a newer Djinn knows; `watch_commands` or `serve_commands` in the team's file |
 | `permissions` | `.agents/permissions.txtpb` Djinn cannot read: no worker, watcher nor source starts | A field a newer Djinn knows |
-| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out |
+| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out (Djinn reads the configuration on the reference branch all the same) |
 | `setup` | The setup's last run failed, with the command it still is | |
 | `skill` | A `SKILL.md` Djinn cannot read; a wish template, inbox source or babysit it cannot use; a summoned skill it no longer finds | |
 | `source` | A source this machine has not decided on: plug it in, or unplug it to say no | A source plugged in that no skill declares any more |

@@ -202,7 +202,7 @@ func (h *Harness) spawnNote(ctx context.Context, t *planv1.Task) string {
 	if err1 != nil || err2 != nil {
 		return ""
 	}
-	access, _, err := decideAccess(project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
+	access, _, err := decideAccess(h.home, project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
 	if err != nil || access != planv1.TaskAccess_TASK_ACCESS_NATIVE {
 		return ""
 	}

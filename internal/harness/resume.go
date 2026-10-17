@@ -291,7 +291,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 			planv1.TaskAccess_TASK_ACCESS_DJINN:
 			// Decided by the developer's answer, outside any project, or by the task's role: it stays.
 		default:
-			access, declared, err := decideAccess(project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
+			access, declared, err := decideAccess(h.home, project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
 			if err != nil {
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
 			}

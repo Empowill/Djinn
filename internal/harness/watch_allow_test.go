@@ -261,7 +261,7 @@ func TestWatchRefusal(t *testing.T) {
 		if perms == nil {
 			perms = editOnly()
 		}
-		err := watchRefusal(&planv1.Project{Name: "app", Directory: c.dir}, c.command, perms)
+		err := watchRefusal("", &planv1.Project{Name: "app", Directory: c.dir}, c.command, perms)
 		for _, want := range c.want {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("%s: refusal\n%s\nlacks\n%s", c.command, err, want)

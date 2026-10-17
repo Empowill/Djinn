@@ -53,14 +53,15 @@ func (p *Projects) projectNotices(ctx context.Context, project *planv1.Project) 
 		}
 		return devFile
 	}
-	if dir := project.GetDirectory(); dir != "" {
-		out = append(out, permissionNotices(dir)...)
+	config := ProjectConfig(p.Home, project)
+	if project.GetDirectory() != "" {
+		out = append(out, permissionNotices(config)...)
 		if project.GetGit() && p.Pusher != nil {
-			out = append(out, p.branchNotices(ctx, project, settings.MainBranch, fileOf(settings.MainBranchFrom))...)
+			out = append(out, p.branchNotices(ctx, project, config, settings.MainBranch, fileOf(settings.MainBranchFrom))...)
 		}
 		out = append(out, setupNotices(project, settings.Setup, fileOf(settings.SetupFrom))...)
 	}
-	out = append(out, p.skillNotices(ctx, project)...)
+	out = append(out, p.skillNotices(ctx, project, config)...)
 	out = append(out, p.sourceNotices(ctx, project)...)
 	slices.SortStableFunc(out, func(a, b *planv1.ProjectNotice) int { return cmp.Compare(a.GetKind(), b.GetKind()) })
 	return out
@@ -117,13 +118,17 @@ func settingsNotices(files []settingsRead) []*planv1.ProjectNotice {
 	return out
 }
 
-// permissionNotices are what Djinn finds in the permissions of the project folder dir.
-func permissionNotices(dir string) []*planv1.ProjectNotice {
-	subject, file := filepath.ToSlash(PermissionsFile), filepath.Join(dir, PermissionsFile)
-	_, unknowns, err := ReadPermissions(dir)
+// permissionNotices are what Djinn finds in the permissions of a project, where it reads its configuration (config).
+func permissionNotices(config Config) []*planv1.ProjectNotice {
+	subject, file := filepath.ToSlash(PermissionsFile), filepath.Join(config.Folder, PermissionsFile)
+	_, unknowns, err := ReadPermissions(config.Dir)
 	if err != nil {
+		detail := err.Error()
+		if config.FromReference() {
+			detail = config.Ref + ":" + detail // the error names the file: origin/main:.agents/permissions.txtpb
+		}
 		return []*planv1.ProjectNotice{{
-			Kind: toFix, Topic: topicPermissions, Subject: subject, Action: fixFile, File: file, Detail: err.Error(),
+			Kind: toFix, Topic: topicPermissions, Subject: subject, Action: fixFile, File: file, Detail: detail,
 			Text: "Djinn cannot read the project's permissions: its workers, watchers and sources do not start until " +
 				"the file is fixed.",
 		}}
@@ -139,8 +144,11 @@ func permissionNotices(dir string) []*planv1.ProjectNotice {
 }
 
 // branchNotices say whether Djinn finds project's reference branch, from name, its main_branch setting that file
-// holds or would hold; and which other branch the project's folder has checked out.
-func (p *Projects) branchNotices(ctx context.Context, project *planv1.Project, name, file string) []*planv1.ProjectNotice {
+// holds or would hold; and which other branch the project's folder has checked out, config saying where Djinn reads
+// the project's configuration.
+func (p *Projects) branchNotices(
+	ctx context.Context, project *planv1.Project, config Config, name, file string,
+) []*planv1.ProjectNotice {
 	branch, ref, err := p.Pusher.Reference(ctx, project, name)
 	if err != nil {
 		n := &planv1.ProjectNotice{
@@ -159,11 +167,13 @@ func (p *Projects) branchNotices(ctx context.Context, project *planv1.Project, n
 	if err != nil || head == "" || head == branch {
 		return nil // detached, or on the reference branch
 	}
-	return []*planv1.ProjectNotice{{
-		Kind: information, Topic: topicBranch, Subject: head,
-		Text: fmt.Sprintf("Your copy has %s checked out, not the reference branch %s: Djinn reads the project's "+
-			"configuration from your copy, on %s.", head, shortRef(ref), head),
-	}}
+	text := fmt.Sprintf("Your copy has %s checked out, not the reference branch %s: Djinn reads the project's "+
+		"configuration from your copy, on %s.", head, shortRef(ref), head)
+	if config.FromReference() {
+		text = fmt.Sprintf("Your copy has %s checked out, not the reference branch %s: no matter, Djinn reads the "+
+			"project's configuration on %s.", head, shortRef(ref), config.Ref)
+	}
+	return []*planv1.ProjectNotice{{Kind: information, Topic: topicBranch, Subject: head, Text: text}}
 }
 
 // projectReference is project's reference branch, from name, its main_branch setting that from sets: the branch,
@@ -215,10 +225,10 @@ func setupNotices(project *planv1.Project, setup, file string) []*planv1.Project
 // template, inbox source or babysit it cannot use, a summoned skill it no longer finds; and, as an information, a
 // front matter that breaks the YAML outside its metadata. A summoned skill's babysit
 // does not count: it would run in the folder of the project that holds it.
-func (p *Projects) skillNotices(ctx context.Context, project *planv1.Project) []*planv1.ProjectNotice {
+func (p *Projects) skillNotices(ctx context.Context, project *planv1.Project, config Config) []*planv1.ProjectNotice {
 	var out []*planv1.ProjectNotice
-	check := func(name, dir string, own bool) {
-		file := filepath.Join(dir, SkillFile)
+	check := func(name, dir, folder string, own bool) {
+		file := filepath.Join(folder, SkillFile)
 		notice := func(text string, err error) {
 			out = append(out, &planv1.ProjectNotice{
 				Kind: toFix, Topic: topicSkill, Subject: name, Action: fixFile, File: file, Detail: err.Error(),
@@ -249,16 +259,16 @@ func (p *Projects) skillNotices(ctx context.Context, project *planv1.Project) []
 				"with it.", err)
 		}
 	}
-	for _, s := range ProjectSkills(project.GetDirectory()) {
-		check(s.Name, s.Dir, true)
+	for _, s := range ProjectSkills(config.Dir) {
+		check(s.Name, s.Dir, config.Shown(s.Dir), true)
 	}
-	summoned, err := SummonedSkills(ctx, p.Store, project)
+	summoned, err := SummonedSkills(ctx, p.Store, p.Home, project)
 	if err != nil {
 		return out
 	}
 	for _, s := range summoned {
 		if s.Missing == "" {
-			check(s.Source, s.Dir, false)
+			check(s.Source, s.Dir, s.Folder, false)
 			continue
 		}
 		out = append(out, &planv1.ProjectNotice{
@@ -274,7 +284,7 @@ func (p *Projects) skillNotices(ctx context.Context, project *planv1.Project) []
 // to, and those it holds plugged in that no skill declares any more. A source that cannot be used is a notice of
 // its skill.
 func (p *Projects) sourceNotices(ctx context.Context, project *planv1.Project) []*planv1.ProjectNotice {
-	srcs, err := declaredSources(ctx, p.Store, []*planv1.Project{project})
+	srcs, err := declaredSources(ctx, p.Store, p.Home, []*planv1.Project{project})
 	if err != nil {
 		return nil
 	}

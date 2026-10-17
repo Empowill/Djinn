@@ -99,7 +99,8 @@ A project is a folder Djinn's workers work in. Git or not: a folder outside Git 
 Click a project to see its configuration, as Djinn reads it on this machine. What waits for you comes first, in red
 ("To fix"): each thing in a sentence, the error as read, and what settles it (a file to correct, a source to plug in or
 say no to, a skill to unsummon). Then its reference branch (the ref and commit Djinn merges, and where its name comes
-from); **Change** chooses another among the remote's branches, written in your own file, never in the repository
+from): in Git with a remote, Djinn reads the project's settings, permissions and skills on it, at the last fetch, not
+in your copy; **Change** chooses another among the remote's branches, written in your own file, never in the repository
 (`djinn project set-branch <project> dev`, `--unset` takes it back). Then its checks, the inbox sources of this machine, its skills with the role each has for Djinn (a wish template, an
 inbox source, a babysit, or know-how for the workers alone), its push cadence, and every other setting with where it
 comes from: Djinn's default, the team's file or yours. Skills summoned from another project show "from app".

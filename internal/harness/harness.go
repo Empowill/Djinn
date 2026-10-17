@@ -821,7 +821,7 @@ func (h *Harness) spawn(
 		return nil, plan.Status(err)
 	}
 	task.ProjectId = project.GetId()
-	if req, err = babysitSpawn(ctx, req, project, task); err != nil {
+	if req, err = babysitSpawn(ctx, h.home, req, project, task); err != nil {
 		return nil, err
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
@@ -1057,7 +1057,7 @@ func (h *Harness) spawn(
 				return err
 			}
 		}
-		if prep, err = prepare(ctx, tx, task, wish, project); err != nil {
+		if prep, err = prepare(ctx, tx, h.home, task, wish, project); err != nil {
 			return err
 		}
 		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
@@ -1155,7 +1155,9 @@ type prepared struct {
 // prepare decides what the task's worker may do (decideAccess), in tx: in a folder outside Git without any agent
 // configuration, the worker starts read-only, and the task asks the developer whether it may edit the project's
 // files.
-func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.Wish, project *planv1.Project) (prepared, error) {
+func prepare(
+	ctx context.Context, tx *store.Tx, home string, task *planv1.Task, wish *planv1.Wish, project *planv1.Project,
+) (prepared, error) {
 	var p prepared
 	var err error
 	if questionWorker(task) {
@@ -1163,7 +1165,7 @@ func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.
 		task.Access = planv1.TaskAccess_TASK_ACCESS_DJINN
 		return p, nil
 	}
-	if task.Access, p.declared, err = decideAccess(project, task.GetProvider(), plan.AllowanceOf(wish, project.GetId())); err != nil {
+	if task.Access, p.declared, err = decideAccess(home, project, task.GetProvider(), plan.AllowanceOf(wish, project.GetId())); err != nil {
 		return p, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
 	}
 	if task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING && watching(task) {

@@ -198,7 +198,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	}
 	p, h = planv1connect.NewMarkServiceHandler(marks, opt)
 	out[p] = h
-	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
+	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s, Home: wishes.home()}, opt)
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h

@@ -334,6 +334,7 @@ type routeInput struct {
 	title    string   // the title asked for a new wish
 	newIDs   []string // the projects asked for a new wish
 	home     []string // the projects of a new wish when the request points to none, nor comes from a wish
+	data     string   // Djinn's data folder, where it reads the projects' configuration (ConfigDir)
 	// templates are the wish templates of the skills the projects use, each with its project
 	templates []*Template
 }
@@ -522,7 +523,7 @@ func readRoute(ctx context.Context, r store.Reader, in *routeInput) (map[string]
 	for _, wish := range in.wishes {
 		names[wish.GetId()] = wish.GetTitle()
 	}
-	if in.templates, err = Templates(ctx, r, in.projects); err != nil {
+	if in.templates, err = Templates(ctx, r, in.data, in.projects); err != nil {
 		return nil, err
 	}
 	return names, nil
@@ -539,7 +540,7 @@ func (w *Wishes) Route(
 	}
 	lang := cmp.Or(w.Language, locales.Source)
 	compute := func(r store.Reader) (*planv1.Route, map[string]string, error) {
-		in := routeInput{lang: lang, text: m.GetRequest(), title: m.GetTitle()}
+		in := routeInput{lang: lang, text: m.GetRequest(), title: m.GetTitle(), data: w.home()}
 		var err error
 		if id := m.GetWishId(); id != "" {
 			if in.from, err = store.Get[*planv1.Wish](ctx, r, id); err != nil {

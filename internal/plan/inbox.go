@@ -117,12 +117,12 @@ type heldSkill struct {
 }
 
 // usedSkills are the skills project uses, its own then those it summons that are found.
-func usedSkills(ctx context.Context, r store.Reader, project *planv1.Project) ([]heldSkill, error) {
+func usedSkills(ctx context.Context, r store.Reader, home string, project *planv1.Project) ([]heldSkill, error) {
 	var out []heldSkill
-	for _, d := range ProjectSkills(project.GetDirectory()) {
+	for _, d := range ProjectSkills(ConfigDir(home, project)) {
 		out = append(out, heldSkill{SkillDir: d, HolderID: project.GetId(), Holder: project.GetName()})
 	}
-	summoned, err := SummonedSkills(ctx, r, project)
+	summoned, err := SummonedSkills(ctx, r, home, project)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func usedSkills(ctx context.Context, r store.Reader, project *planv1.Project) ([
 // why. A skill Djinn cannot read is no source, unless it is plugged in: it is a problem of its project. A skill used
 // by several projects is one source, run in the first one's folder. A source plugged in whose skill no longer
 // declares it comes last, with why: it runs nothing, and can be unplugged.
-func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Project) ([]*Source, error) {
+func declaredSources(ctx context.Context, r store.Reader, home string, projects []*planv1.Project) ([]*Source, error) {
 	plugged, err := store.List[*planv1.PluggedSource](ctx, r, nil)
 	if err != nil {
 		return nil, err
@@ -174,12 +174,15 @@ func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Pro
 		if p.GetDirectory() == "" {
 			continue
 		}
-		used, err := usedSkills(ctx, r, p)
+		used, err := usedSkills(ctx, r, home, p)
 		if err != nil {
 			return nil, err
 		}
 		for _, d := range used {
-			if slices.ContainsFunc(out, func(s *Source) bool { return s.Dir == d.Dir }) {
+			// The skill of its holder, not its folder: projects with the same configuration share a folder of the cache.
+			if slices.ContainsFunc(out, func(s *Source) bool {
+				return s.Dir != "" && strings.EqualFold(s.HolderID, d.HolderID) && strings.EqualFold(s.Skill, d.Name)
+			}) {
 				continue
 			}
 			s, err := ReadSource(d.Dir)
@@ -224,8 +227,8 @@ func declaredSources(ctx context.Context, r store.Reader, projects []*planv1.Pro
 // Sources are the inbox sources plugged in on this machine that can run, from the skills the projects use, in the
 // projects' order then by name. A skill used by several projects runs once, in the first one's folder. A source
 // that cannot be used is left out: djinn inbox sources says why. One not plugged in never runs.
-func Sources(ctx context.Context, r store.Reader, projects []*planv1.Project) ([]*Source, error) {
-	all, err := declaredSources(ctx, r, projects)
+func Sources(ctx context.Context, r store.Reader, home string, projects []*planv1.Project) ([]*Source, error) {
+	all, err := declaredSources(ctx, r, home, projects)
 	if err != nil {
 		return nil, err
 	}
@@ -316,12 +319,12 @@ func findSource(srcs []*Source, name string) (*Source, error) {
 }
 
 // sourcesIn are the sources the projects' skills declare, read in r.
-func sourcesIn(ctx context.Context, r store.Reader) ([]*Source, error) {
+func sourcesIn(ctx context.Context, r store.Reader, home string) ([]*Source, error) {
 	projects, err := store.List[*planv1.Project](ctx, r, nil)
 	if err != nil {
 		return nil, err
 	}
-	return declaredSources(ctx, r, projects)
+	return declaredSources(ctx, r, home, projects)
 }
 
 // itemKey is what makes an item the same when a source prints it again: its first link, else its first line.
@@ -377,7 +380,9 @@ func (in *Inbox) Receive(ctx context.Context, src *Source, text string) (*planv1
 		if slices.ContainsFunc(items, func(i *planv1.InboxItem) bool { return strings.EqualFold(i.GetKey(), key) }) {
 			return nil
 		}
-		input := routeInput{lang: cmp.Or(in.Wishes.Language, locales.Source), text: text, home: []string{src.ProjectID}}
+		input := routeInput{
+			lang: cmp.Or(in.Wishes.Language, locales.Source), text: text, home: []string{src.ProjectID}, data: in.Wishes.home(),
+		}
 		if _, err := readRoute(ctx, tx, &input); err != nil {
 			return err
 		}
@@ -490,7 +495,7 @@ func (in *Inbox) Route(
 func (in *Inbox) Sources(
 	ctx context.Context, _ *connect.Request[planv1.InboxServiceSourcesRequest],
 ) (*connect.Response[planv1.InboxServiceSourcesResponse], error) {
-	srcs, err := sourcesIn(ctx, in.Wishes.Store)
+	srcs, err := sourcesIn(ctx, in.Wishes.Store, in.Wishes.home())
 	if err != nil {
 		return nil, Status(err)
 	}
@@ -509,7 +514,7 @@ func (in *Inbox) Plug(
 ) (*connect.Response[planv1.InboxServicePlugResponse], error) {
 	var out *planv1.InboxSource
 	err := write(ctx, in.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-		srcs, err := sourcesIn(ctx, tx)
+		srcs, err := sourcesIn(ctx, tx, in.Wishes.home())
 		if err != nil {
 			return err
 		}
@@ -548,7 +553,7 @@ func (in *Inbox) Unplug(
 ) (*connect.Response[planv1.InboxServiceUnplugResponse], error) {
 	var out *planv1.InboxSource
 	err := write(ctx, in.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-		srcs, err := sourcesIn(ctx, tx)
+		srcs, err := sourcesIn(ctx, tx, in.Wishes.home())
 		if err != nil {
 			return err
 		}
