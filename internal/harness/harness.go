@@ -262,7 +262,8 @@ func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is running", task.GetCode()))
 	}
 	r.ifrit = dispatch.Ifrit(task)
-	r.forced = h.forcing == r.id || r.ifrit // Started by hand (Start), or an ifrit: counted so from its first instant.
+	// Started by hand (Start), an ifrit or an urgent task (dispatch.Urgent): beyond the slots from its first instant.
+	r.forced = h.forcing == r.id || r.ifrit || dispatch.Urgent(task)
 	h.runs[r.id] = r
 	h.wg.Add(1)
 	h.notifyLocked() // A watcher of the planned task follows its worker now.
@@ -850,6 +851,9 @@ func (h *Harness) spawn(
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a watcher runs its command in a project: the wish has none"))
 		}
 		task.Restart = req.GetRestart()
+		if req.GetUrgent() {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--urgent is for an agent: a watcher takes no slot"))
+		}
 	} else if req.GetRestart() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--restart is for a watcher (--provider watch)"))
 	}
@@ -878,6 +882,12 @@ func (h *Harness) spawn(
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
 		return nil, plan.Status(err)
+	}
+	if req.GetUrgent() {
+		if err := refuseSecondUrgent(tasks, task); err != nil {
+			return nil, err
+		}
+		task.Urgent = true
 	}
 	for _, b := range blocked {
 		tasks[slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == b.GetId() })] = b

@@ -1311,3 +1311,23 @@ test("a question put off for later goes below those asked before, above one aske
   );
   assert.equal(f.placeOf({ ...asked[2], laterTime: at(1) }), 30_000);
 });
+
+test("an urgent task shows so while it is to run or runs, never a watcher nor an azima (W133)", () => {
+  const task = (status, extra = {}) =>
+    f.create(f.TaskSchema, { code: "W2", status, urgent: true, ...extra });
+  assert.equal(f.isUrgent(task(f.TaskStatus.PENDING)), true);
+  assert.equal(f.isUrgent(task(f.TaskStatus.RUNNING)), true);
+  assert.equal(f.isUrgent(task(f.TaskStatus.DONE)), false);
+  assert.equal(
+    f.isUrgent(task(f.TaskStatus.PENDING, { urgent: false })),
+    false,
+  );
+  assert.equal(
+    f.isUrgent(task(f.TaskStatus.PENDING, { provider: f.Provider.WATCH })),
+    false,
+  );
+  assert.equal(
+    f.isUrgent(task(f.TaskStatus.PENDING, { kind: f.TaskKind.AZIMA })),
+    false,
+  );
+});

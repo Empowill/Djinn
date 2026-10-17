@@ -51,7 +51,7 @@ import {
   useTaskEvents,
   useTaskPrompt,
 } from "./data/djinn";
-import { isMerge } from "./data/flight";
+import { isMerge, isUrgent } from "./data/flight";
 import {
   ifritGates,
   ifritLinks,
@@ -357,6 +357,7 @@ export const WishTask = memo(function WishTask({
               title={cancelledText(task) ?? activity ?? undefined}
             />
             {isMerge(task) && <MergeLabel task={task} codes={codes} />}
+            {isUrgent(task) && <UrgentLabel />}
             <span className="agent-code">{task.code}</span>
             {/* Cut to the room left: the whole title shows on hover. */}
             <span className="task-title-wrap">
@@ -635,6 +636,15 @@ export function MergeLabel({
       }
     >
       {t("task.merge")}
+    </span>
+  );
+}
+
+// UrgentLabel marks a task the lead made urgent to unblock the wish (isUrgent): it passes the queue.
+export function UrgentLabel() {
+  return (
+    <span className="urgent-label" title={t("task.urgent_detail")}>
+      {t("task.urgent")}
     </span>
   );
 }

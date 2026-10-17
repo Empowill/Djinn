@@ -207,6 +207,11 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"- **Give a task its place when you spawn it.** What comes before it: `--after W1,W2`. To put a new task before " +
 		"a planned one, spawn it `--blocks W5`: W5 waits for it from the same step. Never spawn, then depend: a pass of " +
 		"the scheduler may start W5 in between. Djinn refuses `--blocks` on a task that has started.\n" +
+		"- **Urgent is for unblocking only.** `--urgent` (at its spawn, or `djinn task update <task> --urgent`) makes a " +
+		"task pass every waiting task, take a slot even on a full machine, and start while the push checks are red: " +
+		"use it for the task that repairs a red integration branch Djinn's corrections gave up on, or for the one a " +
+		"stuck chain waits for; never to hurry ordinary work. One urgent task per wish at a time: Djinn refuses a " +
+		"second, naming the first (`--urgent=false` takes the mark off).\n" +
 		"- **Keep the graph free of conflicts.** Your role is to keep the graph of tasks and azimas so that workers " +
 		"do not collide, along an iterative and de-risked path. Tasks that touch the same files, protos, generated files " +
 		"or the same tests go one after the other (`--after`, or `--write-scopes` when the project uses them), never side " +
@@ -316,7 +321,7 @@ func leadCommandsBrief(driven bool) string {
 		"`djinn question launch <question> [--title …] [--after …]` launches the chosen option's plan.\n" +
 		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
 		"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`, " +
-		"`--kind ifrit` with `--idle-minutes`); " +
+		"`--urgent`, `--kind ifrit` with `--idle-minutes`); " +
 		"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima (`--draft`, `--description \"…\"`); " +
 		"`djinn task describe <azima> --text \"…\"` revises its description; " +
 		"`djinn task open <azima>` turns a draft open; " +
