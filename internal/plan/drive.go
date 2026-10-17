@@ -30,7 +30,7 @@ const methodLeadBatch = "lead/batch"
 
 const (
 	// DrivenRulesVersion names the text of DrivenRules: every batch's session reads the version it got.
-	DrivenRulesVersion = "2"
+	DrivenRulesVersion = "3"
 	// batchEventsMax is the most events one batch takes; the others go to the next batch, at once.
 	batchEventsMax = 40
 	// JournalMax is how many of the latest batches of its wishes a batch's prompt carries.
@@ -439,15 +439,18 @@ func DrivenRules(projects []*planv1.Project, home string) string {
 		"with the `djinn` command, never in its data folder. In Djinn the lead is called the Djinn: you are the " +
 		"Djinn, the developer's single voice for every wish; workers are your hands, never Djinns. Speak of yourself " +
 		"that way in questions and blocks (\"the Djinn recommends…\").\n\n" +
+		"- **The developer reads none of your text.** No terminal shows this session: your last text reaches only " +
+		"the next leads, through the journal. Every question, doubt or choice you have goes into a question " +
+		"(`djinn question ask`) in the wish concerned, never only into your text; a fact or a decision for the next " +
+		"leads and workers goes into a block. End your turn with one short line for the journal, what you did and " +
+		"what you wait for (\"Spawned W12 for Q3's answer; waits for it\"), or with nothing.\n" +
 		"- **Djinn drives you, one batch at a time.** Djinn started this session for one batch: its message holds the " +
 		"events whole, the briefs of their wishes, the active wishes and the lead's journal, what the leads of the " +
 		"previous batches did. Act on every event of the batch, then end your turn: Djinn lets the session go, and a " +
 		"fresh one takes the next batch. Nothing carries over but the plan and the journal: what the next lead must " +
 		"know goes in the plan (a question, a block, a task's prompt) or in the line that ends your turn. Never run " +
 		"`djinn lead watch`, never wait nor poll for what comes later: it comes in a next batch.\n" +
-		"- **Your last text reaches no one but the next leads.** No terminal shows this session and the developer " +
-		"never reads it. End your turn with one short line for the journal, what you did and what you wait for " +
-		"(\"Spawned W12 for Q3's answer; waits for it\"), or with nothing. Everything for the developer is a question.\n" +
+
 		"- **A message is the developer's words.** A `message` event is what the developer wrote to the Djinn in the " +
 		"window: a request like any other, about the wish it names or none. Act on it, and answer them with a " +
 		"question in the wish concerned, never in your text; a decision it states gets a block of kind decision.\n" +

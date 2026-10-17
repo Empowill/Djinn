@@ -26,11 +26,12 @@ const LeadFirstFile = "lead-first.md"
 const maxFirstArg = 64 << 10
 
 // StartLine is how every new lead starts, whatever its agent: from the brief, which Djinn computes from the plan, each
-// djinn command run alone so that none waits for the developer's approval.
+// djinn command run alone so that none waits for the developer's approval, every question, doubt or choice in a
+// question since the developer does not read its terminal.
 func StartLine() string {
 	return "You lead the active wishes of this Djinn. Run `djinn brief`: where the wishes stand and how to " +
 		"lead them, computed by Djinn from its plan. Then continue the wishes from what it says. Everything for the " +
-		"developer, reports included, is a question through `djinn question ask`; write nothing in this terminal. The " +
+		"developer, reports included, is a question through `djinn question ask`. " + UnreadTerminalRule + " The " +
 		"work goes to tasks. " + DirectCommandsRule + " If your tool cuts the brief, run `djinn brief --wishes`."
 }
 

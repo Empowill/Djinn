@@ -225,7 +225,10 @@ An urgent task:
 - starts while the push checks are red.
 
 One task of each kind may be urgent at a time in a wish: a repair and a feedback task together, never two of the same
-kind. Ask the Djinn for it; the window has no switch for it. Urgent is never to hurry ordinary work. A study or an
+kind. A task takes the mark, or loses it, at any time while it is planned, waits, is paused or runs. In the window,
+the lightning button on its card makes it urgent for your feedback, and takes off either mark once pressed; when the
+wish already has a feedback task marked, a message names it. The Djinn marks repairs. A mark taken off a running
+worker keeps its place until it ends. Urgent is never to hurry ordinary work. A study or an
 audit that ends in a decision of yours is an [investigation](#investigation) instead: served first too, its code
 never merged.
 

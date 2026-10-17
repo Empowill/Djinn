@@ -12086,9 +12086,9 @@ export type TaskServiceUpdateRequest = Message<"plan.v1.TaskServiceUpdateRequest
   branch?: string | undefined;
 
   /**
-   * Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an
-   * azima, a watcher, a task that has ended, and while another task of the wish is an urgent repair, which the refusal
-   * names.
+   * Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false, which takes either
+   * mark off. A task planned, waiting, paused or running takes it. Refused on an azima, a watcher, an investigation, a
+   * task that has ended, and while another task of the wish is an urgent repair, which the refusal names.
    *
    * @generated from field: optional bool urgent = 14;
    */
@@ -12104,7 +12104,8 @@ export type TaskServiceUpdateRequest = Message<"plan.v1.TaskServiceUpdateRequest
 
   /**
    * Mark the task urgent for the developer's quick feedback (as djinn task spawn --feedback), or no longer with
-   * --feedback=false. Refused as --urgent is, while another task of the wish is urgent for feedback.
+   * --feedback=false, which leaves a repair's mark. Refused as --urgent is, while another task of the wish is urgent for
+   * feedback; an urgent repair of the wish does not refuse it.
    *
    * @generated from field: optional bool feedback = 16;
    */

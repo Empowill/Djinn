@@ -83,6 +83,12 @@ const DirectCommandsRule = "Run each `djinn` command alone, as one direct comman
 	"(`&&`, `||`, `;`), a loop (`for`), a redirection (`>`, `<<`) nor a substitution (`$(...)`): any of them makes " +
 	"the developer approve the command by hand."
 
+// UnreadTerminalRule is where a lead's words go (W234): the developer does not read the lead's terminal. The first
+// message of every lead says it, and the brief at its start, in its rules and at its end, as DirectCommandsRule.
+const UnreadTerminalRule = "The developer does not read your terminal: every question, doubt or choice you have goes " +
+	"into a question (`djinn question ask`) in the wish concerned, never only into your text; your terminal reply " +
+	"stays one short line at most."
+
 // DirectFlags are the flags that replace what a lead would pipe or loop over.
 const DirectFlags = "Flags replace them: `djinn brief --wishes` for the wishes alone, `djinn lead notes a,b` or " +
 	"`--all` for several notes, `djinn task list --wish-id <wish> --short` for where the tasks stand, " +
@@ -128,9 +134,11 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"kind who lives in the lamp, the developer's single voice for every wish. Workers are your hands, never Djinns; " +
 		"the app is \"Djinn\", you are \"the Djinn\". Speak of yourself that way in questions and blocks (\"the Djinn " +
 		"recommends…\"). The commands keep their names: `djinn lead …` is yours.\n" +
-		"- **Say nothing in your terminal, ever.** The developer never reads your terminal: whatever you write there " +
-		"is lost to them, and costs output tokens for nothing. A turn ends with no text at all: no recap, no summary, no " +
-		"question codes, no \"done\". Assume they never answer there either, even when they do. Everything for the " +
+		"- **The developer does not read your terminal.** Whatever you write there is lost to them, and costs output " +
+		"tokens for nothing. Every question, doubt or choice you have goes into a question (`djinn question ask`) in " +
+		"the wish concerned, never only into your text; a fact or a decision for the next leads and workers goes into a " +
+		"block. Your terminal reply stays one short line at most, what you did and what you wait for: no recap, no " +
+		"summary, no \"done\". Assume they never answer there either, even when they do. Everything for the " +
 		"developer goes through questions in the window, in the wish concerned, statements included: a report, a " +
 		"finding, a status, \"done as you asked\" is a question too, often a yes/no acknowledgement with \"OK, nothing " +
 		"to do\" as an option; their answer tells you nothing is left. A real wait on the developer is a `--move` " +
@@ -1322,7 +1330,7 @@ func globalBrief(ctx context.Context, r store.Reader, home string, wishesOnly bo
 	scrub := newScrubber(allProjects, home, dataName)
 	waits = scrub.waits(waits)
 	var b strings.Builder
-	b.WriteString(DirectCommandsRule + " Too long for your tool: `djinn brief --wishes`.\n\n")
+	b.WriteString(DirectCommandsRule + " Too long for your tool: `djinn brief --wishes`.\n\n" + UnreadTerminalRule + "\n\n")
 	var glance []string
 	if len(actives) == 0 {
 		b.WriteString("No active wishes.\n\n")
@@ -1377,7 +1385,7 @@ func globalBrief(ctx context.Context, r store.Reader, home string, wishesOnly bo
 		for _, line := range glance {
 			b.WriteString(line)
 		}
-		b.WriteString("\n" + DirectCommandsRule + " " + DirectFlags + "\n")
+		b.WriteString("\n" + DirectCommandsRule + " " + DirectFlags + "\n\n" + UnreadTerminalRule + "\n")
 	}
 	return stripCredentials(b.String()), nil
 }

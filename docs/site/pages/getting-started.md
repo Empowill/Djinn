@@ -53,8 +53,8 @@ true. It lives in the terminal of the window, in a tab named **The Djinn**.
 At every start of Djinn, the Djinn comes back on its session. When its agent asks for your approval in the terminal (a
 command to run, a folder to trust), the bar of what waits for you shows the choice first, with its options as buttons.
 
-> **The Djinn talks to you in the window, not in its terminal.** Everything it has to tell you, a report or a "done as
-> you asked" included, comes as a question in the wish it concerns. A line you type in its terminal is answered in the
+> **The Djinn talks to you in the window, not in its terminal.** Everything it has to tell you, a report, a doubt, a
+> choice or a "done as you asked" included, comes as a question in the wish it concerns. A line you type in its terminal is answered in the
 > window.
 
 ## 5. Make your first wish

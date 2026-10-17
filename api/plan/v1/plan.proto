@@ -5687,15 +5687,16 @@ message TaskServiceUpdateRequest {
     min_len: 1
     max_len: 250
   }];
-  // Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an
-  // azima, a watcher, a task that has ended, and while another task of the wish is an urgent repair, which the refusal
-  // names.
+  // Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false, which takes either
+  // mark off. A task planned, waiting, paused or running takes it. Refused on an azima, a watcher, an investigation, a
+  // task that has ended, and while another task of the wish is an urgent repair, which the refusal names.
   optional bool urgent = 14;
   // An azima's place among the azimas of its wish, from 1 for the first; beyond the last, it goes last (djinn task rank
   // places it before or after another). Goes alone; refused on a work task.
   optional int32 rank = 15 [(buf.validate.field).int32.gte = 1];
   // Mark the task urgent for the developer's quick feedback (as djinn task spawn --feedback), or no longer with
-  // --feedback=false. Refused as --urgent is, while another task of the wish is urgent for feedback.
+  // --feedback=false, which leaves a repair's mark. Refused as --urgent is, while another task of the wish is urgent for
+  // feedback; an urgent repair of the wish does not refuse it.
   optional bool feedback = 16;
 }
 

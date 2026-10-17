@@ -23668,15 +23668,16 @@ type TaskServiceUpdateRequest struct {
 	// exist is cut from main under that name. Refused on a work task, while a merge runs into the azima's branch, and
 	// when the branch here has diverged from the remote's.
 	Branch *string `protobuf:"bytes,13,opt,name=branch,proto3,oneof" json:"branch,omitempty"`
-	// Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an
-	// azima, a watcher, a task that has ended, and while another task of the wish is an urgent repair, which the refusal
-	// names.
+	// Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false, which takes either
+	// mark off. A task planned, waiting, paused or running takes it. Refused on an azima, a watcher, an investigation, a
+	// task that has ended, and while another task of the wish is an urgent repair, which the refusal names.
 	Urgent *bool `protobuf:"varint,14,opt,name=urgent,proto3,oneof" json:"urgent,omitempty"`
 	// An azima's place among the azimas of its wish, from 1 for the first; beyond the last, it goes last (djinn task rank
 	// places it before or after another). Goes alone; refused on a work task.
 	Rank *int32 `protobuf:"varint,15,opt,name=rank,proto3,oneof" json:"rank,omitempty"`
 	// Mark the task urgent for the developer's quick feedback (as djinn task spawn --feedback), or no longer with
-	// --feedback=false. Refused as --urgent is, while another task of the wish is urgent for feedback.
+	// --feedback=false, which leaves a repair's mark. Refused as --urgent is, while another task of the wish is urgent for
+	// feedback; an urgent repair of the wish does not refuse it.
 	Feedback      *bool `protobuf:"varint,16,opt,name=feedback,proto3,oneof" json:"feedback,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

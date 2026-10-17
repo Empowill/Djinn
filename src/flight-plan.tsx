@@ -120,6 +120,7 @@ export function FlightPlan({
     quiet,
     answer,
     enlighten,
+    urge,
     move,
     withdraw,
     later,
@@ -313,6 +314,11 @@ export function FlightPlan({
     [quiet, act, clients.tasks],
   );
 
+  const handleUrge = useCallback(
+    (task: Task, urgent: boolean) => quiet(urge(task, urgent)),
+    [quiet, urge],
+  );
+
   const handleDone = useCallback(
     (note: string, task: Task) =>
       act(
@@ -386,6 +392,7 @@ export function FlightPlan({
           onStart={handleStart}
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
+          onUrge={handleUrge}
           onDone={handleDone}
           onRelight={handleRelight}
           merges={merges}
@@ -409,6 +416,7 @@ export function FlightPlan({
       handleSend,
       pausable,
       handleHold,
+      handleUrge,
       handleDone,
       handleRelight,
       handleTurnComments,

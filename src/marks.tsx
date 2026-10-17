@@ -1,5 +1,5 @@
-// The writes the screens share: an answer, a request to investigate, a task reviewed (src/review-tab.tsx), a move, a
-// withdrawal, a question put off for later or put to sleep, each read again once djinn has it.
+// The writes the screens share: an answer, a request to investigate, a task reviewed (src/review-tab.tsx) or made
+// urgent, a move, a withdrawal, a question put off for later or put to sleep, each read again once djinn has it.
 import { useCallback, useMemo } from "react";
 
 import {
@@ -7,6 +7,7 @@ import {
   type Choice,
   Closer,
   MarkKind,
+  type Task,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients, useStore } from "./data/djinn";
@@ -99,6 +100,23 @@ export function useWrites(onToast: (text: string) => void) {
     [act, clients.marks],
   );
 
+  // urge marks a task urgent for the developer's quick feedback (djinn task update --feedback), or takes its urgent
+  // mark off, a repair's as well (--urgent=false). Djinn's refusal, another task of the wish urgent already, is a toast.
+  const urge = useCallback(
+    (task: Task, urgent: boolean) =>
+      act(
+        task.wishId,
+        () =>
+          clients.tasks.update(
+            urgent
+              ? { taskId: task.id, feedback: true }
+              : { taskId: task.id, urgent: false },
+          ),
+        [Change.TASK],
+      ),
+    [act, clients.tasks],
+  );
+
   const move = useCallback(
     (wishId: string, id: string, targetWish: string, follow: boolean) =>
       act(
@@ -189,6 +207,7 @@ export function useWrites(onToast: (text: string) => void) {
       answer,
       enlighten,
       review,
+      urge,
       move,
       withdraw,
       later,
@@ -201,6 +220,7 @@ export function useWrites(onToast: (text: string) => void) {
       answer,
       enlighten,
       review,
+      urge,
       move,
       withdraw,
       later,

@@ -789,19 +789,21 @@ func TestBriefDjinnRule(t *testing.T) {
 	}
 }
 
-// TestBriefSilentTerminalRule: a lead writes nothing at all in its terminal, second among the rules, and says why;
-// every word, statements included, is a question in the window, withdrawn once a task or Djinn does what it asked.
-// Its first message says so.
-func TestBriefSilentTerminalRule(t *testing.T) {
+// TestBriefUnreadTerminalRule (W234): the developer does not read the lead's terminal, second among the rules, and
+// says why: every question, doubt or choice goes into a question in the window, statements included, withdrawn once a
+// task or Djinn does what it asked; the terminal reply stays one short line at most. The brief says it at its start
+// and at its end, and the first message of every lead too.
+func TestBriefUnreadTerminalRule(t *testing.T) {
 	rules := briefRules(nil, "")
 	bullets := strings.Split(rules, "\n- ")
-	if len(bullets) < 3 || !strings.HasPrefix(bullets[2], "**Say nothing in your terminal, ever.**") {
+	if len(bullets) < 3 || !strings.HasPrefix(bullets[2], "**The developer does not read your terminal.**") {
 		t.Errorf("the second rule is not the terminal's:\n%s", rules)
 	}
 	for _, want := range []string{
-		"The developer never reads your terminal",
 		"costs output tokens for nothing",
-		"A turn ends with no text at all: no recap, no summary, no question codes, no \"done\"",
+		"Every question, doubt or choice you have goes into a question (`djinn question ask`) in the wish concerned, " +
+			"never only into your text; a fact or a decision for the next leads and workers goes into a block.",
+		"Your terminal reply stays one short line at most, what you did and what you wait for: no recap, no summary, no \"done\"",
 		"Everything for the developer goes through questions in the window",
 		"statements included",
 		"\"OK, nothing to do\" as an option",
@@ -815,13 +817,33 @@ func TestBriefSilentTerminalRule(t *testing.T) {
 			t.Errorf("briefRules lacks %q:\n%s", want, rules)
 		}
 	}
-	for _, gone := range []string{"at most one line", "naming the questions you asked"} {
+	for _, gone := range []string{"Say nothing in your terminal, ever", "A turn ends with no text at all", "naming the questions you asked"} {
 		if strings.Contains(rules, gone) {
-			t.Errorf("briefRules still allows a line in the terminal, %q:\n%s", gone, rules)
+			t.Errorf("briefRules still holds %q:\n%s", gone, rules)
 		}
 	}
-	if want := "write nothing in this terminal"; !strings.Contains(StartLine(), want) {
-		t.Errorf("StartLine lacks %q: %s", want, StartLine())
+	if !strings.Contains(StartLine(), UnreadTerminalRule) || strings.Contains(StartLine(), "write nothing in this terminal") {
+		t.Errorf("StartLine lacks the rule on the terminal: %s", StartLine())
+	}
+}
+
+// TestDrivenRulesUnreadText (W234): the driven lead's first rule says the developer reads none of its text: every
+// question, doubt or choice goes into a question, its last text one short line for the journal.
+func TestDrivenRulesUnreadText(t *testing.T) {
+	rules := DrivenRules(nil, "")
+	bullets := strings.Split(rules, "\n- ")
+	if len(bullets) < 2 || !strings.HasPrefix(bullets[1], "**The developer reads none of your text.**") {
+		t.Fatalf("the driven lead's first rule is not the one on its text:\n%s", rules)
+	}
+	for _, want := range []string{
+		"No terminal shows this session",
+		"Every question, doubt or choice you have goes into a question (`djinn question ask`) in the wish concerned, " +
+			"never only into your text; a fact or a decision for the next leads and workers goes into a block.",
+		"End your turn with one short line for the journal",
+	} {
+		if !strings.Contains(bullets[1], want) {
+			t.Errorf("the driven lead's first rule lacks %q:\n%s", want, bullets[1])
+		}
 	}
 }
 
@@ -1051,12 +1073,16 @@ func TestGlobalBrief(t *testing.T) {
 	if !strings.HasPrefix(brief, DirectCommandsRule) {
 		t.Errorf("the brief does not open with the rule on direct commands:\n%.300s", brief)
 	}
+	// W234: the rule on the terminal no one reads comes next, and at its end too.
+	if first := strings.SplitN(brief, "\n\n", 3); len(first) < 3 || first[1] != UnreadTerminalRule {
+		t.Errorf("the brief's second paragraph is not the rule on the terminal:\n%.600s", brief)
+	}
 	lines := strings.Split(strings.TrimRight(brief, "\n"), "\n")
 	tail := strings.Join(lines[max(0, len(lines)-12):], "\n")
 	for _, want := range []string{
 		"- **Active Wish 1** (`" + wish1ID + "`): 0 running, 0 waiting, 1 open questions.",
 		"- **Active Wish 2** (`" + wish2ID + "`): 0 running, 0 waiting, 0 open questions.",
-		"`djinn brief --wishes`", DirectCommandsRule, DirectFlags,
+		"`djinn brief --wishes`", DirectCommandsRule, DirectFlags, UnreadTerminalRule,
 	} {
 		if !strings.Contains(tail, want) {
 			t.Errorf("the brief's last lines lack %q:\n%s", want, tail)

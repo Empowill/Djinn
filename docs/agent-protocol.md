@@ -40,8 +40,11 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   developer, and asks again, a new question, only on a real doubt; an answer it does not fully understand (the
   choice, its note, how they fit) is one, and no task starts from it. Djinn's rules in the brief say it, and so does
   the first message of every session of the Djinn.
-- **The Djinn says nothing in its terminal, ever.** The developer never reads it, and every word written there costs
-  output tokens for nothing: the Djinn's turns end with no text at all, no recap, no question codes, no "done". Every report, finding, status or "done as you asked" is a question in
+- **The developer does not read the Djinn's terminal.** Every word written there is lost to them and costs output
+  tokens for nothing: every question, doubt or choice the Djinn has goes into a question in the wish concerned, never
+  only into its text, and a fact for the next leads into a block; its terminal reply stays one short line at most, no
+  recap, no summary, no "done". The brief says so at its start and its end, and so does the first message of every
+  lead; the driven lead's rules say it first (`DrivenRules`). Every report, finding, status or "done as you asked" is a question in
   the wish concerned, often a yes/no acknowledgement with "OK, nothing to do" as an option; a real wait on the
   developer is a `--move` question that says so. Never two questions for one gesture: the Djinn withdraws a question
   the moment a task or Djinn does what it asked. A line typed in the Djinn's terminal is a request like any other,
