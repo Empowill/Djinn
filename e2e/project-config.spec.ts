@@ -180,3 +180,71 @@ test("a project's configuration says what to fix first, its reference branch, wh
     checked_out: "feature",
   });
 });
+
+// The reference branch chosen in the panel (W149): Change lists the remote's branches; the choice is written in your
+// own file, never in the team's, and wins over its name; djinn project set-branch --unset takes it back.
+test("a project's reference branch is chosen in its panel, in your own file, and taken back from the command line", async ({
+  page,
+}) => {
+  const folder = fs.realpathSync(
+    fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "wick-")),
+  );
+  const teamFile = path.join(folder, ".agents", "settings.txtpb");
+  fs.mkdirSync(path.dirname(teamFile), { recursive: true });
+  fs.writeFileSync(teamFile, 'main_branch: "main"\n');
+  git(folder, "init", "-q", "-b", "main");
+  git(folder, "config", "user.name", "Djinn e2e");
+  git(folder, "config", "user.email", "e2e@example.com");
+  git(folder, "remote", "add", "origin", "https://example.invalid/wick.git");
+  git(folder, "add", "-A");
+  git(folder, "commit", "-q", "-m", "the wick");
+  git(folder, "update-ref", "refs/remotes/origin/main", "HEAD");
+  git(folder, "update-ref", "refs/remotes/origin/dev", "HEAD");
+  const commit = git(folder, "rev-parse", "--short=7", "HEAD");
+  djinn("project", "add", folder, "--name", "wick");
+
+  await page.goto(process.env.DJINN_URL!);
+  await page
+    .locator(".project-list")
+    .getByRole("button", { name: "wick", exact: true })
+    .click();
+  const panel = page.getByRole("dialog", { name: "wick" });
+  const reference = panel
+    .locator(".config-box")
+    .filter({ hasText: "Reference branch" });
+  await expect(reference.locator(".config-from")).toHaveText("the team's file");
+  await reference.getByRole("button", { name: "Change" }).click();
+  const list = reference.getByRole("combobox", { name: "Reference branch" });
+  await expect(list.locator("option")).toHaveText(["dev", "main"], {
+    useInnerText: true,
+  });
+  await expect(reference).toContainText("never in the repository");
+  await list.selectOption("dev");
+  await reference.getByRole("button", { name: "Choose" }).click();
+  await expect(reference).toContainText(`dev origin/dev at ${commit}`);
+  await expect(reference.locator(".config-from")).toHaveText("your file");
+  await expect(reference.getByRole("combobox")).toHaveCount(0);
+
+  expect(fs.readFileSync(teamFile, "utf8")).toBe('main_branch: "main"\n');
+  const shown = JSON.parse(djinn("project", "show", "wick", "--json"));
+  expect(shown.reference).toMatchObject({
+    branch: "dev",
+    source: "SETTING_SOURCE_DEVELOPER",
+  });
+  // prototext puts one or two spaces after a colon.
+  expect(fs.readFileSync(shown.developer_file, "utf8")).toMatch(
+    /main_branch:\s+"dev"/,
+  );
+
+  // A branch the remote does not hold is refused; --unset gives the team's main back.
+  expect(() => djinn("project", "set-branch", "wick", "nope")).toThrow(
+    /holds no origin\/nope/,
+  );
+  const unset = JSON.parse(
+    djinn("project", "set-branch", "wick", "--unset", "--json"),
+  );
+  expect(unset.reference).toMatchObject({
+    branch: "main",
+    source: "SETTING_SOURCE_REPOSITORY",
+  });
+});

@@ -57,7 +57,7 @@ for you first:
 | Part | What it shows |
 | --- | --- |
 | To fix | In red, first, only when something waits for you: what Djinn finds that you must settle, each in one sentence, the error as Djinn read it, and what settles it. A source to decide on has its two choices, **Plug in** and **Say no**, each with what it changes; a summoned skill no longer found has **Unsummon**; a file to correct names the file; a command that does it is there to copy. See below. |
-| Reference branch | The branch Djinn keeps the wishes up to date with, and that pull requests aim at: its name, the ref Djinn merges it from and the commit it points at, and where its name comes from (Djinn's default, the team's file or yours). When your copy has another branch checked out, a line says so. |
+| Reference branch | The branch Djinn keeps the wishes up to date with, that azimas are cut from and that pull requests aim at: its name, the ref Djinn merges it from and the commit it points at, and where its name comes from (Djinn's default, the team's file or yours). When your copy has another branch checked out, a line says so. **Change** lists the remote's branches as your copy last fetched them; **Choose** writes the one you pick in your own file, never in the repository, and when the choice is yours the list offers to take it back. See below. |
 | Worth knowing | The information Djinn finds: nothing waits for you. |
 | Checks | The setup and the checks Djinn runs on finished work, where each comes from, and how each last ran: passed on which commit, when, in how long, or why it failed. |
 | Inbox sources | The sources its skills declare on this machine: what each reads, how its last run went, and **Plug in** or **Unplug**, with what that does. See [Inbox](#inbox). |
@@ -150,12 +150,22 @@ into the wish's branch, checked, and pushes it once its push checks pass. With n
 
 ### Changing a setting
 
-- **From the window**: the push cadence switch, and the watcher commands you allow, in the project's configuration.
-  Both write your own file.
+- **From the window**: the push cadence switch, the reference branch (**Change**, then **Choose**), and the watcher
+  commands you allow, in the project's configuration. Each writes your own file.
 - **For the team**: edit the repository's file and commit it, like any change of the project, or ask the Djinn for a
   task that does.
 - **For yourself**: your own file, or Djinn's command line, whose project details list every setting with where it
   comes from: the repository, your file, or the default. The window does not say where a setting comes from.
+
+### The reference branch
+
+The reference branch is the project's main: Djinn keeps the wishes up to date with it, cuts azimas from it, and pull
+requests aim at it. By default it is the remote's default branch, else main, else master. To follow another one, dev
+say, choose it under the reference branch of the project's configuration, or with the project command set-branch of
+Djinn's command line: it goes to your own file, so nothing is committed behind the team, and it wins over the team's.
+Djinn refuses a branch the repository does not hold, on its remote when there is one: fetch it first. Taking your
+choice back gives the team's file its say again, else Djinn's default. A team that follows dev names it in the
+repository's file, for everyone.
 
 ### A file Djinn cannot read
 

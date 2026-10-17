@@ -268,3 +268,118 @@ func TestProjectNoticesBranch(t *testing.T) {
 		t.Errorf("reference when none is found: %v", reference)
 	}
 }
+
+// holdsPusher finds the reference branch it is named among the branches the remote holds, else main.
+type holdsPusher struct {
+	testPusher
+	holds []string
+}
+
+func (p *holdsPusher) Reference(ctx context.Context, project *planv1.Project, name string) (string, string, error) {
+	if name != "" && !slices.Contains(p.holds, name) {
+		return name, "refs/remotes/origin/" + name, fmt.Errorf("the repository holds no origin/%s: fetch it, or name another branch", name)
+	}
+	return p.testPusher.Reference(ctx, project, name)
+}
+
+// TestProjectSetBranch (W149): djinn project set-branch writes the reference branch in the developer's own file,
+// never in the team's, and it wins over the team's; --unset takes it back. A branch the repository does not hold, a
+// project outside Git and a request naming both or neither are refused. The panel lists the remote's branches.
+func TestProjectSetBranch(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	c := serve(t, WithHome(home), WithPusher(&holdsPusher{holds: []string{"main", "dev"}}))
+	dir := gitRepo(t, "repo", "https://example.com/repo.git")
+	for _, args := range [][]string{
+		{"-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "first"},
+		{"update-ref", "refs/remotes/origin/main", "HEAD"},
+		{"update-ref", "refs/remotes/origin/dev", "HEAD"},
+		{"symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"},
+		{"branch", "local-only"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	add, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := add.Msg.GetProject()
+	team := filepath.Join(dir, SettingsFile)
+	writeSettings(t, team, "main_branch: \"main\"\n")
+
+	listed, err := c.projects.Branches(ctx, connect.NewRequest(&planv1.ProjectServiceBranchesRequest{
+		Project: project.GetName(), Reference: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := listed.Msg.GetBranches(); len(got) != 2 || !slices.Contains(got, "main") || !slices.Contains(got, "dev") {
+		t.Errorf("reference branches = %v, want the remote's main and dev, not HEAD nor local-only", got)
+	}
+
+	set := func(branch string, unset bool) (*planv1.ProjectServiceSetBranchResponse, error) {
+		res, err := c.projects.SetBranch(ctx, connect.NewRequest(&planv1.ProjectServiceSetBranchRequest{
+			Project: project.GetName(), Branch: branch, Unset: unset,
+		}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	res, err := set("dev", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	devFile := DeveloperSettingsFile(home, project.GetId())
+	if res.GetDeveloperFile() != devFile || res.GetReference().GetBranch() != "dev" ||
+		res.GetReference().GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("set dev: %v", res)
+	}
+	if b, err := os.ReadFile(team); err != nil || string(b) != "main_branch: \"main\"\n" {
+		t.Errorf("the team's file changed: %q, %v", b, err)
+	}
+	if dev, err := ReadSettings(devFile); err != nil || dev.GetMainBranch() != "dev" {
+		t.Errorf("your file: %v, %v", dev, err)
+	}
+
+	for _, bad := range []struct {
+		branch string
+		unset  bool
+		code   connect.Code
+		says   string
+	}{
+		{"nope", false, connect.CodeFailedPrecondition, "holds no origin/nope"},
+		{"", false, connect.CodeInvalidArgument, "--unset"},
+		{"dev", true, connect.CodeInvalidArgument, "not both"},
+		{"ma in", false, connect.CodeInvalidArgument, "branch"},
+	} {
+		if _, err := set(bad.branch, bad.unset); connect.CodeOf(err) != bad.code || !strings.Contains(err.Error(), bad.says) {
+			t.Errorf("set %q unset %v: %v, want %v saying %q", bad.branch, bad.unset, err, bad.code, bad.says)
+		}
+	}
+	if dev, _ := ReadSettings(devFile); dev.GetMainBranch() != "dev" {
+		t.Errorf("a refused branch changed your file: %v", dev)
+	}
+
+	if res, err = set("", true); err != nil {
+		t.Fatal(err)
+	}
+	if res.GetReference().GetBranch() != "main" || res.GetReference().GetSource() != planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
+		t.Errorf("unset: %v, want the team's main", res.GetReference())
+	}
+	if dev, err := ReadSettings(devFile); err != nil || dev.MainBranch != nil {
+		t.Errorf("your file after unset: %v, %v", dev, err)
+	}
+
+	plain, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir(), Name: "plain"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.projects.SetBranch(ctx, connect.NewRequest(&planv1.ProjectServiceSetBranchRequest{
+		Project: plain.Msg.GetProject().GetName(), Branch: "dev",
+	})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("a project outside Git: %v, want failed precondition", err)
+	}
+}

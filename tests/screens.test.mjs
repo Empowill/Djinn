@@ -88,6 +88,7 @@ export {
   sleepUntil,
 } from "@/src/wish-dialogs.tsx";
 export {
+  BranchChoice,
   NoticeLine,
   ProjectChecks,
   ProjectPanel,
@@ -8458,6 +8459,101 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
   );
 });
 
+// The reference branch chosen in the panel (W149): Change reads the remote's branches, the current one first when this
+// copy lacks it; the choice goes to your own file, and when it is yours it can be taken back. Never an accent button.
+test("a project's reference branch is chosen from the remote's branches, and your choice taken back", async () => {
+  const chosen = [];
+  let refuse = false;
+  const choice = live(s.BranchChoice, {
+    reference: {
+      branch: "main",
+      ref: "origin/main",
+      commit: "0458f74c",
+      source: s.SettingSource.DEFAULT,
+    },
+    load: async () => ["dev", "main", "release"],
+    onChoose: async (branch) => {
+      chosen.push(branch);
+      return !refuse;
+    },
+  });
+  assert.equal(
+    choice.html(),
+    '<button type="button" class="button small secondary">Change</button>',
+  );
+  choice.one("button").onClick();
+  assert.match(choice.html(), /Reading the remote(?:'|&#x27;)s branches…/);
+  await choice.settle();
+  let html = choice.html();
+  assert.match(
+    html,
+    /<select aria-label="Reference branch"><option value="dev">dev<\/option><option value="main" selected="">main<\/option><option value="release">release<\/option><\/select>/,
+  );
+  assert.doesNotMatch(html, /Take your choice back|button accent/);
+  assert.match(
+    html,
+    /<button type="submit" class="button small secondary" disabled="">Choose<\/button>/,
+  );
+  assert.match(html, /never in the repository/);
+  choice.one("select").onChange({ target: { value: "dev" } });
+  refuse = true;
+  await choice.one("form").onSubmit({ preventDefault() {} });
+  await choice.settle();
+  assert.deepEqual(chosen, ["dev"]);
+  assert.match(
+    choice.html(),
+    /<select/,
+    "a refused choice keeps the list open",
+  );
+  refuse = false;
+  await choice.one("form").onSubmit({ preventDefault() {} });
+  await choice.settle();
+  assert.deepEqual(chosen, ["dev", "dev"]);
+  assert.match(
+    choice.html(),
+    /^<button type="button" class="button small secondary">Change<\/button>$/,
+  );
+
+  // Yours: the list offers to take it back, and keeps a branch this copy has not fetched.
+  const yours = live(s.BranchChoice, {
+    reference: {
+      branch: "dev",
+      ref: "origin/dev",
+      commit: "",
+      source: s.SettingSource.DEVELOPER,
+    },
+    load: async () => ["main"],
+    onChoose: async (branch) => {
+      chosen.push(branch);
+      return true;
+    },
+  });
+  yours.one("button").onClick();
+  await yours.settle();
+  html = yours.html();
+  assert.match(
+    html,
+    /<option value="">Take your choice back: the team(?:'|&#x27;)s file, else Djinn(?:'|&#x27;)s default<\/option><option value="dev" selected="">dev<\/option><option value="main">main<\/option>/,
+  );
+  yours.one("select").onChange({ target: { value: "" } });
+  await yours.one("form").onSubmit({ preventDefault() {} });
+  assert.deepEqual(chosen, ["dev", "dev", ""]);
+
+  // Branches it cannot read: the error, and Cancel to close the list.
+  const unread = live(s.BranchChoice, {
+    load: async () => {
+      throw new Error("git for-each-ref: not a git repository");
+    },
+    onChoose: async () => true,
+  });
+  unread.one("button").onClick();
+  await unread.settle();
+  assert.match(unread.html(), /not a git repository/);
+  assert.doesNotMatch(unread.html(), /<select/);
+  unread.all("button").at(-1).props.onClick();
+  assert.match(unread.html(), /^<button[^>]*>Change<\/button>$/);
+});
+
 // The watcher commands a developer allows in a project, in its panel: each with a button that takes it back, and a
 // field that allows one more, kept in their own settings.
 test("a project's panel lists the watcher commands you allow", () => {
@@ -8604,6 +8700,19 @@ test("a project's configuration says what to fix, its reference branch, each ski
   assert.equal(
     render(h(s.ReferenceBranch, { missing: false, notices: [], shown })),
     "",
+  );
+  assert.doesNotMatch(reference, /Change/);
+  assert.match(
+    render(
+      h(s.ReferenceBranch, {
+        missing: true,
+        notices: [],
+        shown,
+        load: async () => [],
+        onChoose: async () => true,
+      }),
+    ),
+    /None found: see “To fix”\.<\/p><p class="muted-text">.*<\/p><button type="button" class="button small secondary">Change<\/button>/,
   );
 
   const project = { id: "p1", name: "djinn", directory: "/tmp/djinn" };

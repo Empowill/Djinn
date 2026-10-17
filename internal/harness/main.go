@@ -611,7 +611,7 @@ func findMain(ctx context.Context, repo, name string) (main, ref string, err err
 			return name, "refs/heads/" + name, nil
 		}
 	}
-	return "", "", errors.New("the project has no main branch: name it with main_branch in its settings")
+	return "", "", errors.New("the project has no main branch: name it with djinn project set-branch, or main_branch in its settings")
 }
 
 // Reference is the project's reference branch, from name, its main_branch setting, as mainRef finds it, and the ref

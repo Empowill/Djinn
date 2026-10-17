@@ -290,7 +290,8 @@ message ProjectSettings {
   // work only once one is set. A file that sets some sets them all; names ignore case and are unique.
   repeated ProjectCheck checks = 14 [(buf.validate.field).repeated.max_items = 20];
   // The project's main branch, which Djinn merges into each wish's integration branch to keep it up with it: "main".
-  // Not set: the default branch of the remote (its HEAD), else main, else master.
+  // Not set: the default branch of the remote (its HEAD), else main, else master. djinn project set-branch, or the
+  // selector of the project's panel, writes it in your own file.
   optional string main_branch = 15 [
     (buf.validate.field).string.max_len = 200,
     (buf.validate.field).string.pattern = "^[A-Za-z0-9._/-]*$"
@@ -2703,10 +2704,18 @@ service ProjectService {
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List the local branches of a project's repository a wish's work may land in, the latest commit first: those
-  // Djinn made for its tasks' worktrees left out.
+  // Djinn made for its tasks' worktrees left out. With --reference, those the reference branch may name.
   rpc Branches(ProjectServiceBranchesRequest) returns (ProjectServiceBranchesResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
+  // that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
+  // file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+  // branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+  rpc SetBranch(ProjectServiceSetBranchRequest) returns (ProjectServiceSetBranchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
 }
 
@@ -2913,13 +2922,41 @@ message ProjectServiceBranchesRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 100
   ];
+  // The branches the reference branch may name instead: the remote's, as this copy last fetched them, without the
+  // remote's name; the local ones in a repository without a remote.
+  bool reference = 2;
 }
 
 message ProjectServiceBranchesResponse {
-  // The branches, without refs/heads/, the latest commit first; empty for a project outside Git.
+  // The branches, without refs/heads/ (or the remote's name), the latest commit first; empty for a project outside
+  // Git.
   repeated string branches = 1;
   // The branch the project's checkout is on; empty when it is on none.
   string checked_out = 2;
+}
+
+message ProjectServiceSetBranchRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The branch, without the remote's name: dev. Not with --unset.
+  string branch = 2 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._/-]*$"
+  ];
+  // Take your choice back: the team's file names the reference branch again, else Djinn finds it (the remote's
+  // default branch, else main, else master).
+  bool unset = 3;
+}
+
+message ProjectServiceSetBranchResponse {
+  // The reference branch now, as Djinn finds it; unset when it finds none.
+  ProjectReference reference = 1;
+  // Your settings file, in Djinn's data folder.
+  string developer_file = 2;
 }
 
 // Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe

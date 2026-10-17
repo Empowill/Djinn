@@ -676,6 +676,19 @@ func SaveDeveloperPushStrategy(home, projectID string, strategy planv1.PushStrat
 	return err
 }
 
+// SaveDeveloperMainBranch writes branch as the main_branch setting of the developer's settings file in home, or
+// removes it when branch is empty: the team's file names the reference branch again, else Djinn finds it.
+func SaveDeveloperMainBranch(home, projectID, branch string) error {
+	_, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		s.MainBranch = nil
+		if branch != "" {
+			s.MainBranch = &branch
+		}
+		return nil
+	})
+	return err
+}
+
 // ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.
 func ResolveWishPushStrategy(wish *planv1.Wish, settings Settings) (planv1.PushStrategy, planv1.SettingSource) {
 	if wish != nil && wish.GetPushStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {

@@ -600,6 +600,15 @@ func (p *Projects) Branches(
 	if !project.GetGit() || dir == "" {
 		return connect.NewResponse(out), nil
 	}
+	out.CheckedOut = CheckedOutBranch(ctx, dir)
+	if req.Msg.GetReference() {
+		if remote := remoteName(ctx, dir); remote != "" {
+			if out.Branches, err = remoteBranches(ctx, dir, remote); err != nil {
+				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+			}
+			return connect.NewResponse(out), nil
+		}
+	}
 	refs, err := gitOut(ctx, dir, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads")
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
@@ -619,8 +628,65 @@ func (p *Projects) Branches(
 			out.Branches = append(out.Branches, b)
 		}
 	}
-	out.CheckedOut = CheckedOutBranch(ctx, dir)
 	return connect.NewResponse(out), nil
+}
+
+// remoteBranches are the branches of remote as the repository in dir last fetched them, without the remote's name,
+// the latest commit first: its HEAD left out.
+func remoteBranches(ctx context.Context, dir, remote string) ([]string, error) {
+	refs, err := gitOut(ctx, dir, "for-each-ref", "--sort=-committerdate", "--format=%(refname)", "refs/remotes/"+remote+"/")
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, ref := range strings.Fields(refs) {
+		if b := strings.TrimPrefix(ref, "refs/remotes/"+remote+"/"); b != "HEAD" {
+			out = append(out, b)
+		}
+	}
+	return out, nil
+}
+
+// SetBranch writes the reference branch the developer chooses for a project as main_branch in their own settings
+// file, or takes it back with unset: never in the repository. A branch the repository does not hold is refused.
+func (p *Projects) SetBranch(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceSetBranchRequest],
+) (*connect.Response[planv1.ProjectServiceSetBranchResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	branch := req.Msg.GetBranch()
+	switch {
+	case branch == "" && !req.Msg.GetUnset():
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name a branch, or take yours back with --unset"))
+	case branch != "" && req.Msg.GetUnset():
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a branch or --unset: not both"))
+	case !project.GetGit() || project.GetDirectory() == "":
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("project %s is no Git repository on this machine: it has no reference branch", project.GetName()))
+	case p.Pusher == nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the reference branch is unavailable"))
+	}
+	if branch != "" {
+		if _, _, err := p.Pusher.Reference(ctx, project, branch); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+	}
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+		if err := SaveDeveloperMainBranch(p.Home, project.GetId(), branch); err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	settings, _ := LoadSettings(p.Home, project)
+	return connect.NewResponse(&planv1.ProjectServiceSetBranchResponse{
+		Reference:     p.projectReference(ctx, project, settings.MainBranch, settings.MainBranchFrom),
+		DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId()),
+	}), nil
 }
 
 // refuseProjectSwitchToAzima refuses making per azima the push strategy of the project projectID while a wish of it

@@ -210,6 +210,31 @@ export function ProjectPanel({
     }
   };
 
+  // The branches the reference branch may name: the remote's, as this copy last fetched them.
+  const loadReferenceBranches = () =>
+    clients.projects
+      .branches({ project: project.id, reference: true })
+      .then((res) => res.branches);
+
+  // A reference branch chosen, or your choice taken back (""): written in your own file. The notices, and the
+  // projects' count of things to fix, are read again.
+  const handleSetBranch = async (branch: string) => {
+    try {
+      await clients.projects.setBranch(
+        branch
+          ? { project: project.id, branch }
+          : { project: project.id, unset: true },
+      );
+      return true;
+    } catch (err) {
+      fail(err);
+      return false;
+    } finally {
+      void store.changed("", [Change.PROJECT]);
+      void reshow();
+    }
+  };
+
   const handleSetPush = async (nextPush: ProjectPush) => {
     try {
       const res = await clients.projects.setPush({
@@ -266,6 +291,8 @@ export function ProjectPanel({
           missing={toFix.some((n) => n.topic === ProjectNoticeTopic.BRANCH)}
           notices={branchInfo}
           shown={shown}
+          load={loadReferenceBranches}
+          onChoose={handleSetBranch}
         />
       )}
       {information.length > 0 && (
@@ -494,6 +521,8 @@ export function ReferenceBranch({
   missing,
   notices,
   shown,
+  load,
+  onChoose,
 }: {
   reference?: ProjectReference;
   // A notice to fix says Djinn finds none.
@@ -501,6 +530,9 @@ export function ReferenceBranch({
   // The information about the branches: the copy on another branch.
   notices: ProjectNotice[];
   shown?: ProjectServiceShowResponse;
+  // The branches it may name, and the choice of one: without them, no selector.
+  load?: () => Promise<string[]>;
+  onChoose?: (branch: string) => Promise<boolean>;
 }) {
   if (!reference && !missing) return null;
   return (
@@ -526,6 +558,13 @@ export function ReferenceBranch({
             <p>{t("project.reference_none")}</p>
           )}
           <p className="muted-text">{t("project.reference_detail")}</p>
+          {load && onChoose && (
+            <BranchChoice
+              reference={reference}
+              load={load}
+              onChoose={onChoose}
+            />
+          )}
         </div>
       </div>
       {notices.map((n) => (
@@ -537,6 +576,110 @@ export function ReferenceBranch({
         </div>
       ))}
     </section>
+  );
+}
+
+// BranchChoice changes a project's reference branch for you: a list of the remote's branches, read when it opens,
+// and where the choice is written. Your choice can be taken back, the team's file or Djinn's default then naming it.
+export function BranchChoice({
+  reference,
+  load,
+  onChoose,
+}: {
+  reference?: ProjectReference;
+  load: () => Promise<string[]>;
+  // branch "": take your choice back. False when it was refused, the panel saying why.
+  onChoose: (branch: string) => Promise<boolean>;
+}) {
+  const [branches, setBranches] = useState<string[] | undefined>();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const [picked, setPicked] = useState("");
+  const [busy, setBusy] = useState(false);
+  const yours = reference?.source === SettingSource.DEVELOPER;
+
+  const start = async () => {
+    setOpen(true);
+    setError("");
+    setPicked(reference?.branch ?? "");
+    try {
+      setBranches(await load());
+    } catch (err) {
+      setError(message(err));
+    }
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    const ok = await onChoose(picked);
+    setBusy(false);
+    if (ok) setOpen(false);
+  };
+
+  if (!open)
+    return (
+      <button
+        type="button"
+        className="button small secondary"
+        onClick={() => void start()}
+      >
+        {t("project.reference_change")}
+      </button>
+    );
+  // The current branch stays listed even when this copy has not fetched it.
+  const listed =
+    branches && reference && !branches.includes(reference.branch)
+      ? [reference.branch, ...branches]
+      : branches;
+  return (
+    <form className="branch-choice" onSubmit={(e) => void submit(e)}>
+      {error && <p className="login-message">{error}</p>}
+      <div className="branch-choice-row">
+        {listed === undefined && !error && (
+          <p className="muted-text">{t("project.reference_reading")}</p>
+        )}
+        {listed !== undefined && (
+          <>
+            <select
+              aria-label={t("project.reference")}
+              value={picked}
+              onChange={(e) => setPicked(e.target.value)}
+            >
+              {(!reference || yours) && (
+                <option value="">
+                  {yours
+                    ? t("project.reference_unset")
+                    : t("project.reference_pick")}
+                </option>
+              )}
+              {listed.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="button small secondary"
+              disabled={
+                busy || (picked === "" ? !yours : picked === reference?.branch)
+              }
+            >
+              {t("project.reference_choose")}
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          className="button small secondary"
+          onClick={() => setOpen(false)}
+        >
+          {t("common.cancel")}
+        </button>
+      </div>
+      <p className="muted-text">{t("project.reference_where")}</p>
+    </form>
   );
 }
 
