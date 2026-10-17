@@ -179,10 +179,19 @@ the code does not say by itself; remove one when a change makes it false.
   follows 30–200 ms later, and the main view is an empty `.wish-view[aria-busy]` until then (W496). *Do:* wait on
   the element you act on (`toBeVisible`, `toBeFocused`), never on Live; to catch a remount, record elements with a
   MutationObserver in `addInitScript`. *Where:* `src/wish-app.tsx`.
-- **Playwright's trace makes the page look slow.** With `trace: "retain-on-failure"` every action snapshots the DOM:
-  ~800 ms a step on a big diff, while the window rendered in ~230 ms (W8). *Do:* measure a budget inside one
-  `page.evaluate` (act and poll with `requestAnimationFrame` there); profile with a CDP session
+- **Playwright's trace makes the page look slow.** A trace that snapshots the DOM at every action took ~800 ms a step
+  on a big diff, while the window rendered in ~230 ms (W8); the config keeps no DOM snapshot since W249. *Do:* measure
+  a budget inside one `page.evaluate` (act and poll with `requestAnimationFrame` there); profile with a CDP session
   (`Profiler.start/stop`) before blaming the interface. *Where:* `e2e/diff-chunks.spec.ts`.
+- **A transition holds while the page draws no frame.** A change of text size or theme starts CSS transitions (the
+  sidebar's width eases in 180 ms); a reading taken before they end sees their start, and on a loaded machine Chromium
+  drew no frame for over a second: text-size read a card laid out narrower, its buttons on two rows, 48 px taller
+  (W212, W249). *Do:* await the page's `CSSTransition`s (`document.getAnimations()`, their `finished`) before a
+  measure. *Where:* `choose` in `e2e/text-size.spec.ts`.
+- **The terminal panel is empty before its tabs come.** It lists the shells djinn up keeps (`running`) after it
+  draws: `if (await empty.isVisible()) click` raced a shell another test left, the button gone under the click
+  (W249). *Do:* open a shell of your own (`.lead-terminal-tab-new`) and close it before a reload. *Where:*
+  `e2e/theme.spec.ts`.
 - **The terminal panel covers the lower half.** `page.mouse` does not scroll: `scrollIntoView` first, and drag
   across `getClientRects()` (a wrapped span's box centre falls between lines). For screenshots, set a tall viewport
   (1366x2400) or the shot is cut (W497).
@@ -204,13 +213,14 @@ the code does not say by itself; remove one when a change makes it false.
   its wait while other workers loaded the machine (W181). The e2e's djinns and `djinn up` in the Go tests read the
   machine calm (`machine.Calm`, `DJINN_TEST_MACHINE=calm` on a test build). *Do:* a spec or test that starts a djinn
   of its own keeps it; one that tests the pressure gives a fake reading instead.
-- **Each step of a spec costs a snapshot of the page.** The trace (`retain-on-failure`) records the DOM before and
-  after every action and assertion, and a loaded machine makes each one slow: the Grimoire's splash spec, ~95 steps on
-  a document that held every page (~10 000 elements, before W165 read each page when opened), took ~70 ms a step on a
-  quiet machine, 300-600 ms under other workers' load, past its 30 s (W248). *Sign:* a timeout with no failed
-  assertion, each step in the trace a few hundred ms. *Do:* one assertion over a list (`expect.poll` on a role
-  locator's `allInnerTexts()`) rather than one per item, and a long spec in parts; measure with `--trace off` against
-  the default.
+- **Each step of a spec costs, a long spec passes its 30 s under load.** The trace kept a DOM snapshot before and
+  after each action and assertion: the Grimoire's splash spec, ~95 steps on a document of ~10 000 elements, took
+  ~70 ms a step quiet, 300-600 ms under other workers' load (W248). Since W249 the trace keeps none (a red test keeps its
+  actions, screencast, screenshot and `error-context.md`), yet under a load of 40-60 a page load takes 5-7 s and a
+  screenshot of a blurred dialog 8 s: the theme spec, one test for every screen, took 22-31 s with no trace at all.
+  *Sign:* a timeout with no failed assertion, each step in the trace hundreds of ms. *Do:* one assertion over a list
+  (`expect.poll` on a role locator's `allInnerTexts()`) rather than one per item, a test per screen, one load a test
+  (the theme set by `addInitScript`, not a reload); measure with `--trace off` against the default.
 - **Every spec after one point refuses: the specs' djinn ended.** `ERR_CONNECTION_REFUSED`, "djinn is not running
   … no …/server.addr": the shared djinn of the suite is gone, and each spec after it fails (W248: a push check at
   56a98a21, from the tilasms spec on). *Do:* read `test-results/e2e/djinn-logs/` (`exit.txt` says when and how it
@@ -263,6 +273,10 @@ the code does not say by itself; remove one when a change makes it false.
   reproduce it; needs `runtime.LockOSThread`). `ReadWorker` returns an empty `Group` then (W537). *Do:* loop over
   fresh processes to reproduce races: `-count=N` in one process hides them behind the 1 s listing cache. *Where:*
   `internal/machine/group.go`.
+- **A process a loop starts again is not always there.** A worker's tree counted from its cgroup (`cgroup.procs`) holds
+  a `sleep 0.05` of a shell loop only between its starts: one reading in a few fell between two and counted 2 processes
+  of 3 (W212); reading for 300 ms fails every time. *Do:* count a process that lasts (a long `sleep` started once).
+  *Where:* `TestScopeTakesTheTree`.
 - **A `djinn-sentinel` shell per running harness is expected.** Since W514 Djinn records each child under
   `$DJINN_HOME/run/`, stops a dead djinn's leftovers at start, and a `/bin/sh … djinn-sentinel` kills the groups
   when Djinn dies: it is not an orphan. *Where:* `internal/harness/orphans_unix.go`.
@@ -326,6 +340,10 @@ the code does not say by itself; remove one when a change makes it false.
 - **Some animations burn a core in WebKit.** At 4K, an infinite `box-shadow` animation cost ~40 % of a core, the same
   pulse by `transform`/`opacity` ~0; SVG child animations are not composited (~40 %) (W513). *Do:* animate
   `transform` and `opacity` only; measure in WebKit, not Chromium.
+- **A read the network cuts throws at the page.** Chromium aborts every request in flight when a network interface
+  comes or goes (Docker adds veths): "[unknown] Failed to fetch". A `void store.read…()` that rejects becomes a page
+  error, which a spec that counts them reports (W7, W249). *Do:* a store read catches its failure and reads again
+  after `retry`, as `readPrompt` does; test it with a fake call that throws once.
 - **A store read that never returns freezes the window's writes.** Each write ends with `store.changed`, which reads
   `WishService/List` and `LeadService/Get` right after. *Sign:* in `djinn.log`, writes with no `WishService/List`
   after them for minutes: `flush()` waits behind a hung read. Every read has a 30 s `timeoutMs` since W543. *Where:*

@@ -104,6 +104,8 @@ enum ProjectNoticeTopic {
   PROJECT_NOTICE_TOPIC_BRANCH = 5;
   // An inbox source of the project's skills, as this machine decided it.
   PROJECT_NOTICE_TOPIC_SOURCE = 6;
+  // A change of the configuration on the reference branch, from the journal of changes (ConfigChange).
+  PROJECT_NOTICE_TOPIC_CHANGE = 7;
 }
 
 // ProjectNoticeAction is the one action that settles a project notice.
@@ -120,6 +122,9 @@ enum ProjectNoticeAction {
   PROJECT_NOTICE_ACTION_UNSUMMON_SKILL = 4;
   // Name the reference branch, a branch the repository holds, with main_branch in your own settings file.
   PROJECT_NOTICE_ACTION_NAME_BRANCH = 5;
+  // Read a change of the configuration on the reference branch, already applied, and mark it seen (djinn project
+  // acknowledge).
+  PROJECT_NOTICE_ACTION_ACKNOWLEDGE_CHANGE = 6;
 }
 
 // ProjectReference is a project's reference branch as Djinn finds it on this machine: the branch it keeps wishes up
@@ -137,6 +142,73 @@ message ProjectReference {
   SettingSource source = 4;
   // The branch your copy has checked out; empty when it is detached.
   string checked_out = 5;
+}
+
+// ConfigWatch is how Djinn watches a project's configuration on its reference branch, on this machine: every 5
+// minutes, and after each push of Djinn, it fetches that branch alone, then compares the digest of the .agents and
+// .claude/skills trees with the one of its last look. Kept in Djinn's data, never in the repository.
+message ConfigWatch {
+  option (djinn.v1.unique) = {fields: ["project_id"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project.
+  string project_id = 2;
+  // The ref Djinn read the configuration from, short: origin/main.
+  string ref = 3;
+  // The commit that ref pointed at, in full.
+  string commit = 4;
+  // The digest of the configuration's trees in that commit: the name of its folder in Djinn's cache.
+  string digest = 5;
+  // When Djinn first found that commit.
+  google.protobuf.Timestamp find_time = 6;
+  // Why the last fetch failed, as git said it; empty when it went well. Djinn then compares what the copy holds.
+  string fetch_error = 7;
+}
+
+// ConfigChange is one entry of a project's journal of configuration changes: a commit of its reference branch that
+// changed the .agents or .claude/skills trees, told in sentences. Djinn writes it when its watch finds the digest of
+// those trees changed (ConfigWatch); the change is already applied, since Djinn reads the configuration on that
+// branch. Kept in Djinn's data, on this machine.
+message ConfigChange {
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project.
+  string project_id = 2;
+  // The ref it came on, short: origin/main.
+  string ref = 3;
+  // The commit, in full; the newest one when the entry tells several.
+  string commit = 4;
+  // Its author, and its first line.
+  string author = 5;
+  string title = 6;
+  // When it was committed.
+  google.protobuf.Timestamp commit_time = 7;
+  // When Djinn found it.
+  google.protobuf.Timestamp find_time = 8;
+  // How many commits the entry tells: 1, more when Djinn told a long run of them at once, or when the reference
+  // branch itself changed.
+  int32 commits = 9;
+  // What changed, a sentence each.
+  repeated ConfigChangeLine lines = 10;
+  // Found by the first look at the project: told as history, nothing waits for you.
+  bool first_look = 11;
+  // When you marked it seen; unset while a line asks for your look and you have not.
+  google.protobuf.Timestamp seen_time = 12;
+}
+
+// ConfigChangeLine is one thing a configuration change did, in one sentence.
+message ConfigChangeLine {
+  // The part of the configuration it changed: settings, permissions, a skill, the reference branch.
+  ProjectNoticeTopic topic = 1;
+  // What it names there: a check, a skill, a source (<project>/<skill>), a branch.
+  string subject = 2;
+  // What changed, in one sentence.
+  string text = 3;
+  // A decision comes back to you: the change gives the workers more (a permission), changes what a skill makes or
+  // runs for Djinn (a wish template, a babysit, the command of a source plugged in here). The project's gear lights
+  // until you mark the change seen. A new source asks through its own notice, until you plug it in or say no.
+  bool asks = 4;
 }
 
 // ProjectSync says how a branch Djinn pushes stands against its remote target: a wish's integration branch, or an
@@ -540,6 +612,9 @@ message Wish {
   // (djinn wish reorder). A wish paused or granted comes first in its list; one set aside before Djinn recorded places
   // has none, and comes after the others, the oldest first. 0 for an active wish.
   int32 place = 22;
+  // Its icon in the window's menu: a name of the bank of wish icons (djinn wish icons), which the Djinn chooses for
+  // its subject (djinn wish icon). Empty until then: the window draws the wish's mark, grey.
+  string icon = 23;
 }
 
 // PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
@@ -840,6 +915,11 @@ enum LeadEventKind {
   // The lead answers it only from a decision the wish already took or from its plan, or revises it to enrich it; a new
   // choice is the developer's.
   LEAD_EVENT_KIND_ASKED = 18;
+  // The network went down, or came back (W285): one line each, of no wish. Down, Djinn starts no worker, pauses the
+  // running ones between their turns, holds its pushes, fetches and forge calls, and sends the workers the outage cut
+  // back to resume; back, it resumes them one per pass, repairs first, and runs again once the push checks that failed
+  // on the network.
+  LEAD_EVENT_KIND_NETWORK = 19;
 }
 
 // LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the
@@ -1344,7 +1424,7 @@ message TaskRun {
   google.protobuf.Timestamp start_time = 1;
   // When this run ended; unset while running.
   google.protobuf.Timestamp end_time = 2;
-  // Why this run ended: done, limit, restart, pause, preemption, interrupted, etc.
+  // Why this run ended: done, limit, network, restart, pause, preemption, interrupted, etc.
   string reason = 3;
 }
 
@@ -2779,6 +2859,13 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
+  // permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
+  // them. They are applied already; djinn project show lists the journal of changes.
+  rpc Acknowledge(ProjectServiceAcknowledgeRequest) returns (ProjectServiceAcknowledgeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message ProjectServiceAddRequest {
@@ -2829,6 +2916,11 @@ message ProjectServiceShowResponse {
   // The project's reference branch; unset for a project outside Git, without a folder on this machine, or whose
   // repository holds no branch Djinn could take for it.
   ProjectReference reference = 12;
+  // How Djinn watches the configuration on the reference branch; unset before its first look, and for a project
+  // outside Git or without a remote.
+  ConfigWatch watch = 13;
+  // The journal of configuration changes on the reference branch, the newest first, the last 20.
+  repeated ConfigChange changes = 14;
   // The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
   // files resolve them. Their last runs are the project's check_runs.
   string setup = 6;
@@ -2993,8 +3085,12 @@ message ProjectServiceBranchesResponse {
   // The branches, without refs/heads/ (or the remote's name), the latest commit first; empty for a project outside
   // Git.
   repeated string branches = 1;
-  // The branch the project's checkout is on; empty when it is on none.
+  // The branch the project's checkout is on; empty when it is on none. Djinn takes nothing from it (W227): it is
+  // shown, never a default.
   string checked_out = 2;
+  // The project's reference branch, as Djinn names it: a wish that records no integration branch lands there, and a
+  // new branch made for one starts from it. Empty when Djinn finds none.
+  string reference = 3;
 }
 
 message ProjectServiceSetBranchRequest {
@@ -3012,6 +3108,26 @@ message ProjectServiceSetBranchRequest {
   // Take your choice back: the team's file names the reference branch again, else Djinn finds it (the remote's
   // default branch, else main, else master).
   bool unset = 3;
+}
+
+message ProjectServiceAcknowledgeRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The change, by its identifier or the start of its commit (7 characters at least); empty: every change that
+  // asks.
+  string change = 2 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.max_len = 64,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9-]*$"
+  ];
+}
+
+message ProjectServiceAcknowledgeResponse {
+  // The changes marked seen now.
+  repeated ConfigChange changes = 1;
 }
 
 message ProjectServiceSetBranchResponse {
@@ -3404,6 +3520,18 @@ service WishService {
   rpc Rename(WishServiceRenameRequest) returns (WishServiceRenameResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Set a wish's icon in the window's menu, in place of what it had: a name of the bank (djinn wish icons) that says
+  // its subject. An empty name takes it back to its mark.
+  rpc Icon(WishServiceIconRequest) returns (WishServiceIconResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // List the bank of wish icons a wish's icon is chosen from, family by family: each name with its words in English
+  // and in French. --search keeps the icons whose name, family or words hold every word given, in either language.
+  rpc Icons(WishServiceIconsRequest) returns (WishServiceIconsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
   // with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
@@ -3975,6 +4103,44 @@ message WishServiceRenameRequest {
 message WishServiceRenameResponse {
   // The wish, with its new title.
   Wish wish = 1;
+}
+
+message WishServiceIconRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The icon's name in the bank, like lamp or wifi-off; empty takes the wish back to its mark.
+  string name = 2 [(buf.validate.field).string.max_len = 64];
+}
+
+message WishServiceIconResponse {
+  // The wish, with its icon.
+  Wish wish = 1;
+}
+
+message WishServiceIconsRequest {
+  // Words to look for, in English or in French, like "theme" or "export": the icons that hold all of them. Empty
+  // lists the whole bank.
+  string search = 1 [(buf.validate.field).string.max_len = 200];
+}
+
+message WishServiceIconsResponse {
+  // The icons found, in the bank's order.
+  repeated WishIcon icons = 1;
+}
+
+// WishIcon is an icon of the bank a wish's icon is chosen from.
+message WishIcon {
+  // Its name, which Wish.icon takes.
+  string name = 1;
+  // Its family: Screen, Data, Network, Security, People, Build, World, Nature, Things, Writing, Value or Tales.
+  string family = 2;
+  // The words a search reads in English.
+  string words = 3;
+  // The words a search reads in French.
+  string words_fr = 4;
 }
 
 message WishServiceAddProjectRequest {

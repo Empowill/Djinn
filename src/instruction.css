@@ -48,6 +48,7 @@
 }
 .workspace-action-content {
   position: relative;
+  border-radius: inherit;
   /* Stay in the isolated pill context so the closed control can blend against the moving fill and its raised
      backdrop. A child stacking context here would make `difference` see transparency instead of the surface. */
   z-index: auto;
@@ -57,9 +58,11 @@
   align-items: center;
   justify-content: center;
 }
-.workspace-action-content:has(> .workspace-action-control) {
+.workspace-action-primary
+  > .workspace-action-content:has(> .workspace-action-control) {
   /* Blend the whole closed foreground group against the sibling surface/fill in the pill's isolated context. The
-     editor has a panel child instead, so its textarea, controls, and feedback keep their normal ink. */
+     editor has a panel child instead, so its textarea, controls, and feedback keep their normal ink. Write to the
+     Djinn paints its own ink instead (below). */
   mix-blend-mode: difference;
 }
 .workspace-action-control,
@@ -88,25 +91,92 @@
   background: transparent;
   box-shadow: none;
 }
-.workspace-action .workspace-action-control:hover {
+.workspace-action-primary .workspace-action-control:hover {
   background: color-mix(in srgb, currentColor 9%, transparent);
   color: var(--workspace-action-ink);
 }
-/* During the primary-to-secondary handoff the accent fill crosses the closed control. Difference against a literal
-   light ink keeps this label and icon readable on both the accent fill and the raised surface; the expanded editor
-   stays on the normal secondary ink so feedback and textarea text are never inverted. */
+/* While the accent fill enters the wish creation pill, it crosses the closed control. Difference against a literal
+   light ink keeps this label and icon readable on both the accent fill and the raised surface. */
 .workspace-action-primary .workspace-action-control,
 .workspace-action-primary .workspace-action-control:hover,
-.workspace-action-primary .workspace-action-control:focus-visible,
-.workspace-action-secondary:not(.is-expanded) .workspace-action-control,
-.workspace-action-secondary:not(.is-expanded) .workspace-action-control:hover,
-.workspace-action-secondary:not(.is-expanded)
-  .workspace-action-control:focus-visible {
+.workspace-action-primary .workspace-action-control:focus-visible {
   color: var(--workspace-action-blend-ink);
 }
 .workspace-action:has(:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+/* Write to the Djinn, proposal 1 Lampe of L19 (Q58 C): the pill in the lamp's gold, as Rub the lamp, one uniform edge
+   of its brass, its ink; the eye's socket on its left (djinn-eye.css). Every state is a layer in its rounding, faded by
+   its opacity: the gold over the field's ground, Calm's hover tint in the pill's own ink (styles.css, the hover's
+   families), a second tint while pressed. Open, the gold fades out on the field, and the send button takes it. */
+.workspace-action-lead {
+  min-height: 2.75rem;
+  box-shadow: 0 0.375rem 1.25rem var(--pill-shadow);
+}
+.workspace-action-lead:not(.is-expanded) {
+  --workspace-action-ink: var(--lamp-ink);
+  --hover-tint: color-mix(
+    in srgb,
+    currentColor var(--hover-strength),
+    transparent
+  );
+}
+.workspace-action-lead:has(:focus-visible) {
+  outline-color: var(--pill-focus);
+}
+.workspace-action-lead > .workspace-action-surface {
+  border: 1px solid var(--lamp-edge);
+  background: var(--pill-field);
+}
+.workspace-action-lead > .workspace-action-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(var(--lamp-hi), var(--lamp-lo));
+  transition: opacity 0.16s ease;
+}
+.workspace-action-lead.is-expanded > .workspace-action-surface::before {
+  opacity: 0;
+}
+.workspace-action-lead:not(.is-expanded) > .workspace-action-content::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: color-mix(
+    in srgb,
+    currentColor var(--press-strength),
+    transparent
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 80ms ease;
+}
+.workspace-action-lead:not(.is-expanded)
+  > .workspace-action-content:active::before {
+  opacity: 1;
+}
+.workspace-action-lead .workspace-action-control {
+  min-height: 2.75rem;
+  padding: 0 1.25rem 0 3.0625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.workspace-action-lead .workspace-action-send {
+  background: linear-gradient(var(--lamp-hi), var(--lamp-lo));
+  color: var(--lamp-ink);
+  --hover-tint: color-mix(
+    in srgb,
+    currentColor var(--hover-strength),
+    transparent
+  );
+}
+/* Nothing to send yet: the gold waits for the text (at the disabled opacity, it would turn brown on the dark field). */
+.workspace-action-lead .workspace-action-send:disabled {
+  background: transparent;
+  color: var(--muted);
 }
 .workspace-action .workspace-action-control:focus-visible,
 .workspace-action .workspace-action-leading:focus-visible,
@@ -195,12 +265,6 @@
   border-radius: 50%;
   background: transparent;
   color: var(--muted);
-}
-.workspace-action-leading:hover,
-.workspace-action-send:hover:not(:disabled),
-.workspace-action-close:hover {
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  color: var(--text);
 }
 .workspace-action-send:disabled {
   cursor: not-allowed;

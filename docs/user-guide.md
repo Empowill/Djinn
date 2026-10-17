@@ -101,7 +101,15 @@ Click a project to see its configuration, as Djinn reads it on this machine. Wha
 say no to, a skill to unsummon). Then its reference branch (the ref and commit Djinn merges, and where its name comes
 from): in Git with a remote, Djinn reads the project's settings, permissions and skills on it, at the last fetch, not
 in your copy; **Change** chooses another among the remote's branches, written in your own file, never in the repository
-(`djinn project set-branch <project> dev`, `--unset` takes it back). Then its checks, the inbox sources of this machine, its skills with the role each has for Djinn (a wish template, an
+(`djinn project set-branch <project> dev`, `--unset` takes it back). Djinn watches that branch: every 5 minutes, and
+after each of its pushes, it fetches it alone and compares the digest of `.agents` and `.claude/skills` with its last
+look; when they moved, the panel's **What changed on origin/main** tells each commit that changed them, who and when,
+in sentences ("New check e2e before a push", "Permissions: 1 more command the workers may run: curl", "New skill
+open-pr, with a wish template"). A change is applied as soon as it is fetched. One that gives the workers more (a
+command allowed, editing, the network, the auto mode), or changes what a skill makes or runs for Djinn (a wish
+template, a babysit, the command of a source you plugged in), is a thing to fix until you mark it **Seen**
+(`djinn project acknowledge <project>`, or `djinn project acknowledge <project> <commit>` for one); a new source asks
+through its own line, until you plug it in or say no. A failed fetch is said there, as git said it. Then its checks, the inbox sources of this machine, its skills with the role each has for Djinn (a wish template, an
 inbox source, a babysit, or know-how for the workers alone), its push cadence, and every other setting with where it
 comes from: Djinn's default, the team's file or yours. Skills summoned from another project show "from app".
 `djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app without a copy.
@@ -138,7 +146,8 @@ From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, 
 `djinn wish reorder <wish-id> --to 1` (a paused or granted wish, first in its list),
 `djinn wish rename <wish-id> --title "…"`, `djinn wish principal <wish-id> --principal`, `djinn wish delete <wish-id>`.
 `djinn wish add-project <wish-id> --project-id <project>` adds a project, by its name or identifier, to a wish made
-without it: its tasks may spawn there, and its finished work goes to the branch the project's checkout is on.
+without it: its tasks may spawn there, and its finished work goes to the project's reference branch, unless you choose
+another.
 
 ## The Djinn
 
@@ -315,8 +324,8 @@ azima with its own branch, status badges show **PR proposed**, **PR open** or **
 merge the PR. An individual **Push** button (`djinn project push <project> --wish <wish>`) pushes the branch on demand
 when you choose.
 
-**Where work lands.** Per wish, a wish's work lands in its integration branch, in each project the branch your checkout
-was on when the wish was made: the chip beside the push strategy names it (with the project, when the wish has several),
+**Where work lands.** Per wish, a wish's work lands in its integration branch, in each project the project's reference
+branch when the wish was made, whatever your copy has checked out: the chip beside the push strategy names it (with the project, when the wish has several),
 and a click on it changes it to another local branch or to a new one made from it (`djinn wish set-integration <wish>
 --branch feat/x`, `--create-branch` for a new one), refused while a merge into it runs. Per azima, each azima's work
 lands in main through its own branch and pull request, which its card shows once opened, and work of no azima in the wish's
@@ -587,7 +596,9 @@ A project with things to fix has its gear, beside its name in the side panel, re
 the side panel is folded), its tooltip counting them, and one line in the inbox under the cards: **Project** and its
 name, how many things, the first of them in a sentence, and **Open its configuration**. The gear and the line open the
 same panel, as a click on the name does; the detail stays there. Once nothing is left to fix, the gear turns grey and
-the line goes.
+the line goes. A change on the reference branch lights the gear only when a decision comes back to you (a permission
+given, a wish template or babysit changed, a source plugged in here that runs another command, a new source); a new
+check, a skill's new instructions or a setting changed are applied and only told in the panel's journal.
 
 ## Team settings and integration
 

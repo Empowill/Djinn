@@ -89,6 +89,7 @@ export {
 } from "@/src/wish-dialogs.tsx";
 export {
   BranchChoice,
+  ConfigChanges,
   NoticeLine,
   ProjectChecks,
   ProjectPanel,
@@ -410,27 +411,63 @@ test("the side panel ranks the active wishes, counts the three places, and folds
   assert.ok(at('title="2 questions') < at('title="1 running"'));
   assert.ok(at('title="1 running"') < at('title="1 watching"'));
   assert.ok(at('title="1 watching"') < at("wish-rank"));
-  // The questions have their count: no raised hand repeats it beside the title, nor on the count (Q01). The icon
-  // says what the wish does.
-  assert.match(row, /wish-tone tone-running asks/);
+  // The questions have their count: no raised hand repeats it beside the title, nor on the count (Q01). The state's
+  // icon says what the wish does.
+  assert.match(row, /wish-tone tone-running"/);
   assert.match(row, /lucide-message-circle-question/);
-  // The hand only waits for a window under 820px wide, whose CSS hides the second line: it takes the icon's place.
-  assert.equal(row.match(/lucide-hand/g).length, 1);
+  assert.doesNotMatch(row, /lucide-hand/);
+  // The wish's own icon waits for a window under 820px wide, whose CSS hides the second line and the state's icon: the
+  // wish's mark (it has no icon yet), the small hand and its count on its corner, a blue dot under it.
   assert.match(
     row,
-    /<span class="wish-hand tone-waiting"><svg[^>]*lucide-hand[^>]*>.*?<\/svg><\/span><\/span>/,
+    /<span class="wish-emblem"><svg[^>]*class="lucide wish-icon wish-mark"[^>]*>(?:(?!<\/svg>).)*<\/svg>/,
+  );
+  assert.match(
+    row,
+    /<span class="wish-hand-corner" title="2 questions wait for your answer." aria-label="2 questions wait for your answer." role="img"><svg class="lucide waiting-hand"[^>]*>.*?<\/svg><b>2<\/b><\/span>/,
+  );
+  assert.match(
+    row,
+    /<span class="wish-acts" title="1 running" aria-label="1 running" role="img"><span class="wish-act tone-running"><\/span><\/span>/,
   );
   // A wish with no question carries no hand.
   assert.doesNotMatch(
     sidebar(false, { questions: 0, running: 1, watching: 0, merging: 0 }),
-    /wish-hand|lucide-hand/,
+    /wish-hand-corner|waiting-hand/,
   );
-  // Folded to the rail, the icon is all that shows: it keeps the hand, and no count.
+  // Folded to the rail, the wish's icon is all that shows, with its hand and its dot: no state's icon, no count.
   const rail = sidebar(true);
-  assert.match(rail, /wish-tone tone-waiting /);
-  assert.doesNotMatch(rail, /wish-hand/);
+  assert.doesNotMatch(rail, /wish-tone/);
+  assert.match(rail, /wish-emblem/);
+  assert.match(rail, /wish-hand-corner/);
+  assert.match(rail, /wish-act tone-running/);
   assert.doesNotMatch(rail, /wish-counts/);
   assert.doesNotMatch(rail, /wish-grip/);
+  // A wish with an icon of the bank draws it in its duo's colours, its line apart from its gilding; a name the bank
+  // does not hold keeps the mark.
+  const drawn = (icon) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1, { icon })],
+        projects: [],
+        selectedWishId: "w1",
+        selectedProjectId: "",
+        collapsed: true,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const lamp = drawn("lamp");
+  assert.match(
+    lamp,
+    /<svg[^>]*class="lucide wish-icon wish-duo-l"[^>]*stroke-width="1.25"[^>]*><g class="wish-icon-line"><g><path d="M4 12h10l7-3.5/,
+  );
+  assert.match(lamp, /<g stroke-width="1"><path d="M6.5 14.2h7"\/?>/);
+  assert.match(lamp, /<g class="wish-icon-gild"><path[^>]*fill="currentColor"/);
+  assert.doesNotMatch(lamp, / id="/);
+  assert.match(drawn("no-such-icon"), /wish-icon wish-mark/);
   // The workers that wait for a place: a grey seat and their number, after what works and before what watches; on the
   // rail, where no count shows, they hang on the corner of the wish's icon. None waits: neither shows.
   const placed = sidebar(false, {
@@ -526,6 +563,27 @@ test("the side panel counts the new inbox items on the flying carpet's entry, ev
   assert.match(
     sidebar([wish("w2", "Ship the lamp", s.WishState.ACTIVE, 1)], 1),
     /aria-label="1 new item in the inbox"/,
+  );
+  // Folded to the rail: no pill, the small hand and the count on the plane's corner.
+  const rail = s.renderToStaticMarkup(
+    h(s.WishSidebar, {
+      wishes: [paused],
+      projects: [],
+      inbox: 2,
+      onSelectPlan() {},
+      selectedWishId: "",
+      selectedProjectId: "",
+      collapsed: true,
+      onSelectWish() {},
+      onSelectProject() {},
+      onMove() {},
+      onNewProject() {},
+    }),
+  );
+  assert.doesNotMatch(rail, /count-pill/);
+  assert.match(
+    rail,
+    /<span class="wish-emblem"><svg[^>]*lucide-plane[^>]*>.*?<\/svg><span class="wish-hand-corner" title="2 new items in the inbox" aria-label="2 new items in the inbox" role="img"><svg class="lucide waiting-hand"[^>]*>.*?<\/svg><b>2<\/b><\/span><\/span>/,
   );
 });
 
@@ -5935,7 +5993,8 @@ test("work that merges stays in sight, shows as merging apart from the workers e
     /aria-label="1 merging: its work waits to merge, no worker runs"/,
   );
   assert.doesNotMatch(sidebar(merging, false), /aria-label="1 running"/);
-  assert.match(sidebar(merging, true), /wish-tone tone-running/);
+  // Folded, the work that merges lights the blue dot under the wish's icon.
+  assert.match(sidebar(merging, true), /wish-act tone-running/);
   assert.doesNotMatch(sidebar(committed, false), /running/);
   assert.doesNotMatch(sidebar(committed, true), /tone-running/);
 
@@ -13011,7 +13070,12 @@ test("a lit ifrit shows plainly on its wish: a flame and its count on the bar's 
   assert.match(side, /count-pill tone-running" title="1 running"/);
   assert.match(
     side,
-    /<span class="wish-tone tone-ifrit "><svg[^>]*fill="currentColor"[^>]*lucide-flame/,
+    /<span class="wish-tone tone-ifrit"><svg[^>]*fill="currentColor"[^>]*lucide-flame/,
+  );
+  // Where the bar folds to its icons, the logo's flame on the icon's corner, without a disc.
+  assert.match(
+    side,
+    /<span class="wish-flame-corner" title="1 ifrit lit" aria-label="1 ifrit lit" role="img"><svg class="lucide ifrit-flame"/,
   );
   // Put out: no flame on the bar, the wish's tone is today's.
   const outSide = sidebar([out]);
@@ -13575,6 +13639,91 @@ test("the sleep dialog offers the wish's tasks not over and the requests not mer
   );
 });
 
+// The journal of changes (W151): each commit of the reference branch that changed the configuration, when, which and
+// who, what it changed in sentences; one that waits for your look has the flame, its asking lines marked, and Seen
+// with what it does; the others say they were applied. A failed fetch is said with git's own words.
+test("the journal of configuration changes says each change, and marks seen those that wait for your look", () => {
+  const at = { seconds: 1760000000n, nanos: 0 };
+  const seen = [];
+  const waiting = {
+    id: "c1",
+    ref: "origin/main",
+    commit: "7290747aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    author: "Skayfa",
+    title: "Allow curl",
+    commitTime: at,
+    commits: 1,
+    firstLook: false,
+    lines: [
+      {
+        text: "Permissions: 1 more command the workers may run: curl.",
+        asks: true,
+      },
+      { text: "New check e2e before a push: go tool task e2e.", asks: false },
+    ],
+  };
+  const applied = {
+    ...waiting,
+    id: "c2",
+    commit: "bf53c16bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    title: "Change recette",
+    lines: [
+      { text: "The skill recette changes its instructions.", asks: false },
+    ],
+  };
+  const history = { ...applied, id: "c3", firstLook: true, commits: 3 };
+  const out = s.renderToStaticMarkup(
+    h(s.ConfigChanges, {
+      watch: {
+        ref: "origin/main",
+        fetchError: "fetch main from origin: could not read Username",
+      },
+      changes: [waiting, applied, history],
+      busy: "",
+      onSeen: (c) => seen.push(c.id),
+    }),
+  );
+  assert.match(
+    out,
+    /<h3>What changed on origin\/main<span class="config-from">watched every 5 min<\/span><\/h3>/,
+  );
+  assert.match(
+    out,
+    /<pre class="notice-detail">fetch main from origin: could not read Username<\/pre>/,
+  );
+  assert.match(
+    out,
+    /<div class="config-line config-change waits">.*<code>7290747<\/code><span>Skayfa<\/span><\/p><strong>Allow curl<\/strong>/,
+  );
+  assert.match(
+    out,
+    /<li class="asks">Permissions: 1 more command the workers may run: curl\.<\/li><li class="">New check e2e/,
+  );
+  assert.match(
+    out,
+    /Seen<\/button><p>Djinn applies it already: the gear stops lighting for it\./,
+  );
+  assert.match(out, /<code>bf53c16<\/code>.*Applied, nothing to decide\./);
+  assert.match(
+    out,
+    /3 commits.*Before Djinn watched it: applied, nothing to decide\./,
+  );
+  assert.doesNotMatch(out, /button accent/);
+  assert.equal((out.match(/Seen<\/button>/g) ?? []).length, 1);
+
+  const none = s.renderToStaticMarkup(
+    h(s.ConfigChanges, {
+      watch: { ref: "origin/dev", fetchError: "" },
+      changes: [],
+      busy: "",
+      onSeen() {},
+    }),
+  );
+  assert.match(
+    none,
+    /Nothing changed in the configuration since Djinn watches it\./,
+  );
+  assert.doesNotMatch(none, /notice-detail/);
 test("a question iterating on its mockup waits for its mockup task, not for you: folded as one being investigated (W268)", () => {
   const card = live(s.WishQuestion, {
     question: {

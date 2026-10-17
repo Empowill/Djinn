@@ -266,7 +266,9 @@ func (h *Harness) schedule(ctx context.Context) {
 	if !p.Auto && h.capacity != nil {
 		h.enforceNotchCapacity(ctx, p)
 	}
-	h.resumeNotchPaused(ctx)
+	if !h.netHolds() { // Resumed now, it would be paused again for the network (network.go).
+		h.resumeNotchPaused(ctx)
+	}
 
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
@@ -283,6 +285,7 @@ func (h *Harness) schedule(ctx context.Context) {
 	}
 	h.wakeQuestions(ctx, tasks)
 	h.judge(ctx, tasks)
+	network := h.netPass(ctx, tasks) // Down, no worker starts; back, one a pass.
 	if !slices.ContainsFunc(tasks, planned) {
 		return
 	}
@@ -293,6 +296,7 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 		return
 	}
+	s.WithNetwork(network)
 	for _, d := range s.Pass() {
 		if h.ctx.Err() != nil {
 			return
@@ -363,7 +367,7 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		h.mu.Lock()
 		outside := h.outside
 		for _, r := range h.runs {
-			if r.paused && (r.notchPaused || r.slotPaused) && !r.stopping && !r.final {
+			if r.paused && (r.notchPaused || r.slotPaused || r.netPaused) && !r.watcher && !r.stopping && !r.final {
 				m.Resuming++
 			}
 		}
@@ -420,7 +424,7 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		_, err := git(ctx, dir, "merge-base", "--is-ancestor", a, b)
 		return err == nil
 	}
-	sit := dispatch.New(tasks, wishes, projectGit, m).At(h.now())
+	sit := dispatch.New(tasks, wishes, projectGit, m).At(h.now()).WithNetwork(h.netView())
 	sit.WithAncestry(branchHead, isAncestor)
 	sit.WithQuestions(func(id string) string {
 		q, err := store.Get[*planv1.Question](ctx, h.store, id)
@@ -516,7 +520,7 @@ func (h *Harness) GatesOutside(n func() (outside, merges int)) {
 // setWaiting records why a planned task waits, whether for the machine alone, and whether for room on it (behind a
 // task that goes first too), when the reason changed, with an event.
 func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine, room bool) {
-	why = grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why)))
+	why = networkWhy(t, grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why))))
 	if t.GetWaitReason() == why && t.GetMachineWait() == machine && t.GetRoomWait() == room {
 		return
 	}
@@ -603,8 +607,8 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		if !questionWorker(t) && t.GetReview() == nil && t.GetCorrection().GetFailure() == nil && len(t.GetDependsOn()) > 0 {
 			if wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId()); err == nil {
 				from := h.workerStartBranch(ctx, wish, project, settings, t)
-				if sha, realFrom, err := startPoint(ctx, project.GetDirectory(), from); err == nil {
-					if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), t, sha, realFrom); depWhy != "" {
+				if sha, shown, err := h.startPoint(ctx, project, from); err == nil {
+					if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), t, sha, cmp.Or(from, shown)); depWhy != "" {
 						h.setWaiting(ctx, t, depWhy, false, false)
 						return nil
 					}

@@ -90,9 +90,22 @@
   --eye-rays: 0;
   /* The hover (styles.css, L17 proposal 1, Calm): a tint of the text's ink fades in, in the shape of the element; a tab
      lights its bar. */
-  --hover-tint: color-mix(in srgb, var(--n-ff) 7%, transparent);
+  --hover-strength: 7%;
+  --hover-tint: color-mix(
+    in srgb,
+    var(--n-ff) var(--hover-strength),
+    transparent
+  );
   --hover-bar: var(--n-6f);
   --hover-time: 140ms;
+  /* Write to the Djinn (instruction.css, L19 proposal 1, Lampe): the pill in the lamp's gold (review.css), its eye in a
+     socket of the seal's emerald; hovered, it takes Calm's tint in its own ink, pressed, a second one. Open, the field
+     lies on the raised surface. */
+  --press-strength: 6%;
+  --pill-socket: #12362c;
+  --pill-shadow: #000000b3;
+  --pill-focus: var(--lamp);
+  --pill-field: var(--surface-raised);
   /* The terminal: xterm's own colours in the dark theme. */
   --term-bg: #111111;
   --term-fg: #e7e7e7;
@@ -215,5 +228,10 @@ html[data-theme="light"] {
   --eye-slit: 1;
   --eye-lid-down: 0;
   --eye-rays: 1;
-  --hover-tint: color-mix(in srgb, var(--n-ff) 5%, transparent);
+  --hover-strength: 5%;
+  --press-strength: 5%;
+  --pill-socket: #ffffff;
+  --pill-shadow: #80600040;
+  --pill-focus: var(--sand);
+  --pill-field: var(--surface);
 }

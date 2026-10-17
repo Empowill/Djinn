@@ -376,6 +376,14 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 			h.cut(doing)
 			return nil, pushing.Err()
 		}
+		if held != "" && h.netCheckFailed("push/"+pushKey(wish.GetId(), project.GetId(), branch), sha, held+"\n"+out) {
+			// Not the code's failure: nothing held, no correction; the next push pass once the network is back runs
+			// them again, and only then, red again, they hold the push (network.go).
+			run.clear(ctx)
+			h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push checks of %s at %s failed on the network (%s); "+
+				"Djinn runs them again once it is back, with no correction", branch, short8(sha), headline(held)))
+			return nil, errNetworkDown
+		}
 	}
 	// What the checks found is acted on with no merge landing meanwhile: the branch still at sha, or the checks moot;
 	// a correction of red checks starting only when none repairs the branch (Q39).
@@ -465,6 +473,12 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		run.clear(ctx)
 		return nil, pushing.Err()
 	}
+	if err != nil && h.netCheckFailed("git push/"+pushKey(wish.GetId(), project.GetId(), branch), sha, out+"\n"+err.Error()) {
+		run.clear(ctx)
+		h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s to %s failed on the network (%s); Djinn "+
+			"pushes it again once the network is back", branch, remote, headline(lastLine(out))))
+		return nil, errNetworkDown
+	}
 	if err != nil {
 		reason := refusal(out, err)
 		run.set(ctx, planv1.PushStage_PUSH_STAGE_FAILED, "", fmt.Sprintf("%s refused the push: %s", remote, headline(reason)))
@@ -505,6 +519,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		commitsText(count, nil), why))
 	unlock()
 	h.notify()
+	h.kickConfig() // the push may have moved the reference branch
 	if settings, err := plan.LoadSettings(h.home, project); err == nil && settings.Install != "" && h.built != nil {
 		b := h.build(ctx, wish, project, settings.Install, record, committed)
 		b.Auto = !unchecked && h.installsItself(ctx, project, settings, b)
@@ -1075,6 +1090,9 @@ func logPush(err error, args ...any) {
 		return
 	case errors.Is(err, errMoot):
 		logx.L().Info("push moot", append(append([]any{"loop", "push"}, args...), "err", err)...)
+		return
+	case errors.Is(err, errNetworkDown):
+		logx.L().Info("push waits for the network", append(append([]any{"loop", "push"}, args...), "err", err)...)
 		return
 	}
 	logx.L().Warn("push failed", append(append([]any{"loop", "push"}, args...), "err", err)...)

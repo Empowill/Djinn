@@ -520,6 +520,19 @@ lead spends its tokens on mechanical work.
   TestReviewACorrectionsWork, TestAReviewThatFailsAfterItsCommit)
 - [x] A task waits for its dependencies to be integrated, and starts from the integration branch.
   (TestWaitsForTheCommit, TestADependentStartsFromTheCommit)
+- [x] Djinn never works from the developer's copy (W227, 17/10/2026, the developer: "the local copy is the
+  developer's, to use with full trust"): a new wish's integration branch is the project's reference branch, never the
+  branch the copy has checked out; a worker starts from the branch its work lands in (per wish the wish's integration
+  branch; per azima the azima's branch, cut from the remote's reference branch, fetched first; work of no azima the
+  wish's integration branch), the remote's copy of it when it is strictly ahead, the reference branch for a wish that
+  records none; never the copy's HEAD nor its changes not committed (the HEAD fallback is gone: no reference branch,
+  no worker). The reference commit is the remote's (`refs/remotes/origin/main`), fetched at most once a minute before a
+  worker starts from it or an azima is cut. What still depends on the copy: its configuration, only without a remote
+  or before the reference branch is fetched (W150 reads it on the reference branch otherwise); the integration branch,
+  when it is the one the copy has checked out, moves only with the copy following (clean, a fast-forward; with changes,
+  held), as Git's HEAD there is that branch; a Djinn built from a checkout judges a release by the branch that checkout
+  is on (Release), its build being that copy's. The project's panel says where workers start for each strategy.
+  (TestWorkersNeverStartFromTheCopy, TestWishAddProject, TestChangeIntegrationBranch)
 - [x] A task with no commit of its own is never merged, and no merge commit that changes nothing is made; a done
   azima's branch is never made again nor pushed by itself, its work waiting, the lead told once; a live azima merges
   and pushes as before. (TestNoCommitTaskIsNotMerged, TestEmptyMergeMakesNoCommit, TestNoOpBatchTellsTheEndOnly,

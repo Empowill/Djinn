@@ -85,6 +85,10 @@ message Machine {
   int32 worker_percentile = 21;
   // The same in words, like "engaged at p50 (overclock)".
   string worker_engaged_at = 22;
+  // Since when the network is down, as Djinn found it (W285): its first sign, which a probe of the provider's API
+  // confirmed; unset while it is up. Djinn starts no worker meanwhile, pauses the running ones between their turns, and
+  // holds its pushes, fetches and forge calls. The status bar says "network down since 15:12".
+  google.protobuf.Timestamp network_down_since = 23;
 }
 
 // WorkerUse is what the worker of a running task uses of the machine.

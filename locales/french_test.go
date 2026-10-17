@@ -44,6 +44,7 @@ var frenchAllowed = map[string]string{
 	"locales/french_test.go":            "this test, which names the signs of French",
 	"internal/harness/worktree.go":      "folds accented letters out of branch names",
 	"internal/harness/worktree_test.go": "checks that folding on an accented title",
+	"wishicons/bank.json":               "the wish icons' search words in French, as a wish's title may be (L09)",
 	"lead/tones/light.md":               "the solar Djinn's tone quotes its French turns, for questions in French",
 	"lead/tones/dark.md":                "the demon's tone quotes its French turns, for questions in French",
 }

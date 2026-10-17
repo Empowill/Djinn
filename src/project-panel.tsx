@@ -1,7 +1,16 @@
 // A project's configuration, as Djinn reads it on this machine: what waits for you first, its reference branch, the
 // checks Djinn runs on its work, the sources of the inbox this machine reads, the role of each skill, how it pushes,
 // its settings and where each comes from, and the watcher commands you allow.
-import { Flame, GitBranch, Info, Plug, Unplug } from "lucide-react";
+import {
+  Check,
+  Flame,
+  GitBranch,
+  GitCommitHorizontal,
+  GitFork,
+  Info,
+  Plug,
+  Unplug,
+} from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -16,6 +25,8 @@ import {
   Change,
   type CheckRun,
   CheckWhen,
+  type ConfigChange,
+  type ConfigWatch,
   type Project,
   type ProjectCheck,
   type ProjectNotice,
@@ -24,6 +35,7 @@ import {
   ProjectNoticeTopic,
   ProjectPush,
   type ProjectReference,
+  PushStrategy,
   type ProjectServiceShowResponse,
   type ProjectSetting,
   type ProjectSync,
@@ -131,6 +143,14 @@ export function ProjectPanel({
     if (firstSources.current !== sources) void reshow();
   }, [sources, reshow]);
 
+  // The projects read again (a look at the reference branch found a change, one was marked seen elsewhere): read
+  // the journal of changes and the notices again.
+  const listed = useData((s) => s.projects.find((p) => p.id === project.id));
+  const firstListed = useRef(listed);
+  useEffect(() => {
+    if (firstListed.current !== listed) void reshow();
+  }, [listed, reshow]);
+
   const currentPush =
     shown?.project?.push ?? project.push ?? ProjectPush.STANDARD;
   const syncs = shown?.project?.syncs ?? project.syncs;
@@ -157,7 +177,12 @@ export function ProjectPanel({
   const act = async (notice: ProjectNotice, plug?: boolean) => {
     setBusy(notice.subject);
     try {
-      if (notice.action === ProjectNoticeAction.UNSUMMON_SKILL) {
+      if (notice.action === ProjectNoticeAction.ACKNOWLEDGE_CHANGE) {
+        await clients.projects.acknowledge({
+          project: project.id,
+          change: notice.subject,
+        });
+      } else if (notice.action === ProjectNoticeAction.UNSUMMON_SKILL) {
         await clients.skills.unsummon({
           skill: notice.subject,
           from: project.id,
@@ -175,7 +200,24 @@ export function ProjectPanel({
       fail(err);
     } finally {
       setBusy("");
-      void store.changed("", [Change.INBOX]);
+      void store.changed("", [Change.INBOX, Change.PROJECT]);
+      void reshow();
+    }
+  };
+
+  // A change of the journal marked seen: the gear goes out once nothing else waits.
+  const handleSeen = async (change: ConfigChange) => {
+    setBusy(change.id);
+    try {
+      await clients.projects.acknowledge({
+        project: project.id,
+        change: change.id,
+      });
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy("");
+      void store.changed("", [Change.PROJECT]);
       void reshow();
     }
   };
@@ -354,6 +396,14 @@ export function ProjectPanel({
           />
         ))}
       </section>
+      {project.git && shown?.watch && (
+        <ConfigChanges
+          watch={shown.watch}
+          changes={shown.changes}
+          busy={busy}
+          onSeen={(c) => void handleSeen(c)}
+        />
+      )}
       {project.git && (
         <section className="config-box">
           <div className="setting-row">
@@ -482,6 +532,13 @@ export function NoticeLine({
         </div>
       );
       break;
+    case ProjectNoticeAction.ACKNOWLEDGE_CHANGE:
+      actions = (
+        <div className="notice-choices">
+          {button(t("project.change_seen"), t("project.change_seen_effect"))}
+        </div>
+      );
+      break;
     case ProjectNoticeAction.UNSUMMON_SKILL:
       actions = (
         <div className="notice-choices">
@@ -510,6 +567,127 @@ export function NoticeLine({
           {t("project.notice_command")} <Command text={notice.command} />
         </p>
       )}
+    </div>
+  );
+}
+
+// waits tells whether a change of the journal waits for your look: found after the first look, not marked seen, and
+// a line of it asks (plan.Waits).
+export function waits(change: ConfigChange): boolean {
+  return (
+    !change.firstLook && !change.seenTime && change.lines.some((l) => l.asks)
+  );
+}
+
+// ConfigChanges is the journal of changes of a project's configuration on its reference branch, the newest first:
+// each commit that changed it, what it changed in sentences, and a Seen button on those that wait for your look.
+// Above, how the watch went: a failed fetch, said as git said it.
+export function ConfigChanges({
+  watch,
+  changes,
+  busy,
+  onSeen,
+}: {
+  watch: ConfigWatch;
+  changes: ConfigChange[];
+  // The change being marked seen.
+  busy: string;
+  onSeen: (change: ConfigChange) => void;
+}) {
+  return (
+    <section className="config-box">
+      <h3>
+        {t("project.changes", { ref: watch.ref })}
+        <span className="config-from">{t("project.changes_where")}</span>
+      </h3>
+      {watch.fetchError && (
+        <div className="notice">
+          <p className="notice-text">
+            <Info size={13} aria-hidden="true" />
+            <span>{t("project.changes_fetch_failed")}</span>
+          </p>
+          <pre className="notice-detail">{watch.fetchError}</pre>
+        </div>
+      )}
+      {changes.length === 0 && (
+        <p className="muted-text">{t("project.changes_none")}</p>
+      )}
+      {changes.map((c) => (
+        <ChangeLine
+          key={c.id}
+          change={c}
+          busy={busy === c.id}
+          onSeen={() => onSeen(c)}
+        />
+      ))}
+    </section>
+  );
+}
+
+// ChangeLine is one entry of the journal of changes: when, which commit and who; its title; what it changed; and
+// whether it waits for your look, was seen, or was applied with nothing to decide.
+function ChangeLine({
+  change,
+  busy,
+  onSeen,
+}: {
+  change: ConfigChange;
+  busy: boolean;
+  onSeen: () => void;
+}) {
+  const waiting = waits(change);
+  const state = waiting
+    ? ""
+    : change.firstLook
+      ? t("project.change_history")
+      : change.seenTime
+        ? t("project.change_seen_at", { when: when(change.seenTime) })
+        : t("project.change_applied");
+  return (
+    <div className={`config-line config-change ${waiting ? "waits" : ""}`}>
+      {waiting ? (
+        <Flame size={14} aria-hidden="true" />
+      ) : (
+        <GitCommitHorizontal size={14} aria-hidden="true" />
+      )}
+      <div>
+        <p className="change-head">
+          <span>{when(change.commitTime)}</span>
+          <code>{change.commit.slice(0, 7)}</code>
+          {change.author && <span>{change.author}</span>}
+          {change.commits > 1 && (
+            <span>
+              {t("project.change_commits", { count: change.commits })}
+            </span>
+          )}
+        </p>
+        {change.title && <strong>{change.title}</strong>}
+        <ul className="change-lines">
+          {change.lines.map((l, i) => (
+            <li key={i} className={waiting && l.asks ? "asks" : ""}>
+              {l.text}
+            </li>
+          ))}
+        </ul>
+        {waiting ? (
+          <div className="notice-choices">
+            <div className="notice-choice">
+              <button
+                type="button"
+                className="button small secondary"
+                disabled={busy}
+                onClick={onSeen}
+              >
+                <Check size={14} />
+                {t("project.change_seen")}
+              </button>
+              <p>{t("project.change_seen_effect")}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="muted-text">{state}</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -567,6 +745,12 @@ export function ReferenceBranch({
           )}
         </div>
       </div>
+      {reference && (
+        <WorkersStart
+          reference={reference}
+          strategy={shown?.project?.pushStrategy}
+        />
+      )}
       {notices.map((n) => (
         <div className="config-line" key={n.text}>
           <Info size={14} aria-hidden="true" />
@@ -576,6 +760,40 @@ export function ReferenceBranch({
         </div>
       ))}
     </section>
+  );
+}
+
+// WorkersStart says where a worker's worktree starts, for each push strategy, the project's own marked: never from
+// the developer's copy, whatever it has checked out (W227).
+export function WorkersStart({
+  reference,
+  strategy,
+}: {
+  reference: ProjectReference;
+  strategy?: PushStrategy;
+}) {
+  const perAzima = strategy === PushStrategy.AZIMA;
+  const mark = (on: boolean) =>
+    on && <span className="badge muted">{t("project.start_default")}</span>;
+  return (
+    <div className="config-line">
+      <GitFork size={14} aria-hidden="true" />
+      <div>
+        <strong>{t("project.start")}</strong>
+        <p>
+          {t("project.start_wish", { branch: reference.branch })}{" "}
+          {mark(!perAzima)}
+        </p>
+        <p>
+          {t("project.start_azima", {
+            ref: reference.ref,
+            branch: reference.branch,
+          })}{" "}
+          {mark(perAzima)}
+        </p>
+        <p className="muted-text">{t("project.start_never")}</p>
+      </div>
+    </div>
   );
 }
 

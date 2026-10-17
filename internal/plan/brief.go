@@ -204,6 +204,11 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"names the task, why, and the command that relaunches it (`djinn task continue <task>`, which also ends and " +
 		"continues a stalled worker): run it, unless what you know of the task says otherwise; never check a worker's " +
 		"health by hand first. A limit that \"lifted\" needs nothing: Djinn resumes those tasks by itself.\n" +
+		"- **A `network` event is Djinn riding an outage (W285).** Down: Djinn starts no worker, pauses the running " +
+		"ones, holds its pushes, fetches and forge calls, and sends the workers the outage cut back to resume. Back: it " +
+		"resumes them one per pass, repairs first, and runs once again the push checks that failed on the network. Do " +
+		"nothing in between: no continue, no repair, no question; a failure or a red check during an outage is the " +
+		"network's, never the code's.\n" +
 		"- **Review comments on a diff**: `djinn task comment <task> \"…\" --file <path> --line <n> [--end-line <n>]` " +
 		"goes to the task's running worker; once it has ended, `djinn task turn-comments <task>` continues it or " +
 		"spawns a correction task in its azima.\n" +
@@ -361,6 +366,9 @@ func leadCommandsBrief(driven bool) string {
 		"- `djinn wish brief <wish>`: one wish's brief, up to date.\n" +
 		"- `djinn wish describe <wish> --text \"…\"`: the wish's description, a few lines: what it is for, its scope, " +
 		"where it goes. The developer edits it in the window too.\n" +
+		"- `djinn wish icon <wish> --name <name>`: the wish's icon in the window's menu, a name of the bank that says its " +
+		"subject; `djinn wish icons --search <word>` finds them by a word, English or French. A wish without one shows " +
+		"a grey mark until you choose.\n" +
 		"- `djinn question ask \"🔐 <question>\" <wish> --options \"…\" --options \"…\" --recommendation \"…\" --icon 🔐` " +
 		"(the emoji its title starts with); `--before \"before the merge\"` says what the answer is needed before, without it the " +
 		"question can wait (a question a waiting task needs is blocking anyway); `--move` marks a move only the " +
@@ -696,6 +704,11 @@ func movingBrief(
 		b.WriteString("\nFirst, write a concise title in the developer's language, using the language of the complete " +
 			"original request above when no preference is given, then run " +
 			"`djinn wish rename <wish> \"<title>\"`. The current title is provisional; keep the original request whole.\n")
+	}
+	if wish.GetIcon() == "" {
+		fmt.Fprintf(&b, "\nThis wish has no icon in the window's menu yet: once it has its title, choose the icon of the "+
+			"bank that says its subject (`djinn wish icons --search <word>`, a word of its title), then "+
+			"`djinn wish icon %s --name <name>`.\n", wish.GetId())
 	}
 
 	codes := map[string]string{}

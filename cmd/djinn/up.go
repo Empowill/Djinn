@@ -219,6 +219,9 @@ func runUp(args []string) (restart bool, err error) {
 		harness.WithBeforeStart(beforeStart()),
 		// While a task waits for its agent's usage limit, an account changed since lifts it (health.go).
 		harness.WithAccount(ui.Account),
+		// An outage Djinn suspects from its workers' and commands' errors is confirmed, and seen to end, by one HEAD
+		// to the provider's API host every 30 s, only while it is suspected (network.go).
+		harness.WithNetworkProbe(harness.ProbeHTTP),
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
@@ -410,6 +413,7 @@ func runUp(args []string) (restart bool, err error) {
 		return ""
 	}
 	workers.Integrate()
+	workers.WatchConfig()
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
 	uiSvc.Window = !browser
@@ -487,6 +491,7 @@ func runUp(args []string) (restart bool, err error) {
 		machine.WithHistory(history),
 		machine.WithSeriesWorkers(workers.RunsSeries),
 		machine.WithSeriesIntervals(gates.Intervals),
+		machine.WithNetwork(workers.NetworkDownSince),
 	)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)

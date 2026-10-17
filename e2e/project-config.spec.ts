@@ -3,6 +3,7 @@
 // template, one that is know-how alone, and one that offers an inbox source this machine has not decided on. The
 // panel says what to fix first, with its choices; then the reference branch, its commit and where its name comes from;
 // the checks and settings with where each comes from; and each skill's role. Saying no to the source settles it.
+// PROJECT_SHOTS=<folder> also writes the panel's reference box, where workers start, there.
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -129,6 +130,26 @@ test("a project's configuration says what to fix first, its reference branch, wh
   await expect(reference).toContainText(
     "Your copy has feature checked out, not the reference branch origin/main",
   );
+  await expect(reference).toContainText("no worker starts from your copy");
+  // Where workers start, for each push strategy, the project's own marked (W227): never from the copy.
+  await expect(reference).toContainText("Where workers start");
+  await expect(reference).toContainText(
+    "Per wish: from the wish's integration branch; a new wish's is main",
+  );
+  await expect(reference).toContainText(
+    "Per azima: an azima's work from its own branch, cut from origin/main",
+  );
+  await expect(reference.locator(".badge")).toHaveText(
+    "this project's default",
+  );
+  await expect(reference).toContainText("Never from your copy");
+  const shots = process.env.PROJECT_SHOTS;
+  if (shots) {
+    await reference.scrollIntoViewIfNeeded();
+    await reference.screenshot({
+      path: path.join(shots, "project-reference.png"),
+    });
+  }
 
   // Where each value comes from: the team's file names the check and merge_main, the file itself on hover.
   const checks = boxes.filter({

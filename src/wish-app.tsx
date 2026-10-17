@@ -21,6 +21,7 @@ import {
 import { importWish } from "./data/exchange";
 import { followPresence } from "./data/presence";
 import {
+  date,
   gateWaiters,
   isActive,
   placeWaitOf,
@@ -32,7 +33,7 @@ import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { HOURGLASS, Hourglass } from "./hourglass";
 import { HeldGates } from "./ifrit";
-import { t } from "./i18n";
+import { language, t } from "./i18n";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { useInboxCount } from "./inbox";
 import { ProjectPanel } from "./project-panel";
@@ -574,23 +575,32 @@ function HomePlaceholder() {
   );
 }
 
-// StatusBar says whether the page follows djinn, how the machine is doing, and the gates held (HeldGates).
+// StatusBar says whether the page follows djinn, how the machine is doing, quietly whether the network is down (W285),
+// and the gates held (HeldGates).
 function StatusBar({ live, error }: { live: boolean; error: string }) {
   const machine = useMachine();
   const gates = useData((s) => s.gates);
+  const down = date(machine?.networkDownSince);
   return (
     <footer className="app-statusbar">
       <span title={error || undefined}>
         <span className={`status-dot ${live ? "green" : "neutral"}`} />
         {live ? t("status.live") : t("status.reconnecting")}
       </span>
-      <span>
+      <span title={down ? t("status.network_down_hint") : undefined}>
         {machine &&
           t("status.machine", {
             running: machine.running,
             workers: machine.workers,
           })}
         {machine?.pressure && ` · ${machine.pressure}`}
+        {down &&
+          ` · ${t("status.network_down", {
+            time: down.toLocaleTimeString(language, {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          })}`}
       </span>
       <span>
         <HeldGates gates={gates} />

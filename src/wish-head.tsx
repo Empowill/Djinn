@@ -728,7 +728,7 @@ export function WhereWorkLands({
   open?: string;
   loadBranches: (
     projectId: string,
-  ) => Promise<{ branches: string[]; checkedOut: string }>;
+  ) => Promise<{ branches: string[]; reference: string }>;
   onChange: (
     projectId: string,
     branch: string,
@@ -820,12 +820,12 @@ export function BranchPicker({
   current: string;
   project?: string;
   branches?: string[];
-  load: () => Promise<{ branches: string[]; checkedOut: string }>;
+  load: () => Promise<{ branches: string[]; reference: string }>;
   onClose: () => void;
   onPick: (branch: string, create: boolean) => Promise<unknown>;
 }) {
   const [found, setFound] = useState<string[] | undefined>(given);
-  const [checkedOut, setCheckedOut] = useState("");
+  const [reference, setReference] = useState("");
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -835,7 +835,7 @@ export function BranchPicker({
       .then((res) => {
         if (!live) return;
         setFound(res.branches);
-        setCheckedOut(res.checkedOut);
+        setReference(res.reference);
       })
       .catch(() => live && setFound([]));
     const away = (event: MouseEvent) => {
@@ -861,8 +861,9 @@ export function BranchPicker({
     b.toLowerCase().includes(name.toLowerCase()),
   );
   const exists = all.some((b) => b.toLowerCase() === name.toLowerCase());
-  // A new branch starts from the current one; for a wish that records none, from the branch the checkout is on.
-  const from = current || checkedOut;
+  // A new branch starts from the current one; for a wish that records none, from the project's reference branch, never
+  // from the branch the developer's copy has checked out.
+  const from = current || reference;
   const pick = (branch: string, create: boolean) => {
     if (busy) return;
     setBusy(true);

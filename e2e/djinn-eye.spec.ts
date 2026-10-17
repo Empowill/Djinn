@@ -172,10 +172,10 @@ test("the eye flies from the seal to the question that matters, follows the one 
       expect(Math.abs(s.x - placed[0].x) + Math.abs(s.y - placed[0].y)).toBe(0);
     }
 
-    // Done writing: it flies to Write to the Djinn, which it lights, and listens.
+    // Done writing: it flies under Write to the Djinn, whose socket opens for it, and listens.
     await page.keyboard.press("Escape");
     const pill = page.locator(
-      ".workspace-action > .djinn-eye-perch > .djinn-eye",
+      ".workspace-action .lead-socket > .djinn-eye-perch > .djinn-eye",
     );
     await expect(pill).toBeVisible({ timeout: 5_000 });
     await expect(pill).toHaveAttribute("data-mood", "listening");

@@ -92,8 +92,33 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
 - **A budget.** A task is stopped, "budget exceeded", past 2 hours of work in total across its runs, or a worker past
   500 model turns in one run. It stays stopped until it is given a new turn.
 
-Only the resumes after a usage limit count against a task: after three of them, it fails. A restart, a pause or a lost
-process costs it nothing.
+Only the resumes after a usage limit count against a task, and those after a network error when no outage was
+confirmed: after three of them, it fails. A restart, a pause, a lost process or a confirmed network outage costs it
+nothing.
+
+## A network outage
+
+When the network goes down, Djinn holds what needs it and takes it all back once the network returns, by itself. On
+17/10/2026 an outage turned a wish's push checks red: a correction would have repaired code that was not broken, and
+every task of the wish waited.
+
+- **It notices from what fails.** The errors that mean no network: a worker's agent that cannot reach its provider (a
+  connection error, a request timed out, a reply cut off mid-stream, the API's 5xx or overloaded), git that could not
+  resolve its remote's host, gh or glab that could not connect, a name the machine could not resolve. A connection that
+  broke in a browser test (network changed, failed to fetch) counts only beside another sign, at the same time: a busy
+  machine says it too.
+- **It asks once, then every 30 seconds.** Such an error makes Djinn probe the network: one light request to the
+  provider's address. Failed, the outage is confirmed; answered, it was not one, and nothing changes. While all goes
+  well, Djinn probes nothing.
+- **While it is down,** no worker starts; the running ones are paused once the command they run ends, never failed for
+  their silence; pushes, fetches and the questions to the forge wait. A worker the outage cut is not failed: it shows
+  **Resuming**, network down since 15:12. The status bar says **network down since 15:12**.
+- **When it comes back,** Djinn resumes the work one task per pass, repairs first: the paused workers, then the tasks
+  the outage cut, each told that the network came back. Push checks that failed on the network run once again instead
+  of starting a correction: a network failure is never a code failure. Red again once the network is up, they hold the
+  push as any red check does.
+
+The Djinn hears one line as the network goes down, one as it comes back, and has nothing to do in between.
 
 ## A resumed worker first takes what came in
 

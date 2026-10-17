@@ -57,9 +57,21 @@ will land. Drop a paused or granted wish among the active ones to make it active
 is then paused. **Make it the first active wish**, beside a paused wish, does it in one click. See [Wish](#wish).
 
 Ctrl+\ (Cmd+\ on macOS), or the button at the top, folds the side panel into a rail of icons; Djinn remembers it. In a
-narrow window, under 820 pixels, the panel keeps only its icons by itself: a wish with open questions then shows a
-raised hand in place of its icon. On the rail, the grey seat and its count hang on the lower corner of a wish's icon
-while some of its workers wait for a place, and the grey pause and its count on its upper corner while some are paused.
+narrow window, under 820 pixels, the panel keeps only its icons by itself, the same way. On the rail each wish shows
+its own icon instead of its state's: an illuminated drawing, a fine line and its small filled ornaments, in two colours
+of the logo (emerald, saffron, mint, or the title's ink). The Djinn chooses it for the wish's subject from a bank of 108
+icons, in twelve families, and its lead can change it with the wish icon command; the wish icons command searches the
+bank by a word, in English or in French. Until it has one, a wish shows its mark, a small grey sigil drawn from its
+identifier, the same in every window. Around the icon, the signs of what goes on, never on a background:
+
+| Sign | What it says |
+| --- | --- |
+| Small yellow hand and a number, upper right | Questions waiting for your answer |
+| Vermilion flame, upper left | An ifrit is lit |
+| Blue dot, under it | Workers running, or work merging |
+| Violet dot, under it | Questions being investigated |
+| Grey seat and a number, lower right | Workers waiting for a place |
+| Grey pause and a number, lower left | Workers paused |
 
 ### The personal space
 
@@ -104,11 +116,12 @@ dark. The eye opens and goes where to look now:
 | --- | --- |
 | In the margin of a question, watching it | You just arrived: the question that matters most, one a worker waits for, then one needed before something, then the oldest |
 | In the margin of a question, reading it | The question you went to, by a click or the arrows |
-| On **Write to the Djinn**, which it lights a little | No question is open |
+| On **Write to the Djinn**, in the round porthole on its left | No question is open |
 | Home, in the seal | A page with none of those; closed while the lead is stopped; pale while Djinn's stream is cut |
 
 From one place to the next it flies on a curve, slowly enough to be followed, and lands in the margin: at rest, it
-covers nothing and scrolls with what it watches. It never moves while you type in a field, press a mouse button, scroll
+covers nothing and scrolls with what it watches. It flies under Write to the Djinn, never over it: there its porthole
+opens, the eye behind it blinks, and the message icon comes back when it leaves. It never moves while you type in a field, press a mouse button, scroll
 or read a dialog, nor while the window is in the background: it waits, then goes to the last place asked. It never takes
 the focus or a click. Its flame shines while something waits for you: a question a worker waits for, a worker waiting,
 a lit ifrit. With less motion asked by the system, it fades out and in, without flying.
@@ -195,7 +208,8 @@ The window's own keys never take a key typed in the terminal.
 ## The status bar and the update banner
 
 The status bar says whether the window is live with Djinn, or reconnecting, how many workers run of how many may, and
-the gates held. When the machine is under pressure, it says why.
+the gates held. When the machine is under pressure, it says why. While the network is down, it says so quietly,
+**network down since 15:12**; see [a network outage](#restarts-and-updates).
 
 When a newer Djinn is ready, a banner takes its own row at the very top of the window, over nothing. See
 [Restarts and updates](#restarts-and-updates).

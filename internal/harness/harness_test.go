@@ -540,10 +540,10 @@ func TestWarmLeftovers(t *testing.T) {
 	_, projectID := e.wish(t, repo)
 	left := worktreeDir(home, projectID, store.NewID())
 	taken := worktreeDir(home, projectID, store.NewID())
-	if _, err := addWorktree(t.Context(), repo, left, "djinn-warm-deadbeef"); err != nil {
+	if _, err := addWorktreeFrom(t.Context(), repo, left, "djinn-warm-deadbeef", "HEAD"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := addWorktree(t.Context(), repo, taken, "w1-a-task-12345678"); err != nil {
+	if _, err := addWorktreeFrom(t.Context(), repo, taken, "w1-a-task-12345678", "HEAD"); err != nil {
 		t.Fatal(err)
 	}
 	e.down()

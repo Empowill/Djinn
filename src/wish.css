@@ -114,55 +114,119 @@ html[data-theme="light"] .mission-nav .wish-counts .wish-rank {
   border: 0;
   background: none;
 }
-/* Under 820px wide the bar narrows to its icons by CSS alone, unfolded (styles.css): the second line hides, so the
-   hand takes the icon's place, as on the folded rail, to keep the questions in sight. */
-.wish-hand {
+/* A wish's own icon (wish-icon.tsx), with its marks: shown on the folded rail, and under 820px wide, where the bar
+   narrows to its icons by CSS alone, unfolded (styles.css), its second line hidden; the state's icon (.wish-tone)
+   shows the rest of the time. Absolute marks, so the row keeps its height when a count comes and goes. */
+.wish-emblem {
+  position: relative;
   display: none;
+  flex: 0 0 auto;
+  --halo: var(--n-14);
 }
-@media (max-width: 820px) {
-  .wish-tone.asks > :not(.wish-hand, .wish-place-corner, .wish-paused-corner) {
-    display: none;
-  }
-  .wish-tone > .wish-hand {
-    display: inline-flex;
-    color: var(--tone);
-  }
-}
-/* The workers that wait for a place hang on the corner of the wish's icon, past its lower right, where the second line
-   hides: on the folded rail, and in a narrow window. Grey, a seat and the number, no border; absolute, so the row
-   keeps its height when the count comes and goes. */
-.wish-place-corner {
-  display: none;
-  position: absolute;
-  left: calc(100% - 0.0625rem);
-  bottom: -0.375rem;
-  align-items: center;
-  gap: 0.0625rem;
-  color: var(--st-planned);
-  font: 600 0.5625rem/1 var(--mono);
-  white-space: nowrap;
-}
-/* The paused workers, the same way on the upper corner: a circled pause and the number. */
-.wish-paused-corner {
-  display: none;
-  position: absolute;
-  left: calc(100% - 0.0625rem);
-  top: -0.375rem;
-  align-items: center;
-  gap: 0.0625rem;
-  color: var(--st-paused);
-  font: 600 0.5625rem/1 var(--mono);
-  white-space: nowrap;
-}
-.sidebar-collapsed .wish-place-corner,
-.sidebar-collapsed .wish-paused-corner {
+.sidebar-collapsed .wish-emblem {
   display: inline-flex;
 }
+.sidebar-collapsed .wish-tone {
+  display: none;
+}
+.sidebar-collapsed .mission-nav.wish-nav {
+  padding: 0.8125rem;
+}
 @media (max-width: 820px) {
-  .wish-place-corner,
-  .wish-paused-corner {
+  .wish-emblem {
     display: inline-flex;
   }
+  .mission-nav > .wish-tone {
+    display: none;
+  }
+  .mission-nav.wish-nav {
+    padding: 0.8125rem;
+  }
+}
+.mission-nav.selected .wish-emblem {
+  --halo: var(--n-1e);
+}
+.nav-item.selected .wish-emblem {
+  --halo: var(--n-28);
+}
+/* The line of an icon in the title's ink goes to the selected title's. */
+.mission-nav.selected .wish-icon {
+  --wi-ink: var(--n-f6);
+}
+/* The hand and the flame without background (L09 v6, Q57 C2): a halo of the row's colour keeps them apart from the
+   icon, no pill, no disc. The hand and the questions' count on its upper right, the flame on its upper left. */
+.wish-hand-corner {
+  position: absolute;
+  top: -0.125rem;
+  left: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--st-waiting);
+  font: 700 0.65625rem/1 var(--mono);
+  white-space: nowrap;
+}
+.wish-hand-corner b {
+  margin-left: 0.0625rem;
+  text-shadow:
+    0 0 1px var(--halo),
+    0 0 0.125rem var(--halo),
+    0 0 0.125rem var(--halo);
+}
+.wish-flame-corner {
+  position: absolute;
+  top: -0.125rem;
+  right: calc(100% - 0.0625rem);
+  display: inline-flex;
+}
+.wish-hand-corner svg,
+.wish-flame-corner svg {
+  display: block;
+  filter: drop-shadow(0 0 1px var(--halo)) drop-shadow(0 0 1px var(--halo));
+}
+.ifrit-flame {
+  height: 0.875rem;
+}
+.ifrit-flame-out {
+  fill: var(--st-ifrit);
+}
+.ifrit-flame-core {
+  fill: var(--ifrit-core);
+}
+/* Under the icon, a dot for what works, merges included, and one for what investigates: never a number. */
+.wish-acts {
+  position: absolute;
+  top: calc(100% + 0.4375rem);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 0.25rem;
+}
+.wish-act {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 50%;
+  background: var(--tone);
+}
+/* The workers that wait for a place hang on the icon's lower right corner, the paused ones on its lower left: grey, a
+   seat or a circled pause and the number, no border. */
+.wish-place-corner,
+.wish-paused-corner {
+  position: absolute;
+  bottom: -0.375rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.0625rem;
+  font: 600 0.5625rem/1 var(--mono);
+  white-space: nowrap;
+}
+.wish-place-corner {
+  left: calc(100% - 0.0625rem);
+  color: var(--st-planned);
+}
+.wish-paused-corner {
+  right: calc(100% - 0.0625rem);
+  color: var(--st-paused);
 }
 .wish-ready {
   color: var(--tone);

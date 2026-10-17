@@ -27,6 +27,7 @@ import (
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
+	"github.com/empowill/djinn/wishicons"
 )
 
 // Entities are the messages the store keeps: those of plan.v1, and what each command of a project costs.
@@ -35,7 +36,7 @@ func Entities() []proto.Message {
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
 		&planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{}, &planv1.Lead{},
 		&planv1.LeadEvent{}, &planv1.TilasmComment{}, &planv1.SourceRun{}, &planv1.LeadBatch{}, &planv1.TilasmSend{},
-		&planv1.DeclinedSource{},
+		&planv1.DeclinedSource{}, &planv1.ConfigWatch{}, &planv1.ConfigChange{},
 	}
 }
 
@@ -415,6 +416,12 @@ func (p *Projects) Show(
 		Reference: p.projectReference(ctx, project, settings.MainBranch, settings.MainBranchFrom),
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
+	if watches, err := store.List[*planv1.ConfigWatch](ctx, p.Store, store.Where{"project_id": project.GetId()}); err == nil && len(watches) > 0 {
+		out.Watch = watches[0]
+	}
+	if changes, err := ProjectChanges(ctx, p.Store, project.GetId()); err == nil {
+		out.Changes = changes[:min(len(changes), configChangesShow)]
+	}
 	return connect.NewResponse(out), nil
 }
 
@@ -605,6 +612,7 @@ func (p *Projects) Branches(
 		return connect.NewResponse(out), nil
 	}
 	out.CheckedOut = CheckedOutBranch(ctx, dir)
+	out.Reference, _ = ReferenceName(ctx, p.Home, project)
 	if req.Msg.GetReference() {
 		if remote := remoteName(ctx, dir); remote != "" {
 			if out.Branches, err = remoteBranches(ctx, dir, remote); err != nil {
@@ -691,6 +699,49 @@ func (p *Projects) SetBranch(
 		Reference:     p.projectReference(ctx, project, settings.MainBranch, settings.MainBranchFrom),
 		DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId()),
 	}), nil
+}
+
+func (p *Projects) Acknowledge(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceAcknowledgeRequest],
+) (*connect.Response[planv1.ProjectServiceAcknowledgeResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	which := req.Msg.GetChange()
+	if which != "" && len(which) < 7 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name a change by its identifier, or 7 characters of its commit at least"))
+	}
+	var seen []*planv1.ConfigChange
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		changes, err := ProjectChanges(ctx, tx, project.GetId())
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, c := range changes {
+			if which != "" && !strings.EqualFold(c.GetId(), which) && !strings.HasPrefix(c.GetCommit(), strings.ToLower(which)) {
+				continue
+			}
+			found = true
+			if !Waits(c) {
+				continue
+			}
+			c.SeenTime = timestamppb.Now()
+			if err := tx.Put(c); err != nil {
+				return err
+			}
+			seen = append(seen, c)
+		}
+		if which != "" && !found {
+			return connect.NewError(connect.CodeNotFound, fmt.Errorf("no change %s in the journal of %s", which, project.GetName()))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.ProjectServiceAcknowledgeResponse{Changes: seen}), nil
 }
 
 // refuseProjectSwitchToAzima refuses making per azima the push strategy of the project projectID while a wish of it
@@ -821,7 +872,7 @@ func (w *Wishes) Make(
 	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
-		wish, err = makeWish(ctx, tx, req.Msg, w.Language)
+		wish, err = makeWish(ctx, tx, req.Msg, w.Home, w.Language)
 		return err
 	})
 	if err != nil {
@@ -853,7 +904,7 @@ func MadeLine(wish *planv1.Wish, provisional bool) string {
 
 // makeWish stores the wish req asks for in tx: last by rank among the active ones, or first among the paused ones,
 // with its request in a creation block. Its texts are in language. The caller journals the command, whose identifier the wish takes.
-func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, language string) (*planv1.Wish, error) {
+func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, home, language string) (*planv1.Wish, error) {
 	title := req.GetTitle()
 	if title == "" {
 		title = locales.T(language, "wish.provisional_title", nil)
@@ -886,7 +937,7 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 			wish.ProjectIds = append(wish.ProjectIds, project.GetId())
 		}
 	}
-	if err := integrationBranches(ctx, tx, wish); err != nil {
+	if err := integrationBranches(ctx, tx, home, wish); err != nil {
 		return nil, err
 	}
 	// A wish made paused comes first among the paused ones.
@@ -1019,8 +1070,47 @@ func (w *Wishes) Rename(
 	return connect.NewResponse(&planv1.WishServiceRenameResponse{Wish: wish}), nil
 }
 
+// Icon sets the wish's icon, a name of the bank, in place of what it had; empty takes it back to its mark. A name
+// outside the bank is refused, with how to find one.
+func (w *Wishes) Icon(
+	ctx context.Context, req *connect.Request[planv1.WishServiceIconRequest],
+) (*connect.Response[planv1.WishServiceIconResponse], error) {
+	name := strings.ToLower(strings.TrimSpace(req.Msg.GetName()))
+	if name != "" && !wishicons.Known(name) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"%q is not an icon of the bank: djinn wish icons --search <word> lists those that fit a word", name))
+	}
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		wish.Icon = name
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceIconResponse{Wish: wish}), nil
+}
+
+// Icons lists the bank of wish icons, or the icons whose words hold every word searched.
+func (w *Wishes) Icons(
+	_ context.Context, req *connect.Request[planv1.WishServiceIconsRequest],
+) (*connect.Response[planv1.WishServiceIconsResponse], error) {
+	var icons []*planv1.WishIcon
+	for _, icon := range wishicons.Search(req.Msg.GetSearch()) {
+		icons = append(icons, &planv1.WishIcon{Name: icon.Name, Family: icon.Family, Words: icon.En, WordsFr: icon.Fr})
+	}
+	return connect.NewResponse(&planv1.WishServiceIconsResponse{Icons: icons}), nil
+}
+
 // AddProject adds a project, named or by identifier, to the wish, with its integration branch there as Make records
-// one: the branch the project's checkout is on. A project already in the wish is refused.
+// one: the project's reference branch. A project already in the wish is refused.
 func (w *Wishes) AddProject(
 	ctx context.Context, req *connect.Request[planv1.WishServiceAddProjectRequest],
 ) (*connect.Response[planv1.WishServiceAddProjectResponse], error) {
@@ -1039,7 +1129,7 @@ func (w *Wishes) AddProject(
 				project.GetName(), wish.GetTitle()))
 		}
 		wish.ProjectIds = append(wish.ProjectIds, project.GetId())
-		integrationBranch(ctx, wish, project)
+		integrationBranch(ctx, w.Home, wish, project)
 		return tx.Put(wish)
 	})
 	if err != nil {

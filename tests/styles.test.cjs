@@ -175,6 +175,72 @@ test("the status colours keep their contrast in the dark and the light theme", (
   }
 });
 
+// The wish icons' colours (L09 v6) read on the menu in both themes, at rest and on a selected row: 3:1 at least, the
+// WCAG level for a graphic. Each is its own token, none of the signs' colours: the lamp's gold, the ifrit's vermilion,
+// the blue and violet of what runs and investigates.
+test("the wish icons' colours keep their contrast on the menu and stay apart from the signs' colours", () => {
+  const css = fs.readFileSync(path.join(root, "review.css"), "utf8");
+  const block = (selector) => {
+    const start = css.indexOf(selector + " {");
+    return css.slice(start, css.indexOf("}", start));
+  };
+  const tokens = (text) =>
+    Object.fromEntries(
+      [...text.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/g)].map((m) => [
+        m[1],
+        m[2],
+      ]),
+    );
+  const lum = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+  const themes = {
+    dark: { ...tokens(block(":root")), grounds: ["#141414", "#1e1e1e"] },
+    light: {
+      ...tokens(block('html[data-theme="light"]')),
+      grounds: ["#f0f0f3", "#e3e3e8"],
+    },
+  };
+  for (const [name, theme] of Object.entries(themes)) {
+    const colours = ["wi-emerald", "wi-saffron", "wi-mint"];
+    for (const colour of colours) {
+      assert.match(theme[colour] ?? "", /^#/, `${name}: --${colour} is set`);
+      for (const sign of ["lamp", "st-ifrit", "st-running", "st-investigating"])
+        assert.notEqual(
+          theme[colour],
+          theme[sign],
+          `${name}: --${colour} is --${sign}`,
+        );
+      for (const ground of theme.grounds) {
+        const r = ratio(theme[colour], ground);
+        assert.ok(
+          r >= 3,
+          `${name}: --${colour} on ${ground} reads at ${r.toFixed(2)}:1`,
+        );
+      }
+    }
+  }
+  // Every duo of the bank has its class, and every class takes its colours from these tokens.
+  const bank = JSON.parse(
+    fs.readFileSync(path.join(root, "../wishicons/bank.json"), "utf8"),
+  );
+  for (const duo of new Set(bank.icons.map((icon) => icon.duo)))
+    assert.match(
+      css,
+      new RegExp(
+        `\\.wish-duo-${duo.toLowerCase()} \\{\\s*--il-line: var\\(--wi-\\w+\\);\\s*--il-gild: var\\(--wi-\\w+\\);`,
+      ),
+    );
+});
+
 // Every surface follows the theme through the tokens of theme.css. The light ramp lifts the texts to 4.5:1 on the page
 // and on a card, in order; the terminal's colours read at 4.5:1 on its light ground; the family of what waits and the
 // danger colour read on their grounds in both themes. Clément's dim greys (65 to 88) stay quiet in the dark theme.
@@ -324,6 +390,118 @@ test("the update banner's buttons keep their contrast in the dark and the light 
   }
 });
 
+// Write to the Djinn, proposal 1 Lampe of L19 (Q58 C): its ink on the lamp's gradient at rest, hovered (Calm's tint in
+// the pill's own ink) and pressed (a second tint over it), the field's placeholder and text once open, keep 4.5:1 in
+// both themes; the eye's line, the socket's icon and the focus ring keep 3:1 on what is around them.
+test("Write to the Djinn's pill keeps its contrast in every state, in the dark and the light theme", () => {
+  const read = (file, selector) => {
+    const css = fs.readFileSync(path.join(root, file), "utf8");
+    const start = css.indexOf(selector + " {");
+    return Object.fromEntries(
+      [
+        ...css
+          .slice(start, css.indexOf("\n}", start))
+          .matchAll(/--([\w-]+):\s*(#[0-9a-f]{6}|\d+%|var\(--[\w-]+\));/g),
+      ].map((m) => [m[1], m[2]]),
+    );
+  };
+  const pill = fs.readFileSync(path.join(root, "instruction.css"), "utf8");
+  assert.match(
+    pill,
+    /\.workspace-action-lead > \.workspace-action-surface \{\s*border: 1px solid var\(--lamp-edge\);\s*background: var\(--pill-field\);/,
+  );
+  assert.match(
+    pill,
+    /\.workspace-action-lead > \.workspace-action-surface::before \{[^}]*background: linear-gradient\(var\(--lamp-hi\), var\(--lamp-lo\)\);/,
+  );
+  assert.match(
+    pill,
+    /\.workspace-action-lead:not\(\.is-expanded\) \{\s*--workspace-action-ink: var\(--lamp-ink\);/,
+  );
+  assert.match(pill, /outline-color: var\(--pill-focus\);/);
+  // The closed label of the pill is painted in its ink: only the wish creation pill blends.
+  assert.match(
+    pill,
+    /\.workspace-action-primary\s+>\s+\.workspace-action-content:has\(\s*>\s+\.workspace-action-control\s*\) \{[^}]*mix-blend-mode: difference;/,
+  );
+  const eye = fs.readFileSync(path.join(root, "djinn-eye.css"), "utf8");
+  assert.match(
+    eye,
+    /\.lead-socket \{[^}]*background: var\(--pill-socket\);\s*color: var\(--eye-line\);/,
+  );
+  assert.match(
+    eye,
+    /\.lead-socket-ring \{[^}]*border: 0\.09375rem solid var\(--eye-line\);/,
+  );
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const lum = (c) => {
+    const [r, g, b] = c.map((v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+  const over = (fore, share, back) =>
+    fore.map((v, i) => v * share + back[i] * (1 - share));
+  const dark = {
+    ...read("styles.css", ":root"),
+    ...read("review.css", ":root"),
+    ...read("theme.css", ":root"),
+  };
+  const themes = {
+    dark,
+    light: {
+      ...dark,
+      ...read("review.css", 'html[data-theme="light"]'),
+      ...read("theme.css", 'html[data-theme="light"]'),
+    },
+  };
+  for (const [name, theme] of Object.entries(themes)) {
+    const value = (token) => {
+      const v = theme[token];
+      assert.ok(v, `${name}: --${token} is set`);
+      const ref = /^var\(--([\w-]+)\)$/.exec(v);
+      return ref ? value(ref[1]) : v;
+    };
+    const colour = (token) => rgb(value(token));
+    const share = (token) => parseFloat(value(token)) / 100;
+    const ink = colour("lamp-ink");
+    const field = colour("pill-field");
+    const texts = {};
+    for (const end of ["lamp-hi", "lamp-lo"]) {
+      const rest = colour(end);
+      const hover = over(ink, share("hover-strength"), rest);
+      const pressed = over(ink, share("press-strength"), hover);
+      Object.assign(texts, {
+        [`the label at rest on --${end}`]: [ink, rest],
+        [`the label hovered on --${end}`]: [ink, hover],
+        [`the label pressed on --${end}`]: [ink, pressed],
+      });
+    }
+    texts["the field's placeholder"] = [colour("muted"), field];
+    texts["the field's text"] = [colour("text"), field];
+    for (const [what, [fore, back]] of Object.entries(texts)) {
+      const r = ratio(fore, back);
+      assert.ok(r >= 4.5, `${name}: ${what} reads at ${r.toFixed(2)}:1`);
+    }
+    const lines = {
+      "the eye's line on the socket": ["eye-line", "pill-socket"],
+      "the eye's line on its white": ["eye-line", "eye-white"],
+      "the socket's icon": ["eye-line", "pill-socket"],
+      "the focus ring on the page": ["pill-focus", "bg"],
+      "the field's edge on the page": ["lamp-edge", "bg"],
+    };
+    for (const [what, [fore, back]] of Object.entries(lines)) {
+      const r = ratio(colour(fore), colour(back));
+      assert.ok(r >= 3, `${name}: ${what} stands at ${r.toFixed(2)}:1`);
+    }
+  }
+});
+
 // The task row's model identifier uses Djinn's violet (--st-investigating), keeping WCAG AA contrast (4.5:1)
 // in both light and dark themes on the task card's surface.
 test("the task model uses Djinn's violet token and keeps contrast in both themes", () => {
@@ -418,6 +596,7 @@ test("every class of the stylesheets is used by a component", () => {
     /^level-/, // attention.tsx: level-${item.level}
     /^kind-\d+$/, // wish-task.tsx: kind-${event.kind}, a TaskEvent kind
     /^work-/, // wish-task.tsx: work-${work.tone}, where a task's work stands
+    /^wish-duo-[slem]$/, // wish-icon.tsx: wish-duo-${duo}, the colours of a wish icon of the bank
     /^lucide$/, // lucide-react's icons carry it (styles.css sizes them in rem)
   ];
   const components = fs

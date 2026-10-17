@@ -104,6 +104,9 @@ const (
 	// ProjectServiceSetBranchProcedure is the fully-qualified name of the ProjectService's SetBranch
 	// RPC.
 	ProjectServiceSetBranchProcedure = "/plan.v1.ProjectService/SetBranch"
+	// ProjectServiceAcknowledgeProcedure is the fully-qualified name of the ProjectService's
+	// Acknowledge RPC.
+	ProjectServiceAcknowledgeProcedure = "/plan.v1.ProjectService/Acknowledge"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -136,6 +139,10 @@ const (
 	WishServiceDescribeProcedure = "/plan.v1.WishService/Describe"
 	// WishServiceRenameProcedure is the fully-qualified name of the WishService's Rename RPC.
 	WishServiceRenameProcedure = "/plan.v1.WishService/Rename"
+	// WishServiceIconProcedure is the fully-qualified name of the WishService's Icon RPC.
+	WishServiceIconProcedure = "/plan.v1.WishService/Icon"
+	// WishServiceIconsProcedure is the fully-qualified name of the WishService's Icons RPC.
+	WishServiceIconsProcedure = "/plan.v1.WishService/Icons"
 	// WishServiceAddProjectProcedure is the fully-qualified name of the WishService's AddProject RPC.
 	WishServiceAddProjectProcedure = "/plan.v1.WishService/AddProject"
 	// WishServiceBriefProcedure is the fully-qualified name of the WishService's Brief RPC.
@@ -682,6 +689,10 @@ type ProjectServiceClient interface {
 	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
+	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
+	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
+	// them. They are applied already; djinn project show lists the journal of changes.
+	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -764,6 +775,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("SetBranch")),
 			connect.WithClientOptions(opts...),
 		),
+		acknowledge: connect.NewClient[v1.ProjectServiceAcknowledgeRequest, v1.ProjectServiceAcknowledgeResponse](
+			httpClient,
+			baseURL+ProjectServiceAcknowledgeProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -780,6 +797,7 @@ type projectServiceClient struct {
 	pull         *connect.Client[v1.ProjectServicePullRequest, v1.ProjectServicePullResponse]
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
 	setBranch    *connect.Client[v1.ProjectServiceSetBranchRequest, v1.ProjectServiceSetBranchResponse]
+	acknowledge  *connect.Client[v1.ProjectServiceAcknowledgeRequest, v1.ProjectServiceAcknowledgeResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -837,6 +855,11 @@ func (c *projectServiceClient) SetBranch(ctx context.Context, req *connect.Reque
 	return c.setBranch.CallUnary(ctx, req)
 }
 
+// Acknowledge calls plan.v1.ProjectService.Acknowledge.
+func (c *projectServiceClient) Acknowledge(ctx context.Context, req *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error) {
+	return c.acknowledge.CallUnary(ctx, req)
+}
+
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
@@ -871,6 +894,10 @@ type ProjectServiceHandler interface {
 	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
+	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
+	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
+	// them. They are applied already; djinn project show lists the journal of changes.
+	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -949,6 +976,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("SetBranch")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceAcknowledgeHandler := connect.NewUnaryHandler(
+		ProjectServiceAcknowledgeProcedure,
+		svc.Acknowledge,
+		connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceAddProcedure:
@@ -973,6 +1006,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceBranchesHandler.ServeHTTP(w, r)
 		case ProjectServiceSetBranchProcedure:
 			projectServiceSetBranchHandler.ServeHTTP(w, r)
+		case ProjectServiceAcknowledgeProcedure:
+			projectServiceAcknowledgeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1024,6 +1059,10 @@ func (UnimplementedProjectServiceHandler) Branches(context.Context, *connect.Req
 
 func (UnimplementedProjectServiceHandler) SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetBranch is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Acknowledge is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.
@@ -1402,6 +1441,12 @@ type WishServiceClient interface {
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
 	// Rename a wish: what you wish, in a sentence, in place of what it had.
 	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
+	// Set a wish's icon in the window's menu, in place of what it had: a name of the bank (djinn wish icons) that says
+	// its subject. An empty name takes it back to its mark.
+	Icon(context.Context, *connect.Request[v1.WishServiceIconRequest]) (*connect.Response[v1.WishServiceIconResponse], error)
+	// List the bank of wish icons a wish's icon is chosen from, family by family: each name with its words in English
+	// and in French. --search keeps the icons whose name, family or words hold every word given, in either language.
+	Icons(context.Context, *connect.Request[v1.WishServiceIconsRequest]) (*connect.Response[v1.WishServiceIconsResponse], error)
 	// Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
 	// with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
 	// wish is made. A project already in the wish, or unknown, is refused. Removing a project is not possible.
@@ -1522,6 +1567,19 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Rename")),
 			connect.WithClientOptions(opts...),
 		),
+		icon: connect.NewClient[v1.WishServiceIconRequest, v1.WishServiceIconResponse](
+			httpClient,
+			baseURL+WishServiceIconProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Icon")),
+			connect.WithClientOptions(opts...),
+		),
+		icons: connect.NewClient[v1.WishServiceIconsRequest, v1.WishServiceIconsResponse](
+			httpClient,
+			baseURL+WishServiceIconsProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Icons")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		addProject: connect.NewClient[v1.WishServiceAddProjectRequest, v1.WishServiceAddProjectResponse](
 			httpClient,
 			baseURL+WishServiceAddProjectProcedure,
@@ -1637,6 +1695,8 @@ type wishServiceClient struct {
 	importData     *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
 	describe       *connect.Client[v1.WishServiceDescribeRequest, v1.WishServiceDescribeResponse]
 	rename         *connect.Client[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse]
+	icon           *connect.Client[v1.WishServiceIconRequest, v1.WishServiceIconResponse]
+	icons          *connect.Client[v1.WishServiceIconsRequest, v1.WishServiceIconsResponse]
 	addProject     *connect.Client[v1.WishServiceAddProjectRequest, v1.WishServiceAddProjectResponse]
 	brief          *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
 	snapshot       *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
@@ -1689,6 +1749,16 @@ func (c *wishServiceClient) Describe(ctx context.Context, req *connect.Request[v
 // Rename calls plan.v1.WishService.Rename.
 func (c *wishServiceClient) Rename(ctx context.Context, req *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
 	return c.rename.CallUnary(ctx, req)
+}
+
+// Icon calls plan.v1.WishService.Icon.
+func (c *wishServiceClient) Icon(ctx context.Context, req *connect.Request[v1.WishServiceIconRequest]) (*connect.Response[v1.WishServiceIconResponse], error) {
+	return c.icon.CallUnary(ctx, req)
+}
+
+// Icons calls plan.v1.WishService.Icons.
+func (c *wishServiceClient) Icons(ctx context.Context, req *connect.Request[v1.WishServiceIconsRequest]) (*connect.Response[v1.WishServiceIconsResponse], error) {
+	return c.icons.CallUnary(ctx, req)
 }
 
 // AddProject calls plan.v1.WishService.AddProject.
@@ -1798,6 +1868,12 @@ type WishServiceHandler interface {
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
 	// Rename a wish: what you wish, in a sentence, in place of what it had.
 	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
+	// Set a wish's icon in the window's menu, in place of what it had: a name of the bank (djinn wish icons) that says
+	// its subject. An empty name takes it back to its mark.
+	Icon(context.Context, *connect.Request[v1.WishServiceIconRequest]) (*connect.Response[v1.WishServiceIconResponse], error)
+	// List the bank of wish icons a wish's icon is chosen from, family by family: each name with its words in English
+	// and in French. --search keeps the icons whose name, family or words hold every word given, in either language.
+	Icons(context.Context, *connect.Request[v1.WishServiceIconsRequest]) (*connect.Response[v1.WishServiceIconsResponse], error)
 	// Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
 	// with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
 	// wish is made. A project already in the wish, or unknown, is refused. Removing a project is not possible.
@@ -1912,6 +1988,19 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		WishServiceRenameProcedure,
 		svc.Rename,
 		connect.WithSchema(wishServiceMethods.ByName("Rename")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceIconHandler := connect.NewUnaryHandler(
+		WishServiceIconProcedure,
+		svc.Icon,
+		connect.WithSchema(wishServiceMethods.ByName("Icon")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceIconsHandler := connect.NewUnaryHandler(
+		WishServiceIconsProcedure,
+		svc.Icons,
+		connect.WithSchema(wishServiceMethods.ByName("Icons")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	wishServiceAddProjectHandler := connect.NewUnaryHandler(
@@ -2033,6 +2122,10 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceDescribeHandler.ServeHTTP(w, r)
 		case WishServiceRenameProcedure:
 			wishServiceRenameHandler.ServeHTTP(w, r)
+		case WishServiceIconProcedure:
+			wishServiceIconHandler.ServeHTTP(w, r)
+		case WishServiceIconsProcedure:
+			wishServiceIconsHandler.ServeHTTP(w, r)
 		case WishServiceAddProjectProcedure:
 			wishServiceAddProjectHandler.ServeHTTP(w, r)
 		case WishServiceBriefProcedure:
@@ -2102,6 +2195,14 @@ func (UnimplementedWishServiceHandler) Describe(context.Context, *connect.Reques
 
 func (UnimplementedWishServiceHandler) Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Rename is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Icon(context.Context, *connect.Request[v1.WishServiceIconRequest]) (*connect.Response[v1.WishServiceIconResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Icon is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Icons(context.Context, *connect.Request[v1.WishServiceIconsRequest]) (*connect.Response[v1.WishServiceIconsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Icons is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) AddProject(context.Context, *connect.Request[v1.WishServiceAddProjectRequest]) (*connect.Response[v1.WishServiceAddProjectResponse], error) {

@@ -182,6 +182,9 @@ func (ws *watchers) changed(ms []proto.Message) {
 		case *planv1.ProjectSync:
 			// Where a branch stands against its remote, or its push: the harness notes it (store.Tx.Change).
 			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT, ""})
+		case *planv1.ConfigWatch, *planv1.ConfigChange:
+			// A look at the reference branch, or a change marked seen: the project's gear may light or go out.
+			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT, ""})
 		case *planv1.PluggedSource, *planv1.DeclinedSource:
 			// A source decided on this machine: its project counts one thing less to fix.
 			changes = append(changes, change{"", planv1.Change_CHANGE_INBOX, ""}, change{"", planv1.Change_CHANGE_PROJECT, ""})

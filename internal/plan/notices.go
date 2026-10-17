@@ -63,6 +63,7 @@ func (p *Projects) projectNotices(ctx context.Context, project *planv1.Project) 
 	}
 	out = append(out, p.skillNotices(ctx, project, config)...)
 	out = append(out, p.sourceNotices(ctx, project)...)
+	out = append(out, changeNotices(ctx, p.Store, project)...)
 	slices.SortStableFunc(out, func(a, b *planv1.ProjectNotice) int { return cmp.Compare(a.GetKind(), b.GetKind()) })
 	return out
 }
@@ -145,7 +146,7 @@ func permissionNotices(config Config) []*planv1.ProjectNotice {
 
 // branchNotices say whether Djinn finds project's reference branch, from name, its main_branch setting that file
 // holds or would hold; and which other branch the project's folder has checked out, config saying where Djinn reads
-// the project's configuration.
+// the project's configuration. No worker starts from that copy, whatever it has checked out (W227).
 func (p *Projects) branchNotices(
 	ctx context.Context, project *planv1.Project, config Config, name, file string,
 ) []*planv1.ProjectNotice {
@@ -168,10 +169,11 @@ func (p *Projects) branchNotices(
 		return nil // detached, or on the reference branch
 	}
 	text := fmt.Sprintf("Your copy has %s checked out, not the reference branch %s: Djinn reads the project's "+
-		"configuration from your copy, on %s.", head, shortRef(ref), head)
+		"configuration from your copy, on %s, changes not committed included. No worker starts from it.",
+		head, shortRef(ref), head)
 	if config.FromReference() {
 		text = fmt.Sprintf("Your copy has %s checked out, not the reference branch %s: no matter, Djinn reads the "+
-			"project's configuration on %s.", head, shortRef(ref), config.Ref)
+			"project's configuration on %s, and no worker starts from your copy.", head, shortRef(ref), config.Ref)
 	}
 	return []*planv1.ProjectNotice{{Kind: information, Topic: topicBranch, Subject: head, Text: text}}
 }

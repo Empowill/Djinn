@@ -269,6 +269,9 @@ func (h *Harness) babysitOpened(t *planv1.Task) {
 	go func() {
 		defer logx.Crash("babysit", "task", t.GetCode())
 		defer h.babysitting.Done()
+		if !h.waitNetwork(h.ctx) { // Its forge cannot answer before the network is back (network.go).
+			return
+		}
 		if err := h.babysit(h.ctx, t); err != nil && h.ctx.Err() == nil {
 			logx.L().Warn("babysit what a task opened", "loop", "babysit", "task", t.GetCode(), "err", err)
 		}
