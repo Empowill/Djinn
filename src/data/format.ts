@@ -27,6 +27,7 @@ import {
   type SleepCondition,
   SleepKind,
   type Task,
+  TaskHold,
   TaskKind,
   TaskRole,
   TaskStatus,
@@ -783,27 +784,101 @@ export function runningOf(
   };
 }
 
-// placeWaitOf counts a wish's tasks whose workers wait for a place: the planned ones that would start now but wait for
-// room on the machine (Task.roomWait: no free slot, a gate held outside the workers taking one, the machine under
-// pressure or its memory short, maybe behind a task that goes first), and the running workers that wait for a gate
-// (gateWaiters), still counted among the running. Not those a dependency, a red integration branch, a usage limit, a
-// write scope or a question holds: the server tells them apart, never the window from a wait reason's text.
-export function placeWaitOf(
-  tasks: (Pick<Task, "id" | "status"> & Partial<Pick<Task, "roomWait">>)[],
+// Waits counts a wish's workers that wait, by what holds them (waitsOf): a place (a free slot, the machine's load or
+// memory, a gate, a write scope), the push checks of its integration branch, a dependency, a usage limit or the
+// network, a question a dependency waits on.
+export interface Waits {
+  place: number;
+  push: number;
+  dependency: number;
+  limit: number;
+  question: number;
+}
+
+// waitsOf counts a wish's work tasks that wait, whatever holds them: every planned or resuming one that has a reason
+// to wait, by its hold (Task.hold, which the server judges, never the window from the reason's text), and the running
+// workers that wait for a gate (gateWaiters), still counted among the running, for a place. One the server has not
+// judged yet waits for a place, its turn. Azimas and watchers are no workers: never counted; nor a task of a wish
+// paused or granted, nor one whose worker waits for your answer (the hand counts its question).
+export function waitsOf(
+  tasks: (Pick<Task, "id" | "status"> &
+    Partial<
+      Pick<Task, "roomWait" | "hold" | "waitReason" | "kind" | "provider">
+    >)[],
   gateWaiting = "",
-): number {
+): Waits {
   const gated = new Set(gateWaiting.split(" "));
-  return tasks.filter((task) => {
-    switch (task.status) {
-      case TaskStatus.PENDING:
-      case TaskStatus.RESUMING:
-        return !!task.roomWait;
-      case TaskStatus.RUNNING:
-        return gated.has(task.id);
-      default:
-        return false;
+  const waits: Waits = {
+    place: 0,
+    push: 0,
+    dependency: 0,
+    limit: 0,
+    question: 0,
+  };
+  for (const task of tasks) {
+    if (task.kind === TaskKind.AZIMA || task.provider === Provider.WATCH)
+      continue;
+    if (task.status === TaskStatus.RUNNING) {
+      if (gated.has(task.id)) waits.place++;
+      continue;
     }
-  }).length;
+    if (
+      task.status !== TaskStatus.PENDING &&
+      task.status !== TaskStatus.RESUMING
+    )
+      continue;
+    const hold = task.hold ?? TaskHold.UNSPECIFIED;
+    if (!task.waitReason && !task.roomWait && hold === TaskHold.UNSPECIFIED)
+      continue;
+    switch (hold) {
+      case TaskHold.PUSH:
+        waits.push++;
+        break;
+      case TaskHold.DEPENDENCY:
+        waits.dependency++;
+        break;
+      case TaskHold.LIMIT:
+      case TaskHold.NETWORK:
+        waits.limit++;
+        break;
+      case TaskHold.QUESTION:
+        waits.question++;
+        break;
+      case TaskHold.WISH:
+        break;
+      default:
+        waits.place++;
+    }
+  }
+  return waits;
+}
+
+// waitCount is how many workers wait (waitsOf), whatever holds them: the seat's number.
+export function waitCount(waits: Waits | undefined): number {
+  if (!waits) return 0;
+  return (
+    waits.place + waits.push + waits.dependency + waits.limit + waits.question
+  );
+}
+
+// waitText says how many workers wait, then how many for each reason, in the order of waitsOf, a reason at zero left
+// out: the seat's tooltip.
+export function waitText(waits: Waits): string {
+  const reasons = (
+    [
+      ["place", "plan.wait_place"],
+      ["push", "plan.wait_push"],
+      ["dependency", "plan.wait_dependency"],
+      ["limit", "plan.wait_limit"],
+      ["question", "plan.wait_question"],
+    ] as const
+  )
+    .filter(([reason]) => waits[reason] > 0)
+    .map(([reason, key]) => t(key, { count: waits[reason] }));
+  return t("plan.waits", {
+    count: waitCount(waits),
+    reasons: reasons.join("; "),
+  });
 }
 
 // gateWaiters names the tasks that wait for a gate (Gate.waitingTaskIds), sorted, in a single string: a selector of

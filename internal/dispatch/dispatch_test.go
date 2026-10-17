@@ -1350,6 +1350,77 @@ func TestMachineAlone(t *testing.T) {
 	}
 }
 
+// TestHold: a decision says what holds a task that waits (Task.hold), the window's count of a wish's waiting workers by
+// reason: room on the machine (behind one the memory holds too, or a write scope outside Git), its branch's red push
+// checks, a dependency, a usage limit, the network, a dependency's blocking question, its wish. A task that starts or
+// fails is held by nothing.
+func TestHold(t *testing.T) {
+	now := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1,
+		Pushes: []*planv1.WishPush{{ProjectId: "held", Held: "at 12345678, test: exit status 1", FailedSha: "1234567890abcdef"}}}
+	paused := &planv1.Wish{Id: "p", State: planv1.WishState_WISH_STATE_PAUSED}
+	task := func(id string, edit func(*planv1.Task)) *planv1.Task {
+		t := &planv1.Task{Id: id, WishId: "w", Code: id, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
+			Provider: planv1.Provider_PROVIDER_CODEX, CreateTime: timestamppb.New(now.Add(-time.Hour))}
+		if edit != nil {
+			edit(t)
+		}
+		return t
+	}
+	tasks := []*planv1.Task{
+		task("full", nil),
+		task("limit", func(t *planv1.Task) {
+			t.Status, t.Provider = planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.Provider_PROVIDER_CLAUDE
+			t.ResumeAfter, t.WaitReason = timestamppb.New(now.Add(time.Hour)), "the session limit"
+		}),
+		task("limited", func(t *planv1.Task) { t.Provider = planv1.Provider_PROVIDER_CLAUDE }),
+		task("pushed", func(t *planv1.Task) { t.ProjectId = "held" }),
+		task("after", func(t *planv1.Task) { t.DependsOn = []string{"full"} }),
+		task("asked", func(t *planv1.Task) {
+			t.Status, t.StartTime, t.WaitQuestionId = planv1.TaskStatus_TASK_STATUS_WAITING, timestamppb.New(now), "q1"
+		}),
+		task("answer", func(t *planv1.Task) { t.DependsOn = []string{"asked"} }),
+		task("shelved", func(t *planv1.Task) { t.WishId = "p" }),
+		task("orphan", func(t *planv1.Task) { t.DependsOn = []string{"gone"} }),
+	}
+	pass := func(n *Network, slots int) map[string]Decision {
+		got := map[string]Decision{}
+		for _, d := range New(tasks, []*planv1.Wish{wish, paused}, map[string]bool{"held": true},
+			&Machine{Slots: slots, Running: 1, Rule: "test"}).At(now).WithNetwork(n).Pass() {
+			got[d.Task.GetId()] = d
+		}
+		return got
+	}
+	got := pass(nil, 1)
+	for id, want := range map[string]planv1.TaskHold{
+		"full":    planv1.TaskHold_TASK_HOLD_PLACE,
+		"limit":   planv1.TaskHold_TASK_HOLD_LIMIT,
+		"limited": planv1.TaskHold_TASK_HOLD_LIMIT,
+		"pushed":  planv1.TaskHold_TASK_HOLD_PUSH,
+		"after":   planv1.TaskHold_TASK_HOLD_DEPENDENCY,
+		"answer":  planv1.TaskHold_TASK_HOLD_QUESTION,
+		"shelved": planv1.TaskHold_TASK_HOLD_WISH,
+		"orphan":  planv1.TaskHold_TASK_HOLD_UNSPECIFIED, // It fails.
+	} {
+		if d := got[id]; d.Hold != want {
+			t.Errorf("%s: hold %v, want %v (why %q, failed %q)", id, d.Hold, want, d.Why, d.Failed)
+		}
+	}
+	if d := pass(nil, 8)["full"]; d.Why != "" || d.Hold != planv1.TaskHold_TASK_HOLD_UNSPECIFIED {
+		t.Errorf("free machine: full = %q, hold %v; want it started, held by nothing", d.Why, d.Hold)
+	}
+	// The network down holds what else would start, or wait for room: the network, not a place.
+	for _, slots := range []int{1, 8} {
+		got = pass(&Network{Down: "network down since 08:40"}, slots)
+		if d := got["full"]; d.Hold != planv1.TaskHold_TASK_HOLD_NETWORK {
+			t.Errorf("network down, %d slots: full hold %v (why %q)", slots, d.Hold, d.Why)
+		}
+		if d := got["pushed"]; d.Hold != planv1.TaskHold_TASK_HOLD_PUSH {
+			t.Errorf("network down, %d slots: pushed hold %v (why %q)", slots, d.Hold, d.Why)
+		}
+	}
+}
+
 // TestAzimaRankFirst (W134): within its wish's rank, the waiting work of the azima ranked first starts first, before
 // older work of a lower azima, even one that unblocks others; work of no azima comes after the ranked azimas'; an
 // azima never ranked comes after the ranked ones; a wish ranked first comes before them all.

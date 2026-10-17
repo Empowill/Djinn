@@ -192,6 +192,8 @@ type Decision struct {
 	// investigation, a merge or a repair pauses a work task for it (the harness's preemptForSlot): it takes that task's
 	// slot, never one more.
 	Slot bool
+	// What holds it while it waits (Task.hold): unspecified when it starts or fails.
+	Hold planv1.TaskHold
 }
 
 // Planned tells whether Djinn starts the task by itself, once it is ready: a task planned on this machine, or one
@@ -303,11 +305,12 @@ func UrgentOf(tasks []*planv1.Task, wishID, except string, feedback bool) *planv
 func (s *Situation) Pass() []Decision {
 	var out []Decision
 	for _, t := range s.Order() {
-		why, failed := s.Held(t)
+		why, failed, hold := s.held(t)
 		machine, room, slot := false, false, false
 		if why == "" && failed == "" {
 			if why = s.networkHeld(t); why != "" {
 				machine, room = true, true // djinn task start may start it all the same.
+				hold = planv1.TaskHold_TASK_HOLD_NETWORK
 			} else {
 				var first bool
 				if why, first, slot = s.full(t); why == "" {
@@ -318,10 +321,16 @@ func (s *Situation) Pass() []Decision {
 				}
 				room = why != ""
 				machine = room && !first
+				if room {
+					hold = planv1.TaskHold_TASK_HOLD_PLACE
+				}
 			}
 		}
+		if failed != "" {
+			hold = planv1.TaskHold_TASK_HOLD_UNSPECIFIED
+		}
 		out = append(out, Decision{Task: t, Why: why, Failed: failed, Commit: why != "" && s.awaitsCommit(t),
-			Machine: machine, Room: room, Slot: slot})
+			Machine: machine, Room: room, Slot: slot, Hold: hold})
 	}
 	return out
 }
@@ -495,13 +504,21 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 // Held is Blocker without the machine: what holds the task whatever the machine allows (its wish, a dependency, a
 // push hold, its provider's usage limit, a write scope). A task forced to start (djinn task start) needs Held empty.
 func (s *Situation) Held(t *planv1.Task) (why, failed string) {
+	why, failed, _ = s.held(t)
+	return why, failed
+}
+
+// held is Held, and what holds the task (Task.hold) when it waits.
+func (s *Situation) held(t *planv1.Task) (why, failed string, hold planv1.TaskHold) {
 	if wish, ok := s.wishes[t.GetWishId()]; ok && !plan.Active(wish) {
-		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), ""
+		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), "",
+			planv1.TaskHold_TASK_HOLD_WISH
 	}
+	hold = planv1.TaskHold_TASK_HOLD_DEPENDENCY
 	for _, id := range t.GetDependsOn() {
 		d, ok := s.byID[id]
 		if !ok {
-			return "", "its dependency " + id + " is gone"
+			return "", "its dependency " + id + " is gone", 0
 		}
 		// A dependency resumed as a fork is its fork: "W1, resumed as W5," when it ended, W5 while it waits.
 		ended := d.GetCode()
@@ -538,12 +555,12 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 			}
 			continue
 		case planv1.TaskStatus_TASK_STATUS_STOPPED:
-			return "", fmt.Sprintf("its dependency %s ended %s", ended, status(d.GetStatus()))
+			return "", fmt.Sprintf("its dependency %s ended %s", ended, status(d.GetStatus())), 0
 		case planv1.TaskStatus_TASK_STATUS_WAITING:
 			// Its worker asked a blocking question: the answer continues it, and this one waits for that answer.
 			if code := s.waitCode(d); code != "" {
 				if why == "" {
-					why = fmt.Sprintf("waits for %s, which %s waits for", code, d.GetCode())
+					why, hold = fmt.Sprintf("waits for %s, which %s waits for", code, d.GetCode()), planv1.TaskHold_TASK_HOLD_QUESTION
 				}
 				continue
 			}
@@ -557,16 +574,16 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 		}
 	}
 	if why != "" {
-		return why, ""
+		return why, "", hold
 	}
 	if why := s.pushHeld(t); why != "" {
-		return why, ""
+		return why, "", planv1.TaskHold_TASK_HOLD_PUSH
 	}
 	if why := s.limited(t); why != "" {
-		return why, ""
+		return why, "", planv1.TaskHold_TASK_HOLD_LIMIT
 	}
 	if Watcher(t) {
-		return "", "" // It sleeps until its command prints: no slot, and it writes nothing.
+		return "", "", 0 // It sleeps until its command prints: no slot, and it writes nothing.
 	}
 	// In Git, worktrees separate the writers; a question worker writes nothing, nor does work that changes no code.
 	if id := t.GetProjectId(); id != "" && !s.git[id] && !QuestionWorker(t) && !ChangesNoCode(t) {
@@ -576,11 +593,11 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 			}
 			if Overlap(t.GetWriteScopes(), o.GetWriteScopes()) {
 				return fmt.Sprintf("%s writes %s, which overlaps %s", o.GetCode(), ScopeText(o.GetWriteScopes()),
-					ScopeText(t.GetWriteScopes())), ""
+					ScopeText(t.GetWriteScopes())), "", planv1.TaskHold_TASK_HOLD_PLACE
 			}
 		}
 	}
-	return "", ""
+	return "", "", 0
 }
 
 // waitCode is the code of the blocking question d waits on; "" when it waits on none, or when it is not known.

@@ -959,9 +959,10 @@ func (h *Harness) spawn(
 	}
 	var why, failed string
 	var machine, room, slot bool
+	var hold planv1.TaskHold
 	for _, d := range sit.Pass() {
 		if d.Task == task {
-			why, failed, machine, room, slot = d.Why, d.Failed, d.Machine, d.Room, d.Slot
+			why, failed, machine, room, slot, hold = d.Why, d.Failed, d.Machine, d.Room, d.Slot, d.Hold
 		}
 	}
 	var preemptedCode string
@@ -976,7 +977,7 @@ func (h *Harness) spawn(
 				if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 					for _, d := range sit2.Pass() {
 						if d.Task == task {
-							why, failed, machine, room = d.Why, d.Failed, d.Machine, d.Room
+							why, failed, machine, room, hold = d.Why, d.Failed, d.Machine, d.Room, d.Hold
 						}
 					}
 				}
@@ -990,7 +991,7 @@ func (h *Harness) spawn(
 					if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 						for _, d := range sit2.Pass() {
 							if d.Task == task {
-								why, failed, machine, room = d.Why, d.Failed, d.Machine, d.Room
+								why, failed, machine, room, hold = d.Why, d.Failed, d.Machine, d.Room, d.Hold
 							}
 						}
 					}
@@ -999,13 +1000,13 @@ func (h *Harness) spawn(
 		} else if slot {
 			// It takes the slot of the work task it pauses, never one more: none to pause, it waits for a slot.
 			if code, err := h.preemptForSlot(ctx, task); err == nil && code != "" {
-				preemptedCode, why, machine, room = code, "", false, false
+				preemptedCode, why, machine, room, hold = code, "", false, false, 0
 			}
 		}
 	case slot && plan.IsMerge(task):
 		// A merge or a repair takes the slot of the work task it pauses, as an investigator does (W233).
 		if code, err := h.preemptForSlot(ctx, task); err == nil && code != "" {
-			preemptedCode, why, machine, room = code, "", false, false
+			preemptedCode, why, machine, room, hold = code, "", false, false, 0
 		}
 	case why != "" && isMemoryShort(why):
 		if code, err := h.interruptPausedForMemory(ctx, task); err == nil && code != "" {
@@ -1016,7 +1017,7 @@ func (h *Harness) spawn(
 			if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 				for _, d := range sit2.Pass() {
 					if d.Task == task {
-						why, failed, machine, room = d.Why, d.Failed, d.Machine, d.Room
+						why, failed, machine, room, hold = d.Why, d.Failed, d.Machine, d.Room, d.Hold
 					}
 				}
 			}
@@ -1026,12 +1027,12 @@ func (h *Harness) spawn(
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))
 	case settingsErr != nil:
-		why, machine, room = fmt.Sprintf("settings unreadable: %v", settingsErr), false, false
+		why, machine, room, hold = fmt.Sprintf("settings unreadable: %v", settingsErr), false, false, 0
 	case req.GetLater() && why == "":
 		why = "planned: it starts at the scheduler's next pass"
 	}
 	if why != "" {
-		task.MachineWait, task.RoomWait = machine, room
+		task.MachineWait, task.RoomWait, task.Hold = machine, room, hold
 		return h.plan(ctx, procedure, req, task, parent, prompt, why)
 	}
 
@@ -1316,7 +1317,7 @@ func (h *Harness) launch(
 					_ = os.RemoveAll(skillsDir)
 					task.Branch, task.Worktree = "", ""
 					h.forgetWithoutWake(r)
-					h.setWaiting(ctx, task, depWhy, false, false)
+					h.setWaiting(ctx, task, depWhy, false, false, planv1.TaskHold_TASK_HOLD_DEPENDENCY)
 					return store.Get[*planv1.Task](ctx, h.store, task.GetId())
 				}
 				dir, err = addWorktreeFrom(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), sha)
@@ -2485,7 +2486,7 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 	if dispatch.Resuming(task) {
 		why = "stopped on request while it waited to resume"
 	}
-	task.Status, task.Error, task.WaitReason, task.MachineWait, task.RoomWait, task.ResumeAfter, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", false, false,
+	task.Status, task.Error, task.WaitReason, task.MachineWait, task.RoomWait, task.Hold, task.ResumeAfter, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", false, false, 0,
 		nil, timestamppb.Now()
 	h.writeAlone(ctx, actorLocal, procedure, req, task.GetId(), task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "stopped: " + task.GetError()})
 	h.sched.Unlock()

@@ -49,7 +49,7 @@ An active wish takes a second line, its signs in one order, each left out when i
 | Violet dot and a number | Questions being investigated |
 | Wrench | Merges being fixed: agents correct them, nothing to do |
 | Grey pause | Workers paused: stopped by you or the lead, put out, or cut short by a restart or a usage limit until Djinn resumes them; their work is kept |
-| Grey seat | Workers waiting for a place: a free slot, the machine's load or memory, or a [gate](#gates). A worker waiting for a gate still counts as running. A task held by a dependency, a red branch, a usage limit or a question is not counted |
+| Grey seat | Workers waiting, whatever holds them: every planned or resuming task of the wish that waits, and the workers waiting for a [gate](#gates), who still count as running. Its tooltip splits them by reason: a place (a free slot, the machine's load or memory, a gate), the push checks of the branch, a dependency, a usage limit or the network, a question. An azima, a watcher, or a worker waiting for your answer is not counted |
 | Teal eye | Watchers watching |
 | Ready to grant | The wish is done for you to grant |
 | #3 | Its rank, never a count |
@@ -75,7 +75,7 @@ corners, and back. On the rail, never on a background:
 | Vermilion flame, upper left | An ifrit is lit |
 | Blue dot, under it | Workers running, or work merging |
 | Violet dot, under it | Questions being investigated |
-| Grey seat and a number, lower right | Workers waiting for a place |
+| Grey seat and a number, lower right | Workers waiting, whatever holds them |
 | Grey pause and a number, lower left | Workers paused |
 
 ### The personal space

@@ -24,9 +24,9 @@ import {
   date,
   gateWaiters,
   isActive,
-  placeWaitOf,
   runningOf,
   waitsForYou,
+  waitsOf,
 } from "./data/format";
 import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
@@ -253,7 +253,7 @@ export function WishApp() {
       {
         questions: details[w.id]?.questions.filter(waitsForYou).length ?? 0,
         ...runningOf(details[w.id]?.tasks ?? []),
-        placeWait: placeWaitOf(details[w.id]?.tasks ?? [], gateWaiting),
+        waits: waitsOf(details[w.id]?.tasks ?? [], gateWaiting),
       },
     ]),
   );

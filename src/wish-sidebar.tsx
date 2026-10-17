@@ -41,7 +41,14 @@ import {
 
 import type { Project, ProjectSync, Wish } from "../gen/ts/plan/v1/plan_pb";
 import { WishState } from "../gen/ts/plan/v1/plan_pb";
-import { MAX_ACTIVE, type Tone, isActive } from "./data/format";
+import {
+  MAX_ACTIVE,
+  type Tone,
+  type Waits,
+  isActive,
+  waitCount,
+  waitText,
+} from "./data/format";
 import { t } from "./i18n";
 import { useOpenTerminal } from "./lead-terminal";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, usePageShortcut } from "./page-keys";
@@ -81,8 +88,9 @@ export interface WishCounts {
   fixing?: number;
   // Lit ifrits (runningOf), apart from the running ones: a vermilion flame, and the wish's tone.
   ifrits?: number;
-  // Workers that wait for a place (placeWaitOf): a free slot, the machine's load or memory, a gate. Grey, with a seat.
-  placeWait?: number;
+  // Workers that wait, by what holds them (waitsOf): a place, the branch's push checks, a dependency, a usage limit or
+  // the network, a question. Grey, with a seat: their number, and each reason's in its tooltip.
+  waits?: Waits;
   // Workers paused, their work kept until they go on (runningOf, workerPhase): grey, with a circled pause.
   paused?: number;
 }
@@ -227,12 +235,12 @@ export function WishSidebar({
     // unfolded: the row is built around it, and only its states move when the menu folds (wish.css). A paused or
     // granted wish's icon gives up its colours, one grey. Unfolded, an active wish takes a second line under its title,
     // in one order: its lit ifrits' flame, the small hand and the questions that wait for you, what runs by kind (work,
-    // merges, investigations, repairs), what is paused, what waits for a place, what watches, then ready to grant, a
-    // count at zero left out, and its rank at the end. Folded to the rail (or narrowed by its width alone, styles.css,
+    // merges, investigations, repairs), what is paused, what waits whatever holds it, what watches, then ready to grant,
+    // a count at zero left out, and its rank at the end. Folded to the rail (or narrowed by its width alone, styles.css,
     // 820px, the second line hidden), the same states sit on the icon's corners, without background: the hand and the
     // questions' count on its upper right, a lit ifrit's flame on its upper left; under it a blue dot while workers run
-    // or merge, a violet one while an investigation runs, never a number; the workers waiting for a place hang on its
-    // lower right corner, the paused ones on its lower left.
+    // or merge, a violet one while an investigation runs, never a number; the workers that wait hang on its lower right
+    // corner, the paused ones on its lower left.
     const counted = !!rank && !collapsed;
     const working = count.running + count.merging;
     const ifritLabel = t("wish.ifrits_lit", { count: count.ifrits ?? 0 });
@@ -247,7 +255,8 @@ export function WishSidebar({
     ]
       .filter(Boolean)
       .join(" · ");
-    const placeLabel = t("plan.place_wait", { count: count.placeWait ?? 0 });
+    const waiting = waitCount(count.waits);
+    const waitLabel = count.waits ? waitText(count.waits) : "";
     const pausedLabel = t("plan.paused", { count: count.paused ?? 0 });
     // Alt+Arrow moves a wish one step within its list: its rank, or its place among the paused or granted ones.
     const keys = (event: KeyboardEvent) => {
@@ -328,15 +337,15 @@ export function WishSidebar({
               )}
             </span>
           )}
-          {!!rank && !!count.placeWait && (
+          {!!rank && !!waiting && (
             <span
               className="wish-place-corner"
-              title={placeLabel}
-              aria-label={placeLabel}
+              title={waitLabel}
+              aria-label={waitLabel}
               role="img"
             >
               <Armchair size={8} aria-hidden="true" />
-              <b>{count.placeWait}</b>
+              <b>{waiting}</b>
             </span>
           )}
           {!!rank && !!count.paused && (
@@ -408,12 +417,12 @@ export function WishSidebar({
                     label={pausedLabel}
                   />
                 )}
-                {!!count.placeWait && (
+                {!!waiting && (
                   <Sign
                     tone="planned"
                     icon={Armchair}
-                    count={count.placeWait}
-                    label={placeLabel}
+                    count={waiting}
+                    label={waitLabel}
                   />
                 )}
                 {count.watching > 0 && (

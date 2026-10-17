@@ -1336,8 +1336,8 @@ message Task {
   // The planned task waits for room on the machine alone: no slot is free (gates held outside the workers take slots),
   // the machine is under pressure, or its memory is short, for it or for a task that goes first and that it waits
   // behind (machine_wait, and the tasks queued after one the memory holds). False when a dependency, its integration
-  // branch's red push checks, a usage limit, a write scope, its wish or a question holds it. The window counts these
-  // tasks as waiting for a place.
+  // branch's red push checks, a usage limit, a write scope, its wish or a question holds it. True too while the network
+  // holds it, which djinn task start may override; hold says which holds it.
   bool room_wait = 72;
   // How the scheduler judges its worker on each pass (W188): stalled, waiting for its usage limit, its limit lifted,
   // or to relaunch after a failure Djinn does not repair by itself. Unset while the worker is well, and for a task
@@ -1354,6 +1354,32 @@ message Task {
   // it: the answer, the developer's or the lead's, continues the task on its session with the decision, once a slot is
   // free. Empty otherwise.
   string wait_question_id = 77;
+  // What holds the planned task that waits (wait_reason), as the scheduler's pass judged it: room on the machine (a
+  // slot, its load or memory, a write scope), its integration branch's push checks, a dependency, a usage limit, the
+  // network, or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
+  // reason's text. Unspecified while the scheduler has not judged it yet, and once it starts.
+  TaskHold hold = 78;
+}
+
+// TaskHold is what holds a planned task that waits (Task.hold).
+enum TaskHold {
+  // Not judged, or nothing holds it.
+  TASK_HOLD_UNSPECIFIED = 0;
+  // Room on the machine: no slot free, the machine under pressure, its memory short, a task that goes first, or,
+  // outside Git, a task that writes the same files.
+  TASK_HOLD_PLACE = 1;
+  // Its wish's integration branch: its push checks are red, or a merge of the branch is being repaired.
+  TASK_HOLD_PUSH = 2;
+  // A task it depends on: not done yet, failed, or its work not yet merged into the branch the task starts from.
+  TASK_HOLD_DEPENDENCY = 3;
+  // Its provider's usage limit, its own or another task's of the same provider.
+  TASK_HOLD_LIMIT = 4;
+  // The network: down, or back and resuming the work it stopped one task per pass.
+  TASK_HOLD_NETWORK = 5;
+  // A blocking question that a task it depends on waits on: its answer continues that task.
+  TASK_HOLD_QUESTION = 6;
+  // Its wish is paused or granted.
+  TASK_HOLD_WISH = 7;
 }
 
 // TaskHealth is how the scheduler judges a work task's worker (W188). It changes only when its state does: each change
