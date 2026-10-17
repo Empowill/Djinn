@@ -505,7 +505,7 @@ Tests: `TestWatchParagraphs`, `TestWatcher` (no slot, the restart loop, the line
 `TestWatcherEnds`, `TestWatcherResumes` (and the restart line), `TestWatcherPermissions` (`watch_test.go`, the test
 binary plays the command), `TestWatcherLife`, `TestLamplighterWatcherOutlivesBudgets`,
 `TestWatcherStartsAgainWhenItDies`, `TestWatcherGivesUp`, `TestLamplighterLostWatcherStartsAgain`
-(`lamplighter_test.go`), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
+(`lamplighter_test.go`), and `TestPass/watcher_takes_no_slot` (`internal/dispatch`).
 
 ## Ifrit: an agent whose input stays open
 
