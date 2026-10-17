@@ -152,7 +152,7 @@ func (w *Wishes) replaceAnswer(
 		return
 	}
 	e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode(),
-		Detail: detail}
+		Detail: detail, Note: q.GetAnswer().GetNote()}
 	err := w.notifyInPlace(ctx, e, func(waiting []*planv1.LeadEvent) []*planv1.LeadEvent {
 		var mine []*planv1.LeadEvent
 		for _, o := range waiting {
@@ -196,7 +196,7 @@ func (w *Wishes) queueWaitingAnswers(ctx context.Context) {
 			continue
 		}
 		e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode(),
-			Text: AnswerLine(q, "")}
+			Text: AnswerLine(q, ""), Note: q.GetAnswer().GetNote()}
 		if err := QueueLeadEvent(ctx, w.Store, e, w.now()); err != nil {
 			logx.L().Error("queue an answer for the lead", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
 		}
@@ -210,7 +210,7 @@ func (w *Wishes) Enlightened(ctx context.Context, q *planv1.Question, note strin
 		// (journal and window only); the lead hears when the worker ends.
 		return
 	}
-	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN, EnlightenLine(q, note, ""))
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN, EnlightenLine(q, note, ""), note)
 }
 
 // Approved tells the lead that the developer approved the answer the lead or a worker gave q: the decision is the
@@ -223,7 +223,7 @@ func (w *Wishes) Approved(ctx context.Context, q *planv1.Question) {
 			by = t.GetCode()
 		}
 	}
-	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_APPROVED, ApprovedLine(q, by))
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_APPROVED, ApprovedLine(q, by), "")
 }
 
 // ApprovedLine is the line that tells a lead the developer approved the answer by gave q (you, or a worker's code):
@@ -268,12 +268,12 @@ func QuestionWorkerOf(ctx context.Context, r store.Reader, q *planv1.Question, r
 	return nil, nil
 }
 
-// notify queues an event of kind about q for the lead.
-func (w *Wishes) notify(ctx context.Context, q *planv1.Question, kind planv1.LeadEventKind, line string) {
+// notify queues an event of kind about q for the lead, with note whole: the developer's words the line cuts.
+func (w *Wishes) notify(ctx context.Context, q *planv1.Question, kind planv1.LeadEventKind, line, note string) {
 	if w.Store == nil {
 		return
 	}
-	e := &planv1.LeadEvent{Kind: kind, WishId: q.GetWishId(), Code: q.GetCode(), Text: line}
+	e := &planv1.LeadEvent{Kind: kind, WishId: q.GetWishId(), Code: q.GetCode(), Text: line, Note: strings.TrimSpace(note)}
 	if err := w.Notify(ctx, e); err != nil {
 		logx.L().Error("tell the lead about a question", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
 	}

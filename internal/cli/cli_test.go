@@ -215,6 +215,23 @@ func TestConvention(t *testing.T) {
 			want: &planv1.TaskServiceWatchRequest{TaskId: wishID, Last: 5},
 		},
 		{
+			name: "a task's last events, then the ones that come",
+			args: []string{wishID, "--last", "5", "--follow"},
+			want: &planv1.TaskServiceWatchRequest{TaskId: wishID, Last: 5, Follow: true},
+		},
+		{
+			name: "one question of a wish, by its code",
+			args: []string{"Q12", "--wish-id", wishID},
+			want: &planv1.QuestionServiceGetRequest{
+				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q12"}}, WishId: wishID,
+			},
+		},
+		{
+			name: "one of the lead's events whole",
+			args: []string{wishID},
+			want: &planv1.LeadServiceEventRequest{Id: wishID},
+		},
+		{
 			name: "an ifrit, with its own idle minutes",
 			args: []string{wishID, "--kind", "ifrit", "--idle-minutes", "60"},
 			want: &planv1.TaskServiceSpawnRequest{WishId: wishID, Kind: planv1.TaskKind_TASK_KIND_IFRIT, IdleMinutes: 60},

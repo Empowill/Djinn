@@ -445,8 +445,8 @@ func TestApprovalComesBackInLeadWatch(t *testing.T) {
 	}
 	digest := res.Msg.GetText()
 	for _, line := range []string{
-		`- Q01 approved: approved by the developer, as you answered it: B — "Paraffin". The decision is theirs now.`,
-		`- Q02 approved: approved by the developer, as W01 answered it: B — "Paraffin". The decision is theirs now.`,
+		`- Q01 [Approvals] approved: approved by the developer, as you answered it: B — "Paraffin". The decision is theirs now.`,
+		`- Q02 [Approvals] approved: approved by the developer, as W01 answered it: B — "Paraffin". The decision is theirs now.`,
 	} {
 		if !strings.Contains(digest, line+"\n") {
 			t.Errorf("the digest lacks %q:\n%s", line, digest)
