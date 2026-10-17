@@ -1562,7 +1562,8 @@ export const WishOrigin = memo(function WishOrigin({ wish }: { wish: Wish }) {
   );
 });
 
-// WaitingTasks are the workers that wait for the user: for an answer before they edit.
+// WaitingTasks are the workers that wait for the user: for an answer before they edit, or to the blocking question
+// they asked, whose answer continues them.
 export function WaitingTasks({
   waiting,
   origin = false,
@@ -1584,9 +1585,11 @@ export function WaitingTasks({
           <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
           {origin && wishOrigin(wish)}
           <span>
-            {question
-              ? t("page.action_waiting", { task: item.code, question })
-              : t("page.action_waiting_unknown", { task: item.code })}
+            {question && item.waitQuestionId
+              ? t("page.action_waiting_question", { task: item.code, question })
+              : question
+                ? t("page.action_waiting", { task: item.code, question })
+                : t("page.action_waiting_unknown", { task: item.code })}
           </span>
         </p>
       ))}

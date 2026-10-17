@@ -169,6 +169,7 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"to the developer. A question to the developer is only for a decision or a move only a person can make (a " +
 		"right, a merge, a release, a machine Djinn does not have); then the exact command goes in the code block at " +
 		"the top of its `--context`, never in a sentence.\n" +
+		"- **A worker's blocking question waits for the developer (W260).** " + WaitingQuestionRule + "\n" +
 		"- **Refused calls are yours, rights stay explicit (Q273).** A worker's `ended` or `failed` event names the " +
 		"calls its permissions refused and the right that would allow them; the developer never sees them, nor a " +
 		"failed worker: the window never counts one as waiting for them, it is yours alone. A failed investigator " +
@@ -1094,6 +1095,10 @@ func waitText(t *planv1.Task) string {
 		}
 		return "planned"
 	case planv1.TaskStatus_TASK_STATUS_WAITING:
+		if t.GetWaitQuestionId() != "" {
+			// Its error names the question: "waiting for the answer to Q51".
+			return clipLine(t.GetError()) + ", which continues it: its slot is free"
+		}
 		return "waits for the answer to its edit question"
 	case planv1.TaskStatus_TASK_STATUS_RESUMING:
 		// Djinn resumes it by itself: not the lead's move.

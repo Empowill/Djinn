@@ -51,6 +51,20 @@ func TestByUrgency(t *testing.T) {
 	}
 }
 
+// TestBlockedByAWorkersQuestion (W260): a task waiting on the blocking question its worker asked makes it blocking, as
+// an edit question does; once continued, it no longer does.
+func TestBlockedByAWorkersQuestion(t *testing.T) {
+	q := &planv1.Question{Id: "w", Code: "Q08"}
+	waiting := &planv1.Task{Code: "W3", Status: planv1.TaskStatus_TASK_STATUS_WAITING, WaitQuestionId: "w"}
+	if got := UrgencyOf(q, Blocked([]*planv1.Task{waiting})); got != Blocking {
+		t.Errorf("urgency %d, want blocking", got)
+	}
+	waiting.Status = planv1.TaskStatus_TASK_STATUS_RESUMING
+	if got := UrgencyOf(q, Blocked([]*planv1.Task{waiting})); got != Later {
+		t.Errorf("continued: urgency %d, want later", got)
+	}
+}
+
 // TestByUrgencyPlace: within a level, a question put off for later comes after those asked before it was put off,
 // and before one asked after; once a level apart, urgency still comes first.
 func TestByUrgencyPlace(t *testing.T) {

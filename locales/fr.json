@@ -510,6 +510,7 @@
   "page.action_attach": "Le projet {project} n’est pas encore sur cette machine : djinn project add <dossier> le rattache.",
   "page.action_ready": "Toutes les tâches sont finies et aucune question n’est ouverte : Djinn propose d’exaucer ce souhait. Exaucez-le quand il l’est pour vous : djinn wish grant {wish}.",
   "page.action_waiting": "{task} attend votre réponse à {question} avant de pouvoir modifier.",
+  "page.action_waiting_question": "{task} attend votre réponse à {question} : la réponse la relance.",
   "page.action_waiting_unknown": "{task} attend votre réponse avant de pouvoir modifier.",
   "page.actions": "Vous attend",
   "page.actions_sub": "Ce qui ne dépend que de vous, le plus urgent d’abord.",

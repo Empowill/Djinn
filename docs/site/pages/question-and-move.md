@@ -44,7 +44,7 @@ Djinn computes how much each question holds up, from what the Djinn marked and f
 
 | Level | When | What the card shows |
 | --- | --- | --- |
-| Blocking | A worker waits on the answer before it may edit. Djinn sees it wait. | **Blocks W12**, in red |
+| Blocking | A worker waits on the answer: one it asked you before it stopped, or whether it may edit. Djinn sees it wait. | **Blocks W12**, in red |
 | Your move | A move only you can make, needed before a step the Djinn names. | Its words, "before the merge", in gold |
 | To decide | An answer needed before something, in the Djinn's words. | Its words, in gold |
 | Can wait | Everything else: useful, not urgent. A move with no step named can wait too. | **Can wait**, in grey |
@@ -66,6 +66,21 @@ only what keeps a wish from moving forward, the most blocking first:
 6. the wishes ready to grant.
 
 A click takes you to the line's card. A question that can wait is not in the bar: it is in the questions column alone.
+
+## A worker's question
+
+A worker may ask you too, about its own task: the card shows it with that task.
+
+- **A blocking question** is one the worker stopped on: it committed what it could and ended its turn, and its task
+  waits for your answer without taking a slot. The card says **Blocks W12**. Your answer, or the Djinn's when a
+  decision of the wish already settles it, puts the task back in line: it starts again once a slot is free, its worker
+  told "Decision Q51" and your choice and note, in its own conversation. See
+  [A worker in doubt](#task-and-worker-a-worker-in-doubt).
+- **A question that does not block** asks about a choice the worker made and went on with. Answered while it works,
+  your decision reaches it between two of its steps; answered after, the Djinn reads it and continues the task if it
+  changes something.
+
+A worker asks one blocking question at a time, two per task, and three that do not block.
 
 ## The questions column
 
@@ -202,7 +217,8 @@ Any other move, asked by the Djinn or a worker, is noted: you make it, and the D
   shapes the tasks the answer leads to.
 - **Treating a grey card as urgent.** A blocking question holds a worker; one that can wait can wait for tomorrow. The
   bar shows you only what holds a wish up.
-- **Putting off a blocking question.** Later moves it down the list; its worker still waits.
+- **Putting off a blocking question.** Later moves it down the list; its worker still waits, and so do the tasks
+  that come after it.
 - **Putting to sleep what you could answer now.** A question asleep holds nothing up while it sleeps; one a worker
   waits on should be answered, not put away.
 - **Guessing rather than asking for light.** Enlighten me costs an investigator's time and a little of your agent's

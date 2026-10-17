@@ -773,6 +773,10 @@ const (
 	// An azima's work is all in its project's main branch (Azima.merged turned on), once; its line says when every azima
 	// of the wish is, so that the lead proposes to grant the wish.
 	LeadEventKind_LEAD_EVENT_KIND_LANDED LeadEventKind = 17
+	// A worker asked a blocking question (djinn question ask --wait): its task waits for the answer once its turn ends.
+	// The lead answers it only from a decision the wish already took or from its plan, or revises it to enrich it; a new
+	// choice is the developer's.
+	LeadEventKind_LEAD_EVENT_KIND_ASKED LeadEventKind = 18
 )
 
 // Enum value maps for LeadEventKind.
@@ -796,6 +800,7 @@ var (
 		15: "LEAD_EVENT_KIND_WOKE",
 		16: "LEAD_EVENT_KIND_HEALTH",
 		17: "LEAD_EVENT_KIND_LANDED",
+		18: "LEAD_EVENT_KIND_ASKED",
 	}
 	LeadEventKind_value = map[string]int32{
 		"LEAD_EVENT_KIND_UNSPECIFIED": 0,
@@ -816,6 +821,7 @@ var (
 		"LEAD_EVENT_KIND_WOKE":        15,
 		"LEAD_EVENT_KIND_HEALTH":      16,
 		"LEAD_EVENT_KIND_LANDED":      17,
+		"LEAD_EVENT_KIND_ASKED":       18,
 	}
 )
 
@@ -981,8 +987,10 @@ const (
 	// worktree; the next djinn up resumes it (RESUMING) unless it cannot: imported, its worktree gone, its wish
 	// granted, or already resumed as another task (Task.fork_of).
 	TaskStatus_TASK_STATUS_INTERRUPTED TaskStatus = 6
-	// Its worker ended read-only, and the task waits for the developer's answer to its edit question
-	// (Task.edit_question_id): a yes starts the worker again, allowed to edit the project's files.
+	// Its worker ended its turn, and the task waits for an answer, without a worker and without a slot of the machine:
+	// read-only, to its edit question (Task.edit_question_id), where a yes starts the worker again, allowed to edit the
+	// project's files; or to the blocking question its worker asked (Task.wait_question_id), where the answer continues
+	// it with the decision once a slot is free. Its worktree, branch, session and write scopes stay.
 	TaskStatus_TASK_STATUS_WAITING TaskStatus = 7
 	// Its worker holds still on request, without losing anything, until it is resumed. It takes no slot of the
 	// machine meanwhile.
@@ -5774,9 +5782,13 @@ type Task struct {
 	// With urgent: the task answers a request of the developer for quick feedback (a mockup, a prototype or a change they
 	// asked to see), not a repair (djinn task spawn --feedback). It is urgent work, merged like any; a repair of the wish
 	// goes before it, and one of each may be urgent at once.
-	Feedback      bool `protobuf:"varint,75,opt,name=feedback,proto3" json:"feedback,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Feedback bool `protobuf:"varint,75,opt,name=feedback,proto3" json:"feedback,omitempty"`
+	// The blocking question its worker asked (djinn question ask --wait), by identifier, while the task waits WAITING on
+	// it: the answer, the developer's or the lead's, continues the task on its session with the decision, once a slot is
+	// free. Empty otherwise.
+	WaitQuestionId string `protobuf:"bytes,77,opt,name=wait_question_id,json=waitQuestionId,proto3" json:"wait_question_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -6339,6 +6351,13 @@ func (x *Task) GetFeedback() bool {
 		return x.Feedback
 	}
 	return false
+}
+
+func (x *Task) GetWaitQuestionId() string {
+	if x != nil {
+		return x.WaitQuestionId
+	}
+	return ""
 }
 
 // TaskHealth is how the scheduler judges a work task's worker (W188). It changes only when its state does: each change
@@ -8535,7 +8554,11 @@ type Question struct {
 	// it apart. The scheduler's pass checks its conditions; once they all hold it wakes (QuestionSleep.wake_time): the
 	// lead hears of it to check its facts still hold and revise it, and it shows at the top of its wish's open questions.
 	// Unset: it never slept.
-	Sleep         *QuestionSleep `protobuf:"bytes,25,opt,name=sleep,proto3" json:"sleep,omitempty"`
+	Sleep *QuestionSleep `protobuf:"bytes,25,opt,name=sleep,proto3" json:"sleep,omitempty"`
+	// Its worker waits for the answer (djinn question ask --wait): once its turn ends, its task waits WAITING on it
+	// (Task.wait_question_id), and the answer continues it with the decision. A question without it does not block its
+	// worker: answered while the worker runs, the decision is sent to it; after, the lead hears of it.
+	Wait          bool `protobuf:"varint,26,opt,name=wait,proto3" json:"wait,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -8743,6 +8766,13 @@ func (x *Question) GetSleep() *QuestionSleep {
 		return x.Sleep
 	}
 	return nil
+}
+
+func (x *Question) GetWait() bool {
+	if x != nil {
+		return x.Wait
+	}
+	return false
 }
 
 // QuestionSleep is what a question sleeps until, and when it woke.
@@ -10356,7 +10386,12 @@ type QuestionServiceAskRequest struct {
 	// the current directory.
 	PlanFile []string `protobuf:"bytes,12,rep,name=plan_file,json=planFile,proto3" json:"plan_file,omitempty"`
 	// Ask it asleep, until these conditions hold (see djinn question sleep --until): it shows once they all do.
-	SleepUntil    []string `protobuf:"bytes,13,rep,name=sleep_until,json=sleepUntil,proto3" json:"sleep_until,omitempty"`
+	SleepUntil []string `protobuf:"bytes,13,rep,name=sleep_until,json=sleepUntil,proto3" json:"sleep_until,omitempty"`
+	// A worker only, about its own task: wait for the answer. Commit what does not depend on it, then end your turn:
+	// Djinn puts your task WAITING on the question, frees its slot and keeps its worktree, branch and session; the answer
+	// continues it with "Decision Qnn: ...", once a slot is free. One blocking question at a time, two per task; three
+	// that do not block.
+	Wait          bool `protobuf:"varint,14,opt,name=wait,proto3" json:"wait,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -10480,6 +10515,13 @@ func (x *QuestionServiceAskRequest) GetSleepUntil() []string {
 		return x.SleepUntil
 	}
 	return nil
+}
+
+func (x *QuestionServiceAskRequest) GetWait() bool {
+	if x != nil {
+		return x.Wait
+	}
+	return false
 }
 
 type QuestionServiceAskResponse struct {
@@ -24552,7 +24594,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
 	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\x12'\n" +
-	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xd5\x17\n" +
+	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xff\x17\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -24642,7 +24684,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\troom_wait\x18H \x01(\bR\broomWait\x12+\n" +
 	"\x06health\x18I \x01(\v2\x13.plan.v1.TaskHealthR\x06health\x12@\n" +
 	"\rinvestigation\x18J \x01(\v2\x1a.plan.v1.TaskInvestigationR\rinvestigation\x12\x1a\n" +
-	"\bfeedback\x18K \x01(\bR\bfeedback:\x13\xd2\xf3\x18\x0f\n" +
+	"\bfeedback\x18K \x01(\bR\bfeedback\x12(\n" +
+	"\x10wait_question_id\x18M \x01(\tR\x0ewaitQuestionId:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\xaf\x01\n" +
 	"\n" +
@@ -24828,7 +24871,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vcreate_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime:\x12\xd2\xf3\x18\x0e\n" +
 	"\atask_id\n" +
-	"\x03seq\"\x90\a\n" +
+	"\x03seq\"\xa4\a\n" +
 	"\bQuestion\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x17\n" +
@@ -24860,7 +24903,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
 	"later_time\x18\x17 \x01(\v2\x1a.google.protobuf.TimestampR\tlaterTime\x12*\n" +
 	"\x05plans\x18\x18 \x03(\v2\x14.plan.v1.PlannedTaskR\x05plans\x12,\n" +
-	"\x05sleep\x18\x19 \x01(\v2\x16.plan.v1.QuestionSleepR\x05sleep:\x13\xd2\xf3\x18\x0f\n" +
+	"\x05sleep\x18\x19 \x01(\v2\x16.plan.v1.QuestionSleepR\x05sleep\x12\x12\n" +
+	"\x04wait\x18\x1a \x01(\bR\x04wait:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\xd7\x01\n" +
 	"\rQuestionSleep\x127\n" +
@@ -25001,7 +25045,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06_about\"j\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
-	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xf3\x04\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\x87\x05\n" +
 	"\x19QuestionServiceAskRequest\x12\x1f\n" +
 	"\x04text\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xd0\x0fR\x04text\x12(\n" +
 	"\aoptions\x18\x02 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x12$\n" +
@@ -25018,7 +25062,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x10\x04\"\x06r\x04\x18\xd0\xe8\fR\x04plan\x12,\n" +
 	"\tplan_file\x18\f \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x04\"\x05r\x03\x18\x80 R\bplanFile\x120\n" +
 	"\vsleep_until\x18\r \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x10\"\x05r\x03\x18\x80\x10R\n" +
-	"sleepUntil\"g\n" +
+	"sleepUntil\x12\x12\n" +
+	"\x04wait\x18\x0e \x01(\bR\x04wait\"g\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xde\x02\n" +
@@ -26041,7 +26086,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16WISH_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WISH_STATE_ACTIVE\x10\x01\x12\x15\n" +
 	"\x11WISH_STATE_PAUSED\x10\x02\x12\x16\n" +
-	"\x12WISH_STATE_GRANTED\x10\x03*\x8e\x04\n" +
+	"\x12WISH_STATE_GRANTED\x10\x03*\xa9\x04\n" +
 	"\rLeadEventKind\x12\x1f\n" +
 	"\x1bLEAD_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15LEAD_EVENT_KIND_ENDED\x10\x01\x12\x1a\n" +
@@ -26061,7 +26106,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x18LEAD_EVENT_KIND_COMMENTS\x10\x0e\x12\x18\n" +
 	"\x14LEAD_EVENT_KIND_WOKE\x10\x0f\x12\x1a\n" +
 	"\x16LEAD_EVENT_KIND_HEALTH\x10\x10\x12\x1a\n" +
-	"\x16LEAD_EVENT_KIND_LANDED\x10\x11*\x88\x01\n" +
+	"\x16LEAD_EVENT_KIND_LANDED\x10\x11\x12\x19\n" +
+	"\x15LEAD_EVENT_KIND_ASKED\x10\x12*\x88\x01\n" +
 	"\x0eLeadBatchState\x12 \n" +
 	"\x1cLEAD_BATCH_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18LEAD_BATCH_STATE_RUNNING\x10\x01\x12\x19\n" +

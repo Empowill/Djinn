@@ -22,15 +22,25 @@ const (
 	Later
 )
 
-// Blocked maps a question's id to the codes of the waiting tasks that need its answer.
+// Blocked maps a question's id to the codes of the waiting tasks that need its answer: an edit question, or the
+// blocking question a worker asked (Task.wait_question_id).
 func Blocked(tasks []*planv1.Task) map[string][]string {
 	blocked := map[string][]string{}
 	for _, t := range tasks {
-		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING && t.GetEditQuestionId() != "" {
-			blocked[t.GetEditQuestionId()] = append(blocked[t.GetEditQuestionId()], t.GetCode())
+		if id := WaitsOn(t); id != "" {
+			blocked[id] = append(blocked[id], t.GetCode())
 		}
 	}
 	return blocked
+}
+
+// WaitsOn is the question the task waits WAITING on, by identifier: its edit question, or the blocking question its
+// worker asked; "" for a task that does not wait.
+func WaitsOn(t *planv1.Task) string {
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
+		return ""
+	}
+	return cmp.Or(t.GetWaitQuestionId(), t.GetEditQuestionId())
 }
 
 // UrgencyOf is the urgency of an open question, given what Blocked returned.

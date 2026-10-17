@@ -422,6 +422,13 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 	}
 	sit := dispatch.New(tasks, wishes, projectGit, m).At(h.now())
 	sit.WithAncestry(branchHead, isAncestor)
+	sit.WithQuestions(func(id string) string {
+		q, err := store.Get[*planv1.Question](ctx, h.store, id)
+		if err != nil {
+			return ""
+		}
+		return q.GetCode()
+	})
 	sit.WithRunning(func(taskID string) bool {
 		h.mu.Lock()
 		defer h.mu.Unlock()

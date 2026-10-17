@@ -831,6 +831,10 @@ enum LeadEventKind {
   // An azima's work is all in its project's main branch (Azima.merged turned on), once; its line says when every azima
   // of the wish is, so that the lead proposes to grant the wish.
   LEAD_EVENT_KIND_LANDED = 17;
+  // A worker asked a blocking question (djinn question ask --wait): its task waits for the answer once its turn ends.
+  // The lead answers it only from a decision the wish already took or from its plan, or revises it to enrich it; a new
+  // choice is the developer's.
+  LEAD_EVENT_KIND_ASKED = 18;
 }
 
 // LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the
@@ -964,8 +968,10 @@ enum TaskStatus {
   // worktree; the next djinn up resumes it (RESUMING) unless it cannot: imported, its worktree gone, its wish
   // granted, or already resumed as another task (Task.fork_of).
   TASK_STATUS_INTERRUPTED = 6;
-  // Its worker ended read-only, and the task waits for the developer's answer to its edit question
-  // (Task.edit_question_id): a yes starts the worker again, allowed to edit the project's files.
+  // Its worker ended its turn, and the task waits for an answer, without a worker and without a slot of the machine:
+  // read-only, to its edit question (Task.edit_question_id), where a yes starts the worker again, allowed to edit the
+  // project's files; or to the blocking question its worker asked (Task.wait_question_id), where the answer continues
+  // it with the decision once a slot is free. Its worktree, branch, session and write scopes stay.
   TASK_STATUS_WAITING = 7;
   // Its worker holds still on request, without losing anything, until it is resumed. It takes no slot of the
   // machine meanwhile.
@@ -1257,6 +1263,10 @@ message Task {
   // asked to see), not a repair (djinn task spawn --feedback). It is urgent work, merged like any; a repair of the wish
   // goes before it, and one of each may be urgent at once.
   bool feedback = 75;
+  // The blocking question its worker asked (djinn question ask --wait), by identifier, while the task waits WAITING on
+  // it: the answer, the developer's or the lead's, continues the task on its session with the decision, once a slot is
+  // free. Empty otherwise.
+  string wait_question_id = 77;
 }
 
 // TaskHealth is how the scheduler judges a work task's worker (W188). It changes only when its state does: each change
@@ -1952,6 +1962,10 @@ message Question {
   // lead hears of it to check its facts still hold and revise it, and it shows at the top of its wish's open questions.
   // Unset: it never slept.
   QuestionSleep sleep = 25;
+  // Its worker waits for the answer (djinn question ask --wait): once its turn ends, its task waits WAITING on it
+  // (Task.wait_question_id), and the answer continues it with the decision. A question without it does not block its
+  // worker: answered while the worker runs, the decision is sent to it; after, the lead hears of it.
+  bool wait = 26;
 }
 
 // QuestionSleep is what a question sleeps until, and when it woke.
@@ -2472,6 +2486,11 @@ message QuestionServiceAskRequest {
     (buf.validate.field).repeated.max_items = 16,
     (buf.validate.field).repeated.items.string.max_len = 2048
   ];
+  // A worker only, about its own task: wait for the answer. Commit what does not depend on it, then end your turn:
+  // Djinn puts your task WAITING on the question, frees its slot and keeps its worktree, branch and session; the answer
+  // continues it with "Decision Qnn: ...", once a slot is free. One blocking question at a time, two per task; three
+  // that do not block.
+  bool wait = 14;
 }
 
 message QuestionServiceAskResponse {

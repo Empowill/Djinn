@@ -66,6 +66,9 @@ type Situation struct {
 	isAncestor AncestryChecker
 	ancestry   map[[2]string]bool // (branchHead, integrationHead) -> isAncestor
 	isRunning  func(taskID string) bool
+	// questionCode is the code of a question by its identifier (Q51), for the reason of a task whose dependency waits
+	// on a blocking question; "" when unknown.
+	questionCode func(id string) string
 }
 
 // AncestryChecker tells whether commit a is an ancestor of commit b in projectID:
@@ -80,6 +83,13 @@ type BranchResolver func(projectID, branch string) (head string, noCommits bool)
 func (s *Situation) WithAncestry(branchHead BranchResolver, isAncestor AncestryChecker) *Situation {
 	s.branchHead = branchHead
 	s.isAncestor = isAncestor
+	return s
+}
+
+// WithQuestions equips the situation with what names a question by its identifier: a task whose dependency waits on
+// a blocking question (Task.wait_question_id) waits "for Q51".
+func (s *Situation) WithQuestions(code func(id string) string) *Situation {
+	s.questionCode = code
 	return s
 }
 
@@ -478,6 +488,14 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 			continue
 		case planv1.TaskStatus_TASK_STATUS_STOPPED:
 			return "", fmt.Sprintf("its dependency %s ended %s", ended, status(d.GetStatus()))
+		case planv1.TaskStatus_TASK_STATUS_WAITING:
+			// Its worker asked a blocking question: the answer continues it, and this one waits for that answer.
+			if code := s.waitCode(d); code != "" {
+				if why == "" {
+					why = fmt.Sprintf("waits for %s, which %s waits for", code, d.GetCode())
+				}
+				continue
+			}
 		}
 		// Interrupted or resuming: Djinn resumes it by itself, so the task waits for it. An azima waits to be marked
 		// done. The azima a task is part of is never waited for: only what it depends on.
@@ -512,6 +530,20 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 		}
 	}
 	return "", ""
+}
+
+// waitCode is the code of the blocking question d waits on; "" when it waits on none, or when it is not known.
+func (s *Situation) waitCode(d *planv1.Task) string {
+	id := d.GetWaitQuestionId()
+	if id == "" {
+		return ""
+	}
+	if s.questionCode != nil {
+		if code := s.questionCode(id); code != "" {
+			return code
+		}
+	}
+	return "its question"
 }
 
 // awaitsCommit tells whether a dependency of t is done, its work waiting to be committed.

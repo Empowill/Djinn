@@ -121,15 +121,20 @@ export interface FlightPlan {
   loaded: boolean;
 }
 
+// waitsOn is the question a waiting task needs answered: the blocking question its worker asked, or its edit
+// question; "" for a task that does not wait (internal/render.WaitsOn).
+export function waitsOn(task: Task): string {
+  if (task.status !== TaskStatus.WAITING) return "";
+  return task.waitQuestionId || task.editQuestionId;
+}
+
 // blocking maps a question to the codes of the tasks that wait for its answer.
 export function blocking(tasks: readonly Task[]): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const task of tasks) {
-    if (task.status !== TaskStatus.WAITING || !task.editQuestionId) continue;
-    out.set(task.editQuestionId, [
-      ...(out.get(task.editQuestionId) ?? []),
-      task.code,
-    ]);
+    const id = waitsOn(task);
+    if (!id) continue;
+    out.set(id, [...(out.get(id) ?? []), task.code]);
   }
   return out;
 }
@@ -614,7 +619,8 @@ export function forkedAs(task: Task, tasks: readonly Task[]): string {
   );
 }
 
-// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit. A failed worker never does,
+// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, or to the blocking question
+// their worker asked. A failed worker never does,
 // whatever made it fail, refused calls included: it is the lead's, who takes it up again, closes it, or asks the user a
 // question for a right only they grant (Q273, W96: W19, an investigator failed on refused commands, waited for you
 // with nothing you could do).
@@ -623,7 +629,7 @@ export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
   return detail.tasks
     .filter((task) => task.status === TaskStatus.WAITING)
     .map((item) => {
-      const q = questions.get(item.editQuestionId);
+      const q = questions.get(waitsOn(item));
       const id = mergeNest(detail.tasks).host.get(item.id);
       const host = id ? detail.tasks.find((x) => x.id === id) : undefined;
       return {

@@ -468,7 +468,9 @@ func build(in Input) (*view, error) {
 		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
 			continue
 		}
-		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil && q.GetWithdrawal() == nil {
+		if q := questions[t.GetWaitQuestionId()]; q != nil && q.GetAnswer() == nil && q.GetWithdrawal() == nil {
+			addAction("bad", blocked, tr("page.action_waiting_question", "task", t.GetCode(), "question", q.GetCode()), "")
+		} else if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil && q.GetWithdrawal() == nil {
 			addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
 		} else {
 			addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
