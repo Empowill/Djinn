@@ -70,20 +70,10 @@ func (m *Marks) Put(
 					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
 				}
 				if question.GetAnswer() == nil {
-					choice, ok := Recommended(question)
-					if !ok {
-						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-							"the recommendation of %s names no option: answer it with djinn question answer", question.GetCode()))
-					}
-					question.Answer = &planv1.Answer{
-						Choice:     choice,
-						CreateTime: mark.GetCreateTime(),
-						Actor:      planv1.Closer_CLOSER_DEVELOPER,
-					}
-					answered = question
-					if then, err = settled(ctx, m.Settle, tx, question); err != nil {
+					if then, err = m.approve(ctx, tx, question, mark); err != nil {
 						return err
 					}
+					answered = question
 				}
 			}
 			question.Marks = setMark(question.GetMarks(), mark, msg.GetRemove())
@@ -96,16 +86,34 @@ func (m *Marks) Put(
 	if err != nil {
 		return nil, err
 	}
-	if then != nil {
-		then(ctx)
-	}
 	if answered != nil {
-		afterAnswer(ctx, m.Answered, m.Told, answered, nil)
+		m.approved(ctx, answered, then)
 	}
 	if endorsed != nil && m.Approved != nil {
 		m.Approved(ctx, proto.CloneOf(endorsed))
 	}
 	return connect.NewResponse(&planv1.MarkServicePutResponse{Marked: marked}), nil
+}
+
+// approve answers the open question q in tx with the option its recommendation names, as the developer's approval
+// does, mark its time, and acts on the answer. What it returns follows once the answer is stored: give it to approved,
+// with q, then.
+func (m *Marks) approve(ctx context.Context, tx *store.Tx, q *planv1.Question, mark *planv1.Mark) (func(context.Context), error) {
+	choice, ok := Recommended(q)
+	if !ok {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"the recommendation of %s names no option: answer it with djinn question answer", q.GetCode()))
+	}
+	q.Answer = &planv1.Answer{Choice: choice, CreateTime: mark.GetCreateTime(), Actor: planv1.Closer_CLOSER_DEVELOPER}
+	return settled(ctx, m.Settle, tx, q)
+}
+
+// approved runs what follows an approval that answered q, once it is stored: then, from approve, and the hooks.
+func (m *Marks) approved(ctx context.Context, q *planv1.Question, then func(context.Context)) {
+	if then != nil {
+		then(ctx)
+	}
+	afterAnswer(ctx, m.Answered, m.Told, q, nil)
 }
 
 // agentAnswered tells a question the lead or a worker answered: a decision of theirs, until the developer approves it.

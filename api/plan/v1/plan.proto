@@ -717,6 +717,9 @@ enum LeadEventKind {
   // The developer wrote to the Djinn (Write to the Djinn, djinn lead tell) while Djinn drives the lead: their words
   // whole, in the next batch like any event.
   LEAD_EVENT_KIND_MESSAGE = 13;
+  // The developer sent their comments on a tilasm, all at once, with their choice: launch its work, or iterate on it.
+  // Its code is the tilasm's; its line, how many comments and the command that reads them.
+  LEAD_EVENT_KIND_COMMENTS = 14;
 }
 
 // LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the

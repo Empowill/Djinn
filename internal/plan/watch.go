@@ -149,10 +149,18 @@ func (ws *watchers) changed(ms []proto.Message) {
 		case *planv1.Task:
 			// Whether Djinn proposes to grant the wish follows its tasks: take says whether this one changes it.
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TASK, m.GetId()})
+			if p := m.GetPrompt(); strings.Contains(p, "djinn://tilasm/") || strings.Contains(p, "--code") {
+				// A task on a tilasm holds its sends while it runs (TilasmHold).
+				changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+			}
 		case *planv1.Question:
 			// And its questions.
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_QUESTION, m.GetId()},
 				change{m.GetWishId(), planv1.Change_CHANGE_WISH, ""})
+			if questionLinksTilasm(m) {
+				// Answering the question that links a tilasm launches it (TilasmHold).
+				changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+			}
 		case *planv1.Block:
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_BLOCK, m.GetId()})
 		case *planv1.Tilasm:
@@ -160,6 +168,14 @@ func (ws *watchers) changed(ms []proto.Message) {
 		case *planv1.TilasmComment:
 			// The comments show in the tilasm's view, which reads its tilasm again.
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+		case *planv1.TilasmSend:
+			// And its sends.
+			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+		case *planv1.LeadEvent:
+			if m.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_COMMENTS {
+				// A send waits for the Djinn until it reads it (TilasmHold).
+				changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+			}
 		case *planv1.Project:
 			// The inbox's sources come from the projects' skills.
 			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT, ""}, change{"", planv1.Change_CHANGE_INBOX, ""})

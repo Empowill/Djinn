@@ -45,8 +45,12 @@ func (t *Tilasms) Comments(
 	if err != nil {
 		return nil, Status(err)
 	}
+	choices, err := sendChoices(ctx, t.Store, tilasm)
+	if err != nil {
+		return nil, Status(err)
+	}
 	return connect.NewResponse(&planv1.TilasmServiceCommentsResponse{
-		Text: commentsText(tilasm, sent, codes), Comments: sent,
+		Text: commentsText(tilasm, sent, codes, choices), Comments: sent,
 	}), nil
 }
 
@@ -94,9 +98,33 @@ func replyTaskCodes(ctx context.Context, r store.Reader, comments []*planv1.Tila
 	return codes, nil
 }
 
-// commentsText lays out the comments sent on a tilasm for the lead: the tilasm, then each send, then each comment
-// with what it is on, so that it reads them without reading the tilasm again.
-func commentsText(tilasm *planv1.Tilasm, sent []*planv1.TilasmComment, taskCodes map[string]string) string {
+// sendChoices say what the developer asked with each send of a tilasm, by its number, and with which question: the
+// line commentsText prints in its head.
+func sendChoices(ctx context.Context, r store.Reader, tilasm *planv1.Tilasm) (map[int32]string, error) {
+	sends, err := store.List[*planv1.TilasmSend](ctx, r, store.Where{"tilasm_id": tilasm.GetId()})
+	if err != nil {
+		return nil, err
+	}
+	out := map[int32]string{}
+	for _, s := range sends {
+		choice := "iterate: put its next version with them"
+		if s.GetChoice() == planv1.SendChoice_SEND_CHOICE_LAUNCH {
+			choice = "launch its work with them"
+			if q, err := store.Get[*planv1.Question](ctx, r, s.GetQuestionId()); err == nil {
+				choice = "launch " + q.GetCode() + " with them"
+			}
+		}
+		out[s.GetNumber()] = choice
+	}
+	return out, nil
+}
+
+// commentsText lays out the comments sent on a tilasm for the lead: the tilasm, then each send with what the developer
+// chose (choices, by send), then each comment with what it is on, so that it reads them without reading the tilasm
+// again.
+func commentsText(
+	tilasm *planv1.Tilasm, sent []*planv1.TilasmComment, taskCodes map[string]string, choices map[int32]string,
+) string {
 	latest := latestVersion(tilasm)
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s · %s · version %d\n", tilasm.GetCode(), oneLine(tilasm.GetTitle()), latest)
@@ -117,10 +145,14 @@ func commentsText(tilasm *planv1.Tilasm, sent []*planv1.TilasmComment, taskCodes
 				fmt.Fprintf(&b, " · %s", when(t.AsTime()))
 			}
 			if n == 1 {
-				b.WriteString(" · 1 comment\n")
+				b.WriteString(" · 1 comment")
 			} else {
-				fmt.Fprintf(&b, " · %d comments\n", n)
+				fmt.Fprintf(&b, " · %d comments", n)
 			}
+			if choice := choices[c.GetSend()]; choice != "" {
+				b.WriteString(" · " + choice)
+			}
+			b.WriteString("\n")
 		}
 		b.WriteString("\n" + commentHead(c, latest) + "\n")
 		if q := commentQuote(c.GetAnchor()); q != "" {
@@ -343,5 +375,19 @@ func (t *Tilasms) Drafts(
 	drafts := slices.DeleteFunc(all, func(c *planv1.TilasmComment) bool {
 		return c.GetState() != planv1.CommentState_COMMENT_STATE_DRAFT
 	})
-	return connect.NewResponse(&planv1.TilasmServiceDraftsResponse{Comments: drafts}), nil
+	tilasms, err := store.List[*planv1.Tilasm](ctx, t.Store, store.Where{"wish_id": req.Msg.GetWish()})
+	if err != nil {
+		return nil, Status(err)
+	}
+	holds, err := tilasmHolds(ctx, t.Store, req.Msg.GetWish(), tilasms)
+	if err != nil {
+		return nil, Status(err)
+	}
+	res := &planv1.TilasmServiceDraftsResponse{Comments: drafts}
+	for _, tilasm := range tilasms {
+		if h := holds[tilasm.GetId()]; h != nil {
+			res.Holds = append(res.Holds, h)
+		}
+	}
+	return connect.NewResponse(res), nil
 }

@@ -29,7 +29,12 @@ import {
 } from "react";
 
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
-import type { Tilasm, TilasmComment } from "../gen/ts/plan/v1/tilasm_pb";
+import {
+  SendChoice,
+  type Tilasm,
+  type TilasmComment,
+  type TilasmHold,
+} from "../gen/ts/plan/v1/tilasm_pb";
 import { message } from "./data/client";
 import { draftCounts, draftsOn } from "./data/comments";
 import { later } from "./data/decisions";
@@ -76,6 +81,7 @@ export function TilasmsTab({
   opening,
   tilasms,
   drafts = [],
+  holds = [],
   tasks,
   onToast,
 }: {
@@ -86,6 +92,8 @@ export function TilasmsTab({
   tilasms: readonly Tilasm[];
   // The developer's draft comments on them.
   drafts?: readonly TilasmComment[];
+  // Why some take no send for now, as the server computes it.
+  holds?: readonly TilasmHold[];
   tasks: readonly Task[];
   onToast: (text: string) => void;
 }) {
@@ -150,11 +158,28 @@ export function TilasmsTab({
       });
       await reread();
     },
+    send: async (tilasmId, choice, text) => {
+      const res = await clients.tilasms.sendComments({
+        tilasmId,
+        choice,
+        text,
+      });
+      await reread();
+      const send = res.send?.number ?? 0;
+      onToast(
+        res.answered
+          ? t("tilasms.sent_answered", { question: res.answered })
+          : choice === SendChoice.ITERATE
+            ? t("tilasms.sent_iterate", { send })
+            : t("tilasms.sent_launch", { send }),
+      );
+    },
   };
   return (
     <TilasmList
       tilasms={found ?? tilasms}
       drafts={drafts}
+      holds={holds}
       comments={comments}
       onCommentError={(error) => onToast(message(error))}
       count={tilasms.length}
@@ -207,6 +232,7 @@ export function TilasmsTab({
 export function TilasmList({
   tilasms,
   drafts = [],
+  holds = [],
   comments,
   onCommentError = () => {},
   count,
@@ -226,6 +252,8 @@ export function TilasmList({
   tilasms: readonly Tilasm[];
   // The developer's draft comments on the wish's tilasms.
   drafts?: readonly TilasmComment[];
+  // Why some take no send for now.
+  holds?: readonly TilasmHold[];
   // What writes them; without it, the open tilasm shows no comments.
   comments?: CommentWrites;
   onCommentError?: (error: unknown) => void;
@@ -314,6 +342,7 @@ export function TilasmList({
             onOpen("");
           }}
           drafts={draftsOn(drafts, open.id)}
+          hold={holds.find((h) => h.tilasmId === open.id)}
           comments={comments}
           onCommentError={onCommentError}
         />
@@ -424,6 +453,7 @@ export function TilasmFrame({
   onClose,
   over = false,
   drafts = [],
+  hold,
   comments,
   onCommentError = () => {},
 }: {
@@ -436,6 +466,8 @@ export function TilasmFrame({
   over?: boolean;
   // The developer's drafts on it, in the order written.
   drafts?: readonly TilasmComment[];
+  // Why it takes no send for now; none: it does.
+  hold?: TilasmHold;
   // What writes them: the Comments column shows beside the frame, on demand; without it, none.
   comments?: CommentWrites;
   onCommentError?: (error: unknown) => void;
@@ -522,7 +554,10 @@ export function TilasmFrame({
         <CommentsColumn
           key={tilasm.id}
           tilasmId={tilasm.id}
+          code={tilasm.code}
+          version={latest(tilasm)}
           drafts={drafts}
+          hold={hold}
           writes={comments}
           onError={onCommentError}
           onClose={() => setCommenting(false)}

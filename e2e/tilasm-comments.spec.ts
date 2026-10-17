@@ -175,3 +175,151 @@ test("drafts on the whole tilasm are written, edited, deleted with an Undo, and 
 
   expect(errors).toEqual([]);
 });
+
+// The foot of the column (decision Q29): a last word on the whole tilasm, then Iterate or Launch, each confirmed in a
+// line that Escape gives up and Enter sends. Iterate sends the drafts and the last word in one send, which holds the
+// buttons until the Djinn reads it. Launch without a comment answers the question that links the tilasm with its
+// recommended option; the tilasm, launched, greys its comments and its buttons, with a line that says why.
+test("the comments leave in one send, Iterate or Launch, and a launched tilasm greys", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const title = `Send the lamp ${randomUUID().slice(0, 8)}`;
+  const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
+    .id as string;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-send-"));
+  let launched = "";
+  try {
+    for (const name of ["Notices of the lead", "The flow"]) {
+      fs.writeFileSync(
+        path.join(dir, "index.html"),
+        `<!doctype html><title>${name}</title><h1>${name}</h1><p>Notices group by wish.</p>`,
+      );
+      launched = JSON.parse(
+        djinn("tilasm", "put", dir, "--wish", wishId, "--json"),
+      ).tilasm.id as string;
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  const question = JSON.parse(
+    djinn(
+      "question",
+      "ask",
+      "Which flow?",
+      wishId,
+      "--options",
+      "Drafts, one send",
+      "--options",
+      "A review",
+      "--recommendation",
+      "**A**: one send, one event.",
+      "--context",
+      `The design: djinn://tilasm/${launched}`,
+      "--json",
+    ),
+  ).question.code as string;
+
+  await page.goto(process.env.DJINN_URL!);
+  await page.locator(".wish-nav").filter({ hasText: title }).click();
+  await page.getByRole("tab", { name: /^Tilasms/ }).click();
+  const panel = page.getByRole("tabpanel", { name: "Tilasms" });
+  const view = panel.locator(".tilasm-view");
+  const column = view.getByRole("complementary", { name: "Comments" });
+  const launch = column.getByRole("button", { name: "Launch", exact: true });
+  const iterate = column.getByRole("button", { name: "Iterate", exact: true });
+  const word = column.getByRole("textbox", {
+    name: "A comment on the whole tilasm, sent with the others",
+  });
+  const confirm = column.getByRole("group", { name: "Confirm the send" });
+  const go = confirm.getByRole("button", { name: "Send to the Djinn" });
+
+  // L01: a draft and a last word leave in one send, to iterate.
+  await panel
+    .locator(".tilasm-row")
+    .filter({ hasText: "L01" })
+    .getByRole("button", { name: "Notices of the lead" })
+    .click();
+  await view.locator(".tilasm-view-head .tilasm-comments-toggle").click();
+  await expect(launch).toBeEnabled();
+  await expect(iterate).toBeDisabled();
+  await column.getByRole("button", { name: "On the whole tilasm" }).click();
+  const editor = column.getByRole("textbox", {
+    name: "Your comment on the whole tilasm",
+  });
+  await editor.fill("A paused wish: do its notices wait?");
+  await editor.press("Control+Enter");
+  await expect(column.locator(".tilasm-comment")).toHaveCount(1);
+  await expect(iterate).toBeEnabled();
+  await expect(iterate).toHaveAttribute("title", /next version/);
+  await expect(launch).toHaveAttribute("title", /recommended option/);
+  await word.fill("And say what a granted wish does.");
+  await iterate.click();
+  await expect(go).toBeFocused();
+  await expect(confirm).toContainText(
+    "The 2 comments on L01 · v1 leave for the Djinn in one send",
+  );
+  await page.keyboard.press("Escape");
+  await expect(confirm).toHaveCount(0);
+  await expect(view).not.toHaveClass(/\bfull\b/);
+  await iterate.click();
+  await expect(go).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByText("Send 1 left for the Djinn: it makes the next version."),
+  ).toBeVisible();
+  await expect(column.locator(".tilasm-comment")).toHaveCount(0);
+  await expect(word).toHaveValue("");
+  // Until the Djinn reads it, the send holds the buttons, not the comments.
+  await expect(column).toContainText("Send 1 waits for the Djinn to read it.");
+  await expect(launch).toBeDisabled();
+  await expect(iterate).toBeDisabled();
+  await expect(word).toBeEnabled();
+  await expect(
+    column.getByRole("button", { name: "On the whole tilasm" }),
+  ).toBeEnabled();
+  const read = djinn("tilasm", "comments", "L01", "--wish", wishId);
+  expect(read).toContain(
+    "2 comments · iterate: put its next version with them",
+  );
+  expect(read).toContain("And say what a granted wish does.");
+
+  // L02: Launch without a comment is a yes to the question that links it.
+  await view.getByRole("button", { name: "Close the tilasm" }).click();
+  await panel
+    .locator(".tilasm-row")
+    .filter({ hasText: "L02" })
+    .getByRole("button", { name: "The flow" })
+    .click();
+  await view.locator(".tilasm-view-head .tilasm-comments-toggle").click();
+  await expect(iterate).toBeDisabled();
+  await launch.click();
+  await expect(confirm).toContainText(
+    `No comment: the question that links L02 gets its recommended option`,
+  );
+  await go.click();
+  await expect(
+    page.getByText(
+      `${question} answered with its recommended option: the work launches.`,
+    ),
+  ).toBeVisible();
+  // Launched: the comments and the buttons grey, and a line says why.
+  await expect(column).toContainText("Launched already, by send 1.");
+  await expect(column).toHaveClass(/\bheld\b/);
+  await expect(launch).toBeDisabled();
+  await expect(iterate).toBeDisabled();
+  await expect(word).toBeDisabled();
+  await expect(
+    column.getByRole("button", { name: "On the whole tilasm" }),
+  ).toBeDisabled();
+  const answered = (
+    JSON.parse(djinn("question", "list", "--wish-id", wishId, "--json"))
+      .questions as { code: string; answer?: { choice: string } }[]
+  ).find((q) => q.code === question);
+  expect(answered?.answer?.choice).toBe("CHOICE_A");
+  await page.screenshot({ path: path.join(shots, "tilasm-send-held.png") });
+
+  expect(errors).toEqual([]);
+});

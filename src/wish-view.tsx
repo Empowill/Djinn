@@ -1190,6 +1190,7 @@ export function WishView({
               opening={opened}
               tilasms={detail.tilasms}
               drafts={detail.drafts}
+              holds={detail.holds}
               tasks={detail.tasks}
               onToast={onToast}
             />

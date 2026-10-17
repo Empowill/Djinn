@@ -9,7 +9,12 @@ const c = await bundle(
   "comments",
   `export * from "@/src/data/comments.ts";
 export { create } from "@bufbuild/protobuf";
-export { CommentState, TilasmCommentSchema } from "@/gen/ts/plan/v1/tilasm_pb.ts";`,
+export {
+  CommentState,
+  TilasmCommentSchema,
+  TilasmHoldReason,
+  TilasmHoldSchema,
+} from "@/gen/ts/plan/v1/tilasm_pb.ts";`,
 );
 
 const L01 = "01a1223a-ae45-728f-8c37-c005eee91edb";
@@ -144,4 +149,42 @@ test("a deleted draft can be put back for five seconds, then its Undo goes", () 
   s = c.column(s, { type: "deleted", comment: c2, now: now + 1000 });
   assert.equal(s.undo.comment, c2);
   assert.equal(s.undo.until, now + 1000 + c.UNDO_MS);
+});
+
+test("the foot sends the drafts and the last word, unless the tilasm is held", () => {
+  const hold = (reason) =>
+    c.create(c.TilasmHoldSchema, { tilasmId: L01, reason, code: "W60" });
+  // Launch goes without a comment; Iterate needs one, a draft or the last word.
+  assert.deepEqual(c.sendFoot(0, "  ", undefined), {
+    count: 0,
+    launch: true,
+    iterate: false,
+    greyed: false,
+  });
+  assert.deepEqual(c.sendFoot(0, "Faster.", undefined), {
+    count: 1,
+    launch: true,
+    iterate: true,
+    greyed: false,
+  });
+  assert.equal(c.sendFoot(2, "Faster.", undefined).count, 3);
+  // A task on it, or its work launched: the buttons and the comments wait.
+  for (const reason of [
+    c.TilasmHoldReason.REWORK,
+    c.TilasmHoldReason.WORK,
+    c.TilasmHoldReason.LAUNCHED,
+  ])
+    assert.deepEqual(c.sendFoot(2, "", hold(reason)), {
+      count: 2,
+      launch: false,
+      iterate: false,
+      greyed: true,
+    });
+  // A send the Djinn has not read yet holds the buttons alone.
+  assert.deepEqual(c.sendFoot(2, "", hold(c.TilasmHoldReason.SENT)), {
+    count: 2,
+    launch: false,
+    iterate: false,
+    greyed: false,
+  });
 });

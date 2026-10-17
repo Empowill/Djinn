@@ -4,6 +4,8 @@
 import {
   CommentState,
   type TilasmComment,
+  type TilasmHold,
+  TilasmHoldReason,
 } from "../../gen/ts/plan/v1/tilasm_pb";
 
 // How long a deleted draft can be put back.
@@ -110,4 +112,34 @@ export function column(state: Column, action: ColumnAction): Column {
 // canSave tells whether the card being written can be stored: a comment says something.
 export function canSave(state: Column): boolean {
   return state.editing !== "" && state.text.trim() !== "";
+}
+
+// SendFoot is what the foot of the column allows (decision Q29): a comment on the whole tilasm above two buttons,
+// Launch and Iterate, that send every draft with it.
+export interface SendFoot {
+  // How many comments a send carries: the drafts, and the comment above the buttons once it says something.
+  count: number;
+  // Launch can go: without a comment, it answers the question that links the tilasm.
+  launch: boolean;
+  // Iterate can go: it needs a comment to say what to change.
+  iterate: boolean;
+  // The comments are greyed too, not only the buttons: a task works on the tilasm, or its work was launched. A send
+  // that waits for the Djinn holds the buttons alone.
+  greyed: boolean;
+}
+
+export function sendFoot(
+  drafts: number,
+  text: string,
+  hold?: TilasmHold,
+): SendFoot {
+  const count = drafts + (text.trim() ? 1 : 0);
+  const held =
+    hold !== undefined && hold.reason !== TilasmHoldReason.UNSPECIFIED;
+  return {
+    count,
+    launch: !held,
+    iterate: !held && count > 0,
+    greyed: held && hold.reason !== TilasmHoldReason.SENT,
+  };
 }

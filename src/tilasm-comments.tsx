@@ -1,11 +1,18 @@
 // The Comments column beside a tilasm's frame (L08, flow A): the developer's drafts on it, in the order written, the
 // new one below. "On the whole tilasm" writes one; a draft is edited in place (Ctrl+Enter saves, Escape cancels) and
 // deleted at once, with an Undo that stands five seconds instead of a dialog. A draft stays in Djinn's store and
-// reaches no agent. Its model is src/data/comments.ts.
+// reaches no agent until its foot sends them all (decision Q29): a last comment on the whole tilasm, then Launch or
+// Iterate, confirmed in a line. A tilasm held, as the server computes it, greys its buttons, and its comments when a
+// task works on it or its work was launched, with a line that says why. Its model is src/data/comments.ts.
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
 
-import type { TilasmComment } from "../gen/ts/plan/v1/tilasm_pb";
+import {
+  SendChoice,
+  type TilasmComment,
+  type TilasmHold,
+  TilasmHoldReason,
+} from "../gen/ts/plan/v1/tilasm_pb";
 import {
   type AnchorKind,
   NEW,
@@ -13,6 +20,7 @@ import {
   canSave,
   column,
   emptyColumn,
+  sendFoot,
 } from "./data/comments";
 import { t } from "./i18n";
 
@@ -24,6 +32,26 @@ export interface CommentWrites {
   remove: (comment: TilasmComment) => Promise<TilasmComment>;
   // Puts back a draft deleted.
   putBack: (comment: TilasmComment) => Promise<void>;
+  // Sends every draft of a tilasm, with text as one more on the whole of it, and the choice.
+  send: (tilasmId: string, choice: SendChoice, text: string) => Promise<void>;
+}
+
+// holdLine says why a tilasm takes no send for now.
+export function holdLine(hold: TilasmHold): string {
+  switch (hold.reason) {
+    case TilasmHoldReason.REWORK:
+      return t("tilasms.hold_rework", { code: hold.code });
+    case TilasmHoldReason.WORK:
+      return t("tilasms.hold_work", { code: hold.code });
+    case TilasmHoldReason.LAUNCHED:
+      return hold.send > 0
+        ? t("tilasms.hold_launched_send", { send: hold.send })
+        : t("tilasms.hold_launched", { code: hold.code });
+    case TilasmHoldReason.SENT:
+      return t("tilasms.hold_sent", { send: hold.send });
+    default:
+      return "";
+  }
 }
 
 const anchorText = (kind: AnchorKind) =>
@@ -35,20 +63,29 @@ const anchorText = (kind: AnchorKind) =>
 
 export function CommentsColumn({
   tilasmId,
+  code,
+  version,
   drafts,
+  hold,
   writes,
   onError,
   onClose,
 }: {
   tilasmId: string;
+  // The tilasm's code and latest version, as the confirmation names them.
+  code: string;
+  version: number;
   // The tilasm's drafts, in the order written.
   drafts: readonly TilasmComment[];
+  // Why it takes no send for now; none: it does.
+  hold?: TilasmHold;
   writes: CommentWrites;
   onError: (error: unknown) => void;
   onClose: () => void;
 }) {
   const [state, dispatch] = useReducer(column, emptyColumn);
   const [busy, setBusy] = useState(false);
+  const greyed = sendFoot(drafts.length, "", hold).greyed;
   // The Undo goes once its time is past.
   const until = state.undo?.until;
   useEffect(() => {
@@ -85,13 +122,16 @@ export function CommentsColumn({
     />
   );
   return (
-    <aside className="tilasm-comments" aria-label={t("tilasms.comments")}>
+    <aside
+      className={`tilasm-comments${greyed ? " held" : ""}`}
+      aria-label={t("tilasms.comments")}
+    >
       <div className="tilasm-comments-head">
         <strong>{t("tilasms.comments")}</strong>
         <button
           type="button"
           className="text-button"
-          disabled={state.editing === NEW}
+          disabled={state.editing === NEW || greyed}
           onClick={() => dispatch({ type: "write" })}
         >
           <Plus size={13} aria-hidden="true" />
@@ -131,6 +171,7 @@ export function CommentsColumn({
                     <button
                       type="button"
                       className="icon-button"
+                      disabled={greyed}
                       title={t("tilasms.comment_edit", { code: comment.code })}
                       aria-label={t("tilasms.comment_edit", {
                         code: comment.code,
@@ -142,7 +183,7 @@ export function CommentsColumn({
                     <button
                       type="button"
                       className="icon-button"
-                      disabled={busy}
+                      disabled={busy || greyed}
                       title={t("tilasms.comment_delete", {
                         code: comment.code,
                       })}
@@ -206,7 +247,141 @@ export function CommentsColumn({
           </button>
         </div>
       )}
+      <SendBar
+        code={code}
+        version={version}
+        drafts={drafts.length}
+        hold={hold}
+        send={(choice, text) => writes.send(tilasmId, choice, text)}
+        onError={onError}
+      />
     </aside>
+  );
+}
+
+// SendBar is the foot of the column: a last comment on the whole tilasm, then Launch or Iterate, which a line confirms
+// (Enter sends, Escape gives up) before anything leaves for the Djinn.
+function SendBar({
+  code,
+  version,
+  drafts,
+  hold,
+  send,
+  onError,
+}: {
+  code: string;
+  version: number;
+  drafts: number;
+  hold?: TilasmHold;
+  send: (choice: SendChoice, text: string) => Promise<void>;
+  onError: (error: unknown) => void;
+}) {
+  const [text, setText] = useState("");
+  // The button the confirmation stands for.
+  const [confirming, setConfirming] = useState<SendChoice>();
+  const [busy, setBusy] = useState(false);
+  const foot = sendFoot(drafts, text, hold);
+  const allowed =
+    confirming === SendChoice.LAUNCH
+      ? foot.launch
+      : confirming === SendChoice.ITERATE && foot.iterate;
+  const confirm = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirming !== undefined)
+      confirm.current?.focus({ preventScroll: true });
+  }, [confirming]);
+  // A hold that comes meanwhile gives the confirmation up.
+  if (confirming !== undefined && !allowed && !busy) setConfirming(undefined);
+  const go = () => {
+    if (confirming === undefined || busy) return;
+    setBusy(true);
+    send(confirming, text)
+      .then(() => {
+        setText("");
+        setConfirming(undefined);
+      })
+      .catch(onError)
+      .finally(() => setBusy(false));
+  };
+  const vars = { count: foot.count, code, version };
+  const asked =
+    confirming === SendChoice.ITERATE
+      ? t("tilasms.send_confirm_iterate", vars)
+      : foot.count > 0
+        ? t("tilasms.send_confirm_launch", vars)
+        : t("tilasms.send_confirm_launch_none", { code });
+  return (
+    <div
+      className="tilasm-send"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || confirming === undefined) return;
+        // Escape gives up the confirmation, and only it: full size stays.
+        event.preventDefault();
+        setConfirming(undefined);
+      }}
+    >
+      {hold && hold.reason !== TilasmHoldReason.UNSPECIFIED && (
+        <p className="tilasm-send-hold">{holdLine(hold)}</p>
+      )}
+      <textarea
+        value={text}
+        rows={2}
+        maxLength={4000}
+        aria-label={t("tilasms.send_text")}
+        placeholder={t("tilasms.send_placeholder")}
+        disabled={busy || foot.greyed}
+        onChange={(event) => setText(event.target.value)}
+      />
+      {confirming !== undefined ? (
+        <div
+          className="tilasm-send-confirm"
+          role="group"
+          aria-label={t("tilasms.send_confirm_label")}
+        >
+          <p>{asked}</p>
+          <div className="tilasm-send-buttons">
+            <button
+              type="button"
+              className="button secondary small"
+              disabled={busy}
+              onClick={() => setConfirming(undefined)}
+            >
+              {t("tilasms.send_not_yet")}
+            </button>
+            <button
+              ref={confirm}
+              type="button"
+              className="button accent small"
+              disabled={busy}
+              onClick={go}
+            >
+              {t("tilasms.send_go")}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="tilasm-send-buttons">
+          <button
+            type="button"
+            className="button secondary small"
+            title={t("tilasms.iterate_title")}
+            disabled={!foot.iterate}
+            onClick={() => setConfirming(SendChoice.ITERATE)}
+          >
+            {t("tilasms.iterate")}
+          </button>
+          <button
+            type="button"
+            className="button accent small"
+            title={t("tilasms.launch_title")}
+            disabled={!foot.launch}
+            onClick={() => setConfirming(SendChoice.LAUNCH)}
+          >
+            {t("tilasms.launch")}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -574,6 +574,9 @@ const (
 	// The developer wrote to the Djinn (Write to the Djinn, djinn lead tell) while Djinn drives the lead: their words
 	// whole, in the next batch like any event.
 	LeadEventKind_LEAD_EVENT_KIND_MESSAGE LeadEventKind = 13
+	// The developer sent their comments on a tilasm, all at once, with their choice: launch its work, or iterate on it.
+	// Its code is the tilasm's; its line, how many comments and the command that reads them.
+	LeadEventKind_LEAD_EVENT_KIND_COMMENTS LeadEventKind = 14
 )
 
 // Enum value maps for LeadEventKind.
@@ -593,6 +596,7 @@ var (
 		11: "LEAD_EVENT_KIND_REPLIED",
 		12: "LEAD_EVENT_KIND_OUT",
 		13: "LEAD_EVENT_KIND_MESSAGE",
+		14: "LEAD_EVENT_KIND_COMMENTS",
 	}
 	LeadEventKind_value = map[string]int32{
 		"LEAD_EVENT_KIND_UNSPECIFIED": 0,
@@ -609,6 +613,7 @@ var (
 		"LEAD_EVENT_KIND_REPLIED":     11,
 		"LEAD_EVENT_KIND_OUT":         12,
 		"LEAD_EVENT_KIND_MESSAGE":     13,
+		"LEAD_EVENT_KIND_COMMENTS":    14,
 	}
 )
 
@@ -23765,7 +23770,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16WISH_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WISH_STATE_ACTIVE\x10\x01\x12\x15\n" +
 	"\x11WISH_STATE_PAUSED\x10\x02\x12\x16\n" +
-	"\x12WISH_STATE_GRANTED\x10\x03*\x9e\x03\n" +
+	"\x12WISH_STATE_GRANTED\x10\x03*\xbc\x03\n" +
 	"\rLeadEventKind\x12\x1f\n" +
 	"\x1bLEAD_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15LEAD_EVENT_KIND_ENDED\x10\x01\x12\x1a\n" +
@@ -23781,7 +23786,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x12\x1b\n" +
 	"\x17LEAD_EVENT_KIND_REPLIED\x10\v\x12\x17\n" +
 	"\x13LEAD_EVENT_KIND_OUT\x10\f\x12\x1b\n" +
-	"\x17LEAD_EVENT_KIND_MESSAGE\x10\r*\x88\x01\n" +
+	"\x17LEAD_EVENT_KIND_MESSAGE\x10\r\x12\x1c\n" +
+	"\x18LEAD_EVENT_KIND_COMMENTS\x10\x0e*\x88\x01\n" +
 	"\x0eLeadBatchState\x12 \n" +
 	"\x1cLEAD_BATCH_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18LEAD_BATCH_STATE_RUNNING\x10\x01\x12\x19\n" +

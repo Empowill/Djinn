@@ -263,6 +263,13 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"`djinn://tilasm/<id>`, rather than explaining again; `--tilasm L01` gives it to a worker as context. Draw its " +
 		"diagrams as inline SVG laid out by hand (boxes, labelled arrows, a legend), in colours that read in light and " +
 		"dark, never Mermaid. A tilasm reaches no network: everything it needs, fonts and scripts, is in its folder.\n" +
+		"- **The developer's comments on a tilasm come as one send**, a `comments` event (L01) with their choice: read " +
+		"them all, `djinn tilasm comments L01 --send <n>`, each with what it is on, then act in one pass, one task per " +
+		"change rather than one per comment. *Launch*: the work the tilasm explains, as the comments change it; the line " +
+		"names the open question that links it: answer it with its recommended option and a note naming the send, then " +
+		"launch its plan edited by the comments (`djinn question launch`), or spawn the tasks. *Iterate*: a task that " +
+		"puts the tilasm's next version as they say (`--tilasm L01`, its prompt naming `--code L01`). Djinn launched " +
+		"a launch without comments itself, by approving the question: no event then.\n" +
 		"- **No secret, no local path** in the plan: name the project.\n" +
 		"- **Every request finds its wish.** A request that is not about the current wish goes through " +
 		"`djinn wish route \"<request>\" --wish-id <wish> --ask`: Djinn asks the developer, on a card, to open a new wish, " +

@@ -41,6 +41,8 @@ import {
   type Tilasm,
   type TilasmComment,
   TilasmCommentSchema,
+  type TilasmHold,
+  TilasmHoldSchema,
   TilasmSchema,
 } from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound, unimplemented } from "./client";
@@ -54,6 +56,8 @@ export interface WishDetail {
   tilasms: Tilasm[];
   // The developer's draft comments on its tilasms, read with them: the window's alone.
   drafts: TilasmComment[];
+  // Why some of its tilasms take no send for now, read with the drafts: computed by the server.
+  holds: TilasmHold[];
   // Read at least once.
   loaded: boolean;
   // Totals from the server for paginated lists.
@@ -138,6 +142,7 @@ const EMPTY_DETAIL: WishDetail = {
   blocks: [],
   tilasms: [],
   drafts: [],
+  holds: [],
   loaded: false,
   loadedKinds: new Set<Change>(),
 };
@@ -776,14 +781,24 @@ export function createStore(
       if (kinds.has(Change.TILASM))
         attemptKind(wishId, Change.TILASM, async () => {
           // A djinn without comments has none to read.
-          const list = await clients.tilasms
+          const res = await clients.tilasms
             .drafts({ wish: wishId }, call)
-            .then((res) => res.comments)
             .catch((error: unknown) => {
-              if (unimplemented(error)) return [];
+              if (unimplemented(error)) return { comments: [], holds: [] };
               throw error;
             });
-          into.drafts = reconcile(TilasmCommentSchema, prevDetail.drafts, list);
+          into.drafts = reconcile(
+            TilasmCommentSchema,
+            prevDetail.drafts,
+            res.comments,
+          );
+          // A hold has no identifier: the same holds in the same order keep their array.
+          const same =
+            prevDetail.holds.length === res.holds.length &&
+            res.holds.every((h, i) =>
+              equals(TilasmHoldSchema, h, prevDetail.holds[i]),
+            );
+          into.holds = same ? prevDetail.holds : res.holds;
         });
     }
     await Promise.all(reads);
@@ -799,6 +814,7 @@ export function createStore(
       const blocks = got.blocks ?? prevDetail.blocks;
       const tilasms = got.tilasms ?? prevDetail.tilasms;
       const drafts = got.drafts ?? prevDetail.drafts;
+      const holds = got.holds ?? prevDetail.holds;
       const tasksTotal =
         got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
       const questionsTotal =
@@ -841,6 +857,7 @@ export function createStore(
         blocks === prevDetail.blocks &&
         tilasms === prevDetail.tilasms &&
         drafts === prevDetail.drafts &&
+        holds === prevDetail.holds &&
         tasksTotal === prevDetail.tasksTotal &&
         questionsTotal === prevDetail.questionsTotal &&
         blocksTotal === prevDetail.blocksTotal &&
@@ -857,6 +874,7 @@ export function createStore(
         blocks,
         tilasms,
         drafts,
+        holds,
         loaded: true,
         tasksTotal,
         questionsTotal,

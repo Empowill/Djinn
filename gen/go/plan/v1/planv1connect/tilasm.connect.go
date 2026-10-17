@@ -61,6 +61,9 @@ const (
 	TilasmServiceDeleteCommentProcedure = "/plan.v1.TilasmService/DeleteComment"
 	// TilasmServiceDraftsProcedure is the fully-qualified name of the TilasmService's Drafts RPC.
 	TilasmServiceDraftsProcedure = "/plan.v1.TilasmService/Drafts"
+	// TilasmServiceSendCommentsProcedure is the fully-qualified name of the TilasmService's
+	// SendComments RPC.
+	TilasmServiceSendCommentsProcedure = "/plan.v1.TilasmService/SendComments"
 )
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
@@ -95,6 +98,11 @@ type TilasmServiceClient interface {
 	DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error)
 	// The draft comments on a wish's tilasms, for the window: no agent reads them.
 	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
+	// Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
+	// explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
+	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
+	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
+	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
 }
 
 // NewTilasmServiceClient constructs a client for the plan.v1.TilasmService service. By default, it
@@ -191,6 +199,12 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		sendComments: connect.NewClient[v1.TilasmServiceSendCommentsRequest, v1.TilasmServiceSendCommentsResponse](
+			httpClient,
+			baseURL+TilasmServiceSendCommentsProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("SendComments")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -209,6 +223,7 @@ type tilasmServiceClient struct {
 	putComment    *connect.Client[v1.TilasmServicePutCommentRequest, v1.TilasmServicePutCommentResponse]
 	deleteComment *connect.Client[v1.TilasmServiceDeleteCommentRequest, v1.TilasmServiceDeleteCommentResponse]
 	drafts        *connect.Client[v1.TilasmServiceDraftsRequest, v1.TilasmServiceDraftsResponse]
+	sendComments  *connect.Client[v1.TilasmServiceSendCommentsRequest, v1.TilasmServiceSendCommentsResponse]
 }
 
 // Put calls plan.v1.TilasmService.Put.
@@ -276,6 +291,11 @@ func (c *tilasmServiceClient) Drafts(ctx context.Context, req *connect.Request[v
 	return c.drafts.CallUnary(ctx, req)
 }
 
+// SendComments calls plan.v1.TilasmService.SendComments.
+func (c *tilasmServiceClient) SendComments(ctx context.Context, req *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error) {
+	return c.sendComments.CallUnary(ctx, req)
+}
+
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
 	// Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
@@ -308,6 +328,11 @@ type TilasmServiceHandler interface {
 	DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error)
 	// The draft comments on a wish's tilasms, for the window: no agent reads them.
 	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
+	// Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
+	// explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
+	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
+	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
+	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
 }
 
 // NewTilasmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -400,6 +425,12 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServiceSendCommentsHandler := connect.NewUnaryHandler(
+		TilasmServiceSendCommentsProcedure,
+		svc.SendComments,
+		connect.WithSchema(tilasmServiceMethods.ByName("SendComments")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TilasmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TilasmServicePutProcedure:
@@ -428,6 +459,8 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceDeleteCommentHandler.ServeHTTP(w, r)
 		case TilasmServiceDraftsProcedure:
 			tilasmServiceDraftsHandler.ServeHTTP(w, r)
+		case TilasmServiceSendCommentsProcedure:
+			tilasmServiceSendCommentsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -487,4 +520,8 @@ func (UnimplementedTilasmServiceHandler) DeleteComment(context.Context, *connect
 
 func (UnimplementedTilasmServiceHandler) Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Drafts is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.SendComments is not implemented"))
 }
