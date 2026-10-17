@@ -43,7 +43,8 @@ folder, and it only reads:
 
 - it reads the project's files and its history, and searches the web;
 - it reads the wish: its brief, its tasks, its questions, its notes and its [tilasms](#tilasm);
-- it edits no file, takes no [gate](#gates) and has no worktree.
+- it edits none of the project's files, takes no [gate](#gates) and has no worktree. Under Claude Code it writes one
+  file only, the new context of its question, in a folder of its own that Djinn keeps for it.
 
 It may still leave a note for the agents, and spawn a worker for what needs writing, a tilasm that lays out a long
 analysis for instance; the question links that tilasm rather than carrying the analysis.

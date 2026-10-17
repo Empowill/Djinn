@@ -18,6 +18,10 @@ type Provider interface {
 	Start(ctx context.Context, spec Spec) (Worker, error)
 }
 
+// writesDirs tells whether a question worker of kind gets its own folder to write in (questionWriteDirs): Claude's
+// folder rules open that folder alone, where Codex's workspace-write sandbox would open its workspace, the project.
+func writesDirs(kind planv1.Provider) bool { return kind == planv1.Provider_PROVIDER_CLAUDE }
+
 // Spec is what a worker is started with.
 type Spec struct {
 	// TaskID is the task the worker works on.
