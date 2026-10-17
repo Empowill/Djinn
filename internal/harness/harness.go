@@ -224,6 +224,8 @@ type run struct {
 	turnsBefore    int           // the task's model turns before this worker
 	restart        bool          // the worker stops to start again, allowed to edit
 	unread         []string      // messages the worker took on its input and has said nothing after yet
+	tools          int           // tool calls of the current worker without a result yet: it is mid-turn (take)
+	held           *message      // a message for the end of the worker's turn, written once tools is 0 (turnOver)
 	branch         string        // the branch template of the project's settings, for launch; empty: the default
 	from           string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
 	checks         string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
@@ -1537,14 +1539,14 @@ func (h *Harness) drain(r *run) Result {
 			h.measure(r, m)
 		case ev, ok := <-events:
 			if !ok {
-				r.unread = nil // A worker started again never had them.
+				r.unread, r.held, r.tools = nil, nil, 0 // A worker started again never had them.
 				return r.worker.Wait()
 			}
 			h.record(r, ev)
 		case ev := <-r.notes:
 			h.note(r, ev)
 		case m := <-r.sends:
-			m.reply <- h.deliver(r, m)
+			m.reply <- h.take(r, m)
 		case written := <-r.holds:
 			h.writeHold(r)
 			close(written)
@@ -1630,6 +1632,16 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	h.acknowledge(r, ev)
 	h.write(r, actorWorker, methodEvent, task, ev)
+	switch ev.Kind {
+	case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL:
+		r.tools++
+	case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT:
+		r.tools = max(r.tools-1, 0)
+		h.turnOver(r)
+	case planv1.TaskEventKind_TASK_EVENT_KIND_USAGE: // A turn's result says its usage: a call cut short has no result.
+		r.tools = 0
+		h.turnOver(r)
+	}
 	if ev.Ifrit == planv1.IfritState_IFRIT_STATE_LISTENING && r.ifrit {
 		h.ifritTimers(r) // Its turn ended: past its out time, it goes out now.
 	}

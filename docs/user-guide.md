@@ -584,8 +584,10 @@ pass. Each task says where its work stands: waiting to be committed, committed, 
 task. A branch that conflicts leaves the batch and merges alone after it; a conflict in code or a red check start a
 correction worker, one for a whole red batch, and when that one fails, Djinn merges the batch one branch at a time to
 find the culprit. One correction repairs a branch at a time: meanwhile nothing else merges into it, the work ended
-waits in line, and merges once the correction is in. Past two attempts, Djinn hands it to the Djinn, which decides
-what follows.
+waits in line, and merges once the correction is in. Once it is in and the branch green again, each running worker
+of the wish that lacks the new work is asked, between two of its steps, to merge the branch itself, settle any conflict
+with its own changes in mind and run the tests it touched; Djinn never merges in a worker's worktree. Past two
+attempts, Djinn hands it to the Djinn, which decides what follows.
 
 Each project defines its push cadence: **Standard** (pushes at an azima's end or after an hour and three tasks committed)
 or **On demand** (pushes only when you click **Push** or run `djinn project push <project> [--wish <wish>]`). You can
