@@ -331,7 +331,9 @@
                 <p>
                   Djinn reads what each worker uses, CPU, memory and processes, every five seconds; on Linux from a systemd
                   scope of its own. Another worker starts only when the free memory holds its typical peak.
-                  <code>djinn machine show</code> lists them, the busiest first.
+                  <code>djinn machine show</code> lists them, the busiest first. Its Go builds share one cache across
+                  worktrees (<code>-trimpath</code>); when the disk runs low, Djinn trims that cache, and almost full,
+                  it tells you and holds the push checks until space comes back.
                 </p>
               </article>
               <article class="card word" id="word-tilasms">

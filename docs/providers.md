@@ -55,6 +55,8 @@ flags; none of it is the worker's to change.
 | CPU priority | `nice 10` at the Minimal to Medium load notches ([operating load](#operating-load-runtime-adjustments)) | the machine's load notch |
 | Memory and slots | a memory ceiling in its own scope, a slot among the workers, room to start | `djinn up --workers`, `--worker-memory`, `--worker-memory-guard`, `--worker-cpu`, and the load notch |
 | Gates | one holder per gate, held an hour at most unless its holder states another timeout | Djinn's defaults ([gates](user-guide.md#gates)) |
+| Go builds | `GOFLAGS=-trimpath` in its environment, after the `GOFLAGS` already set, unless they name `-trimpath` either way ([Go builds and the disk](#go-builds-and-the-disk)) | always (`trimmedGoFlags`) |
+| Disk | before it starts, Djinn trims the Go build cache when space runs low ([Go builds and the disk](#go-builds-and-the-disk)) | `djinn up --disk-trim-gb`, `--disk-full-gb` |
 
 The task carries only some of it: its turns and their limit (`turns`), its spending cap, its access, its write
 scopes. The other parts are Djinn's, and the same for every task.
@@ -287,6 +289,42 @@ codex a thread without `sandbox` nor `approvalPolicy` (an approval it asks for i
 needing approval is soft-denied). Supposed, for Claude read-only: that `--restricted` with `--tools` leaves nothing
 able to write or run code. For agy: that plan mode writes nothing in headless mode, and the sandbox blocks every
 command, are to check on a real run.
+
+## Go builds and the disk
+
+**What Djinn starts builds Go with `-trimpath`** (W303, decision Q71). Without it, the Go build cache keys hold the
+folder of each package: every worktree compiled all of Djinn again, for each set of tags, and the cache grew about
+10 GB an hour, 429 GB on 17/10/2026. Djinn sets `GOFLAGS=-trimpath` in the environment of every process it starts:
+workers in their worktrees, watchers, the lead, ifrits' serves, the commit and push checks, an install. It is appended
+to the `GOFLAGS` already set, and never twice: a `GOFLAGS` that names `-trimpath` already, `-trimpath=false`
+included, stays as it is. Where Go is absent it changes nothing. The developer's own shells, the window's terminals
+included, keep their environment: a build or a `go tool task` run by hand keeps its full paths, for Delve and for
+profiles. `TestTrimmedGoFlags` (`internal/harness/disk_test.go`).
+
+A trimmed binary's stacks, panics and profiles name files by module path (`github.com/empowill/djinn/internal/...`),
+not by folder. `go tool pprof` finds the sources all the same with `-trim_path` and `-source_path`:
+`go tool pprof -trim_path=github.com/empowill/djinn -source_path=$PWD -http=:8080 cpu.prof`, run from the checkout. A
+build with full paths for profiling or debugging is `go build -trimpath=false ./cmd/djinn`, which wins over a
+`GOFLAGS=-trimpath` inherited from Djinn.
+
+**The disk guard.** Before a worker starts and before push checks start, Djinn reads the free space of its data
+folder's file system, and of the Go build cache's when `go` is on its PATH (`go env GOCACHE`, asked again every 10
+minutes; no `go`, no cache step, nothing said):
+
+- Under `djinn up --disk-trim-gb` free where the cache is (30 by default, `$DJINN_DISK_TRIM_GB`), it deletes the cache
+  entries unused for more than 24 hours, apart from the work that asked, once per 30 minutes at most: an action entry
+  (`<id>-a`) first, then its output (`<id>-d`) unless an entry still used names it, so that the cache never points to
+  a missing file. Never `go clean -cache`, never `/tmp/go-build*`. `djinn.log` says what it freed (`go build cache
+  trimmed`, its entries and bytes).
+- Under `--disk-full-gb` free where the data folder or the cache is (10 by default, `$DJINN_DISK_FULL_GB`), the lead
+  hears one `disk` event, "disk almost full", with the free space; its detail names the biggest folders Djinn knows
+  (the Go build cache, each project's worktrees, Djinn's logs and tilasms, the npm and Playwright caches, the
+  temporary folder). The push checks wait instead of failing, and so do push checks that ran out of space ("no space
+  left on device") as the disk filled up: nothing held, no correction. Djinn reads the free space every 30 seconds;
+  once it is back over the threshold, the lead hears it and the push checks run.
+
+0 turns either step off. A worker starts whatever the space: only the push checks wait. `TestDiskGuard`,
+`TestTrimGoCache`, `TestDiskGuardNoGo`, `TestDiskFullPushChecksWait`, `TestDiskFilledDuringPushChecks`.
 
 ## When Djinn resumes a worker
 
