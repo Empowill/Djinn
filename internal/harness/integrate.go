@@ -494,21 +494,15 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	}
 	var remaining []*planv1.Task
 	var alreadyIn []*planv1.Task
+	head := integrationHead(ctx, project.GetDirectory(), branch) // Once for the batch: nothing moves it before its merges.
 	for _, t := range batch {
-		if taskWorkInBranch(ctx, project.GetDirectory(), t, branch) {
+		if taskWorkIn(ctx, project.GetDirectory(), t, head) {
 			alreadyIn = append(alreadyIn, t)
 		} else {
 			remaining = append(remaining, t)
 		}
 	}
 	if len(alreadyIn) > 0 {
-		head, err := git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
-		if err != nil || head == "" {
-			head, _ = git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", branch+"^{commit}")
-		}
-		if head == "" {
-			head, _ = git(ctx, project.GetDirectory(), "rev-parse", "HEAD")
-		}
 		committed := &planv1.TaskIntegration{
 			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
 			Branch: branch,
@@ -625,11 +619,14 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 	}
 	text := "worktree removed, branch " + cur.GetBranch() + " kept"
 	// A review worker works in the worktree of the task it reviews: the second of them finds it removed already.
+	// git worktree remove refuses a worktree holding changes, its own status read: the status is read again only to say
+	// why it stays.
 	if _, err := os.Stat(cur.GetWorktree()); !errors.Is(err, os.ErrNotExist) {
-		if changes, err := git(ctx, cur.GetWorktree(), "status", "--porcelain"); err == nil && changes != "" {
-			text = "worktree kept: it holds changes not committed, " + cur.GetWorktree()
-		} else if err := removeWorktree(ctx, project.GetDirectory(), cur.GetWorktree(), false); err != nil {
+		if err := removeWorktree(ctx, project.GetDirectory(), cur.GetWorktree(), false); err != nil {
 			text = "worktree kept: " + err.Error()
+			if changes, err := git(ctx, cur.GetWorktree(), "status", "--porcelain"); err == nil && changes != "" {
+				text = "worktree kept: it holds changes not committed, " + cur.GetWorktree()
+			}
 		}
 	}
 	kept := strings.HasPrefix(text, "worktree kept")
@@ -1239,11 +1236,15 @@ func (h *Harness) mergeAndTest(
 	defer done()
 	var merged []*planv1.Task
 	empty := false // A merge that changed nothing was undone.
+	head := ""     // The worktree's HEAD, as the last merge left it; "" to read it again.
 	for _, t := range batch {
-		base, err := git(ctx, wt, "rev-parse", "HEAD")
-		if err != nil {
-			return wait(err.Error())
+		if head == "" {
+			if head, err = git(ctx, wt, "rev-parse", "HEAD"); err != nil {
+				return wait(err.Error())
+			}
 		}
+		base := head
+		head = "" // A merge that did not end as foreseen leaves it to read.
 		// What a correction starts from, when this merge conflicts: the merges before it, and this one again.
 		conflict := func(files []string) *planv1.IntegrationFailure {
 			return &planv1.IntegrationFailure{Base: base, MergeBranch: t.GetBranch(), Files: files, TaskIds: append(ids(merged), t.GetId())}
@@ -1256,7 +1257,8 @@ func (h *Harness) mergeAndTest(
 		}
 		_, err = git(keep, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, t.GetBranch())
 		if err == nil {
-			if emptyMerge(keep, wt, base) {
+			var isEmpty bool
+			if isEmpty, head = emptyMerge(keep, wt, base); isEmpty {
 				h.integrationStep(ctx, t, "integration: "+t.GetBranch()+" changes nothing in "+branch+": no merge commit")
 				empty = true
 				continue
@@ -1299,7 +1301,8 @@ func (h *Harness) mergeAndTest(
 			}
 			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, why, conflict(conflicts))
 		}
-		if emptyMerge(keep, wt, base) {
+		var isEmpty bool
+		if isEmpty, head = emptyMerge(keep, wt, base); isEmpty {
 			h.integrationStep(ctx, t, "integration: "+t.GetBranch()+" changes nothing in "+branch+": no merge commit")
 			empty = true
 			continue
@@ -1314,9 +1317,10 @@ func (h *Harness) mergeAndTest(
 		}
 		return "", nil, "", left
 	}
-	sha, err = git(ctx, wt, "rev-parse", "HEAD")
-	if err != nil {
-		return wait(err.Error())
+	if sha = head; sha == "" {
+		if sha, err = git(ctx, wt, "rev-parse", "HEAD"); err != nil {
+			return wait(err.Error())
+		}
 	}
 	red := func(command, why, out string) (string, *planv1.TaskIntegration, string, []leftOut) {
 		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, why,
@@ -1554,15 +1558,21 @@ func integrationWorktree(ctx context.Context, repo, wt, old string) (string, str
 }
 
 // emptyMerge tells whether the merge just committed in the worktree wt changes nothing from base, the commit it was
-// made on; it is then undone: no merge commit without a change is ever made (W196).
-func emptyMerge(ctx context.Context, wt, base string) bool {
-	tree, err1 := git(ctx, wt, "rev-parse", "HEAD^{tree}")
-	before, err2 := git(ctx, wt, "rev-parse", base+"^{tree}")
-	if err1 != nil || err2 != nil || tree != before {
-		return false
+// made on; it is then undone: no merge commit without a change is ever made (W196). head is the commit the worktree
+// is then at, read with the trees in one git: base once undone, "" when unknown.
+func emptyMerge(ctx context.Context, wt, base string) (empty bool, head string) {
+	out, err := git(ctx, wt, "rev-parse", "HEAD", "HEAD^{tree}", base+"^{tree}")
+	read := strings.Fields(out)
+	if err != nil || len(read) != 3 {
+		return false, ""
 	}
-	_, err := git(ctx, wt, "reset", "--quiet", "--hard", base)
-	return err == nil
+	if read[1] != read[2] {
+		return false, read[0]
+	}
+	if _, err := git(ctx, wt, "reset", "--quiet", "--hard", base); err != nil {
+		return false, ""
+	}
+	return true, base
 }
 
 // samePath tells whether a and b are the same folder, symbolic links resolved.

@@ -319,23 +319,34 @@ func taskWorkInBranch(ctx context.Context, dir string, task *planv1.Task, integr
 	if task == nil || task.GetBranch() == "" || integration == "" {
 		return false
 	}
+	return taskWorkIn(ctx, dir, task, integrationHead(ctx, dir, integration))
+}
+
+// integrationHead is the commit the integration branch is at in dir, else the commit dir's checkout is at; "" when
+// neither is found.
+func integrationHead(ctx context.Context, dir, integration string) string {
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+integration+"^{commit}")
+	if err != nil || head == "" {
+		head, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", integration+"^{commit}")
+	}
+	if head == "" {
+		head, _ = git(ctx, dir, "rev-parse", "HEAD")
+	}
+	return head
+}
+
+// taskWorkIn is taskWorkInBranch with the integration branch's head, intHead, read once for a batch of tasks: each
+// git costs a process, a tenth of a second on Windows.
+func taskWorkIn(ctx context.Context, dir string, task *planv1.Task, intHead string) bool {
+	if task == nil || task.GetBranch() == "" || intHead == "" {
+		return false
+	}
 	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+task.GetBranch()+"^{commit}")
 	if err != nil || head == "" {
 		head, err = git(ctx, dir, "rev-parse", "--verify", "--quiet", task.GetBranch()+"^{commit}")
 		if err != nil || head == "" {
 			return false
 		}
-	}
-	intTarget := "refs/heads/" + integration + "^{commit}"
-	intHead, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", intTarget)
-	if err != nil || intHead == "" {
-		intHead, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", integration+"^{commit}")
-	}
-	if intHead == "" {
-		intHead, _ = git(ctx, dir, "rev-parse", "HEAD")
-	}
-	if intHead == "" {
-		return false
 	}
 	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, intHead); err == nil {
 		return true
