@@ -168,12 +168,16 @@ class LoadManager {
     if (!this.clients && !this.djinn) return;
     this.abort = new AbortController();
     const signal = this.abort.signal;
+    // Once the stream has spoken, it alone says the load: it sends only what changed since its last message, so a Get
+    // answered after it and kept would stay on screen. A Get read minimal after the stream's medium, the stream then
+    // sent nothing when the notch went back to medium, and the window showed minimal for good (W248).
+    let streamed = false;
 
     if (this.clients) {
       void this.clients.load
         .get({}, { signal })
         .then((res) => {
-          if (signal.aborted) return;
+          if (signal.aborted || streamed) return;
           const auto = Boolean(res.auto);
           const notch = res.notch || this.data.notch;
           const chosenNotch = res.chosenNotch || this.data.chosenNotch || notch;
@@ -214,6 +218,7 @@ class LoadManager {
     if (this.djinn?.load) {
       this.unsubscribeLoad = this.djinn.load.subscribe((res) => {
         if (signal.aborted) return;
+        streamed = true;
         this.data = {
           notch: res.notch || this.data.notch,
           auto: Boolean(res.auto),
@@ -242,6 +247,7 @@ class LoadManager {
         try {
           for await (const res of this.clients!.load.watch({}, { signal })) {
             if (signal.aborted) return;
+            streamed = true;
             this.data = {
               notch: res.notch || this.data.notch,
               auto: Boolean(res.auto),

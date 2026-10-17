@@ -10745,6 +10745,45 @@ test("operating load gauge: click selects nearest notch, keyboard steps, round s
   }
 });
 
+test("operating load: a Get answered after the stream's first message never takes the stream's place (W248)", async () => {
+  // The e2e race: the stream sends medium, the notch goes to minimal and back to medium within the stream's beat, so
+  // it sends nothing more; the Get, answered in between, read minimal. Kept, it showed minimal for good.
+  const N = s.LoadNotch;
+  const msg = (notch) => ({
+    notch,
+    auto: false,
+    chosenNotch: notch,
+    notchSlots: [],
+    slots: 4,
+    forcedWorkers: 0,
+    lowerPauses: true,
+  });
+  let answer;
+  const fake = {
+    clients: {
+      load: {
+        get: () => new Promise((resolve) => (answer = resolve)),
+        set: async ({ notch }) => msg(notch),
+      },
+    },
+    load: {
+      subscribe: (callback) => {
+        callback(msg(N.MEDIUM));
+        return () => {};
+      },
+    },
+  };
+  s.loadManager.setSnapshot({ notch: N.HIGH, chosenNotch: N.HIGH });
+  // Listened to first: the new djinn restarts the store on it, whatever the tests before left started.
+  const unsubscribe = s.loadManager.subscribe(() => {});
+  s.loadManager.setDjinn(fake);
+  assert.equal(s.loadManager.getSnapshot().notch, N.MEDIUM);
+  answer(msg(N.MINIMAL));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(s.loadManager.getSnapshot().notch, N.MEDIUM);
+  unsubscribe();
+});
+
 test("operating load forecast: binding resource (memory-bound vs cpu-bound) and consistent two-line numbers", async () => {
   // Case A: Memory-bound machine (e.g. 4 memory slots, 8 cpu slots)
   s.loadManager.setSnapshot({
