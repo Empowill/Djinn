@@ -95,6 +95,7 @@ export {
   WishTitle,
   leadTrouble,
   recordedAgent,
+  seatName,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
 export { platformShortcut } from "@/src/tooltip.tsx";
@@ -11877,5 +11878,141 @@ test("the status bar says how many gates an ifrit holds, apart, with a vermilion
   assert.equal(
     s.renderToStaticMarkup(h(s.HeldGates, { gates: gates.slice(1) })),
     "1 gate held",
+  );
+});
+
+test("while Djinn drives the lead, its menu moves it to another agent, account or model in one click", () => {
+  const agents = [
+    { id: "claude", name: "Claude", available: true, command: "claude" },
+    { id: "codex", name: "Codex", available: true, command: "codex" },
+    { id: "antigravity", name: "Antigravity", available: true, command: "agy" },
+  ];
+  const accounts = [
+    {
+      name: "work",
+      provider: s.Provider.CLAUDE,
+      label: "Work",
+      configDirectory: "/home/d/.claude-work",
+    },
+    {
+      name: "gpt",
+      provider: s.Provider.CODEX,
+      label: "",
+      configDirectory: "/home/d/.codex-gpt",
+    },
+  ];
+  const drive = {
+    seat: {
+      provider: s.Provider.CLAUDE,
+      model: "claude-opus-5-5",
+      account: "work",
+    },
+    accounts,
+  };
+  const markup = s.renderToStaticMarkup(
+    h(s.LeadMenu, { agents, drive, onPick() {}, onMove() {} }),
+  );
+  // Each agent on its own sign-in, then on each account; the seat marked, with its model; Antigravity disabled.
+  const order = [
+    "Claude</span>",
+    "Claude · Work",
+    "Codex</span>",
+    "Codex · gpt",
+    "Antigravity",
+  ].map((name) => markup.indexOf(`<span class="lead-agent-name">${name}`));
+  assert.ok(
+    order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1])),
+    order.join(),
+  );
+  assert.match(
+    markup,
+    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude · Work<svg[^]*?The Djinn runs here, on claude-opus-5-5<\/span>/,
+  );
+  assert.match(
+    markup,
+    /<button role="menuitem" class="lead-agent" disabled=""><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Cannot lead yet: use Claude Code or Codex<\/span>/,
+  );
+  assert.match(
+    markup,
+    /Moves the Djinn here: its next batch starts here, with its journal/,
+  );
+  assert.match(
+    markup,
+    /<input placeholder="The agent&#x27;s default" aria-label="Model" value="claude-opus-5-5"\/>/,
+  );
+  // The seat's name, as the attention bar says it.
+  assert.equal(
+    s.seatName({ provider: s.Provider.CODEX, account: "gpt" }, accounts),
+    "Codex · gpt",
+  );
+  assert.equal(
+    s.seatName({ provider: s.Provider.CLAUDE, account: "work" }, accounts),
+    "Claude Code · Work",
+  );
+  assert.equal(
+    s.seatName({ provider: s.Provider.CLAUDE, account: "" }, accounts),
+    "Claude Code",
+  );
+});
+
+test("a limit the driven lead hit comes first in the attention bar, a button per move; none says the events wait", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const accounts = [
+    {
+      name: "work",
+      provider: s.Provider.CLAUDE,
+      label: "Work",
+      configDirectory: "/d",
+    },
+  ];
+  const limit = {
+    text: "the account's session limit, resets at 07:20",
+    seat: { provider: s.Provider.CLAUDE, model: "", account: "" },
+    moves: [
+      { provider: s.Provider.CLAUDE, model: "", account: "work" },
+      { provider: s.Provider.CODEX, model: "", account: "" },
+    ],
+  };
+  const items = s.attentionOf(
+    [{ wish: w, item: { id: "q1", code: "Q1", text: "q1" }, blocking: ["W1"] }],
+    [],
+    [],
+    undefined,
+    undefined,
+    [],
+    { limit, accounts },
+  );
+  assert.deepEqual(
+    items.map((i) => [i.key, i.level, i.label]),
+    [
+      ["lead-limit", "blocking", "The Djinn hit a limit"],
+      ["q1", "blocking", undefined],
+    ],
+  );
+  assert.equal(
+    items[0].text,
+    "Claude Code hit the account's session limit, resets at 07:20: its events wait",
+  );
+  const djinn = s.createDjinn(
+    s.createRouterTransport(() => {}),
+    10,
+  );
+  const markup = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.AttentionBar, { items })),
+  );
+  assert.match(
+    markup,
+    /<div id="lead-limit" class="attention-item attention-prompt level-blocking">[^]*?<button class="button secondary small">Move the Djinn to Claude Code · Work<\/button><button class="button secondary small">Move the Djinn to Codex<\/button>/,
+  );
+  const alone = s.attentionOf([], [], [], undefined, undefined, [], {
+    limit: { ...limit, moves: [] },
+    accounts,
+  });
+  const none = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.AttentionBar, { items: alone })),
+  );
+  assert.match(
+    none,
+    /No other agent or account is signed in here: its events wait for the reset/,
   );
 });

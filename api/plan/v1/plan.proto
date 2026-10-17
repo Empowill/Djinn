@@ -754,6 +754,49 @@ message LeadBatch {
   Usage usage = 15;
   // How many characters its prompt held: the rules aside, its events, briefs and journal.
   int32 prompt_chars = 16;
+  // The account it ran on, by its name (Account.name); empty for the agent's own sign-in.
+  string account = 17;
+}
+
+// Account is a sign-in of an agent on this machine beside its default one: a folder of the agent's own where it keeps
+// its configuration, its sessions and its login (Claude Code's CLAUDE_CONFIG_DIR, Codex's CODEX_HOME). The developer
+// signs in there once, with the agent's own command; Djinn names the folder and passes it to the sessions it starts,
+// and never reads nor stores a token. Kept in settings.json of Djinn's data folder: never a secret, never shared.
+message Account {
+  // How the commands name it: lowercase letters, digits and dashes, such as work.
+  string name = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"];
+  // Its agent: claude or codex. Antigravity documents no folder of its own per sign-in.
+  Provider provider = 2;
+  // What the window calls it, such as Work subscription; its name when empty.
+  string label = 3;
+  // The agent's folder for it, absolute: ~/.claude-<name> or ~/.codex-<name> unless given.
+  string config_directory = 4;
+}
+
+// LeadSeat is where the lead Djinn drives runs: its agent, its model, its account. Each batch's session starts there,
+// with the lead's journal, until the developer moves it (djinn lead move, the lead's menu).
+message LeadSeat {
+  // The agent: claude (the default) or codex.
+  Provider provider = 1;
+  // The model; empty for the agent's default.
+  string model = 2;
+  // The account, by its name; empty for the agent's own sign-in.
+  string account = 3;
+}
+
+// LeadLimit is a usage limit the lead Djinn drives hit: its events wait, and Djinn moves it nowhere by itself. The
+// window offers each move in one click.
+message LeadLimit {
+  // What stopped it, for a reader: "the account's session limit, resets at 07:20".
+  string text = 1;
+  // When the limit resets, and the waiting events go to the same seat again; unset when the agent did not say, and
+  // Djinn tries again later.
+  google.protobuf.Timestamp until = 2;
+  // The seat that hit it.
+  LeadSeat seat = 3;
+  // Where the lead may go instead: the other agents and accounts of this machine whose sign-in is not known to be
+  // missing, the closest first.
+  repeated LeadSeat moves = 4;
 }
 
 // LeadBatchState is where a batch of the driven lead stands.
@@ -3619,6 +3662,32 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
+  // journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
+  // default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
+  // batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
+  rpc Move(LeadServiceMoveRequest) returns (LeadServiceMoveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // The accounts of the agents on this machine, the seat of the lead, and for each account the command that signs
+  // it in, once, in its own folder.
+  rpc Accounts(LeadServiceAccountsRequest) returns (LeadServiceAccountsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
+  // unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
+  rpc AddAccount(LeadServiceAddAccountRequest) returns (LeadServiceAddAccountResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
+  // while the lead runs on it.
+  rpc RemoveAccount(LeadServiceRemoveAccountRequest) returns (LeadServiceRemoveAccountResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
   // would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
   // none; the same choice is answered once. The window's only: an agent never answers its own approval.
@@ -3702,6 +3771,12 @@ message LeadServiceGetResponse {
   bool driven = 5;
   // The batch that runs, or else the last one, while Djinn drives the lead.
   LeadBatch batch = 6;
+  // Where the lead Djinn drives runs: its agent, its model, its account.
+  LeadSeat seat = 7;
+  // The accounts of the agents on this machine.
+  repeated Account accounts = 8;
+  // The usage limit the driven lead hit, and where it may move; unset once a batch ends its turn, or it moves.
+  LeadLimit limit = 9;
 }
 
 // LeadExit is how the program of the lead's terminal ended.
@@ -3771,6 +3846,74 @@ message LeadServiceJournalResponse {
   // The journal, in Markdown: a paragraph per batch, the latest last.
   string text = 1;
 }
+
+message LeadServiceMoveRequest {
+  // The agent: claude or codex; unset for the current one.
+  Provider provider = 1 [(buf.validate.field).enum.defined_only = true];
+  // The model; empty for the agent's default.
+  string model = 2 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+  ];
+  // The account, by its name (djinn lead accounts); empty for the agent's own sign-in.
+  string account = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
+}
+
+message LeadServiceMoveResponse {
+  // The seat, as it now is.
+  LeadSeat seat = 1;
+  // What changes, in a line: where the next batch runs.
+  string note = 2;
+}
+
+message LeadServiceAccountsRequest {}
+
+message LeadServiceAccountsResponse {
+  // The accounts, and the lead's seat, in Markdown: a line per account, its folder and the command that signs it in.
+  string text = 1;
+  // The accounts, with --json: the text says them.
+  repeated Account accounts = 2 [(djinn.v1.json_only) = true];
+  // The lead's seat, with --json.
+  LeadSeat seat = 3 [(djinn.v1.json_only) = true];
+}
+
+message LeadServiceAddAccountRequest {
+  // Its name: lowercase letters, digits and dashes, such as work.
+  string name = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
+  // Its agent: claude or codex.
+  Provider provider = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // What the window calls it; its name by default.
+  string label = 3 [(buf.validate.field).string.max_len = 80];
+  // The agent's folder for it, made if missing; ~/.claude-<name> or ~/.codex-<name> by default. Never Djinn's data
+  // folder, nor the agent's default folder.
+  string config_directory = 4 [(buf.validate.field).string.max_len = 4096];
+}
+
+message LeadServiceAddAccountResponse {
+  // The account.
+  Account account = 1;
+  // The command that signs it in, to run once in a terminal.
+  string login_command = 2;
+}
+
+message LeadServiceRemoveAccountRequest {
+  // Its name.
+  string name = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
+}
+
+message LeadServiceRemoveAccountResponse {}
 
 message LeadServiceChooseRequest {
   // The option picked, from 1.

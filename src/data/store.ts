@@ -22,6 +22,8 @@ import {
   type LeadPrompt,
   LeadPromptSchema,
   LeadSchema,
+  type LeadServiceGetResponse,
+  LeadServiceGetResponseSchema,
   type Project,
   ProjectSchema,
   type Question,
@@ -81,6 +83,9 @@ export interface State {
   leadExit?: LeadExit;
   // Why the last start of the lead failed, until one succeeds; empty when none did.
   leadStartError?: string;
+  // While Djinn drives the lead: where it runs (seat), the accounts of this machine, and the usage limit it hit, if
+  // any (limit); unset when the lead runs in its terminal.
+  leadDrive?: Pick<LeadServiceGetResponse, "seat" | "accounts" | "limit">;
   // As WishService.List gives them: the active ones by rank, then the paused ones, then the granted ones.
   wishes: Wish[];
   details: Readonly<Record<string, WishDetail>>;
@@ -619,10 +624,16 @@ export function createStore(
           const list = (await clients.wishes.list({}, call)).wishes;
           const reconciled = reconcile(WishSchema, state.wishes, list);
           if (reconciled !== state.wishes) patch.wishes = reconciled;
-          const { lead, prompt, exit, startError } = await clients.lead.get(
-            {},
-            call,
-          );
+          const {
+            lead,
+            prompt,
+            exit,
+            startError,
+            driven,
+            seat,
+            accounts,
+            limit,
+          } = await clients.lead.get({}, call);
           const sameLead =
             (!state.lead && !lead) ||
             (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
@@ -637,6 +648,24 @@ export function createStore(
             patch.leadExit = exit;
           if ((state.leadStartError ?? "") !== startError)
             patch.leadStartError = startError;
+          const drive = driven
+            ? create(LeadServiceGetResponseSchema, { seat, accounts, limit })
+            : undefined;
+          const sameDrive =
+            (!state.leadDrive && !drive) ||
+            (state.leadDrive && drive
+              ? equals(
+                  LeadServiceGetResponseSchema,
+                  create(LeadServiceGetResponseSchema, state.leadDrive),
+                  drive,
+                )
+              : false);
+          if (!sameDrive)
+            patch.leadDrive = drive && {
+              seat: drive.seat,
+              accounts: drive.accounts,
+              limit: drive.limit,
+            };
         },
         () => again("wishes", () => (pending.wishes = true)),
         "wishes",

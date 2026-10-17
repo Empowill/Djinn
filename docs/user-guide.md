@@ -414,7 +414,11 @@ terminal while its watch runs, so nothing lands in your prompt box; without a wa
 "Djinn: N events waiting, run djinn lead watch". If the Djinn does not run, the question is marked **Waiting for the Djinn** until
 the Djinn acknowledges it; the next `djinn up` queues it for the Djinn. While Djinn drives the lead
 (`"leadDriven": true` in `settings.json`), there is no terminal and no watch: the answer goes to the next batch's
-session, whole, and `djinn lead journal` shows what each batch did.
+session, whole, and `djinn lead journal` shows what each batch did. The lead runs on the agent, model and account
+you choose, from the arrow beside **Talk to the Djinn** or with `djinn lead move`, until you move it; when it hits its
+subscription's limit, the attention bar offers each other agent or account in one click, and Djinn moves it nowhere by
+itself. An account is a folder of the agent's own where it keeps its login (`djinn lead add-account`, then its
+sign-in once): see [the lead's seat and the accounts](providers.md#the-leads-seat-and-the-accounts).
 
 An open question can be moved to another wish (`djinn question move <question> --wish <wish>`), with `--follow` to
 bring tasks following this decision along with it. A question no longer relevant can be withdrawn without an answer

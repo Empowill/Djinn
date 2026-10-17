@@ -13,9 +13,11 @@ import (
 	"sync"
 	"time"
 
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // agent is an agent command line Djinn knows, and how to ask it where it stands. Every command comes from the
@@ -63,15 +65,57 @@ var agents = []agent{
 var checkTimeout = 3 * time.Second
 
 // checkAgents says where each agent stands, looking for the commands on path only: the PATH machine.ExtendPath
-// gives the workers and the leads, so that what the panel finds is what they run. The agents are checked together.
-func checkAgents(ctx context.Context, path string) []*uiv1.Provider {
+// gives the workers and the leads, so that what the panel finds is what they run; and where each of its accounts
+// stands, its status command run in the account's folder. The agents and accounts are checked together.
+func checkAgents(ctx context.Context, path string, accounts []*planv1.Account) []*uiv1.Provider {
 	res := make([]*uiv1.Provider, len(agents))
 	var wg sync.WaitGroup
 	for i, a := range agents {
-		wg.Go(func() { res[i] = checkAgent(ctx, a, path) })
+		wg.Go(func() {
+			res[i] = checkAgent(ctx, a, path, nil)
+			var mu sync.Mutex
+			var each sync.WaitGroup
+			for _, account := range accounts {
+				if agentProviders[a.id] != account.GetProvider() {
+					continue
+				}
+				setup := &uiv1.AccountSetup{Account: account, LoginCommand: plan.AccountLogin(account, runtime.GOOS),
+					State: uiv1.ProviderState_PROVIDER_STATE_MISSING}
+				res[i].Accounts = append(res[i].Accounts, setup)
+				if !res[i].GetAvailable() {
+					continue
+				}
+				each.Go(func() {
+					state := checkAgent(ctx, a, path, plan.AccountEnv(account)).GetState()
+					mu.Lock()
+					setup.State = state
+					mu.Unlock()
+				})
+			}
+			each.Wait()
+		})
 	}
 	wg.Wait()
 	return res
+}
+
+// agentProviders are the providers of the agents, by their identifier.
+var agentProviders = map[string]planv1.Provider{
+	"claude":      planv1.Provider_PROVIDER_CLAUDE,
+	"codex":       planv1.Provider_PROVIDER_CODEX,
+	"antigravity": planv1.Provider_PROVIDER_ANTIGRAVITY,
+}
+
+// SignedIn says where provider's agent stands, run with env added to Djinn's environment (an account's folder):
+// missing, signed out, ready, or unknown when it documents no status command. The driven lead asks it before it
+// offers to move there.
+func SignedIn(ctx context.Context, provider planv1.Provider, env []string) uiv1.ProviderState {
+	for _, a := range agents {
+		if agentProviders[a.id] == provider {
+			return checkAgent(ctx, a, launchPath(), env).GetState()
+		}
+	}
+	return uiv1.ProviderState_PROVIDER_STATE_UNKNOWN
 }
 
 // launchPath is the PATH the workers and the leads start with, brought up to date: an agent installed from the panel
@@ -81,7 +125,8 @@ func launchPath() string {
 	return os.Getenv("PATH")
 }
 
-func checkAgent(ctx context.Context, a agent, path string) *uiv1.Provider {
+// checkAgent says where agent a stands, its commands run with env added to Djinn's environment.
+func checkAgent(ctx context.Context, a agent, path string, env []string) *uiv1.Provider {
 	p := &uiv1.Provider{
 		Id: a.id, Name: a.name, Command: a.program, InstallCommand: a.install, LoginCommand: a.login,
 		State: uiv1.ProviderState_PROVIDER_STATE_MISSING,
@@ -98,14 +143,14 @@ func checkAgent(ctx context.Context, a agent, path string) *uiv1.Provider {
 	if a.version != nil {
 		wg.Go(func() {
 			var out bytes.Buffer
-			if run(ctx, command, a.version, path, &out) == nil {
+			if run(ctx, command, a.version, path, env, &out) == nil {
 				p.Version = versionOf(out.String())
 			}
 		})
 	}
 	if a.status != nil {
 		var exit *exec.ExitError
-		switch err := run(ctx, command, a.status, path, nil); {
+		switch err := run(ctx, command, a.status, path, env, nil); {
 		case err == nil:
 			p.State = uiv1.ProviderState_PROVIDER_STATE_READY
 		case errors.As(err, &exit) && exit.ExitCode() == 1:
@@ -116,13 +161,13 @@ func checkAgent(ctx context.Context, a agent, path string) *uiv1.Provider {
 	return p
 }
 
-// run runs command with args under checkTimeout, with path as its PATH (an npm command finds node there), and
-// writes its output to out when not nil. Djinn never reads what a status command prints.
-func run(ctx context.Context, command string, args []string, path string, out *bytes.Buffer) error {
+// run runs command with args under checkTimeout, with path as its PATH (an npm command finds node there) and env
+// added, and writes its output to out when not nil. Djinn never reads what a status command prints.
+func run(ctx context.Context, command string, args []string, path string, env []string, out *bytes.Buffer) error {
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, command, args...)
-	cmd.Env = append(withPath(os.Environ(), path), "NO_COLOR=1")
+	cmd.Env = append(append(withPath(os.Environ(), path), env...), "NO_COLOR=1")
 	if out != nil {
 		cmd.Stdout = out
 	}

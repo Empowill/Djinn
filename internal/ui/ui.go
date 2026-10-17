@@ -26,6 +26,7 @@ import (
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/link"
 	"github.com/empowill/djinn/internal/logx"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // Service implements uiv1connect.UiServiceHandler.
@@ -299,10 +300,11 @@ func (s *Service) GetEnvironment(
 		res.Shortcut = s.Shortcuts.State()
 	}
 	if req.Msg.GetAgents() {
+		accounts := plan.ReadAccounts(s.Home)
 		if s.AgentPath != nil {
-			res.Providers = checkAgents(ctx, s.AgentPath())
+			res.Providers = checkAgents(ctx, s.AgentPath(), accounts)
 		} else {
-			res.Providers = checkAgents(ctx, launchPath())
+			res.Providers = checkAgents(ctx, launchPath(), accounts)
 		}
 	} else {
 		for _, p := range providers {
