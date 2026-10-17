@@ -10,15 +10,14 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"path"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/empowill/djinn/internal/cli"
 )
-
-// Marker is where index.html takes the reference of the command line.
-const Marker = "<!-- djinn:commands -->"
 
 const index = "index.html"
 
@@ -52,91 +51,161 @@ func Commands() []byte {
 	return b.Bytes()
 }
 
-// FS is the site with the reference of the command line in index.html, in place of Marker.
+// FS is the site with the Grimoire made from it: index.html with the navigation, the pages' shells and the
+// navigation's words in place of their markers, and a script per page, pages/<slug>.js (PageScript), the Command line's
+// with the commands. Each is made once, when first asked: djinn up renders a page when a reader opens it.
 func FS(site fs.FS) fs.FS {
-	return &withCommands{site: site}
+	return &grimoireFS{site: site, scripts: map[string][]byte{}}
 }
 
-type withCommands struct {
+type grimoireFS struct {
 	site  fs.FS
 	once  sync.Once
 	index []byte
 	err   error
+
+	mu      sync.Mutex
+	scripts map[string][]byte // by slug
 }
 
-// page is index.html with the commands and the Grimoire's navigation, pages and words, made once, when first asked.
-func (s *withCommands) page() ([]byte, error) {
+// page is index.html with the navigation, the pages' shells and the words.
+func (s *grimoireFS) page() ([]byte, error) {
 	s.once.Do(func() {
 		var b []byte
 		if b, s.err = fs.ReadFile(s.site, index); s.err != nil {
 			return
 		}
-		b = bytes.Replace(b, []byte(Marker), Commands(), 1)
-		if bytes.Contains(b, []byte(PagesMarker)) {
-			var pages []byte
-			if pages, s.err = Pages(s.site); s.err != nil {
-				return
-			}
-			b = bytes.Replace(b, []byte(PagesMarker), pages, 1)
-		}
+		b = bytes.Replace(b, []byte(PagesMarker), Shells(), 1)
 		b = bytes.Replace(b, []byte(NavMarker), NavHTML(), 1)
 		s.index = bytes.Replace(b, []byte(LabelsMarker), Labels(), 1)
 	})
 	return s.index, s.err
 }
 
-func (s *withCommands) Open(name string) (fs.File, error) {
-	if name == index {
-		b, err := s.page()
-		if err != nil {
-			return nil, &fs.PathError{Op: "open", Path: name, Err: err}
-		}
-		return &pageFile{Reader: bytes.NewReader(b), size: int64(len(b))}, nil
+// script is a page's script, made once.
+func (s *grimoireFS) script(slug string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if b, ok := s.scripts[slug]; ok {
+		return b, nil
 	}
+	b, err := PageScript(s.site, slug)
+	if err == nil {
+		s.scripts[slug] = b
+	}
+	return b, err
+}
+
+// scriptSlug is the page whose script name is, pages/<slug>.js, if it names one.
+func scriptSlug(name string) (string, bool) {
+	dir, file := path.Split(name)
+	slug, ok := strings.CutSuffix(file, scriptExt)
+	if !ok || dir != pagesDir+"/" {
+		return "", false
+	}
+	return slug, slices.ContainsFunc(all(), func(p Page) bool { return p.Slug == slug })
+}
+
+func (s *grimoireFS) Open(name string) (fs.File, error) {
+	made := s.page
+	if name != index {
+		slug, ok := scriptSlug(name)
+		if !ok {
+			return s.open(name)
+		}
+		made = func() ([]byte, error) { return s.script(slug) }
+	}
+	b, err := made()
+	if err != nil {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: err}
+	}
+	return &madeFile{Reader: bytes.NewReader(b), info: madeInfo{path.Base(name), int64(len(b))}}, nil
+}
+
+// open opens a file of the site; the root and the pages folder list what is made in them, with its size.
+func (s *grimoireFS) open(name string) (fs.File, error) {
 	f, err := s.site.Open(name)
-	if dir, ok := f.(fs.ReadDirFile); ok && name == "." {
-		return &root{ReadDirFile: dir, page: s.page}, nil
+	if err != nil || (name != "." && name != pagesDir) {
+		return f, err
 	}
-	return f, err
-}
-
-// root is the site's root directory, opened: it gives index.html the size of the page with its commands, as a walk
-// of the site, as os.CopyFS does, reads it.
-type root struct {
-	fs.ReadDirFile
-	page func() ([]byte, error)
-}
-
-func (d *root) ReadDir(n int) ([]fs.DirEntry, error) {
-	entries, err := d.ReadDirFile.ReadDir(n)
-	for i, e := range entries {
-		if e.Name() == index {
-			b, perr := d.page()
-			if perr != nil {
-				return entries[:i], perr
-			}
-			entries[i] = fs.FileInfoToDirEntry(pageInfo(len(b)))
+	dir, ok := f.(fs.ReadDirFile)
+	if !ok {
+		return f, nil
+	}
+	made := []string{index}
+	if name == pagesDir {
+		made = nil
+		for _, p := range all() {
+			made = append(made, pagesDir+"/"+p.Slug+scriptExt)
 		}
 	}
-	return entries, err
+	return &madeDir{ReadDirFile: dir, fsys: s, made: made}, nil
 }
 
-// pageFile is index.html with its commands, opened. It seeks, as http.FileServerFS needs.
-type pageFile struct {
+// madeDir is a folder of the site, opened, that lists what the Grimoire makes in it: index.html, with the size it has
+// once made, in place of the file with its markers; each page's script beside its Markdown. A walk of the site, as
+// os.CopyFS does, copies them.
+type madeDir struct {
+	fs.ReadDirFile
+	fsys    *grimoireFS
+	made    []string
+	entries []fs.DirEntry
+	read    bool
+}
+
+func (d *madeDir) ReadDir(n int) ([]fs.DirEntry, error) {
+	if !d.read {
+		d.read = true
+		entries, err := d.ReadDirFile.ReadDir(-1)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range d.made {
+			f, err := d.fsys.Open(name)
+			if err != nil {
+				return nil, err
+			}
+			info, _ := f.Stat()
+			f.Close()
+			entries = slices.DeleteFunc(entries, func(e fs.DirEntry) bool { return e.Name() == info.Name() })
+			entries = append(entries, fs.FileInfoToDirEntry(info))
+		}
+		slices.SortFunc(entries, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+		d.entries = entries
+	}
+	if n <= 0 {
+		all := d.entries
+		d.entries = nil
+		return all, nil
+	}
+	if len(d.entries) == 0 {
+		return nil, io.EOF
+	}
+	n = min(n, len(d.entries))
+	part := d.entries[:n]
+	d.entries = d.entries[n:]
+	return part, nil
+}
+
+// madeFile is a file the Grimoire makes, opened. It seeks, as http.FileServerFS needs.
+type madeFile struct {
 	*bytes.Reader
+	info madeInfo
+}
+
+func (f *madeFile) Stat() (fs.FileInfo, error) { return f.info, nil }
+func (f *madeFile) Close() error               { return nil }
+
+var _ io.ReadSeeker = (*madeFile)(nil)
+
+type madeInfo struct {
+	name string
 	size int64
 }
 
-func (f *pageFile) Stat() (fs.FileInfo, error) { return pageInfo(f.size), nil }
-func (f *pageFile) Close() error               { return nil }
-
-var _ io.ReadSeeker = (*pageFile)(nil)
-
-type pageInfo int64
-
-func (pageInfo) Name() string       { return index }
-func (i pageInfo) Size() int64      { return int64(i) }
-func (pageInfo) Mode() fs.FileMode  { return 0o444 }
-func (pageInfo) ModTime() time.Time { return time.Time{} }
-func (pageInfo) IsDir() bool        { return false }
-func (pageInfo) Sys() any           { return nil }
+func (i madeInfo) Name() string     { return i.name }
+func (i madeInfo) Size() int64      { return i.size }
+func (madeInfo) Mode() fs.FileMode  { return 0o444 }
+func (madeInfo) ModTime() time.Time { return time.Time{} }
+func (madeInfo) IsDir() bool        { return false }
+func (madeInfo) Sys() any           { return nil }

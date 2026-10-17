@@ -22,7 +22,9 @@ From top to bottom:
 - **Projects**, with + to create one. Each project opens its panel; its terminal button opens a terminal at its root,
   and a line shows each of its branches out of step with its remote.
 - **Import a wish**, **Hourglass** (Ctrl+2), **Grimoire**, this documentation, and your profile, **Connections &
-  preferences**.
+  preferences**. The Grimoire is a page of the window, like the Hourglass, never a dialog over it: its navigation
+  shows beside its splash page from the first view, each page is read when you open it, and back and forward move
+  between the pages you read.
 
 ### The wish bar
 
@@ -168,7 +170,7 @@ When a newer Djinn is ready, a banner takes its own row at the very top of the w
 | Ctrl+I (Cmd+I) | Write to the Djinn |
 | Ctrl+Shift+T | A new terminal |
 | Alt+Up, Alt+Down | Move the wish in focus in the wish bar |
-| Escape | Close the Grimoire, a dialog or a menu |
+| Escape | Close a dialog or a menu |
 
 Ctrl+1 and Ctrl+2 are keys' places, not characters: on a French keyboard, the keys of the ampersand and of the e with an
 acute accent; the numpad's 1 and 2 work too. They work in a text field, never in the terminal. Each entry's tooltip

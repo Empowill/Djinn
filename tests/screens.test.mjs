@@ -149,6 +149,7 @@ export {
   HourglassLine,
   HourglassSections,
 } from "@/src/hourglass.tsx";
+export { Docs, GRIMOIRE } from "@/src/docs.tsx";
 export {
   TaskDiffView,
   UnifiedView,
@@ -9722,18 +9723,20 @@ test("the side panel's Hourglass sits at the bottom of the menu, after the wishe
 });
 
 // The Grimoire, the documentation (W89), sits just under the Hourglass, before the profile; its tooltip says
-// Documentation, and folded to its book it keeps its name and its tooltip.
-test("the side panel's Grimoire sits under the Hourglass, opens the documentation, and reads folded too", (t) => {
+// Documentation, and folded to its book it keeps its name and its tooltip. It is a page like the Hourglass (W165):
+// selected while it shows.
+test("the side panel's Grimoire sits under the Hourglass, shows the documentation as a page, and reads folded too", (t) => {
   globalThis.__DJINN_MAC__ = false;
   t.after(() => delete globalThis.__DJINN_MAC__);
-  const sidebar = (collapsed, onOpenDocs) =>
+  const sidebar = (collapsed, onSelectGrimoire, grimoireSelected = false) =>
     s.renderToStaticMarkup(
       h(s.WishSidebar, {
         wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
         projects: [],
         onSelectPlan() {},
         onSelectHourglass() {},
-        onOpenDocs,
+        grimoireSelected,
+        onSelectGrimoire,
         selectedWishId: "",
         selectedProjectId: "",
         collapsed,
@@ -9750,15 +9753,43 @@ test("the side panel's Grimoire sits under the Hourglass, opens the documentatio
   assert.ok(glass >= 0 && grimoire > glass, open);
   assert.match(
     open,
-    /<button class="nav-item grimoire-nav" title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><span>Grimoire<\/span><\/button>$/,
+    /<button class="nav-item grimoire-nav " title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><span>Grimoire<\/span><\/button>$/,
+  );
+  // Shown, it is the entry selected.
+  assert.match(
+    sidebar(false, () => {}, true),
+    /<button class="nav-item grimoire-nav selected" title="Documentation"/,
   );
   // Folded: the book alone, its name and its tooltip kept.
   assert.match(
     sidebar(true, () => {}),
-    /<button class="nav-item grimoire-nav" title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><\/button>$/,
+    /<button class="nav-item grimoire-nav " title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><\/button>$/,
   );
   // No way to the documentation, no entry.
   assert.doesNotMatch(sidebar(false), /grimoire-nav/);
+});
+
+// The Grimoire is a page of the window, as the Hourglass (W165): its header, then the site in a frame that fills the
+// page, in the window's theme and language, under the window's header rather than its own; never a dialog.
+test("the Grimoire is a page of the window, its site in a frame, no dialog", (t) => {
+  // The page the window has: its theme and its text size, which the frame's address carries.
+  const page = globalThis.document;
+  globalThis.document = {
+    documentElement: { dataset: { theme: "light", textSize: "compact" } },
+  };
+  t.after(() => (globalThis.document = page));
+  const { djinn } = hourglassDjinn();
+  const html = s.renderToStaticMarkup(h(s.DjinnProvider, { djinn }, h(s.Docs)));
+  assert.equal(s.GRIMOIRE, "grimoire");
+  assert.match(
+    html,
+    /^<div class="wish-view grimoire"><header class="topbar page-header"><div class="breadcrumbs"><strong>Grimoire<\/strong><\/div>/,
+  );
+  assert.match(
+    html,
+    /<iframe class="grimoire-frame" title="Grimoire" src="\/docs\/\?theme=light&amp;lang=en&amp;embedded=1&amp;text=compact"><\/iframe><\/div>$/,
+  );
+  assert.doesNotMatch(html, /role="dialog"|modal|aria-modal/);
 });
 
 // Ctrl+1 and Ctrl+2 (Q254) are the key's place: the digit row, whatever it types (& and e acute on AZERTY), or the numpad;

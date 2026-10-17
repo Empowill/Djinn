@@ -1,7 +1,8 @@
-// The Grimoire, the documentation that djinn serves at /docs/ (docs/site): its splash page, then the book, a navigation
-// on the left with Introduction by default, a page per concept, and the Command line, filled in by djinn from its own
-// commands (TestCommands checks that every command has its entry); the navigation in the window's language; and the
-// way to it from the side panel's Grimoire, unfolded and folded (W89). Screenshots, dark and light, go to
+// The Grimoire, the documentation that djinn serves at /docs/ (docs/site): its navigation on the left from the first
+// view, beside it the splash page, then the book, Introduction by default, a page per concept, each read only when
+// opened (W165), and the Command line, filled in by djinn from its own commands (TestCommands checks that every command
+// has its entry); the navigation in the window's language; and the side panel's Grimoire, unfolded and folded (W89),
+// which shows it as a page of the window, never a dialog (W165). Screenshots, dark and light, go to
 // test-results/e2e/docs-*.png.
 import { type Page, expect, test } from "@playwright/test";
 import path from "node:path";
@@ -67,19 +68,32 @@ for (const scheme of ["dark", "light"] as const) {
           .locator("#words")
           .getByRole("heading", { level: 3, name: new RegExp(`^${name}`) }),
       ).toBeVisible();
-    await expect(page.locator(".book")).toBeHidden();
+    // The navigation is there from the first view, its title current: no button to open the book.
+    const nav = page.getByRole("navigation", { name: "Grimoire" });
+    await expect(nav.getByRole("link", { name: "Introduction" })).toBeVisible();
+    await expect(nav.locator(".nav-title")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.getByText("Open the Grimoire")).toHaveCount(0);
+    // The pages are not in the first document: each is read when opened.
+    await expect(page.locator("#wish")).toBeEmpty();
+    await expect(page.locator("#commands .cli-cmd")).toHaveCount(0);
     await page.screenshot({
       path: path.join(shots, `docs-splash-${scheme}.png`),
     });
 
-    // Into the book: Introduction first, the navigation on the left.
+    // Into the book: Introduction first.
     await splash
       .getByRole("link", { name: "Read the Grimoire" })
       .first()
       .click();
     await expect(page).toHaveURL(/#introduction$/);
     await expect(splash).toBeHidden();
-    const nav = page.getByRole("navigation", { name: "Grimoire" });
+    await expect(nav.locator(".nav-title")).not.toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     await expect(
       nav.getByRole("link", { name: "Introduction" }),
     ).toHaveAttribute("aria-current", "page");
@@ -131,12 +145,32 @@ for (const scheme of ["dark", "light"] as const) {
     await page.screenshot({
       path: path.join(shots, `docs-azima-${scheme}.png`),
     });
+    // Back and forward move between the pages read.
+    await page.goBack();
+    await expect(page).toHaveURL(/#wish-granting-a-wish$/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Wish" }),
+    ).toBeVisible();
+    await page.goForward();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Azima" }),
+    ).toBeVisible();
 
     // An address that names nothing opens the book on Introduction.
     await page.goto(djinnURL("/docs/") + "#no-such-page");
     await expect(
       page.getByRole("heading", { level: 1, name: "Introduction" }),
     ).toBeVisible();
+    // An address that names a place in a page not read yet: the page is read, the place reached.
+    await page.goto(djinnURL("/docs/") + "#gates-slots-and-gates");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Gates" }),
+    ).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Gates" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.locator("#gates-slots-and-gates")).toBeInViewport();
 
     await nav.getByRole("link", { name: "Command line" }).click();
     await expect(page).toHaveURL(/#commands$/);
@@ -170,10 +204,14 @@ for (const scheme of ["dark", "light"] as const) {
     await page.getByRole("searchbox").fill("");
     await expect(page.locator("#group-wish")).toBeVisible();
 
-    // The brand leads back to the splash.
+    // The brand leads back to the splash, the navigation beside it.
     await page.locator(".brand").click();
     await expect(splash).toBeVisible();
-    await expect(page.locator(".book")).toBeHidden();
+    await expect(page.locator("#commands")).toBeHidden();
+    await expect(nav).toBeVisible();
+    // Opened straight on a command, the Command line is read, the command reached.
+    await page.goto(djinnURL("/docs/") + "#cmd-wish-make");
+    await expect(page.locator("#cmd-wish-make")).toBeInViewport();
     expect(errors).toEqual([]);
   });
 }
@@ -197,10 +235,12 @@ test("the Grimoire's navigation is in the language asked", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-// The documentation was so slow to scroll in the window that it seemed to reload: a blur as wide as the window under
-// smoke that drifted, drawn again on every frame (W144). The frame scrolls at the pace of the screen, is never
-// reloaded by a scroll or a click, and nothing blurs what moves behind it.
-test("the Grimoire opens the documentation over the window, in its theme and language, and it scrolls without stalling", async ({
+// The Grimoire is a page of the window, as the Hourglass (W165): the side panel's entry, just under the Hourglass, shows
+// it in the main view, never a dialog over it; the side panel stays at hand, and back and forward move between the
+// pages read. It was so slow to scroll in the window that it seemed to reload: a blur as wide as the window under smoke
+// that drifted, drawn again on every frame (W144). The frame scrolls at the pace of the screen, is never reloaded by a
+// scroll or a click, and nothing blurs what moves behind it.
+test("the Grimoire opens from the menu as a page of the window, not a modal, in its theme and language, and it scrolls without stalling", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
@@ -220,17 +260,36 @@ test("the Grimoire opens the documentation over the window, in its theme and lan
     page.locator(".sidebar .hourglass-nav + .grimoire-nav"),
   ).toHaveCount(1);
   await page.getByRole("button", { name: "Grimoire", exact: true }).click();
-  const docs = page.getByRole("dialog", { name: "Grimoire" });
-  await expect(docs).toBeVisible();
-  await expect(docs.locator("iframe")).toHaveAttribute(
-    "src",
-    /[?&]lang=en(&|$)/,
-  );
+
+  // A page of the window: its entry selected, its header, the site in the main view; no dialog, nothing over the
+  // window, nothing to close.
+  await expect(grimoire).toHaveClass(/selected/);
+  const view = page.locator(".main-shell .wish-view.grimoire");
+  await expect(view).toBeVisible();
+  await expect(view.locator(".breadcrumbs")).toHaveText("Grimoire");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".modal-backdrop, [aria-modal]")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Close the window" }),
+  ).toHaveCount(0);
+  const iframe = view.locator("iframe.grimoire-frame");
+  await expect(iframe).toHaveAttribute("src", /[?&]lang=en(&|$)/);
+  // The frame fills the page under its header.
+  const [shown, frameBox] = await Promise.all([
+    view.boundingBox(),
+    iframe.boundingBox(),
+  ]);
+  expect(frameBox!.width).toBeGreaterThan(shown!.width - 2);
+  expect(frameBox!.height).toBeGreaterThan(shown!.height * 0.8);
+
   const frame = page.frameLocator('iframe[title="Grimoire"]');
-  // It opens on the splash.
+  // It opens on the splash, its navigation beside it from the first view, under the window's header: no bar of its own.
   await expect(
     frame.getByRole("heading", { level: 1, name: "Grimoire" }),
   ).toBeVisible();
+  const nav = frame.getByRole("navigation", { name: "Grimoire" });
+  await expect(nav.getByRole("link", { name: "Introduction" })).toBeVisible();
+  await expect(frame.locator(".bar")).toBeHidden();
   await expect(frame.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(frame.locator("html")).toHaveClass(/embedded/);
 
@@ -239,12 +298,7 @@ test("the Grimoire opens the documentation over the window, in its theme and lan
   await site.evaluate(() => {
     (window as unknown as { loaded: number }).loaded = 1;
   });
-  // Nothing blurs what is behind it: neither the window under the frame nor anything in the site.
-  expect(
-    await page
-      .locator(".docs-backdrop")
-      .evaluate((e) => getComputedStyle(e).backdropFilter),
-  ).toBe("none");
+  // Nothing blurs what is behind it: nothing in the site.
   expect(
     await site.evaluate(() =>
       Array.from(document.styleSheets)
@@ -291,11 +345,10 @@ test("the Grimoire opens the documentation over the window, in its theme and lan
   expect(median).toBeLessThan(100);
 
   // The book, a page and a command move in the page: the page stays the one loaded.
-  await frame.getByRole("link", { name: "Open the Grimoire" }).click();
+  await nav.getByRole("link", { name: "Introduction" }).click();
   await expect(
     frame.getByRole("heading", { level: 1, name: "Introduction" }),
   ).toBeVisible();
-  const nav = frame.getByRole("navigation", { name: "Grimoire" });
   await nav.getByRole("link", { name: "Command line" }).click();
   await frame
     .locator(".cli-toc")
@@ -306,26 +359,45 @@ test("the Grimoire opens the documentation over the window, in its theme and lan
   await expect(
     frame.getByRole("heading", { level: 1, name: "Question and move" }),
   ).toBeVisible();
+  // Back and forward move between the pages read, in the window as in a browser: the window's history holds the
+  // frame's (page.goBack would wait for the window itself to load again).
+  const back = () => page.evaluate(() => history.back());
+  const forward = () => page.evaluate(() => history.forward());
+  await back();
+  await expect(frame.locator("#cmd-question-answer")).toBeInViewport();
+  await back();
+  await expect(
+    frame.getByRole("heading", { level: 2, name: "The command line" }),
+  ).toBeVisible();
+  await forward();
+  await expect(frame.locator("#cmd-question-answer")).toBeInViewport();
+  await forward();
+  await expect(
+    frame.getByRole("heading", { level: 1, name: "Question and move" }),
+  ).toBeVisible();
+  await expect(grimoire).toHaveClass(/selected/);
   expect(
     await site.evaluate(
       () => (window as unknown as { loaded?: number }).loaded,
     ),
   ).toBe(1);
 
-  await docs.getByRole("button", { name: "Close the window" }).click();
-  await expect(docs).toBeHidden();
+  // The side panel stays at hand: another page shows at once, nothing to close first.
+  await page.locator(".sidebar .hourglass-nav").click();
+  await expect(page.locator(".hourglass .hero h1")).toHaveText("Hourglass");
+  await expect(view).toHaveCount(0);
+  await expect(grimoire).not.toHaveClass(/selected/);
 
-  // Folded, the side panel keeps the Grimoire: its book, its name and its tooltip; it opens the Grimoire on its splash.
+  // Folded, the side panel keeps the Grimoire: its book, its name and its tooltip; it shows the Grimoire on its splash.
   await page.getByRole("button", { name: "Collapse the navigation" }).click();
   await expect(page.locator(".app.sidebar-collapsed")).toBeVisible();
   await expect(grimoire.locator("span")).toHaveCount(0);
   await expect(grimoire.locator("svg.lucide-book-marked")).toBeVisible();
   await expect(grimoire).toHaveAttribute("title", "Documentation");
   await page.getByRole("button", { name: "Grimoire", exact: true }).click();
-  await expect(docs).toBeVisible();
+  await expect(view).toBeVisible();
   await expect(frame.locator("#welcome")).toBeVisible();
-  await docs.getByRole("button", { name: "Close the window" }).click();
-  await expect(docs).toBeHidden();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Expand the navigation" }).click();
   await expect(page.locator(".app.sidebar-collapsed")).toHaveCount(0);
 });

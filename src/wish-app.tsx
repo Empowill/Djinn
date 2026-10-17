@@ -1,6 +1,7 @@
-// The window, on the services: the side panel (the flying carpet, the wishes by rank, the projects, the Hourglass), the
-// flying carpet of the active wishes, the Hourglass's live metrics or the wish shown, and the status bar (whether the
-// page follows djinn, the machine). What stays on this page is how it shows: what is shown and the side panel folded.
+// The window, on the services: the side panel (the flying carpet, the wishes by rank, the projects, the Hourglass, the
+// Grimoire), the flying carpet of the active wishes, the Hourglass's live metrics, the Grimoire or the wish shown, and
+// the status bar (whether the page follows djinn, the machine). What stays on this page is how it shows: what is shown
+// and the side panel folded.
 import { ArrowLeft, PanelLeft, Plus, Settings2 } from "lucide-react";
 import { AnimatePresence, LayoutGroup } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,7 +30,7 @@ import { t } from "./i18n";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { useInboxCount } from "./inbox";
 import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
-import { Docs } from "./docs";
+import { Docs, GRIMOIRE } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
 import { startWishSmokePrewarm } from "./wish-smoke";
 import { TilasmOver } from "./tilasm-over";
@@ -40,7 +41,7 @@ import { CARPET_DIGIT, HOURGLASS_DIGIT, pageDigit } from "./page-keys";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | "docs" | "agents" | null;
+type Modal = "make" | "project" | "settings" | "agents" | null;
 
 // What the window shows instead of a wish: the flying carpet of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -99,13 +100,12 @@ export function WishApp() {
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
   const closeMake = useCallback(() => setModal(null), []);
-  const closeDocs = useCallback(() => setModal(null), []);
   const toggleSidebar = useCallback(() => {
     setGlide(true);
     setCollapsed((value) => !value);
   }, []);
-  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN) or the Hourglass (HOURGLASS), by
-  // the side panel or by the keyboard (PAGES).
+  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN), the Hourglass (HOURGLASS) or the
+  // Grimoire (GRIMOIRE), by the side panel or by the keyboard (PAGES).
   const showPage = useCallback((page: string) => {
     setSelected(page);
     setModal(null);
@@ -230,17 +230,22 @@ export function WishApp() {
       },
     ]),
   );
-  // What shows: the wish chosen, or the Hourglass, else the flying carpet while a wish is active, else the first wish.
+  // What shows: the wish chosen, or the Hourglass, or the Grimoire, else the flying carpet while a wish is active, else
+  // the first wish.
   const chosen = wishes.find((w) => w.id === selected);
   const pendingWish = justMade?.id === selected ? justMade : undefined;
   const hourglass = !chosen && !pendingWish && selected === HOURGLASS;
+  const grimoire = !chosen && !pendingWish && selected === GRIMOIRE;
   const plan =
     !hourglass &&
+    !grimoire &&
     !chosen &&
     !pendingWish &&
     (selected === PLAN || active.length > 0);
   const wish =
-    plan || hourglass ? undefined : (chosen ?? pendingWish ?? wishes[0]);
+    plan || hourglass || grimoire
+      ? undefined
+      : (chosen ?? pendingWish ?? wishes[0]);
   // Until the wishes are read, no page is chosen: the home page would show, then give way to the flying carpet or a wish
   // with a header of its own, and a gauge focused or measured in between would be gone. A failed read shows home.
   const settling = !loaded && !error;
@@ -393,7 +398,8 @@ export function WishApp() {
             onSelectPlan={() => showPage(PLAN)}
             hourglassSelected={hourglass}
             onSelectHourglass={() => showPage(HOURGLASS)}
-            onOpenDocs={() => setModal("docs")}
+            grimoireSelected={grimoire}
+            onSelectGrimoire={() => showPage(GRIMOIRE)}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
@@ -456,6 +462,8 @@ export function WishApp() {
                 wishes={active}
                 target={reaching?.wishId === HOURGLASS ? reaching : undefined}
               />
+            ) : grimoire ? (
+              <Docs />
             ) : plan ? (
               <FlightPlan
                 wishes={active}
@@ -491,7 +499,6 @@ export function WishApp() {
           />
         )}
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
-        {modal === "docs" && <Docs onClose={closeDocs} />}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
         {project && modal !== "make" && (
           <ProjectPanel
