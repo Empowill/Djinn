@@ -82,6 +82,11 @@ the code does not say by itself; remove one when a change makes it false.
   push, and run a new case once against the reverted fix. Each merged task costs ~0.3 s: keep merges few and move
   edge cases to unit tests (`TestPushDue`). Test repositories with a remote set `maintenance.auto false` and
   `gc.auto 0`. *Where:* `internal/harness/integrate_test.go`, `internal/harness/push.go`.
+- **Harness integration tests: pushes run apart from the pass.** Since W180 a push due starts in a goroutine of its
+  own (`pushApart`); `in.pass` waits for it (`waitPushes`), `in.passApart` does not. *Sign:* a test that calls
+  `pushIfDue` or `pushPass` itself sees no push; a test that waits for a task to start sees it start before the push
+  checks end, so the held push starts no correction yet (`workLeft`). *Do:* call `in.h.waitPushes()` after them; hold the
+  push check with `in.testWait` to order a scheduler step before it. *Where:* `internal/harness/push_apart.go`.
 - **A done fake worker now tells the lead, and may babysit.** Since W492 a work task done reaches the lead once: its
   MERGED line, or one ENDED (`tellDone`, `tellNothingMerged`); since W498 a project with no checks integrates into a
   wish's own branch, so such tests see MERGED, not ENDED; since W499 a task ending done in a project with a babysit

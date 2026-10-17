@@ -590,8 +590,10 @@ what follows.
 Each project defines its push cadence: **Standard** (pushes at an azima's end or after an hour and three tasks committed)
 or **On demand** (pushes only when you click **Push** or run `djinn project push <project> [--wish <wish>]`). You can
 switch cadence in the project view or with `djinn project set-push <project> standard|on_demand`. A push due waits for the work in line to be
-merged and checked, 15 minutes at most. Before it pushes the branch,
-it runs the checks named for `push`: red, the push is held, and Djinn starts a correction worker; if that fails or attempts
+merged and checked, 15 minutes at most, no push check running meanwhile. Before it pushes the branch,
+it runs the checks named for `push`, apart from the merges, in a worktree of their own, on the commit the branch was at:
+the merges go on meanwhile, and one that lands before they end makes them moot (nothing pushed, nor held; Djinn checks
+the new tip once no merge is in line). Red, the push is held, and Djinn starts a correction worker; if that fails or attempts
 are spent, it tells the Djinn. `djinn project show` and the project's view in the window list the checks and how each last ran.
 When the settings also name an install command, the window proposes the build it pushed, one per integration branch:
 on one line, its commit, the branch and wish it comes from, and against the running Djinn the tasks it adds, or "older

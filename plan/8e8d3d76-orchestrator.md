@@ -467,6 +467,12 @@ lead spends its tokens on mechanical work.
   TestResolveSettings, TestProjectShow, TestChecksBrief, TestDjinnsOwnSettings, TestBrief, the screens tests "the
   project view lists the setup and the checks, when each runs, and how each last ran" and "the wish's head says a push
   its checks hold, why on hover")
+- [x] The push checks hold no merge (W180, Q40 A): a push due starts apart from the integration's pass once no merge is
+  queued or repairing its branch, its checks run on the commit the branch was at, in the wish's push worktree, while
+  merges go on; a merge that lands meanwhile makes them moot (nothing pushed nor held; checked again once the queue is
+  empty); the step that holds or pushes takes the integration's lock, so one repair at a time still holds (Q39).
+  (TestMergesGoOnDuringPushChecks, TestPushAfterTheLastMerge, TestYourPushChecksTheNewTip, TestPushWaitsForTheQueue,
+  TestPushCheckFailedCorrectionLeavesCommittedAndDependents)
 
 ### Merged by hand into feat/wails-go
 

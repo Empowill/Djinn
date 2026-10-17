@@ -57,6 +57,8 @@ func (h *Harness) worktreeName(dir string) string {
 	switch {
 	case len(parts) >= 3 && parts[1] == "integration":
 		return "the integration worktree of wish " + parts[2]
+	case len(parts) >= 3 && parts[1] == "push":
+		return "the push worktree of wish " + parts[2]
 	case len(parts) >= 2 && parts[1] == "install":
 		return "the install worktree"
 	case len(parts) >= 3 && parts[1] == "worktrees":

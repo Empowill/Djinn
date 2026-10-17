@@ -273,6 +273,7 @@ func TestPushWaitsForTheQueue(t *testing.T) {
 		in.now = in.now.Add(d)
 		in.mu.Unlock()
 		in.h.pushIfDue(t.Context(), in.wishID, project)
+		in.h.waitPushes()
 		if got := in.remoteTip(t, bare); got != pushed {
 			t.Fatalf("pushed after %s while W4 is queued", d)
 		}
@@ -281,6 +282,7 @@ func TestPushWaitsForTheQueue(t *testing.T) {
 	in.now = in.now.Add(6 * time.Minute)
 	in.mu.Unlock()
 	in.h.pushIfDue(t.Context(), in.wishID, project)
+	in.h.waitPushes()
 	if got := in.remoteTip(t, bare); got != in.tip(t) {
 		t.Errorf("past the cap: origin at %s; want the branch's tip %s", got, in.tip(t))
 	}
