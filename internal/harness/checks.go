@@ -27,10 +27,11 @@ import (
 
 // Checks: a project names the commands Djinn runs on its work (ProjectSettings.checks), each before a task's work is
 // committed into its wish's integration branch, before that branch is pushed, or both; and the command that makes a
-// fresh worktree ready (setup). Each runs in the wish's integration worktree, through a gate of its name, and the
-// project keeps its last run. A red commit check fails the merge, as a conflict does: a correction worker starts. A
-// red push check holds the push, said in the tasks' events and on the wish; still red, Djinn starts a correction
-// worker, and asks the person only once that fails or its attempts are spent.
+// fresh worktree ready (setup). Each runs in the wish's integration worktree, the push checks in its push worktree
+// (push_apart.go), through a gate of its name, and the project keeps its last run. A red commit check fails the
+// merge, as a conflict does: a correction worker starts. A red push check holds the push, said in the tasks' events
+// and on the wish; still red, Djinn starts a correction worker, and asks the person only once that fails or its
+// attempts are spent.
 
 // methodCheck is how the journal records a check's run: the request is the run (planv1.CheckRun).
 const methodCheck = "harness/check"
@@ -197,8 +198,9 @@ func setupKey(ctx context.Context, dir, setup string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// pushChecks runs the project's push checks on sha, the tip of the wish's integration branch, in its integration
-// worktree; a check that passed on that very commit already, as a commit check, is not run again. committed are the
+// pushChecks runs the project's push checks on sha, the tip of a branch of the wish as the push began, in its push
+// worktree (pushDir), which pushMu holds: merges go on meanwhile in its integration worktree. A check that passed on
+// that very commit already, as a commit check, is not run again. committed are the
 // tasks the push brings: their events say each check, and running is told the name of each as it starts. It returns
 // the failed check's command, why the push is held, "" when it may go; stopped when djinn up stopped during them.
 func (h *Harness) pushChecks(
@@ -223,12 +225,10 @@ func (h *Harness) pushChecks(
 		return "", "", "", false
 	}
 	running(checks[0].GetName())
-	logx.Lock(&h.integrateMu, "integration") // The push checks use the integration worktree.
-	defer h.integrateMu.Unlock()
-	wt := integrationDir(h.home, project.GetId(), wish.GetId())
+	wt := pushDir(h.home, project.GetId(), wish.GetId())
 	dir, _, err := integrationWorktree(ctx, project.GetDirectory(), wt, sha)
 	if err != nil {
-		return "", "prepare the integration worktree: " + err.Error(), "", false
+		return "", "prepare the push worktree: " + err.Error(), "", false
 	}
 	if why, out, stopped = h.setUp(ctx, project, settings, wish.GetId(), "", wt, dir); why != "" || stopped {
 		return cmp.Or(settings.Setup, setupName), setupName + ": " + why, out, stopped

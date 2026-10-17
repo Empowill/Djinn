@@ -180,7 +180,7 @@ func TestGitGuardKeepsWorkersFromPushing(t *testing.T) {
 	if out, err := runIn(g.integration, nil, "git", "merge", "--quiet", "w1"); err != nil {
 		t.Fatalf("merge w1: %v\n%s", err, out)
 	}
-	if _, out, err := gitPush(t.Context(), g.integration, "origin", "integration", "main"); err != nil {
+	if _, out, err := gitPush(t.Context(), g.integration, "origin", "refs/heads/integration", "main"); err != nil {
 		t.Fatalf("orchestrator's push: %v\n%s", err, out)
 	}
 	if after := refs(); after == before {
