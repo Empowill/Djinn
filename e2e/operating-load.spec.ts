@@ -752,9 +752,11 @@ test.describe("operating load slider", () => {
     await expect(autoBtn).toHaveClass(/active/);
     await page.locator(".operating-load-slider").hover();
     await expect(notes.filter({ hasText: autoText })).toHaveCount(1);
-    // And why auto runs at its notch, in one line (W253): measured every 20 s, not yet at first.
+    // And why auto runs at its notch, in one line (W253): measured every 20 s, not yet at first. Overclock was the
+    // notch chosen, so auto starts at it and climbs no higher: it holds it while the machine's load outside Djinn is
+    // unmeasured, moderate or low, and steps down once that load stayed high, a step a beat at most (W291).
     await expect(forecast.locator(".operating-load-auto-reason")).toHaveText(
-      /^Outside (load|memory) .*(holds|held at|up to|down to) (Minimal|Medium|High|Max)/,
+      /^Outside (load|memory) .*: (holds Overclock|up to Overclock|down to (Max|High) in .+)$/,
     );
 
     // No title anywhere in the gauge (W32); both texts stay in aria-description.
