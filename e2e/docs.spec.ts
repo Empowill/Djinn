@@ -198,8 +198,9 @@ for (const scheme of ["dark", "light"] as const) {
     await nav.getByRole("link", { name: "Command line" }).click();
     await expect(page).toHaveURL(/#commands$/);
     await expect(page.locator("#introduction")).toBeHidden();
+    // The page is read when opened (W165): its commands come after the address changed.
     const commands = page.locator("#commands .cli-cmd");
-    expect(await commands.count()).toBeGreaterThan(50);
+    await expect.poll(() => commands.count()).toBeGreaterThan(50);
     for (const name of ["djinn wish make", "djinn gate run", "djinn up"])
       await expect(
         page.getByRole("heading", { level: 4, name, exact: true }),
