@@ -865,6 +865,15 @@ func NewMonitor(p Policy, read func() (Snapshot, error)) *Monitor {
 	return &Monitor{policy: p, read: read, every: time.Second}
 }
 
+// Calm reads this machine as a Djinn under test sees it: its cores and memory, none of the memory taken, no load and
+// no pressure. Its fake workers start whatever else the machine runs: other workers' builds and tests would hold them
+// back past a test's wait (a macOS runner of the CI reads a load of 21 on 3 cores; this machine reached 42 on 16 while
+// the e2e suite ran, W181). The pressure has its own tests (internal/machine, internal/gate).
+func Calm() (Snapshot, error) {
+	s, err := Read()
+	return Snapshot{Cores: s.Cores, MemoryTotal: s.MemoryTotal, MemoryAvailable: s.MemoryTotal}, err
+}
+
 // SetWorkerMemory gives the resident memory of Djinn's running workers, in bytes, which each snapshot carries
 // (Snapshot.WorkersResident): djinn up gives the harness's (harness.Harness.Resident). It must not call the monitor.
 func (m *Monitor) SetWorkerMemory(resident func() uint64) {
