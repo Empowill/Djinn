@@ -110,16 +110,28 @@ A tilasm greys its comments and both buttons once its work was launched, or whil
 next version; a line says why, and which task or question. A send the Djinn has not read yet holds the buttons only.
 Launch never goes twice: Djinn refuses it, whatever the window shows.
 
-### The Djinn's replies
+### What becomes of them
 
-A sent comment keeps its card, in its place, marked sent; it no longer changes. The Djinn replies to each one: what
-it did with it, or why not, and the tasks it made of it, named under the reply. A comment it did not understand gets
-a reply that asks. The card then reads **Replied**. Until each comment has its reply, the wish's brief reminds the
-Djinn which ones wait; your drafts never show there.
+A sent comment keeps its card, in its place; it no longer changes. Its card says where it stands:
+
+| The card reads | What it means |
+| --- | --- |
+| **Draft** | Written, not sent: no agent reads it. |
+| **Sent · send 1** | It left with the first send; the Djinn has not read it yet. Launch and Iterate wait meanwhile. |
+| **Read by the Djinn**, with when | The Djinn took the send, every comment of it at once, and turns them into tasks. |
+| **Replied** | The Djinn's reply shows under the card. |
+
+The Djinn replies to each comment: what it did with it, or why not, and the tasks it made of it, named under the
+reply, each with its state, planned, running, merging or done, which follows the task as it works. A comment it did
+not understand gets a reply that asks. Until each comment has its reply, the wish's brief reminds the Djinn which ones
+wait; your drafts never show there.
 
 ### A new version
 
-A comment belongs to the tilasm, not to a version. When its next version comes, the frame finds each comment again:
+A comment belongs to the tilasm, not to a version. When the next version is the work of a task the Djinn made of your
+comments, the tilasm's head says so, as in v4 by W62, for C1, C3: the task that put it, and the comments its replies
+link to it. When its next version comes, the frame finds each comment again, and a short message counts what it
+found, as 3 found again, 1 changed, 1 detached:
 the same passage or element, perhaps moved, shows as before; one that changed but keeps most of its words says
 **Changed** on its card, the new passage above the one you wrote on; one that is gone waits under **Detached**, its
 quote struck, never lost. **Reattach** puts a detached draft on a passage you select or an element you aim at;

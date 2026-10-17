@@ -140,7 +140,8 @@ function OverFrame({
       onClose={onClose}
       drafts={draftsOn(detail.drafts, tilasm.id)}
       sent={sentOn(detail.sent, tilasm.id)}
-      codes={new Map(detail.tasks.map((task) => [task.id, task.code]))}
+      reads={detail.reads}
+      tasks={detail.tasks}
       hold={detail.holds.find((h) => h.tilasmId === tilasm.id)}
       comments={comments}
       onCommentError={(error) => onToast(message(error))}

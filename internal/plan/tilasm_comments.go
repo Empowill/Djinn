@@ -403,7 +403,11 @@ func (t *Tilasms) Drafts(
 	if err != nil {
 		return nil, Status(err)
 	}
-	res := &planv1.TilasmServiceDraftsResponse{Comments: drafts, Sent: sent}
+	reads, err := sendReads(ctx, t.Store, req.Msg.GetWish(), tilasms)
+	if err != nil {
+		return nil, Status(err)
+	}
+	res := &planv1.TilasmServiceDraftsResponse{Comments: drafts, Sent: sent, Reads: reads}
 	for _, tilasm := range tilasms {
 		if h := holds[tilasm.GetId()]; h != nil {
 			res.Holds = append(res.Holds, h)

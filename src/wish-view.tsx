@@ -1294,6 +1294,7 @@ export function WishView({
               drafts={detail.drafts}
               holds={detail.holds}
               sent={detail.sent}
+              reads={detail.reads}
               tasks={detail.tasks}
               onToast={onToast}
             />
