@@ -294,12 +294,15 @@ command, are to check on a real run.
 
 **What Djinn starts builds Go with `-trimpath`** (W303, decision Q71). Without it, the Go build cache keys hold the
 folder of each package: every worktree compiled all of Djinn again, for each set of tags, and the cache grew about
-10 GB an hour, 429 GB on 17/10/2026. Djinn sets `GOFLAGS=-trimpath` in the environment of every process it starts:
-workers in their worktrees, watchers, the lead, ifrits' serves, the commit and push checks, an install. It is appended
-to the `GOFLAGS` already set, and never twice: a `GOFLAGS` that names `-trimpath` already, `-trimpath=false`
-included, stays as it is. Where Go is absent it changes nothing. The developer's own shells, the window's terminals
-included, keep their environment: a build or a `go tool task` run by hand keeps its full paths, for Delve and for
-profiles. `TestTrimmedGoFlags` (`internal/harness/disk_test.go`).
+10 GB an hour, 429 GB on 17/10/2026. On an empty `GOCACHE`, compiling all tests (`go test -tags headless -run '^$'
+./...`) in two worktrees one after the other leaves 715 MB (4,032 files) after the first worktree and 1,136 MB
+(4,904 files, +421 MB, 80 s) after the second without `-trimpath`; with `-trimpath`, 714 MB (4,032 files) after the
+first and 714.5 MB (4,148 files, +0.26 MB of action entries, 5 s) after the second. Djinn sets `GOFLAGS=-trimpath` in
+the environment of every process it starts: workers in their worktrees, watchers, the lead, ifrits' serves, the commit
+and push checks, an install. It is appended to the `GOFLAGS` already set, and never twice: a `GOFLAGS` that names
+`-trimpath` already, `-trimpath=false` included, stays as it is. Where Go is absent it changes nothing. The
+developer's own shells, the window's terminals included, keep their environment: a build or a `go tool task` run by
+hand keeps its full paths, for Delve and for profiles. `TestTrimmedGoFlags` (`internal/harness/disk_test.go`).
 
 A trimmed binary's stacks, panics and profiles name files by module path (`github.com/empowill/djinn/internal/...`),
 not by folder. `go tool pprof` finds the sources all the same with `-trim_path` and `-source_path`:
