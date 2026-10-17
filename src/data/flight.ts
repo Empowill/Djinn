@@ -423,6 +423,13 @@ export function compareCodes(a: string, b: string): number {
   return pa < pb ? -1 : pa > pb ? 1 : na - nb || (a < b ? -1 : a > b ? 1 : 0);
 }
 
+// compareRanks orders the azimas of a wish in their rank (Task.rank), as the lead or the developer set it: the ranked
+// ones first, from 1, then those never ranked, a new one included, by code (internal/plan.AzimaOrder).
+export function compareRanks(a: Task, b: Task): number {
+  const rank = (x: Task) => x.rank || Number.MAX_SAFE_INTEGER;
+  return rank(a) - rank(b) || compareCodes(a.code, b.code);
+}
+
 // azimaRank orders the azimas in a stable order between renders and between days:
 // 0: azimas that move (a worker running on one of its parts, in progress, or watching)
 // 1: azimas waiting for the developer (awaiting proof / to validate)
@@ -430,8 +437,9 @@ export function compareCodes(a: string, b: string): number {
 // 3: blocked azimas (waiting for unfinished dependencies)
 // 4: drafts (not ready to spawn parts into)
 // 5: done azimas (finished, folded at the end)
-// Within each group, azimas are ordered strictly by the plan's code order (compareCodes),
-// never by time or by a count that changes every minute.
+// Within each group, azimas follow their rank (compareRanks), never time or a count that changes every minute. The
+// flying carpet groups the azimas of every wish so; a wish's own Tasks tab keeps them in their rank alone, as the
+// developer drags them.
 export function azimaRank(task: Task): number {
   if (isDraftAzima(task) || task.azima?.state === AzimaState.DRAFT) return 4;
   const state = task.azima?.state ?? AzimaState.OPEN;
@@ -447,11 +455,12 @@ export function azimaRank(task: Task): number {
   return 2;
 }
 
-// azimaGroups are the azimas among tasks with their parts, in the order of azimaRank, then by code.
+// azimaGroups are the azimas of a wish among tasks with their parts, in their rank (compareRanks): the order its work
+// starts in, which the developer changes by dragging them.
 export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
   return tasks
     .filter((x) => isAzima(x) && !isDraftAzima(x))
-    .sort((a, b) => azimaRank(a) - azimaRank(b) || compareCodes(a.code, b.code))
+    .sort(compareRanks)
     .map((azima) => {
       const nest = mergeNest(tasks);
       const parts = tasks.filter(
@@ -467,11 +476,9 @@ export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
     });
 }
 
-// draftAzimas are the draft azimas among tasks, ordered by code.
+// draftAzimas are the draft azimas among tasks, in their rank.
 export function draftAzimas(tasks: readonly Task[]): Task[] {
-  return tasks
-    .filter(isDraftAzima)
-    .sort((a, b) => compareCodes(a.code, b.code));
+  return tasks.filter(isDraftAzima).sort(compareRanks);
 }
 
 // The order of the tasks that move or wait: what runs or broke first (running, cut short, failed, resuming), then
@@ -649,10 +656,10 @@ export function flightPlan(
   plan.azimas.sort(
     (a, b) =>
       azimaRank(a.item.azima) - azimaRank(b.item.azima) ||
-      compareCodes(a.item.azima.code, b.item.azima.code),
+      compareRanks(a.item.azima, b.item.azima),
   );
   plan.finished.sort((a, b) => newestEnded(a.item, b.item));
-  plan.drafts.sort((a, b) => compareCodes(a.item.code, b.item.code));
+  plan.drafts.sort((a, b) => compareRanks(a.item, b.item));
   return plan;
 }
 

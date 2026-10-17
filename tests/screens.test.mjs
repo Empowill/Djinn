@@ -63,6 +63,7 @@ export { reviewRows, reviewLeft, toReview } from "@/src/data/review.ts";
 export {
   azimaGroups,
   azimaRank,
+  compareRanks,
   draftAzimas,
   finishedTasks,
   flightPlan,
@@ -75,6 +76,7 @@ export {
   spent,
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
+export { RankedAzimaList } from "@/src/azima-rank.tsx";
 export {
   FolderField,
   MakeWish,
@@ -11877,5 +11879,59 @@ test("the status bar says how many gates an ifrit holds, apart, with a vermilion
   assert.equal(
     s.renderToStaticMarkup(h(s.HeldGates, { gates: gates.slice(1) })),
     "1 gate held",
+  );
+});
+
+test("the azimas of a wish show in their rank, each with the grip that drags it (W134)", () => {
+  const azima = (code, rank) => ({
+    id: code,
+    code,
+    title: `Azima ${code}`,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    rank,
+    azima: { state: s.AzimaState.OPEN, ready: true },
+  });
+  // T3 ranked first, T1 second; T2 and T10, never ranked, after them by code, whatever their state.
+  const tasks = [
+    azima("T1", 2),
+    azima("T2", 0),
+    azima("T3", 1),
+    azima("T10", 0),
+  ];
+  tasks[1].azima = { state: s.AzimaState.IN_PROGRESS, ready: true };
+  const groups = s.azimaGroups(tasks);
+  assert.deepEqual(
+    groups.map((g) => g.azima.code),
+    ["T3", "T1", "T2", "T10"],
+  );
+  const html = s.renderToStaticMarkup(
+    s.createElement(s.RankedAzimaList, {
+      groups,
+      onRank() {},
+      render: ({ azima, parts }, grip) =>
+        s.createElement(s.AzimaCard, {
+          key: azima.id,
+          azima,
+          parts,
+          grip,
+          tasks: new Map(),
+          render: () => null,
+        }),
+    }),
+  );
+  assert.match(html, /class="azima-list ranked"/);
+  const grips = [
+    ...html.matchAll(
+      /class="azima-grip" title="([^"]+)"[^>]*draggable="true"/g,
+    ),
+  ].map((m) => m[1].split(" ")[1]);
+  assert.deepEqual(grips, ["T3", "T1", "T2", "T10"]);
+  assert.match(html, /title="1\. T3 \(drag, or Alt\+Arrow, to change its rank/);
+  // The grip comes first in the card's heading row.
+  assert.match(
+    html,
+    /<div class="azima-row"><button type="button" class="azima-grip"/,
   );
 });

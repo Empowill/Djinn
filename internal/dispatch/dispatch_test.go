@@ -1335,3 +1335,59 @@ func TestMachineAlone(t *testing.T) {
 		t.Errorf("behind one short of memory: %q, machine %v", d.Why, d.Machine)
 	}
 }
+
+// TestAzimaRankFirst (W134): within its wish's rank, the waiting work of the azima ranked first starts first, before
+// older work of a lower azima, even one that unblocks others; work of no azima comes after the ranked azimas'; an
+// azima never ranked comes after the ranked ones; a wish ranked first comes before them all.
+func TestAzimaRankFirst(t *testing.T) {
+	now := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	first := &planv1.Wish{Id: "first", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
+	second := &planv1.Wish{Id: "second", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 2}
+	azima := func(id, wish string, rank int32) *planv1.Task {
+		return &planv1.Task{Id: id, WishId: wish, Code: id, Kind: planv1.TaskKind_TASK_KIND_AZIMA, Rank: rank,
+			Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.New(now.Add(-time.Hour))}
+	}
+	work := func(id, wish, partOf string, age time.Duration) *planv1.Task {
+		return &planv1.Task{Id: id, WishId: wish, ProjectId: "p", Code: id, PartOf: partOf, Scheduled: true,
+			Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.New(now.Add(-age))}
+	}
+	// T1 ranked second, T2 first, T3 never ranked; in the second wish, T9 ranked first.
+	t1, t2, t3, t9 := azima("T1", "second", 2), azima("T2", "second", 1), azima("T3", "second", 0), azima("T9", "first", 1)
+	low := work("low", "second", "T1", 3*time.Hour)
+	blocker := work("blocker", "second", "T1", 2*time.Hour)
+	child := work("child", "second", "T1", time.Minute)
+	child.DependsOn = []string{"blocker"}
+	high := work("high", "second", "T2", time.Minute)
+	unranked := work("unranked", "second", "T3", 4*time.Hour)
+	loose := work("loose", "second", "", 5*time.Hour)
+	top := work("top", "first", "T9", 0)
+	wishes := []*planv1.Wish{first, second}
+	tasks := []*planv1.Task{t1, t2, t3, t9, loose, unranked, low, blocker, child, high, top}
+
+	var got []string
+	for _, tk := range New(tasks, wishes, map[string]bool{"p": true}, nil).At(now).Order() {
+		got = append(got, tk.GetId())
+	}
+	if want := []string{"top", "high", "blocker", "low", "child", "unranked", "loose"}; !slices.Equal(got, want) {
+		t.Errorf("Order() = %v, want %v", got, want)
+	}
+
+	// Two azimas, one slot: the higher one's task starts, the older one of the lower azima waits.
+	decisions := New([]*planv1.Task{t1, t2, low, high}, wishes, map[string]bool{"p": true},
+		&Machine{Slots: 1, Rule: "test"}).At(now).Pass()
+	for _, d := range decisions {
+		switch id := d.Task.GetId(); {
+		case id == "high" && d.Why != "":
+			t.Errorf("the higher azima's task waits: %q", d.Why)
+		case id == "low" && d.Why == "":
+			t.Error("the lower azima's task starts before the higher one's")
+		}
+	}
+
+	// Ranked the other way, the other task starts.
+	t1.Rank, t2.Rank = 1, 2
+	if d := New([]*planv1.Task{t1, t2, low, high}, wishes, map[string]bool{"p": true},
+		&Machine{Slots: 1, Rule: "test"}).At(now).Pass(); d[0].Task.GetId() != "low" || d[0].Why != "" {
+		t.Errorf("after the rank changed, first decision = %s %q, want low starting", d[0].Task.GetId(), d[0].Why)
+	}
+}

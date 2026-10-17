@@ -69,6 +69,7 @@
   "azima.progress.other": "{done} of {count} parts done",
   "azima.progress_parts": "{done} done, {running} running, {waiting} waiting",
   "azima.pushed": "Pushed",
+  "azima.rank": "{rank}. {code} (drag, or Alt+Arrow, to change its rank: the work of the first azimas starts first)",
   "azima.rename": "Rename this azima",
   "azima.state_awaiting_proof": "To validate",
   "azima.state_done": "Done",

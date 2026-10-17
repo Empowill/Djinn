@@ -29,11 +29,12 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// tasks is a fake harness: tasks by id with their wish's rank, those whose worker runs, the ifrits, and the events
-// noted.
+// tasks is a fake harness: tasks by id with their wish's rank and their azima's place, those whose worker runs, the
+// ifrits, and the events noted.
 type tasks struct {
 	mu     sync.Mutex
 	rank   map[string]int
+	place  map[string]int
 	works  map[string]bool
 	ifrits map[string]ifritAt
 	notes  []string
@@ -91,6 +92,18 @@ func (f *tasks) Ranks(_ context.Context, ids []string) map[string]int {
 	for _, id := range ids {
 		if r, ok := f.rank[id]; ok {
 			out[id] = r
+		}
+	}
+	return out
+}
+
+func (f *tasks) Places(_ context.Context, ids []string) map[string]int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[string]int{}
+	for _, id := range ids {
+		if p, ok := f.place[id]; ok {
+			out[id] = p
 		}
 	}
 	return out
@@ -327,6 +340,36 @@ func TestRankFirst(t *testing.T) {
 	await(t, high, "the high wish's grant")()
 	await(t, low, "the low wish's grant")()
 	await(t, outside, "the grant outside any task")()
+}
+
+// TestAzimaRankFirst (W134): within a wish, the waiter whose azima is ranked first gets the gate, whoever came first;
+// work of no azima after the ranked azimas', a wish ranked first before them all, and Djinn's merges before every
+// worker, whatever their azimas.
+func TestAzimaRankFirst(t *testing.T) {
+	f := &tasks{
+		rank:  map[string]int{"holder": 0, "loose": 1, "low": 1, "high": 1, "first": 0, "M": 1},
+		place: map[string]int{"holder": 0, "low": 4, "high": 0, "first": 9},
+	}
+	g := New(nil, nil, f)
+	give := await(t, func() <-chan func() { c, _ := take(t, g, "e2e", "holder"); return c }(), "first grant")
+	var order []string
+	granted := map[string]<-chan func(){}
+	for _, id := range []string{"loose", "low", "high", "first"} {
+		c, waits := take(t, g, "e2e", id)
+		await(t, waits, id+" waits")
+		granted[id] = c
+	}
+	m, mWaits := merge(t, g, "e2e", "M", "")
+	await(t, mWaits, "M waits")
+	granted["M"] = m
+	give()
+	for _, id := range []string{"M", "first", "high", "low", "loose"} {
+		await(t, granted[id], "the grant of "+id)()
+		order = append(order, id)
+	}
+	if want := []string{"M", "first", "high", "low", "loose"}; !slices.Equal(order, want) {
+		t.Errorf("served %v, want %v", order, want)
+	}
 }
 
 // TestMergeFirst: Djinn's requests for a merge or a push go before the workers' that wait, whoever came first and

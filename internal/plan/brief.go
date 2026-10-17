@@ -188,8 +188,10 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"- **The plan is a graph of azimas.** An azima (`T07`) is a task of the plan that no worker runs, nothing waits " +
 		"for the developer on it. Work is part of an azima and waits only for what it depends on, so plan it as a graph, " +
 		"never a line: spawn each task `--part-of <azima>`, and `--after` only the tasks whose result it needs, " +
-		"several if need be. Two tasks that do not need each other run side by side. Work on the ready azimas first; an " +
-		"azima is done when you mark it done (`djinn task done`) or its plan file says so. One whose work is done and " +
+		"several if need be. Two tasks that do not need each other run side by side. The azimas have a rank, which the " +
+		"developer also sets by dragging them in the window: Djinn starts the waiting work of the first ones first, and " +
+		"the gates serve it first; a new azima goes last, `djinn task rank <azima> --top` (`--before T07`, `--after " +
+		"T07`) moves it. Work on the ready azimas first, in their rank; an azima is done when you mark it done (`djinn task done`) or its plan file says so. One whose work is done and " +
 		"whose plan file's unchecked boxes all say `(needs: …)` waits for its proof, from a person, a machine, a release " +
 		"or a real model: spawn no work for it. `djinn task depend` and " +
 		"`djinn task group` re-sequence the plan as it learns; Djinn refuses a cycle.\n" +
@@ -326,6 +328,8 @@ func leadCommandsBrief(driven bool) string {
 		"`djinn task describe <azima> --text \"…\"` revises its description; " +
 		"`djinn task open <azima>` turns a draft open; " +
 		"`djinn task move <azima> --wish <wish>` moves an azima and its unstarted parts to another wish; " +
+		"`djinn task rank <azima> --top` ranks an azima first among its wish's (`--before T07`, `--after T07`; " +
+		"`djinn task update <azima> --rank 2` by number); " +
 		"`djinn task depend <task> --after W1,T02 --also W6=W5` sets what tasks wait for, in place of what they had, " +
 		"all or none; " +
 		"`djinn task group <task> --part-of T07` sets its azima; " +
@@ -854,47 +858,33 @@ func azimaBranchText(t *planv1.Task) string {
 	return text
 }
 
-// azimasBrief writes the plan's azimas as a graph: the ready ones first, under way (in progress or watching) before
-// open, then the blocked ones with what they wait for, then those whose work is done and that wait for their proof,
-// with who gives it, then the done ones on one line; each with the tilasms that explain it, and, per azima (perAzima),
-// its own branch and its pull request. Nothing without an azima.
+// azimasBrief writes the plan's azimas as a graph, in their rank (AzimaOrder): the ones to work on, ready or blocked
+// with what they wait for, then those whose work is done and that wait for their proof, with who gives it, then the
+// done ones on one line; each with the tilasms that explain it, and, per azima (perAzima), its own branch and its pull
+// request. Nothing without an azima.
 func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]string, tilasms []*planv1.Tilasm, perAzima bool) {
 	tasks = WithAzimas(tasks)
-	var ready, blocked, proof, done, drafts []*planv1.Task
-	for _, t := range tasks {
+	var live, proof, done, drafts []*planv1.Task
+	for _, t := range AzimaOrder(tasks) {
 		switch e := t.GetAzima(); {
-		case !IsAzima(t):
 		case e.GetState() == planv1.AzimaState_AZIMA_STATE_DRAFT:
 			drafts = append(drafts, t)
 		case e.GetState() == planv1.AzimaState_AZIMA_STATE_DONE:
 			done = append(done, t)
 		case e.GetState() == planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF:
 			proof = append(proof, t)
-		case e.GetReady():
-			ready = append(ready, t)
 		default:
-			blocked = append(blocked, t)
+			live = append(live, t)
 		}
 	}
-	if len(ready)+len(blocked)+len(proof)+len(done)+len(drafts) == 0 {
+	if len(live)+len(proof)+len(done)+len(drafts) == 0 {
 		return
 	}
-	byCode := func(a, b *planv1.Task) int { return CompareCodes(a.GetCode(), b.GetCode()) }
-	slices.SortFunc(ready, func(a, b *planv1.Task) int {
-		under := func(t *planv1.Task) int {
-			s := t.GetAzima().GetState()
-			return b2i(s != planv1.AzimaState_AZIMA_STATE_IN_PROGRESS && s != planv1.AzimaState_AZIMA_STATE_WATCHING)
-		}
-		return cmp.Or(cmp.Compare(under(a), under(b)), byCode(a, b))
-	})
-	slices.SortFunc(blocked, byCode)
-	slices.SortFunc(proof, byCode)
-	slices.SortFunc(done, byCode)
-	slices.SortFunc(drafts, byCode)
 	b.WriteString("\n## Azimas\n\n")
-	b.WriteString("The plan as a graph, the ready azimas first. Spawn their work `--part-of <azima>`.\n\n")
+	b.WriteString("The plan as a graph, in rank order: Djinn starts the work of the first azimas first " +
+		"(`djinn task rank <azima> --top`, `--before T07`, `--after T07`). Spawn their work `--part-of <azima>`.\n\n")
 	status := map[*planv1.Task]string{}
-	for _, t := range append(slices.Clone(ready), blocked...) {
+	for _, t := range live {
 		e := t.GetAzima()
 		text := "open"
 		switch e.GetState() {
@@ -942,10 +932,11 @@ func azimasBrief(b *strings.Builder, tasks []*planv1.Task, codes map[string]stri
 		slices.SortFunc(waits, CompareCodes)
 		return all, waits
 	}
-	for _, t := range ready {
-		fmt.Fprintf(b, "- **%s** %s: ready, %s\n", t.GetCode(), clipLine(t.GetTitle()), status[t])
-	}
-	for _, t := range blocked {
+	for _, t := range live {
+		if t.GetAzima().GetReady() {
+			fmt.Fprintf(b, "- **%s** %s: ready, %s\n", t.GetCode(), clipLine(t.GetTitle()), status[t])
+			continue
+		}
 		all, waits := after(t)
 		fmt.Fprintf(b, "- **%s** %s: waits for %s", t.GetCode(), clipLine(t.GetTitle()), strings.Join(waits, ", "))
 		if len(all) > len(waits) {
@@ -1010,13 +1001,6 @@ func tilasmsBrief(b *strings.Builder, tilasms []*planv1.TilasmExport) {
 	if n := len(tilasms) - briefTilasms; n > 0 {
 		fmt.Fprintf(b, "- And %d more: `djinn tilasm list --wish <wish>`.\n", n)
 	}
-}
-
-func b2i(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
 }
 
 // CloserWord names who marked a task done by hand.

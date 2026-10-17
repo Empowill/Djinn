@@ -12,7 +12,8 @@ slower, run out of memory, or fail on a port another one holds. Gates turn that 
 - **One at a time per gate.** Two test suites never run side by side; a lint and a test suite may.
 - **Only when the machine can take it.** A gate waits while the machine is under pressure, and until it has the memory
   the command needed last time.
-- **The most urgent first.** Djinn's merges and pushes go first, then the first wish's commands.
+- **The most urgent first.** Djinn's merges and pushes go first, then the first wish's commands, the work of its first
+  azima first.
 - **Measured.** Djinn records what each command cost, and knows next time what it needs.
 
 ## How a gate is granted
@@ -27,7 +28,8 @@ A command asks for a gate by its name, and waits until all of these hold:
 4. **Its turn has come:**
    - first, Djinn's own merges and pushes, in the order they asked: the checks of a task's merge, of a merge of main,
      of a push, and the code generation and setup they need;
-   - then everyone else, the workers, the Djinn, your terminal, the first wish by rank first, then the first to ask.
+   - then everyone else, the workers, the Djinn, your terminal, the first wish by rank first, then within it the work
+     of the first [azima](#azima) by rank, then the first to ask.
 
 A merge or a push that waits for a gate keeps it from the others, even when a lighter command would fit. A gate already
 held is never taken back for it: Djinn waits for the holder to finish.

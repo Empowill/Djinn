@@ -475,10 +475,9 @@ func TestCompareCodes(t *testing.T) {
 	}
 }
 
-// TestBriefAzimas: the brief shows the plan as a graph, the ready azimas first (the one under way before the open one),
-// then the blocked ones with what they wait for, those awaiting their proof apart with who gives it, the done ones on
-// one line; no azima is in the running, waiting or
-// finished work, and work says its azima.
+// TestBriefAzimas: the brief shows the plan as a graph in rank order (W134), the ranked azimas first, then the others
+// by code, ready or with what they wait for, those awaiting their proof apart with who gives it, the done ones on one
+// line; no azima is in the running, waiting or finished work, and work says its azima.
 func TestBriefAzimas(t *testing.T) {
 	ctx := t.Context()
 	c := serve(t)
@@ -499,6 +498,7 @@ func TestBriefAzimas(t *testing.T) {
 	t4 := azima("T4", "The orchestrator", pending, t1.GetId(), t2.GetId())
 	t5 := azima("T5", "Spread the work", pending, t2.GetId(), t3.GetId(), t4.GetId())
 	t10 := azima("T10", "Releases", pending, t4.GetId())
+	t5.Rank, t10.Rank = 2, 1
 	t11 := azima("T11", "Windows", pending)
 	t11.ProofNeeds = []*planv1.ProofNeed{
 		{Box: "Opens on Windows 11.", Needs: "a Windows 11 machine", Provers: []planv1.Prover{planv1.Prover_PROVER_WINDOWS}},
@@ -551,12 +551,13 @@ func TestBriefAzimas(t *testing.T) {
 		t.Fatalf("no azimas:\n%s", brief.Moving)
 	}
 	azimas, rest, _ := strings.Cut(azimas, "\n## ")
-	want := "The plan as a graph, the ready azimas first. Spawn their work `--part-of <azima>`.\n\n" +
+	want := "The plan as a graph, in rank order: Djinn starts the work of the first azimas first " +
+		"(`djinn task rank <azima> --top`, `--before T07`, `--after T07`). Spawn their work `--part-of <azima>`.\n\n" +
+		"- **T10** Releases: waits for T4; open\n" +
+		"- **T5** Spread the work: waits for T3, T4 (after T2, T3, T4); open\n" +
+		"- **T3** The window: ready, open, 0 of 1 parts done\n" +
 		"- **T4** The orchestrator: ready, in progress, 0 of 1 parts done, 1 running\n" +
 		"- **T13** Babysat: ready, watching (only a watcher runs), 1 of 2 parts done, 1 running\n" +
-		"- **T3** The window: ready, open, 0 of 1 parts done\n" +
-		"- **T5** Spread the work: waits for T3, T4 (after T2, T3, T4); open\n" +
-		"- **T10** Releases: waits for T4; open\n" +
 		"- Work done, waiting for its proof: T11 needs a Windows machine, Clément's review; T12 needs a release, a person.\n" +
 		"- Done: T1, T2.\n" +
 		"- Drafts: T31 Spreading work — open with djinn task open T31 (explained by L01).\n"

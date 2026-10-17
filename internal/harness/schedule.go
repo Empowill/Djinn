@@ -443,6 +443,33 @@ func (h *Harness) Ranks(ctx context.Context, taskIDs []string) map[string]int {
 	return out
 }
 
+// Places gives the position of each task's azima among the azimas of its wish, in their rank (plan.AzimaOrder): the
+// gates serve the work of the first azimas first, within its wish's rank. A task part of no azima, or unknown, is not
+// in the map.
+func (h *Harness) Places(ctx context.Context, taskIDs []string) map[string]int {
+	out := map[string]int{}
+	places := map[string]map[string]int{} // By wish.
+	for _, id := range taskIDs {
+		t, err := store.Get[*planv1.Task](ctx, h.store, id)
+		if err != nil || t.GetPartOf() == "" {
+			continue
+		}
+		wish, ok := places[t.GetWishId()]
+		if !ok {
+			tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": t.GetWishId()})
+			if err != nil {
+				continue
+			}
+			wish = plan.AzimaPlaces(tasks)
+			places[t.GetWishId()] = wish
+		}
+		if p, ok := wish[t.GetPartOf()]; ok {
+			out[id] = p
+		}
+	}
+	return out
+}
+
 // Describe names a task for those who wait behind it: its code and title.
 func (h *Harness) Describe(ctx context.Context, taskID string) (string, error) {
 	t, err := store.Get[*planv1.Task](ctx, h.store, taskID)

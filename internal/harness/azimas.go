@@ -828,6 +828,7 @@ func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskSe
 				sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, t.GetCode())
 			}
 			t.WishId = targetWish.GetId()
+			t.Rank = 0 // Its rank was among the azimas of the other wish: it goes last in its new one.
 			codeKey := strings.ToUpper(t.GetCode())
 			if targetCodes[codeKey] {
 				letter := "W"
