@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -394,9 +395,13 @@ func (p *Projects) List(
 	if err != nil {
 		return nil, Status(err)
 	}
+	// Each project's state takes a few git commands, a second or more each on a loaded Windows machine: the projects
+	// fill side by side, or the window waits for their sum before it shows the wishes.
+	var wg sync.WaitGroup
 	for _, project := range projects {
-		p.fillProject(ctx, project)
+		wg.Go(func() { p.fillProject(ctx, project) })
 	}
+	wg.Wait()
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: projects}), nil
 }
 

@@ -31,11 +31,13 @@ func ReadPermissions(dir string) (*djinnv1.Permissions, []string, error) {
 	p := &djinnv1.Permissions{}
 	unknowns := FindUnknownFields(b, p)
 	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
+	// The error names the file as the project does, on every system: a notice prefixes it with the reference branch.
+	name := filepath.ToSlash(PermissionsFile)
 	if err := opts.Unmarshal(b, p); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", PermissionsFile, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
 	if err := protovalidate.Validate(p); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", PermissionsFile, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
 	return p, unknowns, nil
 }
