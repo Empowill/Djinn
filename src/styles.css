@@ -1538,6 +1538,9 @@ html[data-theme="light"] .wordmark-period {
 .scanline {
   animation: wave-flow 3s ease-in-out infinite;
 }
+.machine-smoke {
+  animation: wave-flow 3.2s ease-in-out infinite;
+}
 .screen-symbol {
   animation: breathe 5s ease-in-out infinite;
   transform-origin: 14.25rem 11.25rem;

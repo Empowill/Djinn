@@ -948,10 +948,6 @@ button.glance-line:hover .name {
   text-transform: uppercase;
   color: var(--muted-dim);
 }
-.question-none {
-  padding: 0.375rem 0.75rem;
-  color: var(--muted);
-}
 /* A wish's questions, on the flying carpet: its title as a light heading, which opens the wish. */
 .question-group-head {
   display: flex;

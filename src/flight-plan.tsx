@@ -131,6 +131,15 @@ export function FlightPlan({
     plan.waiting.length +
     plan.ready.length +
     plan.proofs.length;
+  // Nothing waits and nothing runs: the questions column shows the Djinn asleep, and says so.
+  const calm =
+    plan.loaded &&
+    wishes.length > 0 &&
+    waits +
+      plan.running.length +
+      plan.investigating.length +
+      plan.asleep.length ===
+      0;
   const renderAttentionOrigin = useCallback(
     (wish: Wish) => wishOrigin(wish),
     [],
@@ -723,6 +732,7 @@ export function FlightPlan({
                     onSleep={setSleepingQuestion}
                     asleep={plan.asleep}
                     onWake={wakeQuestion}
+                    calm={calm}
                   />
                   {plan.waiting.length +
                     plan.proofs.length +
@@ -799,11 +809,6 @@ export function FlightPlan({
                   />
                 )}
               </div>
-
-              {plan.loaded &&
-                wishes.length > 0 &&
-                waits + plan.running.length + plan.investigating.length ===
-                  0 && <p className="muted-text">{t("plan.calm")}</p>}
 
               {/* The machine's live graphs are in the Hourglass (hourglass.tsx): here, its load in a line. */}
               <HourglassLine />

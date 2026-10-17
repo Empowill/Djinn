@@ -32,6 +32,7 @@ import { type Djinn, useData, useDjinn, useStore } from "./data/djinn";
 import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { onTextSize, textScale } from "./text-size";
 import { onTheme, token } from "./theme";
 import { AddProject } from "./wish-dialogs";
@@ -469,20 +470,32 @@ function LeadTerminal({
       <div className="lead-terminal-screen" ref={host} hidden={!name} />
       {!name && !collapsed && (
         <div className="lead-terminal-empty">
-          <p>{t("terminal.none")}</p>
-          <button className="button accent" onClick={onNew}>
-            <Plus size={14} />
-            {t("terminal.new_tab")}
-          </button>
+          <EmptyState
+            art="terminal"
+            after={
+              <button className="button accent" onClick={onNew}>
+                <Plus size={14} />
+                {t("terminal.new_tab")}
+              </button>
+            }
+          >
+            {t("terminal.none")}
+          </EmptyState>
         </div>
       )}
       {noProject && !collapsed && (
         <div className="lead-terminal-empty">
-          <p>{t("terminal.no_project")}</p>
-          <button className="button accent" onClick={() => setAdding(true)}>
-            <FolderPlus size={14} />
-            {t("sidebar.new_project")}
-          </button>
+          <EmptyState
+            art="noproject"
+            after={
+              <button className="button accent" onClick={() => setAdding(true)}>
+                <FolderPlus size={14} />
+                {t("sidebar.new_project")}
+              </button>
+            }
+          >
+            {t("terminal.no_project")}
+          </EmptyState>
         </div>
       )}
       {adding && (

@@ -96,6 +96,7 @@ import {
 import { ifritOut, litIfrits } from "./data/ifrit";
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
 import { AttentionBar, attentionOf, useReach } from "./attention";
 import { ModalFrame } from "./frame";
@@ -272,6 +273,22 @@ export function WishView({
     [detail.tasks],
   );
   const ifritNow = useNow(ifrits.length > 0, 15_000);
+  // Nothing waits for you and nothing runs in the wish: its questions column shows the Djinn asleep (empty-art.tsx).
+  const calm =
+    detail.loaded &&
+    open.length +
+      waitingLead.length +
+      digging.length +
+      sleeping.length +
+      waiting.length +
+      ifrits.length +
+      running +
+      investigating +
+      watching +
+      merging +
+      fixing ===
+      0 &&
+    !wish.ready;
   // A worker waiting or an ifrit lit: the Djinn's eye lets its flame shine.
   useEyeNeeds(waiting.length > 0 || ifrits.length > 0);
   const done = workDoneCount(detail.tasks);
@@ -1322,9 +1339,15 @@ export function WishView({
           )}
           {view === "tasks" &&
             (detail.tasks.length === 0 ? (
-              <p className="muted-text" role="tabpanel">
-                {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
-              </p>
+              detail.loaded ? (
+                <div role="tabpanel">
+                  <EmptyState art="tasks">{t("wish.no_tasks")}</EmptyState>
+                </div>
+              ) : (
+                <p className="muted-text" role="tabpanel">
+                  {t("common.loading")}
+                </p>
+              )
             ) : tree ? (
               <TaskTree
                 tasks={detail.tasks}
@@ -1388,6 +1411,7 @@ export function WishView({
                   onSleep={setSleepingQuestion}
                   asleep={sleeping}
                   onWake={wakeQuestion}
+                  calm={calm}
                 />
                 {(waiting.length > 0 || wish.ready) && (
                   <section

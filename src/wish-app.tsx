@@ -34,6 +34,7 @@ import { Brand, Toast } from "./frame";
 import { HOURGLASS, Hourglass } from "./hourglass";
 import { HeldGates } from "./ifrit";
 import { language, t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { useInboxCount } from "./inbox";
 import { ProjectPanel } from "./project-panel";
@@ -519,7 +520,7 @@ export function WishApp() {
                 onSetupAgents={() => setModal("agents")}
               />
             ) : (
-              <HomePlaceholder />
+              <HomePlaceholder projects={projects.length} />
             )}
             <StatusBar live={live} error={error} />
           </LayoutGroup>
@@ -564,12 +565,16 @@ export function WishApp() {
   );
 }
 
-function HomePlaceholder() {
+// HomePlaceholder is the window with no wish at all: the lamp waits, for a first project, or for a first wish.
+function HomePlaceholder({ projects }: { projects: number }) {
   return (
     <div className="wish-view">
       <PageHeader middle={<OperatingLoad />} />
       <div className="wish-home-placeholder">
         <h1>{t("home.title")}</h1>
+        <EmptyState art="home">
+          {projects ? t("home.no_wish") : t("home.no_project")}
+        </EmptyState>
       </div>
     </div>
   );

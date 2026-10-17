@@ -1,0 +1,147 @@
+/* The empty states' drawings (empty-art.tsx, tilasm L14): one line weight at any size, the window's tokens only. The
+   lamp in --sand, the smoke in the wordmark's verdigris, the flame and the eye as the seal and djinn-eye.tsx draw
+   them; lines and stars on the neutral ramp. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.125rem 0.75rem 0.5rem;
+  text-align: center;
+}
+.empty-state.small {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  text-align: left;
+}
+.empty-state-text {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1.6;
+}
+.empty-state-text + .empty-state-text {
+  color: var(--muted-dim);
+}
+
+.empty-art {
+  flex: 0 0 auto;
+  overflow: visible;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.empty-art * {
+  vector-effect: non-scaling-stroke;
+}
+.empty-art-column {
+  width: 12.5rem;
+  height: 8.125rem;
+}
+.empty-art-wide {
+  width: 13.75rem;
+  height: 8.75rem;
+}
+.empty-art-home {
+  width: 16.25rem;
+  height: 10.75rem;
+}
+.empty-art-small {
+  width: 7.5rem;
+  height: 4.5rem;
+}
+.empty-art-note {
+  width: 10rem;
+  height: 5.625rem;
+}
+.empty-art-terminal {
+  width: 10.625rem;
+  height: 5.375rem;
+}
+
+.ea-faint {
+  stroke: var(--n-47);
+}
+.ea-ground {
+  fill: var(--n-14);
+}
+.ea-line {
+  stroke: var(--n-6f);
+}
+.ea-paper {
+  fill: color-mix(in srgb, var(--n-83) 8%, transparent);
+}
+.ea-brass {
+  stroke: var(--sand);
+}
+.ea-brass-fill {
+  fill: color-mix(in srgb, var(--sand) 12%, transparent);
+}
+.ea-smoke {
+  stroke: var(--smoke-ascii-2);
+}
+.ea-smoke-light {
+  stroke: var(--smoke-ascii-4);
+  opacity: 0.7;
+}
+.ea-smoke-fill {
+  fill: color-mix(in srgb, var(--smoke-ascii-2) 10%, transparent);
+}
+.ea-star {
+  fill: var(--n-83);
+}
+.ea-snore {
+  stroke: var(--n-83);
+  stroke-width: 1.2;
+}
+.ea-step {
+  fill: var(--n-57);
+}
+.ea-step-far {
+  opacity: 0.5;
+}
+.ea-flame {
+  fill: var(--eye-flame);
+}
+.ea-flame-in {
+  fill: var(--eye-flame-in);
+}
+.ea-eye-white {
+  fill: var(--eye-white);
+}
+.ea-eye-star {
+  fill: var(--eye-star);
+  stroke: var(--eye-line);
+  stroke-width: 0.8;
+}
+.ea-eye-iris {
+  fill: var(--eye-iris);
+  stroke: var(--eye-line);
+  stroke-width: 0.8;
+}
+.ea-eye-flame {
+  fill: var(--eye-flame);
+}
+.ea-eye-lid {
+  fill: var(--eye-lid);
+  opacity: var(--eye-lid-down);
+}
+.ea-eye-line {
+  stroke: var(--eye-line);
+  stroke-width: 1;
+}
+
+/* The smoke rises once as the state shows, then holds still: nothing loops (e2e/idle-frames.spec.ts), and reduced
+   motion shows it in place at once (styles.css). Backwards: once risen, no animation is left on the page. */
+.empty-rise {
+  animation: empty-rise 1.2s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes empty-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.375rem);
+  }
+}
