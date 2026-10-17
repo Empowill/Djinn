@@ -394,6 +394,98 @@ func TestLoadServiceAuto(t *testing.T) {
 	}
 }
 
+func TestAutoStartRunsTheNotchShown(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, settingsFile), []byte(`{"load":"LOAD_NOTCH_AUTO"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	monitor := NewMonitor(NotchPolicy(ReadNotch(home)), func() (Snapshot, error) {
+		return Snapshot{Cores: 16}, nil
+	})
+	var calls []djinnv1.LoadNotch
+	var lastPolicy Policy
+	mux := http.NewServeMux()
+	mux.Handle(LoadHandler(
+		home,
+		monitor,
+		func(p Policy) {
+			calls = append(calls, p.Notch)
+			lastPolicy = p
+		},
+		nil,
+		nil,
+		WithLoadTickInterval(0),
+	))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := djinnv1connect.NewLoadServiceClient(srv.Client(), srv.URL)
+
+	res, err := client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	resp := res.Msg
+	var barSlots int32
+	for _, ns := range resp.GetNotchSlots() {
+		if ns.GetNotch() == resp.GetNotch() {
+			barSlots = ns.GetSlots()
+			break
+		}
+	}
+	if resp.GetNotch() != monitor.Policy().Notch || barSlots != resp.GetSlots() || len(calls) == 0 {
+		t.Fatalf("the bar shows %v (%d slots), the scheduler runs %v (%d slots); setPolicy calls: %v",
+			resp.GetNotch(), barSlots, monitor.Policy().Notch, resp.GetSlots(), calls)
+	}
+	if !monitor.Policy().Auto || !lastPolicy.Auto {
+		t.Errorf("policy Auto: monitor=%v, setPolicy=%v, want true", monitor.Policy().Auto, lastPolicy.Auto)
+	}
+}
+
+func TestApplyNotchKeepsWorkerMemoryGuard(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+
+	initPolicy := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
+	initPolicy.Workers = 5
+	initPolicy.WorkerMemory = 4 * GiB
+	initPolicy.WorkerMemoryGuard = 1.75
+	monitor := NewMonitor(initPolicy, func() (Snapshot, error) {
+		return Snapshot{Cores: 16}, nil
+	})
+
+	var recorded Policy
+	mux := http.NewServeMux()
+	mux.Handle(LoadHandler(
+		home,
+		monitor,
+		func(p Policy) { recorded = p },
+		nil,
+		nil,
+		WithLoadTickInterval(0),
+	))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := djinnv1connect.NewLoadServiceClient(srv.Client(), srv.URL)
+
+	if _, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+	})); err != nil {
+		t.Fatalf("Set HIGH: %v", err)
+	}
+
+	got := monitor.Policy()
+	if got.Workers != 5 || got.WorkerMemory != 4*GiB || got.WorkerMemoryGuard != 1.75 {
+		t.Errorf("monitor policy overrides after Set: Workers=%d WorkerMemory=%d WorkerMemoryGuard=%v, want 5, %d, 1.75",
+			got.Workers, got.WorkerMemory, got.WorkerMemoryGuard, 4*GiB)
+	}
+	if recorded.Workers != 5 || recorded.WorkerMemory != 4*GiB || recorded.WorkerMemoryGuard != 1.75 {
+		t.Errorf("setPolicy overrides after Set: Workers=%d WorkerMemory=%d WorkerMemoryGuard=%v, want 5, %d, 1.75",
+			recorded.Workers, recorded.WorkerMemory, recorded.WorkerMemoryGuard, 4*GiB)
+	}
+}
+
 func containsSubstring(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

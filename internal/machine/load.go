@@ -243,6 +243,10 @@ func LoadHandler(
 		}
 	}
 
+	if s.auto.IsAuto() {
+		s.applyNotch(s.auto.Effective())
+	}
+
 	if s.tickInterval > 0 {
 		go s.runAutoLoop()
 	}
@@ -302,10 +306,11 @@ func (s *loadService) applyNotch(effective djinnv1.LoadNotch) {
 		p.Auto = true
 	}
 	if s.monitor != nil {
-		// Preserve any runtime overrides from flags (Workers, WorkerMemory).
+		// Preserve any runtime overrides from flags (Workers, WorkerMemory, WorkerMemoryGuard).
 		current := s.monitor.Policy()
 		p.Workers = current.Workers
 		p.WorkerMemory = current.WorkerMemory
+		p.WorkerMemoryGuard = current.WorkerMemoryGuard
 		s.monitor.SetPolicy(p)
 	}
 	if s.setPolicy != nil {
