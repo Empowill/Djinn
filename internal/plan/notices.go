@@ -63,6 +63,7 @@ func (p *Projects) projectNotices(ctx context.Context, project *planv1.Project) 
 	}
 	out = append(out, p.skillNotices(ctx, project, config)...)
 	out = append(out, p.sourceNotices(ctx, project)...)
+	out = append(out, changeNotices(ctx, p.Store, project)...)
 	slices.SortStableFunc(out, func(a, b *planv1.ProjectNotice) int { return cmp.Compare(a.GetKind(), b.GetKind()) })
 	return out
 }

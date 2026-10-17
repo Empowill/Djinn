@@ -89,6 +89,7 @@ export {
 } from "@/src/wish-dialogs.tsx";
 export {
   BranchChoice,
+  ConfigChanges,
   NoticeLine,
   ProjectChecks,
   ProjectPanel,
@@ -13636,4 +13637,91 @@ test("the sleep dialog offers the wish's tasks not over and the requests not mer
     html,
     /<button type="submit" class="button accent" disabled="">/,
   );
+});
+
+// The journal of changes (W151): each commit of the reference branch that changed the configuration, when, which and
+// who, what it changed in sentences; one that waits for your look has the flame, its asking lines marked, and Seen
+// with what it does; the others say they were applied. A failed fetch is said with git's own words.
+test("the journal of configuration changes says each change, and marks seen those that wait for your look", () => {
+  const at = { seconds: 1760000000n, nanos: 0 };
+  const seen = [];
+  const waiting = {
+    id: "c1",
+    ref: "origin/main",
+    commit: "7290747aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    author: "Skayfa",
+    title: "Allow curl",
+    commitTime: at,
+    commits: 1,
+    firstLook: false,
+    lines: [
+      {
+        text: "Permissions: 1 more command the workers may run: curl.",
+        asks: true,
+      },
+      { text: "New check e2e before a push: go tool task e2e.", asks: false },
+    ],
+  };
+  const applied = {
+    ...waiting,
+    id: "c2",
+    commit: "bf53c16bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    title: "Change recette",
+    lines: [
+      { text: "The skill recette changes its instructions.", asks: false },
+    ],
+  };
+  const history = { ...applied, id: "c3", firstLook: true, commits: 3 };
+  const out = s.renderToStaticMarkup(
+    h(s.ConfigChanges, {
+      watch: {
+        ref: "origin/main",
+        fetchError: "fetch main from origin: could not read Username",
+      },
+      changes: [waiting, applied, history],
+      busy: "",
+      onSeen: (c) => seen.push(c.id),
+    }),
+  );
+  assert.match(
+    out,
+    /<h3>What changed on origin\/main<span class="config-from">watched every 5 min<\/span><\/h3>/,
+  );
+  assert.match(
+    out,
+    /<pre class="notice-detail">fetch main from origin: could not read Username<\/pre>/,
+  );
+  assert.match(
+    out,
+    /<div class="config-line config-change waits">.*<code>7290747<\/code><span>Skayfa<\/span><\/p><strong>Allow curl<\/strong>/,
+  );
+  assert.match(
+    out,
+    /<li class="asks">Permissions: 1 more command the workers may run: curl\.<\/li><li class="">New check e2e/,
+  );
+  assert.match(
+    out,
+    /Seen<\/button><p>Djinn applies it already: the gear stops lighting for it\./,
+  );
+  assert.match(out, /<code>bf53c16<\/code>.*Applied, nothing to decide\./);
+  assert.match(
+    out,
+    /3 commits.*Before Djinn watched it: applied, nothing to decide\./,
+  );
+  assert.doesNotMatch(out, /button accent/);
+  assert.equal((out.match(/Seen<\/button>/g) ?? []).length, 1);
+
+  const none = s.renderToStaticMarkup(
+    h(s.ConfigChanges, {
+      watch: { ref: "origin/dev", fetchError: "" },
+      changes: [],
+      busy: "",
+      onSeen() {},
+    }),
+  );
+  assert.match(
+    none,
+    /Nothing changed in the configuration since Djinn watches it\./,
+  );
+  assert.doesNotMatch(none, /notice-detail/);
 });

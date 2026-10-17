@@ -104,6 +104,9 @@ const (
 	// ProjectServiceSetBranchProcedure is the fully-qualified name of the ProjectService's SetBranch
 	// RPC.
 	ProjectServiceSetBranchProcedure = "/plan.v1.ProjectService/SetBranch"
+	// ProjectServiceAcknowledgeProcedure is the fully-qualified name of the ProjectService's
+	// Acknowledge RPC.
+	ProjectServiceAcknowledgeProcedure = "/plan.v1.ProjectService/Acknowledge"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -686,6 +689,10 @@ type ProjectServiceClient interface {
 	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
+	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
+	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
+	// them. They are applied already; djinn project show lists the journal of changes.
+	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -768,6 +775,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("SetBranch")),
 			connect.WithClientOptions(opts...),
 		),
+		acknowledge: connect.NewClient[v1.ProjectServiceAcknowledgeRequest, v1.ProjectServiceAcknowledgeResponse](
+			httpClient,
+			baseURL+ProjectServiceAcknowledgeProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -784,6 +797,7 @@ type projectServiceClient struct {
 	pull         *connect.Client[v1.ProjectServicePullRequest, v1.ProjectServicePullResponse]
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
 	setBranch    *connect.Client[v1.ProjectServiceSetBranchRequest, v1.ProjectServiceSetBranchResponse]
+	acknowledge  *connect.Client[v1.ProjectServiceAcknowledgeRequest, v1.ProjectServiceAcknowledgeResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -841,6 +855,11 @@ func (c *projectServiceClient) SetBranch(ctx context.Context, req *connect.Reque
 	return c.setBranch.CallUnary(ctx, req)
 }
 
+// Acknowledge calls plan.v1.ProjectService.Acknowledge.
+func (c *projectServiceClient) Acknowledge(ctx context.Context, req *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error) {
+	return c.acknowledge.CallUnary(ctx, req)
+}
+
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
@@ -875,6 +894,10 @@ type ProjectServiceHandler interface {
 	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
 	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
 	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
+	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
+	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
+	// them. They are applied already; djinn project show lists the journal of changes.
+	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -953,6 +976,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("SetBranch")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceAcknowledgeHandler := connect.NewUnaryHandler(
+		ProjectServiceAcknowledgeProcedure,
+		svc.Acknowledge,
+		connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceAddProcedure:
@@ -977,6 +1006,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceBranchesHandler.ServeHTTP(w, r)
 		case ProjectServiceSetBranchProcedure:
 			projectServiceSetBranchHandler.ServeHTTP(w, r)
+		case ProjectServiceAcknowledgeProcedure:
+			projectServiceAcknowledgeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1028,6 +1059,10 @@ func (UnimplementedProjectServiceHandler) Branches(context.Context, *connect.Req
 
 func (UnimplementedProjectServiceHandler) SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetBranch is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Acknowledge is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.

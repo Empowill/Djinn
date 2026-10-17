@@ -36,7 +36,7 @@ func Entities() []proto.Message {
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
 		&planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{}, &planv1.Lead{},
 		&planv1.LeadEvent{}, &planv1.TilasmComment{}, &planv1.SourceRun{}, &planv1.LeadBatch{}, &planv1.TilasmSend{},
-		&planv1.DeclinedSource{},
+		&planv1.DeclinedSource{}, &planv1.ConfigWatch{}, &planv1.ConfigChange{},
 	}
 }
 
@@ -414,6 +414,12 @@ func (p *Projects) Show(
 		Reference: p.projectReference(ctx, project, settings.MainBranch, settings.MainBranchFrom),
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
+	if watches, err := store.List[*planv1.ConfigWatch](ctx, p.Store, store.Where{"project_id": project.GetId()}); err == nil && len(watches) > 0 {
+		out.Watch = watches[0]
+	}
+	if changes, err := ProjectChanges(ctx, p.Store, project.GetId()); err == nil {
+		out.Changes = changes[:min(len(changes), configChangesShow)]
+	}
 	return connect.NewResponse(out), nil
 }
 
@@ -691,6 +697,49 @@ func (p *Projects) SetBranch(
 		Reference:     p.projectReference(ctx, project, settings.MainBranch, settings.MainBranchFrom),
 		DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId()),
 	}), nil
+}
+
+func (p *Projects) Acknowledge(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceAcknowledgeRequest],
+) (*connect.Response[planv1.ProjectServiceAcknowledgeResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	which := req.Msg.GetChange()
+	if which != "" && len(which) < 7 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name a change by its identifier, or 7 characters of its commit at least"))
+	}
+	var seen []*planv1.ConfigChange
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		changes, err := ProjectChanges(ctx, tx, project.GetId())
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, c := range changes {
+			if which != "" && !strings.EqualFold(c.GetId(), which) && !strings.HasPrefix(c.GetCommit(), strings.ToLower(which)) {
+				continue
+			}
+			found = true
+			if !Waits(c) {
+				continue
+			}
+			c.SeenTime = timestamppb.Now()
+			if err := tx.Put(c); err != nil {
+				return err
+			}
+			seen = append(seen, c)
+		}
+		if which != "" && !found {
+			return connect.NewError(connect.CodeNotFound, fmt.Errorf("no change %s in the journal of %s", which, project.GetName()))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.ProjectServiceAcknowledgeResponse{Changes: seen}), nil
 }
 
 // refuseProjectSwitchToAzima refuses making per azima the push strategy of the project projectID while a wish of it
