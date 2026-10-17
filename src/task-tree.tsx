@@ -1,8 +1,8 @@
 // The tree of a wish's tasks, the Tasks tab's other layout (src/task-tabs.tsx): every task, finished ones included, one
 // row each, the oldest at the bottom on the trunk, the work rising and widening into a branch per azima and side lanes
-// where work runs side by side (src/data/tree.ts). A row shows the task's state, its code and its title cut short; the
-// rest on hover; a click opens its card beside the tree. Hand-drawn SVG, and only the rows on screen: a wish holds
-// hundreds of tasks.
+// where work runs side by side (src/data/tree.ts). A row shows, left of the lanes, when the task started (or was
+// created, never started) to the second, then its state, its code and its title cut short; the rest on hover; a click
+// opens its card beside the tree. Hand-drawn SVG, and only the rows on screen: a wish holds hundreds of tasks.
 import {
   type CSSProperties,
   type ReactNode,
@@ -22,7 +22,10 @@ import { isMerge, isUrgent } from "./data/flight";
 import {
   cancelledText,
   fixerOf,
+  rowStamps,
+  taskDates,
   taskModelDisplay,
+  taskMoment,
   taskStatusText,
   taskTime,
   taskTone,
@@ -43,6 +46,10 @@ import "./task-tree.css";
 export const ROW = 24;
 const LANE = 12;
 const PAD = 10;
+// The dates' column: a character's width in its monospaced font (IBM Plex Mono, 0.6 em at 0.75rem), and its room
+// beside the text, in pixels at the default text size.
+const DIGIT = 0.6 * 12;
+const DATE_PAD = 12;
 // Rows drawn beyond the screen, above and below: a scroll shows no gap before the next frame.
 const OVERSCAN = 40;
 
@@ -195,6 +202,17 @@ export function TaskTree({
     [layout, forked, fixed],
   );
   const drawn = useMemo(() => pieces(layout, tones), [layout, tones]);
+  // Each row's moment, by row, read from the top: its day said only when it changes from the row above's.
+  const stamps = useMemo(
+    () =>
+      rowStamps(
+        layout.nodes.map((node) => taskMoment(node.task)).reverse(),
+      ).reverse(),
+    [layout],
+  );
+  // The dates' column, as wide as its longest date, so the lanes never move while the page scrolls.
+  const dates =
+    Math.ceil(Math.max(0, ...stamps.map((s) => s.length)) * DIGIT) + DATE_PAD;
   const width = PAD * 2 + (layout.lanes - 1) * LANE;
   const height = n * ROW;
   // A row's height on screen.
@@ -293,6 +311,7 @@ export function TaskTree({
               {
                 height: rem(height),
                 "--tree-lanes": rem(width),
+                "--tree-dates": rem(dates),
               } as CSSProperties
             }
           >
@@ -318,6 +337,7 @@ export function TaskTree({
                 node={node}
                 n={n}
                 tone={tones[node.row]}
+                stamp={stamps[node.row]}
                 forkedAs={forked.get(node.task.code) ?? ""}
                 fixedBy={fixed.get(node.task.id) ?? ""}
                 codes={codes}
@@ -358,11 +378,13 @@ export function TaskTree({
   );
 }
 
-// TreeRow is a task's row: on its lane, its state; past the lanes, its code and its title cut short.
+// TreeRow is a task's row: left of the lanes, its moment; on its lane, its state; past the lanes, its code and its title
+// cut short.
 const TreeRow = memo(function TreeRow({
   node,
   n,
   tone,
+  stamp,
   forkedAs,
   fixedBy,
   codes,
@@ -374,6 +396,8 @@ const TreeRow = memo(function TreeRow({
   node: TreeNode;
   n: number;
   tone: Tone;
+  // When it started, or was created, to the second; its day when it is another than the row above's.
+  stamp: string;
   forkedAs: string;
   fixedBy: string;
   codes: ReadonlyMap<string, string>;
@@ -397,7 +421,11 @@ const TreeRow = memo(function TreeRow({
       onFocus={() => onHover(node.row)}
       onBlur={() => onHover(-1)}
     >
-      <span className="tree-dot" style={{ left: rem(x(node.lane)) }}>
+      <span className="tree-date">{stamp}</span>
+      <span
+        className="tree-dot"
+        style={{ left: `calc(var(--tree-dates) + ${rem(x(node.lane))})` }}
+      >
         <ToneIcon tone={tone} size={12} />
       </span>
       <span className="tree-label">
@@ -444,6 +472,7 @@ function TreeTip({
           {t("tasks.branch", { code: azima.code, title: azima.title })}
         </span>
       )}
+      <span className="task-tooltip-activity">{taskDates(task)}</span>
       <span className="task-tooltip-activity">
         {[taskStatusText(task, forkedAs, fixedBy), why, model?.label, time.text]
           .filter(Boolean)

@@ -50,7 +50,7 @@
 .task-tree-lines {
   position: absolute;
   top: 0;
-  left: 0;
+  left: var(--tree-dates);
   overflow: visible;
   pointer-events: none;
 }
@@ -109,6 +109,23 @@
 .tree-row.focused {
   background: color-mix(in srgb, var(--tone) 12%, transparent);
 }
+/* A row's moment, to the second, left of the lanes: right-aligned so the hours line up under a day said once. */
+.tree-date {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--tree-dates);
+  padding-right: 0.5rem;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--muted);
+  font: var(--font-size-body, 0.75rem) var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .tree-dot {
   position: absolute;
   top: 50%;
@@ -130,7 +147,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--tree-lanes) + 0.25rem);
+  left: calc(var(--tree-dates) + var(--tree-lanes) + 0.25rem);
   right: 0.25rem;
   display: flex;
   align-items: center;
@@ -153,7 +170,7 @@
 }
 .task-tooltip.tree-tip {
   display: flex;
-  left: var(--tree-lanes);
+  left: calc(var(--tree-dates) + var(--tree-lanes));
   pointer-events: none;
 }
 

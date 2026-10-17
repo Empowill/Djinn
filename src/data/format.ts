@@ -67,17 +67,106 @@ export function when(ts?: Timestamp): string {
   });
 }
 
+// dayText says a day in figures, in the page's language and the system's time zone unless given: 17/10 in French,
+// 10/17 in English.
+export function dayText(d: Date, lang = language, timeZone?: string): string {
+  return d.toLocaleDateString(lang, {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone,
+  });
+}
+
+// secondText says an hour to the second: 10:42:07 in French, 10:42:07 AM in English.
+export function secondText(
+  d: Date,
+  lang = language,
+  timeZone?: string,
+): string {
+  return d.toLocaleTimeString(lang, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZone,
+  });
+}
+
+// stamp says a moment to the second, its day first: 17/10 10:42:07.
+export function stamp(d: Date, lang = language, timeZone?: string): string {
+  return `${dayText(d, lang, timeZone)} ${secondText(d, lang, timeZone)}`;
+}
+
+// rowStamps says the moments of rows read from the top, each to the second, a row's day said only when it is another
+// than the row above's: 17/10 10:42:07, 10:40:55, 16/10 23:59:01. A row with no moment says "" and is not the row
+// above the next one.
+export function rowStamps(
+  dates: readonly (Date | undefined)[],
+  lang = language,
+  timeZone?: string,
+): string[] {
+  let above = "";
+  return dates.map((d) => {
+    if (!d) return "";
+    const day = d.toLocaleDateString(lang, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone,
+    });
+    const same = day === above;
+    above = day;
+    return same ? secondText(d, lang, timeZone) : stamp(d, lang, timeZone);
+  });
+}
+
+// taskBegun is when a task first started; undefined when it never did.
+export function taskBegun(task: Task): Date | undefined {
+  return date(task.firstStartTime) ?? date(task.startTime);
+}
+
+// taskMoment is the moment a task's row says: its first start, or its creation when it never started.
+export function taskMoment(task: Task): Date | undefined {
+  return taskBegun(task) ?? date(task.createTime);
+}
+
+// taskDates says what a task's moment is, to the second, with its end: Started 17/10 10:42:07 · ended 17/10 10:58:31;
+// Created 17/10 10:40:02, not started yet.
+export function taskDates(
+  task: Task,
+  lang = language,
+  timeZone?: string,
+): string {
+  const at = (d: Date) => stamp(d, lang, timeZone);
+  const begun = taskBegun(task);
+  const created = date(task.createTime);
+  const ended = date(task.endTime);
+  const first = begun
+    ? t("tasks.tree_started", { time: at(begun) })
+    : created
+      ? t(
+          taskFinished(task.status)
+            ? "tasks.tree_created_never"
+            : "tasks.tree_created",
+          { time: at(created) },
+        )
+      : "";
+  return [first, ended && t("tasks.tree_ended", { time: at(ended) })]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 // askedWhen says when a question was asked, when it was last revised, when it woke from its sleep and when you put it
 // off for later: the day and month in figures, the hour (asked 16/10 at 10:24 · revised at 10:31 · woke at 10:35 ·
 // put off at 10:40), a later day said only when it is another. "" when it has no time.
 export function askedWhen(question: Question): string {
   const asked = date(question.createTime);
   if (!asked) return "";
-  const day = (d: Date) =>
-    d.toLocaleDateString(language, { day: "2-digit", month: "2-digit" });
   const hour = (d: Date) =>
     d.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
-  const out = t("question.asked_at", { day: day(asked), time: hour(asked) });
+  const out = t("question.asked_at", {
+    day: dayText(asked),
+    time: hour(asked),
+  });
   const last = [...(question.rounds ?? [])]
     .reverse()
     .find((r) => r.kind === RoundKind.REVISE);
@@ -87,7 +176,7 @@ export function askedWhen(question: Question): string {
   const words = (d: Date, at: TextKey, on: TextKey) =>
     d.toDateString() === asked.toDateString()
       ? t(at, { time: hour(d) })
-      : t(on, { day: day(d), time: hour(d) });
+      : t(on, { day: dayText(d), time: hour(d) });
   return [
     out,
     revised && words(revised, "question.revised_at", "question.revised_on"),

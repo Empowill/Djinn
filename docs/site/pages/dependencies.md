@@ -89,7 +89,9 @@ In the wish's **Tasks** tab, **How the tasks show** has two layouts:
   comes. An azima's row says **Waits for** the tasks and azimas it still waits for, until it is done.
 - **Tree: every task, oldest at the bottom.** A row per task, grouped by azima, with a thin line from each task to
   what it comes after; hovering a row brings out its links. This is the plan drawn as a graph. An azima has no row of
-  its own, so a dependency on an azima draws no line.
+  its own, so a dependency on an azima draws no line. Left of the graph, each row says to the second when its task
+  first started, or when it was created if it never started, in your language and time zone; the day shows only where
+  it changes from the row above. Hovering the row says which of the two it is, and when the task ended.
 
 In **What runs**, beside the questions of a wish and of the flying carpet, a task that waits on another sits under it,
 or names it.

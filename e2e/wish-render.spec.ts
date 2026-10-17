@@ -528,8 +528,25 @@ test.describe("wish render performance @render", () => {
     const drawn = await page.locator(".task-tree .tree-row").count();
     expect(drawn).toBeGreaterThan(10);
     expect(drawn).toBeLessThan(180);
-    // A click opens the task's card beside the tree.
+    // Left of the lanes, each row's moment to the second (W214); its day only where it changes from the row above.
+    const dates = await page
+      .locator(".task-tree .tree-row .tree-date")
+      .allTextContents();
+    expect(dates).toHaveLength(drawn);
+    for (const d of dates) expect(d).toMatch(/\d{2}:\d{2}:\d{2}/);
+    const days = dates.filter((d) => /^\d{2}\/\d{2} /.test(d)).length;
+    expect(days).toBeGreaterThan(0);
+    expect(days).toBeLessThan(drawn);
     const first = page.locator(".task-tree .tree-row").first();
+    const dateBox = await first.locator(".tree-date").boundingBox();
+    const dotBox = await first.locator(".tree-dot").boundingBox();
+    expect(dateBox!.x + dateBox!.width).toBeLessThanOrEqual(dotBox!.x + 1);
+    // Hovered, the row says which moment its date is, and when the task ended.
+    await first.hover();
+    await expect(page.locator(".tree-tip")).toContainText(
+      /(Started|Created) \d{2}\/\d{2} \d{2}:\d{2}:\d{2}/,
+    );
+    // A click opens the task's card beside the tree.
     const code = await first.getAttribute("data-task");
     await first.click();
     await expect(page.locator(".task-tree-card .wish-task.open")).toContainText(
