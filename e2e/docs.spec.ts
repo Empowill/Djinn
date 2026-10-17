@@ -42,7 +42,7 @@ for (const scheme of ["dark", "light"] as const) {
     await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
 
     // The splash: the page the documentation was, titled Grimoire.
-    // One assertion per list, not per item: the trace snapshots the page at each step (docs/pitfalls.md, W248). A
+    // One assertion per list, not per item: each step costs, more so on a loaded machine (docs/pitfalls.md, W248). A
     // role locator leaves out what is hidden; the names come in any order.
     const splash = page.locator("#welcome");
     await expect(
@@ -198,8 +198,9 @@ for (const scheme of ["dark", "light"] as const) {
     await nav.getByRole("link", { name: "Command line" }).click();
     await expect(page).toHaveURL(/#commands$/);
     await expect(page.locator("#introduction")).toBeHidden();
+    // The page is read when opened (W165): its commands come after the address changed.
     const commands = page.locator("#commands .cli-cmd");
-    expect(await commands.count()).toBeGreaterThan(50);
+    await expect.poll(() => commands.count()).toBeGreaterThan(50);
     for (const name of ["djinn wish make", "djinn gate run", "djinn up"])
       await expect(
         page.getByRole("heading", { level: 4, name, exact: true }),

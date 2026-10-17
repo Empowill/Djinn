@@ -56,7 +56,15 @@ export default defineConfig({
     viewport: { width: 1440, height: 1000 },
     colorScheme: "dark",
     locale: "en-US",
-    trace: "retain-on-failure",
+    // The trace of a red test, without a snapshot of the DOM at each step: on a big page under other workers' load
+    // they took 300-600 ms a step, long specs past their 30 s (W212, W249). A red one keeps its actions, sources,
+    // screencast, screenshot and error-context.md (the page's accessibility tree).
+    trace: {
+      mode: "retain-on-failure",
+      snapshots: false,
+      screenshots: true,
+      sources: true,
+    },
     screenshot: "only-on-failure",
     video: "off",
   },

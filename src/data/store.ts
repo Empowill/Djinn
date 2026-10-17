@@ -126,7 +126,8 @@ export interface Store {
   // Follows a task's events until the returned function is called, or the task ends. Once no screen follows it, its
   // events are dropped after a while: a task card closed frees them.
   follow(taskId: string): () => void;
-  // Reads a task's prompt alone, without loading its other events.
+  // Reads a task's prompt alone, without loading its other events. It never fails: a read that fails gives "" and is
+  // made again after retry, its prompt in the store's prompts once it answers.
   readPrompt(taskId: string): Promise<string>;
   // Reads again what changed, as a write the page made says it: the watch says it too, a moment later.
   changed(wishId: string, changes: Change[]): Promise<void>;
@@ -1107,6 +1108,38 @@ export function createStore(
     }
   }
 
+  // readPrompt reads a task's prompt alone (Store.readPrompt).
+  async function readPrompt(taskId: string): Promise<string> {
+    if (state.prompts[taskId]) return state.prompts[taskId];
+    const pending = pendingPrompts.get(taskId);
+    if (pending) return pending;
+    const read = (async () => {
+      const key = `prompt:${taskId}`;
+      try {
+        const res = await clients.tasks.get({ taskId }, call);
+        backoff.delete(key);
+        const prompt = res.task?.prompt ?? "";
+        if (prompt) {
+          set({ prompts: { ...state.prompts, [taskId]: prompt } });
+        }
+        return prompt;
+      } catch (error) {
+        // A call the network cut (Chromium aborts every request in flight when an interface comes or goes, W7) or a
+        // djinn that restarts: read again, never an error thrown at the page. A task gone has no prompt to read.
+        if (!stopped && !notFound(error) && !unimplemented(error)) {
+          const wait = backoff.get(key) ?? retry;
+          backoff.set(key, Math.min(wait * 2, 60_000));
+          setTimeout(() => void readPrompt(taskId), wait);
+        }
+        return "";
+      } finally {
+        pendingPrompts.delete(taskId);
+      }
+    })();
+    pendingPrompts.set(taskId, read);
+    return read;
+  }
+
   return {
     clients,
     getState: () => state,
@@ -1302,25 +1335,7 @@ export function createStore(
         );
       };
     },
-    async readPrompt(taskId) {
-      if (state.prompts[taskId]) return state.prompts[taskId];
-      const pending = pendingPrompts.get(taskId);
-      if (pending) return pending;
-      const read = (async () => {
-        try {
-          const res = await clients.tasks.get({ taskId });
-          const prompt = res.task?.prompt ?? "";
-          if (prompt) {
-            set({ prompts: { ...state.prompts, [taskId]: prompt } });
-          }
-          return prompt;
-        } finally {
-          pendingPrompts.delete(taskId);
-        }
-      })();
-      pendingPrompts.set(taskId, read);
-      return read;
-    },
+    readPrompt,
     putQuestion(question) {
       const detail = state.details[question.wishId];
       if (!detail?.loadedKinds.has(Change.QUESTION)) return;
