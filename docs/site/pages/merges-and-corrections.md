@@ -41,7 +41,8 @@ A worker's work counts once it is in the wish's branch, checked:
    see [One repair at a time](#merges-and-corrections-one-repair-at-a-time).
 
 Djinn runs this every minute, and at once when a task ends. The push checks never hold it up: they run apart, on a
-commit of their own, and a merge that lands meanwhile only has them run again on the new tip (see [Push](#push)).
+commit of their own, and work in line for the branch stops them, to run again on the new tip once it is merged (see
+[Push](#push)).
 
 > **Example.** W3, W4 and W5 end a few minutes apart. Djinn merges them as one batch into feat/invoice-pdf; W4 touched
 > the same lines as W3: its merge conflicts, and it leaves the batch. W3 and W5 pass the lint together, the branch

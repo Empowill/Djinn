@@ -1,11 +1,12 @@
 package harness
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -22,35 +23,41 @@ import (
 // the other, the commit checks run once for all of it. A branch that conflicts leaves the batch and merges alone after
 // it, a correction of its own starting if it still conflicts, one at a time. A red batch gets one correction worker that
 // sees all of it; when that one fails, Djinn merges the batch's work one branch at a time (TaskIntegration.alone), to
-// find what breaks the checks, which gets its own correction. A push due waits until the queue is merged and checked,
-// pushQueueCap at most, then pushes if green.
+// find what breaks the checks, which gets its own correction. A push due waits until the queue is empty, however long
+// (W281): the work waiting or being merged, the repair, and the work left not committed while its review worker is at
+// it; then it pushes if green. Push checks that began on an empty queue stop as soon as work is queued (push_apart.go).
 
-// pushQueueCap is the longest a push due waits for the work queued to merge into its branch: a stream of merges never
-// holds it back for good.
-const pushQueueCap = 15 * time.Minute
-
-// repairing tells whether c, a correction worker, still repairs its branch: it runs or waits to, or it ended done and
-// its work waits to be merged, or is reviewed. One that failed, was cancelled, or stopped past stopGrace is over; so is
-// one whose work is in, or whose merge failed: the correction after it, if any, repairs.
+// repairing tells whether c, a correction worker, still repairs its branch: it is at work (atWork), or its work, done,
+// is left not committed and reviewed. One whose work is in, or whose merge failed, is over: the correction after it, if
+// any, repairs.
 func (h *Harness) repairing(c *planv1.Task) bool {
 	if c.GetCorrection() == nil {
 		return false
 	}
-	if h.running(c.GetId()) {
+	if h.atWork(c) {
 		return true
 	}
-	switch c.GetStatus() {
+	in := c.GetIntegration()
+	return c.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE &&
+		in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED && in.GetReviewedBy() != ""
+}
+
+// atWork tells whether t, a worker on a branch's work (a correction, a review), is not over: it runs or waits to, or it
+// ended done and its work waits to be merged, or is being merged. One that failed, was cancelled, or stopped past
+// stopGrace is over; so is one done whose work is anywhere else.
+func (h *Harness) atWork(t *planv1.Task) bool {
+	if h.running(t.GetId()) {
+		return true
+	}
+	switch t.GetStatus() {
 	case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return false
 	case planv1.TaskStatus_TASK_STATUS_STOPPED:
-		return h.stoppedLately(c)
+		return h.stoppedLately(t)
 	case planv1.TaskStatus_TASK_STATUS_DONE:
-		in := c.GetIntegration()
-		switch in.GetState() {
+		switch t.GetIntegration().GetState() {
 		case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
 			return true
-		case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
-			return in.GetReviewedBy() != ""
 		}
 		return false
 	}
@@ -77,13 +84,50 @@ func (h *Harness) laneOf(ctx context.Context, wish *planv1.Wish, project *planv1
 	return branch
 }
 
+// laneKnown is laneOf as the branches and the wish stand, read only: laneOf may cut an azima's branch, record the wish's
+// integration branch, or tell the lead a branch is apart, which the pass does, never a look apart from it (pushQueued).
+// "" when only laneOf can tell.
+func (h *Harness) laneKnown(ctx context.Context, wish *planv1.Wish, project *planv1.Project, t *planv1.Task) string {
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil {
+		return ""
+	}
+	if strat, _ := plan.ResolveWishPushStrategy(wish, settings); strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
+		azima, err := h.taskAzima(ctx, t)
+		switch {
+		case err != nil:
+			return ""
+		case azima != nil:
+			if azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE || !settings.Integrates() && !azima.GetAzima().GetNamed() {
+				return "" // Held out, or no branch for unchecked work (uncheckedBranch).
+			}
+			return azimaBranchName(azima)
+		case !settings.Integrates():
+			return ""
+		}
+	}
+	branch := plan.IntegrationBranchOf(wish, project.GetId())
+	if settings.Integrates() {
+		return cmp.Or(branch, plan.CheckedOutBranch(ctx, project.GetDirectory()))
+	}
+	if main, _, err := resolveMainSha(ctx, project.GetDirectory(), settings); branch == "" || err != nil || strings.EqualFold(main, branch) {
+		return ""
+	}
+	return branch
+}
+
 // repairOf is the correction worker among tasks, all of wish's, that repairs branch in project; nil when none does.
 func (h *Harness) repairOf(ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch string, tasks []*planv1.Task) *planv1.Task {
+	return h.repairIn(project, branch, tasks, func(t *planv1.Task) string { return h.laneOf(ctx, wish, project, t) })
+}
+
+// repairIn is repairOf, lane telling the branch a task's work merges into.
+func (h *Harness) repairIn(project *planv1.Project, branch string, tasks []*planv1.Task, lane func(*planv1.Task) string) *planv1.Task {
 	if branch == "" {
 		return nil
 	}
 	for _, c := range tasks {
-		if c.GetProjectId() == project.GetId() && h.repairing(c) && h.laneOf(ctx, wish, project, c) == branch {
+		if c.GetProjectId() == project.GetId() && h.repairing(c) && lane(c) == branch {
 			return c
 		}
 	}
@@ -269,33 +313,62 @@ func (h *Harness) stepByStep(ctx context.Context, group []*planv1.Task, in *plan
 }
 
 // mergesQueued lists the work queued to merge into branch, of wish in project, among tasks, the wish's: finished work
-// waiting or being merged, and the correction worker that repairs the branch.
+// waiting or being merged, the correction worker that repairs the branch, and the review worker at work on what a task
+// left not committed (W281).
 func (h *Harness) mergesQueued(ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch string, tasks []*planv1.Task) []string {
+	return h.queuedIn(project, branch, tasks, func(t *planv1.Task) string { return h.laneOf(ctx, wish, project, t) })
+}
+
+// queuedIn is mergesQueued, lane telling the branch a task's work merges into.
+func (h *Harness) queuedIn(project *planv1.Project, branch string, tasks []*planv1.Task, lane func(*planv1.Task) string) []string {
 	var out []string
 	for _, t := range tasks {
 		in := t.GetIntegration()
 		if t.GetProjectId() != project.GetId() || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 			continue
 		}
+		code := t.GetCode()
 		switch in.GetState() {
 		case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
+		case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+			// Its review worker commits it, then merges it: queued while that one is at work.
+			i := slices.IndexFunc(tasks, func(r *planv1.Task) bool { return r.GetId() == in.GetReviewedBy() })
+			if in.GetReviewedBy() == "" || i < 0 || !h.atWork(tasks[i]) {
+				continue
+			}
+			code = tasks[i].GetCode()
 		default:
 			continue
 		}
-		if b := in.GetBranch(); b == branch || b == "" && h.laneOf(ctx, wish, project, t) == branch {
-			out = append(out, t.GetCode())
+		if b := in.GetBranch(); (b == branch || b == "" && lane(t) == branch) && !slices.Contains(out, code) {
+			out = append(out, code)
 		}
 	}
-	if c := h.repairOf(ctx, wish, project, branch, tasks); c != nil && !slices.Contains(out, c.GetCode()) {
+	if c := h.repairIn(project, branch, tasks, lane); c != nil && !slices.Contains(out, c.GetCode()) {
 		out = append(out, c.GetCode())
 	}
 	return out
 }
 
+// pushQueued is mergesQueued read apart from the integration's pass, for the push of branch of the wish wishID in the
+// project projectID: the lanes as they stand (laneKnown).
+func (h *Harness) pushQueued(ctx context.Context, wishID, projectID, branch string) []string {
+	wish, err1 := store.Get[*planv1.Wish](ctx, h.store, wishID)
+	project, err2 := store.Get[*planv1.Project](ctx, h.store, projectID)
+	tasks, err3 := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
+	if err := errors.Join(err1, err2, err3); err != nil {
+		if ctx.Err() == nil {
+			logx.L().Error("read the wish, its project and its tasks", "loop", "push", "wish", wishID, "project", projectID, "err", err)
+		}
+		return nil
+	}
+	return h.queuedIn(project, branch, tasks, func(t *planv1.Task) string { return h.laneKnown(ctx, wish, project, t) })
+}
+
 // pushWaitsForMerges tells whether the push of branch, of wish in project, due for why, waits for the work queued to
-// merge into it (Q39: "merged safely"): until all of it is merged and checked, pushQueueCap at most since the push
-// became due; then it goes, its push checks saying whether it is green. tasks are the wish's; committed, the tasks
-// the push brings, are told when it begins to wait.
+// merge into it (Q39: "merged safely"): until all of it is merged and checked, however long (W281); then it goes, its
+// push checks saying whether it is green. tasks are the wish's; committed, the tasks the push brings, are told when it
+// begins to wait.
 func (h *Harness) pushWaitsForMerges(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, why string, tasks, committed []*planv1.Task,
 ) bool {
@@ -305,20 +378,12 @@ func (h *Harness) pushWaitsForMerges(
 		delete(h.pushWaits, key)
 		return false
 	}
-	since, ok := h.pushWaits[key]
-	if !ok {
-		since = h.now()
-		h.pushWaits[key] = since
-		h.pushSteps(ctx, committed, fmt.Sprintf("integration: a push of %s is due (%s); it waits for %s to merge, %s at most",
-			branch, why, strings.Join(queued, ", "), duration(pushQueueCap)))
+	if !h.pushWaits[key] {
+		h.pushWaits[key] = true
+		h.pushSteps(ctx, committed, fmt.Sprintf("integration: a push of %s is due (%s); it waits for %s to merge",
+			branch, why, strings.Join(queued, ", ")))
 	}
-	if h.now().Sub(since) < pushQueueCap {
-		return true
-	}
-	delete(h.pushWaits, key)
-	h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s waited %s for %s to merge: it goes, if its push checks pass",
-		branch, duration(pushQueueCap), strings.Join(queued, ", ")))
-	return false
+	return true
 }
 
 // forgetPushWait forgets that a push of branch, of the wish wishID in the project projectID, waited: it is not due.

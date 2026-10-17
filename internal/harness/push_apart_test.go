@@ -40,9 +40,9 @@ func (in *integration) holdTest() (release func()) {
 	}
 }
 
-// TestMergesGoOnDuringPushChecks (W180, Q40 A): a push's checks run apart from the integration's pass, in the push
-// worktree, on the commit the branch was at: work that ends meanwhile merges at once. Moved by it, the branch is not
-// pushed, nor held: the checks are moot. The next pass, no merge queued, checks the new tip and pushes it.
+// TestMergesGoOnDuringPushChecks (W180, Q40 A; W281): a push's checks run apart from the integration's pass, in the
+// push worktree, on the commit the branch was at: work that ends meanwhile merges at once. Queued for the branch, it
+// stops them: nothing is pushed, nor held. Once no merge is queued, the push checks the new tip and pushes it.
 func TestMergesGoOnDuringPushChecks(t *testing.T) {
 	testx.Portable(t)
 	in := integrating(t)
@@ -69,7 +69,7 @@ func TestMergesGoOnDuringPushChecks(t *testing.T) {
 		t.Errorf("push run %v; want checking", run)
 	}
 
-	// W2 ends while the check runs: it merges, the pass does not wait for the check.
+	// W2 ends while the check runs: it merges, the pass does not wait for the check, which stops.
 	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
 	merged := make(chan struct{})
 	go func() {
@@ -86,23 +86,19 @@ func TestMergesGoOnDuringPushChecks(t *testing.T) {
 		t.Fatalf("states %s", got)
 	}
 	tip := in.tip(t)
+	stop := "the push checks of " + in.branch + " at " + short8(checked) + " stop: W2 queued to merge into it; nothing " +
+		"pushed nor held, Djinn checks it again once the queue is empty"
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if _, texts := in.integration(t, w1); slices.Contains(texts, stop) {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatalf("W1's events %q lack %q", texts, stop)
+		}
+	}
 
-	// The check ends green on a commit the branch left: moot, nothing pushed nor held.
+	// No merge queued: the push checks the tip, and pushes it with both.
 	release()
 	in.h.waitPushes()
-	if got := in.remoteTip(t, bare); got != old || len(in.pushes(t)) != 0 {
-		t.Fatalf("pushed a moot check: origin at %s, pushes %v", got, in.pushes(t))
-	}
-	if state := in.pushState(t); state.GetHeld() != "" || state.GetRun() != nil {
-		t.Errorf("push state %v; want not held, no run shown", state)
-	}
-	moot := "the push checks of " + in.branch + " at " + short8(checked) + " are moot: it moved to " + short8(tip) +
-		" meanwhile; Djinn checks it again once no merge is queued"
-	if _, texts := in.integration(t, w1); !slices.Contains(texts, moot) {
-		t.Errorf("W1's events %q lack %q", texts, moot)
-	}
-
-	// No merge queued: the next pass checks the tip, and pushes it with both.
 	in.pass(t, time.Minute)
 	pushes := in.pushes(t)
 	if len(pushes) != 1 || pushes[0].GetNewSha() != tip || pushes[0].GetOldSha() != old || in.remoteTip(t, bare) != tip ||
@@ -110,7 +106,92 @@ func TestMergesGoOnDuringPushChecks(t *testing.T) {
 		t.Fatalf("pushes %v; want one of %s, from %s, with W2's work", pushes, tip, old)
 	}
 	if got := len(in.runsOf("test")); got != 2 {
-		t.Errorf("push checks run %d times; want 2: the moot one, the one pushed", got)
+		t.Errorf("push checks run %d times; want 2: the one stopped, the one pushed", got)
+	}
+}
+
+// TestQueuedWorkStopsThePushChecks (W281, Q39/Q40): work queued for a branch during its push checks, a conflict being
+// merged and corrected, stops them at once: the test command's context is cancelled, nothing is pushed, held nor
+// recorded red. The push waits for the correction, then checks the tip that holds it, and pushes it.
+func TestQueuedWorkStopsThePushChecks(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	in.checking(t, pushChecking, map[string]int{"lint": 0})
+	bare := in.remote(t)
+	old := in.tip(t)
+	in.correctWith(func(dir, _ string) string {
+		writeFile(t, dir, "src/a.txt", "a and b\n")
+		commitAll(t, dir, "Settle a.txt") // Which concludes the merge.
+		return "wait\ntext settled"
+	})
+	letters := in.azima(t, in.wishID, "Letters")
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = letters.GetId() })
+	w2 := in.finished(t, "W2", map[string]string{"app/src/a.txt": "b\n"}, func(task *planv1.Task) { task.Integration = nil })
+
+	// W1 ends Letters: the push is due, its check runs and waits.
+	release := in.holdTest()
+	defer release()
+	in.passApart(t, 0)
+	checked := in.tip(t)
+	for deadline := time.Now().Add(30 * time.Second); len(in.runsOf("test")) == 0; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the push check never ran")
+		}
+	}
+
+	// W2's work, conflicting with W1's, waits to be merged: the push check stops at once, never released.
+	w2.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING}
+	putTaskInDB(t, in.db, w2)
+	in.passApart(t, time.Second)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		in.h.waitPushes()
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the push checks went on while W2 was queued")
+	}
+	in.mu.Lock()
+	cut := in.testCut
+	in.mu.Unlock()
+	if cut != 1 || in.remoteTip(t, bare) != old || len(in.pushes(t)) != 0 {
+		t.Fatalf("test commands cut %d, origin at %s, pushes %v; want the one cut, nothing pushed", cut, in.remoteTip(t, bare), in.pushes(t))
+	}
+	if state := in.pushState(t); state.GetHeld() != "" || state.GetRun() != nil {
+		t.Errorf("push state %v; want not held, no run shown", state)
+	}
+	if got := in.checkRuns(t); slices.ContainsFunc(got, func(r string) bool { return strings.HasPrefix(r, "test ") }) {
+		t.Errorf("check runs %q; want no test recorded", got)
+	}
+	_, texts := in.integration(t, w1)
+	if !slices.ContainsFunc(texts, func(s string) bool {
+		return strings.HasPrefix(s, "the push checks of "+in.branch+" at "+short8(checked)+" stop: ") && strings.HasSuffix(s,
+			" queued to merge into it; nothing pushed nor held, Djinn checks it again once the queue is empty")
+	}) {
+		t.Errorf("W1's events %q lack the push checks stopped", texts)
+	}
+	got, _ := in.integration(t, w2)
+	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_CONFLICT || got.GetCorrectedBy() == "" {
+		t.Fatalf("W2's integration %v; want a conflict, corrected", got)
+	}
+
+	// While the correction runs, no push check; its work in, the tip is checked and pushed.
+	release()
+	fix := in.until(t, got.GetCorrectedBy(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	in.pass(t, time.Minute)
+	if n := len(in.runsOf("test")); n != 1 {
+		t.Errorf("push checks run %d times while %s corrects W2; want the one stopped", n, fix.GetCode())
+	}
+	in.release(t, fix.GetId())
+	in.ended(t, fix.GetId())
+	in.pass(t, time.Second)
+	if got := in.states(t, fix, w2); got != fix.GetCode()+" COMMITTED, W2 COMMITTED" {
+		t.Fatalf("after the correction: %s", got)
+	}
+	if tip := in.tip(t); in.remoteTip(t, bare) != tip || len(in.pushes(t)) != 1 {
+		t.Errorf("origin at %s, pushes %v; want one, of %s", in.remoteTip(t, bare), in.pushes(t), tip)
 	}
 }
 
@@ -145,7 +226,7 @@ func TestPushAfterTheLastMerge(t *testing.T) {
 			t.Fatalf("a push check after %s, while W2 and W3 are queued: %q", d, in.runsOf("test"))
 		}
 	}
-	want := "a push of " + in.branch + " is due (the azima " + letters.GetCode() + " ends); it waits for W2, W3 to merge, 15 minutes at most"
+	want := "a push of " + in.branch + " is due (the azima " + letters.GetCode() + " ends); it waits for W2, W3 to merge"
 	if _, texts := in.integration(t, w1); !slices.Contains(texts, want) {
 		t.Errorf("W1's events %q lack %q", texts, want)
 	}

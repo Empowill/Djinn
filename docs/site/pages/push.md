@@ -32,18 +32,19 @@ count: one that babysits the azima's pull request runs until the merge, and does
 wish was made before its first push. Djinn looks after each task's work is committed, and every minute. Paused and
 granted wishes are not pushed by the cadence.
 
-**Merged safely first.** A push that is due waits while finished work is still in line for the branch, being merged, or
-while a correction repairs it: no push check runs meanwhile, and Djinn pushes once all of it is in and checked. The
-tasks' events say it: *a push of feat/invoice-pdf is due (the azima A2 ends); it waits for W7, W8 to merge, 15 minutes
-at most*. Fifteen minutes after the push became due, it goes all the same, if its push checks pass: a stream of merges
-never holds it back for good.
+**Merged safely first.** A push that is due waits while finished work is still in line for the branch, being merged,
+while a correction repairs it, or while a review worker commits what a task left not committed: no push check runs
+meanwhile, and Djinn pushes once all of it is in and checked, however long that takes. The tasks' events say it: *a push
+of feat/invoice-pdf is due (the azima A2 ends); it waits for W7, W8 to merge*.
 
 **Merges go on during the push checks.** The push checks run apart, in a worktree of their own, on the commit the
 branch was at when they began: the work that ends meanwhile merges at once, its commit checks run, and the tasks that
-wait for it start. A merge that lands before the push checks end makes them moot: Djinn neither pushes nor holds that
-commit, says so in the tasks' events (*the push checks of feat/invoice-pdf at 1a2b3c4d are moot: it moved to 5e6f7a8b
-meanwhile*), and checks the new tip once no merge is in line. Your own push, or one you approved, checks the new tip
-at once instead, three times at most.
+wait for it start. As soon as work is in line for the branch, a task's work waiting or being merged, a conflict or a red
+merge being corrected, a review started, the push checks Djinn started stop: their gate, their machine slot and their
+memory go to the merge, nothing is pushed nor held, nothing is recorded red, and the tasks' events say it (*the push
+checks of feat/invoice-pdf at 1a2b3c4d stop: W9 queued to merge into it*). Djinn checks the branch again once nothing is
+in line. Your own push, or one you approved, is never stopped for that: when a merge moves the branch during its checks,
+they are moot, and it checks the new tip at once instead, three times at most.
 
 ### Changing the cadence
 

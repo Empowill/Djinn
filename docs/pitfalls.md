@@ -100,6 +100,13 @@ the code does not say by itself; remove one when a change makes it false.
   `pushIfDue` or `pushPass` itself sees no push; a test that waits for a task to start sees it start before the push
   checks end, so the held push starts no correction yet (`workLeft`). *Do:* call `in.h.waitPushes()` after them; hold the
   push check with `in.testWait` to order a scheduler step before it. *Where:* `internal/harness/push_apart.go`.
+- **Harness integration tests: work queued stops the push checks.** Since W281 a push Djinn starts is cancelled as soon
+  as work is queued for its branch (`stopWhenQueued`): a task's work settled pending or integrating, a review or a
+  correction at work. *Sign:* a test that holds a push check (`holdTest`) and then merges a task sees the check stop,
+  `in.testCut` counting it, and no moot event; a task made with `in.finished` after a merge branches from the new tip
+  and never conflicts. *Do:* wait for the stop event rather than releasing the hold; make a task that must conflict
+  before the first merge, with `Integration` nil, and queue it later (`putTaskInDB`). *Where:*
+  `internal/harness/push_apart_test.go`.
 - **A done fake worker now tells the lead, and may babysit.** Since W492 a work task done reaches the lead once: its
   MERGED line, or one ENDED (`tellDone`, `tellNothingMerged`); since W498 a project with no checks integrates into a
   wish's own branch, so such tests see MERGED, not ENDED; since W499 a task ending done in a project with a babysit

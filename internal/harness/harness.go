@@ -118,24 +118,24 @@ type Harness struct {
 	integrateTick    time.Duration // a pass at least this often; 0: a minute
 	integrateKick    chan struct{} // wakes the integration
 	integrating      sync.Once
-	integrateDone    chan struct{}            // closed when the integration has stopped; nil until Integrate
-	tested           map[string]tested        // by wish/project; owned by the integration's pass
-	integrateMu      sync.Mutex               // held while a batch is integrated, main merged, or a push decided after its checks (push_apart.go)
-	installMu        sync.Mutex               // held while a build is installed
-	installing       string                   // the commit installed now, guarded by mu
-	installed        map[string]string        // by projectID: sha of last installed build, guarded by mu
-	uninstalledDelay time.Duration            // how long a build waits uninstalled before asking; 0: defaultUninstalledDelay
-	pushMu           sync.Mutex               // held while an integration branch is pushed: its push checks use the push worktree
-	pushJobsMu       sync.Mutex               // guards pushJobs
-	pushJobs         map[string]chan struct{} // by pushKey: the pushes run apart from the pass, closed once ended (push_apart.go)
-	pushingMu        sync.Mutex               // guards pushing
-	pushing          string                   // the push that runs now (pushKey), "" between pushes
-	built            func(Built)              // nil: no build is proposed
-	mainTested       map[string]mainTested    // by mainLine.key; owned by the integration's pass
-	pushWaits        map[string]time.Time     // by wish/project/branch: since when a push due waits for merges (repair.go); owned by the integration's pass
-	mainNow          atomic.Bool              // a release was found: the next pass looks at main whatever the cadence
-	toldApart        map[string]bool          // by wish and what was told the lead of a branch apart from its remote's (remote_branch.go), guarded by mu
-	mergedLooks      map[string]time.Time     // by repository, when Djinn last fetched main to find azimas merged into it (merged.go), guarded by mu
+	integrateDone    chan struct{}         // closed when the integration has stopped; nil until Integrate
+	tested           map[string]tested     // by wish/project; owned by the integration's pass
+	integrateMu      sync.Mutex            // held while a batch is integrated, main merged, or a push decided after its checks (push_apart.go)
+	installMu        sync.Mutex            // held while a build is installed
+	installing       string                // the commit installed now, guarded by mu
+	installed        map[string]string     // by projectID: sha of last installed build, guarded by mu
+	uninstalledDelay time.Duration         // how long a build waits uninstalled before asking; 0: defaultUninstalledDelay
+	pushMu           sync.Mutex            // held while an integration branch is pushed: its push checks use the push worktree
+	pushJobsMu       sync.Mutex            // guards pushJobs
+	pushJobs         map[string]*pushJob   // by pushKey: the pushes run apart from the pass (push_apart.go)
+	pushingMu        sync.Mutex            // guards pushing
+	pushing          string                // the push that runs now (pushKey), "" between pushes
+	built            func(Built)           // nil: no build is proposed
+	mainTested       map[string]mainTested // by mainLine.key; owned by the integration's pass
+	pushWaits        map[string]bool       // by wish/project/branch: a push due waits for merges, said (repair.go); owned by the integration's pass
+	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
+	toldApart        map[string]bool       // by wish and what was told the lead of a branch apart from its remote's (remote_branch.go), guarded by mu
+	mergedLooks      map[string]time.Time  // by repository, when Djinn last fetched main to find azimas merged into it (merged.go), guarded by mu
 
 	// The workers' health (health.go), judged by the scheduler's pass: guarded by sched.
 	accountOf AccountFunc                     // nil: no agent's account is read
@@ -299,8 +299,8 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
-		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]time.Time{}, toldApart: map[string]bool{}, mergedLooks: map[string]time.Time{},
-		pushJobs:  map[string]chan struct{}{},
+		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, mergedLooks: map[string]time.Time{},
+		pushJobs:  map[string]*pushJob{},
 		installed: map[string]string{}, preempted: map[string]string{}, aliases: map[string]string{},
 		resident: map[string]uint64{},
 	}

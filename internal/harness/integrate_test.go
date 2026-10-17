@@ -37,6 +37,7 @@ type integration struct {
 	testOut   string
 	afterTest func()                         // run once by the next test command, then forgotten
 	testWait  chan struct{}                  // the test command waits until it closes, the clock free meanwhile
+	testCut   int                            // the test commands whose context was cancelled while they waited
 	verdict   func(dir string) (string, int) // when set, what the test command says and exits with, from the files in dir
 	exits     map[string]int                 // what the other commands exit with, by their first word: setup, lint
 	forge     *fakeForge                     // answers gh and glab when set
@@ -123,8 +124,14 @@ func (in *integration) run(ctx context.Context, dir string, args []string) (stri
 		}
 		if wait := in.testWait; wait != nil {
 			in.mu.Unlock()
-			<-wait
-			in.mu.Lock()
+			select {
+			case <-wait:
+				in.mu.Lock()
+			case <-ctx.Done():
+				in.mu.Lock()
+				in.testCut++
+				return "", -1, ctx.Err()
+			}
 		}
 		if v := in.verdict; v != nil {
 			out, code := v(dir)
