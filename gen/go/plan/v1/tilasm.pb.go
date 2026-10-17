@@ -1380,6 +1380,169 @@ func (x *TilasmServiceReplyResponse) GetUnanswered() int32 {
 	return 0
 }
 
+type TilasmServicePlaceCommentsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tilasm whose comments were placed.
+	TilasmId string `protobuf:"bytes,1,opt,name=tilasm_id,json=tilasmId,proto3" json:"tilasm_id,omitempty"`
+	// The version of the page they were looked for in.
+	Version int32 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	// Each comment placed, with how its anchor stands there.
+	Places        []*CommentPlace `protobuf:"bytes,3,rep,name=places,proto3" json:"places,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TilasmServicePlaceCommentsRequest) Reset() {
+	*x = TilasmServicePlaceCommentsRequest{}
+	mi := &file_plan_v1_tilasm_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TilasmServicePlaceCommentsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TilasmServicePlaceCommentsRequest) ProtoMessage() {}
+
+func (x *TilasmServicePlaceCommentsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_tilasm_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TilasmServicePlaceCommentsRequest.ProtoReflect.Descriptor instead.
+func (*TilasmServicePlaceCommentsRequest) Descriptor() ([]byte, []int) {
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *TilasmServicePlaceCommentsRequest) GetTilasmId() string {
+	if x != nil {
+		return x.TilasmId
+	}
+	return ""
+}
+
+func (x *TilasmServicePlaceCommentsRequest) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *TilasmServicePlaceCommentsRequest) GetPlaces() []*CommentPlace {
+	if x != nil {
+		return x.Places
+	}
+	return nil
+}
+
+// CommentPlace is how a comment's anchor stands in a version of its tilasm.
+type CommentPlace struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The comment.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Found, changed or lost.
+	Status        AnchorStatus `protobuf:"varint,2,opt,name=status,proto3,enum=plan.v1.AnchorStatus" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommentPlace) Reset() {
+	*x = CommentPlace{}
+	mi := &file_plan_v1_tilasm_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommentPlace) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommentPlace) ProtoMessage() {}
+
+func (x *CommentPlace) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_tilasm_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommentPlace.ProtoReflect.Descriptor instead.
+func (*CommentPlace) Descriptor() ([]byte, []int) {
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CommentPlace) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CommentPlace) GetStatus() AnchorStatus {
+	if x != nil {
+		return x.Status
+	}
+	return AnchorStatus_ANCHOR_STATUS_UNSPECIFIED
+}
+
+type TilasmServicePlaceCommentsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The comments whose anchor took a new status, as stored.
+	Comments      []*TilasmComment `protobuf:"bytes,1,rep,name=comments,proto3" json:"comments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TilasmServicePlaceCommentsResponse) Reset() {
+	*x = TilasmServicePlaceCommentsResponse{}
+	mi := &file_plan_v1_tilasm_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TilasmServicePlaceCommentsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TilasmServicePlaceCommentsResponse) ProtoMessage() {}
+
+func (x *TilasmServicePlaceCommentsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plan_v1_tilasm_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TilasmServicePlaceCommentsResponse.ProtoReflect.Descriptor instead.
+func (*TilasmServicePlaceCommentsResponse) Descriptor() ([]byte, []int) {
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *TilasmServicePlaceCommentsResponse) GetComments() []*TilasmComment {
+	if x != nil {
+		return x.Comments
+	}
+	return nil
+}
+
 type TilasmServiceSendCommentsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The tilasm whose drafts to send.
@@ -1394,7 +1557,7 @@ type TilasmServiceSendCommentsRequest struct {
 
 func (x *TilasmServiceSendCommentsRequest) Reset() {
 	*x = TilasmServiceSendCommentsRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[12]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1406,7 +1569,7 @@ func (x *TilasmServiceSendCommentsRequest) String() string {
 func (*TilasmServiceSendCommentsRequest) ProtoMessage() {}
 
 func (x *TilasmServiceSendCommentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[12]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1419,7 +1582,7 @@ func (x *TilasmServiceSendCommentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceSendCommentsRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceSendCommentsRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{12}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TilasmServiceSendCommentsRequest) GetTilasmId() string {
@@ -1457,7 +1620,7 @@ type TilasmServiceSendCommentsResponse struct {
 
 func (x *TilasmServiceSendCommentsResponse) Reset() {
 	*x = TilasmServiceSendCommentsResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[13]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1469,7 +1632,7 @@ func (x *TilasmServiceSendCommentsResponse) String() string {
 func (*TilasmServiceSendCommentsResponse) ProtoMessage() {}
 
 func (x *TilasmServiceSendCommentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[13]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1482,7 +1645,7 @@ func (x *TilasmServiceSendCommentsResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use TilasmServiceSendCommentsResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceSendCommentsResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{13}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TilasmServiceSendCommentsResponse) GetSend() *TilasmSend {
@@ -1527,7 +1690,7 @@ type TilasmServicePutCommentRequest struct {
 
 func (x *TilasmServicePutCommentRequest) Reset() {
 	*x = TilasmServicePutCommentRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[14]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1539,7 +1702,7 @@ func (x *TilasmServicePutCommentRequest) String() string {
 func (*TilasmServicePutCommentRequest) ProtoMessage() {}
 
 func (x *TilasmServicePutCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[14]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1552,7 +1715,7 @@ func (x *TilasmServicePutCommentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServicePutCommentRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServicePutCommentRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{14}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *TilasmServicePutCommentRequest) GetTilasmId() string {
@@ -1607,7 +1770,7 @@ type TilasmServicePutCommentResponse struct {
 
 func (x *TilasmServicePutCommentResponse) Reset() {
 	*x = TilasmServicePutCommentResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[15]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1619,7 +1782,7 @@ func (x *TilasmServicePutCommentResponse) String() string {
 func (*TilasmServicePutCommentResponse) ProtoMessage() {}
 
 func (x *TilasmServicePutCommentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[15]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1632,7 +1795,7 @@ func (x *TilasmServicePutCommentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServicePutCommentResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServicePutCommentResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{15}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *TilasmServicePutCommentResponse) GetComment() *TilasmComment {
@@ -1652,7 +1815,7 @@ type TilasmServiceDeleteCommentRequest struct {
 
 func (x *TilasmServiceDeleteCommentRequest) Reset() {
 	*x = TilasmServiceDeleteCommentRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[16]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1664,7 +1827,7 @@ func (x *TilasmServiceDeleteCommentRequest) String() string {
 func (*TilasmServiceDeleteCommentRequest) ProtoMessage() {}
 
 func (x *TilasmServiceDeleteCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[16]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1677,7 +1840,7 @@ func (x *TilasmServiceDeleteCommentRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use TilasmServiceDeleteCommentRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceDeleteCommentRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{16}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *TilasmServiceDeleteCommentRequest) GetId() string {
@@ -1697,7 +1860,7 @@ type TilasmServiceDeleteCommentResponse struct {
 
 func (x *TilasmServiceDeleteCommentResponse) Reset() {
 	*x = TilasmServiceDeleteCommentResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[17]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1709,7 +1872,7 @@ func (x *TilasmServiceDeleteCommentResponse) String() string {
 func (*TilasmServiceDeleteCommentResponse) ProtoMessage() {}
 
 func (x *TilasmServiceDeleteCommentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[17]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1722,7 +1885,7 @@ func (x *TilasmServiceDeleteCommentResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use TilasmServiceDeleteCommentResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceDeleteCommentResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{17}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *TilasmServiceDeleteCommentResponse) GetComment() *TilasmComment {
@@ -1742,7 +1905,7 @@ type TilasmServiceDraftsRequest struct {
 
 func (x *TilasmServiceDraftsRequest) Reset() {
 	*x = TilasmServiceDraftsRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[18]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1754,7 +1917,7 @@ func (x *TilasmServiceDraftsRequest) String() string {
 func (*TilasmServiceDraftsRequest) ProtoMessage() {}
 
 func (x *TilasmServiceDraftsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[18]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1767,7 +1930,7 @@ func (x *TilasmServiceDraftsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceDraftsRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceDraftsRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{18}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *TilasmServiceDraftsRequest) GetWish() string {
@@ -1791,7 +1954,7 @@ type TilasmServiceDraftsResponse struct {
 
 func (x *TilasmServiceDraftsResponse) Reset() {
 	*x = TilasmServiceDraftsResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[19]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1803,7 +1966,7 @@ func (x *TilasmServiceDraftsResponse) String() string {
 func (*TilasmServiceDraftsResponse) ProtoMessage() {}
 
 func (x *TilasmServiceDraftsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[19]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1816,7 +1979,7 @@ func (x *TilasmServiceDraftsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceDraftsResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceDraftsResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{19}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *TilasmServiceDraftsResponse) GetComments() []*TilasmComment {
@@ -1854,7 +2017,7 @@ type TilasmServiceCommentsRequest struct {
 
 func (x *TilasmServiceCommentsRequest) Reset() {
 	*x = TilasmServiceCommentsRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[20]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1866,7 +2029,7 @@ func (x *TilasmServiceCommentsRequest) String() string {
 func (*TilasmServiceCommentsRequest) ProtoMessage() {}
 
 func (x *TilasmServiceCommentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[20]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1879,7 +2042,7 @@ func (x *TilasmServiceCommentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceCommentsRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceCommentsRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{20}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *TilasmServiceCommentsRequest) GetTilasm() *TilasmRef {
@@ -1915,7 +2078,7 @@ type TilasmServiceCommentsResponse struct {
 
 func (x *TilasmServiceCommentsResponse) Reset() {
 	*x = TilasmServiceCommentsResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[21]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1927,7 +2090,7 @@ func (x *TilasmServiceCommentsResponse) String() string {
 func (*TilasmServiceCommentsResponse) ProtoMessage() {}
 
 func (x *TilasmServiceCommentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[21]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1940,7 +2103,7 @@ func (x *TilasmServiceCommentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceCommentsResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceCommentsResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{21}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *TilasmServiceCommentsResponse) GetText() string {
@@ -1979,7 +2142,7 @@ type TilasmServicePutRequest struct {
 
 func (x *TilasmServicePutRequest) Reset() {
 	*x = TilasmServicePutRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[22]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1991,7 +2154,7 @@ func (x *TilasmServicePutRequest) String() string {
 func (*TilasmServicePutRequest) ProtoMessage() {}
 
 func (x *TilasmServicePutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[22]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2004,7 +2167,7 @@ func (x *TilasmServicePutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServicePutRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServicePutRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{22}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *TilasmServicePutRequest) GetPath() string {
@@ -2061,7 +2224,7 @@ type TilasmServicePutResponse struct {
 
 func (x *TilasmServicePutResponse) Reset() {
 	*x = TilasmServicePutResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[23]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2073,7 +2236,7 @@ func (x *TilasmServicePutResponse) String() string {
 func (*TilasmServicePutResponse) ProtoMessage() {}
 
 func (x *TilasmServicePutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[23]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2086,7 +2249,7 @@ func (x *TilasmServicePutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServicePutResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServicePutResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{23}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *TilasmServicePutResponse) GetTilasm() *Tilasm {
@@ -2116,7 +2279,7 @@ type TilasmServiceListRequest struct {
 
 func (x *TilasmServiceListRequest) Reset() {
 	*x = TilasmServiceListRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[24]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2128,7 +2291,7 @@ func (x *TilasmServiceListRequest) String() string {
 func (*TilasmServiceListRequest) ProtoMessage() {}
 
 func (x *TilasmServiceListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[24]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2141,7 +2304,7 @@ func (x *TilasmServiceListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceListRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceListRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{24}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *TilasmServiceListRequest) GetWish() string {
@@ -2168,7 +2331,7 @@ type TilasmServiceListResponse struct {
 
 func (x *TilasmServiceListResponse) Reset() {
 	*x = TilasmServiceListResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[25]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2180,7 +2343,7 @@ func (x *TilasmServiceListResponse) String() string {
 func (*TilasmServiceListResponse) ProtoMessage() {}
 
 func (x *TilasmServiceListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[25]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2193,7 +2356,7 @@ func (x *TilasmServiceListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceListResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceListResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{25}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *TilasmServiceListResponse) GetTilasms() []*Tilasm {
@@ -2217,7 +2380,7 @@ type TilasmServiceGetRequest struct {
 
 func (x *TilasmServiceGetRequest) Reset() {
 	*x = TilasmServiceGetRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[26]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2229,7 +2392,7 @@ func (x *TilasmServiceGetRequest) String() string {
 func (*TilasmServiceGetRequest) ProtoMessage() {}
 
 func (x *TilasmServiceGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[26]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2242,7 +2405,7 @@ func (x *TilasmServiceGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceGetRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceGetRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{26}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *TilasmServiceGetRequest) GetTilasm() *TilasmRef {
@@ -2291,7 +2454,7 @@ type TilasmServiceGetResponse struct {
 
 func (x *TilasmServiceGetResponse) Reset() {
 	*x = TilasmServiceGetResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[27]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2303,7 +2466,7 @@ func (x *TilasmServiceGetResponse) String() string {
 func (*TilasmServiceGetResponse) ProtoMessage() {}
 
 func (x *TilasmServiceGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[27]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2316,7 +2479,7 @@ func (x *TilasmServiceGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceGetResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceGetResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{27}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *TilasmServiceGetResponse) GetTilasm() *Tilasm {
@@ -2380,7 +2543,7 @@ type TilasmServiceOpenRequest struct {
 
 func (x *TilasmServiceOpenRequest) Reset() {
 	*x = TilasmServiceOpenRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[28]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2392,7 +2555,7 @@ func (x *TilasmServiceOpenRequest) String() string {
 func (*TilasmServiceOpenRequest) ProtoMessage() {}
 
 func (x *TilasmServiceOpenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[28]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2405,7 +2568,7 @@ func (x *TilasmServiceOpenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceOpenRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceOpenRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{28}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *TilasmServiceOpenRequest) GetTilasm() *TilasmRef {
@@ -2436,7 +2599,7 @@ type TilasmServiceOpenResponse struct {
 
 func (x *TilasmServiceOpenResponse) Reset() {
 	*x = TilasmServiceOpenResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[29]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2448,7 +2611,7 @@ func (x *TilasmServiceOpenResponse) String() string {
 func (*TilasmServiceOpenResponse) ProtoMessage() {}
 
 func (x *TilasmServiceOpenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[29]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2461,7 +2624,7 @@ func (x *TilasmServiceOpenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceOpenResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceOpenResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{29}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *TilasmServiceOpenResponse) GetTilasm() *Tilasm {
@@ -2497,7 +2660,7 @@ type TilasmServiceHistoryRequest struct {
 
 func (x *TilasmServiceHistoryRequest) Reset() {
 	*x = TilasmServiceHistoryRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[30]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2509,7 +2672,7 @@ func (x *TilasmServiceHistoryRequest) String() string {
 func (*TilasmServiceHistoryRequest) ProtoMessage() {}
 
 func (x *TilasmServiceHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[30]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2522,7 +2685,7 @@ func (x *TilasmServiceHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceHistoryRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{30}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *TilasmServiceHistoryRequest) GetTilasm() *TilasmRef {
@@ -2551,7 +2714,7 @@ type TilasmServiceHistoryResponse struct {
 
 func (x *TilasmServiceHistoryResponse) Reset() {
 	*x = TilasmServiceHistoryResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[31]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2563,7 +2726,7 @@ func (x *TilasmServiceHistoryResponse) String() string {
 func (*TilasmServiceHistoryResponse) ProtoMessage() {}
 
 func (x *TilasmServiceHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[31]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2576,7 +2739,7 @@ func (x *TilasmServiceHistoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceHistoryResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{31}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *TilasmServiceHistoryResponse) GetVersions() []*TilasmVersion {
@@ -2609,7 +2772,7 @@ type TilasmServiceRestoreRequest struct {
 
 func (x *TilasmServiceRestoreRequest) Reset() {
 	*x = TilasmServiceRestoreRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[32]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2621,7 +2784,7 @@ func (x *TilasmServiceRestoreRequest) String() string {
 func (*TilasmServiceRestoreRequest) ProtoMessage() {}
 
 func (x *TilasmServiceRestoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[32]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2634,7 +2797,7 @@ func (x *TilasmServiceRestoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceRestoreRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceRestoreRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{32}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *TilasmServiceRestoreRequest) GetTilasm() *TilasmRef {
@@ -2675,7 +2838,7 @@ type TilasmServiceRestoreResponse struct {
 
 func (x *TilasmServiceRestoreResponse) Reset() {
 	*x = TilasmServiceRestoreResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[33]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2687,7 +2850,7 @@ func (x *TilasmServiceRestoreResponse) String() string {
 func (*TilasmServiceRestoreResponse) ProtoMessage() {}
 
 func (x *TilasmServiceRestoreResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[33]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2700,7 +2863,7 @@ func (x *TilasmServiceRestoreResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceRestoreResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceRestoreResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{33}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *TilasmServiceRestoreResponse) GetTilasm() *Tilasm {
@@ -2725,7 +2888,7 @@ type TilasmServiceExportRequest struct {
 
 func (x *TilasmServiceExportRequest) Reset() {
 	*x = TilasmServiceExportRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[34]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2737,7 +2900,7 @@ func (x *TilasmServiceExportRequest) String() string {
 func (*TilasmServiceExportRequest) ProtoMessage() {}
 
 func (x *TilasmServiceExportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[34]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2750,7 +2913,7 @@ func (x *TilasmServiceExportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceExportRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceExportRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{34}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *TilasmServiceExportRequest) GetTilasm() *TilasmRef {
@@ -2786,7 +2949,7 @@ type TilasmServiceExportResponse struct {
 
 func (x *TilasmServiceExportResponse) Reset() {
 	*x = TilasmServiceExportResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[35]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2798,7 +2961,7 @@ func (x *TilasmServiceExportResponse) String() string {
 func (*TilasmServiceExportResponse) ProtoMessage() {}
 
 func (x *TilasmServiceExportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[35]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2811,7 +2974,7 @@ func (x *TilasmServiceExportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceExportResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceExportResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{35}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *TilasmServiceExportResponse) GetFile() string {
@@ -2842,7 +3005,7 @@ type TilasmServiceImportRequest struct {
 
 func (x *TilasmServiceImportRequest) Reset() {
 	*x = TilasmServiceImportRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[36]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2854,7 +3017,7 @@ func (x *TilasmServiceImportRequest) String() string {
 func (*TilasmServiceImportRequest) ProtoMessage() {}
 
 func (x *TilasmServiceImportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[36]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2867,7 +3030,7 @@ func (x *TilasmServiceImportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceImportRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServiceImportRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{36}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *TilasmServiceImportRequest) GetFile() string {
@@ -2901,7 +3064,7 @@ type TilasmServiceImportResponse struct {
 
 func (x *TilasmServiceImportResponse) Reset() {
 	*x = TilasmServiceImportResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[37]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2913,7 +3076,7 @@ func (x *TilasmServiceImportResponse) String() string {
 func (*TilasmServiceImportResponse) ProtoMessage() {}
 
 func (x *TilasmServiceImportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[37]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2926,7 +3089,7 @@ func (x *TilasmServiceImportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServiceImportResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServiceImportResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{37}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *TilasmServiceImportResponse) GetTilasm() *Tilasm {
@@ -2952,7 +3115,7 @@ type TilasmServicePutDataRequest struct {
 
 func (x *TilasmServicePutDataRequest) Reset() {
 	*x = TilasmServicePutDataRequest{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[38]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2964,7 +3127,7 @@ func (x *TilasmServicePutDataRequest) String() string {
 func (*TilasmServicePutDataRequest) ProtoMessage() {}
 
 func (x *TilasmServicePutDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[38]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2977,7 +3140,7 @@ func (x *TilasmServicePutDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServicePutDataRequest.ProtoReflect.Descriptor instead.
 func (*TilasmServicePutDataRequest) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{38}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *TilasmServicePutDataRequest) GetWish() string {
@@ -3020,7 +3183,7 @@ type TilasmServicePutDataResponse struct {
 
 func (x *TilasmServicePutDataResponse) Reset() {
 	*x = TilasmServicePutDataResponse{}
-	mi := &file_plan_v1_tilasm_proto_msgTypes[39]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3032,7 +3195,7 @@ func (x *TilasmServicePutDataResponse) String() string {
 func (*TilasmServicePutDataResponse) ProtoMessage() {}
 
 func (x *TilasmServicePutDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plan_v1_tilasm_proto_msgTypes[39]
+	mi := &file_plan_v1_tilasm_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3045,7 +3208,7 @@ func (x *TilasmServicePutDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TilasmServicePutDataResponse.ProtoReflect.Descriptor instead.
 func (*TilasmServicePutDataResponse) Descriptor() ([]byte, []int) {
-	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{39}
+	return file_plan_v1_tilasm_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *TilasmServicePutDataResponse) GetTilasm() *Tilasm {
@@ -3178,7 +3341,17 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\acomment\x18\x01 \x01(\v2\x16.plan.v1.TilasmCommentR\acomment\x12\x1e\n" +
 	"\n" +
 	"unanswered\x18\x02 \x01(\x05R\n" +
-	"unanswered\"\xa3\x01\n" +
+	"unanswered\"\xaa\x01\n" +
+	"!TilasmServicePlaceCommentsRequest\x12(\n" +
+	"\ttilasm_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\btilasmId\x12!\n" +
+	"\aversion\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x01R\aversion\x128\n" +
+	"\x06places\x18\x03 \x03(\v2\x15.plan.v1.CommentPlaceB\t\xbaH\x06\x92\x01\x03\x10\x90NR\x06places\"c\n" +
+	"\fCommentPlace\x12\x18\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x129\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x15.plan.v1.AnchorStatusB\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\x06status\"X\n" +
+	"\"TilasmServicePlaceCommentsResponse\x122\n" +
+	"\bcomments\x18\x01 \x03(\v2\x16.plan.v1.TilasmCommentR\bcomments\"\xa3\x01\n" +
 	" TilasmServiceSendCommentsRequest\x12(\n" +
 	"\ttilasm_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\btilasmId\x127\n" +
 	"\x06choice\x18\x02 \x01(\x0e2\x13.plan.v1.SendChoiceB\n" +
@@ -3304,7 +3477,7 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\x19ANCHOR_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ANCHOR_STATUS_FOUND\x10\x01\x12\x19\n" +
 	"\x15ANCHOR_STATUS_CHANGED\x10\x02\x12\x16\n" +
-	"\x12ANCHOR_STATUS_LOST\x10\x032\xce\v\n" +
+	"\x12ANCHOR_STATUS_LOST\x10\x032\xc2\f\n" +
 	"\rTilasmService\x12T\n" +
 	"\x03Put\x12 .plan.v1.TilasmServicePutRequest\x1a!.plan.v1.TilasmServicePutResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
 	"\x04List\x12!.plan.v1.TilasmServiceListRequest\x1a\".plan.v1.TilasmServiceListResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12S\n" +
@@ -3321,7 +3494,8 @@ const file_plan_v1_tilasm_proto_rawDesc = "" +
 	"\rDeleteComment\x12*.plan.v1.TilasmServiceDeleteCommentRequest\x1a+.plan.v1.TilasmServiceDeleteCommentResponse\"\b\xc8\xf3\x18\x02\xe0\xf3\x18\x01\x12\\\n" +
 	"\x06Drafts\x12#.plan.v1.TilasmServiceDraftsRequest\x1a$.plan.v1.TilasmServiceDraftsResponse\"\a\xc8\xf3\x18\x02\x90\x02\x01\x12o\n" +
 	"\fSendComments\x12).plan.v1.TilasmServiceSendCommentsRequest\x1a*.plan.v1.TilasmServiceSendCommentsResponse\"\b\xc8\xf3\x18\x02\xe0\xf3\x18\x01\x12Z\n" +
-	"\x05Reply\x12\".plan.v1.TilasmServiceReplyRequest\x1a#.plan.v1.TilasmServiceReplyResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x1a\f\xea\xf3\x18\btalismanB\x88\x01\n" +
+	"\x05Reply\x12\".plan.v1.TilasmServiceReplyRequest\x1a#.plan.v1.TilasmServiceReplyResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12r\n" +
+	"\rPlaceComments\x12*.plan.v1.TilasmServicePlaceCommentsRequest\x1a+.plan.v1.TilasmServicePlaceCommentsResponse\"\b\xc8\xf3\x18\x02\xe0\xf3\x18\x01\x1a\f\xea\xf3\x18\btalismanB\x88\x01\n" +
 	"\vcom.plan.v1B\vTilasmProtoP\x01Z/github.com/empowill/djinn/gen/go/plan/v1;planv1\xa2\x02\x03PXX\xaa\x02\aPlan.V1\xca\x02\aPlan\\V1\xe2\x02\x13Plan\\V1\\GPBMetadata\xea\x02\bPlan::V1b\x06proto3"
 
 var (
@@ -3337,7 +3511,7 @@ func file_plan_v1_tilasm_proto_rawDescGZIP() []byte {
 }
 
 var file_plan_v1_tilasm_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_plan_v1_tilasm_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
+var file_plan_v1_tilasm_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
 var file_plan_v1_tilasm_proto_goTypes = []any{
 	(CommentState)(0),                          // 0: plan.v1.CommentState
 	(SendChoice)(0),                            // 1: plan.v1.SendChoice
@@ -3355,117 +3529,125 @@ var file_plan_v1_tilasm_proto_goTypes = []any{
 	(*TilasmHold)(nil),                         // 13: plan.v1.TilasmHold
 	(*TilasmServiceReplyRequest)(nil),          // 14: plan.v1.TilasmServiceReplyRequest
 	(*TilasmServiceReplyResponse)(nil),         // 15: plan.v1.TilasmServiceReplyResponse
-	(*TilasmServiceSendCommentsRequest)(nil),   // 16: plan.v1.TilasmServiceSendCommentsRequest
-	(*TilasmServiceSendCommentsResponse)(nil),  // 17: plan.v1.TilasmServiceSendCommentsResponse
-	(*TilasmServicePutCommentRequest)(nil),     // 18: plan.v1.TilasmServicePutCommentRequest
-	(*TilasmServicePutCommentResponse)(nil),    // 19: plan.v1.TilasmServicePutCommentResponse
-	(*TilasmServiceDeleteCommentRequest)(nil),  // 20: plan.v1.TilasmServiceDeleteCommentRequest
-	(*TilasmServiceDeleteCommentResponse)(nil), // 21: plan.v1.TilasmServiceDeleteCommentResponse
-	(*TilasmServiceDraftsRequest)(nil),         // 22: plan.v1.TilasmServiceDraftsRequest
-	(*TilasmServiceDraftsResponse)(nil),        // 23: plan.v1.TilasmServiceDraftsResponse
-	(*TilasmServiceCommentsRequest)(nil),       // 24: plan.v1.TilasmServiceCommentsRequest
-	(*TilasmServiceCommentsResponse)(nil),      // 25: plan.v1.TilasmServiceCommentsResponse
-	(*TilasmServicePutRequest)(nil),            // 26: plan.v1.TilasmServicePutRequest
-	(*TilasmServicePutResponse)(nil),           // 27: plan.v1.TilasmServicePutResponse
-	(*TilasmServiceListRequest)(nil),           // 28: plan.v1.TilasmServiceListRequest
-	(*TilasmServiceListResponse)(nil),          // 29: plan.v1.TilasmServiceListResponse
-	(*TilasmServiceGetRequest)(nil),            // 30: plan.v1.TilasmServiceGetRequest
-	(*TilasmServiceGetResponse)(nil),           // 31: plan.v1.TilasmServiceGetResponse
-	(*TilasmServiceOpenRequest)(nil),           // 32: plan.v1.TilasmServiceOpenRequest
-	(*TilasmServiceOpenResponse)(nil),          // 33: plan.v1.TilasmServiceOpenResponse
-	(*TilasmServiceHistoryRequest)(nil),        // 34: plan.v1.TilasmServiceHistoryRequest
-	(*TilasmServiceHistoryResponse)(nil),       // 35: plan.v1.TilasmServiceHistoryResponse
-	(*TilasmServiceRestoreRequest)(nil),        // 36: plan.v1.TilasmServiceRestoreRequest
-	(*TilasmServiceRestoreResponse)(nil),       // 37: plan.v1.TilasmServiceRestoreResponse
-	(*TilasmServiceExportRequest)(nil),         // 38: plan.v1.TilasmServiceExportRequest
-	(*TilasmServiceExportResponse)(nil),        // 39: plan.v1.TilasmServiceExportResponse
-	(*TilasmServiceImportRequest)(nil),         // 40: plan.v1.TilasmServiceImportRequest
-	(*TilasmServiceImportResponse)(nil),        // 41: plan.v1.TilasmServiceImportResponse
-	(*TilasmServicePutDataRequest)(nil),        // 42: plan.v1.TilasmServicePutDataRequest
-	(*TilasmServicePutDataResponse)(nil),       // 43: plan.v1.TilasmServicePutDataResponse
-	(*timestamppb.Timestamp)(nil),              // 44: google.protobuf.Timestamp
+	(*TilasmServicePlaceCommentsRequest)(nil),  // 16: plan.v1.TilasmServicePlaceCommentsRequest
+	(*CommentPlace)(nil),                       // 17: plan.v1.CommentPlace
+	(*TilasmServicePlaceCommentsResponse)(nil), // 18: plan.v1.TilasmServicePlaceCommentsResponse
+	(*TilasmServiceSendCommentsRequest)(nil),   // 19: plan.v1.TilasmServiceSendCommentsRequest
+	(*TilasmServiceSendCommentsResponse)(nil),  // 20: plan.v1.TilasmServiceSendCommentsResponse
+	(*TilasmServicePutCommentRequest)(nil),     // 21: plan.v1.TilasmServicePutCommentRequest
+	(*TilasmServicePutCommentResponse)(nil),    // 22: plan.v1.TilasmServicePutCommentResponse
+	(*TilasmServiceDeleteCommentRequest)(nil),  // 23: plan.v1.TilasmServiceDeleteCommentRequest
+	(*TilasmServiceDeleteCommentResponse)(nil), // 24: plan.v1.TilasmServiceDeleteCommentResponse
+	(*TilasmServiceDraftsRequest)(nil),         // 25: plan.v1.TilasmServiceDraftsRequest
+	(*TilasmServiceDraftsResponse)(nil),        // 26: plan.v1.TilasmServiceDraftsResponse
+	(*TilasmServiceCommentsRequest)(nil),       // 27: plan.v1.TilasmServiceCommentsRequest
+	(*TilasmServiceCommentsResponse)(nil),      // 28: plan.v1.TilasmServiceCommentsResponse
+	(*TilasmServicePutRequest)(nil),            // 29: plan.v1.TilasmServicePutRequest
+	(*TilasmServicePutResponse)(nil),           // 30: plan.v1.TilasmServicePutResponse
+	(*TilasmServiceListRequest)(nil),           // 31: plan.v1.TilasmServiceListRequest
+	(*TilasmServiceListResponse)(nil),          // 32: plan.v1.TilasmServiceListResponse
+	(*TilasmServiceGetRequest)(nil),            // 33: plan.v1.TilasmServiceGetRequest
+	(*TilasmServiceGetResponse)(nil),           // 34: plan.v1.TilasmServiceGetResponse
+	(*TilasmServiceOpenRequest)(nil),           // 35: plan.v1.TilasmServiceOpenRequest
+	(*TilasmServiceOpenResponse)(nil),          // 36: plan.v1.TilasmServiceOpenResponse
+	(*TilasmServiceHistoryRequest)(nil),        // 37: plan.v1.TilasmServiceHistoryRequest
+	(*TilasmServiceHistoryResponse)(nil),       // 38: plan.v1.TilasmServiceHistoryResponse
+	(*TilasmServiceRestoreRequest)(nil),        // 39: plan.v1.TilasmServiceRestoreRequest
+	(*TilasmServiceRestoreResponse)(nil),       // 40: plan.v1.TilasmServiceRestoreResponse
+	(*TilasmServiceExportRequest)(nil),         // 41: plan.v1.TilasmServiceExportRequest
+	(*TilasmServiceExportResponse)(nil),        // 42: plan.v1.TilasmServiceExportResponse
+	(*TilasmServiceImportRequest)(nil),         // 43: plan.v1.TilasmServiceImportRequest
+	(*TilasmServiceImportResponse)(nil),        // 44: plan.v1.TilasmServiceImportResponse
+	(*TilasmServicePutDataRequest)(nil),        // 45: plan.v1.TilasmServicePutDataRequest
+	(*TilasmServicePutDataResponse)(nil),       // 46: plan.v1.TilasmServicePutDataResponse
+	(*timestamppb.Timestamp)(nil),              // 47: google.protobuf.Timestamp
 }
 var file_plan_v1_tilasm_proto_depIdxs = []int32{
 	5,  // 0: plan.v1.Tilasm.versions:type_name -> plan.v1.TilasmVersion
-	44, // 1: plan.v1.Tilasm.create_time:type_name -> google.protobuf.Timestamp
-	44, // 2: plan.v1.Tilasm.update_time:type_name -> google.protobuf.Timestamp
-	44, // 3: plan.v1.TilasmVersion.create_time:type_name -> google.protobuf.Timestamp
+	47, // 1: plan.v1.Tilasm.create_time:type_name -> google.protobuf.Timestamp
+	47, // 2: plan.v1.Tilasm.update_time:type_name -> google.protobuf.Timestamp
+	47, // 3: plan.v1.TilasmVersion.create_time:type_name -> google.protobuf.Timestamp
 	4,  // 4: plan.v1.TilasmExport.tilasm:type_name -> plan.v1.Tilasm
 	8,  // 5: plan.v1.TilasmExport.files:type_name -> plan.v1.TilasmFile
 	10, // 6: plan.v1.TilasmComment.anchor:type_name -> plan.v1.TilasmAnchor
 	0,  // 7: plan.v1.TilasmComment.state:type_name -> plan.v1.CommentState
-	44, // 8: plan.v1.TilasmComment.create_time:type_name -> google.protobuf.Timestamp
-	44, // 9: plan.v1.TilasmComment.update_time:type_name -> google.protobuf.Timestamp
-	44, // 10: plan.v1.TilasmComment.send_time:type_name -> google.protobuf.Timestamp
+	47, // 8: plan.v1.TilasmComment.create_time:type_name -> google.protobuf.Timestamp
+	47, // 9: plan.v1.TilasmComment.update_time:type_name -> google.protobuf.Timestamp
+	47, // 10: plan.v1.TilasmComment.send_time:type_name -> google.protobuf.Timestamp
 	11, // 11: plan.v1.TilasmComment.reply:type_name -> plan.v1.CommentReply
 	3,  // 12: plan.v1.TilasmAnchor.status:type_name -> plan.v1.AnchorStatus
-	44, // 13: plan.v1.CommentReply.create_time:type_name -> google.protobuf.Timestamp
+	47, // 13: plan.v1.CommentReply.create_time:type_name -> google.protobuf.Timestamp
 	1,  // 14: plan.v1.TilasmSend.choice:type_name -> plan.v1.SendChoice
-	44, // 15: plan.v1.TilasmSend.create_time:type_name -> google.protobuf.Timestamp
+	47, // 15: plan.v1.TilasmSend.create_time:type_name -> google.protobuf.Timestamp
 	2,  // 16: plan.v1.TilasmHold.reason:type_name -> plan.v1.TilasmHoldReason
 	6,  // 17: plan.v1.TilasmServiceReplyRequest.tilasm:type_name -> plan.v1.TilasmRef
 	9,  // 18: plan.v1.TilasmServiceReplyResponse.comment:type_name -> plan.v1.TilasmComment
-	1,  // 19: plan.v1.TilasmServiceSendCommentsRequest.choice:type_name -> plan.v1.SendChoice
-	12, // 20: plan.v1.TilasmServiceSendCommentsResponse.send:type_name -> plan.v1.TilasmSend
-	9,  // 21: plan.v1.TilasmServiceSendCommentsResponse.comments:type_name -> plan.v1.TilasmComment
-	10, // 22: plan.v1.TilasmServicePutCommentRequest.anchor:type_name -> plan.v1.TilasmAnchor
-	9,  // 23: plan.v1.TilasmServicePutCommentRequest.deleted:type_name -> plan.v1.TilasmComment
-	9,  // 24: plan.v1.TilasmServicePutCommentResponse.comment:type_name -> plan.v1.TilasmComment
-	9,  // 25: plan.v1.TilasmServiceDeleteCommentResponse.comment:type_name -> plan.v1.TilasmComment
-	9,  // 26: plan.v1.TilasmServiceDraftsResponse.comments:type_name -> plan.v1.TilasmComment
-	13, // 27: plan.v1.TilasmServiceDraftsResponse.holds:type_name -> plan.v1.TilasmHold
-	9,  // 28: plan.v1.TilasmServiceDraftsResponse.sent:type_name -> plan.v1.TilasmComment
-	6,  // 29: plan.v1.TilasmServiceCommentsRequest.tilasm:type_name -> plan.v1.TilasmRef
-	9,  // 30: plan.v1.TilasmServiceCommentsResponse.comments:type_name -> plan.v1.TilasmComment
-	4,  // 31: plan.v1.TilasmServicePutResponse.tilasm:type_name -> plan.v1.Tilasm
-	4,  // 32: plan.v1.TilasmServiceListResponse.tilasms:type_name -> plan.v1.Tilasm
-	6,  // 33: plan.v1.TilasmServiceGetRequest.tilasm:type_name -> plan.v1.TilasmRef
-	4,  // 34: plan.v1.TilasmServiceGetResponse.tilasm:type_name -> plan.v1.Tilasm
-	6,  // 35: plan.v1.TilasmServiceOpenRequest.tilasm:type_name -> plan.v1.TilasmRef
-	4,  // 36: plan.v1.TilasmServiceOpenResponse.tilasm:type_name -> plan.v1.Tilasm
-	6,  // 37: plan.v1.TilasmServiceHistoryRequest.tilasm:type_name -> plan.v1.TilasmRef
-	5,  // 38: plan.v1.TilasmServiceHistoryResponse.versions:type_name -> plan.v1.TilasmVersion
-	6,  // 39: plan.v1.TilasmServiceRestoreRequest.tilasm:type_name -> plan.v1.TilasmRef
-	4,  // 40: plan.v1.TilasmServiceRestoreResponse.tilasm:type_name -> plan.v1.Tilasm
-	6,  // 41: plan.v1.TilasmServiceExportRequest.tilasm:type_name -> plan.v1.TilasmRef
-	4,  // 42: plan.v1.TilasmServiceImportResponse.tilasm:type_name -> plan.v1.Tilasm
-	8,  // 43: plan.v1.TilasmServicePutDataRequest.files:type_name -> plan.v1.TilasmFile
-	4,  // 44: plan.v1.TilasmServicePutDataResponse.tilasm:type_name -> plan.v1.Tilasm
-	26, // 45: plan.v1.TilasmService.Put:input_type -> plan.v1.TilasmServicePutRequest
-	28, // 46: plan.v1.TilasmService.List:input_type -> plan.v1.TilasmServiceListRequest
-	30, // 47: plan.v1.TilasmService.Get:input_type -> plan.v1.TilasmServiceGetRequest
-	32, // 48: plan.v1.TilasmService.Open:input_type -> plan.v1.TilasmServiceOpenRequest
-	34, // 49: plan.v1.TilasmService.History:input_type -> plan.v1.TilasmServiceHistoryRequest
-	36, // 50: plan.v1.TilasmService.Restore:input_type -> plan.v1.TilasmServiceRestoreRequest
-	38, // 51: plan.v1.TilasmService.Export:input_type -> plan.v1.TilasmServiceExportRequest
-	40, // 52: plan.v1.TilasmService.Import:input_type -> plan.v1.TilasmServiceImportRequest
-	42, // 53: plan.v1.TilasmService.PutData:input_type -> plan.v1.TilasmServicePutDataRequest
-	24, // 54: plan.v1.TilasmService.Comments:input_type -> plan.v1.TilasmServiceCommentsRequest
-	18, // 55: plan.v1.TilasmService.PutComment:input_type -> plan.v1.TilasmServicePutCommentRequest
-	20, // 56: plan.v1.TilasmService.DeleteComment:input_type -> plan.v1.TilasmServiceDeleteCommentRequest
-	22, // 57: plan.v1.TilasmService.Drafts:input_type -> plan.v1.TilasmServiceDraftsRequest
-	16, // 58: plan.v1.TilasmService.SendComments:input_type -> plan.v1.TilasmServiceSendCommentsRequest
-	14, // 59: plan.v1.TilasmService.Reply:input_type -> plan.v1.TilasmServiceReplyRequest
-	27, // 60: plan.v1.TilasmService.Put:output_type -> plan.v1.TilasmServicePutResponse
-	29, // 61: plan.v1.TilasmService.List:output_type -> plan.v1.TilasmServiceListResponse
-	31, // 62: plan.v1.TilasmService.Get:output_type -> plan.v1.TilasmServiceGetResponse
-	33, // 63: plan.v1.TilasmService.Open:output_type -> plan.v1.TilasmServiceOpenResponse
-	35, // 64: plan.v1.TilasmService.History:output_type -> plan.v1.TilasmServiceHistoryResponse
-	37, // 65: plan.v1.TilasmService.Restore:output_type -> plan.v1.TilasmServiceRestoreResponse
-	39, // 66: plan.v1.TilasmService.Export:output_type -> plan.v1.TilasmServiceExportResponse
-	41, // 67: plan.v1.TilasmService.Import:output_type -> plan.v1.TilasmServiceImportResponse
-	43, // 68: plan.v1.TilasmService.PutData:output_type -> plan.v1.TilasmServicePutDataResponse
-	25, // 69: plan.v1.TilasmService.Comments:output_type -> plan.v1.TilasmServiceCommentsResponse
-	19, // 70: plan.v1.TilasmService.PutComment:output_type -> plan.v1.TilasmServicePutCommentResponse
-	21, // 71: plan.v1.TilasmService.DeleteComment:output_type -> plan.v1.TilasmServiceDeleteCommentResponse
-	23, // 72: plan.v1.TilasmService.Drafts:output_type -> plan.v1.TilasmServiceDraftsResponse
-	17, // 73: plan.v1.TilasmService.SendComments:output_type -> plan.v1.TilasmServiceSendCommentsResponse
-	15, // 74: plan.v1.TilasmService.Reply:output_type -> plan.v1.TilasmServiceReplyResponse
-	60, // [60:75] is the sub-list for method output_type
-	45, // [45:60] is the sub-list for method input_type
-	45, // [45:45] is the sub-list for extension type_name
-	45, // [45:45] is the sub-list for extension extendee
-	0,  // [0:45] is the sub-list for field type_name
+	17, // 19: plan.v1.TilasmServicePlaceCommentsRequest.places:type_name -> plan.v1.CommentPlace
+	3,  // 20: plan.v1.CommentPlace.status:type_name -> plan.v1.AnchorStatus
+	9,  // 21: plan.v1.TilasmServicePlaceCommentsResponse.comments:type_name -> plan.v1.TilasmComment
+	1,  // 22: plan.v1.TilasmServiceSendCommentsRequest.choice:type_name -> plan.v1.SendChoice
+	12, // 23: plan.v1.TilasmServiceSendCommentsResponse.send:type_name -> plan.v1.TilasmSend
+	9,  // 24: plan.v1.TilasmServiceSendCommentsResponse.comments:type_name -> plan.v1.TilasmComment
+	10, // 25: plan.v1.TilasmServicePutCommentRequest.anchor:type_name -> plan.v1.TilasmAnchor
+	9,  // 26: plan.v1.TilasmServicePutCommentRequest.deleted:type_name -> plan.v1.TilasmComment
+	9,  // 27: plan.v1.TilasmServicePutCommentResponse.comment:type_name -> plan.v1.TilasmComment
+	9,  // 28: plan.v1.TilasmServiceDeleteCommentResponse.comment:type_name -> plan.v1.TilasmComment
+	9,  // 29: plan.v1.TilasmServiceDraftsResponse.comments:type_name -> plan.v1.TilasmComment
+	13, // 30: plan.v1.TilasmServiceDraftsResponse.holds:type_name -> plan.v1.TilasmHold
+	9,  // 31: plan.v1.TilasmServiceDraftsResponse.sent:type_name -> plan.v1.TilasmComment
+	6,  // 32: plan.v1.TilasmServiceCommentsRequest.tilasm:type_name -> plan.v1.TilasmRef
+	9,  // 33: plan.v1.TilasmServiceCommentsResponse.comments:type_name -> plan.v1.TilasmComment
+	4,  // 34: plan.v1.TilasmServicePutResponse.tilasm:type_name -> plan.v1.Tilasm
+	4,  // 35: plan.v1.TilasmServiceListResponse.tilasms:type_name -> plan.v1.Tilasm
+	6,  // 36: plan.v1.TilasmServiceGetRequest.tilasm:type_name -> plan.v1.TilasmRef
+	4,  // 37: plan.v1.TilasmServiceGetResponse.tilasm:type_name -> plan.v1.Tilasm
+	6,  // 38: plan.v1.TilasmServiceOpenRequest.tilasm:type_name -> plan.v1.TilasmRef
+	4,  // 39: plan.v1.TilasmServiceOpenResponse.tilasm:type_name -> plan.v1.Tilasm
+	6,  // 40: plan.v1.TilasmServiceHistoryRequest.tilasm:type_name -> plan.v1.TilasmRef
+	5,  // 41: plan.v1.TilasmServiceHistoryResponse.versions:type_name -> plan.v1.TilasmVersion
+	6,  // 42: plan.v1.TilasmServiceRestoreRequest.tilasm:type_name -> plan.v1.TilasmRef
+	4,  // 43: plan.v1.TilasmServiceRestoreResponse.tilasm:type_name -> plan.v1.Tilasm
+	6,  // 44: plan.v1.TilasmServiceExportRequest.tilasm:type_name -> plan.v1.TilasmRef
+	4,  // 45: plan.v1.TilasmServiceImportResponse.tilasm:type_name -> plan.v1.Tilasm
+	8,  // 46: plan.v1.TilasmServicePutDataRequest.files:type_name -> plan.v1.TilasmFile
+	4,  // 47: plan.v1.TilasmServicePutDataResponse.tilasm:type_name -> plan.v1.Tilasm
+	29, // 48: plan.v1.TilasmService.Put:input_type -> plan.v1.TilasmServicePutRequest
+	31, // 49: plan.v1.TilasmService.List:input_type -> plan.v1.TilasmServiceListRequest
+	33, // 50: plan.v1.TilasmService.Get:input_type -> plan.v1.TilasmServiceGetRequest
+	35, // 51: plan.v1.TilasmService.Open:input_type -> plan.v1.TilasmServiceOpenRequest
+	37, // 52: plan.v1.TilasmService.History:input_type -> plan.v1.TilasmServiceHistoryRequest
+	39, // 53: plan.v1.TilasmService.Restore:input_type -> plan.v1.TilasmServiceRestoreRequest
+	41, // 54: plan.v1.TilasmService.Export:input_type -> plan.v1.TilasmServiceExportRequest
+	43, // 55: plan.v1.TilasmService.Import:input_type -> plan.v1.TilasmServiceImportRequest
+	45, // 56: plan.v1.TilasmService.PutData:input_type -> plan.v1.TilasmServicePutDataRequest
+	27, // 57: plan.v1.TilasmService.Comments:input_type -> plan.v1.TilasmServiceCommentsRequest
+	21, // 58: plan.v1.TilasmService.PutComment:input_type -> plan.v1.TilasmServicePutCommentRequest
+	23, // 59: plan.v1.TilasmService.DeleteComment:input_type -> plan.v1.TilasmServiceDeleteCommentRequest
+	25, // 60: plan.v1.TilasmService.Drafts:input_type -> plan.v1.TilasmServiceDraftsRequest
+	19, // 61: plan.v1.TilasmService.SendComments:input_type -> plan.v1.TilasmServiceSendCommentsRequest
+	14, // 62: plan.v1.TilasmService.Reply:input_type -> plan.v1.TilasmServiceReplyRequest
+	16, // 63: plan.v1.TilasmService.PlaceComments:input_type -> plan.v1.TilasmServicePlaceCommentsRequest
+	30, // 64: plan.v1.TilasmService.Put:output_type -> plan.v1.TilasmServicePutResponse
+	32, // 65: plan.v1.TilasmService.List:output_type -> plan.v1.TilasmServiceListResponse
+	34, // 66: plan.v1.TilasmService.Get:output_type -> plan.v1.TilasmServiceGetResponse
+	36, // 67: plan.v1.TilasmService.Open:output_type -> plan.v1.TilasmServiceOpenResponse
+	38, // 68: plan.v1.TilasmService.History:output_type -> plan.v1.TilasmServiceHistoryResponse
+	40, // 69: plan.v1.TilasmService.Restore:output_type -> plan.v1.TilasmServiceRestoreResponse
+	42, // 70: plan.v1.TilasmService.Export:output_type -> plan.v1.TilasmServiceExportResponse
+	44, // 71: plan.v1.TilasmService.Import:output_type -> plan.v1.TilasmServiceImportResponse
+	46, // 72: plan.v1.TilasmService.PutData:output_type -> plan.v1.TilasmServicePutDataResponse
+	28, // 73: plan.v1.TilasmService.Comments:output_type -> plan.v1.TilasmServiceCommentsResponse
+	22, // 74: plan.v1.TilasmService.PutComment:output_type -> plan.v1.TilasmServicePutCommentResponse
+	24, // 75: plan.v1.TilasmService.DeleteComment:output_type -> plan.v1.TilasmServiceDeleteCommentResponse
+	26, // 76: plan.v1.TilasmService.Drafts:output_type -> plan.v1.TilasmServiceDraftsResponse
+	20, // 77: plan.v1.TilasmService.SendComments:output_type -> plan.v1.TilasmServiceSendCommentsResponse
+	15, // 78: plan.v1.TilasmService.Reply:output_type -> plan.v1.TilasmServiceReplyResponse
+	18, // 79: plan.v1.TilasmService.PlaceComments:output_type -> plan.v1.TilasmServicePlaceCommentsResponse
+	64, // [64:80] is the sub-list for method output_type
+	48, // [48:64] is the sub-list for method input_type
+	48, // [48:48] is the sub-list for extension type_name
+	48, // [48:48] is the sub-list for extension extendee
+	0,  // [0:48] is the sub-list for field type_name
 }
 
 func init() { file_plan_v1_tilasm_proto_init() }
@@ -3483,7 +3665,7 @@ func file_plan_v1_tilasm_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plan_v1_tilasm_proto_rawDesc), len(file_plan_v1_tilasm_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   40,
+			NumMessages:   43,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

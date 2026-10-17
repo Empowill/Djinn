@@ -1,14 +1,17 @@
 // The developer's comments on a tilasm, as the Comments column beside its frame shows them (L08, flow A): drafts that
 // reach no agent until they are sent, then the sent ones with the Djinn's replies. The column writes one on the whole
-// tilasm or on a passage selected in the frame, edits a draft in place and deletes it with an Undo that stands five
-// seconds. What the column holds between two renders is a reducer, tested with node.
+// tilasm, on a passage selected in the frame or on an element aimed at, edits a draft in place and deletes it with an
+// Undo that stands five seconds. A new version of the tilasm places each anchor again: found, changed, or lost and kept
+// apart, under Detached, until it is reattached. What the column holds between two renders is a reducer, tested with
+// node, and so are the dots of the margin.
 import {
+  AnchorStatus,
   CommentState,
   type TilasmComment,
   type TilasmHold,
   TilasmHoldReason,
 } from "../../gen/ts/plan/v1/tilasm_pb";
-import type { Passage } from "./bridge";
+import type { Pick, PlaceStatus, Placed } from "./bridge";
 
 // How long a deleted draft can be put back.
 export const UNDO_MS = 5000;
@@ -72,8 +75,8 @@ export interface Column {
   editing: string;
   // Its text, as typed.
   text: string;
-  // The passage a new comment is on; none for the whole tilasm.
-  passage?: Passage;
+  // The passage or the element a new comment is on; none for the whole tilasm.
+  anchor?: Pick;
   // The draft deleted last, while its Undo stands, until that time in milliseconds.
   undo?: { comment: TilasmComment; until: number };
 }
@@ -84,9 +87,9 @@ export const NEW = "new";
 export const emptyColumn: Column = { editing: "", text: "" };
 
 export type ColumnAction =
-  // "On the whole tilasm", or Comment on a passage: a new card, below the others. A card being written takes the
-  // passage, and keeps its text.
-  | { type: "write"; passage?: Passage }
+  // "On the whole tilasm", Comment on a passage, or an element aimed at: a new card, below the others. A card being
+  // written takes the passage or the element, and keeps its text.
+  | { type: "write"; anchor?: Pick }
   // A draft opened for editing, with its text.
   | { type: "edit"; comment: TilasmComment }
   | { type: "type"; text: string }
@@ -104,12 +107,11 @@ export type ColumnAction =
 export function column(state: Column, action: ColumnAction): Column {
   switch (action.type) {
     case "write": {
-      if (state.editing === NEW && state.passage === action.passage)
-        return state;
+      if (state.editing === NEW && state.anchor === action.anchor) return state;
       const next =
         state.editing === NEW ? state : { ...state, editing: NEW, text: "" };
-      return action.passage
-        ? { ...next, passage: action.passage }
+      return action.anchor
+        ? { ...next, anchor: action.anchor }
         : unanchored(next);
     }
     case "edit":
@@ -140,9 +142,9 @@ export function column(state: Column, action: ColumnAction): Column {
   }
 }
 
-// unanchored is a column whose card is on no passage.
+// unanchored is a column whose card is on nothing in the page.
 function unanchored(state: Column): Column {
-  const { passage: _, ...rest } = state;
+  const { anchor: _, ...rest } = state;
   return rest;
 }
 
@@ -179,4 +181,85 @@ export function sendFoot(
     iterate: !held && count > 0,
     greyed: held && hold.reason !== TilasmHoldReason.SENT,
   };
+}
+
+// detached tells a comment whose passage or element a later version lost: its card waits under Detached.
+export const detached = (comment: TilasmComment): boolean =>
+  comment.anchor?.status === AnchorStatus.LOST;
+
+// columnGroups are the comments as the column shows them, drafts and sent, each group in the order given: those still
+// on the tilasm, then the detached ones.
+export function columnGroups(comments: readonly TilasmComment[]): {
+  attached: TilasmComment[];
+  detached: TilasmComment[];
+} {
+  return {
+    attached: comments.filter((c) => !detached(c)),
+    detached: comments.filter(detached),
+  };
+}
+
+const STATUS: Record<PlaceStatus, AnchorStatus> = {
+  found: AnchorStatus.FOUND,
+  changed: AnchorStatus.CHANGED,
+  lost: AnchorStatus.LOST,
+};
+
+// placesToWrite are the statuses the window writes once the frame placed the anchors in a version
+// (TilasmAnchor.status): for each comment written on an earlier version and not placed in this one yet. A comment on
+// the version it was written on stands where it was written; one the frame did not place, on another page, waits.
+export function placesToWrite(
+  comments: readonly TilasmComment[],
+  placed: readonly Placed[],
+  version: number,
+): { id: string; status: AnchorStatus }[] {
+  const byId = new Map(placed.map((p) => [p.id, p]));
+  const out: { id: string; status: AnchorStatus }[] = [];
+  for (const c of comments) {
+    const a = c.anchor;
+    const p = byId.get(c.id);
+    if (!a || !p || c.version >= version || a.statusVersion === version)
+      continue;
+    out.push({ id: c.id, status: STATUS[p.status] });
+  }
+  return out;
+}
+
+// A dot of the margin beside the frame: a comment's code, at the height of its anchor in the frame.
+export interface Dot {
+  id: string;
+  code: string;
+  top: number;
+  sent: boolean;
+}
+
+// dotsOf are the dots of the margin: one per comment whose anchor shows in the frame, height pixels high, at the top
+// of its anchor; two anchors on one line stack their dots, size pixels apart. Those past the frame's edges do not show.
+export function dotsOf(
+  comments: readonly TilasmComment[],
+  placed: readonly Placed[],
+  height: number,
+  size: number,
+): Dot[] {
+  const codes = new Map(comments.map((c) => [c.id, c]));
+  const dots: Dot[] = [];
+  const shown = placed
+    .filter((p) => p.top !== undefined && codes.has(p.id))
+    .sort((a, b) => (a.top ?? 0) - (b.top ?? 0));
+  let below = -Infinity;
+  for (const p of shown) {
+    const c = codes.get(p.id);
+    if (!c || p.top === undefined || p.bottom === undefined) continue;
+    if (p.bottom < 0 || p.top > height) continue;
+    const top = Math.max(p.top, below, 0);
+    if (top > height - size) continue;
+    dots.push({
+      id: c.id,
+      code: c.code,
+      top,
+      sent: c.state === CommentState.SENT,
+    });
+    below = top + size;
+  }
+  return dots;
 }

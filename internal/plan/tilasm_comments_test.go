@@ -370,3 +370,93 @@ func TestTilasmDrafts(t *testing.T) {
 		t.Errorf("put back, its code taken = %v, %v; want C8", back, err)
 	}
 }
+
+// TestTilasmPlaceComments: the window writes how each anchor stands in the tilasm's latest version, on a draft and on a
+// sent comment alike, their words untouched; the same status again writes nothing, an earlier version places nothing,
+// and a comment on the whole tilasm or on another tilasm is refused. The lead reads the status with the comment.
+func TestTilasmPlaceComments(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t, WithHome(t.TempDir()))
+	wish := c.wish(t)
+	src := folder(t, map[string]string{"index.html": page("Notes", "Notices group by wish.")})
+	putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: src, Wish: wish})
+	tilasm := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: src, Wish: wish, Code: "L01"}).GetTilasm()
+	passage := func() *planv1.TilasmAnchor {
+		return &planv1.TilasmAnchor{Page: "index.html", Exact: "group by wish", Label: "§ Notes"}
+	}
+	draft := &planv1.TilasmComment{
+		TilasmId: tilasm.GetId(), WishId: wish, Code: "C1", Text: "Which wish?", Anchor: passage(), Version: 1,
+		State: planv1.CommentState_COMMENT_STATE_DRAFT, UpdateTime: timestamppb.New(time.Unix(1000, 0)),
+	}
+	sent := &planv1.TilasmComment{
+		TilasmId: tilasm.GetId(), WishId: wish, Code: "C2", Text: "A figure.", Version: 1, Send: 1,
+		Anchor: &planv1.TilasmAnchor{Path: "figure:nth-of-type(1)", Fingerprint: "The path of a notice", Label: "figure: The path"},
+		State:  planv1.CommentState_COMMENT_STATE_SENT,
+	}
+	whole := &planv1.TilasmComment{
+		TilasmId: tilasm.GetId(), WishId: wish, Code: "C3", Text: "All of it.", Version: 1, State: planv1.CommentState_COMMENT_STATE_DRAFT,
+	}
+	elsewhere := &planv1.TilasmComment{
+		TilasmId: store.NewID(), WishId: wish, Code: "C1", Text: "Not here.", Anchor: passage(), State: planv1.CommentState_COMMENT_STATE_DRAFT,
+	}
+	putComments(t, c.store, draft, sent, whole, elsewhere)
+	place := func(version int32, places ...*planv1.CommentPlace) ([]string, error) {
+		res, err := c.tilasms.PlaceComments(ctx, connect.NewRequest(&planv1.TilasmServicePlaceCommentsRequest{
+			TilasmId: tilasm.GetId(), Version: version, Places: places,
+		}))
+		if err != nil {
+			return nil, err
+		}
+		return commentCodes(res.Msg.GetComments()), nil
+	}
+	stored := func(id string) *planv1.TilasmComment {
+		t.Helper()
+		got, err := store.Get[*planv1.TilasmComment](ctx, c.store, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	lost := planv1.AnchorStatus_ANCHOR_STATUS_LOST
+	changed := planv1.AnchorStatus_ANCHOR_STATUS_CHANGED
+
+	got, err := place(2, &planv1.CommentPlace{Id: draft.GetId(), Status: lost}, &planv1.CommentPlace{Id: sent.GetId(), Status: changed})
+	if err != nil || !slices.Equal(got, []string{"C1", "C2"}) {
+		t.Fatalf("placed = %v, %v; want C1 C2", got, err)
+	}
+	d := stored(draft.GetId())
+	if a := d.GetAnchor(); a.GetStatus() != lost || a.GetStatusVersion() != 2 || a.GetExact() != "group by wish" ||
+		d.GetText() != "Which wish?" || !proto.Equal(d.GetUpdateTime(), draft.GetUpdateTime()) {
+		t.Errorf("the draft placed = %v", d)
+	}
+	if a := stored(sent.GetId()).GetAnchor(); a.GetStatus() != changed || a.GetStatusVersion() != 2 {
+		t.Errorf("the sent comment placed = %v", a)
+	}
+	if got, err := place(2, &planv1.CommentPlace{Id: draft.GetId(), Status: lost}); err != nil || len(got) != 0 {
+		t.Errorf("placed again the same = %v, %v; want nothing written", got, err)
+	}
+	if got, err := place(1, &planv1.CommentPlace{Id: draft.GetId(), Status: planv1.AnchorStatus_ANCHOR_STATUS_FOUND}); err != nil || len(got) != 0 ||
+		stored(draft.GetId()).GetAnchor().GetStatus() != lost {
+		t.Errorf("an earlier version placed = %v, %v; want nothing written", got, err)
+	}
+	if _, err := place(2, &planv1.CommentPlace{Id: whole.GetId(), Status: lost}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("a comment on the whole tilasm placed = %v, want invalid", err)
+	}
+	if _, err := place(2, &planv1.CommentPlace{Id: elsewhere.GetId(), Status: lost}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("a comment of another tilasm placed = %v, want invalid", err)
+	}
+	if _, err := place(2, &planv1.CommentPlace{Id: draft.GetId()}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("no status = %v, want invalid", err)
+	}
+
+	// The lead reads where the sent comment stands.
+	res, err := c.tilasms.Comments(ctx, connect.NewRequest(&planv1.TilasmServiceCommentsRequest{
+		Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Code{Code: "L01"}}, Wish: wish,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := res.Msg.GetText(); !strings.Contains(text, "C2 on an element, figure: The path, written on version 1, changed in version 2") {
+		t.Errorf("comments read =\n%s", text)
+	}
+}
