@@ -272,6 +272,11 @@ the code does not say by itself; remove one when a change makes it false.
 
 ## The window
 
+- **A Get read beside a Watch that sends only changes.** The server's stream sends what changed since its own last
+  message, within a beat: a value set and set back inside the beat sends nothing. A Get answered meanwhile shows the
+  value in between, and kept, it stays on screen: the load gauge showed minimal for good while the notch was medium
+  again (W248, operating-load.spec in a full e2e run only). *Do:* once the stream has spoken, drop a Get answered
+  after it. *Where:* `LoadManager.start` in `src/operating-load.tsx`.
 - **Chromium hides WebKit bugs.** The window is WebKitGTK on Linux (`wails://localhost`); Playwright here runs
   Chromium. WebKit reads CSP `'self'` in a sandboxed frame as the opaque origin: tilasms rendered in Chromium, not in
   the window, until the server's origin was named (W188). *Do:* probe the real engine with `python3 -I`, `gi`
