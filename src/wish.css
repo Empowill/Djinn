@@ -407,6 +407,20 @@
   line-height: 1rem;
   white-space: nowrap;
 }
+/* A worker to relaunch (Task.health): an icon beside its code, the amber of a pause when stalled, the salmon of a
+   failure when it failed and may be relaunched. */
+.health-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--st-failed);
+}
+.health-mark.stalled {
+  color: var(--st-paused);
+}
+.wish-task-first-line > .health-mark {
+  margin-top: 0.25rem;
+}
 .wish-task-merges {
   padding: 0 0.875rem 0.625rem 2.125rem;
 }

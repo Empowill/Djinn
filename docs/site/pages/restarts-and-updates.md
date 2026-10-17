@@ -77,7 +77,8 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
 
 - **Your agent's usage limit.** The worker shows **Waiting for the limit**, with when the limit resets, and resumes a
   minute after, told that the limit has reset. When the reset time is unknown, Djinn tries again after 15 minutes,
-  then waits longer each time, up to 2 hours.
+  then waits longer each time, up to 2 hours. Sign the agent in with another account meanwhile and Djinn sees it
+  within a minute: the tasks the limit stopped resume at once. Either way, the Djinn hears once which tasks resume.
 - **A silent worker.** The Lamplighter, Djinn's watchdog, wakes a worker that printed nothing for 15 minutes with no
   process busy and no gate held or awaited, or whose process is lost: it ends it and continues it on its session. After
   three wakes in a row the task fails, saying so, and the Djinn is told.
@@ -88,6 +89,33 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
 
 Only the resumes after a usage limit count against a task: after three of them, it fails. A restart, a pause or a lost
 process costs it nothing.
+
+## A worker's health
+
+On each of its passes, Djinn's scheduler judges every worker from what it already knows of it: its last word, what its
+processes use of the processor, the gates it holds, its usage limit and its error. A worker is:
+
+| Health | What it means | What follows |
+|---|---|---|
+| Well | It spoke within ten minutes, or a command of it works the processor, or it holds a gate | Nothing |
+| Stalled | It said nothing for ten minutes and its processes stay idle, under 5% of a core | A mark beside it; the Djinn hears it |
+| Waiting for its limit | Its agent's usage limit stopped it | It resumes at the reset |
+| Limit lifted | The reset passed, or its agent's account changed | Djinn resumes it by itself; the Djinn hears it |
+| Can be relaunched | It failed for a reason a new turn may get past: its agent or its stream broke, a stop of Djinn cut it, a usage limit since lifted | A mark beside it; the Djinn hears it |
+
+A worker whose turn ended may still wait for work it started in the background: it is stalled only after thirty
+minutes. A task stopped on request, or failed for good (its budget, its permissions, a dependency, an error Djinn does
+not know), is never flagged.
+
+A flagged task shows a small circular arrow beside its code, on its card and in the tree, amber when stalled, salmon
+when it failed; its tooltip says why and how to relaunch it. The Djinn hears it once, in one line with the command
+that relaunches it, until its health changes again. Continuing the task relaunches it: a stalled worker is ended and
+continued on its own session, as the Lamplighter wakes one.
+
+The thresholds come from nine days of this machine's workers: of 330 817 pauses between two words of a worker, 64 passed
+ten minutes; every one whose processes worked 5% of a core or more was a command at work, and the idle ones were an
+outage of the agent's service, workers the Lamplighter woke, and workers waiting for their background work after their
+turn.
 
 ## Updates
 
@@ -123,7 +151,7 @@ offers to restart on it. See [Question and move](#question-and-move).
 - **Expecting an update to start by itself.** It never does: the banner waits for your click, so a restart never cuts
   your work by surprise.
 - **Restarting to hurry a worker.** A restart interrupts every worker, each one's command in progress included; a
-  worker that seems stuck is the Lamplighter's to wake.
+  worker that seems stuck is the Lamplighter's to wake, or the Djinn's to relaunch once its card shows it stalled.
 - **Looking for an interrupted task in what waits for you.** A task that could not resume is history: it is among the
   finished parts of its azima.
 

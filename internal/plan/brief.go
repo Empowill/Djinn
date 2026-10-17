@@ -184,6 +184,10 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"ended, failed, stopped or was cut short a new turn of its own session, in its worktree, as the same task. " +
 		"Fork it only to start a different task from its context: a fork of a task cut short closes it, " +
 		"\"continued in\" the fork.\n" +
+		"- **A `health` event is the scheduler's judgement of a worker (W188).** \"stalled\" or \"can be relaunched\" " +
+		"names the task, why, and the command that relaunches it (`djinn task continue <task>`, which also ends and " +
+		"continues a stalled worker): run it, unless what you know of the task says otherwise; never check a worker's " +
+		"health by hand first. A limit that \"lifted\" needs nothing: Djinn resumes those tasks by itself.\n" +
 		"- **Review comments on a diff**: `djinn task comment <task> \"…\" --file <path> --line <n> [--end-line <n>]` " +
 		"goes to the task's running worker; once it has ended, `djinn task turn-comments <task>` continues it or " +
 		"spawns a correction task in its azima.\n" +

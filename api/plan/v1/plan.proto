@@ -820,6 +820,9 @@ enum LeadEventKind {
   // An asleep question woke (Question.sleep): its conditions held, or the developer woke it. The lead checks that its
   // facts still hold (costs, the state of tasks and requests) and revises it if they changed.
   LEAD_EVENT_KIND_WOKE = 15;
+  // A worker's health changed (W188): a task flagged to relaunch (stalled, or retriable after a failure), with the
+  // command that relaunches it; or the tasks Djinn resumes by itself because their usage limit lifted.
+  LEAD_EVENT_KIND_HEALTH = 16;
 }
 
 // LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the
@@ -1231,6 +1234,45 @@ message Task {
   // branch's red push checks, a usage limit, a write scope, its wish or a question holds it. The window counts these
   // tasks as waiting for a place.
   bool room_wait = 72;
+  // How the scheduler judges its worker on each pass (W188): stalled, waiting for its usage limit, its limit lifted,
+  // or to relaunch after a failure Djinn does not repair by itself. Unset while the worker is well, and for a task
+  // stopped on request, failed for good, done or not started: those are never flagged.
+  TaskHealth health = 73;
+}
+
+// TaskHealth is how the scheduler judges a work task's worker (W188). It changes only when its state does: each change
+// into a flagged state (STALLED, RETRIABLE) tells the lead once, with the command that relaunches the task (djinn task
+// continue), and shows a mark beside the worker in the window.
+message TaskHealth {
+  // Where it stands.
+  HealthState state = 1;
+  // Why, in a few words: "silent 12 min, CPU 1%", "claude ended before the end of its turn".
+  string reason = 2 [(buf.validate.field).string.max_len = 512];
+  // When it came to this state.
+  google.protobuf.Timestamp since = 3;
+  // For a task stopped by its usage limit: a fingerprint of the account its agent was signed in with when the limit
+  // stopped it, a hash, never the account's name. Another fingerprint later says the account changed: the limit no
+  // longer holds. Empty when the agent tells no account.
+  string account = 4 [(buf.validate.field).string.max_len = 64];
+}
+
+// HealthState is the class the scheduler gives a work task's worker (W188).
+enum HealthState {
+  // Not judged: the worker is well (events lately, or a command at work with CPU, or a gate), or the task was stopped
+  // on request, failed for good, is done or has not started. Never flagged.
+  HEALTH_STATE_UNSPECIFIED = 0;
+  // Running, but silent and idle: no event and almost no CPU for a while (StallSilence; StallAfterTurn after its turn's
+  // result, when it may wait for its background work). Flagged: djinn task continue ends it and continues it on its
+  // session.
+  HEALTH_STATE_STALLED = 1;
+  // Stopped by its provider's usage limit, which has not lifted yet: Djinn resumes it at the reset.
+  HEALTH_STATE_LIMITED = 2;
+  // Waiting to resume after its usage limit, which lifted: its reset time passed, or its agent's account changed.
+  // Djinn resumes it by itself and tells the lead once; not flagged.
+  HEALTH_STATE_LIMIT_LIFTED = 3;
+  // Failed or cut short for a reason a new turn may get past (a usage limit since lifted, a restart of Djinn, a crash
+  // of its agent or its stream), and Djinn does not resume it by itself. Flagged: djinn task continue relaunches it.
+  HEALTH_STATE_RETRIABLE = 4;
 }
 
 // TaskBabysit is the pull or merge request a watcher babysits.
@@ -4610,8 +4652,9 @@ service TaskService {
   }
   // Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
   // session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
-  // Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
-  // task from its context, fork it instead (djinn task spawn --fork).
+  // Refused while it runs, but for a worker the scheduler flagged stalled (Task.health): that one is ended and
+  // continued on its session, as the Lamplighter wakes one. Refused when its worktree is gone, or when its agent cannot
+  // resume a session. To start another task from its context, fork it instead (djinn task spawn --fork).
   rpc Continue(TaskServiceContinueRequest) returns (TaskServiceContinueResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;

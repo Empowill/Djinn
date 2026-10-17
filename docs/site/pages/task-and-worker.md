@@ -159,6 +159,10 @@ on its row against that limit. Past them it stops, and continuing it gives it fi
 A task may also get a spending cap, which only Claude enforces. A worker silent for fifteen minutes, with nothing
 running, is woken and continued on its session; after three wakes in a row, its task fails, saying so.
 
+A worker silent for ten minutes with its processes idle, or a task failed for a reason a new turn may get past, carries
+a small circular arrow beside its code: the Djinn relaunches it by continuing it. See
+[A worker's health](#restarts-and-updates).
+
 ## Urgent tasks
 
 A task waits its turn: the corrections and reviews first, then the tasks Djinn resumes, then the ones others wait
