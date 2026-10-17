@@ -1107,6 +1107,7 @@ export function syncDescription(sync?: ProjectSync): string {
       target,
     });
   }
+  if (sync.landed) return t("project.sync_landed");
   return "";
 }
 

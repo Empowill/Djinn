@@ -3,6 +3,7 @@ package plan
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -427,6 +428,8 @@ type testPusher struct {
 	azimaWish string
 	// What Push fails with; nil: it pushes.
 	err error
+	// The branches ForgetSync forgot.
+	forgotten []string
 }
 
 func (p *testPusher) Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error) {
@@ -443,6 +446,47 @@ func (p *testPusher) Syncs(ctx context.Context, project *planv1.Project) ([]*pla
 		{WishId: "w1", Branch: "feat/x", Remote: "origin", Target: "feat/x", Ahead: 3, Behind: 1},
 		{WishId: p.azimaWish, Branch: "djinn/T1-azima", Remote: "origin", Target: "djinn/T1-azima", Ahead: 1, AzimaId: "a1"},
 	}, nil
+}
+
+// TestProjectForgetSync: the window's Forget, of a landed branch, reaches the pusher; a branch with commits to push, or
+// none Djinn pushes, is refused, by its own code.
+func TestProjectForgetSync(t *testing.T) {
+	ctx := t.Context()
+	pusher := &testPusher{}
+	c := serve(t, WithHome(t.TempDir()), WithPusher(pusher))
+	p, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := p.Msg.GetProject().GetName()
+	forget := func(branch string) error {
+		_, err := c.projects.ForgetSync(ctx, connect.NewRequest(&planv1.ProjectServiceForgetSyncRequest{Project: name, Branch: branch}))
+		return err
+	}
+	if err := forget("feat/x"); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("ForgetSync of a branch ahead: %v, want failed precondition", err)
+	}
+	if err := forget("feat/none"); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("ForgetSync of no branch Djinn pushes: %v, want not found", err)
+	}
+	if len(pusher.forgotten) != 0 {
+		t.Errorf("forgotten %v, want none", pusher.forgotten)
+	}
+}
+
+// ForgetSync forgets a branch among Syncs with nothing to push.
+func (p *testPusher) ForgetSync(ctx context.Context, project *planv1.Project, branch string) error {
+	syncs, _ := p.Syncs(ctx, project)
+	for _, s := range syncs {
+		if s.GetBranch() == branch {
+			if s.GetAhead() > 0 {
+				return fmt.Errorf("%s has %d commits to push", branch, s.GetAhead())
+			}
+			p.forgotten = append(p.forgotten, branch)
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s", store.ErrNotFound, branch)
 }
 
 func TestProjectPushAndSetPush(t *testing.T) {

@@ -59,6 +59,13 @@ it belongs to.
 The push button at the end of the line, *Push feat/invoice-pdf* on hover, pushes that branch alone. It shows when the
 branch has commits to push. Past three branches, the lines fold behind the first two.
 
+**What main holds waits for no push.** A commit already in the remote's main, or in the branch an azima lands in, is
+never counted to push: a branch whose merge request merged it into main, its remote copy left behind, has no line. A done
+azima's branch whose every commit is in main is **landed**: its card says **Landed in main**, and the cross beside it
+forgets its sync, so that Djinn lists it no more; nothing is deleted, here or on the remote, and a new commit on the
+branch brings it back. The command line does the same with the project's forget-sync command, given the project and
+the branch; it refuses a branch with commits to push.
+
 Your push is a push like Djinn's: the push checks run first, it never forces, and it works in either cadence.
 Nothing skips the push checks.
 

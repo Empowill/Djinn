@@ -35,6 +35,7 @@ import {
   Closer,
   type KeptWorktree,
   type Project,
+  type ProjectSync,
   type Provider,
   type Question,
   type Task,
@@ -599,6 +600,24 @@ export function WishView({
     [azimaSyncs, clients.projects, projects, store, wish.id],
   );
 
+  // Forgetting a landed branch's sync takes its line off the card; an error says why in a toast.
+  const handleForgetSync = useCallback(
+    (sync: ProjectSync) =>
+      void act(
+        () =>
+          clients.projects.forgetSync({
+            project:
+              projects.find((p) =>
+                p.syncs?.some((x) => x.branch === sync.branch),
+              )?.id ?? "",
+            branch: sync.branch,
+          }),
+        [Change.PROJECT],
+        t("azima.sync_forgotten", { branch: sync.branch }),
+      ),
+    [act, clients.projects, projects],
+  );
+
   const handleOpenPr = useCallback(
     (url: string) => {
       void clients.ui
@@ -656,6 +675,7 @@ export function WishView({
         isPerAzima={isPerAzima}
         sync={azimaSyncs.get(azima.id)}
         onPush={handlePushAzima}
+        onForgetSync={handleForgetSync}
         onOpenPr={handleOpenPr}
       />
     ),
@@ -669,6 +689,7 @@ export function WishView({
       isPerAzima,
       azimaSyncs,
       handlePushAzima,
+      handleForgetSync,
       handleOpenPr,
     ],
   );
