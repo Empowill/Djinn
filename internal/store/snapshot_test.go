@@ -1,6 +1,8 @@
 package store
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,15 +95,16 @@ func TestSnapshotFile(t *testing.T) {
 		src       string
 		preCreate bool
 		wantErr   string
+		wantIs    error // an error the system words its own way: "no such file" on Unix, not on Windows
 	}{
 		{
 			name: "copies closed database",
 			src:  src,
 		},
 		{
-			name:    "missing source file",
-			src:     filepath.Join(t.TempDir(), "missing.db"),
-			wantErr: "no such file",
+			name:   "missing source file",
+			src:    filepath.Join(t.TempDir(), "missing.db"),
+			wantIs: fs.ErrNotExist,
 		},
 		{
 			name:      "destination already exists",
@@ -120,6 +123,12 @@ func TestSnapshotFile(t *testing.T) {
 			}
 
 			err := SnapshotFile(ctx, tc.src, dst)
+			if tc.wantIs != nil {
+				if !errors.Is(err, tc.wantIs) {
+					t.Fatalf("SnapshotFile = %v, want %v", err, tc.wantIs)
+				}
+				return
+			}
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("SnapshotFile = %v, want error containing %q", err, tc.wantErr)
