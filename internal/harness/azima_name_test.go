@@ -429,7 +429,12 @@ func TestPullBehindTheRemote(t *testing.T) {
 	}
 
 	// The developer's own checkout of it holds changes: nothing moves it.
-	dev := filepath.Join(t.TempDir(), "dev")
+	// Git names a worktree by its resolved path: on macOS t.TempDir() is a link (docs/pitfalls.md).
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := filepath.Join(tmp, "dev")
 	r.git(t, r.repo, "worktree", "add", "--quiet", dev, branch)
 	writeFile(t, dev, "app/src/start.txt", "mine\n")
 	mate2 := r.onRemote(t, mate, branch, "mate2.txt")

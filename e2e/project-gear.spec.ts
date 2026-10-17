@@ -54,6 +54,10 @@ test("a project with something to fix: its gear red with a flame, folded on its 
       (p: { name: string }) => p.name === "kiln",
     );
     expect(kiln.to_fix).toBe(1);
+    // The folder as Djinn stored it, which the window shows: on Windows its long name, where the temporary folder
+    // may give a short one (RUNNER~1) that realpathSync keeps.
+    const directory: string = kiln.directory;
+    expect(path.basename(directory)).toBe(path.basename(folder));
     const notice = JSON.parse(
       djinn("project", "show", "kiln", "--json"),
     ).notices.find(
@@ -125,10 +129,12 @@ test("a project with something to fix: its gear red with a flame, folded on its 
     // Folded, no gear: the flame passes onto the folder, whose tooltip counts.
     await page.getByRole("button", { name: "Collapse the navigation" }).click();
     await expect(page.locator(".project-list .project-gear")).toHaveCount(0);
+    // By its title, not a CSS attribute selector: a Windows path's backslashes are escapes in CSS.
     await expect(
-      page.locator(
-        `.project-list .project-select[title="${folder} · 1 thing to fix"] .project-folder .project-flame`,
-      ),
+      page
+        .locator(".project-list")
+        .getByTitle(`${directory} · 1 thing to fix`, { exact: true })
+        .locator(".project-folder .project-flame"),
     ).toBeVisible();
     await page.getByRole("button", { name: "Expand the navigation" }).click();
 
