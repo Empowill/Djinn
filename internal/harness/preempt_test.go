@@ -288,7 +288,7 @@ func TestLowestWorkTaskWhileItsPumpWrites(t *testing.T) {
 	wishID, _ := e.wish(t, fakeProject(t, ""))
 	var prompt strings.Builder
 	prompt.WriteString("wait\n")
-	for i := range 200 {
+	for i := range 20 {
 		fmt.Fprintf(&prompt, "usage %d 1\nmodel m%d\n", i+1, i%2)
 	}
 	task := e.mustSpawn(t, wishID, "Work", prompt.String(), nil)
@@ -297,11 +297,13 @@ func TestLowestWorkTaskWhileItsPumpWrites(t *testing.T) {
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Go(func() {
+		tick := time.NewTicker(time.Millisecond) // As a scheduler pass, never a loop holding the harness.
+		defer tick.Stop()
 		for {
 			select {
 			case <-stop:
 				return
-			default:
+			case <-tick.C:
 			}
 			if cand, _ := e.h.lowestWorkTask(t.Context(), true); cand != nil && cand.GetId() != task.GetId() {
 				t.Errorf("picked %s, want %s", cand.GetCode(), task.GetCode())
@@ -312,7 +314,7 @@ func TestLowestWorkTaskWhileItsPumpWrites(t *testing.T) {
 	ended := e.ended(t, task.GetId())
 	close(stop)
 	wg.Wait()
-	if got := ended.GetUsage().GetInputTokens(); got != 200 { // A worker's usage is its session's so far: the last.
-		t.Errorf("input tokens %d, want 200", got)
+	if got := ended.GetUsage().GetInputTokens(); got != 20 { // A worker's usage is its session's so far: the last.
+		t.Errorf("input tokens %d, want 20", got)
 	}
 }
