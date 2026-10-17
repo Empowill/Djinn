@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
@@ -417,4 +418,67 @@ func hasChange(msg *planv1.WishServiceWatchResponse, kind planv1.Change) bool {
 		}
 	}
 	return false
+}
+
+// TestTilasmSendReads: the window reads when the Djinn read each send, from its comments event acknowledged; a send
+// that waits is not read, and one whose event Djinn no longer keeps stays read, without a time.
+func TestTilasmSendReads(t *testing.T) {
+	ctx := t.Context()
+	f := newSendFixture(t)
+	reads := func() []*planv1.TilasmSendRead {
+		t.Helper()
+		res, err := f.c.tilasms.Drafts(ctx, connect.NewRequest(&planv1.TilasmServiceDraftsRequest{Wish: f.wish}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetReads()
+	}
+	f.draft(t, "A paused wish: do its notices wait?", nil)
+	if _, err := f.send(t, planv1.SendChoice_SEND_CHOICE_ITERATE, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := reads(); len(got) != 0 {
+		t.Fatalf("reads before the lead read = %v", got)
+	}
+	at := timestamppb.New(time.Date(2026, 10, 16, 18, 43, 0, 0, time.UTC))
+	first := commentEvents(t, f.c.store)
+	if err := f.c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actor, "test/ack", &planv1.LeadServiceWatchRequest{}); err != nil {
+			return err
+		}
+		for _, e := range first {
+			e.AckSessionId, e.AckTime = session, at
+			if err := tx.Put(e); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := reads()
+	if len(got) != 1 || got[0].GetTilasmId() != f.tilasm.GetId() || got[0].GetSend() != 1 ||
+		!got[0].GetReadTime().AsTime().Equal(at.AsTime()) {
+		t.Fatalf("reads once the lead read send 1 = %v", got)
+	}
+
+	f.draft(t, "One more.", nil)
+	if _, err := f.send(t, planv1.SendChoice_SEND_CHOICE_ITERATE, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := reads(); len(got) != 1 || got[0].GetSend() != 1 {
+		t.Errorf("reads while send 2 waits = %v, want send 1 only", got)
+	}
+	// A week after it was read, Djinn drops the event: the send stays read.
+	if err := f.c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actor, "test/drop", &planv1.LeadServiceWatchRequest{}); err != nil {
+			return err
+		}
+		return tx.Delete(first[0])
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := reads(); len(got) != 1 || got[0].GetSend() != 1 || got[0].GetReadTime() != nil {
+		t.Errorf("reads once the event of send 1 is gone = %v, want send 1 without a time", got)
+	}
 }

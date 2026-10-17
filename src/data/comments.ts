@@ -3,13 +3,19 @@
 // tilasm, on a passage selected in the frame or on an element aimed at, edits a draft in place and deletes it with an
 // Undo that stands five seconds. A new version of the tilasm places each anchor again: found, changed, or lost and kept
 // apart, under Detached, until it is reattached. What the column holds between two renders is a reducer, tested with
-// node, and so are the dots of the margin.
+// node, and so are the dots of the margin. Then what becomes of them: each card says whether the Djinn read its send
+// and replied, the version a task linked to comments put says which, and a toast counts what a new version found again.
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+
+import type { Task } from "../../gen/ts/plan/v1/plan_pb";
 import {
   AnchorStatus,
   CommentState,
+  type Tilasm,
   type TilasmComment,
   type TilasmHold,
   TilasmHoldReason,
+  type TilasmSendRead,
 } from "../../gen/ts/plan/v1/tilasm_pb";
 import type { Pick, PlaceStatus, Placed } from "./bridge";
 
@@ -262,4 +268,63 @@ export function dotsOf(
     below = top + size;
   }
   return dots;
+}
+
+// CardState is where a comment stands, as its card says: a draft; sent, its send waiting for the Djinn; read by the
+// Djinn, when it read it if Djinn still knows; replied.
+export type CardState =
+  | { kind: "draft" }
+  | { kind: "sent"; send: number }
+  | { kind: "read"; time?: Timestamp }
+  | { kind: "replied" };
+
+// cardState is where a comment stands, from the sends the Djinn read (TilasmSendRead, from LeadEvent.ack_time).
+export function cardState(
+  comment: TilasmComment,
+  reads: readonly TilasmSendRead[],
+): CardState {
+  if (comment.state !== CommentState.SENT) return { kind: "draft" };
+  if (comment.reply) return { kind: "replied" };
+  const read = reads.find(
+    (r) => r.tilasmId === comment.tilasmId && r.send === comment.send,
+  );
+  return read
+    ? { kind: "read", time: read.readTime }
+    : { kind: "sent", send: comment.send };
+}
+
+// versionFor says where a tilasm's latest version comes from, when the task that put it (TilasmVersion.author) is
+// one the Djinn's replies link to comments: that task's code and the comments', in the order written. Nothing for a
+// version the lead, the developer or another task put.
+export function versionFor(
+  tilasm: Tilasm,
+  sent: readonly TilasmComment[],
+  tasks: readonly Task[],
+): { task: string; comments: string[] } | undefined {
+  const author = tilasm.versions.at(-1)?.author ?? "";
+  const task = author
+    ? tasks.find((t) => t.code.toUpperCase() === author.toUpperCase())
+    : undefined;
+  if (!task) return undefined;
+  const comments = cards([], sent)
+    .filter(
+      (c) => c.tilasmId === tilasm.id && c.reply?.taskIds.includes(task.id),
+    )
+    .map((c) => c.code);
+  return comments.length > 0 ? { task: task.code, comments } : undefined;
+}
+
+// placeCounts counts what a new version found of the comments placed in it: found, changed, lost. The toast says it.
+export function placeCounts(places: readonly { status: AnchorStatus }[]): {
+  found: number;
+  changed: number;
+  lost: number;
+} {
+  const count = (status: AnchorStatus) =>
+    places.filter((p) => p.status === status).length;
+  return {
+    found: count(AnchorStatus.FOUND),
+    changed: count(AnchorStatus.CHANGED),
+    lost: count(AnchorStatus.LOST),
+  };
 }

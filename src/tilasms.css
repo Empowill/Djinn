@@ -440,6 +440,16 @@
   display: block;
   margin-top: 0.25rem;
 }
+/* Each task a reply names keeps its code beside its state, never split over two lines. */
+.tilasm-comment-reply-task {
+  white-space: nowrap;
+}
+/* Over a view, no head says where the latest version comes from: the column does, above the cards. */
+.tilasm-comments-origin {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: var(--font-size-body);
+}
 .tilasm-comment-text {
   margin: 0.25rem 0 0;
   white-space: pre-wrap;

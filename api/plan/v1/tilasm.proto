@@ -184,6 +184,17 @@ message TilasmSend {
   google.protobuf.Timestamp create_time = 7;
 }
 
+// TilasmSendRead is when the Djinn read a send of a tilasm's comments: its lead event acknowledged (LeadEvent.ack_time),
+// computed on every read, never stored. The cards of the comments it carried say so.
+message TilasmSendRead {
+  // The tilasm sent on.
+  string tilasm_id = 1;
+  // The send, 1, 2… within the tilasm.
+  int32 send = 2;
+  // When the lead acknowledged its event; unset once Djinn no longer keeps the event, a week after it was read.
+  google.protobuf.Timestamp read_time = 3;
+}
+
 // SendChoice is what the developer asks of the Djinn with a send of comments.
 enum SendChoice {
   // Not set.
@@ -471,6 +482,8 @@ message TilasmServiceDraftsResponse {
   repeated TilasmHold holds = 2;
   // The comments sent on them, with the Djinn's replies, for their cards: by send, then code.
   repeated TilasmComment sent = 3;
+  // The sends the Djinn read, by tilasm then send; one that waits for it is not in it.
+  repeated TilasmSendRead reads = 4;
 }
 
 message TilasmServiceCommentsRequest {

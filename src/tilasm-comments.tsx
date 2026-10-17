@@ -8,11 +8,14 @@
 // deleted at once, with an Undo that stands five seconds instead of a dialog. A draft stays in Djinn's store and
 // reaches no agent until its foot sends them all (decision Q29): a last comment on the whole tilasm, then Launch or
 // Iterate, confirmed in a line. A tilasm held, as the server computes it, greys its buttons, and its comments when a
-// task works on it or its work was launched, with a line that says why. Its model is src/data/comments.ts.
+// task works on it or its work was launched, with a line that says why. Then each card says what became of it: sent,
+// read by the Djinn (its lead event acknowledged), replied, with the state of each task the reply names. Its model is
+// src/data/comments.ts.
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
 
+import type { Task } from "../gen/ts/plan/v1/plan_pb";
 import {
   AnchorStatus,
   CommentState,
@@ -21,6 +24,7 @@ import {
   type TilasmComment,
   type TilasmHold,
   TilasmHoldReason,
+  type TilasmSendRead,
 } from "../gen/ts/plan/v1/tilasm_pb";
 import { type Pick, type Placed, isPassage } from "./data/bridge";
 import {
@@ -28,6 +32,7 @@ import {
   NEW,
   anchorKind,
   canSave,
+  cardState,
   cards,
   column,
   columnGroups,
@@ -35,7 +40,9 @@ import {
   emptyColumn,
   sendFoot,
 } from "./data/comments";
+import { taskStatusText, taskTone, when } from "./data/format";
 import { t } from "./i18n";
+import { StatusBadge } from "./status";
 
 // What the column asks of the store; each resolves once the drafts shown are read again.
 export interface CommentWrites {
@@ -49,7 +56,7 @@ export interface CommentWrites {
   ) => Promise<void>;
   // Stores where the anchors of a tilasm's comments stand in a version.
   place: (
-    tilasmId: string,
+    tilasm: { id: string; code: string },
     version: number,
     places: { id: string; status: AnchorStatus }[],
   ) => Promise<void>;
@@ -106,7 +113,9 @@ export function CommentsColumn({
   version,
   drafts,
   sent = [],
-  codes,
+  reads = [],
+  tasks,
+  origin,
   hold,
   writes,
   onError,
@@ -128,8 +137,12 @@ export function CommentsColumn({
   drafts: readonly TilasmComment[];
   // The comments sent on it, with the Djinn's replies.
   sent?: readonly TilasmComment[];
-  // The codes of the wish's tasks, by id: those a reply names.
-  codes?: ReadonlyMap<string, string>;
+  // The sends on it the Djinn read: their cards say so.
+  reads?: readonly TilasmSendRead[];
+  // The wish's tasks, by id: those a reply names, with their state.
+  tasks?: ReadonlyMap<string, Task>;
+  // Where its latest version comes from, said above the cards when no head of the tilasm says it.
+  origin?: string;
   // Why it takes no send for now; none: it does.
   hold?: TilasmHold;
   writes: CommentWrites;
@@ -245,11 +258,7 @@ export function CommentsColumn({
             </button>
           )}
           <span className="tilasm-comment-state">
-            {!sent
-              ? t("tilasms.comment_draft")
-              : comment.reply
-                ? t("tilasms.comment_replied")
-                : t("tilasms.comment_sent", { send: comment.send })}
+            {stateText(cardState(comment, reads))}
           </span>
           {!sent && state.editing !== comment.id && (
             <span className="tilasm-comment-actions">
@@ -341,7 +350,7 @@ export function CommentsColumn({
         ) : (
           <p className="tilasm-comment-text">{comment.text}</p>
         )}
-        {sent && <Reply comment={comment} codes={codes} />}
+        {sent && <Reply comment={comment} tasks={tasks} />}
       </li>
     );
   };
@@ -372,6 +381,7 @@ export function CommentsColumn({
         </button>
       </div>
       <div ref={body} className="tilasm-comments-body">
+        {origin && <p className="tilasm-comments-origin">{origin}</p>}
         {drafts.length === 0 && sent.length === 0 && state.editing !== NEW && (
           <p className="muted-text">{t("tilasms.comments_none")}</p>
         )}
@@ -447,17 +457,33 @@ export function CommentsColumn({
   );
 }
 
-// Reply is the Djinn's reply under a comment sent, with the tasks it made of the comment.
+// stateText is what a card says of where its comment stands.
+function stateText(state: ReturnType<typeof cardState>): string {
+  switch (state.kind) {
+    case "draft":
+      return t("tilasms.comment_draft");
+    case "sent":
+      return t("tilasms.comment_sent", { send: state.send });
+    case "read":
+      return state.time
+        ? t("tilasms.comment_read", { time: when(state.time) })
+        : t("tilasms.comment_read_untimed");
+    case "replied":
+      return t("tilasms.comment_replied");
+  }
+}
+
+// Reply is the Djinn's reply under a comment sent, with the tasks it made of the comment, each in its state.
 function Reply({
   comment,
-  codes,
+  tasks: wish,
 }: {
   comment: TilasmComment;
-  codes?: ReadonlyMap<string, string>;
+  tasks?: ReadonlyMap<string, Task>;
 }) {
   const reply = comment.reply;
   if (!reply) return null;
-  const tasks = reply.taskIds.map((id) => codes?.get(id) ?? id.slice(0, 8));
+  const tasks = reply.taskIds.map((id) => ({ id, task: wish?.get(id) }));
   return (
     <div
       className="tilasm-comment-reply"
@@ -472,7 +498,24 @@ function Reply({
       <p className="tilasm-comment-text">{reply.text}</p>
       {tasks.length > 0 && (
         <span className="tilasm-comment-reply-tasks">
-          {t("tilasms.reply_tasks", { tasks: tasks.join(", ") })}
+          {t("tilasms.reply_tasks")}
+          {tasks.map(({ id, task }, i) => (
+            <span key={id} className="tilasm-comment-reply-task">
+              {i > 0 ? ", " : " "}
+              <span className="tilasm-code">
+                {task?.code ?? id.slice(0, 8)}
+              </span>
+              {task && (
+                <>
+                  {" "}
+                  <StatusBadge
+                    tone={taskTone(task)}
+                    label={taskStatusText(task)}
+                  />
+                </>
+              )}
+            </span>
+          ))}
         </span>
       )}
     </div>

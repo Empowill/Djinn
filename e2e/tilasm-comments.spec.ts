@@ -17,6 +17,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { drainLead, dropLead, leadFolder, setLead } from "./lead";
+
 const shots = path.join(__dirname, "../test-results/e2e");
 const binary = path.resolve(
   __dirname,
@@ -1057,5 +1059,190 @@ test("a new version put with --code finds each comment found, changed or lost, a
   await expect
     .poll(async () => (await highlighted(await frameOf(page)))["djinn-draft"])
     .toContain("wish journal");
+  expect(errors).toEqual([]);
+});
+
+// What becomes of the comments sent (L08, step 8), with demonstration tasks: a wish imported as Djinn leaves it, W1's
+// work merging, W2 done. The cards say Sent until the lead's watch reads the send, then Read by the Djinn; each reply
+// names its tasks in their state; the next version, put by W2, says it is for the comments W2 was made of; and a toast
+// counts what it found again of them. No worker runs, no model is called.
+test("a sent comment is read by the Djinn, replied with its tasks' state, and the version a task put for it says so", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const title = `What becomes of comments ${randomUUID().slice(0, 8)}`;
+  const wishId = randomUUID();
+  made.push(wishId);
+  const at = "2026-10-17T08:00:00Z";
+  const task = (code: string, name: string, extra: object) => ({
+    id: randomUUID(),
+    wish_id: wishId,
+    code,
+    title: name,
+    status: "TASK_STATUS_DONE",
+    create_time: at,
+    end_time: at,
+    ...extra,
+  });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-becomes-"));
+  try {
+    fs.writeFileSync(
+      path.join(dir, "wish.json"),
+      JSON.stringify({
+        version: 1,
+        create_time: at,
+        wish: { id: wishId, title, create_time: at },
+        tasks: [
+          task("W1", "Say the watch's two seconds", {
+            integration: {
+              state: "INTEGRATION_STATE_PENDING",
+              branch: "feat/notices",
+              reason: "waits for its batch",
+            },
+          }),
+          task("W2", "The next version of L01", {}),
+        ],
+      }),
+    );
+    djinn("wish", "import", path.join(dir, "wish.json"));
+    fs.writeFileSync(path.join(dir, "index.html"), versionPage(1));
+    djinn("tilasm", "put", dir, "--wish", wishId);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  await page.goto(process.env.DJINN_URL!);
+  await page.locator(".wish-nav").filter({ hasText: title }).click();
+  await page.getByRole("tab", { name: /^Tilasms/ }).click();
+  const panel = page.getByRole("tabpanel", { name: "Tilasms" });
+  await panel.locator(".tilasm-title").click();
+  const view = panel.locator(".tilasm-view");
+  const head = view.locator(".tilasm-view-head");
+  const inFrame = page.frameLocator("iframe.tilasm-frame");
+  await expect(inFrame.locator("h1")).toBeVisible();
+  const column = view.getByRole("complementary", { name: "Comments" });
+  const cards = column.locator(".tilasm-comment");
+  const card = (code: string) =>
+    cards.filter({ has: page.locator(".tilasm-code", { hasText: code }) });
+  const pick = page.getByRole("button", { name: "Comment", exact: true });
+  for (const [id, text] of [
+    ["digest", "Say the watch's two seconds."],
+    ["burst", "Even mid-turn?"],
+    ["ten", "Ten seconds is short."],
+  ]) {
+    await drag(page, inFrame.locator(`#${id}`));
+    await pick.click();
+    const editor = column.getByRole("textbox", {
+      name: "Your comment on the passage",
+    });
+    await editor.fill(text);
+    await editor.press("Control+Enter");
+    await expect(editor).toHaveCount(0);
+  }
+  await column
+    .getByRole("textbox", {
+      name: "A comment on the whole tilasm, sent with the others",
+    })
+    .fill("And a paused wish?");
+  await column.getByRole("button", { name: "Iterate", exact: true }).click();
+  await expect(
+    column
+      .getByRole("group", { name: "Confirm the send" })
+      .getByRole("button", { name: "Send to the Djinn" }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(cards).toHaveCount(4);
+  await expect(card("C1")).toContainText("Sent · send 1");
+  await expect(card("C4")).toContainText("Sent · send 1");
+
+  // The lead's watch reads the send: every card of it says so, with when.
+  const session = randomUUID();
+  const folder = leadFolder();
+  try {
+    setLead(session, folder);
+    drainLead(session);
+  } finally {
+    await dropLead();
+  }
+  for (const code of ["C1", "C2", "C3", "C4"])
+    await expect(card(code)).toContainText(/Read by the Djinn · \S/);
+  await expect(column).not.toContainText("waits for the Djinn");
+
+  // The Djinn replies, naming the tasks it made: each shows in its state, and follows it.
+  const reply = (code: string, text: string, ...tasks: string[]) =>
+    djinn(
+      "tilasm",
+      "reply",
+      "L01",
+      code,
+      "--wish",
+      wishId,
+      "--text",
+      text,
+      ...tasks.flatMap((t) => ["--task", t]),
+    );
+  reply("C1", "W2 says it in the next version.", "W2");
+  reply("C2", "W1 makes a failure leave at once, mid-turn too.", "W1");
+  reply("C4", "W2 adds a section on paused wishes.", "W2");
+  const tasksOf = (code: string) =>
+    card(code).locator(".tilasm-comment-reply-tasks");
+  await expect(card("C1")).toContainText("Replied");
+  await expect(tasksOf("C1")).toHaveText("Tasks: W2 Done");
+  await expect(tasksOf("C2")).toHaveText("Tasks: W1 Merging");
+  await expect(tasksOf("C2").locator(".status-badge")).toHaveClass(
+    /tone-running/,
+  );
+  await expect(tasksOf("C4").locator(".status-badge")).toHaveClass(/tone-done/);
+  await expect(card("C3")).toContainText("Read by the Djinn");
+  await expect(head).toContainText("v1");
+  await expect(head).not.toContainText("for C1");
+
+  // W2 puts the next version: its head says for which comments, and a toast counts what it found again of them.
+  const next = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-becomes-"));
+  try {
+    fs.writeFileSync(path.join(next, "index.html"), versionPage(2));
+    djinn(
+      "tilasm",
+      "put",
+      next,
+      "--wish",
+      wishId,
+      "--code",
+      "L01",
+      "--author",
+      "W2",
+    );
+  } finally {
+    fs.rmSync(next, { recursive: true, force: true });
+  }
+  await expect(head).toContainText("v2 by W2, for C1, C4");
+  await expect(head.getByText("v2 by W2, for C1, C4")).toHaveAttribute(
+    "title",
+    "W2 put this version: the Djinn's replies to C1, C4 name it",
+  );
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "L01 v2, your comments: 1 found again, 1 changed, 1 detached.",
+    }),
+  ).toBeVisible();
+  await expect(card("C2")).toContainText("Changed in v2");
+  await expect(column.getByRole("region", { name: "Detached" })).toContainText(
+    "C3",
+  );
+  await page.screenshot({ path: path.join(shots, "tilasm-becomes.png") });
+
+  // After a reload, nothing toasts again: each comment stands in v2 already.
+  await page.reload();
+  await page.locator(".wish-nav").filter({ hasText: title }).click();
+  await page.getByRole("tab", { name: /^Tilasms/ }).click();
+  await panel.locator(".tilasm-title").click();
+  await view.locator(".tilasm-view-head .tilasm-comments-toggle").click();
+  await expect(head).toContainText("v2 by W2, for C1, C4");
+  await expect(card("C1")).toContainText("Replied");
+  await expect(card("C3")).toContainText(/Read by the Djinn · \S/);
+  await expect(inFrame.locator("h1")).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page.getByText(/your comments:/)).toHaveCount(0);
   expect(errors).toEqual([]);
 });

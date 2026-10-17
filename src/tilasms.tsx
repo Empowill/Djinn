@@ -11,7 +11,8 @@
 // on its row and on the tab. A passage selected in the frame is commented from a button over it, its drafts highlighted in the page
 // (tilasm-passages.tsx); Aim mode comments an element, and numbered dots in a margin beside the frame stand at the
 // height of each anchor (tilasm-margin.tsx). A new version places the anchors again: the window writes where each
-// stands, found, changed or lost.
+// stands, found, changed or lost, and a toast counts them. A version a task linked to comments put says so on its
+// head: v4 by W62, for C1, C3.
 import {
   Crosshair,
   Download,
@@ -33,6 +34,7 @@ import {
   type Tilasm,
   type TilasmComment,
   type TilasmHold,
+  type TilasmSendRead,
 } from "../gen/ts/plan/v1/tilasm_pb";
 import { type Pick, marksOf } from "./data/bridge";
 import { message } from "./data/client";
@@ -40,8 +42,10 @@ import {
   cards,
   draftCounts,
   draftsOn,
+  placeCounts,
   placesToWrite,
   sentOn,
+  versionFor,
 } from "./data/comments";
 import { later } from "./data/decisions";
 import { useClients, useStore } from "./data/djinn";
@@ -92,6 +96,7 @@ export function TilasmsTab({
   drafts = [],
   holds = [],
   sent = [],
+  reads = [],
   tasks,
   onToast,
 }: {
@@ -106,6 +111,8 @@ export function TilasmsTab({
   holds?: readonly TilasmHold[];
   // The comments sent on them, with the Djinn's replies.
   sent?: readonly TilasmComment[];
+  // The sends on them the Djinn read.
+  reads?: readonly TilasmSendRead[];
   tasks: readonly Task[];
   onToast: (text: string) => void;
 }) {
@@ -158,6 +165,8 @@ export function TilasmsTab({
       drafts={drafts}
       holds={holds}
       sent={sent}
+      reads={reads}
+      tasks={tasks}
       comments={comments}
       onCommentError={(error) => onToast(message(error))}
       count={tilasms.length}
@@ -207,7 +216,7 @@ export function TilasmsTab({
 }
 
 // useCommentWrites is what writes the developer's comments on a wish's tilasms, in the Tilasms tab and over a view;
-// onToast tells what a send did.
+// onToast tells what a send did, and what a new version found again of the comments.
 export function useCommentWrites(
   wishId: string,
   onToast: (text: string) => void,
@@ -221,9 +230,14 @@ export function useCommentWrites(
       await clients.tilasms.putComment({ tilasmId, id, text, anchor });
       await reread();
     },
-    place: async (tilasmId, version, places) => {
-      await clients.tilasms.placeComments({ tilasmId, version, places });
+    place: async (tilasm, version, places) => {
+      await clients.tilasms.placeComments({
+        tilasmId: tilasm.id,
+        version,
+        places,
+      });
       await reread();
+      onToast(placedText(tilasm.code, version, places));
     },
     remove: async (comment) => {
       const res = await clients.tilasms.deleteComment({ id: comment.id });
@@ -256,12 +270,30 @@ export function useCommentWrites(
   };
 }
 
+// placedText is the toast that counts what a version found again of the comments placed in it: 3 found again, 1
+// changed, 1 detached.
+export function placedText(
+  code: string,
+  version: number,
+  places: readonly { status: AnchorStatus }[],
+): string {
+  const n = placeCounts(places);
+  const counts = [
+    n.found > 0 && t("tilasms.placed_found", { count: n.found }),
+    n.changed > 0 && t("tilasms.placed_changed", { count: n.changed }),
+    n.lost > 0 && t("tilasms.placed_lost", { count: n.lost }),
+  ].filter(Boolean);
+  return t("tilasms.placed", { code, version, counts: counts.join(", ") });
+}
+
 // TilasmList is the tab as it shows, from what it is given.
 export function TilasmList({
   tilasms,
   drafts = [],
   holds = [],
   sent = [],
+  reads = [],
+  tasks = [],
   comments,
   onCommentError = () => {},
   count,
@@ -285,6 +317,10 @@ export function TilasmList({
   holds?: readonly TilasmHold[];
   // The comments sent on them, with the Djinn's replies.
   sent?: readonly TilasmComment[];
+  // The sends on them the Djinn read.
+  reads?: readonly TilasmSendRead[];
+  // The wish's tasks: those the Djinn's replies name, with their state.
+  tasks?: readonly Task[];
   // What writes them; without it, the open tilasm shows no comments.
   comments?: CommentWrites;
   onCommentError?: (error: unknown) => void;
@@ -374,7 +410,8 @@ export function TilasmList({
           }}
           drafts={draftsOn(drafts, open.id)}
           sent={sentOn(sent, open.id)}
-          codes={codes}
+          reads={reads}
+          tasks={tasks}
           hold={holds.find((h) => h.tilasmId === open.id)}
           comments={comments}
           onCommentError={onCommentError}
@@ -487,7 +524,8 @@ export function TilasmFrame({
   over = false,
   drafts = [],
   sent = [],
-  codes,
+  reads = [],
+  tasks = [],
   hold,
   comments,
   onCommentError = () => {},
@@ -503,8 +541,10 @@ export function TilasmFrame({
   drafts?: readonly TilasmComment[];
   // The comments sent on it, with the Djinn's replies, in the order written.
   sent?: readonly TilasmComment[];
-  // The codes of the wish's tasks, by id: those a reply names.
-  codes?: ReadonlyMap<string, string>;
+  // The sends the Djinn read: the cards of their comments say so.
+  reads?: readonly TilasmSendRead[];
+  // The wish's tasks: those a reply names, with their state, and the one that put the latest version.
+  tasks?: readonly Task[];
   // Why it takes no send for now; none: it does.
   hold?: TilasmHold;
   // What writes them: the Comments column shows beside the frame, on demand; without it, none.
@@ -554,18 +594,18 @@ export function TilasmFrame({
   // Placed in a later version than they were written on: where each stands is written once, for the cards and the lead.
   const toWrite = enabled ? placesToWrite(all, placed, version) : [];
   const writeKey = toWrite.length > 0 ? JSON.stringify(toWrite) : "";
-  const placing = useRef({ comments, onCommentError, tilasmId: tilasm.id });
-  placing.current = { comments, onCommentError, tilasmId: tilasm.id };
+  const placing = useRef({ comments, onCommentError, tilasm });
+  placing.current = { comments, onCommentError, tilasm };
   useEffect(() => {
     if (!writeKey) return;
     const {
       comments: writes,
       onCommentError: failed,
-      tilasmId,
+      tilasm: placed,
     } = placing.current;
     writes
       ?.place(
-        tilasmId,
+        placed,
         version,
         JSON.parse(writeKey) as ReturnType<typeof placesToWrite>,
       )
@@ -576,6 +616,14 @@ export function TilasmFrame({
       { djinn: "tilasm", type: "reveal", id },
       "*",
     );
+  // The version a task linked to comments put: v4 by W62, for C1, C3.
+  const from = enabled ? versionFor(tilasm, sent, tasks) : undefined;
+  const fromVars = from && {
+    version,
+    task: from.task,
+    comments: from.comments.join(", "),
+  };
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
   const dotted =
     enabled &&
     all.some((c) => c.anchor?.exact || c.anchor?.path || c.anchor?.elementId);
@@ -630,8 +678,13 @@ export function TilasmFrame({
         <div className="tilasm-view-head">
           <span className="tilasm-code">{tilasm.code}</span>
           <strong>{tilasm.title}</strong>
-          <span className="muted-text">
-            {t("tilasms.version", { version: latest(tilasm) })}
+          <span
+            className="muted-text"
+            title={fromVars && t("tilasms.version_for_title", fromVars)}
+          >
+            {fromVars
+              ? t("tilasms.version_for", fromVars)
+              : t("tilasms.version", { version: latest(tilasm) })}
           </span>
           <button
             ref={enter}
@@ -689,7 +742,9 @@ export function TilasmFrame({
           version={latest(tilasm)}
           drafts={drafts}
           sent={sent}
-          codes={codes}
+          reads={reads}
+          tasks={taskById}
+          origin={over && fromVars ? t("tilasms.version_for", fromVars) : ""}
           hold={hold}
           writes={comments}
           onError={onCommentError}

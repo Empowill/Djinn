@@ -15,7 +15,10 @@ export {
   TilasmCommentSchema,
   TilasmHoldReason,
   TilasmHoldSchema,
-} from "@/gen/ts/plan/v1/tilasm_pb.ts";`,
+  TilasmSchema,
+  TilasmSendReadSchema,
+} from "@/gen/ts/plan/v1/tilasm_pb.ts";
+export { TaskSchema } from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 
 const L01 = "01a1223a-ae45-728f-8c37-c005eee91edb";
@@ -388,4 +391,94 @@ test("the dots stand at their anchors' heights, stacked on one line, only within
     ),
     [],
   );
+});
+
+test("a card says whether its comment is a draft, sent, read by the Djinn, or replied", () => {
+  const sent = (code, send, reply) =>
+    c.create(c.TilasmCommentSchema, {
+      id: `01a14600-0000-7000-8000-00000000000${code.slice(1)}`,
+      tilasmId: L01,
+      code,
+      state: c.CommentState.SENT,
+      send,
+      reply,
+    });
+  const at = { seconds: 1792176180n, nanos: 0 };
+  const reads = [
+    c.create(c.TilasmSendReadSchema, { tilasmId: L01, send: 1, readTime: at }),
+    c.create(c.TilasmSendReadSchema, { tilasmId: L01, send: 2 }),
+    c.create(c.TilasmSendReadSchema, { tilasmId: L02, send: 3 }),
+  ];
+  assert.deepEqual(c.cardState(c1, reads), { kind: "draft" });
+  assert.deepEqual(c.cardState(sent("C2", 1), reads).kind, "read");
+  assert.equal(c.cardState(sent("C2", 1), reads).time, reads[0].readTime);
+  // Djinn no longer keeps the event: read, no time.
+  assert.deepEqual(c.cardState(sent("C3", 2), reads), {
+    kind: "read",
+    time: undefined,
+  });
+  // Send 3 of L01 waits: another tilasm's send 3 was read.
+  assert.deepEqual(c.cardState(sent("C4", 3), reads), {
+    kind: "sent",
+    send: 3,
+  });
+  assert.deepEqual(c.cardState(sent("C5", 1, { text: "Done in v2." }), reads), {
+    kind: "replied",
+  });
+});
+
+test("a version a task linked to comments put says which comments, in the order written", () => {
+  const w62 = c.create(c.TaskSchema, {
+    id: "01a14700-0000-7000-8000-000000000062",
+    code: "W62",
+  });
+  const w60 = c.create(c.TaskSchema, {
+    id: "01a14700-0000-7000-8000-000000000060",
+    code: "W60",
+  });
+  const tilasm = (author) =>
+    c.create(c.TilasmSchema, {
+      id: L01,
+      code: "L01",
+      versions: [
+        { number: 1, author: "lead" },
+        { number: 2, author },
+      ],
+    });
+  const replied = (n, taskIds) =>
+    c.create(c.TilasmCommentSchema, {
+      id: `01a14600-0000-7000-8000-00000000000${n}`,
+      tilasmId: L01,
+      code: `C${n}`,
+      state: c.CommentState.SENT,
+      reply: { text: "Done.", taskIds },
+    });
+  const sent = [
+    replied(3, [w62.id]),
+    replied(1, [w60.id, w62.id]),
+    replied(2, [w60.id]),
+  ];
+  assert.deepEqual(c.versionFor(tilasm("w62"), sent, [w60, w62]), {
+    task: "W62",
+    comments: ["C1", "C3"],
+  });
+  // The lead put it, or a task no reply names: nothing to say.
+  assert.equal(c.versionFor(tilasm("lead"), sent, [w60, w62]), undefined);
+  assert.equal(c.versionFor(tilasm("W61"), sent, [w60, w62]), undefined);
+  assert.equal(c.versionFor(tilasm("W62"), [sent[2]], [w60, w62]), undefined);
+});
+
+test("the toast of a new version counts the comments found again, changed and detached", () => {
+  const { FOUND, CHANGED, LOST } = c.AnchorStatus;
+  assert.deepEqual(
+    c.placeCounts([
+      { status: FOUND },
+      { status: LOST },
+      { status: FOUND },
+      { status: CHANGED },
+      { status: FOUND },
+    ]),
+    { found: 3, changed: 1, lost: 1 },
+  );
+  assert.deepEqual(c.placeCounts([]), { found: 0, changed: 0, lost: 0 });
 });

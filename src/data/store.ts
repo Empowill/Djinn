@@ -44,6 +44,8 @@ import {
   type TilasmHold,
   TilasmHoldSchema,
   TilasmSchema,
+  type TilasmSendRead,
+  TilasmSendReadSchema,
 } from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound, unimplemented } from "./client";
 
@@ -60,6 +62,8 @@ export interface WishDetail {
   holds: TilasmHold[];
   // The comments sent on its tilasms, with the Djinn's replies, read with the drafts.
   sent: TilasmComment[];
+  // The sends on its tilasms the Djinn read, read with the drafts: computed by the server.
+  reads: TilasmSendRead[];
   // Read at least once.
   loaded: boolean;
   // Totals from the server for paginated lists.
@@ -146,6 +150,7 @@ const EMPTY_DETAIL: WishDetail = {
   drafts: [],
   holds: [],
   sent: [],
+  reads: [],
   loaded: false,
   loadedKinds: new Set<Change>(),
 };
@@ -815,7 +820,7 @@ export function createStore(
             .drafts({ wish: wishId }, call)
             .catch((error: unknown) => {
               if (unimplemented(error))
-                return { comments: [], holds: [], sent: [] };
+                return { comments: [], holds: [], sent: [], reads: [] };
               throw error;
             });
           into.drafts = reconcile(
@@ -830,6 +835,13 @@ export function createStore(
               equals(TilasmHoldSchema, h, prevDetail.holds[i]),
             );
           into.holds = same ? prevDetail.holds : res.holds;
+          // Nor has a read: the same reads keep their array.
+          const kept =
+            prevDetail.reads.length === res.reads.length &&
+            res.reads.every((r, i) =>
+              equals(TilasmSendReadSchema, r, prevDetail.reads[i]),
+            );
+          into.reads = kept ? prevDetail.reads : res.reads;
           into.sent = reconcile(TilasmCommentSchema, prevDetail.sent, res.sent);
         });
     }
@@ -848,6 +860,7 @@ export function createStore(
       const drafts = got.drafts ?? prevDetail.drafts;
       const holds = got.holds ?? prevDetail.holds;
       const sent = got.sent ?? prevDetail.sent;
+      const reads = got.reads ?? prevDetail.reads;
       const tasksTotal =
         got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
       const questionsTotal =
@@ -892,6 +905,7 @@ export function createStore(
         drafts === prevDetail.drafts &&
         holds === prevDetail.holds &&
         sent === prevDetail.sent &&
+        reads === prevDetail.reads &&
         tasksTotal === prevDetail.tasksTotal &&
         questionsTotal === prevDetail.questionsTotal &&
         blocksTotal === prevDetail.blocksTotal &&
@@ -910,6 +924,7 @@ export function createStore(
         drafts,
         holds,
         sent,
+        reads,
         loaded: true,
         tasksTotal,
         questionsTotal,

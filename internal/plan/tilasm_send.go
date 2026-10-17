@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -353,6 +354,64 @@ func tilasmHold(
 		}
 	}
 	return nil
+}
+
+// sendOfLine finds the send a comments event names, at the end of its line (SendLine).
+var sendOfLine = regexp.MustCompile(`--send ([0-9]+)$`)
+
+// sendReads are the sends on the wish wishID's tilasms that the Djinn read, by tilasm then send: the lead
+// acknowledged the comments event that names it, or Djinn no longer keeps that event, a week after it was read. A send
+// whose event waits is not in it. A send without a comment queued no such event: it has no card to tell.
+func sendReads(ctx context.Context, r store.Reader, wishID string, tilasms []*planv1.Tilasm) ([]*planv1.TilasmSendRead, error) {
+	where := store.Where{"wish_id": wishID}
+	sends, err := store.List[*planv1.TilasmSend](ctx, r, where)
+	if err != nil {
+		return nil, err
+	}
+	events, err := store.List[*planv1.LeadEvent](ctx, r, where)
+	if err != nil {
+		return nil, err
+	}
+	type sent struct {
+		code string
+		send int32
+	}
+	byLine := map[sent]*planv1.LeadEvent{}
+	for _, e := range events {
+		m := sendOfLine.FindStringSubmatch(e.GetText())
+		if e.GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_COMMENTS || m == nil {
+			continue
+		}
+		n, err := strconv.ParseInt(m[1], 10, 32)
+		if err != nil {
+			continue
+		}
+		byLine[sent{strings.ToUpper(e.GetCode()), int32(n)}] = e
+	}
+	codes := map[string]string{}
+	for _, tilasm := range tilasms {
+		codes[tilasm.GetId()] = strings.ToUpper(tilasm.GetCode())
+	}
+	var out []*planv1.TilasmSendRead
+	for _, s := range sends {
+		code, ok := codes[s.GetTilasmId()]
+		if !ok {
+			continue
+		}
+		e, kept := byLine[sent{code, s.GetNumber()}]
+		if kept && e.GetAckSessionId() == "" {
+			continue
+		}
+		read := &planv1.TilasmSendRead{TilasmId: s.GetTilasmId(), Send: s.GetNumber()}
+		if kept {
+			read.ReadTime = e.GetAckTime()
+		}
+		out = append(out, read)
+	}
+	slices.SortFunc(out, func(a, b *planv1.TilasmSendRead) int {
+		return cmp.Or(strings.Compare(a.GetTilasmId(), b.GetTilasmId()), cmp.Compare(a.GetSend(), b.GetSend()))
+	})
+	return out, nil
 }
 
 // HoldText says why a tilasm takes no send, in a sentence: what a refused send answers.
