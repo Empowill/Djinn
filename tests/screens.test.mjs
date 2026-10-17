@@ -13724,6 +13724,8 @@ test("the journal of configuration changes says each change, and marks seen thos
     /Nothing changed in the configuration since Djinn watches it\./,
   );
   assert.doesNotMatch(none, /notice-detail/);
+});
+
 test("a question iterating on its mockup waits for its mockup task, not for you: folded as one being investigated (W268)", () => {
   const card = live(s.WishQuestion, {
     question: {
