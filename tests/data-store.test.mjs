@@ -308,18 +308,26 @@ test("a task card closed frees its events, and opened again reads them again", a
   again();
 });
 
-test("reading a task's prompt gets the task alone without following its events", async () => {
+// W7 saw "[unknown] Failed to fetch" thrown at the page: Chromium cuts every request in flight when Docker adds a
+// network interface, and the prompt's read was left to fail (W249).
+test("reading a task's prompt gets the task alone, read again when the network cut it, then kept", async () => {
   const data = sample();
+  let fail = 1;
+  data.getTask = (req) => {
+    if (fail-- > 0) throw new Error("Failed to fetch");
+    return { task: data.tasks.find((t) => t.id === req.taskId) };
+  };
   const { clients, reads } = server(data);
   const store = createStore(clients, 10);
-  const prompt = await store.readPrompt(taskId);
-  assert.equal(prompt, "Polish the brass with care");
-  assert.equal(reads.taskGet, 1);
+  // The cut read throws nothing at the page: it gives no prompt, and is made again.
+  assert.equal(await store.readPrompt(taskId), "");
+  const state = await until(store, (s) => !!s.prompts[taskId]);
+  assert.equal(state.prompts[taskId], "Polish the brass with care");
+  assert.equal(reads.taskGet, 2);
   assert.equal(reads.events, undefined);
   // A second read takes the prompt from the store's cache.
-  const cached = await store.readPrompt(taskId);
-  assert.equal(cached, "Polish the brass with care");
-  assert.equal(reads.taskGet, 1);
+  assert.equal(await store.readPrompt(taskId), "Polish the brass with care");
+  assert.equal(reads.taskGet, 2);
 });
 
 test("opening a wish does not follow its tasks' events until follow is requested", async () => {

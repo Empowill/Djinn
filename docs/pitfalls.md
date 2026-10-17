@@ -340,6 +340,10 @@ the code does not say by itself; remove one when a change makes it false.
 - **Some animations burn a core in WebKit.** At 4K, an infinite `box-shadow` animation cost ~40 % of a core, the same
   pulse by `transform`/`opacity` ~0; SVG child animations are not composited (~40 %) (W513). *Do:* animate
   `transform` and `opacity` only; measure in WebKit, not Chromium.
+- **A read the network cuts throws at the page.** Chromium aborts every request in flight when a network interface
+  comes or goes (Docker adds veths): "[unknown] Failed to fetch". A `void store.read…()` that rejects becomes a page
+  error, which a spec that counts them reports (W7, W249). *Do:* a store read catches its failure and reads again
+  after `retry`, as `readPrompt` does; test it with a fake call that throws once.
 - **A store read that never returns freezes the window's writes.** Each write ends with `store.changed`, which reads
   `WishService/List` and `LeadService/Get` right after. *Sign:* in `djinn.log`, writes with no `WishService/List`
   after them for minutes: `flush()` waits behind a hung read. Every read has a 30 s `timeoutMs` since W543. *Where:*
