@@ -179,7 +179,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   and the command line; each page is a script of its own, `pages/<slug>.js`, that the site loads when the page is
   opened, the others in idle time. Its sources are in [`docs/site`](docs/site): one Markdown file per page in `docs/site/pages`, in
   English and with no code (Djinn is used without code), each listed in `Nav` (`internal/docsite/grimoire.go`) with
-  its title's locale key; `TestGrimoire` fails on a page missing from either. `djinn up` serves it at `/docs/`, and
+  its title's locale key; `TestNav` fails on a page missing from either, `TestPageHTML` on a page with code. `djinn up` serves it at `/docs/`, and
   the side panel's Grimoire shows it as a page of the window, its navigation in the window's language. The Command line tab has nothing to regenerate by hand: `djinn up` and `go tool task docs`
   fill it from the command tree djinn is built from (`internal/cli`), so a method added to a proto, or a flag, is
   there at once. A command written by hand in `cmd/djinn` takes its entry in `cli.Builtins`, which is its `--help`

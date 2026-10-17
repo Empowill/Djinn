@@ -11,27 +11,37 @@ import (
 	"testing/fstest"
 )
 
-// TestProfilesOnlyWhenMounted: the profiles answer where djinn up --pprof mounts them; without, the path is the
-// interface's.
-func TestProfilesOnlyWhenMounted(t *testing.T) {
+// TestProfiles: the profiles answer where djinn up --pprof mounts them; without, the path is the interface's.
+func TestProfiles(t *testing.T) {
+	t.Parallel()
 	ui := fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}
 	get := func(h http.Handler) string {
-		t.Helper()
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, ProfilePath+"goroutine?debug=1", nil))
 		b, _ := io.ReadAll(rec.Result().Body)
 		return string(b)
 	}
-	if body := get(Handler(ui, nil, map[string]http.Handler{ProfilePath: Profiles()})); !strings.Contains(body, "goroutine profile") {
-		t.Errorf("mounted: %.80q, want the goroutine profile", body)
-	}
-	if body := get(Handler(ui, nil, nil)); body != "<!doctype html>" {
-		t.Errorf("not mounted: %.80q, want the interface", body)
+	for _, tc := range []struct {
+		name     string
+		services map[string]http.Handler
+		want     func(string) bool
+	}{
+		{"mounted", map[string]http.Handler{ProfilePath: Profiles()},
+			func(body string) bool { return strings.Contains(body, "goroutine profile") }},
+		{"not mounted", nil, func(body string) bool { return body == "<!doctype html>" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if body := get(Handler(ui, nil, tc.services)); !tc.want(body) {
+				t.Errorf("%.80q, want the goroutine profile when mounted, the interface otherwise", body)
+			}
+		})
 	}
 }
 
-// TestDumpWritesTheGoroutines: a POST to DumpPath writes a dump to the folder and answers its path (W511).
-func TestDumpWritesTheGoroutines(t *testing.T) {
+// TestDump: a POST to DumpPath writes a dump to the folder and answers its path (W511); a GET is refused.
+func TestDump(t *testing.T) {
+	t.Parallel()
 	ui := fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}
 	dir := t.TempDir()
 	h := Handler(ui, nil, map[string]http.Handler{DumpPath: Dump(dir)})

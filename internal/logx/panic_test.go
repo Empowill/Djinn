@@ -12,9 +12,9 @@ import (
 // crashHome is the variable that makes the test binary a djinn up whose loop panics, in that data folder.
 const crashHome = "LOGX_CRASH_HOME"
 
-// TestLoopPanicLeavesItsStack: a background loop that panics ends the process, after its stack and a last line reach
+// TestCrash: a background loop that panics ends the process, after its stack and a last line reach
 // the log; the runtime writes the panic to the crash file, which the next start names by its time and logs (W525).
-func TestLoopPanicLeavesItsStack(t *testing.T) {
+func TestCrash(t *testing.T) {
 	if home := os.Getenv(crashHome); home != "" {
 		crashingLoop(home)
 		return
@@ -24,7 +24,7 @@ func TestLoopPanicLeavesItsStack(t *testing.T) {
 		t.Fatal(err)
 	}
 	home := t.TempDir()
-	cmd := exec.Command(exe, "-test.run=^TestLoopPanicLeavesItsStack$")
+	cmd := exec.Command(exe, "-test.run=^TestCrash$")
 	cmd.Env = append(os.Environ(), crashHome+"="+home, Level+"=info")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -88,9 +88,9 @@ func crashingLoop(home string) {
 	time.Sleep(time.Minute)
 }
 
-// TestCrashesKeepTheLatest: a start names the crash file left by its time, and keeps the latest CrashesKept; an empty
+// TestKeepCrash: a start names the crash file left by its time, and keeps the latest CrashesKept; an empty
 // one, left by a djinn up killed, goes.
-func TestCrashesKeepTheLatest(t *testing.T) {
+func TestKeepCrash(t *testing.T) {
 	capture(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, CrashFile)
