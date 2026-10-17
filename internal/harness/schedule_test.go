@@ -182,14 +182,15 @@ func TestDependsOn(t *testing.T) {
 
 // TestGateHeldOutside: a gate held outside the running workers (a person's terminal, a lead, a script) takes a slot:
 // on a full machine a new worker waits, saying so, and starts once the gate is given back, woken with no tick. A
-// running worker holds its own gates in its slot (Works).
+// running worker holds its own gates in its slot (Works). Djinn serves the gates: one slot of the three is kept for
+// the merges and pushes (Q26).
 func TestGateHeldOutside(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	l := &limit{slots: 2}
+	l := &limit{slots: 3}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	var outside atomic.Int32
-	e.h.GatesOutside(func() int { return int(outside.Load()) })
+	e.h.GatesOutside(func() (int, int) { return int(outside.Load()), 0 })
 	wishID, _ := e.wish(t, gitRepo(t))
 	busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", nil)
 	if !e.h.Works(busy.GetId()) {
@@ -198,8 +199,8 @@ func TestGateHeldOutside(t *testing.T) {
 
 	outside.Store(1)
 	next := e.mustSpawn(t, wishID, "Next", "text one", nil)
-	if next.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
-		next.GetWaitReason() != "1 worker runs and 1 gate is held outside the workers, the most this machine holds (set by the test)" {
+	if next.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || next.GetWaitReason() != "1 worker runs and 1 gate is held "+
+		"outside the workers, 1 slot is kept for merges and pushes, the most this machine holds (set by the test)" {
 		t.Fatalf("spawned beside a gate held outside: %v", next)
 	}
 	if e.h.Works(next.GetId()) {
@@ -209,6 +210,59 @@ func TestGateHeldOutside(t *testing.T) {
 	e.h.Wake()
 	if got := e.ended(t, next.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Errorf("once the gate is given back: %v", got)
+	}
+}
+
+// TestSlotKeptForMerges: on a machine of several slots full of workers, one slot stays free for the gates of merges and
+// pushes (Q26): a new worker never takes it, a merge's gate held outside the workers takes it and the machine holds no
+// more than its slots, and once it is given back the slot is kept again. On a machine of one slot, nothing is kept: a
+// worker takes it.
+func TestSlotKeptForMerges(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	l := &limit{slots: 3}
+	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
+	var outside, merges atomic.Int32
+	e.h.GatesOutside(func() (int, int) { return int(outside.Load()), int(merges.Load()) })
+	wishID, _ := e.wish(t, gitRepo(t))
+	first := e.mustSpawn(t, wishID, "First", "wait", nil)
+	second := e.mustSpawn(t, wishID, "Second", "wait", nil)
+	third := e.mustSpawn(t, wishID, "Third", "wait", nil)
+	for _, task := range []*planv1.Task{first, second} {
+		if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+			t.Fatalf("%s does not run: %v", task.GetCode(), task)
+		}
+	}
+	const kept = "2 workers run, 1 slot is kept for merges and pushes, the most this machine holds (set by the test)"
+	if third.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || third.GetWaitReason() != kept {
+		t.Fatalf("the third took the kept slot: %v", third)
+	}
+
+	// A merge's gate held outside the workers takes the kept slot: the third still waits, for that gate.
+	outside.Store(1)
+	merges.Store(1)
+	e.h.Wake()
+	held := "2 workers run and 1 gate is held outside the workers, the most this machine holds (set by the test)"
+	e.until(t, third.GetId(), func(t *planv1.Task) bool { return t.GetWaitReason() == held })
+	outside.Store(0)
+	merges.Store(0)
+	e.h.Wake()
+	e.until(t, third.GetId(), func(t *planv1.Task) bool { return t.GetWaitReason() == kept })
+
+	for _, task := range []*planv1.Task{first, second, third} {
+		e.release(t, task.GetId())
+	}
+	if got := e.ended(t, third.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("once a worker ended: %v", got)
+	}
+
+	// One slot alone: nothing is kept, a worker takes it.
+	one := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(time.Hour))
+	one.h.GatesOutside(func() (int, int) { return 0, 0 })
+	oneWish, _ := one.wish(t, gitRepo(t))
+	alone := one.mustSpawn(t, oneWish, "Alone", "text one", nil)
+	if got := one.ended(t, alone.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("on one slot: %v", got)
 	}
 }
 
@@ -708,24 +762,16 @@ func TestDependencyWorkIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// 1. Done dependency without integration record and with unmerged commits -> dependent waits.
 	w1 := &planv1.Task{
 		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W1", Title: "Task 1",
-		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Branch: b1, CreateTime: timestamppb.Now(),
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b1, CreateTime: timestamppb.Now(),
 	}
 	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
 		_ = tx.Journal("test", "put", w1)
 		return tx.Put(w1)
 	}); err != nil {
 		t.Fatal(err)
-	}
-
-	// 1. Dependency closed by hand with unmerged commits -> dependent waits.
-	dropVal := true
-	_, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
-		TaskId: w1.GetId(), Drop: &dropVal, Note: "dropped for test",
-	}))
-	if err != nil {
-		t.Fatalf("task done: %v", err)
 	}
 
 	w2 := e.mustSpawn(t, wishID, "W2", "wait\ntext 2", &planv1.TaskServiceSpawnRequest{
@@ -752,7 +798,7 @@ func TestDependencyWorkIntegration(t *testing.T) {
 
 	none := "none"
 	forceVal := true
-	_, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
 		TaskId:      w1.GetId(),
 		Integration: &none,
 		Force:       &forceVal,
@@ -856,20 +902,76 @@ func TestDependencyWorkIntegration(t *testing.T) {
 	if curr6.GetStartTime() != nil {
 		t.Errorf("curr6 should not have started")
 	}
+
+	// 6. Cancelled dependency with unmerged branch, --drop closed dependency with unmerged branch,
+	// 0-commit committed dependency, and forkOf replacement do not block or tilt.
+	wCancelled := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W7", Title: "Cancelled task",
+		Status: planv1.TaskStatus_TASK_STATUS_CANCELLED, Branch: b5, CreateTime: timestamppb.Now(),
+	}
+	wDroppedZero := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W8", Title: "Dropped 0-commit task",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b3, CreateTime: timestamppb.Now(),
+		Integration: &planv1.TaskIntegration{
+			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: mainBranch,
+			Sha:    "",
+		},
+	}
+	w5.Status = planv1.TaskStatus_TASK_STATUS_INTERRUPTED
+	wForkReplacement := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W9", Title: "Replacement for W5",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b3, ForkOf: w5.GetCode(), CreateTime: timestamppb.Now(),
+		Integration: &planv1.TaskIntegration{
+			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: mainBranch,
+			Sha:    "",
+		},
+	}
+	wToDrop := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W10", Title: "Stopped task closed with --drop",
+		Status: planv1.TaskStatus_TASK_STATUS_STOPPED, Branch: b5, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		for _, tk := range []*planv1.Task{w5, wCancelled, wDroppedZero, wForkReplacement, wToDrop} {
+			_ = tx.Journal("test", "put", tk)
+			if err := tx.Put(tk); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dropVal := true
+	if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+		TaskId: wToDrop.GetId(), Drop: &dropVal, Note: "work superseded, dropped",
+	})); err != nil {
+		t.Fatalf("done --drop on W10: %v", err)
+	}
+	w11 := e.mustSpawn(t, wishID, "W11", "wait\ntext 11", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{wCancelled.GetCode(), wDroppedZero.GetCode(), w5.GetCode(), wToDrop.GetCode()},
+	})
+	e.until(t, w11.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	e.release(t, w11.GetId())
+	e.ended(t, w11.GetId())
 }
 
 // TestStartAnyway: a planned task that waits for the machine alone says so, and starts at once when forced, under
-// pressure; one that waits for a dependency is refused, and keeps waiting.
+// pressure; one that waits for a dependency is refused, and keeps waiting. Only the first waits for room, the window's
+// place; the second's hold is its dependency, the window's count of what holds a wish's waiting workers.
 func TestStartAnyway(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 1, pressure: "simulated"}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, gitRepo(t))
 	held := e.mustSpawn(t, wishID, "Held", "text ok", nil)
-	if !held.GetMachineWait() || held.GetWaitReason() != "the machine is under pressure: simulated" {
+	if !held.GetMachineWait() || !held.GetRoomWait() || held.GetHold() != planv1.TaskHold_TASK_HOLD_PLACE ||
+		held.GetWaitReason() != "the machine is under pressure: simulated" {
 		t.Fatalf("under pressure: %v", held)
 	}
 	after := e.mustSpawn(t, wishID, "After", "text after", &planv1.TaskServiceSpawnRequest{DependsOn: []string{held.GetCode()}})
-	if after.GetMachineWait() {
+	if after.GetMachineWait() || after.GetRoomWait() || after.GetHold() != planv1.TaskHold_TASK_HOLD_DEPENDENCY {
 		t.Errorf("waits for a dependency, not for the machine: %v", after)
 	}
 	start := func(id string) (*planv1.Task, error) {
@@ -908,7 +1010,7 @@ func TestStartAnyway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetStartTime() == nil || got.GetMachineWait() || got.GetWaitReason() != "" {
+	if got.GetStartTime() == nil || got.GetMachineWait() || got.GetRoomWait() || got.GetHold() != 0 || got.GetWaitReason() != "" {
 		t.Errorf("forced = %v", got)
 	}
 	if got := e.ended(t, held.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {

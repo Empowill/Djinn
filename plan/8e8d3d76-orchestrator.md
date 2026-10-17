@@ -122,6 +122,25 @@ Decide who does what, run each worker safely, and protect the machine.
   resumes when memory is short; gate holders, correction/review workers, and Windows pausing are excluded.
   (`TestStrict5TierOrder`, `TestInvestigatorPriorityAndMemory` in `internal/dispatch`; `TestPreemptForSlot`,
   `TestPreemptForMemory`, `TestPreemptExclusions`, `TestPreemptWindowsNeverPauses` in `internal/harness`)
+- [x] The scheduler judges each work task's health on every pass (W188): well, stalled (silent 10 minutes, 30 after
+  its turn's result, its processes under 5% of a core), waiting for its limit, limit lifted (reset passed or account
+  changed: resumed at once, the lead told once), retriable (a crash, a stop of Djinn, a limit since lifted); stopped on
+  request or failed for good is never flagged. A flagged task tells its lead once per change, in one `health` line
+  with `djinn task continue`, which also ends and continues a stalled worker; the window marks it beside its code.
+  (`TestHealthStalled`, `TestHealthAfterTurn`, `TestHealthLimitReset`, `TestHealthAccountChanged`,
+  `TestHealthRetriable`, `TestRetriable` in `internal/harness`; `TestAccountFingerprint` in `internal/ui`;
+  `tests/screens.test.mjs`: "a worker the scheduler flagged to relaunch shows a mark")
+- [x] Investigations and urgent feedback (W213, 17/10/2026): a study or an audit is an investigation (`djinn task spawn
+  --kind investigation`), a worker in a worktree whose commits are never merged ("integration none" in its ENDED line),
+  served first as an investigator is (before planned work, the slot of a work task it pauses, not held by red push
+  checks), at most one at once on a machine of three slots or fewer, two above; at its time limit (25 minutes,
+  `--minutes`) or its budget ($10, `--max-budget-usd`) Djinn asks it to publish its tilasm and question, then stops it
+  10 minutes later. A mockup or a change the developer waits to see is urgent work for feedback (`--feedback`): one per
+  wish beside one urgent repair, the repair first. (`TestInvestigationServedFirst`, `TestInvestigationCap`,
+  `TestInvestigationAskedToPublish`, `TestInvestigationSpawnRefusals`, `TestUrgentFeedbackBesideRepair`,
+  `TestClaudeSpent` in `internal/harness`; `TestInvestigationServedFirst`, `TestInvestigationCap`,
+  `TestInvestigationDependency`, `TestUrgentRepairAndFeedback` in `internal/dispatch`; `TestBriefMarksInvestigations`
+  in `internal/plan`)
 - [ ] Djinn runs its own phase 3 tasks. (needs: a lead that spawns phase 3 tasks with `djinn task spawn` on a real
   model, and a person who confirms it)
 
@@ -309,6 +328,17 @@ Decide who does what, run each worker safely, and protect the machine.
   hover and in their card; the wish's head counts them apart ("3 done · 18 awaiting proof / 30 azimas"); the flying
   carpet lists the proofs a person can give (needs that name a person or a review) under "Proofs you can give", among
   what waits for you, never as work (`screens.test.mjs`, `data-flight.test.mjs`).
+- **An azima merged into main** (W192, 17/10): `Azima.merged`, computed by Djinn and stored with what it records of
+  the azima's branch, once all its work is in its project's main branch, every work task part of it finished and one
+  at least done: its pull or merge request merged after the last of its work ended (the done line of a watcher that
+  babysits it, or `azimaPRPass` finding it merged on the forge, no new forge call), or every commit of its branch and
+  of its done tasks' branches, with the commit each was merged as, in the remote's main, fetched at most once a
+  `merge_main_minutes` by the main pass (`lookMerged`, `internal/harness/merged.go`). A request closed without a
+  merge never sets it. A work task spawned, grouped or started part of it clears it (`reopenAzima`); its merge into
+  main sets it again. The lead hears one `LEAD_EVENT_KIND_LANDED` line as it turns on, which says when every azima of
+  the wish is merged, to propose the grant; the brief says "merged into main" on each, and the window a small round
+  mark with the merge glyph beside its code (`TestAzimaMergedIntoMain`, `TestAzimaMergedByItsWatcher`,
+  `TestBriefAzimas`, `screens.test.mjs`).
 - **A follow-up continues the task, it does not copy it** (W83: every resume through a fork left a duplicate):
   `djinn task continue <task> --prompt "…"` (`TaskService.Continue`) makes a done, failed, stopped or interrupted task
   `resuming` again, `Task.continuing` set: the scheduler starts it like any task (slots, dependencies, pressure, the
@@ -367,6 +397,19 @@ Decide who does what, run each worker safely, and protect the machine.
   etc.). When an investigator cannot start: if slots are full, it pauses the lowest running work task; if memory is short, it
   interrupts it to RESUMING ("made room for Qxx: enlighten", spending no resume count, only for providers supporting resume).
 
+- **A worker's health** (W188, 17/10/2026): the lead checked by hand whether a worker was well (W90), and twice had to
+  be told to relaunch workers a limit stopped after the developer signed the agent in with another account (W90 and
+  W124 of 17/10, stopped until 04:00 at 00:29, credentials changed at 00:58, continued by hand at 01:00). The scheduler
+  now judges from what Djinn knew already (last activity, the CPU readings, gates, `resume_after`, the error) and keeps
+  the class on `Task.health`, written only when it changes. Thresholds from the history of this machine's workers
+  (7 to 17/10: 330 817 gaps between two events; 118 past 5 min, 64 past 10, 47 past 15; every gap at 5% of a core or
+  more was a command at work; the idle ones were an API outage, Lamplighter wakes, and waits for background work after
+  a turn's result, 10 to 25 minutes). The retriable errors are the ones seen there ("claude ended before the end of
+  its turn", "The stream was interrupted", "network issue", "API error", output token limit, a malformed call, a lost
+  process, a stop of Djinn, a usage limit); a failure the Lamplighter gave up on stays final. A failure the scheduler
+  flags is told in its `health` line only, not a second time as `failed`. The Lamplighter is unchanged: its CPU test
+  ("any CPU used") never ends a live claude, which the stall flag now covers for the lead.
+
 ## Open questions
 - Branch names for workers: where does the team convention live? *Decided: in the project settings, default `<task-code>-<slug>-<uuid8>`; built (`branch`, `TestBranchFromSettings`).*
 - Which permissions does a Claude worker get? *Decided (Q34): the project's own configuration; Djinn imposes
@@ -423,6 +466,13 @@ lead spends its tokens on mechanical work.
   developer, 10/10/2026: debug files, abandoned attempts or artifacts would go in too): a review worker judges it.
 - **A task waits for its dependencies to be integrated**, not only done, and its worktree starts from the integration
   branch, so it builds on their work.
+- **Nothing of its own, nothing merged; a done azima takes no more work** (W196, 17/10/2026: task W103 of wish Dew
+  13 oct, in azima T2, done and its work in main through another merge request, deleted T2's branch and made no
+  commit; Djinn made the branch again from the remote's stale copy, merged W103 into it as an empty merge commit and
+  pushed it). A task whose branch holds no commit beyond the one it started from is not merged, its end's line saying
+  "nothing to merge: no commit of its own"; a merge that changes nothing is undone, never committed. Djinn never makes
+  an azima's recorded branch again once it is deleted, nor merges into or pushes a done azima's branch by itself: the
+  work waits, the lead told once in one line, reopen the azima (name its branch again) or drop the work.
 - **The person decides what is theirs**: to install and restart on the new build (Djinn proposes it, with what
   changed), and the choices no worker can make.
 
@@ -430,20 +480,37 @@ lead spends its tokens on mechanical work.
 
 - [x] A task done integrates by itself: merged in its own worktree, generated files made again, tests through a gate,
   the branch moved on, the person's clean checkout fast-forwarded; each step in the task's events and status.
-  (TestIntegrateADoneWorker, TestCommitEachTaskAlone, TestIntegrateGeneratedConflict, TestIntegrateCodeConflict,
+  (TestIntegrateADoneWorker, TestCommitABatch, TestIntegrateGeneratedConflict, TestIntegrateCodeConflict,
   TestIntegrateRedTests, TestIntegrateLeavesADirtyCheckout, TestIntegrateFollowsACleanedCheckout,
   TestIntegrateABranchNoCheckoutHolds, TestRecoverAnIntegration)
 - [x] Each task committed alone as it ends; the push automatic at an azima's end, or with three tasks committed and an
   hour since the last push, checked as each merge ends; `ask` mode by a question; a refused push never forced. Each
   push in the journal and on the wish (its head shows the last one); the build proposed after a push; a task's
   worktree removed once its work is committed, kept with changes not committed. Fake clock, bare remote in a temporary
-  folder. (TestCommitEachTaskAlone, TestPushAtAnAzimasEnd, TestPushAfterThreeTasksAndAnHour, TestPushDue,
+  folder. (TestCommitABatch, TestPushAtAnAzimasEnd, TestPushAfterThreeTasksAndAnHour, TestPushDue,
   TestCommittedSince, TestPushAskMode, TestARefusedPushIsNotForced, TestNoRemoteNoPush, TestABuildIsProposed,
   TestRemoveTheWorktreeOnceCommitted, the screens test "the wish's head says where Djinn last pushed its integration
   branch, and a push refused")
 - [x] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
   (TestCorrectACodeConflict, TestCorrectRedTests, TestCorrectionAttemptsThenAQuestion,
   TestAnswerAFailedIntegration, TestACorrectionWorkerThatFails)
+- [x] Running workers take the repaired branch (W184, decision Q41 B, 17/10/2026): once a repair's work is in, checked,
+  and no correction repairs the branch any more, each running work worker of the wish whose branch lacks commits of
+  the integration branch gets one message (journaled `harness/repaired`): merge it now, its commits' subjects listed
+  (20 at most, newest first), settle any conflict with your own changes in mind, run the tests you touched, go on.
+  Djinn never merges in a worker's worktree; the message waits while a tool call of the worker has no result (the pump
+  holds it, `message.betweenTurns`), and goes once the call returns. A merge with no repair before it tells nobody.
+  (TestRepairedBranchToWorkers, TestGreenMergeTellsNoWorker)
+- [x] A restarted worker first rebases its branch onto its target (W250, 17/10/2026): whenever Djinn starts a worker
+  again on its session (a continue, a resume after a usage limit, a restart or a wish's pause, a wake of the
+  Lamplighter or after an idle stream), and its branch lacks commits of the branch its work merges into (`laneOf`), the
+  first line of its prompt asks it to rebase onto that branch, W184's list of what came in below: commit or
+  `git rebase --autostash`, settle conflicts with its changes in mind, run the tests it touched. A worker resumed after
+  a pause of `PauseRebaseAfter` (15 min) or more gets it as a message between two turns (journaled `harness/rebase`).
+  Merges alone bring nothing to take: no line. The events say "asked to rebase … onto …", then, after a tool's result
+  or at the worker's end, "rebased <branch> onto <target> (at …): <from> → <to>" (or "merged" when it merged). Djinn
+  never rebases itself; read-only, watcher, question, ifrit, correction and review workers are not asked.
+  (TestContinuedWorkerRebasesFirst, TestPausedWorkerRebasesPastThreshold, TestRebaseText)
 - [x] Work not committed is never merged nor committed blindly: before a task's merge, a correction worker's
   included, Djinn reads its worktree (`git status --porcelain`, untracked files included, `.gitignore` applying);
   with changes, a review worker starts in that worktree, part of the same azima, of the task's provider, the task's
@@ -453,6 +520,23 @@ lead spends its tokens on mechanical work.
   TestReviewACorrectionsWork, TestAReviewThatFailsAfterItsCommit)
 - [x] A task waits for its dependencies to be integrated, and starts from the integration branch.
   (TestWaitsForTheCommit, TestADependentStartsFromTheCommit)
+- [x] Djinn never works from the developer's copy (W227, 17/10/2026, the developer: "the local copy is the
+  developer's, to use with full trust"): a new wish's integration branch is the project's reference branch, never the
+  branch the copy has checked out; a worker starts from the branch its work lands in (per wish the wish's integration
+  branch; per azima the azima's branch, cut from the remote's reference branch, fetched first; work of no azima the
+  wish's integration branch), the remote's copy of it when it is strictly ahead, the reference branch for a wish that
+  records none; never the copy's HEAD nor its changes not committed (the HEAD fallback is gone: no reference branch,
+  no worker). The reference commit is the remote's (`refs/remotes/origin/main`), fetched at most once a minute before a
+  worker starts from it or an azima is cut. What still depends on the copy: its configuration, only without a remote
+  or before the reference branch is fetched (W150 reads it on the reference branch otherwise); the integration branch,
+  when it is the one the copy has checked out, moves only with the copy following (clean, a fast-forward; with changes,
+  held), as Git's HEAD there is that branch; a Djinn built from a checkout judges a release by the branch that checkout
+  is on (Release), its build being that copy's. The project's panel says where workers start for each strategy.
+  (TestWorkersNeverStartFromTheCopy, TestWishAddProject, TestChangeIntegrationBranch)
+- [x] A task with no commit of its own is never merged, and no merge commit that changes nothing is made; a done
+  azima's branch is never made again nor pushed by itself, its work waiting, the lead told once; a live azima merges
+  and pushes as before. (TestNoCommitTaskIsNotMerged, TestEmptyMergeMakesNoCommit, TestNoOpBatchTellsTheEndOnly,
+  TestDoneAzimaBranchNotMadeAgain, TestLiveAzimaMergesAndPushes)
 - [x] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
   conflict, red), and propose installing once a batch is integrated. (TestWorkStands, TestBriefWorkStands, TestRun
   "where a task's work stands", the screens tests "the Tasks tab says where each task's work stands" and "the update
@@ -467,6 +551,12 @@ lead spends its tokens on mechanical work.
   TestResolveSettings, TestProjectShow, TestChecksBrief, TestDjinnsOwnSettings, TestBrief, the screens tests "the
   project view lists the setup and the checks, when each runs, and how each last ran" and "the wish's head says a push
   its checks hold, why on hover")
+- [x] The push checks hold no merge (W180, Q40 A): a push due starts apart from the integration's pass once no merge is
+  queued or repairing its branch, its checks run on the commit the branch was at, in the wish's push worktree, while
+  merges go on; a merge that lands meanwhile makes them moot (nothing pushed nor held; checked again once the queue is
+  empty); the step that holds or pushes takes the integration's lock, so one repair at a time still holds (Q39).
+  (TestMergesGoOnDuringPushChecks, TestPushAfterTheLastMerge, TestYourPushChecksTheNewTip, TestPushWaitsForTheQueue,
+  TestPushCheckFailedCorrectionLeavesCommittedAndDependents)
 
 ### Merged by hand into feat/wails-go
 

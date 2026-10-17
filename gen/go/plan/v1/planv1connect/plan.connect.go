@@ -41,6 +41,8 @@ const (
 	MarkServiceName = "plan.v1.MarkService"
 	// TaskServiceName is the fully-qualified name of the TaskService service.
 	TaskServiceName = "plan.v1.TaskService"
+	// ServeServiceName is the fully-qualified name of the ServeService service.
+	ServeServiceName = "plan.v1.ServeService"
 	// PlanServiceName is the fully-qualified name of the PlanService service.
 	PlanServiceName = "plan.v1.PlanService"
 )
@@ -59,6 +61,8 @@ const (
 	QuestionServiceAnswerProcedure = "/plan.v1.QuestionService/Answer"
 	// QuestionServiceListProcedure is the fully-qualified name of the QuestionService's List RPC.
 	QuestionServiceListProcedure = "/plan.v1.QuestionService/List"
+	// QuestionServiceGetProcedure is the fully-qualified name of the QuestionService's Get RPC.
+	QuestionServiceGetProcedure = "/plan.v1.QuestionService/Get"
 	// QuestionServiceEnlightenProcedure is the fully-qualified name of the QuestionService's Enlighten
 	// RPC.
 	QuestionServiceEnlightenProcedure = "/plan.v1.QuestionService/Enlighten"
@@ -69,6 +73,12 @@ const (
 	// QuestionServiceWithdrawProcedure is the fully-qualified name of the QuestionService's Withdraw
 	// RPC.
 	QuestionServiceWithdrawProcedure = "/plan.v1.QuestionService/Withdraw"
+	// QuestionServiceLaterProcedure is the fully-qualified name of the QuestionService's Later RPC.
+	QuestionServiceLaterProcedure = "/plan.v1.QuestionService/Later"
+	// QuestionServiceSleepProcedure is the fully-qualified name of the QuestionService's Sleep RPC.
+	QuestionServiceSleepProcedure = "/plan.v1.QuestionService/Sleep"
+	// QuestionServiceLaunchProcedure is the fully-qualified name of the QuestionService's Launch RPC.
+	QuestionServiceLaunchProcedure = "/plan.v1.QuestionService/Launch"
 	// ProjectServiceAddProcedure is the fully-qualified name of the ProjectService's Add RPC.
 	ProjectServiceAddProcedure = "/plan.v1.ProjectService/Add"
 	// ProjectServiceListProcedure is the fully-qualified name of the ProjectService's List RPC.
@@ -84,8 +94,19 @@ const (
 	ProjectServicePushStrategyProcedure = "/plan.v1.ProjectService/PushStrategy"
 	// ProjectServiceAllowProcedure is the fully-qualified name of the ProjectService's Allow RPC.
 	ProjectServiceAllowProcedure = "/plan.v1.ProjectService/Allow"
+	// ProjectServiceForgetSyncProcedure is the fully-qualified name of the ProjectService's ForgetSync
+	// RPC.
+	ProjectServiceForgetSyncProcedure = "/plan.v1.ProjectService/ForgetSync"
+	// ProjectServicePullProcedure is the fully-qualified name of the ProjectService's Pull RPC.
+	ProjectServicePullProcedure = "/plan.v1.ProjectService/Pull"
 	// ProjectServiceBranchesProcedure is the fully-qualified name of the ProjectService's Branches RPC.
 	ProjectServiceBranchesProcedure = "/plan.v1.ProjectService/Branches"
+	// ProjectServiceSetBranchProcedure is the fully-qualified name of the ProjectService's SetBranch
+	// RPC.
+	ProjectServiceSetBranchProcedure = "/plan.v1.ProjectService/SetBranch"
+	// ProjectServiceAcknowledgeProcedure is the fully-qualified name of the ProjectService's
+	// Acknowledge RPC.
+	ProjectServiceAcknowledgeProcedure = "/plan.v1.ProjectService/Acknowledge"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -118,6 +139,12 @@ const (
 	WishServiceDescribeProcedure = "/plan.v1.WishService/Describe"
 	// WishServiceRenameProcedure is the fully-qualified name of the WishService's Rename RPC.
 	WishServiceRenameProcedure = "/plan.v1.WishService/Rename"
+	// WishServiceIconProcedure is the fully-qualified name of the WishService's Icon RPC.
+	WishServiceIconProcedure = "/plan.v1.WishService/Icon"
+	// WishServiceIconsProcedure is the fully-qualified name of the WishService's Icons RPC.
+	WishServiceIconsProcedure = "/plan.v1.WishService/Icons"
+	// WishServiceAddProjectProcedure is the fully-qualified name of the WishService's AddProject RPC.
+	WishServiceAddProjectProcedure = "/plan.v1.WishService/AddProject"
 	// WishServiceBriefProcedure is the fully-qualified name of the WishService's Brief RPC.
 	WishServiceBriefProcedure = "/plan.v1.WishService/Brief"
 	// WishServiceSnapshotProcedure is the fully-qualified name of the WishService's Snapshot RPC.
@@ -142,6 +169,8 @@ const (
 	WishServiceDeleteProcedure = "/plan.v1.WishService/Delete"
 	// WishServiceMoveProcedure is the fully-qualified name of the WishService's Move RPC.
 	WishServiceMoveProcedure = "/plan.v1.WishService/Move"
+	// WishServiceReorderProcedure is the fully-qualified name of the WishService's Reorder RPC.
+	WishServiceReorderProcedure = "/plan.v1.WishService/Reorder"
 	// WishServiceRenderProcedure is the fully-qualified name of the WishService's Render RPC.
 	WishServiceRenderProcedure = "/plan.v1.WishService/Render"
 	// WishServiceSyncProcedure is the fully-qualified name of the WishService's Sync RPC.
@@ -162,8 +191,21 @@ const (
 	LeadServiceNotesProcedure = "/plan.v1.LeadService/Notes"
 	// LeadServiceWatchProcedure is the fully-qualified name of the LeadService's Watch RPC.
 	LeadServiceWatchProcedure = "/plan.v1.LeadService/Watch"
+	// LeadServiceEventProcedure is the fully-qualified name of the LeadService's Event RPC.
+	LeadServiceEventProcedure = "/plan.v1.LeadService/Event"
 	// LeadServiceTellProcedure is the fully-qualified name of the LeadService's Tell RPC.
 	LeadServiceTellProcedure = "/plan.v1.LeadService/Tell"
+	// LeadServiceJournalProcedure is the fully-qualified name of the LeadService's Journal RPC.
+	LeadServiceJournalProcedure = "/plan.v1.LeadService/Journal"
+	// LeadServiceMoveProcedure is the fully-qualified name of the LeadService's Move RPC.
+	LeadServiceMoveProcedure = "/plan.v1.LeadService/Move"
+	// LeadServiceAccountsProcedure is the fully-qualified name of the LeadService's Accounts RPC.
+	LeadServiceAccountsProcedure = "/plan.v1.LeadService/Accounts"
+	// LeadServiceAddAccountProcedure is the fully-qualified name of the LeadService's AddAccount RPC.
+	LeadServiceAddAccountProcedure = "/plan.v1.LeadService/AddAccount"
+	// LeadServiceRemoveAccountProcedure is the fully-qualified name of the LeadService's RemoveAccount
+	// RPC.
+	LeadServiceRemoveAccountProcedure = "/plan.v1.LeadService/RemoveAccount"
 	// LeadServiceChooseProcedure is the fully-qualified name of the LeadService's Choose RPC.
 	LeadServiceChooseProcedure = "/plan.v1.LeadService/Choose"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
@@ -180,6 +222,8 @@ const (
 	TaskServiceSpawnProcedure = "/plan.v1.TaskService/Spawn"
 	// TaskServiceListProcedure is the fully-qualified name of the TaskService's List RPC.
 	TaskServiceListProcedure = "/plan.v1.TaskService/List"
+	// TaskServiceOverlapsProcedure is the fully-qualified name of the TaskService's Overlaps RPC.
+	TaskServiceOverlapsProcedure = "/plan.v1.TaskService/Overlaps"
 	// TaskServiceGetProcedure is the fully-qualified name of the TaskService's Get RPC.
 	TaskServiceGetProcedure = "/plan.v1.TaskService/Get"
 	// TaskServiceDiffProcedure is the fully-qualified name of the TaskService's Diff RPC.
@@ -218,11 +262,21 @@ const (
 	TaskServiceOpenProcedure = "/plan.v1.TaskService/Open"
 	// TaskServiceMoveProcedure is the fully-qualified name of the TaskService's Move RPC.
 	TaskServiceMoveProcedure = "/plan.v1.TaskService/Move"
+	// TaskServiceRankProcedure is the fully-qualified name of the TaskService's Rank RPC.
+	TaskServiceRankProcedure = "/plan.v1.TaskService/Rank"
 	// TaskServiceCommentProcedure is the fully-qualified name of the TaskService's Comment RPC.
 	TaskServiceCommentProcedure = "/plan.v1.TaskService/Comment"
 	// TaskServiceTurnCommentsProcedure is the fully-qualified name of the TaskService's TurnComments
 	// RPC.
 	TaskServiceTurnCommentsProcedure = "/plan.v1.TaskService/TurnComments"
+	// ServeServiceRunProcedure is the fully-qualified name of the ServeService's Run RPC.
+	ServeServiceRunProcedure = "/plan.v1.ServeService/Run"
+	// ServeServiceListProcedure is the fully-qualified name of the ServeService's List RPC.
+	ServeServiceListProcedure = "/plan.v1.ServeService/List"
+	// ServeServiceStopProcedure is the fully-qualified name of the ServeService's Stop RPC.
+	ServeServiceStopProcedure = "/plan.v1.ServeService/Stop"
+	// ServeServiceLogsProcedure is the fully-qualified name of the ServeService's Logs RPC.
+	ServeServiceLogsProcedure = "/plan.v1.ServeService/Logs"
 	// PlanServiceSyncProcedure is the fully-qualified name of the PlanService's Sync RPC.
 	PlanServiceSyncProcedure = "/plan.v1.PlanService/Sync"
 )
@@ -235,6 +289,10 @@ type QuestionServiceClient interface {
 	Answer(context.Context, *connect.Request[v1.QuestionServiceAnswerRequest]) (*connect.Response[v1.QuestionServiceAnswerResponse], error)
 	// List questions, the most recent last.
 	List(context.Context, *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error)
+	// One question as it stands now: its text, context, options and recommendation, its answer and note, or its
+	// withdrawal; of its rounds, who asked to investigate and why, without what each revision replaced. Reads one
+	// decision's note without listing every question of a wish.
+	Get(context.Context, *connect.Request[v1.QuestionServiceGetRequest]) (*connect.Response[v1.QuestionServiceGetResponse], error)
 	// Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
 	Enlighten(context.Context, *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error)
 	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
@@ -244,6 +302,19 @@ type QuestionServiceClient interface {
 	Move(context.Context, *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error)
 	// Withdraw an open question without an answer.
 	Withdraw(context.Context, *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error)
+	// Put an open question off for later: it goes below the open questions asked before now, in the window and the
+	// brief, and keeps that place. With clear, it goes back to its place, by when it was asked.
+	Later(context.Context, *connect.Request[v1.QuestionServiceLaterRequest]) (*connect.Response[v1.QuestionServiceLaterResponse], error)
+	// Put an open question to sleep until typed conditions hold: tasks over, requests merged, a time. It leaves the open
+	// questions until the scheduler finds them all holding; then it wakes, the lead checks it, and it shows at the top.
+	// With wake, it wakes now.
+	Sleep(context.Context, *connect.Request[v1.QuestionServiceSleepRequest]) (*connect.Response[v1.QuestionServiceSleepResponse], error)
+	// Launch the task the chosen option of an answered question planned, as it is or with the flags given in place of
+	// its own: what djinn task spawn takes, the question its decision. Djinn launches it by itself on an answer without
+	// a note when it comes after no task and blocks none; otherwise the lead does, once it has read the answer. A plan
+	// that no longer holds (its azima closed, a task it comes after cancelled, one it blocks started) is refused, why
+	// said, until the flags change what fails.
+	Launch(context.Context, *connect.Request[v1.QuestionServiceLaunchRequest]) (*connect.Response[v1.QuestionServiceLaunchResponse], error)
 }
 
 // NewQuestionServiceClient constructs a client for the plan.v1.QuestionService service. By default,
@@ -276,6 +347,13 @@ func NewQuestionServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		get: connect.NewClient[v1.QuestionServiceGetRequest, v1.QuestionServiceGetResponse](
+			httpClient,
+			baseURL+QuestionServiceGetProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Get")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		enlighten: connect.NewClient[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse](
 			httpClient,
 			baseURL+QuestionServiceEnlightenProcedure,
@@ -300,6 +378,24 @@ func NewQuestionServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(questionServiceMethods.ByName("Withdraw")),
 			connect.WithClientOptions(opts...),
 		),
+		later: connect.NewClient[v1.QuestionServiceLaterRequest, v1.QuestionServiceLaterResponse](
+			httpClient,
+			baseURL+QuestionServiceLaterProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Later")),
+			connect.WithClientOptions(opts...),
+		),
+		sleep: connect.NewClient[v1.QuestionServiceSleepRequest, v1.QuestionServiceSleepResponse](
+			httpClient,
+			baseURL+QuestionServiceSleepProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Sleep")),
+			connect.WithClientOptions(opts...),
+		),
+		launch: connect.NewClient[v1.QuestionServiceLaunchRequest, v1.QuestionServiceLaunchResponse](
+			httpClient,
+			baseURL+QuestionServiceLaunchProcedure,
+			connect.WithSchema(questionServiceMethods.ByName("Launch")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -308,10 +404,14 @@ type questionServiceClient struct {
 	ask       *connect.Client[v1.QuestionServiceAskRequest, v1.QuestionServiceAskResponse]
 	answer    *connect.Client[v1.QuestionServiceAnswerRequest, v1.QuestionServiceAnswerResponse]
 	list      *connect.Client[v1.QuestionServiceListRequest, v1.QuestionServiceListResponse]
+	get       *connect.Client[v1.QuestionServiceGetRequest, v1.QuestionServiceGetResponse]
 	enlighten *connect.Client[v1.QuestionServiceEnlightenRequest, v1.QuestionServiceEnlightenResponse]
 	revise    *connect.Client[v1.QuestionServiceReviseRequest, v1.QuestionServiceReviseResponse]
 	move      *connect.Client[v1.QuestionServiceMoveRequest, v1.QuestionServiceMoveResponse]
 	withdraw  *connect.Client[v1.QuestionServiceWithdrawRequest, v1.QuestionServiceWithdrawResponse]
+	later     *connect.Client[v1.QuestionServiceLaterRequest, v1.QuestionServiceLaterResponse]
+	sleep     *connect.Client[v1.QuestionServiceSleepRequest, v1.QuestionServiceSleepResponse]
+	launch    *connect.Client[v1.QuestionServiceLaunchRequest, v1.QuestionServiceLaunchResponse]
 }
 
 // Ask calls plan.v1.QuestionService.Ask.
@@ -327,6 +427,11 @@ func (c *questionServiceClient) Answer(ctx context.Context, req *connect.Request
 // List calls plan.v1.QuestionService.List.
 func (c *questionServiceClient) List(ctx context.Context, req *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error) {
 	return c.list.CallUnary(ctx, req)
+}
+
+// Get calls plan.v1.QuestionService.Get.
+func (c *questionServiceClient) Get(ctx context.Context, req *connect.Request[v1.QuestionServiceGetRequest]) (*connect.Response[v1.QuestionServiceGetResponse], error) {
+	return c.get.CallUnary(ctx, req)
 }
 
 // Enlighten calls plan.v1.QuestionService.Enlighten.
@@ -349,6 +454,21 @@ func (c *questionServiceClient) Withdraw(ctx context.Context, req *connect.Reque
 	return c.withdraw.CallUnary(ctx, req)
 }
 
+// Later calls plan.v1.QuestionService.Later.
+func (c *questionServiceClient) Later(ctx context.Context, req *connect.Request[v1.QuestionServiceLaterRequest]) (*connect.Response[v1.QuestionServiceLaterResponse], error) {
+	return c.later.CallUnary(ctx, req)
+}
+
+// Sleep calls plan.v1.QuestionService.Sleep.
+func (c *questionServiceClient) Sleep(ctx context.Context, req *connect.Request[v1.QuestionServiceSleepRequest]) (*connect.Response[v1.QuestionServiceSleepResponse], error) {
+	return c.sleep.CallUnary(ctx, req)
+}
+
+// Launch calls plan.v1.QuestionService.Launch.
+func (c *questionServiceClient) Launch(ctx context.Context, req *connect.Request[v1.QuestionServiceLaunchRequest]) (*connect.Response[v1.QuestionServiceLaunchResponse], error) {
+	return c.launch.CallUnary(ctx, req)
+}
+
 // QuestionServiceHandler is an implementation of the plan.v1.QuestionService service.
 type QuestionServiceHandler interface {
 	// Ask the developer a question. Offer up to four options to answer by letter, or none for a yes/no question.
@@ -357,6 +477,10 @@ type QuestionServiceHandler interface {
 	Answer(context.Context, *connect.Request[v1.QuestionServiceAnswerRequest]) (*connect.Response[v1.QuestionServiceAnswerResponse], error)
 	// List questions, the most recent last.
 	List(context.Context, *connect.Request[v1.QuestionServiceListRequest]) (*connect.Response[v1.QuestionServiceListResponse], error)
+	// One question as it stands now: its text, context, options and recommendation, its answer and note, or its
+	// withdrawal; of its rounds, who asked to investigate and why, without what each revision replaced. Reads one
+	// decision's note without listing every question of a wish.
+	Get(context.Context, *connect.Request[v1.QuestionServiceGetRequest]) (*connect.Response[v1.QuestionServiceGetResponse], error)
 	// Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
 	Enlighten(context.Context, *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error)
 	// Revise an open question after investigating: its context, options or recommendation. The former ones stay in its
@@ -366,6 +490,19 @@ type QuestionServiceHandler interface {
 	Move(context.Context, *connect.Request[v1.QuestionServiceMoveRequest]) (*connect.Response[v1.QuestionServiceMoveResponse], error)
 	// Withdraw an open question without an answer.
 	Withdraw(context.Context, *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error)
+	// Put an open question off for later: it goes below the open questions asked before now, in the window and the
+	// brief, and keeps that place. With clear, it goes back to its place, by when it was asked.
+	Later(context.Context, *connect.Request[v1.QuestionServiceLaterRequest]) (*connect.Response[v1.QuestionServiceLaterResponse], error)
+	// Put an open question to sleep until typed conditions hold: tasks over, requests merged, a time. It leaves the open
+	// questions until the scheduler finds them all holding; then it wakes, the lead checks it, and it shows at the top.
+	// With wake, it wakes now.
+	Sleep(context.Context, *connect.Request[v1.QuestionServiceSleepRequest]) (*connect.Response[v1.QuestionServiceSleepResponse], error)
+	// Launch the task the chosen option of an answered question planned, as it is or with the flags given in place of
+	// its own: what djinn task spawn takes, the question its decision. Djinn launches it by itself on an answer without
+	// a note when it comes after no task and blocks none; otherwise the lead does, once it has read the answer. A plan
+	// that no longer holds (its azima closed, a task it comes after cancelled, one it blocks started) is refused, why
+	// said, until the flags change what fails.
+	Launch(context.Context, *connect.Request[v1.QuestionServiceLaunchRequest]) (*connect.Response[v1.QuestionServiceLaunchResponse], error)
 }
 
 // NewQuestionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -394,6 +531,13 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	questionServiceGetHandler := connect.NewUnaryHandler(
+		QuestionServiceGetProcedure,
+		svc.Get,
+		connect.WithSchema(questionServiceMethods.ByName("Get")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	questionServiceEnlightenHandler := connect.NewUnaryHandler(
 		QuestionServiceEnlightenProcedure,
 		svc.Enlighten,
@@ -418,6 +562,24 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 		connect.WithSchema(questionServiceMethods.ByName("Withdraw")),
 		connect.WithHandlerOptions(opts...),
 	)
+	questionServiceLaterHandler := connect.NewUnaryHandler(
+		QuestionServiceLaterProcedure,
+		svc.Later,
+		connect.WithSchema(questionServiceMethods.ByName("Later")),
+		connect.WithHandlerOptions(opts...),
+	)
+	questionServiceSleepHandler := connect.NewUnaryHandler(
+		QuestionServiceSleepProcedure,
+		svc.Sleep,
+		connect.WithSchema(questionServiceMethods.ByName("Sleep")),
+		connect.WithHandlerOptions(opts...),
+	)
+	questionServiceLaunchHandler := connect.NewUnaryHandler(
+		QuestionServiceLaunchProcedure,
+		svc.Launch,
+		connect.WithSchema(questionServiceMethods.ByName("Launch")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.QuestionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case QuestionServiceAskProcedure:
@@ -426,6 +588,8 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 			questionServiceAnswerHandler.ServeHTTP(w, r)
 		case QuestionServiceListProcedure:
 			questionServiceListHandler.ServeHTTP(w, r)
+		case QuestionServiceGetProcedure:
+			questionServiceGetHandler.ServeHTTP(w, r)
 		case QuestionServiceEnlightenProcedure:
 			questionServiceEnlightenHandler.ServeHTTP(w, r)
 		case QuestionServiceReviseProcedure:
@@ -434,6 +598,12 @@ func NewQuestionServiceHandler(svc QuestionServiceHandler, opts ...connect.Handl
 			questionServiceMoveHandler.ServeHTTP(w, r)
 		case QuestionServiceWithdrawProcedure:
 			questionServiceWithdrawHandler.ServeHTTP(w, r)
+		case QuestionServiceLaterProcedure:
+			questionServiceLaterHandler.ServeHTTP(w, r)
+		case QuestionServiceSleepProcedure:
+			questionServiceSleepHandler.ServeHTTP(w, r)
+		case QuestionServiceLaunchProcedure:
+			questionServiceLaunchHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -455,6 +625,10 @@ func (UnimplementedQuestionServiceHandler) List(context.Context, *connect.Reques
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.List is not implemented"))
 }
 
+func (UnimplementedQuestionServiceHandler) Get(context.Context, *connect.Request[v1.QuestionServiceGetRequest]) (*connect.Response[v1.QuestionServiceGetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Get is not implemented"))
+}
+
 func (UnimplementedQuestionServiceHandler) Enlighten(context.Context, *connect.Request[v1.QuestionServiceEnlightenRequest]) (*connect.Response[v1.QuestionServiceEnlightenResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Enlighten is not implemented"))
 }
@@ -469,6 +643,18 @@ func (UnimplementedQuestionServiceHandler) Move(context.Context, *connect.Reques
 
 func (UnimplementedQuestionServiceHandler) Withdraw(context.Context, *connect.Request[v1.QuestionServiceWithdrawRequest]) (*connect.Response[v1.QuestionServiceWithdrawResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Withdraw is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Later(context.Context, *connect.Request[v1.QuestionServiceLaterRequest]) (*connect.Response[v1.QuestionServiceLaterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Later is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Sleep(context.Context, *connect.Request[v1.QuestionServiceSleepRequest]) (*connect.Response[v1.QuestionServiceSleepResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Sleep is not implemented"))
+}
+
+func (UnimplementedQuestionServiceHandler) Launch(context.Context, *connect.Request[v1.QuestionServiceLaunchRequest]) (*connect.Response[v1.QuestionServiceLaunchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.QuestionService.Launch is not implemented"))
 }
 
 // ProjectServiceClient is a client for the plan.v1.ProjectService service.
@@ -486,12 +672,29 @@ type ProjectServiceClient interface {
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
-	// Show or change the watcher commands you allow in a project for yourself, besides those its
-	// .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+	// Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
+	// yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
+	// repository.
 	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
+	// Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
+	// syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
+	ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error)
+	// Pull a branch Djinn pushes that is behind its remote: fetch it, then bring it up to the remote's, a fast-forward
+	// only, your clean checkout of it following. Refused, saying why, when it has diverged from the remote's, when your
+	// checkout of it has changes not committed, or while work merges into it. Nothing is ever forced.
+	Pull(context.Context, *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
-	// Djinn made for its tasks' worktrees left out.
+	// Djinn made for its tasks' worktrees left out. With --reference, those the reference branch may name.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
+	// Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
+	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
+	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
+	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
+	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
+	// them. They are applied already; djinn project show lists the journal of changes.
+	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -549,11 +752,35 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("Allow")),
 			connect.WithClientOptions(opts...),
 		),
+		forgetSync: connect.NewClient[v1.ProjectServiceForgetSyncRequest, v1.ProjectServiceForgetSyncResponse](
+			httpClient,
+			baseURL+ProjectServiceForgetSyncProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("ForgetSync")),
+			connect.WithClientOptions(opts...),
+		),
+		pull: connect.NewClient[v1.ProjectServicePullRequest, v1.ProjectServicePullResponse](
+			httpClient,
+			baseURL+ProjectServicePullProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Pull")),
+			connect.WithClientOptions(opts...),
+		),
 		branches: connect.NewClient[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse](
 			httpClient,
 			baseURL+ProjectServiceBranchesProcedure,
 			connect.WithSchema(projectServiceMethods.ByName("Branches")),
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		setBranch: connect.NewClient[v1.ProjectServiceSetBranchRequest, v1.ProjectServiceSetBranchResponse](
+			httpClient,
+			baseURL+ProjectServiceSetBranchProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("SetBranch")),
+			connect.WithClientOptions(opts...),
+		),
+		acknowledge: connect.NewClient[v1.ProjectServiceAcknowledgeRequest, v1.ProjectServiceAcknowledgeResponse](
+			httpClient,
+			baseURL+ProjectServiceAcknowledgeProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -568,7 +795,11 @@ type projectServiceClient struct {
 	setPush      *connect.Client[v1.ProjectServiceSetPushRequest, v1.ProjectServiceSetPushResponse]
 	pushStrategy *connect.Client[v1.ProjectServicePushStrategyRequest, v1.ProjectServicePushStrategyResponse]
 	allow        *connect.Client[v1.ProjectServiceAllowRequest, v1.ProjectServiceAllowResponse]
+	forgetSync   *connect.Client[v1.ProjectServiceForgetSyncRequest, v1.ProjectServiceForgetSyncResponse]
+	pull         *connect.Client[v1.ProjectServicePullRequest, v1.ProjectServicePullResponse]
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
+	setBranch    *connect.Client[v1.ProjectServiceSetBranchRequest, v1.ProjectServiceSetBranchResponse]
+	acknowledge  *connect.Client[v1.ProjectServiceAcknowledgeRequest, v1.ProjectServiceAcknowledgeResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -606,9 +837,29 @@ func (c *projectServiceClient) Allow(ctx context.Context, req *connect.Request[v
 	return c.allow.CallUnary(ctx, req)
 }
 
+// ForgetSync calls plan.v1.ProjectService.ForgetSync.
+func (c *projectServiceClient) ForgetSync(ctx context.Context, req *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error) {
+	return c.forgetSync.CallUnary(ctx, req)
+}
+
+// Pull calls plan.v1.ProjectService.Pull.
+func (c *projectServiceClient) Pull(ctx context.Context, req *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error) {
+	return c.pull.CallUnary(ctx, req)
+}
+
 // Branches calls plan.v1.ProjectService.Branches.
 func (c *projectServiceClient) Branches(ctx context.Context, req *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error) {
 	return c.branches.CallUnary(ctx, req)
+}
+
+// SetBranch calls plan.v1.ProjectService.SetBranch.
+func (c *projectServiceClient) SetBranch(ctx context.Context, req *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error) {
+	return c.setBranch.CallUnary(ctx, req)
+}
+
+// Acknowledge calls plan.v1.ProjectService.Acknowledge.
+func (c *projectServiceClient) Acknowledge(ctx context.Context, req *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error) {
+	return c.acknowledge.CallUnary(ctx, req)
 }
 
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
@@ -626,12 +877,29 @@ type ProjectServiceHandler interface {
 	SetPush(context.Context, *connect.Request[v1.ProjectServiceSetPushRequest]) (*connect.Response[v1.ProjectServiceSetPushResponse], error)
 	// Show or change the push strategy of a project: wish (one branch per wish) or azima (one branch per azima).
 	PushStrategy(context.Context, *connect.Request[v1.ProjectServicePushStrategyRequest]) (*connect.Response[v1.ProjectServicePushStrategyResponse], error)
-	// Show or change the watcher commands you allow in a project for yourself, besides those its
-	// .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+	// Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
+	// yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
+	// repository.
 	Allow(context.Context, *connect.Request[v1.ProjectServiceAllowRequest]) (*connect.Response[v1.ProjectServiceAllowResponse], error)
+	// Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
+	// syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
+	ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error)
+	// Pull a branch Djinn pushes that is behind its remote: fetch it, then bring it up to the remote's, a fast-forward
+	// only, your clean checkout of it following. Refused, saying why, when it has diverged from the remote's, when your
+	// checkout of it has changes not committed, or while work merges into it. Nothing is ever forced.
+	Pull(context.Context, *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error)
 	// List the local branches of a project's repository a wish's work may land in, the latest commit first: those
-	// Djinn made for its tasks' worktrees left out.
+	// Djinn made for its tasks' worktrees left out. With --reference, those the reference branch may name.
 	Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error)
+	// Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
+	// that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
+	// file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+	// branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+	SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error)
+	// Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
+	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
+	// them. They are applied already; djinn project show lists the journal of changes.
+	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -685,11 +953,35 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("Allow")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceForgetSyncHandler := connect.NewUnaryHandler(
+		ProjectServiceForgetSyncProcedure,
+		svc.ForgetSync,
+		connect.WithSchema(projectServiceMethods.ByName("ForgetSync")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectServicePullHandler := connect.NewUnaryHandler(
+		ProjectServicePullProcedure,
+		svc.Pull,
+		connect.WithSchema(projectServiceMethods.ByName("Pull")),
+		connect.WithHandlerOptions(opts...),
+	)
 	projectServiceBranchesHandler := connect.NewUnaryHandler(
 		ProjectServiceBranchesProcedure,
 		svc.Branches,
 		connect.WithSchema(projectServiceMethods.ByName("Branches")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectServiceSetBranchHandler := connect.NewUnaryHandler(
+		ProjectServiceSetBranchProcedure,
+		svc.SetBranch,
+		connect.WithSchema(projectServiceMethods.ByName("SetBranch")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectServiceAcknowledgeHandler := connect.NewUnaryHandler(
+		ProjectServiceAcknowledgeProcedure,
+		svc.Acknowledge,
+		connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -708,8 +1000,16 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServicePushStrategyHandler.ServeHTTP(w, r)
 		case ProjectServiceAllowProcedure:
 			projectServiceAllowHandler.ServeHTTP(w, r)
+		case ProjectServiceForgetSyncProcedure:
+			projectServiceForgetSyncHandler.ServeHTTP(w, r)
+		case ProjectServicePullProcedure:
+			projectServicePullHandler.ServeHTTP(w, r)
 		case ProjectServiceBranchesProcedure:
 			projectServiceBranchesHandler.ServeHTTP(w, r)
+		case ProjectServiceSetBranchProcedure:
+			projectServiceSetBranchHandler.ServeHTTP(w, r)
+		case ProjectServiceAcknowledgeProcedure:
+			projectServiceAcknowledgeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -747,8 +1047,24 @@ func (UnimplementedProjectServiceHandler) Allow(context.Context, *connect.Reques
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Allow is not implemented"))
 }
 
+func (UnimplementedProjectServiceHandler) ForgetSync(context.Context, *connect.Request[v1.ProjectServiceForgetSyncRequest]) (*connect.Response[v1.ProjectServiceForgetSyncResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.ForgetSync is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Pull(context.Context, *connect.Request[v1.ProjectServicePullRequest]) (*connect.Response[v1.ProjectServicePullResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Pull is not implemented"))
+}
+
 func (UnimplementedProjectServiceHandler) Branches(context.Context, *connect.Request[v1.ProjectServiceBranchesRequest]) (*connect.Response[v1.ProjectServiceBranchesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Branches is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) SetBranch(context.Context, *connect.Request[v1.ProjectServiceSetBranchRequest]) (*connect.Response[v1.ProjectServiceSetBranchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetBranch is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Acknowledge is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.
@@ -894,9 +1210,11 @@ type InboxServiceClient interface {
 	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
 	// List the sources the projects' skills declare, plugged in or not on this machine.
 	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
-	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool. A
+	// no you said to it is forgotten.
 	Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error)
-	// Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+	// Unplug a source, on this machine, or say no to one never plugged in: its command stops and runs no more, and its
+	// project no longer asks whether to plug it in. Its items stay.
 	Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error)
 }
 
@@ -1003,9 +1321,11 @@ type InboxServiceHandler interface {
 	Route(context.Context, *connect.Request[v1.InboxServiceRouteRequest]) (*connect.Response[v1.InboxServiceRouteResponse], error)
 	// List the sources the projects' skills declare, plugged in or not on this machine.
 	Sources(context.Context, *connect.Request[v1.InboxServiceSourcesRequest]) (*connect.Response[v1.InboxServiceSourcesResponse], error)
-	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+	// Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool. A
+	// no you said to it is forgotten.
 	Plug(context.Context, *connect.Request[v1.InboxServicePlugRequest]) (*connect.Response[v1.InboxServicePlugResponse], error)
-	// Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+	// Unplug a source, on this machine, or say no to one never plugged in: its command stops and runs no more, and its
+	// project no longer asks whether to plug it in. Its items stay.
 	Unplug(context.Context, *connect.Request[v1.InboxServiceUnplugRequest]) (*connect.Response[v1.InboxServiceUnplugResponse], error)
 }
 
@@ -1106,7 +1426,7 @@ type WishServiceClient interface {
 	// Make a wish.
 	Make(context.Context, *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error)
 	// List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
-	// the most recent last.
+	// each in its own order (djinn wish reorder), the one paused or granted last first.
 	List(context.Context, *connect.Request[v1.WishServiceListRequest]) (*connect.Response[v1.WishServiceListResponse], error)
 	// Export a wish to a file, to open it on another machine: its plan, questions, decisions, blocks and journal.
 	// Never code, which travels through Git, never a secret, never a local path: projects are named by their name
@@ -1123,6 +1443,16 @@ type WishServiceClient interface {
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
 	// Rename a wish: what you wish, in a sentence, in place of what it had.
 	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
+	// Set a wish's icon in the window's menu, in place of what it had: a name of the bank (djinn wish icons) that says
+	// its subject. An empty name takes it back to its mark.
+	Icon(context.Context, *connect.Request[v1.WishServiceIconRequest]) (*connect.Response[v1.WishServiceIconResponse], error)
+	// List the bank of wish icons a wish's icon is chosen from, family by family: each name with its words in English
+	// and in French. --search keeps the icons whose name, family or words hold every word given, in either language.
+	Icons(context.Context, *connect.Request[v1.WishServiceIconsRequest]) (*connect.Response[v1.WishServiceIconsResponse], error)
+	// Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
+	// with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
+	// wish is made. A project already in the wish, or unknown, is refused. Removing a project is not possible.
+	AddProject(context.Context, *connect.Request[v1.WishServiceAddProjectRequest]) (*connect.Response[v1.WishServiceAddProjectResponse], error)
 	// The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
 	// store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
@@ -1159,6 +1489,9 @@ type WishServiceClient interface {
 	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
 	// there, the third place at most, and the wish it pushes past the third place is paused.
 	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
+	// Move a paused or granted wish to another place in the list of the wishes of its state: --to 1 puts it first. It
+	// stays paused or granted: djinn wish move makes it active.
+	Reorder(context.Context, *connect.Request[v1.WishServiceReorderRequest]) (*connect.Response[v1.WishServiceReorderResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
 	// local path.
@@ -1236,6 +1569,25 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Rename")),
 			connect.WithClientOptions(opts...),
 		),
+		icon: connect.NewClient[v1.WishServiceIconRequest, v1.WishServiceIconResponse](
+			httpClient,
+			baseURL+WishServiceIconProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Icon")),
+			connect.WithClientOptions(opts...),
+		),
+		icons: connect.NewClient[v1.WishServiceIconsRequest, v1.WishServiceIconsResponse](
+			httpClient,
+			baseURL+WishServiceIconsProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Icons")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		addProject: connect.NewClient[v1.WishServiceAddProjectRequest, v1.WishServiceAddProjectResponse](
+			httpClient,
+			baseURL+WishServiceAddProjectProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("AddProject")),
+			connect.WithClientOptions(opts...),
+		),
 		brief: connect.NewClient[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse](
 			httpClient,
 			baseURL+WishServiceBriefProcedure,
@@ -1303,6 +1655,12 @@ func NewWishServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(wishServiceMethods.ByName("Move")),
 			connect.WithClientOptions(opts...),
 		),
+		reorder: connect.NewClient[v1.WishServiceReorderRequest, v1.WishServiceReorderResponse](
+			httpClient,
+			baseURL+WishServiceReorderProcedure,
+			connect.WithSchema(wishServiceMethods.ByName("Reorder")),
+			connect.WithClientOptions(opts...),
+		),
 		render: connect.NewClient[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse](
 			httpClient,
 			baseURL+WishServiceRenderProcedure,
@@ -1339,6 +1697,9 @@ type wishServiceClient struct {
 	importData     *connect.Client[v1.WishServiceImportDataRequest, v1.WishServiceImportDataResponse]
 	describe       *connect.Client[v1.WishServiceDescribeRequest, v1.WishServiceDescribeResponse]
 	rename         *connect.Client[v1.WishServiceRenameRequest, v1.WishServiceRenameResponse]
+	icon           *connect.Client[v1.WishServiceIconRequest, v1.WishServiceIconResponse]
+	icons          *connect.Client[v1.WishServiceIconsRequest, v1.WishServiceIconsResponse]
+	addProject     *connect.Client[v1.WishServiceAddProjectRequest, v1.WishServiceAddProjectResponse]
 	brief          *connect.Client[v1.WishServiceBriefRequest, v1.WishServiceBriefResponse]
 	snapshot       *connect.Client[v1.WishServiceSnapshotRequest, v1.WishServiceSnapshotResponse]
 	allow          *connect.Client[v1.WishServiceAllowRequest, v1.WishServiceAllowResponse]
@@ -1350,6 +1711,7 @@ type wishServiceClient struct {
 	activate       *connect.Client[v1.WishServiceActivateRequest, v1.WishServiceActivateResponse]
 	delete         *connect.Client[v1.WishServiceDeleteRequest, v1.WishServiceDeleteResponse]
 	move           *connect.Client[v1.WishServiceMoveRequest, v1.WishServiceMoveResponse]
+	reorder        *connect.Client[v1.WishServiceReorderRequest, v1.WishServiceReorderResponse]
 	render         *connect.Client[v1.WishServiceRenderRequest, v1.WishServiceRenderResponse]
 	sync           *connect.Client[v1.WishServiceSyncRequest, v1.WishServiceSyncResponse]
 	route          *connect.Client[v1.WishServiceRouteRequest, v1.WishServiceRouteResponse]
@@ -1389,6 +1751,21 @@ func (c *wishServiceClient) Describe(ctx context.Context, req *connect.Request[v
 // Rename calls plan.v1.WishService.Rename.
 func (c *wishServiceClient) Rename(ctx context.Context, req *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
 	return c.rename.CallUnary(ctx, req)
+}
+
+// Icon calls plan.v1.WishService.Icon.
+func (c *wishServiceClient) Icon(ctx context.Context, req *connect.Request[v1.WishServiceIconRequest]) (*connect.Response[v1.WishServiceIconResponse], error) {
+	return c.icon.CallUnary(ctx, req)
+}
+
+// Icons calls plan.v1.WishService.Icons.
+func (c *wishServiceClient) Icons(ctx context.Context, req *connect.Request[v1.WishServiceIconsRequest]) (*connect.Response[v1.WishServiceIconsResponse], error) {
+	return c.icons.CallUnary(ctx, req)
+}
+
+// AddProject calls plan.v1.WishService.AddProject.
+func (c *wishServiceClient) AddProject(ctx context.Context, req *connect.Request[v1.WishServiceAddProjectRequest]) (*connect.Response[v1.WishServiceAddProjectResponse], error) {
+	return c.addProject.CallUnary(ctx, req)
 }
 
 // Brief calls plan.v1.WishService.Brief.
@@ -1446,6 +1823,11 @@ func (c *wishServiceClient) Move(ctx context.Context, req *connect.Request[v1.Wi
 	return c.move.CallUnary(ctx, req)
 }
 
+// Reorder calls plan.v1.WishService.Reorder.
+func (c *wishServiceClient) Reorder(ctx context.Context, req *connect.Request[v1.WishServiceReorderRequest]) (*connect.Response[v1.WishServiceReorderResponse], error) {
+	return c.reorder.CallUnary(ctx, req)
+}
+
 // Render calls plan.v1.WishService.Render.
 func (c *wishServiceClient) Render(ctx context.Context, req *connect.Request[v1.WishServiceRenderRequest]) (*connect.Response[v1.WishServiceRenderResponse], error) {
 	return c.render.CallUnary(ctx, req)
@@ -1471,7 +1853,7 @@ type WishServiceHandler interface {
 	// Make a wish.
 	Make(context.Context, *connect.Request[v1.WishServiceMakeRequest]) (*connect.Response[v1.WishServiceMakeResponse], error)
 	// List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
-	// the most recent last.
+	// each in its own order (djinn wish reorder), the one paused or granted last first.
 	List(context.Context, *connect.Request[v1.WishServiceListRequest]) (*connect.Response[v1.WishServiceListResponse], error)
 	// Export a wish to a file, to open it on another machine: its plan, questions, decisions, blocks and journal.
 	// Never code, which travels through Git, never a secret, never a local path: projects are named by their name
@@ -1488,6 +1870,16 @@ type WishServiceHandler interface {
 	Describe(context.Context, *connect.Request[v1.WishServiceDescribeRequest]) (*connect.Response[v1.WishServiceDescribeResponse], error)
 	// Rename a wish: what you wish, in a sentence, in place of what it had.
 	Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error)
+	// Set a wish's icon in the window's menu, in place of what it had: a name of the bank (djinn wish icons) that says
+	// its subject. An empty name takes it back to its mark.
+	Icon(context.Context, *connect.Request[v1.WishServiceIconRequest]) (*connect.Response[v1.WishServiceIconResponse], error)
+	// List the bank of wish icons a wish's icon is chosen from, family by family: each name with its words in English
+	// and in French. --search keeps the icons whose name, family or words hold every word given, in either language.
+	Icons(context.Context, *connect.Request[v1.WishServiceIconsRequest]) (*connect.Response[v1.WishServiceIconsResponse], error)
+	// Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
+	// with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
+	// wish is made. A project already in the wish, or unknown, is refused. Removing a project is not possible.
+	AddProject(context.Context, *connect.Request[v1.WishServiceAddProjectRequest]) (*connect.Response[v1.WishServiceAddProjectResponse], error)
 	// The brief of a wish: where it stands, enough for any agent to lead it from there, written by Djinn from the
 	// store, no model. Every lead starts by reading it. First the wish (its description, its azimas, its tasks
 	// running and waiting, its open questions, its latest decisions and blocks, the last lead and when it last
@@ -1524,6 +1916,9 @@ type WishServiceHandler interface {
 	// Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
 	// there, the third place at most, and the wish it pushes past the third place is paused.
 	Move(context.Context, *connect.Request[v1.WishServiceMoveRequest]) (*connect.Response[v1.WishServiceMoveResponse], error)
+	// Move a paused or granted wish to another place in the list of the wishes of its state: --to 1 puts it first. It
+	// stays paused or granted: djinn wish move makes it active.
+	Reorder(context.Context, *connect.Request[v1.WishServiceReorderRequest]) (*connect.Response[v1.WishServiceReorderResponse], error)
 	// Render the wish's page to a file: one HTML page standing alone, with its open questions first, then what waits
 	// for you, its tasks, its decisions, its blocks and its journal. Djinn writes it, no model does. No secret, no
 	// local path.
@@ -1597,6 +1992,25 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Rename")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceIconHandler := connect.NewUnaryHandler(
+		WishServiceIconProcedure,
+		svc.Icon,
+		connect.WithSchema(wishServiceMethods.ByName("Icon")),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceIconsHandler := connect.NewUnaryHandler(
+		WishServiceIconsProcedure,
+		svc.Icons,
+		connect.WithSchema(wishServiceMethods.ByName("Icons")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	wishServiceAddProjectHandler := connect.NewUnaryHandler(
+		WishServiceAddProjectProcedure,
+		svc.AddProject,
+		connect.WithSchema(wishServiceMethods.ByName("AddProject")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceBriefHandler := connect.NewUnaryHandler(
 		WishServiceBriefProcedure,
 		svc.Brief,
@@ -1664,6 +2078,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(wishServiceMethods.ByName("Move")),
 		connect.WithHandlerOptions(opts...),
 	)
+	wishServiceReorderHandler := connect.NewUnaryHandler(
+		WishServiceReorderProcedure,
+		svc.Reorder,
+		connect.WithSchema(wishServiceMethods.ByName("Reorder")),
+		connect.WithHandlerOptions(opts...),
+	)
 	wishServiceRenderHandler := connect.NewUnaryHandler(
 		WishServiceRenderProcedure,
 		svc.Render,
@@ -1704,6 +2124,12 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceDescribeHandler.ServeHTTP(w, r)
 		case WishServiceRenameProcedure:
 			wishServiceRenameHandler.ServeHTTP(w, r)
+		case WishServiceIconProcedure:
+			wishServiceIconHandler.ServeHTTP(w, r)
+		case WishServiceIconsProcedure:
+			wishServiceIconsHandler.ServeHTTP(w, r)
+		case WishServiceAddProjectProcedure:
+			wishServiceAddProjectHandler.ServeHTTP(w, r)
 		case WishServiceBriefProcedure:
 			wishServiceBriefHandler.ServeHTTP(w, r)
 		case WishServiceSnapshotProcedure:
@@ -1726,6 +2152,8 @@ func NewWishServiceHandler(svc WishServiceHandler, opts ...connect.HandlerOption
 			wishServiceDeleteHandler.ServeHTTP(w, r)
 		case WishServiceMoveProcedure:
 			wishServiceMoveHandler.ServeHTTP(w, r)
+		case WishServiceReorderProcedure:
+			wishServiceReorderHandler.ServeHTTP(w, r)
 		case WishServiceRenderProcedure:
 			wishServiceRenderHandler.ServeHTTP(w, r)
 		case WishServiceSyncProcedure:
@@ -1769,6 +2197,18 @@ func (UnimplementedWishServiceHandler) Describe(context.Context, *connect.Reques
 
 func (UnimplementedWishServiceHandler) Rename(context.Context, *connect.Request[v1.WishServiceRenameRequest]) (*connect.Response[v1.WishServiceRenameResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Rename is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Icon(context.Context, *connect.Request[v1.WishServiceIconRequest]) (*connect.Response[v1.WishServiceIconResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Icon is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) Icons(context.Context, *connect.Request[v1.WishServiceIconsRequest]) (*connect.Response[v1.WishServiceIconsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Icons is not implemented"))
+}
+
+func (UnimplementedWishServiceHandler) AddProject(context.Context, *connect.Request[v1.WishServiceAddProjectRequest]) (*connect.Response[v1.WishServiceAddProjectResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.AddProject is not implemented"))
 }
 
 func (UnimplementedWishServiceHandler) Brief(context.Context, *connect.Request[v1.WishServiceBriefRequest]) (*connect.Response[v1.WishServiceBriefResponse], error) {
@@ -1815,6 +2255,10 @@ func (UnimplementedWishServiceHandler) Move(context.Context, *connect.Request[v1
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Move is not implemented"))
 }
 
+func (UnimplementedWishServiceHandler) Reorder(context.Context, *connect.Request[v1.WishServiceReorderRequest]) (*connect.Response[v1.WishServiceReorderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Reorder is not implemented"))
+}
+
 func (UnimplementedWishServiceHandler) Render(context.Context, *connect.Request[v1.WishServiceRenderRequest]) (*connect.Response[v1.WishServiceRenderResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.WishService.Render is not implemented"))
 }
@@ -1842,32 +2286,62 @@ type LeadServiceClient interface {
 	// agent from the brief the same way: a claude one becomes the lead, a codex one once djinn lead set gives its
 	// session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing
 	// starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead
-	// the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.
+	// the same way, and with no project nothing starts, the error says to create one. While Djinn drives the lead, no
+	// terminal opens: the events that wait after a failed batch go to a new session at once, and the note says how the
+	// lead runs. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error)
 	// The lead of Djinn, as currently recorded.
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
-	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
+	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line; at its end,
+	// a line per active wish again, for an agent whose tool keeps only the end of a long output. With --wishes, where
+	// the wishes stand only.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
 	// The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
 	// built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
-	// brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+	// brief holds the same); with one, that note whole; with several (a,b) or --all, each whole, in one call. A lead
+	// reads a note before it acts in its area; to add or fix
 	// one, a lead that may change Djinn spawns a task that edits lead/notes.
 	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
-	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
-	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
+	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code and its wish,
+	// its kind, a few words), under it the final note of a task or the note of an answer, whole up to a few screens
+	// (djinn lead event prints it all), then the wishes' identifiers and the cursor to pass next. It blocks until
 	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
 	// most) so that a burst, like an integration pass merging several tasks, comes as one digest; then it returns.
 	// Called again with --after the cursor, it acknowledges every event up to it for this session, then waits for the
 	// next ones: an event never acknowledged (the lead crashed, its session was lost) comes back on the next watch, at
 	// least once, never lost. While a watch of the lead's session waits, Djinn types nothing in the lead's terminal;
 	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
-	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
+	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent). Refused while Djinn
+	// drives the lead: Djinn hands each batch to a session of its own.
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
+	// One of the lead's events whole, waiting or acknowledged within the week: its line uncut, the note of the task or
+	// the answer it is about, and its detail. A digest names it with the event's identifier when it cuts a note.
+	Event(context.Context, *connect.Request[v1.LeadServiceEventRequest]) (*connect.Response[v1.LeadServiceEventResponse], error)
 	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
-	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+	// djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
+	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
+	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
+	// prompt carries the latest entries of its wishes; this prints them for the developer.
+	Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error)
+	// Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
+	// journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
+	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
+	// batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
+	Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error)
+	// The accounts of the agents on this machine, the seat of the lead, and for each account the command that signs
+	// it in, once, in its own folder.
+	Accounts(context.Context, *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error)
+	// Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
+	// unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
+	AddAccount(context.Context, *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error)
+	// Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
+	// while the lead runs on it.
+	RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
@@ -1924,10 +2398,49 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("Watch")),
 			connect.WithClientOptions(opts...),
 		),
+		event: connect.NewClient[v1.LeadServiceEventRequest, v1.LeadServiceEventResponse](
+			httpClient,
+			baseURL+LeadServiceEventProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Event")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		tell: connect.NewClient[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse](
 			httpClient,
 			baseURL+LeadServiceTellProcedure,
 			connect.WithSchema(leadServiceMethods.ByName("Tell")),
+			connect.WithClientOptions(opts...),
+		),
+		journal: connect.NewClient[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse](
+			httpClient,
+			baseURL+LeadServiceJournalProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Journal")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		move: connect.NewClient[v1.LeadServiceMoveRequest, v1.LeadServiceMoveResponse](
+			httpClient,
+			baseURL+LeadServiceMoveProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Move")),
+			connect.WithClientOptions(opts...),
+		),
+		accounts: connect.NewClient[v1.LeadServiceAccountsRequest, v1.LeadServiceAccountsResponse](
+			httpClient,
+			baseURL+LeadServiceAccountsProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Accounts")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		addAccount: connect.NewClient[v1.LeadServiceAddAccountRequest, v1.LeadServiceAddAccountResponse](
+			httpClient,
+			baseURL+LeadServiceAddAccountProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("AddAccount")),
+			connect.WithClientOptions(opts...),
+		),
+		removeAccount: connect.NewClient[v1.LeadServiceRemoveAccountRequest, v1.LeadServiceRemoveAccountResponse](
+			httpClient,
+			baseURL+LeadServiceRemoveAccountProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("RemoveAccount")),
 			connect.WithClientOptions(opts...),
 		),
 		choose: connect.NewClient[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse](
@@ -1941,14 +2454,20 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // leadServiceClient implements LeadServiceClient.
 type leadServiceClient struct {
-	set    *connect.Client[v1.LeadServiceSetRequest, v1.LeadServiceSetResponse]
-	resume *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
-	get    *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
-	brief  *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
-	notes  *connect.Client[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse]
-	watch  *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
-	tell   *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
-	choose *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
+	set           *connect.Client[v1.LeadServiceSetRequest, v1.LeadServiceSetResponse]
+	resume        *connect.Client[v1.LeadServiceResumeRequest, v1.LeadServiceResumeResponse]
+	get           *connect.Client[v1.LeadServiceGetRequest, v1.LeadServiceGetResponse]
+	brief         *connect.Client[v1.LeadServiceBriefRequest, v1.LeadServiceBriefResponse]
+	notes         *connect.Client[v1.LeadServiceNotesRequest, v1.LeadServiceNotesResponse]
+	watch         *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
+	event         *connect.Client[v1.LeadServiceEventRequest, v1.LeadServiceEventResponse]
+	tell          *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
+	journal       *connect.Client[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse]
+	move          *connect.Client[v1.LeadServiceMoveRequest, v1.LeadServiceMoveResponse]
+	accounts      *connect.Client[v1.LeadServiceAccountsRequest, v1.LeadServiceAccountsResponse]
+	addAccount    *connect.Client[v1.LeadServiceAddAccountRequest, v1.LeadServiceAddAccountResponse]
+	removeAccount *connect.Client[v1.LeadServiceRemoveAccountRequest, v1.LeadServiceRemoveAccountResponse]
+	choose        *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -1981,9 +2500,39 @@ func (c *leadServiceClient) Watch(ctx context.Context, req *connect.Request[v1.L
 	return c.watch.CallUnary(ctx, req)
 }
 
+// Event calls plan.v1.LeadService.Event.
+func (c *leadServiceClient) Event(ctx context.Context, req *connect.Request[v1.LeadServiceEventRequest]) (*connect.Response[v1.LeadServiceEventResponse], error) {
+	return c.event.CallUnary(ctx, req)
+}
+
 // Tell calls plan.v1.LeadService.Tell.
 func (c *leadServiceClient) Tell(ctx context.Context, req *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
 	return c.tell.CallUnary(ctx, req)
+}
+
+// Journal calls plan.v1.LeadService.Journal.
+func (c *leadServiceClient) Journal(ctx context.Context, req *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error) {
+	return c.journal.CallUnary(ctx, req)
+}
+
+// Move calls plan.v1.LeadService.Move.
+func (c *leadServiceClient) Move(ctx context.Context, req *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error) {
+	return c.move.CallUnary(ctx, req)
+}
+
+// Accounts calls plan.v1.LeadService.Accounts.
+func (c *leadServiceClient) Accounts(ctx context.Context, req *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error) {
+	return c.accounts.CallUnary(ctx, req)
+}
+
+// AddAccount calls plan.v1.LeadService.AddAccount.
+func (c *leadServiceClient) AddAccount(ctx context.Context, req *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error) {
+	return c.addAccount.CallUnary(ctx, req)
+}
+
+// RemoveAccount calls plan.v1.LeadService.RemoveAccount.
+func (c *leadServiceClient) RemoveAccount(ctx context.Context, req *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error) {
+	return c.removeAccount.CallUnary(ctx, req)
 }
 
 // Choose calls plan.v1.LeadService.Choose.
@@ -2002,32 +2551,62 @@ type LeadServiceHandler interface {
 	// agent from the brief the same way: a claude one becomes the lead, a codex one once djinn lead set gives its
 	// session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing
 	// starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead
-	// the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.
+	// the same way, and with no project nothing starts, the error says to create one. While Djinn drives the lead, no
+	// terminal opens: the events that wait after a failed batch go to a new session at once, and the note says how the
+	// lead runs. Starts djinn if it is not running.
 	Resume(context.Context, *connect.Request[v1.LeadServiceResumeRequest]) (*connect.Response[v1.LeadServiceResumeResponse], error)
 	// The lead of Djinn, as currently recorded.
 	Get(context.Context, *connect.Request[v1.LeadServiceGetRequest]) (*connect.Response[v1.LeadServiceGetResponse], error)
-	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
+	// The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line; at its end,
+	// a line per active wish again, for an agent whose tool keeps only the end of a long output. With --wishes, where
+	// the wishes stand only.
 	Brief(context.Context, *connect.Request[v1.LeadServiceBriefRequest]) (*connect.Response[v1.LeadServiceBriefResponse], error)
 	// The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
 	// built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
-	// brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+	// brief holds the same); with one, that note whole; with several (a,b) or --all, each whole, in one call. A lead
+	// reads a note before it acts in its area; to add or fix
 	// one, a lead that may change Djinn spawns a task that edits lead/notes.
 	Notes(context.Context, *connect.Request[v1.LeadServiceNotesRequest]) (*connect.Response[v1.LeadServiceNotesResponse], error)
-	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
-	// few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
+	// Wait for the events the lead must act on, and print them as one digest: a line per event (its code and its wish,
+	// its kind, a few words), under it the final note of a task or the note of an answer, whole up to a few screens
+	// (djinn lead event prints it all), then the wishes' identifiers and the cursor to pass next. It blocks until
 	// an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
 	// most) so that a burst, like an integration pass merging several tasks, comes as one digest; then it returns.
 	// Called again with --after the cursor, it acknowledges every event up to it for this session, then waits for the
 	// next ones: an event never acknowledged (the lead crashed, its session was lost) comes back on the next watch, at
 	// least once, never lost. While a watch of the lead's session waits, Djinn types nothing in the lead's terminal;
 	// without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
-	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
+	// command its agent wakes it up for when it ends (djinn lead brief says how, for each agent). Refused while Djinn
+	// drives the lead: Djinn hands each batch to a session of its own.
 	Watch(context.Context, *connect.Request[v1.LeadServiceWatchRequest]) (*connect.Response[v1.LeadServiceWatchResponse], error)
+	// One of the lead's events whole, waiting or acknowledged within the week: its line uncut, the note of the task or
+	// the answer it is about, and its detail. A digest names it with the event's identifier when it cuts a note.
+	Event(context.Context, *connect.Request[v1.LeadServiceEventRequest]) (*connect.Response[v1.LeadServiceEventResponse], error)
 	// Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
 	// queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
 	// the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
-	// djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+	// djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
+	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
+	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
+	// prompt carries the latest entries of its wishes; this prints them for the developer.
+	Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error)
+	// Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
+	// journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
+	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
+	// batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
+	Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error)
+	// The accounts of the agents on this machine, the seat of the lead, and for each account the command that signs
+	// it in, once, in its own folder.
+	Accounts(context.Context, *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error)
+	// Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
+	// unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
+	AddAccount(context.Context, *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error)
+	// Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
+	// while the lead runs on it.
+	RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
@@ -2080,10 +2659,49 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("Watch")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceEventHandler := connect.NewUnaryHandler(
+		LeadServiceEventProcedure,
+		svc.Event,
+		connect.WithSchema(leadServiceMethods.ByName("Event")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceTellHandler := connect.NewUnaryHandler(
 		LeadServiceTellProcedure,
 		svc.Tell,
 		connect.WithSchema(leadServiceMethods.ByName("Tell")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceJournalHandler := connect.NewUnaryHandler(
+		LeadServiceJournalProcedure,
+		svc.Journal,
+		connect.WithSchema(leadServiceMethods.ByName("Journal")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceMoveHandler := connect.NewUnaryHandler(
+		LeadServiceMoveProcedure,
+		svc.Move,
+		connect.WithSchema(leadServiceMethods.ByName("Move")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceAccountsHandler := connect.NewUnaryHandler(
+		LeadServiceAccountsProcedure,
+		svc.Accounts,
+		connect.WithSchema(leadServiceMethods.ByName("Accounts")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceAddAccountHandler := connect.NewUnaryHandler(
+		LeadServiceAddAccountProcedure,
+		svc.AddAccount,
+		connect.WithSchema(leadServiceMethods.ByName("AddAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceRemoveAccountHandler := connect.NewUnaryHandler(
+		LeadServiceRemoveAccountProcedure,
+		svc.RemoveAccount,
+		connect.WithSchema(leadServiceMethods.ByName("RemoveAccount")),
 		connect.WithHandlerOptions(opts...),
 	)
 	leadServiceChooseHandler := connect.NewUnaryHandler(
@@ -2106,8 +2724,20 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceNotesHandler.ServeHTTP(w, r)
 		case LeadServiceWatchProcedure:
 			leadServiceWatchHandler.ServeHTTP(w, r)
+		case LeadServiceEventProcedure:
+			leadServiceEventHandler.ServeHTTP(w, r)
 		case LeadServiceTellProcedure:
 			leadServiceTellHandler.ServeHTTP(w, r)
+		case LeadServiceJournalProcedure:
+			leadServiceJournalHandler.ServeHTTP(w, r)
+		case LeadServiceMoveProcedure:
+			leadServiceMoveHandler.ServeHTTP(w, r)
+		case LeadServiceAccountsProcedure:
+			leadServiceAccountsHandler.ServeHTTP(w, r)
+		case LeadServiceAddAccountProcedure:
+			leadServiceAddAccountHandler.ServeHTTP(w, r)
+		case LeadServiceRemoveAccountProcedure:
+			leadServiceRemoveAccountHandler.ServeHTTP(w, r)
 		case LeadServiceChooseProcedure:
 			leadServiceChooseHandler.ServeHTTP(w, r)
 		default:
@@ -2143,8 +2773,32 @@ func (UnimplementedLeadServiceHandler) Watch(context.Context, *connect.Request[v
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Watch is not implemented"))
 }
 
+func (UnimplementedLeadServiceHandler) Event(context.Context, *connect.Request[v1.LeadServiceEventRequest]) (*connect.Response[v1.LeadServiceEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Event is not implemented"))
+}
+
 func (UnimplementedLeadServiceHandler) Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Tell is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Journal is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Move is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Accounts(context.Context, *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Accounts is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) AddAccount(context.Context, *connect.Request[v1.LeadServiceAddAccountRequest]) (*connect.Response[v1.LeadServiceAddAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.AddAccount is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.RemoveAccount is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
@@ -2396,10 +3050,17 @@ type TaskServiceClient interface {
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
+	// The files the open work of a wish touches, and where tasks touch the same ones: what the lead reads before it
+	// spawns, to bundle or order work on the same files instead of running it side by side. A running, paused, waiting
+	// or cut short task, or a done one not merged yet, touches what its worktree changed from its base (its merge-base
+	// with the branch it merges into, untracked files included); a planned one, its write scopes, or paths unknown.
+	// Generated files are left out of the overlaps: Djinn makes them again on a conflict.
+	Overlaps(context.Context, *connect.Request[v1.TaskServiceOverlapsRequest]) (*connect.Response[v1.TaskServiceOverlapsResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
 	// File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
 	// unified diff of that file with syntax tokens, by chunks of 2 000 lines at most: --offset asks for the next one.
+	// --uncommitted shows what the task's worktree holds not committed instead.
 	Diff(context.Context, *connect.Request[v1.TaskServiceDiffRequest]) (*connect.Response[v1.TaskServiceDiffResponse], error)
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
@@ -2414,7 +3075,8 @@ type TaskServiceClient interface {
 	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting. Its worker takes a slot
 	// all the same, beyond what the load bar lets run: the bar counts it among the workers started by hand.
 	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
-	// Follow a task's events as they come, from the first one or after a position; ends with the task.
+	// Follow a task's events as they come, from the first one or after a position; ends with the task. With --last, its
+	// last events only, at once: it returns without following a task that runs or waits, unless --follow.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
@@ -2444,8 +3106,9 @@ type TaskServiceClient interface {
 	Cancel(context.Context, *connect.Request[v1.TaskServiceCancelRequest]) (*connect.Response[v1.TaskServiceCancelResponse], error)
 	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
 	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
-	// Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
-	// task from its context, fork it instead (djinn task spawn --fork).
+	// Refused while it runs, but for a worker the scheduler flagged stalled (Task.health): that one is ended and
+	// continued on its session, as the Lamplighter wakes one. Refused when its worktree is gone, or when its agent cannot
+	// resume a session. To start another task from its context, fork it instead (djinn task spawn --fork).
 	Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
@@ -2454,7 +3117,7 @@ type TaskServiceClient interface {
 	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
 	// provider, model, prompt (for its next continue), azima, and integration (none clears it, pending puts its work back in
 	// line), never its dependencies once it ran. An azima changes its title, whatever its state, written back to its plan
-	// file's heading when it has one; or its branch, alone.
+	// file's heading when it has one; or its branch, alone; or its rank among the wish's azimas, alone.
 	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
@@ -2462,6 +3125,11 @@ type TaskServiceClient interface {
 	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
 	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
 	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
+	// Rank an azima among the azimas of its wish: first (--top), or just before or after another one (--before T46,
+	// --after T46). Djinn starts the waiting work of the first azimas first, within the wish's own rank among the wishes,
+	// and the gates serve it first after Djinn's merges and pushes. A new azima goes last; djinn task update --rank gives
+	// a place by number.
+	Rank(context.Context, *connect.Request[v1.TaskServiceRankRequest]) (*connect.Response[v1.TaskServiceRankResponse], error)
 	// Comment on a line or range of lines of a task's diff: stored on the task with its file, line range, commit, and
 	// excerpt. While the task's worker runs, the comment is sent to it as an instruction (djinn task send); otherwise it
 	// waits for TaskService.TurnComments.
@@ -2493,6 +3161,13 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			httpClient,
 			baseURL+TaskServiceListProcedure,
 			connect.WithSchema(taskServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		overlaps: connect.NewClient[v1.TaskServiceOverlapsRequest, v1.TaskServiceOverlapsResponse](
+			httpClient,
+			baseURL+TaskServiceOverlapsProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Overlaps")),
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
@@ -2612,6 +3287,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("Move")),
 			connect.WithClientOptions(opts...),
 		),
+		rank: connect.NewClient[v1.TaskServiceRankRequest, v1.TaskServiceRankResponse](
+			httpClient,
+			baseURL+TaskServiceRankProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("Rank")),
+			connect.WithClientOptions(opts...),
+		),
 		comment: connect.NewClient[v1.TaskServiceCommentRequest, v1.TaskServiceCommentResponse](
 			httpClient,
 			baseURL+TaskServiceCommentProcedure,
@@ -2631,6 +3312,7 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 type taskServiceClient struct {
 	spawn        *connect.Client[v1.TaskServiceSpawnRequest, v1.TaskServiceSpawnResponse]
 	list         *connect.Client[v1.TaskServiceListRequest, v1.TaskServiceListResponse]
+	overlaps     *connect.Client[v1.TaskServiceOverlapsRequest, v1.TaskServiceOverlapsResponse]
 	get          *connect.Client[v1.TaskServiceGetRequest, v1.TaskServiceGetResponse]
 	diff         *connect.Client[v1.TaskServiceDiffRequest, v1.TaskServiceDiffResponse]
 	stop         *connect.Client[v1.TaskServiceStopRequest, v1.TaskServiceStopResponse]
@@ -2650,6 +3332,7 @@ type taskServiceClient struct {
 	describe     *connect.Client[v1.TaskServiceDescribeRequest, v1.TaskServiceDescribeResponse]
 	open         *connect.Client[v1.TaskServiceOpenRequest, v1.TaskServiceOpenResponse]
 	move         *connect.Client[v1.TaskServiceMoveRequest, v1.TaskServiceMoveResponse]
+	rank         *connect.Client[v1.TaskServiceRankRequest, v1.TaskServiceRankResponse]
 	comment      *connect.Client[v1.TaskServiceCommentRequest, v1.TaskServiceCommentResponse]
 	turnComments *connect.Client[v1.TaskServiceTurnCommentsRequest, v1.TaskServiceTurnCommentsResponse]
 }
@@ -2662,6 +3345,11 @@ func (c *taskServiceClient) Spawn(ctx context.Context, req *connect.Request[v1.T
 // List calls plan.v1.TaskService.List.
 func (c *taskServiceClient) List(ctx context.Context, req *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error) {
 	return c.list.CallUnary(ctx, req)
+}
+
+// Overlaps calls plan.v1.TaskService.Overlaps.
+func (c *taskServiceClient) Overlaps(ctx context.Context, req *connect.Request[v1.TaskServiceOverlapsRequest]) (*connect.Response[v1.TaskServiceOverlapsResponse], error) {
+	return c.overlaps.CallUnary(ctx, req)
 }
 
 // Get calls plan.v1.TaskService.Get.
@@ -2759,6 +3447,11 @@ func (c *taskServiceClient) Move(ctx context.Context, req *connect.Request[v1.Ta
 	return c.move.CallUnary(ctx, req)
 }
 
+// Rank calls plan.v1.TaskService.Rank.
+func (c *taskServiceClient) Rank(ctx context.Context, req *connect.Request[v1.TaskServiceRankRequest]) (*connect.Response[v1.TaskServiceRankResponse], error) {
+	return c.rank.CallUnary(ctx, req)
+}
+
 // Comment calls plan.v1.TaskService.Comment.
 func (c *taskServiceClient) Comment(ctx context.Context, req *connect.Request[v1.TaskServiceCommentRequest]) (*connect.Response[v1.TaskServiceCommentResponse], error) {
 	return c.comment.CallUnary(ctx, req)
@@ -2778,10 +3471,17 @@ type TaskServiceHandler interface {
 	Spawn(context.Context, *connect.Request[v1.TaskServiceSpawnRequest]) (*connect.Response[v1.TaskServiceSpawnResponse], error)
 	// List the tasks, the oldest first.
 	List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error)
+	// The files the open work of a wish touches, and where tasks touch the same ones: what the lead reads before it
+	// spawns, to bundle or order work on the same files instead of running it side by side. A running, paused, waiting
+	// or cut short task, or a done one not merged yet, touches what its worktree changed from its base (its merge-base
+	// with the branch it merges into, untracked files included); a planned one, its write scopes, or paths unknown.
+	// Generated files are left out of the overlaps: Djinn makes them again on a conflict.
+	Overlaps(context.Context, *connect.Request[v1.TaskServiceOverlapsRequest]) (*connect.Response[v1.TaskServiceOverlapsResponse], error)
 	// Show a task.
 	Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error)
 	// File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
 	// unified diff of that file with syntax tokens, by chunks of 2 000 lines at most: --offset asks for the next one.
+	// --uncommitted shows what the task's worktree holds not committed instead.
 	Diff(context.Context, *connect.Request[v1.TaskServiceDiffRequest]) (*connect.Response[v1.TaskServiceDiffResponse], error)
 	// Stop a task's worker: asked to stop, then killed if it has not after a few seconds. A planned task that has not
 	// started is stopped at once.
@@ -2796,7 +3496,8 @@ type TaskServiceHandler interface {
 	// task that waits for anything else (its wish, a dependency, a write scope) keeps waiting. Its worker takes a slot
 	// all the same, beyond what the load bar lets run: the bar counts it among the workers started by hand.
 	Start(context.Context, *connect.Request[v1.TaskServiceStartRequest]) (*connect.Response[v1.TaskServiceStartResponse], error)
-	// Follow a task's events as they come, from the first one or after a position; ends with the task.
+	// Follow a task's events as they come, from the first one or after a position; ends with the task. With --last, its
+	// last events only, at once: it returns without following a task that runs or waits, unless --follow.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
 	// Remove the worktree of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
@@ -2826,8 +3527,9 @@ type TaskServiceHandler interface {
 	Cancel(context.Context, *connect.Request[v1.TaskServiceCancelRequest]) (*connect.Response[v1.TaskServiceCancelResponse], error)
 	// Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
 	// session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
-	// Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
-	// task from its context, fork it instead (djinn task spawn --fork).
+	// Refused while it runs, but for a worker the scheduler flagged stalled (Task.health): that one is ended and
+	// continued on its session, as the Lamplighter wakes one. Refused when its worktree is gone, or when its agent cannot
+	// resume a session. To start another task from its context, fork it instead (djinn task spawn --fork).
 	Continue(context.Context, *connect.Request[v1.TaskServiceContinueRequest]) (*connect.Response[v1.TaskServiceContinueResponse], error)
 	// Send a message to a running worker: an instruction added while it works. The message is an event of the task,
 	// and a "received" event follows once the worker says something after it.
@@ -2836,7 +3538,7 @@ type TaskServiceHandler interface {
 	// or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
 	// provider, model, prompt (for its next continue), azima, and integration (none clears it, pending puts its work back in
 	// line), never its dependencies once it ran. An azima changes its title, whatever its state, written back to its plan
-	// file's heading when it has one; or its branch, alone.
+	// file's heading when it has one; or its branch, alone; or its rank among the wish's azimas, alone.
 	Update(context.Context, *connect.Request[v1.TaskServiceUpdateRequest]) (*connect.Response[v1.TaskServiceUpdateResponse], error)
 	// Edit the description of an azima.
 	Describe(context.Context, *connect.Request[v1.TaskServiceDescribeRequest]) (*connect.Response[v1.TaskServiceDescribeResponse], error)
@@ -2844,6 +3546,11 @@ type TaskServiceHandler interface {
 	Open(context.Context, *connect.Request[v1.TaskServiceOpenRequest]) (*connect.Response[v1.TaskServiceOpenResponse], error)
 	// Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
 	Move(context.Context, *connect.Request[v1.TaskServiceMoveRequest]) (*connect.Response[v1.TaskServiceMoveResponse], error)
+	// Rank an azima among the azimas of its wish: first (--top), or just before or after another one (--before T46,
+	// --after T46). Djinn starts the waiting work of the first azimas first, within the wish's own rank among the wishes,
+	// and the gates serve it first after Djinn's merges and pushes. A new azima goes last; djinn task update --rank gives
+	// a place by number.
+	Rank(context.Context, *connect.Request[v1.TaskServiceRankRequest]) (*connect.Response[v1.TaskServiceRankResponse], error)
 	// Comment on a line or range of lines of a task's diff: stored on the task with its file, line range, commit, and
 	// excerpt. While the task's worker runs, the comment is sent to it as an instruction (djinn task send); otherwise it
 	// waits for TaskService.TurnComments.
@@ -2871,6 +3578,13 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		TaskServiceListProcedure,
 		svc.List,
 		connect.WithSchema(taskServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	taskServiceOverlapsHandler := connect.NewUnaryHandler(
+		TaskServiceOverlapsProcedure,
+		svc.Overlaps,
+		connect.WithSchema(taskServiceMethods.ByName("Overlaps")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
@@ -2990,6 +3704,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("Move")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceRankHandler := connect.NewUnaryHandler(
+		TaskServiceRankProcedure,
+		svc.Rank,
+		connect.WithSchema(taskServiceMethods.ByName("Rank")),
+		connect.WithHandlerOptions(opts...),
+	)
 	taskServiceCommentHandler := connect.NewUnaryHandler(
 		TaskServiceCommentProcedure,
 		svc.Comment,
@@ -3008,6 +3728,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceSpawnHandler.ServeHTTP(w, r)
 		case TaskServiceListProcedure:
 			taskServiceListHandler.ServeHTTP(w, r)
+		case TaskServiceOverlapsProcedure:
+			taskServiceOverlapsHandler.ServeHTTP(w, r)
 		case TaskServiceGetProcedure:
 			taskServiceGetHandler.ServeHTTP(w, r)
 		case TaskServiceDiffProcedure:
@@ -3046,6 +3768,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceOpenHandler.ServeHTTP(w, r)
 		case TaskServiceMoveProcedure:
 			taskServiceMoveHandler.ServeHTTP(w, r)
+		case TaskServiceRankProcedure:
+			taskServiceRankHandler.ServeHTTP(w, r)
 		case TaskServiceCommentProcedure:
 			taskServiceCommentHandler.ServeHTTP(w, r)
 		case TaskServiceTurnCommentsProcedure:
@@ -3065,6 +3789,10 @@ func (UnimplementedTaskServiceHandler) Spawn(context.Context, *connect.Request[v
 
 func (UnimplementedTaskServiceHandler) List(context.Context, *connect.Request[v1.TaskServiceListRequest]) (*connect.Response[v1.TaskServiceListResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.List is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) Overlaps(context.Context, *connect.Request[v1.TaskServiceOverlapsRequest]) (*connect.Response[v1.TaskServiceOverlapsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Overlaps is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) Get(context.Context, *connect.Request[v1.TaskServiceGetRequest]) (*connect.Response[v1.TaskServiceGetResponse], error) {
@@ -3143,12 +3871,180 @@ func (UnimplementedTaskServiceHandler) Move(context.Context, *connect.Request[v1
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Move is not implemented"))
 }
 
+func (UnimplementedTaskServiceHandler) Rank(context.Context, *connect.Request[v1.TaskServiceRankRequest]) (*connect.Response[v1.TaskServiceRankResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Rank is not implemented"))
+}
+
 func (UnimplementedTaskServiceHandler) Comment(context.Context, *connect.Request[v1.TaskServiceCommentRequest]) (*connect.Response[v1.TaskServiceCommentResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.Comment is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) TurnComments(context.Context, *connect.Request[v1.TaskServiceTurnCommentsRequest]) (*connect.Response[v1.TaskServiceTurnCommentsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.TurnComments is not implemented"))
+}
+
+// ServeServiceClient is a client for the plan.v1.ServeService service.
+type ServeServiceClient interface {
+	// Start a serve: the command returns once its process lives, and once each port it declares answers. A serve of the
+	// same name is stopped first. Like a watcher's, its command must be allowed by the project or the wish's allowance.
+	Run(context.Context, *connect.Request[v1.ServeServiceRunRequest]) (*connect.Response[v1.ServeServiceRunResponse], error)
+	// List an ifrit's serves: their ports, their state.
+	List(context.Context, *connect.Request[v1.ServeServiceListRequest]) (*connect.Response[v1.ServeServiceListResponse], error)
+	// Stop a serve: its stop command first, then its process group. It stays in the ifrit's serves, stopped, and does not
+	// start again when the ifrit is lit again.
+	Stop(context.Context, *connect.Request[v1.ServeServiceStopRequest]) (*connect.Response[v1.ServeServiceStopResponse], error)
+	// Print the end of what a serve wrote, its output and its errors together.
+	Logs(context.Context, *connect.Request[v1.ServeServiceLogsRequest]) (*connect.Response[v1.ServeServiceLogsResponse], error)
+}
+
+// NewServeServiceClient constructs a client for the plan.v1.ServeService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewServeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ServeServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	serveServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("ServeService").Methods()
+	return &serveServiceClient{
+		run: connect.NewClient[v1.ServeServiceRunRequest, v1.ServeServiceRunResponse](
+			httpClient,
+			baseURL+ServeServiceRunProcedure,
+			connect.WithSchema(serveServiceMethods.ByName("Run")),
+			connect.WithClientOptions(opts...),
+		),
+		list: connect.NewClient[v1.ServeServiceListRequest, v1.ServeServiceListResponse](
+			httpClient,
+			baseURL+ServeServiceListProcedure,
+			connect.WithSchema(serveServiceMethods.ByName("List")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		stop: connect.NewClient[v1.ServeServiceStopRequest, v1.ServeServiceStopResponse](
+			httpClient,
+			baseURL+ServeServiceStopProcedure,
+			connect.WithSchema(serveServiceMethods.ByName("Stop")),
+			connect.WithClientOptions(opts...),
+		),
+		logs: connect.NewClient[v1.ServeServiceLogsRequest, v1.ServeServiceLogsResponse](
+			httpClient,
+			baseURL+ServeServiceLogsProcedure,
+			connect.WithSchema(serveServiceMethods.ByName("Logs")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// serveServiceClient implements ServeServiceClient.
+type serveServiceClient struct {
+	run  *connect.Client[v1.ServeServiceRunRequest, v1.ServeServiceRunResponse]
+	list *connect.Client[v1.ServeServiceListRequest, v1.ServeServiceListResponse]
+	stop *connect.Client[v1.ServeServiceStopRequest, v1.ServeServiceStopResponse]
+	logs *connect.Client[v1.ServeServiceLogsRequest, v1.ServeServiceLogsResponse]
+}
+
+// Run calls plan.v1.ServeService.Run.
+func (c *serveServiceClient) Run(ctx context.Context, req *connect.Request[v1.ServeServiceRunRequest]) (*connect.Response[v1.ServeServiceRunResponse], error) {
+	return c.run.CallUnary(ctx, req)
+}
+
+// List calls plan.v1.ServeService.List.
+func (c *serveServiceClient) List(ctx context.Context, req *connect.Request[v1.ServeServiceListRequest]) (*connect.Response[v1.ServeServiceListResponse], error) {
+	return c.list.CallUnary(ctx, req)
+}
+
+// Stop calls plan.v1.ServeService.Stop.
+func (c *serveServiceClient) Stop(ctx context.Context, req *connect.Request[v1.ServeServiceStopRequest]) (*connect.Response[v1.ServeServiceStopResponse], error) {
+	return c.stop.CallUnary(ctx, req)
+}
+
+// Logs calls plan.v1.ServeService.Logs.
+func (c *serveServiceClient) Logs(ctx context.Context, req *connect.Request[v1.ServeServiceLogsRequest]) (*connect.Response[v1.ServeServiceLogsResponse], error) {
+	return c.logs.CallUnary(ctx, req)
+}
+
+// ServeServiceHandler is an implementation of the plan.v1.ServeService service.
+type ServeServiceHandler interface {
+	// Start a serve: the command returns once its process lives, and once each port it declares answers. A serve of the
+	// same name is stopped first. Like a watcher's, its command must be allowed by the project or the wish's allowance.
+	Run(context.Context, *connect.Request[v1.ServeServiceRunRequest]) (*connect.Response[v1.ServeServiceRunResponse], error)
+	// List an ifrit's serves: their ports, their state.
+	List(context.Context, *connect.Request[v1.ServeServiceListRequest]) (*connect.Response[v1.ServeServiceListResponse], error)
+	// Stop a serve: its stop command first, then its process group. It stays in the ifrit's serves, stopped, and does not
+	// start again when the ifrit is lit again.
+	Stop(context.Context, *connect.Request[v1.ServeServiceStopRequest]) (*connect.Response[v1.ServeServiceStopResponse], error)
+	// Print the end of what a serve wrote, its output and its errors together.
+	Logs(context.Context, *connect.Request[v1.ServeServiceLogsRequest]) (*connect.Response[v1.ServeServiceLogsResponse], error)
+}
+
+// NewServeServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewServeServiceHandler(svc ServeServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	serveServiceMethods := v1.File_plan_v1_plan_proto.Services().ByName("ServeService").Methods()
+	serveServiceRunHandler := connect.NewUnaryHandler(
+		ServeServiceRunProcedure,
+		svc.Run,
+		connect.WithSchema(serveServiceMethods.ByName("Run")),
+		connect.WithHandlerOptions(opts...),
+	)
+	serveServiceListHandler := connect.NewUnaryHandler(
+		ServeServiceListProcedure,
+		svc.List,
+		connect.WithSchema(serveServiceMethods.ByName("List")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	serveServiceStopHandler := connect.NewUnaryHandler(
+		ServeServiceStopProcedure,
+		svc.Stop,
+		connect.WithSchema(serveServiceMethods.ByName("Stop")),
+		connect.WithHandlerOptions(opts...),
+	)
+	serveServiceLogsHandler := connect.NewUnaryHandler(
+		ServeServiceLogsProcedure,
+		svc.Logs,
+		connect.WithSchema(serveServiceMethods.ByName("Logs")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/plan.v1.ServeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ServeServiceRunProcedure:
+			serveServiceRunHandler.ServeHTTP(w, r)
+		case ServeServiceListProcedure:
+			serveServiceListHandler.ServeHTTP(w, r)
+		case ServeServiceStopProcedure:
+			serveServiceStopHandler.ServeHTTP(w, r)
+		case ServeServiceLogsProcedure:
+			serveServiceLogsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedServeServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedServeServiceHandler struct{}
+
+func (UnimplementedServeServiceHandler) Run(context.Context, *connect.Request[v1.ServeServiceRunRequest]) (*connect.Response[v1.ServeServiceRunResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ServeService.Run is not implemented"))
+}
+
+func (UnimplementedServeServiceHandler) List(context.Context, *connect.Request[v1.ServeServiceListRequest]) (*connect.Response[v1.ServeServiceListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ServeService.List is not implemented"))
+}
+
+func (UnimplementedServeServiceHandler) Stop(context.Context, *connect.Request[v1.ServeServiceStopRequest]) (*connect.Response[v1.ServeServiceStopResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ServeService.Stop is not implemented"))
+}
+
+func (UnimplementedServeServiceHandler) Logs(context.Context, *connect.Request[v1.ServeServiceLogsRequest]) (*connect.Response[v1.ServeServiceLogsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ServeService.Logs is not implemented"))
 }
 
 // PlanServiceClient is a client for the plan.v1.PlanService service.

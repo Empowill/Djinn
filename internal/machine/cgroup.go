@@ -44,6 +44,46 @@ func ReadCgroup(fsys fs.FS, dir string) (Group, error) {
 	return g, nil
 }
 
+// cgroupCPU reads, from the cgroup v2 folder dir of the file system fsys, the processes in it and the CPU time of
+// every process it held (cpu.stat's usage_usec, the ended ones too).
+func cgroupCPU(fsys fs.FS, dir string) ([]int, time.Duration, error) {
+	dir = strings.TrimPrefix(dir, "/")
+	b, err := fs.ReadFile(fsys, path.Join(dir, "cgroup.procs"))
+	if err != nil {
+		return nil, 0, err
+	}
+	stat, err := fs.ReadFile(fsys, path.Join(dir, "cpu.stat"))
+	if err != nil {
+		return nil, 0, err
+	}
+	usec, err := statField(stat, "usage_usec")
+	if err != nil {
+		return nil, 0, fmt.Errorf("%s/cpu.stat: %w", dir, err)
+	}
+	var pids []int
+	for _, f := range strings.Fields(string(b)) {
+		if pid, err := strconv.Atoi(f); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, time.Duration(usec) * time.Microsecond, nil
+}
+
+// ownCgroup is the cgroup v2 folder of the process pid, under /sys/fs/cgroup, read from the file system fsys; "" when
+// it is in none, or in the root.
+func ownCgroup(fsys fs.FS, pid int) string {
+	b, err := fs.ReadFile(fsys, "proc/"+strconv.Itoa(pid)+"/cgroup")
+	if err != nil {
+		return ""
+	}
+	for line := range strings.SplitSeq(string(b), "\n") {
+		if dir, ok := strings.CutPrefix(line, "0::"); ok && strings.HasPrefix(dir, "/") && dir != "/" {
+			return path.Join(cgroupRoot, dir)
+		}
+	}
+	return ""
+}
+
 // statField reads the value of key in a flat-keyed cgroup file: one "<key> <value>" a line.
 func statField(b []byte, key string) (uint64, error) {
 	sc := bufio.NewScanner(bytes.NewReader(b))

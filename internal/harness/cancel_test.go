@@ -18,6 +18,7 @@ import (
 // keeps its branch, and never queues its work for merging.
 func TestCancelRunning(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	task := in.mustSpawn(t, in.wishID, "Running Task", "wait", nil)
 	id := task.GetId()
@@ -90,6 +91,7 @@ func TestCancelRunning(t *testing.T) {
 // TestCancelPending: cancelling a pending task records cancellation and leaves it cancelled.
 func TestCancelPending(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
 	wishID, _ := e.wish(t, gitRepo(t))
 
@@ -130,6 +132,7 @@ func TestCancelPending(t *testing.T) {
 // and puts an event on each dependent naming the cancelled dependency.
 func TestCancelReleasesDependent(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	a := in.mustSpawn(t, in.wishID, "Task A", "wait", nil)
@@ -176,10 +179,11 @@ func TestCancelReleasesDependent(t *testing.T) {
 	})
 }
 
-// TestCancelCorrectionReleasingHeldPush: cancelling a push correction worker releases
-// the held push, so push checks run and push proceeds when green.
+// TestCancelCorrectionReleasingHeldPush: cancelling a push correction worker releases the held push, so, the branch
+// fixed by hand meanwhile, push checks run and push proceeds when green.
 func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -222,6 +226,7 @@ func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
+	in.handCommit(t) // The developer fixed it, and cancelled the correction.
 
 	in.pass(t, time.Second)
 	tip := in.tip(t)
@@ -237,6 +242,7 @@ func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 // and djinn task done is refused on a cancelled task.
 func TestCancelRefusals(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, gitRepo(t))
 
@@ -285,6 +291,7 @@ func TestCancelRefusals(t *testing.T) {
 // TestCancelAzimaDoneWithoutCancelledParts: an azima is done without its cancelled parts.
 func TestCancelAzimaDoneWithoutCancelledParts(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
 	wishID, _ := e.wish(t, gitRepo(t))
 

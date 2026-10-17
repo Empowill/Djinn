@@ -67,6 +67,7 @@ func nextMatching(t *testing.T, s *connect.ServerStreamForClient[planv1.WishServ
 // TestWatchTaskMethods verifies that every TaskService method publishes Change_CHANGE_TASK to the watch stream.
 func TestWatchTaskMethods(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	restore := plan.SetWatchInterval(time.Millisecond)
 	t.Cleanup(restore)
 

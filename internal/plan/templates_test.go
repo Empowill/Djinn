@@ -158,7 +158,7 @@ func TestRouteTemplate(t *testing.T) {
 		Remote: "https://github.com/acme/lamp.git"}
 	bare := &planv1.Project{Id: store.NewID(), Name: "bare", Directory: t.TempDir(), Git: true}
 	agentSkill(t, lamp.GetDirectory(), "babysit", babysitFront)
-	templates, err := Templates(t.Context(), nil, []*planv1.Project{lamp, bare})
+	templates, err := Templates(t.Context(), nil, "", []*planv1.Project{lamp, bare})
 	if err != nil || len(templates) != 1 || templates[0].ProjectID != lamp.GetId() {
 		t.Fatalf("templates = %v, %v", templates, err)
 	}

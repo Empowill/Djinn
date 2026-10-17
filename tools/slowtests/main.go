@@ -78,6 +78,7 @@ type slow struct {
 // result is what check found.
 type result struct {
 	failed    bool          // a test, a package or a build failed
+	failures  []string      // the tests that failed, subtests included, and the packages cut in the middle, in order
 	slow      []slow        // the tests over the limit and not allowed, the slowest first
 	sum       time.Duration // sum of all top-level test durations
 	wallClock time.Duration // wall clock duration of the test run
@@ -247,6 +248,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "  %s  %s\n", s.elapsed.Round(10*time.Millisecond), s.name)
 		}
 	}
+	// Last, since a push check keeps only the end of the output (W135: it kept "FAIL …/internal/harness", not which test).
+	if len(res.failures) > 0 {
+		fmt.Fprintf(os.Stderr, "\nFailed: %s\n", strings.Join(res.failures, ", "))
+	}
 	if res.failed || len(over(res.slow, fail)) > 0 {
 		os.Exit(1)
 	}
@@ -311,8 +316,12 @@ func checkClock(in io.Reader, out io.Writer, limit time.Duration, now func() tim
 			}
 			if e.Action == "fail" {
 				res.failed = true
-				if !testFailed[e.Package] && e.FailedBuild == "" {
+				switch {
+				case e.FailedBuild != "":
+					res.failures = append(res.failures, e.Package+" (build failed)")
+				case !testFailed[e.Package]:
 					printCut(out, e.Package, raw[e.Package], held)
+					res.failures = append(res.failures, e.Package+" (its test binary ended in the middle)")
 				}
 			}
 			if e.Action == "pass" || e.Action == "fail" || e.Action == "skip" {
@@ -330,6 +339,7 @@ func checkClock(in io.Reader, out io.Writer, limit time.Duration, now func() tim
 			if e.Action == "fail" {
 				res.failed = true
 				testFailed[e.Package] = true
+				res.failures = append(res.failures, key)
 				fmt.Fprint(out, strings.Join(held[key], ""))
 			}
 			delete(held, key)

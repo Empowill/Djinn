@@ -16,10 +16,21 @@ export { createRoot } from "react-dom/client";
 export { renderToStaticMarkup } from "react-dom/server";
 export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
-export { WishSidebar } from "@/src/wish-sidebar.tsx";
-export { SyncLine, SyncLines } from "@/src/project-sync.tsx";
+export { ProjectGear, WishSidebar } from "@/src/wish-sidebar.tsx";
+export { SyncLine, SyncLines, syncTitle } from "@/src/project-sync.tsx";
 export { WishQuestion } from "@/src/wish-question.tsx";
-export { WishView } from "@/src/wish-view.tsx";
+export {
+  AsleepQuestions,
+  QuestionColumn,
+  arrowTo,
+  columnMove,
+  heir,
+  questionGroups,
+  stepTo,
+} from "@/src/question-column.tsx";
+export { WaitingTasks, WishView } from "@/src/wish-view.tsx";
+export { EmptyState, QuestionsEmpty, sessionPick } from "@/src/empty-art.tsx";
+export { Machine } from "@/src/visuals.tsx";
 export {
   WishTask,
   TurnCommentsButton,
@@ -38,8 +49,10 @@ export {
   isPrincipal,
   principalWish,
   runningOf,
+  fixerOf,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
+export { glanceOf, forgeMark, failingTests } from "@/src/glance.tsx";
 export {
   attentionOf,
   AttentionBar,
@@ -53,25 +66,40 @@ export { reviewRows, reviewLeft, toReview } from "@/src/data/review.ts";
 export {
   azimaGroups,
   azimaRank,
+  compareRanks,
   draftAzimas,
   finishedTasks,
   flightPlan,
+  holdsUp,
   mergeNest,
   movingTasks,
-  taskDealtWith,
   waitingLeadQuestions,
   waitingTasks,
   workCount,
   spent,
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
+export { RankedAzimaList } from "@/src/azima-rank.tsx";
 export {
   FolderField,
+  MakeWish,
+  ShortcutField,
+  SleepQuestionDialog,
+  sleepRequests,
+  sleepTasks,
+  sleepUntil,
+} from "@/src/wish-dialogs.tsx";
+export {
+  BranchChoice,
+  ConfigChanges,
+  NoticeLine,
   ProjectChecks,
   ProjectPanel,
-  ShortcutField,
+  ProjectSettings,
+  ReferenceBranch,
+  SkillLine,
   WatchCommands,
-} from "@/src/wish-dialogs.tsx";
+} from "@/src/project-panel.tsx";
 export {
   LastPushes,
   LeadButton,
@@ -84,6 +112,7 @@ export {
   WishTitle,
   leadTrouble,
   recordedAgent,
+  seatName,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";
 export { platformShortcut } from "@/src/tooltip.tsx";
@@ -102,7 +131,12 @@ export {
   getUsageUnit,
   SpentLine,
 } from "@/src/usage.tsx";
-export { TilasmList } from "@/src/tilasms.tsx";
+export { TilasmFrame, TilasmList, newestTilasm } from "@/src/tilasms.tsx";
+export {
+  TilasmOver,
+  TilasmOverContext,
+  giveBack,
+} from "@/src/tilasm-over.tsx";
 export { AgentBlocks } from "@/src/agent-blocks.tsx";
 export { MarkdownBody } from "@/src/markdown-body.tsx";
 export { CopyButton } from "@/src/copy-command.tsx";
@@ -111,7 +145,11 @@ export * as dew from "@/e2e/report-question.ts";
 export { SafeSvg, sanitizeSvg } from "@/src/safe-svg.tsx";
 export { openDjinnLink, parseDjinnLink } from "@/src/data/links.ts";
 export { ConnectError, Code } from "@connectrpc/connect";
-export { readDrop } from "@/src/data/tilasms.ts";
+export {
+  entriesFromFiles,
+  entriesOf,
+  readDrop,
+} from "@/src/data/tilasms.ts";
 export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel, WorkerRow } from "@/src/consumption-panel.tsx";
 export { ResourceChart } from "@/src/resource-chart.tsx";
@@ -126,6 +164,7 @@ export {
   HourglassLine,
   HourglassSections,
 } from "@/src/hourglass.tsx";
+export { Docs, GRIMOIRE } from "@/src/docs.tsx";
 export {
   TaskDiffView,
   UnifiedView,
@@ -138,12 +177,16 @@ export {
   OperatingLoad,
   OperatingLoadSlider,
   OperatingLoadForecast,
+  OperatingLoadAuto,
   loadManager,
   NOTCHES,
   notchLabel,
   notchSlug,
+  nearestNotch,
+  stopAt,
 } from "@/src/operating-load.tsx";
-export { LoadNotch } from "@/gen/ts/djinn/v1/load_pb.ts";
+export { LoadAutoStep, LoadNotch } from "@/gen/ts/djinn/v1/load_pb.ts";
+export { HeldGates } from "@/src/ifrit.tsx";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 const h = s.createElement;
@@ -296,38 +339,204 @@ test("the side panel ranks the active wishes, counts the three places, and folds
       onNewProject() {},
     }),
   );
+  assert.match(
+    html,
+    /<div class="sidebar-section-label"><svg[^>]*lucide-sparkles[^>]*>[^]*?<\/svg><span>Wishes<\/span><span class="nav-counter "/,
+  );
+  assert.match(
+    html,
+    /<div class="sidebar-section-label project-section-label"><svg[^>]*lucide-folder[^>]*>[^]*?<\/svg><span>Projects<\/span><button title="Create a project"/,
+  );
   assert.match(html, />2\/3</);
   assert.ok(html.indexOf("Ship the lamp") < html.indexOf("Polish the brass"));
   assert.match(html, /Paused/);
   assert.match(html, /1 granted/);
   // Granted wishes stay folded until asked.
   assert.doesNotMatch(html, /Light it/);
-  // The active ones are dragged to a new rank, and a paused one among them; a granted one is not.
+  // Every wish shown is dragged by its row, no grip on it: the active ones to a new rank, a paused one among them or
+  // among the paused ones (Q01). The row starts with the wish's icon, 24px, in place of the grip and the state's icon.
   assert.equal(html.match(/draggable="true"/g).length, 3);
+  assert.doesNotMatch(html, /wish-grip|lucide-grip-vertical|wish-tone/);
+  assert.equal(
+    html.match(
+      /draggable="true"><span class="wish-emblem"><svg class="lucide wish-icon[^"]*" width="24" height="24"/g,
+    ).length,
+    3,
+  );
+  // A paused or granted wish rests: its icon in one grey (wish.css), no second line.
+  assert.match(
+    html,
+    /class="mission-nav wish-nav[^"]*\brest\b[^"]*" title="Trim the wick/,
+  );
+  assert.match(
+    html,
+    /title="Trim the wick \(drag, or Alt\+Arrow, to change its place/,
+  );
   // A paused wish goes first with its button.
   assert.equal(html.match(/Make it the first active wish/g).length / 2, 1);
   assert.match(html, /mission-nav wish-nav selected/);
-  // Each wish says at a glance what waits and what runs: an icon and a count, with their words.
-  const counted = s.renderToStaticMarkup(
-    h(s.WishSidebar, {
-      wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
-      projects: [],
-      counts: { w1: { questions: 2, running: 1, watching: 1 } },
-      onSelectPlan() {},
-      selectedWishId: "",
-      selectedProjectId: "",
-      collapsed: false,
-      onSelectWish() {},
-      onSelectProject() {},
-      onMove() {},
-      onNewProject() {},
-    }),
+  // An active wish takes a second line under its title, its rank at the end; a paused one keeps a single line.
+  assert.equal(html.match(/class="wish-counts"/g).length, 2);
+  assert.match(
+    html,
+    /<span class="wish-title">Polish the brass<\/span><span class="wish-counts">/,
   );
-  assert.match(counted, /wish-tone tone-waiting/);
-  assert.match(counted, /aria-label="2 questions wait for your answer."/);
-  assert.match(counted, /aria-label="1 running"[^>]*><span class="live-dot"/);
-  // A watcher is counted apart: it waits for its command to print, it does not work.
-  assert.match(counted, /count-pill tone-watching" title="1 watching"/);
+  assert.match(
+    html,
+    /<span class="wish-title">Trim the wick<\/span><\/button>/,
+  );
+  // A wish ready to grant says it there, before its rank.
+  assert.match(html, />ready to grant<\/span><small class="wish-rank">/);
+  // Each wish says at a glance what waits and what runs: an icon and a count, with their words, on its second line.
+  const sidebar = (
+    collapsed,
+    count = { questions: 2, running: 1, watching: 1, merging: 0 },
+  ) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
+        projects: [],
+        counts: { w1: count },
+        onSelectPlan() {},
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const counted = sidebar(false);
+  const row = counted.slice(counted.indexOf("wish-nav"));
+  // The questions: the small hand and their count, no bubble, no pill; what runs, a full dot and its count, no live
+  // ring (no infinite animation).
+  assert.match(
+    row,
+    /<span class="wish-sign tone-waiting" title="2 questions wait for your answer." aria-label="2 questions wait for your answer." role="img"><svg class="lucide waiting-hand"[^>]*>.*?<\/svg><b>2<\/b><\/span>/,
+  );
+  assert.match(
+    row,
+    /<span class="wish-sign tone-running" title="1 running" aria-label="1 running" role="img"><span class="wish-sign-dot"><\/span><b>1<\/b><\/span>/,
+  );
+  assert.doesNotMatch(
+    row,
+    /live-dot|count-pill|lucide-message-circle-question/,
+  );
+  // A watcher is counted apart, its eye: it waits for its command to print, it does not work.
+  assert.match(
+    row,
+    /wish-sign tone-watching" title="1 watching"[^>]*><svg[^>]*lucide-eye/,
+  );
+  // What waits for you first, then what works, then what watches, then the rank.
+  const at = (text) => row.indexOf(text);
+  assert.ok(at('title="2 questions') < at('title="1 running"'));
+  assert.ok(at('title="1 running"') < at('title="1 watching"'));
+  assert.ok(at('title="1 watching"') < at("wish-rank"));
+  // The wish's own icon is drawn unfolded too, its marks with it, which only the folded rail and a window under 820px
+  // wide show (wish.css): the wish's mark (it has no icon yet), the small hand and its count on its corner, a blue dot
+  // under it.
+  assert.match(
+    row,
+    /<span class="wish-emblem"><svg[^>]*class="lucide wish-icon wish-mark"[^>]*>(?:(?!<\/svg>).)*<\/svg>/,
+  );
+  assert.match(
+    row,
+    /<span class="wish-hand-corner" title="2 questions wait for your answer." aria-label="2 questions wait for your answer." role="img"><svg class="lucide waiting-hand"[^>]*>.*?<\/svg><b>2<\/b><\/span>/,
+  );
+  assert.match(
+    row,
+    /<span class="wish-acts" title="1 running" aria-label="1 running" role="img"><span class="wish-act tone-running"><\/span><\/span>/,
+  );
+  // A wish with no question carries no hand.
+  assert.doesNotMatch(
+    sidebar(false, { questions: 0, running: 1, watching: 0, merging: 0 }),
+    /wish-hand-corner|waiting-hand/,
+  );
+  // Folded to the rail, the wish's icon is all that shows, the same, with its hand and its dot: no second line.
+  const rail = sidebar(true);
+  assert.match(
+    rail,
+    /wish-emblem"><svg class="lucide wish-icon wish-mark" width="24" height="24"/,
+  );
+  assert.match(
+    counted,
+    /wish-emblem"><svg class="lucide wish-icon wish-mark" width="24" height="24"/,
+  );
+  assert.match(rail, /wish-hand-corner/);
+  assert.match(rail, /wish-act tone-running/);
+  assert.doesNotMatch(rail, /wish-counts/);
+  assert.doesNotMatch(rail, /wish-grip/);
+  // A wish with an icon of the bank draws it in its duo's colours, its line apart from its gilding; a name the bank
+  // does not hold keeps the mark.
+  const drawn = (icon) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1, { icon })],
+        projects: [],
+        selectedWishId: "w1",
+        selectedProjectId: "",
+        collapsed: true,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const lamp = drawn("lamp");
+  assert.match(
+    lamp,
+    /<svg[^>]*class="lucide wish-icon wish-duo-l"[^>]*stroke-width="1.25"[^>]*><g class="wish-icon-line"><g><path d="M4 12h10l7-3.5/,
+  );
+  assert.match(lamp, /<g stroke-width="1"><path d="M6.5 14.2h7"\/?>/);
+  assert.match(lamp, /<g class="wish-icon-gild"><path[^>]*fill="currentColor"/);
+  assert.doesNotMatch(lamp, / id="/);
+  assert.match(drawn("no-such-icon"), /wish-icon wish-mark/);
+  // The workers that wait, whatever holds them: a grey seat and their number, after what works and before what
+  // watches, its tooltip split by reason; on the rail, where no count shows, they hang on the corner of the wish's icon.
+  // None waits: neither shows.
+  const placed = sidebar(false, {
+    questions: 0,
+    running: 1,
+    watching: 1,
+    merging: 0,
+    waits: { place: 1, push: 0, dependency: 1, limit: 0, question: 0 },
+  });
+  const placeRow = placed.slice(placed.indexOf("wish-nav"));
+  const placeTitle =
+    "2 workers wait: 1 for a place (a free slot, the machine&#x27;s load or memory, a gate); 1 for a dependency";
+  assert.match(
+    placeRow,
+    new RegExp(
+      `<span class="wish-sign tone-planned" title="${placeTitle.replace(/[()]/g, "\\$&")}" aria-label="[^"]*" role="img"><svg[^>]*lucide-armchair[^>]*>.*?</svg><b>2</b></span>`,
+    ),
+  );
+  const placeAt = (text) => placeRow.indexOf(text);
+  assert.ok(placeAt('title="1 running"') < placeAt("wish-sign tone-planned"));
+  assert.ok(placeAt("wish-sign tone-planned") < placeAt('title="1 watching"'));
+  const placedRail = sidebar(true, {
+    questions: 0,
+    running: 1,
+    watching: 0,
+    merging: 0,
+    waits: { place: 0, push: 3, dependency: 0, limit: 0, question: 0 },
+  });
+  assert.doesNotMatch(placedRail, /wish-counts/);
+  assert.match(
+    placedRail,
+    /<span class="wish-place-corner" title="3 workers wait: 3 for the push checks [^"]*" aria-label="3 workers wait: [^"]*" role="img"><svg[^>]*lucide-armchair[^>]*>.*?<\/svg><b>3<\/b><\/span><\/span>/,
+  );
+  for (const collapsed of [false, true])
+    assert.doesNotMatch(
+      sidebar(collapsed, {
+        questions: 0,
+        running: 1,
+        watching: 0,
+        merging: 0,
+        waits: { place: 0, push: 0, dependency: 0, limit: 0, question: 0 },
+      }),
+      /lucide-armchair|wish-place-corner|workers? waits?/,
+    );
   // A wish whose only process is a watcher is watching, not running.
   const watched = s.renderToStaticMarkup(
     h(s.WishSidebar, {
@@ -344,7 +553,7 @@ test("the side panel ranks the active wishes, counts the three places, and folds
       onNewProject() {},
     }),
   );
-  assert.match(watched, /wish-tone tone-watching/);
+  assert.match(watched, /wish-sign tone-watching/);
   assert.doesNotMatch(watched, /running/);
   assert.match(html, />lamp</);
 });
@@ -380,6 +589,305 @@ test("the side panel counts the new inbox items on the flying carpet's entry, ev
     sidebar([wish("w2", "Ship the lamp", s.WishState.ACTIVE, 1)], 1),
     /aria-label="1 new item in the inbox"/,
   );
+  // Folded to the rail: no pill, the small hand and the count on the plane's corner.
+  const rail = s.renderToStaticMarkup(
+    h(s.WishSidebar, {
+      wishes: [paused],
+      projects: [],
+      inbox: 2,
+      onSelectPlan() {},
+      selectedWishId: "",
+      selectedProjectId: "",
+      collapsed: true,
+      onSelectWish() {},
+      onSelectProject() {},
+      onMove() {},
+      onNewProject() {},
+    }),
+  );
+  assert.doesNotMatch(rail, /count-pill/);
+  assert.match(
+    rail,
+    /<span class="wish-emblem"><svg[^>]*lucide-plane[^>]*>.*?<\/svg><span class="wish-hand-corner" title="2 new items in the inbox" aria-label="2 new items in the inbox" role="img"><svg class="lucide waiting-hand"[^>]*>.*?<\/svg><b>2<\/b><\/span><\/span>/,
+  );
+});
+
+test("a project's gear opens its panel; red with a small flame while it has something to fix, which its tooltip counts; folded, the flame passes onto the folder", () => {
+  const sidebar = (collapsed) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [],
+        projects: [
+          { id: "p1", name: "lamp", directory: "/tmp/lamp", toFix: 0 },
+          { id: "p2", name: "dolmen", directory: "/tmp/dolmen", toFix: 2 },
+        ],
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const html = sidebar(false);
+  // All well: a grey gear, no flame.
+  assert.match(
+    html,
+    /<button class="icon-button project-gear " title="Configuration of lamp" aria-label="Configuration of lamp"><svg[^>]*lucide-settings/,
+  );
+  // Something to fix: red, a flame on its corner, the count in its tooltip and on the folder's.
+  assert.match(
+    html,
+    /<button class="icon-button project-gear hot" title="Configuration of dolmen: 2 things to fix" aria-label="Configuration of dolmen: 2 things to fix"><svg[^>]*lucide-settings[^]*?<\/svg><span class="project-flame" aria-hidden="true"><span class="project-flame-glyph"><svg[^>]*lucide-flame/,
+  );
+  assert.match(html, /title="\/tmp\/dolmen · 2 things to fix"/);
+  assert.equal(html.split('project-flame"').length - 1, 1);
+  // Folded to the rail: no gear, the flame on the red project's folder alone.
+  const rail = sidebar(true);
+  assert.doesNotMatch(rail, /project-gear/);
+  assert.equal(rail.split('project-flame"').length - 1, 1);
+  assert.match(
+    rail,
+    /title="\/tmp\/dolmen · 2 things to fix"><span class="project-folder"><svg[^>]*lucide-folder-open[^]*?<\/svg><span class="project-flame"/,
+  );
+  // The gear opens the same panel as the name.
+  const opened = [];
+  s.ProjectGear({
+    project: { id: "p2", name: "dolmen", toFix: 2 },
+    onOpen: (id) => opened.push(id),
+  }).props.onClick();
+  assert.deepEqual(opened, ["p2"]);
+});
+
+test("a revised question's earlier versions take no room: Versions (3) in its corner opens them below it, to read", () => {
+  // Its context is its current version only (W114); each revision's round keeps the version it replaced.
+  const question = {
+    id: "q1",
+    code: "Q01",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin"],
+    recommendation: "A: it smells good.",
+    context: "The lamp smokes.",
+    revision: 2,
+    rounds: [
+      { kind: s.RoundKind.ENLIGHTEN, note: "Burn time?" },
+      {
+        kind: s.RoundKind.REVISE,
+        context: "The lamp smoked a little.",
+        options: ["Olive", "Canola"],
+        recommendation: "B: it is cheap.",
+      },
+      {
+        kind: s.RoundKind.REVISE,
+        context: "The lamp smoked more.",
+        options: ["Olive", "Paraffin"],
+        recommendation: "B: brighter.",
+      },
+    ],
+  };
+  const row = live(s.WishQuestion, {
+    question,
+    current: true,
+    onSelect() {},
+    onAnswer: async () => {},
+  });
+  const card = live(s.WishQuestion, {
+    question,
+    expanded: true,
+    onAnswer: async () => {},
+  });
+  for (const view of [row, card]) {
+    const closed = view.html();
+    assert.match(closed, /The lamp smokes\./);
+    assert.match(
+      closed,
+      /<div class="question-corner"><button type="button" class="question-corner-button question-versions" title="The earlier versions of this question, to read" aria-expanded="false"><svg[^>]*lucide-history[^>]*>.*?<\/svg>Versions \(3\)<\/button>/,
+    );
+    // Closed, the earlier versions take no room, and no history is left in the context.
+    assert.doesNotMatch(
+      closed,
+      /smoked|Earlier versions|question-versions-list|Historique|Previous versions|question-rounds/,
+    );
+    view.one("question-versions").onClick();
+    const open = view.html();
+    assert.match(
+      open,
+      /question-versions is-pressed" [^>]*aria-expanded="true"/,
+    );
+    // The current version first, then the earlier ones, the last one first, each with what was asked about it.
+    assert.match(
+      open,
+      /The lamp smokes\..*<h4>Earlier versions<\/h4><ol reversed=""><li>.*Version 2.*revised .*The lamp smoked more\..*<li>Olive<\/li><li>Paraffin<\/li>.*Recommended: B: brighter\..*<\/li><li>.*Version 1.*asked .*The lamp smoked a little\..*<li>Canola<\/li>.*Recommended: B: it is cheap\..*Asked to investigate: Burn time\?/s,
+    );
+    // To read only: nothing restores a version.
+    assert.doesNotMatch(open, /Restore/);
+  }
+  // Never revised: no Versions button.
+  const plain = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question: { ...question, revision: 0, rounds: [] },
+      expanded: true,
+      onAnswer: async () => {},
+    }),
+  );
+  assert.doesNotMatch(plain, /question-versions|Versions \(/);
+});
+
+test("W100: an option with a planned task says on one grey line what it launches, and its azima", () => {
+  const azima = {
+    id: "a58",
+    wishId: "w1",
+    code: "T58",
+    title: "Lighting",
+  };
+  const question = {
+    id: "q1",
+    code: "Q01",
+    wishId: "w1",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin", "Neither"],
+    recommendation: "",
+    context: "",
+    plans: [
+      {
+        option: s.Choice.A,
+        title: "Fill the lamp with olive oil",
+        partOf: "a58",
+      },
+      {
+        option: s.Choice.B,
+        title: "",
+        prompt: "Buy paraffin\nThen fill the lamp.",
+      },
+    ],
+  };
+  // The wish's tasks read: the azima by its code and title.
+  const djinn = {
+    store: {
+      getState: () => ({ details: { w1: { tasks: [azima] } } }),
+      subscribe: () => () => {},
+    },
+  };
+  const render = (props) =>
+    s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishQuestion, { question, onAnswer: async () => {}, ...props }),
+      ),
+    );
+  for (const html of [render({}), render({ current: true, onSelect() {} })]) {
+    const options = html.split('<strong class="option-letter">').slice(1);
+    assert.equal(options.length, 3);
+    assert.match(
+      options[0],
+      /<p>Olive<\/p><span class="option-plan" title="Launches: Fill the lamp with olive oil · T58 Lighting"><svg[^>]*lucide-corner-down-right[^]*?<\/svg><span class="option-plan-text">Launches: Fill the lamp with olive oil<\/span><span class="option-plan-azima">· T58 Lighting<\/span><\/span><\/div>/,
+    );
+    // Untitled, its prompt's first line; no azima, nothing after it.
+    assert.match(
+      options[1],
+      /<span class="option-plan-text">Launches: Buy paraffin<\/span><\/span><\/div>/,
+    );
+    // An option without a plan says nothing.
+    assert.doesNotMatch(options[2], /option-plan/);
+  }
+  // The wish's tasks not read yet: the line, without its azima, on the same single line.
+  const alone = s.renderToStaticMarkup(
+    h(s.WishQuestion, { question, onAnswer: async () => {} }),
+  );
+  assert.match(
+    alone,
+    /<span class="option-plan" title="Launches: Fill the lamp with olive oil">.*?<span class="option-plan-text">Launches: Fill the lamp with olive oil<\/span>/,
+  );
+  assert.doesNotMatch(alone, /T58/);
+  // A question without options: the plan of its yes, above the note.
+  const yes = s.renderToStaticMarkup(
+    h(s.WishQuestion, {
+      question: {
+        ...question,
+        options: [],
+        plans: [{ option: s.Choice.YES, title: "Light the lamp" }],
+      },
+      onAnswer: async () => {},
+    }),
+  );
+  assert.match(yes, /Launches: Light the lamp<\/span><\/span><textarea/);
+});
+
+test("W100: an answer that launched its option's plan links the launched task on its own line in the decision log", () => {
+  const question = {
+    id: "q1",
+    code: "Q01",
+    wishId: "w1",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin"],
+    answer: { choice: s.Choice.A, note: "" },
+    plans: [
+      {
+        option: s.Choice.A,
+        title: "Fill the lamp with olive oil",
+        taskId: "t40",
+      },
+      { option: s.Choice.B, title: "Buy paraffin" },
+    ],
+  };
+  const item = (q, tasks) => ({
+    item: {
+      id: q.id,
+      ref: q.code,
+      question: q,
+      human: true,
+      approved: false,
+      by: "",
+      icon: "*",
+      tasks,
+    },
+  });
+  const launched = { id: "t40", code: "W40", title: "Fill the lamp" };
+  const other = { id: "t41", code: "W41", title: "Polish the lamp" };
+  const opened = [];
+  const html = s.renderToStaticMarkup(
+    h(s.DecisionLog, {
+      items: [item(question, [launched, other])],
+      onTask: (id) => opened.push(id),
+    }),
+  );
+  assert.match(
+    html,
+    /<p class="decision-tasks decision-launched"><svg[^]*?<\/svg>Launched as planned<a class="agent-code" href="#task-t40" title="Open W40 in the Tasks tab">W40<\/a><span class="decision-launched-title">Fill the lamp<\/span><\/p><p class="decision-tasks"><svg[^]*?<\/svg>Led to<a class="agent-code" href="#task-t41"[^>]*>W41<\/a><\/p>/,
+  );
+  // Not launched yet (a note left it to the lead): nothing launched, the plan says nothing in the log.
+  const pending = s.renderToStaticMarkup(
+    h(s.DecisionLog, {
+      items: [
+        item(
+          {
+            ...question,
+            plans: [
+              { option: s.Choice.A, title: "Fill the lamp with olive oil" },
+            ],
+          },
+          [],
+        ),
+      ],
+      onTask() {},
+    }),
+  );
+  assert.doesNotMatch(pending, /decision-launched|Launched|Led to/);
+  // Another option's plan launched nothing for this answer.
+  const otherOption = s.renderToStaticMarkup(
+    h(s.DecisionLog, {
+      items: [
+        item({ ...question, answer: { choice: s.Choice.B, note: "" } }, [
+          other,
+        ]),
+      ],
+      onTask() {},
+    }),
+  );
+  assert.doesNotMatch(otherOption, /decision-launched/);
+  assert.match(otherOption, /Led to<a class="agent-code" href="#task-t41"/);
 });
 
 test("a question shows its options by letter and its recommendation; answered, what was chosen", () => {
@@ -441,7 +949,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.doesNotMatch(before, /can-wait|is-blocking/);
 
-  // With the lamp's writes: rub, enlighten, and a read mark already put.
+  // With the lamp's writes: Move at the top, then Withdraw on the left, Enlighten in the middle, and the lamp on the right.
   const lamp = s.renderToStaticMarkup(
     h(s.WishQuestion, {
       question: {
@@ -451,23 +959,35 @@ test("a question shows its options by letter and its recommendation; answered, w
         options: ["Olive", "Paraffin"],
         recommendation: "B: brighter.",
         context: "## Cost\n\nOlive is dearer.",
-        marks: [{ kind: s.MarkKind.READ }],
         rounds: [],
         revision: 0,
       },
       blocking: ["W2"],
       onAnswer: async () => {},
-      onMark: async () => {},
       onEnlighten: async () => {},
+      onMove: () => {},
+      onWithdraw: () => {},
     }),
   );
-  // Enlighten on the left, then the lamp; B, recommended, is the one rubbed.
-  assert.ok(lamp.indexOf("Enlighten me") < lamp.indexOf("Rub the lamp"));
+  // Move, an icon named by its label, beside the heading; Withdraw on the left, Enlighten in the middle, then the
+  // lamp; B, recommended, is the one rubbed.
+  assert.match(
+    lamp,
+    /<\/div><div class="question-corner"><button class="question-corner-button question-move" type="button" aria-label="Move to another wish"><svg[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><\/div><\/div>/,
+  );
+  assert.doesNotMatch(lamp, /question-move"[^>]*title=/);
+  assert.ok(
+    lamp.indexOf("Withdraw question…") < lamp.indexOf(">Enlighten me<kbd"),
+  );
+  assert.ok(lamp.indexOf(">Enlighten me<kbd") < lamp.indexOf("Rub the lamp"));
   assert.match(
     lamp,
     /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
   );
-  assert.match(lamp, /aria-pressed="true"[^>]*>.*Read<\/button>/);
+  assert.doesNotMatch(
+    lamp,
+    /mark-toggle|question-menu|Your answer goes to the Djinn/,
+  );
   assert.match(lamp, /Blocks W2/);
   assert.match(lamp, /What is at stake<\/h4>.*<h2>Cost<\/h2>/);
   assert.match(lamp, /question-card open is-blocking/);
@@ -483,7 +1003,6 @@ test("a question shows its options by letter and its recommendation; answered, w
         rounds: [],
       },
       onAnswer: async () => {},
-      onMark: async () => {},
     }),
   );
   assert.doesNotMatch(vague, /option selected/);
@@ -552,11 +1071,9 @@ test("a question shows its options by letter and its recommendation; answered, w
   );
   assert.match(digging, /You asked to find out more: And the price\?/);
   assert.match(digging, /Revised/);
-  assert.match(
-    digging,
-    /<details class="question-rounds"><summary>.*History: 3 rounds/,
-  );
-  assert.match(digging, /Recommended before: B: brighter\./);
+  // Its earlier version is behind Versions (2), closed.
+  assert.match(digging, /question-versions"[^>]*>.*?Versions \(2\)<\/button>/);
+  assert.doesNotMatch(digging, /B: brighter\./);
   // Already asked: no second request.
   assert.doesNotMatch(digging, /lamp-enlighten/);
   // A click on its heading folds it again.
@@ -743,9 +1260,64 @@ test("a gesture presses its button and the card answers back in its colour", asy
   assert.doesNotMatch(refused.html(), /gesture-|is-pressed|question-wisp/);
 });
 
-test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enlighten, composing, arrows, 1-4, and macOS hints", async () => {
+test("Later sits before Move in a question's top right corner, pressed while the question is put off", () => {
+  const question = {
+    id: "q1",
+    code: "Q01",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin"],
+    recommendation: "",
+    rounds: [],
+    revision: 0,
+    createTime: { seconds: 1_760_000_000n, nanos: 0 },
+  };
+  const later = [];
+  const card = live(s.WishQuestion, {
+    question,
+    onAnswer: async () => {},
+    onMove: () => {},
+    onLater: (q) => later.push(q.code),
+  });
+  // Two icons named by their labels, Later first; not pressed, its icon says it goes down.
+  assert.match(
+    card.html(),
+    /<div class="question-corner"><button class="question-corner-button question-later" aria-pressed="false" type="button" aria-label="Later"><svg[^>]*lucide-clock-arrow-down[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><button class="question-corner-button question-move" type="button" aria-label="Move to another wish">/,
+  );
+  assert.doesNotMatch(card.html(), /put off/);
+  card.one("question-later").onClick();
+  assert.deepEqual(later, ["Q01"]);
+
+  // Put off: pressed, its icon says it comes back up, and the grey line says when.
+  card.update({
+    question: {
+      ...question,
+      laterTime: { seconds: 1_760_000_600n, nanos: 0 },
+    },
+  });
+  assert.match(
+    card.html(),
+    /<button class="question-corner-button question-later is-pressed" aria-pressed="true" type="button" aria-label="Later"><svg[^>]*lucide-clock-arrow-up/,
+  );
+  assert.match(card.html(), /asked [^<]* · put off (?:at|[^<]* at) /);
+  card.one("question-later").onClick();
+  assert.deepEqual(later, ["Q01", "Q01"]);
+
+  // Without the write, no Later: Move alone in the corner.
+  const alone = s.renderToStaticMarkup(
+    h(s.WishQuestion, { question, onAnswer: async () => {}, onMove: () => {} }),
+  );
+  assert.doesNotMatch(alone, /question-later/);
+  assert.match(
+    alone,
+    /<div class="question-corner"><button class="question-corner-button question-move"/,
+  );
+});
+
+test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enlighten, Withdraw, Move, composing, arrows, 1-4, and macOS hints", async () => {
   const answered = [];
   const enlightened = [];
+  const moved = [];
+  const withdrawn = [];
   const card = live(s.WishQuestion, {
     question: {
       id: "q1",
@@ -759,6 +1331,12 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
     },
     onEnlighten: async (note) => {
       enlightened.push(note);
+    },
+    onMove: (q) => {
+      moved.push(q.code);
+    },
+    onWithdraw: (q) => {
+      withdrawn.push(q.code);
     },
   });
 
@@ -902,6 +1480,47 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   await card.settle();
   assert.deepEqual(enlightened, ["Pure and filtered", "From card"]);
 
+  // Move button at the top, Withdraw button at the bottom, and Mod+Shift+Backspace on the card and in the textarea
+  card.one("question-move").onClick();
+  assert.deepEqual(moved, ["Q01"]);
+  card.one("lamp-withdraw").onClick();
+  assert.deepEqual(withdrawn, ["Q01"]);
+  let withdrawPrevented = false;
+  card.one("question-card").onKeyDown({
+    key: "Backspace",
+    ctrlKey: true,
+    shiftKey: true,
+    preventDefault: () => {
+      withdrawPrevented = true;
+    },
+  });
+  assert.ok(withdrawPrevented);
+  assert.deepEqual(withdrawn, ["Q01", "Q01"]);
+  let textareaWithdrawPrevented = false;
+  card.one("textarea").onKeyDown({
+    key: "Backspace",
+    metaKey: true,
+    shiftKey: true,
+    preventDefault: () => {
+      textareaWithdrawPrevented = true;
+    },
+  });
+  assert.ok(textareaWithdrawPrevented);
+  assert.deepEqual(withdrawn, ["Q01", "Q01", "Q01"]);
+  // Plain Backspace or Ctrl+Alt+Backspace does not withdraw
+  card.one("question-card").onKeyDown({
+    key: "Backspace",
+    preventDefault: () => {},
+  });
+  card.one("question-card").onKeyDown({
+    key: "Backspace",
+    ctrlKey: true,
+    shiftKey: true,
+    altKey: true,
+    preventDefault: () => {},
+  });
+  assert.equal(withdrawn.length, 3);
+
   // Question with no recommendation: Enter without option selected does not answer and shows alert
   const unselectedAnswered = [];
   const cardNoRec = live(s.WishQuestion, {
@@ -993,7 +1612,16 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
         },
         onAnswer: async () => {},
         onEnlighten: async () => {},
+        onWithdraw: () => {},
       }),
+    );
+    assert.match(
+      macMarkup,
+      /<kbd class="key-hint" aria-hidden="true">⌘⇧⌫<\/kbd>/,
+    );
+    assert.match(
+      macMarkup,
+      /title="Close this question without an answer \(⌘⇧⌫\)"/,
     );
     assert.match(
       macMarkup,
@@ -1006,6 +1634,401 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   } finally {
     delete globalThis.__DJINN_MAC__;
   }
+});
+
+// The questions column (Decision Q08, mockup L04 v2): grouped by wish on the flying carpet, one open at a time, the
+// arrows from one to the next across the groups, stopping at both ends.
+test("the questions column groups the open questions by wish, the first open in full, the others two-line rows", () => {
+  const lamp = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const wick = wish("w2", "Trim the wick", s.WishState.ACTIVE, 2);
+  const calm = wish("w3", "Polish the brass", s.WishState.ACTIVE, 3);
+  const open = (w, id, code, text, extra = {}) => ({
+    wish: w,
+    item: {
+      id,
+      code,
+      text,
+      options: ["Olive", "Paraffin"],
+      recommendation: "B: brighter.",
+      rounds: [],
+      revision: 0,
+      wishId: w.id,
+      ...extra,
+    },
+    blocking: [],
+  });
+  // As the flying carpet orders them, the most urgent first: the groups follow the wishes' rank all the same.
+  const long = `## Cost\n\n${"Olive is dearer. ".repeat(40)}\n\n## Versions\n\n### Round 0\n\nThe first ask.\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n\`\`\`sh\ngo tool task test\n\`\`\``;
+  const questions = [
+    open(wick, "q3", "Q03", "Which wick?", { context: long }),
+    open(lamp, "q1", "Q01", "Which oil?", { context: long }),
+    open(lamp, "q2", "Q02", "Which glass?", { revision: 2 }),
+  ];
+  const groups = s.questionGroups([lamp, wick, calm], questions);
+  assert.deepEqual(
+    groups.map((g) => [g.wish.id, g.questions.map((q) => q.item.code)]),
+    [
+      ["w1", ["Q01", "Q02"]],
+      ["w2", ["Q03"]],
+    ],
+  );
+  const html = s.renderToStaticMarkup(
+    h(s.QuestionColumn, {
+      groups,
+      headings: true,
+      onAnswer: async () => {},
+      onEnlighten: async () => {},
+      onMove() {},
+      onWithdraw() {},
+    }),
+  );
+  // No card: a section on the page's ground, its label, then a light heading per wish with its count.
+  assert.match(
+    html,
+    /^<section class="question-column decisions-section" id="questions" aria-label="Questions"><h2 class="question-column-label">Questions<\/h2>/,
+  );
+  assert.doesNotMatch(html, /action-center/);
+  const heads = [
+    ...html.matchAll(
+      /<span class="name">([^<]*)<\/span><span class="question-group-count">(\d)/g,
+    ),
+  ];
+  assert.deepEqual(
+    heads.map((m) => [m[1], m[2]]),
+    [
+      ["Ship the lamp", "2"],
+      ["Trim the wick", "1"],
+    ],
+  );
+  // The first question is open, in full: its move icon beside the title, the whole context (no Read more), its table and its
+  // code block with Copy, the recommendation, the lettered options, the note and the three gestures.
+  const rows = html.split('<article id="question-').slice(1);
+  assert.equal(rows.length, 3);
+  assert.match(
+    rows[0],
+    /^q1" class="question-card question-row open current can-wait" tabindex="0" aria-current="true"/,
+  );
+  assert.match(
+    rows[0],
+    /<\/p><\/div><div class="question-corner"><button class="question-corner-button question-move" type="button" aria-label="Move to another wish"><svg[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><\/div><div class="question-open">/,
+  );
+  assert.doesNotMatch(rows[0], /read-more|Read more/);
+  assert.match(rows[0], /<h2>Versions<\/h2>\s*<h3>Round 0<\/h3>/);
+  assert.match(rows[0], /<table>/);
+  assert.match(rows[0], /class="ac-copy">Copy<\/button>/);
+  assert.equal((rows[0].match(/Olive is dearer\./g) ?? []).length, 40);
+  assert.ok(
+    rows[0].indexOf("What is at stake") < rows[0].indexOf("Recommendation · B"),
+  );
+  assert.ok(
+    rows[0].indexOf("Recommendation · B") <
+      rows[0].indexOf('option-letter">A<'),
+  );
+  assert.ok(
+    rows[0].indexOf('option-letter">B<') < rows[0].indexOf("<textarea"),
+  );
+  assert.ok(
+    rows[0].indexOf("<textarea") < rows[0].indexOf("Withdraw question…"),
+  );
+  assert.ok(
+    rows[0].indexOf("Withdraw question…") <
+      rows[0].indexOf(">Enlighten me<kbd"),
+  );
+  assert.ok(
+    rows[0].indexOf(">Enlighten me<kbd") < rows[0].indexOf("Rub the lamp"),
+  );
+  // The others are closed: their code, their title, how much they hold up, out of the tab order; no body. Each has a
+  // perch for the Djinn's eye, empty, hidden from screen readers.
+  assert.match(
+    rows[1],
+    /^q2" class="question-card question-row closed can-wait" tabindex="-1"[^>]*><span class="djinn-eye-perch" data-perch="q:q2" aria-hidden="true"><\/span><span class="question-id">Q02<\/span><div class="question-row-head"><h3 class="question-row-title">Which glass\?<\/h3><p class="question-row-meta"><span class="status-badge tone-later">.*Can wait<\/span><\/span><span>2 options<\/span><span class="revised-badge">Revised ×2<\/span><\/p><\/div><\/article>/,
+  );
+  assert.doesNotMatch(
+    rows[1] + rows[2],
+    /<textarea|question-open|Olive is dearer/,
+  );
+
+  // On a wish's page: its own questions, no heading; none, a line says so.
+  const page = s.renderToStaticMarkup(
+    h(s.QuestionColumn, {
+      groups: s.questionGroups([lamp], questions.slice(1)),
+      onAnswer: async () => {},
+    }),
+  );
+  assert.doesNotMatch(page, /question-group-head/);
+  assert.equal((page.match(/<article/g) ?? []).length, 2);
+  const none = s.renderToStaticMarkup(
+    h(s.QuestionColumn, { groups: [], onAnswer: async () => {} }),
+  );
+  // None open: the session's drawing above its sentence, the fact first (empty-art.tsx); the first without storage.
+  assert.match(
+    none,
+    /<div class="empty-state question-none"><svg class="empty-art empty-art-column" viewBox="0 0 200 130" fill="none" aria-hidden="true">.*<\/svg><p class="empty-state-text">No open question: nothing to ask you for now\.<\/p><\/div>/,
+  );
+  // Nothing waits and nothing runs: the Djinn asleep, and the sentence that says so.
+  const asleep = s.renderToStaticMarkup(
+    h(s.QuestionColumn, { groups: [], calm: true, onAnswer: async () => {} }),
+  );
+  assert.match(
+    asleep,
+    /<p class="empty-state-text">Nothing waits for you, and nothing runs: I rest above my lamp\.<\/p>/,
+  );
+  assert.doesNotMatch(asleep, /No open question/);
+});
+
+test("each empty state draws its drawing of the family above its sentence, the drawing hidden from readers, the pick kept for the session", () => {
+  const arts = {
+    calm: "empty-art-column",
+    still: "empty-art-column",
+    home: "empty-art-home",
+    tasks: "empty-art-wide",
+    decisions: "empty-art-wide",
+    review: "empty-art-wide",
+    agents: "empty-art-wide",
+    tilasms: "empty-art-wide",
+    nomatch: "empty-art-small",
+    comments: "empty-art-note",
+    terminal: "empty-art-terminal",
+    noproject: "empty-art-terminal",
+    clean: "empty-art-wide",
+    noworktree: "empty-art-wide",
+  };
+  for (const [art, size] of Object.entries(arts)) {
+    const html = s.renderToStaticMarkup(h(s.EmptyState, { art }, "The fact."));
+    assert.match(
+      html,
+      new RegExp(
+        `^<div class="empty-state"><svg class="empty-art ${size}" viewBox="[^"]+" fill="none" aria-hidden="true">.+</svg><p class="empty-state-text">The fact\\.</p></div>$`,
+      ),
+      art,
+    );
+    // No id to collide with another copy of the same drawing on the page.
+    assert.doesNotMatch(html, / id=/, art);
+  }
+  // Small: beside its sentence, for a narrow place; after it, a button or a second line.
+  assert.match(
+    s.renderToStaticMarkup(
+      h(
+        s.EmptyState,
+        { art: "nomatch", small: true, after: h("button", null, "Go") },
+        "None.",
+      ),
+    ),
+    /^<div class="empty-state small"><svg[^>]*>.+<\/svg><p class="empty-state-text">None\.<\/p><button>Go<\/button><\/div>$/,
+  );
+  // The variant is drawn once: the same at every call, whatever n asks.
+  assert.equal(s.sessionPick(5), s.sessionPick(5));
+  assert.equal(
+    s.renderToStaticMarkup(h(s.QuestionsEmpty)),
+    s.renderToStaticMarkup(h(s.QuestionsEmpty)),
+  );
+});
+
+test("the machine's screen shows the seal's flame, and smoke leaves its top only while workers run", () => {
+  const active = s.renderToStaticMarkup(h(s.Machine, { active: true }));
+  assert.match(
+    active,
+    /<g class="screen-symbol"><path d="M228 192C[^"]+" style="fill:var\(--eye-flame\)"><\/path>/,
+  );
+  assert.match(active, /class="machine-smoke"/);
+  const rest = s.renderToStaticMarkup(h(s.Machine, { active: false }));
+  assert.match(rest, /class="screen-symbol"/);
+  assert.doesNotMatch(rest, /machine-smoke/);
+});
+
+test("the questions column's keys: up and down across the groups stop at both ends, Escape leaves, the heir of an answered one", () => {
+  const order = ["q1", "q2", "q3"];
+  // Down and up, one at a time, from one wish to the next; nothing moves past either end.
+  assert.equal(s.stepTo(order, "q1", 1), "q2");
+  assert.equal(s.stepTo(order, "q2", 1), "q3");
+  assert.equal(s.stepTo(order, "q3", 1), "q3");
+  assert.equal(s.stepTo(order, "q2", -1), "q1");
+  assert.equal(s.stepTo(order, "q1", -1), "q1");
+  // From none open (Escape left the column), Down comes back to the first, Up to the last.
+  assert.equal(s.stepTo(order, undefined, 1), "q1");
+  assert.equal(s.stepTo(order, undefined, -1), "q3");
+  assert.equal(s.stepTo([], undefined, 1), undefined);
+  // The keys the column takes for itself: the arrows, Home and End, Escape; with a modifier, none.
+  const key = (k, mods = {}) =>
+    s.columnMove({
+      key: k,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+      ...mods,
+    });
+  assert.equal(key("ArrowDown"), "down");
+  assert.equal(key("ArrowUp"), "up");
+  assert.equal(key("Home"), "first");
+  assert.equal(key("End"), "last");
+  assert.equal(key("Escape"), "leave");
+  assert.equal(key("ArrowDown", { shiftKey: true }), undefined);
+  assert.equal(key("ArrowDown", { ctrlKey: true }), undefined);
+  assert.equal(key("ArrowRight"), undefined);
+  assert.equal(key(" "), undefined);
+  assert.equal(key("PageDown"), undefined);
+  // Answered, withdrawn or moved: the one below opens, else the one above; none left, none.
+  assert.equal(s.heir(order, ["q1", "q3"], "q2"), "q3");
+  assert.equal(s.heir(order, ["q1", "q2"], "q3"), "q2");
+  assert.equal(s.heir(order, ["q3"], "q1"), "q3");
+  assert.equal(s.heir(order, [], "q2"), undefined);
+});
+
+// W59: with no question focused (the focus on the page, or nowhere), the first arrow gives the focus to the open
+// question and moves nothing; the next one, from the focused question, moves. None open, the first for Down, the last
+// for Up, opens.
+test("the questions column's first arrow takes the focus, the second moves it", () => {
+  const order = ["q1", "q2", "q3"];
+  assert.deepEqual(s.arrowTo(order, "q2", 1, false), { id: "q2", move: false });
+  assert.deepEqual(s.arrowTo(order, "q2", -1, false), {
+    id: "q2",
+    move: false,
+  });
+  assert.deepEqual(s.arrowTo(order, "q2", 1, true), { id: "q3", move: true });
+  assert.deepEqual(s.arrowTo(order, "q2", -1, true), { id: "q1", move: true });
+  assert.deepEqual(s.arrowTo(order, "q3", 1, true), { id: "q3", move: false });
+  assert.deepEqual(s.arrowTo(order, undefined, 1, false), {
+    id: "q1",
+    move: true,
+  });
+  assert.deepEqual(s.arrowTo(order, undefined, -1, false), {
+    id: "q3",
+    move: true,
+  });
+  assert.equal(s.arrowTo([], undefined, 1, false), undefined);
+});
+
+test("an open question of the column: letters and digits pick, Enter goes to the note, Escape clears the pick, then leaves it to the column", async () => {
+  const answered = [];
+  const selected = [];
+  const keys = { current: undefined };
+  const question = {
+    id: "q1",
+    code: "Q01",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin", "Canola"],
+    recommendation: "A: it smells good.",
+    rounds: [],
+  };
+  const card = live(s.WishQuestion, {
+    question,
+    current: true,
+    onSelect: (id) => selected.push(id),
+    keys,
+    onAnswer: async (choice, note) => {
+      answered.push({ choice, note });
+    },
+  });
+  const selectedLetter = () =>
+    card
+      .html()
+      .match(
+        /<div class="option selected"[^>]*><strong class="option-letter">(\w)</,
+      )?.[1];
+  const press = (key, more = {}) => {
+    let prevented = false;
+    card.one("question-card").onKeyDown({
+      key,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+      target: null,
+      currentTarget: null,
+      preventDefault: () => {
+        prevented = true;
+      },
+      ...more,
+    });
+    return prevented;
+  };
+  // The recommended option is selected, as today: the lamp rubs it.
+  assert.equal(selectedLetter(), "A");
+  // A letter, in either case, or a digit picks its option; nothing leaves.
+  assert.ok(press("b"));
+  assert.equal(selectedLetter(), "B");
+  assert.ok(press("C"));
+  assert.equal(selectedLetter(), "C");
+  assert.ok(press("2"));
+  assert.equal(selectedLetter(), "B");
+  // No such option, Shift, or a modifier alone: nothing.
+  assert.equal(press("D"), false);
+  assert.equal(press("9"), false);
+  assert.equal(press("A", { shiftKey: true }), false);
+  assert.equal(selectedLetter(), "B");
+  // The arrows are the column's: the card leaves them.
+  assert.equal(press("ArrowDown"), false);
+  assert.equal(press("ArrowRight"), false);
+  assert.equal(selectedLetter(), "B");
+  await card.settle();
+  assert.deepEqual(answered, []);
+  // Enter on the question puts the caret in the note: it answers nothing.
+  assert.ok(press("Enter"));
+  await card.settle();
+  assert.deepEqual(answered, []);
+  // Escape in the note gives the focus back to the question.
+  let back = false;
+  card.one("textarea").onKeyDown({
+    key: "Escape",
+    preventDefault: () => {
+      back = true;
+    },
+  });
+  assert.ok(back);
+  // Escape on the question clears your pick: the recommendation is selected again; once none is yours, the column
+  // takes Escape (the focus leaves it).
+  assert.ok(press("Escape"));
+  assert.equal(selectedLetter(), "A");
+  assert.equal(press("Escape"), false);
+  // Ctrl+Enter rubs the lamp on the selected option, as today; Enter in the note too.
+  assert.ok(press("Enter", { ctrlKey: true }));
+  await card.settle();
+  assert.deepEqual(answered, [{ choice: s.Choice.A, note: "" }]);
+  press("c");
+  card.one("textarea").onChange({ target: { value: "Pressed today" } });
+  card.one("textarea").onKeyDown({ key: "Enter", preventDefault() {} });
+  await card.settle();
+  assert.deepEqual(answered[1], { choice: s.Choice.C, note: "Pressed today" });
+
+  // With no option recommended, the lamp waits for a pick, as today.
+  const vague = live(s.WishQuestion, {
+    question: {
+      ...question,
+      id: "q2",
+      code: "Q02",
+      recommendation: "Both burn.",
+    },
+    current: true,
+    onSelect() {},
+    keys,
+    onAnswer: async () => assert.fail("nothing picked"),
+  });
+  assert.match(vague.html(), /title="Pick an option first" disabled=""/);
+  vague.one("question-card").onKeyDown({
+    key: "Enter",
+    ctrlKey: true,
+    target: null,
+    preventDefault() {},
+  });
+  await vague.settle();
+  assert.match(
+    vague.html(),
+    /<p class="question-hint unpicked" role="alert">.*Pick an option first<\/p>/,
+  );
+
+  // Closed, it is its row: a click or the focus opens it, and the pick you made shows.
+  card.update({ current: false });
+  const closed = card.html();
+  assert.match(closed, /question-row closed/);
+  assert.match(closed, /<span class="question-row-picked">Choice C<\/span>/);
+  assert.doesNotMatch(closed, /<textarea|question-open/);
+  const row = card.one("question-card");
+  assert.equal(row.onKeyDown, undefined);
+  row.onClick();
+  const self = {};
+  row.onFocus({ target: self, currentTarget: self });
+  assert.deepEqual(selected, ["q1", "q1"]);
 });
 
 // A shortcut reads ⌘ on a Mac and Ctrl elsewhere, in the tooltip and in aria-keyshortcuts; an icon action of a page
@@ -1038,7 +2061,7 @@ test("shortcuts follow the platform, and header actions carry tooltips, not titl
   assert.doesNotMatch(action, /role="tooltip"/);
 });
 
-test("a question reads top-down: its title, what is at stake folded, its report, the recommendation, the options, the gestures, then the note", () => {
+test("a question reads top-down: its title, what is at stake folded, its report, the recommendation, the options, the note, then the gestures", () => {
   const wishId = "01a130b1-398a-7072-be60-ce928cb7241e";
   const report = {
     id: "01a130d9-0000-7000-8000-000000000001",
@@ -1064,9 +2087,11 @@ test("a question reads top-down: its title, what is at stake folded, its report,
       report,
       onAnswer: async () => {},
       onEnlighten: async () => {},
+      onMove: () => {},
+      onWithdraw: () => {},
     }),
   );
-  // The explanation comes before the call to act, the note last.
+  // The explanation comes before the call to act, the note above the gestures at the bottom.
   const at = (text) => {
     const i = html.indexOf(text);
     assert.ok(i >= 0, `the card shows ${text}`);
@@ -1074,6 +2099,7 @@ test("a question reads top-down: its title, what is at stake folded, its report,
   };
   const order = [
     "Will you run the command?",
+    'aria-label="Move to another wish"',
     "What is at stake</h4>",
     s.dew.CONTEXT_FIRST,
     "Read more",
@@ -1081,15 +2107,16 @@ test("a question reads top-down: its title, what is at stake folded, its report,
     "Recommendation · A",
     '<strong class="option-letter">A</strong>',
     '<strong class="option-letter">B</strong>',
-    "Enlighten me",
-    "Rub the lamp",
     "<textarea",
-    "Your answer goes to the Djinn",
+    "Withdraw question…",
+    ">Enlighten me<kbd",
+    "Rub the lamp",
   ].map(at);
   assert.deepEqual(
     order,
     [...order].sort((a, b) => a - b),
   );
+  assert.doesNotMatch(html, /Your answer goes to the Djinn/);
   // Its before words stay on its badge.
   assert.match(
     html,
@@ -1407,7 +2434,7 @@ test("a wish's reports are notes for agents, with no section nor count of their 
   // The For agents tab holds it with the other blocks.
   assert.match(
     html,
-    /id="view-tab-agents" aria-selected="false" class="discreet">For agents<span class="count">2<\/span>/,
+    /id="view-tab-agents" aria-selected="false" class="discreet"><span class="djinn-eye-perch" data-perch="tab:agents" aria-hidden="true"><\/span>For agents<span class="count">2<\/span>/,
   );
 });
 
@@ -1429,14 +2456,15 @@ test("a question of a wish without a lead session says no lead is told: open, th
       }),
     );
   const told = props(false, {});
-  assert.match(told, /Your answer goes to the Djinn and the workers\./);
-  assert.doesNotMatch(told, /The Djinn is not there to tell/);
+  assert.doesNotMatch(
+    told,
+    /goes to the Djinn|The Djinn is not there to tell|question-hint/,
+  );
   const open = props(true, {});
   assert.match(
     open,
     /The Djinn is not there to tell: your answer goes to the workers and waits in the wish&#x27;s brief\./,
   );
-  assert.doesNotMatch(open, /goes to the Djinn/);
   const answer = { answer: { choice: s.Choice.A, note: "" } };
   assert.doesNotMatch(props(false, answer), /The Djinn is not there to tell/);
   assert.match(
@@ -1456,6 +2484,48 @@ test("a question of a wish without a lead session says no lead is told: open, th
     waitingHtml,
     /<span class="status-badge tone-waiting">.*Waiting for the Djinn<\/span>/,
   );
+});
+
+test("a worker the scheduler flagged to relaunch shows a mark beside its code, with why and the command (W188)", () => {
+  const card = (status, health) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "01a14710-0169-7580-8e84-704c8214cdb5",
+          code: "W1",
+          title: "Trim the wick",
+          status,
+          provider: s.Provider.CLAUDE,
+          health,
+        },
+        onStop() {},
+        async onSend() {},
+      }),
+    );
+  const stalled = card(s.TaskStatus.RUNNING, {
+    state: s.HealthState.STALLED,
+    reason: "silent 12 min, CPU 1%",
+  });
+  assert.match(
+    stalled,
+    /<span class="agent-code">W1<\/span><span class="health-mark stalled" role="img" aria-label="Stalled" title="Stalled: silent 12 min, CPU 1%. The lead relaunches it with: djinn task continue 01a14710-0169-7580-8e84-704c8214cdb5">/,
+  );
+  const retriable = card(s.TaskStatus.FAILED, {
+    state: s.HealthState.RETRIABLE,
+    reason: "a crash: claude ended before the end of its turn",
+  });
+  assert.match(
+    retriable,
+    /class="health-mark retriable" role="img" aria-label="Can be relaunched" title="Can be relaunched: a crash: claude ended before the end of its turn\./,
+  );
+  // Waiting for its limit, past a limit Djinn resumes it from, or well: no mark.
+  for (const health of [
+    { state: s.HealthState.LIMITED, reason: "the account's session limit" },
+    { state: s.HealthState.LIMIT_LIFTED, reason: "its account changed" },
+    undefined,
+  ]) {
+    assert.doesNotMatch(card(s.TaskStatus.RESUMING, health), /health-mark/);
+  }
 });
 
 test("a running worker pauses from its card, a paused one resumes; none where djinn cannot pause", () => {
@@ -1511,6 +2581,55 @@ test("a running worker pauses from its card, a paused one resumes; none where dj
   const windows = card(s.TaskStatus.RUNNING, s.Provider.CLAUDE, undefined);
   assert.doesNotMatch(windows, /Pause the worker|Resume the worker/);
   assert.match(windows, /aria-label="Stop the worker"/);
+});
+
+test("a task to run or running is made urgent from its card, its mark taken off the same way; not an ended one (W234)", () => {
+  const card = (task, onUrge) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: {
+          id: "t1",
+          code: "W1",
+          title: "Trim the wick",
+          provider: s.Provider.CLAUDE,
+          ...task,
+        },
+        onStop() {},
+        async onSend() {},
+        onUrge,
+      }),
+    );
+  const urge = () => {};
+  for (const status of [
+    s.TaskStatus.PENDING,
+    s.TaskStatus.WAITING,
+    s.TaskStatus.PAUSED,
+    s.TaskStatus.RUNNING,
+  ]) {
+    assert.match(
+      card({ status }, urge),
+      /<button class="icon-button " title="Make it urgent for your quick feedback: [^"]+" aria-label="Urgent" aria-pressed="false"><svg[^>]*lucide-zap/,
+      s.TaskStatus[status],
+    );
+    // Urgent, a repair or for feedback: the toggle is pressed, and takes the mark off.
+    for (const feedback of [false, true])
+      assert.match(
+        card({ status, urgent: true, feedback }, urge),
+        /<button class="icon-button active" title="Take its urgent mark off: it waits its turn again" aria-label="Urgent" aria-pressed="true">/,
+      );
+  }
+  for (const task of [
+    { status: s.TaskStatus.DONE },
+    { status: s.TaskStatus.FAILED, urgent: true },
+    { status: s.TaskStatus.RUNNING, provider: s.Provider.WATCH },
+    { status: s.TaskStatus.RUNNING, kind: s.TaskKind.INVESTIGATION },
+  ])
+    assert.doesNotMatch(card(task, urge), /aria-label="Urgent"/);
+  // Without onUrge, no toggle.
+  assert.doesNotMatch(
+    card({ status: s.TaskStatus.RUNNING }, undefined),
+    /aria-label="Urgent"/,
+  );
 });
 
 test("a wish's screen puts its questions first, proposes to grant it when ready, and leaves its blocks to the agents' tab", async () => {
@@ -1597,11 +2716,11 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   // The tasks have a tab of their own, with their count: the wish's tab does not show them.
   assert.match(
     html,
-    /role="tab" id="view-tab-main" aria-selected="true" class="active">Wish<\/button>/,
+    /role="tab" id="view-tab-main" aria-selected="true" class="active"><span class="djinn-eye-perch" data-perch="tab:main" aria-hidden="true"><\/span>Wish<\/button>/,
   );
   assert.match(
     html,
-    /role="tab" id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">2<\/span>/,
+    /role="tab" id="view-tab-tasks" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:tasks" aria-hidden="true"><\/span>Tasks<span class="count">2<\/span>/,
   );
   assert.doesNotMatch(html, /Trim the wick|Light the wick/);
   // No notes: the blocks for agents have the last tab, discreet, with their count: neither the decision nor the log.
@@ -1611,12 +2730,12 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   );
   assert.match(
     html,
-    /id="view-tab-tilasms".*role="tab" id="view-tab-agents" aria-selected="false" class="discreet">For agents<span class="count">1<\/span><\/button><\/div>/,
+    /id="view-tab-tilasms".*role="tab" id="view-tab-agents" aria-selected="false" class="discreet"><span class="djinn-eye-perch" data-perch="tab:agents" aria-hidden="true"><\/span>For agents<span class="count">1<\/span><\/button><\/div>/,
   );
   // The answered question and the decision block are in the Decisions tab, apart, with no mark.
   assert.match(
     html,
-    /role="tab" id="view-tab-decisions" aria-selected="false" class="">Decisions<span class="count">2<\/span>/,
+    /role="tab" id="view-tab-decisions" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:decisions" aria-hidden="true"><\/span>Decisions<span class="count">2<\/span>/,
   );
   assert.doesNotMatch(html, /Light it tonight\?/);
   // Nothing waits for an answer: no yes/no card waiting.
@@ -1676,7 +2795,10 @@ test("the For agents tab folds each block under its title and kind, with no mark
   const none = s.renderToStaticMarkup(
     h(s.AgentBlocks, { blocks: [], codes: new Map() }),
   );
-  assert.match(none, /No block for agents yet\./);
+  assert.match(
+    none,
+    /<div class="empty-state"><svg class="empty-art empty-art-wide"[^>]*>.*<\/svg><p class="empty-state-text">No block for agents yet: what they hand each other is written here\.<\/p><\/div>/,
+  );
 });
 
 const usage = (input, output, read, write, costUsd) => ({
@@ -2262,9 +3384,23 @@ test("a task card shows its prompt on hover, and opened shows prompt and no logs
   assert.match(opened, /See logs/);
   assert.match(opened, /wish-task-diff-button/);
   assert.match(opened, /See the diff/);
-  // Logs and diff are deferred: containers are not rendered until toggled.
+  // A task with no worktree has no uncommitted files to show: the button says why it is off.
+  assert.match(
+    opened,
+    /<button type="button" class="button secondary small wish-task-worktree-button" disabled="" title="This task has no worktree">See uncommitted files<\/button>/,
+  );
+  const withWorktree = s.renderToStaticMarkup(
+    h(s.WishTask, {
+      task: { ...task, worktree: "/tmp/w1" },
+      focused: true,
+      onStop() {},
+    }),
+  );
+  assert.doesNotMatch(withWorktree, /disabled=""[^>]*>See uncommitted files/);
+  // Logs and diff are deferred: containers are not rendered until toggled, the diff's review until a button opens it.
   assert.doesNotMatch(opened, /class="wish-task-events"/);
-  assert.doesNotMatch(opened, /class="task-diff-view"/);
+  assert.doesNotMatch(opened, /task-diff-view/);
+  assert.doesNotMatch(opened, /task-review/);
 });
 
 test("diff views render unified and split diffs with Chroma syntax tokens and hunk headers", () => {
@@ -2750,6 +3886,59 @@ test("a cancelled part leaves its azima's counters and shows among its finished 
   assert.doesNotMatch(only, /waiting/);
 });
 
+test("an azima whose only live work is a watcher reads Watching, teal with an eye, and still moves", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const part = (code, status, provider) => ({
+    id: code,
+    code,
+    title: `Task ${code}`,
+    status,
+    provider,
+    partOf: "T1",
+    dependsOn: [],
+    createTime: at(1),
+    startTime: at(2),
+  });
+  const parts = [
+    part("W1", s.TaskStatus.DONE),
+    part("W2", s.TaskStatus.RUNNING, s.Provider.WATCH),
+  ];
+  const azima = (state) => ({
+    id: "T1",
+    code: "T1",
+    title: "Ship the lamp",
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    azima: { state, ready: true, parts: 2, partsDone: 1, partsRunning: 1 },
+  });
+  const card = (state) =>
+    s.renderToStaticMarkup(
+      h(s.AzimaCard, {
+        azima: azima(state),
+        parts,
+        tasks: new Map(parts.map((x) => [x.id, x])),
+        render: (task) => h(s.WishTask, { key: task.id, task, onStop() {} }),
+      }),
+    );
+  // The server's state (internal/plan.FillAzimas): watching, never "In progress", in the watchers' teal.
+  const html = card(s.AzimaState.WATCHING);
+  assert.match(html, /azima-card tone-watching/);
+  assert.match(html, /status-badge tone-watching[^>]*>.*?Watching/);
+  assert.doesNotMatch(html, /In progress/);
+  // A work part running beside it: the server says in progress, and so does the card.
+  assert.match(card(s.AzimaState.IN_PROGRESS), /In progress/);
+  // Among the azimas, it moves: first, with the ones in progress.
+  assert.equal(s.azimaRank(azima(s.AzimaState.WATCHING)), 0);
+  assert.equal(
+    s.azimaRank({
+      ...azima(s.AzimaState.WATCHING),
+      azima: { state: s.AzimaState.WATCHING },
+    }),
+    0,
+  );
+});
+
 test("the Tasks tab groups work under its azima, which says what it waits for and its progress, and never waits", () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const azima = (code, title, extra) => ({
@@ -3130,7 +4319,7 @@ test("the flying carpet merges the active wishes: their questions, the blocking 
   assert.doesNotMatch(html, /focused on this wish/);
   assert.match(
     html,
-    /<div class="lead-message">[^]*?aria-keyshortcuts="[^"]*I"[^]*?<span>Write to the Djinn<\/span><\/button>/,
+    /<div class="lead-message" data-eye-place="">[^]*?aria-keyshortcuts="[^"]*I"[^]*?<span>Write to the Djinn<\/span><\/button>/,
   );
   // The blocking question of the second wish comes before the free one of the first, each marked with its wish.
   const blocking = html.indexOf("May W2 pour?");
@@ -3146,23 +4335,20 @@ test("the flying carpet merges the active wishes: their questions, the blocking 
   assert.match(html, /W2 waits for your answer to Q01 before it may edit\./);
   assert.match(
     html,
-    /id="view-tab-tasks"[^>]*>Tasks<span class="count">3<\/span>/,
+    /id="view-tab-tasks"[^>]*><span class="djinn-eye-perch" data-perch="tab:tasks" aria-hidden="true"><\/span>Tasks<span class="count">3<\/span>/,
   );
-  assert.doesNotMatch(html, /Taste the oils/);
   assert.match(
     html,
-    /id="view-tab-decisions"[^>]*>Decisions<span class="count">1<\/span>/,
+    /id="view-tab-decisions"[^>]*><span class="djinn-eye-perch" data-perch="tab:decisions" aria-hidden="true"><\/span>Decisions<span class="count">1<\/span>/,
   );
   assert.doesNotMatch(html, /Tonight\?/);
-  // What each wish spent: the first its price, reported, then its tokens; the second, with no price at all, its tokens
-  // and why.
+  // On the right, the glance (Decision Q08): the worker that runs, and nothing else of the wishes, not what they
+  // spent (each wish's page and the Tasks tab say it).
   assert.match(
     html,
-    /<span class="spent-price" title="\$0\.42 reported">\$0\.42<\/span><span>input 10 · output 400 · cache read 38K · cache written 12K<\/span>/,
+    /<li class="glance-item"><button type="button" class="glance-row run" title="Running · W1 Taste the oils">/,
   );
-  assert.doesNotMatch(html, /estimated/);
-  assert.match(html, /input 1\.2K · output 300 · cache read 5K/);
-  assert.match(html, /<small>1 task without a price in the table<\/small>/);
+  assert.doesNotMatch(html, /Trim the wick|spent-price/);
 });
 
 test("what a wish spent shows one price, ≈ when an estimate is in it; the hover splits it, in money only", () => {
@@ -3262,10 +4448,20 @@ test("the flying carpet hides its empty sections", async () => {
     ),
   );
   assert.doesNotMatch(html, /Your move|Who runs now|Spent/);
-  assert.match(html, /Nothing waits for you, and nothing runs\./);
+  // Said once, in the questions column, beside the Djinn asleep.
+  assert.equal(
+    html.match(
+      /Nothing waits for you, and nothing runs: I rest above my lamp\./g,
+    )?.length,
+    1,
+  );
+  assert.match(
+    html,
+    /<div class="empty-state question-none"><svg class="empty-art empty-art-column"/,
+  );
 });
 
-test("the inbox shows each item with its proposed route, the recommended destination first", async () => {
+test("an inbox card says its kind and the fact, what Djinn will do, and what each choice changes under it; Dismiss is the last choice", async () => {
   const lamp = wish(
     "01a11833-a440-7479-a067-52615c91da71",
     "Ship the lamp",
@@ -3287,7 +4483,11 @@ test("the inbox shows each item with its proposed route, the recommended destina
           title: "Babysit !12",
           projectIds: ["p1"],
           reason: "the skill babysit-mr makes this wish",
-          template: { skill: "babysit-mr", projectId: "p1" },
+          template: {
+            skill: "babysit-mr",
+            projectId: "p1",
+            watch: "mrwatch -mr 12",
+          },
         },
         { kind: s.RouteKind.FILE, wishId: lamp.id, title: lamp.title },
       ],
@@ -3301,7 +4501,15 @@ test("the inbox shows each item with its proposed route, the recommended destina
     service(s.InboxService, {
       list: () => ({ items: [item] }),
       sources: () => ({
-        sources: [{ name: "gong/babysit-mr", skill: "babysit-mr" }],
+        sources: [
+          {
+            name: "gong/babysit-mr",
+            skill: "babysit-mr",
+            project: "gong",
+            plugged: true,
+            every: "5m0s",
+          },
+        ],
       }),
     });
     service(s.TaskService, { list: () => ({ tasks: [] }) });
@@ -3322,23 +4530,42 @@ test("the inbox shows each item with its proposed route, the recommended destina
     ),
   );
   assert.match(html, /Inbox/);
-  assert.match(html, /From babysit-mr/);
+  // 1. Its kind, then the fact.
+  assert.match(
+    html,
+    /<span class="inbox-kind">Request<\/span><span class="inbox-source">read by babysit-mr on this machine<\/span>/,
+  );
   assert.match(html, /<h3>Babysit !12 · Fix the wick<\/h3>/);
+  // 2. What Djinn will do with the recommended destination.
+  assert.match(
+    html,
+    /<p class="inbox-will">If you hand it to Djinn, a wish follows it with the skill babysit-mr: its watcher starts at once/,
+  );
+  // 3. Under each choice, what it changes; Dismiss last, with its own.
   const made = html.indexOf(
     "New wish “Babysit !12”, in gong, from the skill babysit-mr",
   );
   const filed = html.indexOf("File it in “Ship the lamp”");
-  assert.ok(made > 0 && filed > made);
-  assert.match(html, /Rub the lamp/);
-  assert.match(html, /Dismiss/);
-  // The sources fold under the items.
+  const dismissed = html.indexOf(">Dismiss<");
+  assert.ok(made > 0 && filed > made && dismissed > filed);
   assert.match(
     html,
-    /<details class="inbox-sources-fold"><summary>Sources \(1\)<\/summary>/,
+    /from the skill babysit-mr<\/p><p class="inbox-effect">Its watcher starts at once and tells the lead each change; workers, and so tokens, only when the lead starts them\.<\/p>/,
   );
+  assert.match(
+    html,
+    /File it in “Ship the lamp”<\/p><p class="inbox-effect">Its lead receives it as a block and decides; nothing starts by itself\.<\/p>/,
+  );
+  assert.match(
+    html,
+    /<strong class="option-letter">C<\/strong><p>Dismiss<\/p><p class="inbox-effect">It will not come back here; nothing is said or marked at the source\.<\/p>/,
+  );
+  assert.match(html, /Rub the lamp · A/);
+  // The sources are not listed in the inbox: their project's panel holds them.
+  assert.doesNotMatch(html, /inbox-source-row|Plug in|Unplug/);
 });
 
-test("the empty inbox lists the sources the skills declare, each with Plug in or Unplug; without any, it is hidden", async () => {
+test("the inbox hides when nothing waits, however many sources the skills declare; a plugged-in source that fails gets a card", async () => {
   const lamp = wish(
     "01a11833-a440-7479-a067-52615c91da71",
     "Ship the lamp",
@@ -3371,16 +4598,169 @@ test("the empty inbox lists the sources the skills declare, each with Plug in or
       ),
     );
   };
+  const unplugged = {
+    name: "djinn/babysit-pr",
+    skill: "babysit-pr",
+    project: "djinn",
+    watch: "sh .agents/skills/babysit-pr/inbox.sh",
+    every: "5m0s",
+  };
+  const fine = {
+    name: "gong/mentions",
+    skill: "mentions",
+    project: "gong",
+    watch: "mentions --new",
+    every: "1h0m0s",
+    plugged: true,
+    lastRun: { endTime: { seconds: 1_760_000_000n, nanos: 0 }, items: 2 },
+  };
+  const broke = {
+    ...unplugged,
+    plugged: true,
+    summary: "The pull requests assigned to you, read with gh.",
+    lastRun: {
+      endTime: { seconds: 1_760_000_600n, nanos: 0 },
+      failingSince: { seconds: 1_760_000_000n, nanos: 0 },
+      failures: 7,
+      error:
+        "exit status 4: gh: To get started with GitHub CLI, please run: gh auth login",
+    },
+  };
 
   assert.doesNotMatch(await render([]), /Inbox/);
+  // Declared, unplugged or running well: nothing to decide, no inbox.
+  assert.doesNotMatch(await render([unplugged, fine]), /Inbox|inbox/);
 
-  const html = await render([
+  const html = await render([broke, fine]);
+  assert.match(html, /<span class="count">1<\/span>/);
+  assert.equal(html.split("inbox-source-card").length - 1, 1);
+  // 1. Its kind, since when and how many runs, then the fact and the error.
+  assert.match(
+    html,
+    /<span class="inbox-kind">Djinn(?:'|&#x27;)s configuration<\/span><span class="inbox-when">since [^<]+<\/span><span class="inbox-when">7 failed runs in a row<\/span>/,
+  );
+  assert.match(
+    html,
+    /<h3>The source djinn\/babysit-pr fails on this machine<\/h3><pre class="inbox-error">exit status 4: gh: To get started/,
+  );
+  assert.match(
+    html,
+    /It reads: The pull requests assigned to you, read with gh\./,
+  );
+  // 2. What Djinn does meanwhile.
+  assert.match(html, /Djinn runs it again every 5m on its own/);
+  // 3. The two ways out: fix it, recommended, with no button; unplug it.
+  assert.match(
+    html,
+    /<div class="option selected inbox-fix"><strong class="option-letter">A<\/strong><p>Fix the cause on this machine<\/p><p class="inbox-effect">[^<]+<\/p><span class="option-recommended">Recommended<\/span><\/div>/,
+  );
+  assert.match(
+    html,
+    /<button class="option"><strong class="option-letter">B<\/strong><p>Unplug it on this machine<\/p><p class="inbox-effect">Its command stops and this card goes/,
+  );
+
+  // A source plugged in before its skill broke cannot run: its card says why, and how to fix it.
+  const cannot = await render([
     {
-      name: "djinn/babysit-pr",
-      skill: "babysit-pr",
-      project: "djinn",
-      watch: "sh .agents/skills/babysit-pr/inbox.sh",
+      name: "gong/noisy",
+      skill: "noisy",
+      project: "gong",
+      plugged: true,
+      error: "metadata.djinn.source.every: 10s is too often",
+    },
+  ]);
+  assert.match(
+    cannot,
+    /<h3>The source gong\/noisy cannot run on this machine<\/h3><pre class="inbox-error">metadata.djinn.source.every: 10s is too often<\/pre>/,
+  );
+  assert.match(cannot, /<p>Fix its skill<\/p>/);
+  assert.doesNotMatch(cannot, /failed run/);
+});
+
+test("a project with something to fix takes one line in the inbox, under the cards: its red gear, its name and count, the first thing to fix from the first paint, and the button that opens its panel", async () => {
+  const lamp = wish(
+    "01a11833-a440-7479-a067-52615c91da71",
+    "Ship the lamp",
+    s.WishState.ACTIVE,
+    1,
+  );
+  const render = async (projects) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.ProjectService, { list: () => ({ projects }) });
+      service(s.InboxService, {
+        list: () => ({ items: [] }),
+        sources: () => ({ sources: [] }),
+      });
+      service(s.TaskService, { list: () => ({ tasks: [] }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    await djinn.store.changed("", [
+      s.Change.WISH,
+      s.Change.PROJECT,
+      s.Change.INBOX,
+    ]);
+    return s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, {
+          wishes: [lamp],
+          onOpen() {},
+          onOpenProject() {},
+          onToast() {},
+        }),
+      ),
+    );
+  };
+  // All well: no line, no inbox.
+  assert.doesNotMatch(
+    await render([{ id: "p1", name: "lamp", toFix: 0 }]),
+    /Inbox|inbox/,
+  );
+  const first =
+    "The skill dolmen-news offers an inbox source this machine has not decided on: plug it in for its items to come here, or unplug it to say no.";
+  const html = await render([
+    { id: "p1", name: "lamp", toFix: 0 },
+    { id: "p2", name: "dolmen", toFix: 2, firstFix: first },
+  ]);
+  assert.match(html, /<span class="count">1<\/span>/);
+  assert.equal(html.split('inbox-project"').length - 1, 1);
+  assert.match(
+    html,
+    /<article class="question-card inbox-card inbox-project"><span class="inbox-project-gear" aria-hidden="true"><svg[^>]*lucide-settings[^]*?<\/svg><span class="project-flame"/,
+  );
+  assert.match(
+    html,
+    /<span class="inbox-kind">Project dolmen<\/span><span class="inbox-project-count">2 things to fix<\/span>/,
+  );
+  // The first thing to fix as Djinn says it, from the first paint: no sentence comes later to grow the line under the
+  // reader. Then the button that opens the panel.
+  assert.ok(html.includes(`<p>${first}</p>`), html);
+  assert.match(
+    html,
+    /<button class="button small secondary">Open its configuration<\/button><\/article>/,
+  );
+  // A project that says none: a sentence that sends to the panel.
+  assert.match(
+    await render([{ id: "p2", name: "dolmen", toFix: 1 }]),
+    /<p>Djinn waits for you on its configuration/,
+  );
+});
+
+test("a project's panel lists the sources its skills declare: what each reads, how it stands, and Plug in or Unplug with what it does", async () => {
+  const p1 = { id: "p1", name: "gong", git: true, directory: "/tmp/gong" };
+  const sources = [
+    {
+      name: "gong/babysit-mr",
+      skill: "babysit-mr",
+      project: "gong",
+      watch: "sh .agents/skills/babysit-mr/assigned.sh",
       every: "5m0s",
+      summary:
+        "The merge requests of this project assigned to you, read with glab.",
     },
     {
       name: "gong/mentions",
@@ -3389,6 +4769,7 @@ test("the empty inbox lists the sources the skills declare, each with Plug in or
       watch: "mentions --new",
       every: "1h0m0s",
       plugged: true,
+      lastRun: { endTime: { seconds: 1_760_000_000n, nanos: 0 }, items: 2 },
     },
     {
       name: "gong/noisy",
@@ -3396,29 +4777,67 @@ test("the empty inbox lists the sources the skills declare, each with Plug in or
       project: "gong",
       error: "metadata.djinn.source.every: 10s is too often",
     },
-  ]);
-  assert.match(html, /Inbox/);
+    { name: "bell/other", skill: "other", project: "bell", every: "5m0s" },
+  ];
+  const render = async (list) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.ProjectService, { show: () => ({ project: p1 }) });
+      service(s.SkillService, { list: () => ({ skills: [] }) });
+      service(s.InboxService, {
+        list: () => ({ items: [] }),
+        sources: () => ({ sources: list }),
+      });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    await djinn.store.changed("", [s.Change.INBOX]);
+    return s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.ProjectPanel, { project: p1, onClose() {} }),
+      ),
+    );
+  };
+  const html = await render(sources);
   assert.match(
     html,
-    /Djinn reads only the sources you plug in, on this machine/,
+    /<h3>Inbox sources<span class="config-from">on this machine<\/span><\/h3>/,
   );
   const rows = html
     .split('<li class="inbox-source-row">')
     .slice(1)
     .map((row) => row.slice(0, row.indexOf("</li>")));
+  // Only this project's sources.
   assert.equal(rows.length, 3);
-  assert.match(rows[0], /djinn\/babysit-pr/);
+  assert.match(rows[0], /<strong>babysit-mr<\/strong>/);
   assert.match(
     rows[0],
-    /<code>sh .agents\/skills\/babysit-pr\/inbox.sh<\/code>/,
+    /<p>The merge requests of this project assigned to you, read with glab\.<\/p>/,
   );
   assert.match(rows[0], /Unplugged: runs nothing/);
-  assert.match(rows[0], />Plug in<\/button>/);
-  assert.match(rows[1], /Plugged in, every 1h/);
+  assert.match(
+    rows[0],
+    /<code>sh .agents\/skills\/babysit-mr\/assigned.sh<\/code>/,
+  );
+  // No setting's button in the accent colour: none is recommended.
+  assert.match(
+    rows[0],
+    /class="button small secondary"[^>]*>.*Plug in<\/button>/,
+  );
+  assert.match(
+    rows[0],
+    /<p>Runs this command every 5m on this machine, logged in by its own tool; each item it prints becomes a card in the inbox\.<\/p>/,
+  );
+  assert.match(rows[1], /Plugged in, every 1h · last run [^<]+: 2 items/);
   assert.match(rows[1], />Unplug<\/button>/);
   // A source that cannot run says why, and offers nothing to plug in.
   assert.match(rows[2], /10s is too often/);
   assert.doesNotMatch(rows[2], /<button/);
+
+  assert.match(
+    await render([]),
+    /No skill of this project declares a source\./,
+  );
 });
 
 test("the folder of a new project has a folder dialog's button only when the window has one", () => {
@@ -3557,7 +4976,7 @@ const tilasm = (id, code, title, extra = {}) => ({
   ...extra,
 });
 
-test("the Tilasms tab lists each tilasm with its code, title, author, date and what it cites, and opens one in a sandboxed frame", () => {
+test("the Tilasms tab lists each tilasm newest first with its code, title, author, date and what it cites, and opens one in a sandboxed frame", () => {
   const model = tilasm(
     "01a1223a-ae45-728f-8c37-c005eee91edb",
     "L01",
@@ -3594,9 +5013,17 @@ test("the Tilasms tab lists each tilasm with its code, title, author, date and w
     },
   );
   const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
+  const recent = tilasm(
+    "01a1223a-ae45-728f-8c37-c005eee91edd",
+    "L03",
+    "Latest sketch",
+    {
+      updateTime: stamp("2026-10-09T13:00:00Z"),
+    },
+  );
   const props = {
-    tilasms: [model, flows],
-    count: 2,
+    tilasms: [flows, model, recent],
+    count: 3,
     codes: new Map([["t29", "T29"]]),
     search: "",
     onSearch() {},
@@ -3615,9 +5042,14 @@ test("the Tilasms tab lists each tilasm with its code, title, author, date and w
   );
   assert.match(
     html,
-    /Drop a folder with an index.html, or a .zip, to add a tilasm/,
+    /class="tilasm-drop ".*Drop an \.html file, a folder with an index\.html, or a \.zip — or click to choose a file/,
   );
-  // A row per tilasm, by code: its title opens it; who made it and when; what it cites, by code.
+  assert.match(
+    html,
+    /<input type="file" accept="\.html,\.htm,\.zip,text\/html,application\/zip"/,
+  );
+  // Sorted from newest to oldest: L03 (13:00), then L01 (v3 at 12:00), then L02 (10:00).
+  assert.ok(html.indexOf("L03") < html.indexOf("L01"));
   assert.ok(html.indexOf("L01") < html.indexOf("L02"));
   assert.match(
     html,
@@ -3631,6 +5063,34 @@ test("the Tilasms tab lists each tilasm with its code, title, author, date and w
   // Nothing open: no frame; the history folded.
   assert.doesNotMatch(html, /<iframe/);
   assert.doesNotMatch(html, /Restore this version/);
+
+  // The drop zone reacts on dragover and forwards files picked from the file input.
+  const picked = [];
+  const view = live(s.TilasmList, {
+    ...props,
+    onDrop: (entries) => picked.push(entries),
+  });
+  view.one("tilasms").onDragOver({
+    dataTransfer: { types: ["Files"] },
+    preventDefault() {},
+  });
+  assert.match(view.html(), /class="tilasm-drop dropping"/);
+  view.one("tilasms").onDragLeave({
+    currentTarget: { contains: () => false },
+    relatedTarget: null,
+  });
+  assert.doesNotMatch(view.html(), /dropping/);
+  const input = view
+    .all("input")
+    .find((node) => node.props.type === "file").props;
+  input.onChange({
+    target: {
+      files: [new File(["<h1>Lamp</h1>"], "lamp.html", { type: "text/html" })],
+      value: "lamp.html",
+    },
+  });
+  assert.equal(picked.length, 1);
+  assert.equal(picked[0][0].name, "lamp.html");
 
   // Open: a frame served by Djinn at the tilasm's address, scripts only, never Djinn's origin.
   const open = s.renderToStaticMarkup(
@@ -3664,8 +5124,582 @@ test("the Tilasms tab lists each tilasm with its code, title, author, date and w
     s.renderToStaticMarkup(
       h(s.TilasmList, { ...props, tilasms: [], count: 0 }),
     ),
-    /No tilasm yet: .*djinn tilasm put/,
+    /<p class="empty-state-text">No tilasm yet\. Drop an \.html file or a folder with an index\.html here; I can put one too\.<\/p><p class="empty-state-text">From the command line: djinn tilasm put\.<\/p>/,
   );
+});
+
+test("a tilasm's draft comments are counted in gold on its head, its row and the Tilasms tab", () => {
+  const model = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Model");
+  const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
+  const draft = (id, tilasmId, code, state = 1) => ({
+    id,
+    tilasmId,
+    wishId: "w1",
+    code,
+    text: `Text of ${code}`,
+    state,
+  });
+  const props = {
+    tilasms: [model, flows],
+    drafts: [
+      draft("01a14600-0000-7000-8000-000000000001", model.id, "C1"),
+      draft("01a14600-0000-7000-8000-000000000002", model.id, "C2"),
+      // Sent: no longer waits for the developer.
+      draft("01a14600-0000-7000-8000-000000000003", model.id, "C3", 2),
+    ],
+    comments: { put() {}, remove() {}, putBack() {} },
+    count: 2,
+    codes: new Map(),
+    search: "",
+    onSearch() {},
+    open: model,
+    onOpen() {},
+    history: "",
+    onHistory() {},
+    onRestore() {},
+    onExport() {},
+    onDrop() {},
+  };
+  const html = s.renderToStaticMarkup(h(s.TilasmList, props));
+  // The head: a button that opens the column, with the count; the column stays closed until it is pressed.
+  assert.match(
+    html,
+    /<button type="button" class="icon-button tilasm-comments-toggle[^"]*" aria-pressed="false" title="Comments · 2 draft comments"[^>]*>.*<span class="draft-count">2<\/span><\/button>/,
+  );
+  assert.doesNotMatch(html, /class="tilasm-comments"/);
+  // The row of the tilasm with drafts has its gold dot; the other has none.
+  const rows = html.match(/<li id="tilasm-[^"]*"[\s\S]*?<\/li>/g);
+  const row = (id) => rows.find((r) => r.includes(`tilasm-${id}`));
+  assert.match(
+    row(model.id),
+    /<span class="draft-dot" title="2 draft comments" aria-label="2 draft comments">2<\/span>/,
+  );
+  assert.doesNotMatch(row(flows.id), /draft-dot/);
+  // Without what writes them, as over a view, no comments show.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(h(s.TilasmList, { ...props, comments: undefined })),
+    /tilasm-comments-toggle/,
+  );
+  // The tab: the tilasms' count, then the drafts' gold dot; none without drafts.
+  const tabs = (drafts) =>
+    s.renderToStaticMarkup(
+      h(s.ViewTabs, {
+        view: "main",
+        main: "Wish",
+        tasks: 0,
+        decisions: 0,
+        tilasms: 2,
+        drafts,
+        onView() {},
+      }),
+    );
+  assert.match(
+    tabs(2),
+    /id="view-tab-tilasms"[^>]*><span class="djinn-eye-perch" data-perch="tab:tilasms" aria-hidden="true"><\/span>Tilasms<span class="count">2<\/span><span class="draft-dot" title="2 draft comments" aria-label="2 draft comments">2<\/span><\/button>/,
+  );
+  assert.doesNotMatch(tabs(0), /draft-dot/);
+});
+
+test("the open tilasm goes full size and back, the same tilasm open, its frame never made again", () => {
+  const model = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Model");
+  const flows = tilasm("01a1223a-ae45-728f-8c37-c005eee91edc", "L02", "Flows");
+  const opened = [];
+  const view = live(s.TilasmList, {
+    tilasms: [model, flows],
+    count: 2,
+    codes: new Map(),
+    search: "",
+    onSearch() {},
+    open: model,
+    onOpen: (id) => opened.push(id),
+    history: "",
+    onHistory() {},
+    onRestore() {},
+    onExport() {},
+    onDrop() {},
+  });
+  const shown = () => view.one(s.TilasmFrame);
+  // The frame as it renders, from what the tab gives it.
+  const frame = (props = shown()) => live(s.TilasmFrame, props);
+  const before = frame().all("iframe")[0];
+  // Not full size: the button that enters it says so in words, with no tooltip; nothing leaves it.
+  assert.equal(frame().one("tilasm-full-enter").title, undefined);
+  assert.match(
+    view.html(),
+    /class="text-button tilasm-full-enter">.*Full size<\/button>/,
+  );
+  assert.match(view.html(), /<section class="tilasm-view"/);
+  assert.doesNotMatch(view.html(), /tilasm-full-leave/);
+
+  // The enter button asks the tab for full size.
+  let asked;
+  frame({ ...shown(), onFull: (on) => (asked = on) })
+    .one("tilasm-full-enter")
+    .onClick();
+  assert.equal(asked, true);
+  shown().onFull(true);
+  const html = view.html();
+  assert.match(html, /<section class="tilasm-view full"/);
+  // The same frame, at the same place: React keeps it, so its page does not load again.
+  const iframe = frame().all("iframe")[0];
+  assert.equal(iframe.key, before.key);
+  assert.equal(iframe.props.className, "tilasm-frame");
+  assert.equal(iframe.props.src, before.props.src);
+  assert.equal(iframe.props.sandbox, "allow-scripts");
+  assert.doesNotMatch(html.match(/<iframe[^>]*>/)[0], /allow-same-origin/);
+  // The room it left keeps the page's place; a small button leaves, named, with Escape as its key, and no tooltip.
+  assert.match(
+    html,
+    /<\/iframe><div class="tilasm-frame-room"><\/div><button type="button" class="icon-button tilasm-full-leave" aria-label="Leave full size" aria-keyshortcuts="Escape">/,
+  );
+  assert.equal(frame().one("tilasm-full-leave").title, undefined);
+  assert.match(html, /tilasm-row open/);
+
+  frame({ ...shown(), onFull: (on) => (asked = on) })
+    .one("tilasm-full-leave")
+    .onClick();
+  assert.equal(asked, false);
+  shown().onFull(false);
+  const back = view.html();
+  assert.match(back, /<section class="tilasm-view"/);
+  assert.doesNotMatch(back, /tilasm-full-leave/);
+  assert.equal(frame().all("iframe")[0].key, before.key);
+  // The same tilasm open, the same row marked: leaving full size opens and closes nothing.
+  assert.deepEqual(opened, []);
+  assert.deepEqual(
+    view
+      .all("tilasm-row")
+      .filter((row) => /\bopen\b/.test(row.props.className))
+      .map((row) => row.key),
+    [model.id],
+  );
+
+  // Closing the tilasm while full ends full size: the next one opens in the page, and so does this one again.
+  shown().onFull(true);
+  frame()
+    .all("icon-button")
+    .find((button) => button.props["aria-label"] === "Close the tilasm")
+    .props.onClick();
+  assert.deepEqual(opened, [""]);
+  view.update({ open: flows });
+  assert.match(view.html(), /<section class="tilasm-view"/);
+  view.update({ open: model });
+  assert.match(view.html(), /<section class="tilasm-view"/);
+});
+
+test("a tilasm over a view is the same frame, full size from the start, with no head and a button that closes it", () => {
+  const model = tilasm("01a1223a-ae45-728f-8c37-c005eee91edb", "L01", "Model");
+  let closed = 0;
+  const props = {
+    tilasm: model,
+    full: true,
+    over: true,
+    onFull() {},
+    onClose: () => closed++,
+  };
+  const html = s.renderToStaticMarkup(h(s.TilasmFrame, props));
+  // Laid over the view, it takes no room in it: no head, no room left in the page.
+  assert.match(
+    html,
+    /^<section class="tilasm-view over full-over" aria-label="Model"><iframe/,
+  );
+  assert.doesNotMatch(
+    html,
+    /tilasm-view-head|tilasm-frame-room|tilasm-full-enter/,
+  );
+  // The tab's frame: scripts only, at the tilasm's address.
+  const frame = html.match(/<iframe[^>]*>/)[0];
+  assert.match(frame, /class="tilasm-frame"/);
+  assert.match(frame, /src="\/tilasm\/01a1223a-ae45-728f-8c37-c005eee91edb\/"/);
+  assert.match(frame, /sandbox="allow-scripts"/);
+  assert.doesNotMatch(frame, /allow-same-origin/);
+  assert.match(
+    html,
+    /<button type="button" class="icon-button tilasm-full-leave" aria-label="Close the tilasm" aria-keyshortcuts="Escape"><svg[^>]*lucide-x/,
+  );
+  live(s.TilasmFrame, props).one("tilasm-full-leave").onClick();
+  assert.equal(closed, 1);
+});
+
+test("a tilasm link in a question opens over the view; elsewhere it opens its wish's tab", () => {
+  const href = "djinn://tilasm/01a1223a-ae45-728f-8c37-c005eee91edb";
+  const asked = [];
+  const view = live(s.Link, { href, children: "the diagram" });
+  const click = (inQuestion) => {
+    const anchor = {
+      closest: (sel) => (sel === ".question-card" && inQuestion ? {} : null),
+    };
+    let stopped = false;
+    view.one("djinn-link").onClick({
+      preventDefault() {},
+      stopPropagation: () => (stopped = true),
+      currentTarget: anchor,
+    });
+    return { anchor, stopped };
+  };
+  // Without the window around (no TilasmOver), nothing opens over.
+  assert.equal(click(true).stopped, true);
+  s.TilasmOverContext._currentValue = (link, from) => asked.push([link, from]);
+  try {
+    const { anchor, stopped } = click(true);
+    assert.equal(stopped, true);
+    assert.deepEqual(asked, [[href, anchor]]);
+    // Out of a question, the link does as before: nothing opens over.
+    click(false);
+    assert.equal(asked.length, 1);
+  } finally {
+    s.TilasmOverContext._currentValue = undefined;
+  }
+});
+
+test("closing gives the focus back to the link, else the same link drawn again in its question, else the question, never scrolling", () => {
+  const href = "djinn://tilasm/01a1223a-ae45-728f-8c37-c005eee91edb";
+  const focused = [];
+  const el = (name, extra = {}) => ({
+    name,
+    isConnected: true,
+    focus: (options) => focused.push([name, options]),
+    ...extra,
+  });
+  const link = el("link");
+  const again = el("again", { getAttribute: () => href });
+  const other = el("other", { getAttribute: () => "djinn://wish/x" });
+  let links = [other, again];
+  const question = el("question", { querySelectorAll: () => links });
+  const doc = {
+    getElementById: (id) => (id === "question-q1" ? question : null),
+  };
+  const back = { link, href, question: "question-q1" };
+  assert.equal(s.giveBack(back, doc), link);
+  // The link drawn again: the same one in its question takes the focus; none there, the question.
+  link.isConnected = false;
+  assert.equal(s.giveBack(back, doc), again);
+  links = [other];
+  assert.equal(s.giveBack(back, doc), question);
+  // The question gone too: nothing takes it.
+  assert.equal(s.giveBack({ ...back, question: "question-q2" }, doc), null);
+  assert.deepEqual(focused, [
+    ["link", { preventScroll: true }],
+    ["again", { preventScroll: true }],
+    ["question", { preventScroll: true }],
+  ]);
+});
+
+test("a tilasm opened from a question covers the view full size, which stays mounted; closing lands back on the link, focus and scroll kept; a click on the wish in the side panel closes it", async () => {
+  const container = setupMockDom();
+  const doc = globalThis.document;
+  // What the frame, its cover and the focus need of a DOM, on the test's own.
+  const proto = Object.getPrototypeOf(container);
+  const classes = (el) => String(el.attributes?.class ?? "").split(" ");
+  const matches = (el, selectors) =>
+    el.nodeType === 1 &&
+    selectors.split(",").some((one) => {
+      const m =
+        /^([a-z]*)((?:\.[\w-]+)*)(?:\[([\w-]+)(?:="([^"]*)")?\])?$/i.exec(
+          one.trim(),
+        );
+      if (!m) throw new Error(`selector ${one}`);
+      const [, tag, cls, attr, value] = m;
+      if (tag && el.nodeName !== tag.toUpperCase()) return false;
+      if (
+        cls &&
+        !cls
+          .slice(1)
+          .split(".")
+          .every((c) => classes(el).includes(c))
+      )
+        return false;
+      if (attr === "inert") return el.inert === true;
+      if (attr)
+        return value === undefined
+          ? attr in el.attributes
+          : el.attributes[attr] === value;
+      return true;
+    });
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const focused = [];
+  Object.defineProperties(proto, {
+    parentElement: {
+      configurable: true,
+      get() {
+        return this.parentNode?.nodeType === 1 ? this.parentNode : null;
+      },
+    },
+    isConnected: {
+      configurable: true,
+      get() {
+        return doc.documentElement.contains(this);
+      },
+    },
+    id: {
+      configurable: true,
+      get() {
+        return this.attributes.id ?? "";
+      },
+    },
+  });
+  Object.assign(proto, {
+    matches(selectors) {
+      return matches(this, selectors);
+    },
+    closest(selectors) {
+      if (matches(this, selectors)) return this;
+      return this.parentNode?.nodeType === 1
+        ? this.parentNode.closest(selectors)
+        : null;
+    },
+    contains(node) {
+      for (let at = node; at; at = at.parentNode) if (at === this) return true;
+      return false;
+    },
+    querySelectorAll(selectors) {
+      return below(this).filter((el) => matches(el, selectors));
+    },
+    getAttribute(name) {
+      return this.attributes[name] ?? null;
+    },
+    focus(options) {
+      if (this.closest("[inert]")) return;
+      doc.activeElement = this;
+      focused.push(options);
+    },
+  });
+  doc.documentElement.appendChild(doc.body);
+  doc.body.appendChild(container);
+  doc.getElementById = (id) =>
+    below(doc.documentElement).find((el) => el.id === id) ?? null;
+  const keys = [];
+  doc.addEventListener = (type, listener) =>
+    type === "keydown" && keys.push(listener);
+  doc.removeEventListener = (type, listener) =>
+    keys.includes(listener) && keys.splice(keys.indexOf(listener), 1);
+  const press = (key, target) => {
+    const event = {
+      key,
+      target,
+      defaultPrevented: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+    };
+    [...keys].forEach((listener) => listener(event));
+    return event;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 5; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+
+  const id = "01a1223a-ae45-728f-8c37-c005eee91edb";
+  const href = `djinn://tilasm/${id}`;
+  const shown = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [] }),
+      watch: async function* () {},
+    });
+    service(s.TaskService, { list: () => ({ tasks: [] }) });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+    service(s.TilasmService, {
+      get: (req) => ({
+        tilasm:
+          req.tilasm.ref.value === id ? tilasm(id, "L01", "Model") : undefined,
+      }),
+    });
+  });
+  // What the window is asked to show is kept here.
+  const djinn = {
+    ...s.createDjinn(transport, 10),
+    focus: { subscribe: () => () => {}, show: (focus) => shown.push(focus) },
+  };
+
+  // The window's main shell, the wish clicked last in the side panel given (landing).
+  const page = (landing) =>
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(
+        "main",
+        { className: "main-shell" },
+        h(
+          s.TilasmOver,
+          { view: "plan", landing },
+          h(
+            "div",
+            { className: "wish-view" },
+            h(
+              "div",
+              { className: "mission-scroll" },
+              h(
+                "article",
+                {
+                  id: "question-q1",
+                  className: "question-card question-row open current",
+                  tabIndex: 0,
+                },
+                h("p", null, "Read it first: ", h(s.Link, { href }, "L01")),
+                h("button", { type: "button" }, "Yes"),
+              ),
+            ),
+          ),
+          h("footer", { className: "app-statusbar" }),
+        ),
+      ),
+    );
+  const root = s.createRoot(container);
+  try {
+    s.act(() => root.render(page(undefined)));
+    const main = container.children[0];
+    const [view, footer] = main.children;
+    const scroller = view.children[0];
+    const question = doc.getElementById("question-q1");
+    const link = question.querySelectorAll("a.djinn-link")[0];
+    assert.ok(link);
+    scroller.scrollTop = 240;
+    question.focus({ preventScroll: true });
+    focused.length = 0;
+
+    for (const how of ["Escape", "button"]) {
+      // The click on the link: it opens nothing in the page, the frame comes over the view.
+      s.act(() =>
+        props(link).onClick({
+          preventDefault() {},
+          stopPropagation() {},
+          currentTarget: link,
+        }),
+      );
+      await settle();
+      const over = main.children.at(-1);
+      assert.equal(over.nodeName, "SECTION");
+      assert.equal(over.attributes.class, "tilasm-view over full-over");
+      const frame = over.children[0];
+      assert.equal(frame.nodeName, "IFRAME");
+      assert.equal(frame.attributes.src, `/tilasm/${id}/`);
+      assert.equal(frame.attributes.sandbox, "allow-scripts");
+      const leave = over.querySelectorAll(".tilasm-full-leave")[0];
+      // The view underneath stays mounted, out of the keyboard's reach, and unscrolled; the button that closes has the
+      // focus.
+      assert.equal(doc.getElementById("question-q1"), question);
+      assert.equal(main.children[0], view);
+      assert.equal(view.inert, true);
+      assert.equal(footer.inert, true);
+      assert.equal(over.inert, undefined);
+      assert.equal(scroller.scrollTop, 240);
+      assert.equal(doc.activeElement, leave);
+      assert.deepEqual(shown, []);
+
+      if (how === "Escape") {
+        // Escape in a dialog is the dialog's.
+        const dialog = doc.createElement("dialog");
+        const inside = dialog.appendChild(doc.createElement("button"));
+        assert.equal(press("Escape", inside).defaultPrevented, false);
+        s.act(() => press("Escape", leave));
+      } else s.act(() => props(leave).onClick());
+      await settle();
+      // Gone, the cover lifted, the focus on the link again, the page where it was.
+      assert.equal(main.children.length, 2);
+      assert.equal(over.isConnected, false);
+      assert.equal(view.inert, false);
+      assert.equal(footer.inert, false);
+      assert.equal(doc.activeElement, link);
+      assert.equal(doc.getElementById("question-q1"), question);
+      assert.equal(scroller.scrollTop, 240);
+      assert.deepEqual(keys, []);
+    }
+    // Every focus moved never scrolled.
+    assert.ok(focused.length >= 4);
+    assert.ok(focused.every((options) => options?.preventScroll === true));
+
+    // The wish clicked in the side panel, even the one under the tilasm (a new landing): it closes, the cover lifted.
+    s.act(() =>
+      props(link).onClick({
+        preventDefault() {},
+        stopPropagation() {},
+        currentTarget: link,
+      }),
+    );
+    await settle();
+    assert.equal(main.children.length, 3);
+    assert.equal(view.inert, true);
+    s.act(() => root.render(page({ wishId: "w1" })));
+    await settle();
+    assert.equal(main.children.length, 2);
+    assert.equal(view.inert, false);
+    assert.equal(footer.inert, false);
+    // Opened again after it, it stays until the next click.
+    s.act(() =>
+      props(link).onClick({
+        preventDefault() {},
+        stopPropagation() {},
+        currentTarget: link,
+      }),
+    );
+    await settle();
+    assert.equal(main.children.length, 3);
+    s.act(() =>
+      props(
+        main.children.at(-1).querySelectorAll(".tilasm-full-leave")[0],
+      ).onClick(),
+    );
+    await settle();
+    assert.equal(main.children.length, 2);
+
+    // A tilasm not on this machine: the window says so, and nothing covers the view.
+    const gone = `djinn://tilasm/${"0".repeat(8)}-0000-7000-8000-${"0".repeat(12)}`;
+    s.act(() =>
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(
+            "main",
+            { className: "main-shell" },
+            h(
+              s.TilasmOver,
+              { view: "plan" },
+              h(
+                "div",
+                { className: "wish-view" },
+                h(
+                  "article",
+                  { id: "question-q2", className: "question-card" },
+                  h(s.Link, { href: gone }, "gone"),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    const lost = doc.getElementById("question-q2").querySelectorAll("a")[0];
+    s.act(() =>
+      props(lost).onClick({
+        preventDefault() {},
+        stopPropagation() {},
+        currentTarget: lost,
+      }),
+    );
+    await settle();
+    assert.deepEqual(
+      shown.map((f) => f.unknownLink),
+      [gone],
+    );
+    assert.equal(container.children[0].querySelectorAll("section").length, 0);
+  } finally {
+    s.act(() => root.unmount());
+    // React's act keeps a port open: it holds the test's process no more.
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
 });
 
 test("a wish's view has a Tilasms tab beside Tasks and Decisions, with its count", async () => {
@@ -3692,11 +5726,11 @@ test("a wish's view has a Tilasms tab beside Tasks and Decisions, with its count
   );
   assert.match(
     html,
-    /id="view-tab-decisions".*id="view-tab-tilasms" aria-selected="false" class="">Tilasms<span class="count">1<\/span>/,
+    /id="view-tab-decisions".*id="view-tab-tilasms" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:tilasms" aria-hidden="true"><\/span>Tilasms<span class="count">1<\/span>/,
   );
 });
 
-test("a folder dropped on the Tilasms tab is read with its files by their paths in it, hidden files left out", async () => {
+test("a folder, an .html file or a .zip dropped on the Tilasms tab is read with its files, hidden files left out", async () => {
   const file = (name, text) => ({
     name,
     isFile: true,
@@ -3729,6 +5763,25 @@ test("a folder dropped on the Tilasms tab is read with its files by their paths 
       ["index.html", "<p>model</p>"],
       ["css/a.css", "p{}"],
     ],
+  );
+  const htmlFile = await s.readDrop([
+    file("diagram.html", "<title>Lamp</title><p>diagram</p>"),
+  ]);
+  assert.equal(htmlFile.name, "diagram");
+  assert.deepEqual(
+    htmlFile.files.map((f) => [f.path, new TextDecoder().decode(f.content)]),
+    [["index.html", "<title>Lamp</title><p>diagram</p>"]],
+  );
+  const htmFile = await s.readDrop(
+    s.entriesOf({
+      items: [],
+      files: [new File(["<p>notes</p>"], "notes.HTM", { type: "text/html" })],
+    }),
+  );
+  assert.equal(htmFile.name, "notes");
+  assert.deepEqual(
+    htmFile.files.map((f) => [f.path, new TextDecoder().decode(f.content)]),
+    [["index.html", "<p>notes</p>"]],
   );
   const zip = await s.readDrop([file("model.zip", "PK")]);
   assert.equal(zip.name, "model.zip");
@@ -4100,11 +6153,12 @@ test("work that merges stays in sight, shows as merging apart from the workers e
     /aria-label="1 merging: its work waits to merge, no worker runs"/,
   );
   assert.doesNotMatch(sidebar(merging, false), /aria-label="1 running"/);
-  assert.match(sidebar(merging, true), /wish-tone tone-running/);
+  // Folded, the work that merges lights the blue dot under the wish's icon.
+  assert.match(sidebar(merging, true), /wish-act tone-running/);
   assert.doesNotMatch(sidebar(committed, false), /running/);
   assert.doesNotMatch(sidebar(committed, true), /tone-running/);
 
-  // The head of the wish and the flying carpet count it as running.
+  // The head of the wish counts it as running; the flying carpet's glance shows workers only, and none runs for it.
   const page = async (list) => {
     const transport = s.createRouterTransport(({ service }) => {
       service(s.WishService, { list: () => ({ wishes: [lamp] }) });
@@ -4139,12 +6193,272 @@ test("work that merges stays in sight, shows as merging apart from the workers e
     /count-pill tone-running" title="1 merging: its work waits to merge, no worker runs"/,
   );
   assert.doesNotMatch(now.view, /title="1 running"/);
-  assert.match(now.plan, /plan-wish tone-running/);
-  assert.match(now.plan, /<span>1 merging<\/span>/);
-  assert.doesNotMatch(now.plan, /<span>1 running<\/span>/);
+  assert.doesNotMatch(now.plan, /glance-dot run/);
+  assert.doesNotMatch(now.plan, /1 running/);
   const later = await page(committed);
   assert.doesNotMatch(later.view, /count-pill tone-running/);
-  assert.doesNotMatch(later.plan, /plan-wish tone-running/);
+  assert.doesNotMatch(later.plan, /glance-dot run/);
+});
+
+// An investigator, the worker Enlighten me starts on a question (TaskRole.INVESTIGATOR), is violet while it works, as
+// the button that started it, and counted apart from the workers that run, blue: in the side panel's second line, the
+// head of the wish, the flying carpet and its task row.
+test("an investigator at work shows violet, apart from the running workers, wherever workers are counted", async () => {
+  const wishId = "01a14419-ec14-7ab3-837e-8b26cb20e7e1";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const worker = {
+    id: "w1",
+    wishId,
+    code: "W1",
+    title: "Pour",
+    status: s.TaskStatus.RUNNING,
+    dependsOn: [],
+    createTime: at(1),
+    startTime: at(2),
+  };
+  const investigator = {
+    id: "w2",
+    wishId,
+    code: "W2",
+    title: "Q1: enlighten",
+    status: s.TaskStatus.RUNNING,
+    role: s.TaskRole.INVESTIGATOR,
+    question: "Q1",
+    dependsOn: [],
+    createTime: at(3),
+    startTime: at(4),
+  };
+  const both = [worker, investigator];
+  const alone = [investigator];
+  const sidebar = (list) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [lamp],
+        projects: [],
+        counts: { [wishId]: { questions: 0, ...s.runningOf(list) } },
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const pill = (tone, label) =>
+    new RegExp(`count-pill tone-${tone}" title="${label}"`);
+  const sign = (tone, label) =>
+    new RegExp(
+      `wish-sign tone-${tone}" title="${label}"[^>]*><span class="wish-sign-dot">`,
+    );
+  const investigating =
+    "1 investigating: a worker finds out more on a question, for you";
+  // The second line counts the worker blue and the investigator violet, apart, each a full dot, the worker first.
+  const side = sidebar(both);
+  assert.match(side, sign("running", "1 running"));
+  assert.match(side, sign("investigating", investigating));
+  assert.ok(
+    side.indexOf("wish-sign tone-running") <
+      side.indexOf("wish-sign tone-investigating"),
+  );
+  // The investigator alone: violet, and no worker runs.
+  const sideAlone = sidebar(alone);
+  assert.match(sideAlone, sign("investigating", investigating));
+  assert.doesNotMatch(sideAlone, /tone-running/);
+  // Nothing investigates: no violet count.
+  assert.doesNotMatch(sidebar([worker]), /tone-investigating/);
+
+  // Its task row is violet and says it investigates; the worker's stays blue.
+  const row = (task) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, { task, codes: new Map(), onStop() {} }),
+    );
+  assert.match(row(investigator), /wish-task tone-investigating/);
+  assert.match(row(investigator), /<span>Investigating<\/span>/);
+  assert.match(row(worker), /wish-task tone-running/);
+
+  // The head of the wish and the flying carpet's glance count one running worker, not two; the glance shows the
+  // investigator violet.
+  const page = async (list) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.TaskService, { list: () => ({ tasks: list }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    const close = djinn.store.open(wishId);
+    await djinn.store.changed(wishId, [s.Change.WISH]);
+    close();
+    const view = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: lamp, onToast() {} }),
+      ),
+    );
+    const plan = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+      ),
+    );
+    return { view, plan };
+  };
+  const now = await page(both);
+  assert.match(now.view, pill("running", "1 running"));
+  assert.doesNotMatch(now.view, /title="2 running"/);
+  assert.match(now.plan, /glance-count">1 running · 1 investigating</);
+  assert.match(now.plan, /glance-dot investigate/);
+  const only = await page(alone);
+  assert.doesNotMatch(only.view, /count-pill tone-running/);
+  assert.match(only.plan, /glance-count">1 investigating</);
+  assert.doesNotMatch(only.plan, /glance-dot run/);
+});
+
+test("a failed merge an agent fixes shows orange, naming its correction, everywhere; red once no correction runs", async () => {
+  const wishId = "01a13c45-f3a8-7295-855a-73c0445d7c88";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  // W1's merge conflicted; W2 corrects it, in the state given.
+  const tasks = (status) => [
+    {
+      id: "w1",
+      wishId,
+      code: "W1",
+      title: "Pour",
+      status: s.TaskStatus.DONE,
+      dependsOn: [],
+      createTime: at(1),
+      endTime: at(10),
+      integration: {
+        state: s.IntegrationState.CONFLICT,
+        branch: "feat/x",
+        reason: "a.go conflicts",
+        correctedBy: "w2",
+        attempts: 1,
+      },
+    },
+    {
+      id: "w2",
+      wishId,
+      code: "W2",
+      title: "Correct the merge of W1",
+      status,
+      dependsOn: [],
+      createTime: at(11),
+      correction: {
+        attempt: 1,
+        failure: { state: s.IntegrationState.CONFLICT, taskIds: ["w1"] },
+      },
+    },
+  ];
+  const fixing = tasks(s.TaskStatus.RUNNING);
+  const failed = tasks(s.TaskStatus.FAILED);
+  const card = (list) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, {
+        task: list[0],
+        codes: new Map(list.map((x) => [x.id, x.code])),
+        fixedBy: s.fixerOf(list[0], list)?.code,
+        onStop() {},
+        async onSend() {},
+      }),
+    );
+  // The card: orange with a wrench, its words and its work line naming W2, a link to its card.
+  const now = card(fixing);
+  assert.match(now, /wish-task tone-fixing/);
+  assert.match(
+    now,
+    /<span class="status-badge tone-fixing">[\s\S]*?<span>Merge being fixed by W2<\/span><\/span>/,
+  );
+  assert.match(
+    now,
+    /work-fixing">Conflict, not committed: a\.go conflicts, being fixed by <button type="button" class="text-button agent-code task-link">W2<\/button><\/p>/,
+  );
+  assert.doesNotMatch(now, /tone-failed|Merge failed/);
+  // W2 failed: no correction runs, red as before.
+  const red = card(failed);
+  assert.match(red, /wish-task tone-failed/);
+  assert.match(red, /<span>Merge failed<\/span>/);
+  assert.match(
+    red,
+    /work-failed">Conflict, not committed: a\.go conflicts, corrected by W2</,
+  );
+
+  // The side panel counts it apart, orange.
+  const sidebar = (list) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [lamp],
+        projects: [],
+        counts: { [wishId]: { questions: 0, ...s.runningOf(list) } },
+        onSelectPlan() {},
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  const detail = "1 merge being fixed: an agent corrects it, nothing to do";
+  assert.match(
+    sidebar(fixing),
+    new RegExp(
+      `wish-sign tone-fixing" title="${detail}"[^>]*><svg[^>]*lucide-wrench`,
+    ),
+  );
+  assert.doesNotMatch(sidebar(failed), /tone-fixing/);
+
+  // The head of the wish, and the flying carpet.
+  const page = async (list) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.TaskService, { list: () => ({ tasks: list }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    const close = djinn.store.open(wishId);
+    await djinn.store.changed(wishId, [s.Change.WISH]);
+    close();
+    const view = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: lamp, onToast() {} }),
+      ),
+    );
+    const plan = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+      ),
+    );
+    return { view, plan };
+  };
+  const live = await page(fixing);
+  assert.match(
+    live.view,
+    new RegExp(`count-pill tone-fixing" title="${detail}"`),
+  );
+  assert.match(live.view, /<b>1<\/b>being fixed<\/span>/);
+  // The flying carpet's glance shows its correction at work apart, a repair worker: a wrench in place of its dot,
+  // blue as any worker at work, saying what it repairs (W137).
+  assert.match(
+    live.plan,
+    /<button type="button" class="glance-row glance-repair run" title="Running · W2 Correct the merge of W1"><span class="glance-mark run" role="img" aria-label="repair worker · Running"[^>]*><svg[^>]*lucide-wrench[\s\S]*?<span class="glance-code">W2<\/span><span class="glance-title">settles the conflict of W1<span class="glance-after">Running<\/span>/,
+  );
+  assert.doesNotMatch(live.plan, /glance-dot run/);
+  assert.match(live.plan, /glance-count">1 repair</);
+  const dead = await page(failed);
+  assert.doesNotMatch(dead.view, /tone-fixing/);
+  assert.doesNotMatch(dead.plan, /tone-fixing|glance-dot run|glance-repair/);
 });
 
 test("the update banner proposes to install a build committed, on one line, what changed unfolded on demand", () => {
@@ -4683,7 +6997,7 @@ test("an azima whose work is done awaits its proof: its own label and tone, what
   assert.doesNotMatch(plan, /The same scenario runs on macOS/);
   assert.match(
     plan,
-    /id="view-tab-tasks"[^>]*>Tasks<span class="count">2<\/span>/,
+    /id="view-tab-tasks"[^>]*><span class="djinn-eye-perch" data-perch="tab:tasks" aria-hidden="true"><\/span>Tasks<span class="count">2<\/span>/,
   );
   const fp = s.flightPlan([lamp], {
     [wishId]: { tasks, questions: [], blocks: [], loaded: true },
@@ -4953,7 +7267,7 @@ test("the wish's title shows in the head and edits in place", () => {
   );
 });
 
-test("the attention bar says how much each question holds up: blocking, your move, before X, can wait", () => {
+test("the attention bar counts what holds up a wish: blocking, your move, before X; never a question that can wait", () => {
   const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
   const q = (id, before = "", move = false) => ({
     id,
@@ -4988,12 +7302,13 @@ test("the attention bar says how much each question holds up: blocking, your mov
       ["q2", "question", "before the demo"],
       ["q5", "question", "Waiting for the Djinn"],
       ["t9", "action", undefined],
-      ["q3", "later", undefined],
-      ["q6", "later", undefined],
       ["ready-w1", "ready", undefined],
     ],
   );
+  // q3 can wait, and so does q6, a move needed before nothing: their cards say "Can wait", the bar leaves them out.
   const markup = s.renderToStaticMarkup(h(s.AttentionBar, { items }));
+  assert.match(markup, /6 things wait for you/);
+  assert.doesNotMatch(markup, /Can wait|>Q3<|>Q6</);
   assert.match(markup, /<button class="attention-item level-move"/);
   // A move with no link has no button beside its line.
   assert.doesNotMatch(markup, /move-link/);
@@ -5001,6 +7316,44 @@ test("the attention bar says how much each question holds up: blocking, your mov
     markup,
     /<span class="attention-level"><svg[^>]*class="lucide lucide-circle-user-round[^>]*>.*<\/svg>Your move<\/span>/,
   );
+});
+
+test("the attention bar counts a blocking question and a move, not a question that can wait; nothing but those, no bar", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const q = (id, extra = {}) => ({
+    id,
+    code: id.toUpperCase(),
+    text: id,
+    ...extra,
+  });
+  const blocking = { wish: w, item: q("q1"), blocking: ["W1"] };
+  const move = {
+    wish: w,
+    item: q("q2", { move: true, before: "before the release" }),
+    blocking: [],
+  };
+  const canWait = { wish: w, item: q("q3"), blocking: [] };
+  const items = s.attentionOf([blocking, canWait, move], [], []);
+  assert.deepEqual(
+    items.map((i) => [i.key, i.level]),
+    [
+      ["q1", "blocking"],
+      ["q2", "move"],
+    ],
+  );
+  assert.match(
+    s.renderToStaticMarkup(h(s.AttentionBar, { items })),
+    /2 things wait for you/,
+  );
+  // One definition: the bar keeps what holdsUp keeps.
+  assert.deepEqual([blocking, move, canWait].map(s.holdsUp), [
+    true,
+    true,
+    false,
+  ]);
+  const alone = s.attentionOf([canWait], [], []);
+  assert.equal(alone.length, 0);
+  assert.equal(s.renderToStaticMarkup(h(s.AttentionBar, { items: alone })), "");
 });
 
 test("a move's line in the attention bar has its main link beside it, a button", () => {
@@ -5107,12 +7460,13 @@ test("a line of the attention bar takes you to its target in another tab, a fold
     text: id,
     ...extra,
   });
+  const before = { before: "before the merge" };
   const items = s.attentionOf(
     [
-      { wish: w1, item: q("q1"), blocking: [] },
+      { wish: w1, item: q("q1", before), blocking: [] },
       { wish: w1, item: q("q2", { waitingLead: true }), blocking: [] },
-      { wish: w2, item: q("q3"), blocking: [] },
-      { wish: w1, item: q("q4"), blocking: [] },
+      { wish: w2, item: q("q3", before), blocking: [] },
+      { wish: w1, item: q("q4", before), blocking: [] },
     ],
     [
       {
@@ -5120,8 +7474,7 @@ test("a line of the attention bar takes you to its target in another tab, a fold
         item: {
           id: "t9",
           code: "W9",
-          status: s.TaskStatus.FAILED,
-          error: "",
+          status: s.TaskStatus.WAITING,
         },
         question: "",
       },
@@ -5162,7 +7515,7 @@ test("a line of the attention bar takes you to its target in another tab, a fold
   assert.equal(markup.match(/<button class="attention-item/g).length, 4);
   assert.match(
     markup,
-    /<span class="attention-item level-later"><span class="attention-level">Can wait<\/span><b class="attention-code">Q4<\/b><span class="attention-text">q4<\/span><\/span>/,
+    /<span class="attention-item level-question"><span class="attention-level">before the merge<\/span><b class="attention-code">Q4<\/b><span class="attention-text">q4<\/span><\/span>/,
   );
 
   // In a folded part: a decision older than the latest ones shows when it is the one in focus, as the bar asks.
@@ -5238,12 +7591,12 @@ test("regression W507: a wish without a project shows its task, its rank as a ra
   assert.doesNotMatch(html, /My wish is granted|id="grant-/);
   assert.doesNotMatch(
     html,
-    /waits? for you|with problems|refused|id="waiting-|tone-interrupted/,
+    /(?<!othing )waits? for you|with problems|refused|id="waiting-|tone-interrupted/,
   );
   // (a) The Tasks tab counts it.
   assert.match(
     html,
-    /id="view-tab-tasks" aria-selected="false" class="">Tasks<span class="count">1<\/span>/,
+    /id="view-tab-tasks" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:tasks" aria-hidden="true"><\/span>Tasks<span class="count">1<\/span>/,
   );
 
   // (a) In the Tasks tab, a task part of no azima shows, folded under Finished once done, a clean Done whether its
@@ -5306,14 +7659,11 @@ test("regression W507: a wish without a project shows its task, its rank as a ra
       onNewProject() {},
     }),
   );
-  assert.match(
-    side,
-    /<small class="wish-rank"><svg[^>]*>.*?<\/svg>#3<\/small>/,
-  );
+  assert.match(side, /<small class="wish-rank">#3<\/small>/);
   assert.doesNotMatch(side, /count-pill/);
 });
 
-test("an open question that can wait stays visible in WishView action center and attention bar, never folded", async () => {
+test("an open question that can wait stays visible in WishView's questions column, never folded, and out of the attention bar", async () => {
   const wishId = "01a11833-a440-7479-a067-52615c91da70";
   const lamp = wish(wishId, "Djinn sur Wails", s.WishState.ACTIVE, 1);
   const transport = s.createRouterTransport(({ service }) => {
@@ -5358,15 +7708,13 @@ test("an open question that can wait stays visible in WishView action center and
     h(s.DjinnProvider, { djinn }, h(s.WishView, { wish: lamp, onToast() {} })),
   );
 
-  // 1. Attention bar shows the can-wait question with level-later and "Can wait".
-  assert.match(html, /class="attention-item level-later"/);
-  assert.match(html, /<b class="attention-code">Q86<\/b>/);
-  assert.match(html, /<span class="attention-level">Can wait<\/span>/);
+  // 1. Nothing holds up the wish: no attention bar.
+  assert.doesNotMatch(html, /attention-bar|attention-item/);
 
-  // 2. Action center displays the question in decisions-section with can-wait tone.
-  assert.match(html, /class="action-center"/);
-  assert.match(html, /class="decisions-section"/);
-  assert.match(html, /question-card open can-wait/);
+  // 2. The questions column shows it, open as the first, with the can-wait tone; no card holds the column.
+  assert.doesNotMatch(html, /action-center/);
+  assert.match(html, /class="question-column decisions-section"/);
+  assert.match(html, /question-card question-row open current can-wait/);
   assert.match(html, /<span class="question-id">Q86<\/span>/);
   assert.match(html, /status-badge tone-later[^>]*>.*<span>Can wait<\/span>/);
   assert.match(html, /The push checks of feat\/wails-go stay red/);
@@ -5377,119 +7725,71 @@ test("an open question that can wait stays visible in WishView action center and
   assert.doesNotMatch(html, /question-card[^"]*folded/);
 });
 
-test("the attention bar shows a failed worker until it is dealt with (continued, done, or a new task names it)", () => {
-  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
-  const failedTask = {
-    id: "t1",
+test("a failed worker never waits for you: refused calls are the Djinn's (W96)", () => {
+  // W19 of wish Will retour beta (16/10/2026): an investigator failed on refused djinn commands, Djinn started W20 in
+  // its place, and W19 still showed at the top as waiting for you, with nothing you could do.
+  const w = wish("w1", "Will retour beta", s.WishState.ACTIVE, 1);
+  const w19 = {
+    id: "t19",
     wishId: "w1",
-    code: "W1",
-    title: "Light the wick",
+    code: "W19",
+    title: "Q17: enlighten",
     status: s.TaskStatus.FAILED,
-    error: "exit code 1: fuel line broken\nstack trace follows",
+    role: s.TaskRole.INVESTIGATOR,
+    question: "Q17",
+    error: "its command was refused: djinn task list --wish-id w1 | grep Q17",
+    refused: { count: 2, names: ["djinn"] },
   };
-
-  // 1. Initially, undealt-with failed task is in waitingTasks and attentionOf.
-  let tasks = [failedTask];
-  let waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 1);
-  assert.equal(waiting[0].item.id, "t1");
-
-  let items = s.attentionOf([], waiting, []);
-  assert.equal(items.length, 1);
-  assert.equal(items[0].key, "t1");
-  assert.equal(items[0].level, "action");
-  assert.equal(items[0].target, "waiting-t1");
-  assert.equal(items[0].code, "W1");
-  assert.equal(items[0].text, "exit code 1: fuel line broken");
-
-  // 2. When marked done: dealt with, disappears from attention bar.
-  tasks = [{ ...failedTask, status: s.TaskStatus.DONE }];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 3. When continuing: true: dealt with, disappears.
-  tasks = [{ ...failedTask, continuing: true }];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 4. When closed.continuedIn is set: dealt with, disappears.
-  tasks = [{ ...failedTask, closed: { continuedIn: "t2" } }];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 5. When forked by another task (forkOf === "W1"): dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Forked",
-      status: s.TaskStatus.RUNNING,
-      forkOf: "W1",
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 6. When another task has decision === "W1": dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Follow up",
-      status: s.TaskStatus.RUNNING,
-      decision: "W1",
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 7. When another task's title names W1: dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Fix W1 build error",
-      status: s.TaskStatus.RUNNING,
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 8. When another task's correction failure taskIds includes t1.id: dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Correct W1",
-      status: s.TaskStatus.RUNNING,
-      correction: { failure: { taskIds: ["t1"] } },
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
-
-  // 9. When another task's review taskIds includes t1.id: dealt with, disappears.
-  tasks = [
-    failedTask,
-    {
-      id: "t2",
-      wishId: "w1",
-      code: "W2",
-      title: "Review W1",
-      status: s.TaskStatus.RUNNING,
-      review: { taskIds: ["t1"] },
-    },
-  ];
-  waiting = s.waitingTasks(w, { tasks, questions: [] });
-  assert.equal(waiting.length, 0);
+  const w20 = {
+    ...w19,
+    id: "t20",
+    code: "W20",
+    status: s.TaskStatus.RUNNING,
+    error: "",
+    refused: undefined,
+  };
+  const failed = {
+    ...w19,
+    id: "t3",
+    code: "W3",
+    title: "Light the wick",
+    role: s.TaskRole.UNSPECIFIED,
+    question: "",
+    error: "exit code 1: fuel line broken",
+    refused: undefined,
+  };
+  const detail = { tasks: [w19, w20, failed], questions: [] };
+  assert.deepEqual(s.waitingTasks(w, detail), []);
+  assert.deepEqual(s.attentionOf([], s.waitingTasks(w, detail), []), []);
+  const plan = s.flightPlan([w], {
+    w1: { ...detail, blocks: [], loaded: true },
+  });
+  assert.deepEqual(plan.waiting, []);
+  // It stays in sight among the tasks that move, failed, for the Djinn to take up.
+  assert.deepEqual(
+    plan.moving.map(({ item }) => item.code),
+    ["W20", "W19", "W3"],
+  );
+  // A worker that waits for its edit question still waits for you.
+  const asking = {
+    id: "t4",
+    wishId: "w1",
+    code: "W4",
+    title: "Edit",
+    status: s.TaskStatus.WAITING,
+  };
+  const waiting = s.waitingTasks(w, { tasks: [w19, asking], questions: [] });
+  assert.deepEqual(
+    waiting.map(({ item }) => item.code),
+    ["W4"],
+  );
+  const [line] = s.attentionOf([], waiting, []);
+  assert.equal(line.target, "waiting-t4");
+  assert.equal(line.text, "waits for your answer before it may edit");
+  // The flying carpet's list of what waits for you names it alone.
+  const html = s.renderToStaticMarkup(h(s.WaitingTasks, { waiting }));
+  assert.match(html, /waiting-t4/);
+  assert.doesNotMatch(html, /W19|refused/);
 });
 
 test("the wish's head says where Djinn last pushed its integration branch, and a push refused", () => {
@@ -6283,6 +8583,54 @@ test("regression W489: a stale ↑3 pushed again says 'up to date' quietly on it
   );
 });
 
+test("W164: a branch behind its remote has a pull button; a refused pull says why with a cross on its line", async () => {
+  const pulls = [];
+  let answer = {};
+  const lines = live(s.SyncLines, {
+    syncs: [projectSync("feat/x", 0, 2), projectSync("feat/y", 3, 0)],
+    onPush() {},
+    onPull: (sync) => {
+      pulls.push(sync.branch);
+      return answer instanceof Error
+        ? Promise.reject(answer)
+        : Promise.resolve(answer);
+    },
+  });
+  const first = () => lines.all(s.SyncLine)[0].props;
+  const [behind, ahead] = lines.all(s.SyncLine).map((x) => x.props);
+  const html = s.renderToStaticMarkup(h(s.SyncLine, behind));
+  assert.match(
+    html,
+    /<button type="button" class="icon-button sync-push sync-pull" title="Pull feat\/x: bring it up to origin\/feat\/x, a fast-forward only"/,
+  );
+  // Ahead only: nothing to pull, no pull button.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(h(s.SyncLine, ahead)),
+    /sync-pull/,
+  );
+
+  // While it pulls, every other button waits.
+  behind.onPull();
+  assert.equal(first().pulling, true);
+  assert.equal(
+    lines.all(s.SyncLine)[1].props.busy,
+    "A pull is running: wait for it to end",
+  );
+  await lines.settle();
+  assert.deepEqual(pulls, ["feat/x"]);
+  assert.equal(first().refused, "");
+
+  answer = new Error(
+    "feat/x has diverged from origin/feat/x (ahead 1, behind 2): Djinn merges nothing into it",
+  );
+  first().onPull();
+  await lines.settle();
+  assert.match(
+    s.renderToStaticMarkup(h(s.SyncLine, first())),
+    /class="sync-status failed" role="img" title="The pull was refused\n?feat\/x has diverged from origin\/feat\/x \(ahead 1, behind 2\)/,
+  );
+});
+
 test("the project panel displays the push cadence setting, out-of-sync status, and push button", () => {
   const p1 = {
     id: "p1",
@@ -6346,6 +8694,101 @@ test("the project panel displays the push cadence setting, out-of-sync status, a
   );
 });
 
+// The reference branch chosen in the panel (W149): Change reads the remote's branches, the current one first when this
+// copy lacks it; the choice goes to your own file, and when it is yours it can be taken back. Never an accent button.
+test("a project's reference branch is chosen from the remote's branches, and your choice taken back", async () => {
+  const chosen = [];
+  let refuse = false;
+  const choice = live(s.BranchChoice, {
+    reference: {
+      branch: "main",
+      ref: "origin/main",
+      commit: "0458f74c",
+      source: s.SettingSource.DEFAULT,
+    },
+    load: async () => ["dev", "main", "release"],
+    onChoose: async (branch) => {
+      chosen.push(branch);
+      return !refuse;
+    },
+  });
+  assert.equal(
+    choice.html(),
+    '<button type="button" class="button small secondary">Change</button>',
+  );
+  choice.one("button").onClick();
+  assert.match(choice.html(), /Reading the remote(?:'|&#x27;)s branches…/);
+  await choice.settle();
+  let html = choice.html();
+  assert.match(
+    html,
+    /<select aria-label="Reference branch"><option value="dev">dev<\/option><option value="main" selected="">main<\/option><option value="release">release<\/option><\/select>/,
+  );
+  assert.doesNotMatch(html, /Take your choice back|button accent/);
+  assert.match(
+    html,
+    /<button type="submit" class="button small secondary" disabled="">Choose<\/button>/,
+  );
+  assert.match(html, /never in the repository/);
+  choice.one("select").onChange({ target: { value: "dev" } });
+  refuse = true;
+  await choice.one("form").onSubmit({ preventDefault() {} });
+  await choice.settle();
+  assert.deepEqual(chosen, ["dev"]);
+  assert.match(
+    choice.html(),
+    /<select/,
+    "a refused choice keeps the list open",
+  );
+  refuse = false;
+  await choice.one("form").onSubmit({ preventDefault() {} });
+  await choice.settle();
+  assert.deepEqual(chosen, ["dev", "dev"]);
+  assert.match(
+    choice.html(),
+    /^<button type="button" class="button small secondary">Change<\/button>$/,
+  );
+
+  // Yours: the list offers to take it back, and keeps a branch this copy has not fetched.
+  const yours = live(s.BranchChoice, {
+    reference: {
+      branch: "dev",
+      ref: "origin/dev",
+      commit: "",
+      source: s.SettingSource.DEVELOPER,
+    },
+    load: async () => ["main"],
+    onChoose: async (branch) => {
+      chosen.push(branch);
+      return true;
+    },
+  });
+  yours.one("button").onClick();
+  await yours.settle();
+  html = yours.html();
+  assert.match(
+    html,
+    /<option value="">Take your choice back: the team(?:'|&#x27;)s file, else Djinn(?:'|&#x27;)s default<\/option><option value="dev" selected="">dev<\/option><option value="main">main<\/option>/,
+  );
+  yours.one("select").onChange({ target: { value: "" } });
+  await yours.one("form").onSubmit({ preventDefault() {} });
+  assert.deepEqual(chosen, ["dev", "dev", ""]);
+
+  // Branches it cannot read: the error, and Cancel to close the list.
+  const unread = live(s.BranchChoice, {
+    load: async () => {
+      throw new Error("git for-each-ref: not a git repository");
+    },
+    onChoose: async () => true,
+  });
+  unread.one("button").onClick();
+  await unread.settle();
+  assert.match(unread.html(), /not a git repository/);
+  assert.doesNotMatch(unread.html(), /<select/);
+  unread.all("button").at(-1).props.onClick();
+  assert.match(unread.html(), /^<button[^>]*>Change<\/button>$/);
+});
+
 // The watcher commands a developer allows in a project, in its panel: each with a button that takes it back, and a
 // field that allows one more, kept in their own settings.
 test("a project's panel lists the watcher commands you allow", () => {
@@ -6373,6 +8816,229 @@ test("a project's panel lists the watcher commands you allow", () => {
     }),
   );
   assert.doesNotMatch(none, /Take back/);
+});
+
+// The project's configuration panel (W148): a thing to fix says what it is, the error as read, and what settles it,
+// a button never alone and never in the accent colour; the reference branch says its ref, commit and where its name
+// comes from; each skill says its role for Djinn; each setting where it comes from, those at the default folded.
+test("a project's configuration says what to fix, its reference branch, each skill's role and where each setting comes from", () => {
+  const render = (el) => s.renderToStaticMarkup(el);
+  const unreadable = render(
+    h(s.NoticeLine, {
+      notice: {
+        kind: s.ProjectNoticeKind.TO_FIX,
+        topic: s.ProjectNoticeTopic.SKILL,
+        subject: "notion-ticket",
+        text: "Djinn cannot read the skill notion-ticket.",
+        detail: "yaml: line 3: did not find expected key",
+        action: s.ProjectNoticeAction.FIX_FILE,
+        file: "/tmp/dolmen/.agents/skills/notion-ticket/SKILL.md",
+        command: "",
+      },
+      busy: false,
+      onAct() {},
+    }),
+  );
+  assert.match(unreadable, /^<div class="notice to-fix">/);
+  assert.match(
+    unreadable,
+    /<span>Djinn cannot read the skill notion-ticket\.<\/span><\/p><pre class="notice-detail">yaml: line 3: did not find expected key<\/pre>/,
+  );
+  assert.match(
+    unreadable,
+    /To fix in <span class="command"><code>\/tmp\/dolmen\/\.agents\/skills\/notion-ticket\/SKILL\.md<\/code>/,
+  );
+  assert.doesNotMatch(unreadable, /From a terminal/);
+
+  const acted = [];
+  const offered = render(
+    h(s.NoticeLine, {
+      notice: {
+        kind: s.ProjectNoticeKind.TO_FIX,
+        topic: s.ProjectNoticeTopic.SOURCE,
+        subject: "djinn/babysit-pr",
+        text: "The skill babysit-pr offers an inbox source this machine has not decided on.",
+        detail: "",
+        action: s.ProjectNoticeAction.PLUG_SOURCE,
+        file: "",
+        command: "djinn inbox plug djinn/babysit-pr",
+      },
+      busy: false,
+      onAct: (plug) => acted.push(plug),
+    }),
+  );
+  assert.doesNotMatch(offered, /notice-detail|button accent/);
+  assert.match(
+    offered,
+    /<div class="notice-choice"><button type="button" class="button small secondary">.*Plug in<\/button><p>Its command runs on this machine; each item it prints becomes a card in the inbox\.<\/p><\/div><div class="notice-choice"><button type="button" class="button small secondary">.*Say no<\/button><p>It runs nothing on this machine, and the project stops asking\.<\/p><\/div>/,
+  );
+  assert.match(
+    offered,
+    /From a terminal: <span class="command"><code>djinn inbox plug djinn\/babysit-pr<\/code>/,
+  );
+
+  const shown = {
+    repositoryFile: "/tmp/djinn/.agents/settings.txtpb",
+    developerFile: "/home/you/.config/djinn/projects/p1/settings.txtpb",
+  };
+  const reference = render(
+    h(s.ReferenceBranch, {
+      reference: {
+        branch: "main",
+        ref: "origin/main",
+        commit: "0458f74c0ffee",
+        source: s.SettingSource.DEFAULT,
+        checkedOut: "feature",
+      },
+      missing: false,
+      notices: [
+        {
+          kind: s.ProjectNoticeKind.INFORMATION,
+          topic: s.ProjectNoticeTopic.BRANCH,
+          text: "Your copy has feature checked out, not the reference branch origin/main.",
+        },
+      ],
+      shown,
+    }),
+  );
+  assert.match(
+    reference,
+    /<strong>Reference branch<\/strong><p><code>main<\/code> origin\/main at 0458f74 <span class="config-from">Djinn(?:'|&#x27;)s default<\/span><\/p>/,
+  );
+  assert.match(reference, /pull requests aim at it/);
+  assert.match(
+    reference,
+    /<p>Your copy has feature checked out, not the reference branch origin\/main\.<\/p>/,
+  );
+  const named = render(
+    h(s.ReferenceBranch, {
+      reference: {
+        branch: "dev",
+        ref: "origin/dev",
+        commit: "",
+        source: s.SettingSource.DEVELOPER,
+        checkedOut: "dev",
+      },
+      missing: true,
+      notices: [],
+      shown,
+    }),
+  );
+  assert.match(
+    named,
+    /<code>dev<\/code> origin\/dev, not in this copy yet <span class="config-from" title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span>/,
+  );
+  assert.match(
+    render(h(s.ReferenceBranch, { missing: true, notices: [], shown })),
+    /None found: see “To fix”\./,
+  );
+  assert.equal(
+    render(h(s.ReferenceBranch, { missing: false, notices: [], shown })),
+    "",
+  );
+  assert.doesNotMatch(reference, /Change/);
+  assert.match(
+    render(
+      h(s.ReferenceBranch, {
+        missing: true,
+        notices: [],
+        shown,
+        load: async () => [],
+        onChoose: async () => true,
+      }),
+    ),
+    /None found: see “To fix”\.<\/p><p class="muted-text">.*<\/p><button type="button" class="button small secondary">Change<\/button>/,
+  );
+
+  const project = { id: "p1", name: "djinn", directory: "/tmp/djinn" };
+  const skill = (extra) =>
+    render(
+      h(s.SkillLine, {
+        project,
+        toFix: false,
+        skill: {
+          project: "djinn",
+          name: "babysit-pr",
+          source: "",
+          directory: "/tmp/djinn/.agents/skills/babysit-pr",
+          description: "Babysits a pull request.",
+          missing: "",
+          template: "",
+          inboxSource: "",
+          babysit: "",
+          ...extra,
+        },
+      }),
+    );
+  assert.match(
+    skill({
+      template: "Babysit PR #{number}",
+      inboxSource: "sh inbox.sh",
+      babysit: "sh watch.sh {number}",
+    }),
+    /<strong>babysit-pr<\/strong><span class="config-from">\.agents\/skills<\/span><p>Babysits a pull request\.<\/p><p class="skill-role">Wish template “Babysit PR #\{number\}” · Inbox source · Babysits the project(?:'|&#x27;)s pull requests<\/p>/,
+  );
+  assert.match(
+    skill({}),
+    /<p class="skill-role">Know-how for the workers: no wish template, inbox source nor babysit for Djinn\.<\/p>/,
+  );
+  assert.match(
+    render(
+      h(s.SkillLine, {
+        project,
+        toFix: true,
+        skill: {
+          name: "notion-ticket",
+          source: "",
+          directory: "/tmp/djinn/.claude/skills/notion-ticket",
+          description: "",
+          missing: "",
+        },
+      }),
+    ),
+    /<span class="config-from">\.claude\/skills<\/span>.*<p class="skill-role to-fix">Djinn cannot use all of it: see “To fix”\.<\/p>/,
+  );
+  const summoned = skill({
+    source: "dolmen/recette",
+    name: "recette",
+    directory: "/tmp/dolmen/.agents/skills/recette",
+  });
+  assert.match(
+    summoned,
+    /<span class="badge muted">from dolmen\/recette<\/span>/,
+  );
+  assert.doesNotMatch(summoned, /config-from/);
+
+  const settings = render(
+    h(s.ProjectSettings, {
+      shown,
+      settings: [
+        {
+          name: "provider",
+          value: "claude",
+          source: s.SettingSource.DEVELOPER,
+        },
+        { name: "model", value: "", source: s.SettingSource.DEFAULT },
+        {
+          name: "checks",
+          value: "lint: go tool task lint (commit)",
+          source: s.SettingSource.REPOSITORY,
+        },
+        { name: "babysit", value: "true", source: s.SettingSource.DEFAULT },
+        {
+          name: "merge_main",
+          value: "release",
+          source: s.SettingSource.REPOSITORY,
+        },
+      ],
+    }),
+  );
+  // The checks have their own part of the panel; the settings a file sets come first, the defaults folded.
+  assert.doesNotMatch(settings, /lint: go tool task lint/);
+  assert.match(
+    settings,
+    /<div class="config-setting"><code>provider<\/code><span class="">claude<\/span><span class="config-from" title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span><\/div><div class="config-setting"><code>merge_main<\/code><span class="">release<\/span><span class="config-from" title="\/tmp\/djinn\/\.agents\/settings\.txtpb">the team(?:'|&#x27;)s file<\/span><\/div><details class="config-more"><summary>2 more at Djinn(?:'|&#x27;)s default<\/summary><div class="config-setting"><code>model<\/code><span class="muted-text">not set<\/span>/,
+  );
 });
 
 // An opened azima, as the Tasks tab shows it: built from what the lamp sends, its parts as the tab renders any task.
@@ -7416,6 +10082,66 @@ test("the wish shows its push strategy and azima cards show branch, sync and PR 
   );
   assert.match(mergedHtml, /<span class="azima-pushed-status">Pushed<\/span>/);
   assert.match(mergedHtml, /<span class="azima-pr-badge">PR merged<\/span>/);
+  assert.doesNotMatch(mergedHtml, /azima-merged/);
+
+  // Its work all in main (W192): a small mark beside its code, how Djinn found it on hover, per azima or not.
+  const markedHtml = (merged) =>
+    s.renderToStaticMarkup(
+      h(s.AzimaCard, {
+        azima: { ...taskT27, azima: { merged } },
+        parts: [],
+        tasks: new Map(),
+        render: () => null,
+      }),
+    );
+  assert.match(
+    markedHtml({ requestUrl: "https://github.com/acme/lamp/pull/7" }),
+    /<span class="agent-code">T27<\/span><span class="azima-merged" role="img" aria-label="Merged into main" title="Merged into main\nAll its work is in it: its pull request merged, https:\/\/github.com\/acme\/lamp\/pull\/7. A task added to it clears this mark."><svg[^>]*lucide-git-merge/,
+  );
+  assert.match(
+    markedHtml({ mainBranch: "master", mainSha: "53698aea52673bbd" }),
+    /aria-label="Merged into master" title="Merged into master\nAll its work is in it: every commit of its branch and of its tasks, at 53698aea. A task/,
+  );
+
+  // A done azima whose commits main holds already, its remote branch left behind (W163): landed, never waiting for a
+  // push, its sync to forget.
+  const landed = projectSync("hotfix-tenant", 0, 0, {
+    azimaId: "a27",
+    azimaCode: "T27",
+    azimaTitle: "Tenants apart",
+    landed: true,
+  });
+  let forgotten;
+  const landedCard = {
+    azima: {
+      ...taskT27,
+      azima: { branch: "hotfix-tenant", baseBranch: "main" },
+    },
+    sync: landed,
+    parts: [],
+    tasks: new Map(),
+    render: () => null,
+    isPerAzima: true,
+    onPush() {},
+    onForgetSync: (sync) => {
+      forgotten = sync;
+    },
+  };
+  const landedHtml = s.renderToStaticMarkup(h(s.AzimaCard, landedCard));
+  assert.match(
+    landedHtml,
+    /<span class="azima-pushed-status" title="Every commit of hotfix-tenant is in main already: nothing waits for a push">Landed in main<\/span><button type="button" class="icon-button azima-forget-sync" title="Forget the sync of hotfix-tenant/,
+  );
+  assert.doesNotMatch(landedHtml, /sync-line|>Pushed</);
+  live(s.AzimaCard, landedCard)
+    .all("button")
+    .find((b) => b.props.className === "icon-button azima-forget-sync")
+    .props.onClick(fakeEvent);
+  assert.equal(forgotten?.branch, "hotfix-tenant");
+  assert.equal(
+    s.syncTitle(landed),
+    "Branch of the azima T27 Tenants apart, wish Lamp\nLanded: main holds its commits already, nothing to push",
+  );
 
   // 7. Verify T27: AzimaCard is memoized (React.memo)
   assert.equal(typeof s.AzimaCard, "object");
@@ -7807,14 +10533,14 @@ test("a worker's eye opens its task in its wish, through the window's focus", ()
   assert.equal(s.tabOf("task-task-w1"), "tasks");
 });
 
-test("the side panel's Hourglass comes right below the flying carpet, before the wishes, and stays with no active wish", (t) => {
+test("the side panel's Hourglass sits at the bottom of the menu, after the wishes, projects and import, and stays with no active wish", (t) => {
   globalThis.__DJINN_MAC__ = false;
   t.after(() => delete globalThis.__DJINN_MAC__);
   const sidebar = (wishes, selected) =>
     s.renderToStaticMarkup(
       h(s.WishSidebar, {
         wishes,
-        projects: [],
+        projects: [{ id: "p1", name: "lamp", directory: "/tmp/lamp" }],
         onSelectPlan() {},
         hourglassSelected: selected,
         onSelectHourglass() {},
@@ -7825,6 +10551,7 @@ test("the side panel's Hourglass comes right below the flying carpet, before the
         onSelectProject() {},
         onMove() {},
         onNewProject() {},
+        onImportWish() {},
       }),
     );
   const html = sidebar(
@@ -7832,9 +10559,18 @@ test("the side panel's Hourglass comes right below the flying carpet, before the
     true,
   );
   const carpet = html.indexOf("plan-nav");
-  const glass = html.indexOf("hourglass-nav");
   const wishes = html.indexOf("Ship the lamp");
-  assert.ok(carpet >= 0 && glass > carpet && wishes > glass, html);
+  const projects = html.indexOf("project-list");
+  const importBtn = html.indexOf("import-nav");
+  const glass = html.indexOf("hourglass-nav");
+  assert.ok(
+    carpet >= 0 &&
+      wishes > carpet &&
+      projects > wishes &&
+      importBtn > projects &&
+      glass > importBtn,
+    html,
+  );
   assert.match(
     html,
     /<button class="nav-item hourglass-nav selected" title="Hourglass \(Ctrl 2\)" aria-keyshortcuts="Control\+2"><svg[^>]*lucide-hourglass[^>]*>[^]*?<\/svg><span>Hourglass<\/span><\/button>/,
@@ -7853,6 +10589,76 @@ test("the side panel's Hourglass comes right below the flying carpet, before the
     calm,
     /class="nav-item hourglass-nav " title="Hourglass \(Ctrl 2\)"/,
   );
+});
+
+// The Grimoire, the documentation (W89), sits just under the Hourglass, before the profile; its tooltip says
+// Documentation, and folded to its book it keeps its name and its tooltip. It is a page like the Hourglass (W165):
+// selected while it shows.
+test("the side panel's Grimoire sits under the Hourglass, shows the documentation as a page, and reads folded too", (t) => {
+  globalThis.__DJINN_MAC__ = false;
+  t.after(() => delete globalThis.__DJINN_MAC__);
+  const sidebar = (collapsed, onSelectGrimoire, grimoireSelected = false) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
+        projects: [],
+        onSelectPlan() {},
+        onSelectHourglass() {},
+        grimoireSelected,
+        onSelectGrimoire,
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+        onImportWish() {},
+      }),
+    );
+  const open = sidebar(false, () => {});
+  const glass = open.indexOf("hourglass-nav");
+  const grimoire = open.indexOf("grimoire-nav");
+  assert.ok(glass >= 0 && grimoire > glass, open);
+  assert.match(
+    open,
+    /<button class="nav-item grimoire-nav " title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><span>Grimoire<\/span><\/button>$/,
+  );
+  // Shown, it is the entry selected.
+  assert.match(
+    sidebar(false, () => {}, true),
+    /<button class="nav-item grimoire-nav selected" title="Documentation"/,
+  );
+  // Folded: the book alone, its name and its tooltip kept.
+  assert.match(
+    sidebar(true, () => {}),
+    /<button class="nav-item grimoire-nav " title="Documentation" aria-label="Grimoire"><svg[^>]*lucide-book-marked[^>]*>[^]*?<\/svg><\/button>$/,
+  );
+  // No way to the documentation, no entry.
+  assert.doesNotMatch(sidebar(false), /grimoire-nav/);
+});
+
+// The Grimoire is a page of the window, as the Hourglass (W165): its header, then the site in a frame that fills the
+// page, in the window's theme and language, under the window's header rather than its own; never a dialog.
+test("the Grimoire is a page of the window, its site in a frame, no dialog", (t) => {
+  // The page the window has: its theme and its text size, which the frame's address carries.
+  const page = globalThis.document;
+  globalThis.document = {
+    documentElement: { dataset: { theme: "light", textSize: "compact" } },
+  };
+  t.after(() => (globalThis.document = page));
+  const { djinn } = hourglassDjinn();
+  const html = s.renderToStaticMarkup(h(s.DjinnProvider, { djinn }, h(s.Docs)));
+  assert.equal(s.GRIMOIRE, "grimoire");
+  assert.match(
+    html,
+    /^<div class="wish-view grimoire"><header class="topbar page-header"><div class="breadcrumbs"><strong>Grimoire<\/strong><\/div>/,
+  );
+  assert.match(
+    html,
+    /<iframe class="grimoire-frame" title="Grimoire" src="\/docs\/\?theme=light&amp;lang=en&amp;embedded=1&amp;text=compact"><\/iframe><\/div>$/,
+  );
+  assert.doesNotMatch(html, /role="dialog"|modal|aria-modal/);
 });
 
 // Ctrl+1 and Ctrl+2 (Q254) are the key's place: the digit row, whatever it types (& and e acute on AZERTY), or the numpad;
@@ -8070,7 +10876,7 @@ test("flightPlan includes waitingLead questions", () => {
   assert.equal(plan.waitingLead[0].item.id, "q-wait");
 });
 
-test("operating load gauge: click selects nearest notch, keyboard steps, colours per notch class", async () => {
+test("operating load gauge: click selects nearest notch, keyboard steps, round stops, colours per notch class", async () => {
   s.loadManager.setSnapshot({
     notch: s.LoadNotch.MEDIUM,
     auto: false,
@@ -8208,7 +11014,68 @@ test("operating load gauge: click selects nearest notch, keyboard steps, colours
   input = screen.one("operating-load-input");
   assert.equal(input["aria-valuenow"], 5);
 
-  // 3. Colours per notch class
+  // 3. A round stop per notch on the track (W28): a button named for its notch, the one in effect pressed and filled;
+  // a click on one sets its notch as its label does.
+  let stops = screen.all("operating-load-stop");
+  assert.deepEqual(
+    stops.map((b) => [b.type, b.props["aria-label"], b.props.style.left]),
+    [
+      ["button", "Minimal", "0%"],
+      ["button", "Medium", "25%"],
+      ["button", "High", "50%"],
+      ["button", "Max", "75%"],
+      ["button", "Overclock", "100%"],
+    ],
+  );
+  const stopOf = (slug) =>
+    screen
+      .all("operating-load-stop")
+      .find((b) => b.props["data-notch"] === slug).props;
+  assert.equal(stopOf("overclock")["aria-pressed"], true);
+  assert.match(stopOf("overclock").className, /\bcurrent\b/);
+  assert.match(
+    stopOf("overclock")["aria-description"],
+    /^Overclock: up to \d+ workers/,
+  );
+  let propagated = true;
+  stopOf("medium").onClick({
+    stopPropagation() {
+      propagated = false;
+    },
+  });
+  assert.equal(propagated, false, "the track's click does not run after it");
+  slider = screen.one("operating-load-slider");
+  assert.equal(slider["data-notch"], "medium");
+  input = screen.one("operating-load-input");
+  assert.equal(input["aria-valuenow"], 2);
+  stops = screen.all("operating-load-stop");
+  assert.deepEqual(
+    stops.map((b) => b.props["aria-pressed"]),
+    [false, true, false, false, false],
+  );
+  assert.deepEqual(
+    stops.map((b) => /\bcurrent\b/.test(b.props.className)),
+    [false, true, false, false, false],
+  );
+  assert.match(
+    screen
+      .all("operating-load-notch")
+      .find((b) => b.props["data-notch"] === "medium").props.className,
+    /active/,
+  );
+  // Hovering a stop previews its notch (the filled stop moves there), the one in effect staying pressed.
+  const track = { getBoundingClientRect: () => ({ left: 0, width: 200 }) };
+  screen.one("operating-load-slider").onMouseMove({
+    clientX: 150,
+    currentTarget: track,
+  });
+  assert.equal(screen.one("operating-load-slider")["data-notch"], "max");
+  assert.match(stopOf("max").className, /\bcurrent\b/);
+  assert.equal(stopOf("medium")["aria-pressed"], true);
+  screen.one("operating-load-slider").onMouseLeave();
+  assert.equal(screen.one("operating-load-slider")["data-notch"], "medium");
+
+  // 4. Colours per notch class
   // Check that all 5 notches correctly reflect their active class and data-notch
   for (const notch of s.NOTCHES) {
     const slug = s.notchSlug(notch);
@@ -8220,6 +11087,45 @@ test("operating load gauge: click selects nearest notch, keyboard steps, colours
       .find((b) => b.props.className.includes("active"));
     assert.equal(active.props["data-notch"], slug);
   }
+});
+
+test("operating load: a Get answered after the stream's first message never takes the stream's place (W248)", async () => {
+  // The e2e race: the stream sends medium, the notch goes to minimal and back to medium within the stream's beat, so
+  // it sends nothing more; the Get, answered in between, read minimal. Kept, it showed minimal for good.
+  const N = s.LoadNotch;
+  const msg = (notch) => ({
+    notch,
+    auto: false,
+    chosenNotch: notch,
+    notchSlots: [],
+    slots: 4,
+    forcedWorkers: 0,
+    lowerPauses: true,
+  });
+  let answer;
+  const fake = {
+    clients: {
+      load: {
+        get: () => new Promise((resolve) => (answer = resolve)),
+        set: async ({ notch }) => msg(notch),
+      },
+    },
+    load: {
+      subscribe: (callback) => {
+        callback(msg(N.MEDIUM));
+        return () => {};
+      },
+    },
+  };
+  s.loadManager.setSnapshot({ notch: N.HIGH, chosenNotch: N.HIGH });
+  // Listened to first: the new djinn restarts the store on it, whatever the tests before left started.
+  const unsubscribe = s.loadManager.subscribe(() => {});
+  s.loadManager.setDjinn(fake);
+  assert.equal(s.loadManager.getSnapshot().notch, N.MEDIUM);
+  answer(msg(N.MINIMAL));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(s.loadManager.getSnapshot().notch, N.MEDIUM);
+  unsubscribe();
 });
 
 test("operating load forecast: binding resource (memory-bound vs cpu-bound) and consistent two-line numbers", async () => {
@@ -8323,20 +11229,20 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
     const row = screen.all("operating-load-forecast-row")[0];
     return {
       text: s.renderToStaticMarkup(row.props.children),
-      title:
+      description:
         s
           .renderToStaticMarkup(row.props.children)
-          .match(/title="([^"]*)"/)?.[1] ?? "",
+          .match(/aria-description="([^"]*)"/)?.[1] ?? "",
     };
   };
-  const notchTitle = (slug) =>
+  const notchDescription = (slug) =>
     live(s.OperatingLoadSlider, {})
       .all("operating-load-notch")
-      .find((b) => b.props["data-notch"] === slug).props.title;
+      .find((b) => b.props["data-notch"] === slug).props["aria-description"];
 
   s.loadManager.setPreviewNotch(null);
   s.loadManager.setSnapshot(base);
-  // Each notch's tooltip names the server's count, never an estimate of its own.
+  // Each notch's description names the server's count, never an estimate of its own.
   for (const [slug, n] of [
     ["minimal", N.MINIMAL],
     ["medium", N.MEDIUM],
@@ -8345,7 +11251,7 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
     ["overclock", N.OVERCLOCK],
   ])
     assert.match(
-      notchTitle(slug),
+      notchDescription(slug),
       new RegExp(`up to ${notchSlots[n]} workers`),
       slug,
     );
@@ -8354,7 +11260,7 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
   assert.match(row.text, /CPU: 6 of 6 workers run/);
   assert.doesNotMatch(row.text, /operating-load-forecast-over/);
   assert.match(
-    row.title,
+    row.description,
     /Lowering the load pauses the newest workers above its limit/,
   );
 
@@ -8370,7 +11276,10 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
     row.text,
     /data-over="finish"[^>]*> · 3 above the limit finish their run/,
   );
-  assert.match(row.title, /lets the workers above its limit finish their run/);
+  assert.match(
+    row.description,
+    /lets the workers above its limit finish their run/,
+  );
   s.loadManager.setPreviewNotch(null);
 
   // At Medium, 4 run: 1 started by hand, the other above the limit finishing its run (a gate, a correction).
@@ -8392,8 +11301,321 @@ test("operating load: each notch shows what the scheduler lets run there, and wh
 
   // Before the server says, the estimate stands in.
   s.loadManager.setSnapshot({ ...base, notchSlots: {}, runningWorkers: 0 });
-  assert.match(notchTitle("medium"), /up to 4 workers/);
+  assert.match(notchDescription("medium"), /up to 4 workers/);
   s.loadManager.setSnapshot(base);
+});
+
+// The pointer on the track previews the stop nearest it, gaps included: between Max and Overclock it never falls back
+// to the level in effect (W37). Nothing applies before a click.
+test("operating load: the hover previews the stop nearest the pointer along the whole track (W37)", () => {
+  const N = s.LoadNotch;
+  s.loadManager.setSnapshot({
+    notch: N.HIGH,
+    auto: false,
+    chosenNotch: N.HIGH,
+    memoryTotalBytes: 32n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 24n * 1024n * 1024n * 1024n,
+    baseSlots: 8,
+  });
+  s.loadManager.setPreviewNotch(null);
+  const screen = live(s.OperatingLoadSlider, {});
+  const track = { getBoundingClientRect: () => ({ left: 10, width: 200 }) };
+  const at = (x) => {
+    screen.one("operating-load-slider").onMouseMove({
+      clientX: 10 + x,
+      currentTarget: track,
+    });
+    return screen.one("operating-load-slider")["data-notch"];
+  };
+  try {
+    // Stops at 0, 50, 100, 150 and 200: from Max across the gap to Overclock, then back between High and Max.
+    const seen = [
+      150, 160, 170, 174, 176, 185, 200, 186, 176, 174, 140, 126, 124, 101,
+    ].map(at);
+    assert.deepEqual(seen, [
+      "max",
+      "max",
+      "max",
+      "max",
+      "overclock",
+      "overclock",
+      "overclock",
+      "overclock",
+      "overclock",
+      "max",
+      "max",
+      "max",
+      "high",
+      "high",
+    ]);
+    // Beyond either end, the end stops.
+    assert.equal(at(-20), "minimal");
+    assert.equal(at(260), "overclock");
+    // A label previews its own notch, whatever the stop nearest it.
+    screen
+      .all("operating-load-notch")
+      .find((b) => b.props["data-notch"] === "medium")
+      .props.onMouseMove({ stopPropagation() {} });
+    assert.equal(screen.one("operating-load-slider")["data-notch"], "medium");
+    // Nothing applied while hovering; leaving the track shows the level in effect again.
+    assert.equal(s.loadManager.getSnapshot().notch, N.HIGH);
+    screen.one("operating-load-slider").onMouseLeave();
+    assert.equal(screen.one("operating-load-slider")["data-notch"], "high");
+    // The helper itself: the nearest index, none on a box not drawn.
+    assert.equal(s.nearestNotch(37, { left: 0, width: 100 }), 1);
+    assert.equal(s.nearestNotch(38, { left: 0, width: 100 }), 2);
+    assert.equal(s.nearestNotch(10, { left: 0, width: 0 }), null);
+  } finally {
+    s.loadManager.setPreviewNotch(null);
+  }
+});
+
+// A real gauge: a solid fill from the track's left end to the level in effect, a striped one on to the previewed
+// level, rising or going down (W37).
+test("operating load: the fill rises to the level in effect, striped to the previewed one (W37)", () => {
+  const N = s.LoadNotch;
+  s.loadManager.setSnapshot({
+    notch: N.HIGH,
+    auto: false,
+    chosenNotch: N.HIGH,
+  });
+  s.loadManager.setPreviewNotch(null);
+  const screen = live(s.OperatingLoadSlider, {});
+  const fill = () => {
+    const solid = screen.one("operating-load-fill");
+    const reach = screen.one("operating-load-fill-reach");
+    return [
+      solid.style.width,
+      solid["data-notch"],
+      reach.style.width,
+      reach["data-notch"],
+    ];
+  };
+  try {
+    assert.equal(s.stopAt(0), "calc(0.4375rem + 0 * (100% - 0.875rem))");
+    assert.equal(s.stopAt(2), "calc(0.4375rem + 0.5 * (100% - 0.875rem))");
+    assert.equal(s.stopAt(4), "calc(0.4375rem + 1 * (100% - 0.875rem))");
+    // At rest: both up to High.
+    assert.deepEqual(fill(), [s.stopAt(2), "high", s.stopAt(2), "high"]);
+    // Previewing Overclock: solid to High, striped on to Overclock in its colour.
+    s.loadManager.setPreviewNotch(N.OVERCLOCK);
+    assert.deepEqual(fill(), [s.stopAt(2), "high", s.stopAt(4), "overclock"]);
+    // Previewing Minimal: solid down to Minimal, striped over what High gives up.
+    s.loadManager.setPreviewNotch(N.MINIMAL);
+    assert.deepEqual(fill(), [s.stopAt(0), "high", s.stopAt(2), "minimal"]);
+    s.loadManager.setPreviewNotch(null);
+    // In Auto, the fill stands at the level Auto put in effect.
+    s.loadManager.setSnapshot({
+      notch: N.MAX,
+      auto: true,
+      chosenNotch: N.HIGH,
+    });
+    assert.deepEqual(fill(), [s.stopAt(3), "max", s.stopAt(3), "max"]);
+  } finally {
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setSnapshot({
+      notch: N.MEDIUM,
+      auto: false,
+      chosenNotch: N.MEDIUM,
+    });
+  }
+});
+
+// W32 left the Overclock risk and Auto's explanation in aria-description only: the coloured preview shows them (W37).
+test("operating load: the preview warns of Overclock's risk and explains Auto (W37)", () => {
+  const N = s.LoadNotch;
+  const base = {
+    notch: N.HIGH,
+    auto: false,
+    chosenNotch: N.HIGH,
+    memoryTotalBytes: 32n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 24n * 1024n * 1024n * 1024n,
+    baseSlots: 8,
+  };
+  const risk =
+    /Risk: Djinn will saturate CPU and memory; other applications may slow down or be terminated\./;
+  const auto =
+    /Auto: follows the load of the programs outside Djinn, never Djinn&#x27;s own work nor your presence: one level down when that load stays high for 3 minutes, one level up towards High when it stays low for 5\./;
+  const notes = () =>
+    live(s.OperatingLoadForecast, {})
+      .all("operating-load-forecast-note")
+      .map((n) => [
+        n.props.className,
+        s.renderToStaticMarkup(n.props.children),
+      ]);
+  try {
+    s.loadManager.setSnapshot(base);
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setPreviewAuto(false);
+    assert.deepEqual(notes(), []);
+
+    // Overclock previewed: the risk, styled as a warning.
+    s.loadManager.setPreviewNotch(N.OVERCLOCK);
+    let found = notes();
+    assert.equal(found.length, 1);
+    assert.match(found[0][0], /\boperating-load-forecast-risk\b/);
+    assert.match(found[0][1], risk);
+    // Overclock set: the risk again; another level previewed over it shows that level's preview, without it.
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setSnapshot({
+      ...base,
+      notch: N.OVERCLOCK,
+      chosenNotch: N.OVERCLOCK,
+    });
+    assert.match(notes()[0][1], risk);
+    s.loadManager.setPreviewNotch(N.MEDIUM);
+    assert.deepEqual(notes(), []);
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setSnapshot(base);
+
+    // The Auto button hovered or focused: Auto's explanation, not as a warning.
+    const button = () =>
+      live(s.OperatingLoadAuto, {})
+        .all("operating-load-notch")
+        .find((b) => b.props["data-notch"] === "auto").props;
+    button().onMouseEnter();
+    found = notes();
+    assert.equal(found.length, 1);
+    assert.doesNotMatch(found[0][0], /risk/);
+    assert.match(found[0][1], auto);
+    button().onMouseLeave();
+    assert.deepEqual(notes(), []);
+    button().onFocus();
+    assert.match(notes()[0][1], auto);
+    button().onBlur();
+    assert.deepEqual(notes(), []);
+    // Auto on: the explanation stays, with the risk when Auto climbed to Overclock.
+    s.loadManager.setSnapshot({
+      ...base,
+      auto: true,
+      notch: N.OVERCLOCK,
+      chosenNotch: N.OVERCLOCK,
+    });
+    found = notes();
+    assert.equal(found.length, 2);
+    assert.match(found[0][1], risk);
+    assert.match(
+      found[1][1],
+      /one level up towards Overclock when it stays low/,
+    );
+
+    // And why auto runs at its notch, in one line (W253).
+    s.loadManager.setSnapshot({
+      ...base,
+      auto: true,
+      notch: N.MAX,
+      chosenNotch: N.MAX,
+      autoReason: {
+        outsidePercent: 12,
+        memory: false,
+        windowSeconds: 300,
+        step: s.LoadAutoStep.CEILING,
+        notch: N.MAX,
+        inSeconds: 0,
+      },
+    });
+    found = notes();
+    assert.equal(found.length, 2);
+    assert.match(found[1][0], /\boperating-load-auto-reason\b/);
+    assert.equal(found[1][1], "Outside load 12 % for 5m: up to Max");
+    s.loadManager.setSnapshot({
+      ...base,
+      auto: true,
+      notch: N.MEDIUM,
+      chosenNotch: N.MAX,
+      autoReason: {
+        outsidePercent: 64,
+        memory: false,
+        windowSeconds: 40,
+        step: s.LoadAutoStep.LOWER,
+        notch: N.MINIMAL,
+        inSeconds: 80,
+      },
+    });
+    assert.equal(
+      notes()[1][1],
+      "Outside load 64 % for 40s: down to Minimal in 1m20s",
+    );
+    assert.match(
+      s.renderToStaticMarkup(h(s.OperatingLoad)),
+      /data-effective="medium" aria-description="Outside load 64 % for 40s: down to Minimal in 1m20s"/,
+    );
+    s.loadManager.setSnapshot({
+      ...base,
+      auto: true,
+      notch: N.OVERCLOCK,
+      chosenNotch: N.OVERCLOCK,
+    });
+
+    // Both stay in aria-description, and no title anywhere (W32).
+    const html = s.renderToStaticMarkup(h(s.OperatingLoad));
+    assert.doesNotMatch(html, /\stitle=/);
+    assert.match(
+      html,
+      /aria-label="Overclock"[^>]*aria-description="Overclock: up to \d+ workers[^"]*Risk: Djinn will saturate CPU and memory/,
+    );
+    assert.match(
+      html,
+      /aria-description="Auto: follows the load of the programs outside Djinn/,
+    );
+  } finally {
+    s.loadManager.setPreviewNotch(null);
+    s.loadManager.setPreviewAuto(false);
+    s.loadManager.setSnapshot({
+      ...base,
+      notch: N.MEDIUM,
+      chosenNotch: N.MEDIUM,
+    });
+  }
+});
+
+// The coloured preview is the gauge's only hover: a title on any of its elements brought the browser's own
+// tooltip up late over it (W32). Names stay in aria-label, the explanations in aria-description.
+test("operating load: no element of the gauge or its preview carries a title (W32)", () => {
+  const N = s.LoadNotch;
+  const base = {
+    notch: N.HIGH,
+    auto: false,
+    chosenNotch: N.HIGH,
+    engagedMemoryBytes: 8n * 1024n * 1024n * 1024n,
+    workerMemoryBytes: 6n * 1024n * 1024n * 1024n,
+    memoryTotalBytes: 31n * 1024n * 1024n * 1024n,
+    memoryAvailableBytes: 14n * 1024n * 1024n * 1024n,
+    workerForecastBytes: 1536n * 1024n * 1024n,
+    bindingResource: "cpu",
+    cpuSlots: 8,
+    memorySlots: 10,
+    baseSlots: 8,
+    runningWorkers: 6,
+    pausedWorkers: 1,
+    forcedWorkers: 1,
+    lowerPauses: true,
+  };
+  const states = [
+    [base, null],
+    [base, N.MINIMAL],
+    [{ ...base, auto: true, notch: N.MEDIUM }, null],
+  ];
+  try {
+    for (const [snapshot, preview] of states) {
+      s.loadManager.setSnapshot(snapshot);
+      s.loadManager.setPreviewNotch(preview);
+      const html = s.renderToStaticMarkup(h(s.OperatingLoad));
+      const label = `auto ${snapshot.auto}, preview ${preview}`;
+      assert.match(html, /class="operating-load-forecast /, label);
+      assert.doesNotMatch(html, /\stitle=/, label);
+      assert.match(html, /aria-label="Operating load"/, label);
+      assert.match(html, /aria-description="[^"]*up to \d+ workers?/, label);
+    }
+    s.loadManager.setSnapshot(base);
+    s.loadManager.setPreviewNotch(null);
+    const html = s.renderToStaticMarkup(h(s.OperatingLoad));
+    for (const n of ["Minimal", "Medium", "High", "Max", "Overclock"])
+      assert.match(html, new RegExp(`aria-label="${n}"`), n);
+    assert.match(html, /aria-description="Lowering the load pauses/);
+  } finally {
+    s.loadManager.setPreviewNotch(null);
+  }
 });
 
 test("azima counters and states in the window are right before any azima is opened on a wish with more tasks than one page", async () => {
@@ -8696,6 +11918,103 @@ test("a long diff loads its next chunk as the reader scrolls near its end, a hun
   }
 });
 
+test("the uncommitted diff asks for the worktree's changes, read only, and says when the worktree is clean or gone", async () => {
+  const container = setupMockDom();
+  const asked = [];
+  let answer = {};
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.TaskService, {
+      diff: (req) => {
+        asked.push([req.file, req.uncommitted]);
+        if (req.file !== "") {
+          return {
+            file: {
+              path: "notes.md",
+              totalLines: 6,
+              hunks: [
+                {
+                  header: "@@ -0,0 +1 @@",
+                  lines: [
+                    {
+                      kind: s.DiffLineKind.ADDED,
+                      newLine: 1,
+                      text: "a draft",
+                      tokens: [],
+                    },
+                  ],
+                },
+              ],
+            },
+            base: "abc",
+          };
+        }
+        return answer;
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const text = (node) =>
+    node.childNodes.length > 0
+      ? node.childNodes.map(text).join("")
+      : (node.nodeValue ?? node.textContent ?? "");
+  const count = (node, cls) =>
+    (node.attributes?.class?.split(" ").includes(cls) ? 1 : 0) +
+    node.childNodes.reduce((n, c) => n + count(c, cls), 0);
+  const settle = async () => {
+    for (let i = 0; i < 5; i++) {
+      await s.act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+  };
+  const root = s.createRoot(container);
+  const show = async (key) => {
+    s.act(() => {
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(s.TaskDiffView, {
+            key,
+            task: { id: "t1", comments: [] },
+            uncommitted: true,
+          }),
+        ),
+      );
+    });
+    await settle();
+    return text(container);
+  };
+  try {
+    answer = {
+      files: [{ path: "notes.md", added: 1, status: s.DiffStatus.ADDED }],
+      base: "abc",
+    };
+    const shown = await show("changed");
+    assert.deepEqual(asked, [
+      ["", true],
+      ["notes.md", true],
+    ]);
+    assert.match(shown, /a draft/);
+    assert.equal(count(container, "diff-line-row"), 1);
+    // Work not committed has no commit a comment could name: no comment on it.
+    assert.equal(count(container, "diff-add-comment-btn"), 0);
+
+    answer = { files: [], base: "abc" };
+    assert.match(
+      await show("clean"),
+      /The worktree is clean: nothing left uncommitted\./,
+    );
+    answer = { files: [], noWorktree: true };
+    assert.match(await show("gone"), /This task has no worktree any more/);
+  } finally {
+    s.act(() => root.unmount());
+    for (const handle of process._getActiveHandles()) {
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+    }
+  }
+});
+
 test("the Review tab lists merged work, its merges under the task they serve, checks each, and counts what is left", async () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const merged = { state: s.IntegrationState.COMMITTED, sha: "abc" };
@@ -8736,7 +12055,7 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
         },
       ],
     }),
-    // Not merged: its tests failed; still running; an azima; a question worker, without a branch.
+    // Not merged: its tests failed; still running; an azima; a question worker, without a branch; a 0-commit task without a merge sha.
     work("W2", { integration: { state: s.IntegrationState.RED } }),
     work("W3", { status: s.TaskStatus.RUNNING, integration: undefined }),
     work("W4", { kind: s.TaskKind.AZIMA, branch: "" }),
@@ -8747,6 +12066,9 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
     work("W7", reviewed("local")),
     // A push correction serves no task: a row of its own.
     work("W8", { correction: { failure: { taskIds: [] }, attempt: 1 } }),
+    work("W9", {
+      integration: { state: s.IntegrationState.COMMITTED, sha: "" },
+    }),
   ];
   const rows = s.reviewRows(tasks);
   assert.deepEqual(
@@ -8779,7 +12101,7 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
   );
   assert.doesNotMatch(html, /review-code">W7</);
   assert.match(html, /Show 1 reviewed/);
-  for (const code of ["W2", "W3", "W4", "W5"])
+  for (const code of ["W2", "W3", "W4", "W5", "W9"])
     assert.doesNotMatch(html, new RegExp(`review-code">${code}<`));
 
   // A click on the box checks the task; checked, it says who and when, and a click takes the mark off.
@@ -8828,7 +12150,7 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
   );
   assert.match(
     tabs,
-    /id="view-tab-tasks".*id="view-tab-review" aria-selected="true" class="active">Review<span class="count">3<\/span>.*id="view-tab-decisions"/,
+    /id="view-tab-tasks".*id="view-tab-review" aria-selected="true" class="active"><span class="djinn-eye-perch" data-perch="tab:review" aria-hidden="true"><\/span>Review<span class="count">3<\/span>.*id="view-tab-decisions"/,
   );
   // The flying carpet has no Review tab.
   assert.doesNotMatch(
@@ -8843,4 +12165,1753 @@ test("the Review tab lists merged work, its merges under the task they serve, ch
     ),
     /view-tab-review/,
   );
+});
+
+test("MakeWish requires an active lead before a wish can be created", async () => {
+  let resumed = 0;
+  const page = live(s.MakeWish, {
+    projects: [],
+    active: 0,
+    lead: undefined,
+    onMade() {},
+    onClose() {},
+    onResumeLead: async () => {
+      resumed++;
+    },
+  });
+
+  // With no active lead, the creation screen shows the lead onboarding step and command.
+  const withoutLeadHtml = page.html();
+  assert.match(
+    withoutLeadHtml,
+    /No Djinn is running to receive this wish: start the Djinn first, or run djinn lead resume\./,
+  );
+  assert.match(withoutLeadHtml, /djinn lead resume/);
+  assert.match(withoutLeadHtml, />Start the Djinn</);
+
+  // Typing a wish keeps submission disabled until a lead is running.
+  const findByProp = (pred) => {
+    const found = [];
+    const walk = (node) => {
+      if (Array.isArray(node)) node.forEach(walk);
+      else if (node && typeof node === "object" && node.props) {
+        if (pred(node)) found.push(node);
+        walk(node.props.children);
+      }
+    };
+    walk(page.all("section")[0]);
+    return found;
+  };
+  const composerNode = findByProp(
+    (n) => typeof n.props.onChange === "function" && "invalid" in n.props,
+  )[0];
+  assert.ok(composerNode, "WishComposer mounted");
+  composerNode.props.onChange("Build a flying carpet.", true);
+
+  const submitButton = () =>
+    findByProp((n) => n.props.type === "submit")[0].props;
+  assert.equal(
+    submitButton().disabled,
+    true,
+    "submit stays disabled while no lead is active",
+  );
+
+  // Starting the lead from New Wish runs the resume action, clears the warning, and unlocks submission.
+  const resumeButton = page
+    .all("button")
+    .find((b) => b.props.children === "Start the Djinn");
+  assert.ok(resumeButton, "Start the Djinn button rendered");
+  resumeButton.props.onClick();
+  await page.settle();
+  assert.equal(resumed, 1);
+  assert.doesNotMatch(page.html(), /No Djinn is running to receive this wish/);
+  assert.equal(
+    submitButton().disabled,
+    false,
+    "submit is enabled once the lead is started",
+  );
+
+  // When a lead is already active, no lead warning is shown and submission is enabled as soon as a prompt is typed.
+  const activePage = live(s.MakeWish, {
+    projects: [],
+    active: 0,
+    lead: {
+      provider: s.Provider.CLAUDE_CODE,
+      sessionId: "lead-session",
+      directory: "/workspace/lamp",
+    },
+    onMade() {},
+    onClose() {},
+  });
+  assert.doesNotMatch(
+    activePage.html(),
+    /No Djinn is running to receive this wish/,
+  );
+  assert.doesNotMatch(activePage.html(), /djinn lead resume/);
+
+  // When the lead has exited with an error, MakeWish surfaces the exit trouble and blocks submission.
+  const exitedPage = live(s.MakeWish, {
+    projects: [],
+    active: 0,
+    lead: {
+      provider: s.Provider.CLAUDE_CODE,
+      sessionId: "lead-session",
+      directory: "/workspace/lamp",
+    },
+    leadExit: { code: 1 },
+    onMade() {},
+    onClose() {},
+  });
+  assert.match(exitedPage.html(), /The Djinn ended \(code 1\)/);
+  assert.match(exitedPage.html(), /djinn lead resume/);
+});
+
+// The glance (Decision Q08, mockup L04 v2, W219): beside the questions and on a wish's page, each wish's workers in
+// one order whatever their kind: what is in progress on top, the one begun first above (work, investigation,
+// investigator, lit ifrit), then the paused ones, a circled pause with why on hover, then what waits (under the task it
+// waits on when that one waits too, else naming it and its wish), then what is planned; an urgent task carries its
+// label. Below them, the watchers, a line each, with what they said last, since when, and the request they watch.
+test("the glance lists every worker in one order by state: in progress, paused, waiting, planned; then the watchers", async () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const nowS = Math.floor(Date.now() / 1000);
+  const lamp = wish(
+    "01a1440a-0000-7000-8000-000000000001",
+    "Ship the lamp",
+    s.WishState.ACTIVE,
+    1,
+  );
+  const qol = wish(
+    "01a1440a-0000-7000-8000-000000000002",
+    "Djinn QoL",
+    s.WishState.ACTIVE,
+    2,
+  );
+  const task = (wishId, code, status, extra = {}) => ({
+    id: `${wishId.slice(-1)}-${code}`,
+    wishId,
+    code,
+    title: `Task ${code}`,
+    status,
+    dependsOn: [],
+    createTime: at(1),
+    ...extra,
+  });
+  const L = (code, status, extra) => task(lamp.id, code, status, extra);
+  const id = (wishId, code) => `${wishId.slice(-1)}-${code}`;
+  const begun = (seconds) => ({ firstStartTime: at(seconds) });
+  const tasks = {
+    [lamp.id]: [
+      L("T1", s.TaskStatus.PENDING, {
+        kind: s.TaskKind.AZIMA,
+        azima: {
+          state: s.AzimaState.IN_PROGRESS,
+          pr: { url: "https://github.com/acme/lamp/pull/40" },
+        },
+      }),
+      // Running, begun at 100; it forks W17, cut short.
+      L("W1", s.TaskStatus.RUNNING, {
+        partOf: id(lamp.id, "T1"),
+        forkOf: "W17",
+        ...begun(100),
+      }),
+      // W3 waits on W2, which waits on W1, running: W2 names W1 in its own place, W3 sits under W2.
+      L("W3", s.TaskStatus.PENDING, { dependsOn: [id(lamp.id, "W2")] }),
+      L("W2", s.TaskStatus.PENDING, { dependsOn: [id(lamp.id, "W1")] }),
+      // W4's dependency is done: planned.
+      L("W4", s.TaskStatus.PENDING, { dependsOn: [id(lamp.id, "W10")] }),
+      L("W5", s.TaskStatus.PENDING, { dependsOn: [id(qol.id, "W26")] }),
+      // The investigator began before W1: above it.
+      L("W6", s.TaskStatus.RUNNING, {
+        role: s.TaskRole.INVESTIGATOR,
+        question: "Q4",
+        ...begun(50),
+      }),
+      L("W7", s.TaskStatus.RUNNING, {
+        provider: s.Provider.WATCH,
+        babysit: {
+          url: "https://gitlab.com/acme/lamp/-/merge_requests/3",
+          number: 3,
+        },
+        lastLine: "GREEN",
+        lastLineTime: at(nowS - 720),
+        ...begun(10),
+      }),
+      // Its request is its azima's.
+      L("W8", s.TaskStatus.RUNNING, {
+        provider: s.Provider.WATCH,
+        partOf: id(lamp.id, "T1"),
+        lastLine: "CI_FAILED",
+        ...begun(20),
+      }),
+      L("W9", s.TaskStatus.STOPPED, {
+        provider: s.Provider.WATCH,
+        error: "stopped on request",
+        ...begun(5),
+      }),
+      L("W10", s.TaskStatus.DONE, { endTime: at(5) }),
+      L("W11", s.TaskStatus.FAILED, { endTime: at(5) }),
+      L("W12", s.TaskStatus.WAITING),
+      // A lit ifrit, listening; an urgent task; an investigation: all in progress, by when they began.
+      L("W13", s.TaskStatus.RUNNING, {
+        kind: s.TaskKind.IFRIT,
+        ifrit: { state: s.IfritState.LISTENING },
+        ...begun(200),
+      }),
+      L("W20", s.TaskStatus.RUNNING, { urgent: true, ...begun(300) }),
+      L("W21", s.TaskStatus.RUNNING, {
+        kind: s.TaskKind.INVESTIGATION,
+        ...begun(250),
+      }),
+      // Paused: held still, stopped on request, its provider's limit to wait for; cut short and forked: gone.
+      L("W14", s.TaskStatus.PAUSED, {
+        runs: [{ reason: "pause" }],
+        ...begun(20),
+      }),
+      L("W15", s.TaskStatus.STOPPED, {
+        error: "stopped on request",
+        ...begun(30),
+      }),
+      L("W16", s.TaskStatus.RESUMING, {
+        resumeAfter: at(nowS + 3600),
+        ...begun(10),
+      }),
+      L("W17", s.TaskStatus.INTERRUPTED, begun(5)),
+      L("W18", s.TaskStatus.CANCELLED, begun(5)),
+    ],
+    [qol.id]: [task(qol.id, "W26", s.TaskStatus.RUNNING)],
+  };
+  const all = [...tasks[lamp.id], ...tasks[qol.id]];
+  const titles = new Map([
+    [lamp.id, lamp.title],
+    [qol.id, qol.title],
+  ]);
+  const glance = s.glanceOf(
+    tasks[lamp.id],
+    (x) => all.find((t) => t.id === x),
+    (x) => titles.get(x),
+  );
+  assert.deepEqual(
+    glance.rows.map((r) => [
+      r.task.code,
+      r.state,
+      r.depth,
+      r.after ?? "",
+      r.afterWish ?? "",
+    ]),
+    [
+      ["W6", "investigate", 0, "", ""],
+      ["W1", "run", 0, "", ""],
+      ["W13", "run", 0, "", ""],
+      ["W21", "run", 0, "", ""],
+      ["W20", "run", 0, "", ""],
+      ["W16", "paused", 0, "", ""],
+      ["W14", "paused", 0, "", ""],
+      ["W15", "paused", 0, "", ""],
+      ["W2", "wait", 0, "W1", ""],
+      ["W3", "wait", 1, "W2", ""],
+      ["W5", "wait", 0, "W26", "Djinn QoL"],
+      ["W4", "plan", 0, "", ""],
+    ],
+  );
+  assert.deepEqual(
+    glance.watchers.map((x) => [x.task.code, x.state, x.url]),
+    [
+      ["W7", "watch", "https://gitlab.com/acme/lamp/-/merge_requests/3"],
+      ["W8", "watch", "https://github.com/acme/lamp/pull/40"],
+      ["W9", "paused", ""],
+    ],
+  );
+  // A dependency no wish read holds nothing back: planned.
+  const lone = s.glanceOf(
+    [L("W5", s.TaskStatus.PENDING, { dependsOn: ["gone"] })],
+    () => undefined,
+    () => undefined,
+  );
+  assert.deepEqual(
+    lone.rows.map((r) => r.state),
+    ["plan"],
+  );
+  // The side panel counts the same: 4 paused (3 workers and a watcher), W17 forked into W1 none.
+  const counted = s.runningOf(tasks[lamp.id]);
+  assert.deepEqual(
+    [counted.running, counted.investigating, counted.ifrits, counted.paused],
+    [3, 1, 1, 4],
+  );
+
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [lamp, qol] }) });
+    service(s.TaskService, {
+      list: (req) => ({ tasks: tasks[req.wishId] ?? [] }),
+    });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const closes = [lamp, qol].map((w) => djinn.store.open(w.id));
+  await djinn.store.changed(lamp.id, [s.Change.WISH]);
+  await djinn.store.changed(qol.id, [s.Change.WISH]);
+  closes.forEach((close) => close());
+  const render = (node) =>
+    s.renderToStaticMarkup(h(s.DjinnProvider, { djinn }, node));
+
+  // The flying carpet: each active wish under its title, which opens it, with its counts, each worker once.
+  const plan = render(
+    h(s.FlightPlan, { wishes: [lamp, qol], onOpen() {}, onToast() {} }),
+  );
+  assert.doesNotMatch(plan, /plan-wish/);
+  assert.match(plan, /<section class="glance" aria-label="What runs">/);
+  assert.match(
+    plan,
+    /<button type="button" title="Open this wish">Ship the lamp<\/button><span class="glance-count">1 ifrit lit · 3 running · 1 investigating · 4 paused · 4 to come · 2 watching<\/span>/,
+  );
+  assert.match(
+    plan,
+    /<button type="button" title="Open this wish">Djinn QoL<\/button><span class="glance-count">1 running<\/span>/,
+  );
+  // One list, in the glance's order: no list of investigators apart.
+  const wide = plan.slice(
+    plan.indexOf('class="glance-wide"'),
+    plan.indexOf('class="glance-narrow"'),
+  );
+  const lampPart = wide.slice(0, wide.indexOf("Djinn QoL</button>"));
+  assert.doesNotMatch(plan, /glance-investigators/);
+  assert.deepEqual(
+    [
+      ...lampPart.matchAll(
+        /class="glance-row ([a-z ]+)" title="[^"·]+· (W\d+) /g,
+      ),
+    ].map((m) => `${m[2]} ${m[1]}`),
+    [
+      "W6 investigate",
+      "W1 run",
+      "W13 run",
+      "W21 run",
+      "W20 run",
+      "W16 paused",
+      "W14 paused",
+      "W15 paused",
+      "W2 wait",
+      "W3 wait child",
+      "W5 wait",
+      "W4 plan",
+      "W7 watch watch",
+      "W8 watch watch",
+      "W9 watch paused",
+    ],
+  );
+  // Running blue; the investigator violet, naming its question; the lit ifrit's flame.
+  assert.match(
+    plan,
+    /<li class="glance-item"><button type="button" class="glance-row run" title="Running · W1 Task W1"><span class="glance-dot run" role="img" aria-label="Running"><\/span><span class="glance-code">W1<\/span>/,
+  );
+  assert.match(
+    plan,
+    /class="glance-row investigate" title="Investigating · W6 Task W6"><span class="glance-dot investigate"[\s\S]*?<span class="glance-after">on Q4<\/span>/,
+  );
+  assert.match(
+    plan,
+    /class="glance-row run" title="[^"]+ · W13 Task W13"><span class="glance-flame tone-ifrit"/,
+  );
+  // An urgent task and an investigation carry the tasks view's labels.
+  assert.match(
+    plan,
+    /title="Running · W20 Task W20">[\s\S]*?<span class="glance-title"><span class="urgent-label" title="[^"]+">Urgent<\/span>Task W20/,
+  );
+  assert.match(
+    plan,
+    /title="Running · W21 Task W21">[\s\S]*?<span class="glance-title"><span class="investigation-label" title="[^"]+">Investigation<\/span>Task W21/,
+  );
+  // Paused: a circled pause, its word, and why on hover.
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row paused" title="Stopped · W15 Task W15\nstopped on request"><span class="glance-pause tone-paused" role="img" aria-label="Stopped"><svg[^>]*lucide-circle-pause[\s\S]*?<span class="glance-after">Stopped<\/span>/,
+  );
+  assert.match(plan, /title="Paused · W14 Task W14\npause"/);
+  assert.match(
+    plan,
+    /title="[^"]+ · W16 Task W16\nresumes after \d\d:\d\d[^"]*, once its usage limit resets"/,
+  );
+  assert.doesNotMatch(plan, /title="[^"]*· (W17|W18) /);
+  // Waiting: W2 names W1, at work, in its own place; W3 under W2.
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row wait" title="Waits · W2 Task W2">[\s\S]*?<span class="glance-after">waits on W1<\/span>/,
+  );
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row wait child" title="Waits · W3 Task W3" style="--depth:1">/,
+  );
+  assert.match(
+    plan,
+    /<li class="glance-item"><button type="button" class="glance-row wait" title="Waits · W5 Task W5">[\s\S]*?<span class="glance-after">waits on W26 · Djinn QoL<\/span>/,
+  );
+  assert.match(
+    plan,
+    /<li class="glance-item"><button type="button" class="glance-row plan" title="Planned · W4 Task W4"><span class="glance-dot plan"/,
+  );
+  // The watchers, unfolded: what they said last, since when (12 minutes ago when the test started, a second more once
+  // it crossed one), and their request, a link out.
+  assert.match(
+    plan,
+    /<li class="glance-item glance-watcher watch"><button type="button" class="glance-row watch watch" title="Watching · W7 Task W7"><span class="glance-eye tone-watching" role="img" aria-label="Watching"><svg[^>]*lucide-eye[\s\S]*?<span class="glance-code">W7<\/span><span class="glance-title"><span class="glance-watch-line">GREEN<\/span><span class="glance-since">12m(?:1s)?<\/span><\/span><\/button><a href="https:\/\/gitlab.com\/acme\/lamp\/-\/merge_requests\/3" class="glance-link" target="_blank" rel="noopener noreferrer">!3<svg[^>]*lucide-external-link/,
+  );
+  assert.match(
+    plan,
+    /<span class="glance-watch-line">CI_FAILED<\/span>[\s\S]*?<a href="https:\/\/github.com\/acme\/lamp\/pull\/40" class="glance-link"[^>]*>PR #40<svg/,
+  );
+  assert.match(
+    plan,
+    /class="glance-row watch paused" title="Stopped · W9 Task W9\nstopped on request"><span class="glance-pause tone-paused"/,
+  );
+  assert.doesNotMatch(
+    plan,
+    /glance-row[^"]*" title="[^"]*· W9 [^"]*"[^>]*>[\s\S]{0,400}glance-link/,
+  );
+  // Done, failed, waiting for your answer, azimas: not in the glance.
+  assert.doesNotMatch(plan, /title="[^"]*· (W10|W11|W12|T1) /);
+  // Gold is for what waits on you: never in the glance.
+  assert.doesNotMatch(plan, /glance[^"]*waiting/);
+  // The legend names the states shown, the pause among them.
+  assert.match(
+    plan,
+    /<p class="glance-legend">.*running.*investigating.*<span class="glance-pause tone-paused" aria-hidden="true">.*paused.*waits on a task.*planned.*watches<\/span><\/p>/,
+  );
+  // Narrow: one line per wish, a mark per worker in the same order, the watchers counted, the paused one marked.
+  assert.match(
+    plan,
+    /<button type="button" class="glance-line" title="Open this wish"><span class="name">Ship the lamp<\/span><span class="glance-line-marks">(<span class="glance-(dot (run|wait|plan|investigate)|flame tone-ifrit|pause tone-paused)" role="img" aria-label="[^"]+" title="[^"]+">(<svg[\s\S]*?<\/svg>)?<\/span>){12}<span class="glance-line-watch" title="2 watching">/,
+  );
+
+  // A wish's page: the wish alone, without its title; the task across wishes still names its wish.
+  const view = render(h(s.WishView, { wish: lamp, onToast() {} }));
+  assert.match(view, /<section class="glance" aria-label="What runs">/);
+  assert.doesNotMatch(view, /glance-head|Djinn QoL<\/button>/);
+  assert.match(view, /waits on W26 · Djinn QoL/);
+  assert.match(view, /class="glance-row paused" title="Stopped · W15 /);
+  assert.match(
+    view,
+    /<div class="glance-line"><span class="name">Ship the lamp<\/span>/,
+  );
+  // Its journal and rights below both columns.
+  assert.match(view, /<div class="main-after">/);
+
+  // The side panel counts the paused workers, beside the others, and on the folded rail's corner.
+  const side = (collapsed) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [lamp],
+        projects: [],
+        counts: { [lamp.id]: { questions: 0, merging: 0, ...counted } },
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  assert.match(
+    side(false),
+    /<span class="wish-sign tone-paused" title="4 workers paused: stopped, their work kept until they go on"[^>]*><svg[^>]*lucide-circle-pause[\s\S]*?<b>4<\/b>/,
+  );
+  assert.match(
+    side(true),
+    /<span class="wish-paused-corner" title="4 workers paused: [^"]+" aria-label="[^"]+" role="img"><svg[^>]*lucide-circle-pause[\s\S]*?<b>4<\/b><\/span>/,
+  );
+
+  // A wish where nothing runs or is planned says so.
+  const quiet = s.glanceOf(
+    [],
+    () => undefined,
+    () => undefined,
+  );
+  assert.deepEqual([quiet.rows, quiet.watchers], [[], []]);
+  const calm = wish(
+    "01a1440a-0000-7000-8000-000000000003",
+    "Calm",
+    s.WishState.ACTIVE,
+    3,
+  );
+  const calmPlan = render(
+    h(s.FlightPlan, { wishes: [calm], onOpen() {}, onToast() {} }),
+  );
+  assert.match(
+    calmPlan,
+    /<li class="glance-quiet">Nothing runs, nothing planned\.<\/li>/,
+  );
+  assert.match(
+    calmPlan,
+    /<span class="glance-line-marks zero">nothing<\/span>/,
+  );
+  assert.doesNotMatch(calmPlan, /glance-legend/);
+});
+
+// Beside the workers, the work on its way into each wish's branch and the repair workers (W137): the batch merging with
+// the check it runs and for how long, a push the checks hold with the tests that failed, the merges waiting in line
+// in the order Djinn merges them, and the repair workers apart, a wrench in place of their dot.
+test("the glance shows the merges in progress, the queue, a held push and the repair workers", async () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const nowS = Math.floor(Date.now() / 1000);
+  const qolId = "01a1440a-0000-7000-8000-000000000011";
+  const lampId = "01a1440a-0000-7000-8000-000000000012";
+  const id = (code) => `q-${code}`;
+  const task = (code, status, extra = {}) => ({
+    id: id(code),
+    wishId: qolId,
+    projectId: "p1",
+    code,
+    title: `Task ${code}`,
+    status,
+    dependsOn: [],
+    createTime: at(1),
+    ...extra,
+  });
+  const done = (code, integration, extra = {}) =>
+    task(code, s.TaskStatus.DONE, {
+      endTime: at(10),
+      integration: { branch: "feat/qol", ...integration },
+      ...extra,
+    });
+  const tasks = [
+    done("W1", { state: s.IntegrationState.INTEGRATING }),
+    done("W2", {
+      state: s.IntegrationState.INTEGRATING,
+      check: "lint",
+      updateTime: at(nowS - 80),
+    }),
+    done(
+      "W3",
+      {
+        state: s.IntegrationState.PENDING,
+        reason: "waits for W9, which repairs feat/qol",
+      },
+      { endTime: at(20) },
+    ),
+    done("W4", { state: s.IntegrationState.PENDING, alone: true }),
+    done("W5", { state: s.IntegrationState.COMMITTED, sha: "abc" }),
+    done("W6", { state: s.IntegrationState.RED, correctedBy: id("W9") }),
+    done("W7", {
+      state: s.IntegrationState.UNCOMMITTED,
+      reviewedBy: id("W10"),
+    }),
+    task("W9", s.TaskStatus.RUNNING, {
+      correction: {
+        attempt: 2,
+        failure: { state: s.IntegrationState.RED, taskIds: [id("W6")] },
+      },
+    }),
+    task("W10", s.TaskStatus.PENDING, {
+      review: { attempt: 1, taskIds: [id("W7")] },
+    }),
+    task("W11", s.TaskStatus.RUNNING, {
+      correction: { attempt: 1, failure: { mainSha: "f00d" } },
+    }),
+    task("W12", s.TaskStatus.RUNNING, {
+      correction: {
+        attempt: 1,
+        failure: { state: s.IntegrationState.RED },
+      },
+    }),
+    task("W13", s.TaskStatus.RUNNING),
+  ];
+  const qol = wish(qolId, "Djinn QoL", s.WishState.ACTIVE, 1, {
+    pushes: [
+      {
+        projectId: "p1",
+        held: "test: go tool task test exited 1",
+        correctedBy: id("W12"),
+        failure: {
+          command: "go tool task test",
+          output: "ok  pkg/a\n--- FAIL: TestLogin\n--- FAIL: TestLogout\nFAIL",
+        },
+        run: { branch: "feat/qol", stage: s.PushStage.HELD, note: "test" },
+      },
+    ],
+  });
+  const lamp = wish(lampId, "Ship the lamp", s.WishState.ACTIVE, 2, {
+    pushes: [
+      {
+        projectId: "p2",
+        run: {
+          branch: "feat/lamp",
+          stage: s.PushStage.CHECKING,
+          check: "test",
+          startTime: at(nowS - 65),
+        },
+      },
+    ],
+  });
+
+  const glance = s.glanceOf(
+    tasks,
+    () => undefined,
+    () => undefined,
+    qol,
+  );
+  // The workers alone in the rows: the repair workers are apart.
+  assert.deepEqual(
+    glance.rows.map((r) => r.task.code),
+    ["W13"],
+  );
+  assert.deepEqual(
+    glance.merges.map((m) =>
+      m.kind === "merging"
+        ? [m.kind, m.branch, m.tasks.map((x) => x.code).join(","), m.check]
+        : m.kind === "held"
+          ? [m.kind, m.branch, m.tests.join(","), m.by?.code]
+          : m.kind === "queued"
+            ? [m.kind, m.task.code, m.reason]
+            : [m.kind],
+    ),
+    [
+      ["merging", "feat/qol", "W1,W2", "lint"],
+      ["held", "feat/qol", "TestLogin,TestLogout", "W12"],
+      // In the order Djinn merges them: the first ended first.
+      ["queued", "W4", "merges alone"],
+      ["queued", "W3", "waits for W9, which repairs feat/qol"],
+    ],
+  );
+  assert.deepEqual(
+    glance.repairs.map((r) => [r.task.code, r.kind, r.state, r.of.join(",")]),
+    [
+      ["W9", "red", "run", "W6"],
+      ["W11", "main", "run", ""],
+      ["W12", "push", "run", ""],
+      ["W10", "review", "plan", "W7"],
+    ],
+  );
+  // The tests a check's output names as failed.
+  assert.deepEqual(
+    s.failingTests("ok\n--- FAIL: TestA\n    --- FAIL: TestA/sub\nFAIL"),
+    ["TestA", "TestA/sub"],
+  );
+  assert.deepEqual(
+    s.failingTests(
+      "--- FAIL: TestA\nFailed: internal/harness TestA, internal/ui TestB\n",
+    ),
+    ["internal/harness TestA", "internal/ui TestB"],
+  );
+  assert.deepEqual(
+    s.failingTests(
+      "  1) [chromium] › e2e/glance.spec.ts:12:3 › the glance\n  ✘  2 [chromium] › e2e/wish-render.spec.ts:40:1 › opens (1.2s)",
+    ),
+    ["e2e/glance.spec.ts:12", "e2e/wish-render.spec.ts:40"],
+  );
+
+  const details = { [qolId]: tasks, [lampId]: [] };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, { list: () => ({ wishes: [qol, lamp] }) });
+    service(s.TaskService, {
+      list: (req) => ({ tasks: details[req.wishId] ?? [] }),
+    });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const closes = [qol, lamp].map((w) => djinn.store.open(w.id));
+  await djinn.store.changed(qolId, [s.Change.WISH]);
+  await djinn.store.changed(lampId, [s.Change.WISH]);
+  closes.forEach((close) => close());
+  const plan = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.FlightPlan, { wishes: [qol, lamp], onOpen() {}, onToast() {} }),
+    ),
+  );
+  assert.match(
+    plan,
+    /Djinn QoL<\/button><span class="glance-count">1 running · 2 merging · 2 to merge · push held · 4 repairs<\/span>/,
+  );
+  assert.match(
+    plan,
+    /<ul class="glance-list glance-flow" aria-label="Merges and repairs">/,
+  );
+  // The batch merging, its check and for how long; a click opens its first task.
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row glance-merge merging" title="W1, W2 → feat\/qol\nW1 Task W1\nW2 Task W2"><span class="glance-mark run" role="img" aria-label="merging"><svg[^>]*lucide-git-merge[\s\S]*?<span class="glance-title glance-span">W1, W2 → feat\/qol<span class="glance-after" title="through the gate lint">checks lint<span class="glance-since">1m2\ds<\/span>/,
+  );
+  // The held push, salmon, the tests that failed.
+  assert.match(
+    plan,
+    /<button type="button" class="glance-row glance-merge held" title="Push of feat\/qol held\ntest: go tool task test exited 1"><span class="glance-mark held" role="img" aria-label="push held"><svg[^>]*lucide-cloud-off[\s\S]*?Push of feat\/qol held<span class="glance-after">test red: TestLogin, TestLogout<\/span>/,
+  );
+  // The queue, its reasons.
+  assert.match(
+    plan,
+    /class="glance-row glance-merge queued" title="W4 Task W4\nmerges alone"><span class="glance-mark wait"[\s\S]*?W4 → feat\/qol<span class="glance-after">merges alone<\/span>[\s\S]*?W3 → feat\/qol<span class="glance-after">waits for W9, which repairs feat\/qol<\/span>/,
+  );
+  // The repair workers: a wrench, blue at work, grey to start, saying what each repairs.
+  assert.match(
+    plan,
+    /class="glance-row glance-repair run" title="Running · W9 Task W9"><span class="glance-mark run" role="img" aria-label="repair worker · Running"><svg[^>]*lucide-wrench[\s\S]*?<span class="glance-code">W9<\/span><span class="glance-title">makes the checks of W6 pass<span class="glance-after">Running · attempt 2<\/span>/,
+  );
+  assert.match(
+    plan,
+    /W11<\/span><span class="glance-title">settles the merge of main</,
+  );
+  assert.match(
+    plan,
+    /W12<\/span><span class="glance-title">makes the push checks pass</,
+  );
+  assert.match(
+    plan,
+    /class="glance-row glance-repair plan" title="Planned · W10 Task W10"><span class="glance-mark wait"[\s\S]*?commits the work W7 left not committed/,
+  );
+  // The push checks running on the other wish.
+  assert.match(
+    plan,
+    /class="glance-row glance-merge pushing" title="Push of feat\/lamp">[\s\S]*?Push of feat\/lamp<span class="glance-after">checks test<span class="glance-since">1m\ds<\/span>/,
+  );
+  // Gold is for what waits on you: never in the glance.
+  assert.doesNotMatch(plan, /glance[^"]*waiting/);
+  // The legend names them.
+  assert.match(
+    plan,
+    /<p class="glance-legend">.*running.*merging.*waits to merge.*push held.*repair worker<\/span><\/p>/,
+  );
+  // Narrow: a wrench per repair worker, one mark for the merges, one for the held push.
+  assert.match(
+    plan,
+    /<span class="name">Djinn QoL<\/span><span class="glance-line-marks"><span class="glance-dot run"[^>]*><\/span>(<span class="glance-mark (run|wait)" role="img" aria-label="repair worker" title="[^"]+"><svg[^>]*lucide-wrench[\s\S]*?<\/svg><\/span>){4}<span class="glance-mark run" role="img" aria-label="merging" title="2 merging · 2 to merge · push held">[\s\S]*?<span class="glance-mark held" role="img" aria-label="push held">/,
+  );
+});
+
+// Nothing moves under the reader (AGENTS.md, Interface): on a wish's page, a question asked later renders after the
+// older ones, even one a task waits for, and a revision keeps the question in its place, open, dated in grey.
+test("a new question renders after the older ones, a revision keeps the order and the open question", async () => {
+  const container = setupMockDom();
+  const wishId = "01a1443f-0000-7000-8000-000000000047";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const at = (iso) => ({ seconds: BigInt(Date.parse(iso) / 1000), nanos: 0 });
+  const asked = (id, code, text, iso, extra = {}) => ({
+    id,
+    wishId,
+    code,
+    text,
+    options: ["Yes", "No"],
+    createTime: at(iso),
+    ...extra,
+  });
+  let questions = [
+    asked("q1", "Q01", "Brass?", "2026-10-16T10:24:00Z"),
+    asked("q2", "Q02", "Wick?", "2026-10-16T10:25:00Z"),
+  ];
+  let tasks = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [lamp] }),
+      describe: () => ({ wish: lamp }),
+      watch: async function* () {},
+    });
+    service(s.TaskService, { list: () => ({ tasks }) });
+    service(s.QuestionService, { list: () => ({ questions }) });
+    service(s.BlockService, { list: () => ({ blocks: [] }) });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+  const root = s.createRoot(container);
+  s.act(() => {
+    root.render(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: lamp, onToast() {} }),
+      ),
+    );
+  });
+  const nodes = (node, out = []) => {
+    out.push(node);
+    for (const child of node.childNodes ?? []) nodes(child, out);
+    return out;
+  };
+  const textOf = (node) =>
+    node.nodeType === 3
+      ? node.nodeValue
+      : node.childNodes.length
+        ? node.childNodes.map(textOf).join("")
+        : (node.textContent ?? "");
+  const cards = () =>
+    nodes(container).filter((n) => /^question-/.test(n.attributes?.id ?? ""));
+  const ids = () => cards().map((n) => n.attributes.id.slice(9));
+  const open = () =>
+    cards()
+      .filter((n) => / current /.test(` ${n.attributes.class} `))
+      .map((n) => n.attributes.id.slice(9));
+  const date = (id) =>
+    textOf(
+      nodes(cards().find((n) => n.attributes.id === `question-${id}`)).find(
+        (n) => n.attributes?.class === "question-asked",
+      ),
+    );
+  assert.deepEqual(ids(), ["q1", "q2"]);
+  assert.deepEqual(open(), ["q1"]);
+  assert.match(date("q1"), /^asked \d\d\/\d\d at \d\d:\d\d( [AP]M)?$/);
+
+  // Asked later, a question a task waits for, needed before the merge: it still comes last.
+  questions = [
+    ...questions,
+    asked("q3", "Q03", "May W1 edit?", "2026-10-16T10:26:00Z", {
+      before: "before the merge",
+    }),
+  ];
+  tasks = [
+    {
+      id: "t1",
+      wishId,
+      code: "W1",
+      title: "Polish",
+      status: s.TaskStatus.WAITING,
+      editQuestionId: "q3",
+    },
+  ];
+  await s.act(async () => {
+    await djinn.store.changed(wishId, [s.Change.QUESTION, s.Change.TASK]);
+  });
+  assert.deepEqual(ids(), ["q1", "q2", "q3"]);
+  assert.deepEqual(open(), ["q1"]);
+
+  // Revised, the first question keeps its place, open, its date saying when.
+  questions = [
+    asked("q1", "Q01", "Brass or copper?", "2026-10-16T10:24:00Z", {
+      revision: 1,
+      rounds: [
+        { kind: s.RoundKind.REVISE, createTime: at("2026-10-16T10:31:00Z") },
+      ],
+    }),
+    ...questions.slice(1),
+  ];
+  await s.act(async () => {
+    await djinn.store.changed(wishId, [s.Change.QUESTION]);
+  });
+  assert.deepEqual(ids(), ["q1", "q2", "q3"]);
+  assert.deepEqual(open(), ["q1"]);
+  assert.match(
+    date("q1"),
+    /^asked \d\d\/\d\d at \d\d:\d\d( [AP]M)? · revised at \d\d:\d\d( [AP]M)?$/,
+  );
+  s.act(() => root.unmount());
+  close();
+  // React's scheduler port would keep the run alive, as above.
+  for (const handle of process._getActiveHandles())
+    if (handle?.constructor?.name === "MessagePort") handle.unref();
+});
+
+// An ifrit (T51) lit on a wish, as tilasm L06 (section 6) draws it: a lit ifrit fixture, its questions, those of the
+// lead about it, and the other questions of the wish.
+const ifritAt = (seconds) => ({
+  seconds: BigInt(Math.floor(seconds)),
+  nanos: 0,
+});
+function litIfrit(id, code, activity, extra = {}) {
+  return {
+    id,
+    wishId: "01a14438-8011-7520-a2c2-96da9e2791e6",
+    code,
+    title: `Front of the lamp ${code}`,
+    kind: s.TaskKind.IFRIT,
+    status: s.TaskStatus.RUNNING,
+    dependsOn: [],
+    createTime: ifritAt(1),
+    startTime: ifritAt(2),
+    lastActivityTime: ifritAt(activity),
+    ifrit: {
+      state: s.IfritState.LISTENING,
+      serves: [],
+      reply: "",
+      ...extra,
+    },
+  };
+}
+
+test("each lit ifrit has a band after the lead's choice, the latest active first, holding its questions and the lead's about it; without one, today's order", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const front = litIfrit("i1", "W12", 10, {
+    reply: "Button made primary, 8 px margin.\nReload /reviews.",
+    serves: [
+      {
+        name: "front",
+        state: s.ServeState.RUNNING,
+        gate: "",
+        ports: [{ number: 5173, label: "", open: true }],
+      },
+      {
+        name: "back",
+        state: s.ServeState.RUNNING,
+        gate: "stack",
+        ports: [{ number: 8080, label: "api", open: false }],
+      },
+    ],
+  });
+  const back = litIfrit("i2", "W13", 20);
+  const q = (id, extra = {}) => ({
+    id,
+    code: id.toUpperCase(),
+    text: `text of ${id}`,
+    before: "",
+    move: false,
+    taskId: "",
+    aboutTaskId: "",
+    createTime: ifritAt(Number(id.slice(1))),
+    ...extra,
+  });
+  const questions = [
+    { wish: w, item: q("q1"), blocking: ["W1"] },
+    {
+      wish: w,
+      item: q("q2", { aboutTaskId: "i1", before: "before the demo" }),
+      blocking: [],
+    },
+    { wish: w, item: q("q3", { taskId: "i1" }), blocking: ["W14"] },
+    { wish: w, item: q("q4", { taskId: "i1" }), blocking: [] },
+    { wish: w, item: q("q5"), blocking: [] },
+    {
+      wish: w,
+      item: q("q6", { aboutTaskId: "i2", before: "before the merge" }),
+      blocking: [],
+    },
+  ];
+  const prompt = {
+    title: "Would you like to run the following command?",
+    lines: [],
+    options: ["Yes", "No"],
+  };
+  const today = s.attentionOf(questions, [], [w], undefined, prompt);
+  assert.deepEqual(
+    today.map((i) => i.key),
+    ["lead-prompt", "q1", "q3", "q2", "q6", "ready-w1"],
+  );
+  // Without a lit ifrit, the order is exactly today's.
+  assert.deepEqual(
+    s.attentionOf(questions, [], [w], undefined, prompt, []),
+    today,
+  );
+  // With two lit ifrits: the lead's choice, then a band each, the latest activity first, then the rest as today.
+  const ifrits = [
+    { wish: w, item: back },
+    { wish: w, item: front },
+  ];
+  const lit = s.attentionOf(questions, [], [w], undefined, prompt, ifrits);
+  assert.deepEqual(
+    lit.map((i) => [i.key, i.level, i.target]),
+    [
+      ["lead-prompt", "blocking", "lead-prompt"],
+      ["ifrit-i2", "ifrit", "task-i2"],
+      ["ifrit-i1", "ifrit", "task-i1"],
+      ["q1", "blocking", "question-q1"],
+      ["ready-w1", "ready", "grant-w1"],
+    ],
+  );
+  // A band holds the ifrit's own questions, then the lead's about it, each the most urgent first; one that can wait
+  // (q4) is in the questions column alone, as below (q5).
+  assert.deepEqual(
+    lit[2].band.items.map((i) => [i.key, i.level, i.asker]),
+    [
+      ["q3", "blocking", "asked by W12"],
+      ["q2", "question", "the Djinn, about W12"],
+    ],
+  );
+  assert.deepEqual(
+    lit[1].band.items.map((i) => [i.key, i.asker]),
+    [["q6", "the Djinn, about W13"]],
+  );
+  // Never shown twice: each question that holds up its wish once, in a band or below.
+  const shown = lit.flatMap((i) => [
+    i.key,
+    ...(i.band?.items.map((x) => x.key) ?? []),
+  ]);
+  assert.equal(new Set(shown).size, shown.length);
+  for (const id of ["q1", "q2", "q3", "q6"]) assert.ok(shown.includes(id), id);
+  for (const id of ["q4", "q5"]) assert.ok(!shown.includes(id), id);
+  // No lead's choice: the bands come first.
+  assert.deepEqual(
+    s
+      .attentionOf(questions, [], [], undefined, undefined, ifrits)
+      .slice(0, 2)
+      .map((i) => i.key),
+    ["ifrit-i2", "ifrit-i1"],
+  );
+
+  // The band: its flame, code, title and word, a button to its card; its links; the first line of its last reply;
+  // then its lines with who asked them. The summary counts every line, a band's included.
+  const djinn = s.createDjinn(
+    s.createRouterTransport(() => {}),
+    10,
+  );
+  const render = (items) =>
+    s.renderToStaticMarkup(
+      h(s.DjinnProvider, { djinn }, h(s.AttentionBar, { items })),
+    );
+  const markup = render(lit);
+  assert.match(markup, /<nav class="attention-bar with-ifrit"/);
+  assert.match(markup, /8 things wait for you/);
+  assert.match(
+    markup,
+    /<section class="attention-ifrit tone-ifrit" aria-label="Ifrit W12: Front of the lamp W12"><div class="attention-ifrit-head"><button class="attention-ifrit-title"><span class="attention-level"><svg[^>]*lucide-flame[^>]*>.*?<\/svg>Ifrit<\/span><b class="attention-code">W12<\/b><span class="attention-text">Front of the lamp W12<\/span><span class="attention-ifrit-state">Lit<\/span>/,
+  );
+  assert.match(
+    markup,
+    /<span class="ifrit-link " title="http:\/\/localhost:5173\/"><a href="http:\/\/localhost:5173\/"[^>]*>localhost:5173<\/a><span class="ifrit-link-label">front<\/span><\/span>/,
+  );
+  assert.match(
+    markup,
+    /<span class="ifrit-link closed" title="localhost:8080 no longer answers">/,
+  );
+  assert.match(
+    markup,
+    /<p class="attention-ifrit-reply" title="The first line of its last reply"><q>Button made primary, 8 px margin.<\/q><\/p>/,
+  );
+  assert.match(
+    markup,
+    /<button class="attention-item level-blocking"><span class="attention-level">Blocking<\/span><b class="attention-code">Q3<\/b><span class="attention-asker">asked by W12<\/span>/,
+  );
+  // Not warned yet: no countdown, no Keep lit.
+  assert.doesNotMatch(markup, /ifrit-countdown|Keep lit/);
+  // Warned: the countdown, gold and dotted, and Keep lit.
+  const now = Date.now() / 1000;
+  const warned = {
+    ...front,
+    ifrit: {
+      ...front.ifrit,
+      warnTime: ifritAt(now - 60),
+      outTime: ifritAt(now + 210),
+    },
+  };
+  const hot = render(
+    s.attentionOf([], [], [], undefined, undefined, [
+      { wish: w, item: warned },
+    ]),
+  );
+  assert.match(
+    hot,
+    /<span class="attention-ifrit-state">Goes out in 4 min<\/span>/,
+  );
+  assert.match(
+    hot,
+    /<span class="ifrit-countdown" role="timer"><svg[^>]*>.*?<\/svg>Goes out in 4 min<\/span><button type="button" class="button secondary small ifrit-keep" title="You are here: Djinn keeps its ifrits lit">Keep lit<\/button>/,
+  );
+});
+
+test("a lit ifrit shows plainly on its wish: a flame and its count on the bar's second line, the wish's tone, its badge in the wish's head, its band first", async () => {
+  const wishId = "01a14438-8011-7520-a2c2-96da9e2791e6";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const front = litIfrit("i1", "W12", 10);
+  const worker = {
+    id: "w1",
+    wishId,
+    code: "W1",
+    title: "Pour",
+    status: s.TaskStatus.RUNNING,
+    dependsOn: [],
+    createTime: ifritAt(1),
+    startTime: ifritAt(2),
+  };
+  const out = {
+    ...front,
+    status: s.TaskStatus.STOPPED,
+    ifrit: { ...front.ifrit, state: s.IfritState.OUT },
+  };
+  const sidebar = (list, questions = 0) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [lamp],
+        projects: [],
+        counts: { [wishId]: { questions, ...s.runningOf(list) } },
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed: false,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+      }),
+    );
+  // The logo's flame comes first on the second line, without a disc, and with no number for one ifrit alone; the
+  // worker is counted alone, then the questions' hand.
+  const side = sidebar([front, worker], 1);
+  assert.match(
+    side,
+    /<span class="wish-counts"><span class="wish-sign tone-ifrit" title="1 ifrit lit" aria-label="1 ifrit lit" role="img"><svg class="lucide ifrit-flame"[^>]*>(?:(?!<\/svg>).)*<\/svg><\/span>/,
+  );
+  assert.match(side, /wish-sign tone-running" title="1 running"/);
+  assert.ok(
+    side.indexOf("wish-sign tone-ifrit") <
+      side.indexOf("wish-sign tone-waiting"),
+  );
+  // Where the bar folds to its icons, the logo's flame on the icon's corner, without a disc.
+  assert.match(
+    side,
+    /<span class="wish-flame-corner" title="1 ifrit lit" aria-label="1 ifrit lit" role="img"><svg class="lucide ifrit-flame"/,
+  );
+  // Put out: no flame on the bar, the wish's tone is today's.
+  const outSide = sidebar([out]);
+  assert.doesNotMatch(outSide, /tone-ifrit|lucide-flame/);
+
+  const page = async (list) => {
+    const transport = s.createRouterTransport(({ service }) => {
+      service(s.WishService, { list: () => ({ wishes: [lamp] }) });
+      service(s.TaskService, { list: () => ({ tasks: list }) });
+      service(s.QuestionService, { list: () => ({ questions: [] }) });
+      service(s.BlockService, { list: () => ({ blocks: [] }) });
+    });
+    const djinn = s.createDjinn(transport, 10);
+    const close = djinn.store.open(wishId);
+    await djinn.store.changed(wishId, [s.Change.WISH]);
+    close();
+    const view = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishView, { wish: lamp, onToast() {} }),
+      ),
+    );
+    const plan = s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.FlightPlan, { wishes: [lamp], onOpen() {}, onToast() {} }),
+      ),
+    );
+    return { view, plan };
+  };
+  // The wish's head: its state in the ifrit's tone, with the flame, and the ifrit's badge and word beside it.
+  const now = await page([front, worker]);
+  assert.match(
+    now.view,
+    /<div class="review-pills"><span class="status-badge tone-ifrit"><svg[^>]*lucide-flame[^>]*>.*?<\/svg><span>Active · rank 1<\/span><\/span><span class="status-badge tone-ifrit" title="Front of the lamp W12"><svg[^>]*lucide-flame[^>]*>.*?<\/svg><span>Ifrit W12 · Lit<\/span><\/span>/,
+  );
+  // Its band heads what waits for you, in the wish and on the flying carpet.
+  for (const html of [now.view, now.plan])
+    assert.match(
+      html,
+      /<nav class="attention-bar with-ifrit" aria-label="What waits for you">.*?<ul><li><section class="attention-ifrit tone-ifrit" aria-label="Ifrit W12: Front of the lamp W12">/,
+    );
+  // The glance of what runs: its flame and word in place of the blue dot, counted apart from the worker.
+  assert.match(now.plan, /glance-count">1 ifrit lit · 1 running</);
+  assert.match(
+    now.plan,
+    /<span class="glance-flame tone-ifrit" role="img" aria-label="Lit"><svg[^>]*lucide-flame/,
+  );
+  // Put out: grey, its flame outlined, and no band.
+  const gone = await page([out]);
+  assert.match(
+    gone.view,
+    /<span class="status-badge tone-out" title="Front of the lamp W12"><svg[^>]*lucide-flame[^>]*>.*?<\/svg><span>Ifrit W12 · Out<\/span><\/span>/,
+  );
+  assert.doesNotMatch(
+    gone.view,
+    /fill="currentColor"[^>]*lucide-flame|attention-ifrit/,
+  );
+});
+
+test("an ifrit's card: its word, its links and gates, Finish; out, Relight; warned, the countdown and Keep lit; a task waiting for its gate says when it comes back", async () => {
+  const front = litIfrit("i1", "W12", 10, {
+    reply: "Button made primary.\nReload /reviews.",
+    serves: [
+      {
+        name: "back",
+        state: s.ServeState.RUNNING,
+        gate: "stack",
+        ports: [{ number: 8080, label: "api", open: true }],
+      },
+    ],
+  });
+  const waiter = {
+    id: "t15",
+    wishId: front.wishId,
+    code: "W15",
+    title: "Tests",
+    status: s.TaskStatus.RUNNING,
+    dependsOn: [],
+    createTime: ifritAt(1),
+    startTime: ifritAt(2),
+  };
+  const release = Date.UTC(2026, 9, 16, 15, 42);
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.MachineService, { show: () => ({ machine: { workers: 4 } }) });
+    service(s.GateService, {
+      list: () => ({
+        gates: [
+          {
+            name: "stack",
+            holder: "W12 (Front of the lamp W12): task run-back",
+            holderTaskId: "i1",
+            ifrit: true,
+            waiting: ["W15 (Tests): go tool task test"],
+            expireTime: ifritAt(release / 1000),
+          },
+          { name: "lint", holder: "W3 (Lint)", holderTaskId: "t3" },
+        ],
+      }),
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  await djinn.store.readMachine();
+  const card = (task, extra = {}) =>
+    s.renderToStaticMarkup(
+      h(
+        s.DjinnProvider,
+        { djinn },
+        h(s.WishTask, {
+          task,
+          codes: new Map(),
+          onStop() {},
+          onSend: async () => {},
+          onDone: async () => {},
+          onRelight: async () => {},
+          ...extra,
+        }),
+      ),
+    );
+  const lit = card(front);
+  assert.match(lit, /<article class="wish-task tone-ifrit /);
+  assert.match(
+    lit,
+    /<span class="status-badge tone-ifrit" title="active [^"]* ago"><svg[^>]*fill="currentColor"[^>]*lucide-flame[^>]*>.*?<\/svg><span>Lit<\/span>/,
+  );
+  assert.match(
+    lit,
+    /<div class="wish-task-note ifrit-line"><span class="ifrit-links"><span class="ifrit-link " title="http:\/\/localhost:8080\/"><a href="http:\/\/localhost:8080\/"[^>]*>localhost:8080<\/a><span class="ifrit-link-label">api<\/span><\/span><\/span><span class="ifrit-gates" title="Held while it is lit: others wait until it goes out or ends"><span class="ifrit-gate"><svg[^>]*>.*?<\/svg>gate stack<\/span><\/span><span class="ifrit-actions"><button type="button" class="button secondary small" title="Finish the ifrit: its input closes, its serves stop, and its work integrates like any task&#x27;s"><svg[^>]*>.*?<\/svg><span>Finish<\/span><\/button><\/span><\/div>/,
+  );
+  assert.match(
+    lit,
+    /<p class="wish-task-note ifrit-reply" title="The first line of its last reply"><q>Button made primary.<\/q><\/p>/,
+  );
+  // Finish takes the place of Mark done; no Relight while lit.
+  assert.doesNotMatch(lit, /aria-label="Mark done"|Relight/);
+  // Put out: grey, Relight beside Finish, and no gate held.
+  const out = card({
+    ...front,
+    status: s.TaskStatus.STOPPED,
+    ifrit: {
+      ...front.ifrit,
+      state: s.IfritState.OUT,
+      serves: front.ifrit.serves.map((x) => ({
+        ...x,
+        state: s.ServeState.STOPPED,
+      })),
+    },
+  });
+  assert.match(out, /<article class="wish-task tone-out /);
+  assert.match(out, /<span>Out<\/span>/);
+  assert.match(
+    out,
+    /<button type="button" class="button secondary small" title="A message lights it again, in its own session and worktree" aria-expanded="false"><svg[^>]*lucide-flame[^>]*>.*?<\/svg><span>Relight<\/span><\/button>/,
+  );
+  assert.doesNotMatch(
+    out,
+    /ifrit-gate"|localhost:8080<\/a>|aria-label="Mark done"/,
+  );
+  // Warned: the countdown and Keep lit.
+  const now = Date.now() / 1000;
+  const warned = card({
+    ...front,
+    ifrit: {
+      ...front.ifrit,
+      warnTime: ifritAt(now - 60),
+      outTime: ifritAt(now + 210),
+    },
+  });
+  assert.match(warned, /<span>Goes out in 4 min<\/span>/);
+  assert.match(warned, /class="ifrit-countdown" role="timer"/);
+  assert.match(warned, />Keep lit<\/button>/);
+  // A task waiting for the gate the ifrit holds: the flame, the holder, and the hour it comes back at the latest.
+  const time = new Date(release).toLocaleTimeString("en", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  assert.match(
+    card(waiter),
+    new RegExp(
+      `<p class="wish-task-note ifrit-wait tone-ifrit"><svg[^>]*lucide-flame[^>]*>.*?</svg><span>Waits for the gate stack, held by the ifrit W12 \\(Front of the lamp W12\\): task run-back; given back when you leave, at ${time} at the latest</span></p>`,
+    ),
+  );
+  // A task no ifrit holds up: no such line.
+  assert.doesNotMatch(card({ ...waiter, code: "W16" }), /ifrit-wait/);
+});
+
+test("the status bar says how many gates an ifrit holds, apart, with a vermilion dot", () => {
+  const gates = [
+    { name: "stack", holder: "W12 (Front)", ifrit: true, waiting: [] },
+    { name: "lint", holder: "W3 (Lint)", ifrit: false, waiting: [] },
+    { name: "test", holder: "", ifrit: false, waiting: ["W4 (Test)"] },
+  ];
+  assert.equal(
+    s.renderToStaticMarkup(h(s.HeldGates, { gates })),
+    '2 gates held<span class="status-ifrit"><span class="status-dot ifrit"></span>1 gate held by an ifrit</span>',
+  );
+  assert.equal(
+    s.renderToStaticMarkup(h(s.HeldGates, { gates: gates.slice(1) })),
+    "1 gate held",
+  );
+});
+
+test("while Djinn drives the lead, its menu moves it to another agent, account or model in one click", () => {
+  const agents = [
+    { id: "claude", name: "Claude", available: true, command: "claude" },
+    { id: "codex", name: "Codex", available: true, command: "codex" },
+    { id: "antigravity", name: "Antigravity", available: true, command: "agy" },
+  ];
+  const accounts = [
+    {
+      name: "work",
+      provider: s.Provider.CLAUDE,
+      label: "Work",
+      configDirectory: "/home/d/.claude-work",
+    },
+    {
+      name: "gpt",
+      provider: s.Provider.CODEX,
+      label: "",
+      configDirectory: "/home/d/.codex-gpt",
+    },
+  ];
+  const drive = {
+    seat: {
+      provider: s.Provider.CLAUDE,
+      model: "claude-opus-5-5",
+      account: "work",
+    },
+    accounts,
+  };
+  const markup = s.renderToStaticMarkup(
+    h(s.LeadMenu, { agents, drive, onPick() {}, onMove() {} }),
+  );
+  // Each agent on its own sign-in, then on each account; the seat marked, with its model; Antigravity disabled.
+  const order = [
+    "Claude</span>",
+    "Claude · Work",
+    "Codex</span>",
+    "Codex · gpt",
+    "Antigravity",
+  ].map((name) => markup.indexOf(`<span class="lead-agent-name">${name}`));
+  assert.ok(
+    order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1])),
+    order.join(),
+  );
+  assert.match(
+    markup,
+    /<button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude · Work<svg[^]*?The Djinn runs here, on claude-opus-5-5<\/span>/,
+  );
+  assert.match(
+    markup,
+    /<button role="menuitem" class="lead-agent" disabled=""><span class="lead-agent-name">Antigravity<\/span><span class="lead-agent-detail">Cannot lead yet: use Claude Code or Codex<\/span>/,
+  );
+  assert.match(
+    markup,
+    /Moves the Djinn here: its next batch starts here, with its journal/,
+  );
+  assert.match(
+    markup,
+    /<input placeholder="The agent&#x27;s default" aria-label="Model" value="claude-opus-5-5"\/>/,
+  );
+  // The seat's name, as the attention bar says it.
+  assert.equal(
+    s.seatName({ provider: s.Provider.CODEX, account: "gpt" }, accounts),
+    "Codex · gpt",
+  );
+  assert.equal(
+    s.seatName({ provider: s.Provider.CLAUDE, account: "work" }, accounts),
+    "Claude Code · Work",
+  );
+  assert.equal(
+    s.seatName({ provider: s.Provider.CLAUDE, account: "" }, accounts),
+    "Claude Code",
+  );
+});
+
+test("a limit the driven lead hit comes first in the attention bar, a button per move; none says the events wait", () => {
+  const w = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const accounts = [
+    {
+      name: "work",
+      provider: s.Provider.CLAUDE,
+      label: "Work",
+      configDirectory: "/d",
+    },
+  ];
+  const limit = {
+    text: "the account's session limit, resets at 07:20",
+    seat: { provider: s.Provider.CLAUDE, model: "", account: "" },
+    moves: [
+      { provider: s.Provider.CLAUDE, model: "", account: "work" },
+      { provider: s.Provider.CODEX, model: "", account: "" },
+    ],
+  };
+  const items = s.attentionOf(
+    [{ wish: w, item: { id: "q1", code: "Q1", text: "q1" }, blocking: ["W1"] }],
+    [],
+    [],
+    undefined,
+    undefined,
+    [],
+    { limit, accounts },
+  );
+  assert.deepEqual(
+    items.map((i) => [i.key, i.level, i.label]),
+    [
+      ["lead-limit", "blocking", "The Djinn hit a limit"],
+      ["q1", "blocking", undefined],
+    ],
+  );
+  assert.equal(
+    items[0].text,
+    "Claude Code hit the account's session limit, resets at 07:20: its events wait",
+  );
+  const djinn = s.createDjinn(
+    s.createRouterTransport(() => {}),
+    10,
+  );
+  const markup = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.AttentionBar, { items })),
+  );
+  assert.match(
+    markup,
+    /<div id="lead-limit" class="attention-item attention-prompt level-blocking">[^]*?<button class="button secondary small">Move the Djinn to Claude Code · Work<\/button><button class="button secondary small">Move the Djinn to Codex<\/button>/,
+  );
+  const alone = s.attentionOf([], [], [], undefined, undefined, [], {
+    limit: { ...limit, moves: [] },
+    accounts,
+  });
+  const none = s.renderToStaticMarkup(
+    h(s.DjinnProvider, { djinn }, h(s.AttentionBar, { items: alone })),
+  );
+  assert.match(
+    none,
+    /No other agent or account is signed in here: its events wait for the reset/,
+  );
+});
+
+test("the azimas of a wish show in their rank, each with the grip that drags it (W134)", () => {
+  const azima = (code, rank) => ({
+    id: code,
+    code,
+    title: `Azima ${code}`,
+    kind: s.TaskKind.AZIMA,
+    status: s.TaskStatus.PENDING,
+    dependsOn: [],
+    rank,
+    azima: { state: s.AzimaState.OPEN, ready: true },
+  });
+  // T3 ranked first, T1 second; T2 and T10, never ranked, after them by code, whatever their state.
+  const tasks = [
+    azima("T1", 2),
+    azima("T2", 0),
+    azima("T3", 1),
+    azima("T10", 0),
+  ];
+  tasks[1].azima = { state: s.AzimaState.IN_PROGRESS, ready: true };
+  const groups = s.azimaGroups(tasks);
+  assert.deepEqual(
+    groups.map((g) => g.azima.code),
+    ["T3", "T1", "T2", "T10"],
+  );
+  const html = s.renderToStaticMarkup(
+    s.createElement(s.RankedAzimaList, {
+      groups,
+      onRank() {},
+      render: ({ azima, parts }, grip) =>
+        s.createElement(s.AzimaCard, {
+          key: azima.id,
+          azima,
+          parts,
+          grip,
+          tasks: new Map(),
+          render: () => null,
+        }),
+    }),
+  );
+  assert.match(html, /class="azima-list ranked"/);
+  const grips = [
+    ...html.matchAll(
+      /class="azima-grip" title="([^"]+)"[^>]*draggable="true"/g,
+    ),
+  ].map((m) => m[1].split(" ")[1]);
+  assert.deepEqual(grips, ["T3", "T1", "T2", "T10"]);
+  assert.match(html, /title="1\. T3 \(drag, or Alt\+Arrow, to change its rank/);
+  // The grip comes first in the card's heading row.
+  assert.match(
+    html,
+    /<div class="azima-row"><button type="button" class="azima-grip"/,
+  );
+});
+
+test("Sleep sits between Later and Move in a question's top right corner, and opens what it sleeps until", () => {
+  const question = {
+    id: "q1",
+    code: "Q01",
+    text: "Which oil?",
+    options: ["Olive", "Paraffin"],
+    recommendation: "",
+    rounds: [],
+    revision: 0,
+    createTime: { seconds: 1_760_000_000n, nanos: 0 },
+  };
+  const slept = [];
+  const card = live(s.WishQuestion, {
+    question,
+    onAnswer: async () => {},
+    onMove: () => {},
+    onLater: () => {},
+    onSleep: (q) => slept.push(q.code),
+  });
+  assert.match(
+    card.html(),
+    /aria-label="Later">(?:(?!<\/button>).)*<\/button><button class="question-corner-button question-sleep" type="button" aria-label="Sleep"><svg[^>]*lucide-moon[^>]*>(?:(?!<\/svg>).)*<\/svg><\/button><button class="question-corner-button question-move"/,
+  );
+  card.one("question-sleep").onClick();
+  assert.deepEqual(slept, ["Q01"]);
+  // Woken, the grey line says when.
+  card.update({
+    question: {
+      ...question,
+      sleep: {
+        conditions: [],
+        createTime: { seconds: 1_760_000_100n, nanos: 0 },
+        wakeTime: { seconds: 1_760_000_600n, nanos: 0 },
+      },
+    },
+  });
+  assert.match(card.html(), /asked [^<]* · woke (?:at|[^<]* at) /);
+});
+
+test("the questions asleep are a discreet count below the column, their list on demand, each with what it waits for and Wake", () => {
+  const lamp = wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1);
+  const asleep = {
+    id: "q3",
+    code: "Q03",
+    wishId: "w1",
+    text: "Release now?",
+    options: [],
+    rounds: [],
+    createTime: { seconds: 1_760_000_000n, nanos: 0 },
+    sleep: {
+      conditions: [
+        { kind: s.SleepKind.TASK, code: "W12", taskId: "t12", url: "" },
+        { kind: s.SleepKind.MERGED, code: "W45", taskId: "t45", url: "" },
+        {
+          kind: s.SleepKind.MERGED,
+          code: "",
+          taskId: "",
+          url: "https://github.com/acme/lamp/pull/7",
+        },
+      ],
+      createTime: { seconds: 1_760_000_000n, nanos: 0 },
+    },
+  };
+  const woken = [];
+  const list = live(s.AsleepQuestions, {
+    questions: [{ wish: lamp, item: asleep, blocking: [] }],
+    headings: true,
+    onWake: async (q) => woken.push(q.code),
+  });
+  assert.match(
+    list.html(),
+    /^<div class="question-asleep"><button type="button" class="question-asleep-toggle" aria-expanded="false"><svg[^>]*lucide-moon[^>]*>(?:(?!<\/svg>).)*<\/svg>1 question asleep<\/button><\/div>$/,
+  );
+  list.one("question-asleep-toggle").onClick();
+  const html = list.html();
+  assert.match(html, /aria-expanded="true"/);
+  assert.match(
+    html,
+    /<li id="asleep-q3"><span class="question-id">Q03<\/span><span class="question-asleep-text">Release now\?<span class="question-asleep-wish">Ship the lamp<\/span><span class="question-asleep-until">until W12 over · W45&#x27;s request merged · https:\/\/github.com\/acme\/lamp\/pull\/7 merged<\/span><\/span><button type="button" class="button secondary question-wake">Wake<\/button><\/li>/,
+  );
+  list.one("question-wake").onClick();
+  assert.deepEqual(woken, ["Q03"]);
+  // None asleep: nothing at all.
+  assert.equal(
+    s.renderToStaticMarkup(h(s.AsleepQuestions, { questions: [] })),
+    "",
+  );
+  // In the column, below its questions; none open, the line still says so.
+  const column = s.renderToStaticMarkup(
+    h(s.QuestionColumn, {
+      groups: [],
+      asleep: [{ wish: lamp, item: asleep, blocking: [] }],
+      onAnswer: async () => {},
+    }),
+  );
+  assert.match(
+    column,
+    /<p class="empty-state-text">No open question: nothing to ask you for now\.<\/p><\/div><div class="question-asleep">/,
+  );
+});
+
+test("the sleep dialog offers the wish's tasks not over and the requests not merged, and sends what you pick, all of it", () => {
+  const task = (id, code, status, extra = {}) => ({
+    id,
+    code,
+    title: `Task ${code}`,
+    status,
+    role: s.TaskRole.UNSPECIFIED,
+    kind: s.TaskKind.WORK,
+    ...extra,
+  });
+  const tasks = [
+    task("t1", "W1", s.TaskStatus.RUNNING),
+    task("t2", "W2", s.TaskStatus.DONE),
+    task("t3", "W3", s.TaskStatus.CANCELLED),
+    task("t4", "T4", s.TaskStatus.DONE, {
+      kind: s.TaskKind.AZIMA,
+      azima: { state: s.AzimaState.IN_PROGRESS },
+    }),
+    task("t5", "T5", s.TaskStatus.DONE, {
+      kind: s.TaskKind.AZIMA,
+      azima: { state: s.AzimaState.DONE },
+    }),
+    task("t6", "W6", s.TaskStatus.RUNNING, { role: s.TaskRole.INVESTIGATOR }),
+    task("t7", "W7", s.TaskStatus.RUNNING, {
+      babysit: { url: "https://github.com/acme/lamp/pull/7" },
+    }),
+    task("t8", "W8", s.TaskStatus.DONE, {
+      babysit: {
+        url: "https://github.com/acme/lamp/pull/8",
+        doneTime: { seconds: 1n, nanos: 0 },
+      },
+    }),
+  ];
+  assert.deepEqual(
+    s.sleepTasks(tasks).map((t) => t.code),
+    ["W1", "T4"],
+  );
+  assert.deepEqual(
+    s.sleepRequests(tasks).map((t) => t.code),
+    ["W7"],
+  );
+  assert.deepEqual(
+    s.sleepUntil(["W1", "T4"], ["W7"], "2026-10-20T09:00", " 3d, merged:W9 ,"),
+    ["W1", "T4", "merged:W7", "2026-10-20T09:00", "3d", "merged:W9"],
+  );
+  assert.deepEqual(s.sleepUntil([], [], "", " "), []);
+  const html = s.renderToStaticMarkup(
+    h(s.SleepQuestionDialog, {
+      question: { id: "q1", code: "Q01", text: "Release now?" },
+      tasks,
+      currentWishId: "w1",
+      onClose: () => {},
+      onSleep: async () => {},
+    }),
+  );
+  assert.match(html, /Put Q01 to sleep/);
+  assert.match(html, /<b>W1<\/b> Task W1/);
+  assert.match(html, /<b>T4<\/b> Task T4/);
+  assert.doesNotMatch(html, /<b>(?:W2|W3|T5|W6|W8)<\/b>/);
+  assert.match(html, /<b>W7<\/b> https:\/\/github.com\/acme\/lamp\/pull\/7/);
+  assert.match(html, /type="datetime-local"/);
+  // Nothing picked: nothing to send.
+  assert.match(
+    html,
+    /<button type="submit" class="button accent" disabled="">/,
+  );
+});
+
+// The journal of changes (W151): each commit of the reference branch that changed the configuration, when, which and
+// who, what it changed in sentences; one that waits for your look has the flame, its asking lines marked, and Seen
+// with what it does; the others say they were applied. A failed fetch is said with git's own words.
+test("the journal of configuration changes says each change, and marks seen those that wait for your look", () => {
+  const at = { seconds: 1760000000n, nanos: 0 };
+  const seen = [];
+  const waiting = {
+    id: "c1",
+    ref: "origin/main",
+    commit: "7290747aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    author: "Skayfa",
+    title: "Allow curl",
+    commitTime: at,
+    commits: 1,
+    firstLook: false,
+    lines: [
+      {
+        text: "Permissions: 1 more command the workers may run: curl.",
+        asks: true,
+      },
+      { text: "New check e2e before a push: go tool task e2e.", asks: false },
+    ],
+  };
+  const applied = {
+    ...waiting,
+    id: "c2",
+    commit: "bf53c16bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    title: "Change recette",
+    lines: [
+      { text: "The skill recette changes its instructions.", asks: false },
+    ],
+  };
+  const history = { ...applied, id: "c3", firstLook: true, commits: 3 };
+  const out = s.renderToStaticMarkup(
+    h(s.ConfigChanges, {
+      watch: {
+        ref: "origin/main",
+        fetchError: "fetch main from origin: could not read Username",
+      },
+      changes: [waiting, applied, history],
+      busy: "",
+      onSeen: (c) => seen.push(c.id),
+    }),
+  );
+  assert.match(
+    out,
+    /<h3>What changed on origin\/main<span class="config-from">watched every 5 min<\/span><\/h3>/,
+  );
+  assert.match(
+    out,
+    /<pre class="notice-detail">fetch main from origin: could not read Username<\/pre>/,
+  );
+  assert.match(
+    out,
+    /<div class="config-line config-change waits">.*<code>7290747<\/code><span>Skayfa<\/span><\/p><strong>Allow curl<\/strong>/,
+  );
+  assert.match(
+    out,
+    /<li class="asks">Permissions: 1 more command the workers may run: curl\.<\/li><li class="">New check e2e/,
+  );
+  assert.match(
+    out,
+    /Seen<\/button><p>Djinn applies it already: the gear stops lighting for it\./,
+  );
+  assert.match(out, /<code>bf53c16<\/code>.*Applied, nothing to decide\./);
+  assert.match(
+    out,
+    /3 commits.*Before Djinn watched it: applied, nothing to decide\./,
+  );
+  assert.doesNotMatch(out, /button accent/);
+  assert.equal((out.match(/Seen<\/button>/g) ?? []).length, 1);
+
+  const none = s.renderToStaticMarkup(
+    h(s.ConfigChanges, {
+      watch: { ref: "origin/dev", fetchError: "" },
+      changes: [],
+      busy: "",
+      onSeen() {},
+    }),
+  );
+  assert.match(
+    none,
+    /Nothing changed in the configuration since Djinn watches it\./,
+  );
+  assert.doesNotMatch(none, /notice-detail/);
+});
+
+test("a question iterating on its mockup waits for its mockup task, not for you: folded as one being investigated (W268)", () => {
+  const card = live(s.WishQuestion, {
+    question: {
+      id: "q1",
+      code: "Q61",
+      text: "Do the typed options suit you?",
+      options: ["Iterate", "Build", "Other"],
+      recommendation: "A: one more version.",
+      rounds: [
+        { kind: s.RoundKind.ITERATE, note: "Bigger icons", option: s.Choice.A },
+      ],
+    },
+    onAnswer: async () => {},
+    onEnlighten: async () => {},
+  });
+  const folded = card.html();
+  assert.match(folded, /question-card investigating {2}folded/);
+  assert.match(folded, /You asked: Bigger icons/);
+  assert.doesNotMatch(folded, /<textarea/);
 });

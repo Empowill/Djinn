@@ -220,60 +220,36 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
     page.locator(".plan-nav").filter({ hasText: "Flying carpet" }),
   ).toHaveClass(/selected/);
 
-  // Both questions, each marked with its wish.
-  const oilCard = page
-    .locator(".decisions-section .question-card")
-    .filter({ hasText: "May the worker pour the oil?" });
-  const lampCard = page
-    .locator(".decisions-section .question-card")
-    .filter({ hasText: "Which oil for the wick?" });
-  await expect(oilCard.locator(".wish-origin")).toHaveText(`2${oilTitle}`);
-  await expect(lampCard.locator(".wish-origin")).toHaveText(`1${lampTitle}`);
-  // Each wish's card says what it spent: one price, then its tokens; the price's hover tells what was reported and
-  // what has no price.
-  const lampSpent = page
-    .locator(".plan-wish")
-    .filter({ hasText: lampTitle })
-    .locator(".wish-spent");
-  await expect(lampSpent).toContainText("cache read");
-  const lampPrice = lampSpent.locator(".spent-price");
-  await expect(lampPrice).toHaveText("$0.42");
-  await expect(lampPrice).toHaveAttribute(
-    "title",
-    "$0.42 reported\n1 task without a price in the table\nclaude: $0.42",
-  );
-  await expect(lampSpent).not.toContainText("reported");
-  await expect(lampSpent).not.toContainText("without a price");
-  // The price reads in both themes, in a grey of each; the page then shows its own again.
-  const shown = await page.evaluate(
-    () => document.documentElement.dataset.theme,
-  );
-  const colours: string[] = [];
-  for (const theme of ["dark", "light"]) {
-    await page.evaluate(
-      (t) => document.documentElement.setAttribute("data-theme", t),
-      theme,
-    );
-    await expect(lampPrice).toBeVisible();
-    colours.push(await lampPrice.evaluate((e) => getComputedStyle(e).color));
-    await lampSpent.screenshot({
-      path: path.join(
-        __dirname,
-        `../test-results/e2e/flight-plan-spent-${theme}.png`,
-      ),
+  // Both questions, each under its wish's title, by rank (question-column.tsx).
+  const group = (title: string) =>
+    page.locator(".question-group").filter({
+      has: page.locator(".question-group-head", { hasText: title }),
     });
-  }
-  expect(colours[0]).not.toBe(colours[1]);
-  await page.evaluate(
-    (t) => document.documentElement.setAttribute("data-theme", t ?? "dark"),
-    shown,
-  );
+  await expect(
+    page.locator(".question-column .question-group-head .name"),
+  ).toHaveText([lampTitle, oilTitle]);
+  const oilCard = group(oilTitle)
+    .locator(".question-card")
+    .filter({ hasText: "May the worker pour the oil?" });
+  const lampCard = group(lampTitle)
+    .locator(".question-card")
+    .filter({ hasText: "Which oil for the wick?" });
+  await expect(oilCard).toBeVisible();
+  await expect(lampCard).toBeVisible();
+  // On the right, the glance (Decision Q08): each wish under its title, its workers and nothing else.
+  await expect(page.locator(".glance-head button")).toHaveText([
+    lampTitle,
+    oilTitle,
+  ]);
+  await expect(page.locator(".plan-wish")).toHaveCount(0);
   await page.screenshot({
     path: path.join(__dirname, "../test-results/e2e/flight-plan.png"),
     fullPage: true,
   });
 
-  // Answered from the merged view: the answer goes to its own wish.
+  // Answered from the merged view: the answer goes to its own wish. Closed, a click opens it.
+  await oilCard.click();
+  await expect(oilCard).toHaveClass(/current/);
   await oilCard.getByLabel("Note with the answer").fill("Pour it.");
   await oilCard.getByRole("button", { name: "Rub the lamp" }).click();
   await expect(oilCard).toHaveCount(0);
@@ -303,7 +279,10 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
 
   // The wish's own view stays: its tasks with their tokens in their own tab, its block about W1 in the agents' tab,
   // its journal.
-  await page.locator(".plan-wish").filter({ hasText: lampTitle }).click();
+  await page
+    .locator(".glance-head button")
+    .filter({ hasText: lampTitle })
+    .click();
   await expect(page.locator(".hero h1")).toHaveText(lampTitle);
   // Share and Delete are icons; Pause and Talk to the Djinn keep their words. The operating-load gauge sits between.
   await expect(pageHeader.locator(".page-header-action")).toHaveCount(2);
@@ -356,6 +335,42 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
   await page.getByRole("button", { name: /^Journal/ }).click();
   await expect(page.locator(".journal-list")).toContainText("Kick-off");
   await page.getByRole("tab", { name: /^Tasks/ }).click();
+  // Its Tasks tab says what it spent: one price, then its tokens; the price's hover tells what was reported and what
+  // has no price.
+  const lampSpent = page.locator(".wish-spent");
+  await expect(lampSpent).toContainText("cache read");
+  const lampPrice = lampSpent.locator(".spent-price");
+  await expect(lampPrice).toHaveText("$0.42");
+  await expect(lampPrice).toHaveAttribute(
+    "title",
+    "$0.42 reported\n1 task without a price in the table\nclaude: $0.42",
+  );
+  await expect(lampSpent).not.toContainText("reported");
+  await expect(lampSpent).not.toContainText("without a price");
+  // The price reads in both themes, in a grey of each; the page then shows its own again.
+  const shown = await page.evaluate(
+    () => document.documentElement.dataset.theme,
+  );
+  const colours: string[] = [];
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (t) => document.documentElement.setAttribute("data-theme", t),
+      theme,
+    );
+    await expect(lampPrice).toBeVisible();
+    colours.push(await lampPrice.evaluate((e) => getComputedStyle(e).color));
+    await lampSpent.screenshot({
+      path: path.join(
+        __dirname,
+        `../test-results/e2e/flight-plan-wish-spent-${theme}.png`,
+      ),
+    });
+  }
+  expect(colours[0]).not.toBe(colours[1]);
+  await page.evaluate(
+    (t) => document.documentElement.setAttribute("data-theme", t ?? "dark"),
+    shown,
+  );
   await azimaCard.locator(".azima-heading").click();
   await page
     .locator(".wish-task")

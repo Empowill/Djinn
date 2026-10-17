@@ -132,22 +132,28 @@ func toldDoneAtEnd(t *planv1.Task, integrate bool) bool {
 }
 
 // tellDone tells the lead of t's wish that its work worker ended done, with the first line of its final note and the
-// calls its permissions refused; why, when not empty, says what came of its work ("nothing to merge").
-func (h *Harness) tellDone(ctx context.Context, t *planv1.Task, why string) {
+// calls its permissions refused, its final note whole apart; why, when not empty, says what came of its work
+// ("nothing to merge"); stopped, when not empty, why Djinn stopped its worker (silent.go).
+func (h *Harness) tellDone(ctx context.Context, t *planv1.Task, why, stopped string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	wish, _ := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
-	line := doneLine(t, wish, h.finalNote(ctx, t.GetId()), why)
-	if err := h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line); err != nil &&
-		!errors.Is(err, plan.ErrNoLead) {
+	note := h.finalNote(ctx, t.GetId())
+	line := doneLine(t, wish, firstLine(note), why, stopped)
+	if err := h.toLeadNote(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line,
+		note); err != nil && !errors.Is(err, plan.ErrNoLead) {
 		logx.L().Warn("tell the lead a task is done", "wish", t.GetWishId(), "task", t.GetCode(), "err", err)
 	}
 }
 
-// doneLine is the line that tells a lead the work worker t ended done: what was refused first, with as many names
-// as let the digest keep the whole command, then its note; why, when nothing was refused, says what came of its work.
-func doneLine(t *planv1.Task, wish *planv1.Wish, note, why string) string {
+// doneLine is the line that tells a lead the work worker t ended done: why Djinn stopped it when it did, what was
+// refused first, with as many names as let the digest keep the whole command, then its note; why, when nothing was
+// refused, says what came of its work.
+func doneLine(t *planv1.Task, wish *planv1.Wish, note, why, stopped string) string {
 	line := "Djinn: " + t.GetCode() + " done"
+	if stopped != "" {
+		line += " (" + stopped + ": Djinn stopped it)"
+	}
 	if t.GetRefused().GetCount() > 0 {
 		shown := refusedShown
 		for shown > 0 && !plan.DigestKeeps(&planv1.LeadEvent{
@@ -168,8 +174,8 @@ func doneLine(t *planv1.Task, wish *planv1.Wish, note, why string) string {
 	return line + ": " + note
 }
 
-// finalNote is the first line of the last thing the worker of the task wrote, where it says what it did; "" when it
-// wrote nothing.
+// finalNote is the last thing the worker of the task wrote, where it says what it did, whole; "" when it wrote
+// nothing.
 func (h *Harness) finalNote(ctx context.Context, taskID string) string {
 	var last string
 	err := store.Latest(ctx, h.store, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
@@ -181,7 +187,7 @@ func (h *Harness) finalNote(ctx context.Context, taskID string) string {
 	if err != nil {
 		return ""
 	}
-	return firstLine(last)
+	return strings.TrimSpace(last)
 }
 
 // spawnNote says what the spawner of t should know of where it runs: with its agent's own configuration (access
@@ -196,7 +202,7 @@ func (h *Harness) spawnNote(ctx context.Context, t *planv1.Task) string {
 	if err1 != nil || err2 != nil {
 		return ""
 	}
-	access, _, err := decideAccess(project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
+	access, _, err := decideAccess(h.home, project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
 	if err != nil || access != planv1.TaskAccess_TASK_ACCESS_NATIVE {
 		return ""
 	}

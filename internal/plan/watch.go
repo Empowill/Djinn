@@ -149,21 +149,46 @@ func (ws *watchers) changed(ms []proto.Message) {
 		case *planv1.Task:
 			// Whether Djinn proposes to grant the wish follows its tasks: take says whether this one changes it.
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TASK, m.GetId()})
+			if p := m.GetPrompt(); strings.Contains(p, "djinn://tilasm/") || strings.Contains(p, "--code") {
+				// A task on a tilasm holds its sends while it runs (TilasmHold).
+				changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+			}
 		case *planv1.Question:
 			// And its questions.
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_QUESTION, m.GetId()},
 				change{m.GetWishId(), planv1.Change_CHANGE_WISH, ""})
+			if questionLinksTilasm(m) {
+				// Answering the question that links a tilasm launches it (TilasmHold).
+				changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+			}
 		case *planv1.Block:
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_BLOCK, m.GetId()})
 		case *planv1.Tilasm:
 			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+		case *planv1.TilasmComment:
+			// The comments show in the tilasm's view, which reads its tilasm again.
+			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+		case *planv1.TilasmSend:
+			// And its sends.
+			changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+		case *planv1.LeadEvent:
+			if m.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_COMMENTS {
+				// A send waits for the Djinn until it reads it (TilasmHold).
+				changes = append(changes, change{m.GetWishId(), planv1.Change_CHANGE_TILASM, ""})
+			}
 		case *planv1.Project:
 			// The inbox's sources come from the projects' skills.
 			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT, ""}, change{"", planv1.Change_CHANGE_INBOX, ""})
 		case *planv1.ProjectSync:
 			// Where a branch stands against its remote, or its push: the harness notes it (store.Tx.Change).
 			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT, ""})
-		case *planv1.InboxItem, *planv1.PluggedSource:
+		case *planv1.ConfigWatch, *planv1.ConfigChange:
+			// A look at the reference branch, or a change marked seen: the project's gear may light or go out.
+			changes = append(changes, change{"", planv1.Change_CHANGE_PROJECT, ""})
+		case *planv1.PluggedSource, *planv1.DeclinedSource:
+			// A source decided on this machine: its project counts one thing less to fix.
+			changes = append(changes, change{"", planv1.Change_CHANGE_INBOX, ""}, change{"", planv1.Change_CHANGE_PROJECT, ""})
+		case *planv1.InboxItem, *planv1.SourceRun:
 			changes = append(changes, change{"", planv1.Change_CHANGE_INBOX, ""})
 		}
 	}
@@ -398,7 +423,10 @@ func (sub *watcher) readTasks(ctx context.Context, s *store.Store, wishID string
 	slices.SortFunc(tasks, func(a, b *planv1.Task) int { return strings.Compare(a.GetId(), b.GetId()) })
 	for _, t := range tasks {
 		if IsAzima(t) {
-			t.Azima = proto.CloneOf(shapes[t.GetId()].GetAzima())
+			// Its state from the shapes, which hold none of what Djinn records of it: that comes from the store (W219).
+			a := proto.CloneOf(shapes[t.GetId()].GetAzima())
+			KeepAzimaRecord(a, t.GetAzima())
+			t.Azima = a
 		}
 	}
 	if err := FillTilasms(ctx, s, tasks); err != nil {

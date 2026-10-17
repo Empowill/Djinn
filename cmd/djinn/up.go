@@ -60,8 +60,9 @@ func runUp(args []string) (restart bool, err error) {
 		enlightenWorkers                          bool
 		profiles                                  bool
 		port, maxWorkers, workerCPU, workerMemory int
+		diskTrim, diskFull                        int
 		workerMemoryGuard                         float64
-		term, termDir                             string
+		term, termDir, ifritIdle                  string
 	)
 	flags := cli.Up.FlagSet(map[string]any{
 		"browser": &browser, "port": &port, "terminal": &term, "terminal-dir": &termDir, "workers": &maxWorkers,
@@ -69,6 +70,9 @@ func runUp(args []string) (restart bool, err error) {
 		"worker-memory-guard": &workerMemoryGuard,
 		"enlighten-workers":   &enlightenWorkers,
 		"pprof":               &profiles,
+		"ifrit-idle":          &ifritIdle,
+		"disk-trim-gb":        &diskTrim,
+		"disk-full-gb":        &diskFull,
 	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
@@ -125,6 +129,17 @@ func runUp(args []string) (restart bool, err error) {
 	if workerMemoryGuard < 0 {
 		return false, fmt.Errorf("--worker-memory-guard %g: expected a positive factor (e.g. 2 to 3), or 0 to turn off", workerMemoryGuard)
 	}
+	disk := harness.DiskGuard{Free: diskFree}
+	if disk.Trim, err = diskFlag(flags, "disk-trim-gb", diskTrim); err != nil {
+		return false, err
+	}
+	if disk.Full, err = diskFlag(flags, "disk-full-gb", diskFull); err != nil {
+		return false, err
+	}
+	idle, err := ifritIdleFlag(ifritIdle)
+	if err != nil {
+		return false, err
+	}
 	home, err := ui.Home()
 	if err != nil {
 		return false, err
@@ -138,6 +153,14 @@ func runUp(args []string) (restart bool, err error) {
 		fmt.Fprintln(os.Stderr, "djinn: the last djinn up did not stop cleanly; starting again")
 		unclean = true
 	}
+	// A restore a stop cut between its renames left no data folder: it ends before anything creates one.
+	restored, restoreErr := backup.Finish(home)
+	for _, line := range restored {
+		fmt.Fprintln(os.Stderr, "djinn:", line)
+	}
+	if restoreErr != nil {
+		return false, fmt.Errorf("finish the restore a stop cut: %w", restoreErr)
+	}
 	// What djinn up does goes to logs/djinn.log, rolled over (W511); its stop is followed step by step there, and a
 	// stop that hangs dumps its goroutines, then exits.
 	stopLog, err := logx.Start(home)
@@ -149,6 +172,9 @@ func runUp(args []string) (restart bool, err error) {
 		"flags", flagNames(flags))
 	if unclean {
 		logx.L().Warn("the last djinn up did not stop cleanly", "addr", filepath.Join(home, server.AddrFile))
+	}
+	for _, line := range restored {
+		logx.L().Warn("a cut restore", "did", line)
 	}
 	// A panic of djinn up's own goroutine ends it, its stack in the log first; each goroutine it starts does the same,
 	// or recovers where it can go on (a call to the server, a callback of the window).
@@ -167,6 +193,10 @@ func runUp(args []string) (restart bool, err error) {
 		return false, fmt.Errorf("open the database: %w", err)
 	}
 	defer down.Step("database", func() { db.Close() })
+	// The questions stored with the history Djinn appended to their context lose it: their rounds hold it (W114).
+	if err := plan.CleanVersions(ctx, db); err != nil {
+		return false, fmt.Errorf("clean the questions' versions: %w", err)
+	}
 	// A transaction that holds the one connection past logx.HeldLong names itself in the log, with a dump (W549).
 	go db.Watch(ctx, logx.Folder(home))
 	// The workers stop before the database closes: deferred calls run last first.
@@ -176,7 +206,12 @@ func runUp(args []string) (restart bool, err error) {
 	policy.WorkerMemory = uint64(workerMemory) << 20
 	policy.WorkerMemoryGuard = workerMemoryGuard
 	read := readMachine
-	if read == nil {
+	switch {
+	case read != nil:
+	case ui.StampedTestBuild() && os.Getenv("DJINN_TEST_MACHINE") == "calm":
+		// The e2e suite's djinn (e2e/playwright.config.ts): its fake workers start whatever the machine runs besides.
+		read = machine.Calm
+	default:
 		read = machine.Reader(home)
 	}
 	monitor := machine.NewMonitor(policy, read)
@@ -192,6 +227,14 @@ func runUp(args []string) (restart bool, err error) {
 		// Started from the Finder or a desktop menu, Djinn has a bare PATH (fromLauncher): before each start, its PATH
 		// gains the folders of the agents installed meanwhile.
 		harness.WithBeforeStart(beforeStart()),
+		// While a task waits for its agent's usage limit, an account changed since lifts it (health.go).
+		harness.WithAccount(ui.Account),
+		// An outage Djinn suspects from its workers' and commands' errors is confirmed, and seen to end, by one HEAD
+		// to the provider's API host every 30 s, only while it is suspected (network.go).
+		harness.WithNetworkProbe(harness.ProbeHTTP),
+		// Before a worker starts and before push checks, the free space of the data folder's disk and the Go build
+		// cache's: low, the cache's old entries go; almost full, the lead hears it and the push checks wait (disk.go).
+		harness.WithDiskGuard(disk),
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
@@ -199,13 +242,17 @@ func runUp(args []string) (restart bool, err error) {
 	if enlightenSet {
 		opts = append(opts, harness.WithEnlightenWorkers(enlightenWorkers))
 	}
-	if scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory, policy.WorkerMemoryGuard); scopes != nil {
+	if idle > 0 {
+		opts = append(opts, harness.WithIfritIdle(idle))
+	}
+	scopes := workerScopes(ctx, os.Stderr, workerCPU, policy.WorkerMemory, policy.WorkerMemoryGuard)
+	if scopes != nil {
 		opts = append(opts, harness.WithScopes(scopes))
 	}
 	// The integration of finished work runs its gen, setup and checks under the gates, as djinn gate run does.
 	var gates *gate.Gates
-	opts = append(opts, harness.WithGates(func(ctx context.Context, name, taskID, what, dir string, waiting func(string)) (func(), error) {
-		held, err := gates.Take(ctx, gate.Request{Name: name, TaskID: taskID, What: what, Dir: dir}, waiting)
+	opts = append(opts, harness.WithGates(func(ctx context.Context, name, taskID, what, dir string, first bool, waiting func(string)) (func(), error) {
+		held, err := gates.Take(ctx, gate.Request{Name: name, TaskID: taskID, What: what, Dir: dir, First: first}, waiting)
 		if err != nil {
 			return nil, err
 		}
@@ -235,6 +282,10 @@ func runUp(args []string) (restart bool, err error) {
 	seriesRec := machine.NewSeriesRecorder(monitor, machine.ReadWorker)
 	seriesRec.Keep(history)
 	seriesRec.ReadSelf(machine.ReadSelf)
+	// The Djinn line reads the cgroups of its work, every djinn-*.scope of the slice its scopes are made in (W347).
+	seriesRec.ReadWork(func() (machine.Work, error) {
+		return machine.ReadWork(os.Getpid(), scopes.Slice(), workers.Cgroups())
+	})
 	seriesRec.Sample()
 	go func() {
 		defer logx.Crash("series")
@@ -313,9 +364,18 @@ func runUp(args []string) (restart bool, err error) {
 	// The lead a wish kept, before the one lead, is the lead from now on.
 	lead := carryLead(ctx, db, os.Stderr)
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
-	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, lead.GetSessionId(), os.Stderr))
+	// The lead Djinn drives (decision Q31) runs in no terminal: a session per batch of its events, once the services
+	// run. Until it is proven, it is a setting (ui.v1.Settings.lead_driven); the lead runs in its terminal otherwise.
+	driven := machine.ReadLeadDriven(home)
+	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, lead.GetSessionId(), driven, os.Stderr))
 	// Then the lead, unless a lead came back already.
-	leadFailed := resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
+	var leadFailed error
+	if driven {
+		plan.DriveLead(db, nil)
+		logx.L().Info("Djinn drives the lead", "loop", "lead")
+	} else {
+		leadFailed = resumeLead(ctx, db, home, terminals, uiSvc, os.Stderr)
+	}
 	updates, err := newUpdater(version, uiSvc, terminals, leadNotes, stop)
 	if err != nil {
 		return false, err
@@ -368,6 +428,7 @@ func runUp(args []string) (restart bool, err error) {
 		return ""
 	}
 	workers.Integrate()
+	workers.WatchConfig()
 	raise := make(chan struct{}, 1)
 	var url string // In browser mode, the page to open, token included.
 	uiSvc.Window = !browser
@@ -415,6 +476,7 @@ func runUp(args []string) (restart bool, err error) {
 		plan.WithShowTilasm(showTilasm), plan.WithTilasmURL(tilasmURL),
 		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
 		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead), plan.WithLeadFailed(leadFailed),
+		plan.WithIfritWaits(gates.IfritWaits), plan.WithOverlaps(workers.OverlapsBrief),
 	)
 	loadPrefix, loadHandler := machine.LoadHandler(home, monitor, workers.SetPolicy, func(n djinnv1.LoadNotch) {
 		if broadcastLoad != nil {
@@ -425,16 +487,26 @@ func runUp(args []string) (restart bool, err error) {
 		machine.WithLoadForcedWorkers(workers.Forced),
 		machine.WithLoadLowerPauses(workers.LowerPauses),
 		machine.WithLoadWorkerForecast(workers.WorkerForecast),
+		machine.WithLoadOutside(seriesRec.Outside),
 		machine.WithLoadStreamer(func(stream func(context.Context, func(*djinnv1.LoadServiceWatchResponse) error) error) {
 			uiSvc.WatchLoad = stream
 		}),
 	)
 	svc[loadPrefix] = loadHandler
+	if driven {
+		lead := &plan.Wishes{Store: db, Home: home, Language: render.SystemLanguage(), Workers: workers}
+		go workers.LeadDriver(lead, func() {
+			if changeLead != nil {
+				changeLead()
+			}
+		}).Run(ctx)
+	}
 	machinePrefix, machineHandler := machine.Handler(monitor, workers.Running, workers.Uses,
 		machine.WithSeriesRecorder(seriesRec),
 		machine.WithHistory(history),
 		machine.WithSeriesWorkers(workers.RunsSeries),
 		machine.WithSeriesIntervals(gates.Intervals),
+		machine.WithNetwork(workers.NetworkDownSince),
 	)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
@@ -448,6 +520,8 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	svc[server.DumpPath] = server.Dump(logx.Folder(home))
 	h := server.Handler(djinn.UI(), djinn.Docs(), svc)
+	// The developer's own requests keep the ifrits lit; a worker's, inside WorkerContext, do not.
+	h = harness.Touching(h, workers.Presence())
 	h = server.WorkerContext(h, func(ctx context.Context, peerPID int, token string) context.Context {
 		if caller := workers.Caller(peerPID, token); caller != nil {
 			return plan.WithCaller(ctx, caller)
@@ -520,6 +594,9 @@ func runUp(args []string) (restart bool, err error) {
 		Answer: func(ctx context.Context, id string, choice planv1.Choice) error { return answer(ctx, addr, id, choice) },
 	}
 	uiSvc.Notices = notices
+	// The window's touches keep the ifrits lit, as the Keep lit button of the warning Djinn shows before one goes out.
+	uiSvc.Touched, notices.KeepLit = workers.Presence().Touch, workers.Presence().Touch
+	workers.WarnIfrits(notices.IfritWarning)
 	go notices.Run(ctx)
 	prompted := func() {
 		changeLead()
@@ -579,7 +656,7 @@ func services(
 	uiPrefix, uiHandler := uiv1connect.NewUiServiceHandler(uiSvc)
 	language := render.SystemLanguage()
 	out := plan.Handlers(db, append([]plan.Option{plan.WithAnswered(h.Answered), plan.WithEnlightened(h.Enlightened),
-		plan.WithLeads(leads{terminals, uiSvc}),
+		plan.WithIterated(h.Iterated), plan.WithLaunch(h.LaunchPlan), plan.WithLeads(leads{terminals, uiSvc}),
 		plan.WithPages(pages), plan.WithLanguage(language), plan.WithWatchers(h.SpawnWatcher), plan.WithHome(home),
 		plan.WithWorkers(h), plan.WithPusher(h), plan.WithFillModels(h.FillModels), plan.WithClock(h.Now)}, more...)...)
 	// A watcher wakes the lead of its wish, as an answer does; its done line offers to grant a wish made from a
@@ -593,6 +670,8 @@ func services(
 	// A request to investigate the last djinn up stored but left without a follow-up gets its investigator, or the
 	// lead's event, now.
 	h.ResumeInvestigations()
+	// A task whose blocking question was answered as the last djinn up stopped, before it was continued, is now.
+	h.ResumeDecisions()
 	h.OnWatched(wishes.Watched)
 	// The inbox sources of the projects' skills run until djinn up stops; what they print waits for a click.
 	h.RunSources((&plan.Inbox{Wishes: wishes}).Receive)
@@ -602,6 +681,8 @@ func services(
 	out[taskPrefix] = taskHandler
 	planPrefix, planHandler := harness.PlanHandler(h)
 	out[planPrefix] = planHandler
+	servePrefix, serveHandler := harness.ServeHandler(h)
+	out[servePrefix] = serveHandler
 	terminalPrefix, terminalHandler := terminal.Handler(terminals)
 	out[terminalPrefix] = terminalHandler
 	return out
@@ -700,7 +781,43 @@ func answer(ctx context.Context, addr, questionID string, choice planv1.Choice) 
 	return err
 }
 
+// ifritIdleFlag reads djinn up --ifrit-idle: a duration from 5 minutes to 4 hours, in whole minutes; 0 for none given.
+func ifritIdleFlag(s string) (time.Duration, error) {
+	if s == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d < 5*time.Minute || d > 4*time.Hour || d%time.Minute != 0 {
+		return 0, fmt.Errorf("--ifrit-idle %s: expected whole minutes from 5m to 4h, like 30m or 1h30m", s)
+	}
+	return d, nil
+}
+
 // flagSet tells whether the command line set the flag name.
+// diskFlag is a disk threshold of djinn up in bytes: the flag name, given; else its environment variable, set; else
+// the flag's default, v.
+func diskFlag(flags *flag.FlagSet, name string, v int) (uint64, error) {
+	env := "DJINN_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+	if e := os.Getenv(env); e != "" && !flagSet(flags, name) {
+		if _, err := fmt.Sscan(e, &v); err != nil {
+			return 0, fmt.Errorf("%s: %w", env, err)
+		}
+	}
+	if v < 0 {
+		return 0, fmt.Errorf("--%s %d: expected GB, or 0 for never", name, v)
+	}
+	return uint64(v) * harness.GB, nil
+}
+
+// diskFree is the space Djinn may use on the file system that holds dir.
+func diskFree(dir string) (uint64, error) {
+	d, err := machine.ReadDisk(dir)
+	if err != nil {
+		return 0, err
+	}
+	return d.Available, nil
+}
+
 func flagSet(flags *flag.FlagSet, name string) bool {
 	set := false
 	flags.Visit(func(f *flag.Flag) { set = set || f.Name == name })

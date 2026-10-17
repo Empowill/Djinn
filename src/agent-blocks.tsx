@@ -10,6 +10,7 @@ import { isDecisionBlock } from "./data/decisions";
 import { when } from "./data/format";
 import { isLog } from "./data/journal";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { MarkdownBody } from "./markdown-body";
 import { SafeSvg } from "./safe-svg";
 
@@ -33,7 +34,9 @@ export function AgentBlocks({
       aria-labelledby="view-tab-agents"
     >
       <p className="muted-text">{t("agents.detail")}</p>
-      {blocks.length === 0 && <p className="muted-text">{t("agents.none")}</p>}
+      {blocks.length === 0 && (
+        <EmptyState art="agents">{t("agents.none")}</EmptyState>
+      )}
       {blocks.map((block) => (
         <AgentBlock
           key={block.id}

@@ -18,7 +18,6 @@ import (
 	"strings"
 	"unicode"
 
-	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -70,26 +69,30 @@ type djinnYAML struct {
 	Babysit *babysitYAML  `yaml:"babysit"`
 }
 
-// readDjinn reads metadata.djinn in the SKILL.md of the skill in dir: empty without it.
+// UnreadableSkillError is why Djinn cannot read what a skill's SKILL.md declares for it: its metadata is not YAML,
+// or its metadata.djinn is not what Djinn reads. Nothing of the skill counts for Djinn, neither template, source nor
+// babysit: a problem of the project that holds it, not a source of the inbox. Another key of the front matter that
+// breaks the YAML is only a warning: skillFront reads metadata apart.
+type UnreadableSkillError struct{ Err error }
+
+func (e *UnreadableSkillError) Error() string { return e.Err.Error() }
+func (e *UnreadableSkillError) Unwrap() error { return e.Err }
+
+// readDjinn reads metadata.djinn in the SKILL.md of the skill in dir: empty without it, an UnreadableSkillError when it
+// cannot be read.
 func readDjinn(dir string) (djinnYAML, error) {
-	front, err := frontMatter(filepath.Join(dir, SkillFile))
-	if err != nil || front == "" {
-		return djinnYAML{}, err
-	}
 	// Agent Skills lets a skill hold extra metadata; Djinn reads its own key only, and ignores the rest.
-	var doc struct {
-		Metadata map[string]yaml.Node `yaml:"metadata"`
+	metadata, _, err := skillFront(dir)
+	if err != nil {
+		return djinnYAML{}, &UnreadableSkillError{Err: err}
 	}
-	if err := yaml.Unmarshal([]byte(front), &doc); err != nil {
-		return djinnYAML{}, fmt.Errorf("%s: its front matter is not YAML: %w", SkillFile, err)
-	}
-	node, ok := doc.Metadata["djinn"]
+	node, ok := metadata["djinn"]
 	if !ok {
 		return djinnYAML{}, nil
 	}
 	var djinn djinnYAML
 	if err := node.Decode(&djinn); err != nil {
-		return djinnYAML{}, fmt.Errorf("%s: metadata.djinn: %w", SkillFile, err)
+		return djinnYAML{}, &UnreadableSkillError{Err: fmt.Errorf("%s: metadata.djinn: %w", SkillFile, err)}
 	}
 	return djinn, nil
 }
@@ -181,10 +184,10 @@ func quoteWord(s string) string {
 
 // Templates are the wish templates of the skills the projects use, their own then those they summon, in the
 // projects' order then by name. A template that cannot be used is left out.
-func Templates(ctx context.Context, r store.Reader, projects []*planv1.Project) ([]*Template, error) {
+func Templates(ctx context.Context, r store.Reader, home string, projects []*planv1.Project) ([]*Template, error) {
 	var out []*Template
 	for _, p := range projects {
-		dirs, err := usedSkills(ctx, r, p)
+		dirs, err := usedSkills(ctx, r, home, p)
 		if err != nil {
 			return nil, err
 		}
@@ -307,7 +310,7 @@ func (w *Wishes) startTemplate(ctx context.Context, wish *planv1.Wish) string {
 	}
 	skill := fmt.Sprintf("the skill %s", t.GetSkill())
 	if p, err := store.Get[*planv1.Project](ctx, w.Store, t.GetProjectId()); err == nil {
-		if dir := usedSkill(ctx, w.Store, p, t.GetSkill()); dir != "" {
+		if dir := usedSkill(ctx, w.Store, w.home(), p, t.GetSkill()); dir != "" {
 			skill = fmt.Sprintf("the skill %s (%s)", t.GetSkill(), filepath.Join(dir, SkillFile))
 		}
 	}
@@ -336,11 +339,11 @@ func (w *Wishes) startTemplate(ctx context.Context, wish *planv1.Wish) string {
 }
 
 // usedSkill is the folder of the skill name that project uses, its own or summoned; empty when it is not found.
-func usedSkill(ctx context.Context, r store.Reader, project *planv1.Project, name string) string {
-	if s, err := FindSkill(project.GetDirectory(), name); err == nil {
+func usedSkill(ctx context.Context, r store.Reader, home string, project *planv1.Project, name string) string {
+	if s, err := FindProjectSkill(home, project, name); err == nil {
 		return s.Dir
 	}
-	summoned, _ := SummonedSkills(ctx, r, project)
+	summoned, _ := SummonedSkills(ctx, r, home, project)
 	for _, s := range summoned {
 		if s.Missing == "" && strings.EqualFold(s.Name, name) {
 			return s.Dir

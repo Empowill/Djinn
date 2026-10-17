@@ -16,6 +16,7 @@ import {
 import type { GateInterval } from "../gen/ts/machine/v1/machine_pb";
 import { timeOf } from "./data/series";
 import { language, t } from "./i18n";
+import { useTextScale } from "./text-size";
 import { memory } from "./usage";
 
 export interface ChartPoint {
@@ -187,7 +188,7 @@ export const ResourceChart = memo(function ResourceChart({
   memoryTotal = 0,
   lines = [],
   gates = [],
-  height = 190,
+  height: tall = 190,
 }: {
   title: string;
   unit: ChartUnit;
@@ -204,8 +205,10 @@ export const ResourceChart = memo(function ResourceChart({
   memoryTotal?: number;
   lines?: readonly ChartLine[];
   gates?: readonly GateInterval[];
+  // In pixels at the default text size: the chart grows and shrinks with it (text-size.ts).
   height?: number;
 }) {
+  const height = Math.round(tall * useTextScale());
   const plot = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   // The time of the point shown, kept as new samples come; null when none is.

@@ -7,6 +7,7 @@ package dispatch
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -26,8 +27,13 @@ type Machine struct {
 	Pressure string
 	// Running is the number of workers that run now.
 	Running int
-	// Gates is the number of gates held outside the running workers: each takes a slot.
-	Gates int
+	// Gates is the number of gates held outside the running workers: each takes a slot. Merges is how many of them
+	// Djinn holds to merge a task's work, settle a merge or check a push.
+	Gates, Merges int
+	// Keep keeps one slot free for the gates of merges and pushes, when the machine has more than one (Q26): a new
+	// worker never takes it, so a merge or a push never waits behind workers on a full machine. A merge's gate held
+	// outside the workers takes that slot. djinn up keeps it once its gates are served.
+	Keep bool
 	// Resuming is the number of workers paused by the load bar or for an investigator, which resume before any new
 	// task (Q123): each keeps its slot from a new work task. An investigator goes before them.
 	Resuming int
@@ -47,6 +53,7 @@ type Situation struct {
 	byID    map[string]*planv1.Task
 	wishes  map[string]*planv1.Wish
 	rank    map[string]int // position of each active wish
+	place   map[string]int // position of each azima among its wish's (plan.AzimaPlaces)
 	git     map[string]bool
 	machine *Machine
 	started map[string]bool // the workers started in this pass: each takes a slot and memory
@@ -59,6 +66,43 @@ type Situation struct {
 	isAncestor AncestryChecker
 	ancestry   map[[2]string]bool // (branchHead, integrationHead) -> isAncestor
 	isRunning  func(taskID string) bool
+	// questionCode is the code of a question by its identifier (Q51), for the reason of a task whose dependency waits
+	// on a blocking question; "" when unknown.
+	questionCode func(id string) string
+	// network is what the network allows now (W285); nil: it holds nothing back.
+	network *Network
+}
+
+// Network is what the network allows now (W285).
+type Network struct {
+	// Down says since when the network is down, or that it may be while Djinn probes it: no worker starts then, a
+	// watcher neither. "" when it is up.
+	Down string
+	// OnePerPass: the network is back, and the work the outage stopped resumes one task per pass, so that its workers
+	// do not all call their providers at once; the tasks after it in the order wait their turn. Spent: the harness
+	// resumed a paused worker in this pass already, and no task starts besides.
+	OnePerPass, Spent bool
+}
+
+// WithNetwork tells the situation what the network allows now; nil: nothing holds back.
+func (s *Situation) WithNetwork(n *Network) *Situation {
+	s.network = n
+	return s
+}
+
+// networkHeld says why the network holds back t, which would start: it is down, or back and a task resumed in this
+// pass already; "" when it holds nothing back. A watcher takes no slot: it waits only while the network is down.
+func (s *Situation) networkHeld(t *planv1.Task) string {
+	n := s.network
+	switch {
+	case n == nil:
+		return ""
+	case n.Down != "":
+		return n.Down
+	case n.OnePerPass && n.Spent && !Watcher(t):
+		return "the network is back: Djinn resumes the work it stopped, one task per pass"
+	}
+	return ""
 }
 
 // AncestryChecker tells whether commit a is an ancestor of commit b in projectID:
@@ -73,6 +117,13 @@ type BranchResolver func(projectID, branch string) (head string, noCommits bool)
 func (s *Situation) WithAncestry(branchHead BranchResolver, isAncestor AncestryChecker) *Situation {
 	s.branchHead = branchHead
 	s.isAncestor = isAncestor
+	return s
+}
+
+// WithQuestions equips the situation with what names a question by its identifier: a task whose dependency waits on
+// a blocking question (Task.wait_question_id) waits "for Q51".
+func (s *Situation) WithQuestions(code func(id string) string) *Situation {
+	s.questionCode = code
 	return s
 }
 
@@ -111,6 +162,7 @@ func New(tasks []*planv1.Task, wishes []*planv1.Wish, git map[string]bool, machi
 	for i, w := range plan.Ranked(wishes) {
 		s.rank[w.GetId()] = i
 	}
+	s.place = plan.AzimaPlaces(tasks)
 	return s
 }
 
@@ -133,9 +185,15 @@ type Decision struct {
 	// It waits for the machine alone: no slot free, the machine under pressure, or its memory short. Forced
 	// (djinn task start), it may start. A task that waits for one going first before it does not.
 	Machine bool
-	// It waits for a slot alone: the machine is not under pressure and its memory holds it. An investigator pauses
-	// a work task for it (the harness's preemptForSlot): it takes that task's slot, never one more.
+	// It waits for room on the machine: Machine, or a task the memory holds goes before it (Task.room_wait). Neither
+	// its wish, a dependency, a push hold, a usage limit nor a write scope holds it.
+	Room bool
+	// It waits for a slot alone: the machine is not under pressure and its memory holds it. An investigator, an
+	// investigation, a merge or a repair pauses a work task for it (the harness's preemptForSlot): it takes that task's
+	// slot, never one more.
 	Slot bool
+	// What holds it while it waits (Task.hold): unspecified when it starts or fails.
+	Hold planv1.TaskHold
 }
 
 // Planned tells whether Djinn starts the task by itself, once it is ready: a task planned on this machine, or one
@@ -164,6 +222,44 @@ func Watcher(t *planv1.Task) bool { return t.GetProvider() == planv1.Provider_PR
 // hold it. On a full machine, an investigator takes the slot of a work task it pauses (Decision.Slot).
 func QuestionWorker(t *planv1.Task) bool { return t.GetRole() != planv1.TaskRole_TASK_ROLE_UNSPECIFIED }
 
+// Ifrit tells whether the task is an ifrit (TASK_KIND_IFRIT): a worker that stays lit while the developer is there.
+// The developer waits for it: it starts beyond the slots, as a task started by hand does, and only the machine's
+// pressure or its memory hold it.
+func Ifrit(t *planv1.Task) bool { return t.GetKind() == planv1.TaskKind_TASK_KIND_IFRIT }
+
+// Investigation tells whether the task is an investigation (TASK_KIND_INVESTIGATION): a short study or audit that ends
+// in a tilasm and a question, its commits never merged. It works in a worktree of its own, so it takes a slot like any
+// worker; it is served first, as an investigator is (ServedFirst), at most InvestigationCap of them at once.
+func Investigation(t *planv1.Task) bool {
+	return t.GetKind() == planv1.TaskKind_TASK_KIND_INVESTIGATION
+}
+
+// Mockup tells whether the task is a mockup task (TASK_KIND_MOCKUP): framed like an investigation, it puts a tilasm's
+// next version, then revises the question it iterates on (Task.question).
+func Mockup(t *planv1.Task) bool { return t.GetKind() == planv1.TaskKind_TASK_KIND_MOCKUP }
+
+// ChangesNoCode tells whether the task's work never reaches its project's code: an investigation or a mockup, whose
+// commits Djinn never merges. The other workers' state holds none of them: neither its wish's red push checks, nor a
+// merge in conflict or its repair (pushHeld), nor the merge freeze while a branch is repaired (it merges nothing), nor
+// a write scope; and its work never holds a task that depends on it once done.
+func ChangesNoCode(t *planv1.Task) bool { return Investigation(t) || Mockup(t) }
+
+// ServedFirst tells whether the task is served before the planned work, and may take, on a full machine, the slot of a
+// work task it pauses (Decision.Slot): an investigator (Enlighten me), an investigation or a mockup. None is held by
+// the paused workers that resume first, nor preempted itself.
+func ServedFirst(t *planv1.Task) bool {
+	return t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR || ChangesNoCode(t)
+}
+
+// InvestigationCap is how many investigations and mockups run at once on a machine of slots: one on a machine of three
+// slots or fewer, two above, so that they never take more than a third of the work's slots, and never starve it.
+func InvestigationCap(slots int) int {
+	if slots <= 3 {
+		return 1
+	}
+	return 2
+}
+
 // Light tells whether the task writes nothing in its project's folder: a watcher, or a question worker. Only a watcher
 // takes no slot.
 func Light(t *planv1.Task) bool { return Watcher(t) || QuestionWorker(t) }
@@ -171,35 +267,86 @@ func Light(t *planv1.Task) bool { return Watcher(t) || QuestionWorker(t) }
 // Resuming tells whether the task is one Djinn resumes.
 func Resuming(t *planv1.Task) bool { return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING }
 
-// Pass decides for every planned task, the first wish of the rank first, then the oldest: each task it starts
-// counts as writing and takes a slot for the ones after it.
+// Urgent tells whether the lead marked the task urgent (Task.urgent) and it is still to run or runs: planned, waiting,
+// running or paused. While planned it goes before every other planned task, takes a slot whatever the machine, as
+// djinn task start does, and its integration branch's red push checks do not hold it. A watcher or an azima never is:
+// neither takes a slot. It is of one of two classes: a repair, which unblocks the wish and goes first, or a task for
+// the developer's quick feedback (Feedback). At most one task of a wish is urgent of each class at a time (UrgentOf).
+func Urgent(t *planv1.Task) bool {
+	if !t.GetUrgent() || Watcher(t) || plan.IsAzima(t) {
+		return false
+	}
+	switch t.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.TaskStatus_TASK_STATUS_RUNNING,
+		planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_WAITING:
+		return true
+	}
+	return false
+}
+
+// Feedback tells whether the task is urgent for the developer's quick feedback (Task.feedback): a mockup or a change
+// they asked to see, after the wish's urgent repair.
+func Feedback(t *planv1.Task) bool { return Urgent(t) && t.GetFeedback() }
+
+// UrgentOf is the urgent task of the wish among tasks (Urgent) of the class feedback says (Feedback, or a repair), other
+// than the task except; nil when none is.
+func UrgentOf(tasks []*planv1.Task, wishID, except string, feedback bool) *planv1.Task {
+	for _, t := range tasks {
+		if t.GetWishId() == wishID && t.GetId() != except && Urgent(t) && t.GetFeedback() == feedback {
+			return t
+		}
+	}
+	return nil
+}
+
+// Pass decides for every planned task, in Order: the first wish of the rank first, then its first azima, then the
+// oldest. Each task it starts
+// counts as writing and takes a slot for the ones after it. An urgent task starts whatever the machine (Urgent).
 func (s *Situation) Pass() []Decision {
 	var out []Decision
 	for _, t := range s.Order() {
-		why, failed := s.Held(t)
-		machine, slot := false, false
+		why, failed, hold := s.held(t)
+		machine, room, slot := false, false, false
 		if why == "" && failed == "" {
-			var first bool
-			if why, first, slot = s.full(t); why == "" {
-				s.Start(t)
+			if why = s.networkHeld(t); why != "" {
+				machine, room = true, true // djinn task start may start it all the same.
+				hold = planv1.TaskHold_TASK_HOLD_NETWORK
+			} else {
+				var first bool
+				if why, first, slot = s.full(t); why == "" {
+					s.Start(t)
+					if s.network != nil && s.network.OnePerPass && !Watcher(t) {
+						s.network.Spent = true
+					}
+				}
+				room = why != ""
+				machine = room && !first
+				if room {
+					hold = planv1.TaskHold_TASK_HOLD_PLACE
+				}
 			}
-			machine = why != "" && !first
+		}
+		if failed != "" {
+			hold = planv1.TaskHold_TASK_HOLD_UNSPECIFIED
 		}
 		out = append(out, Decision{Task: t, Why: why, Failed: failed, Commit: why != "" && s.awaitsCommit(t),
-			Machine: machine, Slot: slot})
+			Machine: machine, Room: room, Slot: slot, Hold: hold})
 	}
 	return out
 }
 
-// Order is the planned tasks in the strict 5-tier order:
-//  1. Investigator workers (Enlighten me), followed by answer workers;
+// Order is the planned tasks in the strict tiered order, the urgent tasks before all (Urgent), a repair before a task
+// for feedback:
+//  1. Investigator workers (Enlighten me), followed by answer workers, then investigations and mockups;
 //  2. Correction workers, followed by review workers;
 //  3. Resumed work tasks (RESUMING: limits, restarts, preemptions);
-//  4. Work tasks that unblock others (graph's critical path: most planned and waiting dependents first);
-//  5. Other work tasks.
+//  4. Work tasks: the first wish of the rank first, then the work of the first azima of its rank (Task.rank, work of
+//     no azima after it), then the tasks that unblock others (graph's critical path: most planned and waiting
+//     dependents first), then the others.
 //
-// Within each level and sub-level, ties are broken by the wish's rank, then the oldest first, then by task ID.
-// The tasks of a wish that is not active come last; Blocker keeps them waiting.
+// Within the first tiers and their sub-levels, ties are broken by the wish's rank, then its azimas' rank; then, in
+// every tier, the oldest first, then by task ID. The tasks of a wish that is not active come last; Blocker keeps them
+// waiting.
 func (s *Situation) Order() []*planv1.Task {
 	var out []*planv1.Task
 	for _, t := range s.tasks {
@@ -214,13 +361,25 @@ func (s *Situation) Order() []*planv1.Task {
 		}
 		return len(s.rank)
 	}
+	// place is the position of the task's azima among its wish's: work of no azima comes after the azimas'.
+	place := func(t *planv1.Task) int {
+		if p, ok := s.place[t.GetPartOf()]; ok {
+			return p
+		}
+		return math.MaxInt
+	}
 	slices.SortStableFunc(out, func(a, b *planv1.Task) int {
 		aLevel, aSub := taskPriority(a, depCounts)
 		bLevel, bSub := taskPriority(b, depCounts)
+		ranks := cmp.Or(cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())), cmp.Compare(place(a), place(b)))
+		if aLevel == workLevel && bLevel == workLevel {
+			// The developer's order comes before the critical path: a higher azima's work before what unblocks a lower one's.
+			ranks, aSub, bSub = cmp.Or(ranks, cmp.Compare(aSub, bSub)), 0, 0
+		}
 		return cmp.Or(
 			cmp.Compare(aLevel, bLevel),
 			cmp.Compare(aSub, bSub),
-			cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())),
+			ranks,
 			a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime()),
 			strings.Compare(a.GetId(), b.GetId()),
 		)
@@ -228,28 +387,36 @@ func (s *Situation) Order() []*planv1.Task {
 	return out
 }
 
+// workLevel is the tier of the work tasks (taskPriority): the ones that unblock others, then the others, within the
+// order of the wishes and of their azimas.
+const workLevel = 4
+
 func taskPriority(t *planv1.Task, depCounts map[string]int) (level int, sub int) {
 	switch {
+	case Feedback(t):
+		return 0, 1
+	case Urgent(t):
+		return 0, 0
 	case t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
 		return 1, 0
 	case QuestionWorker(t):
 		return 1, 1
+	case ChangesNoCode(t):
+		return 1, 2
 	case t.GetCorrection() != nil:
 		return 2, 0
 	case t.GetReview() != nil:
 		return 2, 1
 	case Resuming(t):
 		return 3, 0
-	case depCounts[t.GetId()] > 0:
-		return 4, -depCounts[t.GetId()]
 	default:
-		return 5, 0
+		return workLevel, -depCounts[t.GetId()]
 	}
 }
 
 // isWaitingWorkTask tells whether a task is a planned or waiting work task in the dependency graph.
 func isWaitingWorkTask(t *planv1.Task) bool {
-	if plan.IsAzima(t) || Watcher(t) || QuestionWorker(t) {
+	if plan.IsAzima(t) || Watcher(t) || QuestionWorker(t) || ChangesNoCode(t) {
 		return false
 	}
 	return Planned(t) || t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING
@@ -337,13 +504,21 @@ func (s *Situation) Blocker(t *planv1.Task) (why, failed string) {
 // Held is Blocker without the machine: what holds the task whatever the machine allows (its wish, a dependency, a
 // push hold, its provider's usage limit, a write scope). A task forced to start (djinn task start) needs Held empty.
 func (s *Situation) Held(t *planv1.Task) (why, failed string) {
+	why, failed, _ = s.held(t)
+	return why, failed
+}
+
+// held is Held, and what holds the task (Task.hold) when it waits.
+func (s *Situation) held(t *planv1.Task) (why, failed string, hold planv1.TaskHold) {
 	if wish, ok := s.wishes[t.GetWishId()]; ok && !plan.Active(wish) {
-		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), ""
+		return "its wish is " + strings.ToLower(strings.TrimPrefix(wish.GetState().String(), "WISH_STATE_")), "",
+			planv1.TaskHold_TASK_HOLD_WISH
 	}
+	hold = planv1.TaskHold_TASK_HOLD_DEPENDENCY
 	for _, id := range t.GetDependsOn() {
 		d, ok := s.byID[id]
 		if !ok {
-			return "", "its dependency " + id + " is gone"
+			return "", "its dependency " + id + " is gone", 0
 		}
 		// A dependency resumed as a fork is its fork: "W1, resumed as W5," when it ended, W5 while it waits.
 		ended := d.GetCode()
@@ -363,7 +538,9 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 				}
 				continue
 			}
-			if d.GetBranch() != "" && d.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+			// An investigation's or a mockup's work never reaches the branch (ChangesNoCode): done, it is done.
+			if !plan.IsAzima(d) && !ChangesNoCode(d) && !integrationDropped(d) && d.GetBranch() != "" &&
+				d.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 				if !s.workMerged(d) && why == "" {
 					intBranch := s.integrationBranch(d)
 					why = fmt.Sprintf("waits for %s's work to reach %s", d.GetCode(), intBranch)
@@ -378,7 +555,15 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 			}
 			continue
 		case planv1.TaskStatus_TASK_STATUS_STOPPED:
-			return "", fmt.Sprintf("its dependency %s ended %s", ended, status(d.GetStatus()))
+			return "", fmt.Sprintf("its dependency %s ended %s", ended, status(d.GetStatus())), 0
+		case planv1.TaskStatus_TASK_STATUS_WAITING:
+			// Its worker asked a blocking question: the answer continues it, and this one waits for that answer.
+			if code := s.waitCode(d); code != "" {
+				if why == "" {
+					why, hold = fmt.Sprintf("waits for %s, which %s waits for", code, d.GetCode()), planv1.TaskHold_TASK_HOLD_QUESTION
+				}
+				continue
+			}
 		}
 		// Interrupted or resuming: Djinn resumes it by itself, so the task waits for it. An azima waits to be marked
 		// done. The azima a task is part of is never waited for: only what it depends on.
@@ -389,30 +574,44 @@ func (s *Situation) Held(t *planv1.Task) (why, failed string) {
 		}
 	}
 	if why != "" {
-		return why, ""
+		return why, "", hold
 	}
 	if why := s.pushHeld(t); why != "" {
-		return why, ""
+		return why, "", planv1.TaskHold_TASK_HOLD_PUSH
 	}
 	if why := s.limited(t); why != "" {
-		return why, ""
+		return why, "", planv1.TaskHold_TASK_HOLD_LIMIT
 	}
 	if Watcher(t) {
-		return "", "" // It sleeps until its command prints: no slot, and it writes nothing.
+		return "", "", 0 // It sleeps until its command prints: no slot, and it writes nothing.
 	}
-	// In Git, worktrees separate the writers; a question worker writes nothing.
-	if id := t.GetProjectId(); id != "" && !s.git[id] && !QuestionWorker(t) {
+	// In Git, worktrees separate the writers; a question worker writes nothing, nor does work that changes no code.
+	if id := t.GetProjectId(); id != "" && !s.git[id] && !QuestionWorker(t) && !ChangesNoCode(t) {
 		for _, o := range s.tasks {
 			if o.GetId() == t.GetId() || o.GetProjectId() != id || !s.writing(o) {
 				continue
 			}
 			if Overlap(t.GetWriteScopes(), o.GetWriteScopes()) {
 				return fmt.Sprintf("%s writes %s, which overlaps %s", o.GetCode(), ScopeText(o.GetWriteScopes()),
-					ScopeText(t.GetWriteScopes())), ""
+					ScopeText(t.GetWriteScopes())), "", planv1.TaskHold_TASK_HOLD_PLACE
 			}
 		}
 	}
-	return "", ""
+	return "", "", 0
+}
+
+// waitCode is the code of the blocking question d waits on; "" when it waits on none, or when it is not known.
+func (s *Situation) waitCode(d *planv1.Task) string {
+	id := d.GetWaitQuestionId()
+	if id == "" {
+		return ""
+	}
+	if s.questionCode != nil {
+		if code := s.questionCode(id); code != "" {
+			return code
+		}
+	}
+	return "its question"
 }
 
 // awaitsCommit tells whether a dependency of t is done, its work waiting to be committed.
@@ -428,10 +627,22 @@ func (s *Situation) awaitsCommit(t *planv1.Task) bool {
 	return false
 }
 
+// integrationDropped tells whether the branch work of d, a task done, was dropped by hand (djinn task done --drop,
+// which closes the task without queuing integration, or left out when answering an integration question).
+func integrationDropped(d *planv1.Task) bool {
+	if d.GetClosed() != nil && d.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED {
+		return true
+	}
+	return strings.HasPrefix(d.GetIntegration().GetReason(), "left out (")
+}
+
 // uncommitted tells whether the work of d, a task done, waits to be committed into its wish's integration branch:
 // not when it is committed, nor when Djinn does not integrate it. state is " (conflict)" or " (red)" when its merge
 // met one, " (uncommitted)" while its worktree holds changes not committed, "" while it waits or is being committed.
 func uncommitted(d *planv1.Task) (waits bool, state string) {
+	if integrationDropped(d) {
+		return false, ""
+	}
 	switch d.GetIntegration().GetState() {
 	case planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED, planv1.IntegrationState_INTEGRATION_STATE_COMMITTED:
 		return false, ""
@@ -528,25 +739,80 @@ func pushCheckHeld(p *planv1.WishPush) (sha, check string) {
 	return sha, check
 }
 
-// pushHeld tells whether t waits because the push of its wish's integration branch is held on red push checks.
+// pushHeld tells why t, a task that starts a worker, waits for its wish's integration branch in its project: the push
+// is held on red push checks, or a merge into the branch is in conflict or red and a correction repairs it (Q44, W233:
+// a new worker would start from the branch without that work, its own merge conflicting in turn); "" when neither
+// holds it. A correction, a review, a question worker, an urgent task, which the lead marks to repair the branch or for
+// quick feedback, and an investigation or a mockup, whose work is never merged (ChangesNoCode), never wait; neither do
+// the workers Djinn resumes,
+// nor, for a repair, a watcher, which starts from no branch. The workers already running go on.
 func (s *Situation) pushHeld(t *planv1.Task) string {
-	if t.GetCorrection() != nil || QuestionWorker(t) {
+	if plan.IsMerge(t) || QuestionWorker(t) || Urgent(t) || ChangesNoCode(t) {
 		return ""
 	}
 	wish := s.wishes[t.GetWishId()]
 	if wish == nil || t.GetProjectId() == "" {
 		return ""
 	}
-	p := plan.PushStateOf(wish, t.GetProjectId())
-	if p == nil || p.GetHeld() == "" || p.GetUnchecked() {
+	if p := plan.PushStateOf(wish, t.GetProjectId()); p != nil && p.GetHeld() != "" && !p.GetUnchecked() && p.GetCorrectedBy() != t.GetId() {
+		sha, check := pushCheckHeld(p)
+		return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", s.integrationBranch(t), sha, check)
+	}
+	if Resuming(t) || Watcher(t) {
 		return ""
 	}
-	if p.GetCorrectedBy() == t.GetId() {
-		return ""
+	for _, c := range s.tasks {
+		if c.GetWishId() == t.GetWishId() && strings.EqualFold(c.GetProjectId(), t.GetProjectId()) && repairing(c) {
+			return fmt.Sprintf("waits for %s to %s", c.GetCode(), s.repairs(c))
+		}
 	}
-	branch := s.integrationBranch(t)
-	sha, check := pushCheckHeld(p)
-	return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", branch, sha, check)
+	return ""
+}
+
+// repairing tells whether c, a correction worker, still repairs its branch: it is planned, runs or waits to, or it
+// ended done and its work waits to be merged, or reviewed (the harness's repairing, without the stop's grace). One
+// that failed, was cancelled, stopped or cut short is over, the correction after it, if any, repairing.
+func repairing(c *planv1.Task) bool {
+	if c.GetCorrection() == nil {
+		return false
+	}
+	switch c.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_CANCELLED, planv1.TaskStatus_TASK_STATUS_STOPPED,
+		planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+		return false
+	case planv1.TaskStatus_TASK_STATUS_DONE:
+		switch in := c.GetIntegration(); in.GetState() {
+		case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
+			return true
+		case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+			return in.GetReviewedBy() != ""
+		}
+		return false
+	}
+	return true
+}
+
+// repairs says what c, a correction worker repairing a branch, does to it: "settle the conflict in feat/qol", "settle
+// the merge of main into feat/qol", "repair the red checks of feat/qol".
+func (s *Situation) repairs(c *planv1.Task) string {
+	f := c.GetCorrection().GetFailure()
+	branch := ""
+	for _, id := range f.GetTaskIds() {
+		if d := s.byID[id]; d != nil && d.GetIntegration().GetBranch() != "" {
+			branch = d.GetIntegration().GetBranch()
+			break
+		}
+	}
+	branch = cmp.Or(branch, s.integrationBranch(c))
+	switch {
+	case f.GetMainSha() != "":
+		return "settle the merge of main into " + branch
+	case f.GetState() == planv1.IntegrationState_INTEGRATION_STATE_CONFLICT:
+		return "settle the conflict in " + branch
+	case f.GetState() == planv1.IntegrationState_INTEGRATION_STATE_RED:
+		return "repair the red checks of " + branch
+	}
+	return "repair " + branch
 }
 
 // forkedAs is the task that took over d: d itself, or, when d was cut short and resumed as a fork of its session
@@ -601,24 +867,40 @@ func Provider(t *planv1.Task) string {
 func provider(t *planv1.Task) string { return Provider(t) }
 
 // full says why the task's worker may not start now, or "" when it may: a slot is free, and the memory holds a worker
-// of its provider. Once the memory holds a task, the ones after it wait for it: they keep their order.
+// of its provider; an urgent task always may. Once the memory holds a task, the ones after it wait for it: they keep their order.
 // first tells that the task waits for one before it in that order, not for the machine: djinn task start never jumps it.
-// slot tells that it waits for a slot alone, its memory holding it: an investigator may take a paused task's slot.
+// slot tells that it waits for a slot alone, its memory holding it: an investigator, a merge or a repair may take the
+// slot of a work task it pauses.
 func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 	m := s.machine
 	if m == nil || Watcher(t) { // A watcher sleeps until its command prints: no slot.
 		return "", false, false
 	}
+	if Urgent(t) { // The lead marked it urgent: it takes a slot whatever the others, as djinn task start does.
+		return "", false, false
+	}
 	if m.Pressure != "" {
 		return "the machine is under pressure: " + m.Pressure, false, false
 	}
+	if ChangesNoCode(t) {
+		if n, most := s.investigations(), InvestigationCap(m.Slots); n >= most {
+			return fmt.Sprintf("%s run, the most investigations this machine runs at once, mockups counted (%d of %d slots)",
+				plural(n, "investigation"), most, m.Slots), false, false
+		}
+	}
 	// A slot each for the workers running, the ones this pass started, the gates held outside them, and the paused
-	// workers that resume first.
+	// workers that resume first, except before an investigator, an investigation, a merge or a repair.
+	takes := ServedFirst(t) || plan.IsMerge(t)
 	resuming := m.Resuming
-	if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+	if takes {
 		resuming = 0
 	}
-	if running := m.Running + len(s.started); running+m.Gates+resuming >= m.Slots {
+	// One slot kept for the merges and pushes, on a machine of more than one, unless a merge's gate already takes it.
+	kept := 0
+	if m.Keep && m.Slots > 1 && m.Merges == 0 {
+		kept = 1
+	}
+	if running := m.Running + len(s.started); running+m.Gates+kept+resuming >= m.Slots {
 		workers := "1 worker runs"
 		if running != 1 {
 			workers = fmt.Sprintf("%d workers run", running)
@@ -630,6 +912,9 @@ func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 		default:
 			workers += fmt.Sprintf(" and %d gates are held outside the workers", m.Gates)
 		}
+		if kept > 0 {
+			workers += ", 1 slot is kept for merges and pushes"
+		}
 		switch resuming {
 		case 0:
 		case 1:
@@ -638,17 +923,38 @@ func (s *Situation) full(t *planv1.Task) (why string, first, slot bool) {
 			workers += fmt.Sprintf(", %d paused workers resume first", resuming)
 		}
 		why = workers + ", the most this machine holds (" + m.Rule + ")"
-		if t.GetRole() != planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+		if !takes && !Ifrit(t) {
 			return why, false, false
 		}
-		// An investigator may take the slot of a work task it pauses: only where the memory holds it.
-		if room, first := s.room(t); room != "" {
+		// An investigator, an investigation, a merge or a repair may take the slot of a work task it pauses (W233: a
+		// merge before any work, which would start on the branch it settles), and an ifrit starts beyond the slots:
+		// only where the memory holds it.
+		if room, first := s.room(t); room != "" || Ifrit(t) {
 			return room, first, false
 		}
 		return why, false, true
 	}
 	room, first := s.room(t)
 	return room, first, false
+}
+
+// investigations counts the investigations and the mockups that run now, or that this pass started: InvestigationCap
+// bounds them.
+func (s *Situation) investigations() int {
+	n := 0
+	for _, o := range s.tasks {
+		if ChangesNoCode(o) && (s.taskRunning(o) || s.started[o.GetId()]) {
+			n++
+		}
+	}
+	return n
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // room says why the memory does not hold the task's worker now, or "" when it does: what a worker of the task's
@@ -662,6 +968,10 @@ func (s *Situation) room(t *planv1.Task) (why string, first bool) {
 		switch {
 		case s.short.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
 			return "an investigator goes first: " + s.shortWhy, true
+		case Investigation(s.short):
+			return fmt.Sprintf("the investigation %s goes first: %s", s.short.GetCode(), s.shortWhy), true
+		case Mockup(s.short):
+			return fmt.Sprintf("the mockup %s goes first: %s", s.short.GetCode(), s.shortWhy), true
 		case s.short.GetCorrection() != nil:
 			return "a correction goes first: " + s.shortWhy, true
 		case s.short.GetReview() != nil:
@@ -728,8 +1038,7 @@ func MemoryAt(res *planv1.Resources, percentile int) uint64 {
 //
 // Rationale: Agents (such as Claude Code or Antigravity) take 1 to 2 minutes during startup to
 // authenticate, inspect repository status, and spin up language servers. By 3 minutes, resident
-// memory stabilizes into representative peaks. This matches Djinn's machine idle threshold
-// (DefaultIdleThreshold = 3 * time.Minute).
+// memory stabilizes into representative peaks.
 const WorkerPeakWarmup = 3 * time.Minute
 
 // taskRunDuration returns how long a worker has run across all its runs up to now.

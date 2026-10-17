@@ -9,11 +9,13 @@ import (
 	"time"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
 
-// methodPreempt is what the journal records when Djinn preempts a work task to make room for an investigator.
+// methodPreempt is what the journal records when Djinn preempts a work task to make room for an investigator, or for
+// a merge or a repair (W233).
 const methodPreempt = "harness/preempt"
 
 // isMemoryShort reports whether why says the task cannot start because memory is short.
@@ -34,9 +36,9 @@ type candidate struct {
 // lowestWorkTask returns the running work task of lowest priority to preempt:
 // the last wish by rank, then the most recently started.
 // It never returns:
-// - an investigator or question worker;
+// - an investigator, a question worker, an investigation or a mockup;
 // - a worker the developer started or resumed by hand (Forced);
-// - a correction or review worker;
+// - a correction or review worker, or an urgent task (W233);
 // - a task holding or waiting for a gate;
 // - on Windows when forSlot is true;
 // - a worker that cannot pause (when forSlot is true);
@@ -56,14 +58,14 @@ func (h *Harness) lowestWorkTask(ctx context.Context, forSlot bool) (*planv1.Tas
 		if r.paused || r.watcher || r.light || r.stopping || r.final || r.shelved || r.worker == nil {
 			continue
 		}
-		t := r.task
+		t := r.shown // Not r.task: its pump changes it without a lock (W182).
 		if t == nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 			continue
 		}
-		if questionWorker(t) || r.forced {
+		if questionWorker(t) || dispatch.ChangesNoCode(t) || r.forced {
 			continue
 		}
-		if t.GetCorrection() != nil || t.GetReview() != nil {
+		if t.GetCorrection() != nil || t.GetReview() != nil || t.GetUrgent() {
 			continue
 		}
 		if h.held != nil && len(h.held(t.GetId())) > 0 {
@@ -81,7 +83,7 @@ func (h *Harness) lowestWorkTask(ctx context.Context, forSlot bool) (*planv1.Tas
 				continue
 			}
 		}
-		candidates = append(candidates, candidate{r: r, t: h.copyRunning(t)})
+		candidates = append(candidates, candidate{r: r, t: t})
 		ids = append(ids, t.GetId())
 	}
 	h.mu.Unlock()
@@ -130,7 +132,7 @@ func (h *Harness) lowestWorkTask(ctx context.Context, forSlot bool) (*planv1.Tas
 	return lowest.t, lowest.r
 }
 
-// preemptForSlot pauses the lowest work task to free its slot for an investigator.
+// preemptForSlot pauses the lowest work task to free its slot for inv, an investigator, a merge or a repair.
 // It returns the preempted task's code, or "" if no task was preempted.
 func (h *Harness) preemptForSlot(ctx context.Context, inv *planv1.Task) (string, error) {
 	cand, _ := h.lowestWorkTask(ctx, true)
@@ -183,9 +185,9 @@ func (h *Harness) preemptForMemory(ctx context.Context, inv *planv1.Task) (strin
 	return cand.GetCode(), nil
 }
 
-// unpausePreempted lets the task paused to make room for investigator t resume, now that t ended: the scheduler's
-// next pass resumes it before any new task (resumeNotchPaused), once t's slot is free. Resumed here, at once, it ran
-// beside t while t was still counted, one worker more than the load bar lets run.
+// unpausePreempted lets the task paused to make room for t, an investigator or a merge, resume, now that t ended: the
+// scheduler's next pass resumes it before any new task (resumeNotchPaused), once t's slot is free. Resumed here, at
+// once, it ran beside t while t was still counted, one worker more than the load bar lets run.
 func (h *Harness) unpausePreempted(t *planv1.Task) {
 	h.mu.Lock()
 	_, ok := h.preempted[t.GetId()]

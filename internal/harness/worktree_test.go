@@ -72,7 +72,7 @@ func TestWorktree(t *testing.T) {
 	repo := gitRepo(t)
 	path := worktreeDir(t.TempDir(), "p1", "t1")
 	// The project is a folder inside the repository: the worker runs in the same folder of the worktree.
-	dir, err := addWorktree(t.Context(), filepath.Join(repo, "app"), path, "w1-try-t1")
+	dir, err := addWorktreeFrom(t.Context(), filepath.Join(repo, "app"), path, "w1-try-t1", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestWorktreeDeletedByHand(t *testing.T) {
 	t.Parallel()
 	repo := gitRepo(t)
 	path := worktreeDir(t.TempDir(), "p1", "t1")
-	if _, err := addWorktree(t.Context(), repo, path, "w1-t1"); err != nil {
+	if _, err := addWorktreeFrom(t.Context(), repo, path, "w1-t1", "HEAD"); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.RemoveAll(path); err != nil {

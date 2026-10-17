@@ -1,59 +1,17 @@
-// The read mark, the click that says "I saw it" on an open question without a word: it goes to the lamp
-// (MarkService.Put), where the lead reads it in the brief and with djinn mark list. A block takes no mark: it is for
-// agents (src/agent-blocks.tsx). And the writes the screens share: an answer, a mark, a request to investigate, each
-// read again once djinn has it. A task takes another mark, reviewed (src/review-tab.tsx).
-import { Check, Eye } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+// The writes the screens share: an answer, a request to investigate, a task reviewed (src/review-tab.tsx) or made
+// urgent, a move, a withdrawal, a question put off for later or put to sleep, each read again once djinn has it.
+import { useCallback, useMemo } from "react";
 
 import {
   Change,
   type Choice,
   Closer,
-  type Mark,
   MarkKind,
+  type Task,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
 import { useClients, useStore } from "./data/djinn";
-import { markOf } from "./data/format";
 import { t } from "./i18n";
-
-export type OnMark<T = unknown> = (
-  kind: MarkKind,
-  remove: boolean,
-  item?: T,
-) => Promise<void>;
-
-// MarkButtons are an open question's read mark, a toggle. A decision has none: it was taken (the decision log).
-export function MarkButtons<T extends { marks?: Mark[] }>({
-  item,
-  onMark,
-}: {
-  item: T;
-  onMark: (kind: MarkKind, remove: boolean, item?: T) => Promise<void>;
-}) {
-  const [sending, setSending] = useState(false);
-  const toggle = (kind: MarkKind) => {
-    setSending(true);
-    void onMark(kind, !!markOf(item, kind), item)
-      .catch(() => {})
-      .finally(() => setSending(false));
-  };
-  const read = !!markOf(item, MarkKind.READ);
-  return (
-    <span className="mark-buttons">
-      <button
-        className={`mark-toggle ${read ? "on" : ""}`}
-        aria-pressed={read}
-        disabled={sending}
-        title={read ? t("mark.read_undo") : t("mark.read_detail")}
-        onClick={() => toggle(MarkKind.READ)}
-      >
-        {read ? <Check size={13} /> : <Eye size={13} />}
-        {read ? t("mark.read_done") : t("mark.read")}
-      </button>
-    </span>
-  );
-}
 
 const QUESTIONS_CHANGES = [Change.QUESTION, Change.WISH];
 
@@ -125,23 +83,6 @@ export function useWrites(onToast: (text: string) => void) {
     [act, clients.questions],
   );
 
-  // mark marks a question, by its id.
-  const mark = useCallback(
-    (wishId: string, id: string, kind: MarkKind, remove: boolean) =>
-      act(
-        wishId,
-        () =>
-          clients.marks.put({
-            target: { ref: { case: "id", value: id } },
-            kind,
-            remove,
-            wishId,
-          }),
-        QUESTIONS_CHANGES,
-      ),
-    [act, clients.marks],
-  );
-
   // review checks a task reviewed, by its id, or takes the mark off.
   const review = useCallback(
     (wishId: string, id: string, remove: boolean) =>
@@ -157,6 +98,23 @@ export function useWrites(onToast: (text: string) => void) {
         [Change.TASK],
       ),
     [act, clients.marks],
+  );
+
+  // urge marks a task urgent for the developer's quick feedback (djinn task update --feedback), or takes its urgent
+  // mark off, a repair's as well (--urgent=false). Djinn's refusal, another task of the wish urgent already, is a toast.
+  const urge = useCallback(
+    (task: Task, urgent: boolean) =>
+      act(
+        task.wishId,
+        () =>
+          clients.tasks.update(
+            urgent
+              ? { taskId: task.id, feedback: true }
+              : { taskId: task.id, urgent: false },
+          ),
+        [Change.TASK],
+      ),
+    [act, clients.tasks],
   );
 
   const move = useCallback(
@@ -202,6 +160,45 @@ export function useWrites(onToast: (text: string) => void) {
     [act, clients.questions],
   );
 
+  // later puts an open question off for later, to the bottom of its list, or gives it its place back with clear.
+  const later = useCallback(
+    (wishId: string, id: string, clear: boolean) =>
+      act(
+        wishId,
+        async () => {
+          const res = await clients.questions.later({
+            question: { ref: { case: "id", value: id } },
+            wishId,
+            clear,
+          });
+          // It takes its new place now, whatever the reads that follow take.
+          if (res.question) store.putQuestion(res.question);
+        },
+        QUESTIONS_CHANGES,
+      ),
+    [act, clients.questions, store],
+  );
+
+  // sleep puts an open question to sleep until conditions hold (QuestionService.Sleep, --until), or wakes it with
+  // wake: it takes its place at once, whatever the reads that follow take.
+  const sleep = useCallback(
+    (wishId: string, id: string, until: string[], wake = false) =>
+      act(
+        wishId,
+        async () => {
+          const res = await clients.questions.sleep({
+            question: { ref: { case: "id", value: id } },
+            wishId,
+            until,
+            wake,
+          });
+          if (res.question) store.putQuestion(res.question);
+        },
+        QUESTIONS_CHANGES,
+      ),
+    [act, clients.questions, store],
+  );
+
   return useMemo(
     () => ({
       clients,
@@ -209,11 +206,25 @@ export function useWrites(onToast: (text: string) => void) {
       quiet,
       answer,
       enlighten,
-      mark,
       review,
+      urge,
       move,
       withdraw,
+      later,
+      sleep,
     }),
-    [clients, act, quiet, answer, enlighten, mark, review, move, withdraw],
+    [
+      clients,
+      act,
+      quiet,
+      answer,
+      enlighten,
+      review,
+      urge,
+      move,
+      withdraw,
+      later,
+      sleep,
+    ],
   );
 }

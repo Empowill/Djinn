@@ -97,6 +97,25 @@ function summary(command: Command, exp: WishExport): string {
       const note = String(r.note ?? "");
       return `${code} ${note}`.trim();
     }
+    case "plan.v1.QuestionServiceLaterRequest": {
+      const ref = (r.question as { ref?: { case?: string; value?: string } })
+        ?.ref;
+      const code =
+        ref?.case === "id"
+          ? (exp.questions.find((q) => q.id === ref.value)?.code ?? "")
+          : (ref?.value ?? "");
+      return r.clear ? `${code} --clear`.trim() : code;
+    }
+    case "plan.v1.QuestionServiceSleepRequest": {
+      const ref = (r.question as { ref?: { case?: string; value?: string } })
+        ?.ref;
+      const code =
+        ref?.case === "id"
+          ? (exp.questions.find((q) => q.id === ref.value)?.code ?? "")
+          : (ref?.value ?? "");
+      if (r.wake) return `${code} --wake`.trim();
+      return `${code} ${((r.until as string[]) ?? []).join(", ")}`.trim();
+    }
     case "plan.v1.BlockServicePutRequest":
       return `${String(r.kind ?? "")} ${String(r.title ?? "")}`.trim();
     case "plan.v1.WishServiceAllowRequest": {
@@ -106,6 +125,7 @@ function summary(command: Command, exp: WishExport): string {
       return `${modes[Number(r.mode)] ?? ""} ${project}`.trim();
     }
     case "plan.v1.WishServiceMoveRequest":
+    case "plan.v1.WishServiceReorderRequest":
       return String(r.to ?? "");
   }
   if (typeof r.taskId === "string") return task(r.taskId);

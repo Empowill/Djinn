@@ -2,6 +2,7 @@ package harness
 
 import (
 	"bufio"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -25,6 +27,8 @@ const Grace = 5 * time.Second
 type process struct {
 	cmd    *exec.Cmd
 	cgroup string // the cgroup of its scope; empty without one
+	mark   string // the value of markVar in its environment, which what it starts inherits
+	start  string // when the system started it (procStart), empty when unknown
 	stdin  io.WriteCloser
 	grace  time.Duration
 	// lines are the lines of the output, then of the error output, as they come; closed once both end.
@@ -42,22 +46,36 @@ type line struct {
 }
 
 // startProcess starts name in dir with args, in a scope of its own when scope is set. The process gets Djinn's
-// environment plus env, which Djinn passes on without reading. On Unix it leads a process group of its own, so that
-// stopping it stops what it started; in a scope, its cgroup holds even what left the group.
+// environment plus env, which Djinn passes on without reading, and a mark of its own (markVar). On Unix it leads a
+// process group of its own, so that stopping it stops what it started; in a scope, its cgroup holds even what left
+// the group, and elsewhere its mark finds it. Once it ended, what it left running is stopped too (stopLeft).
 // When lowPriority is true, the process starts at low CPU priority (under nice 10 on Unix, BELOW_NORMAL_PRIORITY_CLASS
 // on Windows); else at Djinn's own priority.
 // When track is set, it is told of the process as it starts, and what it returns is called once the process ended.
 func startProcess(
 	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, lowPriority bool,
-	track func(pid int, cgroup string) func(),
+	track func(pid int, cgroup, mark string) func(),
 ) (*process, error) {
 	return startCommand(dir, name, args, env, scope, grace, false, lowPriority, track)
+}
+
+// pwdEntry is the PWD of a process started in dir, as exec sets it when it builds the environment itself (not on
+// Windows). Djinn's own would name Djinn's folder: a shell finds it wrong and takes the folder with its symbolic
+// links resolved (/private/var for /var on macOS), so its pwd is not dir.
+func pwdEntry(dir string) []string {
+	if dir == "" || runtime.GOOS == "windows" || runtime.GOOS == "plan9" {
+		return nil
+	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		return []string{"PWD=" + abs}
+	}
+	return nil
 }
 
 // startCommand is startProcess; with blanks, the empty lines of the output are lines too.
 func startCommand(
 	dir, name string, args, env []string, scope func() machine.Scope, grace time.Duration, blanks bool, lowPriority bool,
-	track func(pid int, cgroup string) func(),
+	track func(pid int, cgroup, mark string) func(),
 ) (*process, error) {
 	var sc machine.Scope
 	if scope != nil {
@@ -82,9 +100,9 @@ func startCommand(
 	}
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
-	}
+	mark := rand.Text()
+	// Last, so that it replaces the mark of whatever started Djinn. Its Go builds are trimmed (goenv.go).
+	cmd.Env = append(trimmedGoFlags(append(append(os.Environ(), pwdEntry(dir)...), env...)), markEntry(mark))
 	ownGroup(cmd, lowPriority)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -104,11 +122,13 @@ func startCommand(
 	applyPriority(cmd, lowPriority && !atLevel)
 	ended := func() {}
 	if track != nil {
-		ended = track(cmd.Process.Pid, sc.Cgroup)
+		ended = track(cmd.Process.Pid, sc.Cgroup, mark)
 	}
 	started := time.Now()
 	logx.L().Info("process started", "program", program, "pid", cmd.Process.Pid, "dir", dir)
-	p := &process{cmd: cmd, cgroup: sc.Cgroup, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
+	start, _ := procStart(cmd.Process.Pid)
+	p := &process{cmd: cmd, cgroup: sc.Cgroup, mark: mark, start: start, stdin: stdin, grace: grace, lines: make(chan line, 64), done: make(chan struct{}), blanks: blanks}
+	adopt(p) // After track: on Windows, Djinn's job holds it first.
 	var read sync.WaitGroup
 	read.Add(2)
 	go func() {
@@ -121,7 +141,17 @@ func startCommand(
 	}()
 	go func() {
 		defer logx.Crash("process wait", "program", program, "pid", cmd.Process.Pid)
+		// What it left running stops before its record goes (ended): a Djinn that dies meanwhile still stops it,
+		// by the sentinel or at the next start. Held unreaped, it keeps its group's ID its own: stopLeft finds what is
+		// left by group and by mark; else by mark alone.
+		held := holdExit(cmd)
+		if held {
+			stopLeft(p, true)
+		}
 		err := cmd.Wait()
+		if !held {
+			stopLeft(p, false)
+		}
 		outW.Close()
 		errW.Close()
 		read.Wait()

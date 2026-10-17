@@ -22,6 +22,7 @@ import (
 // a build of the line that does not hold another line's install, newer than the running Djinn.
 func TestABuildOfTheRunningLineInstallsItself(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	ctx := t.Context()
 	project, err := store.Get[*planv1.Project](ctx, in.db, in.projectID)
@@ -116,6 +117,7 @@ func TestABuildOfTheRunningLineInstallsItself(t *testing.T) {
 // TestInstallTellsItsLines: Install's commands tell each line they write to the window (InstallWith), the fake's as
 // the real one's.
 func TestInstallTellsItsLines(t *testing.T) {
+	t.Parallel()
 	var lines []string
 	w := &lineWriter{line: func(l string) { lines = append(lines, l) }}
 	for _, chunk := range []string{"task: [ui] npm ", "run build\r\nbuilt\n", "task: [install] go build"} {

@@ -19,6 +19,9 @@ repeat them.
   lint before Djinn commits your work (`djinn gate run lint -- go tool task lint`), the tests before it pushes.
 - **A story that touches the window** (interface under the UI folder, the stream it reads, the server calls it makes)
   runs this spec before it ends (`go tool task e2e -- e2e/wish-render.spec.ts`); other stories do not.
+- **A change to what Djinn does updates its documentation in the same change**: a feature, a concept, a screen, a
+  command, a behaviour. Rewrite its chapter or card in the documentation site (`docs/site/index.html`); a new concept
+  gets its card. The Command line tab reads the command tree: keep a proto comment or a `cli.Builtins` entry true.
 - **Read [`docs/pitfalls.md`](docs/pitfalls.md) before you chase a failure**: the code's known traps, how to spot them.
 - **Never call a paid model in a test.** Record a stream instead (`docs/providers.md`).
 - **A license check comes before any reuse** of third-party code: see the license section of
@@ -29,3 +32,5 @@ repeat them.
 ## Interface
 - Rounded elements use a uniform border on all sides, or no border. Never combine a rounded card with a
   one-sided border or a thicker accent border on one side. Straight separators belong on square elements.
+- A list being read never moves under the reader: new items append below the older ones, a revision keeps an item's
+  place, and the scroll stays anchored on what is on screen (`src/scroll-anchor.ts`).

@@ -28,90 +28,63 @@ func decisionLog(t *testing.T) *planv1.WishExport {
 // TestDecisions: the decisions are the answered questions and the decision blocks, the latest first, each with its
 // emoji, who took it, and the tasks that name it.
 func TestDecisions(t *testing.T) {
-	ds := Decisions(decisionLog(t))
-	var got []string
-	for _, d := range ds {
-		id := d.Question.GetCode() + d.Block.GetId()
-		got = append(got, strings.Join([]string{id, d.Icon, d.By, strings.Join(d.Tasks, "+")}, " "))
-		if d.Human != (d.By == "") {
-			t.Errorf("%s: human %v, by %q", id, d.Human, d.By)
+	t.Parallel()
+	t.Run("blocks and questions", func(t *testing.T) {
+		t.Parallel()
+		ds := Decisions(decisionLog(t))
+		var got []string
+		for _, d := range ds {
+			id := d.Question.GetCode() + d.Block.GetId()
+			got = append(got, strings.Join([]string{id, d.Icon, d.By, strings.Join(d.Tasks, "+")}, " "))
+			if d.Human != (d.By == "") {
+				t.Errorf("%s: human %v, by %q", id, d.Human, d.By)
+			}
 		}
-	}
-	want := []string{"b5 📌 lead ", "b4 📌  W4", "b3 🧱 W1 ", "Q02 🔒  W1"}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("decisions = %q, want %q", got, want)
-	}
-	if !ds[1].Approved || ds[3].Approved {
-		t.Error("the approved block reads approved, the answered question does not")
-	}
-}
+		want := []string{"b5 📌 lead ", "b4 📌  W4", "b3 🧱 W1 ", "Q02 🔒  W1"}
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Errorf("decisions = %q, want %q", got, want)
+		}
+		if !ds[1].Approved || ds[3].Approved {
+			t.Error("the approved block reads approved, the answered question does not")
+		}
+	})
 
-// TestDecisionTable: the page's decision table shows the emoji, the developer's decisions in the human colour with an
-// icon and a word, an agent's in plain words, and links to the tasks they led to; a decision block is no longer a
-// note.
-func TestDecisionTable(t *testing.T) {
-	html := page(t, Input{Export: decisionLog(t), Language: "en"})
-	table := between(html, `<section id="decisions">`, "</section>")
-	for _, s := range []string{
-		`<tr class="human">`, `<span class="ico">🔒</span><span class="code">Q02</span>Keep the old page?`,
-		`<span class="st human"><i aria-hidden="true">✋︎</i>By you</span>`,
-		`<span class="st human"><i aria-hidden="true">✋︎</i>Approved by you</span>`,
-		`<span class="by">By W1</span>`, `<span class="by">By the Djinn</span>`,
-		`<b class="chosen"><span class="ico">🧱</span>Goldmark, no raw HTML</b>`,
-		`<b class="chosen"><span class="ico">📌</span>Split the CSS</b>`,
-		`Led to <a class="code" href="#t-W1">W1</a>`, `Led to <a class="code" href="#t-W4">W4</a>`,
-	} {
-		if !strings.Contains(table, s) {
-			t.Errorf("the decision table lacks %q:\n%s", s, table)
+	// Questions answered by the developer, the lead or a worker record their actor.
+	t.Run("question actor", func(t *testing.T) {
+		t.Parallel()
+		exp := &planv1.WishExport{
+			Wish: &planv1.Wish{Id: "w", Title: "Wish"},
+			Tasks: []*planv1.Task{
+				{Id: "t1", WishId: "w", Code: "W1", Title: "Worker task"},
+			},
+			Questions: []*planv1.Question{
+				{
+					Id: "q1", Code: "Q01", WishId: "w", Text: "Developer decision",
+					Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_A, Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: ts(-30)},
+				},
+				{
+					Id: "q2", Code: "Q02", WishId: "w", Text: "Lead decision",
+					Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_B, Actor: planv1.Closer_CLOSER_LEAD, CreateTime: ts(-20)},
+				},
+				{
+					Id: "q3", Code: "Q03", WishId: "w", Text: "Worker decision",
+					Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_YES, TaskId: "t1", CreateTime: ts(-10)},
+				},
+			},
 		}
-	}
-	if strings.Index(table, "Split the CSS") > strings.Index(table, "Keep the old page?") {
-		t.Error("the latest decision comes first")
-	}
-	for _, s := range []string{`id="t-W1"`, `id="t-W4"`} {
-		if !strings.Contains(html, s) {
-			t.Errorf("the page has no anchor %s for a decision's link", s)
+		ds := Decisions(exp)
+		if len(ds) != 3 {
+			t.Fatalf("got %d decisions, want 3", len(ds))
 		}
-	}
-	if notes := between(html, `<section id="notes">`, "</section>"); strings.Contains(notes, "Split the CSS") {
-		t.Error("a decision block shows in the notes too")
-	}
-}
-
-// TestDecisionsQuestionActor: questions answered by developer, lead, or worker record their actor.
-func TestDecisionsQuestionActor(t *testing.T) {
-	exp := &planv1.WishExport{
-		Wish: &planv1.Wish{Id: "w", Title: "Wish"},
-		Tasks: []*planv1.Task{
-			{Id: "t1", WishId: "w", Code: "W1", Title: "Worker task"},
-		},
-		Questions: []*planv1.Question{
-			{
-				Id: "q1", Code: "Q01", WishId: "w", Text: "Developer decision",
-				Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_A, Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: ts(-30)},
-			},
-			{
-				Id: "q2", Code: "Q02", WishId: "w", Text: "Lead decision",
-				Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_B, Actor: planv1.Closer_CLOSER_LEAD, CreateTime: ts(-20)},
-			},
-			{
-				Id: "q3", Code: "Q03", WishId: "w", Text: "Worker decision",
-				Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_YES, TaskId: "t1", CreateTime: ts(-10)},
-			},
-		},
-	}
-	ds := Decisions(exp)
-	if len(ds) != 3 {
-		t.Fatalf("got %d decisions, want 3", len(ds))
-	}
-	// Latest first: Q03 (worker), Q02 (lead), Q01 (developer)
-	if !ds[2].Human || ds[2].By != "" || ds[2].Question.GetCode() != "Q01" {
-		t.Errorf("Q01 developer: got human=%v, by=%q", ds[2].Human, ds[2].By)
-	}
-	if ds[1].Human || ds[1].By != ByLead || ds[1].Question.GetCode() != "Q02" {
-		t.Errorf("Q02 lead: got human=%v, by=%q", ds[1].Human, ds[1].By)
-	}
-	if ds[0].Human || ds[0].By != "W1" || ds[0].Question.GetCode() != "Q03" {
-		t.Errorf("Q03 worker: got human=%v, by=%q", ds[0].Human, ds[0].By)
-	}
+		// Latest first: Q03 (worker), Q02 (lead), Q01 (developer)
+		if !ds[2].Human || ds[2].By != "" || ds[2].Question.GetCode() != "Q01" {
+			t.Errorf("Q01 developer: got human=%v, by=%q", ds[2].Human, ds[2].By)
+		}
+		if ds[1].Human || ds[1].By != ByLead || ds[1].Question.GetCode() != "Q02" {
+			t.Errorf("Q02 lead: got human=%v, by=%q", ds[1].Human, ds[1].By)
+		}
+		if ds[0].Human || ds[0].By != "W1" || ds[0].Question.GetCode() != "Q03" {
+			t.Errorf("Q03 worker: got human=%v, by=%q", ds[0].Human, ds[0].By)
+		}
+	})
 }

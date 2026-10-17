@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
+	"github.com/empowill/djinn/wishicons"
 )
 
 // Entities are the messages the store keeps: those of plan.v1, and what each command of a project costs.
@@ -34,7 +36,8 @@ func Entities() []proto.Message {
 	return []proto.Message{
 		&planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.TaskEvent{}, &planv1.Question{}, &planv1.Block{},
 		&planv1.InboxItem{}, &planv1.PluggedSource{}, &machinev1.CommandCost{}, &planv1.Tilasm{}, &planv1.Lead{},
-		&planv1.LeadEvent{},
+		&planv1.LeadEvent{}, &planv1.TilasmComment{}, &planv1.SourceRun{}, &planv1.LeadBatch{}, &planv1.TilasmSend{},
+		&planv1.DeclinedSource{}, &planv1.ConfigWatch{}, &planv1.ConfigChange{}, &planv1.GateWait{},
 	}
 }
 
@@ -42,17 +45,22 @@ func Entities() []proto.Message {
 // identity of their own.
 const actor = "local"
 
-// Pusher pushes a wish's branches, all or only one, and computes how far each branch it pushes in a project is out of
-// sync with its remote.
+// Pusher pushes a wish's branches, all or only one, computes how far each branch it pushes in a project is out of
+// sync with its remote, forgets one that landed, pulls those behind their remote, and finds a project's reference branch: from name, its main_branch setting, the branch and the
+// ref Djinn merges it from (refs/remotes/origin/main), or why the repository holds none.
 type Pusher interface {
 	Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error)
 	Syncs(ctx context.Context, project *planv1.Project) ([]*planv1.ProjectSync, error)
+	ForgetSync(ctx context.Context, project *planv1.Project, branch string) error
+	Pull(ctx context.Context, project *planv1.Project, branch string) ([]*planv1.BranchPull, error)
+	Reference(ctx context.Context, project *planv1.Project, name string) (branch, ref string, err error)
 }
 
 // Option sets what the plan services reach beyond the store.
 type Option func(*options)
 
 type options struct {
+	iterated        []IterateHook
 	leads           Leads
 	pages           *Pages
 	language        string
@@ -68,8 +76,11 @@ type options struct {
 	leadBroadcaster *func()
 	leadFailed      error
 	pusher          Pusher
+	launch          LaunchPlan
 	fillModels      func(context.Context, []*planv1.Task)
 	clock           func() time.Time
+	ifritWaits      IfritWaits
+	overlaps        Overlaps
 }
 
 // WithLeadFailed gives LeadService.Get why the lead could not start before the services ran, as djinn up resumes it:
@@ -142,6 +153,16 @@ func WithClock(now func() time.Time) Option {
 	return func(o *options) { o.clock = now }
 }
 
+// WithIfritWaits tells the briefs who waits for the gates the lit ifrits hold.
+func WithIfritWaits(waits IfritWaits) Option {
+	return func(o *options) { o.ifritWaits = waits }
+}
+
+// WithOverlaps gives a wish's brief its Overlaps section: the open tasks that touch the same files.
+func WithOverlaps(overlaps Overlaps) Option {
+	return func(o *options) { o.overlaps = overlaps }
+}
+
 // Handlers returns the Connect handlers of the plan services, by path prefix.
 func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	var o options
@@ -153,7 +174,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	p, h := planv1connect.NewProjectServiceHandler(&Projects{Store: s, Home: o.home, Pusher: o.pusher}, opt)
 	out[p] = h
 	wishes := &Wishes{Store: s, Leads: o.leads, Pages: o.pages, Language: o.language, Watchers: o.watchers,
-		Workers: o.workers, Home: o.home, Load: o.load, FillModels: o.fillModels, Clock: o.clock}
+		Workers: o.workers, Home: o.home, Load: o.load, FillModels: o.fillModels, Clock: o.clock, IfritWaits: o.ifritWaits,
+		Overlaps: o.overlaps}
 	if o.loadBroadcaster != nil {
 		*o.loadBroadcaster = wishes.ChangeLoad
 	}
@@ -170,9 +192,13 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	if o.leads != nil {
 		o.enlight = append(o.enlight, wishes.Enlightened) // The lead learns each request to investigate, after the harness.
 	}
-	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle, Workers: o.workers}
+	questions := &Questions{Store: s, Answered: o.answered, Told: told, Enlightened: o.enlight, Settle: wishes.settle,
+		Workers: o.workers, LaunchPlan: o.launch, Iterated: o.iterated}
 	if o.leads != nil {
-		questions.NoteEdited = wishes.NoteEdited // The lead learns an answer's new note, once.
+		questions.Wishes = wishes                               // The lead learns of an iteration no mockup task took on.
+		questions.NoteEdited = wishes.NoteEdited                // The lead learns an answer's new note, once.
+		questions.Woke = append(questions.Woke, wishes.Woke)    // And a question woken by hand, to check it.
+		questions.Asked = append(questions.Asked, wishes.Asked) // And a worker's blocking question, to answer it if it may.
 	}
 	p, h = planv1connect.NewQuestionServiceHandler(questions, opt)
 	out[p] = h
@@ -184,13 +210,13 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	}
 	p, h = planv1connect.NewMarkServiceHandler(marks, opt)
 	out[p] = h
-	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s}, opt)
+	p, h = planv1connect.NewSkillServiceHandler(&Skills{Store: s, Home: wishes.home()}, opt)
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h
 	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes}, opt)
 	out[p] = h
-	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url}
+	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Marks: marks, Wake: wishes.Queued, Questions: questions}
 	p, h = planv1connect.NewTilasmServiceHandler(tilasms, opt)
 	out[p] = h
 	out[server.TilasmPrefix] = tilasms.Files()
@@ -244,9 +270,11 @@ type Projects struct {
 	Pusher Pusher
 }
 
-func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
+// fillProject adds to project what is computed on every read, and returns what Djinn finds in its configuration:
+// project.to_fix counts the things to fix, project.first_fix says the first.
+func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) []*planv1.ProjectNotice {
 	if project == nil {
-		return
+		return nil
 	}
 	repo, dev, _, _ := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
@@ -258,6 +286,10 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) {
 			project.Syncs = syncs
 		}
 	}
+	notices := p.projectNotices(ctx, project)
+	project.ToFix = countToFix(notices)
+	project.FirstFix = firstFix(notices)
+	return notices
 }
 
 func (p *Projects) wishForProject(ctx context.Context, projectID, wishNameOrID string) (*planv1.Wish, error) {
@@ -370,9 +402,13 @@ func (p *Projects) List(
 	if err != nil {
 		return nil, Status(err)
 	}
+	// Each project's state takes a few git commands, a second or more each on a loaded Windows machine: the projects
+	// fill side by side, or the window waits for their sum before it shows the wishes.
+	var wg sync.WaitGroup
 	for _, project := range projects {
-		p.fillProject(ctx, project)
+		wg.Go(func() { p.fillProject(ctx, project) })
 	}
+	wg.Wait()
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: projects}), nil
 }
 
@@ -383,18 +419,21 @@ func (p *Projects) Show(
 	if err != nil {
 		return nil, Status(err)
 	}
-	p.fillProject(ctx, project)
-	repo, dev, warnings, problems := loadSettings(p.Home, project)
+	notices := p.fillProject(ctx, project)
+	repo, dev, _, _ := loadSettings(p.Home, project)
 	settings := ResolveSettings(repo, dev)
 	out := &planv1.ProjectServiceShowResponse{
 		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
-		WatchCommands: settings.WatchCommands,
+		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands, Notices: notices,
+		Reference: p.projectReference(ctx, project, settings.MainBranch, settings.MainBranchFrom),
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
-	for _, err := range problems {
-		out.Problems = append(out.Problems, err.Error())
+	if watches, err := store.List[*planv1.ConfigWatch](ctx, p.Store, store.Where{"project_id": project.GetId()}); err == nil && len(watches) > 0 {
+		out.Watch = watches[0]
 	}
-	out.Warnings = append(out.Warnings, warnings...)
+	if changes, err := ProjectChanges(ctx, p.Store, project.GetId()); err == nil {
+		out.Changes = changes[:min(len(changes), configChangesShow)]
+	}
 	return connect.NewResponse(out), nil
 }
 
@@ -487,8 +526,8 @@ func (p *Projects) PushStrategy(
 	}), nil
 }
 
-// Allow shows the watcher commands the developer allows in a project for themselves, or allows one, or takes one
-// back: in their own settings file, never in the repository.
+// Allow shows the watcher and serve commands the developer allows in a project for themselves, or allows one, or takes
+// one back: in their own settings file, never in the repository.
 func (p *Projects) Allow(
 	ctx context.Context, req *connect.Request[planv1.ProjectServiceAllowRequest],
 ) (*connect.Response[planv1.ProjectServiceAllowResponse], error) {
@@ -497,29 +536,77 @@ func (p *Projects) Allow(
 		return nil, Status(err)
 	}
 	out := &planv1.ProjectServiceAllowResponse{DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId())}
-	if req.Msg.Watch == nil {
+	if req.Msg.Watch != nil && req.Msg.Serve != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--watch or --serve: one command at a time"))
+	}
+	dev, err := ReadSettings(out.DeveloperFile)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	out.WatchCommands, out.ServeCommands = dev.GetWatchCommands(), dev.GetServeCommands()
+	if req.Msg.Watch == nil && req.Msg.Serve == nil {
 		if req.Msg.GetRevoke() {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--revoke takes back the command --watch names"))
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--revoke takes back the command --watch or --serve names"))
 		}
-		dev, err := ReadSettings(out.DeveloperFile)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
-		}
-		out.WatchCommands = dev.GetWatchCommands()
 		return connect.NewResponse(out), nil
 	}
 	err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
-		commands, err := AllowWatch(p.Home, project.GetId(), req.Msg.GetWatch(), req.Msg.GetRevoke())
+		var err error
+		if req.Msg.Serve != nil {
+			out.ServeCommands, err = AllowServe(p.Home, project.GetId(), req.Msg.GetServe(), req.Msg.GetRevoke())
+		} else {
+			out.WatchCommands, err = AllowWatch(p.Home, project.GetId(), req.Msg.GetWatch(), req.Msg.GetRevoke())
+		}
 		if err != nil {
 			return connect.NewError(connect.CodeFailedPrecondition, err)
 		}
-		out.WatchCommands = commands
 		return nil
 	})
 	if err != nil {
 		return nil, Status(err)
 	}
 	return connect.NewResponse(out), nil
+}
+
+// ForgetSync forgets the sync of a branch with nothing to push: the project's syncs leave it out until it moves.
+func (p *Projects) ForgetSync(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceForgetSyncRequest],
+) (*connect.Response[planv1.ProjectServiceForgetSyncResponse], error) {
+	if p.Pusher == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("push is unavailable"))
+	}
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	switch err := p.Pusher.ForgetSync(ctx, project, req.Msg.GetBranch()); {
+	case errors.Is(err, store.ErrNotFound):
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&planv1.ProjectServiceForgetSyncResponse{}), nil
+}
+
+// Pull brings a branch Djinn pushes, or every one, up to its remote's when it is behind it: a fast-forward only.
+func (p *Projects) Pull(
+	ctx context.Context, req *connect.Request[planv1.ProjectServicePullRequest],
+) (*connect.Response[planv1.ProjectServicePullResponse], error) {
+	if p.Pusher == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("pull is unavailable"))
+	}
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	pulls, err := p.Pusher.Pull(ctx, project, req.Msg.GetBranch())
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	case err != nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&planv1.ProjectServicePullResponse{Pulls: pulls}), nil
 }
 
 // Branches lists the local branches of a project's repository, the latest commit first, without the branches of
@@ -535,6 +622,16 @@ func (p *Projects) Branches(
 	dir := project.GetDirectory()
 	if !project.GetGit() || dir == "" {
 		return connect.NewResponse(out), nil
+	}
+	out.CheckedOut = CheckedOutBranch(ctx, dir)
+	out.Reference, _ = ReferenceName(ctx, p.Home, project)
+	if req.Msg.GetReference() {
+		if remote := remoteName(ctx, dir); remote != "" {
+			if out.Branches, err = remoteBranches(ctx, dir, remote); err != nil {
+				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+			}
+			return connect.NewResponse(out), nil
+		}
 	}
 	refs, err := gitOut(ctx, dir, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads")
 	if err != nil {
@@ -555,8 +652,108 @@ func (p *Projects) Branches(
 			out.Branches = append(out.Branches, b)
 		}
 	}
-	out.CheckedOut = CheckedOutBranch(ctx, dir)
 	return connect.NewResponse(out), nil
+}
+
+// remoteBranches are the branches of remote as the repository in dir last fetched them, without the remote's name,
+// the latest commit first: its HEAD left out.
+func remoteBranches(ctx context.Context, dir, remote string) ([]string, error) {
+	refs, err := gitOut(ctx, dir, "for-each-ref", "--sort=-committerdate", "--format=%(refname)", "refs/remotes/"+remote+"/")
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, ref := range strings.Fields(refs) {
+		if b := strings.TrimPrefix(ref, "refs/remotes/"+remote+"/"); b != "HEAD" {
+			out = append(out, b)
+		}
+	}
+	return out, nil
+}
+
+// SetBranch writes the reference branch the developer chooses for a project as main_branch in their own settings
+// file, or takes it back with unset: never in the repository. A branch the repository does not hold is refused.
+func (p *Projects) SetBranch(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceSetBranchRequest],
+) (*connect.Response[planv1.ProjectServiceSetBranchResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	branch := req.Msg.GetBranch()
+	switch {
+	case branch == "" && !req.Msg.GetUnset():
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name a branch, or take yours back with --unset"))
+	case branch != "" && req.Msg.GetUnset():
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a branch or --unset: not both"))
+	case !project.GetGit() || project.GetDirectory() == "":
+		return nil, connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("project %s is no Git repository on this machine: it has no reference branch", project.GetName()))
+	case p.Pusher == nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the reference branch is unavailable"))
+	}
+	if branch != "" {
+		if _, _, err := p.Pusher.Reference(ctx, project, branch); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+	}
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+		if err := SaveDeveloperMainBranch(p.Home, project.GetId(), branch); err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	settings, _ := LoadSettings(p.Home, project)
+	return connect.NewResponse(&planv1.ProjectServiceSetBranchResponse{
+		Reference:     p.projectReference(ctx, project, settings.MainBranch, settings.MainBranchFrom),
+		DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId()),
+	}), nil
+}
+
+func (p *Projects) Acknowledge(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceAcknowledgeRequest],
+) (*connect.Response[planv1.ProjectServiceAcknowledgeResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	which := req.Msg.GetChange()
+	if which != "" && len(which) < 7 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("name a change by its identifier, or 7 characters of its commit at least"))
+	}
+	var seen []*planv1.ConfigChange
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		changes, err := ProjectChanges(ctx, tx, project.GetId())
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, c := range changes {
+			if which != "" && !strings.EqualFold(c.GetId(), which) && !strings.HasPrefix(c.GetCommit(), strings.ToLower(which)) {
+				continue
+			}
+			found = true
+			if !Waits(c) {
+				continue
+			}
+			c.SeenTime = timestamppb.Now()
+			if err := tx.Put(c); err != nil {
+				return err
+			}
+			seen = append(seen, c)
+		}
+		if which != "" && !found {
+			return connect.NewError(connect.CodeNotFound, fmt.Errorf("no change %s in the journal of %s", which, project.GetName()))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.ProjectServiceAcknowledgeResponse{Changes: seen}), nil
 }
 
 // refuseProjectSwitchToAzima refuses making per azima the push strategy of the project projectID while a wish of it
@@ -667,6 +864,10 @@ type Wishes struct {
 	FillModels func(context.Context, []*planv1.Task)
 	// Clock gives the wishes their time; nil uses time.Now.
 	Clock func() time.Time
+	// IfritWaits says who waits for the gates the lit ifrits hold, in the briefs; nil where djinn up runs no gates.
+	IfritWaits IfritWaits
+	// Overlaps writes a wish's Overlaps section, from its tasks' worktrees; nil where djinn up runs no tasks.
+	Overlaps Overlaps
 
 	watch       watchers    // the open Watch streams
 	leadFailure leadFailure // why the lead's last start failed, for LeadService.Get
@@ -685,7 +886,7 @@ func (w *Wishes) Make(
 	var wish *planv1.Wish
 	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
-		wish, err = makeWish(ctx, tx, req.Msg, w.Language)
+		wish, err = makeWish(ctx, tx, req.Msg, w.Home, w.Language)
 		return err
 	})
 	if err != nil {
@@ -715,9 +916,9 @@ func MadeLine(wish *planv1.Wish, provisional bool) string {
 		"request whole.", wish.GetId())
 }
 
-// makeWish stores the wish req asks for in tx: last by rank among the active ones, or paused, with its request in a
-// creation block. Its texts are in language. The caller journals the command, whose identifier the wish takes.
-func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, language string) (*planv1.Wish, error) {
+// makeWish stores the wish req asks for in tx: last by rank among the active ones, or first among the paused ones,
+// with its request in a creation block. Its texts are in language. The caller journals the command, whose identifier the wish takes.
+func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequest, home, language string) (*planv1.Wish, error) {
 	title := req.GetTitle()
 	if title == "" {
 		title = locales.T(language, "wish.provisional_title", nil)
@@ -750,12 +951,19 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 			wish.ProjectIds = append(wish.ProjectIds, project.GetId())
 		}
 	}
-	if err := integrationBranches(ctx, tx, wish); err != nil {
+	if err := integrationBranches(ctx, tx, home, wish); err != nil {
 		return nil, err
 	}
-	if req.GetPaused() {
+	// A wish made paused comes first among the paused ones.
+	paused := func() (*planv1.Wish, error) {
 		wish.State = planv1.WishState_WISH_STATE_PAUSED
+		if err := setAside(ctx, tx, wish); err != nil {
+			return nil, err
+		}
 		return wish, put()
+	}
+	if req.GetPaused() {
+		return paused()
 	}
 	actives, err := ActiveWishes(ctx, tx)
 	if err != nil {
@@ -763,8 +971,7 @@ func makeWish(ctx context.Context, tx *store.Tx, req *planv1.WishServiceMakeRequ
 	}
 	if len(actives) >= MaxActive {
 		// Three wishes are active: the new one waits, paused, until you make it active.
-		wish.State = planv1.WishState_WISH_STATE_PAUSED
-		return wish, put()
+		return paused()
 	}
 	if err := renumber(tx, actives); err != nil {
 		return nil, err
@@ -877,6 +1084,77 @@ func (w *Wishes) Rename(
 	return connect.NewResponse(&planv1.WishServiceRenameResponse{Wish: wish}), nil
 }
 
+// Icon sets the wish's icon, a name of the bank, in place of what it had; empty takes it back to its mark. A name
+// outside the bank is refused, with how to find one.
+func (w *Wishes) Icon(
+	ctx context.Context, req *connect.Request[planv1.WishServiceIconRequest],
+) (*connect.Response[planv1.WishServiceIconResponse], error) {
+	name := strings.ToLower(strings.TrimSpace(req.Msg.GetName()))
+	if name != "" && !wishicons.Known(name) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"%q is not an icon of the bank: djinn wish icons --search <word> lists those that fit a word", name))
+	}
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		wish.Icon = name
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceIconResponse{Wish: wish}), nil
+}
+
+// Icons lists the bank of wish icons, or the icons whose words hold every word searched.
+func (w *Wishes) Icons(
+	_ context.Context, req *connect.Request[planv1.WishServiceIconsRequest],
+) (*connect.Response[planv1.WishServiceIconsResponse], error) {
+	var icons []*planv1.WishIcon
+	for _, icon := range wishicons.Search(req.Msg.GetSearch()) {
+		icons = append(icons, &planv1.WishIcon{Name: icon.Name, Family: icon.Family, Words: icon.En, WordsFr: icon.Fr})
+	}
+	return connect.NewResponse(&planv1.WishServiceIconsResponse{Icons: icons}), nil
+}
+
+// AddProject adds a project, named or by identifier, to the wish, with its integration branch there as Make records
+// one: the project's reference branch. A project already in the wish is refused.
+func (w *Wishes) AddProject(
+	ctx context.Context, req *connect.Request[planv1.WishServiceAddProjectRequest],
+) (*connect.Response[planv1.WishServiceAddProjectResponse], error) {
+	var wish *planv1.Wish
+	err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if wish, err = store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		project, err := ProjectNamed(ctx, tx, req.Msg.GetProjectId())
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(wish.GetProjectIds(), func(id string) bool { return strings.EqualFold(id, project.GetId()) }) {
+			return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("project %s is already in wish %q",
+				project.GetName(), wish.GetTitle()))
+		}
+		wish.ProjectIds = append(wish.ProjectIds, project.GetId())
+		integrationBranch(ctx, w.Home, wish, project)
+		return tx.Put(wish)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, wish); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceAddProjectResponse{Wish: wish}), nil
+}
+
 // AllowanceOf is the right wish allows its workers in the project projectID: ALLOWANCE_NONE when it allows none.
 func AllowanceOf(wish *planv1.Wish, projectID string) planv1.Allowance {
 	for _, a := range wish.GetAllowances() {
@@ -900,11 +1178,22 @@ type Questions struct {
 	NoteEdited func(ctx context.Context, q *planv1.Question, was string)
 	// Enlightened are called with a question once a request to investigate it is stored, with its note.
 	Enlightened []func(ctx context.Context, q *planv1.Question, note string)
+	// Woke are called with a question woken by hand once it is stored (Sleep): the scheduler tells of the others.
+	Woke []func(ctx context.Context, q *planv1.Question)
+	// Asked are called with a question once it is stored: the lead hears of a blocking one (Wishes.Asked).
+	Asked []func(ctx context.Context, q *planv1.Question)
 	// Settle, when set, acts on an answer in the transaction that stores it, and returns what follows once it is
 	// stored, if anything: a question that routes a request files it, or makes its wish.
 	Settle Settle
 	// Workers tells whether a task is running.
 	Workers WishWorkers
+	// LaunchPlan, when set, launches the task an answered question's option planned (Launch).
+	LaunchPlan LaunchPlan
+	// Iterated are called with a question once an iteration round is stored on it: the harness starts its mockup
+	// task, and says its code.
+	Iterated []IterateHook
+	// Wishes, when set, tells the lead of an iteration no mockup task took on.
+	Wishes *Wishes
 }
 
 // AnswerHook is called with a question once its answer is stored. It says what it did with the answer, for the
@@ -950,26 +1239,68 @@ const maxCode = 999
 func (q *Questions) Ask(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceAskRequest],
 ) (*connect.Response[planv1.QuestionServiceAskResponse], error) {
+	m := req.Msg
+	if len(m.GetPlanFile()) > 0 {
+		// The journal keeps the plans' texts, not where they were read.
+		plans, err := readPlans(m.GetPlan(), m.GetPlanFile())
+		if err != nil {
+			return nil, err
+		}
+		m = proto.CloneOf(m)
+		m.Plan, m.PlanFile = plans, nil
+	}
 	question := &planv1.Question{
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
 		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
 		Icon: req.Msg.GetIcon(), TaskId: req.Msg.GetTaskId(), Before: strings.TrimSpace(req.Msg.GetBefore()),
-		Move: req.Msg.GetMove(),
+		Move: req.Msg.GetMove(), Wait: req.Msg.GetWait(),
 	}
 	if err := checkIcon(question.GetIcon()); err != nil {
 		return nil, err
 	}
-	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+	caller := CallerFromContext(ctx)
+	if question.GetWait() && (caller == nil || question.GetTaskId() == "") {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(
+			"--wait is for a worker, about its own task: a question of the lead or the developer blocks no worker"))
+	}
+	err := write(ctx, q.Store, req.Spec(), m, func(tx *store.Tx) error {
 		if _, err := store.Get[*planv1.Wish](ctx, tx, question.GetWishId()); err != nil {
 			return err
 		}
 		if err := taskOfWish(ctx, tx, question.GetWishId(), question.GetTaskId()); err != nil {
 			return err
 		}
+		var err error
+		if question.AboutTaskId, err = aboutTask(ctx, tx, question.GetWishId(), req.Msg.GetAbout()); err != nil {
+			return err
+		}
+		if err := setPlans(ctx, tx, question, m.GetPlan(), false); err != nil {
+			return err
+		}
+		if caller != nil && question.GetTaskId() != "" {
+			task, err := store.Get[*planv1.Task](ctx, tx, question.GetTaskId())
+			if err != nil {
+				return err
+			}
+			if err := askedBy(ctx, tx, task, question, question.GetWait()); err != nil {
+				return err
+			}
+			if question.GetWait() && question.GetAboutTaskId() == "" {
+				question.AboutTaskId = task.GetId() // The window shows it with the task that waits for it.
+			}
+		}
+		if len(m.GetSleepUntil()) > 0 {
+			if err := sleepUntil(ctx, tx, question, m.GetSleepUntil(), question.GetCreateTime().AsTime()); err != nil {
+				return err
+			}
+		}
 		return Ask(ctx, tx, question)
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, f := range q.Asked {
+		f(ctx, proto.CloneOf(question))
 	}
 	return connect.NewResponse(&planv1.QuestionServiceAskResponse{
 		Question: question, Warnings: ContextWarnings(question.GetContext()),
@@ -1036,6 +1367,7 @@ func (q *Questions) Answer(
 	// note only (incident Q253: a window that kept the card open sent the same answer 37 times, the lead got each).
 	var was *planv1.Answer
 	var same, edited bool
+	var iteration *planv1.Round
 	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		var err error
 		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
@@ -1072,6 +1404,14 @@ func (q *Questions) Answer(
 				actor = planv1.Closer_CLOSER_DEVELOPER
 			}
 		}
+		if p := Iterates(question, choice); p != nil {
+			// An option that plans a mockup, within its rounds: no answer, an iteration (W268).
+			if iteration, err = iterationRound(ctx, tx, question, p, req.Msg.GetNote(), 0); err != nil {
+				return err
+			}
+			question.Rounds = append(question.Rounds, iteration)
+			return tx.Put(question)
+		}
 		was = question.GetAnswer()
 		if was.GetChoice() == choice && was.GetActor() == actor && was.GetTaskId() == taskID {
 			if was.GetNote() == req.Msg.GetNote() {
@@ -1100,6 +1440,12 @@ func (q *Questions) Answer(
 		return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 	case err != nil:
 		return nil, err
+	case iteration != nil:
+		q.iterated(ctx, question, iteration)
+		if fresh, err := store.Get[*planv1.Question](ctx, q.Store, question.GetId()); err == nil {
+			question = fresh // Its round names the mockup task that took it on.
+		}
+		return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 	case edited:
 		if q.NoteEdited != nil {
 			q.NoteEdited(ctx, proto.CloneOf(question), was.GetNote())
@@ -1110,6 +1456,12 @@ func (q *Questions) Answer(
 		then(ctx)
 	}
 	afterAnswer(ctx, q.Answered, q.Told, question, was)
+	if len(question.GetPlans()) > 0 {
+		// The harness may have launched a plan: the answer shows its task.
+		if fresh, err := store.Get[*planv1.Question](ctx, q.Store, question.GetId()); err == nil {
+			question = fresh
+		}
+	}
 	return connect.NewResponse(&planv1.QuestionServiceAnswerResponse{Question: question}), nil
 }
 
@@ -1118,7 +1470,7 @@ var errSameAnswer = errors.New("the question has this answer already")
 
 // find resolves a reference to a question: its id, or its code within wishID, or within every wish when the code
 // is used by one only.
-func find(ctx context.Context, tx *store.Tx, ref *planv1.QuestionRef, wishID string) (*planv1.Question, error) {
+func find(ctx context.Context, tx store.Reader, ref *planv1.QuestionRef, wishID string) (*planv1.Question, error) {
 	if id := ref.GetId(); id != "" {
 		return store.Get[*planv1.Question](ctx, tx, id)
 	}
@@ -1223,6 +1575,21 @@ func (q *Questions) List(
 		NextPageToken: nextToken,
 		Total:         total,
 	}), nil
+}
+
+// Get returns one question as it stands: its rounds keep who asked to investigate and why, not what each revision
+// replaced, which can weigh many times the question.
+func (q *Questions) Get(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceGetRequest],
+) (*connect.Response[planv1.QuestionServiceGetResponse], error) {
+	question, err := find(ctx, q.Store, req.Msg.GetQuestion(), req.Msg.GetWishId())
+	if err != nil {
+		return nil, Status(err)
+	}
+	for _, r := range question.GetRounds() {
+		r.Context, r.Options, r.Recommendation = "", nil, ""
+	}
+	return connect.NewResponse(&planv1.QuestionServiceGetResponse{Question: question}), nil
 }
 
 // Move moves an open question to another wish, optionally along with tasks that name it as their decision.
@@ -1459,4 +1826,33 @@ func (q *Questions) Withdraw(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.QuestionServiceWithdrawResponse{Question: question}), nil
+}
+
+// Later puts an open question off for later, or back in its place with clear: its later_time is now, or unset.
+func (q *Questions) Later(
+	ctx context.Context, req *connect.Request[planv1.QuestionServiceLaterRequest],
+) (*connect.Response[planv1.QuestionServiceLaterResponse], error) {
+	var question *planv1.Question
+	err := write(ctx, q.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		if question, err = find(ctx, tx, req.Msg.GetQuestion(), req.Msg.GetWishId()); err != nil {
+			return err
+		}
+		if question.GetAnswer() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s is decided", question.GetCode()))
+		}
+		if question.GetWithdrawal() != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
+		}
+		if req.Msg.GetClear() {
+			question.LaterTime = nil
+		} else {
+			question.LaterTime = timestamppb.Now()
+		}
+		return tx.Put(question)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.QuestionServiceLaterResponse{Question: question}), nil
 }

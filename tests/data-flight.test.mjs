@@ -12,6 +12,8 @@ export * from "@/src/data/journal.ts";
 export {
   cancelledText,
   deletedText,
+  fixerOf,
+  gateWaiters,
   isTaskMerging,
   runningOf,
   span,
@@ -19,7 +21,12 @@ export {
   taskStatusText,
   taskTime,
   taskTone,
+  waitCount,
+  waitsOf,
+  waitText,
+  wishTone,
 } from "@/src/data/format.ts";
+export * from "@/src/data/ifrit.ts";
 export { create } from "@bufbuild/protobuf";
 export { anyPack } from "@bufbuild/protobuf/wkt";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
@@ -40,7 +47,7 @@ const detail = (tasks, questions) => ({
   loaded: true,
 });
 
-test("the flying carpet merges the wishes: blocking questions first, every item keeps its wish", () => {
+test("the flying carpet merges the wishes: questions by wish, as they were asked, every item keeps its wish", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const oil = wish("w2", "Find the oil", 2, { ready: true });
   const plan = f.flightPlan([lamp, oil], {
@@ -79,12 +86,12 @@ test("the flying carpet merges the wishes: blocking questions first, every item 
       ],
     ),
   });
-  // The second wish's blocking question comes before the first wish's free one.
+  // The wishes' rank first: the second wish's blocking question stays after the first wish's free one.
   assert.deepEqual(
     plan.questions.map((q) => [q.wish.id, q.item.id, q.blocking]),
     [
-      ["w2", "q3", ["W2"]],
       ["w1", "q1", []],
+      ["w2", "q3", ["W2"]],
     ],
   );
   // Only a worker that asks waits for the user: W3, cut short, is Djinn's to resume or history.
@@ -368,7 +375,280 @@ test("work that merges counts as running: a worker at work, not a watcher", () =
       done(I.CONFLICT),
       { status: S.DONE },
     ]),
-    { running: 1, watching: 1, merging: 2 },
+    {
+      running: 1,
+      investigating: 0,
+      watching: 1,
+      merging: 2,
+      fixing: 0,
+      ifrits: 0,
+      paused: 0,
+    },
+  );
+});
+
+test("a wish's workers that wait, by what holds them: the server's hold, never the reason's text", () => {
+  const S = f.TaskStatus;
+  const H = f.TaskHold;
+  const task = (id, status, extra = {}) => ({ id, status, ...extra });
+  const tasks = [
+    // Planned, the server says each waits for room: no slot, the machine's load or memory, or behind one that goes
+    // first. A task Djinn resumes waits for room the same way.
+    task("slot", S.PENDING, {
+      roomWait: true,
+      machineWait: true,
+      hold: H.PLACE,
+      waitReason: "2 workers run, the most this machine holds (test)",
+    }),
+    task("behind", S.PENDING, {
+      roomWait: true,
+      hold: H.PLACE,
+      waitReason: "W1 goes first: the memory would not hold it",
+    }),
+    task("resumed", S.RESUMING, { roomWait: true, hold: H.PLACE }),
+    // Not judged yet by the scheduler's pass: it waits its turn, a place.
+    task("spawned", S.PENDING, {
+      waitReason: "planned: it starts at the scheduler's next pass",
+    }),
+    // Held by more than the machine: the hold says what, whatever the text reads (a dependency's wait reason that
+    // names the machine is still a dependency).
+    task("dependency", S.PENDING, {
+      hold: H.DEPENDENCY,
+      waitReason: "waits for W1 (the most this machine holds)",
+    }),
+    task("red", S.PENDING, {
+      hold: H.PUSH,
+      waitReason: "waits for djinn/w to be green again",
+    }),
+    task("limit", S.RESUMING, {
+      hold: H.LIMIT,
+      waitReason: "claude waits for its limit",
+    }),
+    // The network down sets roomWait too: its hold says the network.
+    task("network", S.PENDING, {
+      roomWait: true,
+      machineWait: true,
+      hold: H.NETWORK,
+      waitReason: "network down since 15:12",
+    }),
+    task("answer", S.PENDING, {
+      hold: H.QUESTION,
+      waitReason: "waits for Q51, which W1 waits for",
+    }),
+    // Not counted: its worker waits for your answer (the hand counts it), its wish is paused, an azima, a watcher, a
+    // planned task with nothing to wait for, a stale flag on one that left the plan.
+    task("question", S.WAITING, { waitQuestionId: "q1" }),
+    task("shelved", S.PENDING, {
+      hold: H.WISH,
+      waitReason: "its wish is paused",
+    }),
+    task("azima", S.PENDING, { kind: f.TaskKind.AZIMA, hold: H.DEPENDENCY }),
+    task("watch", S.PENDING, {
+      provider: f.Provider.WATCH,
+      hold: H.DEPENDENCY,
+      waitReason: "waits for W2 (running)",
+    }),
+    task("imported", S.PENDING),
+    task("done", S.DONE, { roomWait: true, hold: H.PLACE }),
+    task("ran", S.RUNNING, { roomWait: true, hold: H.PUSH }),
+    // A running worker counts for a place when it waits for a gate, not when it works.
+    task("gated", S.RUNNING),
+    task("working", S.RUNNING),
+  ];
+  const waiting = f.gateWaiters([
+    { waitingTaskIds: ["gated", "elsewhere"] },
+    { waitingTaskIds: [] },
+    { waitingTaskIds: ["gated"] },
+  ]);
+  // One string, sorted and without repeats: the store's selector keeps it while the gates stay.
+  assert.equal(waiting, "elsewhere gated");
+  assert.equal(f.gateWaiters([]), "");
+  const waits = f.waitsOf(tasks, waiting);
+  assert.deepEqual(waits, {
+    place: 5,
+    push: 1,
+    dependency: 1,
+    limit: 2,
+    question: 1,
+  });
+  assert.equal(f.waitCount(waits), 10);
+  assert.equal(
+    f.waitText(waits),
+    "10 workers wait: 5 for a place (a free slot, the machine's load or memory, a gate); 1 for the push checks of " +
+      "the branch to be green; 1 for a dependency; 2 for a usage limit or the network; 1 for the answer to a question",
+  );
+  assert.equal(f.waitCount(f.waitsOf(tasks)), 9);
+  // A reason at zero is left out.
+  const one = f.waitsOf([tasks[0]]);
+  assert.equal(f.waitCount(one), 1);
+  assert.equal(
+    f.waitText(one),
+    "1 worker waits: 1 for a place (a free slot, the machine's load or memory, a gate)",
+  );
+  // None waits: zero, which the side panel hides.
+  assert.equal(f.waitCount(f.waitsOf([task("working", S.RUNNING)], "")), 0);
+  assert.equal(f.waitCount(f.waitsOf([])), 0);
+  assert.equal(f.waitCount(undefined), 0);
+});
+
+test("the seat counts every task of Djinn QoL that waits, the red branch's and the dependencies' too (W329, W334)", () => {
+  const S = f.TaskStatus;
+  const H = f.TaskHold;
+  const task = (id, status, extra = {}) => ({ id, status, ...extra });
+  const many = (n, make) => Array.from({ length: n }, (_, i) => make(i));
+  // Djinn QoL as its live tasks read when the seat said 1: 32 planned or resumed tasks wait, one of them for a place,
+  // 8 for feat/qol to be green, 23 for a dependency.
+  const red =
+    "waits for feat/qol to be green again (push checks red at de18f949: test)";
+  const tasks = [
+    task("W328", S.PENDING, {
+      roomWait: true,
+      machineWait: true,
+      hold: H.PLACE,
+      waitReason: "load minimal commits up to 3.6 GiB of memory",
+    }),
+    ...many(6, (i) =>
+      task(`red${i}`, S.PENDING, { hold: H.PUSH, waitReason: red }),
+    ),
+    ...many(2, (i) =>
+      task(`resumed${i}`, S.RESUMING, { hold: H.PUSH, waitReason: red }),
+    ),
+    ...many(23, (i) =>
+      task(`dep${i}`, S.PENDING, {
+        hold: H.DEPENDENCY,
+        waitReason: `waits for W${i} (pending)`,
+      }),
+    ),
+    // Azimas are planned, never run by a worker.
+    ...many(25, (i) =>
+      task(`azima${i}`, S.PENDING, { kind: f.TaskKind.AZIMA }),
+    ),
+    task("W329", S.RUNNING),
+  ];
+  const waits = f.waitsOf(tasks, "");
+  assert.equal(f.waitCount(waits), 32);
+  assert.deepEqual(waits, {
+    place: 1,
+    push: 8,
+    dependency: 23,
+    limit: 0,
+    question: 0,
+  });
+  assert.equal(
+    f.waitText(waits),
+    "32 workers wait: 1 for a place (a free slot, the machine's load or memory, a gate); 8 for the push checks of " +
+      "the branch to be green; 23 for a dependency",
+  );
+  // Once the branch is green, the same tasks wait for a place: the count stays, its split moves.
+  const green = tasks.map((t) =>
+    t.hold === H.PUSH ? { ...t, roomWait: true, hold: H.PLACE } : t,
+  );
+  assert.equal(f.waitCount(f.waitsOf(green, "")), 32);
+  assert.equal(f.waitsOf(green, "").place, 9);
+});
+
+test("a failed merge is being fixed while its correction works, failed when none does", () => {
+  const I = f.IntegrationState;
+  const S = f.TaskStatus;
+  // W1's merge failed; its correction is task c, in the state given.
+  const failed = (by, extra = {}) => ({
+    id: "t1",
+    code: "W1",
+    status: S.DONE,
+    integration: { state: I.CONFLICT, correctedBy: by, ...extra },
+  });
+  const correction = (status, integration) => ({
+    id: "c",
+    code: "W9",
+    status,
+    integration,
+  });
+  const fixer = (task, c) => f.fixerOf(task, [task, c])?.code ?? "";
+  for (const status of [S.PENDING, S.RUNNING, S.WAITING, S.PAUSED, S.RESUMING])
+    assert.equal(
+      fixer(failed("c"), correction(status)),
+      "W9",
+      `status ${status}`,
+    );
+  for (const status of [S.FAILED, S.STOPPED, S.CANCELLED, S.INTERRUPTED])
+    assert.equal(
+      fixer(failed("c"), correction(status)),
+      "",
+      `status ${status}`,
+    );
+  // Red checks too; not a merge that merges, nor one committed.
+  assert.equal(
+    fixer(
+      { ...failed("c"), integration: { state: I.RED, correctedBy: "c" } },
+      correction(S.RUNNING),
+    ),
+    "W9",
+  );
+  for (const state of [I.PENDING, I.INTEGRATING, I.COMMITTED, I.UNCOMMITTED])
+    assert.equal(
+      fixer(
+        { ...failed("c"), integration: { state, correctedBy: "c" } },
+        correction(S.RUNNING),
+      ),
+      "",
+      `state ${state}`,
+    );
+  // No correction, one not among the tasks, attempts spent (Djinn asked the person).
+  assert.equal(fixer(failed(""), correction(S.RUNNING)), "");
+  assert.equal(fixer(failed("gone"), correction(S.RUNNING)), "");
+  assert.equal(
+    fixer(failed("c", { questionId: "q1" }), correction(S.RUNNING)),
+    "",
+  );
+  // A correction done: its work merges, it fixes until it is in; its own merge failed, it fixes while its own
+  // correction does; with no work recorded, Djinn drops it.
+  assert.equal(
+    fixer(failed("c"), correction(S.DONE, { state: I.PENDING })),
+    "W9",
+  );
+  assert.equal(fixer(failed("c"), correction(S.DONE, { state: I.RED })), "");
+  assert.equal(fixer(failed("c"), correction(S.DONE)), "");
+  const own = { id: "c2", code: "W10", status: S.RUNNING };
+  const red = correction(S.DONE, { state: I.RED, correctedBy: "c2" });
+  assert.equal(f.fixerOf(failed("c"), [failed("c"), red, own])?.code, "W9");
+  // Corrections that point at each other fix nothing.
+  const loop = correction(S.DONE, { state: I.RED, correctedBy: "c" });
+  assert.equal(fixer(failed("c"), loop), "");
+
+  // The badge: orange, its words name the correction; red without one.
+  assert.equal(f.taskTone(failed("c"), "", "W9"), "fixing");
+  assert.equal(
+    f.taskStatusText(failed("c"), "", "W9"),
+    "Merge being fixed by W9",
+  );
+  assert.equal(f.taskTone(failed("c")), "failed");
+  assert.equal(f.taskStatusText(failed("c")), "Merge failed");
+  // A task that is not done keeps its state whatever its integration says.
+  assert.equal(
+    f.taskTone(
+      { status: S.FAILED, integration: { state: I.CONFLICT } },
+      "",
+      "W9",
+    ),
+    "failed",
+  );
+
+  // The counts: fixing apart from merging, the correction running with the running.
+  assert.deepEqual(
+    f.runningOf([
+      failed("c"),
+      correction(S.RUNNING),
+      { id: "t2", status: S.DONE, integration: { state: I.RED } },
+    ]),
+    {
+      running: 1,
+      investigating: 0,
+      watching: 0,
+      merging: 0,
+      fixing: 1,
+      ifrits: 0,
+      paused: 0,
+    },
   );
 });
 
@@ -542,7 +822,10 @@ test("a cancelled task has its own muted tone, never done's, and a compact note 
   // It is history: finished, dealt with, never the person's move.
   assert.ok(f.taskFinished(S.CANCELLED));
   assert.ok(f.finishedTask(task));
-  assert.ok(f.taskDealtWith(task, [task]));
+  assert.deepEqual(
+    f.waitingTasks({ id: "w" }, { tasks: [task], questions: [] }),
+    [],
+  );
 });
 
 test("a watcher has its own tone while its command runs", () => {
@@ -555,6 +838,49 @@ test("a watcher has its own tone while its command runs", () => {
   assert.equal(
     f.taskTone({ status: S.RUNNING, provider: f.Provider.CLAUDE }),
     "running",
+  );
+});
+
+// An investigator, the worker Enlighten me starts on a question (TaskRole.INVESTIGATOR), is violet as the button that
+// started it while it works, and counted apart from the workers that run, blue; ended, it is a task like any other.
+test("an investigator at work has its own tone and count, apart from the running workers", () => {
+  const S = f.TaskStatus;
+  const R = f.TaskRole;
+  const investigator = (status) => ({
+    status,
+    role: R.INVESTIGATOR,
+    question: "Q3",
+  });
+  assert.equal(f.taskTone(investigator(S.RUNNING)), "investigating");
+  assert.equal(f.taskStatusText(investigator(S.RUNNING)), "Investigating");
+  assert.equal(f.taskTone(investigator(S.RESUMING)), "investigating");
+  assert.equal(
+    f.taskTone({ ...investigator(S.RESUMING), resumeAfter: at(100) }),
+    "paused",
+  );
+  assert.equal(f.taskTone(investigator(S.DONE)), "done");
+  assert.equal(f.taskStatusText(investigator(S.DONE)), "Done");
+  assert.equal(
+    f.taskTone({ status: S.RUNNING, role: R.UNSPECIFIED }),
+    "running",
+  );
+  assert.deepEqual(
+    f.runningOf([
+      { status: S.RUNNING },
+      investigator(S.RUNNING),
+      investigator(S.RUNNING),
+      investigator(S.DONE),
+      { status: S.RUNNING, provider: f.Provider.WATCH },
+    ]),
+    {
+      running: 1,
+      investigating: 2,
+      watching: 1,
+      merging: 0,
+      fixing: 0,
+      ifrits: 0,
+      paused: 0,
+    },
   );
 });
 
@@ -854,21 +1180,29 @@ test("the azimas' progress counts the azimas done, those awaiting their proof ap
   assert.equal(f.workDoneCount(local), 2);
 });
 
-test("open questions come blocking, then your move, then before X, then can wait, across the wishes", () => {
+// Nothing moves under the reader (AGENTS.md, Interface): a question asked later comes below, whatever it holds up.
+test("open questions come as they were asked, by wish, whatever they hold up; each keeps its urgency", () => {
   const lamp = wish("w1", "Ship the lamp", 1);
   const oil = wish("w2", "Find the oil", 2);
   const plan = f.flightPlan([lamp, oil], {
     w1: detail(
       [],
       [
-        { id: "q1", code: "Q01", text: "Brass?" },
-        { id: "q2", code: "Q02", text: "Wick?", before: "before the merge" },
+        { id: "q1", code: "Q01", text: "Brass?", createTime: at(10) },
+        {
+          id: "q2",
+          code: "Q02",
+          text: "Wick?",
+          before: "before the merge",
+          createTime: at(20),
+        },
         {
           id: "q6",
           code: "Q03",
           text: "Push tag?",
           move: true,
           before: "before the release",
+          createTime: at(30),
         },
         { id: "q7", code: "Q04", text: "Install build?", move: true },
       ],
@@ -883,56 +1217,398 @@ test("open questions come blocking, then your move, then before X, then can wait
         },
       ],
       [
-        { id: "q3", code: "Q01", text: "Olive?" },
-        { id: "q4", code: "Q02", text: "Glass?", before: "before the demo" },
+        { id: "q3", code: "Q01", text: "Olive?", createTime: at(5) },
+        {
+          id: "q4",
+          code: "Q02",
+          text: "Glass?",
+          before: "before the demo",
+          createTime: at(15),
+        },
         {
           id: "q5",
           code: "Q03",
           text: "May W1 edit?",
           before: "before the demo",
+          createTime: at(25),
         },
       ],
     ),
   });
+  // The first wish's, then the second's, each the oldest first: one with no time comes first, by its id.
   assert.deepEqual(
     plan.questions.map((q) => [q.item.id, f.urgency(q)]),
     [
-      ["q5", 0],
-      ["q6", 1],
-      ["q2", 2],
-      ["q4", 2],
-      ["q1", 3],
       ["q7", 3],
+      ["q1", 3],
+      ["q2", 2],
+      ["q6", 1],
       ["q3", 3],
+      ["q4", 2],
+      ["q5", 0],
     ],
   );
-  // One wish alone sorts the same way.
+  // A revision keeps the question's creation time: it stays where it was, even listed after a newer one (the store
+  // put it back in place of its old copy).
+  const revised = {
+    id: "q1",
+    code: "Q01",
+    text: "Brass or copper?",
+    revision: 1,
+    createTime: at(10),
+    rounds: [{ kind: f.RoundKind.REVISE, createTime: at(40) }],
+  };
   assert.deepEqual(
     f
       .openQuestions(
-        oil,
+        lamp,
         detail(
+          [],
           [
-            {
-              id: "t1",
-              code: "W1",
-              status: f.TaskStatus.WAITING,
-              editQuestionId: "q5",
-            },
-          ],
-          [
-            { id: "q3", code: "Q01", text: "Olive?" },
-            {
-              id: "q4",
-              code: "Q02",
-              text: "Glass?",
-              before: "before the demo",
-            },
-            { id: "q5", code: "Q03", text: "May W1 edit?" },
+            { id: "q2", code: "Q02", text: "Wick?", createTime: at(20) },
+            revised,
+            { id: "q8", code: "Q05", text: "Oil?", createTime: at(50) },
           ],
         ),
       )
-      .map((q) => q.item.id),
-    ["q5", "q4", "q3"],
+      .map((q) => q.item.code),
+    ["Q01", "Q02", "Q05"],
+  );
+});
+
+// An ifrit (T51): a worker that stays lit while the developer is there. Its tone and word never rest on the colour
+// alone: lit, at work, going out in 4 min once warned, out; it counts apart from the workers, and turns its wish's tone
+// before what waits.
+test("an ifrit lit, at work, warned or out: its tone, its word, and its count apart from the workers", () => {
+  const S = f.TaskStatus;
+  const I = f.IfritState;
+  const now = Date.UTC(2026, 9, 16, 15, 0, 0);
+  const ms = (t) => ({ seconds: BigInt(Math.floor(t / 1000)), nanos: 0 });
+  const ifrit = (status, state, extra = {}) => ({
+    id: "i1",
+    code: "W12",
+    title: "Front of the lamp",
+    kind: f.TaskKind.IFRIT,
+    status,
+    ifrit: { state, serves: [], reply: "", ...extra },
+  });
+  const working = ifrit(S.RUNNING, I.WORKING);
+  const lit = ifrit(S.RUNNING, I.LISTENING, { outTime: ms(now + 30 * 60e3) });
+  const warned = ifrit(S.RUNNING, I.LISTENING, {
+    warnTime: ms(now - 60e3),
+    outTime: ms(now + 3.5 * 60e3),
+  });
+  const out = ifrit(S.STOPPED, I.OUT);
+  const done = ifrit(S.DONE, I.UNSPECIFIED);
+  assert.deepEqual(
+    [working, lit, warned, out, done].map((t) => f.taskTone(t)),
+    ["ifrit", "ifrit", "ifrit", "out", "done"],
+  );
+  assert.deepEqual(
+    [working, lit, warned, out, done].map((t) => f.ifritPhase(t, now)),
+    ["working", "listening", "warned", "out", undefined],
+  );
+  assert.deepEqual(
+    [working, lit, warned, out].map((t) => f.ifritWord(t, now)),
+    ["At work", "Lit", "Goes out in 4 min", "Out"],
+  );
+  // Before its warning time, no countdown; a row that does not tick says where it stands, never a countdown.
+  assert.equal(f.ifritWord(warned, now - 2 * 60e3), "Lit", "not warned yet");
+  assert.equal(f.taskStatusText(warned), "Lit");
+  assert.equal(f.taskStatusText(out), "Out");
+  assert.equal(f.taskStatusText(done), "Done");
+  // A work task is no ifrit, whatever its fields.
+  assert.equal(f.taskTone({ status: S.RUNNING, ifrit: lit.ifrit }), "running");
+
+  // Counted apart: the workers running are the work alone; one put out counts with the paused workers, its work kept
+  // until a message lights it again (W219).
+  assert.deepEqual(f.runningOf([working, lit, out, { status: S.RUNNING }]), {
+    running: 1,
+    investigating: 0,
+    watching: 0,
+    merging: 0,
+    fixing: 0,
+    ifrits: 2,
+    paused: 1,
+  });
+  // Its wish takes its tone before what waits, after a paused or granted wish's.
+  const w = { state: f.WishState.ACTIVE, ready: true };
+  assert.equal(f.wishTone(w, 2, 1, 0, 0, 1), "ifrit");
+  assert.equal(f.wishTone(w, 2, 1, 0, 0, 0), "waiting");
+  assert.equal(
+    f.wishTone({ ...w, state: f.WishState.PAUSED }, 0, 0, 0, 0, 1),
+    "paused",
+  );
+});
+
+test("an ifrit's ports are links, its gates those it holds, and a task waiting for one is told when it comes back", () => {
+  const R = f.ServeState;
+  const ms = (t) => ({ seconds: BigInt(Math.floor(t / 1000)), nanos: 0 });
+  const ifrit = {
+    id: "i1",
+    code: "W12",
+    title: "Front of the lamp",
+    kind: f.TaskKind.IFRIT,
+    status: f.TaskStatus.RUNNING,
+    ifrit: {
+      state: f.IfritState.LISTENING,
+      serves: [
+        {
+          name: "front",
+          state: R.RUNNING,
+          gate: "",
+          ports: [{ number: 5173, label: "", open: true }],
+        },
+        {
+          name: "back",
+          state: R.STARTING,
+          gate: "Stack",
+          ports: [{ number: 8080, label: "api", open: false }],
+        },
+        {
+          name: "old",
+          state: R.STOPPED,
+          gate: "db",
+          ports: [{ number: 9000, label: "", open: true }],
+        },
+      ],
+    },
+  };
+  // The ports of the serves that run, named as declared, else by their serve; one that does not answer says so.
+  assert.deepEqual(f.ifritLinks(ifrit), [
+    {
+      url: "http://localhost:5173/",
+      host: "localhost:5173",
+      label: "front",
+      open: true,
+    },
+    {
+      url: "http://localhost:8080/",
+      host: "localhost:8080",
+      label: "api",
+      open: false,
+    },
+  ]);
+  const release = Date.UTC(2026, 9, 16, 15, 42);
+  const gates = [
+    {
+      name: "stack",
+      holder: "W12 (Front of the lamp): task run-back",
+      holderTaskId: "i1",
+      ifrit: true,
+      waiting: ["W15 (Tests): go tool task test"],
+      expireTime: ms(release),
+    },
+    {
+      name: "lint",
+      holder: "W3 (Lint)",
+      holderTaskId: "t3",
+      ifrit: false,
+      waiting: ["W16 (Other): go tool task lint"],
+    },
+    {
+      name: "e2e",
+      holder: "W12 (Front of the lamp): npx playwright test",
+      holderTaskId: "i1",
+      ifrit: true,
+      waiting: [],
+    },
+  ];
+  // The gates Djinn lists as its own, and those its running serves hold, each once.
+  assert.deepEqual(f.ifritGates(ifrit, gates), ["e2e", "stack"]);
+  const wait = f.ifritWaitOf({ code: "W15", title: "Tests" }, gates);
+  assert.equal(wait.gate, "stack");
+  assert.equal(wait.holder, "W12 (Front of the lamp): task run-back");
+  assert.equal(
+    wait.release,
+    new Date(release).toLocaleTimeString("en", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  );
+  // A gate held by a worker that is no ifrit, or a task that waits for nothing: no line.
+  assert.equal(
+    f.ifritWaitOf({ code: "W16", title: "Other" }, gates),
+    undefined,
+  );
+  assert.equal(f.ifritWaitOf({ code: "W1", title: "Tests" }, gates), undefined);
+
+  // The lit ifrits, the latest activity first; one put out is not lit.
+  const at = (id, seconds, extra = {}) => ({
+    item: {
+      ...ifrit,
+      id,
+      lastActivityTime: { seconds: BigInt(seconds), nanos: 0 },
+      ...extra,
+    },
+  });
+  assert.deepEqual(
+    f
+      .litIfrits([
+        at("a", 10),
+        at("b", 20),
+        at("c", 30, {
+          status: f.TaskStatus.STOPPED,
+          ifrit: { state: f.IfritState.OUT, serves: [] },
+        }),
+        at("d", 40, { kind: f.TaskKind.WORK }),
+      ])
+      .map(({ item }) => item.id),
+    ["b", "a"],
+  );
+});
+
+test("a question put off for later goes below those asked before, above one asked after; cleared, back in place", () => {
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const asked = [
+    { id: "q1", code: "Q01", text: "Brass?", createTime: at(10) },
+    { id: "q2", code: "Q02", text: "Wick?", createTime: at(20) },
+    { id: "q3", code: "Q03", text: "Glass?", createTime: at(30) },
+    { id: "q4", code: "Q04", text: "Oil?", createTime: at(50) },
+  ];
+  const codes = (questions) =>
+    f.openQuestions(lamp, detail([], questions)).map((q) => q.item.code);
+  assert.deepEqual(codes(asked), ["Q01", "Q02", "Q03", "Q04"]);
+  // Q01 put off at 40: below Q02 and Q03, asked before, above Q04, asked after.
+  const putOff = [{ ...asked[0], laterTime: at(40) }, ...asked.slice(1)];
+  assert.deepEqual(codes(putOff), ["Q02", "Q03", "Q01", "Q04"]);
+  assert.equal(f.placeOf(putOff[0]), 40_000);
+  // Its date taken off, it is back where it was asked; a date before that changes nothing.
+  assert.deepEqual(
+    codes([{ ...asked[0], laterTime: undefined }, ...asked.slice(1)]),
+    ["Q01", "Q02", "Q03", "Q04"],
+  );
+  assert.equal(f.placeOf({ ...asked[2], laterTime: at(1) }), 30_000);
+});
+
+test("an urgent task shows so while it is to run or runs, never a watcher nor an azima (W133)", () => {
+  const task = (status, extra = {}) =>
+    f.create(f.TaskSchema, { code: "W2", status, urgent: true, ...extra });
+  assert.equal(f.isUrgent(task(f.TaskStatus.PENDING)), true);
+  assert.equal(f.isUrgent(task(f.TaskStatus.RUNNING)), true);
+  assert.equal(f.isUrgent(task(f.TaskStatus.DONE)), false);
+  assert.equal(
+    f.isUrgent(task(f.TaskStatus.PENDING, { urgent: false })),
+    false,
+  );
+  assert.equal(
+    f.isUrgent(task(f.TaskStatus.PENDING, { provider: f.Provider.WATCH })),
+    false,
+  );
+  assert.equal(
+    f.isUrgent(task(f.TaskStatus.PENDING, { kind: f.TaskKind.AZIMA })),
+    false,
+  );
+});
+
+test("an investigation shows its kind, a task urgent for feedback stays urgent (W213)", () => {
+  const task = (extra) =>
+    f.create(f.TaskSchema, {
+      code: "W3",
+      status: f.TaskStatus.RUNNING,
+      ...extra,
+    });
+  assert.equal(
+    f.isInvestigation(task({ kind: f.TaskKind.INVESTIGATION })),
+    true,
+  );
+  assert.equal(f.isInvestigation(task({ kind: f.TaskKind.WORK })), false);
+  assert.equal(f.isUrgent(task({ urgent: true, feedback: true })), true);
+});
+
+test("a task to run or running may be made urgent or no longer, not a merge, an investigation or an ifrit (W234)", () => {
+  const task = (status, extra = {}) =>
+    f.create(f.TaskSchema, { code: "W4", status, ...extra });
+  for (const status of [
+    f.TaskStatus.PENDING,
+    f.TaskStatus.RESUMING,
+    f.TaskStatus.RUNNING,
+    f.TaskStatus.PAUSED,
+    f.TaskStatus.WAITING,
+  ])
+    assert.equal(f.canUrge(task(status)), true, f.TaskStatus[status]);
+  for (const status of [
+    f.TaskStatus.DONE,
+    f.TaskStatus.FAILED,
+    f.TaskStatus.STOPPED,
+  ])
+    assert.equal(f.canUrge(task(status)), false, f.TaskStatus[status]);
+  for (const extra of [
+    { provider: f.Provider.WATCH },
+    { kind: f.TaskKind.AZIMA },
+    { kind: f.TaskKind.INVESTIGATION },
+    { kind: f.TaskKind.IFRIT },
+    { correction: {} },
+    { review: {} },
+  ])
+    assert.equal(
+      f.canUrge(task(f.TaskStatus.PENDING, extra)),
+      false,
+      JSON.stringify(extra),
+    );
+});
+
+test("a question asleep waits for its conditions, out of the open ones; woken, it comes first, the first woken first", () => {
+  const lamp = wish("w1", "Ship the lamp", 1);
+  const sleep = (wakeTime) => ({
+    conditions: [{ kind: f.SleepKind.TASK, code: "W1", taskId: "t1", url: "" }],
+    createTime: at(5),
+    ...(wakeTime && { wakeTime }),
+  });
+  const asked = [
+    { id: "q1", code: "Q01", text: "Brass?", createTime: at(10) },
+    {
+      id: "q2",
+      code: "Q02",
+      text: "Wick?",
+      createTime: at(20),
+      sleep: sleep(),
+    },
+    {
+      id: "q3",
+      code: "Q03",
+      text: "Glass?",
+      createTime: at(30),
+      sleep: sleep(at(60)),
+    },
+    {
+      id: "q4",
+      code: "Q04",
+      text: "Oil?",
+      createTime: at(40),
+      sleep: sleep(at(50)),
+    },
+    // Put off after it woke: back among the others, put off.
+    {
+      id: "q5",
+      code: "Q05",
+      text: "Lid?",
+      createTime: at(1),
+      sleep: sleep(at(50)),
+      laterTime: at(70),
+    },
+  ];
+  const d = detail([], asked);
+  assert.deepEqual(
+    f.openQuestions(lamp, d).map((q) => q.item.code),
+    ["Q04", "Q03", "Q01", "Q05"],
+  );
+  assert.deepEqual(
+    f.asleepQuestions(lamp, d).map((q) => q.item.code),
+    ["Q02"],
+  );
+  const plan = f.flightPlan([lamp], { w1: d });
+  assert.deepEqual(
+    plan.asleep.map((q) => q.item.code),
+    ["Q02"],
+  );
+  assert.ok(!plan.questions.some((q) => q.item.code === "Q02"));
+  // Answered, it waits for nothing.
+  assert.deepEqual(
+    f.asleepQuestions(
+      lamp,
+      detail([], [{ ...asked[1], answer: { choice: f.Choice.YES } }]),
+    ),
+    [],
   );
 });

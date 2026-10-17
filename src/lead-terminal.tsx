@@ -32,6 +32,8 @@ import { type Djinn, useData, useDjinn, useStore } from "./data/djinn";
 import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
+import { onTextSize, textScale } from "./text-size";
 import { onTheme, token } from "./theme";
 import { AddProject } from "./wish-dialogs";
 
@@ -468,20 +470,32 @@ function LeadTerminal({
       <div className="lead-terminal-screen" ref={host} hidden={!name} />
       {!name && !collapsed && (
         <div className="lead-terminal-empty">
-          <p>{t("terminal.none")}</p>
-          <button className="button accent" onClick={onNew}>
-            <Plus size={14} />
-            {t("terminal.new_tab")}
-          </button>
+          <EmptyState
+            art="terminal"
+            after={
+              <button className="button accent" onClick={onNew}>
+                <Plus size={14} />
+                {t("terminal.new_tab")}
+              </button>
+            }
+          >
+            {t("terminal.none")}
+          </EmptyState>
         </div>
       )}
       {noProject && !collapsed && (
         <div className="lead-terminal-empty">
-          <p>{t("terminal.no_project")}</p>
-          <button className="button accent" onClick={() => setAdding(true)}>
-            <FolderPlus size={14} />
-            {t("sidebar.new_project")}
-          </button>
+          <EmptyState
+            art="noproject"
+            after={
+              <button className="button accent" onClick={() => setAdding(true)}>
+                <FolderPlus size={14} />
+                {t("sidebar.new_project")}
+              </button>
+            }
+          >
+            {t("terminal.no_project")}
+          </EmptyState>
         </div>
       )}
       {adding && (
@@ -496,6 +510,10 @@ function LeadTerminal({
     </section>
   );
 }
+
+// terminalFontSize is the emulator's font size: 13px at the default text size, scaled with it (text-size.ts) to the
+// half pixel.
+const terminalFontSize = () => Math.round(26 * textScale()) / 2;
 
 // mountTerminal runs an emulator in element on the terminal of djinn that request opens or attaches to, and tells
 // onStatus where its program stands, until dispose. The window's terminal and the agents' setup both use it; onNew,
@@ -515,13 +533,17 @@ export function mountTerminal(
   const api = djinn.terminal;
   const term = new Terminal({
     fontFamily: '"IBM Plex Mono", monospace',
-    fontSize: 13,
+    fontSize: terminalFontSize(),
     cursorBlink: true,
     scrollback: 5000,
     allowProposedApi: false,
     theme: terminalTheme(),
   });
   const stopTheme = onTheme(() => (term.options.theme = terminalTheme()));
+  const stopTextSize = onTextSize(() => {
+    term.options.fontSize = terminalFontSize();
+    fitSafely(fit);
+  });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(
@@ -641,6 +663,7 @@ export function mountTerminal(
     dispose: () => {
       abort.abort();
       stopTheme();
+      stopTextSize();
       inputs.forEach((d) => d.dispose());
       element.removeEventListener("keydown", keep);
       term.dispose();

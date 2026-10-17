@@ -1,12 +1,16 @@
 package plan
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -345,12 +349,94 @@ func TestWishMake(t *testing.T) {
 	}
 }
 
+func TestWishAddProject(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t)
+	add := func(dir string) *planv1.Project {
+		t.Helper()
+		res, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetProject()
+	}
+	docs := add(t.TempDir())
+	app := gitRepo(t, "app", "https://example.com/acme/app.git")
+	// The copy has another branch checked out, trunk: the wish takes main, the reference branch, never the copy's (W227).
+	for _, args := range [][]string{
+		{"-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "First"},
+		{"branch", "-M", "main"}, {"switch", "-q", "-c", "trunk"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", app}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	appProject := add(app)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+		Title: "Ship it", ProjectIds: []string{docs.GetId()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+	addTo := func(project string) (*planv1.Wish, error) {
+		res, err := c.wishes.AddProject(ctx, connect.NewRequest(&planv1.WishServiceAddProjectRequest{WishId: wishID, ProjectId: project}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetWish(), nil
+	}
+
+	// By name, case ignored: the wish works in it, its integration branch the project's reference, as Make sets it.
+	wish, err := addTo("APP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := wish.GetProjectIds(), []string{docs.GetId(), appProject.GetId()}; !slices.Equal(got, want) {
+		t.Errorf("projects = %v, want %v", got, want)
+	}
+	if got := IntegrationBranchOf(wish, appProject.GetId()); got != "main" {
+		t.Errorf("integration branch = %q, want main, the reference branch, not trunk the copy has checked out", got)
+	}
+
+	// Already in the wish, by identifier or name: refused, saying which.
+	for _, project := range []string{appProject.GetId(), docs.GetName()} {
+		_, err := addTo(project)
+		if code(err) != connect.CodeAlreadyExists || !strings.Contains(err.Error(), "already in wish") {
+			t.Errorf("AddProject(%s) again = %v, want already_exists", project, err)
+		}
+	}
+	// Unknown: refused, naming it.
+	if _, err := addTo("ghost"); code(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "no project ghost") {
+		t.Errorf("AddProject(ghost) = %v, want not_found naming it", err)
+	}
+	// Without a project: refused before the store.
+	if _, err := addTo(""); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("AddProject without a project = %v, want invalid_argument", err)
+	}
+
+	// The list and the brief show it.
+	list, err := c.wishes.List(ctx, connect.NewRequest(&planv1.WishServiceListRequest{}))
+	if err != nil || len(list.Msg.GetWishes()) != 1 || len(list.Msg.GetWishes()[0].GetProjectIds()) != 2 {
+		t.Errorf("List = %v, %v; want the wish with its two projects", list, err)
+	}
+	brief, err := c.wishes.Brief(ctx, connect.NewRequest(&planv1.WishServiceBriefRequest{WishId: wishID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "- Projects: " + docs.GetName() + ", app."; !strings.Contains(brief.Msg.GetText(), want) {
+		t.Errorf("brief lacks %q:\n%s", want, brief.Msg.GetText())
+	}
+}
+
 type testPusher struct {
 	pushedWish, pushedProject, pushedBranch string
 	// The wish of the azima branch Syncs gives.
 	azimaWish string
 	// What Push fails with; nil: it pushes.
 	err error
+	// The branches ForgetSync forgot.
+	forgotten []string
 }
 
 func (p *testPusher) Push(ctx context.Context, wishID, projectID, branch string) (*planv1.IntegrationPush, error) {
@@ -367,6 +453,108 @@ func (p *testPusher) Syncs(ctx context.Context, project *planv1.Project) ([]*pla
 		{WishId: "w1", Branch: "feat/x", Remote: "origin", Target: "feat/x", Ahead: 3, Behind: 1},
 		{WishId: p.azimaWish, Branch: "djinn/T1-azima", Remote: "origin", Target: "djinn/T1-azima", Ahead: 1, AzimaId: "a1"},
 	}, nil
+}
+
+// TestProjectForgetSync: the window's Forget, of a landed branch, reaches the pusher; a branch with commits to push, or
+// none Djinn pushes, is refused, by its own code.
+func TestProjectForgetSync(t *testing.T) {
+	ctx := t.Context()
+	pusher := &testPusher{}
+	c := serve(t, WithHome(t.TempDir()), WithPusher(pusher))
+	p, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := p.Msg.GetProject().GetName()
+	forget := func(branch string) error {
+		_, err := c.projects.ForgetSync(ctx, connect.NewRequest(&planv1.ProjectServiceForgetSyncRequest{Project: name, Branch: branch}))
+		return err
+	}
+	if err := forget("feat/x"); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("ForgetSync of a branch ahead: %v, want failed precondition", err)
+	}
+	if err := forget("feat/none"); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("ForgetSync of no branch Djinn pushes: %v, want not found", err)
+	}
+	if len(pusher.forgotten) != 0 {
+		t.Errorf("forgotten %v, want none", pusher.forgotten)
+	}
+}
+
+// ForgetSync forgets a branch among Syncs with nothing to push.
+func (p *testPusher) ForgetSync(ctx context.Context, project *planv1.Project, branch string) error {
+	syncs, _ := p.Syncs(ctx, project)
+	for _, s := range syncs {
+		if s.GetBranch() == branch {
+			if s.GetAhead() > 0 {
+				return fmt.Errorf("%s has %d commits to push", branch, s.GetAhead())
+			}
+			p.forgotten = append(p.forgotten, branch)
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s", store.ErrNotFound, branch)
+}
+
+// Pull pulls a branch among Syncs behind its remote, refusing one that diverged; every one behind without branch.
+func (p *testPusher) Pull(ctx context.Context, project *planv1.Project, branch string) ([]*planv1.BranchPull, error) {
+	syncs, _ := p.Syncs(ctx, project)
+	var pulls []*planv1.BranchPull
+	for _, s := range syncs {
+		if (branch != "" && s.GetBranch() != branch) || s.GetBehind() == 0 {
+			continue
+		}
+		pull := &planv1.BranchPull{Branch: s.GetBranch(), Remote: s.GetRemote() + "/" + s.GetTarget(), Sha: "abc"}
+		if s.GetAhead() > 0 {
+			pull.Sha, pull.Refused = "", s.GetBranch()+" has diverged"
+		}
+		if branch != "" && pull.GetRefused() != "" {
+			return nil, errors.New(pull.GetRefused())
+		}
+		pulls = append(pulls, pull)
+	}
+	if branch != "" && !slices.ContainsFunc(syncs, func(s *planv1.ProjectSync) bool { return s.GetBranch() == branch }) {
+		return nil, fmt.Errorf("%w: %s", store.ErrNotFound, branch)
+	}
+	return pulls, nil
+}
+
+// TestProjectPull: the window's Pull reaches the pusher; a branch that diverged is refused saying why, one Djinn does
+// not push is not found; without a branch, each refusal is said in its pull.
+func TestProjectPull(t *testing.T) {
+	ctx := t.Context()
+	c := serve(t, WithHome(t.TempDir()), WithPusher(&testPusher{}))
+	p, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := p.Msg.GetProject().GetName()
+	pull := func(branch *string) (*planv1.ProjectServicePullResponse, error) {
+		res, err := c.projects.Pull(ctx, connect.NewRequest(&planv1.ProjectServicePullRequest{Project: name, Branch: branch}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	if _, err := pull(proto.String("feat/x")); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!strings.Contains(err.Error(), "feat/x has diverged") {
+		t.Errorf("Pull of a branch that diverged: %v, want failed precondition saying so", err)
+	}
+	if _, err := pull(proto.String("feat/none")); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("Pull of no branch Djinn pushes: %v, want not found", err)
+	}
+	all, err := pull(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := all.GetPulls(); len(got) != 1 || got[0].GetBranch() != "feat/x" || got[0].GetRefused() == "" {
+		t.Errorf("Pull of every branch: %v, want feat/x refused", got)
+	}
+}
+
+// Reference finds main, as a repository with a remote holds it.
+func (p *testPusher) Reference(ctx context.Context, project *planv1.Project, name string) (string, string, error) {
+	return cmp.Or(name, "main"), "refs/remotes/origin/" + cmp.Or(name, "main"), nil
 }
 
 func TestProjectPushAndSetPush(t *testing.T) {

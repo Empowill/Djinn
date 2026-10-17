@@ -46,7 +46,8 @@ func twoProjects(t *testing.T, e *env) (wishID, projectID string) {
 
 // TestDoneWithoutCommitTellsTheLeadOnce replays W1 of wish Dew (12/10/2026): a worker of a new wish, in its second
 // project, with its agent's own configuration, that commits nothing and ends done. Its project names no check, so no
-// merge ever told its end: the lead heard nothing for an hour. Now it hears it once, with the worker's final note.
+// merge ever told its end: the lead heard nothing for an hour. Now it hears it once, with the worker's final note, and
+// that its work brought nothing to merge (W196).
 func TestDoneWithoutCommitTellsTheLeadOnce(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir())
@@ -70,7 +71,7 @@ func TestDoneWithoutCommitTellsTheLeadOnce(t *testing.T) {
 	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_NATIVE {
 		t.Fatalf("task %v, access %v: want done, native", got.GetStatus(), got.GetAccess())
 	}
-	want := []string{"Djinn: " + task.GetCode() + " done: The rest of the report."}
+	want := []string{"Djinn: " + task.GetCode() + " done, nothing to merge: no commit of its own. Its final note: The rest of the report."}
 	if lines := endedEvents(queue, task.GetCode()); !slices.Equal(lines, want) {
 		t.Errorf("ended events %q, want %q", lines, want)
 	}
@@ -123,7 +124,7 @@ func TestRefusedCallsToldAndCarried(t *testing.T) {
 	if lines[0] != want {
 		t.Errorf("ended event\n got %s\nwant %s", lines[0], want)
 	}
-	digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: task.GetCode(), Text: lines[0]})
+	digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: task.GetCode(), Text: lines[0]}, "")
 	if !strings.Contains(digest, command) {
 		t.Errorf("the digest cuts the command: %s", digest)
 	}
@@ -151,11 +152,11 @@ func TestDoneLine(t *testing.T) {
 			want: "Djinn: W3 done, nothing to merge into djinn/dew. Its final note: Done."},
 		{task: &planv1.Task{Code: "W4"}, want: "Djinn: W4 done. It left no final note."},
 	} {
-		got := doneLine(c.task, one, c.note, c.why)
+		got := doneLine(c.task, one, c.note, c.why, "")
 		if got != c.want {
 			t.Errorf("doneLine\n got %s\nwant %s", got, c.want)
 		}
-		digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: c.task.GetCode(), Text: got})
+		digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: c.task.GetCode(), Text: got}, "")
 		if c.wantDigest && !strings.Contains(digest, "djinn wish allow "+wishID+" --mode auto") {
 			t.Errorf("the digest cuts the command: %s", digest)
 		}
@@ -242,5 +243,31 @@ func TestClaudeAllowsDjinn(t *testing.T) {
 		if got := claudeAllowsDjinn(t.TempDir(), dir); got != want {
 			t.Errorf("claudeAllowsDjinn(home %s) = %v, want %v", settings, got, want)
 		}
+	}
+}
+
+// TestDoneCarriesTheWholeNote: the lead's event of a task done carries the worker's final note whole, apart from its
+// line, which keeps the first line: the digest cut it at 160 characters, and the lead read the rest with task watch
+// (16/10/2026).
+func TestDoneCarriesTheWholeNote(t *testing.T) {
+	t.Parallel()
+	e := up(t, t.TempDir())
+	queue := &leadQueue{}
+	e.h.NotifyLead(queue.notify)
+	wishID, _ := e.wish(t, fakeProject(t, ""))
+	task := e.ended(t, e.spawn(t, wishID, "text working").GetId())
+	note := "Added djinn question get.\n\nLeft to verify:\n- the Windows build"
+	e.h.Note(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: note + "\n"})
+	e.h.tellDone(t.Context(), task, "", "")
+	events := queue.all()
+	if len(events) == 0 {
+		t.Fatal("no event for the lead")
+	}
+	last := events[len(events)-1]
+	if last.GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED || last.GetNote() != note {
+		t.Errorf("event %v, want its note whole: %q", last, note)
+	}
+	if want := "Djinn: " + task.GetCode() + " done: Added djinn question get."; last.GetText() != want {
+		t.Errorf("line %q, want %q", last.GetText(), want)
 	}
 }

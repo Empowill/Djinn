@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -27,6 +30,10 @@ import (
 
 // methodQuestion is what the journal records when Djinn starts a question worker; the request is the spawn.
 const methodQuestion = "harness/question"
+
+// methodOutrun is what the journal records when Djinn closes a failed question worker that another one took over, or
+// whose question moved on without it; the request is the task, closed.
+const methodOutrun = "harness/outrun"
 
 // WithEnlightenWorkers lets the harness start enlighten workers: true by default.
 func WithEnlightenWorkers(on ...bool) Option {
@@ -93,7 +100,8 @@ func (h *Harness) startInvestigator(ctx context.Context, q *planv1.Question, not
 	}
 }
 
-// ResumeInvestigations follows up each request to investigate that was left without one: djinn up stopped, or hung
+// ResumeInvestigations follows up each request to investigate, or iteration on a mockup (resumeIteration), that was
+// left without one: djinn up stopped, or hung
 // until it was made to quit, between storing the request and starting its investigator or telling the lead, and the
 // question stayed under investigation with no one on it (W536). Each one gets its investigator now, or else the
 // lead's event, once: a request that an investigator took on, or the lead heard of, is followed up already. djinn
@@ -133,6 +141,9 @@ func (h *Harness) resumeInvestigation(ctx context.Context, q *planv1.Question) e
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
 	if err != nil || wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
 		return err
+	}
+	if asked.GetKind() == planv1.RoundKind_ROUND_KIND_ITERATE {
+		return h.resumeIteration(ctx, q, asked)
 	}
 	if followed, err := h.investigationFollowed(ctx, q, asked); err != nil || followed {
 		return err
@@ -226,13 +237,37 @@ func (h *Harness) startQuestionWorker(
 	if err != nil {
 		return nil, err
 	}
-	title, prompt := investigatorPrompt(q, note, retryText(before), brief.Moving, tasks...)
 	provider, model, _ := questionProvider(settings)
-	task := &planv1.Task{Role: role, Question: q.GetCode()}
+	task := &planv1.Task{Id: store.NewID(), Role: role, Question: q.GetCode()}
+	contextFile := ""
+	if writesDirs(provider) {
+		contextFile = questionContextFile(h.home, task.GetId())
+	}
+	title, prompt := investigatorPrompt(q, note, retryText(before), brief.Moving, contextFile, tasks...)
 	return h.spawn(ctx, methodQuestion, &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: title, Prompt: prompt, Provider: provider,
 		Model: model, MaxBudgetUsd: settings.QuestionBudgetUSD,
 	}, task)
+}
+
+// questionContextFile is where the question worker taskID writes the context of its revision, which it passes with
+// --context-file: in its own folder under Djinn's data folder, the one it may write in (questionWriteDirs).
+func questionContextFile(home, taskID string) string {
+	return filepath.Join(scratchDir(home, taskID), "context.md")
+}
+
+// questionWriteDirs are the folders the worker of t may write in besides its permissions: a question worker's own
+// folder, which it makes, for its context file (questionContextFile), when its agent writes there alone (writesDirs);
+// none for another task.
+func (h *Harness) questionWriteDirs(t *planv1.Task) ([]string, error) {
+	if t.GetAccess() != planv1.TaskAccess_TASK_ACCESS_DJINN || !writesDirs(t.GetProvider()) {
+		return nil, nil
+	}
+	dir := scratchDir(h.home, t.GetId())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("create the task's folder: %w", err)
+	}
+	return []string{dir}, nil
 }
 
 // questionProvider returns the provider and model for a question worker given the project's settings,
@@ -395,6 +430,13 @@ func writeQuestionHistory(b *strings.Builder, q *planv1.Question) {
 				note = "(no note)"
 			}
 			fmt.Fprintf(b, "### Round %d — Enlighten request (Tour %d)\n- Note: %s\n\n", i+1, revNum, note)
+		case planv1.RoundKind_ROUND_KIND_ITERATE:
+			note := cmp.Or(strings.TrimSpace(r.GetNote()), "(no note)")
+			if r.GetSend() > 0 {
+				note += fmt.Sprintf(" (comments of send %d)", r.GetSend())
+			}
+			fmt.Fprintf(b, "### Round %d — Iteration on the mockup, option %s, from version %d (Tour %d)\n- Note: %s\n\n",
+				i+1, strings.TrimPrefix(r.GetOption().String(), "CHOICE_"), r.GetVersion(), revNum, note)
 		case planv1.RoundKind_ROUND_KIND_REVISE:
 			revNum++
 			opts, ctx, rec := revisionAfter(q, rounds, i)
@@ -412,24 +454,33 @@ func writeQuestionHistory(b *strings.Builder, q *planv1.Question) {
 // questionAccess tells a question worker how to work within its access (TASK_ACCESS_DJINN): its agent refuses a
 // call that joins anything to a djinn command, since every part of a compound command must be allowed, and reads
 // files with its own tools. Workers that took a refused form for a refused Bash gave up without doing anything.
-const questionAccess = "## How to work within your access\n\n" +
-	"You read files, search the web and fetch pages, and run djinn's inspection/revision commands (`djinn wish brief`, " +
-	"`djinn task list`, `djinn task get`, `djinn question list`, `djinn block list`, `djinn tilasm list`, " +
-	"`djinn tilasm get`, `djinn question revise`) and read-only git inspection commands (`git log`, `git show`, " +
-	"`git diff`, `git status`, `git branch`, `git rev-parse`, `git ls-tree`): nothing else.\n\n" +
-	"- Run each `djinn …` or `git …` command alone, in a Bash call of its own: no pipe (`|`), no `;`, no `&&` nor `||`, no " +
-	"redirection (`>`, `2>`, `<<`), no `$(…)`, no `cd` before it. A call that joins anything to a command is " +
-	"refused whole. Read a command's whole output rather than filtering it.\n" +
-	"- Read files with your Read, Grep and Glob tools, and search or fetch the web with your web tools (WebSearch " +
-	"and WebFetch, or search_web and read_url_content), never with cat, grep, sed, head, find or curl in Bash.\n" +
-	"- Write the values of `--title`, `--prompt`, `--context`, `--recommendation`, `--options`… between double quotes, " +
-	"with no backtick nor `$` inside: there they would run a command, and the call is refused. Never start a line " +
-	"inside a quoted argument with `#` at column zero (indent `#` comments inside a `~~~` block with a leading space, " +
-	"` # …`, or keep lines plain), as a newline followed immediately by `#` inside quotes is refused by the shell " +
-	"filter; or pass `--context-file <path>` to read the context from a file when Markdown headers (`#`), arrows " +
-	"(`->`) or parentheses would be rejected by shell static filters. Write an inner double quote `\\\"`.\n" +
-	"- A refused call means that this form of the command is refused, not that Bash is: run the djinn command again, " +
-	"alone and plain. Never end on a refusal: a question worker that did nothing after one has failed.\n\n"
+// contextFile is the file it writes the context of its revision in, when its agent may write there; "" otherwise.
+func questionAccess(contextFile string) string {
+	context := "- Pass the context with `--context \"…\"`, between double quotes like the other values.\n"
+	if contextFile != "" {
+		// Claude Code refuses a newline followed by # inside a quoted argument, whatever its allow rules say: W80 of
+		// wish Dew 13 oct, an investigator, could not revise Q32 with a # comment above each command (W153).
+		context = "- Write the context in a file, never in `--context`: Claude Code refuses a quoted argument where a " +
+			"line starts with `#`, however indented, whatever Djinn allows, and the shape above puts a `# …` comment " +
+			"above each command. Write the whole context with your Write tool in `" + contextFile + "`, the one file " +
+			"you may write, then pass `--context-file \"" + contextFile + "\"`; write it again before each revision.\n"
+	}
+	return "## How to work within your access\n\n" +
+		"You read files, search the web and fetch pages, and run djinn's inspection/revision commands (`djinn wish brief`, " +
+		"`djinn task list`, `djinn task get`, `djinn question list`, `djinn block list`, `djinn tilasm list`, " +
+		"`djinn tilasm get`, `djinn task spawn`, `djinn question revise`) and read-only git inspection commands " +
+		"(`git log`, `git show`, `git diff`, `git status`, `git branch`, `git rev-parse`, `git ls-tree`): nothing else.\n\n" +
+		"- Run each `djinn …` or `git …` command alone, in a Bash call of its own: no pipe (`|`), no `;`, no `&&` nor " +
+		"`||`, no redirection (`>`, `2>`, `<<`), no `$(…)`, no `cd` before it. A call that joins anything to a command " +
+		"is refused whole. Read a command's whole output rather than filtering it.\n" +
+		"- Read files with your Read, Grep and Glob tools, and search or fetch the web with your web tools (WebSearch " +
+		"and WebFetch, or search_web and read_url_content), never with cat, grep, sed, head, find or curl in Bash.\n" +
+		"- Write the values of `--title`, `--prompt`, `--recommendation`, `--options`… between double quotes, with no " +
+		"backtick nor `$` inside: there they would run a command, and the call is refused. Write an inner double " +
+		"quote `\\\"`.\n" + context +
+		"- A refused call means that this form of the command is refused, not that Bash is: run the djinn command again, " +
+		"alone and plain. Never end on a refusal: a question worker that did nothing after one has failed.\n\n"
+}
 
 // retryText tells the worker that starts again in the place of before, which gave up after a refusal, what was
 // refused; nothing without before.
@@ -443,9 +494,15 @@ func retryText(before *planv1.Task) string {
 }
 
 // investigatorPrompt is the title and the prompt of the investigator of q, which the developer wants to know more
-// about, with their note; retry says why it starts again, if it does.
-func investigatorPrompt(q *planv1.Question, note, retry, brief string, tasks ...*planv1.Task) (title, prompt string) {
+// about, with their note; retry says why it starts again, if it does. contextFile is where it writes its context, when
+// its agent may write there (questionContextFile); "" otherwise.
+func investigatorPrompt(q *planv1.Question, note, retry, brief, contextFile string, tasks ...*planv1.Task) (title, prompt string) {
 	code, wish := q.GetCode(), q.GetWishId()
+	revise := fmt.Sprintf("`djinn question revise %s --wish-id %s --context \"…\" --recommendation \"…\"`", code, wish)
+	if contextFile != "" {
+		revise = fmt.Sprintf("write the context in `%s`, then `djinn question revise %s --wish-id %s --context-file "+
+			"\"%s\" --recommendation \"…\"`", contextFile, code, wish, contextFile)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are a question worker of Djinn. Before answering %s in wish %s, the developer wants to know "+
 		"more. Your one job: find out, then revise the question so that it waits for the developer again. You write "+
@@ -464,17 +521,22 @@ func investigatorPrompt(q *planv1.Question, note, retry, brief string, tasks ...
 		"fetch external documentation or references (with WebSearch and WebFetch, or search_web and read_url_content) "+
 		"when helpful, and read the brief below and Djinn's state (`djinn wish brief %[2]s`, "+
 		"`djinn task list --wish-id %[2]s`, `djinn task get <task>`, `djinn question list --wish-id %[2]s`, "+
-		"`djinn block list %[2]s`, `djinn tilasm list %[2]s`, `djinn tilasm get %[2]s <name>`), to answer what "+
-		"the developer asks.\n"+
-		"3. Revise the question: `djinn question revise %[1]s --wish-id %[2]s --context \"…\" --recommendation \"…\"` "+
-		"(or `--context-file <path>`), and `--options \"…\"` (each one, up to four) when the options change. The "+
-		"context says what you found and what each option costs, in the shape below; Djinn automatically preserves "+
-		"prior versions under `%[4]s`, so write only the current revised context.\n"+
+		"`djinn block list %[2]s`, `djinn tilasm list --wish %[2]s`, `djinn tilasm get <tilasm> --wish %[2]s`), to "+
+		"answer what the developer asks.\n"+
+		"3. Revise the question: %[4]s, and `--options \"…\"` (each one, up to four) when the options change. The "+
+		"context says what you found and what each option costs, in the shape below; Djinn keeps the former version "+
+		"in the question's rounds, so write the current context only, never the earlier versions. Keep it short: what you found "+
+		"to choose with full light, an analysis, a comparison, a mockup, goes in a tilasm that lays out the possible "+
+		"choices, and the context links it (`djinn://tilasm/<id>`) instead of carrying it. You write no file: link a "+
+		"tilasm of the wish (`djinn tilasm list --wish %[2]s`), or spawn a worker that makes one "+
+		"(`djinn task spawn %[2]s --title \"…\" --prompt \"…\"`) and name it in your end line, so the lead links "+
+		"it once made. Set `--before \"…\"` only when the answer is needed before something, `--before \"\"` when "+
+		"it can wait: never to get it seen.\n"+
 		"4. Revise it once, at the end, even if you found little: the question waits for you until you do.\n"+
-		"5. End with one line: what you found.\n\n", code, wish, q.GetText(), plan.HistoryHeader)
+		"5. End with one line: what you found.\n\n", code, wish, q.GetText(), revise)
 	b.WriteString("## The shape of the context\n\n" + plan.QuestionShape + " Rewrite the former context into this " +
 		"shape even where you found nothing new.\n\n")
-	b.WriteString(questionAccess + retry + "## Where the wish stands\n\n" + brief)
+	b.WriteString(questionAccess(contextFile) + retry + "## Where the wish stands\n\n" + brief)
 	return code + ": enlighten", b.String()
 }
 
@@ -489,6 +551,7 @@ func (h *Harness) questionEnded(t *planv1.Task) {
 	}
 	h.unpausePreempted(t)
 	if !refusedFailure(t) {
+		h.closeOutrun(t.GetWishId(), t.GetQuestion())
 		h.tellEnd(t, "")
 		return
 	}
@@ -503,8 +566,8 @@ func (h *Harness) questionEnded(t *planv1.Task) {
 	}()
 }
 
-// tellEnd tells the lead of t's wish what the question worker t did; retry is the worker Djinn started again in its
-// place, if any.
+// tellEnd tells the lead of t's wish what the question worker t did, its final note whole apart; retry is the worker
+// Djinn started again in its place, if any.
 func (h *Harness) tellEnd(t *planv1.Task, retry string) {
 	h.mu.Lock()
 	told := h.tell != nil || h.notifyLead != nil
@@ -516,7 +579,8 @@ func (h *Harness) tellEnd(t *planv1.Task, retry string) {
 	defer cancel()
 	line, err := h.questionEndLineOf(ctx, t, retry)
 	if err == nil {
-		err = h.toLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line)
+		err = h.toLeadNote(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(), line,
+			h.finalNote(ctx, t.GetId()))
 	}
 	if err != nil && !errors.Is(err, plan.ErrNoLead) {
 		h.Note(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_LOG, Text: "the lead was not told: " + err.Error()})
@@ -570,7 +634,8 @@ func (h *Harness) retryRefused(t *planv1.Task) string {
 		return ""
 	}
 	if slices.ContainsFunc(tasks, func(o *planv1.Task) bool {
-		return o.GetId() != t.GetId() && o.GetRole() == t.GetRole() && o.GetQuestion() == t.GetQuestion() && refusedFailure(o)
+		return o.GetId() != t.GetId() && o.GetRole() == t.GetRole() && o.GetQuestion() == t.GetQuestion() &&
+			(refusedFailure(o) || o.GetClosed().GetContinuedIn() != "")
 	}) {
 		return ""
 	}
@@ -592,7 +657,89 @@ func (h *Harness) retryRefused(t *planv1.Task) string {
 	if err != nil {
 		logx.L().Error("start a question worker again", "loop", "question", "task", t.GetCode(), "err", err)
 	}
+	if again != nil {
+		// The new worker is the failed one's continuation: it waits for no one (W96).
+		h.closeQuestionWorker(ctx, t.GetId(), "Djinn started it again as "+again.GetCode(), again.GetCode())
+	}
 	return again.GetCode()
+}
+
+// outrun tells whether t is a failed investigator whose question moved on without it, among the questions of its
+// wish: answered, withdrawn, or revised after t started by another task or by the lead. Nothing is left of it to take
+// up: it waits neither for the lead nor for the developer (W96: W19 failed on a refused command, W20 did its work
+// and Q17 was answered, and W19 still waited).
+func outrun(t *planv1.Task, questions []*planv1.Question) bool {
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || t.GetRole() != planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+		return false
+	}
+	i := slices.IndexFunc(questions, func(q *planv1.Question) bool {
+		return q.GetCode() == t.GetQuestion() && q.GetWishId() == t.GetWishId()
+	})
+	if i < 0 {
+		return false
+	}
+	q := questions[i]
+	if q.GetAnswer() != nil || q.GetWithdrawal() != nil {
+		return true
+	}
+	return slices.ContainsFunc(q.GetRounds(), func(r *planv1.Round) bool {
+		return r.GetKind() == planv1.RoundKind_ROUND_KIND_REVISE && r.GetTaskId() != t.GetId() &&
+			r.GetCreateTime().AsTime().After(t.GetCreateTime().AsTime())
+	})
+}
+
+// closeOutrun closes the failed investigators of the question code of the wish that it outran (outrun).
+func (h *Harness) closeOutrun(wishID, code string) {
+	if code == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	tasks, questions, err := h.wishWork(ctx, wishID)
+	if err != nil {
+		logx.L().Error("read a question's failed workers", "loop", "question", "question", code, "err", err)
+		return
+	}
+	for _, t := range tasks {
+		if t.GetQuestion() == code && outrun(t, questions) {
+			h.closeQuestionWorker(ctx, t.GetId(), code+" moved on without it: nothing left to take up", "")
+		}
+	}
+}
+
+// closeQuestionWorker closes the failed question worker id: done, closed by Djinn for the lead (Q273: a worker's
+// failure is the lead's), with note, continued in the task coded in when another one took over. One that is no longer
+// failed, read again in the transaction, stays as it is.
+func (h *Harness) closeQuestionWorker(ctx context.Context, id, note, in string) {
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		t, err := store.Get[*planv1.Task](ctx, tx, id)
+		if err != nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+			return err
+		}
+		now := timestamppb.New(h.now())
+		text := fmt.Sprintf("closed by Djinn, was %s", short(t.GetStatus()))
+		if e := t.GetError(); e != "" {
+			text += " (" + e + ")"
+		}
+		text += ": " + note
+		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_DONE, "", ""
+		if t.GetEndTime() == nil {
+			t.EndTime = now
+		}
+		t.Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_LEAD, CreateTime: now, Note: note, ContinuedIn: in}
+		if err := tx.Journal(actorHarness, methodOutrun, t); err != nil {
+			return err
+		}
+		if err := tx.Put(t); err != nil {
+			return err
+		}
+		return putEvents(ctx, tx, newEventAt(id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}, h.now()))
+	})
+	if err != nil {
+		logx.L().Error("close a failed question worker", "loop", "question", "task", id, "err", err)
+		return
+	}
+	h.notify()
 }
 
 // wishWork are the tasks and the questions of the wish.
@@ -675,7 +822,7 @@ func questionEndLine(t *planv1.Task, tasks []*planv1.Task, questions []*planv1.Q
 	case t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE:
 		line += fmt.Sprintf(" Check what is left of %s: djinn wish brief %s has the context.", code, wish)
 	case len(spawned) > 0:
-		line += " Check every task that ends: read its final note (djinn task watch <task>, or the line Djinn types): what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task or a watcher that verifies it, never to the developer; when it leaves an uncertainty (a choice it made in the developer's place, a partial result, a step it skipped, 'to validate'), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too. Withdraw the open questions its work made needless."
+		line += " Check every task that ends: read its final note (under its line in your watch's digest, or djinn task watch <task> --last 5): what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task or a watcher that verifies it, never to the developer; when it leaves an uncertainty (a choice it made in the developer's place, a partial result, a step it skipped, 'to validate'), ask the developer a question about it, with what the worker said, instead of letting it pass; a move only the developer can make is a question too. Withdraw the open questions its work made needless."
 	}
 	return line
 }

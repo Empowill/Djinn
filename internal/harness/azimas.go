@@ -33,10 +33,11 @@ import (
 func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
 	if req.GetPrompt() != "" || req.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || req.GetModel() != "" ||
 		req.GetMaxBudgetUsd() != 0 || len(req.GetWriteScopes()) > 0 || req.GetLater() || req.GetFork() != "" ||
-		req.GetFromLead() || req.GetRestart() || len(req.GetTilasm()) > 0 {
+		req.GetFromLead() || req.GetRestart() || len(req.GetTilasm()) > 0 || req.GetUrgent() ||
+		req.GetFeedback() || req.GetMinutes() != 0 || req.GetRepair() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(
 			"an azima has no worker: no prompt, provider, model, budget, write scope, --later, --fork, --from-lead, "+
-				"--restart or --tilasm"))
+				"--restart, --tilasm, --urgent, --feedback, --minutes or --repair"))
 	}
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
@@ -85,7 +86,7 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 			}
 		}
 		if task.PartOf != "" {
-			if err := reopenAzima(ctx, tx, task.PartOf, task.GetCode()+" spawned"); err != nil {
+			if err := reopenAzima(ctx, tx, task.PartOf, task, "spawned"); err != nil {
 				return err
 			}
 		}
@@ -102,8 +103,12 @@ func (h *Harness) spawnAzima(ctx context.Context, procedure string, req *planv1.
 	return store.Get[*planv1.Task](ctx, h.store, task.GetId())
 }
 
-// reopenAzima reopens a closed azima and any closed azima it is part of, recording an event.
-func reopenAzima(ctx context.Context, tx *store.Tx, id, reason string) error {
+// reopenAzima reopens a closed azima and any closed azima it is part of, recording an event: part, part of the azima
+// id, was spawned, grouped into it or started (verb). Work, neither a watcher nor an azima, is not in main yet: each of
+// these azimas loses its mark (Azima.merged) until Djinn finds it there too.
+func reopenAzima(ctx context.Context, tx *store.Tx, id string, part *planv1.Task, verb string) error {
+	reason := part.GetCode() + " " + verb
+	unmerge := !plan.IsAzima(part) && !watching(part)
 	seen := map[string]bool{}
 	for id != "" && !seen[id] {
 		seen[id] = true
@@ -116,6 +121,14 @@ func reopenAzima(ctx context.Context, tx *store.Tx, id, reason string) error {
 		}
 		if !plan.IsAzima(a) {
 			break
+		}
+		if unmerge && a.GetAzima().GetMerged() != nil {
+			if err := unmergeAzima(ctx, tx, a, reason); err != nil {
+				return err
+			}
+			if a, err = store.Get[*planv1.Task](ctx, tx, id); err != nil {
+				return err
+			}
 		}
 		if a.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
 			a.Status = planv1.TaskStatus_TASK_STATUS_PENDING
@@ -828,6 +841,7 @@ func (h *Harness) Move(ctx context.Context, procedure string, req *planv1.TaskSe
 				sourceWish.RetiredCodes = append(sourceWish.RetiredCodes, t.GetCode())
 			}
 			t.WishId = targetWish.GetId()
+			t.Rank = 0 // Its rank was among the azimas of the other wish: it goes last in its new one.
 			codeKey := strings.ToUpper(t.GetCode())
 			if targetCodes[codeKey] {
 				letter := "W"

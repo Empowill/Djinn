@@ -4,7 +4,9 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   Allowance,
+  LeadServiceGetResponseSchema,
   ProjectServiceListResponseSchema,
+  Provider,
   WishServiceAllowRequestSchema,
   WishServiceAllowResponseSchema,
   WishServiceListResponseSchema,
@@ -44,6 +46,7 @@ async function openComposer(
   locale = "en",
   agentReady = true,
   solver = false,
+  leadReady = true,
 ) {
   if (locale === "fr") {
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -53,6 +56,25 @@ async function openComposer(
   await page.addInitScript((locale) => {
     localStorage.setItem("djinn.language", locale);
   }, locale);
+  await page.route("**/plan.v1.LeadService/Get", (route) =>
+    route.fulfill({
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          LeadServiceGetResponseSchema,
+          create(LeadServiceGetResponseSchema, {
+            lead: leadReady
+              ? {
+                  provider: Provider.CLAUDE_CODE,
+                  sessionId: "lead-session",
+                  directory: "/workspace/lamp",
+                }
+              : undefined,
+          }),
+        ),
+      ),
+    }),
+  );
   await page.route("**/ui.v1.UiService/GetEnvironment", (route) =>
     route.fulfill({
       contentType: "application/proto",

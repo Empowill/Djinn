@@ -14,11 +14,13 @@ import (
 	"github.com/empowill/djinn/internal/testx/bigwish"
 )
 
-// TestSizes: each size holds what it says, and the shape of a wish under way: azimas within azimas, most tasks done
+// TestMake: each size holds what it says, and the shape of a wish under way: azimas within azimas, most tasks done
 // and part of one, the last ones running or waiting, a few decisions left open.
-func TestSizes(t *testing.T) {
+func TestMake(t *testing.T) {
+	t.Parallel()
 	for _, size := range bigwish.Sizes() {
 		t.Run(size.Name, func(t *testing.T) {
+			t.Parallel()
 			exp := bigwish.Make(size)
 			kinds, status := map[planv1.TaskKind]int{}, map[planv1.TaskStatus]int{}
 			partOf, nested := 0, 0
@@ -70,36 +72,61 @@ func TestSizes(t *testing.T) {
 	}
 }
 
-// TestDeterministic: a size gives the same bytes every time, and another size other bytes.
-func TestDeterministic(t *testing.T) {
-	a, err := bigwish.Data(bigwish.Real)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := bigwish.Data(bigwish.Real)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(a, b) {
-		t.Error("two wishes of the same size differ")
-	}
-	small := bigwish.Real
-	small.Work = 10
-	if c, err := bigwish.Data(small); err != nil || bytes.Equal(a, c) {
-		t.Errorf("another size gives the same bytes (%v)", err)
-	}
-	if _, err := bigwish.Named("x10"); err != nil {
-		t.Error(err)
-	}
-	if _, err := bigwish.Named("huge"); err == nil {
-		t.Error("an unknown size is accepted")
+func TestNamed(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		known bool
+	}{
+		{"real", true},
+		{"x10", true},
+		{"huge", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			size, err := bigwish.Named(tc.name)
+			if tc.known && (err != nil || size.Name != tc.name) {
+				t.Errorf("Named(%q) = %v, %v", tc.name, size.Name, err)
+			}
+			if !tc.known && err == nil {
+				t.Error("an unknown size is accepted")
+			}
+		})
 	}
 }
 
-// TestImport: the store takes the real size through WishService.ImportData, as djinn wish import does, and gives it
+func TestData(t *testing.T) {
+	t.Parallel()
+	// A size gives the same bytes every time, and another size other bytes.
+	t.Run("deterministic", func(t *testing.T) {
+		t.Parallel()
+		a, err := bigwish.Data(bigwish.Real)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := bigwish.Data(bigwish.Real)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(a, b) {
+			t.Error("two wishes of the same size differ")
+		}
+		small := bigwish.Real
+		small.Work = 10
+		if c, err := bigwish.Data(small); err != nil || bytes.Equal(a, c) {
+			t.Errorf("another size gives the same bytes (%v)", err)
+		}
+	})
+	t.Run("imported whole", func(t *testing.T) {
+		t.Parallel()
+		testImport(t)
+	})
+}
+
+// testImport: the store takes the real size through WishService.ImportData, as djinn wish import does, and gives it
 // back whole through WishService.Snapshot. With fewer events: the 27 000 of the real size take 4 s to import (a
 // statement prepared for each Put), past what a unit test may take; their shape is the same at any count.
-func TestImport(t *testing.T) {
+func testImport(t *testing.T) {
 	size := bigwish.Real
 	size.EventsPerTask = 8
 	ctx := t.Context()

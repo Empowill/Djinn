@@ -4,7 +4,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -206,15 +208,27 @@ func run(ctx context.Context, args []string, cfg Config) error {
 		return err
 	}
 	if asJSON {
-		b, err := protojson.MarshalOptions{Multiline: true, UseProtoNames: true}.Marshal(res)
+		out, err := indentedJSON(res)
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(cfg.Stdout, string(b))
+		_, err = fmt.Fprintln(cfg.Stdout, out)
 		return err
 	}
 	writeText(cfg.Stdout, res)
 	return nil
+}
+
+// indentedJSON is m in JSON, indented by two spaces. protojson varies its own spacing on purpose, from one build to
+// the next (a test binary built in another folder): indented here, the same answer reads the same.
+func indentedJSON(m proto.Message) (string, error) {
+	b, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	var out bytes.Buffer
+	err = json.Indent(&out, b, "", "  ")
+	return out.String(), err
 }
 
 // autostart gives cfg the address of a running djinn, started if needed, when md is marked autostart and no
@@ -575,7 +589,7 @@ func writeWarnings(w io.Writer, m protoreflect.Message) {
 }
 
 // singleContentField returns the single content field of fields, ignoring pagination metadata
-// (next_page_token and total) and warnings if present.
+// (next_page_token and total), warnings if present, and the fields printed with --json only.
 func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.FieldDescriptor {
 	if fields.Len() == 1 {
 		return fields.Get(0)
@@ -584,7 +598,7 @@ func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.Field
 	for i := range fields.Len() {
 		fd := fields.Get(i)
 		name := string(fd.Name())
-		if name == "next_page_token" || name == "total" || name == "warnings" {
+		if name == "next_page_token" || name == "total" || name == "warnings" || jsonOnly(fd) {
 			continue
 		}
 		nonPagination = append(nonPagination, fd)
@@ -595,9 +609,14 @@ func singleContentField(fields protoreflect.FieldDescriptors) protoreflect.Field
 	return nil
 }
 
+// jsonOnly tells whether the command line prints the field with --json only.
+func jsonOnly(fd protoreflect.FieldDescriptor) bool {
+	return proto.GetExtension(fd.Options(), djinnv1.E_JsonOnly) == true
+}
+
 func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 	for _, fd := range byNumber(m.Descriptor()) {
-		if !m.Has(fd) || fd.IsMap() {
+		if !m.Has(fd) || fd.IsMap() || jsonOnly(fd) {
 			continue
 		}
 		v := m.Get(fd)

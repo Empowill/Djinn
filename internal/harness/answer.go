@@ -8,10 +8,12 @@ import (
 	"slices"
 	"strings"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -29,7 +31,9 @@ const (
 // Answered takes the answer to a question: when it is a task's edit question, a yes starts the task's worker again,
 // allowed to edit the project's files and to run no command, through the scheduler when no worker runs it; a no
 // leaves it reading only. When Djinn asked it about work that failed to integrate, it settles that work
-// (answerIntegration); about a push, it pushes or waits (answerPush). Any other answer is a decision for the wish's
+// (answerIntegration); about a push, it pushes or waits (answerPush). The task the chosen option planned it launches, or
+// leaves to the lead (answerPlan). The worker that asked it gets the decision: sent while it runs, or its task, which
+// waits on its blocking question, continued with it (answerAsker). Any other answer is a decision for the wish's
 // lead to turn into tasks, or for the principal lead when the wish has no lead. Only the first answer counts. The plan
 // services call it once the answer is stored. It says what Djinn did with the answer, for the lead; "" when the
 // answer is the lead's to act on.
@@ -37,6 +41,7 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	if q.GetAnswer() == nil {
 		return ""
 	}
+	h.closeOutrun(q.GetWishId(), q.GetCode()) // A failed investigator of it has nothing left to find (W96).
 	var did []string
 	if d, ok := h.answerIntegration(ctx, q); ok {
 		did = append(did, d)
@@ -45,6 +50,12 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 		did = append(did, d)
 	}
 	if d, ok := h.answerMove(ctx, q); ok {
+		did = append(did, d)
+	}
+	if d, ok := h.answerPlan(ctx, q); ok {
+		did = append(did, d)
+	}
+	if d, ok := h.answerAsker(ctx, q); ok {
 		did = append(did, d)
 	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"edit_question_id": q.GetId()})
@@ -131,6 +142,127 @@ func (h *Harness) answerMove(ctx context.Context, q *planv1.Question) (string, b
 		return "Djinn noted: start release dry run", true
 	}
 	return "Djinn noted move", true
+}
+
+// answerPlan takes the answer to a question whose chosen option planned a task (decision Q25). Without a note, a plan
+// that comes after no task and blocks none is launched at once, its decision the question; a note, or a plan that
+// names tasks, leaves it to the lead, who reads the plan and how its tasks stand with the answer (plan.RevisionDetail) and
+// launches it, as it is or edited (djinn question launch). A plan that no longer holds is never launched: the lead is
+// told why. An option without a plan is not this one's.
+func (h *Harness) answerPlan(ctx context.Context, q *planv1.Question) (string, bool) {
+	p := plan.ChosenPlan(q)
+	if p == nil {
+		return h.formerPlans(ctx, q), false
+	}
+	if id := p.GetTaskId(); id != "" {
+		return fmt.Sprintf("Its plan launched %s before", h.taskCode(ctx, id)), true
+	}
+	if plan.IsMockupPlan(p) {
+		return mockupPast(q, p), true // Within its rounds, the answer was an iteration (plan.Iterates).
+	}
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": q.GetWishId()})
+	if err != nil {
+		return fmt.Sprintf("Djinn could not read the plan's tasks (%v): %s launches it", err, plan.LaunchCommand(q)), true
+	}
+	if why := plan.WhyStale(p, tasks); why != "" {
+		return fmt.Sprintf("Its plan no longer holds (%s), not launched: %s with spawn's flags launches it edited",
+			why, plan.LaunchCommand(q)), true
+	}
+	if why := plan.WhyLeadLaunches(q, p); why != "" {
+		return fmt.Sprintf("Its plan waits for you, as %s: %s launches it", why, plan.LaunchCommand(q)), true
+	}
+	task, err := h.LaunchPlan(ctx, q, p)
+	if err != nil {
+		return fmt.Sprintf("Its plan could not launch (%v): %s launches it edited", err, plan.LaunchCommand(q)), true
+	}
+	did := task.GetCode() + " launched as planned"
+	if v := h.approved(ctx, q); v != "" {
+		did += ", " + v
+	}
+	if former := h.formerPlans(ctx, q); former != "" {
+		did += "; " + former
+	}
+	return did, true
+}
+
+// approved says which tilasm versions the launched plan of q's answer pins (approvedVersions); "" when none.
+func (h *Harness) approved(ctx context.Context, q *planv1.Question) string {
+	cur, err := store.Get[*planv1.Question](ctx, h.store, q.GetId())
+	if err != nil {
+		return ""
+	}
+	return approvedVersions(ctx, h.store, plan.ChosenPlan(cur).GetTilasm())
+}
+
+// formerPlans says which tasks the plans of q's other options launched, after the developer changed their answer:
+// they stay, for the lead to cancel if the new choice replaces them. "" when none did.
+func (h *Harness) formerPlans(ctx context.Context, q *planv1.Question) string {
+	var launched []string
+	for _, p := range q.GetPlans() {
+		if p.GetTaskId() != "" && p.GetOption() != q.GetAnswer().GetChoice() {
+			launched = append(launched, h.taskCode(ctx, p.GetTaskId()))
+		}
+	}
+	if len(launched) == 0 {
+		return ""
+	}
+	return strings.Join(launched, ", ") + ", launched for the former answer, stays: cancel it if this one replaces it"
+}
+
+// taskCode is the code of the task id; the identifier when it is gone.
+func (h *Harness) taskCode(ctx context.Context, id string) string {
+	if t, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && t.GetCode() != "" {
+		return t.GetCode()
+	}
+	return id
+}
+
+// LaunchPlan spawns the task p plans for an option of the answered question q, its decision q, and records it in the
+// question's plan of that option, which becomes the task as it was launched. A plan launched already is refused: one
+// launch at a time, the question read again first. The caller checks that the plan holds.
+func (h *Harness) LaunchPlan(ctx context.Context, q *planv1.Question, p *planv1.PlannedTask) (*planv1.Task, error) {
+	h.launching.Lock()
+	defer h.launching.Unlock()
+	mine := func(o *planv1.PlannedTask) bool { return o.GetOption() == p.GetOption() }
+	cur, err := store.Get[*planv1.Question](ctx, h.store, q.GetId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if i := slices.IndexFunc(cur.GetPlans(), mine); i >= 0 && cur.GetPlans()[i].GetTaskId() != "" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the plan of %s was launched already: %s",
+			cur.GetCode(), h.taskCode(ctx, cur.GetPlans()[i].GetTaskId())))
+	}
+	// The tilasms it is given are the versions the developer saw when they chose it: what they approved (W268).
+	tilasms := pinned(ctx, h.store, cur, p.GetTilasm())
+	task, err := h.Spawn(ctx, planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
+		WishId: cur.GetWishId(), Title: p.GetTitle(), Prompt: p.GetPrompt(), ProjectId: p.GetProjectId(),
+		Provider: p.GetProvider(), Model: p.GetModel(), PartOf: p.GetPartOf(), After: p.GetAfter(),
+		Blocks: p.GetBlocks(), Tilasm: tilasms, Kind: p.GetKind(), Decision: cur.GetCode(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	launched := proto.CloneOf(p)
+	launched.TaskId, launched.Tilasm = task.GetId(), tilasms
+	err = h.store.Tx(ctx, func(tx *store.Tx) error {
+		cur, err := store.Get[*planv1.Question](ctx, tx, q.GetId())
+		if err != nil {
+			return err
+		}
+		if i := slices.IndexFunc(cur.GetPlans(), mine); i >= 0 {
+			cur.Plans[i] = launched
+		} else {
+			cur.Plans = append(cur.Plans, launched)
+		}
+		if err := tx.Journal(actorHarness, methodLaunch, cur); err != nil {
+			return err
+		}
+		return tx.Put(cur)
+	})
+	if err != nil {
+		logx.L().Error("record a question's launched plan", "question", q.GetCode(), "task", task.GetCode(), "err", err)
+	}
+	return task, nil
 }
 
 // moveProject is the project of Djinn's move question q: the one it names, or its wish's first.
@@ -316,7 +448,7 @@ func (h *Harness) again(r *run) error {
 	if err != nil {
 		return err
 	}
-	budget := t.GetMaxBudgetUsd()
+	budget := providerBudget(t)
 	if budget > 0 {
 		if budget -= t.GetUsage().GetCostUsd(); budget <= 0 {
 			return fmt.Errorf("its budget of $%.2f is spent", t.GetMaxBudgetUsd())

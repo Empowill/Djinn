@@ -95,6 +95,9 @@ test("a comment on a line of a running task's diff goes to its worker", async ({
     await expect(
       page.locator(".diff-comment-text").getByText("Trim it shorter"),
     ).toBeVisible();
+    // The diff's review covers the main shell: Escape closes it, back to the task's card.
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".task-review")).toHaveCount(0);
 
     await page.locator(".wish-task-events-fold summary").click();
     await expect(

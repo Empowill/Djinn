@@ -143,6 +143,7 @@ func (h *Harness) prepare() {
 	if h.beforeStart != nil {
 		h.beforeStart()
 	}
+	h.diskGuard(h.ctx) // Trims the Go build cache when space runs low; a worker starts all the same (disk.go).
 }
 
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the
@@ -150,10 +151,12 @@ func (h *Harness) prepare() {
 func WithTick(d time.Duration) Option { return func(h *Harness) { h.tick = d } }
 
 // Schedule starts the scheduler: a planned task starts as soon as its dependencies are done, its write scopes are
-// free and a slot is free. djinn up calls it once the harness has recovered; Close stops it.
+// free and a slot is free, and an asleep question wakes once its conditions hold. djinn up calls it once the harness
+// has recovered; Close stops it.
 func (h *Harness) Schedule() {
 	h.scheduling.Do(func() {
 		h.loopDone = make(chan struct{})
+		h.watchSleepers()
 		go h.loop()
 	})
 }
@@ -231,8 +234,9 @@ func (h *Harness) Forced() int {
 	return n
 }
 
-// slotted tells whether the run's worker takes a slot now: it runs, and is not a watcher. The caller holds h.mu.
-func (r *run) slotted() bool { return !r.paused && !r.watcher }
+// slotted tells whether the run's worker takes a slot now: it runs, is not a watcher, and is no ifrit that listens
+// between two turns. The caller holds h.mu.
+func (r *run) slotted() bool { return !r.paused && !r.watcher && r.listenSince.IsZero() }
 
 // Works tells whether a worker of the task runs now and takes a slot: what it runs, a gate's command included, is in
 // that slot. A paused worker or a watcher takes none.
@@ -247,7 +251,8 @@ func (h *Harness) Works(taskID string) bool {
 func planned(t *planv1.Task) bool { return dispatch.Planned(t) }
 
 // schedule makes one pass over the planned tasks, the first wish first: each one starts, waits with its reason,
-// or fails when a dependency failed. The rules are internal/dispatch's.
+// or fails when a dependency failed. The rules are internal/dispatch's. The asleep questions whose conditions hold
+// wake first.
 func (h *Harness) schedule(ctx context.Context) {
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
@@ -257,11 +262,14 @@ func (h *Harness) schedule(ctx context.Context) {
 	start := time.Now()
 	logx.L().Debug("scheduler pass begins")
 	defer func() { logx.Took(slog.LevelDebug, "scheduler pass ended", start) }()
+	h.pokeIfrits() // Time went by: an ifrit may be due a warning, or to go out.
 	p := h.Policy()
 	if !p.Auto && h.capacity != nil {
 		h.enforceNotchCapacity(ctx, p)
 	}
-	h.resumeNotchPaused(ctx)
+	if !h.netHolds() { // Resumed now, it would be paused again for the network (network.go).
+		h.resumeNotchPaused(ctx)
+	}
 
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
@@ -270,11 +278,15 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 		return
 	}
+	h.endSilent(tasks) // Before the Lamplighter: a worker silent after its result ends as its note says.
 	if h.lamplighter(ctx, tasks) {
 		if reloaded, err := store.List[*planv1.Task](ctx, h.store, nil); err == nil {
 			tasks = reloaded
 		}
 	}
+	h.wakeQuestions(ctx, tasks)
+	h.judge(ctx, tasks)
+	network := h.netPass(ctx, tasks) // Down, no worker starts; back, one a pass.
 	if !slices.ContainsFunc(tasks, planned) {
 		return
 	}
@@ -285,6 +297,7 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 		return
 	}
+	s.WithNetwork(network)
 	for _, d := range s.Pass() {
 		if h.ctx.Err() != nil {
 			return
@@ -295,15 +308,16 @@ func (h *Harness) schedule(ctx context.Context) {
 		switch t := d.Task; {
 		case d.Failed != "":
 			h.failPlanned(ctx, t, d.Failed)
-		case d.Slot && t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR:
-			// An investigator takes the slot of the work task it pauses, never one more: none to pause, it waits.
+		case d.Slot && (dispatch.ServedFirst(t) || plan.IsMerge(t)):
+			// An investigator, an investigation, a mockup, a merge or a repair takes the slot of the work task it pauses, never one
+			// more: none to pause, it waits.
 			if code, err := h.preemptForSlot(ctx, t); err == nil && code != "" {
 				if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
 					logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
 				}
 				continue
 			}
-			h.setWaiting(ctx, t, d.Why, d.Machine)
+			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room, d.Hold)
 		case d.Why != "":
 			if isMemoryShort(d.Why) {
 				if code, err := h.interruptPausedForMemory(ctx, t); err == nil && code != "" {
@@ -313,7 +327,7 @@ func (h *Harness) schedule(ctx context.Context) {
 					continue
 				}
 			}
-			if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR && isMemoryShort(d.Why) {
+			if dispatch.ServedFirst(t) && isMemoryShort(d.Why) {
 				if code, err := h.preemptForMemory(ctx, t); err == nil && code != "" {
 					if err := h.launchPlannedWithPreemption(ctx, t, code); err != nil {
 						logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
@@ -321,7 +335,7 @@ func (h *Harness) schedule(ctx context.Context) {
 					continue
 				}
 			}
-			h.setWaiting(ctx, t, d.Why, d.Machine)
+			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room, d.Hold)
 		default:
 			if err := h.launchPlanned(ctx, t); err != nil {
 				logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
@@ -354,13 +368,15 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		h.mu.Lock()
 		outside := h.outside
 		for _, r := range h.runs {
-			if r.paused && (r.notchPaused || r.slotPaused) && !r.stopping && !r.final {
+			if r.paused && (r.notchPaused || r.slotPaused || r.netPaused) && !r.watcher && !r.stopping && !r.final {
 				m.Resuming++
 			}
 		}
 		h.mu.Unlock()
 		if outside != nil {
-			m.Gates = outside()
+			// Djinn serves the gates: one slot is kept for the merges' and pushes' (Q26).
+			m.Gates, m.Merges = outside()
+			m.Keep = true
 		}
 		if h.available != nil {
 			m.Available, m.Policy = h.available(), h.Policy()
@@ -394,16 +410,7 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 				head, _ = git(ctx, dir, "rev-parse", "HEAD")
 			}
 		}
-		noCommits := false
-		if head != "" {
-			reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
-			if err == nil && reflog != "" {
-				lines := strings.Split(strings.TrimSpace(reflog), "\n")
-				if strings.TrimSpace(lines[len(lines)-1]) == head {
-					noCommits = true
-				}
-			}
-		}
+		noCommits := head == "" || branchStartCommit(ctx, dir, branch) == head
 		branchCache[key] = branchState{head: head, noCommits: noCommits}
 		return head, noCommits
 	}
@@ -418,8 +425,15 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		_, err := git(ctx, dir, "merge-base", "--is-ancestor", a, b)
 		return err == nil
 	}
-	sit := dispatch.New(tasks, wishes, projectGit, m).At(h.now())
+	sit := dispatch.New(tasks, wishes, projectGit, m).At(h.now()).WithNetwork(h.netView())
 	sit.WithAncestry(branchHead, isAncestor)
+	sit.WithQuestions(func(id string) string {
+		q, err := store.Get[*planv1.Question](ctx, h.store, id)
+		if err != nil {
+			return ""
+		}
+		return q.GetCode()
+	})
 	sit.WithRunning(func(taskID string) bool {
 		h.mu.Lock()
 		defer h.mu.Unlock()
@@ -448,6 +462,33 @@ func (h *Harness) Ranks(ctx context.Context, taskIDs []string) map[string]int {
 	return out
 }
 
+// Places gives the position of each task's azima among the azimas of its wish, in their rank (plan.AzimaOrder): the
+// gates serve the work of the first azimas first, within its wish's rank. A task part of no azima, or unknown, is not
+// in the map.
+func (h *Harness) Places(ctx context.Context, taskIDs []string) map[string]int {
+	out := map[string]int{}
+	places := map[string]map[string]int{} // By wish.
+	for _, id := range taskIDs {
+		t, err := store.Get[*planv1.Task](ctx, h.store, id)
+		if err != nil || t.GetPartOf() == "" {
+			continue
+		}
+		wish, ok := places[t.GetWishId()]
+		if !ok {
+			tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": t.GetWishId()})
+			if err != nil {
+				continue
+			}
+			wish = plan.AzimaPlaces(tasks)
+			places[t.GetWishId()] = wish
+		}
+		if p, ok := wish[t.GetPartOf()]; ok {
+			out[id] = p
+		}
+	}
+	return out
+}
+
 // Describe names a task for those who wait behind it: its code and title.
 func (h *Harness) Describe(ctx context.Context, taskID string) (string, error) {
 	t, err := store.Get[*planv1.Task](ctx, h.store, taskID)
@@ -467,30 +508,32 @@ func (h *Harness) HeldGates(held, waiting func(taskID string) []string) {
 }
 
 // GatesOutside tells the harness how many gates are held outside its running workers, by a person's terminal, a
-// lead or a script: each takes a slot, so no new worker starts on it while it is held. djinn up gives the gates'
-// (gate.Gates.Outside). n calls the harness back (Works): it runs without h.mu (W549).
-func (h *Harness) GatesOutside(n func() int) {
+// lead, a script or Djinn's own merges and pushes, and how many of them are those merges' and pushes': each takes a
+// slot, so no new worker starts on it while it is held. Once told, the scheduler keeps one slot for the merges and
+// pushes on a machine of more than one (dispatch.Machine.Keep). djinn up gives the gates' (gate.Gates.Outside). n
+// calls the harness back (Works): it runs without h.mu (W549).
+func (h *Harness) GatesOutside(n func() (outside, merges int)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.outside = n
 }
 
-// setWaiting records why a planned task waits, and whether for the machine alone, when the reason changed, with an
-// event.
-func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine bool) {
-	why = grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why)))
-	if t.GetWaitReason() == why && t.GetMachineWait() == machine {
+// setWaiting records why a planned task waits, whether for the machine alone, whether for room on it (behind a task
+// that goes first too), and what holds it, when one changed, with an event.
+func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine, room bool, hold planv1.TaskHold) {
+	why = networkWhy(t, grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why))))
+	if t.GetWaitReason() == why && t.GetMachineWait() == machine && t.GetRoomWait() == room && t.GetHold() == hold {
 		return
 	}
 	t = proto.CloneOf(t)
-	t.WaitReason, t.MachineWait = why, machine
+	t.WaitReason, t.MachineWait, t.RoomWait, t.Hold = why, machine, room, hold
 	h.writeAlone(ctx, actorHarness, methodWait, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
 }
 
 // failPlanned ends a planned task that never will start.
 func (h *Harness) failPlanned(ctx context.Context, t *planv1.Task, why string) {
 	t = proto.CloneOf(t)
-	t.Status, t.Error, t.WaitReason, t.MachineWait, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", false, timestamppb.Now()
+	t.Status, t.Error, t.WaitReason, t.MachineWait, t.RoomWait, t.Hold, t.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, why, "", false, false, 0, timestamppb.Now()
 	h.writeAlone(ctx, actorHarness, methodEnd, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "failed: " + why})
 	h.wake() // Its own dependents fail in turn.
 }
@@ -512,7 +555,7 @@ func (h *Harness) writeAlone(ctx context.Context, actor, method string, req prot
 				return err
 			}
 			if method == methodResume && task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && task.GetPartOf() != "" {
-				if err := reopenAzima(ctx, tx, task.GetPartOf(), task.GetCode()+" started"); err != nil {
+				if err := reopenAzima(ctx, tx, task.GetPartOf(), task, "started"); err != nil {
 					return err
 				}
 			}
@@ -536,8 +579,6 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if dispatch.Resuming(t) {
 		return h.relaunch(ctx, t, preemptedCode)
 	}
-	t = proto.CloneOf(t)
-	t.WaitReason, t.MachineWait = "", false
 	provider, ok := h.providers[t.GetProvider()]
 	if !ok {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
@@ -561,8 +602,19 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		var err error
 		if settings, err = plan.LoadSettings(h.home, project); err != nil {
-			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false)
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false, false, 0)
 			return nil
+		}
+		if !questionWorker(t) && t.GetReview() == nil && t.GetCorrection().GetFailure() == nil && len(t.GetDependsOn()) > 0 {
+			if wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId()); err == nil {
+				from := h.workerStartBranch(ctx, wish, project, settings, t)
+				if sha, shown, err := h.startPoint(ctx, project, from); err == nil {
+					if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), t, sha, cmp.Or(from, shown)); depWhy != "" {
+						h.setWaiting(ctx, t, depWhy, false, false, planv1.TaskHold_TASK_HOLD_DEPENDENCY)
+						return nil
+					}
+				}
+			}
 		}
 	}
 	// A babysit spawned by hand watches what the tasks it comes after opened: its command, filled, is its prompt
@@ -572,6 +624,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		filled, why := h.babysitPrompt(ctx, project, t, prompt)
 		if why != "" {
 			h.failPlanned(ctx, t, why)
+			t = proto.CloneOf(t)
 			t.Error = why
 			h.tellWatcherFailed(t)
 			return nil
@@ -579,6 +632,8 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		prompt = filled
 		prompted = h.newEvent(t.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
 	}
+	t = proto.CloneOf(t)
+	t.WaitReason, t.MachineWait, t.RoomWait, t.Hold = "", false, false, 0
 	r, err := h.newRun(t)
 	if err != nil {
 		return err
@@ -594,7 +649,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 		if wish, err = store.Get[*planv1.Wish](ctx, tx, t.GetWishId()); err != nil {
 			return err
 		}
-		if prep, err = prepare(ctx, tx, t, wish, project); err != nil {
+		if prep, err = prepare(ctx, tx, h.home, t, wish, project); err != nil {
 			return err
 		}
 		if err := tx.Journal(actorHarness, methodSchedule, t); err != nil {

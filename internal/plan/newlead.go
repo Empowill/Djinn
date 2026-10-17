@@ -13,6 +13,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -24,12 +25,14 @@ const LeadFirstFile = "lead-first.md"
 // Linux takes 128 KiB in one argument.
 const maxFirstArg = 64 << 10
 
-// StartLine is how every new lead starts, whatever its agent: from the brief, which Djinn computes from the plan.
+// StartLine is how every new lead starts, whatever its agent: from the brief, which Djinn computes from the plan, each
+// djinn command run alone so that none waits for the developer's approval, every question, doubt or choice in a
+// question since the developer does not read its terminal.
 func StartLine() string {
 	return "You lead the active wishes of this Djinn. Run `djinn brief`: where the wishes stand and how to " +
 		"lead them, computed by Djinn from its plan. Then continue the wishes from what it says. Everything for the " +
-		"developer, reports included, is a question through `djinn question ask`; write nothing in this terminal. The " +
-		"work goes to tasks."
+		"developer, reports included, is a question through `djinn question ask`. " + UnreadTerminalRule + " The " +
+		"work goes to tasks. " + DirectCommandsRule + " If your tool cuts the brief, run `djinn brief --wishes`."
 }
 
 // newLead prepares a new lead: the command line that starts provider's agent in dir (FirstProjectFolder: a
@@ -57,7 +60,7 @@ func (w *Wishes) newLead(
 	if err := os.MkdirAll(own, 0o700); err != nil {
 		return "", "", nil, "", connect.NewError(connect.CodeInternal, err)
 	}
-	if err := os.WriteFile(filepath.Join(own, LeadFirstFile), []byte(msg), 0o600); err != nil {
+	if err := fsx.WriteAtomic(filepath.Join(own, LeadFirstFile), []byte(msg), 0o600); err != nil {
 		return "", "", nil, "", connect.NewError(connect.CodeInternal, fmt.Errorf("write the first message: %w", err))
 	}
 	lead = &planv1.Lead{Id: "lead", Provider: provider, Directory: dir}

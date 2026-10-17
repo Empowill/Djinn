@@ -54,7 +54,9 @@ func TestEnvFailureReplayOnVersionChange(t *testing.T) {
 		t.Fatalf("env replays = %d, want 0", got.GetEnvReplays())
 	}
 
-	// Because replays < 2, the lead is not told yet, and task list --failed does not list it.
+	// Because replays < 2, the lead is not told yet, and task list --failed does not list it. Flushed once the task's
+	// feed closes, after its end would have queued a line.
+	e.watch(t.Context(), t, id, 0)
 	e.h.FlushTell(t.Context())
 	if len(lead.all()) != 0 {
 		t.Fatalf("lead was told %v, want nothing told yet for env failure with replays < 2", lead.all())
@@ -204,6 +206,9 @@ func TestWorkFailureLeftToLead(t *testing.T) {
 		t.Fatalf("env cause = %q, want empty for work failure", got.GetEnvCause())
 	}
 
+	// Its end is stored before the lead's line is queued: the task's feed closes once both are done (W284: under load,
+	// a flush at the first FAILED read found no line).
+	e.watch(t.Context(), t, id, 0)
 	e.h.FlushTell(t.Context())
 	if len(lead.all()) == 0 {
 		t.Fatal("lead was not told of work failure")

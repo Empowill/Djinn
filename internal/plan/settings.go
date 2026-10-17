@@ -17,8 +17,10 @@ import (
 
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -42,6 +44,12 @@ func ReadSettings(path string) (*planv1.ProjectSettings, error) {
 // something that looks like a secret is refused, comments included, without repeating it. Any unknown fields are discarded,
 // logged once as warnings, and returned in warnings.
 func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, error) {
+	return readSettingsNamed(path, path)
+}
+
+// readSettingsNamed is ReadSettingsWithWarnings, its messages naming the file name: where Djinn read it from, a
+// reference branch's tree.
+func readSettingsNamed(path, name string) (*planv1.ProjectSettings, []string, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, nil
@@ -50,10 +58,10 @@ func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, e
 		return nil, nil, err
 	}
 	if line, why := secretIn(b); line > 0 {
-		return nil, nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", path, line, why)
+		return nil, nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", name, line, why)
 	}
 	if line, key := removedKeyIn(b); line > 0 {
-		return nil, nil, fmt.Errorf("%s: line %d names %s: this key was removed; delete the line", path, line, key)
+		return nil, nil, fmt.Errorf("%s: line %d names %s: this key was removed; delete the line", name, line, key)
 	}
 	s := &planv1.ProjectSettings{}
 	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
@@ -68,22 +76,22 @@ func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, e
 	unknowns := FindUnknownFields(normalized, s)
 	var warnings []string
 	for _, u := range unknowns {
-		warnings = append(warnings, WarnUnknownField(path, u))
+		warnings = append(warnings, WarnUnknownField(name, u))
 	}
 	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
 	if err := opts.Unmarshal(normalized, s); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
 	if err := protovalidate.Validate(s); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
 	seen := map[string]bool{}
 	for _, c := range s.GetChecks() {
-		name := strings.ToLower(c.GetName())
-		if seen[name] {
-			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", path, c.GetName())
+		lower := strings.ToLower(c.GetName())
+		if seen[lower] {
+			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", name, c.GetName())
 		}
-		seen[name] = true
+		seen[lower] = true
 	}
 	return s, warnings, nil
 }
@@ -198,6 +206,9 @@ type Settings struct {
 	// WatchCommands are the commands, or their starts, the developer lets a watcher run in the project besides those
 	// its .agents/permissions.txtpb lists: from their own file only.
 	WatchCommands []string
+	// ServeCommands are the commands, or their starts, the developer lets an ifrit's serve run in the project besides
+	// those its .agents/permissions.txtpb lists: from their own file only.
+	ServeCommands []string
 	// InstallBuilds says whether a build of the running Djinn's line, once pushed, installs by itself (W554).
 	InstallBuilds bool
 	Warnings      []string
@@ -208,6 +219,7 @@ type Settings struct {
 	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
 	InstallQuestionsFrom, BabysitFrom, WatchCommandsFrom, InstallBuildsFrom                            planv1.SettingSource
+	ServeCommandsFrom                                                                                  planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
@@ -258,7 +270,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
 		InstallQuestions: DefaultInstallQuestions,
 		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
-		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
+		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, ServeCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -347,6 +359,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if len(f.settings.GetWatchCommands()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
 			s.WatchCommands, s.WatchCommandsFrom = f.settings.GetWatchCommands(), f.from
 		}
+		if len(f.settings.GetServeCommands()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+			s.ServeCommands, s.ServeCommandsFrom = f.settings.GetServeCommands(), f.from
+		}
 	}
 	effective := s.QuestionProvider
 	if effective == planv1.Provider_PROVIDER_UNSPECIFIED {
@@ -389,39 +404,91 @@ func LoadSettings(home string, project *planv1.Project) (Settings, error) {
 
 // loadSettings reads both files of project, and why each one that could not be read was not.
 func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.ProjectSettings, warnings []string, problems []error) {
-	if project == nil {
-		return nil, nil, nil, nil
-	}
-	repoFile, devFile := settingsFiles(home, project)
-	var err error
-	var w []string
-	if repoFile != "" {
-		if repo, w, err = ReadSettingsWithWarnings(repoFile); err != nil {
-			problems = append(problems, err)
-		} else {
-			if len(repo.GetWatchCommands()) > 0 {
-				w = append(w, repoFile+": watch_commands is ignored: a developer allows a watcher command in their own "+
-					"file (djinn project allow --watch), the repository lists its commands in .agents/permissions.txtpb")
-			}
-			for _, warn := range w {
-				if !slices.Contains(warnings, warn) {
-					warnings = append(warnings, warn)
-				}
-			}
+	for _, f := range readSettingsFiles(home, project) {
+		if f.err != nil {
+			problems = append(problems, f.err)
+			continue
 		}
-	}
-	if devFile != "" {
-		if dev, w, err = ReadSettingsWithWarnings(devFile); err != nil {
-			problems = append(problems, err)
+		if f.team {
+			repo = f.settings
 		} else {
-			for _, warn := range w {
-				if !slices.Contains(warnings, warn) {
-					warnings = append(warnings, warn)
-				}
+			dev = f.settings
+		}
+		for _, warn := range f.warnings {
+			if !slices.Contains(warnings, warn.text) {
+				warnings = append(warnings, warn.text)
 			}
 		}
 	}
 	return repo, dev, warnings, problems
+}
+
+// settingsRead is one settings file of a project as Djinn read it.
+type settingsRead struct {
+	// path is the file; team tells the repository's from the developer's.
+	path string
+	team bool
+	// settings are what it holds; nil without the file, or when it cannot be read: err says why.
+	settings *planv1.ProjectSettings
+	err      error
+	// warnings are what Djinn ignored in it.
+	warnings []settingsWarning
+}
+
+// settingsWarning is a thing a settings file holds that Djinn ignores; ignored says a line to remove, not a field a
+// newer Djinn knows.
+type settingsWarning struct {
+	text    string
+	ignored bool
+}
+
+// readSettingsFiles reads the files of project: the repository's, then the developer's; a file project has no path
+// for is left out.
+func readSettingsFiles(home string, project *planv1.Project) []settingsRead {
+	if project == nil {
+		return nil
+	}
+	repoFile, devFile := settingsFiles(home, project)
+	config := ProjectConfig(home, project)
+	var out []settingsRead
+	for _, f := range []settingsRead{{path: repoFile, team: true}, {path: devFile}} {
+		if f.path == "" {
+			continue
+		}
+		read, name := f.path, f.path
+		if f.team {
+			// The team's file is read where Djinn reads the project's configuration: the reference branch's tree.
+			read = filepath.Join(config.Dir, SettingsFile)
+			name = config.Named(read)
+		}
+		var w []string
+		f.settings, w, f.err = readSettingsNamed(read, name)
+		for _, text := range w {
+			f.warnings = append(f.warnings, settingsWarning{text: text})
+		}
+		if f.err == nil && f.team && config.TeamBranch != "" && f.settings.GetMainBranch() == "" {
+			// The default branch's tree named the reference branch, whose own tree does not: it stays the reference.
+			if f.settings == nil {
+				f.settings = &planv1.ProjectSettings{}
+			}
+			f.settings = proto.CloneOf(f.settings)
+			f.settings.MainBranch = &config.TeamBranch
+		}
+		if f.err == nil && f.team {
+			if len(f.settings.GetWatchCommands()) > 0 {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": watch_commands is " +
+					"ignored: a developer allows a watcher command in their own file (djinn project allow --watch), the " +
+					"repository lists its commands in .agents/permissions.txtpb"})
+			}
+			if len(f.settings.GetServeCommands()) > 0 {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": serve_commands is " +
+					"ignored: a developer allows a serve command in their own file (djinn project allow --serve), the " +
+					"repository lists its commands in .agents/permissions.txtpb"})
+			}
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // Rows are the settings as djinn project show lists them.
@@ -458,6 +525,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "push_strategy", Value: PushStrategyWord(s.PushStrategy), Source: s.PushStrategyFrom},
 		{Name: "babysit", Value: strconv.FormatBool(s.Babysit), Source: s.BabysitFrom},
 		{Name: "watch_commands", Value: strings.Join(s.WatchCommands, "; "), Source: s.WatchCommandsFrom},
+		{Name: "serve_commands", Value: strings.Join(s.ServeCommands, "; "), Source: s.ServeCommandsFrom},
 	}
 }
 
@@ -572,29 +640,43 @@ func saveDeveloper(home, projectID string, change func(*planv1.ProjectSettings) 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	return s, os.WriteFile(path, b, 0o600)
+	return s, fsx.WriteAtomic(path, b, 0o600)
 }
 
 // AllowWatch adds command to the watcher commands the developer allows in the project, in their settings file in
 // home, or takes it back with revoke: the commands allowed then. Its words are joined by single spaces, as a
 // watcher's command is compared.
 func AllowWatch(home, projectID, command string, revoke bool) ([]string, error) {
-	command = strings.Join(strings.Fields(command), " ")
 	s, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
-		at := slices.Index(s.GetWatchCommands(), command)
-		switch {
-		case command == "":
-			return errors.New("a watcher command has words")
-		case revoke && at < 0:
-			return fmt.Errorf("%q is not a watcher command you allow", command)
-		case revoke:
-			s.WatchCommands = slices.Delete(s.WatchCommands, at, at+1)
-		case at < 0:
-			s.WatchCommands = append(s.WatchCommands, command)
-		}
-		return nil
+		return allowIn(&s.WatchCommands, "watcher", command, revoke)
 	})
 	return s.GetWatchCommands(), err
+}
+
+// AllowServe is AllowWatch for the commands an ifrit's serve runs (djinn serve run).
+func AllowServe(home, projectID, command string, revoke bool) ([]string, error) {
+	s, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		return allowIn(&s.ServeCommands, "serve", command, revoke)
+	})
+	return s.GetServeCommands(), err
+}
+
+// allowIn adds command, its words joined by single spaces, to the commands of what (watcher, serve), or takes it
+// back with revoke.
+func allowIn(commands *[]string, what, command string, revoke bool) error {
+	command = strings.Join(strings.Fields(command), " ")
+	at := slices.Index(*commands, command)
+	switch {
+	case command == "":
+		return fmt.Errorf("a %s command has words", what)
+	case revoke && at < 0:
+		return fmt.Errorf("%q is not a %s command you allow", command, what)
+	case revoke:
+		*commands = slices.Delete(*commands, at, at+1)
+	case at < 0:
+		*commands = append(*commands, command)
+	}
+	return nil
 }
 
 // PushStrategyWord is how a wish integrates its work, as the settings say it: wish, azima.
@@ -611,6 +693,19 @@ func PushStrategyWord(p planv1.PushStrategy) string {
 func SaveDeveloperPushStrategy(home, projectID string, strategy planv1.PushStrategy) error {
 	_, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
 		s.PushStrategy = strategy.Enum()
+		return nil
+	})
+	return err
+}
+
+// SaveDeveloperMainBranch writes branch as the main_branch setting of the developer's settings file in home, or
+// removes it when branch is empty: the team's file names the reference branch again, else Djinn finds it.
+func SaveDeveloperMainBranch(home, projectID, branch string) error {
+	_, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		s.MainBranch = nil
+		if branch != "" {
+			s.MainBranch = &branch
+		}
 		return nil
 	})
 	return err
@@ -679,26 +774,8 @@ func (s Settings) ChecksBrief() string {
 	if !s.Integrates() {
 		return ""
 	}
-	list := func(when planv1.CheckWhen) string {
-		var names []string
-		for _, c := range s.ChecksAt(when) {
-			names = append(names, "`"+GateCommand(c)+"`")
-		}
-		return strings.Join(names, ", ")
-	}
 	var b strings.Builder
-	b.WriteString("Djinn checks this project's work")
-	commit, push := list(planv1.CheckWhen_CHECK_WHEN_COMMIT), list(planv1.CheckWhen_CHECK_WHEN_PUSH)
-	if commit != "" {
-		b.WriteString(" before it commits a task's work, with " + commit)
-	}
-	if push != "" {
-		if commit != "" {
-			b.WriteString(";")
-		}
-		b.WriteString(" before it pushes, with " + push)
-	}
-	b.WriteString(".")
+	commit, push := s.checksWhen(&b)
 	commitHasTest := slices.ContainsFunc(s.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT), func(c *planv1.ProjectCheck) bool {
 		return strings.EqualFold(c.GetName(), "test")
 	})
@@ -724,8 +801,63 @@ func (s Settings) ChecksBrief() string {
 		}
 		b.WriteString("; do not run the push checks (" + push + "): Djinn runs them before pushing.")
 	}
+	s.setupBrief(&b)
+	return b.String()
+}
+
+// IfritChecksBrief is ChecksBrief for an ifrit's first prompt (T51): which checks Djinn runs and when, but an ifrit
+// runs none of them after a change: Djinn runs the commit checks once the developer finishes it. "" for a project
+// that sets none.
+func (s Settings) IfritChecksBrief() string {
+	if !s.Integrates() {
+		return ""
+	}
+	var b strings.Builder
+	commit, push := s.checksWhen(&b)
+	switch {
+	case commit != "" && push != "":
+		b.WriteString(" Run neither after a change: Djinn runs the commit checks once you are finished, the push checks " +
+			"before it pushes.")
+	case commit != "":
+		b.WriteString(" Do not run them after a change: Djinn runs them once you are finished.")
+	case push != "":
+		b.WriteString(" Do not run them: Djinn runs them before it pushes.")
+	}
+	if s.TestOne != "" {
+		b.WriteString(" A test the developer asks for runs with `" + s.TestOne + "`.")
+	}
+	s.setupBrief(&b)
+	return b.String()
+}
+
+// checksWhen writes to b which checks Djinn runs on the project's work, before it commits and before it pushes, and
+// returns them, each list "" when there is none.
+func (s Settings) checksWhen(b *strings.Builder) (commit, push string) {
+	list := func(when planv1.CheckWhen) string {
+		var names []string
+		for _, c := range s.ChecksAt(when) {
+			names = append(names, "`"+GateCommand(c)+"`")
+		}
+		return strings.Join(names, ", ")
+	}
+	b.WriteString("Djinn checks this project's work")
+	commit, push = list(planv1.CheckWhen_CHECK_WHEN_COMMIT), list(planv1.CheckWhen_CHECK_WHEN_PUSH)
+	if commit != "" {
+		b.WriteString(" before it commits a task's work, with " + commit)
+	}
+	if push != "" {
+		if commit != "" {
+			b.WriteString(";")
+		}
+		b.WriteString(" before it pushes, with " + push)
+	}
+	b.WriteString(".")
+	return commit, push
+}
+
+// setupBrief writes to b what a fresh worktree needs first, if anything.
+func (s Settings) setupBrief(b *strings.Builder) {
 	if s.Setup != "" {
 		b.WriteString(" A fresh worktree needs `" + s.Setup + "` first.")
 	}
-	return b.String()
 }

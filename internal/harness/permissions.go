@@ -1,16 +1,12 @@
 package harness
 
 import (
-	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"buf.build/go/protovalidate"
-	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
@@ -18,34 +14,17 @@ import (
 	"github.com/empowill/djinn/internal/plan"
 )
 
-// PermissionsFile is where a project declares, for every agent, what an agent may do in it: a djinn.v1.Permissions
-// in text protobuf, under the .agents folder that Codex and Antigravity already read for skills.
-var PermissionsFile = filepath.Join(".agents", "permissions.txtpb")
+// PermissionsFile is where a project declares what an agent may do in it (plan.PermissionsFile).
+var PermissionsFile = plan.PermissionsFile
 
-// LoadPermissions reads the permissions a project declares in dir. It returns nil, and no error, when the project
-// declares none.
+// LoadPermissions reads the permissions a project declares in dir, each field a newer Djinn knows logged once. It
+// returns nil, and no error, when the project declares none.
 func LoadPermissions(dir string) (*djinnv1.Permissions, error) {
-	path := filepath.Join(dir, PermissionsFile)
-	b, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	p := &djinnv1.Permissions{}
-	unknowns := plan.FindUnknownFields(b, p)
+	p, unknowns, err := plan.ReadPermissions(dir)
 	for _, u := range unknowns {
-		plan.WarnUnknownField(path, u)
+		plan.WarnUnknownField(filepath.Join(dir, PermissionsFile), u)
 	}
-	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
-	if err := opts.Unmarshal(b, p); err != nil {
-		return nil, fmt.Errorf("%s: %w", PermissionsFile, err)
-	}
-	if err := protovalidate.Validate(p); err != nil {
-		return nil, fmt.Errorf("%s: %w", PermissionsFile, err)
-	}
-	return p, nil
+	return p, err
 }
 
 // effectiveMode is the mode the agent gets: AUTO only with edit, since a reviewer could approve a command that
@@ -94,16 +73,30 @@ func LeadPermissions() *djinnv1.Permissions {
 // commit. The project's denied_commands still win.
 var commitCommands = []string{"git status", "git diff", "git log", "git add", "git commit", "git restore", "git rm", "git clean"}
 
-// withCommit is perms with commitCommands for t when it is a correction or a review worker that may edit; perms as it
-// is otherwise.
+// reviewDenied are what a review worker may not run: it stages each path it judges by its name, and leaves what it
+// leaves out where it is, never staged all at once, removed or stashed.
+var reviewDenied = []string{
+	"git add -A", "git add --all", "git add .", "git add -u", "git add --update", "git commit -a", "git commit -am",
+	"git commit --all", "git clean", "git stash",
+}
+
+// withCommit is perms with commitCommands for t when it is a correction or a review worker that may edit, a review
+// worker denied reviewDenied; perms as it is otherwise.
 func withCommit(t *planv1.Task, perms *djinnv1.Permissions) *djinnv1.Permissions {
 	if perms == nil || !perms.GetEdit() || t.GetCorrection() == nil && t.GetReview() == nil {
 		return perms
 	}
 	perms = proto.CloneOf(perms)
 	for _, c := range commitCommands {
-		if !slices.Contains(perms.GetCommands(), c) {
+		if !slices.Contains(perms.GetCommands(), c) && (t.GetReview() == nil || !slices.Contains(reviewDenied, c)) {
 			perms.Commands = append(perms.Commands, c)
+		}
+	}
+	if t.GetReview() != nil {
+		for _, c := range reviewDenied {
+			if !slices.Contains(perms.GetDeniedCommands(), c) {
+				perms.DeniedCommands = append(perms.DeniedCommands, c)
+			}
 		}
 	}
 	return perms
@@ -169,11 +162,13 @@ func existsFold(dir, name string) bool {
 // (docs/providers.md): outside any project, read-only; the wish's allowance; the project's .agents/permissions.txtpb
 // when it has one; the agent's own configuration in a Git repository, or in a folder holding agent configuration
 // files; otherwise, read-only until the developer allows editing.
-func decideAccess(project *planv1.Project, kind planv1.Provider, allowance planv1.Allowance) (planv1.TaskAccess, *djinnv1.Permissions, error) {
+func decideAccess(
+	home string, project *planv1.Project, kind planv1.Provider, allowance planv1.Allowance,
+) (planv1.TaskAccess, *djinnv1.Permissions, error) {
 	if project == nil {
 		return planv1.TaskAccess_TASK_ACCESS_READ_ONLY, nil, nil
 	}
-	p, err := LoadPermissions(project.GetDirectory())
+	p, err := LoadPermissions(plan.ConfigDir(home, project))
 	switch {
 	case err != nil:
 		return planv1.TaskAccess_TASK_ACCESS_UNSPECIFIED, nil, err

@@ -4,7 +4,8 @@ package harness
 // developer plugs it in on this machine, Djinn runs it like a watcher, without a task nor a wish, in the folder of the
 // project that holds or summons the skill. A source not plugged in never starts. Each item it prints becomes an item
 // of the inbox (plan.Inbox.Receive). It takes no slot and spends no token; its input is closed, and Djinn never writes
-// anything back to it.
+// anything back to it. Each run's end, how many items it printed and why it failed are kept on this machine
+// (plan.KeepSourceRun): djinn inbox sources shows them.
 
 import (
 	"context"
@@ -85,14 +86,16 @@ type sourceRun struct {
 func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, kick <-chan struct{}, asked <-chan chan int) {
 	defer logx.Crash("inbox")
 	defer h.wg.Done()
-	c.Items = true
+	c.Items, c.Runs = true, true
 	running := map[string]*sourceRun{}
 	said := map[string]string{} // the last error said, by source
-	say := func(key string, s *plan.Source, err error) {
-		if said[key] != err.Error() {
-			said[key] = err.Error()
-			logx.L().Warn("inbox source does not run", "loop", "inbox", "skill", s.Skill, "err", err)
+	say := func(key string, s *plan.Source, err error) (news bool) {
+		if said[key] == err.Error() {
+			return false
 		}
+		said[key] = err.Error()
+		logx.L().Warn("inbox source does not run", "loop", "inbox", "skill", s.Skill, "err", err)
+		return true
 	}
 	tick := time.NewTicker(rescan)
 	defer tick.Stop()
@@ -130,10 +133,14 @@ func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, ki
 			}
 			r, err := h.startSource(c, s, receive)
 			if err != nil {
-				say(key, s.src, err)
+				if say(key, s.src, err) {
+					// Each pass tries it again: its run says why once, not once a pass.
+					h.keepSourceRun(s.src, time.Now(), 0, err)
+				}
 				continue
 			}
 			running[key] = r
+			delete(said, key) // It runs: the same error, should it come back, is news again.
 		}
 		for _, done := range waiting {
 			done <- len(running)
@@ -150,10 +157,10 @@ func (h *Harness) sources(receive ReceiveFunc, c Watch, rescan time.Duration, ki
 	}
 }
 
-// wantedSource is a source and the folder its command runs in.
+// wantedSource is a source, the folder its command runs in, and the folder its project's permissions are read in.
 type wantedSource struct {
-	src *plan.Source
-	dir string
+	src         *plan.Source
+	dir, config string
 }
 
 // readSources reads the sources the projects' skills declare and this machine plugged in, by what makes each one run
@@ -165,18 +172,20 @@ func (h *Harness) readSources() (map[string]wantedSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	srcs, err := plan.Sources(ctx, h.store, projects)
+	srcs, err := plan.Sources(ctx, h.store, h.home, projects)
 	if err != nil {
 		return nil, err
 	}
-	dirs := map[string]string{}
+	byID := map[string]*planv1.Project{}
 	for _, p := range projects {
-		dirs[p.GetId()] = p.GetDirectory()
+		byID[p.GetId()] = p
 	}
 	out := map[string]wantedSource{}
 	for _, s := range srcs {
-		key := fmt.Sprintf("%s\x00%s\x00%s\x00%s", s.Dir, s.ProjectID, s.Watch, s.Every)
-		out[key] = wantedSource{src: s, dir: dirs[s.ProjectID]}
+		// The skill, not its folder: a folder of the cache changes with any change of the project's configuration.
+		key := fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%s", s.HolderID, s.Skill, s.ProjectID, s.Watch, s.Every)
+		p := byID[s.ProjectID]
+		out[key] = wantedSource{src: s, dir: p.GetDirectory(), config: plan.ConfigDir(h.home, p)}
 	}
 	return out, nil
 }
@@ -184,7 +193,7 @@ func (h *Harness) readSources() (map[string]wantedSource, error) {
 // startSource starts the command of a source, as a watcher that starts it again every s.Every, and gives each item
 // it prints to receive. Where the project lists the commands its workers may run, the command must be one of them.
 func (h *Harness) startSource(c Watch, s wantedSource, receive ReceiveFunc) (*sourceRun, error) {
-	perms, err := LoadPermissions(s.dir)
+	perms, err := LoadPermissions(s.config)
 	if err != nil {
 		return nil, err
 	}
@@ -197,9 +206,14 @@ func (h *Harness) startSource(c Watch, s wantedSource, receive ReceiveFunc) (*so
 	go func() {
 		defer logx.Crash("inbox", "skill", s.src.Skill)
 		defer close(r.done)
+		items := 0 // printed by the run under way
 		for ev := range w.Events() {
 			switch {
+			case ev.Ran != nil:
+				h.keepSourceRun(s.src, ev.Ran.End, items, ev.Ran.Err)
+				items = 0
 			case ev.Watched != nil && ev.Watched.First != "":
+				items++
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				if _, err := receive(ctx, s.src, ev.Text); err != nil {
 					logx.L().Error("keep an inbox item", "loop", "inbox", "skill", s.src.Skill, "err", err)
@@ -212,4 +226,14 @@ func (h *Harness) startSource(c Watch, s wantedSource, receive ReceiveFunc) (*so
 		r.err = w.Wait().Err
 	}()
 	return r, nil
+}
+
+// keepSourceRun keeps a run of the source src on this machine, as plan.KeepSourceRun does; the log says why it
+// could not.
+func (h *Harness) keepSourceRun(src *plan.Source, end time.Time, items int, failed error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := plan.KeepSourceRun(ctx, h.store, src, end, items, failed); err != nil {
+		logx.L().Error("keep an inbox source's run", "loop", "inbox", "skill", src.Skill, "err", err)
+	}
 }

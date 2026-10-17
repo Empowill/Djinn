@@ -79,6 +79,47 @@ esac
 	}
 }
 
+// Each account of an agent is checked in its own folder, the agent's status command run with its folder variable:
+// one signed in, one not; its sign-in command names its folder. The default sign-in is checked apart.
+func TestGetEnvironmentAccounts(t *testing.T) {
+	dir := t.TempDir()
+	work, home := filepath.Join(t.TempDir(), "claude-work"), filepath.Join(t.TempDir(), "claude-home")
+	fake(t, dir, "claude", `case "$*" in
+"auth status") [ "$CLAUDE_CONFIG_DIR" = "`+work+`" ] && [ -z "$ANTHROPIC_API_KEY" ] && exit 0; exit 1 ;;
+esac
+`)
+	t.Setenv("ANTHROPIC_API_KEY", "not-a-key") // It would win over the folder's login: the check clears it.
+	s, _ := newService(t)
+	s.AgentPath = func() string { return dir }
+	settings := `{"accounts": [
+  {"name": "work", "provider": "PROVIDER_CLAUDE", "label": "Work", "configDirectory": "` + work + `"},
+  {"name": "home", "provider": "PROVIDER_CLAUDE", "configDirectory": "` + home + `"},
+  {"name": "gpt", "provider": "PROVIDER_CODEX", "configDirectory": "/nowhere"}
+]}`
+	if err := os.WriteFile(filepath.Join(s.Home, "settings.json"), []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env, err := s.GetEnvironment(context.Background(),
+		connect.NewRequest(&uiv1.UiServiceGetEnvironmentRequest{Agents: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := byID(env.Msg.GetProviders())
+	if got["claude"].GetState() != uiv1.ProviderState_PROVIDER_STATE_SIGNED_OUT {
+		t.Errorf("claude's own sign-in = %v; want signed out", got["claude"].GetState())
+	}
+	accounts := got["claude"].GetAccounts()
+	if len(accounts) != 2 || accounts[0].GetAccount().GetName() != "work" ||
+		accounts[0].GetState() != uiv1.ProviderState_PROVIDER_STATE_READY ||
+		accounts[1].GetState() != uiv1.ProviderState_PROVIDER_STATE_SIGNED_OUT ||
+		accounts[0].GetLoginCommand() != "CLAUDE_CONFIG_DIR="+work+" claude auth login" {
+		t.Errorf("claude's accounts = %v; want work ready, home signed out", accounts)
+	}
+	if codex := got["codex"].GetAccounts(); len(codex) != 1 || codex[0].GetState() != uiv1.ProviderState_PROVIDER_STATE_MISSING {
+		t.Errorf("codex's accounts = %v; want gpt, codex missing", codex)
+	}
+}
+
 // Antigravity documents no status command nor version flag: installed, its sign-in is unknown, and Djinn runs it
 // not at all.
 func TestGetEnvironmentAgyUnknown(t *testing.T) {
@@ -150,7 +191,7 @@ func TestPanelAndLaunchAgree(t *testing.T) {
 	fake(t, bin, "claude", `[ "$1" = "--version" ] && echo "2.1.294 (Claude Code)"; exit 0
 `)
 	// Claude alone: the installers' folders of this machine may hold real agents, which no test runs.
-	claude := checkAgent(context.Background(), agents[0], launchPath())
+	claude := checkAgent(context.Background(), agents[0], launchPath(), nil)
 	if claude.GetState() != uiv1.ProviderState_PROVIDER_STATE_READY || claude.GetCommand() != filepath.Join(bin, "claude") {
 		t.Fatalf("claude = %v; want ready in %s", claude, bin)
 	}

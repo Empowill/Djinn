@@ -26,6 +26,7 @@ import (
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/link"
 	"github.com/empowill/djinn/internal/logx"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // Service implements uiv1connect.UiServiceHandler.
@@ -81,6 +82,8 @@ type Service struct {
 	Known func(ctx context.Context, wishID string) bool
 	// Notices shows the system notifications, and knows whether the system lets it. Nil: none (a test).
 	Notices *Notices
+	// Touched says that the developer is there (harness.Presence): it keeps the ifrits lit. Nil: nothing.
+	Touched func()
 
 	dialogs sync.Mutex // One folder dialog at a time.
 
@@ -297,10 +300,11 @@ func (s *Service) GetEnvironment(
 		res.Shortcut = s.Shortcuts.State()
 	}
 	if req.Msg.GetAgents() {
+		accounts := plan.ReadAccounts(s.Home)
 		if s.AgentPath != nil {
-			res.Providers = checkAgents(ctx, s.AgentPath())
+			res.Providers = checkAgents(ctx, s.AgentPath(), accounts)
 		} else {
-			res.Providers = checkAgents(ctx, launchPath())
+			res.Providers = checkAgents(ctx, launchPath(), accounts)
 		}
 	} else {
 		for _, p := range providers {
@@ -830,5 +834,18 @@ func (s *Service) View(
 	if s.Notices != nil {
 		s.Notices.View(req.Msg.GetWishId())
 	}
+	// The theme the page shows, for the driven lead's tone: the last page to say it wins.
+	if err := plan.SetShownTheme(s.Home, req.Msg.GetTheme()); err != nil {
+		logx.L().Warn("keep the theme shown", "err", err)
+	}
 	return connect.NewResponse(&uiv1.UiServiceViewResponse{}), nil
+}
+
+func (s *Service) Touch(
+	context.Context, *connect.Request[uiv1.UiServiceTouchRequest],
+) (*connect.Response[uiv1.UiServiceTouchResponse], error) {
+	if s.Touched != nil {
+		s.Touched()
+	}
+	return connect.NewResponse(&uiv1.UiServiceTouchResponse{}), nil
 }

@@ -42,6 +42,7 @@ func (in *integration) stored(t *testing.T, id string) *planv1.Task {
 // and their tasks integrate into their respective azima branches.
 func TestAzimaIndependentBranchesFromMain(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.setAzimaStrategy(t)
 	mainSha := in.tip(t)
@@ -107,6 +108,7 @@ func TestAzimaIndependentBranchesFromMain(t *testing.T) {
 // does not cut it again: its work merges into the branch as cut, which keeps its name once the title changes.
 func TestAzimaBranchCutFromMainWhenMade(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.setAzimaStrategy(t)
 	cut := in.tip(t)
@@ -165,6 +167,7 @@ func TestAzimaBranchCutFromMainWhenMade(t *testing.T) {
 // its first part to start cuts it from main, recorded, and starts from it.
 func TestAzimaBranchCutWhenItsFirstPartStarts(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	t1 := in.azima(t, in.wishID, "Made Before")
 	b1 := "djinn/T1-made-before"
@@ -207,6 +210,7 @@ func TestAzimaBranchCutWhenItsFirstPartStarts(t *testing.T) {
 // nothing of its own beyond main moves to main's commit.
 func TestAzimaBranchKeepsUpWithMain(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
 	u.setAzimaStrategy(t)
 	t1 := u.azima(t, u.wishID, "With Work")
@@ -254,6 +258,7 @@ func TestAzimaBranchKeepsUpWithMain(t *testing.T) {
 // azima as merged by it.
 func TestAzimaBranchMainConflictStartsACorrection(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
 	u.setAzimaStrategy(t)
 	t1 := u.azima(t, u.wishID, "Readme")
@@ -295,6 +300,7 @@ func TestAzimaBranchMainConflictStartsACorrection(t *testing.T) {
 // lands in main, main is merged into it, its pushed history kept.
 func TestAzimaOldStackedBranchKeepsWorking(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
 	// Made per wish, T2 after T1, then switched before Djinn refused that.
 	t1 := u.azima(t, u.wishID, "Base")
@@ -354,6 +360,7 @@ func TestAzimaOldStackedBranchKeepsWorking(t *testing.T) {
 // of its own azima is as usual.
 func TestPerAzimaRefusesAzimaDependencies(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.setAzimaStrategy(t)
 	ctx := t.Context()
@@ -424,6 +431,7 @@ func TestPerAzimaRefusesAzimaDependencies(t *testing.T) {
 // integration branch.
 func TestAzimaTaskWithNoAzimaUsesWishBranch(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.setAzimaStrategy(t)
 
@@ -446,6 +454,7 @@ func TestAzimaTaskWithNoAzimaUsesWishBranch(t *testing.T) {
 // the wish branch as before, and no azima branches are created.
 func TestAzimaPerWishModeUnchanged(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	t1 := in.azima(t, in.wishID, "First")

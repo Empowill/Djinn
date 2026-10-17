@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
@@ -38,6 +39,7 @@ func (in *integration) wishTasks(t *testing.T) []*planv1.Task {
 // integrates as it is: no review worker, the ignored file left out.
 func TestIntegrateACleanWorktree(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n", ".gitignore": "*.log\n"})
 	in.leave(t, w1, map[string]string{"app/build.log": "built\n"})
@@ -60,6 +62,7 @@ func TestIntegrateACleanWorktree(t *testing.T) {
 // belongs to the task and drops the rest, and its work integrates like any task's, the reviewed work with it.
 func TestReviewUncommittedWork(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	old := in.tip(t)
 	azima := in.azima(t, in.wishID, "The sources")
@@ -111,8 +114,9 @@ func TestReviewUncommittedWork(t *testing.T) {
 	}
 	for _, s := range []string{"the work of W1 into " + in.branch, "The task, W1: Work of W1. Its prompt:\n\n    work\n",
 		"     M app/README.md\n    ?? app/scratch.txt\n    ?? app/src/b.txt\n", "    -# App\n    +# App, with b\n",
-		"    +++ b/app/scratch.txt\n    +debug\n", "    +++ b/app/src/b.txt\n    +b", "Commit what belongs to the task",
-		"debug output, scratch files, build artifacts", "its commit checks (`djinn gate run test -- test`) run through their gates", "what you kept, what you dropped, and why"} {
+		"    +++ b/app/scratch.txt\n    +debug\n", "    +++ b/app/src/b.txt\n    +b", "Commit what belongs to the task's change",
+		"Its worker's final note:\n\n    (none)\n", "When in doubt, leave it out and say so", "`git add -A`, `git add .` and `git commit -a` are refused",
+		"its commit checks (`djinn gate run test -- test`) run through their gates", "Committed: <path>, <path>. Left: <path> (why), <path> (why)."} {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("W2's prompt lacks %q:\n%s", s, prompt)
 		}
@@ -144,10 +148,78 @@ func TestReviewUncommittedWork(t *testing.T) {
 	}
 }
 
+// TestAReviewLeavesWhatIsNotTheTasks: a worker leaves its fix not committed, saying so (W105 and W108 of wish Dew 13
+// oct), with a screenshot and an env file. Its review worker commits the fix alone, by its name, and leaves the rest
+// where it is, naming each path in its final note: the work integrates without them, the worktree keeps them, and the
+// lead reads what the review committed and left under the merge line.
+func TestAReviewLeavesWhatIsNotTheTasks(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	in := integrating(t)
+	queue := &leadQueue{}
+	in.h.NotifyLead(queue.notify)
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+	in.h.Note(w1.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "The fix is in the worktree: nothing committed."})
+	in.leave(t, w1, map[string]string{"app/src/a.txt": "a, fixed\n", "app/shot.png": "\x89PNG\x00", "app/.env": "TOKEN=1\n"})
+	var prompt string
+	in.correctWith(func(d, p string) string {
+		prompt = p
+		if _, err := git(t.Context(), d, "add", "--", "src/a.txt"); err != nil {
+			t.Error(err)
+		}
+		if _, err := git(t.Context(), d, "commit", "--quiet", "-m", "Fix a"); err != nil {
+			t.Error(err)
+		}
+		return "text Committed: src/a.txt. Left: shot.png (a screenshot of the check), .env (a secret)."
+	})
+
+	in.pass(t, 0)
+	w2 := in.reviewer(t, w1)
+	for _, s := range []string{"Its worker's final note:\n\n    The fix is in the worktree: nothing committed.\n",
+		"     M app/src/a.txt\n    ?? app/.env  (a secret or an env file: never commit it)\n" +
+			"    ?? app/shot.png  (an image or a video: a screenshot, unless the change uses it)\n",
+		"new file app/shot.png: binary", "A worker may leave real work not committed, even saying it commits nothing: commit it."} {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("W2's prompt lacks %q:\n%s", s, prompt)
+		}
+	}
+
+	in.pass(t, time.Second)
+	if got := in.states(t, w1, w2); got != "W1 COMMITTED, W2 COMMITTED" {
+		t.Fatalf("after the review: %s", got)
+	}
+	tip := in.tip(t)
+	if out := in.git(t, in.repo, "ls-tree", "-r", "--name-only", tip, "app"); strings.Contains(out, "shot.png") || strings.Contains(out, ".env") {
+		t.Errorf("the branch holds what the review left:\n%s", out)
+	}
+	if out := in.git(t, in.repo, "show", tip+":app/src/a.txt"); out != "a, fixed" {
+		t.Errorf("a.txt in the branch: %q", out)
+	}
+	if status, _ := git(t.Context(), w1.GetWorktree(), "status", "--porcelain"); status != "?? app/.env\n?? app/shot.png" {
+		t.Errorf("the worktree keeps:\n%s", status)
+	}
+	want := "integration: W2 left not committed, as its note says: app/.env, app/shot.png; its worktree keeps them"
+	if texts := storedTexts(t, in.db, w2.GetId()); !slices.Contains(texts, want) {
+		t.Errorf("W2's events %q lack %q", texts, want)
+	}
+	var merged *planv1.LeadEvent
+	for _, e := range queue.all() {
+		if e.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED {
+			merged = e
+		}
+	}
+	detail := "W2 reviewed the work W1 left not committed: Committed: src/a.txt. Left: shot.png (a screenshot of the check), " +
+		".env (a secret). Its worktree keeps what it left: " + w1.GetWorktree()
+	if merged == nil || merged.GetText() != "Djinn: W2 merged into "+in.branch+" as "+tip[:8] || merged.GetDetail() != detail {
+		t.Errorf("the merge event %v; want its detail %q", merged, detail)
+	}
+}
+
 // TestReviewAttemptsThenAQuestion: a review worker that fails, then one that leaves the work not committed in turn,
 // spend the attempts; Djinn then asks the person, and trying again starts a new review, its attempts counted from one.
 func TestReviewAttemptsThenAQuestion(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
@@ -175,6 +247,9 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 	if w3.GetReview().GetAttempt() != 2 || !slices.Equal(w3.GetReview().GetTaskIds(), []string{w1.GetId()}) {
 		t.Fatalf("the second attempt %v", w3)
 	}
+	if prompt, _ := firstPrompt(in.db, w3.GetId()); !strings.HasSuffix(prompt, "This is attempt 2: the review before yours left changes not committed.") {
+		t.Errorf("W3's prompt ends:\n%s", prompt[max(0, len(prompt)-200):])
+	}
 	if _, texts := in.integration(t, w1); texts[len(texts)-1] != "W2, its review worker, failed: I cannot tell what belongs to it; "+
 		"W3 reviews it, attempt 2 of 2" {
 		t.Errorf("W1's events %q", texts)
@@ -182,6 +257,10 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 	in.pass(t, time.Second)
 	if got := in.states(t, w1, w3); got != "W1 UNCOMMITTED, W3 UNCOMMITTED" {
 		t.Fatalf("two attempts spent: %s", got)
+	}
+	// W3 left app/src/b.txt without naming it in its final note: not judged, not integrated.
+	if texts := storedTexts(t, in.db, w3.GetId()); slices.ContainsFunc(texts, func(s string) bool { return strings.Contains(s, "as its note says") }) {
+		t.Errorf("W3's leftover taken as judged: %q", texts)
 	}
 	got, texts := in.integration(t, w3)
 	if got.GetQuestionId() != "" || got.GetAttempts() != 2 || got.GetReviewedBy() != "" ||
@@ -205,6 +284,10 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 		t.Fatalf("tried again: %v; events %q", got, texts)
 	}
 	w4 := in.reviewer(t, w1)
+	if prompt, _ := firstPrompt(in.db, w4.GetId()); !strings.HasSuffix(prompt,
+		"The review before yours left these paths not committed without naming them after Left: in its final note: app/src/b.txt.") {
+		t.Errorf("W4's prompt ends:\n%s", prompt[max(0, len(prompt)-200):])
+	}
 	in.pass(t, time.Second)
 	if got := in.states(t, w1, w3, w4); got != "W1 COMMITTED, W3 COMMITTED, W4 COMMITTED" {
 		t.Errorf("after the third review: %s", got)
@@ -219,6 +302,7 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 // work and the work it corrected.
 func TestReviewACorrectionsWork(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	azima := in.azima(t, in.wishID, "The readme")
 	partOf := func(task *planv1.Task) { task.PartOf = azima.GetId() }
@@ -274,6 +358,7 @@ func TestReviewACorrectionsWork(t *testing.T) {
 // the work waits to be merged, and integrates.
 func TestAReviewThatFailsAfterItsCommit(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
@@ -300,6 +385,7 @@ func TestAReviewThatFailsAfterItsCommit(t *testing.T) {
 // all the same, part of no azima, and says so in its events.
 func TestAReviewOfWorkWhoseAzimaIsGone(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	azima := in.azima(t, in.wishID, "Absorbed")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
@@ -322,6 +408,7 @@ func TestAReviewOfWorkWhoseAzimaIsGone(t *testing.T) {
 // it is left to the lead.
 func TestAReviewThatCannotStart(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	lead := &leadListener{}
 	in.h.TellLeads(lead.tell)
@@ -348,5 +435,119 @@ func TestAReviewThatCannotStart(t *testing.T) {
 	}
 	if paras := lead.all(); len(paras) == 0 || !strings.Contains(paras[len(paras)-1], "The move is yours: retry a review, drop the work") {
 		t.Errorf("expected lead notification, got %v", paras)
+	}
+}
+
+// TestNamed: a review's final note names a path it left whole, from one of its folders down, or by a folder holding
+// it; a longer name, or a name inside another, does not.
+func TestNamed(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		note, path string
+		want       bool
+	}{
+		{"Left: app/shot.png (a screenshot).", "app/shot.png", true},
+		{"Left: shot.png (a screenshot).", "app/shot.png", true},
+		{"Left: src/b.txt.", "app/src/b.txt", true},
+		{"Left: `test-results/` (outputs).", "app/test-results/run/trace.zip", true},
+		{"Left: app/test-results/ (outputs).", "app/test-results/run/trace.zip", true},
+		{"Left: shot.png.bak (a backup).", "app/shot.png", false},
+		{"Left: myshot.png.", "app/shot.png", false},
+		{"Left: test-results (outputs).", "app/test-results/run/trace.zip", false},
+		{"I leave it as it is.", "app/src/b.txt", false},
+		{"", "a", false},
+	} {
+		if got := named(c.note, c.path); got != c.want {
+			t.Errorf("named(%q, %q) = %v; want %v", c.note, c.path, got, c.want)
+		}
+	}
+}
+
+// TestPathHint: the name of a file added says a secret, an output or a picture to the review worker; a tracked file,
+// a sample of a secret, or a source says nothing.
+func TestPathHint(t *testing.T) {
+	t.Parallel()
+	const secret, output, image = "a secret or an env file: never commit it",
+		"a build or test output, a log or a leftover: leave it out unless the change makes it",
+		"an image or a video: a screenshot, unless the change uses it"
+	for status, want := range map[string]string{
+		"?? .env":                          secret,
+		"?? app/.env.local":                secret,
+		"?? app/.env.example":              "",
+		"?? certs/server.pem":              secret,
+		"A  id_ed25519":                    secret,
+		"?? e2e/test-results/a/trace.zip":  output,
+		"?? debug.log":                     output,
+		"?? src/main.go.orig":              output,
+		"?? shot.png":                      image,
+		"?? docs/site/img/logo.png":        image,
+		" M debug.log":                     "",
+		"?? src/build.go":                  "",
+		"?? internal/plan/build/x.go":      output,
+		"R  new.png <- old.png":            "",
+		"?? internal/harness/review.go":    "",
+		"?? coverage/lcov.info":            output,
+		"?? node_modules/.package-lock.js": output,
+	} {
+		if got := pathHint(status); got != want {
+			t.Errorf("pathHint(%q) = %q; want %q", status, got, want)
+		}
+	}
+}
+
+// TestReviewReport: the lead reads what a review's final note ends with, from its last Committed: on, in one line, its
+// Markdown bold aside; a path counts as left only when named after its Left:.
+func TestReviewReport(t *testing.T) {
+	t.Parallel()
+	for note, want := range map[string]string{
+		"Done.\n\n**Committed:** a.go. **Left:** shot.png (a screenshot).": "Committed: a.go. Left: shot.png (a screenshot).",
+		"Done.\n\nCommitted: a.go. Left: nothing.\n":                       "Committed: a.go. Left: nothing.",
+		"- Committed: a.go.\nCommitted: a.go, b.go.\nLeft: c (in doubt).":  "Committed: a.go, b.go. Left: c (in doubt).",
+		"I kept everything.\nNothing else.":                                "",
+	} {
+		if got := reviewReport(note); got != want {
+			t.Errorf("reviewReport(%q) = %q; want %q", note, got, want)
+		}
+	}
+	paths := []string{"app/src/a.go", "app/shot.png", "app/out.log"}
+	for note, want := range map[string][]string{
+		"Committed: src/a.go. Left: shot.png (a screenshot), out.log (a log).":              {"app/src/a.go"},
+		"Committed: src/a.go, shot.png, out.log. Left: nothing.":                            paths,
+		"I committed src/a.go and left shot.png and out.log.":                               paths,
+		"Committed: nothing.\nLeft: app/ (in doubt: the task's worker says it is a draft).": nil,
+		"Committed: src/a.go. Left: shot.png.":                                              {"app/src/a.go", "app/out.log"},
+	} {
+		if got := unnamed(note, paths); !slices.Equal(got, want) {
+			t.Errorf("unnamed(%q) = %q; want %q", note, got, want)
+		}
+	}
+}
+
+// TestReviewPermissions: a review worker may commit, never stage all at once, clean or stash, whatever the project
+// lists; a correction worker keeps git clean.
+func TestReviewPermissions(t *testing.T) {
+	t.Parallel()
+	project := &djinnv1.Permissions{Edit: true, Commands: []string{"go test", "git clean"}}
+	review := withCommit(&planv1.Task{Review: &planv1.TaskReview{}}, project)
+	for _, c := range []string{"git add -A", "git add . && git commit -m x", "git commit -am x", "git clean -fdx", "git stash push"} {
+		if commandAllowed(review, c) {
+			t.Errorf("a review worker may run %q", c)
+		}
+	}
+	for _, c := range []string{"git add -- src/a.go", "git add .agents/skills/a.md", "git commit -m x", "git restore --staged a.go", "go test ./..."} {
+		if !commandAllowed(review, c) {
+			t.Errorf("a review worker may not run %q", c)
+		}
+	}
+	if deny := claudePermissions(review)["deny"].([]string); !slices.Contains(deny, "Bash(git add -A *)") ||
+		!slices.Contains(deny, "Bash(git clean *)") {
+		t.Errorf("Claude's deny rules %q", deny)
+	}
+	correction := withCommit(&planv1.Task{Correction: &planv1.TaskCorrection{}}, project)
+	if !commandAllowed(correction, "git clean -fd") || len(correction.GetDeniedCommands()) != 0 {
+		t.Errorf("a correction worker's permissions %v", correction)
+	}
+	if len(project.GetDeniedCommands()) != 0 {
+		t.Errorf("the project's permissions changed: %v", project)
 	}
 }

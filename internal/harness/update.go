@@ -11,16 +11,18 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
 
 // Update edits a task in place: only the fields given change, in one journaled transaction.
-// A task not started (planned, waiting) may change everything; a running or paused task may change its title only;
+// A task not started (planned, waiting) may change everything; a running or paused task may change its title and its
+// urgent mark only (one urgent repair and one urgent feedback task per wish, refuseSecondUrgent);
 // a finished task (done, failed, stopped, cut short) may change title, provider/model, prompt (for its next continue),
 // azima, and integration (none clears it, pending puts a done task's work back in line); never its dependencies once
-// it ran. An azima changes its title (renameAzima) or its branch (nameAzimaBranch) only.
+// it ran. An azima changes its title (renameAzima), its branch (nameAzimaBranch) or its rank (rankAzima) only.
 func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	h.answering.Lock()
@@ -32,20 +34,32 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	if req.Rank != nil {
+		if !plan.IsAzima(task) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"task %s is work: only an azima has a rank; its azima's rank orders it", task.GetCode()))
+		}
+		if req.Title != nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil || req.Urgent != nil || req.Feedback != nil ||
+			req.Branch != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--rank goes alone: rank an azima in a call of its own"))
+		}
+		return h.rankAzima(ctx, procedure, req, task)
+	}
 	if req.Branch != nil {
 		if !plan.IsAzima(task) {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"task %s is work: only an azima has a branch of its own; a work task's branch is Djinn's", task.GetCode()))
 		}
 		if req.Title != nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
-			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil {
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil || req.Urgent != nil || req.Feedback != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--branch goes alone: name an azima's branch in a call of its own"))
 		}
 		return h.nameAzimaBranch(ctx, procedure, req, task)
 	}
 	if task.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		if req.Title == nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
-			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil {
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil || req.Urgent != nil || req.Feedback != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"task %s is an azima of the plan: no worker runs it; only its title, or its branch, changes", task.GetCode()))
 		}
@@ -62,13 +76,14 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	budgetGiven := req.MaxBudgetUsd != nil
 	scopesGiven := req.WriteScopes != nil
 	integrationGiven := req.Integration != nil
+	urgentGiven := req.Urgent != nil || req.Feedback != nil
 
-	if !titleGiven && !promptGiven && !providerGiven && !modelGiven && !partOfGiven && !afterGiven && !decisionGiven && !budgetGiven && !scopesGiven && !integrationGiven {
+	if !titleGiven && !promptGiven && !providerGiven && !modelGiven && !partOfGiven && !afterGiven && !decisionGiven && !budgetGiven && !scopesGiven && !integrationGiven && !urgentGiven {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("nothing to update: give at least one field"))
 	}
 
 	if task.GetProvider() == planv1.Provider_PROVIDER_WATCH {
-		if providerGiven || modelGiven {
+		if providerGiven || modelGiven || req.GetUrgent() || req.GetFeedback() {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is a watcher: no agent runs it", task.GetCode()))
 		}
 	}
@@ -197,6 +212,26 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		return nil, plan.Status(err)
 	}
 
+	if urgentGiven {
+		// --feedback marks it urgent for feedback, or takes the mark off; --urgent alone marks it a repair. --feedback=false
+		// alone leaves a repair's mark: it takes off only the mark it names.
+		switch {
+		case req.Urgent == nil && !req.GetFeedback():
+			t.Urgent, t.Feedback = t.GetUrgent() && !t.GetFeedback(), false
+		default:
+			t.Urgent, t.Feedback = req.GetUrgent() || req.GetFeedback(), req.GetFeedback()
+		}
+		if t.GetUrgent() && !dispatch.Urgent(t) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition,
+				fmt.Errorf("task %s is %s: only a task to run or running may be urgent", task.GetCode(), short(task.GetStatus())))
+		}
+		if t.GetUrgent() {
+			if err := refuseSecondUrgent(tasks, t); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	newDeps := t.GetDependsOn()
 	if afterGiven {
 		deps, err := resolveIn(tasks, req.GetAfter(), "dependency")
@@ -246,7 +281,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			}
 		}
 		if partOfGiven && newAzima != "" && task.GetPartOf() != newAzima {
-			if err := reopenAzima(ctx, tx, newAzima, task.GetCode()+" grouped"); err != nil {
+			if err := reopenAzima(ctx, tx, newAzima, task, "grouped"); err != nil {
 				return err
 			}
 		}
@@ -268,6 +303,14 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		return nil, plan.Status(err)
 	}
 
+	if urgentGiven && t.GetUrgent() {
+		// A running worker marked urgent stays beyond the slots: the load bar never pauses it (enforceNotchCapacity).
+		h.mu.Lock()
+		if r := h.runs[id]; r != nil {
+			r.forced = true
+		}
+		h.mu.Unlock()
+	}
 	h.notify()
 	h.wake()
 	if integrationGiven {
@@ -285,6 +328,26 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		filled[0].Prompt = p
 	}
 	return filled[0], nil
+}
+
+// refuseSecondUrgent refuses to mark t urgent while another task of its wish is of its class (dispatch.UrgentOf),
+// naming it: one urgent repair and one urgent feedback task at a time, or none passes the queue.
+func refuseSecondUrgent(tasks []*planv1.Task, t *planv1.Task) error {
+	if dispatch.Investigation(t) {
+		return connect.NewError(connect.CodeInvalidArgument,
+			errors.New("an investigation is served first already: --urgent and --feedback are for work"))
+	}
+	if o := dispatch.UrgentOf(tasks, t.GetWishId(), t.GetId(), t.GetFeedback()); o != nil {
+		if t.GetFeedback() {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"%s (%s) is urgent for feedback already: one urgent feedback task per wish at a time; take its mark off first: djinn task update %s --feedback=false",
+				o.GetCode(), o.GetTitle(), o.GetCode()))
+		}
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"%s (%s) is urgent already: one urgent repair per wish at a time (a feedback task may be urgent beside it); take its mark off first: djinn task update %s --urgent=false",
+			o.GetCode(), o.GetTitle(), o.GetId()))
+	}
+	return nil
 }
 
 // pendAgain puts the work of task, done without an integration record, back in line to be merged in t, its copy: as

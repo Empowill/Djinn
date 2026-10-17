@@ -107,6 +107,7 @@ func TestTwoWorkersFailingAtOnceBatchParagraph(t *testing.T) {
 // and what Djinn did (a correction worker started, or the move is yours when attempts are spent).
 func TestCorrectionWorkerFailingTellsLead(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 2\n")
@@ -153,6 +154,7 @@ func TestCorrectionWorkerFailingTellsLead(t *testing.T) {
 // Djinn tells the lead that the move is theirs.
 func TestCorrectionWorkerFailingAttemptsSpent(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 1\n")

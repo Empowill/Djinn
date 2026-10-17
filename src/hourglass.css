@@ -2,11 +2,11 @@
 .hourglass-sections {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4, 16px);
+  gap: var(--space-4, 1rem);
 }
 
 .hourglass-section {
-  scroll-margin-top: 16px;
+  scroll-margin-top: 1rem;
 }
 
 /* A link that is a button: the text's own look, underlined (.text-link), without a button's frame. */
@@ -20,5 +20,5 @@
 }
 
 .hourglass-line {
-  margin: var(--space-4, 16px) 0;
+  margin: var(--space-4, 1rem) 0;
 }

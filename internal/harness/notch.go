@@ -114,11 +114,11 @@ func (h *Harness) resumeNotchPaused(ctx context.Context) {
 		if !r.paused || !r.notchPaused && !r.slotPaused || r.stopping || r.final || r.worker == nil {
 			continue
 		}
-		t := r.task
+		t := r.shown // Not r.task: its pump changes it without a lock (W182).
 		if t == nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED {
 			continue
 		}
-		candidates = append(candidates, candidate{r: r, t: h.copyRunning(t)})
+		candidates = append(candidates, candidate{r: r, t: t})
 		ids = append(ids, t.GetId())
 	}
 	h.mu.Unlock()
@@ -202,7 +202,7 @@ func (h *Harness) lowestPausedWorkTask(ctx context.Context, forTask *planv1.Task
 		if !r.paused || r.watcher || r.light || r.stopping || r.final || r.shelved || r.worker == nil {
 			continue
 		}
-		t := r.task
+		t := r.shown // Not r.task: its pump changes it without a lock (W182).
 		if t == nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED {
 			continue
 		}
@@ -221,7 +221,7 @@ func (h *Harness) lowestPausedWorkTask(ctx context.Context, forTask *planv1.Task
 		if !plan.CanResume(t.GetProvider()) {
 			continue
 		}
-		candidates = append(candidates, candidate{r: r, t: h.copyRunning(t)})
+		candidates = append(candidates, candidate{r: r, t: t})
 		ids = append(ids, t.GetId())
 	}
 	h.mu.Unlock()

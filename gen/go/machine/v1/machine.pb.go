@@ -194,8 +194,12 @@ type Machine struct {
 	WorkerPercentile int32 `protobuf:"varint,21,opt,name=worker_percentile,json=workerPercentile,proto3" json:"worker_percentile,omitempty"`
 	// The same in words, like "engaged at p50 (overclock)".
 	WorkerEngagedAt string `protobuf:"bytes,22,opt,name=worker_engaged_at,json=workerEngagedAt,proto3" json:"worker_engaged_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Since when the network is down, as Djinn found it (W285): its first sign, which a probe of the provider's API
+	// confirmed; unset while it is up. Djinn starts no worker meanwhile, pauses the running ones between their turns, and
+	// holds its pushes, fetches and forge calls. The status bar says "network down since 15:12".
+	NetworkDownSince *timestamppb.Timestamp `protobuf:"bytes,23,opt,name=network_down_since,json=networkDownSince,proto3" json:"network_down_since,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Machine) Reset() {
@@ -380,6 +384,13 @@ func (x *Machine) GetWorkerEngagedAt() string {
 		return x.WorkerEngagedAt
 	}
 	return ""
+}
+
+func (x *Machine) GetNetworkDownSince() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NetworkDownSince
+	}
+	return nil
 }
 
 // WorkerUse is what the worker of a running task uses of the machine.
@@ -1469,9 +1480,15 @@ type Gate struct {
 	// What its holder's process uses, at the last reading; unset when its process is not known or not measured.
 	Resources *v11.Resources `protobuf:"bytes,7,opt,name=resources,proto3" json:"resources,omitempty"`
 	// When Djinn takes it back if its holder has not given it back by then.
-	ExpireTime    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expire_time,json=expireTime,proto3" json:"expire_time,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ExpireTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expire_time,json=expireTime,proto3" json:"expire_time,omitempty"`
+	// Its holder is an ifrit (plan.v1.TaskKind TASK_KIND_IFRIT): it keeps the gate while it is lit, and gives it back when
+	// it goes out, at expire_time at the latest, or ends.
+	Ifrit bool `protobuf:"varint,9,opt,name=ifrit,proto3" json:"ifrit,omitempty"`
+	// The tasks of those who wait for it, by identifier, the next one first: a waiter outside any task is left out. The
+	// window counts a task's worker that waits for a gate as waiting for a place.
+	WaitingTaskIds []string `protobuf:"bytes,10,rep,name=waiting_task_ids,json=waitingTaskIds,proto3" json:"waiting_task_ids,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Gate) Reset() {
@@ -1556,6 +1573,20 @@ func (x *Gate) GetResources() *v11.Resources {
 func (x *Gate) GetExpireTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpireTime
+	}
+	return nil
+}
+
+func (x *Gate) GetIfrit() bool {
+	if x != nil {
+		return x.Ifrit
+	}
+	return false
+}
+
+func (x *Gate) GetWaitingTaskIds() []string {
+	if x != nil {
+		return x.WaitingTaskIds
 	}
 	return nil
 }
@@ -2318,7 +2349,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\n" +
 	"some_avg10\x18\x01 \x01(\x01R\tsomeAvg10\x12\x1d\n" +
 	"\n" +
-	"full_avg10\x18\x02 \x01(\x01R\tfullAvg10\"\xf9\x06\n" +
+	"full_avg10\x18\x02 \x01(\x01R\tfullAvg10\"\xc3\a\n" +
 	"\aMachine\x12\x0e\n" +
 	"\x02os\x18\x01 \x01(\tR\x02os\x12\x12\n" +
 	"\x04arch\x18\x02 \x01(\tR\x04arch\x12\x14\n" +
@@ -2343,7 +2374,8 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x0eworker_measure\x18\x13 \x01(\tR\rworkerMeasure\x12'\n" +
 	"\x04load\x18\x14 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x04load\x12+\n" +
 	"\x11worker_percentile\x18\x15 \x01(\x05R\x10workerPercentile\x12*\n" +
-	"\x11worker_engaged_at\x18\x16 \x01(\tR\x0fworkerEngagedAtB\b\n" +
+	"\x11worker_engaged_at\x18\x16 \x01(\tR\x0fworkerEngagedAt\x12H\n" +
+	"\x12network_down_since\x18\x17 \x01(\v2\x1a.google.protobuf.TimestampR\x10networkDownSinceB\b\n" +
 	"\x06_load1\"\xb1\x01\n" +
 	"\tWorkerUse\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x17\n" +
@@ -2432,7 +2464,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x04gate\x18\b \x01(\tR\x04gate\x12\x17\n" +
 	"\atask_id\x18\t \x01(\tR\x06taskId\x12\x12\n" +
 	"\x04tree\x18\n" +
-	" \x01(\tR\x04tree\"\xb2\x02\n" +
+	" \x01(\tR\x04tree\"\xf2\x02\n" +
 	"\x04Gate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12$\n" +
@@ -2443,7 +2475,10 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"takes_slot\x18\x06 \x01(\bR\ttakesSlot\x120\n" +
 	"\tresources\x18\a \x01(\v2\x12.plan.v1.ResourcesR\tresources\x12;\n" +
 	"\vexpire_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"expireTime\"\x90\x02\n" +
+	"expireTime\x12\x14\n" +
+	"\x05ifrit\x18\t \x01(\bR\x05ifrit\x12(\n" +
+	"\x10waiting_task_ids\x18\n" +
+	" \x03(\tR\x0ewaitingTaskIds\"\x90\x02\n" +
 	"\x16GateServiceHoldRequest\x12;\n" +
 	"\x04name\x18\x01 \x01(\tB'\xbaH$\xc8\x01\x01r\x1f2\x1d^[A-Za-z][A-Za-z0-9_-]{0,39}$R\x04name\x12$\n" +
 	"\atask_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12\x1c\n" +
@@ -2580,48 +2615,49 @@ var file_machine_v1_machine_proto_depIdxs = []int32{
 	5,  // 4: machine.v1.Machine.gpus:type_name -> machine.v1.Gpu
 	3,  // 5: machine.v1.Machine.worker_uses:type_name -> machine.v1.WorkerUse
 	27, // 6: machine.v1.Machine.load:type_name -> djinn.v1.LoadNotch
-	28, // 7: machine.v1.WorkerUse.resources:type_name -> plan.v1.Resources
-	2,  // 8: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
-	26, // 9: machine.v1.MachineServiceSeriesRequest.since:type_name -> google.protobuf.Timestamp
-	10, // 10: machine.v1.MachineServiceSeriesResponse.machine:type_name -> machine.v1.MachineSeries
-	12, // 11: machine.v1.MachineServiceSeriesResponse.workers:type_name -> machine.v1.WorkerSeries
-	14, // 12: machine.v1.MachineServiceSeriesResponse.gates:type_name -> machine.v1.GateInterval
-	11, // 13: machine.v1.MachineSeries.points:type_name -> machine.v1.MachinePoint
-	26, // 14: machine.v1.MachinePoint.time:type_name -> google.protobuf.Timestamp
-	29, // 15: machine.v1.WorkerSeries.provider:type_name -> plan.v1.Provider
-	13, // 16: machine.v1.WorkerSeries.points:type_name -> machine.v1.WorkerPoint
-	14, // 17: machine.v1.WorkerSeries.gates:type_name -> machine.v1.GateInterval
-	26, // 18: machine.v1.WorkerPoint.time:type_name -> google.protobuf.Timestamp
-	26, // 19: machine.v1.GateInterval.asked_time:type_name -> google.protobuf.Timestamp
-	26, // 20: machine.v1.GateInterval.grant_time:type_name -> google.protobuf.Timestamp
-	26, // 21: machine.v1.GateInterval.release_time:type_name -> google.protobuf.Timestamp
-	26, // 22: machine.v1.CommandRun.time:type_name -> google.protobuf.Timestamp
-	26, // 23: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
-	28, // 24: machine.v1.Gate.resources:type_name -> plan.v1.Resources
-	26, // 25: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
-	0,  // 26: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
-	16, // 27: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
-	26, // 28: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
-	15, // 29: machine.v1.CommandCost.recent_runs:type_name -> machine.v1.CommandRun
-	21, // 30: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
-	21, // 31: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
-	6,  // 32: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
-	8,  // 33: machine.v1.MachineService.Series:input_type -> machine.v1.MachineServiceSeriesRequest
-	17, // 34: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
-	19, // 35: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
-	22, // 36: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
-	24, // 37: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
-	7,  // 38: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
-	9,  // 39: machine.v1.MachineService.Series:output_type -> machine.v1.MachineServiceSeriesResponse
-	18, // 40: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
-	20, // 41: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
-	23, // 42: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
-	25, // 43: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
-	38, // [38:44] is the sub-list for method output_type
-	32, // [32:38] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	26, // 7: machine.v1.Machine.network_down_since:type_name -> google.protobuf.Timestamp
+	28, // 8: machine.v1.WorkerUse.resources:type_name -> plan.v1.Resources
+	2,  // 9: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
+	26, // 10: machine.v1.MachineServiceSeriesRequest.since:type_name -> google.protobuf.Timestamp
+	10, // 11: machine.v1.MachineServiceSeriesResponse.machine:type_name -> machine.v1.MachineSeries
+	12, // 12: machine.v1.MachineServiceSeriesResponse.workers:type_name -> machine.v1.WorkerSeries
+	14, // 13: machine.v1.MachineServiceSeriesResponse.gates:type_name -> machine.v1.GateInterval
+	11, // 14: machine.v1.MachineSeries.points:type_name -> machine.v1.MachinePoint
+	26, // 15: machine.v1.MachinePoint.time:type_name -> google.protobuf.Timestamp
+	29, // 16: machine.v1.WorkerSeries.provider:type_name -> plan.v1.Provider
+	13, // 17: machine.v1.WorkerSeries.points:type_name -> machine.v1.WorkerPoint
+	14, // 18: machine.v1.WorkerSeries.gates:type_name -> machine.v1.GateInterval
+	26, // 19: machine.v1.WorkerPoint.time:type_name -> google.protobuf.Timestamp
+	26, // 20: machine.v1.GateInterval.asked_time:type_name -> google.protobuf.Timestamp
+	26, // 21: machine.v1.GateInterval.grant_time:type_name -> google.protobuf.Timestamp
+	26, // 22: machine.v1.GateInterval.release_time:type_name -> google.protobuf.Timestamp
+	26, // 23: machine.v1.CommandRun.time:type_name -> google.protobuf.Timestamp
+	26, // 24: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
+	28, // 25: machine.v1.Gate.resources:type_name -> plan.v1.Resources
+	26, // 26: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
+	0,  // 27: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
+	16, // 28: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
+	26, // 29: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
+	15, // 30: machine.v1.CommandCost.recent_runs:type_name -> machine.v1.CommandRun
+	21, // 31: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
+	21, // 32: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
+	6,  // 33: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
+	8,  // 34: machine.v1.MachineService.Series:input_type -> machine.v1.MachineServiceSeriesRequest
+	17, // 35: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
+	19, // 36: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
+	22, // 37: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
+	24, // 38: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
+	7,  // 39: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
+	9,  // 40: machine.v1.MachineService.Series:output_type -> machine.v1.MachineServiceSeriesResponse
+	18, // 41: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
+	20, // 42: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
+	23, // 43: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
+	25, // 44: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
+	39, // [39:45] is the sub-list for method output_type
+	33, // [33:39] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_machine_v1_machine_proto_init() }

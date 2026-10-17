@@ -22,6 +22,8 @@ import {
   type LeadPrompt,
   LeadPromptSchema,
   LeadSchema,
+  type LeadServiceGetResponse,
+  LeadServiceGetResponseSchema,
   type Project,
   ProjectSchema,
   type Question,
@@ -35,7 +37,16 @@ import {
   type WishChanges,
   WishChangesSchema,
 } from "../../gen/ts/plan/v1/plan_pb";
-import { type Tilasm, TilasmSchema } from "../../gen/ts/plan/v1/tilasm_pb";
+import {
+  type Tilasm,
+  type TilasmComment,
+  TilasmCommentSchema,
+  type TilasmHold,
+  TilasmHoldSchema,
+  TilasmSchema,
+  type TilasmSendRead,
+  TilasmSendReadSchema,
+} from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound, unimplemented } from "./client";
 
 // What the page shows of one wish, read while a screen shows it.
@@ -45,6 +56,14 @@ export interface WishDetail {
   blocks: Block[];
   // Its tilasms, by code.
   tilasms: Tilasm[];
+  // The developer's draft comments on its tilasms, read with them: the window's alone.
+  drafts: TilasmComment[];
+  // Why some of its tilasms take no send for now, read with the drafts: computed by the server.
+  holds: TilasmHold[];
+  // The comments sent on its tilasms, with the Djinn's replies, read with the drafts.
+  sent: TilasmComment[];
+  // The sends on its tilasms the Djinn read, read with the drafts: computed by the server.
+  reads: TilasmSendRead[];
   // Read at least once.
   loaded: boolean;
   // Totals from the server for paginated lists.
@@ -74,6 +93,9 @@ export interface State {
   leadExit?: LeadExit;
   // Why the last start of the lead failed, until one succeeds; empty when none did.
   leadStartError?: string;
+  // While Djinn drives the lead: where it runs (seat), the accounts of this machine, and the usage limit it hit, if
+  // any (limit); unset when the lead runs in its terminal.
+  leadDrive?: Pick<LeadServiceGetResponse, "seat" | "accounts" | "limit">;
   // As WishService.List gives them: the active ones by rank, then the paused ones, then the granted ones.
   wishes: Wish[];
   details: Readonly<Record<string, WishDetail>>;
@@ -104,7 +126,8 @@ export interface Store {
   // Follows a task's events until the returned function is called, or the task ends. Once no screen follows it, its
   // events are dropped after a while: a task card closed frees them.
   follow(taskId: string): () => void;
-  // Reads a task's prompt alone, without loading its other events.
+  // Reads a task's prompt alone, without loading its other events. It never fails: a read that fails gives "" and is
+  // made again after retry, its prompt in the store's prompts once it answers.
   readPrompt(taskId: string): Promise<string>;
   // Reads again what changed, as a write the page made says it: the watch says it too, a moment later.
   changed(wishId: string, changes: Change[]): Promise<void>;
@@ -125,6 +148,10 @@ const EMPTY_DETAIL: WishDetail = {
   questions: [],
   blocks: [],
   tilasms: [],
+  drafts: [],
+  holds: [],
+  sent: [],
+  reads: [],
   loaded: false,
   loadedKinds: new Set<Change>(),
 };
@@ -611,10 +638,16 @@ export function createStore(
           const list = (await clients.wishes.list({}, call)).wishes;
           const reconciled = reconcile(WishSchema, state.wishes, list);
           if (reconciled !== state.wishes) patch.wishes = reconciled;
-          const { lead, prompt, exit, startError } = await clients.lead.get(
-            {},
-            call,
-          );
+          const {
+            lead,
+            prompt,
+            exit,
+            startError,
+            driven,
+            seat,
+            accounts,
+            limit,
+          } = await clients.lead.get({}, call);
           const sameLead =
             (!state.lead && !lead) ||
             (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
@@ -629,6 +662,24 @@ export function createStore(
             patch.leadExit = exit;
           if ((state.leadStartError ?? "") !== startError)
             patch.leadStartError = startError;
+          const drive = driven
+            ? create(LeadServiceGetResponseSchema, { seat, accounts, limit })
+            : undefined;
+          const sameDrive =
+            (!state.leadDrive && !drive) ||
+            (state.leadDrive && drive
+              ? equals(
+                  LeadServiceGetResponseSchema,
+                  create(LeadServiceGetResponseSchema, state.leadDrive),
+                  drive,
+                )
+              : false);
+          if (!sameDrive)
+            patch.leadDrive = drive && {
+              seat: drive.seat,
+              accounts: drive.accounts,
+              limit: drive.limit,
+            };
         },
         () => again("wishes", () => (pending.wishes = true)),
         "wishes",
@@ -658,9 +709,30 @@ export function createStore(
       if (kinds.has(Change.TASK))
         attemptKind(wishId, Change.TASK, async () => {
           const res = await clients.tasks.list({ wishId }, call);
+          // Past the first page, the tasks the lists of what runs read come too (live): the glance shows a wish's
+          // waiting work from the start, not once the Tasks tab read further (W219).
+          let live: Task[] = [];
+          // Page after page, but never the same page twice.
+          const seen = new Set<string>();
+          let token = "";
+          while (res.nextPageToken && !seen.has(token)) {
+            seen.add(token);
+            const page = await clients.tasks.list(
+              { wishId, live: true, pageSize: 200, pageToken: token },
+              call,
+            );
+            live = live.concat(page.tasks);
+            token = page.nextPageToken;
+            if (!token) break;
+          }
+          const liveIds = new Set(live.map((x) => x.id));
           // The read goes as far as the tasks shown went, as for the questions: after a restart, an enlighten task
-          // ended meanwhile past the first page shows ended, not running as it was (incident Q274, W544).
-          const furthest = prevDetail.tasks.at(-1)?.id ?? "";
+          // ended meanwhile past the first page shows ended, not running as it was (incident Q274, W544). The live
+          // ones read already are not that far: only those read by a page, or that are live no longer.
+          const furthest = prevDetail.tasks.reduce(
+            (far, x) => (!liveIds.has(x.id) && x.id > far ? x.id : far),
+            "",
+          );
           let allTasks = res.tasks;
           let next = res.nextPageToken;
           while (next && (allTasks.at(-1)?.id ?? "") < furthest) {
@@ -670,6 +742,12 @@ export function createStore(
             );
             allTasks = allTasks.concat(page.tasks);
             next = page.nextPageToken;
+          }
+          if (live.length) {
+            const paged = new Set(allTasks.map((x) => x.id));
+            allTasks = allTasks
+              .concat(live.filter((x) => !paged.has(x.id)))
+              .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
           }
           into.tasks = reconcile(TaskSchema, prevDetail.tasks, allTasks);
           into.tasksTotal = res.total;
@@ -736,6 +814,37 @@ export function createStore(
             .tilasms;
           into.tilasms = reconcile(TilasmSchema, prevDetail.tilasms, list);
         });
+      if (kinds.has(Change.TILASM))
+        attemptKind(wishId, Change.TILASM, async () => {
+          // A djinn without comments has none to read.
+          const res = await clients.tilasms
+            .drafts({ wish: wishId }, call)
+            .catch((error: unknown) => {
+              if (unimplemented(error))
+                return { comments: [], holds: [], sent: [], reads: [] };
+              throw error;
+            });
+          into.drafts = reconcile(
+            TilasmCommentSchema,
+            prevDetail.drafts,
+            res.comments,
+          );
+          // A hold has no identifier: the same holds in the same order keep their array.
+          const same =
+            prevDetail.holds.length === res.holds.length &&
+            res.holds.every((h, i) =>
+              equals(TilasmHoldSchema, h, prevDetail.holds[i]),
+            );
+          into.holds = same ? prevDetail.holds : res.holds;
+          // Nor has a read: the same reads keep their array.
+          const kept =
+            prevDetail.reads.length === res.reads.length &&
+            res.reads.every((r, i) =>
+              equals(TilasmSendReadSchema, r, prevDetail.reads[i]),
+            );
+          into.reads = kept ? prevDetail.reads : res.reads;
+          into.sent = reconcile(TilasmCommentSchema, prevDetail.sent, res.sent);
+        });
     }
     await Promise.all(reads);
     const next = { ...state.details };
@@ -749,6 +858,10 @@ export function createStore(
         : prevDetail.questions;
       const blocks = got.blocks ?? prevDetail.blocks;
       const tilasms = got.tilasms ?? prevDetail.tilasms;
+      const drafts = got.drafts ?? prevDetail.drafts;
+      const holds = got.holds ?? prevDetail.holds;
+      const sent = got.sent ?? prevDetail.sent;
+      const reads = got.reads ?? prevDetail.reads;
       const tasksTotal =
         got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
       const questionsTotal =
@@ -790,6 +903,10 @@ export function createStore(
         questions === prevDetail.questions &&
         blocks === prevDetail.blocks &&
         tilasms === prevDetail.tilasms &&
+        drafts === prevDetail.drafts &&
+        holds === prevDetail.holds &&
+        sent === prevDetail.sent &&
+        reads === prevDetail.reads &&
         tasksTotal === prevDetail.tasksTotal &&
         questionsTotal === prevDetail.questionsTotal &&
         blocksTotal === prevDetail.blocksTotal &&
@@ -805,6 +922,10 @@ export function createStore(
         questions,
         blocks,
         tilasms,
+        drafts,
+        holds,
+        sent,
+        reads,
         loaded: true,
         tasksTotal,
         questionsTotal,
@@ -985,6 +1106,38 @@ export function createStore(
       await new Promise((r) => setTimeout(r, retry));
       if (abort.signal.aborted) return;
     }
+  }
+
+  // readPrompt reads a task's prompt alone (Store.readPrompt).
+  async function readPrompt(taskId: string): Promise<string> {
+    if (state.prompts[taskId]) return state.prompts[taskId];
+    const pending = pendingPrompts.get(taskId);
+    if (pending) return pending;
+    const read = (async () => {
+      const key = `prompt:${taskId}`;
+      try {
+        const res = await clients.tasks.get({ taskId }, call);
+        backoff.delete(key);
+        const prompt = res.task?.prompt ?? "";
+        if (prompt) {
+          set({ prompts: { ...state.prompts, [taskId]: prompt } });
+        }
+        return prompt;
+      } catch (error) {
+        // A call the network cut (Chromium aborts every request in flight when an interface comes or goes, W7) or a
+        // djinn that restarts: read again, never an error thrown at the page. A task gone has no prompt to read.
+        if (!stopped && !notFound(error) && !unimplemented(error)) {
+          const wait = backoff.get(key) ?? retry;
+          backoff.set(key, Math.min(wait * 2, 60_000));
+          setTimeout(() => void readPrompt(taskId), wait);
+        }
+        return "";
+      } finally {
+        pendingPrompts.delete(taskId);
+      }
+    })();
+    pendingPrompts.set(taskId, read);
+    return read;
   }
 
   return {
@@ -1182,25 +1335,7 @@ export function createStore(
         );
       };
     },
-    async readPrompt(taskId) {
-      if (state.prompts[taskId]) return state.prompts[taskId];
-      const pending = pendingPrompts.get(taskId);
-      if (pending) return pending;
-      const read = (async () => {
-        try {
-          const res = await clients.tasks.get({ taskId });
-          const prompt = res.task?.prompt ?? "";
-          if (prompt) {
-            set({ prompts: { ...state.prompts, [taskId]: prompt } });
-          }
-          return prompt;
-        } finally {
-          pendingPrompts.delete(taskId);
-        }
-      })();
-      pendingPrompts.set(taskId, read);
-      return read;
-    },
+    readPrompt,
     putQuestion(question) {
       const detail = state.details[question.wishId];
       if (!detail?.loadedKinds.has(Change.QUESTION)) return;

@@ -134,20 +134,23 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await page.setViewportSize({ width: 1440, height: 2200 });
   await page.goto(process.env.DJINN_URL!);
   await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
-  // The bar of what waits: one line per question and one for the worker that failed, a click goes there; the one
-  // needed before the first light under those words, the worker needing an action, the other that can wait. W3,
-  // cut short and not resumed by Djinn, asks nothing: it is history.
+  // The bar of what waits: one line per question that holds up the wish, a click goes there; the one needed before
+  // the first light under those words. The other question can wait: the questions column alone shows it. W2, failed,
+  // is the lead's, never the developer's (W96, Q273); W3, cut short and not resumed by Djinn, asks nothing: it is
+  // history.
   const bar = page.locator(".attention-bar");
-  await expect(bar).toContainText("3 things wait for you");
+  await expect(bar).toContainText("1 thing waits for you");
   await expect(bar.locator(".attention-level")).toHaveText([
     "before the first light",
-    "Worker",
-    "Can wait",
   ]);
+  await expect(bar).not.toContainText("W2");
   await expect(bar).not.toContainText("W3");
   await expect(
-    page.locator(".plan-wish").filter({ hasText: title }),
-  ).toContainText("2 questions");
+    page
+      .locator(".question-group-head")
+      .filter({ hasText: title })
+      .locator(".question-group-count"),
+  ).toHaveText("2");
   await shoot(page, "review-flight-plan-dark");
   await theme(page, "light");
   await shoot(page, "review-flight-plan-light");
@@ -204,7 +207,8 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     "You asked: How long does each burn?",
   );
   await expect(digging.locator("textarea, .option")).toHaveCount(0);
-  await expect(bar.locator(".attention-item")).toHaveCount(2);
+  // Out of the bar too: the question that can wait never was in it, so nothing waits there.
+  await expect(bar.locator(".attention-item")).toHaveCount(0);
   await digging.screenshot({
     path: path.join(shots, "review-question-folded.png"),
   });
@@ -219,7 +223,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   expect(brief).toContain("## To investigate");
   expect(brief).toContain("How long does each burn?");
 
-  // The lead revises from the command line: the question waits for you again, revised, its history folded.
+  // The lead revises from the command line: the question waits for you again, revised, its earlier version apart.
   djinn(
     "question",
     "revise",
@@ -234,12 +238,40 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   const revised = page
     .locator(".decisions-section .question-card")
     .filter({ hasText: "Which oil for the wick?" });
-  // Revised, it waits for an answer again, open by itself.
+  // Revised, it waits for an answer again, back in its place: the question opened meanwhile stays open, nothing
+  // moves under the reader (AGENTS.md, Interface); a click opens it.
   await expect(revised.locator(".revised-badge")).toHaveText("Revised");
   await expect(revised).not.toHaveClass(/folded/);
-  await expect(revised.locator(".question-rounds summary")).toHaveText(
-    "History: 2 rounds",
+  await expect(revised).toHaveClass(/closed/);
+  await expect(
+    page
+      .locator(".decisions-section .question-card")
+      .filter({ hasText: "May the worker polish the brass again?" }),
+  ).toHaveClass(/current/);
+  await revised.locator(".question-row-title").click();
+  await expect(revised).toHaveClass(/current/);
+  // The new context only; the version before it takes no room: Versions (2), in the card's corner, opens it below
+  // the question, to read, and closes it again (W114).
+  await expect(revised.locator(".question-context > .prose h2")).toHaveText(
+    "What we found",
   );
+  await expect(revised).not.toContainText("Historique");
+  const versions = revised.locator(".question-corner .question-versions");
+  await expect(versions).toHaveText("Versions (2)");
+  await expect(versions).toHaveAttribute("aria-expanded", "false");
+  const earlier = revised.locator(".question-versions-list");
+  await expect(earlier).toHaveCount(0);
+  await versions.click();
+  await expect(versions).toHaveAttribute("aria-expanded", "true");
+  await expect(earlier.locator("li").first()).toContainText("Version 1");
+  await expect(earlier.locator("h2")).toHaveText("What it changes");
+  await expect(earlier).toContainText(
+    "Recommended: A: it smells good, and the wick lasts.",
+  );
+  await earlier.scrollIntoViewIfNeeded();
+  await shoot(page, "review-wish-versions-dark");
+  await versions.click();
+  await expect(earlier).toHaveCount(0);
   await expect(revised.locator(".option-recommended")).toHaveCount(1);
   await expect(
     revised.locator(".option", { has: page.locator(".option-recommended") }),
@@ -277,9 +309,7 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
   await block.locator(".fold-heading").click();
   await expect(block.locator("strong")).toHaveText("on Friday");
   await expect(block.locator("table td").first()).toHaveText("Fri");
-  await expect(
-    block.getByRole("button", { name: /Mark read|Approve/ }),
-  ).toHaveCount(0);
+  await expect(block.getByRole("button", { name: /Approve/ })).toHaveCount(0);
 
   djinn("wish", "pause", wishId);
   fs.rmSync(dir, { recursive: true, force: true });

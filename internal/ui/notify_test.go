@@ -290,28 +290,21 @@ func TestNoticesAskPermission(t *testing.T) {
 	notes.none(t)
 }
 
-func TestNoticesShowAFailedTaskOnce(t *testing.T) {
+// A failed worker is the lead's, never the developer's (Q273, W96: W19, an investigator failed on refused commands,
+// told the developer it waited for them): no notification, as a worker that waits for its edit question has one.
+func TestNoticesShowNoFailedTask(t *testing.T) {
 	n, notes := newNotices(t, "en")
 	db := n.Store
 	w := makeWish(t, db, "Ship it", planv1.WishState_WISH_STATE_ACTIVE)
-	// Failed long ago, written again: not news.
-	old := &planv1.Task{
-		Id: store.NewID(), WishId: w.GetId(), Code: "W1", Title: "Old", Status: planv1.TaskStatus_TASK_STATUS_FAILED,
-		EndTime: timestamppb.New(time.Now().Add(-time.Hour)),
-	}
-	put(t, db, old)
 	task := &planv1.Task{
-		Id: store.NewID(), WishId: w.GetId(), Code: "W2", Title: "Build", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Id: store.NewID(), WishId: w.GetId(), Code: "W19", Title: "Q17: enlighten", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR, Question: "Q17",
 	}
 	put(t, db, task)
 	notes.none(t)
-	task.Status, task.Error, task.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, "exit code 2", timestamppb.Now()
-	put(t, db, task)
-	got := notes.next(t)
-	if got.Title != "W2 failed · Ship it" || got.Body != "Build\nexit code 2" || got.Target != "task-"+task.GetId() ||
-		got.QuestionID != "" || len(got.Actions) != 0 {
-		t.Errorf("failed = %+v", got)
-	}
+	task.Status, task.EndTime = planv1.TaskStatus_TASK_STATUS_FAILED, timestamppb.Now()
+	task.Error = "its command was refused: djinn task list --wish-id x | head"
+	task.Refused = &planv1.TaskRefusals{Count: 2, Names: []string{"djinn"}}
 	put(t, db, task)
 	notes.none(t)
 }
@@ -524,5 +517,33 @@ func TestNoticesShowTheLeadsChoiceOnceTheyCan(t *testing.T) {
 	case note := <-notes:
 		t.Fatalf("twice: %+v", note)
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// TestNoticesWarnAnIfritGoesOut: an ifrit about to go out is notified once per out time, even with the window in
+// front on its wish, which says nothing of it; its Keep lit button keeps it lit, and brings no window forward.
+func TestNoticesWarnAnIfritGoesOut(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	var kept, shown int
+	n.KeepLit = func() { kept++ }
+	n.Show = func(string, string) { shown++ }
+	w := makeWish(t, n.Store, "Front", planv1.WishState_WISH_STATE_ACTIVE)
+	n.View(w.GetId())
+	n.Focus(true)
+	out := time.Date(2026, 10, 16, 10, 30, 0, 0, time.Local)
+	ifrit := &planv1.Task{Id: store.NewID(), WishId: w.GetId(), Code: "W12", Kind: planv1.TaskKind_TASK_KIND_IFRIT,
+		Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_LISTENING, OutTime: timestamppb.New(out)}}
+	n.IfritWarning(ifrit)
+	got := notes.next(t)
+	if got.Title != "W12 goes out in 5 min · Front" || !strings.Contains(got.Body, "W12 goes out at 10:30") ||
+		got.Target != "task-"+ifrit.GetId() || len(got.Actions) != 1 || got.Actions[0].Title != "Keep lit" {
+		t.Errorf("warning = %+v", got)
+	}
+	n.IfritWarning(ifrit)
+	notes.none(t)
+
+	n.Respond(t.Context(), Response{WishID: w.GetId(), Target: got.Target, Action: got.Actions[0].ID})
+	if kept != 1 || shown != 0 {
+		t.Errorf("Keep lit: kept %d, shown %d; want kept once, no window", kept, shown)
 	}
 }

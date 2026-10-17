@@ -275,6 +275,7 @@ func TestResolveSettings(t *testing.T) {
 		got.Babysit, got.BabysitFrom = false, 0
 		// Watch commands are TestWatchCommandsSettings'.
 		got.WatchCommands, got.WatchCommandsFrom = nil, 0
+		got.ServeCommands, got.ServeCommandsFrom = nil, 0
 		// Install builds is TestInstallBuildsSettings'.
 		got.InstallBuilds, got.InstallBuildsFrom = false, 0
 		if !reflect.DeepEqual(got, c.want) {
@@ -392,10 +393,27 @@ func TestWatchCommandsSettings(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".agents")); !os.IsNotExist(err) {
 		t.Errorf("the repository was touched: %v", err)
 	}
+	// An ifrit's serve commands (djinn project allow --serve), beside the watcher's.
+	serveRes, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{Project: "dolmen", Serve: proto.String("npm  run dev")}))
+	if err != nil || !slices.Equal(serveRes.Msg.GetServeCommands(), []string{"npm run dev"}) ||
+		!slices.Equal(serveRes.Msg.GetWatchCommands(), []string{"glab mr view"}) {
+		t.Errorf("a serve command allowed: %v, %v", serveRes, err)
+	}
+	if _, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{
+		Project: "dolmen", Serve: proto.String("npm run dev"), Watch: proto.String("glab mr view"),
+	})); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("--serve and --watch at once: %v", err)
+	}
+	if s := ResolveSettings(&planv1.ProjectSettings{ServeCommands: []string{"rm -rf"}}, nil); len(s.ServeCommands) != 0 {
+		t.Errorf("the repository's serve commands: %q, want none", s.ServeCommands)
+	}
 
 	writeSettings(t, filepath.Join(dir, SettingsFile), "watch_commands: \"rm -rf\"\n")
 	show, err = c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "dolmen"}))
-	if err != nil || !slices.ContainsFunc(show.Msg.GetWarnings(), func(w string) bool { return strings.Contains(w, "watch_commands is ignored") }) ||
+	if err != nil || !slices.ContainsFunc(show.Msg.GetNotices(), func(n *planv1.ProjectNotice) bool {
+		return n.GetAction() == planv1.ProjectNoticeAction_PROJECT_NOTICE_ACTION_FIX_FILE &&
+			strings.Contains(n.GetDetail(), "watch_commands is ignored")
+	}) ||
 		slices.Contains(show.Msg.GetWatchCommands(), "rm -rf") {
 		t.Errorf("the repository's watch_commands: %v, %v", show.Msg, err)
 	}
@@ -603,11 +621,11 @@ func TestProjectShow(t *testing.T) {
 	res := show()
 	repoFile := filepath.Join(project.GetDirectory(), ".agents", "settings.txtpb")
 	devFile := filepath.Join(home, "projects", project.GetId(), "settings.txtpb")
-	if res.GetRepositoryFile() != repoFile || res.GetDeveloperFile() != devFile || len(res.GetProblems()) > 0 {
-		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
+	if res.GetRepositoryFile() != repoFile || res.GetDeveloperFile() != devFile || len(res.GetNotices()) > 0 {
+		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetNotices(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -626,7 +644,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 
@@ -636,11 +654,12 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
-	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {
-		t.Errorf("problems = %v; want one naming %s", res.GetProblems(), devFile)
+	if n := res.GetNotices(); len(n) != 1 || n[0].GetKind() != planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX ||
+		n[0].GetFile() != devFile || !strings.Contains(n[0].GetDetail(), devFile) || res.GetProject().GetToFix() != 1 {
+		t.Errorf("notices = %v, to fix %d; want one naming %s", n, res.GetProject().GetToFix(), devFile)
 	}
 	if _, err := LoadSettings(home, project); err == nil || !strings.Contains(err.Error(), devFile) {
 		t.Errorf("LoadSettings = %v; want an error naming %s", err, devFile)
@@ -662,6 +681,40 @@ func TestProjectShow(t *testing.T) {
 // atCommit is a check run before each commit.
 func atCommit(name, command string) *planv1.ProjectCheck {
 	return &planv1.ProjectCheck{Name: name, Command: command, When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_COMMIT}}
+}
+
+// TestIfritChecksBrief (T51, Q11): an ifrit's first prompt says which checks Djinn runs, but that it runs none after
+// a change: Djinn runs the commit checks once it is finished; a test the developer asks for has its command.
+func TestIfritChecksBrief(t *testing.T) {
+	if got := (Settings{}).IfritChecksBrief(); got != "" {
+		t.Errorf("no check: %q", got)
+	}
+	both := Settings{Setup: "npm ci", TestOne: "go tool task test-pkg -- {pkg}", Checks: []*planv1.ProjectCheck{
+		atCommit("lint", "go tool task lint"),
+		{Name: "test", Command: "go tool task test", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}},
+	}}
+	want := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
+		"before it pushes, with `djinn gate run test -- go tool task test`. Run neither after a change: Djinn runs the " +
+		"commit checks once you are finished, the push checks before it pushes. A test the developer asks for runs with " +
+		"`go tool task test-pkg -- {pkg}`. A fresh worktree needs `npm ci` first."
+	if got := both.IfritChecksBrief(); got != want {
+		t.Errorf("both:\n%s\nwant:\n%s", got, want)
+	}
+	commit := Settings{Checks: []*planv1.ProjectCheck{atCommit("test", "make test")}}
+	want = "Djinn checks this project's work before it commits a task's work, with `djinn gate run test -- make test`. " +
+		"Do not run them after a change: Djinn runs them once you are finished."
+	if got := commit.IfritChecksBrief(); got != want {
+		t.Errorf("commit only:\n%s\nwant:\n%s", got, want)
+	}
+	push := Settings{Checks: []*planv1.ProjectCheck{{Name: "lint", Command: "make lint", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}}}}
+	want = "Djinn checks this project's work before it pushes, with `djinn gate run lint -- make lint`. Do not run them: " +
+		"Djinn runs them before it pushes."
+	if got := push.IfritChecksBrief(); got != want {
+		t.Errorf("push only:\n%s\nwant:\n%s", got, want)
+	}
+	if got := both.IfritChecksBrief(); strings.Contains(got, "A worker runs the commit checks") {
+		t.Errorf("an ifrit is told to run the commit checks: %s", got)
+	}
 }
 
 // TestChecksBrief: the lead's brief and each worker's first prompt say which checks Djinn runs and when, how to run

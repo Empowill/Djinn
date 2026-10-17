@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/site/assets/mark-dark.svg">
+    <img src="docs/site/assets/mark.svg" width="88" height="88" alt="Djinn">
+  </picture>
+</p>
+
 # Djinn
 
 _A wisp of smoke to work your will._
@@ -182,7 +189,7 @@ _Screenshots of a demonstration wish, with fictional data. `go tool task screens
 [Team settings](docs/team-settings.md) · [Wish templates](docs/wish-templates.md) · [Backups](docs/backup.md) ·
 [Release notes](docs/releases/)
 
-Every concept and command in one site: **Documentation** in the window's settings, served at `/docs/` while
+Every concept and command in one site: **Grimoire** in the window's side panel, served at `/docs/` while
 `djinn up` runs, or `go tool task docs`, then `bin/docs/index.html`.
 
 ## Contributing

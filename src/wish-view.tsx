@@ -1,6 +1,7 @@
-// The screen of one wish, read from the services: what waits for you first (its open questions, the blocking ones
-// first, its workers that wait, and "My wish is granted" once Djinn proposes it), its journal and the rights its
-// workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
+// The screen of one wish, read from the services: on the left, what waits for you first (its open questions in the
+// questions column, question-column.tsx, the blocking ones first; its workers that wait, and "My wish is granted" once
+// Djinn proposes it; the questions you asked to investigate), on the right its workers running now and to come
+// (glance.tsx), then below both its journal and the rights its workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
 // (decision-log.tsx), its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the last
 // (agent-blocks.tsx): what is for you is a question.
 // Djinn proposes; only the user grants.
@@ -14,8 +15,8 @@ import {
   ScrollText,
   Sparkles,
   Trash2,
+  Wrench,
 } from "lucide-react";
-import { AnimatePresence } from "motion/react";
 import {
   type ReactNode,
   memo,
@@ -33,12 +34,11 @@ import {
   type Choice,
   Closer,
   type KeptWorktree,
-  type MarkKind,
   type Project,
+  type ProjectSync,
   type Provider,
   type Question,
   type Task,
-  TaskStatus,
   type Wish,
   type WishExport,
   WishState,
@@ -58,6 +58,7 @@ import {
   azimaGroups,
   codeMapOf,
   forkedAs,
+  asleepQuestions,
   investigatingQuestions,
   isAzima,
   mergeNest,
@@ -76,7 +77,7 @@ import {
 import {
   allowanceOf,
   deletedText,
-  firstLine,
+  fixerOf,
   MAX_ACTIVE,
   isActive,
   isPrincipal,
@@ -87,19 +88,23 @@ import {
   when,
   wishStateText,
   runningOf,
+  useNow,
   wishTone,
   effectivePushStrategy,
   isWithdrawn,
 } from "./data/format";
+import { ifritOut, litIfrits } from "./data/ifrit";
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
 import { AttentionBar, attentionOf, useReach } from "./attention";
 import { ModalFrame } from "./frame";
+import { IfritBadge } from "./ifrit";
 import { useWrites } from "./marks";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
-import { useKeepPlace } from "./scroll-anchor";
+import { placeTaken, useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
 import { OperatingLoad } from "./operating-load";
 import { CountPill, StatusBadge } from "./status";
@@ -110,7 +115,12 @@ import {
   MoveAzimaDialog,
   useStickyRoom,
 } from "./azima";
-import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
+import { RankedAzimaList, type RankPlace } from "./azima-rank";
+import {
+  MoveQuestionDialog,
+  SleepQuestionDialog,
+  WithdrawQuestionDialog,
+} from "./wish-dialogs";
 import {
   kindsForView,
   LayoutToggle,
@@ -126,6 +136,8 @@ import { TilasmsTab } from "./tilasms";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
 import { WishQuestion } from "./wish-question";
+import { QuestionColumn } from "./question-column";
+import { Glance } from "./glance";
 import { WishTask } from "./wish-task";
 import {
   LastPushes,
@@ -138,8 +150,10 @@ import {
   WishTitle,
   leadTrouble,
   recordedAgent,
+  type SeatChoice,
 } from "./wish-head";
 import { LeadMessage } from "./lead-message";
+import { useEyeNeeds } from "./djinn-eye";
 import { PageHeader, PageHeaderAction } from "./page-header";
 import { TooltipButton } from "./tooltip";
 
@@ -156,10 +170,17 @@ export interface Reaching {
   target: string;
 }
 
+// Landing is a click on the wish in the side panel: it brings back its first tab, the questions, from wherever the wish
+// was; a new object at each click.
+export interface Landing {
+  wishId: string;
+}
+
 export function WishView({
   wish,
   opening,
   reaching,
+  landing,
   onToast,
   onSetupAgents,
 }: {
@@ -168,6 +189,8 @@ export function WishView({
   opening?: Opening;
   // An element of the wish to bring into sight now, in its tab.
   reaching?: Reaching;
+  // The wish clicked in the side panel: its first tab now.
+  landing?: Landing;
   onToast: (text: string) => void;
   // Opens the setup of the agents, from the lead's menu.
   onSetupAgents?: () => void;
@@ -182,6 +205,7 @@ export function WishView({
   const allWishes = useData((s) => s.wishes);
   const leadRecord = useData((s) => s.lead);
   const leadPrompt = useData((s) => s.leadPrompt);
+  const leadDrive = useData((s) => s.leadDrive);
   const leadExit = useData((s) => s.leadExit);
   const leadStartError = useData((s) => s.leadStartError);
   const pausable = usePausable();
@@ -195,8 +219,18 @@ export function WishView({
     [wish, allProjects],
   );
   const open = openQuestions(wish, detail);
+  // Its questions column: one group, its own (question-column.tsx).
+  const questionGroup = useMemo(
+    () => (open.length ? [{ wish, questions: open }] : []),
+    [wish, open],
+  );
+  // The glance on the right: the wish alone; the tasks of the other active wishes, read for the window's side panel,
+  // name what one of its tasks waits on across wishes (glance.tsx).
+  const glanceWish = useMemo(() => [wish], [wish]);
+  const allDetails = useData((s) => s.details);
   const waitingLead = waitingLeadQuestions(wish, detail);
   const digging = investigatingQuestions(wish, detail);
+  const sleeping = asleepQuestions(wish, detail);
   const waiting = waitingTasks(wish, detail);
   const codes = codeMapOf(detail.tasks);
   // Read again only when the wish's questions, blocks or tasks change, not at every render of the screen.
@@ -214,18 +248,49 @@ export function WishView({
     const withdrawnCount = detail.questions.filter(isWithdrawn).length;
     const answeredCount = Math.max(
       0,
-      detail.questionsTotal - open.length - withdrawnCount,
+      detail.questionsTotal - open.length - sleeping.length - withdrawnCount,
     );
     const decisionBlocksCount = detail.blocks.filter(isDecisionBlock).length;
     return Math.max(decisionItems.length, answeredCount + decisionBlocksCount);
   }, [
     detail.questionsTotal,
     open.length,
+    sleeping.length,
     detail.questions,
     detail.blocks,
     decisionItems.length,
   ]);
-  const { running, watching, merging } = runningOf(detail.tasks);
+  const { running, investigating, watching, merging, fixing } = runningOf(
+    detail.tasks,
+  );
+  // Its lit ifrits, the latest activity first, and those put out: each shows by the wish's title, flame and word.
+  const ifrits = useMemo(
+    () => litIfrits(detail.tasks.map((item) => ({ wish, item }))),
+    [detail.tasks, wish],
+  );
+  const outIfrits = useMemo(
+    () => detail.tasks.filter(ifritOut),
+    [detail.tasks],
+  );
+  const ifritNow = useNow(ifrits.length > 0, 15_000);
+  // Nothing waits for you and nothing runs in the wish: its questions column shows the Djinn asleep (empty-art.tsx).
+  const calm =
+    detail.loaded &&
+    open.length +
+      waitingLead.length +
+      digging.length +
+      sleeping.length +
+      waiting.length +
+      ifrits.length +
+      running +
+      investigating +
+      watching +
+      merging +
+      fixing ===
+      0 &&
+    !wish.ready;
+  // A worker waiting or an ifrit lit: the Djinn's eye lets its flame shine.
+  useEyeNeeds(waiting.length > 0 || ifrits.length > 0);
   const done = workDoneCount(detail.tasks);
   // The azimas' progress, then the work's: the azimas are not counted as tasks.
   const azimaProgress = azimasDone(detail.tasks);
@@ -304,6 +369,35 @@ export function WishView({
   // The page keeps your place when something above what you read changes (src/scroll-anchor.ts).
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
+  // The wish clicked in the side panel: its first tab, a tilasm the Tilasms tab showed closed, the page at the top, and
+  // its first question open with the focus, once its questions are read (question-column.tsx); the Djinn's eye goes
+  // with the focus. After the commit that drops a full-size tilasm, whose page under it is inert until then.
+  const land = useRef<() => boolean>(undefined);
+  // The last landing, and whether its first question had the focus: a tab chosen meanwhile drops it.
+  const landed = useRef<{ landing?: Landing; done: boolean }>({ done: true });
+  const questionsRead = detail.loadedKinds.has(Change.QUESTION);
+  useEffect(() => {
+    if (!landing) return;
+    if (landed.current.landing !== landing) {
+      landed.current = { landing, done: false };
+      if (view !== "main") {
+        setOpened(undefined);
+        show("main");
+        return;
+      }
+    }
+    if (landed.current.done || view !== "main") return;
+    setOpened(undefined);
+    setFocus("");
+    const scroller = scrollRef.current;
+    if (scroller) {
+      scroller.scrollTop = 0;
+      placeTaken(scroller);
+    }
+    if (!questionsRead) return;
+    landed.current.done = true;
+    land.current?.();
+  }, [landing, view, show, questionsRead]);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || !store) return;
@@ -330,11 +424,20 @@ export function WishView({
     quiet,
     answer,
     enlighten,
-    mark,
     review: markReviewed,
+    urge,
     move,
     withdraw,
+    later,
+    sleep,
   } = useWrites(onToast);
+  const [sleepingQuestion, setSleepingQuestion] = useState<Question | null>(
+    null,
+  );
+  const wakeQuestion = useCallback(
+    (q: Question) => sleep(q.wishId, q.id, [], true),
+    [sleep],
+  );
   const act = useCallback(
     (
       run: () => Promise<unknown>,
@@ -392,6 +495,11 @@ export function WishView({
     [quiet, write, clients.tasks],
   );
 
+  const handleUrge = useCallback(
+    (task: Task, urgent: boolean) => quiet(urge(task, urgent)),
+    [quiet, urge],
+  );
+
   const handleDone = useCallback(
     (note: string, task: Task) =>
       write(
@@ -404,6 +512,23 @@ export function WishView({
           }),
         [Change.TASK],
         t("task.marked_done", { task: task.code }),
+      ),
+    [write, clients.tasks],
+  );
+
+  // An ifrit put out: a message lights it again, in its own session and worktree.
+  const handleRelight = useCallback(
+    (text: string, task: Task) =>
+      write(
+        task.wishId,
+        () =>
+          clients.tasks.continue({
+            taskId: task.id,
+            prompt: text,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("ifrit.relit", { code: task.code }),
       ),
     [write, clients.tasks],
   );
@@ -445,6 +570,7 @@ export function WishView({
           task={task}
           codes={codes}
           forkedAs={forkedAs(task, detail.tasks)}
+          fixedBy={fixerOf(task, detail.tasks)?.code}
           decision={decisionOf(task, decisions)}
           focused={focus === task.id}
           onDecision={handleDecision}
@@ -453,7 +579,9 @@ export function WishView({
           onStart={handleStart}
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
+          onUrge={handleUrge}
           onDone={handleDone}
+          onRelight={handleRelight}
           onTurnComments={handleTurnComments}
           merges={merges}
           nested={merges?.map(row)}
@@ -475,7 +603,9 @@ export function WishView({
       handleSend,
       pausable,
       handleHold,
+      handleUrge,
       handleDone,
+      handleRelight,
       handleTurnComments,
     ],
   );
@@ -552,6 +682,24 @@ export function WishView({
     [azimaSyncs, clients.projects, projects, store, wish.id],
   );
 
+  // Forgetting a landed branch's sync takes its line off the card; an error says why in a toast.
+  const handleForgetSync = useCallback(
+    (sync: ProjectSync) =>
+      void act(
+        () =>
+          clients.projects.forgetSync({
+            project:
+              projects.find((p) =>
+                p.syncs?.some((x) => x.branch === sync.branch),
+              )?.id ?? "",
+            branch: sync.branch,
+          }),
+        [Change.PROJECT],
+        t("azima.sync_forgotten", { branch: sync.branch }),
+      ),
+    [act, clients.projects, projects],
+  );
+
   const handleOpenPr = useCallback(
     (url: string) => {
       void clients.ui
@@ -594,10 +742,34 @@ export function WishView({
     [quiet, write, clients.tasks],
   );
 
+  // A drag, or Alt+Arrow, ranks an azima just before or after another (azima-rank.tsx).
+  const handleRankAzima = useCallback(
+    (azima: Task, place: RankPlace) => {
+      quiet(
+        write(
+          azima.wishId,
+          () =>
+            clients.tasks.rank({
+              azima: azima.id,
+              ...("before" in place
+                ? { before: place.before.id }
+                : { after: place.after.id }),
+            }),
+          [Change.TASK],
+        ),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
   const renderAzima = useCallback(
-    ({ azima, parts }: { azima: Task; parts: readonly Task[] }) => (
+    (
+      { azima, parts }: { azima: Task; parts: readonly Task[] },
+      grip?: ReactNode,
+    ) => (
       <AzimaCard
         key={azima.id}
+        grip={grip}
         azima={azima}
         parts={parts}
         tasks={byId}
@@ -609,6 +781,7 @@ export function WishView({
         isPerAzima={isPerAzima}
         sync={azimaSyncs.get(azima.id)}
         onPush={handlePushAzima}
+        onForgetSync={handleForgetSync}
         onOpenPr={handleOpenPr}
       />
     ),
@@ -622,6 +795,7 @@ export function WishView({
       isPerAzima,
       azimaSyncs,
       handlePushAzima,
+      handleForgetSync,
       handleOpenPr,
     ],
   );
@@ -666,20 +840,17 @@ export function WishView({
     [answer],
   );
 
-  const handleQuestionMark = useCallback(
-    (kind: MarkKind, remove: boolean, q?: Question) => {
-      if (q) return mark(q.wishId, q.id, kind, remove);
-      return Promise.resolve();
-    },
-    [mark],
-  );
-
   const handleQuestionEnlighten = useCallback(
     (note: string, q?: Question) => {
       if (q) return enlighten(q.wishId, q.id, note);
       return Promise.resolve();
     },
     [enlighten],
+  );
+
+  const handleQuestionLater = useCallback(
+    (q: Question) => later(q.wishId, q.id, !!q.laterTime),
+    [later],
   );
 
   const handleTaskFocus = useCallback(
@@ -721,12 +892,28 @@ export function WishView({
     );
   };
   const lead = (provider?: Provider) => quiet(resumeLead(provider));
+  // moveLead moves the lead Djinn drives to another seat; what Djinn says of it shows as a toast.
+  const moveLead = (seat: SeatChoice) => {
+    let note = "";
+    return act(
+      async () => {
+        ({ note } = await clients.lead.move(seat));
+      },
+      [Change.WISH],
+      () => note,
+    );
+  };
   const attention = attentionOf(
     [...open, ...waitingLead],
     waiting,
     wish.ready ? [wish] : [],
     undefined,
     leadPrompt,
+    ifrits,
+    leadDrive?.limit && {
+      limit: leadDrive.limit,
+      accounts: leadDrive.accounts,
+    },
   );
   // What the wish's tabs show of the bar's lines: the open questions, the waiting workers and the grant in the
   // first tab, the answered questions in the decisions.
@@ -735,13 +922,21 @@ export function WishView({
     ...decisions.map((d) => `decision-${d.id}`),
     ...waiting.map(({ item }) => `waiting-${item.id}`),
     ...(wish.ready ? [`grant-${wish.id}`] : []),
+    ...ifrits.map(({ item }) => `task-${item.id}`),
   ]);
   const { reach, to } = useReach(show, shown, wish.id);
   useEffect(() => {
     if (reaching) to(reaching.target);
   }, [reaching, to]);
   useStickyRoom(scrollRef, attention.length > 0);
-  const tone = wishTone(wish, open.length, running + merging, watching);
+  const tone = wishTone(
+    wish,
+    open.length,
+    running + merging,
+    watching,
+    investigating,
+    ifrits.length,
+  );
 
   return (
     <div className="wish-view review">
@@ -808,6 +1003,8 @@ export function WishView({
               onLead={() => lead()}
               onPick={(provider) => lead(provider)}
               onSetup={onSetupAgents}
+              drive={leadDrive}
+              onMove={(seat) => quiet(moveLead(seat))}
             />
             <PageHeaderAction
               label={t("app.share")}
@@ -850,7 +1047,7 @@ export function WishView({
         <DeleteWish
           wish={wish}
           tasks={detail.tasks.length}
-          running={running + watching}
+          running={running + watching + ifrits.length}
           onClose={() => setDeleting(false)}
           onDelete={() => {
             setDeleting(false);
@@ -899,6 +1096,15 @@ export function WishView({
           onMove={move}
         />
       )}
+      {sleepingQuestion && (
+        <SleepQuestionDialog
+          question={sleepingQuestion}
+          tasks={detail.tasks}
+          currentWishId={wish.id}
+          onClose={() => setSleepingQuestion(null)}
+          onSleep={sleep}
+        />
+      )}
       {withdrawingQuestion && (
         <WithdrawQuestionDialog
           question={withdrawingQuestion}
@@ -942,6 +1148,13 @@ export function WishView({
             <div className="review-facts">
               <div className="review-pills">
                 <StatusBadge tone={tone} label={wishStateText(wish)} />
+                {ifrits.map(({ item }) => (
+                  <IfritBadge key={item.id} task={item} now={ifritNow} />
+                ))}
+                {!ifrits.length &&
+                  outIfrits.map((item) => (
+                    <IfritBadge key={item.id} task={item} now={ifritNow} />
+                  ))}
                 {isPrincipal(wish, allWishes) && (
                   <StatusBadge
                     tone="accent"
@@ -986,6 +1199,16 @@ export function WishView({
                     label={t("plan.merging_detail", { count: merging })}
                   >
                     {t("pill.merging")}
+                  </CountPill>
+                )}
+                {fixing > 0 && (
+                  <CountPill
+                    tone="fixing"
+                    icon={Wrench}
+                    count={fixing}
+                    label={t("plan.fixing_detail", { count: fixing })}
+                  >
+                    {t("pill.fixing")}
                   </CountPill>
                 )}
                 {watching > 0 && (
@@ -1092,6 +1315,7 @@ export function WishView({
             review={reviewLeft(review)}
             decisions={decisionsTotal ?? decisions.length}
             tilasms={detail.tilasms.length}
+            drafts={detail.drafts.length}
             agents={forAgents.length}
             onView={(to) => show(to)}
           />
@@ -1101,6 +1325,10 @@ export function WishView({
               wishId={wish.id}
               opening={opened}
               tilasms={detail.tilasms}
+              drafts={detail.drafts}
+              holds={detail.holds}
+              sent={detail.sent}
+              reads={detail.reads}
               tasks={detail.tasks}
               onToast={onToast}
             />
@@ -1128,9 +1356,15 @@ export function WishView({
           )}
           {view === "tasks" &&
             (detail.tasks.length === 0 ? (
-              <p className="muted-text" role="tabpanel">
-                {detail.loaded ? t("wish.no_tasks") : t("common.loading")}
-              </p>
+              detail.loaded ? (
+                <div role="tabpanel">
+                  <EmptyState art="tasks">{t("wish.no_tasks")}</EmptyState>
+                </div>
+              ) : (
+                <p className="muted-text" role="tabpanel">
+                  {t("common.loading")}
+                </p>
+              )
             ) : tree ? (
               <TaskTree
                 tasks={detail.tasks}
@@ -1162,6 +1396,13 @@ export function WishView({
                 showDone={showDone}
                 showDrafts={showDrafts}
                 renderAzima={renderAzima}
+                renderAzimas={(groups) => (
+                  <RankedAzimaList
+                    groups={groups}
+                    render={renderAzima}
+                    onRank={handleRankAzima}
+                  />
+                )}
                 renderDraft={renderDraft}
                 aside={
                   <>
@@ -1174,73 +1415,51 @@ export function WishView({
             ))}
           {view === "main" && (
             <div className="main-columns">
-              {(open.length > 0 ||
-                waiting.length > 0 ||
-                wish.ready ||
-                digging.length > 0) && (
-                <div className="main-moves">
-                  {(open.length > 0 || waiting.length > 0 || wish.ready) && (
-                    <section
-                      className="action-center"
-                      id="action-center"
-                      aria-label={t("panels.your_move")}
-                    >
-                      <div className="section-title">
-                        <h2>{t("panels.your_move")}</h2>
-                        <p>
-                          {open.length
-                            ? t("wish.questions_wait", { count: open.length })
-                            : wish.ready
-                              ? t("wish.ready_detail")
-                              : t("panels.your_move_detail")}
-                        </p>
-                      </div>
-                      {open.length > 0 && (
-                        <section className="decisions-section">
-                          <div className="section-heading">
-                            <h3>
-                              {t("panels.decisions")}
-                              <span className="count">{open.length}</span>
-                            </h3>
-                          </div>
-                          <AnimatePresence mode="popLayout">
-                            {open.map(({ item: q, blocking, report }) => (
-                              <WishQuestion
-                                key={q.id}
-                                question={q}
-                                blocking={blocking}
-                                report={report}
-                                noLead={noLead(leadRecord)}
-                                onAnswer={handleQuestionAnswer}
-                                onMark={handleQuestionMark}
-                                onEnlighten={handleQuestionEnlighten}
-                                onMove={setMovingQuestion}
-                                onWithdraw={setWithdrawingQuestion}
-                              />
-                            ))}
-                          </AnimatePresence>
-                        </section>
-                      )}
-                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-                      {wish.ready && (
-                        <GrantCard wish={wish} onGrant={handleGrant} />
-                      )}
-                    </section>
-                  )}
+              <div className="main-moves">
+                <QuestionColumn
+                  groups={questionGroup}
+                  land={land}
+                  noLead={noLead(leadRecord)}
+                  onAnswer={handleQuestionAnswer}
+                  onEnlighten={handleQuestionEnlighten}
+                  onMove={setMovingQuestion}
+                  onWithdraw={setWithdrawingQuestion}
+                  onLater={handleQuestionLater}
+                  onSleep={setSleepingQuestion}
+                  asleep={sleeping}
+                  onWake={wakeQuestion}
+                  calm={calm}
+                />
+                {(waiting.length > 0 || wish.ready) && (
+                  <section
+                    className="your-move"
+                    id="action-center"
+                    aria-label={t("panels.your_move")}
+                  >
+                    {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
+                    {wish.ready && (
+                      <GrantCard wish={wish} onGrant={handleGrant} />
+                    )}
+                  </section>
+                )}
+                {digging.length > 0 && (
+                  <InvestigatingSection
+                    questions={digging}
+                    onAnswer={handleQuestionAnswer}
+                    onMove={setMovingQuestion}
+                    onWithdraw={setWithdrawingQuestion}
+                  />
+                )}
+              </div>
 
-                  {digging.length > 0 && (
-                    <InvestigatingSection
-                      questions={digging}
-                      onAnswer={handleQuestionAnswer}
-                      onMark={handleQuestionMark}
-                      onMove={setMovingQuestion}
-                      onWithdraw={setWithdrawingQuestion}
-                    />
-                  )}
-                </div>
-              )}
+              <Glance
+                wishes={glanceWish}
+                tasksOf={allDetails}
+                all={allWishes}
+                onOpenTask={(task) => to(`task-${task.id}`)}
+              />
 
-              <div className="main-side">
+              <div className="main-after">
                 <Journal
                   wish={wish}
                   blocks={detail.blocks}
@@ -1320,7 +1539,6 @@ export const InvestigatingSection = memo(function InvestigatingSection({
   questions,
   origin = false,
   onAnswer,
-  onMark,
   onMove,
   onWithdraw,
 }: {
@@ -1329,11 +1547,6 @@ export const InvestigatingSection = memo(function InvestigatingSection({
   onAnswer: (
     choice: Choice,
     note: string,
-    question?: Question,
-  ) => Promise<void>;
-  onMark: (
-    kind: MarkKind,
-    remove: boolean,
     question?: Question,
   ) => Promise<void>;
   onMove?: (question: Question) => void;
@@ -1361,7 +1574,6 @@ export const InvestigatingSection = memo(function InvestigatingSection({
           noLead={noLead(lead)}
           origin={origin ? wishOrigin(wish) : undefined}
           onAnswer={onAnswer}
-          onMark={onMark}
           onMove={onMove}
           onWithdraw={onWithdraw}
         />
@@ -1391,7 +1603,8 @@ export const WishOrigin = memo(function WishOrigin({ wish }: { wish: Wish }) {
   );
 });
 
-// WaitingTasks are the workers that wait for the user: for an answer before they edit.
+// WaitingTasks are the workers that wait for the user: for an answer before they edit, or to the blocking question
+// they asked, whose answer continues them.
 export function WaitingTasks({
   waiting,
   origin = false,
@@ -1413,8 +1626,8 @@ export function WaitingTasks({
           <StatusBadge tone={taskTone(item)} label={taskStatusText(item)} />
           {origin && wishOrigin(wish)}
           <span>
-            {item.status === TaskStatus.FAILED
-              ? firstLine(item.error) || t("attention.worker_failed")
+            {question && item.waitQuestionId
+              ? t("page.action_waiting_question", { task: item.code, question })
               : question
                 ? t("page.action_waiting", { task: item.code, question })
                 : t("page.action_waiting_unknown", { task: item.code })}

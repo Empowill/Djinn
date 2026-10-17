@@ -310,3 +310,39 @@ func TestWorkerGuardRefusesAnsweringTheLead(t *testing.T) {
 		t.Errorf("a worker answers the lead's approval: %v (reached %v), want a refusal", err, reached)
 	}
 }
+
+// TestWorkerGuardServesOfItsOwnTask: an ifrit reaches ServeService for its own task, named by default, never another's
+// (T51).
+func TestWorkerGuardServesOfItsOwnTask(t *testing.T) {
+	caller := &plan.WorkerCaller{TaskID: "task-1", WishID: "wish-1"}
+	var received *planv1.ServeServiceRunRequest
+	client := testClient(
+		planv1connect.ServeServiceRunProcedure,
+		func(_ context.Context, req *connect.Request[planv1.ServeServiceRunRequest]) (*connect.Response[planv1.ServeServiceRunResponse], error) {
+			received = req.Msg
+			return connect.NewResponse(&planv1.ServeServiceRunResponse{}), nil
+		},
+		caller,
+	)
+	if _, err := client.CallUnary(context.Background(), connect.NewRequest(&planv1.ServeServiceRunRequest{Name: "front", Command: "npm run dev"})); err != nil {
+		t.Fatalf("own serve refused: %v", err)
+	}
+	if received.GetTaskId() != "task-1" {
+		t.Fatalf("task_id = %q, want the caller's task-1", received.GetTaskId())
+	}
+	_, err := client.CallUnary(context.Background(), connect.NewRequest(&planv1.ServeServiceRunRequest{Name: "front", Command: "npm run dev", TaskId: "task-other"}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "its own serves") {
+		t.Fatalf("another task's serve: got %v, want permission_denied", err)
+	}
+
+	logs := testClient(
+		planv1connect.ServeServiceLogsProcedure,
+		func(_ context.Context, req *connect.Request[planv1.ServeServiceLogsRequest]) (*connect.Response[planv1.ServeServiceLogsResponse], error) {
+			return connect.NewResponse(&planv1.ServeServiceLogsResponse{}), nil
+		},
+		caller,
+	)
+	if _, err := logs.CallUnary(context.Background(), connect.NewRequest(&planv1.ServeServiceLogsRequest{Name: "front"})); err != nil {
+		t.Fatalf("own logs refused: %v", err)
+	}
+}

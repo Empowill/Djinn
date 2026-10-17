@@ -29,6 +29,7 @@ import (
 //	DJINN_FAKE_STDERR    a file whose lines go to the error output first, when set
 //	DJINN_FAKE_ARGS      a file the arguments are written to, one per line, when set
 //	DJINN_FAKE_INPUT     a file each input line is written to, when set
+//	DJINN_FAKE_ENVIRON   a file its environment is written to, one variable per line, when set
 //	DJINN_FAKE_END       what it does once the fixture is played: eof (wait until its input is closed, exit 0),
 //	                     eof:N (the same, exit N), exit:N (exit N at once), hang (ignore SIGTERM, never end),
 //	                     wait (wait until it is stopped), tick (write "tick N" to the error output every 20 ms
@@ -92,6 +93,9 @@ func fakeProvider(provider string) int {
 	}
 	if f := os.Getenv("DJINN_FAKE_ARGS"); f != "" {
 		_ = os.WriteFile(f, []byte(strings.Join(os.Args[1:], "\n")), 0o600)
+	}
+	if f := os.Getenv("DJINN_FAKE_ENVIRON"); f != "" {
+		_ = os.WriteFile(f, []byte(strings.Join(os.Environ(), "\n")), 0o600)
 	}
 	var record = io.Discard
 	if f := os.Getenv("DJINN_FAKE_INPUT"); f != "" {

@@ -358,6 +358,37 @@ func TestWatcher(t *testing.T) {
 	e.ended(t, agent.GetId())
 }
 
+// TestWatcherPausedAsARunEnds: a pause or a resume that comes as a run's command ends, gone but not yet cleared,
+// holds or frees the next run as between two runs, instead of failing with "os: process already finished" (TestWatcher
+// on macOS, W159). Windows cannot pause a worker yet (pause_test.go).
+func TestWatcherPausedAsARunEnds(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot pause a worker")
+	}
+	t.Parallel()
+	p, err := startCommand(t.TempDir(), "true", nil, nil, nil, Grace, false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range p.lines {
+	}
+	<-p.done
+	w := &watchWorker{}
+	w.running(p)
+	if err := w.Pause(); err != nil {
+		t.Fatalf("paused as its run ended: %v", err)
+	}
+	if w.held == nil {
+		t.Errorf("paused as its run ended, the next run is not held")
+	}
+	if err := w.Resume(); err != nil {
+		t.Fatalf("resumed as its run ended: %v", err)
+	}
+	if w.held != nil {
+		t.Errorf("resumed as its run ended, the next run is still held")
+	}
+}
+
 // TestWatcherEnds: without --restart, the watcher ends with its command, done, and the lead learns it has ended; a
 // command that dies at each start fails the task. --restart is for a watcher only, and a watcher needs a project.
 func TestWatcherEnds(t *testing.T) {
@@ -456,8 +487,10 @@ func TestWatcherResumedSaysItOnce(t *testing.T) {
 	lead := &told{}
 	e.h.TellLeads(lead.tell)
 	wishID, _ := e.wish(t, gitRepo(t))
-	// Each run waits a little before it speaks: the test gives the lead to the Djinn started again before that.
-	cmd := watchCommand("keep:runs", "sleep:100ms", "say:CI red", "sleep:100ms", "from:2", "say:CI green", "wait")
+	// Each run waits a little before it speaks: the test gives the lead to the Djinn started again before that. Its
+	// two paragraphs are 300 ms apart, six times fastWatch's Quiet: 100 ms let a busy macOS runner read both lines in
+	// one paragraph, "CI red" first, which says again what the task said last (W270).
+	cmd := watchCommand("keep:runs", "sleep:100ms", "say:CI red", "sleep:300ms", "from:2", "say:CI green", "wait")
 	task, err := e.spawnWatch(t, wishID, cmd, true)
 	if err != nil {
 		t.Fatal(err)
@@ -591,5 +624,47 @@ func TestWatcherFinishes(t *testing.T) {
 	}
 	if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
 		t.Errorf("stopped watcher = %v", got)
+	}
+}
+
+// TestWatcherLineTime: a watcher's task says since when its state line holds (Task.last_line_time, the window's "GREEN
+// · 12m"): the same line said again at each run keeps its time, another line takes the time it came.
+func TestWatcherLineTime(t *testing.T) {
+	t.Parallel()
+	clock := &fakeClock{at: time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)}
+	e := up(t, t.TempDir(), WithClock(clock.now), WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+	dir := t.TempDir()
+
+	same := filepath.Join(dir, "same")
+	task, err := e.spawnWatch(t, wishID, watchCommand("say:GREEN", "count:"+same, "exit:0"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "GREEN" }).GetLastLineTime()
+	if !first.AsTime().Equal(clock.now()) {
+		t.Fatalf("GREEN since %v, want %v", first.AsTime(), clock.now())
+	}
+	clock.set(clock.now().Add(time.Hour))
+	// Run 4 printed: the paragraph of run 3, GREEN again, reached the task an hour later on the clock.
+	e.until(t, task.GetId(), func(*planv1.Task) bool {
+		b, _ := os.ReadFile(same)
+		n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+		return n >= 4
+	})
+	if got := e.get(t, task.GetId()).GetLastLineTime(); !got.AsTime().Equal(first.AsTime()) {
+		t.Errorf("GREEN said again moved its time: %v, want %v", got.AsTime(), first.AsTime())
+	}
+
+	changing := filepath.Join(dir, "changing")
+	other, err := e.spawnWatch(t, wishID, watchCommand("count:"+changing, "exit:0"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.until(t, other.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 1" })
+	clock.set(clock.now().Add(time.Hour))
+	got := e.until(t, other.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 3" }).GetLastLineTime()
+	if !got.AsTime().Equal(clock.now()) {
+		t.Errorf("run 3 since %v, want %v", got.AsTime(), clock.now())
 	}
 }

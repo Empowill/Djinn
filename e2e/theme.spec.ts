@@ -28,6 +28,16 @@ const wishes = (): Wish[] =>
 
 const at = "2026-10-09T09:10:00Z";
 
+// shownTheme is the theme Djinn keeps as the one the window shows, from settings.json of its data folder.
+function shownTheme(): string {
+  try {
+    const file = path.join(process.env.DJINN_E2E_HOME!, "settings.json");
+    return JSON.parse(fs.readFileSync(file, "utf8")).shownTheme ?? "";
+  } catch {
+    return "";
+  }
+}
+
 async function choose(page: Page, value: "" | "dark" | "light") {
   await page.evaluate((v) => {
     if (v) localStorage.setItem("djinn.theme", v);
@@ -45,86 +55,129 @@ const background = (page: Page, selector: string) =>
       return `${style.backgroundColor} ${style.backgroundImage}`;
     });
 
-test("the dialogs, the lead's blocks and the terminal follow the theme, the system's by default", async ({
+// The system's theme by default: light under a light system, dark under a dark one.
+test("the window follows the system's theme by default, and tells Djinn the one it shows", async ({
   page,
 }) => {
-  test.skip(process.platform === "win32", "the terminal runs a POSIX shell");
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto(process.env.DJINN_URL!);
+  await choose(page, "");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  // The page tells Djinn the theme it shows, the system's resolved: the Djinn's tone follows it (W156).
+  await expect.poll(shownTheme).toBe("SHOWN_THEME_LIGHT");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect.poll(shownTheme).toBe("SHOWN_THEME_DARK");
+});
+
+const looks = {
+  dark: { page: "rgb(17, 17, 17)", card: "rgb(25, 25, 25)" },
+  light: { page: "rgb(246, 246, 248)", card: "rgb(255, 255, 255)" },
+};
+
+// pauseActive pauses the active wishes, which other specs may have left: the page shows the one a test makes.
+function pauseActive() {
   for (const w of wishes().filter((w) => w.state === "WISH_STATE_ACTIVE"))
     djinn("wish", "pause", w.id);
-  const tag = randomUUID().slice(0, 8);
-  const wishId = randomUUID();
-  const title = `Read by the lamp ${tag}`;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-theme-"));
-  const file = path.join(dir, "lamp.json");
-  fs.writeFileSync(
-    file,
-    JSON.stringify({
-      version: 1,
-      create_time: at,
-      wish: { id: wishId, title, create_time: at },
-      tasks: [],
-    }),
-  );
-  try {
-    djinn("wish", "import", file);
-    djinn(
-      "block",
-      "put",
-      wishId,
-      "--kind",
-      "note",
-      "--title",
-      "How the wick burns",
-      "--content",
-      [
-        "The wick **burns** from the top; `oil` rises by itself.",
-        "",
-        "```go",
-        'func burn(wick string) error {\n\treturn fmt.Errorf("no oil in %s", wick)\n}',
-        "```",
-        "",
-        "```mermaid",
-        "flowchart LR\n  Oil --> Wick --> Light",
-        "```",
-        "",
-        "| Oil | Hours |",
-        "| --- | --- |",
-        "| Olive | 6 |",
-      ].join("\n"),
-    );
+}
 
-    await page.setViewportSize({ width: 1440, height: 1300 });
-    // The system's theme by default: light under a light system, dark under a dark one.
-    await page.emulateMedia({ colorScheme: "light" });
-    await page.goto(process.env.DJINN_URL!);
-    await choose(page, "");
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-    await page.emulateMedia({ colorScheme: "dark" });
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+// open shows the window in the theme chosen in the settings, kept before its first load: one load, not a load and a
+// reload, which a loaded machine took seconds each (W249). A later choose changes it.
+async function open(page: Page, theme: "dark" | "light") {
+  await page.addInitScript((v) => {
+    if (sessionStorage.getItem("djinn.e2e.theme")) return;
+    sessionStorage.setItem("djinn.e2e.theme", v);
+    localStorage.setItem("djinn.theme", v);
+  }, theme);
+  await page.setViewportSize({ width: 1440, height: 1300 });
+  await page.goto(process.env.DJINN_URL!);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+}
 
-    // Every ANSI colour, normal and bright, on the terminal.
-    const empty = page.locator(".lead-terminal-empty button");
-    if (await empty.isVisible()) {
-      await empty.click();
-    }
+// Four tests per theme, the terminal, the lead's blocks, the settings, the creation page: each has its 30 s, which one
+// test for all took whole on a loaded machine, with or without the trace (W249).
+for (const theme of ["dark", "light"] as const) {
+  const look = looks[theme];
+
+  test(`the terminal follows the theme chosen, ${theme}`, async ({ page }) => {
+    test.skip(process.platform === "win32", "the terminal runs a POSIX shell");
+    pauseActive();
+    await open(page, theme);
+    // Every ANSI colour, normal and bright, on a shell of its own: one another test left may come after the empty
+    // panel showed, its button gone under a click (W249).
+    await page.locator(".lead-terminal-tab-new").click();
+    const tab = page.locator(".lead-terminal-tab.selected");
+    await expect(tab).toBeVisible();
     const terminal = page.locator(".lead-terminal .xterm");
     await terminal.click();
     await page.keyboard.type(
       "for i in 0 1 2 3 4 5 6 7; do printf '\\033[3%sm col%s \\033[9%sm bright%s\\033[0m ' $i $i $i $i; done; echo",
     );
     await page.keyboard.press("Enter");
+    // Its ground is the page's, its rows are coloured by the theme.
     await expect(
       page.locator(".lead-terminal .xterm-rows").getByText("bright7").last(),
     ).toBeVisible();
+    expect(
+      await background(page, ".lead-terminal .xterm-scrollable-element"),
+    ).toContain(look.page);
+    await page.locator(".lead-terminal").screenshot({
+      path: path.join(shots, `theme-terminal-${theme}.png`),
+    });
+    // The shell closed before the page reloads, which would show the panel before its tabs.
+    const tabs = page.locator(".lead-terminal-tab");
+    const shells = await tabs.count();
+    await tab.locator(".lead-terminal-tab-close").click();
+    await expect(tabs).toHaveCount(shells - 1);
+    await choose(page, "");
+  });
 
-    const looks = {
-      dark: { page: "rgb(17, 17, 17)", card: "rgb(25, 25, 25)" },
-      light: { page: "rgb(246, 246, 244)", card: "rgb(255, 255, 255)" },
-    };
-    for (const theme of ["dark", "light"] as const) {
-      await choose(page, theme);
-      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      const look = looks[theme];
+  test(`the lead's blocks follow the theme chosen, ${theme}`, async ({
+    page,
+  }) => {
+    pauseActive();
+    const tag = randomUUID().slice(0, 8);
+    const wishId = randomUUID();
+    const title = `Read by the lamp ${tag}`;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-theme-"));
+    const file = path.join(dir, "lamp.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        create_time: at,
+        wish: { id: wishId, title, create_time: at },
+        tasks: [],
+      }),
+    );
+    try {
+      djinn("wish", "import", file);
+      djinn(
+        "block",
+        "put",
+        wishId,
+        "--kind",
+        "note",
+        "--title",
+        "How the wick burns",
+        "--content",
+        [
+          "The wick **burns** from the top; `oil` rises by itself.",
+          "",
+          "```go",
+          'func burn(wick string) error {\n\treturn fmt.Errorf("no oil in %s", wick)\n}',
+          "```",
+          "",
+          "```mermaid",
+          "flowchart LR\n  Oil --> Wick --> Light",
+          "```",
+          "",
+          "| Oil | Hours |",
+          "| --- | --- |",
+          "| Olive | 6 |",
+        ].join("\n"),
+      );
+      await open(page, theme);
 
       // The lead's blocks, in the agents' tab, opened: Markdown, a code block, a Mermaid diagram on the card's ground.
       await page.locator(".wish-nav").filter({ hasText: title }).click();
@@ -177,56 +230,53 @@ test("the dialogs, the lead's blocks and the terminal follow the theme, the syst
             }),
         )
         .toBe(theme === "dark" ? "light" : "dark");
-
-      // The terminal: its ground is the page's, its rows are coloured by the theme.
-      await expect(
-        page.locator(".lead-terminal .xterm-rows").getByText("bright7").last(),
-      ).toBeVisible();
-      expect(
-        await background(page, ".lead-terminal .xterm-scrollable-element"),
-      ).toContain(look.page);
       await page.screenshot({
         path: path.join(shots, `theme-wish-${theme}.png`),
       });
       await block.screenshot({
         path: path.join(shots, `theme-blocks-${theme}.png`),
       });
-      await page.locator(".lead-terminal").screenshot({
-        path: path.join(shots, `theme-terminal-${theme}.png`),
-      });
+      await choose(page, "");
+    } finally {
+      try {
+        djinn("wish", "delete", wishId);
+      } catch {}
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
-      // The settings' dialog, and the creation page of a new wish.
-      await page.getByTitle("Connections & preferences").click();
-      const settings = page.locator(".modal");
-      await expect(settings).toBeVisible();
-      await expect(page.getByLabel("Theme")).toHaveValue(theme);
-      expect(await background(page, ".modal")).toContain(look.card);
-      await page.screenshot({
-        path: path.join(shots, `theme-settings-${theme}.png`),
-      });
-      await page.keyboard.press("Escape");
-      await expect(settings).toHaveCount(0);
-      await page.getByRole("button", { name: "New wish" }).first().click();
-      const creation = page.locator(".wish-creation");
-      await expect(creation).toBeVisible();
-      await page.screenshot({
-        path: path.join(shots, `theme-new-wish-${theme}.png`),
-      });
-      await page.keyboard.press("Escape");
-      await expect(creation).toHaveCount(0);
-    }
+  test(`the settings follow the theme chosen, ${theme}`, async ({ page }) => {
+    pauseActive();
+    await open(page, theme);
+    await page.getByTitle("Connections & preferences").click();
+    const settings = page.locator(".modal");
+    await expect(settings).toBeVisible();
+    await expect(page.getByLabel("Theme")).toHaveValue(theme);
+    expect(await background(page, ".modal")).toContain(look.card);
+    await page.screenshot({
+      path: path.join(shots, `theme-settings-${theme}.png`),
+    });
+    await page.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
     await choose(page, "");
-    const close = page.locator(".lead-terminal-tab-close");
-    if (await close.isVisible()) {
-      await close.click();
-    }
-  } finally {
-    try {
-      djinn("wish", "delete", wishId);
-    } catch {}
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
+  });
+
+  test(`the creation page of a new wish follows the theme chosen, ${theme}`, async ({
+    page,
+  }) => {
+    pauseActive();
+    await open(page, theme);
+    await page.getByRole("button", { name: "New wish" }).first().click();
+    const creation = page.locator(".wish-creation");
+    await expect(creation).toBeVisible();
+    await page.screenshot({
+      path: path.join(shots, `theme-new-wish-${theme}.png`),
+    });
+    await page.keyboard.press("Escape");
+    await expect(creation).toHaveCount(0);
+    await choose(page, "");
+  });
+}
 
 test("the light creation fallback keeps its status readable when WebGL is unavailable", async ({
   page,

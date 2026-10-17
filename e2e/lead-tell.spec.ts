@@ -110,7 +110,9 @@ test("an answer waits for the lead, which hears of it from one line and its watc
 
   // The lead's watch prints the answer, with a cursor.
   const watched = leadWatch(session, "--timeout", "0s");
-  expect(watched.digest).toContain(`- ${first} answer: answered B — "Glass"`);
+  expect(watched.digest).toContain(
+    `- ${first} [Tell the lead] answer: answered B — "Glass"`,
+  );
   expect(watched.cursor).not.toBe("");
 
   // The lead watches again, acknowledging the first: an answer in another wish comes to that watch at once.
@@ -134,7 +136,9 @@ test("an answer waits for the lead, which hears of it from one line and its watc
   await new Promise((r) => setTimeout(r, 500));
   const second = askAndAnswer(other, "Copper", "Tin");
   const { stdout } = await running;
-  expect(stdout).toContain(`- ${second} answer: answered B — "Tin"`);
+  expect(stdout).toContain(
+    `- ${second} [Tell the same lead] answer: answered B — "Tin"`,
+  );
   expect(stdout).not.toContain("Glass");
   // Nothing more was typed in the lead's terminal: no second line, no answer.
   await expect(rows(page, waitingLine)).toHaveCount(2);

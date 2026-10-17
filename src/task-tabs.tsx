@@ -13,7 +13,11 @@ import {
 } from "react";
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
+import { tabPerch } from "./data/eye";
+import { EyePerch } from "./djinn-eye";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
+import { DraftDot } from "./tilasm-comments";
 
 export type View =
   "main" | "tasks" | "review" | "decisions" | "tilasms" | "agents";
@@ -56,6 +60,7 @@ export function ViewTabs({
   review,
   decisions,
   tilasms,
+  drafts = 0,
   agents,
   onView,
 }: {
@@ -70,6 +75,8 @@ export function ViewTabs({
   decisions: number;
   // How many tilasms the Tilasms tab holds; without it, a view with no such tab (the flying carpet).
   tilasms?: number;
+  // How many draft comments the developer wrote on them, not sent yet.
+  drafts?: number;
   // How many blocks the For agents tab holds; without it, a view with no such tab (the flying carpet).
   agents?: number;
   onView: (view: View) => void;
@@ -97,8 +104,11 @@ export function ViewTabs({
           className={`${view === id ? "active" : ""}${id === "agents" ? " discreet" : ""}`.trim()}
           onClick={() => onView(id)}
         >
+          {/* Under the tab, the Djinn's eye rests while it has the focus. */}
+          <EyePerch name={tabPerch(id)} />
           {label}
           {count >= 0 && <span className="count">{count}</span>}
+          {id === "tilasms" && drafts > 0 && <DraftDot count={drafts} />}
         </button>
       ))}
     </div>
@@ -241,6 +251,7 @@ export function TaskSections<T, A = never, D = never>({
   azimas = [],
   doneAzimas = [],
   renderAzima,
+  renderAzimas,
   drafts = [],
   renderDraft,
   fold = "",
@@ -259,6 +270,9 @@ export function TaskSections<T, A = never, D = never>({
   azimas?: readonly A[];
   doneAzimas?: readonly A[];
   renderAzima?: (azima: A) => ReactNode;
+  // Lays out the azimas not done yet, which the developer ranks by dragging them (azima-rank.tsx); by default one under
+  // the other, each with renderAzima.
+  renderAzimas?: (azimas: readonly A[]) => ReactNode;
   // The draft azimas, behind their Fold at the end of the Tasks tab.
   drafts?: readonly D[];
   renderDraft?: (draft: D) => ReactNode;
@@ -285,7 +299,7 @@ export function TaskSections<T, A = never, D = never>({
           {aside}
         </div>
         {moving.length === 0 && (
-          <p className="muted-text">{t("tasks.none_live")}</p>
+          <EmptyState art="still">{t("tasks.none_live")}</EmptyState>
         )}
         {moving.length > 0 && (
           <div className="card-grid task-grid">{moving.map(render)}</div>
@@ -322,9 +336,14 @@ export function TaskSections<T, A = never, D = never>({
               <span className="count">{azimas.length + doneAzimas.length}</span>
             </h2>
           </div>
-          {azimas.length > 0 && (
-            <div className="azima-list">{azimas.map(renderAzima)}</div>
-          )}
+          {azimas.length > 0 &&
+            (renderAzimas ? (
+              renderAzimas(azimas)
+            ) : (
+              <div className="azima-list">
+                {azimas.map((x) => renderAzima(x))}
+              </div>
+            ))}
           {drafts.length > 0 && renderDraft && (
             <div className="tasks-drafts">
               <Fold
@@ -339,7 +358,9 @@ export function TaskSections<T, A = never, D = never>({
             </div>
           )}
           <Fold id={`azimas:${fold}`} count={doneAzimas.length} open={showDone}>
-            <div className="azima-list">{doneAzimas.map(renderAzima)}</div>
+            <div className="azima-list">
+              {doneAzimas.map((x) => renderAzima(x))}
+            </div>
           </Fold>
         </section>
       )}

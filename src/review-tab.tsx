@@ -10,6 +10,7 @@ import { type ReviewRow, reviewedMark, rowReviewed } from "./data/review";
 import { when } from "./data/format";
 import { TaskDiffView } from "./diff";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { Fold } from "./task-tabs";
 
 import "./review-tab.css";
@@ -63,7 +64,9 @@ export function ReviewTab({
       aria-labelledby="view-tab-review"
       className="review-tab"
     >
-      {rows.length === 0 && <p className="muted-text">{t("review.none")}</p>}
+      {rows.length === 0 && (
+        <EmptyState art="review">{t("review.none")}</EmptyState>
+      )}
       {left.length > 0 && <ul className="review-list">{left.map(row)}</ul>}
       <Fold
         id={`reviewed:${fold}`}

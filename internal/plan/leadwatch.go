@@ -54,6 +54,11 @@ const (
 	digestMax = 30
 	// digestLineMax is how many characters of an event's text a digest line keeps.
 	digestLineMax = 160
+	// digestNoteMax is how many characters of an event's note a digest prints under its line: an answer's note
+	// whole, a final note up to a screen or two.
+	digestNoteMax = 2000
+	// digestTitleMax is how many characters of a wish's title name it in a digest.
+	digestTitleMax = 40
 	// leadEventsKept is how long an acknowledged event stays in the store.
 	leadEventsKept = 7 * 24 * time.Hour
 )
@@ -134,10 +139,15 @@ func (w *Wishes) Notify(ctx context.Context, e *planv1.LeadEvent) error {
 	if err := QueueLeadEvent(ctx, w.Store, e, w.now()); err != nil {
 		return err
 	}
+	w.Queued()
+	return nil
+}
+
+// Queued wakes the lead's watch, as Notify does, for an event another service stored in a transaction of its own.
+func (w *Wishes) Queued() {
 	l := w.leadWatch()
 	l.signal()
 	w.remindLead(l.timing.remind)
-	return nil
 }
 
 // notifyInPlace queues e for the lead as Notify does, in place of the waiting events replaces picks among those that
@@ -185,8 +195,8 @@ func (w *Wishes) RemindLead() {
 // remindLead plans the check that types the line, in after at the soonest, or later when a watch returned within
 // the grace.
 func (w *Wishes) remindLead(after time.Duration) {
-	if w.Leads == nil {
-		return
+	if w.Leads == nil || w.drive() != nil {
+		return // No terminal to type in: a driven lead gets its events in its batches.
 	}
 	l := w.leadWatch()
 	l.mu.Lock()
@@ -268,6 +278,9 @@ func (s *LeadService) Watch(
 	if CallerFromContext(ctx) != nil {
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New(
 			"a worker cannot watch the lead's events: they are the lead's"))
+	}
+	if w.drive() != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errDriven)
 	}
 	lead, err := store.Get[*planv1.Lead](ctx, w.Store, "lead")
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -439,7 +452,8 @@ func (w *Wishes) waitEvents(ctx context.Context, timeout time.Duration) ([]*plan
 	return events, Status(err)
 }
 
-// digest is what a watch prints: a line per event, at most digestMax, then the cursor and what to run next.
+// digest is what a watch prints: a line per event, at most digestMax, each with its wish and under it the note it
+// cuts, then the wishes' identifiers, the cursor and what to run next.
 func (w *Wishes) digest(ctx context.Context, events []*planv1.LeadEvent, after string, timeout time.Duration) string {
 	var b strings.Builder
 	if len(events) == 0 {
@@ -454,17 +468,7 @@ func (w *Wishes) digest(ctx context.Context, events []*planv1.LeadEvent, after s
 	if len(events) > digestMax {
 		more, events = len(events)-digestMax, events[:digestMax]
 	}
-	// The wish of each line, when the events are about more than one.
-	titles := map[string]string{}
-	for _, e := range events {
-		if _, ok := titles[e.GetWishId()]; ok || e.GetWishId() == "" {
-			continue
-		}
-		titles[e.GetWishId()] = e.GetWishId()
-		if wish, err := store.Get[*planv1.Wish](ctx, w.Store, e.GetWishId()); err == nil {
-			titles[e.GetWishId()] = clipRunes(wish.GetTitle(), 40)
-		}
-	}
+	titles := DigestTitles(ctx, w.Store, events)
 	if len(events) == 1 {
 		b.WriteString("1 event for the lead:\n")
 	} else {
@@ -472,34 +476,109 @@ func (w *Wishes) digest(ctx context.Context, events []*planv1.LeadEvent, after s
 	}
 	for _, e := range events {
 		b.WriteString("- ")
-		b.WriteString(DigestLine(e))
-		if title, ok := titles[e.GetWishId()]; ok && len(titles) > 1 {
-			fmt.Fprintf(&b, " [%s]", title)
-		}
+		b.WriteString(DigestLine(e, titles[e.GetWishId()]))
 		b.WriteString("\n")
+		for line := range strings.SplitSeq(strings.TrimSpace(e.GetDetail()), "\n") {
+			if line != "" {
+				fmt.Fprintf(&b, "  %s\n", line) // Under its line, whole: what one line cannot carry.
+			}
+		}
+		writeDigestNote(&b, e)
 	}
 	if more > 0 {
 		fmt.Fprintf(&b, "%d more wait: the next watch returns them at once.\n", more)
 	}
+	var wishes []string
+	for _, id := range EventWishes(events) {
+		wishes = append(wishes, fmt.Sprintf("[%s] %s", titles[id], id))
+	}
+	if len(wishes) > 0 {
+		fmt.Fprintf(&b, "Wishes: %s.\n", strings.Join(wishes, ", "))
+	}
 	cursor := events[len(events)-1].GetId()
-	b.WriteString("Details: djinn task watch <task>, djinn wish brief <wish>.\n")
+	b.WriteString("Details: djinn task watch <task> --last 5, djinn question get <question> --wish-id <wish>, " +
+		"djinn wish brief <wish>.\n")
 	fmt.Fprintf(&b, "Cursor %s. Next: djinn lead watch --after %s (acknowledges these, waits for the next).\n",
 		cursor, cursor)
 	return b.String()
 }
 
-// DigestKeeps tells whether a digest's line keeps the whole text of e, uncut.
-func DigestKeeps(e *planv1.LeadEvent) bool {
-	return !strings.HasSuffix(DigestLine(e), "…") || strings.HasSuffix(oneLine(e.GetText()), "…")
+// writeDigestNote writes under e's line the note it cuts, indented, at most digestNoteMax characters: past them, the
+// command that prints the event whole.
+func writeDigestNote(b *strings.Builder, e *planv1.LeadEvent) {
+	note := noteApart(e)
+	if note == "" {
+		return
+	}
+	kept := clipText(note, digestNoteMax)
+	b.WriteString("  Note:\n")
+	for line := range strings.SplitSeq(kept, "\n") {
+		if line = strings.TrimRight(line, " \t\r"); line != "" {
+			fmt.Fprintf(b, "    %s\n", line)
+		}
+	}
+	if kept != note {
+		fmt.Fprintf(b, "  The note goes on for %d more characters: djinn lead event %s prints it whole.\n",
+			len([]rune(note))-len([]rune(strings.TrimSuffix(kept, "\n…"))), e.GetId())
+	}
 }
 
-// DigestLine is an event in a digest's line: its code, its kind, and its text in a few words.
-func DigestLine(e *planv1.LeadEvent) string {
+// noteApart is the note of e its digest line does not show whole: a final note longer than its first line, a long
+// answer note; "" when the line shows it all.
+func noteApart(e *planv1.LeadEvent) string {
+	note := strings.TrimSpace(e.GetNote())
+	if note == "" || strings.Contains(DigestLine(e, ""), oneLine(note)) {
+		return ""
+	}
+	return note
+}
+
+// Event is one of the lead's events whole, as a driven lead's batch writes it: a digest names it when it cuts a note.
+func (s *LeadService) Event(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceEventRequest],
+) (*connect.Response[planv1.LeadServiceEventResponse], error) {
+	e, err := store.Get[*planv1.LeadEvent](ctx, s.Wishes.Store, req.Msg.GetId())
+	if err != nil {
+		return nil, Status(err)
+	}
+	titles := map[string]string{}
+	if id := e.GetWishId(); id != "" {
+		if wish, err := store.Get[*planv1.Wish](ctx, s.Wishes.Store, id); err == nil {
+			titles[id] = oneLine(wish.GetTitle())
+		}
+	}
+	return connect.NewResponse(&planv1.LeadServiceEventResponse{Text: eventEntry(e, titles)}), nil
+}
+
+// DigestTitles are the wishes of events by their short title, for the lines that name them: task and question codes
+// are unique within a wish only (W74 was in two wishes at once). A wish deleted since is named by its identifier.
+func DigestTitles(ctx context.Context, r store.Reader, events []*planv1.LeadEvent) map[string]string {
+	titles := map[string]string{}
+	for _, id := range EventWishes(events) {
+		titles[id] = id
+		if wish, err := store.Get[*planv1.Wish](ctx, r, id); err == nil {
+			titles[id] = clipRunes(oneLine(wish.GetTitle()), digestTitleMax)
+		}
+	}
+	return titles
+}
+
+// DigestKeeps tells whether a digest's line keeps the whole text of e, uncut.
+func DigestKeeps(e *planv1.LeadEvent) bool {
+	return !strings.HasSuffix(DigestLine(e, ""), "…") || strings.HasSuffix(oneLine(e.GetText()), "…")
+}
+
+// DigestLine is an event in a digest's line: its code and the short title of its wish (title, empty for an event of
+// no wish), its kind, and its text in a few words.
+func DigestLine(e *planv1.LeadEvent, title string) string {
 	kind := strings.ToLower(strings.TrimPrefix(e.GetKind().String(), "LEAD_EVENT_KIND_"))
 	text := strings.TrimPrefix(oneLine(e.GetText()), "Djinn: ")
 	head := kind
+	if title != "" {
+		head = "[" + title + "] " + kind
+	}
 	if code := e.GetCode(); code != "" {
-		head = code + " " + kind
+		head = code + " " + head
 		text = strings.TrimPrefix(text, code+" ")
 	}
 	return head + ": " + clipRunes(text, digestLineMax)

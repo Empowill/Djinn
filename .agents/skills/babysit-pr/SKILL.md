@@ -16,6 +16,7 @@ metadata:
       done_when: MERGED
     source:
       watch: "sh .agents/skills/babysit-pr/inbox.sh"
+      summary: "The open pull requests of this repository assigned to you or that request your review, read with gh."
 ---
 
 # Babysit a pull request

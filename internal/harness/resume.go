@@ -219,7 +219,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	}
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		if _, err := plan.LoadSettings(h.home, project); err != nil {
-			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false)
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false, false, 0)
 			return nil
 		}
 	}
@@ -240,14 +240,20 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		by = byPreempt
 	case strings.HasPrefix(t.GetWaitReason(), whyLost):
 		by = byLost
+	case strings.HasPrefix(t.GetWaitReason(), whyNetworkDown):
+		by = byNetwork
 	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
-	t.Status, t.WaitReason, t.MachineWait, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", false, nil
+	t.Status, t.WaitReason, t.MachineWait, t.RoomWait, t.Hold, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", false, false, 0, nil
 	switch by {
 	case byContinue:
 		t.Continuing = false // Cut short again, it resumes as any task does.
 	case byLimit:
 		t.Resumes++
+	case byNetwork:
+		if end := t.GetEndTime(); end == nil || !h.netCut(end.AsTime()) {
+			t.Resumes++ // No outage confirmed when it was cut: a resume spent, as for a limit; an outage costs none.
+		}
 	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byLost:
 		// No resume spent.
 	}
@@ -291,7 +297,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 			planv1.TaskAccess_TASK_ACCESS_DJINN:
 			// Decided by the developer's answer, outside any project, or by the task's role: it stays.
 		default:
-			access, declared, err := decideAccess(project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
+			access, declared, err := decideAccess(h.home, project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
 			if err != nil {
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
 			}
@@ -326,6 +332,21 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	return nil
 }
 
+// taskStartBranch is the branch a worktree made again for t, a task of project, starts from: where its work lands, as
+// at its launch (workerStartBranch); "" when its wish or the project's settings cannot be read, the reference branch
+// then.
+func (h *Harness) taskStartBranch(ctx context.Context, project *planv1.Project, t *planv1.Task) string {
+	wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
+	if err != nil {
+		return ""
+	}
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil {
+		return ""
+	}
+	return h.workerStartBranch(ctx, wish, project, settings, t)
+}
+
 // resumeWorker starts the worker of a resumed task where its last one worked, by: byRestart, byLimit, or byContinue
 // with the prompt it was continued with. The caller owns the run's task.
 func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Project, prep prepared, prompt, by string, priorProvider planv1.Provider) error {
@@ -356,9 +377,9 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		dir = filepath.Join(t.GetWorktree(), filepath.FromSlash(prefix))
 		if _, err := os.Stat(dir); err != nil {
 			if by == byEnvReplay {
-				sha, _, _ := startPoint(h.ctx, project.GetDirectory(), "")
-				if sha == "" {
-					sha = "HEAD"
+				sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+				if err != nil {
+					return fmt.Errorf("create the worktree: %w", err)
 				}
 				if dir, err = addWorktreeFrom(h.ctx, project.GetDirectory(), t.GetWorktree(), t.GetBranch(), sha); err != nil {
 					return fmt.Errorf("create the worktree: %w", err)
@@ -370,11 +391,10 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case project.GetGit() && !r.light: // A question worker reads in the project's folder.
 		if by == byEnvReplay {
 			t.Worktree = worktreeDir(h.home, project.GetId(), t.GetId())
-			sha, _, _ := startPoint(h.ctx, project.GetDirectory(), "")
-			if sha == "" {
-				sha = "HEAD"
+			sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+			if err != nil {
+				return fmt.Errorf("create the worktree: %w", err)
 			}
-			var err error
 			if dir, err = addWorktreeFrom(h.ctx, project.GetDirectory(), t.GetWorktree(), t.GetBranch(), sha); err != nil {
 				return fmt.Errorf("create the worktree: %w", err)
 			}
@@ -382,7 +402,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return errors.New("its worktree is gone: it cannot be resumed")
 		}
 	}
-	budget := t.GetMaxBudgetUsd()
+	budget := providerBudget(t)
 	if budget > 0 {
 		if budget -= t.GetUsage().GetCostUsd(); budget <= 0 {
 			return fmt.Errorf("its budget of $%.2f is spent", t.GetMaxBudgetUsd())
@@ -412,6 +432,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		line = envReplayLine
 	case byPreempt:
 		line = preemptLine
+	case byNetwork:
+		line = networkLine
 	}
 	model := t.GetModel()
 	if foreignModel(t.GetProvider(), model) && !r.watcher {
@@ -421,6 +443,10 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	spec := Spec{
 		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: model, MaxBudgetUSD: budget,
 		Resume: t.GetSessionId(), Prompt: line,
+	}
+	var err error
+	if spec.WriteDirs, err = h.questionWriteDirs(t); err != nil {
+		return err
 	}
 	how := ", resuming its session"
 	providerChanged := priorProvider != planv1.Provider_PROVIDER_UNSPECIFIED && priorProvider != t.GetProvider()
@@ -446,6 +472,20 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		if by == byAnswer {
 			spec.Prompt = line // It holds the first prompt already.
 		}
+	}
+	// What was sent to its last worker and never read: told with its prompt, received once it says something.
+	unread, err := unreceived(h.ctx, h.store, t.GetId())
+	if err != nil {
+		return err
+	}
+	if len(unread) > 0 {
+		spec.Prompt += "\n\n" + unreceivedText(unread)
+		r.unread = unread
+	}
+	// Its branch first brought up to date with the branch its work merges into, when that one moved (uptodate.go).
+	stale := h.behindTarget(h.ctx, r, t, project)
+	if stale != nil {
+		spec.Prompt = rebaseText(stale) + "\n\n" + spec.Prompt
 	}
 	r.base = t.GetUsage()
 	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)
@@ -475,7 +515,13 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		text = fmt.Sprintf("resumed %s (%d of 2): started %s %s%s, %s%s", by, t.GetEnvReplays(),
 			short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
 	}
-	return h.start(r, provider, spec, text)
+	if err := h.start(r, provider, spec, text); err != nil {
+		return err
+	}
+	if stale != nil {
+		h.rebasePending(r, stale)
+	}
+	return nil
 }
 
 // replayEnvFailures restarts tasks of the given provider that failed for an environment cause.

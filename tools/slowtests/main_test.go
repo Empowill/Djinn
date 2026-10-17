@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,10 @@ func TestCheck(t *testing.T) {
 	if !res.failed || out.String() != "--- FAIL: TestBad (0.00s)\n" {
 		t.Errorf("failed = %v, out = %q", res.failed, out.String())
 	}
+	// A push check keeps only the end of the output: main names the failed tests last (W135).
+	if want := []string{"p TestBad"}; !slices.Equal(res.failures, want) {
+		t.Errorf("failures = %q, want %q", res.failures, want)
+	}
 
 	out.Reset()
 	if res, _ = check(strings.NewReader("go: no Go files\n"), &out, time.Second); !res.failed {
@@ -109,6 +114,9 @@ func TestCheckCutPackage(t *testing.T) {
 	if !res.failed || !strings.HasSuffix(got, "ok  \tq\t1s\n") {
 		t.Errorf("failed = %v, out:\n%s", res.failed, got)
 	}
+	if want := []string{"p (its test binary ended in the middle)"}; !slices.Equal(res.failures, want) {
+		t.Errorf("failures = %q, want %q", res.failures, want)
+	}
 
 	in = strings.Join([]string{
 		`{"Action":"build-output","ImportPath":"p [p.test]","Output":"p_test.go:1: syntax error\n"}`,
@@ -122,6 +130,9 @@ func TestCheckCutPackage(t *testing.T) {
 	}
 	if want := "p_test.go:1: syntax error\nFAIL\tp [build failed]\n"; !res.failed || out.String() != want {
 		t.Errorf("failed = %v, out = %q, want %q", res.failed, out.String(), want)
+	}
+	if want := []string{"p (build failed)"}; !slices.Equal(res.failures, want) {
+		t.Errorf("failures = %q, want %q", res.failures, want)
 	}
 }
 

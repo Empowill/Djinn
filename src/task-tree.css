@@ -3,11 +3,11 @@
 .tasks-moving .section-title,
 .tasks-tree .section-title {
   position: relative;
-  padding-right: 64px;
+  padding-right: 4rem;
 }
 .layout-toggle {
   position: absolute;
-  top: 2px;
+  top: 0.125rem;
   right: 0;
   display: inline-flex;
   border: 1px solid var(--line);
@@ -18,8 +18,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 24px;
+  width: 1.75rem;
+  height: 1.5rem;
   padding: 0;
   border: 0;
   background: none;
@@ -40,7 +40,7 @@
 .task-tree-layout.with-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
+  gap: 1rem;
   align-items: start;
 }
 .task-tree {
@@ -50,7 +50,7 @@
 .task-tree-lines {
   position: absolute;
   top: 0;
-  left: 0;
+  left: var(--tree-dates);
   overflow: visible;
   pointer-events: none;
 }
@@ -86,11 +86,11 @@
   position: absolute;
   left: 0;
   right: 0;
-  height: 24px;
+  height: 1.5rem;
   display: block;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   background: none;
   color: var(--text);
   font: inherit;
@@ -109,34 +109,51 @@
 .tree-row.focused {
   background: color-mix(in srgb, var(--tone) 12%, transparent);
 }
+/* A row's moment, to the second, left of the lanes: right-aligned so the hours line up under a day said once. */
+.tree-date {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--tree-dates);
+  padding-right: 0.5rem;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--muted);
+  font: var(--font-size-body, 0.75rem) var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .tree-dot {
   position: absolute;
   top: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin: -8px 0 0 -8px;
+  width: 1rem;
+  height: 1rem;
+  margin: -0.5rem 0 0 -0.5rem;
   border-radius: 50%;
   background: var(--bg);
   color: var(--tone);
 }
 .tree-dot .live-dot {
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
 }
 .tree-label {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--tree-lanes) + 4px);
-  right: 4px;
+  left: calc(var(--tree-dates) + var(--tree-lanes) + 0.25rem);
+  right: 0.25rem;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   min-width: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   white-space: nowrap;
 }
 .tree-label .agent-code {
@@ -153,7 +170,7 @@
 }
 .task-tooltip.tree-tip {
   display: flex;
-  left: var(--tree-lanes);
+  left: calc(var(--tree-dates) + var(--tree-lanes));
   pointer-events: none;
 }
 
@@ -181,8 +198,8 @@
 .task-tree-close {
   float: right;
   display: inline-flex;
-  margin: 0 0 4px 8px;
-  padding: 4px;
+  margin: 0 0 0.25rem 0.5rem;
+  padding: 0.25rem;
   border: 0;
   background: none;
   color: var(--muted);

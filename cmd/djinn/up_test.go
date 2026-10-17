@@ -62,7 +62,8 @@ func TestMain(m *testing.M) {
 		}
 		updatePoll, restartDelay = updatePollForTests, restartDelayForTests
 		extendPath = false
-		readMachine = calmMachine
+		// A djinn up of a test starts its workers whatever else the machine runs (machine.Calm).
+		readMachine = machine.Calm
 		// No test reaches the network: only a fake release, served by the test, is looked for.
 		checkReleases = os.Getenv("DJINN_TEST_RELEASE_API") != ""
 		if checkReleases {
@@ -77,15 +78,6 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	cleanup()
 	os.Exit(code)
-}
-
-// calmMachine is this machine, its cores and memory, never under pressure. A djinn up of a test starts its workers
-// whatever else the machine runs: a macOS runner of the CI, with no pressure stall information, reads a load of 21
-// on 3 cores while the packages test in parallel, and its scheduler held a resumed worker past the test's wait.
-// The pressure has its own tests (internal/machine, internal/gate).
-func calmMachine() (machine.Snapshot, error) {
-	s, err := machine.Read()
-	return machine.Snapshot{Cores: s.Cores, MemoryTotal: s.MemoryTotal, MemoryAvailable: s.MemoryTotal}, err
 }
 
 // environ is the environment of a djinn of the test: its data directory (none when home is empty), a plain POSIX
@@ -712,5 +704,19 @@ func TestWorkerMemoryGuardFlag(t *testing.T) {
 	t.Setenv("DJINN_WORKER_MEMORY_GUARD", "invalid")
 	if _, err := runUp(nil); err == nil || !strings.Contains(err.Error(), "DJINN_WORKER_MEMORY_GUARD") {
 		t.Errorf("runUp with invalid env guard: got %v, want error", err)
+	}
+}
+
+// TestIfritIdleFlag: djinn up --ifrit-idle takes whole minutes from 5m to 4h; none given leaves it to the settings.
+func TestIfritIdleFlag(t *testing.T) {
+	for in, want := range map[string]time.Duration{"": 0, "30m": 30 * time.Minute, "1h30m": 90 * time.Minute, "5m": 5 * time.Minute, "4h": 4 * time.Hour} {
+		if got, err := ifritIdleFlag(in); err != nil || got != want {
+			t.Errorf("--ifrit-idle %q = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"4m", "4h1m", "30", "30m30s", "half an hour", "-30m"} {
+		if _, err := ifritIdleFlag(in); err == nil || !strings.Contains(err.Error(), "expected whole minutes from 5m to 4h") {
+			t.Errorf("--ifrit-idle %q: %v, want refused", in, err)
+		}
 	}
 }

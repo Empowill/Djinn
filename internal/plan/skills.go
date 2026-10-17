@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -73,6 +74,18 @@ func FindSkill(dir, name string) (SkillDir, error) {
 		filepath.ToSlash(SkillFolders[0]), filepath.ToSlash(SkillFolders[1]), dir)
 }
 
+// FindProjectSkill is the skill name of project, case ignored, where Djinn reads its configuration (ProjectConfig),
+// home its data folder.
+func FindProjectSkill(home string, project *planv1.Project, name string) (SkillDir, error) {
+	c := ProjectConfig(home, project)
+	s, err := FindSkill(c.Dir, name)
+	if err != nil && c.FromReference() {
+		return s, fmt.Errorf("no skill %s in %s nor %s of %s", name,
+			filepath.ToSlash(SkillFolders[0]), filepath.ToSlash(SkillFolders[1]), c.Ref)
+	}
+	return s, err
+}
+
 // isSkill tells whether dir is a folder, or a link to one, holding a SKILL.md.
 func isSkill(dir string) bool {
 	info, err := os.Stat(filepath.Join(dir, SkillFile))
@@ -119,6 +132,82 @@ func Description(dir string) string {
 	return strings.TrimSpace(strings.Join(parts, " "))
 }
 
+// skillFront reads the metadata of the front matter of the SKILL.md of the skill in dir, by key: none without it.
+// Claude Code reads a front matter that is not YAML when one line breaks it, as `argument-hint: [a] [b]` does (YAML
+// opens a list there): Djinn then reads metadata apart from the other keys, and warning names the lines it skipped.
+// An error when metadata itself cannot be read.
+func skillFront(dir string) (metadata map[string]yaml.Node, warning string, err error) {
+	front, err := frontMatter(filepath.Join(dir, SkillFile))
+	if err != nil || front == "" {
+		return nil, "", err
+	}
+	var doc struct {
+		Metadata map[string]yaml.Node `yaml:"metadata"`
+	}
+	err = yaml.Unmarshal([]byte(front), &doc)
+	if err == nil {
+		return doc.Metadata, "", nil
+	}
+	notYAML := fmt.Errorf("%s: its front matter is not YAML: %w", SkillFile, err)
+	doc.Metadata = nil // What a type error let through.
+	found := false
+	var broken []string
+	for _, e := range frontEntries(front) {
+		var one struct {
+			Metadata *map[string]yaml.Node `yaml:"metadata"`
+		}
+		key, _, _ := strings.Cut(e.text, ":")
+		isMetadata := strings.Trim(strings.TrimSpace(key), `"'`) == "metadata"
+		switch err := yaml.Unmarshal([]byte(e.text), &one); {
+		case isMetadata && (err != nil || found):
+			return nil, "", notYAML // metadata itself breaks, or comes twice: nothing to read apart.
+		case err != nil:
+			broken = append(broken, fmt.Sprintf("line %d (%s)", e.line, shortLine(e.text)))
+		case isMetadata:
+			found = true
+			if one.Metadata != nil {
+				doc.Metadata = *one.Metadata
+			}
+		}
+	}
+	if len(broken) == 0 {
+		return doc.Metadata, notYAML.Error() + ": Djinn reads metadata apart", nil
+	}
+	return doc.Metadata, fmt.Sprintf("%s: not YAML at %s: Djinn reads metadata apart; quoting the value fixes it",
+		SkillFile, strings.Join(broken, ", ")), nil
+}
+
+// frontEntry is a key of a front matter at the top level, with the lines of its value.
+type frontEntry struct {
+	// line is where it starts in SKILL.md, from 1; text its lines.
+	line int
+	text string
+}
+
+// frontEntries cut front, a front matter, into its keys at the top level: a key starts at a line that is neither
+// indented, blank, a comment nor an item of a list, which may follow its key at the same indentation.
+func frontEntries(front string) []frontEntry {
+	var out []frontEntry
+	for i, line := range strings.SplitAfter(front, "\n") {
+		starts := line != "" && !strings.ContainsRune(" \t\r\n#", rune(line[0])) &&
+			line != "-\n" && !strings.HasPrefix(line, "- ")
+		if starts || len(out) == 0 {
+			out = append(out, frontEntry{line: i + 2}) // SKILL.md's first line is the ---.
+		}
+		out[len(out)-1].text += line
+	}
+	return out
+}
+
+// shortLine is the first line of text, cut to fit in a sentence.
+func shortLine(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+	if line = strings.TrimSpace(line); len([]rune(line)) > 60 {
+		line = string([]rune(line)[:60]) + "…"
+	}
+	return line
+}
+
 func unquote(s string) string {
 	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
 		return s[1 : len(s)-1]
@@ -135,10 +224,13 @@ type Summoned struct {
 	ProjectID string
 	// Missing says why the skill cannot be found; empty when it is.
 	Missing string
+	// Folder is its folder in its project's folder, where it is fixed: Dir, unless Djinn reads that project's
+	// configuration on its reference branch.
+	Folder string
 }
 
 // SummonedSkills are the skills project summons, each found in its source project or said missing.
-func SummonedSkills(ctx context.Context, r store.Reader, project *planv1.Project) ([]Summoned, error) {
+func SummonedSkills(ctx context.Context, r store.Reader, home string, project *planv1.Project) ([]Summoned, error) {
 	var out []Summoned
 	for _, s := range project.GetSummons() {
 		res := Summoned{
@@ -152,11 +244,11 @@ func SummonedSkills(ctx context.Context, r store.Reader, project *planv1.Project
 			return nil, err
 		default:
 			res.Source = src.GetName() + "/" + s.GetSkill()
-			found, err := FindSkill(src.GetDirectory(), s.GetSkill())
+			found, err := FindProjectSkill(home, src, s.GetSkill())
 			if err != nil {
 				res.Missing = err.Error()
 			} else {
-				res.SkillDir = found
+				res.SkillDir, res.Folder = found, ProjectConfig(home, src).Shown(found.Dir)
 			}
 		}
 		out = append(out, res)
@@ -168,6 +260,8 @@ func SummonedSkills(ctx context.Context, r store.Reader, project *planv1.Project
 type Skills struct {
 	planv1connect.UnimplementedSkillServiceHandler
 	Store *store.Store
+	// Home is Djinn's data folder, where it reads the projects' configuration (ConfigDir); empty: their folders.
+	Home string
 }
 
 func (k *Skills) Summon(
@@ -187,11 +281,11 @@ func (k *Skills) Summon(
 		if src.GetId() == into.GetId() {
 			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s holds the skill %s already: nothing to summon", into.GetName(), name))
 		}
-		found, err := FindSkill(src.GetDirectory(), name)
+		found, err := FindProjectSkill(k.Home, src, name)
 		if err != nil {
 			return connect.NewError(connect.CodeNotFound, fmt.Errorf("project %s: %w", src.GetName(), err))
 		}
-		if _, err := FindSkill(into.GetDirectory(), found.Name); err == nil {
+		if _, err := FindProjectSkill(k.Home, into, found.Name); err == nil {
 			return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("%s has a skill %s of its own", into.GetName(), found.Name))
 		}
 		for _, s := range into.GetSummons() {
@@ -236,12 +330,12 @@ func (k *Skills) List(
 	}
 	res := &planv1.SkillServiceListResponse{}
 	for _, p := range projects {
-		for _, s := range ProjectSkills(p.GetDirectory()) {
+		for _, s := range ProjectSkills(ConfigDir(k.Home, p)) {
 			res.Skills = append(res.Skills, withTemplate(&planv1.Skill{
 				Project: p.GetName(), Name: s.Name, Directory: s.Dir, Description: s.Description,
 			}))
 		}
-		summoned, err := SummonedSkills(ctx, k.Store, p)
+		summoned, err := SummonedSkills(ctx, k.Store, k.Home, p)
 		if err != nil {
 			return nil, Status(err)
 		}

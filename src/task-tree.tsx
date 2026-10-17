@@ -1,8 +1,8 @@
 // The tree of a wish's tasks, the Tasks tab's other layout (src/task-tabs.tsx): every task, finished ones included, one
 // row each, the oldest at the bottom on the trunk, the work rising and widening into a branch per azima and side lanes
-// where work runs side by side (src/data/tree.ts). A row shows the task's state, its code and its title cut short; the
-// rest on hover; a click opens its card beside the tree. Hand-drawn SVG, and only the rows on screen: a wish holds
-// hundreds of tasks.
+// where work runs side by side (src/data/tree.ts). A row shows, left of the lanes, when the task started (or was
+// created, never started) to the second, then its state, its code and its title cut short; the rest on hover; a click
+// opens its card beside the tree. Hand-drawn SVG, and only the rows on screen: a wish holds hundreds of tasks.
 import {
   type CSSProperties,
   type ReactNode,
@@ -18,10 +18,14 @@ import { X } from "lucide-react";
 
 import type { Project, Task } from "../gen/ts/plan/v1/plan_pb";
 import { useTaskPrompt } from "./data/djinn";
-import { isMerge } from "./data/flight";
+import { isInvestigation, isMerge, isUrgent } from "./data/flight";
 import {
   cancelledText,
+  fixerOf,
+  rowStamps,
+  taskDates,
   taskModelDisplay,
+  taskMoment,
   taskStatusText,
   taskTime,
   taskTone,
@@ -31,18 +35,32 @@ import {
 import { type TreeLayout, type TreeNode, treeLayout } from "./data/tree";
 import { t } from "./i18n";
 import { ToneIcon } from "./status";
+import { useTextScale } from "./text-size";
 import { TaskUsage } from "./usage";
-import { MergeLabel, promptPreview } from "./wish-task";
+import {
+  HealthMark,
+  InvestigationLabel,
+  MergeLabel,
+  promptPreview,
+  UrgentLabel,
+} from "./wish-task";
 import "./task-tree.css";
 
-// A row's height, a lane's width, and the room left of the first lane, in pixels.
+// A row's height, a lane's width, and the room left of the first lane, in pixels at the default text size: the tree
+// lays out in these units and draws in rem, so it follows the root font size (text-size.ts), and measures the screen
+// with the text size's scale.
 export const ROW = 24;
 const LANE = 12;
 const PAD = 10;
+// The dates' column: a character's width in its monospaced font (IBM Plex Mono, 0.6 em at 0.75rem), and its room
+// beside the text, in pixels at the default text size.
+const DIGIT = 0.6 * 12;
+const DATE_PAD = 12;
 // Rows drawn beyond the screen, above and below: a scroll shows no gap before the next frame.
 const OVERSCAN = 40;
 
 const x = (lane: number) => PAD + lane * LANE;
+const rem = (length: number) => `${length / 16}rem`;
 
 // joint goes on from a point to another, rising: it leaves vertically and arrives vertically, a soft curve between, like
 // smoke.
@@ -167,16 +185,44 @@ export function TaskTree({
     [tasks],
   );
   const byId = useMemo(() => new Map(tasks.map((x) => [x.id, x])), [tasks]);
+  // The correction task that fixes a task's failed merge while it works, by the id of the task (fixerOf).
+  const fixed = useMemo(
+    () =>
+      new Map(
+        tasks.flatMap((x) => {
+          const fixer = fixerOf(x, tasks);
+          return fixer ? [[x.id, fixer.code] as const] : [];
+        }),
+      ),
+    [tasks],
+  );
   const tones = useMemo(
     () =>
       layout.nodes.map((node) =>
-        taskTone(node.task, forked.get(node.task.code) ?? ""),
+        taskTone(
+          node.task,
+          forked.get(node.task.code) ?? "",
+          fixed.get(node.task.id) ?? "",
+        ),
       ),
-    [layout, forked],
+    [layout, forked, fixed],
   );
   const drawn = useMemo(() => pieces(layout, tones), [layout, tones]);
+  // Each row's moment, by row, read from the top: its day said only when it changes from the row above's.
+  const stamps = useMemo(
+    () =>
+      rowStamps(
+        layout.nodes.map((node) => taskMoment(node.task)).reverse(),
+      ).reverse(),
+    [layout],
+  );
+  // The dates' column, as wide as its longest date, so the lanes never move while the page scrolls.
+  const dates =
+    Math.ceil(Math.max(0, ...stamps.map((s) => s.length)) * DIGIT) + DATE_PAD;
   const width = PAD * 2 + (layout.lanes - 1) * LANE;
   const height = n * ROW;
+  // A row's height on screen.
+  const row = ROW * useTextScale();
 
   // The rows on screen, by the scroll of the page: the newest ones until it is measured.
   const ref = useRef<HTMLDivElement>(null);
@@ -192,12 +238,12 @@ export function TaskTree({
     const view = scroller
       ? scroller.getBoundingClientRect()
       : { top: 0, bottom: window.innerHeight };
-    const top = Math.floor((view.top - box.top) / ROW);
-    const bottom = Math.ceil((view.bottom - box.top) / ROW);
+    const top = Math.floor((view.top - box.top) / row);
+    const bottom = Math.ceil((view.bottom - box.top) / row);
     const lo = Math.max(0, n - 1 - bottom - OVERSCAN);
     const hi = Math.min(n - 1, n - 1 - top + OVERSCAN);
     setRange((was) => (was[0] === lo && was[1] === hi ? was : [lo, hi]));
-  }, [n]);
+  }, [n, row]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -233,16 +279,16 @@ export function TaskTree({
     if (!scroller) return;
     const box = el.getBoundingClientRect();
     const view = scroller.getBoundingClientRect();
-    const at = box.top + (n - 1 - focusRow) * ROW;
+    const at = box.top + (n - 1 - focusRow) * row;
     // Under the attention bar is out of sight (src/azima.tsx useStickyRoom).
     const top =
       view.top +
       (parseFloat(
         getComputedStyle(scroller).getPropertyValue("--attention-height"),
       ) || 0);
-    if (at >= top && at + ROW <= view.bottom) return;
+    if (at >= top && at + row <= view.bottom) return;
     scroller.scrollTop += at - (top + view.bottom) / 2;
-  }, [focusRow, n]);
+  }, [focusRow, n, row]);
 
   const [hover, setHover] = useState(-1);
   const lit = hover >= 0 ? hover : (focusRow ?? -1);
@@ -267,12 +313,19 @@ export function TaskTree({
           <div
             className="task-tree"
             ref={ref}
-            style={{ height, "--tree-lanes": `${width}px` } as CSSProperties}
+            style={
+              {
+                height: rem(height),
+                "--tree-lanes": rem(width),
+                "--tree-dates": rem(dates),
+              } as CSSProperties
+            }
           >
             <svg
               className="task-tree-lines"
               width={width}
               height={height}
+              style={{ width: rem(width), height: rem(height) }}
               viewBox={`0 0 ${width} ${height}`}
               aria-hidden="true"
             >
@@ -290,7 +343,9 @@ export function TaskTree({
                 node={node}
                 n={n}
                 tone={tones[node.row]}
+                stamp={stamps[node.row]}
                 forkedAs={forked.get(node.task.code) ?? ""}
+                fixedBy={fixed.get(node.task.id) ?? ""}
                 codes={codes}
                 focused={node.row === focusRow}
                 kin={!!kin && node.group === kin && node.row !== hover}
@@ -303,6 +358,7 @@ export function TaskTree({
                 node={hovered}
                 n={n}
                 forkedAs={forked.get(hovered.task.code) ?? ""}
+                fixedBy={fixed.get(hovered.task.id) ?? ""}
                 project={projects.get(hovered.task.projectId)}
                 azima={byId.get(hovered.group)}
               />
@@ -328,12 +384,15 @@ export function TaskTree({
   );
 }
 
-// TreeRow is a task's row: on its lane, its state; past the lanes, its code and its title cut short.
+// TreeRow is a task's row: left of the lanes, its moment; on its lane, its state; past the lanes, its code and its title
+// cut short.
 const TreeRow = memo(function TreeRow({
   node,
   n,
   tone,
+  stamp,
   forkedAs,
+  fixedBy,
   codes,
   focused,
   kin,
@@ -343,7 +402,10 @@ const TreeRow = memo(function TreeRow({
   node: TreeNode;
   n: number;
   tone: Tone;
+  // When it started, or was created, to the second; its day when it is another than the row above's.
+  stamp: string;
   forkedAs: string;
+  fixedBy: string;
   codes: ReadonlyMap<string, string>;
   focused: boolean;
   // Part of the same azima as the row hovered.
@@ -356,21 +418,28 @@ const TreeRow = memo(function TreeRow({
     <button
       type="button"
       className={`tree-row tone-${tone}${focused ? " focused" : ""}${kin ? " kin" : ""}`}
-      style={{ top: (n - 1 - node.row) * ROW }}
+      style={{ top: rem((n - 1 - node.row) * ROW) }}
       data-task={task.code}
-      aria-label={`${task.code} ${task.title}: ${taskStatusText(task, forkedAs)}`}
+      aria-label={`${task.code} ${task.title}: ${taskStatusText(task, forkedAs, fixedBy)}`}
       onClick={() => onOpen(task.id)}
       onMouseEnter={() => onHover(node.row)}
       onMouseLeave={() => onHover(-1)}
       onFocus={() => onHover(node.row)}
       onBlur={() => onHover(-1)}
     >
-      <span className="tree-dot" style={{ left: x(node.lane) }}>
+      <span className="tree-date">{stamp}</span>
+      <span
+        className="tree-dot"
+        style={{ left: `calc(var(--tree-dates) + ${rem(x(node.lane))})` }}
+      >
         <ToneIcon tone={tone} size={12} />
       </span>
       <span className="tree-label">
         {isMerge(task) && <MergeLabel task={task} codes={codes} />}
+        {isUrgent(task) && <UrgentLabel feedback={task.feedback} />}
+        {isInvestigation(task) && <InvestigationLabel />}
         <span className="agent-code">{task.code}</span>
+        <HealthMark task={task} />
         <span className="tree-title">{task.title}</span>
       </span>
     </button>
@@ -382,12 +451,14 @@ function TreeTip({
   node,
   n,
   forkedAs,
+  fixedBy,
   project,
   azima,
 }: {
   node: TreeNode;
   n: number;
   forkedAs: string;
+  fixedBy: string;
   project?: Project;
   // The azima it is part of.
   azima?: Task;
@@ -401,7 +472,7 @@ function TreeTip({
     <span
       className="task-tooltip tree-tip"
       role="tooltip"
-      style={{ top: (n - node.row) * ROW }}
+      style={{ top: rem((n - node.row) * ROW) }}
     >
       <span className="task-tooltip-title">{task.title}</span>
       {azima && (
@@ -409,8 +480,9 @@ function TreeTip({
           {t("tasks.branch", { code: azima.code, title: azima.title })}
         </span>
       )}
+      <span className="task-tooltip-activity">{taskDates(task)}</span>
       <span className="task-tooltip-activity">
-        {[taskStatusText(task, forkedAs), why, model?.label, time.text]
+        {[taskStatusText(task, forkedAs, fixedBy), why, model?.label, time.text]
           .filter(Boolean)
           .join(" · ")}
         {task.usage && (

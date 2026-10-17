@@ -48,6 +48,7 @@ func (in *integration) installs() []string {
 // over the running Djinn. Neither a worker's nor the lead's move question installs anything, whatever its words.
 func TestAnswerOtherMoveInstallsNothing(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"generate: \"gen\"\ntest: \"test\"\ninstall: \"install\"\n")
@@ -86,6 +87,7 @@ func TestAnswerOtherMoveInstallsNothing(t *testing.T) {
 // mentioning a release starts none; Djinn's own tag question, answered yes, pushes the tag it named.
 func TestAnswerOtherMovePushesNoTag(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -121,6 +123,7 @@ func TestAnswerOtherMovePushesNoTag(t *testing.T) {
 // even once the integration branch moved past it.
 func TestAnswerOwnInstallInstallsItsBuild(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"generate: \"gen\"\ntest: \"test\"\ninstall: \"install\"\n")

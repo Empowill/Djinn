@@ -9,6 +9,23 @@ the code does not say by itself; remove one when a change makes it false.
 - **A test over the time limit is a failing test.** `test-go` fails a Go test over 10 s on Linux (15 s elsewhere), and
   the project counts one over 1 s as a bug. *Do:* a fake clock, a short tick, a wait on an event; keep git merges
   and spawned processes few. *Where:* `tools/slowtests`.
+- **A slow test with an idle CPU waits on fsync.** Djinn's store syncs each commit (`synchronous(FULL)`), ~20 ms on a
+  machine busy with workers: `TestEventsBesideTheRun` took 8.3 s alone, 0.8 s of it on the CPU (W124). Tests now
+  open their stores with `synchronous(NORMAL)` (`durability`, under `go test` or `DJINN_TEST=1`). *Sign:* a CPU
+  profile far shorter than the test; `-test.trace`, then `go tool trace -pprof=syscall`, shows `Tx.Commit`. `strace
+  -c` hides it: it counts the CPU time of a syscall, not its wait. *Where:* `internal/store/store.go`.
+- **The harness tests run in parallel; a few cannot.** W182 made 171 serial `internal/harness` tests parallel (the
+  package from about 110 s to about 55 s, `-race` from 8 min to 5). Stay serial: a test that sets the environment
+  (`t.Setenv` panics after `t.Parallel`: a fake `gh` on `PATH`, `HOME`), one that sets a hook every worker reaches
+  (`setPriorityFn`), and one with parallel subtests: queued behind the whole package, `TestReleaseFit` took 17 s.
+  *Sign:* passes alone, red in a loaded full run under `-race`: a wait on a duration, or a fake clock started before
+  something made with the real time (an integration test's clock now starts once its wish is made: the first task
+  merged looked older than the wish, and no push was due). *Where:* `internal/harness`.
+- **The scheduler reads a copy of a run's task.** The pump changes `r.task` without a lock; a reader apart from the
+  pump (`lowestWorkTask`, `resumeNotchPaused`, `lowestPausedWorkTask`) reads `r.shown`, the copy `writeAs` publishes
+  under `h.mu` (W182: a data race under `-race`). *Do:* a new reader outside the pump reads `r.shown`; a test that
+  changes what the scheduler sees replaces `r.shown` (`shownAs`), once the worker said its session. *Where:*
+  `internal/harness/harness.go`.
 - **`jq` is slow in test fakes.** jq 1.6 costs ~57 ms a run: a fake `gh`/`glab` that runs it per call made a test
   last 1.5 s (W148). *Do:* run jq once per command over all its data files (`input_filename` before each line) and
   cache the answers, or answer in Go with no jq at all. *Where:* `internal/harness/babysit_pr_test.go`,
@@ -18,6 +35,16 @@ the code does not say by itself; remove one when a change makes it false.
   `go tool task test` red on `French (…)`. *Do:* paraphrase in English; to show Unicode passes, use an em dash, not
   a French word; run `go test -tags headless ./locales/` (about 1 s) after writing non-ASCII text. *Where:*
   `locales/french_test.go`. Under a loaded full run it may report ~2 s although it takes 0.6 s alone: rerun it alone.
+- **protojson output depends on the binary.** protojson adds a space after a colon, or not, from a hash of the
+  running binary: a test binary built in another folder (Djinn's integration worktree) prints `"comments":  [`
+  where yours printed `"comments": [` (W187). *Sign:* a test on JSON text green in your worktree, red in the push
+  check. *Do:* print through `indentedJSON` (compact protojson, then `json.Indent`), or compare parsed JSON;
+  reproduce by appending a few bytes to a `go test -c` binary. *Where:* `internal/cli/cli.go`.
+- **A deadline on a watch ends it on the server first.** connect sends a context's deadline to the server, whose
+  handler then ends the stream cleanly a moment before the client's own timer fires: a test that checks `ctx.Err()`
+  after a watch with `context.WithTimeout` reads nil about one time in three (W201, `TestTaskWatchLastReturns`).
+  *Sign:* a watch that "returned before the task ended" with no stream error, the test as long as its timeout. *Do:*
+  `context.WithCancel` and `time.AfterFunc(d, cancel)`: a cancel stays on the client. *Where:* `internal/harness`.
 - **A test goroutine that outlives its test kills the package.** A tick that called `t.Error` after the test returned
   hit a closed store, then panicked ("Log in goroutine after … has completed"), ending the test binary (W530,
   `TestLeadWatchSettleIsCapped`). *Sign:* `FAIL <package>` with no `--- FAIL` line; slowtests names the tests left
@@ -25,6 +52,15 @@ the code does not say by itself; remove one when a change makes it false.
   reproduce with `go test -c`, then `-test.run X -test.count=150 -test.cpu=1`. A provider hook in harness tests runs
   on the harness goroutine: return an error there, never `t.Fatal` (`Harness.Close` then hangs to the package
   timeout).
+- **A process a task's end stops can be gone before the test looks at it.** A done or failed task ends at once, and
+  stops what its worker left (stopLeft): a test that polled `/proc/PID/environ` of such a job raced that end (W135,
+  `TestTaskEndStopsWhatItsWorkerStarted`). *Do:* let the process write what the test checks to a file before its
+  PID, and read that file. *Where:* `internal/harness/leftover_linux_test.go`.
+- **A fake worker idle after its result is stopped at ten minutes.** A script that ends a turn (`usage …`) then
+  waits (`wait`), given idle CPU readings (`readCPU`) and a clock moved `SilentAfterResult` on, ends done (with a text
+  before the usage) or is continued once (without), at the scheduler's next pass (W272): a test that expected it to
+  run on, or to be stalled at thirty minutes, sees it ended. *Do:* give it busy readings, or end its turn on an error
+  (`error …` before `usage`), as `TestHealthAfterTurn` does. *Where:* `internal/harness/silent.go`.
 - **`TestUpdateInstallsABuild` races under `-race`, before your change.** A test variable is written while Update's
   goroutine reads it; `test-go` and `test-pkg` run without `-race` and pass. Still true today. *Do:* run
   `go tool task test-race -- -skip TestUpdateInstallsABuild ./internal/ui`, and do not take it for your regression.
@@ -59,6 +95,25 @@ the code does not say by itself; remove one when a change makes it false.
   push, and run a new case once against the reverted fix. Each merged task costs ~0.3 s: keep merges few and move
   edge cases to unit tests (`TestPushDue`). Test repositories with a remote set `maintenance.auto false` and
   `gc.auto 0`. *Where:* `internal/harness/integrate_test.go`, `internal/harness/push.go`.
+- **Harness integration tests: pushes run apart from the pass.** Since W180 a push due starts in a goroutine of its
+  own (`pushApart`); `in.pass` waits for it (`waitPushes`), `in.passApart` does not. *Sign:* a test that calls
+  `pushIfDue` or `pushPass` itself sees no push; a test that waits for a task to start sees it start before the push
+  checks end, so the held push starts no correction yet (`workLeft`). *Do:* call `in.h.waitPushes()` after them; hold the
+  push check with `in.testWait` to order a scheduler step before it. *Where:* `internal/harness/push_apart.go`.
+- **Harness integration tests: work queued stops the push checks.** Since W281 a push Djinn starts is cancelled as soon
+  as work is queued for its branch (`stopWhenQueued`): a task's work settled pending or integrating, a review or a
+  correction at work. *Sign:* a test that holds a push check (`holdTest`) and then merges a task sees the check stop,
+  `in.testCut` counting it, and no moot event; a task made with `in.finished` after a merge branches from the new tip
+  and never conflicts. *Do:* wait for the stop event rather than releasing the hold; make a task that must conflict
+  before the first merge, with `Integration` nil, and queue it later (`putTaskInDB`). *Where:*
+  `internal/harness/push_apart_test.go`.
+- **Harness integration tests: push checks never run twice on a tree.** Since W245 push checks red on a tree do not
+  run again on the same files (`seenRed`): the next push due starts the correction instead, even within the same pass
+  (`pushPass` after the merge's `pushIfDue`). *Sign:* a test that flips `in.testCode` to 0 and expects a green push
+  after a correction, a cancel or a hand commit that changed no file sees a new correction or "left to the lead"
+  instead; a test asserting "held, no correction yet" flakes when the push ends before the pass's own look. *Do:* make
+  the fake fix change a file (`fixTests`, `handCommit`); hold the first push check with `in.testWait` and
+  `in.passApart` until the pass is over. *Where:* `internal/harness/check_output.go`.
 - **A done fake worker now tells the lead, and may babysit.** Since W492 a work task done reaches the lead once: its
   MERGED line, or one ENDED (`tellDone`, `tellNothingMerged`); since W498 a project with no checks integrates into a
   wish's own branch, so such tests see MERGED, not ENDED; since W499 a task ending done in a project with a babysit
@@ -74,6 +129,11 @@ the code does not say by itself; remove one when a change makes it false.
 - **A watcher repeating itself wakes no one.** A paragraph equal to the last one (or, first after a start, to the
   task's `last_line`) is dropped. *Sign:* a check that fails again on a new push goes unreported. *Do:* make each
   paragraph name what it is about (head commit, job link). *Where:* `internal/harness/watch.go`.
+- **A watcher's paragraphs are cut by a silence, on the clock.** `Watch.Quiet` (50 ms in `fastWatch`) of silence ends
+  a paragraph: two lines a fake prints 100 ms apart came as one paragraph on a busy macOS runner, its first line the
+  task's `last_line`, so nothing changed (W270, `TestWatcherResumedSaysItOnce`, 1 failure in 41 macOS runs). *Sign:*
+  a task "stays" on its old `last_line` until the test's timeout. *Do:* print two paragraphs of a fake at least
+  300 ms apart. *Where:* `internal/harness/watch_test.go`.
 - **The command line fills a field from one input only through a oneof of scalars.** A message member in that oneof
   silently breaks the command (help says "Expects an RFC 3339 time"); and any string field named `file`, `path`,
   `directory` (or `*_file`…) is made absolute from the caller's folder (W9). *Do:* add a scalar member with a
@@ -82,6 +142,12 @@ the code does not say by itself; remove one when a change makes it false.
 - **A test that pushes must be a Go test.** In a worker, Bash refuses any command holding `git push`, and the
   worker's git config makes pushes from the project's repository and worktrees fail (W281); other repositories push
   fine. *Do:* prove push behaviour with a temporary repository in a Go test. *Where:* `internal/harness/guard.go`.
+- **A Go build cache emptied under a run fails it with no failing test.** The machine's `~/.cache/go-build` is shared
+  by every worker and grows to hundreds of GB; when it is emptied while `go test` or `go vet` runs, packages fail to
+  build (W299: a red push check on feat/qol, no code at fault). *Sign:* `package runtime/pprof is not in std`,
+  `could not import fmt (open …/go-build/…-d: no such file or directory)`, on standard or third-party packages.
+  *Do:* `du -sh ~/.cache/go-build` (a few MB after a wipe), then `go vet -tags headless ./...` again once nothing
+  deletes: green, the code is sound. Never empty the cache yourself: other workers build from it.
 
 ## Interface tests
 
@@ -99,21 +165,39 @@ the code does not say by itself; remove one when a change makes it false.
 - **All specs share one djinn.** `e2e/global-setup.ts` starts one `djinn up --browser`; specs leave wishes and
   terminals behind (W32). *Sign:* a spec passes alone and fails in the full run. *Do:* reproduce with the spec
   before it (`npx playwright test --config e2e/playwright.config.ts e2e/decision-log.spec.ts e2e/<spec>`), and make
-  the spec create its own state (`djinn wish make --json` through `bin/djinn-e2e`).
+  the spec create its own state (`djinn wish make --json` through `bin/djinn-e2e`). A spec that fails half way
+  leaves its state too: `project-config` failed on Windows before it said no to its source, and the flying carpet of
+  every later spec held an inbox line for it (W270). Fix the first red spec before the ones after it.
+- **Content that grows above a read item moves the scroll offset.** The browser keeps the item on screen
+  (`overflow-anchor`), so `scrollTop` grows by what was added above: the inbox line of a project fetched its sentence
+  after its first paint, and on Windows the longer sentence took a second line, 21 px (W270, `tilasms.spec.ts`). *Do:*
+  render an item with its final text (`Project.first_fix`); to reproduce, delay the call with `page.route` and narrow
+  the viewport until the text wraps.
 - **A reload gets the last minute's show.** `ui.Service` replays the last `Present` (wish and terminal) to a window
   that starts watching within a minute; since W501 not one whose wish was deleted, but another spec's live wish
   still lands (W477). *Do:* `djinn open djinn://wish/<id>` before `page.goto`; to switch themes, set
   `localStorage djinn.theme` and `documentElement.dataset.theme` in one `page.evaluate` and await the
-  `CSSTransition`s' `finished`. On a wrong page, read the error context's headings first ("Flight plan" has an
-  attention bar and a Tasks tab too). *Where:* `replay` in `internal/ui/ui.go`.
+  `CSSTransition`s' `finished`, each with `.catch(() => {})`: a transition another one replaces is cancelled, its
+  `finished` rejects, and the spec fails on "AbortError: The user aborted a request" (W263, `tilasms.spec.ts`). On a
+  wrong page, read the error context's headings first ("Flight plan" has an attention bar and a Tasks tab too).
+  *Where:* `replay` in `internal/ui/ui.go`.
 - **Live comes before the wishes are loaded.** The status bar says Live once the watch answers; the store's `loaded`
   follows 30–200 ms later, and the main view is an empty `.wish-view[aria-busy]` until then (W496). *Do:* wait on
   the element you act on (`toBeVisible`, `toBeFocused`), never on Live; to catch a remount, record elements with a
   MutationObserver in `addInitScript`. *Where:* `src/wish-app.tsx`.
-- **Playwright's trace makes the page look slow.** With `trace: "retain-on-failure"` every action snapshots the DOM:
-  ~800 ms a step on a big diff, while the window rendered in ~230 ms (W8). *Do:* measure a budget inside one
-  `page.evaluate` (act and poll with `requestAnimationFrame` there); profile with a CDP session
+- **Playwright's trace makes the page look slow.** A trace that snapshots the DOM at every action took ~800 ms a step
+  on a big diff, while the window rendered in ~230 ms (W8); the config keeps no DOM snapshot since W249. *Do:* measure
+  a budget inside one `page.evaluate` (act and poll with `requestAnimationFrame` there); profile with a CDP session
   (`Profiler.start/stop`) before blaming the interface. *Where:* `e2e/diff-chunks.spec.ts`.
+- **A transition holds while the page draws no frame.** A change of text size or theme starts CSS transitions (the
+  sidebar's width eases in 180 ms); a reading taken before they end sees their start, and on a loaded machine Chromium
+  drew no frame for over a second: text-size read a card laid out narrower, its buttons on two rows, 48 px taller
+  (W212, W249). *Do:* await the page's `CSSTransition`s (`document.getAnimations()`, their `finished`) before a
+  measure. *Where:* `choose` in `e2e/text-size.spec.ts`.
+- **The terminal panel is empty before its tabs come.** It lists the shells djinn up keeps (`running`) after it
+  draws: `if (await empty.isVisible()) click` raced a shell another test left, the button gone under the click
+  (W249). *Do:* open a shell of your own (`.lead-terminal-tab-new`) and close it before a reload. *Where:*
+  `e2e/theme.spec.ts`.
 - **The terminal panel covers the lower half.** `page.mouse` does not scroll: `scrollIntoView` first, and drag
   across `getClientRects()` (a wrapped span's box centre falls between lines). For screenshots, set a tall viewport
   (1366x2400) or the shot is cut (W497).
@@ -126,9 +210,27 @@ the code does not say by itself; remove one when a change makes it false.
   *Do:* a spec that starts its own `djinn up` passes `withAgents(process.env)`; reproduce with
   `env -i HOME=$(mktemp -d) PATH=<node, go, /usr/bin, /bin> PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright npx playwright test …`.
   *Where:* `e2e/agents.ts`.
-- **`docs.spec.ts` "scrolls without stalling" fails under load.** It measures scrolling smoothness, which other
-  workers' gates break (W177). *Do:* when it is the only failure and the change does not touch the docs, rerun it
-  alone and report both runs.
+- **A time budget measures the machine as much as Djinn.** The cases tagged `@budget` (the Grimoire's scroll, a
+  terminal key, a typed note, a diff's chunks) fail when other workers load the machine, whatever the change (W177,
+  W181): the push check leaves them out. *Do:* run them on a quiet machine, `go tool task e2e -- --grep @budget`, or
+  with their spec named; a red one that passes alone on a quiet machine was the load.
+- **A djinn under pressure starts no worker.** Over the notch's CPU or memory pressure, a djinn holds every new worker
+  and gate ("the machine is under pressure" in the task's wait reason): the fake tasks of a spec stayed pending past
+  its wait while other workers loaded the machine (W181). The e2e's djinns and `djinn up` in the Go tests read the
+  machine calm (`machine.Calm`, `DJINN_TEST_MACHINE=calm` on a test build). *Do:* a spec or test that starts a djinn
+  of its own keeps it; one that tests the pressure gives a fake reading instead.
+- **Each step of a spec costs, a long spec passes its 30 s under load.** The trace kept a DOM snapshot before and
+  after each action and assertion: the Grimoire's splash spec, ~95 steps on a document of ~10 000 elements, took
+  ~70 ms a step quiet, 300-600 ms under other workers' load (W248). Since W249 the trace keeps none (a red test keeps its
+  actions, screencast, screenshot and `error-context.md`), yet under a load of 40-60 a page load takes 5-7 s and a
+  screenshot of a blurred dialog 8 s: the theme spec, one test for every screen, took 22-31 s with no trace at all.
+  *Sign:* a timeout with no failed assertion, each step in the trace hundreds of ms. *Do:* one assertion over a list
+  (`expect.poll` on a role locator's `allInnerTexts()`) rather than one per item, a test per screen, one load a test
+  (the theme set by `addInitScript`, not a reload); measure with `--trace off` against the default.
+- **Every spec after one point refuses: the specs' djinn ended.** `ERR_CONNECTION_REFUSED`, "djinn is not running
+  … no …/server.addr": the shared djinn of the suite is gone, and each spec after it fails (W248: a push check at
+  56a98a21, from the tilasms spec on). *Do:* read `test-results/e2e/djinn-logs/` (`exit.txt` says when and how it
+  ended; its `djinn.log` and `crash.txt`, which the teardown keeps).
 - **Two Playwright runs in one worktree erase each other's traces.** `go tool task test` runs the e2e too; beside
   `go tool task e2e` (or a second agent in the same worktree) both write `test-results/`. *Sign:*
   `ENOENT … .playwright-artifacts-0/traces/*.trace`. *Do:* one run at a time.
@@ -146,6 +248,9 @@ the code does not say by itself; remove one when a change makes it false.
   `strace -f -qq -e trace=execve -e signal=none -o out.s`, then `grep -c execve out.s`; cut spawns (`passMemo` keeps
   git answers for an integration pass). Mark tests that only check Djinn's logic portable (`testx.Portable`,
   [CONTRIBUTING.md](../CONTRIBUTING.md)).
+- **`fstest.TestFS` on `os.DirFS` checks the disk, not your `fs.FS`.** On the Windows runner a folder's listing says
+  size 0 and its `Stat` 4096 (`docs/site/fonts`, `pages`): `TestFS` failed there only (W270). *Do:* test an `fs.FS`
+  wrapper on the files read into an `fstest.MapFS`, as Djinn embeds them (`embedded` in `internal/docsite`).
 - **A file without build tag may use helpers that do not build on Windows.** `prompt_test.go` used helpers of a
   `//go:build !windows` test file: the Windows test package did not compile, Linux and the lint saw nothing (W484).
   *Do:* after a merge or a test move, run `GOOS=windows go vet -tags headless ./...` and
@@ -155,6 +260,17 @@ the code does not say by itself; remove one when a change makes it false.
   while `setpriority` lands: the child kept the parent's nice (macOS CI, Linux cannot reproduce it). *Do:* set a
   child's priority before exec (`nice -n`, `lowCommand`); never combine `nice` with a `setpriority` on the same
   process. *Where:* `internal/harness/process_unix.go`.
+- **On macOS `t.TempDir()` is not the path Djinn stores.** It gives `/var/folders/…`, a link to `/private/var/…`;
+  on Windows CI it gives `C:\Users\RUNNER~1\…`, a short name. A project's folder is stored with its links resolved
+  (`ProjectService.Add`), and a shell that finds `$PWD` wrong prints the resolved path from `pwd` (W159: a test
+  compared a notice's file to the raw temporary folder; a serve's `pwd` printed `/private/var` until `startCommand`
+  set `PWD`; W208: git names a worktree by its resolved path; an e2e spec's `realpathSync` keeps `RUNNER~1` where
+  Djinn stores `runneradmin`; W270: `project-config.spec.ts` made the same mistake after W208's fix). *Sign:* passes on Linux, fails on macOS and Windows with the same path written two
+  ways. *Do:* compare to `project.GetDirectory()`, or the path Djinn gave; resolve a folder you make with
+  `filepath.EvalSymlinks`; to reproduce on Linux, set `TMPDIR` to a symbolic link (only `/private/` gets the macOS
+  treatment in `aliases`). In e2e, never put a path in a CSS attribute selector: a Windows path's backslashes are CSS
+  escapes (`\A` is a newline), it never matches; use `getByTitle(…, { exact: true })`. *Where:*
+  `internal/plan/plan.go`, `internal/plan/exchange.go`.
 
 ## Processes
 
@@ -163,9 +279,26 @@ the code does not say by itself; remove one when a change makes it false.
   reproduce it; needs `runtime.LockOSThread`). `ReadWorker` returns an empty `Group` then (W537). *Do:* loop over
   fresh processes to reproduce races: `-count=N` in one process hides them behind the 1 s listing cache. *Where:*
   `internal/machine/group.go`.
+- **A process a loop starts again is not always there.** A worker's tree counted from its cgroup (`cgroup.procs`) holds
+  a `sleep 0.05` of a shell loop only between its starts: one reading in a few fell between two and counted 2 processes
+  of 3 (W212); reading for 300 ms fails every time. *Do:* count a process that lasts (a long `sleep` started once).
+  *Where:* `TestScopeTakesTheTree`.
 - **A `djinn-sentinel` shell per running harness is expected.** Since W514 Djinn records each child under
   `$DJINN_HOME/run/`, stops a dead djinn's leftovers at start, and a `/bin/sh … djinn-sentinel` kills the groups
   when Djinn dies: it is not an orphan. *Where:* `internal/harness/orphans_unix.go`.
+- **What a worker starts dies with it.** Since W68 the end of any process Djinn starts (a worker, each run of a
+  watcher's command) stops what it left: its group, its scope's cgroup, and every process whose environment holds its
+  `DJINN_MARK` (a `setsid` daemon). A test or a watcher that expects a background process to outlive its command
+  fails: nothing may outlive it until `djinn serve` (W63) lands. On Linux the process stays a zombie (waitid
+  WNOWAIT) until its leftovers are gone, so its group ID cannot be reused meanwhile. *Where:* `internal/harness/process_unix.go` (stopLeft), `orphans_linux.go` (procsOf).
+- **A git that changes a repository must not stop half way.** A stop cancels the harness's context; a git killed
+  mid-reset left its `index.lock` and every later reset there failed, and `moveBranch` moved a branch but not the
+  checkout that follows it (W52). Since W84 `gitx.Command` stops git with SIGTERM (SIGKILL `WaitDelay` later), and
+  steps that change a repository (merge and its abort, reset, worktree add, a branch move and its put back) run under
+  `gitx.Uncut`, `Finish` at most past the stop. *Do:* wrap a new sequence of changing gits in `Uncut`, after checking
+  `ctx.Err()`; reads stay cancellable. To hold a git mid-checkout in a test, `testx.HoldCheckout`. *Where:*
+  `internal/gitx/gitx.go`, `internal/harness/locks.go`, `internal/harness/cut.go` (what the restart line says the stop
+  cut).
 - **Finding a freeze in a goroutine dump.** `djinn debug dump` (or `kill -USR2` on djinn up, found by its socket,
   not `pgrep`: from the desktop menu it runs as `djinn open`) writes the goroutines to the log folder. Every waiter
   shows `lockSlow(0xADDR)`; ADDR minus the base address of a `Harness` method's receiver is the field offset, which
@@ -177,10 +310,26 @@ the code does not say by itself; remove one when a change makes it false.
   `Directory` at a missing folder (Git=false alone still let the push checks make a worktree in the real repository,
   W504); run with its own `DJINN_HOME`, a fake agent first on `PATH` and `DJINN_QUESTION_WORKERS=off`.
 
+## Agents' permissions
+
+- **Claude refuses a `#` line inside a quoted argument, whatever Djinn allows.** Claude Code's "newline-hash" check
+  refuses a Bash call where an argument holds a newline then `#`, indented or not; in `dontAsk` it reads "Permission
+  to use Bash has been denied because Claude Code is running in don't ask mode", as a missing rule does, while
+  `commandAllowed` says yes. A question's shape puts a `# …` comment above each command: W80 of wish Dew 13 oct could
+  not revise Q32 (W153). *Do:* pass multi-line text through a file the agent writes (an investigator's
+  `--context-file`, `questionContextFile`); try a rule for real with `claude -p --permission-mode dontAsk --settings
+  …`, a fake `djinn` first on `PATH`, a scratch folder and Haiku: under a cent. *Where:*
+  `internal/harness/question.go`, `internal/harness/question_context_test.go`.
+
 ## Store and sqlite
 
 - **`Put` without `Journal` stores nothing.** `store.Tx` refuses a `Put` before `tx.Journal`: an ignored error there
   means nothing was written. *Where:* `internal/store`.
+- **A gate event written past `putEvents` is not counted.** A task's gate wait is the `GateWait` kept beside it,
+  counted as `putEvents` writes each gate event (`plan.CountGate`); a task list never reads the events again (W283).
+  *Sign:* a task's waiting gate stays short of its gate events, or a test's gate events written with `tx.Put` count
+  only until its first fill. *Do:* write a task's events through `putEvents`, or call `plan.CountGate` before the
+  `Put`; delete the `GateWait` with its task. *Where:* `internal/plan/times.go`, `internal/harness/harness.go`.
 - **Read the real database read-only.** No `sqlite3` on the machine: a throwaway Go program with `modernc.org/sqlite`
   and `file:<path>?mode=ro`, decoding payloads with `gen/go/plan/v1`. The `command` table (the journal: seq, actor,
   at, method, request) tells a freeze (calls journaled, follow-ups missing) from a crash (`harness/recover` at the
@@ -188,6 +337,11 @@ the code does not say by itself; remove one when a change makes it false.
 
 ## The window
 
+- **A Get read beside a Watch that sends only changes.** The server's stream sends what changed since its own last
+  message, within a beat: a value set and set back inside the beat sends nothing. A Get answered meanwhile shows the
+  value in between, and kept, it stays on screen: the load gauge showed minimal for good while the notch was medium
+  again (W248, operating-load.spec in a full e2e run only). *Do:* once the stream has spoken, drop a Get answered
+  after it. *Where:* `LoadManager.start` in `src/operating-load.tsx`.
 - **Chromium hides WebKit bugs.** The window is WebKitGTK on Linux (`wails://localhost`); Playwright here runs
   Chromium. WebKit reads CSP `'self'` in a sandboxed frame as the opaque origin: tilasms rendered in Chromium, not in
   the window, until the server's origin was named (W188). *Do:* probe the real engine with `python3 -I`, `gi`
@@ -197,6 +351,10 @@ the code does not say by itself; remove one when a change makes it false.
 - **Some animations burn a core in WebKit.** At 4K, an infinite `box-shadow` animation cost ~40 % of a core, the same
   pulse by `transform`/`opacity` ~0; SVG child animations are not composited (~40 %) (W513). *Do:* animate
   `transform` and `opacity` only; measure in WebKit, not Chromium.
+- **A read the network cuts throws at the page.** Chromium aborts every request in flight when a network interface
+  comes or goes (Docker adds veths): "[unknown] Failed to fetch". A `void store.read…()` that rejects becomes a page
+  error, which a spec that counts them reports (W7, W249). *Do:* a store read catches its failure and reads again
+  after `retry`, as `readPrompt` does; test it with a fake call that throws once.
 - **A store read that never returns freezes the window's writes.** Each write ends with `store.changed`, which reads
   `WishService/List` and `LeadService/Get` right after. *Sign:* in `djinn.log`, writes with no `WishService/List`
   after them for minutes: `flush()` waits behind a hung read. Every read has a 30 s `timeoutMs` since W543. *Where:*

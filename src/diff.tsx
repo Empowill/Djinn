@@ -1,14 +1,23 @@
-// TaskDiffView displays git diffs for a task: changed files list, then unified and side-by-side diff viewers. A file's
-// diff comes by chunks of 2 000 lines, the next one asked for as the reader scrolls near the end. A line of the unified
-// diff, or a range of them (shift-click), takes a review comment: TaskService.Comment.
+// TaskDiffView displays git diffs for a task: the files it changes as a tree of folders, then their diffs one after the
+// other, unified or side by side. A file's diff comes by chunks of 2 000 lines, the next one asked for as the reader
+// scrolls near the end. A line of the unified diff, or a range of them (shift-click), takes a review comment:
+// TaskService.Comment. Its uncommitted view shows what the task's worktree holds not committed instead, read only.
+// TaskReview opens both full size, beside the side panel.
+import { ChevronRight, RefreshCw, X } from "lucide-react";
 import {
+  createContext,
   type FormEvent,
+  type KeyboardEvent,
   memo,
+  type RefObject,
+  use,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   DiffHunk,
   DiffLine,
@@ -20,7 +29,19 @@ import {
   type TaskServiceDiffResponse,
 } from "../gen/ts/plan/v1/plan_pb";
 import { useDjinn } from "./data/djinn";
+import {
+  type DiffFolder,
+  type DiffRow,
+  diffFiles,
+  diffRows,
+  diffTree,
+  OPEN_UP_TO,
+  rowShowing,
+} from "./data/diff-tree";
+import { useFullSize } from "./full-size";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
+import { placeTaken, useKeepPlace } from "./scroll-anchor";
 import "./diff.css";
 
 // Map Chroma token categories to CSS syntax classes.
@@ -159,6 +180,11 @@ export function CommentBox({
         aria-label={title}
         autoFocus
         rows={3}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          onCancel();
+        }}
       />
       {error && <div className="diff-error">{error}</div>}
       <div className="diff-comment-box-actions">
@@ -189,6 +215,8 @@ export interface UnifiedViewProps {
   filePath?: string;
   headCommit?: string;
   onCommentAdded?: (comment: TaskComment) => void;
+  // No comment on these lines: work not committed has no commit a comment could name.
+  readOnly?: boolean;
 }
 
 interface LineRange {
@@ -206,6 +234,7 @@ const UnifiedLine = memo(function UnifiedLine({
   taskId,
   filePath,
   headCommit,
+  readOnly,
   onClick,
   onPick,
   onCancel,
@@ -214,6 +243,7 @@ const UnifiedLine = memo(function UnifiedLine({
   line: DiffLine;
   comments?: readonly TaskComment[];
   selected: boolean;
+  readOnly?: boolean;
   // The range picked, given to the row that ends it only.
   box: LineRange | null;
   taskId?: string;
@@ -260,7 +290,7 @@ const UnifiedLine = memo(function UnifiedLine({
         </span>
         <span className="diff-cell-marker">{marker}</span>
         <span className="diff-cell-code">
-          {lineNum > 0 && (
+          {lineNum > 0 && !readOnly && (
             <button
               type="button"
               className="diff-add-comment-btn"
@@ -330,20 +360,24 @@ export function UnifiedView({
   filePath,
   headCommit,
   onCommentAdded,
+  readOnly = false,
 }: UnifiedViewProps) {
   const [activeRange, setActiveRange] = useState<LineRange | null>(null);
 
-  const handleLineClick = useCallback((lineNum: number, shift: boolean) => {
-    if (lineNum <= 0) return;
-    setActiveRange((range) =>
-      shift && range
-        ? {
-            start: Math.min(range.start, lineNum),
-            end: Math.max(range.start, lineNum),
-          }
-        : { start: lineNum, end: lineNum },
-    );
-  }, []);
+  const handleLineClick = useCallback(
+    (lineNum: number, shift: boolean) => {
+      if (lineNum <= 0 || readOnly) return;
+      setActiveRange((range) =>
+        shift && range
+          ? {
+              start: Math.min(range.start, lineNum),
+              end: Math.max(range.start, lineNum),
+            }
+          : { start: lineNum, end: lineNum },
+      );
+    },
+    [readOnly],
+  );
   const pick = useCallback(
     (lineNum: number) => setActiveRange({ start: lineNum, end: lineNum }),
     [],
@@ -382,6 +416,7 @@ export function UnifiedView({
                 taskId={taskId}
                 filePath={filePath}
                 headCommit={headCommit}
+                readOnly={readOnly}
                 onClick={handleLineClick}
                 onPick={pick}
                 onCancel={cancel}
@@ -507,6 +542,9 @@ export function appendChunk(
   };
 }
 
+// ScrollRootContext is the column the files' diffs scroll in, for what loads as it nears the view; null: the window.
+const ScrollRootContext = createContext<HTMLElement | null>(null);
+
 // NextChunk ends a diff that has more to load: it asks for the next chunk as soon as it nears the view, and offers a
 // button for when it cannot tell.
 function NextChunk({
@@ -520,6 +558,7 @@ function NextChunk({
   loading: boolean;
   onLoad: () => void;
 }) {
+  const root = use(ScrollRootContext);
   const ref = useRef<HTMLDivElement>(null);
   // A new observer per offset: it reports at once whether the row is still in view after a chunk shorter than the
   // screen.
@@ -530,11 +569,11 @@ function NextChunk({
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) onLoad();
       },
-      { rootMargin: "0px 0px 800px 0px" },
+      { root, rootMargin: "0px 0px 800px 0px" },
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [offset, onLoad]);
+  }, [offset, onLoad, root]);
   return (
     <div ref={ref} className="diff-next-chunk">
       <span>{t("diff.more", { shown: offset, total })}</span>
@@ -550,46 +589,98 @@ function NextChunk({
   );
 }
 
-function SingleFileDiff({
+// useNear tells, for good, that an element came within a screen of the view of the column it scrolls in; at once
+// when asked, or where the browser cannot tell.
+function useNear(ref: RefObject<HTMLElement | null>, at: boolean): boolean {
+  const root = use(ScrollRootContext);
+  const [near, setNear] = useState(
+    at || typeof IntersectionObserver === "undefined",
+  );
+  useEffect(() => {
+    const el = ref.current;
+    if (near || !el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setNear(true);
+      },
+      { root, rootMargin: "100% 0px 100% 0px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, root, near]);
+  return near;
+}
+
+// The lines a chunk of a file's diff holds at most: the room a file not loaded yet takes is counted up to it.
+const CHUNK = 2000;
+
+const named = (file: TaskDiffFile) =>
+  file.oldPath ? `${file.oldPath} → ${file.path}` : file.path;
+
+function Counts({ added, deleted }: { added: number; deleted: number }) {
+  return (
+    <span className="diff-counts">
+      {added > 0 && <span className="diff-count-add">+{added}</span>}
+      {deleted > 0 && <span className="diff-count-del">-{deleted}</span>}
+    </span>
+  );
+}
+
+function Flags({ file }: { file: TaskDiffFile }) {
+  if (!file.binary && !file.generated && !file.lock) return null;
+  return (
+    <span className="diff-flags">
+      {file.binary && <span className="diff-flag">{t("diff.binary")}</span>}
+      {file.generated && (
+        <span className="diff-flag">{t("diff.generated")}</span>
+      )}
+      {file.lock && <span className="diff-flag">{t("diff.lock")}</span>}
+    </span>
+  );
+}
+
+// FileDiff is a file's part of the diff: its name and counts on top, kept in sight while its lines scroll by, then its
+// lines. They load as the part nears the view, the first file's at once; a generated, lock or binary file's once the
+// reader asks. Until they show, the part takes about the room they will, so a jump to a file below lands on it.
+const FileDiff = memo(function FileDiff({
   task,
+  uncommitted,
   file,
+  first,
   viewMode,
-  onToggleMode,
   comments,
   onCommentAdded,
 }: {
   task: Task;
+  uncommitted: boolean;
   file: TaskDiffFile;
+  first: boolean;
   viewMode: "unified" | "split";
-  onToggleMode: (mode: "unified" | "split") => void;
   comments: readonly TaskComment[];
   onCommentAdded: (comment: TaskComment) => void;
 }) {
   const djinn = useDjinn();
   const clients = djinn?.clients;
+  const part = useRef<HTMLElement>(null);
+  const near = useNear(part, first);
+  const [asked, setAsked] = useState(false);
+  const wanted = near && (!file.folded || asked);
   const [diff, setDiff] = useState<DiffChunks | null>(null);
   const [headCommit, setHeadCommit] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // The file the chunks belong to, and whether one is on its way: a chunk of the file left behind is dropped.
-  const shown = useRef({ path: "", busy: false });
+  // Whether a chunk is on its way: the next one is asked once.
+  const busy = useRef(false);
 
   useEffect(() => {
+    if (!wanted || !clients) return;
     let active = true;
-    shown.current = { path: file.path, busy: false };
-    setDiff(null);
-    setLoading(true);
-    setLoadingMore(false);
-    setError(null);
-    if (!clients) {
-      setLoading(false);
-      return;
-    }
     clients.tasks
       .diff({
         task: { ref: { case: "id", value: task.id } },
         file: file.path,
+        uncommitted,
       })
       .then((res: TaskServiceDiffResponse) => {
         if (!active) return;
@@ -599,73 +690,78 @@ function SingleFileDiff({
       })
       .catch((err: unknown) => {
         if (!active) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
+        setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [clients, task.id, file.path]);
+  }, [wanted, clients, task.id, file.path, uncommitted]);
 
   const nextOffset = diff?.nextOffset ?? 0;
   const loadMore = useCallback(() => {
-    const path = shown.current.path;
-    if (!clients || nextOffset <= 0 || shown.current.busy) return;
-    shown.current.busy = true;
+    if (!clients || nextOffset <= 0 || busy.current) return;
+    busy.current = true;
     setLoadingMore(true);
     clients.tasks
       .diff({
         task: { ref: { case: "id", value: task.id } },
-        file: path,
+        file: file.path,
         offset: nextOffset,
+        uncommitted,
       })
       .then((res: TaskServiceDiffResponse) => {
-        if (shown.current.path !== path) return;
         const chunk = res.file;
         if (chunk) setDiff((prev) => appendChunk(prev, chunk));
       })
       .catch((err: unknown) => {
-        if (shown.current.path !== path) return;
         setError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
-        if (shown.current.path !== path) return;
-        shown.current.busy = false;
+        busy.current = false;
         setLoadingMore(false);
       });
-  }, [clients, task.id, nextOffset]);
+  }, [clients, task.id, file.path, nextOffset, uncommitted]);
 
+  const lines = file.binary ? 1 : file.added + file.deleted;
   return (
-    <div className="single-file-diff">
-      <div className="diff-toolbar">
-        <span className="diff-toolbar-title">
-          {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+    <section
+      ref={part}
+      className="diff-file"
+      data-path={file.path}
+      aria-label={named(file)}
+    >
+      <header className="diff-file-head">
+        <span className="diff-file-path" title={named(file)}>
+          {named(file)}
         </span>
-        <div className="diff-mode-toggle">
+        <Counts added={file.added} deleted={file.deleted} />
+        <Flags file={file} />
+        {file.folded && !asked && (
           <button
             type="button"
-            className={`diff-mode-btn ${viewMode === "unified" ? "active" : ""}`}
-            onClick={() => onToggleMode("unified")}
+            className="diff-mode-btn diff-file-show"
+            onClick={() => setAsked(true)}
           >
-            {t("diff.unified")}
+            {t("diff.show_folded")}
           </button>
-          <button
-            type="button"
-            className={`diff-mode-btn ${viewMode === "split" ? "active" : ""}`}
-            onClick={() => onToggleMode("split")}
-          >
-            {t("diff.split")}
-          </button>
-        </div>
-      </div>
-
-      {loading && <div className="diff-loading">{t("diff.loading")}</div>}
+        )}
+      </header>
       {error && <div className="diff-error">{t("diff.error", { error })}</div>}
-      {!loading && diff?.binary && (
+      {!error && !file.folded && (!wanted || loading) && (
+        <div
+          className="diff-file-room"
+          style={{
+            height: `calc(${Math.min(lines, CHUNK) + 2} * var(--diff-line))`,
+          }}
+        >
+          {wanted && <div className="diff-loading">{t("diff.loading")}</div>}
+        </div>
+      )}
+      {wanted && !loading && diff?.binary && (
         <div className="diff-binary-msg">{t("diff.binary_notice")}</div>
       )}
-      {!loading && diff && !diff.binary && (
+      {wanted && !loading && diff && !diff.binary && (
         <>
           {viewMode === "unified" ? (
             <UnifiedView
@@ -675,6 +771,7 @@ function SingleFileDiff({
               filePath={file.path}
               headCommit={headCommit}
               onCommentAdded={onCommentAdded}
+              readOnly={uncommitted}
             />
           ) : (
             <SplitView
@@ -696,21 +793,40 @@ function SingleFileDiff({
           )}
         </>
       )}
-    </div>
+    </section>
   );
-}
+});
 
+// NO_COMMENTS are the comments the uncommitted view shows: those of the task name lines of its commits.
+const NO_COMMENTS: readonly TaskComment[] = [];
+
+const keyOf = (row: DiffRow) => `${row.node.kind}:${row.node.path}`;
+
+// TaskDiffView shows a task's diff: the files it changes as a tree of folders on the left (data/diff-tree.ts), their
+// diffs one after the other on the right, in the tree's order. A click on a file, or Enter on it, scrolls the diff to
+// it; the tree follows the diff as it scrolls, the row of the file read marked. The arrows move in the tree, Right
+// and Left open and close a folder, Enter opens. The folders opened or closed stay so while the view lives: another
+// read of the diff or the other tab keeps them.
 export const TaskDiffView = memo(function TaskDiffView({
   task,
+  uncommitted = false,
+  reads = 0,
+  drawn = false,
 }: {
   task: Task;
+  // What the task's worktree holds not committed, instead of its committed work.
+  uncommitted?: boolean;
+  // How many times the diff was read again: each one reads it anew.
+  reads?: number;
+  // In the drawer, where an empty diff has the room for its drawing (empty-art.tsx); inline in the Review, the line.
+  drawn?: boolean;
 }) {
   const djinn = useDjinn();
   const clients = djinn?.clients;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [noWorktree, setNoWorktree] = useState(false);
   const [files, setFiles] = useState<TaskDiffFile[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"unified" | "split">("unified");
   const [localComments, setLocalComments] = useState<readonly TaskComment[]>(
     task.comments ?? [],
@@ -720,9 +836,9 @@ export const TaskDiffView = memo(function TaskDiffView({
     setLocalComments(task.comments ?? []);
   }, [task.comments]);
 
-  const handleCommentAdded = (newComment: TaskComment) => {
+  const handleCommentAdded = useCallback((newComment: TaskComment) => {
     setLocalComments((prev) => [...prev, newComment]);
-  };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -736,16 +852,13 @@ export const TaskDiffView = memo(function TaskDiffView({
       .diff({
         task: { ref: { case: "id", value: task.id } },
         file: "",
+        uncommitted,
       })
       .then((res: TaskServiceDiffResponse) => {
         if (!active) return;
+        setNoWorktree(res.noWorktree);
         setFiles(res.files);
         setLoading(false);
-        if (res.files.length > 0) {
-          const firstVisible =
-            res.files.find((f: TaskDiffFile) => !f.folded) ?? res.files[0];
-          setSelectedPath(firstVisible.path);
-        }
       })
       .catch((err: unknown) => {
         if (!active) return;
@@ -756,11 +869,151 @@ export const TaskDiffView = memo(function TaskDiffView({
     return () => {
       active = false;
     };
-  }, [clients, task.id]);
+  }, [clients, task.id, uncommitted, reads]);
+
+  const tree = useMemo(() => diffTree(files), [files]);
+  const ordered = useMemo(() => diffFiles(tree), [tree]);
+  // The folders the reader opened or closed, by path; the others as OPEN_UP_TO says.
+  const [folds, setFolds] = useState<ReadonlyMap<string, boolean>>(
+    () => new Map(),
+  );
+  const openAll = files.length <= OPEN_UP_TO;
+  const isOpen = useCallback(
+    (folder: DiffFolder) => folds.get(folder.path) ?? openAll,
+    [folds, openAll],
+  );
+  const rows = useMemo(() => diffRows(tree, isOpen), [tree, isOpen]);
+  // The file read, at the top of the diff: its row, or its closed folder's, is marked.
+  const [current, setCurrent] = useState("");
+  const showing = rowShowing(rows, current || (ordered[0]?.path ?? ""));
+  // The row the keyboard is on: the file read's until a key or a click moves it.
+  const [cursor, setCursor] = useState("");
+  const found = rows.findIndex((r) => keyOf(r) === cursor);
+  const focusAt = found >= 0 ? found : Math.max(showing, 0);
+
+  const treeRef = useRef<HTMLDivElement>(null);
+  const columnRef = useRef<HTMLDivElement | null>(null);
+  const [column, setColumn] = useState<HTMLDivElement | null>(null);
+  const keepPlace = useKeepPlace(columnRef);
+  const holdColumn = useCallback(
+    (el: HTMLDivElement | null) => {
+      setColumn(el);
+      return keepPlace(el);
+    },
+    [keepPlace],
+  );
+  // The scroll a jump to a file set: the file stays the one read, even where the diff ends before it reaches the top.
+  const jumped = useRef(-1);
+
+  const open = useCallback((path: string) => {
+    setCurrent(path);
+    const col = columnRef.current;
+    const part = col
+      ? [...col.querySelectorAll<HTMLElement>(".diff-file")].find(
+          (p) => p.dataset.path === path,
+        )
+      : undefined;
+    if (!col || !part) return;
+    col.scrollTop +=
+      part.getBoundingClientRect().top - col.getBoundingClientRect().top;
+    jumped.current = col.scrollTop;
+    placeTaken(col);
+  }, []);
+
+  // The tree follows the scroll: the file read is the last one whose part starts at the top of the column or above.
+  useEffect(() => {
+    if (!column) return;
+    let frame = 0;
+    const follow = () => {
+      if (Math.abs(column.scrollTop - jumped.current) < 1) return;
+      jumped.current = -1;
+      const top = column.getBoundingClientRect().top + 2;
+      let at = "";
+      for (const part of column.querySelectorAll<HTMLElement>(".diff-file")) {
+        if (part.getBoundingClientRect().top > top) break;
+        at = part.dataset.path ?? "";
+      }
+      setCurrent(at);
+    };
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(follow);
+    };
+    column.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      column.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [column]);
+
+  // The marked row stays in sight in the tree, which scrolls on its own: nothing around it moves.
+  useEffect(() => {
+    const box = treeRef.current;
+    const row = box?.children[showing];
+    if (!box || !(row instanceof HTMLElement)) return;
+    if (row.offsetTop < box.scrollTop) box.scrollTop = row.offsetTop;
+    else if (
+      row.offsetTop + row.offsetHeight >
+      box.scrollTop + box.clientHeight
+    )
+      box.scrollTop = row.offsetTop + row.offsetHeight - box.clientHeight;
+  }, [showing]);
+
+  const toggle = (folder: DiffFolder) =>
+    setFolds((m) => new Map(m).set(folder.path, !isOpen(folder)));
+  const activate = (row: DiffRow) => {
+    if (row.node.kind === "folder") toggle(row.node);
+    else open(row.node.path);
+  };
+  const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    const row = rows[focusAt];
+    if (!row) return;
+    const node = row.node;
+    let to = focusAt;
+    switch (event.key) {
+      case "ArrowDown":
+        to = Math.min(focusAt + 1, rows.length - 1);
+        break;
+      case "ArrowUp":
+        to = Math.max(focusAt - 1, 0);
+        break;
+      case "Home":
+        to = 0;
+        break;
+      case "End":
+        to = rows.length - 1;
+        break;
+      case "ArrowRight":
+        if (node.kind !== "folder") break;
+        if (!isOpen(node)) toggle(node);
+        else to = Math.min(focusAt + 1, rows.length - 1);
+        break;
+      case "ArrowLeft":
+        if (node.kind === "folder" && isOpen(node)) toggle(node);
+        else if (row.parent)
+          to = rows.findIndex(
+            (r) => r.node.kind === "folder" && r.node.path === row.parent,
+          );
+        break;
+      case "Enter":
+      case " ":
+        activate(row);
+        break;
+      default:
+        return;
+    }
+    // The keys stay in the tree: the page around it has its own.
+    event.preventDefault();
+    event.stopPropagation();
+    if (to === focusAt || to < 0) return;
+    setCursor(keyOf(rows[to]));
+    const el = treeRef.current?.children[to];
+    if (el instanceof HTMLElement) el.focus();
+  };
 
   if (loading) {
     return (
-      <div className="task-diff-view">
+      <div className="task-diff-view diff-state">
         <div className="diff-loading">{t("diff.loading")}</div>
       </div>
     );
@@ -768,73 +1021,237 @@ export const TaskDiffView = memo(function TaskDiffView({
 
   if (error) {
     return (
-      <div className="task-diff-view">
+      <div className="task-diff-view diff-state">
         <div className="diff-error">{t("diff.error", { error })}</div>
       </div>
     );
   }
 
   if (files.length === 0) {
+    const empty = noWorktree
+      ? t("diff.no_worktree")
+      : uncommitted
+        ? t("diff.worktree_clean")
+        : t("diff.no_changes");
     return (
-      <div className="task-diff-view">
-        <div className="diff-empty">{t("diff.no_changes")}</div>
+      <div className="task-diff-view diff-state">
+        {drawn ? (
+          <EmptyState art={noWorktree ? "noworktree" : "clean"}>
+            {empty}
+          </EmptyState>
+        ) : (
+          <div className="diff-empty">{empty}</div>
+        )}
       </div>
     );
   }
 
-  const selectedFile = files.find((f) => f.path === selectedPath) ?? files[0];
-
+  const added = files.reduce((n, f) => n + f.added, 0);
+  const deleted = files.reduce((n, f) => n + f.deleted, 0);
   return (
     <div className="task-diff-view">
-      <div className="diff-file-list" role="tablist">
-        {files.map((file) => (
-          <button
-            key={file.path}
-            type="button"
-            role="tab"
-            aria-selected={file.path === selectedPath}
-            className={`diff-file-btn ${file.path === selectedPath ? "active" : ""}`}
-            onClick={() => setSelectedPath(file.path)}
-          >
-            <span
-              className="diff-file-path"
-              title={
-                file.oldPath ? `${file.oldPath} → ${file.path}` : file.path
-              }
-            >
-              {file.path}
-            </span>
-            <span className="diff-file-counts">
-              {file.added > 0 && (
-                <span className="diff-count-add">+{file.added}</span>
-              )}
-              {file.deleted > 0 && (
-                <span className="diff-count-del">-{file.deleted}</span>
-              )}
-            </span>
-            <span className="diff-file-flags">
-              {file.binary && (
-                <span className="diff-flag">{t("diff.binary")}</span>
-              )}
-              {file.generated && (
-                <span className="diff-flag">{t("diff.generated")}</span>
-              )}
-              {file.lock && <span className="diff-flag">{t("diff.lock")}</span>}
-            </span>
-          </button>
-        ))}
+      <div className="diff-review">
+        <div
+          ref={treeRef}
+          className="diff-tree"
+          role="tree"
+          aria-label={t("diff.tree")}
+          onKeyDown={onKey}
+        >
+          {rows.map((row, i) => {
+            const node = row.node;
+            const folder = node.kind === "folder";
+            return (
+              <div
+                key={keyOf(row)}
+                role="treeitem"
+                tabIndex={i === focusAt ? 0 : -1}
+                aria-level={row.depth + 1}
+                aria-expanded={folder ? isOpen(node) : undefined}
+                aria-selected={i === showing}
+                className={`diff-tree-row${folder ? " folder" : ""}${i === showing ? " current" : ""}`}
+                style={{ paddingLeft: `${0.375 + row.depth * 0.875}rem` }}
+                title={folder ? node.path : named(node.file)}
+                onClick={() => {
+                  setCursor(keyOf(row));
+                  activate(row);
+                }}
+              >
+                {folder ? (
+                  <ChevronRight
+                    size={12}
+                    className="diff-tree-chevron"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <span className="diff-tree-chevron" />
+                )}
+                <span className="diff-tree-name">{node.name}</span>
+                {folder ? (
+                  <span className="diff-tree-files">
+                    {t("diff.files", { count: node.files })}
+                  </span>
+                ) : (
+                  <Flags file={node.file} />
+                )}
+                <Counts
+                  added={folder ? node.added : node.file.added}
+                  deleted={folder ? node.deleted : node.file.deleted}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="diff-main">
+          <div className="diff-bar">
+            <span>{t("diff.files", { count: files.length })}</span>
+            <Counts added={added} deleted={deleted} />
+            <div className="diff-mode-toggle">
+              <button
+                type="button"
+                className={`diff-mode-btn ${viewMode === "unified" ? "active" : ""}`}
+                aria-pressed={viewMode === "unified"}
+                onClick={() => setViewMode("unified")}
+              >
+                {t("diff.unified")}
+              </button>
+              <button
+                type="button"
+                className={`diff-mode-btn ${viewMode === "split" ? "active" : ""}`}
+                aria-pressed={viewMode === "split"}
+                onClick={() => setViewMode("split")}
+              >
+                {t("diff.split")}
+              </button>
+            </div>
+          </div>
+          <ScrollRootContext value={column}>
+            {/* It takes the focus: the arrows and the page keys scroll it. */}
+            <div className="diff-files" ref={holdColumn} tabIndex={0}>
+              {ordered.map((file, i) => (
+                <FileDiff
+                  key={`${uncommitted}-${reads}-${file.path}`}
+                  task={task}
+                  uncommitted={uncommitted}
+                  file={file}
+                  first={i === 0}
+                  viewMode={viewMode}
+                  comments={uncommitted ? NO_COMMENTS : localComments}
+                  onCommentAdded={handleCommentAdded}
+                />
+              ))}
+            </div>
+          </ScrollRootContext>
+        </div>
       </div>
-
-      {selectedFile && (
-        <SingleFileDiff
-          task={task}
-          file={selectedFile}
-          viewMode={viewMode}
-          onToggleMode={setViewMode}
-          comments={localComments}
-          onCommentAdded={handleCommentAdded}
-        />
-      )}
     </div>
   );
 });
+
+// DiffView is what the review of a task shows: its committed work, or what its worktree holds not committed.
+export type DiffView = "committed" | "uncommitted";
+
+// TaskReview shows a task's diffs full size, beside the side panel, as a tilasm opens full size (full-size.ts): over
+// the main shell, the view underneath kept as it was, its place and its scroll. A tab for the task's committed work,
+// one for what its worktree holds not committed; refresh reads the diff again, a running worker changing it. The
+// close button or Escape closes it, the focus back where the developer was; a click in the side panel closes it too,
+// and goes where it leads.
+export function TaskReview({
+  task,
+  view,
+  shell,
+  onView,
+  onClose,
+}: {
+  task: Task;
+  view: DiffView;
+  // The main shell it opens over.
+  shell: HTMLElement;
+  onView: (view: DiffView) => void;
+  // back: the focus goes back where it was; not after a click in the side panel, which takes it.
+  onClose: (back: boolean) => void;
+}) {
+  const section = useRef<HTMLElement>(null);
+  const enter = useRef<HTMLButtonElement>(null);
+  const leave = useRef<HTMLButtonElement>(null);
+  useFullSize(true, section, enter, leave, () => onClose(true));
+  const closing = useRef(onClose);
+  closing.current = onClose;
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest("#djinn-sidebar")
+      )
+        closing.current(false);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
+  // Each read of the diff is a new view: refresh counts them.
+  const [reads, setReads] = useState(0);
+  const title = t("diff.title", { task: task.code || task.title });
+  const tabs: readonly [DiffView, string][] = [
+    ["committed", t("diff.tab_committed")],
+    ["uncommitted", t("diff.tab_uncommitted")],
+  ];
+  return createPortal(
+    // A click on nothing that takes the focus leaves it in the review: the keys of the view underneath stay asleep.
+    <section
+      ref={section}
+      className="full-over task-review"
+      aria-label={title}
+      tabIndex={-1}
+    >
+      <header className="task-review-head">
+        <div className="task-review-title">
+          <span className="eyebrow">{task.code}</span>
+          <h2 title={task.title}>{task.title}</h2>
+        </div>
+        <div className="task-review-tabs" role="tablist" aria-label={title}>
+          {tabs.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={view === key}
+              className={`diff-mode-btn ${view === key ? "active" : ""}`}
+              onClick={() => onView(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => setReads((n) => n + 1)}
+          aria-label={t("diff.refresh")}
+          title={t("diff.refresh")}
+        >
+          <RefreshCw size={16} />
+        </button>
+        <button
+          ref={leave}
+          type="button"
+          className="icon-button"
+          onClick={() => onClose(true)}
+          aria-label={t("diff.close")}
+          aria-keyshortcuts="Escape"
+          title={t("diff.close")}
+        >
+          <X size={18} />
+        </button>
+      </header>
+      <div className="task-review-body" role="tabpanel">
+        <TaskDiffView
+          task={task}
+          uncommitted={view === "uncommitted"}
+          reads={reads}
+          drawn
+        />
+      </div>
+    </section>,
+    shell,
+  );
+}

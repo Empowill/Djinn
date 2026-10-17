@@ -42,7 +42,10 @@ const (
 		"  Press enter to confirm or esc to cancel\r\n"
 )
 
+// TestReadPrompt: the choice the rows show, its title, its lines, its options and the one marked; none without
+// the hint of the keys near the options, or with one option.
 func TestReadPrompt(t *testing.T) {
+	t.Parallel()
 	trust, err := os.ReadFile(filepath.Join("testdata", "claude-trust.out"))
 	if err != nil {
 		t.Fatal(err)
@@ -80,6 +83,7 @@ func TestReadPrompt(t *testing.T) {
 		"one option":    {"Do you want to proceed?\r\n❯ 1. Yes\r\n\r\nEsc to cancel\r\n", nil},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			got := readPrompt(shown(120, 40, tc.out))
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("readPrompt =\n%#v\nwant\n%#v", got, tc.want)
@@ -88,9 +92,9 @@ func TestReadPrompt(t *testing.T) {
 	}
 }
 
-// TestPromptNeedsAChoice: options on screen without the hint of the keys are no choice, and a choice scrolled
-// away is gone.
-func TestPromptNeedsAChoice(t *testing.T) {
+// TestPrompt: options on screen without the hint of the keys are no choice, and a choice scrolled away is gone.
+func TestPrompt(t *testing.T) {
+	t.Parallel()
 	term := &Terminal{screen: newScreen(120, 30)}
 	term.screen.write([]byte(codexApproval))
 	if p := term.Prompt(); p == nil || p.Title != "Would you like to run the following command?" {
@@ -102,19 +106,27 @@ func TestPromptNeedsAChoice(t *testing.T) {
 	}
 }
 
-// A changed command with the same title and buttons must require a new decision.
-func TestChooseRejectsChangedCommand(t *testing.T) {
-	term := &Terminal{screen: newScreen(120, 40), done: make(chan struct{})}
-	term.screen.write([]byte(codexApproval))
-	p := term.Prompt()
-	if p == nil {
-		t.Fatal("no prompt")
-	}
-	term.screen.write([]byte("\x1b[2J\x1b[H" + strings.ReplaceAll(codexApproval, "djinn wish brief 01a11f56", "delete another file")))
-	if err := term.Choose(p.Title, p.Lines, p.Options, 0); !errors.Is(err, ErrNoPrompt) {
-		t.Fatalf("stale command: %v", err)
-	}
-	if promptKey(term.Prompt()) == promptKey(p) {
-		t.Fatal("different commands have the same identity")
-	}
+// TestChoose: the window picks an option of the choice on screen as the keys would, the arrows from the option marked
+// then Enter, and only while the screen shows that very choice. The terminal says when a choice comes and goes.
+func TestChoose(t *testing.T) {
+	t.Parallel()
+	// The fake lead runs on Unix only: chooseOnScreen skips elsewhere.
+	t.Run("on screen", chooseOnScreen)
+	// A changed command with the same title and buttons requires a new decision.
+	t.Run("changed command", func(t *testing.T) {
+		t.Parallel()
+		term := &Terminal{screen: newScreen(120, 40), done: make(chan struct{}), pace: defaultPace}
+		term.screen.write([]byte(codexApproval))
+		p := term.Prompt()
+		if p == nil {
+			t.Fatal("no prompt")
+		}
+		term.screen.write([]byte("\x1b[2J\x1b[H" + strings.ReplaceAll(codexApproval, "djinn wish brief 01a11f56", "delete another file")))
+		if err := term.Choose(p.Title, p.Lines, p.Options, 0); !errors.Is(err, ErrNoPrompt) {
+			t.Fatalf("stale command: %v", err)
+		}
+		if promptKey(term.Prompt()) == promptKey(p) {
+			t.Fatal("different commands have the same identity")
+		}
+	})
 }

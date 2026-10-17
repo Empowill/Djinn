@@ -26,27 +26,40 @@ const (
 	maxDraft = 4 << 10
 )
 
-var (
-	// quiet is Quiet, shortened by the tests.
-	quiet = Quiet
+// pace is how long Say, Choose and Hangup wait. A manager's terminals take its Config.pace: the tests shorten it.
+type pace struct {
+	// quiet is how long the person must not have typed before Djinn types a line: Quiet.
+	quiet time.Duration
 	// settle is how long the output of a program just started must pause before a line goes to it: it has drawn its
 	// screen and reads its input.
-	settle = time.Second
+	settle time.Duration
 	// warmup is how long a program may draw before a line goes to it anyway.
-	warmup = 10 * time.Second
+	warmup time.Duration
 	// enter is the pause between a line and its Enter: an agent's prompt reads a line and an Enter that come
 	// together as a paste, and keeps the Enter in the text.
-	enter = 300 * time.Millisecond
+	enter time.Duration
 	// afterEnter is the pause after Enter before the next line: it lets the agent's prompt accept the submission
 	// and clear its prompt box before another line arrives.
-	afterEnter = 300 * time.Millisecond
+	afterEnter time.Duration
 	// hold is how often Say looks again while a choice on screen or a line under way holds its line.
-	hold = 200 * time.Millisecond
+	hold time.Duration
 	// typingIdle is how long a line under way holds Say without a key, where the program shows no prompt Say reads
 	// (underWay): there Say follows the keys, and loses track of an edit it does not know (a word erased by a key of
 	// the person's own).
-	typingIdle = 30 * time.Second
-)
+	typingIdle time.Duration
+	// keyGap is how long Choose waits between two keys: an agent that reads keys in one go would take them as a
+	// paste.
+	keyGap time.Duration
+	// grace is how long a program has to end after its terminal hangs up: Grace.
+	grace time.Duration
+}
+
+// defaultPace is the pace of djinn up.
+var defaultPace = pace{
+	quiet: Quiet, settle: time.Second, warmup: 10 * time.Second, enter: 300 * time.Millisecond,
+	afterEnter: 300 * time.Millisecond, hold: 200 * time.Millisecond, typingIdle: 30 * time.Second,
+	keyGap: 80 * time.Millisecond, grace: Grace,
+}
 
 // ErrFull says that SayQueue lines already wait for the terminal.
 var ErrFull = errors.New("too many lines wait for this terminal")
@@ -131,7 +144,7 @@ func (t *Terminal) queue(text string) (waiting bool, err error) {
 	}
 	select {
 	case t.voice.lines <- text:
-		return t.choosing() || t.underWay() || time.Since(t.voice.typed) < quiet, nil
+		return t.choosing() || t.underWay() || time.Since(t.voice.typed) < t.pace.quiet, nil
 	default:
 		return false, ErrFull
 	}
@@ -158,7 +171,7 @@ func (t *Terminal) speak(lines <-chan string, hushed chan<- struct{}) {
 			} else {
 				line = strings.ReplaceAll(line, "\n", " ")
 			}
-			if t.put([]byte(line)) != nil || !t.sleep(enter) || t.put([]byte("\r")) != nil || !t.sleep(afterEnter) {
+			if t.put([]byte(line)) != nil || !t.sleep(t.pace.enter) || t.put([]byte("\r")) != nil || !t.sleep(t.pace.afterEnter) {
 				return
 			}
 		}
@@ -177,20 +190,21 @@ func (t *Terminal) ready() bool {
 		if held {
 			// A choice goes with the output that erases it; a line under way, with a key, the output that shows the
 			// prompt cleared, or typingIdle. Look again at each output, and every hold.
-			if !t.await(changed, hold) {
+			if !t.await(changed, t.pace.hold) {
 				return false
 			}
 			continue
 		}
 		now := time.Now()
-		at, step := v.typed.Add(quiet), time.Duration(0)
-		if now.Sub(v.started) < warmup {
-			drawn := v.started.Add(warmup)
-			if !v.output.IsZero() && v.output.Add(settle).Before(drawn) {
-				drawn = v.output.Add(settle)
+		p := t.pace
+		at, step := v.typed.Add(p.quiet), time.Duration(0)
+		if now.Sub(v.started) < p.warmup {
+			drawn := v.started.Add(p.warmup)
+			if !v.output.IsZero() && v.output.Add(p.settle).Before(drawn) {
+				drawn = v.output.Add(p.settle)
 			}
 			if drawn.After(at) {
-				at, step = drawn, settle // The output may come meanwhile: look again.
+				at, step = drawn, p.settle // The output may come meanwhile: look again.
 			}
 		}
 		wait := at.Sub(now)
@@ -234,7 +248,7 @@ func (t *Terminal) underWay() bool {
 		return holds
 	}
 	v := &t.voice
-	return (len(v.draft) > 0 || v.recalled) && time.Since(v.typed) < typingIdle
+	return (len(v.draft) > 0 || v.recalled) && time.Since(v.typed) < t.pace.typingIdle
 }
 
 // keys follows what the person types at the program's prompt: when they last typed, and whether something is under

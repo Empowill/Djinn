@@ -10,13 +10,15 @@ import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
 import type { LoadNotch, LoadServiceWatchResponse } from "../../djinn/v1/load_pb";
 import { file_djinn_v1_load } from "../../djinn/v1/load_pb";
 import { file_djinn_v1_options } from "../../djinn/v1/options_pb";
+import type { Account, LeadSeat } from "../../plan/v1/plan_pb";
+import { file_plan_v1_plan } from "../../plan/v1/plan_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file ui/v1/ui.proto.
  */
 export const file_ui_v1_ui: GenFile = /*@__PURE__*/
-  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiMAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0Eg4KBmFnZW50cxgBIAEoCCKiAQofVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhAKCHBsYXRmb3JtGAIgASgJEiIKCXByb3ZpZGVycxgDIAMoCzIPLnVpLnYxLlByb3ZpZGVyEhUKDWZvbGRlcl9kaWFsb2cYBCABKAgSIQoIc2hvcnRjdXQYBSABKAsyDy51aS52MS5TaG9ydGN1dCJUCghTaG9ydGN1dBINCgVjaG9yZBgBIAEoCRIVCg1kZWZhdWx0X2Nob3JkGAIgASgJEhEKCWF2YWlsYWJsZRgDIAEoCBIPCgdwcm9ibGVtGAQgASgJIl8KCFNldHRpbmdzEhUKCHNob3J0Y3V0GAEgASgJSACIAQESJgoEbG9hZBgCIAEoDjITLmRqaW5uLnYxLkxvYWROb3RjaEgBiAEBQgsKCV9zaG9ydGN1dEIHCgVfbG9hZCKuAQoIUHJvdmlkZXISCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIRCglhdmFpbGFibGUYAyABKAgSDwoHY29tbWFuZBgEIAEoCRIjCgVzdGF0ZRgFIAEoDjIULnVpLnYxLlByb3ZpZGVyU3RhdGUSDwoHdmVyc2lvbhgGIAEoCRIXCg9pbnN0YWxsX2NvbW1hbmQYByABKAkSFQoNbG9naW5fY29tbWFuZBgIIAEoCSJXCh9VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXF1ZXN0EhcKBXRpdGxlGAEgASgJQgi6SAVyAxjIARIbCglkaXJlY3RvcnkYAiABKAlCCLpIBXIDGIAgIjUKIFVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlEhEKCWRpcmVjdG9yeRgBIAEoCSIrChxVaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0EgsKA3VybBgBIAEoCSIsCh1VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZRILCgN1cmwYASABKAkiNQobVWlTZXJ2aWNlU2V0U2hvcnRjdXRSZXF1ZXN0EhYKBWNob3JkGAEgASgJQge6SARyAhhAIkEKHFVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2USIQoIc2hvcnRjdXQYASABKAsyDy51aS52MS5TaG9ydGN1dCJCChRVaVNlcnZpY2VTaG93UmVxdWVzdBIPCgd3aXNoX2lkGAEgASgJEhkKCHRlcm1pbmFsGAIgASgJQge6SARyAhhAIicKFVVpU2VydmljZVNob3dSZXNwb25zZRIOCgZ3aW5kb3cYASABKAgiMQoYVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0EhUKA3VybBgBIAEoCUIIukgFcgMYgCAiTwoZVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhEKCXRpbGFzbV9pZBgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiGwoZVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdCJ4ChpVaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIPCgd3aXNoX2lkGAEgASgJEhAKCHRlcm1pbmFsGAIgASgJEhEKCXRpbGFzbV9pZBgDIAEoCRIUCgx1bmtub3duX2xpbmsYBCABKAkSDgoGdGFyZ2V0GAUgASgJIh0KG1VpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdCLuAQocVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZRIPCgdjdXJyZW50GAEgASgJEg0KBXJlYWR5GAIgASgJEhMKC25vdF9yZXN1bWVkGAMgAygJEhEKCW5vdGVzX3VybBgEIAEoCRIcCgZidWlsZHMYByADKAsyDC51aS52MS5CdWlsZBIlCgppbnN0YWxsaW5nGAYgASgLMhEudWkudjEuSW5zdGFsbGluZxIhCgtyZWFkeV9idWlsZBgIIAEoCzIMLnVpLnYxLkJ1aWxkEhEKCWluc3RhbGxlZBgJIAEoCEoECAUQBlIFYnVpbGQiFwoVVWlTZXJ2aWNlV2F0Y2hSZXF1ZXN0IrABChZVaVNlcnZpY2VXYXRjaFJlc3BvbnNlEi8KBHNob3cYASABKAsyIS51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXNwb25zZRIzCgZ1cGRhdGUYAiABKAsyIy51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlEjAKBGxvYWQYAyABKAsyIi5kamlubi52MS5Mb2FkU2VydmljZVdhdGNoUmVzcG9uc2UihQEKCkluc3RhbGxpbmcSCwoDc2hhGAEgASgJEiAKBHN0ZXAYAiABKA4yEi51aS52MS5JbnN0YWxsU3RlcBIPCgd3YWl0aW5nGAMgASgJEg0KBWRvaW5nGAQgASgJEgwKBGF1dG8YBSABKAgSDQoFZXJyb3IYBiABKAkSCwoDbG9nGAcgAygJIjsKC1Rhc2tTdW1tYXJ5EgwKBGNvZGUYASABKAkSDQoFdGl0bGUYAiABKAkSDwoHc3VtbWFyeRgDIAEoCSLBAgoFQnVpbGQSDwoHd2lzaF9pZBgBIAEoCRISCgp3aXNoX3RpdGxlGAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkSDwoHcHJvamVjdBgEIAEoCRIOCgZicmFuY2gYBSABKAkSCwoDc2hhGAYgASgJEg0KBXRhc2tzGAcgAygJEg8KB2NoYW5nZXMYCCADKAkSJQoJc3VtbWFyaWVzGAkgAygLMhIudWkudjEuVGFza1N1bW1hcnkSDwoHaW5zdGFsbBgKIAEoCRIMCgRiYXNlGAsgASgJEg8KB3J1bm5pbmcYDCABKAgSFQoNY2hhbmdlc19jb3VudBgNIAEoBRINCgVsYWNrcxgOIAMoCRITCgtsYWNrc19jb3VudBgPIAEoBRIRCgljb250aW51ZXMYECABKAkSDAoEYXV0bxgRIAEoCCIwChZVaVNlcnZpY2VVcGRhdGVSZXF1ZXN0EhYKBWJ1aWxkGAEgASgJQge6SARyAhhAIlAKF1VpU2VydmljZVVwZGF0ZVJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEQoJdGVybWluYWxzGAIgASgFEhEKCWluc3RhbGxlZBgDIAEoCSIiCiBVaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVxdWVzdCJgCiFVaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVzcG9uc2USKQoGYWNjZXNzGAEgASgOMhkudWkudjEuTm90aWZpY2F0aW9uQWNjZXNzEhAKCHNldHRpbmdzGAIgASgIIiYKJFVpU2VydmljZVJlcXVlc3ROb3RpZmljYXRpb25zUmVxdWVzdCJkCiVVaVNlcnZpY2VSZXF1ZXN0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlEikKBmFjY2VzcxgBIAEoDjIZLnVpLnYxLk5vdGlmaWNhdGlvbkFjY2VzcxIQCghzZXR0aW5ncxgCIAEoCCIqCihVaVNlcnZpY2VPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3NSZXF1ZXN0IisKKVVpU2VydmljZU9wZW5Ob3RpZmljYXRpb25TZXR0aW5nc1Jlc3BvbnNlIjAKFFVpU2VydmljZVZpZXdSZXF1ZXN0EhgKB3dpc2hfaWQYASABKAlCB7pIBHICGEAiFwoVVWlTZXJ2aWNlVmlld1Jlc3BvbnNlKqABCg1Qcm92aWRlclN0YXRlEh4KGlBST1ZJREVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWUFJPVklERVJfU1RBVEVfTUlTU0lORxABEh0KGVBST1ZJREVSX1NUQVRFX1NJR05FRF9PVVQQAhIYChRQUk9WSURFUl9TVEFURV9SRUFEWRADEhoKFlBST1ZJREVSX1NUQVRFX1VOS05PV04QBCqyAQoLSW5zdGFsbFN0ZXASHAoYSU5TVEFMTF9TVEVQX1VOU1BFQ0lGSUVEEAASGAoUSU5TVEFMTF9TVEVQX1dBSVRJTkcQARIaChZJTlNUQUxMX1NURVBfUFJFUEFSSU5HEAISGQoVSU5TVEFMTF9TVEVQX0JVSUxESU5HEAMSGwoXSU5TVEFMTF9TVEVQX1JFU1RBUlRJTkcQBBIXChNJTlNUQUxMX1NURVBfRkFJTEVEEAUqnwEKEk5vdGlmaWNhdGlvbkFjY2VzcxIjCh9OT1RJRklDQVRJT05fQUNDRVNTX1VOU1BFQ0lGSUVEEAASIwofTk9USUZJQ0FUSU9OX0FDQ0VTU19VTkFWQUlMQUJMRRABEh8KG05PVElGSUNBVElPTl9BQ0NFU1NfQUxMT1dFRBACEh4KGk5PVElGSUNBVElPTl9BQ0NFU1NfREVOSUVEEAMyxQoKCVVpU2VydmljZRJlCg5HZXRFbnZpcm9ubWVudBIlLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVxdWVzdBomLnVpLnYxLlVpU2VydmljZUdldEVudmlyb25tZW50UmVzcG9uc2UiBMjzGAISaAoPQ2hvb3NlRGlyZWN0b3J5EiYudWkudjEuVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVxdWVzdBonLnVpLnYxLlVpU2VydmljZUNob29zZURpcmVjdG9yeVJlc3BvbnNlIgTI8xgCEl8KDE9wZW5FeHRlcm5hbBIjLnVpLnYxLlVpU2VydmljZU9wZW5FeHRlcm5hbFJlcXVlc3QaJC51aS52MS5VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXNwb25zZSIEyPMYAhJcCgtTZXRTaG9ydGN1dBIiLnVpLnYxLlVpU2VydmljZVNldFNob3J0Y3V0UmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVNldFNob3J0Y3V0UmVzcG9uc2UiBMjzGAISRwoEU2hvdxIbLnVpLnYxLlVpU2VydmljZVNob3dSZXF1ZXN0GhwudWkudjEuVWlTZXJ2aWNlU2hvd1Jlc3BvbnNlIgTI8xgCElMKCE9wZW5MaW5rEh8udWkudjEuVWlTZXJ2aWNlT3BlbkxpbmtSZXF1ZXN0GiAudWkudjEuVWlTZXJ2aWNlT3BlbkxpbmtSZXNwb25zZSIEyPMYAhJYCglXYXRjaFNob3cSIC51aS52MS5VaVNlcnZpY2VXYXRjaFNob3dSZXF1ZXN0GiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2UiBMjzGAIwARJeCgtXYXRjaFVwZGF0ZRIiLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVxdWVzdBojLnVpLnYxLlVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2UiBMjzGAIwARJMCgVXYXRjaBIcLnVpLnYxLlVpU2VydmljZVdhdGNoUmVxdWVzdBodLnVpLnYxLlVpU2VydmljZVdhdGNoUmVzcG9uc2UiBMjzGAIwARJNCgZVcGRhdGUSHS51aS52MS5VaVNlcnZpY2VVcGRhdGVSZXF1ZXN0Gh4udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVzcG9uc2UiBMjzGAISawoQR2V0Tm90aWZpY2F0aW9ucxInLnVpLnYxLlVpU2VydmljZUdldE5vdGlmaWNhdGlvbnNSZXF1ZXN0GigudWkudjEuVWlTZXJ2aWNlR2V0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlIgTI8xgCEncKFFJlcXVlc3ROb3RpZmljYXRpb25zEisudWkudjEuVWlTZXJ2aWNlUmVxdWVzdE5vdGlmaWNhdGlvbnNSZXF1ZXN0GiwudWkudjEuVWlTZXJ2aWNlUmVxdWVzdE5vdGlmaWNhdGlvbnNSZXNwb25zZSIEyPMYAhKDAQoYT3Blbk5vdGlmaWNhdGlvblNldHRpbmdzEi8udWkudjEuVWlTZXJ2aWNlT3Blbk5vdGlmaWNhdGlvblNldHRpbmdzUmVxdWVzdBowLnVpLnYxLlVpU2VydmljZU9wZW5Ob3RpZmljYXRpb25TZXR0aW5nc1Jlc3BvbnNlIgTI8xgCEkcKBFZpZXcSGy51aS52MS5VaVNlcnZpY2VWaWV3UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVZpZXdSZXNwb25zZSIEyPMYAkJ2Cgljb20udWkudjFCB1VpUHJvdG9QAVorZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vdWkvdjE7dWl2MaICA1VYWKoCBVVpLlYxygIFVWlcVjHiAhFVaVxWMVxHUEJNZXRhZGF0YeoCBlVpOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_load, file_djinn_v1_options]);
+  fileDesc("Cg51aS92MS91aS5wcm90bxIFdWkudjEiMAoeVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXF1ZXN0Eg4KBmFnZW50cxgBIAEoCCKiAQofVWlTZXJ2aWNlR2V0RW52aXJvbm1lbnRSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhAKCHBsYXRmb3JtGAIgASgJEiIKCXByb3ZpZGVycxgDIAMoCzIPLnVpLnYxLlByb3ZpZGVyEhUKDWZvbGRlcl9kaWFsb2cYBCABKAgSIQoIc2hvcnRjdXQYBSABKAsyDy51aS52MS5TaG9ydGN1dCJUCghTaG9ydGN1dBINCgVjaG9yZBgBIAEoCRIVCg1kZWZhdWx0X2Nob3JkGAIgASgJEhEKCWF2YWlsYWJsZRgDIAEoCBIPCgdwcm9ibGVtGAQgASgJIroCCghTZXR0aW5ncxIVCghzaG9ydGN1dBgBIAEoCUgAiAEBEiYKBGxvYWQYAiABKA4yEy5kamlubi52MS5Mb2FkTm90Y2hIAYgBARIrChJpZnJpdF9pZGxlX21pbnV0ZXMYAyABKA1CCrpIByoFGPABKAVIAogBARIYCgtsZWFkX2RyaXZlbhgEIAEoCEgDiAEBEiIKCGFjY291bnRzGAUgAygLMhAucGxhbi52MS5BY2NvdW50Eh8KBGxlYWQYBiABKAsyES5wbGFuLnYxLkxlYWRTZWF0EiYKC3Nob3duX3RoZW1lGAcgASgOMhEudWkudjEuU2hvd25UaGVtZUILCglfc2hvcnRjdXRCBwoFX2xvYWRCFQoTX2lmcml0X2lkbGVfbWludXRlc0IOCgxfbGVhZF9kcml2ZW4i1QEKCFByb3ZpZGVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEQoJYXZhaWxhYmxlGAMgASgIEg8KB2NvbW1hbmQYBCABKAkSIwoFc3RhdGUYBSABKA4yFC51aS52MS5Qcm92aWRlclN0YXRlEg8KB3ZlcnNpb24YBiABKAkSFwoPaW5zdGFsbF9jb21tYW5kGAcgASgJEhUKDWxvZ2luX2NvbW1hbmQYCCABKAkSJQoIYWNjb3VudHMYCSADKAsyEy51aS52MS5BY2NvdW50U2V0dXAibQoMQWNjb3VudFNldHVwEiEKB2FjY291bnQYASABKAsyEC5wbGFuLnYxLkFjY291bnQSIwoFc3RhdGUYAiABKA4yFC51aS52MS5Qcm92aWRlclN0YXRlEhUKDWxvZ2luX2NvbW1hbmQYAyABKAkiVwofVWlTZXJ2aWNlQ2hvb3NlRGlyZWN0b3J5UmVxdWVzdBIXCgV0aXRsZRgBIAEoCUIIukgFcgMYyAESGwoJZGlyZWN0b3J5GAIgASgJQgi6SAVyAxiAICI1CiBVaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZRIRCglkaXJlY3RvcnkYASABKAkiKwocVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVxdWVzdBILCgN1cmwYASABKAkiLAodVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2USCwoDdXJsGAEgASgJIjUKG1VpU2VydmljZVNldFNob3J0Y3V0UmVxdWVzdBIWCgVjaG9yZBgBIAEoCUIHukgEcgIYQCJBChxVaVNlcnZpY2VTZXRTaG9ydGN1dFJlc3BvbnNlEiEKCHNob3J0Y3V0GAEgASgLMg8udWkudjEuU2hvcnRjdXQiQgoUVWlTZXJ2aWNlU2hvd1JlcXVlc3QSDwoHd2lzaF9pZBgBIAEoCRIZCgh0ZXJtaW5hbBgCIAEoCUIHukgEcgIYQCInChVVaVNlcnZpY2VTaG93UmVzcG9uc2USDgoGd2luZG93GAEgASgIIjEKGFVpU2VydmljZU9wZW5MaW5rUmVxdWVzdBIVCgN1cmwYASABKAlCCLpIBXIDGIAgIk8KGVVpU2VydmljZU9wZW5MaW5rUmVzcG9uc2USDwoHd2lzaF9pZBgBIAEoCRIRCgl0aWxhc21faWQYAiABKAkSDgoGd2luZG93GAMgASgIIhsKGVVpU2VydmljZVdhdGNoU2hvd1JlcXVlc3QieAoaVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2USDwoHd2lzaF9pZBgBIAEoCRIQCgh0ZXJtaW5hbBgCIAEoCRIRCgl0aWxhc21faWQYAyABKAkSFAoMdW5rbm93bl9saW5rGAQgASgJEg4KBnRhcmdldBgFIAEoCSIdChtVaVNlcnZpY2VXYXRjaFVwZGF0ZVJlcXVlc3Qi7gEKHFVpU2VydmljZVdhdGNoVXBkYXRlUmVzcG9uc2USDwoHY3VycmVudBgBIAEoCRINCgVyZWFkeRgCIAEoCRITCgtub3RfcmVzdW1lZBgDIAMoCRIRCglub3Rlc191cmwYBCABKAkSHAoGYnVpbGRzGAcgAygLMgwudWkudjEuQnVpbGQSJQoKaW5zdGFsbGluZxgGIAEoCzIRLnVpLnYxLkluc3RhbGxpbmcSIQoLcmVhZHlfYnVpbGQYCCABKAsyDC51aS52MS5CdWlsZBIRCglpbnN0YWxsZWQYCSABKAhKBAgFEAZSBWJ1aWxkIhcKFVVpU2VydmljZVdhdGNoUmVxdWVzdCKwAQoWVWlTZXJ2aWNlV2F0Y2hSZXNwb25zZRIvCgRzaG93GAEgASgLMiEudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVzcG9uc2USMwoGdXBkYXRlGAIgASgLMiMudWkudjEuVWlTZXJ2aWNlV2F0Y2hVcGRhdGVSZXNwb25zZRIwCgRsb2FkGAMgASgLMiIuZGppbm4udjEuTG9hZFNlcnZpY2VXYXRjaFJlc3BvbnNlIoUBCgpJbnN0YWxsaW5nEgsKA3NoYRgBIAEoCRIgCgRzdGVwGAIgASgOMhIudWkudjEuSW5zdGFsbFN0ZXASDwoHd2FpdGluZxgDIAEoCRINCgVkb2luZxgEIAEoCRIMCgRhdXRvGAUgASgIEg0KBWVycm9yGAYgASgJEgsKA2xvZxgHIAMoCSI7CgtUYXNrU3VtbWFyeRIMCgRjb2RlGAEgASgJEg0KBXRpdGxlGAIgASgJEg8KB3N1bW1hcnkYAyABKAkiwQIKBUJ1aWxkEg8KB3dpc2hfaWQYASABKAkSEgoKd2lzaF90aXRsZRgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEg8KB3Byb2plY3QYBCABKAkSDgoGYnJhbmNoGAUgASgJEgsKA3NoYRgGIAEoCRINCgV0YXNrcxgHIAMoCRIPCgdjaGFuZ2VzGAggAygJEiUKCXN1bW1hcmllcxgJIAMoCzISLnVpLnYxLlRhc2tTdW1tYXJ5Eg8KB2luc3RhbGwYCiABKAkSDAoEYmFzZRgLIAEoCRIPCgdydW5uaW5nGAwgASgIEhUKDWNoYW5nZXNfY291bnQYDSABKAUSDQoFbGFja3MYDiADKAkSEwoLbGFja3NfY291bnQYDyABKAUSEQoJY29udGludWVzGBAgASgJEgwKBGF1dG8YESABKAgiMAoWVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdBIWCgVidWlsZBgBIAEoCUIHukgEcgIYQCJQChdVaVNlcnZpY2VVcGRhdGVSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhEKCXRlcm1pbmFscxgCIAEoBRIRCglpbnN0YWxsZWQYAyABKAkiIgogVWlTZXJ2aWNlR2V0Tm90aWZpY2F0aW9uc1JlcXVlc3QiYAohVWlTZXJ2aWNlR2V0Tm90aWZpY2F0aW9uc1Jlc3BvbnNlEikKBmFjY2VzcxgBIAEoDjIZLnVpLnYxLk5vdGlmaWNhdGlvbkFjY2VzcxIQCghzZXR0aW5ncxgCIAEoCCImCiRVaVNlcnZpY2VSZXF1ZXN0Tm90aWZpY2F0aW9uc1JlcXVlc3QiZAolVWlTZXJ2aWNlUmVxdWVzdE5vdGlmaWNhdGlvbnNSZXNwb25zZRIpCgZhY2Nlc3MYASABKA4yGS51aS52MS5Ob3RpZmljYXRpb25BY2Nlc3MSEAoIc2V0dGluZ3MYAiABKAgiKgooVWlTZXJ2aWNlT3Blbk5vdGlmaWNhdGlvblNldHRpbmdzUmVxdWVzdCIrCilVaVNlcnZpY2VPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3NSZXNwb25zZSJcChRVaVNlcnZpY2VWaWV3UmVxdWVzdBIYCgd3aXNoX2lkGAEgASgJQge6SARyAhhAEioKBXRoZW1lGAIgASgOMhEudWkudjEuU2hvd25UaGVtZUIIukgFggECEAEiFwoVVWlTZXJ2aWNlVmlld1Jlc3BvbnNlIhcKFVVpU2VydmljZVRvdWNoUmVxdWVzdCIYChZVaVNlcnZpY2VUb3VjaFJlc3BvbnNlKlYKClNob3duVGhlbWUSGwoXU0hPV05fVEhFTUVfVU5TUEVDSUZJRUQQABIUChBTSE9XTl9USEVNRV9EQVJLEAESFQoRU0hPV05fVEhFTUVfTElHSFQQAiqgAQoNUHJvdmlkZXJTdGF0ZRIeChpQUk9WSURFUl9TVEFURV9VTlNQRUNJRklFRBAAEhoKFlBST1ZJREVSX1NUQVRFX01JU1NJTkcQARIdChlQUk9WSURFUl9TVEFURV9TSUdORURfT1VUEAISGAoUUFJPVklERVJfU1RBVEVfUkVBRFkQAxIaChZQUk9WSURFUl9TVEFURV9VTktOT1dOEAQqsgEKC0luc3RhbGxTdGVwEhwKGElOU1RBTExfU1RFUF9VTlNQRUNJRklFRBAAEhgKFElOU1RBTExfU1RFUF9XQUlUSU5HEAESGgoWSU5TVEFMTF9TVEVQX1BSRVBBUklORxACEhkKFUlOU1RBTExfU1RFUF9CVUlMRElORxADEhsKF0lOU1RBTExfU1RFUF9SRVNUQVJUSU5HEAQSFwoTSU5TVEFMTF9TVEVQX0ZBSUxFRBAFKp8BChJOb3RpZmljYXRpb25BY2Nlc3MSIwofTk9USUZJQ0FUSU9OX0FDQ0VTU19VTlNQRUNJRklFRBAAEiMKH05PVElGSUNBVElPTl9BQ0NFU1NfVU5BVkFJTEFCTEUQARIfChtOT1RJRklDQVRJT05fQUNDRVNTX0FMTE9XRUQQAhIeChpOT1RJRklDQVRJT05fQUNDRVNTX0RFTklFRBADMpELCglVaVNlcnZpY2USZQoOR2V0RW52aXJvbm1lbnQSJS51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlcXVlc3QaJi51aS52MS5VaVNlcnZpY2VHZXRFbnZpcm9ubWVudFJlc3BvbnNlIgTI8xgCEmgKD0Nob29zZURpcmVjdG9yeRImLnVpLnYxLlVpU2VydmljZUNob29zZURpcmVjdG9yeVJlcXVlc3QaJy51aS52MS5VaVNlcnZpY2VDaG9vc2VEaXJlY3RvcnlSZXNwb25zZSIEyPMYAhJfCgxPcGVuRXh0ZXJuYWwSIy51aS52MS5VaVNlcnZpY2VPcGVuRXh0ZXJuYWxSZXF1ZXN0GiQudWkudjEuVWlTZXJ2aWNlT3BlbkV4dGVybmFsUmVzcG9uc2UiBMjzGAISXAoLU2V0U2hvcnRjdXQSIi51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VTZXRTaG9ydGN1dFJlc3BvbnNlIgTI8xgCEkcKBFNob3cSGy51aS52MS5VaVNlcnZpY2VTaG93UmVxdWVzdBocLnVpLnYxLlVpU2VydmljZVNob3dSZXNwb25zZSIEyPMYAhJTCghPcGVuTGluaxIfLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVxdWVzdBogLnVpLnYxLlVpU2VydmljZU9wZW5MaW5rUmVzcG9uc2UiBMjzGAISWAoJV2F0Y2hTaG93EiAudWkudjEuVWlTZXJ2aWNlV2F0Y2hTaG93UmVxdWVzdBohLnVpLnYxLlVpU2VydmljZVdhdGNoU2hvd1Jlc3BvbnNlIgTI8xgCMAESXgoLV2F0Y2hVcGRhdGUSIi51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlcXVlc3QaIy51aS52MS5VaVNlcnZpY2VXYXRjaFVwZGF0ZVJlc3BvbnNlIgTI8xgCMAESTAoFV2F0Y2gSHC51aS52MS5VaVNlcnZpY2VXYXRjaFJlcXVlc3QaHS51aS52MS5VaVNlcnZpY2VXYXRjaFJlc3BvbnNlIgTI8xgCMAESTQoGVXBkYXRlEh0udWkudjEuVWlTZXJ2aWNlVXBkYXRlUmVxdWVzdBoeLnVpLnYxLlVpU2VydmljZVVwZGF0ZVJlc3BvbnNlIgTI8xgCEmsKEEdldE5vdGlmaWNhdGlvbnMSJy51aS52MS5VaVNlcnZpY2VHZXROb3RpZmljYXRpb25zUmVxdWVzdBooLnVpLnYxLlVpU2VydmljZUdldE5vdGlmaWNhdGlvbnNSZXNwb25zZSIEyPMYAhJ3ChRSZXF1ZXN0Tm90aWZpY2F0aW9ucxIrLnVpLnYxLlVpU2VydmljZVJlcXVlc3ROb3RpZmljYXRpb25zUmVxdWVzdBosLnVpLnYxLlVpU2VydmljZVJlcXVlc3ROb3RpZmljYXRpb25zUmVzcG9uc2UiBMjzGAISgwEKGE9wZW5Ob3RpZmljYXRpb25TZXR0aW5ncxIvLnVpLnYxLlVpU2VydmljZU9wZW5Ob3RpZmljYXRpb25TZXR0aW5nc1JlcXVlc3QaMC51aS52MS5VaVNlcnZpY2VPcGVuTm90aWZpY2F0aW9uU2V0dGluZ3NSZXNwb25zZSIEyPMYAhJHCgRWaWV3EhsudWkudjEuVWlTZXJ2aWNlVmlld1JlcXVlc3QaHC51aS52MS5VaVNlcnZpY2VWaWV3UmVzcG9uc2UiBMjzGAISSgoFVG91Y2gSHC51aS52MS5VaVNlcnZpY2VUb3VjaFJlcXVlc3QaHS51aS52MS5VaVNlcnZpY2VUb3VjaFJlc3BvbnNlIgTI8xgCQnYKCWNvbS51aS52MUIHVWlQcm90b1ABWitnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby91aS92MTt1aXYxogIDVVhYqgIFVWkuVjHKAgVVaVxWMeICEVVpXFYxXEdQQk1ldGFkYXRh6gIGVWk6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_load, file_djinn_v1_options, file_plan_v1_plan]);
 
 /**
  * @generated from message ui.v1.UiServiceGetEnvironmentRequest
@@ -131,7 +133,7 @@ export const ShortcutSchema: GenMessage<Shortcut> = /*@__PURE__*/
 
 /**
  * The window's settings that Djinn acts on, in settings.json of the data directory. The page keeps its own (the
- * language, the theme).
+ * language, the theme chosen); it tells Djinn the theme it shows (shown_theme).
  *
  * @generated from message ui.v1.Settings
  */
@@ -149,6 +151,47 @@ export type Settings = Message<"ui.v1.Settings"> & {
    * @generated from field: optional djinn.v1.LoadNotch load = 2;
    */
   load?: LoadNotch | undefined;
+
+  /**
+   * Minutes without you in Djinn before Djinn puts an ifrit out, 5 to 240: your pace on this machine. Unset: 30.
+   * djinn up --ifrit-idle, and an ifrit's own (djinn task spawn --idle-minutes), come first.
+   *
+   * @generated from field: optional uint32 ifrit_idle_minutes = 3;
+   */
+  ifritIdleMinutes?: number | undefined;
+
+  /**
+   * Djinn drives the lead (decision Q31): a fresh headless session for each batch of the lead's events and of what
+   * you write to the Djinn, with the rules, the events whole, the briefs of their wishes and the lead's journal in
+   * its prompt; no terminal, no djinn lead watch. Unset or false: the lead runs in its terminal, as before, until the
+   * driven lead is proven. djinn up reads it as it starts.
+   *
+   * @generated from field: optional bool lead_driven = 4;
+   */
+  leadDriven?: boolean | undefined;
+
+  /**
+   * The accounts of the agents on this machine, each a folder of the agent's own where it keeps its login (djinn lead
+   * add-account). No token: the login stays the agent's.
+   *
+   * @generated from field: repeated plan.v1.Account accounts = 5;
+   */
+  accounts: Account[];
+
+  /**
+   * Where the lead Djinn drives runs (djinn lead move). Unset: Claude, its default model and sign-in.
+   *
+   * @generated from field: plan.v1.LeadSeat lead = 6;
+   */
+  lead?: LeadSeat | undefined;
+
+  /**
+   * The theme the window shows, as the last page to say it did (UiService.View), kept across restarts: each batch of
+   * the driven lead speaks in its tone (decision Q36). Unset: no page said it yet, and the Djinn stays plain.
+   *
+   * @generated from field: ui.v1.ShownTheme shown_theme = 7;
+   */
+  shownTheme: ShownTheme;
 };
 
 /**
@@ -220,6 +263,13 @@ export type Provider = Message<"ui.v1.Provider"> & {
    * @generated from field: string login_command = 8;
    */
   loginCommand: string;
+
+  /**
+   * The agent's accounts on this machine beside its default sign-in, each checked in its own folder.
+   *
+   * @generated from field: repeated ui.v1.AccountSetup accounts = 9;
+   */
+  accounts: AccountSetup[];
 };
 
 /**
@@ -228,6 +278,41 @@ export type Provider = Message<"ui.v1.Provider"> & {
  */
 export const ProviderSchema: GenMessage<Provider> = /*@__PURE__*/
   messageDesc(file_ui_v1_ui, 4);
+
+/**
+ * AccountSetup is where an account of an agent stands, and how to sign it in.
+ *
+ * @generated from message ui.v1.AccountSetup
+ */
+export type AccountSetup = Message<"ui.v1.AccountSetup"> & {
+  /**
+   * The account.
+   *
+   * @generated from field: plan.v1.Account account = 1;
+   */
+  account?: Account | undefined;
+
+  /**
+   * Whether it is signed in: the agent's status command, run with the account's folder.
+   *
+   * @generated from field: ui.v1.ProviderState state = 2;
+   */
+  state: ProviderState;
+
+  /**
+   * The command line that signs it in, in its folder, through the user's shell.
+   *
+   * @generated from field: string login_command = 3;
+   */
+  loginCommand: string;
+};
+
+/**
+ * Describes the message ui.v1.AccountSetup.
+ * Use `create(AccountSetupSchema)` to create a new message.
+ */
+export const AccountSetupSchema: GenMessage<AccountSetup> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 5);
 
 /**
  * @generated from message ui.v1.UiServiceChooseDirectoryRequest
@@ -253,7 +338,7 @@ export type UiServiceChooseDirectoryRequest = Message<"ui.v1.UiServiceChooseDire
  * Use `create(UiServiceChooseDirectoryRequestSchema)` to create a new message.
  */
 export const UiServiceChooseDirectoryRequestSchema: GenMessage<UiServiceChooseDirectoryRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 5);
+  messageDesc(file_ui_v1_ui, 6);
 
 /**
  * @generated from message ui.v1.UiServiceChooseDirectoryResponse
@@ -272,7 +357,7 @@ export type UiServiceChooseDirectoryResponse = Message<"ui.v1.UiServiceChooseDir
  * Use `create(UiServiceChooseDirectoryResponseSchema)` to create a new message.
  */
 export const UiServiceChooseDirectoryResponseSchema: GenMessage<UiServiceChooseDirectoryResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 6);
+  messageDesc(file_ui_v1_ui, 7);
 
 /**
  * @generated from message ui.v1.UiServiceOpenExternalRequest
@@ -291,7 +376,7 @@ export type UiServiceOpenExternalRequest = Message<"ui.v1.UiServiceOpenExternalR
  * Use `create(UiServiceOpenExternalRequestSchema)` to create a new message.
  */
 export const UiServiceOpenExternalRequestSchema: GenMessage<UiServiceOpenExternalRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 7);
+  messageDesc(file_ui_v1_ui, 8);
 
 /**
  * @generated from message ui.v1.UiServiceOpenExternalResponse
@@ -310,7 +395,7 @@ export type UiServiceOpenExternalResponse = Message<"ui.v1.UiServiceOpenExternal
  * Use `create(UiServiceOpenExternalResponseSchema)` to create a new message.
  */
 export const UiServiceOpenExternalResponseSchema: GenMessage<UiServiceOpenExternalResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 8);
+  messageDesc(file_ui_v1_ui, 9);
 
 /**
  * @generated from message ui.v1.UiServiceSetShortcutRequest
@@ -329,7 +414,7 @@ export type UiServiceSetShortcutRequest = Message<"ui.v1.UiServiceSetShortcutReq
  * Use `create(UiServiceSetShortcutRequestSchema)` to create a new message.
  */
 export const UiServiceSetShortcutRequestSchema: GenMessage<UiServiceSetShortcutRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 9);
+  messageDesc(file_ui_v1_ui, 10);
 
 /**
  * @generated from message ui.v1.UiServiceSetShortcutResponse
@@ -348,7 +433,7 @@ export type UiServiceSetShortcutResponse = Message<"ui.v1.UiServiceSetShortcutRe
  * Use `create(UiServiceSetShortcutResponseSchema)` to create a new message.
  */
 export const UiServiceSetShortcutResponseSchema: GenMessage<UiServiceSetShortcutResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 10);
+  messageDesc(file_ui_v1_ui, 11);
 
 /**
  * @generated from message ui.v1.UiServiceShowRequest
@@ -374,7 +459,7 @@ export type UiServiceShowRequest = Message<"ui.v1.UiServiceShowRequest"> & {
  * Use `create(UiServiceShowRequestSchema)` to create a new message.
  */
 export const UiServiceShowRequestSchema: GenMessage<UiServiceShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 11);
+  messageDesc(file_ui_v1_ui, 12);
 
 /**
  * @generated from message ui.v1.UiServiceShowResponse
@@ -393,7 +478,7 @@ export type UiServiceShowResponse = Message<"ui.v1.UiServiceShowResponse"> & {
  * Use `create(UiServiceShowResponseSchema)` to create a new message.
  */
 export const UiServiceShowResponseSchema: GenMessage<UiServiceShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 12);
+  messageDesc(file_ui_v1_ui, 13);
 
 /**
  * @generated from message ui.v1.UiServiceOpenLinkRequest
@@ -412,7 +497,7 @@ export type UiServiceOpenLinkRequest = Message<"ui.v1.UiServiceOpenLinkRequest">
  * Use `create(UiServiceOpenLinkRequestSchema)` to create a new message.
  */
 export const UiServiceOpenLinkRequestSchema: GenMessage<UiServiceOpenLinkRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 13);
+  messageDesc(file_ui_v1_ui, 14);
 
 /**
  * @generated from message ui.v1.UiServiceOpenLinkResponse
@@ -445,7 +530,7 @@ export type UiServiceOpenLinkResponse = Message<"ui.v1.UiServiceOpenLinkResponse
  * Use `create(UiServiceOpenLinkResponseSchema)` to create a new message.
  */
 export const UiServiceOpenLinkResponseSchema: GenMessage<UiServiceOpenLinkResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 14);
+  messageDesc(file_ui_v1_ui, 15);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowRequest
@@ -458,7 +543,7 @@ export type UiServiceWatchShowRequest = Message<"ui.v1.UiServiceWatchShowRequest
  * Use `create(UiServiceWatchShowRequestSchema)` to create a new message.
  */
 export const UiServiceWatchShowRequestSchema: GenMessage<UiServiceWatchShowRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 15);
+  messageDesc(file_ui_v1_ui, 16);
 
 /**
  * @generated from message ui.v1.UiServiceWatchShowResponse
@@ -507,7 +592,7 @@ export type UiServiceWatchShowResponse = Message<"ui.v1.UiServiceWatchShowRespon
  * Use `create(UiServiceWatchShowResponseSchema)` to create a new message.
  */
 export const UiServiceWatchShowResponseSchema: GenMessage<UiServiceWatchShowResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 16);
+  messageDesc(file_ui_v1_ui, 17);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateRequest
@@ -520,7 +605,7 @@ export type UiServiceWatchUpdateRequest = Message<"ui.v1.UiServiceWatchUpdateReq
  * Use `create(UiServiceWatchUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateRequestSchema: GenMessage<UiServiceWatchUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 17);
+  messageDesc(file_ui_v1_ui, 18);
 
 /**
  * @generated from message ui.v1.UiServiceWatchUpdateResponse
@@ -594,7 +679,7 @@ export type UiServiceWatchUpdateResponse = Message<"ui.v1.UiServiceWatchUpdateRe
  * Use `create(UiServiceWatchUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceWatchUpdateResponseSchema: GenMessage<UiServiceWatchUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 18);
+  messageDesc(file_ui_v1_ui, 19);
 
 /**
  * @generated from message ui.v1.UiServiceWatchRequest
@@ -607,7 +692,7 @@ export type UiServiceWatchRequest = Message<"ui.v1.UiServiceWatchRequest"> & {
  * Use `create(UiServiceWatchRequestSchema)` to create a new message.
  */
 export const UiServiceWatchRequestSchema: GenMessage<UiServiceWatchRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 19);
+  messageDesc(file_ui_v1_ui, 20);
 
 /**
  * @generated from message ui.v1.UiServiceWatchResponse
@@ -640,7 +725,7 @@ export type UiServiceWatchResponse = Message<"ui.v1.UiServiceWatchResponse"> & {
  * Use `create(UiServiceWatchResponseSchema)` to create a new message.
  */
 export const UiServiceWatchResponseSchema: GenMessage<UiServiceWatchResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 20);
+  messageDesc(file_ui_v1_ui, 21);
 
 /**
  * Installing is an install of a build that runs now, and where it stands; or the last one, when it failed.
@@ -703,7 +788,7 @@ export type Installing = Message<"ui.v1.Installing"> & {
  * Use `create(InstallingSchema)` to create a new message.
  */
 export const InstallingSchema: GenMessage<Installing> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 21);
+  messageDesc(file_ui_v1_ui, 22);
 
 /**
  * TaskSummary is what a task of the build brought, and its worker's final words.
@@ -738,7 +823,7 @@ export type TaskSummary = Message<"ui.v1.TaskSummary"> & {
  * Use `create(TaskSummarySchema)` to create a new message.
  */
 export const TaskSummarySchema: GenMessage<TaskSummary> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 22);
+  messageDesc(file_ui_v1_ui, 23);
 
 /**
  * Build is a wish's integration branch as Djinn pushed it (T07), to install.
@@ -871,7 +956,7 @@ export type Build = Message<"ui.v1.Build"> & {
  * Use `create(BuildSchema)` to create a new message.
  */
 export const BuildSchema: GenMessage<Build> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 23);
+  messageDesc(file_ui_v1_ui, 24);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateRequest
@@ -891,7 +976,7 @@ export type UiServiceUpdateRequest = Message<"ui.v1.UiServiceUpdateRequest"> & {
  * Use `create(UiServiceUpdateRequestSchema)` to create a new message.
  */
 export const UiServiceUpdateRequestSchema: GenMessage<UiServiceUpdateRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 24);
+  messageDesc(file_ui_v1_ui, 25);
 
 /**
  * @generated from message ui.v1.UiServiceUpdateResponse
@@ -924,7 +1009,7 @@ export type UiServiceUpdateResponse = Message<"ui.v1.UiServiceUpdateResponse"> &
  * Use `create(UiServiceUpdateResponseSchema)` to create a new message.
  */
 export const UiServiceUpdateResponseSchema: GenMessage<UiServiceUpdateResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 25);
+  messageDesc(file_ui_v1_ui, 26);
 
 /**
  * @generated from message ui.v1.UiServiceGetNotificationsRequest
@@ -937,7 +1022,7 @@ export type UiServiceGetNotificationsRequest = Message<"ui.v1.UiServiceGetNotifi
  * Use `create(UiServiceGetNotificationsRequestSchema)` to create a new message.
  */
 export const UiServiceGetNotificationsRequestSchema: GenMessage<UiServiceGetNotificationsRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 26);
+  messageDesc(file_ui_v1_ui, 27);
 
 /**
  * @generated from message ui.v1.UiServiceGetNotificationsResponse
@@ -961,7 +1046,7 @@ export type UiServiceGetNotificationsResponse = Message<"ui.v1.UiServiceGetNotif
  * Use `create(UiServiceGetNotificationsResponseSchema)` to create a new message.
  */
 export const UiServiceGetNotificationsResponseSchema: GenMessage<UiServiceGetNotificationsResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 27);
+  messageDesc(file_ui_v1_ui, 28);
 
 /**
  * @generated from message ui.v1.UiServiceRequestNotificationsRequest
@@ -974,7 +1059,7 @@ export type UiServiceRequestNotificationsRequest = Message<"ui.v1.UiServiceReque
  * Use `create(UiServiceRequestNotificationsRequestSchema)` to create a new message.
  */
 export const UiServiceRequestNotificationsRequestSchema: GenMessage<UiServiceRequestNotificationsRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 28);
+  messageDesc(file_ui_v1_ui, 29);
 
 /**
  * @generated from message ui.v1.UiServiceRequestNotificationsResponse
@@ -998,7 +1083,7 @@ export type UiServiceRequestNotificationsResponse = Message<"ui.v1.UiServiceRequ
  * Use `create(UiServiceRequestNotificationsResponseSchema)` to create a new message.
  */
 export const UiServiceRequestNotificationsResponseSchema: GenMessage<UiServiceRequestNotificationsResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 29);
+  messageDesc(file_ui_v1_ui, 30);
 
 /**
  * @generated from message ui.v1.UiServiceOpenNotificationSettingsRequest
@@ -1011,7 +1096,7 @@ export type UiServiceOpenNotificationSettingsRequest = Message<"ui.v1.UiServiceO
  * Use `create(UiServiceOpenNotificationSettingsRequestSchema)` to create a new message.
  */
 export const UiServiceOpenNotificationSettingsRequestSchema: GenMessage<UiServiceOpenNotificationSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 30);
+  messageDesc(file_ui_v1_ui, 31);
 
 /**
  * @generated from message ui.v1.UiServiceOpenNotificationSettingsResponse
@@ -1024,7 +1109,7 @@ export type UiServiceOpenNotificationSettingsResponse = Message<"ui.v1.UiService
  * Use `create(UiServiceOpenNotificationSettingsResponseSchema)` to create a new message.
  */
 export const UiServiceOpenNotificationSettingsResponseSchema: GenMessage<UiServiceOpenNotificationSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 31);
+  messageDesc(file_ui_v1_ui, 32);
 
 /**
  * @generated from message ui.v1.UiServiceViewRequest
@@ -1036,6 +1121,14 @@ export type UiServiceViewRequest = Message<"ui.v1.UiServiceViewRequest"> & {
    * @generated from field: string wish_id = 1;
    */
   wishId: string;
+
+  /**
+   * The theme the page shows, sent again when it changes: Djinn keeps it for the driven lead's tone. Unset: the one
+   * kept stays.
+   *
+   * @generated from field: ui.v1.ShownTheme theme = 2;
+   */
+  theme: ShownTheme;
 };
 
 /**
@@ -1043,7 +1136,7 @@ export type UiServiceViewRequest = Message<"ui.v1.UiServiceViewRequest"> & {
  * Use `create(UiServiceViewRequestSchema)` to create a new message.
  */
 export const UiServiceViewRequestSchema: GenMessage<UiServiceViewRequest> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 32);
+  messageDesc(file_ui_v1_ui, 33);
 
 /**
  * @generated from message ui.v1.UiServiceViewResponse
@@ -1056,7 +1149,67 @@ export type UiServiceViewResponse = Message<"ui.v1.UiServiceViewResponse"> & {
  * Use `create(UiServiceViewResponseSchema)` to create a new message.
  */
 export const UiServiceViewResponseSchema: GenMessage<UiServiceViewResponse> = /*@__PURE__*/
-  messageDesc(file_ui_v1_ui, 33);
+  messageDesc(file_ui_v1_ui, 34);
+
+/**
+ * @generated from message ui.v1.UiServiceTouchRequest
+ */
+export type UiServiceTouchRequest = Message<"ui.v1.UiServiceTouchRequest"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceTouchRequest.
+ * Use `create(UiServiceTouchRequestSchema)` to create a new message.
+ */
+export const UiServiceTouchRequestSchema: GenMessage<UiServiceTouchRequest> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 35);
+
+/**
+ * @generated from message ui.v1.UiServiceTouchResponse
+ */
+export type UiServiceTouchResponse = Message<"ui.v1.UiServiceTouchResponse"> & {
+};
+
+/**
+ * Describes the message ui.v1.UiServiceTouchResponse.
+ * Use `create(UiServiceTouchResponseSchema)` to create a new message.
+ */
+export const UiServiceTouchResponseSchema: GenMessage<UiServiceTouchResponse> = /*@__PURE__*/
+  messageDesc(file_ui_v1_ui, 36);
+
+/**
+ * ShownTheme is the theme a page shows: the system's resolved by the page, never "system".
+ *
+ * @generated from enum ui.v1.ShownTheme
+ */
+export enum ShownTheme {
+  /**
+   * Not known: no page said it.
+   *
+   * @generated from enum value: SHOWN_THEME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Dark: the Djinn is the mocking demon of the lamp.
+   *
+   * @generated from enum value: SHOWN_THEME_DARK = 1;
+   */
+  DARK = 1,
+
+  /**
+   * Light: the Djinn is the solar Djinn.
+   *
+   * @generated from enum value: SHOWN_THEME_LIGHT = 2;
+   */
+  LIGHT = 2,
+}
+
+/**
+ * Describes the enum ui.v1.ShownTheme.
+ */
+export const ShownThemeSchema: GenEnum<ShownTheme> = /*@__PURE__*/
+  enumDesc(file_ui_v1_ui, 0);
 
 /**
  * ProviderState is whether an agent command line is installed and signed in.
@@ -1104,7 +1257,7 @@ export enum ProviderState {
  * Describes the enum ui.v1.ProviderState.
  */
 export const ProviderStateSchema: GenEnum<ProviderState> = /*@__PURE__*/
-  enumDesc(file_ui_v1_ui, 0);
+  enumDesc(file_ui_v1_ui, 1);
 
 /**
  * InstallStep is where an install stands.
@@ -1158,7 +1311,7 @@ export enum InstallStep {
  * Describes the enum ui.v1.InstallStep.
  */
 export const InstallStepSchema: GenEnum<InstallStep> = /*@__PURE__*/
-  enumDesc(file_ui_v1_ui, 1);
+  enumDesc(file_ui_v1_ui, 2);
 
 /**
  * Whether the system lets Djinn show notifications.
@@ -1200,7 +1353,7 @@ export enum NotificationAccess {
  * Describes the enum ui.v1.NotificationAccess.
  */
 export const NotificationAccessSchema: GenEnum<NotificationAccess> = /*@__PURE__*/
-  enumDesc(file_ui_v1_ui, 2);
+  enumDesc(file_ui_v1_ui, 3);
 
 /**
  * What the window needs to show and follow the plan.
@@ -1355,7 +1508,8 @@ export const UiService: GenService<{
     output: typeof UiServiceOpenNotificationSettingsResponseSchema;
   },
   /**
-   * Say which wish the page shows: no notification comes for it while the window is in front.
+   * Say which wish the page shows, and its theme: no notification comes for that wish while the window is in front,
+   * and the driven lead takes the tone of that theme.
    *
    * @generated from rpc ui.v1.UiService.View
    */
@@ -1363,6 +1517,17 @@ export const UiService: GenService<{
     methodKind: "unary";
     input: typeof UiServiceViewRequestSchema;
     output: typeof UiServiceViewResponseSchema;
+  },
+  /**
+   * Say that the developer is there: a key, a click or a scroll in the window in front, sent at most every 30 seconds.
+   * It keeps the ifrits lit.
+   *
+   * @generated from rpc ui.v1.UiService.Touch
+   */
+  touch: {
+    methodKind: "unary";
+    input: typeof UiServiceTouchRequestSchema;
+    output: typeof UiServiceTouchResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_ui_v1_ui, 0);

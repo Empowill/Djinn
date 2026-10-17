@@ -14,6 +14,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -128,13 +129,8 @@ func checkIdentity(ctx context.Context, dir string) error {
 	return err
 }
 
-// addWorktree creates the worktree path of the repository holding dir, on a new branch from its HEAD. It returns
-// the folder the worker runs in: the project's own folder within the worktree.
-func addWorktree(ctx context.Context, dir, path, branch string) (string, error) {
-	return addWorktreeFrom(ctx, dir, path, branch, "HEAD")
-}
-
-// addWorktreeFrom is addWorktree, its branch starting from the commit from.
+// addWorktreeFrom creates the worktree path of the repository holding dir, on a new branch from the commit from. It
+// returns the folder the worker runs in: the project's own folder within the worktree.
 func addWorktreeFrom(ctx context.Context, dir, path, branch, from string) (string, error) {
 	prefix, err := git(ctx, dir, "rev-parse", "--show-prefix")
 	if err != nil {
@@ -143,7 +139,9 @@ func addWorktreeFrom(ctx context.Context, dir, path, branch, from string) (strin
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	if _, err := git(ctx, dir, "worktree", "add", "--quiet", "-b", branch, path, from); err != nil {
+	keep, done := gitx.Uncut(ctx) // A worktree begun is made whole though djinn up stops (W52).
+	defer done()
+	if _, err := git(keep, dir, "worktree", "add", "--quiet", "-b", branch, path, from); err != nil {
 		return "", err
 	}
 	return filepath.Join(path, filepath.FromSlash(prefix)), nil
@@ -174,28 +172,59 @@ func correctionWorktree(ctx context.Context, dir, path, branch string, f *planv1
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	if _, err := git(ctx, dir, "worktree", "add", "--quiet", "-b", branch, path, f.GetBase()); err != nil {
+	keep, done := gitx.Uncut(ctx) // The worktree and its merge are made whole though djinn up stops (W52).
+	defer done()
+	if _, err := git(keep, dir, "worktree", "add", "--quiet", "-b", branch, path, f.GetBase()); err != nil {
 		return "", err
 	}
 	if b := f.GetMergeBranch(); b != "" {
-		if _, err := git(ctx, path, "merge", "--no-ff", "--no-edit", "--quiet", b); err != nil && len(conflicted(ctx, path)) == 0 {
+		if _, err := git(keep, path, "merge", "--no-ff", "--no-edit", "--quiet", b); err != nil && len(conflicted(keep, path)) == 0 {
 			return "", fmt.Errorf("merge %s again: %w", b, err)
 		}
 	}
 	return filepath.Join(path, filepath.FromSlash(prefix)), nil
 }
 
-// startPoint is the commit a task's worktree starts from in the repository holding dir: the tip of its wish's
-// integration branch there, integration, so that it builds on the work committed before it (T07); the checkout's
-// HEAD when the wish has none, or the branch is not in the repository. from is "" for HEAD.
-func startPoint(ctx context.Context, dir, integration string) (sha, from string, err error) {
-	if integration != "" {
-		if sha, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+integration+"^{commit}"); err == nil {
-			return sha, integration, nil
+// startPoint is the commit a task's worktree starts from in project, and the branch it says it starts from: the tip of
+// from, the branch its work lands in (its wish's integration branch, or its azima's), so that it builds on the work
+// committed before it (T07); the remote's branch of that name when this one is behind it, or missing here. Without
+// from, or a branch of that name, the project's reference branch, fetched first (resolveMainSha). Never the developer's
+// HEAD, nor their changes not committed: their copy is theirs (W227). An error when the project has no reference
+// branch either.
+func (h *Harness) startPoint(ctx context.Context, project *planv1.Project, from string) (sha, shown string, err error) {
+	repo := project.GetDirectory()
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil {
+		return "", "", fmt.Errorf("settings unreadable: %w", err)
+	}
+	if main, _, err := mainRef(ctx, repo, settings.MainBranch); err == nil && (from == "" || strings.EqualFold(from, main)) {
+		h.fetchReference(ctx, repo, settings)
+	}
+	if from != "" {
+		ours := commitOf(ctx, repo, "refs/heads/"+from)
+		theirs, remoteShown := "", ""
+		if remote, target := pushTarget(ctx, repo, from); remote != "" {
+			remoteShown = remote + "/" + target
+			theirs = commitOf(ctx, repo, "refs/remotes/"+remoteShown)
+		}
+		switch {
+		case ours != "" && theirs != "" && ours != theirs && isAncestor(ctx, repo, ours, theirs):
+			return theirs, remoteShown, nil
+		case ours != "":
+			return ours, from, nil
+		case theirs != "":
+			return theirs, remoteShown, nil
 		}
 	}
-	sha, err = git(ctx, dir, "rev-parse", "HEAD")
-	return sha, "", err
+	main, sha, err := resolveMainSha(ctx, repo, settings)
+	if err != nil {
+		return "", "", err
+	}
+	shown = main
+	if remote, target := pushTarget(ctx, repo, main); remote != "" && commitOf(ctx, repo, "refs/remotes/"+remote+"/"+target) == sha {
+		shown = remote + "/" + target
+	}
+	return sha, shown, nil
 }
 
 // removeWorktree removes the worktree path of the repository holding dir; its branch stays. Without force, git
@@ -211,11 +240,39 @@ func removeWorktree(ctx context.Context, dir, path string, force bool) error {
 	if force {
 		args = append(args, "--force")
 	}
-	_, err := git(ctx, dir, append(args, path)...)
+	keep, done := gitx.Uncut(ctx) // Never half removed (W52).
+	defer done()
+	_, err := git(keep, dir, append(args, path)...)
 	if err == nil {
 		forgetAgyProject(path)
 	}
 	return err
+}
+
+// branchStartCommit returns the commit from which branch in dir was created, from its reflog.
+func branchStartCommit(ctx context.Context, dir, branch string) string {
+	if branch == "" {
+		return ""
+	}
+	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
+	if err != nil || reflog == "" {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(reflog), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+// branchHasNoCommits tells whether branch in dir is still at the commit it started from.
+func branchHasNoCommits(ctx context.Context, dir, branch string) bool {
+	if branch == "" {
+		return false
+	}
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
+	if err != nil || head == "" {
+		return false
+	}
+	start := branchStartCommit(ctx, dir, branch)
+	return start != "" && start == head
 }
 
 // branchHoldsUnmergedCommits tells whether branch in dir has commits of its own that are not in integration.
@@ -231,12 +288,8 @@ func branchHoldsUnmergedCommits(ctx context.Context, dir, branch, integration st
 		}
 	}
 	// A branch with no commit beyond the point it started from holds no unmerged work.
-	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
-	if err == nil && reflog != "" {
-		lines := strings.Split(strings.TrimSpace(reflog), "\n")
-		if strings.TrimSpace(lines[len(lines)-1]) == head {
-			return false
-		}
+	if start := branchStartCommit(ctx, dir, branch); start != "" && start == head {
+		return false
 	}
 	intTarget := "refs/heads/" + integration + "^{commit}"
 	intHead, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", intTarget)
@@ -259,6 +312,9 @@ func depWorkInSha(ctx context.Context, dir string, dep *planv1.Task, sha string)
 	if sha == "" {
 		return false
 	}
+	if dep.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		return true
+	}
 	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+dep.GetBranch()+"^{commit}")
 	if err != nil || head == "" {
 		head, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", dep.GetBranch()+"^{commit}")
@@ -267,12 +323,8 @@ func depWorkInSha(ctx context.Context, dir string, dep *planv1.Task, sha string)
 		return true // Branch does not exist; no work to check.
 	}
 	// A branch with no commit beyond the point it started from holds no unmerged work.
-	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+dep.GetBranch())
-	if err == nil && reflog != "" {
-		lines := strings.Split(strings.TrimSpace(reflog), "\n")
-		if strings.TrimSpace(lines[len(lines)-1]) == head {
-			return true
-		}
+	if start := branchStartCommit(ctx, dir, dep.GetBranch()); start != "" && start == head {
+		return true
 	}
 	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, sha); err == nil {
 		return true
@@ -291,23 +343,34 @@ func taskWorkInBranch(ctx context.Context, dir string, task *planv1.Task, integr
 	if task == nil || task.GetBranch() == "" || integration == "" {
 		return false
 	}
+	return taskWorkIn(ctx, dir, task, integrationHead(ctx, dir, integration))
+}
+
+// integrationHead is the commit the integration branch is at in dir, else the commit dir's checkout is at; "" when
+// neither is found.
+func integrationHead(ctx context.Context, dir, integration string) string {
+	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+integration+"^{commit}")
+	if err != nil || head == "" {
+		head, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", integration+"^{commit}")
+	}
+	if head == "" {
+		head, _ = git(ctx, dir, "rev-parse", "HEAD")
+	}
+	return head
+}
+
+// taskWorkIn is taskWorkInBranch with the integration branch's head, intHead, read once for a batch of tasks: each
+// git costs a process, a tenth of a second on Windows.
+func taskWorkIn(ctx context.Context, dir string, task *planv1.Task, intHead string) bool {
+	if task == nil || task.GetBranch() == "" || intHead == "" {
+		return false
+	}
 	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+task.GetBranch()+"^{commit}")
 	if err != nil || head == "" {
 		head, err = git(ctx, dir, "rev-parse", "--verify", "--quiet", task.GetBranch()+"^{commit}")
 		if err != nil || head == "" {
 			return false
 		}
-	}
-	intTarget := "refs/heads/" + integration + "^{commit}"
-	intHead, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", intTarget)
-	if err != nil || intHead == "" {
-		intHead, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", integration+"^{commit}")
-	}
-	if intHead == "" {
-		intHead, _ = git(ctx, dir, "rev-parse", "HEAD")
-	}
-	if intHead == "" {
-		return false
 	}
 	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", head, intHead); err == nil {
 		return true
@@ -329,9 +392,44 @@ func (h *Harness) dependenciesUnmergedIn(ctx context.Context, dir string, task *
 	if targetBranch == "" {
 		targetBranch = "the integration branch"
 	}
+	all, _ := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": task.GetWishId()})
+	byID := make(map[string]*planv1.Task, len(all))
+	byCode := make(map[string]*planv1.Task, len(all))
+	for _, t := range all {
+		byID[t.GetId()] = t
+		if t.GetCode() != "" {
+			byCode[t.GetCode()] = t
+		}
+	}
 	for _, depID := range task.GetDependsOn() {
-		dep, err := store.Get[*planv1.Task](ctx, h.store, depID)
-		if err != nil || dep == nil {
+		dep := byID[depID]
+		if dep == nil {
+			var err error
+			dep, err = store.Get[*planv1.Task](ctx, h.store, depID)
+			if err != nil || dep == nil {
+				continue
+			}
+		}
+		seen := map[string]bool{}
+		for !seen[dep.GetId()] {
+			seen[dep.GetId()] = true
+			code := dep.GetClosed().GetContinuedIn()
+			if dep.GetStatus() == planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+				code = render.ForkedAs(dep, all)
+			}
+			if code == "" || byCode[code] == nil {
+				break
+			}
+			dep = byCode[code]
+		}
+		if plan.IsAzima(dep) {
+			continue
+		}
+		if dep.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			continue
+		}
+		if (dep.GetClosed() != nil && dep.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED) ||
+			strings.HasPrefix(dep.GetIntegration().GetReason(), "left out (") {
 			continue
 		}
 		if dep.GetProjectId() != "" && task.GetProjectId() != "" && dep.GetProjectId() != task.GetProjectId() {

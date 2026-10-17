@@ -31,17 +31,20 @@ import (
 //	sleep 5s              it works for a while
 //	wait                  it works until a message comes (Send), which it says back at the end as the others
 //	fail no tests         it fails with this reason
+//	error API Error: 500  it says an error and goes on, as claude does on a turn that failed (its process lives on)
 //	exit 2                its process exits with this code
 //	djinn task list       it runs Djinn's command line, as an agent does: this djinn, in its folder, with its task's
 //	                      environment ($DJINN_TASK_ID); "…" and '…' quote an argument
 //
 // Any other line is said back as text. It runs in Djinn's process: stopping it ends its script at once, pausing it
-// holds its script before the next step until it is resumed.
+// holds its script before the next step until it is resumed. Started with Spec.Listen, it listens once its script is
+// played: each message it takes starts a turn that says it back, until its input is closed (CloseInput).
 type Fake struct{}
 
 func (Fake) Start(ctx context.Context, spec Spec) (Worker, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1), lowPriority: spec.LowPriority}
+	w := &fakeWorker{events: make(chan Event), cancel: cancel, done: make(chan struct{}), sent: make(chan struct{}, 1),
+		closed: make(chan struct{}), lowPriority: spec.LowPriority}
 	go func() {
 		defer logx.Crash("fake worker", "dir", spec.Dir)
 		w.play(ctx, spec)
@@ -55,9 +58,11 @@ type fakeWorker struct {
 	done   chan struct{}
 	res    Result
 
-	sent chan struct{} // a message came (wait)
+	sent   chan struct{} // a message came (wait)
+	closed chan struct{} // its input is closed (CloseInput)
 
 	mu          sync.Mutex
+	ending      bool // its input is closed: it takes no more messages
 	inbox       []string
 	held        chan struct{} // while paused; closed when resumed
 	lowPriority bool
@@ -76,12 +81,25 @@ func (w *fakeWorker) Send(text string) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.ending {
+		return ErrClosed
+	}
 	w.inbox = append(w.inbox, text)
 	select {
 	case w.sent <- struct{}{}:
 	default:
 	}
 	return nil
+}
+
+// CloseInput closes its input: it ends once it said back the messages it took.
+func (w *fakeWorker) CloseInput() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.ending {
+		w.ending = true
+		close(w.closed)
+	}
 }
 
 // Pause holds the script before its next step, as a process stopped where it is.
@@ -236,6 +254,8 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 			}
 			ev = fakeDjinn(ctx, spec, rest)
 			ev.Raw = raw
+		case "error":
+			ev.Kind, ev.Text = planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, rest
 		case "fail":
 			emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_ERROR, Text: rest, Raw: raw})
 			w.res = Result{ExitCode: 1, Err: errors.New(rest)}
@@ -255,14 +275,52 @@ func (w *fakeWorker) play(ctx context.Context, spec Spec) {
 			return
 		}
 	}
-	w.mu.Lock()
-	inbox := w.inbox
-	w.inbox = nil
-	w.mu.Unlock()
-	for _, text := range inbox {
-		if !emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "received: " + text}) {
-			w.res = stopped
+	for {
+		w.mu.Lock()
+		inbox := w.inbox
+		w.inbox = nil
+		w.mu.Unlock()
+		for _, text := range inbox {
+			if !emit(Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "received: " + text}) {
+				w.res = stopped
+				return
+			}
+		}
+		if !spec.Listen || !w.listen(ctx, emit) {
+			if ctx.Err() != nil {
+				w.res = stopped
+			}
 			return
+		}
+	}
+}
+
+// listen says its turn ended, then waits for a message: true once one starts its next turn, false once its input is
+// closed or it is stopped. A message already there goes on with the turn.
+func (w *fakeWorker) listen(ctx context.Context, emit func(Event) bool) bool {
+	listening := false
+	for {
+		w.mu.Lock()
+		ending, waiting := w.ending, len(w.inbox) == 0
+		w.mu.Unlock()
+		switch {
+		case !waiting && listening:
+			return emit(workingEvent("fake"))
+		case !waiting:
+			return true
+		case ending:
+			return false
+		case !listening:
+			if !emit(listeningEvent("fake")) {
+				return false
+			}
+			listening = true
+		}
+		select {
+		case <-w.sent:
+		case <-w.closed:
+		case <-ctx.Done():
+			return false
 		}
 	}
 }

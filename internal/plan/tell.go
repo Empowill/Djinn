@@ -22,6 +22,9 @@ var ErrNoLead = errors.New("this wish has no lead to tell")
 // the lead reads it as a message, and acts. A lead that does not run is reopened first, on its session, as Resume
 // does, without bringing the window to the front. ErrNoLead when there is none to tell.
 func (w *Wishes) Tell(ctx context.Context, wishID, line string) error {
+	if w.drive() != nil {
+		return fmt.Errorf("%w: %w", ErrNoLead, errDriven)
+	}
 	if w.Leads == nil {
 		return errors.New("this server runs no terminal")
 	}
@@ -81,7 +84,8 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, was *planv1.A
 	if routeOption(q) != nil {
 		line = RoutedLine(q)
 	}
-	if did == "" && routeOption(q) == nil && (w.Leads == nil || !w.Leads.Running(LeadTerminal)) && w.Store != nil {
+	if did == "" && routeOption(q) == nil && (w.Leads == nil || !w.Leads.Running(LeadTerminal)) && w.drive() == nil &&
+		w.Store != nil {
 		// No lead runs at all: the answer waits, marked waiting for a lead.
 		spec := connect.Spec{Procedure: planv1connect.QuestionServiceAnswerProcedure}
 		req := &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}}
@@ -97,7 +101,23 @@ func (w *Wishes) Answered(ctx context.Context, q *planv1.Question, was *planv1.A
 		}
 		q.WaitingLead = true
 	}
-	w.replaceAnswer(ctx, q, func(*planv1.LeadEvent) string { return line })
+	w.replaceAnswer(ctx, q, func(*planv1.LeadEvent) string { return line }, w.planDetail(ctx, q))
+}
+
+// planDetail is what the lead reads under the line of q's answer when Djinn left the plan of the chosen option to it
+// (RevisionDetail), read from the store: the harness has launched it, or not, by now.
+func (w *Wishes) planDetail(ctx context.Context, q *planv1.Question) string {
+	if w.Store == nil || len(q.GetPlans()) == 0 {
+		return ""
+	}
+	if fresh, err := store.Get[*planv1.Question](ctx, w.Store, q.GetId()); err == nil {
+		q = fresh
+	}
+	detail, err := RevisionDetail(ctx, w.Store, q)
+	if err != nil {
+		logx.L().Error("tell the lead a question's plan", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
+	}
+	return detail
 }
 
 // NoteEdited tells the lead that the developer changed the note of their answer to q, which had the note was: the
@@ -119,17 +139,20 @@ func (w *Wishes) NoteEdited(ctx context.Context, q *planv1.Question, was string)
 			note = " The note is removed."
 		}
 		return text + note
-	})
+	}, w.planDetail(ctx, q))
 }
 
 // replaceAnswer queues an answer event about q, its text line(the newest answer event of q that waits for the lead,
-// or nil), in place of the answer events of q that wait: the lead has not acknowledged them, and reads the one.
+// or nil) and its detail detail, in place of the answer events of q that wait: the lead has not acknowledged them, and reads the one.
 // It is a new event, after the watch's cursor: a lead whose digest held the one it replaces reads this one too.
-func (w *Wishes) replaceAnswer(ctx context.Context, q *planv1.Question, line func(waiting *planv1.LeadEvent) string) {
+func (w *Wishes) replaceAnswer(
+	ctx context.Context, q *planv1.Question, line func(waiting *planv1.LeadEvent) string, detail string,
+) {
 	if w.Store == nil {
 		return
 	}
-	e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode()}
+	e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode(),
+		Detail: detail, Note: q.GetAnswer().GetNote()}
 	err := w.notifyInPlace(ctx, e, func(waiting []*planv1.LeadEvent) []*planv1.LeadEvent {
 		var mine []*planv1.LeadEvent
 		for _, o := range waiting {
@@ -173,7 +196,7 @@ func (w *Wishes) queueWaitingAnswers(ctx context.Context) {
 			continue
 		}
 		e := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER, WishId: q.GetWishId(), Code: q.GetCode(),
-			Text: AnswerLine(q, "")}
+			Text: AnswerLine(q, ""), Note: q.GetAnswer().GetNote()}
 		if err := QueueLeadEvent(ctx, w.Store, e, w.now()); err != nil {
 			logx.L().Error("queue an answer for the lead", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
 		}
@@ -187,7 +210,7 @@ func (w *Wishes) Enlightened(ctx context.Context, q *planv1.Question, note strin
 		// (journal and window only); the lead hears when the worker ends.
 		return
 	}
-	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN, EnlightenLine(q, note, ""))
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_ENLIGHTEN, EnlightenLine(q, note, ""), note)
 }
 
 // Approved tells the lead that the developer approved the answer the lead or a worker gave q: the decision is the
@@ -200,7 +223,7 @@ func (w *Wishes) Approved(ctx context.Context, q *planv1.Question) {
 			by = t.GetCode()
 		}
 	}
-	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_APPROVED, ApprovedLine(q, by))
+	w.notify(ctx, q, planv1.LeadEventKind_LEAD_EVENT_KIND_APPROVED, ApprovedLine(q, by), "")
 }
 
 // ApprovedLine is the line that tells a lead the developer approved the answer by gave q (you, or a worker's code):
@@ -245,12 +268,12 @@ func QuestionWorkerOf(ctx context.Context, r store.Reader, q *planv1.Question, r
 	return nil, nil
 }
 
-// notify queues an event of kind about q for the lead.
-func (w *Wishes) notify(ctx context.Context, q *planv1.Question, kind planv1.LeadEventKind, line string) {
+// notify queues an event of kind about q for the lead, with note whole: the developer's words the line cuts.
+func (w *Wishes) notify(ctx context.Context, q *planv1.Question, kind planv1.LeadEventKind, line, note string) {
 	if w.Store == nil {
 		return
 	}
-	e := &planv1.LeadEvent{Kind: kind, WishId: q.GetWishId(), Code: q.GetCode(), Text: line}
+	e := &planv1.LeadEvent{Kind: kind, WishId: q.GetWishId(), Code: q.GetCode(), Text: line, Note: strings.TrimSpace(note)}
 	if err := w.Notify(ctx, e); err != nil {
 		logx.L().Error("tell the lead about a question", "wish", q.GetWishId(), "question", q.GetCode(), "err", err)
 	}

@@ -1,11 +1,14 @@
 package harness
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/machine"
@@ -177,7 +180,8 @@ func TestPreemptExclusions(t *testing.T) {
 	wishID, _ := e.wish(t, fakeProject(t, ""))
 
 	task := e.mustSpawn(t, wishID, "Work", "wait", nil)
-	e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	// Its session written, its worker waits and writes its task no more: what the test sets is not replaced.
+	e.follow(t, task.GetId())("its session", saidSession(task.GetId()))
 
 	// 1. Task holding a gate is never preempted.
 	e.h.HeldGates(func(taskID string) []string {
@@ -215,9 +219,7 @@ func TestPreemptExclusions(t *testing.T) {
 	}
 
 	// 3. Correction worker is never preempted.
-	e.h.mu.Lock()
-	e.h.runs[task.GetId()].task.Correction = &planv1.TaskCorrection{Attempt: 1}
-	e.h.mu.Unlock()
+	e.shownAs(task.GetId(), func(t *planv1.Task) { t.Correction = &planv1.TaskCorrection{Attempt: 1} })
 
 	cand, _ = e.h.lowestWorkTask(t.Context(), true)
 	if cand != nil {
@@ -225,18 +227,36 @@ func TestPreemptExclusions(t *testing.T) {
 	}
 
 	// 4. Review worker is never preempted.
-	e.h.mu.Lock()
-	e.h.runs[task.GetId()].task.Correction = nil
-	e.h.runs[task.GetId()].task.Review = &planv1.TaskReview{Attempt: 1}
-	e.h.mu.Unlock()
+	e.shownAs(task.GetId(), func(t *planv1.Task) { t.Correction, t.Review = nil, &planv1.TaskReview{Attempt: 1} })
 
 	cand, _ = e.h.lowestWorkTask(t.Context(), true)
 	if cand != nil {
 		t.Errorf("review worker was chosen for preemption: %v", cand.GetCode())
 	}
 
+	// 5. Urgent task is never preempted (W233).
+	e.h.mu.Lock()
+	e.h.runs[task.GetId()].task.Review = nil
+	e.h.runs[task.GetId()].task.Urgent = true
+	e.h.mu.Unlock()
+
+	cand, _ = e.h.lowestWorkTask(t.Context(), true)
+	if cand != nil {
+		t.Errorf("urgent task was chosen for preemption: %v", cand.GetCode())
+	}
+
 	e.release(t, task.GetId())
 	e.ended(t, task.GetId())
+}
+
+// shownAs replaces what the scheduler reads of the running task id by a copy that change alters.
+func (e *env) shownAs(id string, change func(*planv1.Task)) {
+	e.h.mu.Lock()
+	defer e.h.mu.Unlock()
+	r := e.h.runs[id]
+	shown := proto.CloneOf(r.shown)
+	change(shown)
+	r.shown = shown
 }
 
 // TestPreemptWindowsNeverPauses: Windows refuses pausing, so slot preemption returns nil.
@@ -267,4 +287,45 @@ func TestPreemptWindowsNeverPauses(t *testing.T) {
 
 	e.release(t, w1.GetId())
 	e.ended(t, w1.GetId())
+}
+
+// TestLowestWorkTaskWhileItsPumpWrites: the scheduler picks the worker to pause while that worker's pump writes its
+// task, a usage and a model at each event. Under -race, reading the run's own task there was a data race (W182).
+func TestLowestWorkTaskWhileItsPumpWrites(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, fakeProject(t, ""))
+	var prompt strings.Builder
+	prompt.WriteString("wait\n")
+	for i := range 20 {
+		fmt.Fprintf(&prompt, "usage %d 1\nmodel m%d\n", i+1, i%2)
+	}
+	task := e.mustSpawn(t, wishID, "Work", prompt.String(), nil)
+	e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		tick := time.NewTicker(time.Millisecond) // As a scheduler pass, never a loop holding the harness.
+		defer tick.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-tick.C:
+			}
+			if cand, _ := e.h.lowestWorkTask(t.Context(), true); cand != nil && cand.GetId() != task.GetId() {
+				t.Errorf("picked %s, want %s", cand.GetCode(), task.GetCode())
+			}
+		}
+	})
+	e.release(t, task.GetId())
+	ended := e.ended(t, task.GetId())
+	close(stop)
+	wg.Wait()
+	if got := ended.GetUsage().GetInputTokens(); got != 20 { // A worker's usage is its session's so far: the last.
+		t.Errorf("input tokens %d, want 20", got)
+	}
 }

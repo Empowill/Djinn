@@ -137,16 +137,26 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
   try {
     await page.goto(process.env.DJINN_URL!);
     await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
-    await expect(page.locator(".flight-plan .live-dot").first()).toBeVisible({
+    await expect(
+      page
+        .locator(".flight-plan .glance-wide .glance-row .glance-dot.run")
+        .first(),
+    ).toBeVisible({
       timeout: 15_000,
     });
-    // The menu: the Hourglass right below the flying carpet, before the wishes.
+    // The menu: the Hourglass at the bottom of the side panel, the Grimoire under it (W89), right above the profile.
     const entries = page.locator(
-      ".sidebar .plan-nav, .sidebar .hourglass-nav, .sidebar .wish-nav",
+      ".sidebar .plan-nav, .sidebar .wish-list, .sidebar .project-list, .sidebar .import-nav, .sidebar .hourglass-nav, .sidebar .grimoire-nav, .sidebar .sidebar-bottom",
     );
     await expect(entries.nth(0)).toHaveClass(/plan-nav/);
-    await expect(entries.nth(1)).toHaveClass(/hourglass-nav/);
-    await expect(entries.nth(1)).toHaveText("Hourglass");
+    await expect(entries.nth(1)).toHaveClass(/wish-list/);
+    await expect(entries.nth(2)).toHaveClass(/project-list/);
+    await expect(entries.nth(3)).toHaveClass(/import-nav/);
+    await expect(entries.nth(4)).toHaveClass(/hourglass-nav/);
+    await expect(entries.nth(4)).toHaveText("Hourglass");
+    await expect(entries.nth(5)).toHaveClass(/grimoire-nav/);
+    await expect(entries.nth(5)).toHaveText("Grimoire");
+    await expect(entries.nth(6)).toHaveClass(/sidebar-bottom/);
 
     // The flying carpet: no live graph, no series read; one line of the machine's load.
     await expect(page.locator(".consumption-panel")).toHaveCount(0);

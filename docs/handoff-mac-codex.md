@@ -205,7 +205,7 @@ go tool task build && export DJINN_HOME=$(mktemp -d) L=$DJINN_HOME/logs && ./bin
 5. **Quitting**: quit from the window; the last lines of `djinn.log` are `msg="shutdown begins"`, a
    `msg="shutdown step ended" step=…` per step, then `msg="shutdown ended"`.
 6. **A stop that hangs** (no way to provoke one by hand): `go tool task test-pkg -- -count=1 -v -run
-   'TestShutdownDumpsThenExits|TestRotating|TestDebugDump|TestDumpGoroutinesOnRequestFile' ./internal/logx ./cmd/djinn`
+   'TestShutdown|TestRotating|TestDebugDump|TestDumpGoroutinesOnRequestFile' ./internal/logx ./cmd/djinn`
    ends `PASS` for both packages. If a real quit ever takes over 10 s: `msg="shutdown is slow"` and a
    `goroutines-<time>.txt` at 10 s, `msg="shutdown hangs: exiting" … code=3` at 30 s, and `echo $?` (Windows:
    `$LASTEXITCODE`) prints `3`; send both files.

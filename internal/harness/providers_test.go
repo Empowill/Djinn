@@ -103,6 +103,43 @@ func catalog() []catalogCase {
 					t.Errorf("session = %q", ev.SessionID)
 				}
 			}},
+		{provider: "claude", fixture: "lead-comments",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, _ string) {
+				// The lead's batch on a send of comments: a reply per comment, its cost as claude counts it.
+				replies := 0
+				for _, ev := range events {
+					if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL && strings.Contains(ev.Text, "djinn tilasm reply L01 C") {
+						replies++
+					}
+				}
+				if replies != 4 {
+					t.Errorf("%d replies, want 4", replies)
+				}
+				if u := event(t, events, "USAGE").Usage; u.GetCostUsd() != 0.6187598000000001 {
+					t.Errorf("usage = %v", u)
+				}
+			}},
+		{provider: "claude", fixture: "lead-batch",
+			spec: Spec{SystemPrompt: "# Leading in Djinn", MaxTurns: 60, WriteDirs: []string{"/d/lead"}, ReadDirs: []string{"/d"},
+				Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}, Mode: djinnv1.Mode_MODE_LISTED}},
+			want: []string{"STATUS", "TOOL_CALL", "STATUS", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, args, _ string) {
+				// The driven lead's session: its rules in the system prompt, its turns capped, its folder writable.
+				for _, want := range []string{"--append-system-prompt\n# Leading in Djinn\n--exclude-dynamic-system-prompt-sections",
+					"--max-turns\n60", `"Write(//d/lead/**)"`, `"Read(//d/**)"`, `"Bash(djinn *)"`} {
+					if !strings.Contains(args, want) {
+						t.Errorf("args lack %q: %q", want, args)
+					}
+				}
+				if strings.Contains(args, `"Write"`) {
+					t.Errorf("a deny of every edit would win over the lead's folder: %q", args)
+				}
+				if u := event(t, events, "USAGE").Usage; u.GetCostUsd() != 0.1599468 || u.GetCacheReadTokens() != 47074 ||
+					u.GetCacheWriteTokens() != 18102 {
+					t.Errorf("usage = %v", u)
+				}
+			}},
 		{provider: "claude", fixture: "session-limit", want: []string{"STATUS", "STATUS", "STATUS", "TEXT", "ERROR", "USAGE"},
 			err: "You've hit your session limit · resets 7:20am (Europe/Paris)",
 			check: func(t *testing.T, events []Event, _, _ string) {
@@ -716,6 +753,19 @@ func TestProviderArgs(t *testing.T) {
 	if b, _ := json.Marshal(turn); !strings.Contains(string(b), `"approvalPolicy":"on-request","approvalsReviewer":"auto_review"`) ||
 		!strings.Contains(string(b), `"sandboxPolicy":{"excludeSlashTmp":false,"excludeTmpdirEnvVar":false,"networkAccess":true,"type":"workspaceWrite","writableRoots":[]}`) {
 		t.Errorf("an auto turn with edit and network: %s", b)
+	}
+	// The driven lead (W132): its rules are codex's developer instructions, and its folders to write in, without edit,
+	// open the workspace-write sandbox on them alone.
+	lead := Spec{Dir: "/home/d/lead", SystemPrompt: "The driven lead's rules", WriteDirs: []string{"/home/d/lead", "/home/d/plans"},
+		Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}}}
+	if _, params := (Codex{}).threadRequest(lead); params["developerInstructions"] != "The driven lead's rules" ||
+		params["sandbox"] != "workspace-write" || params["approvalPolicy"] != "untrusted" {
+		t.Errorf("the lead's thread: %v", params)
+	}
+	turn = (Codex{}).turnParams(lead, "th", "hi")
+	if b, _ := json.Marshal(turn); !strings.Contains(string(b), `"type":"workspaceWrite","writableRoots":["/home/d/plans"]`) ||
+		!strings.Contains(string(b), `"networkAccess":false`) {
+		t.Errorf("the lead's turn: %s", b)
 	}
 	turn = (Codex{}).turnParams(Spec{Dir: "/w", Permissions: &djinnv1.Permissions{}}, "th", "hi")
 	if b, _ := json.Marshal(turn); !strings.Contains(string(b), `"approvalPolicy":"untrusted"`) ||

@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -121,6 +122,7 @@ func (in *integration) later(d time.Duration) {
 // failed part has not ended, as its state says (plan.FillAzimas): its other part committed waits for the next push.
 func TestPushAtAnAzimasEnd(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -162,11 +164,56 @@ func TestPushAtAnAzimasEnd(t *testing.T) {
 	}
 }
 
+// TestPushPastAnAzimasWatcher: a watcher part of an azima (the babysit of its pull request) runs until the merge, so
+// it never holds the azima's push: its committed correction pushes the branch; a work part still running holds it.
+func TestPushPastAnAzimasWatcher(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	for _, c := range []struct {
+		name   string
+		other  planv1.Provider
+		pushed bool
+	}{
+		{"its watcher runs", planv1.Provider_PROVIDER_WATCH, true},
+		{"its work runs", planv1.Provider_PROVIDER_FAKE, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			in := integrating(t)
+			bare := in.remote(t)
+			old := in.tip(t)
+			azima := in.azima(t, in.wishID, "Letters")
+			babysit := &planv1.Task{
+				Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W2", Title: "Babysit the PR",
+				Kind: planv1.TaskKind_TASK_KIND_WORK, Status: planv1.TaskStatus_TASK_STATUS_RUNNING, Provider: planv1.Provider_PROVIDER_WATCH,
+				PartOf: azima.GetId(), Scheduled: true, Babysit: &planv1.TaskBabysit{Url: "https://example.com/pr/1", Number: 1},
+			}
+			putTask(t, in.db, babysit, "gh pr checks 1 --watch")
+			running := &planv1.Task{
+				Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: "W3", Title: "Something else",
+				Kind: planv1.TaskKind_TASK_KIND_WORK, Status: planv1.TaskStatus_TASK_STATUS_RUNNING, Provider: c.other,
+				PartOf: azima.GetId(), Scheduled: true,
+			}
+			putTask(t, in.db, running, "another watcher, or work")
+			in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+
+			in.pass(t, 0)
+			want, pushes := old, 0
+			if c.pushed {
+				want, pushes = in.tip(t), 1
+			}
+			if got := in.remoteTip(t, bare); got != want || len(in.pushes(t)) != pushes {
+				t.Errorf("origin's %s is at %s, pushes %v; want it at %s", in.branch, got, in.pushes(t), want)
+			}
+		})
+	}
+}
+
 // TestPushAfterThreeTasksAndAnHour: without an azima, the branch is pushed once three tasks are committed since the
 // last push and more than an hour has passed since it, checked as a task's merge ends; not before. TestPushDue holds
 // three tasks within the hour.
 func TestPushAfterThreeTasksAndAnHour(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -196,6 +243,7 @@ func TestPushAfterThreeTasksAndAnHour(t *testing.T) {
 // pass, with the work committed meanwhile.
 func TestPushAskMode(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -243,6 +291,7 @@ func TestPushAskMode(t *testing.T) {
 // in, it passes.
 func TestARefusedPushIsNotForced(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	// Someone else pushed to origin meanwhile.
@@ -253,6 +302,9 @@ func TestARefusedPushIsNotForced(t *testing.T) {
 	in.git(t, other, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit", "--quiet", "-m", "Theirs")
 	in.git(t, other, "push", "--quiet", "origin", in.branch)
 	theirs := in.remoteTip(t, bare)
+	// Djinn cannot fetch from origin, which takes pushes: it merges on main as it last saw it, and git refuses the push.
+	in.git(t, in.repo, "remote", "set-url", "--push", "origin", bare)
+	in.git(t, in.repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
 
 	azima := in.azima(t, in.wishID, "Letters")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
@@ -281,7 +333,8 @@ func TestARefusedPushIsNotForced(t *testing.T) {
 	}
 
 	// The person brings origin's commit in: pushed.
-	in.git(t, in.repo, "pull", "--quiet", "--no-rebase", "--no-edit", "origin", in.branch)
+	in.git(t, in.repo, "pull", "--quiet", "--no-rebase", "--no-edit", bare, in.branch)
+	in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+in.branch, theirs)
 	in.answer(t, again, planv1.Choice_CHOICE_A)
 	in.pass(t, 0)
 	if got := in.remoteTip(t, bare); got != in.tip(t) {
@@ -292,12 +345,48 @@ func TestARefusedPushIsNotForced(t *testing.T) {
 	}
 }
 
+// TestMainBehindTheRemoteCatchesUp (W164): main, the wish's integration branch, behind origin's after someone else's
+// push, is fetched and brought up to it, the person's clean checkout following, before the work merges on top: the
+// push then goes, never forced.
+func TestMainBehindTheRemoteCatchesUp(t *testing.T) {
+	testx.Portable(t)
+	in := integrating(t)
+	bare := in.remote(t)
+	other := filepath.Join(t.TempDir(), "other")
+	in.git(t, in.repo, "clone", "--quiet", "--branch", in.branch, bare, other)
+	writeFile(t, other, "NEWS", "theirs\n")
+	in.git(t, other, "add", "NEWS")
+	in.git(t, other, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit", "--quiet", "-m", "Theirs")
+	in.git(t, other, "push", "--quiet", "origin", in.branch)
+	theirs := in.remoteTip(t, bare)
+
+	azima := in.azima(t, in.wishID, "Letters")
+	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	in.pass(t, 0)
+	if got := in.get(t, w1.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		t.Fatalf("W1's integration %v, want committed", got)
+	}
+	if !isAncestor(t.Context(), in.repo, theirs, in.tip(t)) {
+		t.Errorf("%s at %s lacks origin's %s", in.branch, in.tip(t), theirs)
+	}
+	if got := in.remoteTip(t, bare); got != in.tip(t) {
+		t.Errorf("origin at %s, want pushed at %s", got, in.tip(t))
+	}
+	if got := in.git(t, in.repo, "status", "--porcelain", "--untracked-files=no"); got != "" {
+		t.Errorf("the person's checkout reads %q, want following, clean", got)
+	}
+	if got := in.git(t, in.repo, "show", "HEAD:NEWS"); got != "theirs" {
+		t.Errorf("NEWS reads %q in the checkout's HEAD, want origin's", got)
+	}
+}
+
 // TestABuildIsProposed: once Djinn pushes in a project whose settings name an install command, djinn up is told what
 // to propose: the commits' titles, and the tasks' summaries from what each worker said last. Installing it runs the command
 // in the project's install worktree at that commit, under the install gate, never in the person's checkout nor in an
 // integration worktree, and says each step and what it waits for.
 func TestABuildIsProposed(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	var built []Built
 	in := integrating(t, WithBuilt(func(b Built) { built = append(built, b) }))
 	in.remote(t)
@@ -336,8 +425,10 @@ func TestABuildIsProposed(t *testing.T) {
 	out, err := in.h.Install(t.Context(), in.wishID, in.projectID, tip, progress)
 	in.h.integrateMu.Unlock()
 	wt := filepath.Join(installDir(in.home, in.projectID), "app")
-	if err != nil || out != "installed a\n" || in.runs[len(in.runs)-1] != "install in "+wt || in.gates[len(in.gates)-1] != "install -" {
-		t.Errorf("install: %q, %v; runs %v, gates %v", out, err, in.runs, in.gates)
+	// Its gate is no merge's nor push's: it does not go before the workers' (Q26).
+	if err != nil || out != "installed a\n" || in.runs[len(in.runs)-1] != "install in "+wt || in.gates[len(in.gates)-1] != "install -" ||
+		!slices.Equal(in.behind, []string{"install -"}) {
+		t.Errorf("install: %q, %v; runs %v, gates %v, not first %v", out, err, in.runs, in.gates, in.behind)
 	}
 	wantSteps := []string{
 		fmt.Sprint(InstallPreparing, " "), fmt.Sprint(InstallBuilding, " "),
@@ -355,6 +446,7 @@ func TestABuildIsProposed(t *testing.T) {
 // TestNoRemoteNoPush: a repository without a remote pushes nothing, and says nothing about it.
 func TestNoRemoteNoPush(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	azima := in.azima(t, in.wishID, "Letters")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
@@ -365,12 +457,16 @@ func TestNoRemoteNoPush(t *testing.T) {
 }
 
 func TestPushDue(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	task := func(code string, status planv1.TaskStatus, state planv1.IntegrationState, partOf string) *planv1.Task {
 		return &planv1.Task{
 			Id: code, Code: code, Status: status, Kind: planv1.TaskKind_TASK_KIND_WORK, PartOf: partOf,
 			Integration: &planv1.TaskIntegration{State: state},
 		}
+	}
+	watcher := func(code string, status planv1.TaskStatus, partOf string) *planv1.Task {
+		return &planv1.Task{Id: code, Code: code, Status: status, Kind: planv1.TaskKind_TASK_KIND_WORK, Provider: planv1.Provider_PROVIDER_WATCH, PartOf: partOf}
 	}
 	done, running := planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_RUNNING
 	committed, pending := planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, planv1.IntegrationState_INTEGRATION_STATE_PENDING
@@ -392,6 +488,11 @@ func TestPushDue(t *testing.T) {
 		{"an azima whose other part was cut short", []*planv1.Task{w1}, []*planv1.Task{t1, w1, task("W4", planv1.TaskStatus_TASK_STATUS_INTERRUPTED, none, "a")}, 0, "the azima T1 ends"},
 		{"an azima whose azima part waits", []*planv1.Task{w1}, []*planv1.Task{t1, w1, t2, task("W6", done, pending, "b")}, 0, ""},
 		{"an azima whose azima part ended", []*planv1.Task{w1}, []*planv1.Task{t1, w1, t2, task("W6", done, committed, "b")}, 0, "the azima T1 ends"},
+		// A watcher runs until the merge: it holds no push, a work part still open does (Q10).
+		{"an azima with only its watcher running", []*planv1.Task{w1}, []*planv1.Task{t1, w1, watcher("W7", running, "a")}, 0, "the azima T1 ends"},
+		{"an azima whose azima part has only its watcher running", []*planv1.Task{w1}, []*planv1.Task{t1, w1, t2, task("W6", done, committed, "b"), watcher("W7", running, "b")}, 0, "the azima T1 ends"},
+		{"an azima with its watcher and a part running", []*planv1.Task{w1}, []*planv1.Task{t1, w1, watcher("W7", running, "a"), task("W4", running, none, "a")}, 0, ""},
+		{"an azima with its watcher and a part still open", []*planv1.Task{w1}, []*planv1.Task{t1, w1, watcher("W7", running, "a"), task("W4", planv1.TaskStatus_TASK_STATUS_PENDING, none, "a")}, 0, ""},
 		{"three tasks, 59 minutes", []*planv1.Task{w2, w3, task("W5", done, committed, "")}, nil, 59 * time.Minute, ""},
 		{"three tasks, an hour", []*planv1.Task{w2, w3, task("W5", done, committed, "")}, nil, time.Hour, ""},
 		{"three tasks, more than an hour", []*planv1.Task{w2, w3, task("W5", done, committed, "")}, nil, time.Hour + time.Second,
@@ -402,9 +503,19 @@ func TestPushDue(t *testing.T) {
 			t.Errorf("%s: %q; want %q", c.name, got, c.want)
 		}
 	}
+	// An azima whose only live work is its watcher ends for the push and reads watching all the same (W86).
+	for _, tasks := range [][]*planv1.Task{
+		{t1, w1, watcher("W7", running, "a")},
+		{t1, w1, t2, task("W6", done, committed, "b"), watcher("W7", running, "b")},
+	} {
+		if s := plan.WithAzimas(tasks)[0].GetAzima().GetState(); s != planv1.AzimaState_AZIMA_STATE_WATCHING {
+			t.Errorf("T1 with only a watcher running reads %v; want watching", s)
+		}
+	}
 }
 
 func TestCommittedSince(t *testing.T) {
+	t.Parallel()
 	push := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	committed := func(code, project string, at time.Time) *planv1.Task {
 		return &planv1.Task{Id: code, Code: code, ProjectId: project, Integration: &planv1.TaskIntegration{
@@ -427,6 +538,7 @@ func TestCommittedSince(t *testing.T) {
 // automatically at an azima's end or on the cadence, and no push question is asked.
 func TestPushOnDemandNeverPushesOnAzimaOrCadence(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	old := in.tip(t)
@@ -469,6 +581,7 @@ func TestPushOnDemandNeverPushesOnAzimaOrCadence(t *testing.T) {
 // when remote is ahead (asking refusal question), and returns an error when already up to date.
 func TestPushMethod(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
 	bare := in.remote(t)
@@ -544,6 +657,7 @@ func TestPushMethod(t *testing.T) {
 // TestPushSync: computes ahead and behind commit counts between integration branch and remote tracking ref.
 func TestPushSync(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 
@@ -602,11 +716,101 @@ func (in *integration) syncOf(t *testing.T, project *planv1.Project, branch stri
 	return nil
 }
 
+// TestPushSyncLandedInMain: a done azima's branch whose remote copy lags behind, but whose commits main holds already
+// (its merge request merged them, then closed), waits for no push: ahead 0, landed. Its sync forgotten, the project's
+// syncs leave it out, until a new commit on it waits for a push again; a branch with commits to push is never forgotten.
+func TestPushSyncLandedInMain(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	in := integrating(t)
+	in.remote(t)
+	ctx := t.Context()
+	in.git(t, in.repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/"+in.branch)
+
+	commit := func(branch, title string) {
+		tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+branch)
+		tip = in.git(t, in.repo, "commit-tree", tip+"^{tree}", "-p", tip, "-m", title)
+		in.git(t, in.repo, "update-ref", "refs/heads/"+branch, tip)
+	}
+	// The hotfix branch, pushed once, then three more commits that main took by its merge request and pushed.
+	in.git(t, in.repo, "branch", "hotfix-tenant", in.branch)
+	commit("hotfix-tenant", "first")
+	in.git(t, in.repo, "push", "--quiet", "origin", "hotfix-tenant")
+	for _, title := range []string{"second", "third", "fourth"} {
+		commit("hotfix-tenant", title)
+	}
+	main := in.git(t, in.repo, "rev-parse", "refs/heads/"+in.branch)
+	in.git(t, in.repo, "update-ref", "refs/heads/"+in.branch, in.git(t, in.repo, "rev-parse", "refs/heads/hotfix-tenant"))
+	in.git(t, in.repo, "push", "--quiet", "origin", in.branch)
+	err := in.db.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("local", "test", &planv1.Wish{}); err != nil {
+			return err
+		}
+		for code, branch := range map[string]string{"T2": "hotfix-tenant", "T3": "feat/ahead"} {
+			err := tx.Put(&planv1.Task{
+				Id: store.NewID(), WishId: in.wishID, ProjectId: in.projectID, Code: code, Title: "Tenants apart",
+				Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_DONE,
+				Azima: &planv1.Azima{Branch: branch, BaseBranch: in.branch, CutFrom: main, Named: true},
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A done azima whose branch has a commit main lacks: it waits for a push, and is no landed one.
+	in.git(t, in.repo, "branch", "feat/ahead", main)
+	commit("feat/ahead", "ahead")
+	project, err := store.Get[*planv1.Project](ctx, in.db, in.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if s := in.syncOf(t, project, "hotfix-tenant"); s.GetAhead() != 0 || s.GetBehind() != 0 || !s.GetLanded() {
+		t.Errorf("hotfix-tenant, in main: ↑%d ↓%d landed %v; want ↑0 ↓0, landed", s.GetAhead(), s.GetBehind(), s.GetLanded())
+	}
+	if s := in.syncOf(t, project, "feat/ahead"); s.GetAhead() != 1 || s.GetLanded() {
+		t.Errorf("feat/ahead: ↑%d landed %v; want ↑1, not landed", s.GetAhead(), s.GetLanded())
+	}
+	if _, err := in.h.Push(ctx, in.wishID, in.projectID, "hotfix-tenant"); !errors.Is(err, plan.ErrUpToDate) {
+		t.Errorf("Push of hotfix-tenant: %v, want up to date", err)
+	}
+
+	if err := in.h.ForgetSync(ctx, project, "feat/ahead"); err == nil || !strings.Contains(err.Error(), "1 commits to push") {
+		t.Errorf("ForgetSync of feat/ahead: %v, want refused, it has a commit to push", err)
+	}
+	if err := in.h.ForgetSync(ctx, project, "hotfix-tenant"); err != nil {
+		t.Fatalf("ForgetSync of hotfix-tenant: %v", err)
+	}
+	branches := func() []string {
+		syncs, err := in.h.Syncs(ctx, project)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, s := range syncs {
+			got = append(got, s.GetBranch())
+		}
+		return got
+	}
+	if got := branches(); slices.Contains(got, "hotfix-tenant") || !slices.Contains(got, "feat/ahead") {
+		t.Errorf("syncs once hotfix-tenant forgotten: %v, want feat/ahead and not hotfix-tenant", got)
+	}
+	commit("hotfix-tenant", "fifth")
+	if s := in.syncOf(t, project, "hotfix-tenant"); s.GetAhead() != 1 || s.GetLanded() {
+		t.Errorf("hotfix-tenant with a new commit: ↑%d landed %v; want ↑1, not landed", s.GetAhead(), s.GetLanded())
+	}
+}
+
 // TestPushSyncs: a project holds a sync for each branch Djinn pushes there that exists: the integration branch of each
 // active or paused wish, the active first, each followed by its azimas' own branches; not a granted wish's. Its push
 // button pushes that branch alone.
 func TestPushSyncs(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	ctx := t.Context()

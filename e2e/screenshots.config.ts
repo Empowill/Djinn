@@ -9,5 +9,5 @@ export default defineConfig({
   testMatch: /.*\.shot\.ts/,
   outputDir: "../test-results/screenshots",
   timeout: 60_000,
-  use: { ...e2e.use, viewport: { width: 1440, height: 1000 } },
+  use: { ...e2e.use, viewport: { width: 1440, height: 1340 } },
 });

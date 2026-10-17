@@ -65,22 +65,78 @@ func SetIntegrationBranch(wish *planv1.Wish, projectID, branch string) {
 	wish.IntegrationBranches = append(wish.IntegrationBranches, &planv1.IntegrationBranch{ProjectId: projectID, Branch: branch})
 }
 
-// integrationBranches records, for each Git project of wish, the branch its checkout is on now: where the wish's
-// finished work goes by default.
-func integrationBranches(ctx context.Context, tx store.Reader, wish *planv1.Wish) error {
+// integrationBranches records, for each Git project of wish, its reference branch: where the wish's finished work goes
+// by default. home holds the developer's own settings, which may name it.
+func integrationBranches(ctx context.Context, tx store.Reader, home string, wish *planv1.Wish) error {
 	for _, id := range wish.GetProjectIds() {
 		project, err := store.Get[*planv1.Project](ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		if !project.GetGit() || project.GetDirectory() == "" {
-			continue
-		}
-		if branch := CheckedOutBranch(ctx, project.GetDirectory()); branch != "" {
-			SetIntegrationBranch(wish, id, branch)
-		}
+		integrationBranch(ctx, home, wish, project)
 	}
 	return nil
+}
+
+// integrationBranch records the reference branch of project (ReferenceName) as wish's integration branch there, never
+// the branch the developer's copy has checked out (W227); nothing for a project outside Git, without a folder, or
+// where Djinn finds no reference branch.
+func integrationBranch(ctx context.Context, home string, wish *planv1.Wish, project *planv1.Project) {
+	if !project.GetGit() || project.GetDirectory() == "" {
+		return
+	}
+	if branch, _ := ReferenceName(ctx, home, project); branch != "" {
+		SetIntegrationBranch(wish, project.GetId(), branch)
+	}
+}
+
+// ReferenceName is the reference branch of project, and the ref Djinn reads it from: the main_branch setting of the
+// developer's file, else the team's, else DefaultReference; the remote's branch when the repository has a remote and
+// it holds that branch, else the local one. "" for both when Djinn finds none. It reads no branch the developer's copy
+// has checked out, nor its HEAD: the copy is theirs (W227).
+func ReferenceName(ctx context.Context, home string, project *planv1.Project) (branch, ref string) {
+	dir := project.GetDirectory()
+	ctx, cancel := context.WithTimeout(ctx, readGitTimeout)
+	defer cancel()
+	settings, _ := LoadSettings(home, project)
+	if branch = settings.MainBranch; branch == "" {
+		branch, ref, _ = DefaultReference(ctx, dir)
+		return branch, ref
+	}
+	if remote := pushRemote(ctx, dir); remote != "" {
+		if _, err := gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/remotes/"+remote+"/"+branch); err == nil {
+			return branch, "refs/remotes/" + remote + "/" + branch
+		}
+	}
+	return branch, "refs/heads/" + branch
+}
+
+// DefaultReference is the reference branch of the repository holding dir when no main_branch names one, and the ref
+// Djinn reads it from: the remote's default branch (its HEAD, as a clone records it), else main, else master; the
+// remote's branch (refs/remotes/origin/main) when the repository has a remote that holds it, else the local one.
+// Never the branch the copy has checked out (W227).
+func DefaultReference(ctx context.Context, dir string) (branch, ref string, err error) {
+	remote := pushRemote(ctx, dir)
+	if remote != "" {
+		if head, err := gitOut(ctx, dir, "symbolic-ref", "--quiet", "--short", "refs/remotes/"+remote+"/HEAD"); err == nil {
+			name := strings.TrimPrefix(head, remote+"/")
+			return name, "refs/remotes/" + remote + "/" + name, nil
+		}
+	}
+	for _, name := range []string{"main", "master"} {
+		if remote != "" {
+			if _, err := gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/remotes/"+remote+"/"+name); err == nil {
+				return name, "refs/remotes/" + remote + "/" + name, nil
+			}
+		}
+	}
+	// A repository without a remote, or whose remote holds neither yet (never fetched, or empty): the local one.
+	for _, name := range []string{"main", "master"} {
+		if _, err := gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+name); err == nil {
+			return name, "refs/heads/" + name, nil
+		}
+	}
+	return "", "", errors.New("the project has no main branch: name it with djinn project set-branch, or main_branch in its settings")
 }
 
 // MergeRunning says, in a phrase, what merges into wish's integration branch in the project projectID now: a batch of
@@ -160,9 +216,10 @@ func AzimaMergeRunning(azima *planv1.Task, tasks []*planv1.Task, branch string) 
 }
 
 // createIntegrationBranch makes branch in the repository of the project projectID: from the remote's branch of that
-// name when the remote holds one, else at the tip of wish's integration branch there (the branch its checkout is on, for
-// a wish that records none); a branch of that name already there is left as it is.
-func createIntegrationBranch(ctx context.Context, tx store.Reader, wish *planv1.Wish, projectID, branch string) error {
+// name when the remote holds one, else at the tip of wish's integration branch there (the project's reference branch,
+// for a wish that records none); a branch of that name already there is left as it is. home holds the developer's own
+// settings.
+func createIntegrationBranch(ctx context.Context, tx store.Reader, home string, wish *planv1.Wish, projectID, branch string) error {
 	project, err := store.Get[*planv1.Project](ctx, tx, projectID)
 	if err != nil {
 		return err
@@ -191,14 +248,17 @@ func createIntegrationBranch(ctx context.Context, tx store.Reader, wish *planv1.
 		}
 	}
 	from := IntegrationBranchOf(wish, projectID)
-	if from == "" {
-		from = CheckedOutBranch(ctx, dir)
+	var ref string
+	if from != "" {
+		ref = "refs/heads/" + from
+	} else {
+		from, ref = ReferenceName(ctx, home, project)
 	}
 	if from == "" {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"project %s has no integration branch to make %s from: name an existing branch", project.GetName(), branch))
 	}
-	if _, err := gitOut(ctx, dir, "branch", "--no-track", branch, "refs/heads/"+from); err != nil {
+	if _, err := gitOut(ctx, dir, "branch", "--no-track", branch, ref); err != nil {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("make %s from %s: %w", branch, from, err))
 	}
 	return nil
@@ -267,7 +327,7 @@ func (w *Wishes) SetIntegration(
 			return nil, Status(err)
 		}
 		if change {
-			if err := createIntegrationBranch(ctx, w.Store, wish, projectID, branch); err != nil {
+			if err := createIntegrationBranch(ctx, w.Store, w.Home, wish, projectID, branch); err != nil {
 				return nil, Status(err)
 			}
 		}

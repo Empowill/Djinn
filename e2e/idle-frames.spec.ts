@@ -1,7 +1,8 @@
 // The window draws nothing while nothing changes (W513): W503 measured its WebKit repainting a whole core with a
 // worker running and nobody looking. With a worker running on the flight plan, once the drawing has rested, no script
 // asks for frames, and what loops in CSS only moves by transform and opacity, which the engine composes without
-// painting. A window at rest (not focused) pauses even those. The worker is the fake agent: no model is called.
+// painting. A window at rest (not focused) pauses even those, never its data (W290). The worker is the fake agent: no
+// model is called.
 // Run alone with: go tool task e2e -- e2e/idle-frames.spec.ts
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -65,7 +66,11 @@ test("an idle window asks for no frame and paints no looping animation", async (
   try {
     await page.goto(process.env.DJINN_URL!);
     await expect(page.locator(".flight-plan")).toBeVisible();
-    await expect(page.locator(".flight-plan .live-dot").first()).toBeVisible({
+    await expect(
+      page
+        .locator(".flight-plan .glance-wide .glance-row .glance-dot.run")
+        .first(),
+    ).toBeVisible({
       timeout: 15_000,
     });
     // The drawing moves a while as the worker starts, then rests.
@@ -122,6 +127,9 @@ test("an idle window asks for no frame and paints no looping animation", async (
           ).length,
     );
     expect(looping).toBe(0);
+    // Its data reads on (W290): the load bar's machine is read again, every 5 s, with another window in front.
+    await page.waitForRequest(/MachineService\/Show/, { timeout: 8_000 });
+    await expect(page.locator("html[data-still]")).toHaveCount(1);
     expect(errors).toEqual([]);
   } finally {
     djinn("task", "stop", taskId);

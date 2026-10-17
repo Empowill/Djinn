@@ -13,14 +13,17 @@ import {
   CirclePlay,
   CircleStop,
   FileText,
+  Flame,
   Gauge,
   Lock,
   MessageSquare,
   MessageSquarePlus,
   Play,
+  RotateCcw,
   ScrollText,
   Send,
   Terminal,
+  Zap,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -33,6 +36,7 @@ import {
 
 import {
   Closer,
+  HealthState,
   IntegrationState,
   type Project,
   Provider,
@@ -49,9 +53,20 @@ import {
   useTaskEvents,
   useTaskPrompt,
 } from "./data/djinn";
-import { isMerge } from "./data/flight";
+import { canUrge, isInvestigation, isMerge, isUrgent } from "./data/flight";
+import {
+  ifritGates,
+  ifritLinks,
+  ifritLit,
+  ifritOut,
+  ifritPhase,
+  ifritWaitOf,
+  ifritWord,
+  isIfrit,
+} from "./data/ifrit";
 import {
   cancelledText,
+  firstLine,
   gitReason,
   taskActivity,
   taskFinished,
@@ -66,9 +81,10 @@ import {
 import { DecisionLink } from "./decision-log";
 import { HOURGLASS } from "./hourglass";
 import { language, t } from "./i18n";
+import { IfritCountdown, IfritGates, IfritLinks, KeepLit } from "./ifrit";
 import { MarkdownBody } from "./markdown-body";
-import { StatusBadge } from "./status";
-import { TaskDiffView } from "./diff";
+import { StatusBadge, ToneIcon } from "./status";
+import { type DiffView, TaskReview } from "./diff";
 import {
   costTitle,
   resourcesDetail,
@@ -211,14 +227,17 @@ export const WishTask = memo(function WishTask({
   codes,
   origin,
   forkedAs = "",
+  fixedBy = "",
   decision,
   focused = false,
   onStop,
   onStart,
   onSend,
   onHold,
+  onUrge,
   onDecision,
   onDone,
+  onRelight,
   merges,
   nested,
   mergeOpen = false,
@@ -233,6 +252,8 @@ export const WishTask = memo(function WishTask({
   origin?: ReactNode;
   // The task that took over this one, cut short: its code.
   forkedAs?: string;
+  // The correction task that fixes its failed merge while it works (fixerOf): its code.
+  fixedBy?: string;
   // The decision the task comes from, which onDecision shows.
   decision?: Decision;
   // Brought into sight and opened, from its decision.
@@ -243,9 +264,14 @@ export const WishTask = memo(function WishTask({
   onSend: (text: string, task: Task) => Promise<unknown>;
   // Pauses the task's worker (true) or lets it go on (false); none where djinn cannot pause one (Windows).
   onHold?: (pause: boolean, task: Task) => void;
+  // Marks the task urgent for the developer's quick feedback (true), or takes its urgent mark off (false); none where
+  // it cannot be done from here.
+  onUrge?: (task: Task, urgent: boolean) => void;
   onDecision?: (task: Task) => void;
   // Marks the task done by hand, with a note; none where the task cannot be closed from here.
   onDone?: (note: string, task: Task) => Promise<unknown>;
+  // Lights an ifrit put out again with a message (TaskService.Continue); none where it cannot be done from here.
+  onRelight?: (text: string, task: Task) => Promise<unknown>;
   // The merges that bring this task's work in (src/data/flight.ts mergeNest), and their rows: folded under it.
   merges?: readonly Task[];
   nested?: ReactNode;
@@ -282,13 +308,40 @@ export const WishTask = memo(function WishTask({
     : (task.dependsOn ?? [])
         .map((id) => codes?.get(id))
         .filter((code): code is string => !!code);
-  const tone = taskTone(task, forkedAs);
+  const tone = taskTone(task, forkedAs, fixedBy);
   // The main counter ticks while it runs, and freezes while paused or done.
   const now = useNow(task.status === TaskStatus.RUNNING && !!task.startTime);
   const time = taskTime(task, now);
   const activity = taskActivity(task, now);
-  const work = taskWork(task, codes);
-  const hasActions = holdable || stoppable || (!!onDone && closable(task));
+  const work = taskWork(task, codes, fixedBy);
+  // An ifrit lit or put out: its links, gates and buttons on a line of their own, Finish in place of Mark done.
+  const ifrit = isIfrit(task);
+  const lit = ifritLit(task);
+  const out = ifritOut(task);
+  const phase = ifritPhase(task, now);
+  const reply = ifrit ? firstLine(task.ifrit?.reply ?? "") : "";
+  const [relighting, setRelighting] = useState(false);
+  // The gates it holds while lit, and the gate an ifrit holds that it waits for, read as words: a new reading of the
+  // gates draws the card again only when they change.
+  const held = useOptionalData(
+    (s) => (lit ? ifritGates(task, s.gates).join(" ") : ""),
+    "",
+  );
+  const gateWait = useOptionalData((s) => {
+    const wait = ifritWaitOf(task, s.gates);
+    if (!wait) return "";
+    return wait.release
+      ? t("ifrit.gate_wait", {
+          gate: wait.gate,
+          holder: wait.holder,
+          time: wait.release,
+        })
+      : t("ifrit.gate_wait_held", { gate: wait.gate, holder: wait.holder });
+  }, "");
+  const markable = !!onDone && closable(task) && !ifrit;
+  const urgeable = !!onUrge && canUrge(task);
+  const urgent = isUrgent(task);
+  const hasActions = urgeable || holdable || stoppable || markable;
   const machineWait = task.status === TaskStatus.PENDING && task.machineWait;
   return (
     <article
@@ -304,11 +357,18 @@ export const WishTask = memo(function WishTask({
           <span className="wish-task-first-line">
             <StatusBadge
               tone={tone}
-              label={taskStatusText(task, forkedAs)}
+              label={
+                lit || out
+                  ? ifritWord(task, now)
+                  : taskStatusText(task, forkedAs, fixedBy)
+              }
               title={cancelledText(task) ?? activity ?? undefined}
             />
             {isMerge(task) && <MergeLabel task={task} codes={codes} />}
+            {isUrgent(task) && <UrgentLabel feedback={task.feedback} />}
+            {isInvestigation(task) && <InvestigationLabel />}
             <span className="agent-code">{task.code}</span>
+            <HealthMark task={task} />
             {/* Cut to the room left: the whole title shows on hover. */}
             <span className="task-title-wrap">
               <strong className="task-title">{task.title}</strong>
@@ -359,6 +419,17 @@ export const WishTask = memo(function WishTask({
         </button>
         {hasActions && (
           <span className="wish-task-actions">
+            {urgeable && (
+              <button
+                className={`icon-button ${urgent ? "active" : ""}`}
+                onClick={() => onUrge?.(task, !urgent)}
+                title={t(urgent ? "task.unurge_detail" : "task.urge_detail")}
+                aria-label={t("task.urge")}
+                aria-pressed={urgent}
+              >
+                <Zap size={14} />
+              </button>
+            )}
             {holdable && (
               <button
                 className="icon-button"
@@ -379,7 +450,7 @@ export const WishTask = memo(function WishTask({
                 <CircleStop size={14} />
               </button>
             )}
-            {onDone && closable(task) && (
+            {markable && (
               <button
                 className="icon-button"
                 onClick={() => setClosing(!closing)}
@@ -398,11 +469,63 @@ export const WishTask = memo(function WishTask({
           <DecisionLink decision={decision} onOpen={() => onDecision(task)} />
         </p>
       )}
-      {closing && onDone && closable(task) && (
+      {closing && onDone && markable && (
         <DoneBox
           onDone={(note) => onDone(note, task)}
           onCancel={() => setClosing(false)}
         />
+      )}
+      {(lit || out) && (
+        <div className="wish-task-note ifrit-line">
+          <IfritLinks links={ifritLinks(task)} />
+          <IfritGates gates={held ? held.split(" ") : []} />
+          {phase === "warned" && <IfritCountdown task={task} now={now} />}
+          <span className="ifrit-actions">
+            {phase === "warned" && <KeepLit />}
+            {out && onRelight && (
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={() => setRelighting(!relighting)}
+                title={t("ifrit.relight_detail")}
+                aria-expanded={relighting}
+              >
+                <Flame size={13} aria-hidden="true" />
+                <span>{t("ifrit.relight")}</span>
+              </button>
+            )}
+            {onDone && (
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={() => void onDone("", task).catch(() => {})}
+                title={t("ifrit.finish_detail")}
+              >
+                <CheckCircle2 size={13} aria-hidden="true" />
+                <span>{t("ifrit.finish")}</span>
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+      {relighting && out && onRelight && (
+        <SendBox
+          label={t("ifrit.relight_placeholder")}
+          onSend={(text) =>
+            onRelight(text, task).then(() => setRelighting(false))
+          }
+        />
+      )}
+      {reply && (
+        <p className="wish-task-note ifrit-reply" title={t("ifrit.reply")}>
+          <q>{reply}</q>
+        </p>
+      )}
+      {gateWait && (
+        <p className="wish-task-note ifrit-wait tone-ifrit">
+          <ToneIcon tone="ifrit" size={12} />
+          <span>{gateWait}</span>
+        </p>
       )}
       {task.closed && (
         <p className="wish-task-note wish-task-closed">
@@ -426,6 +549,12 @@ export const WishTask = memo(function WishTask({
       {work && (
         <p className={`wish-task-note wish-task-work work-${work.tone}`}>
           {work.text}
+          {work.fixedBy && (
+            <>
+              {`, ${t("work.fixing_by")} `}
+              <TaskLink code={work.fixedBy} codes={codes} />
+            </>
+          )}
         </p>
       )}
       {machineWait ? (
@@ -532,6 +661,58 @@ export function MergeLabel({
   );
 }
 
+// HealthMark marks a worker the scheduler flagged to relaunch (Task.health, W188): stalled, or failed for a reason a
+// new turn may get past. Its tooltip says why, and the command that relaunches it. Nothing for any other task.
+export function HealthMark({ task }: { task: Task }) {
+  const state = task.health?.state;
+  if (state !== HealthState.STALLED && state !== HealthState.RETRIABLE) {
+    return null;
+  }
+  const stalled = state === HealthState.STALLED;
+  const label = t(stalled ? "task.health_stalled" : "task.health_retriable");
+  const title = t("task.health_detail", {
+    what: label,
+    reason: task.health?.reason ?? "",
+    command: `djinn task continue ${task.id}`,
+  });
+  return (
+    <span
+      className={`health-mark ${stalled ? "stalled" : "retriable"}`}
+      role="img"
+      aria-label={label}
+      title={title}
+    >
+      <RotateCcw size={12} />
+    </span>
+  );
+}
+
+// UrgentLabel marks a task the lead made urgent (isUrgent): to unblock the wish, or for the developer's quick feedback
+// (a mockup, a change they wait to see). Either passes the queue, a repair first.
+export function UrgentLabel({ feedback }: { feedback: boolean }) {
+  return (
+    <span
+      className="urgent-label"
+      title={t(feedback ? "task.feedback_detail" : "task.urgent_detail")}
+    >
+      {t(feedback ? "task.feedback" : "task.urgent")}
+    </span>
+  );
+}
+
+// InvestigationLabel marks a study or audit the lead launched to align with the developer (isInvestigation): served
+// first, it ends in a tilasm and a question, and its commits are never merged.
+export function InvestigationLabel() {
+  return (
+    <span
+      className="investigation-label"
+      title={t("task.investigation_detail")}
+    >
+      {t("task.investigation")}
+    </span>
+  );
+}
+
 // MergeFold folds the merges of a task under it, the label, their codes and the latest one's state on its line; the
 // rows open on a click, or when one of them is brought into sight.
 function MergeFold({
@@ -572,17 +753,24 @@ function MergeFold({
   );
 }
 
+type Work = {
+  text: string;
+  tone: "waiting" | "running" | "done" | "failed" | "fixing";
+  // The correction task that fixes the failed merge while it works, by its code: the page links to it after the text.
+  fixedBy?: string;
+};
+
 // taskWork says where the finished work of a task stands on its way into its wish's integration branch (T07), as the
-// page says it, and its tone: undefined for work Djinn does not integrate. codes name the correction worker's task.
+// page says it, and its tone: undefined for work Djinn does not integrate. codes name the correction worker's task;
+// fixedBy is that task's code while it fixes a failed merge (fixerOf): the failure is then being fixed, not red.
 export function taskWork(
   task: Task,
   codes?: ReadonlyMap<string, string>,
-):
-  | { text: string; tone: "waiting" | "running" | "done" | "failed" }
-  | undefined {
+  fixedBy = "",
+): Work | undefined {
   const work = task.integration;
   const sha = (work?.sha ?? "").slice(0, 8);
-  let out: { text: string; tone: "waiting" | "running" | "done" | "failed" };
+  let out: Work;
   switch (work?.state) {
     case IntegrationState.PENDING:
       out = {
@@ -599,6 +787,7 @@ export function taskWork(
       };
       break;
     case IntegrationState.COMMITTED:
+      if (!sha && !work.correctedBy && !work.reviewedBy) return undefined;
       out = {
         text: t("work.committed", { branch: work.branch, sha }),
         tone: "done",
@@ -619,7 +808,9 @@ export function taskWork(
     default:
       return undefined;
   }
-  if (work.correctedBy)
+  if (out.tone === "failed" && fixedBy)
+    out = { ...out, tone: "fixing", fixedBy };
+  else if (work.correctedBy)
     out.text += `, ${t("work.corrected_by", { task: codes?.get(work.correctedBy) ?? work.correctedBy })}`;
   if (work.reviewedBy)
     out.text += `, ${t("work.reviewed_by", { task: codes?.get(work.reviewedBy) ?? work.reviewedBy })}`;
@@ -716,7 +907,26 @@ function TaskBody({
   onTurnComments?: (task: Task) => Promise<unknown>;
 }) {
   const [showLogs, setShowLogs] = useState(false);
-  const [showDiff, setShowDiff] = useState(false);
+  // The review of the task's diffs, full size over the main shell, on its committed work or on its worktree; null
+  // while closed. The button that opened it takes the focus back once it closes.
+  const [diff, setDiff] = useState<{
+    view: DiffView;
+    shell: HTMLElement;
+  } | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const openDiff = (view: DiffView, from: HTMLElement) => {
+    opener.current = from;
+    setDiff({
+      view,
+      shell: from.closest<HTMLElement>(".main-shell") ?? document.body,
+    });
+  };
+  // Once the review is gone and what it covered given back (its effects end before this one runs).
+  useEffect(() => {
+    if (diff) return;
+    opener.current?.focus({ preventScroll: true });
+    opener.current = null;
+  }, [diff]);
   const events = useTaskEvents(task.id, task.status, showLogs);
   const box = useRef<HTMLDivElement>(null);
   // Keep the newest event in sight while the worker runs, inside the box: the page stays where it is.
@@ -815,19 +1025,36 @@ function TaskBody({
       {onTurnComments && commentsWaiting(task) && (
         <TurnCommentsButton task={task} onTurn={onTurnComments} />
       )}
-      <details className="wish-task-diff-fold" open={showDiff}>
-        <summary
+      <div className="wish-task-diff-actions">
+        <button
+          type="button"
           className="button secondary small wish-task-diff-button"
-          role="button"
-          onClick={(e) => {
-            e.preventDefault();
-            setShowDiff(!showDiff);
-          }}
+          onClick={(e) => openDiff("committed", e.currentTarget)}
         >
-          {showDiff ? t("task.hide_diff") : t("task.see_diff")}
-        </summary>
-        {showDiff && <TaskDiffView task={task} />}
-      </details>
+          {t("task.see_diff")}
+        </button>
+        <button
+          type="button"
+          className="button secondary small wish-task-worktree-button"
+          disabled={!task.worktree}
+          title={task.worktree ? undefined : t("task.no_worktree")}
+          onClick={(e) => openDiff("uncommitted", e.currentTarget)}
+        >
+          {t("task.see_worktree")}
+        </button>
+      </div>
+      {diff && (
+        <TaskReview
+          task={task}
+          view={diff.view}
+          shell={diff.shell}
+          onView={(view) => setDiff({ ...diff, view })}
+          onClose={(back) => {
+            if (!back) opener.current = null;
+            setDiff(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -887,8 +1114,15 @@ function clock(event: TaskEvent): string {
   );
 }
 
-// SendBox sends the running worker an instruction; djinn's refusal shows as a toast, and the text stays.
-function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
+// SendBox sends the running worker an instruction, or the message that lights an ifrit again (label); djinn's refusal
+// shows as a toast, and the text stays.
+function SendBox({
+  onSend,
+  label = t("task.message_placeholder"),
+}: {
+  onSend: (text: string) => Promise<unknown>;
+  label?: string;
+}) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
@@ -910,8 +1144,8 @@ function SendBox({ onSend }: { onSend: (text: string) => Promise<unknown> }) {
       <input
         value={text}
         onChange={(event) => setText(event.target.value)}
-        placeholder={t("task.message_placeholder")}
-        aria-label={t("task.message_placeholder")}
+        placeholder={label}
+        aria-label={label}
         disabled={busy}
       />
       <button

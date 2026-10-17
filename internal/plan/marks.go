@@ -70,20 +70,10 @@ func (m *Marks) Put(
 					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("question %s was withdrawn", question.GetCode()))
 				}
 				if question.GetAnswer() == nil {
-					choice, ok := Recommended(question)
-					if !ok {
-						return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-							"the recommendation of %s names no option: answer it with djinn question answer", question.GetCode()))
-					}
-					question.Answer = &planv1.Answer{
-						Choice:     choice,
-						CreateTime: mark.GetCreateTime(),
-						Actor:      planv1.Closer_CLOSER_DEVELOPER,
-					}
-					answered = question
-					if then, err = settled(ctx, m.Settle, tx, question); err != nil {
+					if then, err = m.approve(ctx, tx, question, mark); err != nil {
 						return err
 					}
+					answered = question
 				}
 			}
 			question.Marks = setMark(question.GetMarks(), mark, msg.GetRemove())
@@ -96,16 +86,34 @@ func (m *Marks) Put(
 	if err != nil {
 		return nil, err
 	}
-	if then != nil {
-		then(ctx)
-	}
 	if answered != nil {
-		afterAnswer(ctx, m.Answered, m.Told, answered, nil)
+		m.approved(ctx, answered, then)
 	}
 	if endorsed != nil && m.Approved != nil {
 		m.Approved(ctx, proto.CloneOf(endorsed))
 	}
 	return connect.NewResponse(&planv1.MarkServicePutResponse{Marked: marked}), nil
+}
+
+// approve answers the open question q in tx with the option its recommendation names, as the developer's approval
+// does, mark its time, and acts on the answer. What it returns follows once the answer is stored: give it to approved,
+// with q, then.
+func (m *Marks) approve(ctx context.Context, tx *store.Tx, q *planv1.Question, mark *planv1.Mark) (func(context.Context), error) {
+	choice, ok := Recommended(q)
+	if !ok {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"the recommendation of %s names no option: answer it with djinn question answer", q.GetCode()))
+	}
+	q.Answer = &planv1.Answer{Choice: choice, CreateTime: mark.GetCreateTime(), Actor: planv1.Closer_CLOSER_DEVELOPER}
+	return settled(ctx, m.Settle, tx, q)
+}
+
+// approved runs what follows an approval that answered q, once it is stored: then, from approve, and the hooks.
+func (m *Marks) approved(ctx context.Context, q *planv1.Question, then func(context.Context)) {
+	if then != nil {
+		then(ctx)
+	}
+	afterAnswer(ctx, m.Answered, m.Told, q, nil)
 }
 
 // agentAnswered tells a question the lead or a worker answered: a decision of theirs, until the developer approves it.
@@ -178,6 +186,25 @@ func taskByCode(ctx context.Context, tx *store.Tx, code, wishID string) (*planv1
 	}
 	return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 		"%d wishes have a task %s: give its identifier, or the wish with --wish-id", len(found), code))
+}
+
+// aboutTask is the identifier of the task of the wish wishID that ref names, by code (W12) or identifier, that a
+// question is about (djinn question ask --about); empty for an empty ref.
+func aboutTask(ctx context.Context, tx *store.Tx, wishID, ref string) (string, error) {
+	if ref == "" {
+		return "", nil
+	}
+	if !strings.ContainsRune(ref, '-') {
+		task, err := taskByCode(ctx, tx, ref, wishID)
+		if err != nil {
+			return "", err
+		}
+		return task.GetId(), nil
+	}
+	if err := taskOfWish(ctx, tx, wishID, ref); err != nil {
+		return "", err
+	}
+	return ref, nil
 }
 
 // setMark puts mark in marks, in place of one of its kind, or takes that one off.

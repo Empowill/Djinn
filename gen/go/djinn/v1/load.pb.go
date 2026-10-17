@@ -42,7 +42,7 @@ const (
 	LoadNotch_LOAD_NOTCH_HIGH LoadNotch = 4
 	// Max load: 100% of the machine's capacity, standard CPU priority.
 	LoadNotch_LOAD_NOTCH_MAX LoadNotch = 5
-	// Auto load: adapts operating load between minimal and chosen notch based on developer activity.
+	// Auto load: adapts operating load between minimal and the chosen notch to the load outside Djinn.
 	LoadNotch_LOAD_NOTCH_AUTO LoadNotch = 6
 	// Overclock load: 150% of the machine's capacity, accepts pressure, standard CPU priority.
 	LoadNotch_LOAD_NOTCH_OVERCLOCK LoadNotch = 7
@@ -97,6 +97,71 @@ func (x LoadNotch) Number() protoreflect.EnumNumber {
 // Deprecated: Use LoadNotch.Descriptor instead.
 func (LoadNotch) EnumDescriptor() ([]byte, []int) {
 	return file_djinn_v1_load_proto_rawDescGZIP(), []int{0}
+}
+
+// LoadAutoStep is what auto mode does with its notch, from the load outside Djinn against its marks.
+type LoadAutoStep int32
+
+const (
+	// Not set.
+	LoadAutoStep_LOAD_AUTO_STEP_UNSPECIFIED LoadAutoStep = 0
+	// Between the marks, back within 5 points of the mark it passed, or nothing measured yet: auto keeps its notch.
+	LoadAutoStep_LOAD_AUTO_STEP_HOLD LoadAutoStep = 1
+	// Above the high mark: one notch down once that load stayed there 3 minutes.
+	LoadAutoStep_LOAD_AUTO_STEP_LOWER LoadAutoStep = 2
+	// Below the low marks: one notch up once that load stayed there 5 minutes.
+	LoadAutoStep_LOAD_AUTO_STEP_RAISE LoadAutoStep = 3
+	// Below the low marks at the chosen notch: auto runs up to it.
+	LoadAutoStep_LOAD_AUTO_STEP_CEILING LoadAutoStep = 4
+	// Above the high mark at Minimal: auto goes no lower.
+	LoadAutoStep_LOAD_AUTO_STEP_FLOOR LoadAutoStep = 5
+)
+
+// Enum value maps for LoadAutoStep.
+var (
+	LoadAutoStep_name = map[int32]string{
+		0: "LOAD_AUTO_STEP_UNSPECIFIED",
+		1: "LOAD_AUTO_STEP_HOLD",
+		2: "LOAD_AUTO_STEP_LOWER",
+		3: "LOAD_AUTO_STEP_RAISE",
+		4: "LOAD_AUTO_STEP_CEILING",
+		5: "LOAD_AUTO_STEP_FLOOR",
+	}
+	LoadAutoStep_value = map[string]int32{
+		"LOAD_AUTO_STEP_UNSPECIFIED": 0,
+		"LOAD_AUTO_STEP_HOLD":        1,
+		"LOAD_AUTO_STEP_LOWER":       2,
+		"LOAD_AUTO_STEP_RAISE":       3,
+		"LOAD_AUTO_STEP_CEILING":     4,
+		"LOAD_AUTO_STEP_FLOOR":       5,
+	}
+)
+
+func (x LoadAutoStep) Enum() *LoadAutoStep {
+	p := new(LoadAutoStep)
+	*p = x
+	return p
+}
+
+func (x LoadAutoStep) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LoadAutoStep) Descriptor() protoreflect.EnumDescriptor {
+	return file_djinn_v1_load_proto_enumTypes[1].Descriptor()
+}
+
+func (LoadAutoStep) Type() protoreflect.EnumType {
+	return &file_djinn_v1_load_proto_enumTypes[1]
+}
+
+func (x LoadAutoStep) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LoadAutoStep.Descriptor instead.
+func (LoadAutoStep) EnumDescriptor() ([]byte, []int) {
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{1}
 }
 
 type LoadServiceGetRequest struct {
@@ -177,7 +242,9 @@ type LoadServiceGetResponse struct {
 	ForcedWorkers int32 `protobuf:"varint,17,opt,name=forced_workers,json=forcedWorkers,proto3" json:"forced_workers,omitempty"`
 	// Whether lowering the notch pauses the newest workers above what it lets run: not in auto mode, nor on Windows,
 	// where they finish their run. Investigators, corrections, reviews and workers started by hand always finish theirs.
-	LowerPauses   bool `protobuf:"varint,18,opt,name=lower_pauses,json=lowerPauses,proto3" json:"lower_pauses,omitempty"`
+	LowerPauses bool `protobuf:"varint,18,opt,name=lower_pauses,json=lowerPauses,proto3" json:"lower_pauses,omitempty"`
+	// Why auto mode runs at its notch; unset outside auto mode.
+	AutoReason    *LoadAutoReason `protobuf:"bytes,19,opt,name=auto_reason,json=autoReason,proto3" json:"auto_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -336,6 +403,13 @@ func (x *LoadServiceGetResponse) GetLowerPauses() bool {
 		return x.LowerPauses
 	}
 	return false
+}
+
+func (x *LoadServiceGetResponse) GetAutoReason() *LoadAutoReason {
+	if x != nil {
+		return x.AutoReason
+	}
+	return nil
 }
 
 type LoadServiceSetRequest struct {
@@ -524,7 +598,9 @@ type LoadServiceWatchResponse struct {
 	// Workers among running_workers started or resumed by hand, whatever the slots.
 	ForcedWorkers int32 `protobuf:"varint,19,opt,name=forced_workers,json=forcedWorkers,proto3" json:"forced_workers,omitempty"`
 	// Whether lowering the notch pauses the newest workers above what it lets run (LoadServiceGetResponse.lower_pauses).
-	LowerPauses   bool `protobuf:"varint,20,opt,name=lower_pauses,json=lowerPauses,proto3" json:"lower_pauses,omitempty"`
+	LowerPauses bool `protobuf:"varint,20,opt,name=lower_pauses,json=lowerPauses,proto3" json:"lower_pauses,omitempty"`
+	// Why auto mode runs at its notch; unset outside auto mode.
+	AutoReason    *LoadAutoReason `protobuf:"bytes,21,opt,name=auto_reason,json=autoReason,proto3" json:"auto_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -699,6 +775,108 @@ func (x *LoadServiceWatchResponse) GetLowerPauses() bool {
 	return false
 }
 
+func (x *LoadServiceWatchResponse) GetAutoReason() *LoadAutoReason {
+	if x != nil {
+		return x.AutoReason
+	}
+	return nil
+}
+
+// LoadAutoReason says why auto mode runs at its notch: the load outside Djinn (the machine's CPU and memory beyond
+// Djinn's own tree, as the Hourglass splits it), read every 20 seconds and averaged.
+type LoadAutoReason struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The load outside Djinn, averaged over window_seconds, in percent of the machine: its CPU, or its memory when
+	// memory is set.
+	OutsidePercent float64 `protobuf:"fixed64,1,opt,name=outside_percent,json=outsidePercent,proto3" json:"outside_percent,omitempty"`
+	// Whether outside_percent is the memory, where it decides, rather than the CPU.
+	Memory bool `protobuf:"varint,2,opt,name=memory,proto3" json:"memory,omitempty"`
+	// The span of the average, in seconds: 2 minutes against the high mark, up to 10 against the low ones; 0 when
+	// nothing is measured yet.
+	WindowSeconds int32 `protobuf:"varint,3,opt,name=window_seconds,json=windowSeconds,proto3" json:"window_seconds,omitempty"`
+	// What auto mode does next if the load stays where it is.
+	Step LoadAutoStep `protobuf:"varint,4,opt,name=step,proto3,enum=djinn.v1.LoadAutoStep" json:"step,omitempty"`
+	// The notch of that step: the next one when lowering or raising, the chosen one at the ceiling, the one in effect
+	// otherwise.
+	Notch LoadNotch `protobuf:"varint,5,opt,name=notch,proto3,enum=djinn.v1.LoadNotch" json:"notch,omitempty"`
+	// Seconds before that step if the load stays where it is; 0 when holding.
+	InSeconds     int32 `protobuf:"varint,6,opt,name=in_seconds,json=inSeconds,proto3" json:"in_seconds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadAutoReason) Reset() {
+	*x = LoadAutoReason{}
+	mi := &file_djinn_v1_load_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadAutoReason) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadAutoReason) ProtoMessage() {}
+
+func (x *LoadAutoReason) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_load_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadAutoReason.ProtoReflect.Descriptor instead.
+func (*LoadAutoReason) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *LoadAutoReason) GetOutsidePercent() float64 {
+	if x != nil {
+		return x.OutsidePercent
+	}
+	return 0
+}
+
+func (x *LoadAutoReason) GetMemory() bool {
+	if x != nil {
+		return x.Memory
+	}
+	return false
+}
+
+func (x *LoadAutoReason) GetWindowSeconds() int32 {
+	if x != nil {
+		return x.WindowSeconds
+	}
+	return 0
+}
+
+func (x *LoadAutoReason) GetStep() LoadAutoStep {
+	if x != nil {
+		return x.Step
+	}
+	return LoadAutoStep_LOAD_AUTO_STEP_UNSPECIFIED
+}
+
+func (x *LoadAutoReason) GetNotch() LoadNotch {
+	if x != nil {
+		return x.Notch
+	}
+	return LoadNotch_LOAD_NOTCH_UNSPECIFIED
+}
+
+func (x *LoadAutoReason) GetInSeconds() int32 {
+	if x != nil {
+		return x.InSeconds
+	}
+	return 0
+}
+
 // LoadNotchSlots is the most workers a notch lets run on the machine now.
 type LoadNotchSlots struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -712,7 +890,7 @@ type LoadNotchSlots struct {
 
 func (x *LoadNotchSlots) Reset() {
 	*x = LoadNotchSlots{}
-	mi := &file_djinn_v1_load_proto_msgTypes[6]
+	mi := &file_djinn_v1_load_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -724,7 +902,7 @@ func (x *LoadNotchSlots) String() string {
 func (*LoadNotchSlots) ProtoMessage() {}
 
 func (x *LoadNotchSlots) ProtoReflect() protoreflect.Message {
-	mi := &file_djinn_v1_load_proto_msgTypes[6]
+	mi := &file_djinn_v1_load_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -737,7 +915,7 @@ func (x *LoadNotchSlots) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoadNotchSlots.ProtoReflect.Descriptor instead.
 func (*LoadNotchSlots) Descriptor() ([]byte, []int) {
-	return file_djinn_v1_load_proto_rawDescGZIP(), []int{6}
+	return file_djinn_v1_load_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *LoadNotchSlots) GetNotch() LoadNotch {
@@ -759,7 +937,7 @@ var File_djinn_v1_load_proto protoreflect.FileDescriptor
 const file_djinn_v1_load_proto_rawDesc = "" +
 	"\n" +
 	"\x13djinn/v1/load.proto\x12\bdjinn.v1\x1a\x1bbuf/validate/validate.proto\x1a\x16djinn/v1/options.proto\"\x17\n" +
-	"\x15LoadServiceGetRequest\"\xf5\x05\n" +
+	"\x15LoadServiceGetRequest\"\xb0\x06\n" +
 	"\x16LoadServiceGetResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x12\x1d\n" +
@@ -781,7 +959,9 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\vnotch_slots\x18\x10 \x03(\v2\x18.djinn.v1.LoadNotchSlotsR\n" +
 	"notchSlots\x12%\n" +
 	"\x0eforced_workers\x18\x11 \x01(\x05R\rforcedWorkers\x12!\n" +
-	"\flower_pauses\x18\x12 \x01(\bR\vlowerPauses\"Q\n" +
+	"\flower_pauses\x18\x12 \x01(\bR\vlowerPauses\x129\n" +
+	"\vauto_reason\x18\x13 \x01(\v2\x18.djinn.v1.LoadAutoReasonR\n" +
+	"autoReason\"Q\n" +
 	"\x15LoadServiceSetRequest\x128\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchB\r\xbaH\n" +
 	"\xc8\x01\x01\x82\x01\x04\x10\x01 \x00R\x05notch\"\x8f\x01\n" +
@@ -789,7 +969,7 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x12\n" +
 	"\x04auto\x18\x02 \x01(\bR\x04auto\x126\n" +
 	"\fchosen_notch\x18\x03 \x01(\x0e2\x13.djinn.v1.LoadNotchR\vchosenNotch\"\x19\n" +
-	"\x17LoadServiceWatchRequest\"\xd9\x06\n" +
+	"\x17LoadServiceWatchRequest\"\x94\a\n" +
 	"\x18LoadServiceWatchResponse\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x120\n" +
 	"\x14engaged_memory_bytes\x18\x02 \x01(\x04R\x12engagedMemoryBytes\x12.\n" +
@@ -813,7 +993,17 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\vnotch_slots\x18\x12 \x03(\v2\x18.djinn.v1.LoadNotchSlotsR\n" +
 	"notchSlots\x12%\n" +
 	"\x0eforced_workers\x18\x13 \x01(\x05R\rforcedWorkers\x12!\n" +
-	"\flower_pauses\x18\x14 \x01(\bR\vlowerPauses\"Q\n" +
+	"\flower_pauses\x18\x14 \x01(\bR\vlowerPauses\x129\n" +
+	"\vauto_reason\x18\x15 \x01(\v2\x18.djinn.v1.LoadAutoReasonR\n" +
+	"autoReason\"\xee\x01\n" +
+	"\x0eLoadAutoReason\x12'\n" +
+	"\x0foutside_percent\x18\x01 \x01(\x01R\x0eoutsidePercent\x12\x16\n" +
+	"\x06memory\x18\x02 \x01(\bR\x06memory\x12%\n" +
+	"\x0ewindow_seconds\x18\x03 \x01(\x05R\rwindowSeconds\x12*\n" +
+	"\x04step\x18\x04 \x01(\x0e2\x16.djinn.v1.LoadAutoStepR\x04step\x12)\n" +
+	"\x05notch\x18\x05 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x1d\n" +
+	"\n" +
+	"in_seconds\x18\x06 \x01(\x05R\tinSeconds\"Q\n" +
 	"\x0eLoadNotchSlots\x12)\n" +
 	"\x05notch\x18\x01 \x01(\x0e2\x13.djinn.v1.LoadNotchR\x05notch\x12\x14\n" +
 	"\x05slots\x18\x02 \x01(\x05R\x05slots*\xc8\x01\n" +
@@ -825,7 +1015,14 @@ const file_djinn_v1_load_proto_rawDesc = "" +
 	"\x0fLOAD_NOTCH_HIGH\x10\x04\x12\x12\n" +
 	"\x0eLOAD_NOTCH_MAX\x10\x05\x12\x13\n" +
 	"\x0fLOAD_NOTCH_AUTO\x10\x06\x12\x18\n" +
-	"\x14LOAD_NOTCH_OVERCLOCK\x10\a2\x8c\x02\n" +
+	"\x14LOAD_NOTCH_OVERCLOCK\x10\a*\xb1\x01\n" +
+	"\fLoadAutoStep\x12\x1e\n" +
+	"\x1aLOAD_AUTO_STEP_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13LOAD_AUTO_STEP_HOLD\x10\x01\x12\x18\n" +
+	"\x14LOAD_AUTO_STEP_LOWER\x10\x02\x12\x18\n" +
+	"\x14LOAD_AUTO_STEP_RAISE\x10\x03\x12\x1a\n" +
+	"\x16LOAD_AUTO_STEP_CEILING\x10\x04\x12\x18\n" +
+	"\x14LOAD_AUTO_STEP_FLOOR\x10\x052\x8c\x02\n" +
 	"\vLoadService\x12Q\n" +
 	"\x03Get\x12\x1f.djinn.v1.LoadServiceGetRequest\x1a .djinn.v1.LoadServiceGetResponse\"\a\xc8\xf3\x18\x01\x90\x02\x01\x12R\n" +
 	"\x03Set\x12\x1f.djinn.v1.LoadServiceSetRequest\x1a .djinn.v1.LoadServiceSetResponse\"\b\xc8\xf3\x18\x01\xe0\xf3\x18\x01\x12V\n" +
@@ -844,40 +1041,46 @@ func file_djinn_v1_load_proto_rawDescGZIP() []byte {
 	return file_djinn_v1_load_proto_rawDescData
 }
 
-var file_djinn_v1_load_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_djinn_v1_load_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_djinn_v1_load_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_djinn_v1_load_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_djinn_v1_load_proto_goTypes = []any{
 	(LoadNotch)(0),                   // 0: djinn.v1.LoadNotch
-	(*LoadServiceGetRequest)(nil),    // 1: djinn.v1.LoadServiceGetRequest
-	(*LoadServiceGetResponse)(nil),   // 2: djinn.v1.LoadServiceGetResponse
-	(*LoadServiceSetRequest)(nil),    // 3: djinn.v1.LoadServiceSetRequest
-	(*LoadServiceSetResponse)(nil),   // 4: djinn.v1.LoadServiceSetResponse
-	(*LoadServiceWatchRequest)(nil),  // 5: djinn.v1.LoadServiceWatchRequest
-	(*LoadServiceWatchResponse)(nil), // 6: djinn.v1.LoadServiceWatchResponse
-	(*LoadNotchSlots)(nil),           // 7: djinn.v1.LoadNotchSlots
+	(LoadAutoStep)(0),                // 1: djinn.v1.LoadAutoStep
+	(*LoadServiceGetRequest)(nil),    // 2: djinn.v1.LoadServiceGetRequest
+	(*LoadServiceGetResponse)(nil),   // 3: djinn.v1.LoadServiceGetResponse
+	(*LoadServiceSetRequest)(nil),    // 4: djinn.v1.LoadServiceSetRequest
+	(*LoadServiceSetResponse)(nil),   // 5: djinn.v1.LoadServiceSetResponse
+	(*LoadServiceWatchRequest)(nil),  // 6: djinn.v1.LoadServiceWatchRequest
+	(*LoadServiceWatchResponse)(nil), // 7: djinn.v1.LoadServiceWatchResponse
+	(*LoadAutoReason)(nil),           // 8: djinn.v1.LoadAutoReason
+	(*LoadNotchSlots)(nil),           // 9: djinn.v1.LoadNotchSlots
 }
 var file_djinn_v1_load_proto_depIdxs = []int32{
 	0,  // 0: djinn.v1.LoadServiceGetResponse.notch:type_name -> djinn.v1.LoadNotch
 	0,  // 1: djinn.v1.LoadServiceGetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
-	7,  // 2: djinn.v1.LoadServiceGetResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
-	0,  // 3: djinn.v1.LoadServiceSetRequest.notch:type_name -> djinn.v1.LoadNotch
-	0,  // 4: djinn.v1.LoadServiceSetResponse.notch:type_name -> djinn.v1.LoadNotch
-	0,  // 5: djinn.v1.LoadServiceSetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
-	0,  // 6: djinn.v1.LoadServiceWatchResponse.notch:type_name -> djinn.v1.LoadNotch
-	0,  // 7: djinn.v1.LoadServiceWatchResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
-	7,  // 8: djinn.v1.LoadServiceWatchResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
-	0,  // 9: djinn.v1.LoadNotchSlots.notch:type_name -> djinn.v1.LoadNotch
-	1,  // 10: djinn.v1.LoadService.Get:input_type -> djinn.v1.LoadServiceGetRequest
-	3,  // 11: djinn.v1.LoadService.Set:input_type -> djinn.v1.LoadServiceSetRequest
-	5,  // 12: djinn.v1.LoadService.Watch:input_type -> djinn.v1.LoadServiceWatchRequest
-	2,  // 13: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
-	4,  // 14: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
-	6,  // 15: djinn.v1.LoadService.Watch:output_type -> djinn.v1.LoadServiceWatchResponse
-	13, // [13:16] is the sub-list for method output_type
-	10, // [10:13] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	9,  // 2: djinn.v1.LoadServiceGetResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
+	8,  // 3: djinn.v1.LoadServiceGetResponse.auto_reason:type_name -> djinn.v1.LoadAutoReason
+	0,  // 4: djinn.v1.LoadServiceSetRequest.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 5: djinn.v1.LoadServiceSetResponse.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 6: djinn.v1.LoadServiceSetResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
+	0,  // 7: djinn.v1.LoadServiceWatchResponse.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 8: djinn.v1.LoadServiceWatchResponse.chosen_notch:type_name -> djinn.v1.LoadNotch
+	9,  // 9: djinn.v1.LoadServiceWatchResponse.notch_slots:type_name -> djinn.v1.LoadNotchSlots
+	8,  // 10: djinn.v1.LoadServiceWatchResponse.auto_reason:type_name -> djinn.v1.LoadAutoReason
+	1,  // 11: djinn.v1.LoadAutoReason.step:type_name -> djinn.v1.LoadAutoStep
+	0,  // 12: djinn.v1.LoadAutoReason.notch:type_name -> djinn.v1.LoadNotch
+	0,  // 13: djinn.v1.LoadNotchSlots.notch:type_name -> djinn.v1.LoadNotch
+	2,  // 14: djinn.v1.LoadService.Get:input_type -> djinn.v1.LoadServiceGetRequest
+	4,  // 15: djinn.v1.LoadService.Set:input_type -> djinn.v1.LoadServiceSetRequest
+	6,  // 16: djinn.v1.LoadService.Watch:input_type -> djinn.v1.LoadServiceWatchRequest
+	3,  // 17: djinn.v1.LoadService.Get:output_type -> djinn.v1.LoadServiceGetResponse
+	5,  // 18: djinn.v1.LoadService.Set:output_type -> djinn.v1.LoadServiceSetResponse
+	7,  // 19: djinn.v1.LoadService.Watch:output_type -> djinn.v1.LoadServiceWatchResponse
+	17, // [17:20] is the sub-list for method output_type
+	14, // [14:17] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_djinn_v1_load_proto_init() }
@@ -891,8 +1094,8 @@ func file_djinn_v1_load_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_load_proto_rawDesc), len(file_djinn_v1_load_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   7,
+			NumEnums:      2,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

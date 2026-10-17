@@ -202,6 +202,7 @@ func putTaskInDB(t *testing.T, db *store.Store, task *planv1.Task) {
 
 // TestAzimaPRDraftProposal tests PR proposal drafting from the azima goal and parts.
 func TestAzimaPRDraftProposal(t *testing.T) {
+	t.Parallel()
 	h := &Harness{}
 
 	// Case 1: Azima with ## Goal heading in description.
@@ -256,6 +257,7 @@ Some additional context here.`,
 // TestAzimaPRBaseIsMain: an azima's pull request targets main, as recorded when its branch was cut, else as the
 // project names it; never the branch of an azima it would wait for.
 func TestAzimaPRBaseIsMain(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	repo := gitRepo(t)
 	main := plan.CheckedOutBranch(ctx, repo)
@@ -575,6 +577,7 @@ func TestAzimaPRGlabReady(t *testing.T) {
 // TestBabysitPRWatchesEveryAzimaPR verifies that babysit-pr watcher watches every azima PR,
 // speaking only when something needs the lead, and exits once all are merged.
 func TestBabysitPRWatchesEveryAzimaPR(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("watch.sh is a POSIX shell script")
 	}
@@ -685,5 +688,40 @@ func TestBabysitPRWatchesEveryAzimaPR(t *testing.T) {
 	}
 	if !strings.Contains(out2Str, "MERGED: PR #102 is merged.") {
 		t.Errorf("output missing PR 102 merged: %s", out2Str)
+	}
+}
+
+// TestMainFallbacksFollowTheReference (W149): the base of a PR and the main of an azima go through the reference
+// branch the settings name, never main or master in its place; with no reference at all, no PR base is made up.
+func TestMainFallbacksFollowTheReference(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	repo := gitRepo(t)
+	for _, args := range [][]string{
+		{"branch", "-M", "master"},
+		{"remote", "add", "origin", "https://example.com/repo.git"},
+		{"update-ref", "refs/remotes/origin/dev", "HEAD"},
+	} {
+		if _, err := git(ctx, repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sha := commitOf(ctx, repo, "HEAD")
+	dev := plan.Settings{MainBranch: "dev"}
+	if name, got, err := resolveMainSha(ctx, repo, dev); err != nil || name != "dev" || got != sha {
+		t.Errorf("main_branch dev, only on the remote: %s %s %v; want dev at %s, not the local master", name, got, err, sha)
+	}
+	azima := &planv1.Task{Id: "t1", Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Azima: &planv1.Azima{}}
+	if got := azimaPRBase(ctx, repo, dev, azima); got != "dev" {
+		t.Errorf("PR base with main_branch dev = %q", got)
+	}
+	if name, _, err := resolveMainSha(ctx, repo, plan.Settings{}); err != nil || name != "master" {
+		t.Errorf("no reference on the remote: %s %v; want the local master", name, err)
+	}
+	if _, err := git(ctx, repo, "branch", "-M", "trunk"); err != nil {
+		t.Fatal(err)
+	}
+	if got := azimaPRBase(ctx, repo, plan.Settings{}, azima); got != "" {
+		t.Errorf("PR base with no reference branch = %q, want none", got)
 	}
 }

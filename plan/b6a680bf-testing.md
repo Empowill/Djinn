@@ -44,6 +44,9 @@ Linux, 16 cores, `go test -tags headless -count=1`, under a gate.
 
 Run together, the packages share the cores: a test then takes up to twice its time alone, under the 2 s of the guard.
 What remains is mostly the store's durable writes (`synchronous(FULL)`, kept: nothing is lost) and real processes.
+Since W124 (17/10) the tests' stores sync at the checkpoints only (`synchronous(NORMAL)`, under `go test` and
+`DJINN_TEST=1`): on a machine busy with workers an fsync took ~20 ms, and a test writing 400 events waited 8 s on
+them (`TestEventsBesideTheRun`, 8.3 s alone, 1.3 s after). Djinn itself keeps `FULL`.
 
 ## Done when
 - [x] `task test` runs in seconds and needs nothing running. (08/10, Linux: `test-go` 23 s uncached, `test-ui`

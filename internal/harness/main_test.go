@@ -117,6 +117,7 @@ func (u *upkeep) holds(t *testing.T, sha string) bool {
 // it, and the window proposes the build. The release's own commit, the built interface, stays out.
 func TestMergeMainAtARelease(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	built := make(chan Built, 1)
 	u := keepingUp(t, "install: \"install\"\n")
 	u.h.built = func(b Built) { built <- b }
@@ -181,6 +182,7 @@ func TestMergeMainAtARelease(t *testing.T) {
 // TestLookAtMainAtOnce: a release the running Djinn finds makes it look at main at once, whatever the cadence.
 func TestLookAtMainAtOnce(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "")
 	u.pass(t, 0)
 	fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
@@ -196,6 +198,7 @@ func TestLookAtMainAtOnce(t *testing.T) {
 // release or not; MERGE_MAIN_OFF never does.
 func TestMergeMainEachCommit(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
 	fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
 	u.pass(t, 0)
@@ -217,6 +220,7 @@ func TestMergeMainEachCommit(t *testing.T) {
 // like any task's, and its success records main as merged, settled by it.
 func TestMainConflictStartsACorrection(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
 	writeFile(t, u.repo, "app/README.md", "# Branch\n")
 	commitAll(t, u.repo, "The branch's readme")
@@ -280,6 +284,7 @@ func TestMainConflictStartsACorrection(t *testing.T) {
 // TestMainAttemptsSpent: past correction_attempts, a merge of main that fails stays out until main moves.
 func TestMainAttemptsSpent(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\ncorrection_attempts: 0\n")
 	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
 	old := u.tip(t)
@@ -366,6 +371,7 @@ func TestReleaseFit(t *testing.T) {
 // is reported once on the wish as a block, and subsequent passes do not duplicate it.
 func TestMainTagClash(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
 	// Make a local tag v0.1.0 on u.repo (pointing to the initial commit of u.repo).
 	u.git(t, u.repo, "tag", "v0.1.0")
@@ -438,6 +444,7 @@ func TestMainTagClash(t *testing.T) {
 // "exit status 1".
 func TestMainFetchFails(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "")
 	// Set origin remote URL to a nonexistent path.
 	u.git(t, u.repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "nonexistent"))
@@ -463,6 +470,7 @@ func TestMainFetchFails(t *testing.T) {
 // is git's own message, not "exit status 1".
 func TestMainMergeFails(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
 	// Make an unrelated branch on u.other and force push it as main to origin.
 	u.git(t, u.other, "checkout", "--orphan", "unrelated")
@@ -487,6 +495,7 @@ func TestMainMergeFails(t *testing.T) {
 // runs again on the next pass and merges when green.
 func TestMainCorrectionCleared(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
 	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
 	theirs := u.onMain(t, "Feature on main", map[string]string{"app/src/feature.txt": "feat\n"})
@@ -527,6 +536,7 @@ func TestMainCorrectionCleared(t *testing.T) {
 // clears its link, runs again on the next pass and merges when green.
 func TestMainCorrectionCancelled(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
 	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
 	theirs := u.onMain(t, "Feature on main", map[string]string{"app/src/feature.txt": "feat\n"})
@@ -564,5 +574,21 @@ func TestMainCorrectionCancelled(t *testing.T) {
 	}
 	if state := u.mainState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
 		t.Errorf("after main merge succeeded, state: %v", state)
+	}
+}
+
+// TestReference (W146): the reference branch is the one main_branch names, else the repository's main or master; a
+// branch named that the repository does not hold is an error that names it.
+func TestReference(t *testing.T) {
+	t.Parallel()
+	repo := gitRepo(t)
+	project := &planv1.Project{Directory: repo, Git: true}
+	h := &Harness{}
+	branch, ref, err := h.Reference(t.Context(), project, "")
+	if err != nil || (branch != "main" && branch != "master") || ref != "refs/heads/"+branch {
+		t.Errorf("unnamed: %s, %s, %v; want the local main or master", branch, ref, err)
+	}
+	if _, _, err := h.Reference(t.Context(), project, "dev"); err == nil || !strings.Contains(err.Error(), "holds no dev") {
+		t.Errorf("dev, which the repository does not hold: %v", err)
 	}
 }

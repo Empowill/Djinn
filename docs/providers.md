@@ -42,8 +42,9 @@ flags; none of it is the worker's to change.
 
 | Part | What it bounds | Where it comes from |
 | ---- | -------------- | ------------------- |
-| Silence limit | 15 minutes without an event, no process busy, no gate held or awaited: the Lamplighter ends the worker, then [wakes it](#when-djinn-resumes-a-worker) | Djinn's default (`SilenceLimit`) |
-| Wall time | 2 hours of work over all its runs, gate waits included; past it the task is stopped, "budget exceeded", and stays stopped | Djinn's default (`TaskMaxWallTime`) |
+| Silence limit | 15 minutes without an event, no process busy, no gate held or awaited: the Lamplighter ends the worker, then [wakes it](#when-djinn-resumes-a-worker); never while an [ifrit](#ifrit-an-agent-whose-input-stays-open) listens | Djinn's default (`SilenceLimit`) |
+| Wall time | 2 hours of work over all its runs, gate waits included, an ifrit's listening aside; past it the task is stopped, "budget exceeded", and stays stopped | Djinn's default (`TaskMaxWallTime`) |
+| An investigation's limits | 25 minutes of work and $10 by default; at either, Djinn sends it a message asking it to publish its tilasm and question (`Task.investigation.publish_time`), and stops it 10 minutes later; its provider's cap is 1.5 times its budget, so that the last turn is paid; Claude's spending is estimated from its token counts as it goes (`Event.Spent`) | the spawn request (`minutes`, `max_budget_usd`), else Djinn's defaults (`DefaultInvestigationMinutes`, `DefaultInvestigationBudgetUSD`) |
 | Model turns | 500 turns in one run (`Task.turns`, shown `37/500`); past it the run is stopped; `djinn task continue` gives 500 again | Djinn's default (`TaskMaxTurns`) |
 | Wakes and resumes | 3 wakes in a row, 3 resumes on usage limits, 2 replays after an environment failure | Djinn's defaults |
 | Spending cap | US dollars over its runs; Claude alone enforces it (`--max-budget-usd`), Codex and Antigravity have none | the spawn request (`max_budget_usd`), else the project's `max_budget_usd`; a question worker's, `question_budget_usd` (2 by default) |
@@ -54,6 +55,8 @@ flags; none of it is the worker's to change.
 | CPU priority | `nice 10` at the Minimal to Medium load notches ([operating load](#operating-load-runtime-adjustments)) | the machine's load notch |
 | Memory and slots | a memory ceiling in its own scope, a slot among the workers, room to start | `djinn up --workers`, `--worker-memory`, `--worker-memory-guard`, `--worker-cpu`, and the load notch |
 | Gates | one holder per gate, held an hour at most unless its holder states another timeout | Djinn's defaults ([gates](user-guide.md#gates)) |
+| Go builds | `GOFLAGS=-trimpath` in its environment, after the `GOFLAGS` already set, unless they name `-trimpath` either way ([Go builds and the disk](#go-builds-and-the-disk)) | always (`trimmedGoFlags`) |
+| Disk | before it starts, Djinn trims the Go build cache when space runs low ([Go builds and the disk](#go-builds-and-the-disk)) | `djinn up --disk-trim-gb`, `--disk-full-gb` |
 
 The task carries only some of it: its turns and their limit (`turns`), its spending cap, its access, its write
 scopes. The other parts are Djinn's, and the same for every task.
@@ -75,10 +78,11 @@ Djinn decides when it spawns a task, and records the outcome in the task's `acce
    (`WISH_AUTO`). It weighs over the project's configuration: when the project has `.agents/permissions.txtpb`,
    the allowance decides editing and the mode, and the commands, denied commands and network stay the file's;
    an allowance never adds a command nor the network.
-3. **`.agents/permissions.txtpb`** in the project's folder: Djinn translates it for the agent (`AGENTS`). The
+3. **`.agents/permissions.txtpb`** of the project: Djinn translates it for the agent (`AGENTS`). The
    agent's own configuration files still apply on top, as the agent applies them by itself; what Djinn passes
-   never allows more than the file. Djinn reads the file in the project's folder, not in the task's worktree: a
-   worker that edits its own copy does not change its rights. An invalid file refuses the spawn, and says why.
+   never allows more than the file. Djinn reads the file on the project's reference branch, at the last fetch (in
+   the project's folder outside Git or without a remote: see [team settings](team-settings.md#where-djinn-reads-it)),
+   never in the task's worktree: a worker that edits its own copy does not change its rights. An invalid file refuses the spawn, and says why.
 4. **The agent's own configuration** (`NATIVE`, decision Q34): in a Git repository, or in a folder that holds an
    agent configuration file. Djinn passes no permission setting. In a Git repository without any configuration,
    the agent's defaults decide: Claude, Codex and Antigravity then refuse edits that would need an approval,
@@ -105,7 +109,15 @@ Read, Grep and Glob read it (`code.claude.com/docs/en/permissions`, read 2026-10
 command must be allowed: `djinn task list … | grep …` is refused whole. Its prompt says so: each `djinn` command alone
 in its own Bash call, files read with Read, Grep and Glob, the web searched with its web tools, and a refusal is of
 that form, not of Bash. One that ends without doing anything after a refusal fails, and Djinn starts it again once
-(`internal/harness/question.go`).
+(`internal/harness/question.go`). Claude Code also refuses, whatever its allow rules, a quoted argument where a
+line starts with `#`, indented or not (its "newline-hash" check, 2.1.300 to 2.1.302 at least): the shape of a
+question puts a `# …` comment above each command, and W80 of wish Dew 13 oct could not revise Q32 (W153). So a Claude
+question worker writes in one folder, its own under Djinn's data folder (`tasks/<id>`, `Spec.WriteDirs`, translated to
+`Edit(//…/**)` and `Write(//…/**)` with the edit denials dropped; `dontAsk` refuses a write anywhere else), and its
+prompt says to write the context whole in `context.md` there, then revise with `--context-file`. Verified on
+2026-10-17 with claude 2.1.302 in `dontAsk`: the write and the revision run, the inline `--context` form is refused,
+a write in the project or beside the folder is refused. A Codex question worker gets no such folder (`writesDirs`):
+Codex's workspace-write sandbox would open its workspace, the project, with it; it revises with `--context`.
 
 **What counts as agent configuration** (rule 4), at the root of the project's folder, file names compared without
 regard to case: for every agent, `AGENTS.md` and an `.agents` folder; for Claude, `CLAUDE.md`, `CLAUDE.local.md`,
@@ -278,6 +290,45 @@ needing approval is soft-denied). Supposed, for Claude read-only: that `--restri
 able to write or run code. For agy: that plan mode writes nothing in headless mode, and the sandbox blocks every
 command, are to check on a real run.
 
+## Go builds and the disk
+
+**What Djinn starts builds Go with `-trimpath`** (W303, decision Q71). Without it, the Go build cache keys hold the
+folder of each package: every worktree compiled all of Djinn again, for each set of tags, and the cache grew about
+10 GB an hour, 429 GB on 17/10/2026. On an empty `GOCACHE`, compiling all tests (`go test -tags headless -run '^$'
+./...`) in two worktrees one after the other leaves 715 MB (4,032 files) after the first worktree and 1,136 MB
+(4,904 files, +421 MB, 80 s) after the second without `-trimpath`; with `-trimpath`, 714 MB (4,032 files) after the
+first and 714.5 MB (4,148 files, +0.26 MB of action entries, 5 s) after the second. Djinn sets `GOFLAGS=-trimpath` in
+the environment of every process it starts: workers in their worktrees, watchers, the lead, ifrits' serves, the commit
+and push checks, an install. It is appended to the `GOFLAGS` already set, and never twice: a `GOFLAGS` that names
+`-trimpath` already, `-trimpath=false` included, stays as it is. Where Go is absent it changes nothing. The
+developer's own shells, the window's terminals included, keep their environment: a build or a `go tool task` run by
+hand keeps its full paths, for Delve and for profiles. `TestTrimmedGoFlags` (`internal/harness/disk_test.go`).
+
+A trimmed binary's stacks, panics and profiles name files by module path (`github.com/empowill/djinn/internal/...`),
+not by folder. `go tool pprof` finds the sources all the same with `-trim_path` and `-source_path`:
+`go tool pprof -trim_path=github.com/empowill/djinn -source_path=$PWD -http=:8080 cpu.prof`, run from the checkout. A
+build with full paths for profiling or debugging is `go build -trimpath=false ./cmd/djinn`, which wins over a
+`GOFLAGS=-trimpath` inherited from Djinn.
+
+**The disk guard.** Before a worker starts and before push checks start, Djinn reads the free space of its data
+folder's file system, and of the Go build cache's when `go` is on its PATH (`go env GOCACHE`, asked again every 10
+minutes; no `go`, no cache step, nothing said):
+
+- Under `djinn up --disk-trim-gb` free where the cache is (30 by default, `$DJINN_DISK_TRIM_GB`), it deletes the cache
+  entries unused for more than 24 hours, apart from the work that asked, once per 30 minutes at most: an action entry
+  (`<id>-a`) first, then its output (`<id>-d`) unless an entry still used names it, so that the cache never points to
+  a missing file. Never `go clean -cache`, never `/tmp/go-build*`. `djinn.log` says what it freed (`go build cache
+  trimmed`, its entries and bytes).
+- Under `--disk-full-gb` free where the data folder or the cache is (10 by default, `$DJINN_DISK_FULL_GB`), the lead
+  hears one `disk` event, "disk almost full", with the free space; its detail names the biggest folders Djinn knows
+  (the Go build cache, each project's worktrees, Djinn's logs and tilasms, the npm and Playwright caches, the
+  temporary folder). The push checks wait instead of failing, and so do push checks that ran out of space ("no space
+  left on device") as the disk filled up: nothing held, no correction. Djinn reads the free space every 30 seconds;
+  once it is back over the threshold, the lead hears it and the push checks run.
+
+0 turns either step off. A worker starts whatever the space: only the push checks wait. `TestDiskGuard`,
+`TestTrimGoCache`, `TestDiskGuardNoGo`, `TestDiskFullPushChecksWait`, `TestDiskFilledDuringPushChecks`.
+
 ## When Djinn resumes a worker
 
 Djinn resumes a worker by itself, in the same task (status `resuming`), in four cases:
@@ -287,7 +338,11 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in four 
   (it reads "resumed as W47").
 - **Its provider's usage limit stopped it.** The task waits for the reset (status "waiting for the limit", with
   "the account's session limit, resets at 07:20"), then resumes. Without a reset time, it waits 15 minutes, then 30,
-  doubling up to 2 hours. While a limit holds, no new worker of that provider starts.
+  doubling up to 2 hours. While a limit holds, no new worker of that provider starts. The scheduler notes the
+  account the agent was signed in with when the limit stopped it (`TaskHealth.account`: a hash of what its status
+  command prints of it, `claude auth status`'s email and organization, `codex login status`'s line; never the account
+  itself) and reads it again once a minute while the task waits: another account, and the task resumes at once.
+  agy documents no status command: its limit waits for the reset.
 - **Preemption for an investigator worker.** When memory is short and an investigator worker ("Qxx: enlighten")
   cannot start, Djinn makes room: it interrupts the running work task of lowest priority so that it resumes later in
   its session or conversation (Claude, Antigravity), RESUMING with the wait reason "made room for Qxx: enlighten",
@@ -296,11 +351,25 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in four 
   lamplighter woke the street's lamps one by one, and lit again the ones the wind blew out). It wakes before it
   fails: a worker silent past the silence limit with no process busy and no gate held or awaited, a worker whose
   stream went idle, or a task running without a process (a lost process) is ended, then continued on its session
-  ("continue where you stopped…"), its run ending `wake` (`TaskRun.reason`). Only after 3 wakes in a row does the
+  ("continue where you stopped…"), its run ending `wake` (`TaskRun.reason`). A paused worker is none of these: the
+  Lamplighter skips it, and its stream's idle timer (`StreamIdleTimeout`, 5 minutes) and quiet timer stop while it is
+  held still and start again from zero when it resumes (W226). Messages sent to a worker that ended before it read
+  them (no text nor tool call after them) are told to the worker started again, after its prompt, whatever started
+  it (a wake, a restart, a preemption, a continue), and are received once it says something. Only after 3 wakes in a row does the
   task fail, with "silent for 15 min; the Lamplighter woke it 3 times in a row and gives up", its lead told once; a
   run that ends otherwise (done, a limit, a restart) ends the row. Wakes are counted apart from usage-limit
   resumes: a worker that waited for its limits is woken all the same, and a wake spends no resume. A budget of
   the task's [seal](#a-tasks-seal) is no wake: a task stopped past its wall time or its turns stays stopped.
+
+Beside these, the scheduler judges each work task's health on every pass (`internal/harness/health.go`,
+`Task.health`): a worker silent for `StallSilence` (10 minutes; `StallAfterTurn`, 30, after its turn's result) whose
+processes used under 5% of a core on average and never 25% in a reading, holding and waiting for no gate, is
+`stalled`; a task failed or cut short for a reason a new turn may get past (its agent or stream broke, a stop of
+Djinn, a usage limit since lifted) and that Djinn does not resume by itself is `retriable`. Both are flagged: the
+lead hears it once per change of state, in one `health` event with the command that relaunches the task
+(`djinn task continue`, which ends a stalled worker and continues it on its session as a wake), and the window
+marks the worker. Without readings of its processes (Windows, the fake agent), a worker is never stalled. The
+Lamplighter is unchanged: it ends a silent worker only when its processes used no CPU at all.
 
 The scheduler starts a resumed task like a planned one: slots, pressure and gates still apply. After 3
 resumes on usage limits without finishing (unspent by preemption, pauses, grants or wakes), the task fails, saying
@@ -341,9 +410,9 @@ An investigator is never held behind a waiting work task. If memory is short, it
 
 ### Preemption for investigators
 When an investigator cannot start, Djinn makes room:
-- **No free slot**: Djinn pauses the running work task of lowest priority (the last wish by rank, then the most recently started), starts the investigator, and resumes the paused task as soon as the investigator ends.
+- **No free slot**: Djinn pauses the running work task of lowest priority (the last wish by rank, then the most recently started), starts the investigator, and resumes the paused task as soon as the investigator ends. A correction or a review (a merge in conflict, red checks, work left not committed) does the same (W233): it goes before the paused workers that resume, takes the slot of the work task it pauses, and lets it resume when it ends; under pressure, or when no work task can be paused, it waits.
 - **Memory short**: A pause frees the slot and CPU but not the memory held by the stopped process. When memory blocks an investigator, Djinn interrupts the running work task of lowest priority so that it resumes later in its session or conversation (`plan.CanResume`), entering status `RESUMING` with the reason `"made room for Qxx: enlighten"`, without spending a resume attempt.
-- **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
+- **Exclusions**: Djinn never preempts a task holding or waiting for a gate, never a correction or review worker, never an urgent task, never a provider that cannot resume, and never pauses on Windows where process tree suspension is refused. At most one task is preempted per investigator. Each preemption records an event on both tasks and an entry in the journal (`harness/preempt`).
 
 ### Memory a worker is engaged at
 
@@ -436,7 +505,53 @@ Tests: `TestWatchParagraphs`, `TestWatcher` (no slot, the restart loop, the line
 `TestWatcherEnds`, `TestWatcherResumes` (and the restart line), `TestWatcherPermissions` (`watch_test.go`, the test
 binary plays the command), `TestWatcherLife`, `TestLamplighterWatcherOutlivesBudgets`,
 `TestWatcherStartsAgainWhenItDies`, `TestWatcherGivesUp`, `TestLamplighterLostWatcherStartsAgain`
-(`lamplighter_test.go`), and `TestWatcherTakesNoSlot` (`internal/dispatch`).
+(`lamplighter_test.go`), and `TestPass/watcher_takes_no_slot` (`internal/dispatch`).
+
+## Ifrit: an agent whose input stays open
+
+`djinn task spawn <wish> --kind ifrit` (`TASK_KIND_IFRIT`, decision Q11) runs an agent that stays lit while the
+developer is in Djinn ([the user's side](user-guide.md#an-ifrit-a-worker-that-stays-lit-while-you-are-there)). It
+needs a project, and runs Claude or Antigravity: Djinn does not keep Codex's input open yet, and refuses it, as it
+refuses `--provider watch`.
+
+- **Its input stays open** (`Spec.Listen`, `ifrit.go`, `stream.go`). A worker closes its agent's input once every
+  message has its result, and the agent ends; an ifrit's stays open. Once a turn has its result its worker says it
+  listens (`Task.ifrit.state` `LISTENING`): the process is blocked on its input, no CPU, no model call. A message
+  (`djinn task send`) starts the next turn (`WORKING`); one sent during a turn is absorbed by it, as for any worker.
+- **Its seal.** It starts at once, beyond the slots, like `djinn task start`: no load notch pauses it, no investigator
+  preempts it. It takes a slot only while it works on a turn. The Lamplighter leaves its silence alone while it
+  listens, and its wall time counts its turns only (`Task.ifrit.listened` is taken off).
+- **Its first prompt** carries the ifrit's rules in place of the wait in the foreground every other worker reads
+  (`ifritRule`, `harness.go`): after each request, make the change, say in three lines at most what changed and how to
+  see it, then end the turn; run every durable process through `djinn serve run`, never `&` nor `nohup`; never wait in
+  a loop nor sleep; run only the tests a request names. Its checks sentence (`Settings.IfritChecksBrief`) names the
+  project's checks but tells it to run none after a change: Djinn runs the commit checks once it is finished. An ifrit
+  outside Git, with no branch, still reads its rules.
+- **Its serves** (`serve.go`, `djinn serve run|list|logs|stop`) run in its worktree, each in a process group of its
+  own, in its systemd scope where Djinn has one, logged under the data folder. Djinn reads the ports they listen on
+  every 5 seconds and checks those declared with `--port`; a serve stops when the ifrit's run ends, its `--stop`
+  command first. A serve's command runs when the ifrit's own permissions allow it (the wish's allowance, else the
+  project's `.agents/permissions.txtpb`) or the developer's `serve_commands` list it, the project's denied commands
+  winning; where neither declares permissions, the agent's own configuration decides, as for its worker.
+- **Going out** (`presence.go`, `ifritTimers`). The developer's activity in Djinn (`Presence`: the window's
+  `UiService.Touch` and actions, a terminal's keys, a `djinn` command they type) pushes back its out time; the lead's,
+  the workers' and the watchers' calls do not. Past the idle delay (`--idle-minutes`, else `djinn up --ifrit-idle`,
+  else 30 minutes), once it listens, Djinn closes its input: its serves stop, its gates and slot go back, the task is
+  `STOPPED` with `Task.ifrit.state` `OUT` and why, and the lead hears a `LEAD_EVENT_KIND_OUT` line. A warning comes 5
+  minutes before. A restart of Djinn brings a lit ifrit back out (`putOut`).
+- **Lighting it again** (`relight`). `djinn task send` to an ifrit out goes through `djinn task continue`: its next
+  worker resumes its session in its worktree, its serves started first, its turn the message, told how long it was
+  out.
+- **Finishing it** (`doneIfrit`). `djinn task done` on a lit ifrit closes its input once the turn under way has its
+  result: its agent ends, and the task ends `DONE`, its work integrated like any task's.
+
+Tests: `TestIfritListensBetweenMessages` (the `two-turns` Claude fixture), `TestIfritTakesNoSlotWhileListening`,
+`TestLamplighterLeavesAListeningIfrit`, `TestSpawnIfrit`, `TestIfritIdle`, `TestIfritPromptRules` (`move_test.go`);
+`TestIfritWarnsThenGoesOut`, `TestYourActivityKeepsItLit`, `TestLeadAndWorkersAreNoActivity`,
+`TestIfritOutLetsTheTurnEnd`, `TestSendRelightsAnIfrit`, `TestIfritOutAfterARestart` (`presence_test.go`);
+`TestServeRunsAndStops`, `TestServeStopCommandRunsWhenItGoesOut`, `TestServesComeBackOnRelight`,
+`TestServeFollowsTheWatchersRule` (`serve_test.go`); `TestTake`, `TestService_Hold`
+(`internal/gate`); `TestIfritChecksBrief` (`internal/plan`).
 
 ## Claude
 
@@ -450,6 +565,19 @@ Djinn does not count one result per message but takes the result's `queued_turn_
 for later turns) as the number still waiting; at 0 it closes the input. A result without that field (older
 versions, and agy) counts one message. If messages still wait after such a result and the agent writes nothing
 for `harness.Quiet` (10 minutes), Djinn takes them as answered, says so in a `STATUS`, and closes the input.
+
+**Background work.** Once its input is closed, `claude -p` waits for the background work its worker started before
+it exits, and the task stays `RUNNING` meanwhile. By default it stops a Monitor watch, a background subagent or a
+workflow still running 10 minutes after the last turn; a background command the worker started holds the run open
+until its own time limit (30 minutes, or the `timeout` the worker gives, 2 hours at most, with stream-json input).
+In W31 of wish Will retour beta the 10 minutes stopped a paid run a monitor watched, and the task ended done. Djinn
+starts every Claude worker with `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, over the value of its own environment:
+claude waits however long, and the task's life bounds the wait, since a stopped or ended task stops everything its
+worker started (`stopLeft`; `TestClaudeWaitsForItsBackgroundWork`, `TestTaskEndStopsWhatItsWorkerStarted`). Every
+worker's instructions also say never to end a turn while a long run is going, but to wait in the foreground.
+**Verified** in Claude Code's docs (`env-vars.md`, `headless.md` "Background tasks at exit", `tools-reference.md`
+"Time limit for background commands"), 16/10/2026: the variable needs claude v2.1.182 or later. **Supposed:** the
+wait on a real run, not replayed.
 
 **Finding claude.** An app started from the Finder or a desktop menu gets a bare PATH: the shell's startup files
 that add `~/.local/bin` (where Claude Code's installer puts `claude`) are never read, not even by the login shell
@@ -468,6 +596,34 @@ trust dialog only with `-p` (`claude --help`), so a lead started in a folder Cla
 lead starts in the first project's folder) first asks to trust it, there, in the window.
 Djinn never answers it: trusting a folder is the user's decision. A first run of interactive Claude Code on a
 machine also shows its onboarding (theme, sign-in) once.
+
+**The driven lead (decision Q31, W131).** With `"leadDriven": true` in `settings.json`, Djinn runs no lead in a
+terminal: `harness.LeadDriver` starts a worker-like `claude -p` for each batch of the lead's events, in Djinn's own
+`lead` folder (no project's `CLAUDE.md` nor memory), with `--session-id` new each time, `--max-turns 60`,
+`--max-budget-usd 5`, the rules of the driven lead in `--append-system-prompt` and
+`--exclude-dynamic-system-prompt-sections` (the per-machine sections move to the first message, so the system prompt
+is the same from one session to the next and its cache serves them all). Its permissions are the lead's: `djinn`
+and the read-only Git commands, writing in its folder (plan files, tilasms), reading Djinn's data folder; it gets
+`DJINN_LEAD=1` and an empty `DJINN_TASK_ID`, `DJINN_WISH_ID`, `DJINN_WORKER_TOKEN`: a `djinn up` started from a
+worker's shell gave its session the worker's identity, and every write of the lead was refused (found on the first
+real run). Not `--bare`: it would not use the subscription's sign-in. **Verified** in Claude Code's docs
+(`headless.md`, `cli-reference.md`, 16/10/2026): `--max-turns` is print mode only and ends with `error_max_turns`;
+`--bare` needs an API key. **Verified** on real runs (claude 2.1.301, Opus 5.5, 16/10/2026): `--max-turns`, hidden
+from `claude --help`, is taken; a fresh session reads 18,626 tokens (system prompt, tools, rules) from the cache the
+previous batch's session wrote, and writes its own message and turn to the cache for an hour. Measured per batch: a
+cold start $0.21 (26,522 tokens written), a one-command batch $0.16, a question with two plan files $0.22, as
+claude counts them; L10 estimated $0.12 to $0.21. The price table's estimate of the $0.16 batch is $0.11: it prices
+a cache write at 5 minutes (5 $ a million tokens), `claude -p` writes them for an hour (8 $).
+
+**The Djinn's tone (decision Q36, W156).** The page sends the theme it shows with `UiService.View` (`ShownTheme`,
+`system` resolved by the page), Djinn keeps the last one in `settings.json` (`shownTheme`), and `plan.LeadPacket`
+reads it as the batch starts: a `## Your tone` section with the one tone of that theme, from `lead/tones/light.md` or
+`lead/tones/dark.md`, one line each. The limits of every tone are a rule of `plan.DrivenRules` (version 2), the same
+text whatever the theme, so the system prompt's cache still serves every session. **Measured** on real calls (claude
+-p, Opus 5.5, 17/10/2026, the difference in input tokens with and without the text): the rule 283 tokens, the light
+section 127, the dark one 145. Per batch: the section written once to the hour cache (127 to 145 × 8 $ a million,
+about $0.001) and read by the session's later calls; the rule read from the cache by each call (283 × 0.20 $ a
+million, about $0.00006 a call). Under $0.002 a batch, about 1 % of the $0.16 batch. No theme said: no section.
 
 **Stream.** One JSON message per line: `system/init` (session, model), `assistant` and `user` messages made of
 blocks (`text`, `tool_use`, `tool_result`, `thinking`), and one `result` per turn with the cost.
@@ -502,6 +658,8 @@ error subtype (`error_max_turns`, `error_during_execution`…) fails the turn ev
 | Turns counted as they come                    | `claude/turns-mid-run.jsonl`     | by hand, from `tool-call.jsonl`             | a model turn per assistant message id, on its first event; a subagent's line (`parent_tool_use_id`) is none       |
 | Second message                                | `claude/two-turns.jsonl`         | by hand                                     | two turns in one process                                                                                            |
 | Message sent during the turn                  | `claude/mid-turn-message.jsonl`  | by hand, from W59's real result             | one result with `queued_turn_count` 0 answers both messages: the input is closed and the worker ends               |
+| A batch of the driven lead                    | `claude/lead-batch.jsonl`        | **real**, claude 2.1.301, Opus 5.5          | the rules in the system prompt, turns capped, the lead's folder writable without a deny of every edit; the batch's cost, $0.16, kept in the lead's journal (`TestLeadBatchCostOnRecordedStream`) |
+| Comments sent on a tilasm                     | `claude/lead-comments.jsonl`     | **real**, claude 2.1.302, Opus 5.5          | the driven lead reads the send in one command, acts in the same batch and replies to each comment once (`TestLeadRepliesToEachCommentOnRecordedStream`); $0.62 |
 | Session limit reached                         | `claude/session-limit.jsonl`     | **real**, claude 2.1.293                    | `rate_limit_event` `rejected` gives the limit and its `resetsAt`; error "You've hit your session limit · resets 7:20am (Europe/Paris)"; the task waits for the reset, then resumes |
 
 ## Codex
@@ -754,6 +912,54 @@ use a personal or licensed account.
 | Malformed call retry    | `antigravity/malformed-call.jsonl`                | by hand, from W258    | retry prompt continued; done on second turn                         |
 | Token limit retry       | `antigravity/token-limit.jsonl`                   | by hand, from W281    | partial output `[cut]`, token limit prompt continued; done on second turn |
 | Three retries failed    | `antigravity/retry-failed.jsonl`                  | by hand               | three retry prompts continued in a row; fourth fails the task       |
+
+## The lead's seat and the accounts
+
+The lead Djinn drives runs on a **seat**: an agent, a model and an account, chosen by the developer and kept in
+`settings.json` (`ui.v1.Settings.lead`) until changed (W132, decision Q31). Each batch reads it as it starts, so a move
+takes effect at the next batch, which carries the lead's journal like any other; the batch records its agent, model and
+account. The moves: `djinn lead move --provider codex --model <model> --account <name>` (the whole seat: an empty model
+is the agent's default, an empty account its own sign-in; without `--provider`, the current agent), or the lead's menu
+in the window (the arrow beside **Talk to the Djinn**), which lists each agent on its own sign-in then on each account,
+and the model.
+
+**Which agents may lead.** Claude: its rules in `--append-system-prompt` (W131). Codex: its rules as the thread's
+`developerInstructions`, and the lead's folder, without `edit`, as its `workspace-write` sandbox (the other folders it
+may write in as `writableRoots`, a file change inside them accepted); Djinn answers its command approvals by the lead's
+commands, as for a worker. **Built, not tried on a real run:** a Codex batch; `--max-turns` has no Codex equivalent,
+the 30-minute timeout guards it. Antigravity cannot lead: agy takes no instructions beside the prompt and refuses a
+session that may not edit every file of its folder; `djinn lead move --provider antigravity` is refused.
+
+**A usage limit is the developer's move.** A batch that hits a limit (Claude's `rate_limit_event` `rejected`, or a
+limit in its error, as for a worker) is not tried again on the same seat: Djinn moves the lead nowhere by itself. It
+shows the limit beside **Talk to the Djinn** and first in the attention bar, with a button per seat it may move to: the
+other accounts of the same agent first (its model kept), then the other agents on their own sign-in and on each account,
+only those installed whose status command does not say signed out. A click is `LeadService.Move`: the waiting events
+go to the new seat at once. Without a move, the events, newer ones too, wait for the reset the agent gave (15 minutes
+when it gave none), then go to the same seat; **Talk to the Djinn** tries the same seat at once.
+
+### Several subscriptions at once
+
+An **account** is a folder of the agent's own where it keeps its configuration, sessions and login, beside its
+default one: `djinn lead add-account work --provider claude [--label Work] [--config-directory <folder>]` names it,
+makes the folder (`~/.claude-work` or `~/.codex-work` by default; never Djinn's data folder, the home folder, nor the
+agent's default folder), and prints the command that signs it in there once. `djinn lead accounts` lists them;
+`djinn lead remove-account work` forgets one and leaves its folder and its login as they are (refused while the lead
+runs on it). The window's agents setup shows each account under its agent, where it stands, and runs its sign-in in a
+terminal of the panel. Djinn passes the folder's variable to the sessions it starts on the account and to the status
+check; it never reads nor stores a token.
+
+| Agent       | Variable            | What it moves, by its documentation (read 17/10/2026)                                                                                                                                                                                                                                     | Sign in, status                                                       |
+| ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Claude Code | `CLAUDE_CONFIG_DIR` | "Each directory has its own settings, session history, and claude.ai login or API key" (`code.claude.com/docs/en/authentication`, Log in with multiple accounts); on Linux its `.credentials.json`, on macOS a Keychain entry keyed to the folder                                          | `claude auth login`; `claude auth status` exits 0 signed in, 1 not    |
+| Codex       | `CODEX_HOME`        | "Codex stores its local state under CODEX_HOME" with `config.toml` and `auth.json` (`developers.openai.com/codex/config-advanced`); its keyring entry is keyed to the folder's path (`codex-rs/login/src/auth/storage.rs`, source only)                                                     | `codex login`; `codex login status` exits 0 when credentials are present |
+| Antigravity | none documented     | its settings in `~/.gemini/antigravity-cli`, its token in the system's keyring (a file on Linux without a session bus); no variable moves them (`antigravity.google/docs`, `agy --help` 1.3.5)                                                                                              | no account: changing `HOME` would move everything, untried             |
+
+**Caveats, from the same documentation.** For Claude, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and
+`CLAUDE_CODE_OAUTH_TOKEN` win over a folder's login: a session or a check on an account clears them. A Claude Console
+sign-in without an API key is kept outside the folder: two Console sign-ins are not kept apart. Codex's IDE extension
+and desktop app share the default folder's login. **Verified** in tests on fake agents only: the variable reaches each
+session and each status check; no real sign-in was made.
 
 ## Tokens and cost estimates across providers
 

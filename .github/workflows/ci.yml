@@ -23,13 +23,31 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          # golangci-lint's own module too: the build cache then keeps the built linter (a minute or more to build).
-          cache-dependency-path: |
-            go.sum
-            tools/golangci/go.sum
+          # Cached below: setup-go saves only after a green job, and finds nothing once go.sum changes. A cold build
+          # cache doubles the Go tests (550 s instead of 250 s), a test then passes 10 s, the job fails and saves
+          # nothing again: every run after a go.sum change started cold, red.
+          cache: false
+      - id: go-env
+        run: |
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      # Go's modules and build cache, golangci-lint's own module too (the built linter: a minute or more to build).
+      # A go.sum change restores the latest all the same, setup-go's last included (the same paths, in its order):
+      # most of the build still holds.
+      - id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-env.outputs.mod }}
+            ${{ steps.go-env.outputs.build }}
+          key: go-${{ runner.os }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum', 'tools/golangci/go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.go.outputs.go-version }}-
+            setup-go-Linux-x64-ubuntu24-go-${{ steps.go.outputs.go-version }}-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -46,6 +64,14 @@ jobs:
       - run: go tool task lint
       # Go, interface and end-to-end tests (browser mode, headless Chromium).
       - run: go tool task test
+      # Saved red or green, once per go.sum: the next run does not start cold.
+      - if: ${{ !cancelled() && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-env.outputs.mod }}
+            ${{ steps.go-env.outputs.build }}
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   macos:
     name: Go tests (macos-15)

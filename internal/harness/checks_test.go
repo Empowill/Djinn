@@ -71,6 +71,7 @@ const lintAtCommit = "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN
 // file changes. Each runs through the gate of its name, and the project keeps their last runs.
 func TestSetupOncePerWorktree(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	in.ran()
@@ -122,6 +123,7 @@ func (in *integration) linted(t *testing.T, task *planv1.Task, code int32) {
 // to run. A file changed after the worker's lint, or a lint that failed last, and the check runs as before.
 func TestCommitLintPassedByTheWorker(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	const skipped = "commit checks: lint passed by the worker on this tree, not run again"
@@ -166,6 +168,7 @@ func TestCommitLintPassedByTheWorker(t *testing.T) {
 // TestSetupAgain: the setup runs again when a lock file changes, and in an integration worktree made anew.
 func TestSetupAgain(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	in.finished(t, "W1", map[string]string{"app/package-lock.json": "{}\n"})
@@ -192,6 +195,7 @@ func TestSetupAgain(t *testing.T) {
 // lock file changes.
 func TestSetupWhenNodeModulesMissing(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	in.finished(t, "W1", map[string]string{"app/package.json": "{}\n", "app/.gitignore": "node_modules\n"})
@@ -230,6 +234,7 @@ func TestSetupWhenNodeModulesMissing(t *testing.T) {
 // at the commit. Djinn's former test command is the check test at commit (the other integration tests).
 func TestARedCommitCheck(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n",
 		map[string]int{"setup": 0, "lint": 1})
@@ -264,11 +269,12 @@ func TestARedCommitCheck(t *testing.T) {
 }
 
 // TestPushChecksHoldThePush: before a push, the push checks run on the branch's tip; red, the push is held, said in
-// the tasks' events and on the wish. Red while work is left to commit, Djinn checks again at the next push due; red
-// again, it starts a correction worker. A second red does not spawn another worker while it runs; a failed correction
+// the tasks' events and on the wish. Red once no work is left to commit (W1 and W2 merged as one batch), it starts a
+// correction worker. A second red does not spawn another worker while it runs; a failed correction
 // asks the person, who can retry, take it over, or push without checks.
 func TestPushChecksHoldThePush(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin"
@@ -288,6 +294,7 @@ func TestPushChecksHoldThePush(t *testing.T) {
 		if attempts == 1 {
 			return "wait\nfail could not fix tests"
 		}
+		fixTests(t, dir, "Fix the tests")
 		return "text push checks fixed"
 	})
 
@@ -305,8 +312,9 @@ func TestPushChecksHoldThePush(t *testing.T) {
 		t.Errorf("gates %q; want the push check test through its gate, the commit check lint not again", gates)
 	}
 	state := in.pushState(t)
-	if !strings.Contains(state.GetHeld(), "test: test exited 1") || state.GetHeldRuns() != 2 {
-		t.Fatalf("the push %v; want held twice, W2's azima ending after W1's", state)
+	// W1 and W2 merged as one batch: the push checks ran once, red, and no work is left to commit (W126).
+	if !strings.Contains(state.GetHeld(), "test: test exited 1") || state.GetHeldRuns() != 1 {
+		t.Fatalf("the push %v; want held once, W1 and W2 merged as one batch", state)
 	}
 	if state.GetCorrectedBy() == "" || state.GetAttempts() != 1 {
 		t.Fatalf("the push %v; want corrected by a worker, attempt 1", state)
@@ -382,6 +390,7 @@ func TestPushChecksHoldThePush(t *testing.T) {
 // again before the push.
 func TestPushWithoutTheChecks(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "correction_attempts: 0\n"+
 		"checks { name: \"lint\" command: \"lint\" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }\n"+
@@ -423,10 +432,11 @@ func TestPushWithoutTheChecks(t *testing.T) {
 	}
 }
 
-// TestPushChecksCorrectionCleared: a push held with a correction whose integration record was cleared
-// runs its checks again on the next pass and pushes when green.
+// TestPushChecksCorrectionCleared: a push held with a correction whose integration record was cleared, the branch
+// fixed by hand meanwhile, runs its checks again on the next pass and pushes when green.
 func TestPushChecksCorrectionCleared(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -450,6 +460,7 @@ func TestPushChecksCorrectionCleared(t *testing.T) {
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
+	in.handCommit(t)
 
 	none := "none"
 	if _, err := in.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
@@ -472,10 +483,11 @@ func TestPushChecksCorrectionCleared(t *testing.T) {
 	}
 }
 
-// TestPushChecksCorrectionCancelled: a push held with a correction that was cancelled
-// clears its link, runs its checks again on the next pass and pushes when green.
+// TestPushChecksCorrectionCancelled: a push held with a correction that was cancelled, the branch fixed by hand
+// meanwhile, clears its link, runs its checks again on the next pass and pushes when green.
 func TestPushChecksCorrectionCancelled(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -514,6 +526,7 @@ func TestPushChecksCorrectionCancelled(t *testing.T) {
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
+	in.handCommit(t)
 
 	in.pass(t, time.Second)
 	tip := in.tip(t)
@@ -530,6 +543,7 @@ func TestPushChecksCorrectionCancelled(t *testing.T) {
 // pushes once corrected.
 func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -570,9 +584,25 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 		return "text push checks fixed"
 	})
 
-	// Pass 1: W1 commits into the branch.
-	// Push check fails on tip (testCode = 1). Push is held.
-	// Correction worker W3 is spawned.
+	// Pass 1: W1 commits into the branch. Dependent task W2 is free to start because W1 is COMMITTED: it runs while
+	// the push checks run apart (W180). They fail on the tip (testCode = 1): the push is held, no correction yet, W2's
+	// work may make them pass.
+	wait := make(chan struct{})
+	in.mu.Lock()
+	in.testWait = wait
+	in.mu.Unlock()
+	in.passApart(t, 0)
+	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	close(wait)
+	in.h.waitPushes()
+	if state := in.pushState(t); state.GetHeldRuns() != 1 || state.GetCorrectedBy() != "" {
+		t.Fatalf("push state %v; want held once, no correction while W2 runs", state)
+	}
+	in.mu.Lock()
+	in.testWait = nil
+	in.mu.Unlock()
+
+	// Pass 2: red twice in a row, the correction worker W3 is spawned.
 	in.pass(t, 0)
 
 	// Remote has not received the red push.
@@ -597,30 +627,23 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 		t.Fatalf("correction worker is %s, want W3", w3.GetCode())
 	}
 
-	// Dependent task W2 is free to start because W1 is COMMITTED!
-	w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	// In W2, modify app/src/a.txt so W3's commit conflicts on merge into the branch.
-	writeFile(t, w2.GetWorktree(), "app/src/a.txt", "a modified by W2\n")
-	commitAll(t, w2.GetWorktree(), "W2 modifies a.txt")
-	in.release(t, w2.GetId())
-	in.ended(t, w2.GetId())
+	writeFile(t, w2.GetWorktree(), "app/src/b.txt", "b by W2\n")
+	commitAll(t, w2.GetWorktree(), "W2 adds b.txt")
 
-	// Pass 2: W2 integrates and commits its change into the branch first.
-	in.pass(t, time.Second)
+	// The person commits on the branch by hand, changing app/src/a.txt: W3's merge conflicts with it. (Work a task
+	// finishes meanwhile would wait for W3, which repairs the branch: W126.)
+	writeFile(t, in.repo, "app/src/a.txt", "a modified by hand\n")
+	commitAll(t, in.repo, "a.txt by hand")
 
-	// Now release correction worker W3: its merge into the branch conflicts with W2's commit!
+	// Now release correction worker W3: its merge into the branch conflicts.
 	in.release(t, w3ID)
 	in.ended(t, w3ID)
 	in.pass(t, time.Second)
 
-	// Verify W1 and W2 STILL have state COMMITTED and no CorrectedBy!
+	// Verify W1 STILL has state COMMITTED and no CorrectedBy!
 	w1In, _ = in.integration(t, w1)
 	if w1In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w1In.GetCorrectedBy() != "" {
 		t.Errorf("W1 integration after correction conflict = %v; want COMMITTED", w1In)
-	}
-	w2In, _ := in.integration(t, w2)
-	if w2In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w2In.GetCorrectedBy() != "" {
-		t.Errorf("W2 integration after correction conflict = %v; want COMMITTED", w2In)
 	}
 
 	// A new dependent task WDep depending on W1 is planned: while push checks are red, it waits to be green again!
@@ -671,8 +694,18 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 		t.Errorf("after push, pushState = %v; want cleared", state)
 	}
 
+	// W2 ends: its work merges, no correction repairing the branch any more.
+	in.release(t, w2.GetId())
+	in.ended(t, w2.GetId())
+	in.pass(t, time.Second)
+	if w2In, _ := in.integration(t, w2); w2In.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w2In.GetCorrectedBy() != "" {
+		t.Errorf("W2 integration = %v; want COMMITTED", w2In)
+	}
+
 	// Now that push checks have passed and push succeeded, wDep starts running and finishes!
 	wDep = in.until(t, wDep.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	writeFile(t, wDep.GetWorktree(), "app/src/dep.txt", "dep\n") // Work of its own: one without is not merged (W196).
+	commitAll(t, wDep.GetWorktree(), "Dependent adds dep.txt")
 	in.release(t, wDep.GetId())
 	in.ended(t, wDep.GetId())
 	in.pass(t, time.Second)
@@ -689,6 +722,7 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 // once the correction makes the checks pass and the push clears, the task starts from the green head.
 func TestPushHeldBlocksPlannedTasksUntilGreen(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -705,6 +739,7 @@ func TestPushHeldBlocksPlannedTasksUntilGreen(t *testing.T) {
 			in.mu.Lock()
 			in.testCode = 0
 			in.mu.Unlock()
+			fixTests(t, dir, "Fix the tests")
 			return "text push checks fixed"
 		}
 		return ""
@@ -765,6 +800,7 @@ func TestPushHeldBlocksPlannedTasksUntilGreen(t *testing.T) {
 // and notifies the lead; the waiting planned work task starts running.
 func TestPushHeldLiftsWhenApprovedUnchecked(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "correction_attempts: 0\n"+
 		lintAtCommit+
@@ -832,6 +868,7 @@ func (in *integration) questions(t *testing.T) []*planv1.Question {
 // correction, the push stays held on it; once it is committed, the push checks pass and the push lifts the hold.
 func TestPushCorrectionStoppedThenContinued(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -846,6 +883,7 @@ func TestPushCorrectionStoppedThenContinued(t *testing.T) {
 		if starts == 1 {
 			return "wait\ntext stopped before this"
 		}
+		fixTests(t, dir, "Fix the tests")
 		return "text push checks fixed"
 	})
 
@@ -898,14 +936,21 @@ func TestPushCorrectionStoppedThenContinued(t *testing.T) {
 	}
 }
 
-// handCommit commits on the integration branch, as the developer does by hand, without changing its files: the push
-// checks' fake says whether they pass. It returns the new tip.
+// handCommit commits on the integration branch, as the developer does by hand, in its checkout: a file of its own, so
+// the tree changes (push checks are not run twice on a tree, W245); the push checks' fake says whether they pass. It
+// returns the new tip.
 func (in *integration) handCommit(t *testing.T) string {
 	t.Helper()
-	tip := in.tip(t)
-	sha := in.git(t, in.repo, "commit-tree", tip+"^{tree}", "-p", tip, "-m", "Fix the tests by hand")
-	in.git(t, in.repo, "update-ref", "refs/heads/"+in.branch, sha, tip)
-	return sha
+	fixTests(t, filepath.Join(in.repo, "app"), "Fix the tests by hand")
+	return in.tip(t)
+}
+
+// fixTests commits a fix in dir, a worktree or a folder of one, as a worker or the developer does: a file of its own,
+// which changes the tree; the push checks' fake says whether they pass.
+func fixTests(t *testing.T, dir, message string) {
+	t.Helper()
+	writeFile(t, dir, "FIXED.md", message+"\n")
+	commitAll(t, dir, message)
 }
 
 // withdraw withdraws the question q, as the lead does with djinn question withdraw.
@@ -945,6 +990,7 @@ func (in *integration) leftToTheLead(t *testing.T) (bare, old string) {
 // longer: the branch moved since its push checks were red, they run again and, green, the push goes.
 func TestPushQuestionWithdrawn(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare, old := in.leftToTheLead(t)
 	q := in.attachPushQuestion(t)
@@ -972,6 +1018,7 @@ func TestPushQuestionWithdrawn(t *testing.T) {
 // on: the next pass runs them on it and, green, records the push and lifts the hold, with nothing to push.
 func TestPushedByHandWhileHeld(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare, _ := in.leftToTheLead(t)
 	tip := in.handCommit(t)
@@ -1002,6 +1049,7 @@ func TestPushedByHandWhileHeld(t *testing.T) {
 // and acts on them, here with a correction, instead of leaving every task held with nobody on it.
 func TestPushRedAgainOnAStaleQuestion(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})

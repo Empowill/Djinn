@@ -102,3 +102,6 @@ func (j *job) close() {
 		j.h = 0
 	}
 }
+
+// procsOf finds no process on Windows: a worker's job holds what it started (adopt).
+func procsOf(string, int, string) []identity { return nil }

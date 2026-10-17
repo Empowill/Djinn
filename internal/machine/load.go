@@ -60,6 +60,43 @@ func ReadNotch(home string) djinnv1.LoadNotch {
 	return *settings.Load
 }
 
+// ReadIfritIdle reads the minutes without the developer before Djinn puts an ifrit out from settings.json in home
+// (ui.v1.Settings.ifrit_idle_minutes). It returns 0 when the file does not say, or says a value out of 5 to 240.
+func ReadIfritIdle(home string) uint32 {
+	if home == "" {
+		return 0
+	}
+	data, err := os.ReadFile(filepath.Join(home, settingsFile))
+	if err != nil {
+		return 0
+	}
+	var settings uiv1.Settings
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(data, &settings); err != nil {
+		return 0
+	}
+	if m := settings.GetIfritIdleMinutes(); m >= 5 && m <= 240 {
+		return m
+	}
+	return 0
+}
+
+// ReadLeadDriven tells whether settings.json in home says that Djinn drives the lead (ui.v1.Settings.lead_driven,
+// decision Q31): false when the file does not say, or cannot be read.
+func ReadLeadDriven(home string) bool {
+	if home == "" {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(home, settingsFile))
+	if err != nil {
+		return false
+	}
+	var settings uiv1.Settings
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(data, &settings); err != nil {
+		return false
+	}
+	return settings.GetLeadDriven()
+}
+
 // WriteNotch writes the operating load notch to settings.json in home, preserving other settings.
 func WriteNotch(home string, notch djinnv1.LoadNotch) error {
 	if home == "" {
@@ -78,7 +115,7 @@ func WriteNotch(home string, notch djinnv1.LoadNotch) error {
 	if err != nil {
 		return err
 	}
-	return fsx.WriteAtomic(path, data)
+	return fsx.WriteAtomic(path, data, 0o600)
 }
 
 // LoadOption configures loadService.
@@ -142,28 +179,15 @@ func WithLoadStreamer(attach func(func(ctx context.Context, send func(*djinnv1.L
 	}
 }
 
-// WithLoadSignal sets the activity signal function used for auto mode.
-func WithLoadSignal(signal ActivitySignal) LoadOption {
+// WithLoadOutside sets what reads the load outside Djinn for auto mode (SeriesRecorder.Outside); without it, auto
+// mode holds its notch.
+func WithLoadOutside(source OutsideSource) LoadOption {
 	return func(s *loadService) {
-		s.signal = signal
+		s.outside = source
 	}
 }
 
-// WithLoadIdleSource sets the idle source used for auto mode.
-func WithLoadIdleSource(source IdleSource) LoadOption {
-	return func(s *loadService) {
-		s.idleSource = source
-	}
-}
-
-// WithLoadStepDuration sets the hysteresis minimum interval for auto mode.
-func WithLoadStepDuration(d time.Duration) LoadOption {
-	return func(s *loadService) {
-		s.stepDuration = d
-	}
-}
-
-// WithLoadTickInterval sets the auto ticker interval (<= 0 disables background ticker).
+// WithLoadTickInterval sets the auto mode's beat (<= 0 disables the background beat); AutoBeat by default.
 func WithLoadTickInterval(d time.Duration) LoadOption {
 	return func(s *loadService) {
 		s.tickInterval = d
@@ -187,7 +211,7 @@ func LoadHandler(
 		broadcast:    broadcast,
 		workerMemory: workerMemory,
 		subs:         make(map[chan struct{}]struct{}),
-		tickInterval: time.Second,
+		tickInterval: AutoBeat,
 		stopAuto:     make(chan struct{}),
 	}
 	for _, opt := range opts {
@@ -204,18 +228,8 @@ func LoadHandler(
 		if s.clock != nil {
 			autoOpts = append(autoOpts, WithAutoClock(s.clock))
 		}
-		if s.signal != nil {
-			autoOpts = append(autoOpts, WithAutoSignal(s.signal))
-		} else {
-			autoOpts = append(autoOpts, WithAutoSignal(SystemActivitySignal(m)))
-		}
-		if s.idleSource != nil {
-			autoOpts = append(autoOpts, WithAutoIdleSource(s.idleSource))
-		} else {
-			autoOpts = append(autoOpts, WithAutoIdleSource(DefaultIdleSource()))
-		}
-		if s.stepDuration > 0 {
-			autoOpts = append(autoOpts, WithAutoStepDuration(s.stepDuration))
+		if s.outside != nil {
+			autoOpts = append(autoOpts, WithAutoOutside(s.outside))
 		}
 		s.auto = NewAutoController(savedNotch, autoOpts...)
 	} else {
@@ -227,6 +241,10 @@ func LoadHandler(
 				oldOnChange(effective)
 			}
 		}
+	}
+
+	if s.auto.IsAuto() {
+		s.applyNotch(s.auto.Effective())
 	}
 
 	if s.tickInterval > 0 {
@@ -251,9 +269,7 @@ type loadService struct {
 
 	auto         *AutoController
 	clock        func() time.Time
-	signal       ActivitySignal
-	idleSource   IdleSource
-	stepDuration time.Duration
+	outside      OutsideSource
 	tickInterval time.Duration
 	stopAuto     chan struct{}
 
@@ -275,7 +291,8 @@ func (s *loadService) runAutoLoop() {
 	}
 }
 
-// Tick evaluates developer activity and updates effective load notch in auto mode.
+// Tick is the auto mode's beat: it reads the load outside Djinn and steps the notch in effect when it stayed past a
+// mark long enough (AutoController.Tick).
 func (s *loadService) Tick() (bool, djinnv1.LoadNotch) {
 	if s.auto == nil {
 		return false, djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
@@ -289,10 +306,11 @@ func (s *loadService) applyNotch(effective djinnv1.LoadNotch) {
 		p.Auto = true
 	}
 	if s.monitor != nil {
-		// Preserve any runtime overrides from flags (Workers, WorkerMemory).
+		// Preserve any runtime overrides from flags (Workers, WorkerMemory, WorkerMemoryGuard).
 		current := s.monitor.Policy()
 		p.Workers = current.Workers
 		p.WorkerMemory = current.WorkerMemory
+		p.WorkerMemoryGuard = current.WorkerMemoryGuard
 		s.monitor.SetPolicy(p)
 	}
 	if s.setPolicy != nil {
@@ -322,6 +340,7 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 		resp.Notch = s.auto.Effective()
 		resp.Auto = s.auto.IsAuto()
 		resp.ChosenNotch = s.auto.Chosen()
+		resp.AutoReason = s.auto.Reason()
 	} else if s.monitor != nil {
 		policy := s.monitor.Policy()
 		if policy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
@@ -420,6 +439,9 @@ func (s *loadService) Get(
 		Notch:       effective,
 		Auto:        isAuto,
 		ChosenNotch: chosen,
+	}
+	if s.auto != nil {
+		resp.AutoReason = s.auto.Reason()
 	}
 	if s.monitor != nil {
 		policy := s.monitor.Policy()

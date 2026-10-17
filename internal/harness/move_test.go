@@ -24,6 +24,7 @@ import (
 // with `djinn question ask`.
 func TestWorkerPromptMoveRule(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 
 	// 1. With checks: rule is appended next to ChecksBrief.
 	r1 := &run{
@@ -87,10 +88,55 @@ func TestWorkerPromptMoveRule(t *testing.T) {
 	}
 }
 
+// TestIfritPromptRules (T51, Q11): an ifrit's first prompt carries its own rules in place of the wait in the
+// foreground: a turn per request, three lines, serves through djinn serve run, no loop nor sleep, no checks after a
+// change. Outside Git it still has them; a task that is no ifrit never does.
+func TestIfritPromptRules(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	checks := plan.Settings{Checks: []*planv1.ProjectCheck{{Name: "lint", Command: "make lint",
+		When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_COMMIT}}}}
+	ifrit := &run{ifrit: true, task: &planv1.Task{Branch: "w12-front", Provider: planv1.Provider_PROVIDER_CLAUDE,
+		Kind: planv1.TaskKind_TASK_KIND_IFRIT}}
+	ifrit.setChecks(checks)
+	got := briefed(ifrit, "Make the button primary.", false)
+	for _, want := range []string{
+		"Make the button primary.\n\n" + checks.IfritChecksBrief() + " ",
+		"After each request: make the change, say in three lines at most what changed and how to see it",
+		"then end your turn; Djinn keeps you alive",
+		"`djinn serve run <name> \"<command>\"`",
+		"never with `&` or `nohup`",
+		"Never wait in a loop or sleep.",
+		"only the tests a request names, when it asks",
+		workerHandRule, workerCheckRule, workerMoveRule,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ifrit prompt lacks %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{workerWaitRule, "A worker runs the commit checks"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("ifrit prompt has %q:\n%s", unwanted, got)
+		}
+	}
+
+	outside := &run{ifrit: true, task: &planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE, Kind: planv1.TaskKind_TASK_KIND_IFRIT}}
+	if got := briefed(outside, "Try the stack.", false); got != "Try the stack.\n\n"+ifritRules {
+		t.Errorf("ifrit outside Git: %q", got)
+	}
+
+	task := &run{task: &planv1.Task{Branch: "w13-back", Provider: planv1.Provider_PROVIDER_CLAUDE}}
+	task.setChecks(checks)
+	if got := briefed(task, "Fix it.", false); strings.Contains(got, ifritRule) || !strings.Contains(got, workerWaitRule) {
+		t.Errorf("a task's prompt: %q", got)
+	}
+}
+
 // TestMergeMoveTag: a worker's merge creates a local tag. Djinn raises a question
 // with Move: true to push the tag, the lead line names the move, and answering Choice A pushes it.
 func TestMergeMoveTag(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 
@@ -160,6 +206,7 @@ func TestMergeMoveTag(t *testing.T) {
 // Djinn never proposes pushing it.
 func TestMergeMoveTagAlreadyOnRemoteNotProposed(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 
@@ -186,6 +233,7 @@ func TestMergeMoveTagAlreadyOnRemoteNotProposed(t *testing.T) {
 // Djinn proposes pushing it.
 func TestMergeMoveTagOnRemoteAtDifferentCommitProposed(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 
@@ -219,6 +267,7 @@ func TestMergeMoveTagOnRemoteAtDifferentCommitProposed(t *testing.T) {
 // TestRemoteTags: remoteTags returns peeled tags correctly.
 func TestRemoteTags(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 
@@ -246,6 +295,7 @@ func TestRemoteTags(t *testing.T) {
 // - red push check, refused push, failed integration, correction past attempts -> "before the push"
 // - install proposals and proof checks -> can wait (Before: "", Urgency: Later).
 func TestComputedQuestionLevels(t *testing.T) {
+	t.Parallel()
 	tagQ := tagMoveQuestion("w1", "p1", "v1.0.0", "origin")
 	if !tagQ.GetMove() || tagQ.GetBefore() != "before the release" {
 		t.Errorf("tagMoveQuestion: move=%v, before=%q; want move=true, before='before the release'", tagQ.GetMove(), tagQ.GetBefore())
@@ -287,6 +337,7 @@ func TestComputedQuestionLevels(t *testing.T) {
 // Djinn raises a question to start release dry run, and lead line names the move.
 func TestMergeMoveReleaseFiles(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	var told []string
@@ -337,6 +388,7 @@ func TestMergeMoveReleaseFiles(t *testing.T) {
 // Djinn raises a question to check on that machine, and lead line names the move.
 func TestMergeMoveNeedsBox(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	var told []string
@@ -379,6 +431,7 @@ func TestMergeMoveNeedsBox(t *testing.T) {
 // Djinn does not ask a duplicate, and the merge line does not repeat the move since no question was asked on merge.
 func TestMergeMoveWorkerAlreadyAskedDeduplicated(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	var told []string
@@ -433,6 +486,7 @@ func TestMergeMoveWorkerAlreadyAskedDeduplicated(t *testing.T) {
 // for longer than uninstalledDelay generates an "Install and restart <sha>?" question.
 func TestComputedMoveUninstalledBuild(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
@@ -492,6 +546,7 @@ func TestComputedMoveUninstalledBuild(t *testing.T) {
 // failed task raises an install question naming the task, deduplicated, and closed when installed.
 func TestComputedMoveInstallQuestionsWhenNeeded(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
@@ -583,6 +638,7 @@ func TestComputedMoveInstallQuestionsWhenNeeded(t *testing.T) {
 // no install question is raised even when a build carries a fix for a failed task.
 func TestComputedMoveInstallQuestionsNever(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
@@ -614,6 +670,7 @@ func TestComputedMoveInstallQuestionsNever(t *testing.T) {
 // Answering "Verified" marks the azima done.
 func TestComputedMoveAzimaProof(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	azima := in.azima(t, in.wishID, "NativeMac")
@@ -679,6 +736,7 @@ func TestComputedMoveAzimaProof(t *testing.T) {
 // Djinn raises "Open a pull request to main?".
 func TestComputedMoveOpenPR(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 
@@ -738,6 +796,7 @@ func TestComputedMoveOpenPR(t *testing.T) {
 // raise at most one install question.
 func TestComputedMoveTwoPushesOneQuestion(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
@@ -796,6 +855,7 @@ func TestComputedMoveTwoPushesOneQuestion(t *testing.T) {
 // no new question is raised after restarting Djinn.
 func TestComputedMoveInstallDoneNoNewQuestionAfterRestart(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
@@ -853,6 +913,7 @@ func TestComputedMoveInstallDoneNoNewQuestionAfterRestart(t *testing.T) {
 // the old uninstalled question is closed with a note, and exactly one new question is raised.
 func TestComputedMoveNewerBuildSupersedesOldQuestion(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
@@ -921,6 +982,7 @@ func TestComputedMoveNewerBuildSupersedesOldQuestion(t *testing.T) {
 // raises nothing; the lead line has no move suffix and no "%s".
 func TestMergeMoveDiffWithGoCodeDoesNotRaise(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	var told []string
@@ -959,6 +1021,7 @@ func TestMergeMoveDiffWithGoCodeDoesNotRaise(t *testing.T) {
 // raises one move with its box text; the line has no "%s".
 func TestMergeMovePlanFileGainingNeedsBoxRaisesOneMove(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	var told []string
@@ -1012,6 +1075,7 @@ func TestMergeMovePlanFileGainingNeedsBoxRaisesOneMove(t *testing.T) {
 // TestMoveTemplatesNoUnfilledFormatVerbs: checks that every template helper fills all its format verbs.
 func TestMoveTemplatesNoUnfilledFormatVerbs(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 
 	assertNoVerb := func(name, s string) {
 		t.Helper()
@@ -1073,6 +1137,7 @@ func TestMoveTemplatesNoUnfilledFormatVerbs(t *testing.T) {
 // once per subject (deduplicated across tasks/passes), and only when the branch is really ahead and green.
 func TestMergeMoveOpenPRDeduplicatedAndAheadGreen(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	_ = in.remote(t)
 

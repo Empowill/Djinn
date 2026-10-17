@@ -1,5 +1,6 @@
 // End-to-end test for the operating load slider: 5 notches, keyboard and click
-// navigation, server synchronization via LoadService RPCs, and live two-line forecast display.
+// navigation, round stops on the track, server synchronization via LoadService RPCs, and the live two-line forecast
+// shown while the gauge is hovered.
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -77,24 +78,24 @@ test.describe("operating load slider", () => {
     for (const notch of notches) {
       const btn = page.locator(`.operating-load-notch[data-notch="${notch}"]`);
       await expect(btn).toBeVisible();
-      const title = await btn.getAttribute("title");
-      expect(title).toBeTruthy();
-      expect(title?.length).toBeGreaterThan(15);
-      expect(title?.toLowerCase()).toContain("workers");
+      const description = await btn.getAttribute("aria-description");
+      expect(description).toBeTruthy();
+      expect(description?.length).toBeGreaterThan(15);
+      expect(description?.toLowerCase()).toContain("workers");
     }
 
     const ocBtn = page.locator('.operating-load-notch[data-notch="overclock"]');
-    const ocTitle = await ocBtn.getAttribute("title");
-    expect(ocTitle).toContain("saturate CPU and memory");
+    const ocDescription = await ocBtn.getAttribute("aria-description");
+    expect(ocDescription).toContain("saturate CPU and memory");
 
     const activeBtn = page.locator(".operating-load-notch.active");
     await expect(activeBtn).toHaveAttribute("data-notch", "medium");
 
     const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
     await expect(autoBtn).toBeVisible();
-    const autoTitle = await autoBtn.getAttribute("title");
-    expect(autoTitle).toBeTruthy();
-    expect(autoTitle?.length).toBeGreaterThan(10);
+    const autoDescription = await autoBtn.getAttribute("aria-description");
+    expect(autoDescription).toBeTruthy();
+    expect(autoDescription?.length).toBeGreaterThan(10);
     await expect(autoBtn).not.toHaveClass(/active/);
 
     expect(errors).toEqual([]);
@@ -210,6 +211,94 @@ test.describe("operating load slider", () => {
     await expect(range).toHaveValue("5");
     await expect(ocBtn).toHaveClass(/active/);
     await expect.poll(getNotch).toBe("overclock");
+
+    expect(errors).toEqual([]);
+  });
+
+  // W28: the track holds a round stop per notch, a button each: a click or Enter or Space on one sets its notch, as its
+  // label does.
+  test("clicking a round stop on the track sets the load notch", async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await page.goto(djinnURL());
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+
+    const range = page.locator(".operating-load-input");
+    const stops = page.locator(".operating-load-stop");
+    await expect(stops).toHaveCount(5);
+    const notches = ["minimal", "medium", "high", "max", "overclock"] as const;
+    for (const notch of notches) {
+      const stop = page.locator(`.operating-load-stop[data-notch="${notch}"]`);
+      await expect(stop).toHaveAttribute(
+        "aria-label",
+        notch[0].toUpperCase() + notch.slice(1),
+      );
+      expect(await stop.evaluate((el) => getComputedStyle(el).cursor)).toBe(
+        "pointer",
+      );
+    }
+    const medium = page.locator('.operating-load-stop[data-notch="medium"]');
+    await expect(medium).toHaveClass(/\bcurrent\b/);
+    await expect(medium).toHaveAttribute("aria-pressed", "true");
+
+    // Each stop sits where the thumb's centre lands at its notch, on the track's line.
+    const box = await range.boundingBox();
+    expect(box).toBeTruthy();
+    if (!box) return;
+    for (const [i, notch] of notches.entries()) {
+      const stop = await page
+        .locator(`.operating-load-stop[data-notch="${notch}"]`)
+        .boundingBox();
+      expect(stop).toBeTruthy();
+      expect(stop!.x + stop!.width / 2).toBeCloseTo(
+        box.x + 7 + ((box.width - 14) * i) / 4,
+        0,
+      );
+      expect(stop!.y + stop!.height / 2).toBeCloseTo(box.y + box.height / 2, 0);
+    }
+
+    const high = page.locator('.operating-load-stop[data-notch="high"]');
+    await high.click();
+    await expect(range).toHaveValue("3");
+    await expect.poll(getNotch).toBe("high");
+    await expect(high).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.locator('.operating-load-notch[data-notch="high"]'),
+    ).toHaveClass(/active/);
+
+    const minimal = page.locator('.operating-load-stop[data-notch="minimal"]');
+    await minimal.click();
+    await expect(range).toHaveValue("1");
+    await expect.poll(getNotch).toBe("minimal");
+
+    // Keyboard: each stop takes the focus; Enter or Space selects it. The pointer leaves first: resting on a stop, it
+    // previews that stop's notch.
+    await page.mouse.move(0, 0);
+    const max = page.locator('.operating-load-stop[data-notch="max"]');
+    await max.focus();
+    await expect(max).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect.poll(getNotch).toBe("max");
+    await expect(range).toHaveValue("4");
+
+    const overclock = page.locator(
+      '.operating-load-stop[data-notch="overclock"]',
+    );
+    await page.keyboard.press("Tab");
+    await expect(overclock).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect.poll(getNotch).toBe("overclock");
+    await expect(range).toHaveValue("5");
+
+    // A stop exits auto mode as its label does.
+    await page.locator('.operating-load-notch[data-notch="auto"]').click();
+    await expect.poll(() => djinn("load", "get")).toContain("auto: true");
+    await page.locator('.operating-load-stop[data-notch="medium"]').click();
+    await expect.poll(() => djinn("load", "get")).not.toContain("auto: true");
+    await expect.poll(getNotch).toBe("medium");
 
     expect(errors).toEqual([]);
   });
@@ -365,8 +454,26 @@ test.describe("operating load slider", () => {
       page.locator(".app-statusbar").getByText("Live"),
     ).toBeVisible();
 
+    // W28: the limits stay hidden until the gauge is hovered, then show over the page, the bar keeping its size.
     const forecastEl = page.locator(".operating-load-forecast");
+    const loadEl = page.locator(".operating-load");
+    await page.mouse.move(0, 0);
+    await expect(forecastEl).toBeAttached();
+    await expect(forecastEl).toBeHidden();
+    const before = await loadEl.boundingBox();
+    await page.locator(".operating-load-slider").hover();
     await expect(forecastEl).toBeVisible();
+    expect(await loadEl.boundingBox()).toEqual(before);
+    const shown = await forecastEl.boundingBox();
+    expect(shown!.y).toBeGreaterThanOrEqual(before!.y + before!.height);
+    await page.mouse.move(0, 0);
+    await expect(forecastEl).toBeHidden();
+    // The keyboard shows it too.
+    await page.locator(".operating-load-input").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(forecastEl).toBeVisible();
+    await page.keyboard.press("ArrowLeft");
+    await page.locator(".operating-load-slider").hover();
 
     // Binding resource line: "limited by (memory|CPU): X workers of ~Y"
     await expect(
@@ -419,7 +526,7 @@ test.describe("operating load slider", () => {
       await expect(
         page.locator(`.operating-load-notch[data-notch="${notch}"]`),
       ).toHaveAttribute(
-        "title",
+        "aria-description",
         new RegExp(`up to ${slots[notch]} workers?\\b`),
       );
     }
@@ -434,7 +541,7 @@ test.describe("operating load slider", () => {
     }
     // What lowering does, said on the CPU line.
     await expect(label).toHaveAttribute(
-      "title",
+      "aria-description",
       /Lowering the load (pauses the newest workers|lets the workers above its limit finish)/,
     );
     expect(errors).toEqual([]);
@@ -460,10 +567,207 @@ test.describe("operating load slider", () => {
     // But server notch is still medium
     expect(getNotch()).toBe("medium");
 
+    // Hovering a stop previews its notch the same way.
+    await page.locator('.operating-load-stop[data-notch="max"]').hover();
+    await expect(forecastEl).toBeVisible();
+    await expect(forecastEl).toHaveAttribute("data-notch", "max");
+    expect(getNotch()).toBe("medium");
+
+    // The coloured preview is the only hover: no title brings the browser's tooltip up over it (W32).
+    await expect(page.locator(".operating-load [title]")).toHaveCount(0);
+    await expect(page.locator(".operating-load[title]")).toHaveCount(0);
+
     // Move away
     await page.mouse.move(0, 0);
     await expect(forecastEl).toHaveAttribute("data-notch", "medium");
 
+    expect(errors).toEqual([]);
+  });
+
+  // W37: the pointer previews the stop nearest it all along the track: across the gap between Max and Overclock the
+  // preview never falls back to the level in effect. A gauge's fill rises to the level, striped on to the preview.
+  test("moving across the gap between Max and Overclock never previews High", async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    djinn("load", "set", "high");
+    await page.goto(djinnURL());
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+    const slider = page.locator(".operating-load-slider");
+    await expect(slider).toHaveAttribute("data-notch", "high");
+    const centre = async (notch: string) => {
+      const box = (await page
+        .locator(`.operating-load-stop[data-notch="${notch}"]`)
+        .boundingBox())!;
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    };
+    const high = await centre("high");
+    const max = await centre("max");
+    const overclock = await centre("overclock");
+
+    // The fill stands at High, its right end on High's stop.
+    // How far a fill's right end stands from x, in pixels.
+    const fillOff = (selector: string, x: number) =>
+      page
+        .locator(selector)
+        .evaluate((el, x) => Math.abs(el.getBoundingClientRect().right - x), x);
+    await expect
+      .poll(() => fillOff(".operating-load-fill", high.x))
+      .toBeLessThan(1.5);
+    await expect
+      .poll(() => fillOff(".operating-load-fill-reach", high.x))
+      .toBeLessThan(1.5);
+
+    // Every preview the slider shows, in order.
+    await slider.evaluate((el) => {
+      const seen: string[] = [];
+      (window as unknown as { seen: string[] }).seen = seen;
+      new MutationObserver(() => seen.push(el.dataset.notch!)).observe(el, {
+        attributeFilter: ["data-notch"],
+      });
+    });
+    const seen = () =>
+      page.evaluate(() => (window as unknown as { seen: string[] }).seen);
+
+    await page.mouse.move(max.x, max.y);
+    await expect(slider).toHaveAttribute("data-notch", "max");
+    await page.mouse.move(overclock.x, overclock.y, { steps: 24 });
+    await expect(slider).toHaveAttribute("data-notch", "overclock");
+    // Striped on to Overclock, the solid fill still at High.
+    await expect
+      .poll(() => fillOff(".operating-load-fill-reach", overclock.x))
+      .toBeLessThan(1.5);
+    expect(await fillOff(".operating-load-fill", high.x)).toBeLessThan(1.5);
+    await page.mouse.move(max.x, max.y, { steps: 24 });
+    await expect(slider).toHaveAttribute("data-notch", "max");
+    expect(await seen()).toEqual(["max", "overclock", "max"]);
+    // Back between High and Max, nearer High: High.
+    await page.mouse.move(high.x + (max.x - high.x) * 0.3, high.y, {
+      steps: 8,
+    });
+    await expect(slider).toHaveAttribute("data-notch", "high");
+    expect(await seen()).toEqual(["max", "overclock", "max", "high"]);
+    // Nothing applied while hovering.
+    expect(getNotch()).toBe("high");
+
+    // A click in the gap sets the nearest stop.
+    await page.mouse.click(max.x + (overclock.x - max.x) * 0.7, max.y);
+    await expect.poll(getNotch).toBe("overclock");
+    // Overclock set, the gauge's width may move by a pixel or two: its stop is measured again.
+    await expect
+      .poll(async () =>
+        fillOff(".operating-load-fill", (await centre("overclock")).x),
+      )
+      .toBeLessThan(1.5);
+    expect(errors).toEqual([]);
+  });
+
+  // W37: W32 left Overclock's risk and Auto's explanation in aria-description only; the coloured preview shows them.
+  test("the preview warns of Overclock's risk and explains Auto", async ({
+    page,
+  }) => {
+    const errors = collectErrors(page);
+    await page.goto(djinnURL());
+    await expect(
+      page.locator(".app-statusbar").getByText("Live"),
+    ).toBeVisible();
+    const forecast = page.locator(".operating-load-forecast");
+    const risk = forecast.locator(".operating-load-forecast-risk");
+    const notes = forecast.locator(".operating-load-forecast-note");
+    const autoText = /Auto: follows the load of the programs outside Djinn/;
+
+    // Overclock previewed: the warning, inside the preview's width.
+    await page.locator('.operating-load-notch[data-notch="overclock"]').hover();
+    await expect(risk).toBeVisible();
+    await expect(risk).toHaveText(
+      "Risk: Djinn will saturate CPU and memory; other applications may slow down or be terminated.",
+    );
+    const panel = (await forecast.boundingBox())!;
+    const warning = (await risk.boundingBox())!;
+    expect(warning.x).toBeGreaterThanOrEqual(panel.x);
+    expect(warning.x + warning.width).toBeLessThanOrEqual(
+      panel.x + panel.width,
+    );
+    // Another level previewed: no warning.
+    await page.locator('.operating-load-notch[data-notch="medium"]').hover();
+    await expect(forecast).toHaveAttribute("data-notch", "medium");
+    await expect(notes).toHaveCount(0);
+
+    // The Auto button hovered: Auto's explanation.
+    const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
+    await autoBtn.hover();
+    await expect(forecast).toBeVisible();
+    await expect(notes).toHaveCount(1);
+    await expect(notes).toContainText(autoText);
+    await page.mouse.move(0, 0);
+    await expect(forecast).toBeHidden();
+    await page.locator(".operating-load-slider").hover();
+    await expect(notes).toHaveCount(0);
+
+    // Overclock set, the Auto button hovered: both, the warning in the theme's danger colour, light and dark.
+    djinn("load", "set", "overclock");
+    await expect(
+      page.locator('.operating-load-notch[data-notch="overclock"]'),
+    ).toHaveClass(/active/);
+    await autoBtn.hover();
+    await expect(risk).toBeVisible();
+    await expect(notes).toHaveCount(2);
+    await expect(notes.nth(1)).toContainText(autoText);
+    const outDir = path.resolve(__dirname, "../test-results/screenshots");
+    fs.mkdirSync(outDir, { recursive: true });
+    for (const theme of ["dark", "light"] as const) {
+      await page.evaluate(
+        (t) => document.documentElement.setAttribute("data-theme", t),
+        theme,
+      );
+      const colours = await risk.evaluate((el) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--danger)";
+        el.appendChild(probe);
+        const danger = getComputedStyle(probe).color;
+        probe.remove();
+        return { colour: getComputedStyle(el).color, danger };
+      });
+      expect(colours.colour).toBe(colours.danger);
+      // The theme's colours glide: shoot once they stand.
+      await forecast.evaluate((el) =>
+        Promise.all(
+          el
+            .getAnimations({ subtree: true })
+            .map((a) => a.finished.catch(() => {})),
+        ),
+      );
+      await forecast.screenshot({
+        path: path.join(outDir, `notch-risk-${theme}.png`),
+      });
+    }
+    await page.evaluate(() =>
+      document.documentElement.setAttribute("data-theme", "dark"),
+    );
+
+    // Auto on: its explanation shows while the gauge is hovered.
+    djinn("load", "set", "auto");
+    await expect(autoBtn).toHaveClass(/active/);
+    await page.locator(".operating-load-slider").hover();
+    await expect(notes.filter({ hasText: autoText })).toHaveCount(1);
+    // And why auto runs at its notch, in one line (W253): measured every 20 s, not yet at first. Overclock was the
+    // notch chosen, so auto starts at it and climbs no higher: it holds it while the machine's load outside Djinn is
+    // unmeasured, moderate or low, and steps down once that load stayed high, a step a beat at most (W291).
+    await expect(forecast.locator(".operating-load-auto-reason")).toHaveText(
+      /^Outside (load|memory) .*: (holds Overclock|up to Overclock|down to (Max|High) in .+)$/,
+    );
+
+    // No title anywhere in the gauge (W32); both texts stay in aria-description.
+    await expect(page.locator(".operating-load [title]")).toHaveCount(0);
+    await expect(
+      page.locator('.operating-load-notch[data-notch="overclock"]'),
+    ).toHaveAttribute(
+      "aria-description",
+      /Risk: Djinn will saturate CPU and memory/,
+    );
+    await expect(autoBtn).toHaveAttribute("aria-description", autoText);
     expect(errors).toEqual([]);
   });
 
@@ -500,6 +804,27 @@ test.describe("operating load slider", () => {
           path: path.join(outDir, `notch-${notch}-${theme}.png`),
         });
       }
+      // The forecast shown on hover, laid over the page under the gauge.
+      await page.locator(".operating-load-slider").hover();
+      await expect(page.locator(".operating-load-forecast")).toBeVisible();
+      const gauge = (await loadEl.boundingBox())!;
+      const forecast = (await page
+        .locator(".operating-load-forecast")
+        .boundingBox())!;
+      const left = Math.min(gauge.x, forecast.x) - 8;
+      await page.screenshot({
+        path: path.join(outDir, `notch-hover-${theme}.png`),
+        clip: {
+          x: left,
+          y: gauge.y - 8,
+          width:
+            Math.max(gauge.x + gauge.width, forecast.x + forecast.width) +
+            8 -
+            left,
+          height: forecast.y + forecast.height + 8 - (gauge.y - 8),
+        },
+      });
+      await page.mouse.move(0, 0);
     }
 
     expect(errors).toEqual([]);
@@ -541,29 +866,40 @@ test.describe("in French", () => {
       const btn = page.locator(`.operating-load-notch[data-notch="${notch}"]`);
       await expect(btn).toBeVisible();
       await expect(btn).toHaveText(fr[`load.notch.${notch}`]);
-      const title = await btn.getAttribute("title");
-      expect(title).toBeTruthy();
-      expect(title?.length).toBeGreaterThan(15);
-      expect(title).toContain(fr[`load.notch.${notch}`]);
+      const description = await btn.getAttribute("aria-description");
+      expect(description).toBeTruthy();
+      expect(description?.length).toBeGreaterThan(15);
+      expect(description).toContain(fr[`load.notch.${notch}`]);
     }
 
     const ocBtn = page.locator('.operating-load-notch[data-notch="overclock"]');
-    const ocTitle = await ocBtn.getAttribute("title");
-    expect(ocTitle).toContain(fr["load.notch.overclock"]);
-    expect(ocTitle?.length).toBeGreaterThan(50);
+    const ocDescription = await ocBtn.getAttribute("aria-description");
+    expect(ocDescription).toContain(fr["load.notch.overclock"]);
+    expect(ocDescription?.length).toBeGreaterThan(50);
 
     const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
     await expect(autoBtn).toBeVisible();
     await expect(autoBtn).toHaveText(fr["load.notch.auto"]);
-    const autoTitle = await autoBtn.getAttribute("title");
-    expect(autoTitle).toBeTruthy();
+    const autoDescription = await autoBtn.getAttribute("aria-description");
+    expect(autoDescription).toBeTruthy();
 
     const forecastEl = page.locator(".operating-load-forecast");
+    await page.locator(".operating-load-slider").hover();
     await expect(forecastEl).toBeVisible();
     const cpuPrefix = fr["load.forecast_cpu_running"].split("{")[0];
     const memPrefix = fr["load.forecast_memory"].split("{")[0];
     await expect(forecastEl).toContainText(cpuPrefix);
     await expect(forecastEl).toContainText(memPrefix);
+
+    // Overclock's risk and Auto's explanation in the preview (W37).
+    await ocBtn.hover();
+    await expect(
+      forecastEl.locator(".operating-load-forecast-risk"),
+    ).toHaveText(fr["load.overclock_risk"]);
+    await autoBtn.hover();
+    await expect(forecastEl).toContainText(
+      fr["load.tooltip.auto"].split("{")[0],
+    );
 
     expect(errors).toEqual([]);
   });

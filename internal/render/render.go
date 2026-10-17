@@ -95,6 +95,7 @@ const maxLastWord, maxEvent = 600, 280
 var icons = map[string]string{
 	"ok": "✓", "run": "", "wait": "?", "idle": "○", "bad": "!", "fail": "✕", "amber": "↺", "pause": "‖", "stop": "■", "dig": "⌕",
 	"human": "✋\ufe0e",
+	"fix":   "⚒\ufe0e", // A failed merge a correction fixes: orange as what waits, Djinn's move.
 	"later": "◷",
 }
 
@@ -146,17 +147,20 @@ type view struct {
 	Counts    []count // the tasks by status
 	Contents  []link  // the sections present, in their order
 	Questions []question
-	Actions   []action
-	Running   []task // the workers running now
-	Finished  []task // the work finished, folded under them
-	Tasks     []task // what needs an eye: waiting, cut short, failed
-	Planned   []task
-	Decisions []decision // the latest ones
-	Older     []decision // the decisions before them, folded
-	Blocks    []block
-	Notes     []notes // the blocks as shown: alone, or gathered in a run of one kind
-	Journal   []entry // the latest entries
-	Earlier   []entry // the entries before them, folded
+	// Asleep counts the open questions asleep until their conditions hold (Question.sleep), and says it.
+	Asleep     int
+	AsleepLine string
+	Actions    []action
+	Running    []task // the workers running now
+	Finished   []task // the work finished, folded under them
+	Tasks      []task // what needs an eye: waiting, cut short, failed
+	Planned    []task
+	Decisions  []decision // the latest ones
+	Older      []decision // the decisions before them, folded
+	Blocks     []block
+	Notes      []notes // the blocks as shown: alone, or gathered in a run of one kind
+	Journal    []entry // the latest entries
+	Earlier    []entry // the entries before them, folded
 	// JournalCut says how many entries the page left out.
 	JournalCut string
 	Events     []event // the workers' latest events
@@ -318,9 +322,14 @@ func build(in Input) (*view, error) {
 	blocking := Blocked(exp.GetTasks())
 
 	// Open questions, the blocking ones first, then those needed before something, then those that can wait; each in
-	// the order they were asked. Decisions, the latest first.
-	for _, q := range exp.GetQuestions() {
+	// the order they were asked, or put off for later (Place), a woken one first. An asleep one waits for its
+	// conditions, not for the developer: counted apart. Decisions, the latest first.
+	for _, q := range slices.SortedStableFunc(slices.Values(exp.GetQuestions()), ByPlace) {
 		if q.GetAnswer() != nil || q.GetWithdrawal() != nil {
+			continue
+		}
+		if Asleep(q) {
+			v.Asleep++
 			continue
 		}
 		cq := question{
@@ -352,8 +361,11 @@ func build(in Input) (*view, error) {
 		}
 		for _, r := range q.GetRounds() {
 			label := "page.round_revise"
-			if r.GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
+			switch r.GetKind() {
+			case planv1.RoundKind_ROUND_KIND_ENLIGHTEN:
 				label = "page.round_enlighten"
+			case planv1.RoundKind_ROUND_KIND_ITERATE:
+				label = "page.round_iterate"
 			}
 			text := tr(label)
 			if by := tasks[r.GetTaskId()]; by != nil && r.GetKind() == planv1.RoundKind_ROUND_KIND_REVISE {
@@ -361,13 +373,16 @@ func build(in Input) (*view, error) {
 			}
 			cq.Rounds = append(cq.Rounds, round{At: at(r.GetCreateTime()), Label: text, Note: r.GetNote()})
 		}
-		if rounds := q.GetRounds(); len(rounds) > 0 && rounds[len(rounds)-1].GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN {
+		if rounds := q.GetRounds(); len(rounds) > 0 && waitsForRevision(rounds[len(rounds)-1]) {
 			cq.Investigating = true
 			cq.Class, cq.Level = "dig", tr("page.investigating")
 		}
 		v.Questions = append(v.Questions, cq)
 	}
 	slices.SortStableFunc(v.Questions, func(a, b question) int { return cmp.Compare(a.Urgency, b.Urgency) })
+	if v.Asleep > 0 {
+		v.AsleepLine = tr("page.asleep", "count", fmt.Sprint(v.Asleep))
+	}
 	if len(v.Questions) == 1 {
 		v.Questions[0].Open = true
 	}
@@ -456,7 +471,9 @@ func build(in Input) (*view, error) {
 		if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
 			continue
 		}
-		if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil && q.GetWithdrawal() == nil {
+		if q := questions[t.GetWaitQuestionId()]; q != nil && q.GetAnswer() == nil && q.GetWithdrawal() == nil {
+			addAction("bad", blocked, tr("page.action_waiting_question", "task", t.GetCode(), "question", q.GetCode()), "")
+		} else if q := questions[t.GetEditQuestionId()]; q != nil && q.GetAnswer() == nil && q.GetWithdrawal() == nil {
 			addAction("bad", blocked, tr("page.action_waiting", "task", t.GetCode(), "question", q.GetCode()), "")
 		} else {
 			addAction("bad", blocked, tr("page.action_waiting_unknown", "task", t.GetCode()),
@@ -534,7 +551,7 @@ func build(in Input) (*view, error) {
 			}
 		}
 		ct.Status, ct.StatusClass = status(t.GetStatus(), tr)
-		forked := ""
+		forked, fixing := "", false
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_RESUMING:
 			if t.GetResumeAfter() != nil {
@@ -550,6 +567,9 @@ func build(in Input) (*view, error) {
 				ct.Status, ct.StatusClass = tr("page.status_merging"), "run"
 			case planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, planv1.IntegrationState_INTEGRATION_STATE_RED:
 				ct.Status, ct.StatusClass = tr("page.status_merge_failed"), "fail"
+				if f := Fixer(t, exp.GetTasks()); f != nil {
+					ct.Status, ct.StatusClass, fixing = tr("page.status_fixing", "task", f.GetCode()), "fix", true
+				}
 			case planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
 				ct.Status, ct.StatusClass = tr("page.status_to_review"), "wait"
 			}
@@ -565,6 +585,9 @@ func build(in Input) (*view, error) {
 		}
 		ct.Wait = t.GetWaitReason()
 		ct.Work, ct.WorkClass = Work(t, func(id string) string { return tasks[id].GetCode() }, tr)
+		if fixing {
+			ct.WorkClass = "fix"
+		}
 		ct.Agent = strings.ToLower(strings.TrimPrefix(t.GetProvider().String(), "PROVIDER_"))
 		if t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED {
 			ct.Agent = "claude"
@@ -945,6 +968,49 @@ func ForkedAs(t *planv1.Task, tasks []*planv1.Task) string {
 	return ""
 }
 
+// mergeFailed tells a done task whose work failed to merge into its wish's integration branch: a conflict, or red
+// checks.
+func mergeFailed(t *planv1.Task) bool {
+	s := t.GetIntegration().GetState()
+	return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE &&
+		(s == planv1.IntegrationState_INTEGRATION_STATE_CONFLICT || s == planv1.IntegrationState_INTEGRATION_STATE_RED)
+}
+
+// Fixer is the correction task that fixes t's failed merge while it works, among tasks: Djinn handles the failure,
+// the page shows it being fixed, not failed. nil when no correction is under way: none was started, it failed, was
+// stopped, cancelled or dropped, or the attempts were spent and Djinn asked the person. A correction done whose own
+// merge failed in turn fixes it while a correction fixes that one. The window says the same (src/data/format.ts
+// fixerOf).
+func Fixer(t *planv1.Task, tasks []*planv1.Task) *planv1.Task {
+	seen := map[string]bool{}
+	var of func(x *planv1.Task) *planv1.Task
+	of = func(x *planv1.Task) *planv1.Task {
+		in := x.GetIntegration()
+		id := in.GetCorrectedBy()
+		if !mergeFailed(x) || id == "" || in.GetQuestionId() != "" || seen[id] {
+			return nil
+		}
+		seen[id] = true
+		i := slices.IndexFunc(tasks, func(o *planv1.Task) bool { return o.GetId() == id })
+		if i < 0 {
+			return nil
+		}
+		fixer := tasks[i]
+		switch fixer.GetStatus() {
+		case planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_STOPPED,
+			planv1.TaskStatus_TASK_STATUS_CANCELLED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			return nil
+		case planv1.TaskStatus_TASK_STATUS_DONE:
+			// Done with no work recorded, Djinn drops it as a correction; done with its merge failed, it waits for its own.
+			if fixer.GetIntegration() == nil || mergeFailed(fixer) && of(fixer) == nil {
+				return nil
+			}
+		}
+		return fixer
+	}
+	return of(t)
+}
+
 // TaskDealtWith tells whether a failed worker has been addressed: marked done, continued (or forked),
 // or a new task names it in its title, decision, forkOf, or as a correction/review target.
 func TaskDealtWith(t *planv1.Task, tasks []*planv1.Task) bool {
@@ -1032,6 +1098,9 @@ func Work(t *planv1.Task, code func(id string) string, tr func(string, ...string
 	case planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING:
 		text, class = tr("work.integrating", "branch", in.GetBranch()), "run"
 	case planv1.IntegrationState_INTEGRATION_STATE_COMMITTED:
+		if in.GetSha() == "" && in.GetCorrectedBy() == "" && in.GetReviewedBy() == "" {
+			return "", ""
+		}
 		text, class = tr("work.committed", "branch", in.GetBranch(), "sha", ShortSha(in.GetSha())), "ok"
 	case planv1.IntegrationState_INTEGRATION_STATE_CONFLICT:
 		text, class = tr("work.conflict", "reason", in.GetReason()), "fail"
@@ -1143,6 +1212,24 @@ func summary(
 			code = q.GetCode()
 		}
 		return strings.TrimSpace(code + " " + m.GetNote())
+	case *planv1.QuestionServiceLaterRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		if m.GetClear() {
+			return strings.TrimSpace(code + " --clear")
+		}
+		return code
+	case *planv1.QuestionServiceSleepRequest:
+		code := m.GetQuestion().GetCode()
+		if q := questions[m.GetQuestion().GetId()]; q != nil {
+			code = q.GetCode()
+		}
+		if m.GetWake() {
+			return strings.TrimSpace(code + " --wake")
+		}
+		return strings.TrimSpace(code + " " + strings.Join(m.GetUntil(), ", "))
 	case *planv1.BlockServicePutRequest:
 		return strings.TrimSpace(m.GetKind() + " " + m.GetTitle())
 	case *planv1.TaskServiceSpawnRequest:
@@ -1175,4 +1262,10 @@ func duration(d time.Duration) string {
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	}
 	return fmt.Sprintf("%dh%02d", int(d.Hours()), int(d.Minutes())%60)
+}
+
+// waitsForRevision tells whether r, an open question's last round, makes it wait for a revision, not for the
+// developer: a request to investigate, or an iteration on its mockup (plan.Investigating).
+func waitsForRevision(r *planv1.Round) bool {
+	return r.GetKind() == planv1.RoundKind_ROUND_KIND_ENLIGHTEN || r.GetKind() == planv1.RoundKind_ROUND_KIND_ITERATE
 }

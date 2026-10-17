@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -36,7 +37,11 @@ type SeriesRecorder struct {
 	readSelf       func() (Group, error) // Djinn's own process alone; nil: not read
 	lastSelfCPU    time.Duration
 	lastSelfAt     time.Time
-	history        *History // nil: the samples are kept in memory only
+	readWork       func() (Work, error) // its work's cgroups and processes (ReadWork); nil: its tree, by readWorker
+	lastWork       *Work                // the last reading of readWork; nil: none yet
+	cpuRead        bool                 // the machine's CPU was read from /proc/stat: the points' CpuPercent is the machine's
+	memoryTotal    uint64               // the machine's memory, as the last sample read it
+	history        *History             // nil: the samples are kept in memory only
 }
 
 // NewSeriesRecorder returns a recorder for machine metrics.
@@ -98,21 +103,32 @@ func (r *SeriesRecorder) Sample() {
 			}
 			r.lastTotalTicks = total
 			r.lastIdleTicks = idle
+			r.cpuRead = total > 0
 		}
 	}
 	if machineCPU == 0 && snap.CPU != nil && snap.CPU.Some > 0 {
 		machineCPU = snap.CPU.Some
 	}
 
-	// 2. Djinn process CPU % and memory.
+	// 2. Djinn's CPU % and memory: its work's cgroups and processes (ReadWork), else its tree alone.
 	var djinnCPU float64
 	var djinnMem uint64
-	if r.readWorker != nil {
+	switch {
+	case r.readWork != nil:
+		if w, err := r.readWork(); err == nil {
+			djinnMem = w.Memory
+			if r.lastWork != nil {
+				if d := now.Sub(r.lastDjinnAt); d > 0 {
+					djinnCPU = math.Round(float64(workUsed(*r.lastWork, w))/float64(d)*1000) / 10
+				}
+			}
+			r.lastWork, r.lastDjinnAt = &w, now
+		}
+	case r.readWorker != nil:
 		if g, err := r.readWorker(os.Getpid(), ""); err == nil {
 			djinnMem = g.Memory
 			if !r.lastDjinnAt.IsZero() {
-				d := now.Sub(r.lastDjinnAt)
-				if d > 0 && g.CPU >= r.lastDjinnCPU {
+				if d := now.Sub(r.lastDjinnAt); d > 0 && g.CPU >= r.lastDjinnCPU {
 					djinnCPU = math.Round(float64(g.CPU-r.lastDjinnCPU)/float64(d)*1000) / 10
 				}
 			}
@@ -144,6 +160,7 @@ func (r *SeriesRecorder) Sample() {
 	selfCPU = math.Round(selfCPU/float64(cores)*10) / 10
 
 	// 3. Machine memory used.
+	r.memoryTotal = snap.MemoryTotal
 	var memUsed uint64
 	if snap.MemoryTotal >= snap.MemoryAvailable {
 		memUsed = snap.MemoryTotal - snap.MemoryAvailable
@@ -175,6 +192,37 @@ func (r *SeriesRecorder) ReadSelf(read func() (Group, error)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.readSelf = read
+}
+
+// ReadWork reads Djinn's work with read (ReadWork in djinn up): the Djinn line counts its cgroups and processes in
+// place of its tree.
+func (r *SeriesRecorder) ReadWork(read func() (Work, error)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.readWork = read
+}
+
+// workUsed is the CPU time Djinn's work used from the reading last to now. Each counter counts what it grew by; one
+// that ended counts no more, and never takes back what it counted. A djinn-*.scope first read was made since: all it
+// used is new. Any other counter first read (a process just started or adopted, a cgroup Djinn's alone once a program
+// beside it ended) counts from its next reading.
+func workUsed(last, now Work) time.Duration {
+	var used time.Duration
+	for dir, cpu := range now.Cgroups {
+		was, ok := last.Cgroups[dir]
+		switch {
+		case ok && cpu > was:
+			used += cpu - was
+		case !ok && strings.HasPrefix(path.Base(dir), "djinn-"):
+			used += cpu
+		}
+	}
+	for pid, cpu := range now.Procs {
+		if was, ok := last.Procs[pid]; ok && cpu > was {
+			used += cpu - was
+		}
+	}
+	return used
 }
 
 // Keep keeps each sample in h too, the store's series that outlive a restart.
@@ -211,6 +259,46 @@ func (r *SeriesRecorder) Points(cutoff time.Time) []*machinev1.MachinePoint {
 		}
 	}
 	return out
+}
+
+// Outside is the load outside Djinn over the points measured after since: the machine's CPU and memory beyond the
+// Djinn line, averaged; false when no point came since. It reads what the samples hold, nothing of the machine: the
+// auto mode's beat costs a walk of the last points.
+func (r *SeriesRecorder) Outside(since time.Time) (Outside, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	o := Outside{CPUKnown: r.cpuRead}
+	var n, measured int // the points, and those with Djinn's memory read
+	for i := 1; i <= len(r.buf); i++ {
+		j := r.head - i
+		if j < 0 {
+			if !r.full {
+				break
+			}
+			j += len(r.buf)
+		}
+		p := r.buf[j]
+		if p == nil || !p.GetTime().AsTime().After(since) {
+			break
+		}
+		n++
+		o.CPU += max(0, p.GetCpuPercent()-p.GetDjinnCpuPercent())
+		if r.memoryTotal > 0 && p.GetDjinnMemoryBytes() > 0 {
+			measured++
+			if p.GetMemoryBytes() > p.GetDjinnMemoryBytes() {
+				o.Memory += float64(p.GetMemoryBytes()-p.GetDjinnMemoryBytes()) / float64(r.memoryTotal) * 100
+			}
+		}
+	}
+	if n == 0 {
+		return Outside{}, false
+	}
+	o.CPU /= float64(n)
+	if measured > 0 {
+		o.Memory /= float64(measured)
+		o.MemoryKnown = true
+	}
+	return o, true
 }
 
 func parseProcStat(data []byte) (total, idle uint64) {

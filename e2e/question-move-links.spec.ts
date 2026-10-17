@@ -104,7 +104,7 @@ test("a move's links open where the developer acts, its main link a button, and 
     await expect(card).toBeVisible();
 
     // The move's main link: a button on the card, and beside its line in the attention bar.
-    const button = card.locator(".question-move-link .move-link");
+    const button = card.locator(".question-open-top .move-link");
     await expect(button).toHaveText("Open MR !123");
     await expect(button).toHaveAttribute("href", MR);
     const line = page

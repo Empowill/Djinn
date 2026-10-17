@@ -64,6 +64,15 @@ function pick(scroller: HTMLElement): Mark[] {
   return levels.flat().map((el) => ({ el, top: layoutTop(el) }));
 }
 
+// How each scroller this script keeps takes the reader's place again, where it is now.
+const places = new WeakMap<HTMLElement, () => void>();
+
+// placeTaken says the scroller was just scrolled at the reader's gesture (a move to another question): the place kept
+// is where it is now, not where it was before the page changed with it.
+export function placeTaken(scroller: HTMLElement) {
+  places.get(scroller)?.();
+}
+
 // keepPlace keeps the place of the reader in scroller until the returned function is called.
 export function keepPlace(scroller: HTMLElement): () => void {
   if (CSS.supports("overflow-anchor", "auto")) return () => {};
@@ -110,7 +119,12 @@ export function keepPlace(scroller: HTMLElement): () => void {
   watch();
   scroller.addEventListener("scroll", onScroll, { passive: true });
   mark();
+  places.set(scroller, () => {
+    cancelAnimationFrame(frame);
+    mark();
+  });
   return () => {
+    places.delete(scroller);
     cancelAnimationFrame(frame);
     scroller.removeEventListener("scroll", onScroll);
     mutations.disconnect();

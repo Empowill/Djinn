@@ -21,7 +21,7 @@ tasks:
       - go tool buf build --exclude-imports --as-file-descriptor-set -o gen/djinn.binpb
 
   docs:
-    desc: "Build the documentation site into bin/docs, to open offline (bin/docs/index.html): docs/site, its concepts and its Command line tab, filled in from djinn's command tree. djinn up serves the same at /docs/"
+    desc: "Build the Grimoire, the documentation site, into bin/docs, to open offline (bin/docs/index.html): docs/site, its pages from docs/site/pages and its Command line, filled in from djinn's command tree. djinn up serves the same at /docs/"
     cmds:
       - go run ./tools/docsite bin/docs
 
@@ -172,9 +172,12 @@ tasks:
       - "{{.GOLANGCI}} fmt --diff"
       - "{{.GOLANGCI}} run ./..."
       - "{{.GOLANGCI}} run --build-tags headless,mcp ./cmd/djinn"
+      # tsc keeps what it checked in node_modules/.cache/tsc (tsconfig.json): after the ui build's own check, or a
+      # lint before, it reads again only the files that changed. ESLint and Prettier keep theirs beside it, by the
+      # content of each file (the worktrees are fresh checkouts: their times say nothing). npm ci empties them all.
       - npx tsc -b --noEmit
-      - npx eslint --max-warnings 0 .
-      - npx prettier --check --log-level warn {{.PRETTIER_FILES}}
+      - npx eslint --max-warnings 0 --cache --cache-strategy content --cache-location node_modules/.cache/eslint/ .
+      - npx prettier --check --log-level warn --cache --cache-strategy content {{.PRETTIER_FILES}}
 
   format:
     desc: Format the Go and TypeScript code in place, and apply the fixes golangci-lint and ESLint know

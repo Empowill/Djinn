@@ -106,8 +106,16 @@ test("a revision reaches the card under investigation without a reload", async (
     await expect(question).not.toHaveClass(/investigating/);
     await expect(question).toHaveClass(/open/);
     await expect(question.locator(".revised-badge")).toHaveText("Revised");
-    await expect(question.locator(".question-context h2")).toHaveText(
-      "What the worker found",
+    // The whole context is what the worker found: the version before it is behind Versions (2), never in the
+    // context (W114).
+    const headings = question.locator(".question-context h2");
+    await expect(headings).toHaveCount(1);
+    await expect(headings.first()).toHaveText("What the worker found");
+    await expect(question.locator(".question-context")).not.toContainText(
+      "Historique",
+    );
+    await expect(question.locator(".question-versions")).toHaveText(
+      "Versions (2)",
     );
     await expect(
       question.getByRole("button", { name: /Linen, twice as long/ }),
@@ -141,8 +149,12 @@ test("a revision reaches the card under investigation without a reload", async (
     await expect(digging).toHaveCount(0);
     const waiting = card(page, text);
     await expect(waiting).toHaveClass(/open/);
-    await expect(waiting.locator(".question-context h2")).toHaveText(
+    await expect(waiting.locator(".question-context h2").first()).toHaveText(
       "The price",
+    );
+    await expect(waiting.locator(".question-context h2")).toHaveCount(1);
+    await expect(waiting.locator(".question-versions")).toHaveText(
+      "Versions (3)",
     );
     expect(errors).toEqual([]);
   } finally {

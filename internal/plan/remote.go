@@ -8,6 +8,7 @@ import (
 
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,23 @@ func remoteOf(dir string) string {
 		return ""
 	}
 	return cleanRemote(strings.TrimSpace(string(out)))
+}
+
+// remoteName is the remote Djinn reads the reference branch from in the repository in dir, as the harness finds it:
+// origin, else the only one; empty without a remote, or with several and no origin.
+func remoteName(ctx context.Context, dir string) string {
+	out, err := gitOut(ctx, dir, "remote")
+	if err != nil {
+		return ""
+	}
+	names := strings.Fields(out)
+	switch {
+	case slices.Contains(names, "origin"):
+		return "origin"
+	case len(names) == 1:
+		return names[0]
+	}
+	return ""
 }
 
 // cleanRemote removes the credentials a remote URL may hold: the password, and over HTTP the user name too, which

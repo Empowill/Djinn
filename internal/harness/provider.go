@@ -18,6 +18,10 @@ type Provider interface {
 	Start(ctx context.Context, spec Spec) (Worker, error)
 }
 
+// writesDirs tells whether a question worker of kind gets its own folder to write in (questionWriteDirs): Claude's
+// folder rules open that folder alone, where Codex's workspace-write sandbox would open its workspace, the project.
+func writesDirs(kind planv1.Provider) bool { return kind == planv1.Provider_PROVIDER_CLAUDE }
+
 // Spec is what a worker is started with.
 type Spec struct {
 	// TaskID is the task the worker works on.
@@ -72,9 +76,24 @@ type Spec struct {
 	// IsWorkDone reports whether the worker has committed clean work since start.
 	// When nil, callers compute it from git status in Dir.
 	IsWorkDone func() bool
-	// Track, when set, is told of each process the worker starts, its PID and the cgroup of its scope, as it starts;
-	// what it returns is called once the process ended. Djinn records them so that none outlives it (W514).
-	Track func(pid int, cgroup string) (ended func())
+	// Listen keeps the agent's input open once every message has its result: an ifrit's agent waits on it for the
+	// next message, spending nothing, until Djinn closes it (Listener). Its worker says when each turn starts and
+	// ends (Event.Ifrit).
+	Listen bool
+	// SystemPrompt, when set, is added to the agent's own system prompt, the same text for every session that gets
+	// it: the rules of the lead Djinn drives (decision Q31). Claude's appended system prompt, Codex's developer
+	// instructions; Antigravity ignores it, and cannot lead (plan.LeadAgent).
+	SystemPrompt string
+	// MaxTurns caps the model turns of the run, when the provider can enforce it; 0 for no cap.
+	MaxTurns int
+	// WriteDirs are folders the agent may write in even without Permissions.Edit, and ReadDirs folders it may read
+	// outside its own: the driven lead's folder, where it writes plan files and tilasms, and Djinn's data folder.
+	// Claude's folder rules; Codex's workspace-write sandbox on them (it reads everywhere already).
+	WriteDirs, ReadDirs []string
+	// Track, when set, is told of each process the worker starts, its PID, the cgroup of its scope and its mark
+	// (markVar), as it starts; what it returns is called once the process, and what it left running, ended. Djinn
+	// records them so that none outlives it (W514).
+	Track func(pid int, cgroup, mark string) (ended func())
 }
 
 // Skill is a skill summoned from another project: its folder stays in its source, and the worker reads it there.
@@ -100,6 +119,13 @@ type Worker interface {
 	Stop()
 	// Wait blocks until the worker has ended and its events are all read, then says how it ended.
 	Wait() Result
+}
+
+// Listener is a worker started with Spec.Listen, whose input stays open between turns.
+type Listener interface {
+	// CloseInput closes the agent's input once the turn under way, if any, has its result: the agent then ends, as
+	// any worker does once every message has its result. It takes no message after.
+	CloseInput()
 }
 
 // Pauser is a worker that can hold still without losing anything: its agent stops where it is until it is resumed.
@@ -151,11 +177,23 @@ type Event struct {
 	Limit *Limit
 	// Watched is set on a paragraph a watcher's command printed: the wish's lead is told its first line.
 	Watched *Watched
+	// Ran is set at the end of each run of a watcher's command, when its Watch asks for it (Watch.Runs).
+	Ran *Ran
 	// Model is the model the worker actually runs, when the event tells it.
 	Model string
+	// Ifrit is set by a worker started with Spec.Listen when its agent starts a turn on a message (WORKING), and
+	// when the turn ends and the agent waits on its open input (LISTENING).
+	Ifrit planv1.IfritState
+	// Serve is set by Djinn on an event of an ifrit's serve (serve.go): the serve as it stands now, which replaces the
+	// one of its name in Task.ifrit.serves.
+	Serve *planv1.Serve
 	// Turns is how many model turns the worker took so far, on the first event of a new one: the Lamplighter's count
 	// grows as they come, not only at a result (num_turns).
 	Turns int
+	// Spent is what the worker spent so far in this run, in US dollars, as Djinn estimates it from the token counts its
+	// agent says as it goes, for an agent that says its cost at a result only (claude): an investigation is asked to
+	// publish at its budget before its provider cuts it (investigationDue).
+	Spent float64
 }
 
 // Result is how a worker ended.

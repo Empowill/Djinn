@@ -1,5 +1,5 @@
-// Command docsite builds the documentation site into a folder that opens offline: docs/site, its Command line tab
-// filled in from the command tree djinn is built from. `go tool task docs` runs it: go run ./tools/docsite bin/docs.
+// Command docsite builds the Grimoire, the documentation site, into a folder that opens offline: docs/site, its pages
+// rendered and its Command line filled in from the command tree djinn is built from. `go tool task docs` runs it: go run ./tools/docsite bin/docs.
 // djinn up serves the same site at /docs/.
 package main
 

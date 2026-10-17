@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
@@ -360,12 +359,5 @@ func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, 
 	if err != nil {
 		return "", err
 	}
-	b, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(res)
-	if err != nil {
-		return "", err
-	}
-	// protojson varies its own spacing on purpose: indent it here, so the same answer reads the same.
-	var out bytes.Buffer
-	err = json.Indent(&out, b, "", "  ")
-	return out.String(), err
+	return indentedJSON(res)
 }

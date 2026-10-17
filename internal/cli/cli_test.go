@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -128,6 +129,11 @@ func TestConvention(t *testing.T) {
 			want: &planv1.WishServiceRenameRequest{WishId: wishID, Title: "Djinn orchestrator"},
 		},
 		{
+			name: "djinn wish add-project <wish> --project-id",
+			args: []string{wishID, "--project-id", "api"},
+			want: &planv1.WishServiceAddProjectRequest{WishId: wishID, ProjectId: "api"},
+		},
+		{
 			name: "a string and a list of strings in one input, repeated",
 			args: []string{taskID, "--after", "W1,W2", "--also", "W6=W5,W3", "--also", "W7="},
 			want: &planv1.TaskServiceDependRequest{
@@ -177,6 +183,95 @@ func TestConvention(t *testing.T) {
 			args:      []string{"notes", "--wish", wishID, "--cites", "T29", "--cites", "W12"},
 			want:      &planv1.TilasmServicePutRequest{Path: filepath.Join(filepath.Dir(dir), "notes"), Wish: wishID, Cites: []string{"T29", "W12"}},
 			parseOnly: true,
+		},
+		{
+			name: "the lead reads several notes in one direct command",
+			args: []string{"blockers-as-questions,direct-commands"},
+			want: &planv1.LeadServiceNotesRequest{Name: "blockers-as-questions,direct-commands"},
+		},
+		{
+			name: "the lead reads every note in one direct command",
+			args: []string{"--all"},
+			want: &planv1.LeadServiceNotesRequest{All: true},
+		},
+		{
+			name: "an optional bool set false takes its mark off",
+			args: []string{wishID, "--urgent=false"},
+			want: &planv1.TaskServiceUpdateRequest{TaskId: wishID, Urgent: proto.Bool(false)},
+		},
+		{
+			name: "the brief of the wishes alone",
+			args: []string{"--wishes"},
+			want: &planv1.LeadServiceBriefRequest{Wishes: true},
+		},
+		{
+			name: "where the tasks stand, in a few lines each",
+			args: []string{"--wish-id", wishID, "--short"},
+			want: &planv1.TaskServiceListRequest{WishId: wishID, Short: true},
+		},
+		{
+			name: "a task's last events",
+			args: []string{wishID, "--last", "5"},
+			want: &planv1.TaskServiceWatchRequest{TaskId: wishID, Last: 5},
+		},
+		{
+			name: "a task's last events, then the ones that come",
+			args: []string{wishID, "--last", "5", "--follow"},
+			want: &planv1.TaskServiceWatchRequest{TaskId: wishID, Last: 5, Follow: true},
+		},
+		{
+			name: "one question of a wish, by its code",
+			args: []string{"Q12", "--wish-id", wishID},
+			want: &planv1.QuestionServiceGetRequest{
+				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q12"}}, WishId: wishID,
+			},
+		},
+		{
+			name: "one of the lead's events whole",
+			args: []string{wishID},
+			want: &planv1.LeadServiceEventRequest{Id: wishID},
+		},
+		{
+			name: "an ifrit, with its own idle minutes",
+			args: []string{wishID, "--kind", "ifrit", "--idle-minutes", "60"},
+			want: &planv1.TaskServiceSpawnRequest{WishId: wishID, Kind: planv1.TaskKind_TASK_KIND_IFRIT, IdleMinutes: 60},
+		},
+		{
+			name: "a question about a task",
+			args: []string{"Keep this margin?", wishID, "--about", "W12"},
+			want: &planv1.QuestionServiceAskRequest{Text: "Keep this margin?", WishId: wishID, About: "W12"},
+		},
+		{
+			name: "a revision about another task",
+			args: []string{"Q03", "--about", "W7"},
+			want: &planv1.QuestionServiceReviseRequest{
+				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, About: proto.String("W7"),
+			},
+		},
+		{
+			name: "a revision about no task any more",
+			args: []string{"Q03", "--about", ""},
+			want: &planv1.QuestionServiceReviseRequest{
+				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, About: proto.String(""),
+			},
+		},
+		{
+			name: "a serve with its gate, ports and stop command",
+			args: []string{"back", "task run-back", "--gate", "stack", "--port", "8080=api", "--port", "5432", "--stop", "task stop-back"},
+			want: &planv1.ServeServiceRunRequest{
+				Name: "back", Command: "task run-back", Gate: "stack", Port: []string{"8080=api", "5432"}, Stop: "task stop-back",
+			},
+		},
+		{
+			name:      "a serve's command after --",
+			args:      []string{"front", "--port", "5173=front", "--", "npm run dev"},
+			want:      &planv1.ServeServiceRunRequest{Name: "front", Command: "npm run dev", Port: []string{"5173=front"}},
+			parseOnly: true,
+		},
+		{
+			name: "a serve's last lines",
+			args: []string{"back", "--last", "50"},
+			want: &planv1.ServeServiceLogsRequest{Name: "back", Last: 50},
 		},
 		{
 			name:      "-- ends the flags",
@@ -277,6 +372,16 @@ func (f tilasms) List(_ context.Context, req *connect.Request[planv1.TilasmServi
 	return connect.NewResponse(&planv1.TilasmServiceListResponse{Tilasms: []*planv1.Tilasm{
 		{Id: questionID, WishId: wishID, Code: "L01", Title: "The objects in the database"},
 	}}), nil
+}
+
+func (f tilasms) Comments(_ context.Context, req *connect.Request[planv1.TilasmServiceCommentsRequest]) (*connect.Response[planv1.TilasmServiceCommentsResponse], error) {
+	f.record(req.Msg)
+	return connect.NewResponse(&planv1.TilasmServiceCommentsResponse{
+		Text: fmt.Sprintf("L01 · The objects in the database · version 1\n\nsend %d · 1 comment\n", req.Msg.GetSend()),
+		Comments: []*planv1.TilasmComment{{
+			Code: "C1", Text: "Say what a wish holds.", State: planv1.CommentState_COMMENT_STATE_SENT, Send: req.Msg.GetSend(),
+		}},
+	}), nil
 }
 
 type projects struct {
@@ -401,6 +506,21 @@ func (f wishes) PushStrategy(_ context.Context, req *connect.Request[planv1.Wish
 	}), nil
 }
 
+// AddProject adds the project named api, or of its identifier, to a wish that has web already; refuses web.
+func (f wishes) AddProject(_ context.Context, req *connect.Request[planv1.WishServiceAddProjectRequest]) (*connect.Response[planv1.WishServiceAddProjectResponse], error) {
+	f.record(req.Msg)
+	switch req.Msg.GetProjectId() {
+	case "api", projectID:
+	case "web":
+		return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf(`project web is already in wish %q`, "Ship it"))
+	default:
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s: djinn project list shows them", req.Msg.GetProjectId()))
+	}
+	return connect.NewResponse(&planv1.WishServiceAddProjectResponse{Wish: &planv1.Wish{
+		Id: req.Msg.GetWishId(), Title: "Ship it", ProjectIds: []string{taskID, projectID},
+	}}), nil
+}
+
 func question() *planv1.Question {
 	return &planv1.Question{
 		Id: questionID, Code: "Q03", Text: "Which store?", Options: []string{"sqlite", "files"},
@@ -439,6 +559,8 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	mux.Handle(planv1connect.NewTilasmServiceHandler(tilasms{fake: f}))
 	mux.Handle(planv1connect.NewTaskServiceHandler(tasks{fake: f}))
 	mux.Handle(djinnv1connect.NewLoadServiceHandler(loads{fake: f}))
+	// ServeService answers unimplemented here: the command line reaches it, which is all these tests check.
+	mux.Handle(planv1connect.NewServeServiceHandler(planv1connect.UnimplementedServeServiceHandler{}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return f, func(args ...string) (int, string, string) {
@@ -476,7 +598,7 @@ func TestRun(t *testing.T) {
 		{name: "rule on a repeated flag", args: []string{"q", "ask", "Which?", wishID, "--options", "a", "--options", "b", "--options", "c", "--options", "d", "--options", "e"}, wantCode: 2, wantErr: "--options: must contain no more than 4 item(s)"},
 		{name: "rule on a flag", args: []string{"q", "answer", "Q03", "b", "--wish-id", "W1"}, wantCode: 2, wantErr: "--wish-id: must be a valid UUID; expected a UUID"},
 		{name: "ambiguous method", args: []string{"question", "a"}, wantCode: 2, wantErr: `question method "a" is ambiguous: ask, answer`},
-		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, lead, load, machine, mark, plan, project, question, skill, task, tilasm, wish`},
+		{name: "unknown command", args: []string{"mission"}, wantCode: 2, wantErr: `unknown command "mission", expected one of: help, version, block, command, gate, inbox, lead, load, machine, mark, plan, project, question, serve, skill, task, tilasm, wish`},
 		{name: "load get", args: []string{"load", "get"}, wantOut: "notch: medium\n", wantCalled: true},
 		{name: "load set", args: []string{"load", "set", "minimal"}, wantOut: "notch: minimal\n", wantCalled: true},
 		{name: "load set auto", args: []string{"load", "set", "auto"}, wantOut: "notch: minimal\nauto: true\n", wantCalled: true},
@@ -496,9 +618,22 @@ func TestRun(t *testing.T) {
 		{name: "project push strategy set", args: []string{"project", "push-strategy", "api", "--strategy", "azima"}, wantOut: "strategy: azima\nsource: developer\n", wantCalled: true},
 		{name: "wish push strategy show", args: []string{"wish", "push-strategy", wishID}, wantOut: "strategy: wish\nsource: default\n", wantCalled: true},
 		{name: "wish push strategy set", args: []string{"wish", "push-strategy", wishID, "--strategy", "azima"}, wantOut: "strategy: azima\nsource: wish\n", wantCalled: true},
+		{name: "wish add project by name", args: []string{"wish", "add-project", wishID, "--project-id", "api"}, wantOut: "project_ids:\n  - " + taskID + "\n  - " + projectID + "\n", wantCalled: true},
+		{name: "wish add project already in", args: []string{"wish", "add-project", wishID, "--project-id", "web"}, wantCode: 1, wantErr: `already_exists: project web is already in wish "Ship it"`, wantCalled: true},
+		{name: "wish add project unknown", args: []string{"wish", "add-project", wishID, "--project-id", "ghost"}, wantCode: 1, wantErr: "not_found: no project ghost", wantCalled: true},
+		{name: "wish add project without one", args: []string{"wish", "add-project", wishID}, wantCode: 2, wantErr: "--project-id: "},
 		{name: "task update integration none", args: []string{"task", "update", taskID, "--integration", "none"}, wantCalled: true},
 		{name: "task update integration invalid", args: []string{"task", "update", taskID, "--integration", "other"}, wantCode: 2, wantErr: "--integration: must be in list [none, pending]"},
 		{name: "task cancel", args: []string{"task", "cancel", taskID, "--note", "not needed"}, wantOut: "status: cancelled", wantCalled: true},
+		{name: "an ifrit's idle minutes past 4 hours", args: []string{"task", "spawn", wishID, "--kind", "ifrit", "--idle-minutes", "300"}, wantCode: 2, wantErr: "--idle-minutes: must be greater than or equal to 5 and less than or equal to 240"},
+		{name: "an ifrit's idle minutes under 5", args: []string{"task", "spawn", wishID, "--kind", "ifrit", "--idle-minutes", "2"}, wantCode: 2, wantErr: "--idle-minutes: must be greater than or equal to 5"},
+		{name: "about a task by neither code nor id", args: []string{"q", "ask", "Which?", wishID, "--about", "Q12"}, wantCode: 2, wantErr: "--about: does not match regex pattern"},
+		{name: "a serve's port without a number", args: []string{"serve", "run", "front", "npm run dev", "--task-id", taskID, "--port", "api=5173"}, wantCode: 2, wantErr: "--port: "},
+		{name: "a serve's name with a space", args: []string{"serve", "run", "my front", "npm run dev", "--task-id", taskID}, wantCode: 2, wantErr: "<name>: does not match regex pattern"},
+		{name: "serve run reaches its stub", args: []string{"serve", "run", "front", "npm run dev", "--task-id", taskID, "--port", "5173=front"}, wantCode: 1, wantErr: "unimplemented"},
+		{name: "serve list reaches its stub", args: []string{"serve", "list", "--task-id", taskID}, wantCode: 1, wantErr: "unimplemented"},
+		{name: "serve stop reaches its stub", args: []string{"serve", "stop", "front", "--task-id", taskID}, wantCode: 1, wantErr: "unimplemented"},
+		{name: "serve logs reaches its stub", args: []string{"serve", "logs", "front", "--task-id", taskID, "--last", "50"}, wantCode: 1, wantErr: "unimplemented"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -512,6 +647,28 @@ func TestRun(t *testing.T) {
 				t.Errorf("server called = %v, want %v", called, tt.wantCalled)
 			}
 		})
+	}
+}
+
+// TestJSONOnly: a response field marked json_only prints with --json only, so that djinn tilasm comments shows the
+// text the lead reads and not the same comments again, field by field.
+func TestJSONOnly(t *testing.T) {
+	f, run := serve(t)
+	code, out, errs := run("tilasm", "comments", "L01", "--send", "2")
+	if want := "text: L01 · The objects in the database · version 1\n\nsend 2 · 1 comment\n\n"; code != 0 || out != want {
+		t.Errorf("djinn tilasm comments L01 --send 2: code %d, stdout %q, want %q; stderr %s", code, out, want, errs)
+	}
+	if got := f.calls[0].(*planv1.TilasmServiceCommentsRequest); got.GetTilasm().GetCode() != "L01" || got.GetSend() != 2 {
+		t.Errorf("request = %v", got)
+	}
+	code, out, errs = run("--json", "tilasm", "comments", "L01")
+	// protojson spaces its output at random, one space or two: read it back rather than compare its text.
+	var printed struct {
+		Comments []struct{ Text string } `json:"comments"`
+	}
+	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || len(printed.Comments) != 1 ||
+		printed.Comments[0].Text != "Say what a wish holds." {
+		t.Errorf("djinn --json tilasm comments L01: code %d, %v, stdout:\n%s\nstderr: %s", code, err, out, errs)
 	}
 }
 
@@ -539,6 +696,11 @@ func TestFromEnv(t *testing.T) {
 		{&planv1.QuestionServiceAskRequest{}, []string{"Which?", wishID}, task},
 		{&planv1.QuestionServiceReviseRequest{}, []string{"Q03", "--context", "found"}, task},
 		{&planv1.BlockServiceListRequest{}, []string{wishID}, ""},
+		// An ifrit names its own serves without saying it.
+		{&planv1.ServeServiceRunRequest{}, []string{"front", "npm run dev"}, task},
+		{&planv1.ServeServiceListRequest{}, nil, task},
+		{&planv1.ServeServiceStopRequest{}, []string{"front", "--task-id", other}, other},
+		{&planv1.ServeServiceLogsRequest{}, []string{"front"}, task},
 	} {
 		md := local(t, c.msg)
 		req, err := parse(md, c.args)

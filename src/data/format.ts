@@ -5,24 +5,31 @@ import {
   timestampMs,
 } from "@bufbuild/protobuf/wkt";
 
+import type { Gate } from "../../gen/ts/machine/v1/machine_pb";
 import {
   Allowance,
   AzimaState,
   Choice,
   Closer,
+  IfritState,
   IntegrationState,
   type KeptWorktree,
   type Lead,
   type Mark,
   MarkKind,
+  type PlannedTask,
   type Project,
   type ProjectSync,
   Provider,
   PushStrategy,
   type Question,
   RoundKind,
+  type SleepCondition,
+  SleepKind,
   type Task,
+  TaskHold,
   TaskKind,
+  TaskRole,
   TaskStatus,
   type Wish,
   WishState,
@@ -30,7 +37,8 @@ import {
 import { useEffect, useState } from "react";
 
 import { type TextKey, language, t } from "../i18n";
-import { onStillness, still } from "../stillness";
+import { keepLive } from "../stillness";
+import { ifritLit, ifritOut, ifritWord, isIfrit } from "./ifrit";
 
 // A djinn grants three wishes at a time, never more. The lamp refuses a fourth; the page only says so beforehand.
 export const MAX_ACTIVE = 3;
@@ -59,6 +67,126 @@ export function when(ts?: Timestamp): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// dayText says a day in figures, in the page's language and the system's time zone unless given: 17/10 in French,
+// 10/17 in English.
+export function dayText(d: Date, lang = language, timeZone?: string): string {
+  return d.toLocaleDateString(lang, {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone,
+  });
+}
+
+// secondText says an hour to the second: 10:42:07 in French, 10:42:07 AM in English.
+export function secondText(
+  d: Date,
+  lang = language,
+  timeZone?: string,
+): string {
+  return d.toLocaleTimeString(lang, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZone,
+  });
+}
+
+// stamp says a moment to the second, its day first: 17/10 10:42:07.
+export function stamp(d: Date, lang = language, timeZone?: string): string {
+  return `${dayText(d, lang, timeZone)} ${secondText(d, lang, timeZone)}`;
+}
+
+// rowStamps says the moments of rows read from the top, each to the second, a row's day said only when it is another
+// than the row above's: 17/10 10:42:07, 10:40:55, 16/10 23:59:01. A row with no moment says "" and is not the row
+// above the next one.
+export function rowStamps(
+  dates: readonly (Date | undefined)[],
+  lang = language,
+  timeZone?: string,
+): string[] {
+  let above = "";
+  return dates.map((d) => {
+    if (!d) return "";
+    const day = d.toLocaleDateString(lang, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone,
+    });
+    const same = day === above;
+    above = day;
+    return same ? secondText(d, lang, timeZone) : stamp(d, lang, timeZone);
+  });
+}
+
+// taskBegun is when a task first started; undefined when it never did.
+export function taskBegun(task: Task): Date | undefined {
+  return date(task.firstStartTime) ?? date(task.startTime);
+}
+
+// taskMoment is the moment a task's row says: its first start, or its creation when it never started.
+export function taskMoment(task: Task): Date | undefined {
+  return taskBegun(task) ?? date(task.createTime);
+}
+
+// taskDates says what a task's moment is, to the second, with its end: Started 17/10 10:42:07 · ended 17/10 10:58:31;
+// Created 17/10 10:40:02, not started yet.
+export function taskDates(
+  task: Task,
+  lang = language,
+  timeZone?: string,
+): string {
+  const at = (d: Date) => stamp(d, lang, timeZone);
+  const begun = taskBegun(task);
+  const created = date(task.createTime);
+  const ended = date(task.endTime);
+  const first = begun
+    ? t("tasks.tree_started", { time: at(begun) })
+    : created
+      ? t(
+          taskFinished(task.status)
+            ? "tasks.tree_created_never"
+            : "tasks.tree_created",
+          { time: at(created) },
+        )
+      : "";
+  return [first, ended && t("tasks.tree_ended", { time: at(ended) })]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+// askedWhen says when a question was asked, when it was last revised, when it woke from its sleep and when you put it
+// off for later: the day and month in figures, the hour (asked 16/10 at 10:24 · revised at 10:31 · woke at 10:35 ·
+// put off at 10:40), a later day said only when it is another. "" when it has no time.
+export function askedWhen(question: Question): string {
+  const asked = date(question.createTime);
+  if (!asked) return "";
+  const hour = (d: Date) =>
+    d.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
+  const out = t("question.asked_at", {
+    day: dayText(asked),
+    time: hour(asked),
+  });
+  const last = [...(question.rounds ?? [])]
+    .reverse()
+    .find((r) => r.kind === RoundKind.REVISE);
+  const revised = question.revision > 0 ? date(last?.createTime) : undefined;
+  const later = date(question.laterTime);
+  const woke = date(question.sleep?.wakeTime);
+  const words = (d: Date, at: TextKey, on: TextKey) =>
+    d.toDateString() === asked.toDateString()
+      ? t(at, { time: hour(d) })
+      : t(on, { day: dayText(d), time: hour(d) });
+  return [
+    out,
+    revised && words(revised, "question.revised_at", "question.revised_on"),
+    woke && words(woke, "question.woke_at", "question.woke_on"),
+    later && words(later, "question.later_at", "question.later_on"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // span says a length of time as a counter, two units at most: 45s, 1m1s, 1h1m, 3d4h.
@@ -220,7 +348,11 @@ export function taskActivity(task: Task, now: number): string | null {
       : 0;
   if (!last) return null;
   const elapsed = Math.max(0, now - last);
-  if (elapsed >= SILENCE_HOVER_MS) {
+  // A listening ifrit is silent by design: it waits for your next message.
+  if (
+    elapsed >= SILENCE_HOVER_MS &&
+    task.ifrit?.state !== IfritState.LISTENING
+  ) {
     const mins = Math.max(1, Math.round(elapsed / 60000));
     return t("task.silent_for", { count: mins });
   }
@@ -290,25 +422,15 @@ export function azimaTime(
   };
 }
 
-// useNow is the time now, read again every period while on: a duration shown stays current. A window at rest
-// (stillness.ts) stops the clock, and reads the time again as it wakes.
+// useNow is the time now, read again every period while on: a duration shown stays current, the window focused or
+// not (keepLive in stillness.ts). A hidden window reads it seldom, and again as it shows.
 export function useNow(on: boolean, period = 1_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!on) return;
-    let id: ReturnType<typeof setInterval> | undefined;
-    const tick = () => {
-      clearInterval(id);
-      id = undefined;
-      setNow(Date.now());
-      if (!still()) id = setInterval(() => setNow(Date.now()), period);
-    };
+    const tick = () => setNow(Date.now());
     tick();
-    const stop = onStillness(tick);
-    return () => {
-      stop();
-      clearInterval(id);
-    };
+    return keepLive(tick, period);
   }, [on, period]);
   return now;
 }
@@ -369,13 +491,19 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
 };
 
 // taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the
-// limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches.
+// limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches, and a running
+// investigator investigates.
+// fixedBy is the code of the correction task that fixes its failed merge while it works (fixerOf): the merge shows
+// being fixed, not failed.
 export function taskStatusText(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration">>,
+    Partial<Pick<Task, "provider" | "integration" | "role" | "kind" | "ifrit">>,
   forkedAs = "",
+  fixedBy = "",
 ): string {
   if (watcherRuns(task)) return t("task.status_watching");
+  if (ifritLit(task) || ifritOut(task)) return ifritWord(task);
+  if (investigatorRuns(task)) return t("task.status_investigating");
   if (task.status === TaskStatus.RESUMING && task.resumeAfter)
     return t("task.status_limit");
   if (task.status === TaskStatus.INTERRUPTED && forkedAs)
@@ -387,7 +515,9 @@ export function taskStatusText(
         return t("task.status_merging");
       case IntegrationState.CONFLICT:
       case IntegrationState.RED:
-        return t("task.status_merge_failed");
+        return fixedBy
+          ? t("task.status_fixing", { task: fixedBy })
+          : t("task.status_merge_failed");
       case IntegrationState.UNCOMMITTED:
         return t("task.status_to_review");
       default:
@@ -420,6 +550,8 @@ export type Tone =
   | "investigating"
   | "planned"
   | "failed"
+  // A merge that failed and that a correction task fixes: Djinn handles it, nothing to do (fixerOf).
+  | "fixing"
   | "interrupted"
   | "stopped"
   // Cancelled: its work was discarded on purpose, never done.
@@ -431,24 +563,33 @@ export type Tone =
   // An open question nothing waits for: it can wait.
   | "later"
   | "withdrawn"
-  | "accent";
+  | "accent"
+  // A lit ifrit (src/data/ifrit.ts): vermilion, with a flame; it may hold gates others wait for, and it calls you.
+  | "ifrit"
+  // An ifrit put out: the grey of what stopped, its flame outlined; a message lights it again.
+  | "out";
 
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
-// None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints.
+// None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints. An
+// investigator at work is violet, as Enlighten me that started it (investigatorRuns), not blue as the work. A merge
+// that failed is red, unless a correction task fixes it while it works (fixedBy, fixerOf): orange, Djinn handles it.
 export function taskTone(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration">>,
+    Partial<Pick<Task, "provider" | "integration" | "role" | "kind" | "ifrit">>,
   forkedAs = "",
+  fixedBy = "",
 ): Tone {
   const status = task.status;
   if (watcherRuns(task)) return "watching";
+  if (ifritLit(task)) return "ifrit";
+  if (ifritOut(task)) return "out";
   if (status === TaskStatus.RESUMING && task.resumeAfter) return "paused";
   if (status === TaskStatus.INTERRUPTED && forkedAs) return "stopped";
   switch (status) {
     case TaskStatus.RUNNING:
     case TaskStatus.RESUMING:
-      return "running";
+      return task.role === TaskRole.INVESTIGATOR ? "investigating" : "running";
     case TaskStatus.DONE:
       switch (task.integration?.state) {
         case IntegrationState.PENDING:
@@ -456,7 +597,7 @@ export function taskTone(
           return "running";
         case IntegrationState.CONFLICT:
         case IntegrationState.RED:
-          return "failed";
+          return fixedBy ? "fixing" : "failed";
         case IntegrationState.UNCOMMITTED:
           return "waiting";
         default:
@@ -486,6 +627,16 @@ export function watcherRuns(
   return task.provider === Provider.WATCH && task.status === TaskStatus.RUNNING;
 }
 
+// investigatorRuns tells whether the task is an investigator at work: the worker Djinn starts on a question after
+// Enlighten me (TaskRole.INVESTIGATOR).
+export function investigatorRuns(
+  task: Pick<Task, "status"> & Partial<Pick<Task, "role">>,
+): boolean {
+  return (
+    task.role === TaskRole.INVESTIGATOR && task.status === TaskStatus.RUNNING
+  );
+}
+
 // isTaskMerging tells whether a done task's work is merging: waiting for its batch, or in it. It shows blue, as work
 // that runs (taskTone), and counts with it (runningOf).
 export function isTaskMerging(
@@ -496,25 +647,248 @@ export function isTaskMerging(
   return s === IntegrationState.PENDING || s === IntegrationState.INTEGRATING;
 }
 
-// Running counts a wish's tasks whose process runs, apart: workers at work, and watchers that wait for their command to
-// print. A watcher is not work in progress: "1 running" for a PR watched alone said a worker ran. Work that merges
-// (isTaskMerging) is counted apart: no worker runs for it, and the load bar's count of workers never had it (W577:
-// 6 workers and 2 merges waiting read as "8 running" at a level that runs 6). Djinn is at work on it all the same: a
-// wish's tone counts it as running.
+// mergeFailed tells a done task whose work failed to merge into its wish's integration branch: a conflict, or red
+// checks.
+function mergeFailed(
+  task: Pick<Task, "status"> & Partial<Pick<Task, "integration">>,
+): boolean {
+  const s = task.integration?.state;
+  return (
+    task.status === TaskStatus.DONE &&
+    (s === IntegrationState.CONFLICT || s === IntegrationState.RED)
+  );
+}
+
+// fixerOf is the correction task that fixes a done task's failed merge while it works, among the wish's tasks: Djinn
+// handles the failure, the window shows it orange. None, and the failure stays red, when no correction is under way:
+// none was started, it failed, was stopped, cancelled or dropped, or the attempts were spent and Djinn asked the
+// person (questionId). A correction done whose own merge failed in turn fixes it while a correction fixes that one.
+type Fixable = Pick<Task, "status"> & Partial<Pick<Task, "id" | "integration">>;
+
+export function fixerOf<T extends Fixable>(
+  task: Fixable,
+  tasks: readonly T[],
+): T | undefined {
+  const seen = new Set<string>();
+  const of = (x: Fixable): T | undefined => {
+    if (!mergeFailed(x)) return undefined;
+    const id = x.integration?.correctedBy ?? "";
+    if (!id || x.integration?.questionId || seen.has(id)) return undefined;
+    seen.add(id);
+    const fixer = tasks.find((other) => other.id === id);
+    switch (fixer?.status) {
+      case undefined:
+      case TaskStatus.FAILED:
+      case TaskStatus.STOPPED:
+      case TaskStatus.CANCELLED:
+      case TaskStatus.INTERRUPTED:
+        return undefined;
+      case TaskStatus.DONE:
+        // Done with no work recorded, Djinn drops it as a correction; done with its merge failed, it waits for its own.
+        if (!fixer.integration) return undefined;
+        return !mergeFailed(fixer) || of(fixer) ? fixer : undefined;
+      default:
+        return fixer;
+    }
+  };
+  return of(task);
+}
+
+// Running counts a wish's tasks whose process runs, apart: workers at work, investigators at work on a question after
+// Enlighten me (investigatorRuns), and watchers that wait for their command to print. A watcher is not work in
+// progress: "1 running" for a PR watched alone said a worker ran. Work that merges (isTaskMerging) is counted apart: no
+// worker runs for it, and the load bar's count of workers never had it (W577: 6 workers and 2 merges waiting read as "8
+// running" at a level that runs 6). Djinn is at work on it all the same: a wish's tone counts it as running. Work whose
+// merge failed and that a correction fixes (fixerOf) is counted apart too: its correction runs, and counts with the
+// running. A lit ifrit is counted apart as well (ifritLit): it stays lit while you are there, at work or listening.
+// A worker stopped and not ended is counted apart too (workerPhase: paused): its work is kept, and it goes on.
 export interface Running {
   running: number;
+  investigating: number;
   watching: number;
   merging: number;
+  fixing: number;
+  ifrits: number;
+  paused: number;
+}
+
+// WorkerPhase is where a worker stands in the lists of what runs (the glance of the questions page and of a wish, the
+// side panel's counts): at work, a lit ifrit included, listening or lit again; paused, its worker stopped with its work
+// kept until it goes on (held still or stopped on request, by you or the lead, put out, cut short by a restart or by
+// its provider's usage limit until Djinn resumes it); or to come, planned. Done, cancelled, failed, waiting for your
+// answer, an azima, and one cut short that a fork took over (taken, forkedAs) are in none: undefined.
+export type WorkerPhase = "run" | "paused" | "coming";
+
+export function workerPhase(
+  task: Pick<Task, "status"> & Partial<Pick<Task, "kind" | "ifrit">>,
+  taken = false,
+): WorkerPhase | undefined {
+  if (task.kind === TaskKind.AZIMA) return undefined;
+  if (ifritLit(task)) return "run";
+  switch (task.status) {
+    case TaskStatus.RUNNING:
+      return "run";
+    case TaskStatus.PAUSED:
+    case TaskStatus.STOPPED:
+    case TaskStatus.RESUMING:
+      return "paused";
+    case TaskStatus.INTERRUPTED:
+      return taken ? undefined : "paused";
+    case TaskStatus.PENDING:
+      return "coming";
+    default:
+      return undefined;
+  }
+}
+
+// takenOver are the codes of the tasks a fork took over (forkedAs), among tasks: a task cut short and continued as
+// another is no longer a worker of its own.
+export function takenOver(
+  tasks: readonly Partial<Pick<Task, "forkOf">>[],
+): Set<string> {
+  return new Set(tasks.map((x) => x.forkOf ?? "").filter(Boolean));
 }
 
 export function runningOf(
   tasks: (Pick<Task, "status"> &
-    Partial<Pick<Task, "provider" | "integration">>)[],
+    Partial<
+      Pick<
+        Task,
+        "id" | "provider" | "integration" | "role" | "kind" | "ifrit" | "code"
+      >
+    > &
+    Partial<Pick<Task, "forkOf">>)[],
 ): Running {
-  const live = tasks.filter((task) => task.status === TaskStatus.RUNNING);
+  const ifrits = tasks.filter(ifritLit).length;
+  const taken = takenOver(tasks);
+  const paused = tasks.filter(
+    (task) => workerPhase(task, taken.has(task.code ?? "")) === "paused",
+  ).length;
+  const live = tasks.filter(
+    (task) => task.status === TaskStatus.RUNNING && !isIfrit(task),
+  );
   const watching = live.filter(watcherRuns).length;
+  const investigating = live.filter(investigatorRuns).length;
   const merging = tasks.filter(isTaskMerging).length;
-  return { running: live.length - watching, watching, merging };
+  const fixing = tasks.filter(
+    (task) => mergeFailed(task) && fixerOf(task, tasks),
+  ).length;
+  return {
+    running: live.length - watching - investigating,
+    investigating,
+    watching,
+    merging,
+    fixing,
+    ifrits,
+    paused,
+  };
+}
+
+// Waits counts a wish's workers that wait, by what holds them (waitsOf): a place (a free slot, the machine's load or
+// memory, a gate, a write scope), the push checks of its integration branch, a dependency, a usage limit or the
+// network, a question a dependency waits on.
+export interface Waits {
+  place: number;
+  push: number;
+  dependency: number;
+  limit: number;
+  question: number;
+}
+
+// waitsOf counts a wish's work tasks that wait, whatever holds them: every planned or resuming one that has a reason
+// to wait, by its hold (Task.hold, which the server judges, never the window from the reason's text), and the running
+// workers that wait for a gate (gateWaiters), still counted among the running, for a place. One the server has not
+// judged yet waits for a place, its turn. Azimas and watchers are no workers: never counted; nor a task of a wish
+// paused or granted, nor one whose worker waits for your answer (the hand counts its question).
+export function waitsOf(
+  tasks: (Pick<Task, "id" | "status"> &
+    Partial<
+      Pick<Task, "roomWait" | "hold" | "waitReason" | "kind" | "provider">
+    >)[],
+  gateWaiting = "",
+): Waits {
+  const gated = new Set(gateWaiting.split(" "));
+  const waits: Waits = {
+    place: 0,
+    push: 0,
+    dependency: 0,
+    limit: 0,
+    question: 0,
+  };
+  for (const task of tasks) {
+    if (task.kind === TaskKind.AZIMA || task.provider === Provider.WATCH)
+      continue;
+    if (task.status === TaskStatus.RUNNING) {
+      if (gated.has(task.id)) waits.place++;
+      continue;
+    }
+    if (
+      task.status !== TaskStatus.PENDING &&
+      task.status !== TaskStatus.RESUMING
+    )
+      continue;
+    const hold = task.hold ?? TaskHold.UNSPECIFIED;
+    if (!task.waitReason && !task.roomWait && hold === TaskHold.UNSPECIFIED)
+      continue;
+    switch (hold) {
+      case TaskHold.PUSH:
+        waits.push++;
+        break;
+      case TaskHold.DEPENDENCY:
+        waits.dependency++;
+        break;
+      case TaskHold.LIMIT:
+      case TaskHold.NETWORK:
+        waits.limit++;
+        break;
+      case TaskHold.QUESTION:
+        waits.question++;
+        break;
+      case TaskHold.WISH:
+        break;
+      default:
+        waits.place++;
+    }
+  }
+  return waits;
+}
+
+// waitCount is how many workers wait (waitsOf), whatever holds them: the seat's number.
+export function waitCount(waits: Waits | undefined): number {
+  if (!waits) return 0;
+  return (
+    waits.place + waits.push + waits.dependency + waits.limit + waits.question
+  );
+}
+
+// waitText says how many workers wait, then how many for each reason, in the order of waitsOf, a reason at zero left
+// out: the seat's tooltip.
+export function waitText(waits: Waits): string {
+  const reasons = (
+    [
+      ["place", "plan.wait_place"],
+      ["push", "plan.wait_push"],
+      ["dependency", "plan.wait_dependency"],
+      ["limit", "plan.wait_limit"],
+      ["question", "plan.wait_question"],
+    ] as const
+  )
+    .filter(([reason]) => waits[reason] > 0)
+    .map(([reason, key]) => t(key, { count: waits[reason] }));
+  return t("plan.waits", {
+    count: waitCount(waits),
+    reasons: reasons.join("; "),
+  });
+}
+
+// gateWaiters names the tasks that wait for a gate (Gate.waitingTaskIds), sorted, in a single string: a selector of
+// the store gives the same value while they stay, and the gates read every few seconds draw nothing again.
+export function gateWaiters(
+  gates: readonly Pick<Gate, "waitingTaskIds">[],
+): string {
+  return [...new Set(gates.flatMap((gate) => gate.waitingTaskIds))]
+    .sort()
+    .join(" ");
 }
 
 export function taskFinished(status: TaskStatus): boolean {
@@ -545,6 +919,23 @@ export function answerText(question: Question): string {
   const index = choice - Choice.A;
   const option = question.options[index];
   return option ? `${letter(index)} · ${option}` : letter(index);
+}
+
+// planOf is the task a question's option launches once picked (decision Q25), set by the asker; none for an option
+// without a plan. A message built by hand (a test) may leave the list out.
+export function planOf(
+  question: Question,
+  choice: Choice | undefined,
+): PlannedTask | undefined {
+  if (choice === undefined || choice === Choice.UNSPECIFIED) return undefined;
+  return (question.plans ?? []).find((p) => p.option === choice);
+}
+
+// launchedPlan is the task an answer launched from its option's plan, by Djinn or the lead: its identifier, once
+// launched.
+export function launchedPlan(question: Question): PlannedTask | undefined {
+  const plan = planOf(question, question.answer?.choice);
+  return plan?.taskId ? plan : undefined;
 }
 
 export function isOpen(question: Question): boolean {
@@ -598,20 +989,113 @@ export function usd(cost: number): string {
   }).format(cost);
 }
 
-// investigating tells an open question whose last round asks to investigate: it waits for the lead, not for you. The
-// lamp reads it the same way (plan.Investigating).
+// investigating tells an open question whose last round asks to investigate, or iterates on its mockup: it waits for
+// the lead or a worker, not for you. The lamp reads it the same way (plan.Investigating).
 export function investigating(question: Question): boolean {
   const last = question.rounds?.at(-1);
   return (
     !question.answer &&
     !question.withdrawal &&
-    last?.kind === RoundKind.ENLIGHTEN
+    (last?.kind === RoundKind.ENLIGHTEN || last?.kind === RoundKind.ITERATE)
   );
 }
 
-// waitsForYou tells an open question that waits for your answer.
+// A version a question had before its last revision.
+export interface QuestionVersion {
+  // 1 for the question as it was asked.
+  number: number;
+  // When it was asked, or revised into this version.
+  time?: Timestamp;
+  context: string;
+  options: string[];
+  recommendation: string;
+  // What you asked to investigate about it, in order.
+  asked: string[];
+}
+
+// questionVersions are a question's earlier versions, the first asked first, as its rounds keep them: each revision's
+// round holds the version it replaced. The question itself is its current version, never among them.
+export function questionVersions(question: Question): QuestionVersion[] {
+  const out: QuestionVersion[] = [];
+  let time = question.createTime;
+  let asked: string[] = [];
+  for (const round of question.rounds ?? []) {
+    if (
+      round.kind === RoundKind.ENLIGHTEN ||
+      round.kind === RoundKind.ITERATE
+    ) {
+      if (round.note.trim()) asked.push(round.note.trim());
+    } else if (round.kind === RoundKind.REVISE) {
+      out.push({
+        number: out.length + 1,
+        time,
+        context: round.context,
+        options: round.options,
+        recommendation: round.recommendation,
+        asked,
+      });
+      time = round.createTime;
+      asked = [];
+    }
+  }
+  return out;
+}
+
+// waitsForYou tells an open question that waits for your answer: not one being investigated, nor one asleep.
 export function waitsForYou(question: Question): boolean {
-  return isOpen(question) && !investigating(question);
+  return isOpen(question) && !investigating(question) && !asleep(question);
+}
+
+// asleep tells an open question put to sleep until its conditions hold, not woken yet (Question.sleep): it waits for
+// them, not for you. The lamp reads it the same way (render.Asleep).
+export function asleep(question: Question): boolean {
+  return isOpen(question) && !!question.sleep && !question.sleep.wakeTime;
+}
+
+// woken tells an open question that woke from its sleep and that you did not put off since: it comes first in its
+// wish's list (render.Woken).
+export function woken(question: Question): boolean {
+  const woke = question.sleep?.wakeTime;
+  if (!isOpen(question) || !woke) return false;
+  return (
+    !question.laterTime || timestampMs(question.laterTime) < timestampMs(woke)
+  );
+}
+
+// sleepText says a condition an asleep question waits for, in a few words: W12 over, W45's request merged, 20/10 at
+// 09:00.
+export function sleepText(condition: SleepCondition): string {
+  switch (condition.kind) {
+    case SleepKind.TASK:
+      return t("sleep.task", { code: condition.code });
+    case SleepKind.MERGED:
+      return condition.url
+        ? t("sleep.merged_url", { url: condition.url })
+        : t("sleep.merged", { code: condition.code });
+    case SleepKind.TIME: {
+      const d = date(condition.time);
+      if (!d) return "";
+      return t("sleep.time", {
+        day: d.toLocaleDateString(language, {
+          day: "2-digit",
+          month: "2-digit",
+        }),
+        time: d.toLocaleTimeString(language, {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      });
+    }
+  }
+  return "";
+}
+
+// sleepTexts says every condition a question sleeps until, all of which must hold.
+export function sleepTexts(question: Question): string {
+  return (question.sleep?.conditions ?? [])
+    .map(sleepText)
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // markOf is the mark of a kind on a question or a block, if it has one.
@@ -645,17 +1129,22 @@ export function recommendedChoice(question: Question): Choice | undefined {
   return found.length === 1 ? choiceOf(found[0]) : undefined;
 }
 
-// wishTone is a wish's state in the status language: what it needs first.
+// wishTone is a wish's state in the status language: what it needs first. A lit ifrit comes before what waits: it is
+// there for you, and calls you.
 export function wishTone(
   wish: Wish,
   questions: number,
   running: number,
   watching = 0,
+  investigating = 0,
+  ifrits = 0,
 ): Tone {
   if (wish.state === WishState.GRANTED) return "done";
   if (wish.state === WishState.PAUSED) return "paused";
+  if (ifrits > 0) return "ifrit";
   if (questions > 0 || wish.ready) return "waiting";
   if (running > 0) return "running";
+  if (investigating > 0) return "investigating";
   if (watching > 0) return "watching";
   return "planned";
 }
@@ -913,6 +1402,7 @@ export function syncDescription(sync?: ProjectSync): string {
       target,
     });
   }
+  if (sync.landed) return t("project.sync_landed");
   return "";
 }
 

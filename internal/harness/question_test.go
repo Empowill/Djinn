@@ -445,7 +445,7 @@ func TestInvestigatorPromptFullHistory(t *testing.T) {
 		{Id: "t-wait", Code: "W12", Title: "Implement investigator fix", Status: planv1.TaskStatus_TASK_STATUS_WAITING, Decision: "Q45"},
 		{Id: "t-edit", Code: "W13", Title: "Paused on edit", Status: planv1.TaskStatus_TASK_STATUS_PAUSED, EditQuestionId: "q-id-1"},
 	}
-	title, prompt := investigatorPrompt(q, "Third enlighten note: verify blocked tasks too.", "", "Moving brief.", tasks...)
+	title, prompt := investigatorPrompt(q, "Third enlighten note: verify blocked tasks too.", "", "Moving brief.", "", tasks...)
 	if title != "Q45: enlighten" {
 		t.Errorf("title = %q, want Q45: enlighten", title)
 	}
@@ -469,7 +469,7 @@ func TestInvestigatorPromptFullHistory(t *testing.T) {
 		"Tour 2 revised context.",
 		"### Round 5 — Enlighten request (Tour 2)\n- Note: Third enlighten note: verify blocked tasks too.",
 		"Stay anchored to the original subject from Tour 0 (`Q45: How should investigator workers inspect git and history?`)",
-		"--context-file <path>",
+		"`djinn question revise Q45 --wish-id w-id-1 --context \"…\" --recommendation \"…\"`",
 		"git branch",
 		"git rev-parse",
 		"git ls-tree",
@@ -697,4 +697,106 @@ func TestEnlightenSurvivesARestart(t *testing.T) {
 		e.release(t, invs[0].GetId())
 		e.ended(t, invs[0].GetId())
 	})
+}
+
+// TestFailedInvestigatorWaitsForNoOne replays W19 of wish Will retour beta (16/10/2026): an investigator ("Q17:
+// enlighten") ended on refused djinn commands and did nothing; Djinn started W20 in its place, which did the work, and
+// Q17 was answered. W19 stayed failed, told the developer it waited for them, and stayed in the lead's failed list
+// until the lead closed it by hand. Now the worker started again closes the failed one, continued in it; the retry,
+// failed in turn, is not started a third time; it leaves the lead's failed list once another one revised its question,
+// and closes when the question is answered.
+func TestFailedInvestigatorWaitsForNoOne(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	e := up(t, t.TempDir(), WithEnlightenWorkers())
+	lead := &told{}
+	e.h.TellLeads(lead.tell)
+	wishID, _ := e.wish(t, fakeProject(t, ""))
+	q := e.asker(wishID)
+	asked := q.ask(t, "refuse Bash djinn task list --wish-id w | grep Q17")
+	q.enlighten(t, asked.GetCode(), "")
+	first := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)[0]
+	e.ended(t, first.GetId())
+	var invs []*planv1.Task
+	waitFor(t, "the investigator started again", func() bool {
+		invs = e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+		return len(invs) == 2
+	})
+	again := invs[1]
+	e.ended(t, again.GetId())
+	w1 := e.until(t, first.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if c := w1.GetClosed(); c.GetActor() != planv1.Closer_CLOSER_LEAD || c.GetContinuedIn() != again.GetCode() || w1.GetError() != "" {
+		t.Errorf("the failed investigator: %v, closure %v: want done, continued in %s", w1.GetStatus(), c, again.GetCode())
+	}
+	failed := func() []string {
+		res, err := e.tasks.List(t.Context(), connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wishID, Failed: true}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var codes []string
+		for _, task := range res.Msg.GetTasks() {
+			codes = append(codes, task.GetCode())
+		}
+		return codes
+	}
+	// The retry failed too: it is the lead's to take up, and Djinn starts no third one.
+	waitFor(t, "the lead told of the retry's end", func() bool { return len(lead.all()) == 2 })
+	if got := e.get(t, again.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		t.Fatalf("the retry: %v, want failed", got.GetStatus())
+	}
+	if n := len(e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)); n != 2 {
+		t.Errorf("%d investigators, want 2: no third start", n)
+	}
+	if got := failed(); !slices.Equal(got, []string{again.GetCode()}) {
+		t.Errorf("failed list %q, want only %s", got, again.GetCode())
+	}
+	// Another one revises the question: the failed retry has nothing left to find.
+	if _, err := q.Revise(t.Context(), connect.NewRequest(&planv1.QuestionServiceReviseRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: asked.GetCode()}}, WishId: wishID,
+		Context: "SQLite costs nothing to run.",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if got := failed(); len(got) != 0 {
+		t.Errorf("failed list %q after the revision, want none", got)
+	}
+	q.answer(t, asked.GetCode(), planv1.Choice_CHOICE_A, "")
+	w2 := e.until(t, again.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if c := w2.GetClosed(); c.GetActor() != planv1.Closer_CLOSER_LEAD || c.GetContinuedIn() != "" || c.GetNote() == "" {
+		t.Errorf("the failed retry's closure: %v", c)
+	}
+}
+
+// TestOutrun: a failed investigator is outrun once its question is answered, withdrawn, or revised after it started by
+// another than itself; a revision of its own, an earlier one, another question or another role leave it to the lead.
+func TestOutrun(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 10, 16, 13, 9, 0, 0, time.UTC)
+	before, after := timestamppb.New(at.Add(-time.Minute)), timestamppb.New(at.Add(time.Minute))
+	inv := &planv1.Task{Id: "w19", Code: "W19", WishId: "w", Question: "Q17", Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR,
+		Status: planv1.TaskStatus_TASK_STATUS_FAILED, CreateTime: timestamppb.New(at)}
+	revise := func(task string, when *timestamppb.Timestamp) *planv1.Round {
+		return &planv1.Round{Kind: planv1.RoundKind_ROUND_KIND_REVISE, TaskId: task, CreateTime: when}
+	}
+	for name, c := range map[string]struct {
+		task *planv1.Task
+		q    *planv1.Question
+		want bool
+	}{
+		"open":            {inv, &planv1.Question{Code: "Q17", WishId: "w"}, false},
+		"answered":        {inv, &planv1.Question{Code: "Q17", WishId: "w", Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_A}}, true},
+		"withdrawn":       {inv, &planv1.Question{Code: "Q17", WishId: "w", Withdrawal: &planv1.Withdrawal{}}, true},
+		"revised by W20":  {inv, &planv1.Question{Code: "Q17", WishId: "w", Rounds: []*planv1.Round{revise("w20", after)}}, true},
+		"revised by lead": {inv, &planv1.Question{Code: "Q17", WishId: "w", Rounds: []*planv1.Round{revise("", after)}}, true},
+		"revised by it":   {inv, &planv1.Question{Code: "Q17", WishId: "w", Rounds: []*planv1.Round{revise("w19", after)}}, false},
+		"revised before":  {inv, &planv1.Question{Code: "Q17", WishId: "w", Rounds: []*planv1.Round{revise("w18", before)}}, false},
+		"other question":  {inv, &planv1.Question{Code: "Q18", WishId: "w", Answer: &planv1.Answer{}}, false},
+		"other wish":      {inv, &planv1.Question{Code: "Q17", WishId: "v", Answer: &planv1.Answer{}}, false},
+		"a worker": {&planv1.Task{Code: "W3", WishId: "w", Question: "Q17", Status: planv1.TaskStatus_TASK_STATUS_FAILED},
+			&planv1.Question{Code: "Q17", WishId: "w", Answer: &planv1.Answer{}}, false},
+	} {
+		if got := outrun(c.task, []*planv1.Question{c.q}); got != c.want {
+			t.Errorf("%s: outrun = %v, want %v", name, got, c.want)
+		}
+	}
 }

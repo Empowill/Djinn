@@ -67,8 +67,9 @@ test("a wish made by the command line shows live, and its question is answered f
       .filter({ hasText: "Which lamp first?" });
     await expect(card).toBeVisible();
     await expect(card.getByText("it is tested.")).toBeVisible();
-    // Two gestures only: Enlighten on the left, the lamp; nothing else confirms.
+    // Three gestures at the bottom: Withdraw on the left, Enlighten in the middle, the lamp on the right.
     await expect(card.locator(".question-actions button")).toHaveText([
+      /Withdraw question…/,
       /Enlighten me/,
       /Rub the lamp/,
     ]);
@@ -83,6 +84,9 @@ test("a wish made by the command line shows live, and its question is answered f
       await expect(brass).toHaveAttribute("aria-pressed", "false");
       await card.getByLabel("Note with the answer").fill("Glass, then brass.");
       await expect(card).toHaveCSS("opacity", "1");
+      await page
+        .locator(".mission-scroll")
+        .evaluate((el) => el.scrollTo(0, el.scrollHeight));
     };
     const shots = path.join(__dirname, "../test-results/e2e");
     await pick();
@@ -94,7 +98,9 @@ test("a wish made by the command line shows live, and its question is answered f
       path: path.join(shots, "question-card-light.png"),
     });
     await card.getByRole("button", { name: "Rub the lamp" }).click();
-    await expect(page.locator(".decisions-section")).toHaveCount(0);
+    await expect(page.locator(".question-column .question-card")).toHaveCount(
+      0,
+    );
     // It is a decision now, in its own tab.
     await expect(page.getByRole("tab", { name: /^Decisions/ })).toHaveText(
       "Decisions1",

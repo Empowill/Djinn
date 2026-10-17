@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -190,5 +191,72 @@ func TestRebuildTaskRunsFromJournal(t *testing.T) {
 	}
 	if d := recovered.GetPaused().AsDuration(); d != 4*time.Minute {
 		t.Errorf("paused = %v, want 4m", d)
+	}
+}
+
+// TestGateWaitAcrossRestart: the gate events of a running task count in its gate wait as Djinn writes them; after a
+// restart, its list shows the same wait read from that count, none of its events (W283).
+func TestGateWaitAcrossRestart(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	t0 := time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)
+	clock := &fakeClock{at: t0}
+	e := up(t, home, WithClock(clock.now))
+	wishID, _ := e.wish(t, gitRepo(t))
+	task := e.mustSpawn(t, wishID, "Gated", "wait\ntext done", nil)
+	e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	note := func(at time.Duration, text string) {
+		t.Helper()
+		clock.set(t0.Add(at))
+		e.h.Note(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_GATE, Text: text})
+		e.untilText(t, task.GetId(), text)
+	}
+	note(time.Minute, "gate build: asked")
+	note(4*time.Minute, "gate build: taken")
+	note(5*time.Minute, "gate test: asked")
+	note(7*time.Minute, "gate test: taken")
+	clock.set(t0.Add(8 * time.Minute))
+	e.release(t, task.GetId())
+	if got := e.ended(t, task.GetId()).GetWaitingGate().AsDuration(); got != 5*time.Minute {
+		t.Errorf("before the restart: waiting gate = %v, want 3m for build and 2m for test", got)
+	}
+	e.down()
+
+	s, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Tx(t.Context(), func(tx *store.Tx) error {
+		events, err := store.List[*planv1.TaskEvent](t.Context(), tx, store.Where{"task_id": task.GetId()})
+		if err != nil {
+			return err
+		}
+		if err := tx.Journal("test", "test/forget", events[0]); err != nil {
+			return err
+		}
+		for _, ev := range events {
+			if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_GATE {
+				if err := tx.Delete(ev); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	s.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e = up(t, home, WithClock(clock.now))
+	res, err := e.tasks.List(t.Context(), connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wishID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range res.Msg.GetTasks() {
+		if got.GetId() == task.GetId() && got.GetWaitingGate().AsDuration() != 5*time.Minute {
+			t.Errorf("after the restart: waiting gate = %v, want 5m", got.GetWaitingGate().AsDuration())
+		}
 	}
 }

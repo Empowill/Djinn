@@ -12,6 +12,8 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -390,13 +392,30 @@ func TestBabysitAWatcherSpawnedByHand(t *testing.T) {
 	if told != 1 {
 		t.Errorf("the lead was told %d times of PR #3's watcher, want once: %q", told, leadWatchLines(queue))
 	}
+	// A question asleep until the PR the opener opened is merged (W154).
+	questions := planv1connect.NewQuestionServiceClient(e.srv.Client(), e.srv.URL)
+	asked, err := questions.Ask(t.Context(), connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		Text: "Release now?", WishId: wishID, SleepUntil: []string{"merged:" + opener.GetCode()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(repo, "merged-3"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the lead's watcher to end on MERGED", func() bool {
 		return e.get(t, lead.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
 	})
-	if b := e.get(t, lead.GetId()).GetBabysit(); b.GetUrl() != url {
-		t.Errorf("babysit of %s after its end %v, want kept", lead.GetCode(), b)
+	if b := e.get(t, lead.GetId()).GetBabysit(); b.GetUrl() != url || b.GetDoneTime() == nil {
+		t.Errorf("babysit of %s after its end %v, want kept, its done line's time said", lead.GetCode(), b)
+	}
+	waitFor(t, "the question asleep until PR #3 is merged to wake", func() bool {
+		q, err := store.Get[*planv1.Question](t.Context(), e.db, asked.Msg.GetQuestion().GetId())
+		return err == nil && render.Woken(q)
+	})
+	if !slices.ContainsFunc(queue.all(), func(ev *planv1.LeadEvent) bool {
+		return ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_WOKE && ev.GetCode() == asked.Msg.GetQuestion().GetCode()
+	}) {
+		t.Errorf("the lead was not told the question woke")
 	}
 }
