@@ -303,21 +303,11 @@ func TestAzimaBranchNamedFromTheRemote(t *testing.T) {
 }
 
 // TestAzimaBranchApartFromTheRemote: an azima's branch named that is here behind the remote's is brought up to it; one
-// that diverged from it, as Djinn made them from main for wish Dew (13/10/2026), is refused, left as it is. One that
-// falls behind later, a teammate pushing to it, is fetched and brought up to the remote's before work merges into it
-// (W164); one that diverged later takes no more work and is not pushed, the lead told once, until a person aligns them.
+// that diverged from it, as Djinn made them from main for wish Dew (13/10/2026), is refused, left as it is.
 func TestAzimaBranchApartFromTheRemote(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	r := withRequests(t)
-	var mu sync.Mutex
-	var told []string
-	r.h.NotifyLead(func(_ context.Context, ev *planv1.LeadEvent) error {
-		mu.Lock()
-		defer mu.Unlock()
-		told = append(told, ev.GetText())
-		return nil
-	})
 	const apart, behind = "ET-3063-collab-signes", "hotfix-company-tenant-isolation"
 	r.onRemote(t, r.fork, apart, "collab.txt")
 	behindRemote := r.onRemote(t, r.fork, behind, "tenant.txt")
@@ -339,10 +329,25 @@ func TestAzimaBranchApartFromTheRemote(t *testing.T) {
 	if got := r.git(t, r.repo, "rev-parse", "refs/heads/"+behind); got != behindRemote {
 		t.Errorf("%s at %s, want brought up to origin's %s", behind, got, behindRemote)
 	}
+}
+
+// TestAzimaBranchFallsBehindTheRemote (W164): an azima's branch that falls behind the remote's once named, a teammate
+// pushing to it, is fetched and brought up to the remote's before work merges into it.
+func TestAzimaBranchFallsBehindTheRemote(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	r := withRequests(t)
+	const behind = "hotfix-company-tenant-isolation"
+	named := r.onRemote(t, r.fork, behind, "tenant.txt")
+	r.git(t, r.repo, "branch", behind, named)
+	t1 := r.azima(t, r.wishID, "Tenant")
+	if _, err := r.nameBranch(t, t1.GetId(), behind); err != nil {
+		t.Fatal(err)
+	}
 
 	// A teammate pushes to it; this repository has not fetched it.
-	teammate := r.onRemote(t, behindRemote, behind, "mate.txt")
-	r.git(t, r.repo, "update-ref", "refs/remotes/origin/"+behind, behindRemote)
+	teammate := r.onRemote(t, named, behind, "mate.txt")
+	r.git(t, r.repo, "update-ref", "refs/remotes/origin/"+behind, named)
 	w1 := r.finished(t, "W1", map[string]string{"app/src/w1.txt": "w1\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
 	r.pass(t, 0)
 	if got := r.get(t, w1.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetBranch() != behind {
@@ -351,18 +356,47 @@ func TestAzimaBranchApartFromTheRemote(t *testing.T) {
 	if !isAncestor(t.Context(), r.repo, teammate, "refs/heads/"+behind) {
 		t.Errorf("%s lacks the teammate's %s: not fetched and brought up before the merge", behind, teammate)
 	}
+}
 
-	// The teammate pushes another commit over W1's merge, by force: they diverged.
-	r.git(t, r.repo, "switch", "--quiet", "--detach", teammate)
+// TestAzimaBranchDivergedFromTheRemote (W164): an azima's branch that diverges from the remote's once named, a teammate
+// pushing over its pushed work by force, takes no more work and is not pushed nor pulled, the lead told once, until a
+// person aligns them.
+func TestAzimaBranchDivergedFromTheRemote(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	r := withRequests(t)
+	var mu sync.Mutex
+	var told []string
+	r.h.NotifyLead(func(_ context.Context, ev *planv1.LeadEvent) error {
+		mu.Lock()
+		defer mu.Unlock()
+		told = append(told, ev.GetText())
+		return nil
+	})
+	const behind = "hotfix-company-tenant-isolation"
+	named := r.onRemote(t, r.fork, behind, "tenant.txt")
+	r.git(t, r.repo, "branch", behind, named)
+	t1 := r.azima(t, r.wishID, "Tenant")
+	if _, err := r.nameBranch(t, t1.GetId(), behind); err != nil {
+		t.Fatal(err)
+	}
+
+	// Work on it is pushed; then the teammate pushes another commit over it, by force: they diverged.
+	r.git(t, r.repo, "switch", "--quiet", behind)
+	writeFile(t, r.repo, "app/src/w1.txt", "w1\n")
+	commitAll(t, r.repo, "W1")
+	r.git(t, r.repo, "push", "--quiet", "origin", behind)
+	r.git(t, r.repo, "switch", "--quiet", r.branch)
+	merged := r.git(t, r.repo, "rev-parse", "refs/heads/"+behind)
+	r.git(t, r.repo, "switch", "--quiet", "--detach", named)
 	writeFile(t, r.repo, "app/src/mate2.txt", "mate2\n")
 	commitAll(t, r.repo, "Request: mate2")
 	r.git(t, r.repo, "push", "--quiet", "--force", "origin", "HEAD:refs/heads/"+behind)
 	r.git(t, r.repo, "switch", "--quiet", r.branch)
-	merged := r.git(t, r.repo, "rev-parse", "refs/heads/"+behind)
 	w2 := r.finished(t, "W2", map[string]string{"app/src/w2.txt": "w2\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
 	r.pass(t, 0)
 	r.pass(t, 0)
-	want := behind + " has diverged from origin/" + behind + " (ahead 3, behind 1)" // W1's work, pushed before
+	want := behind + " has diverged from origin/" + behind + " (ahead 1, behind 1)"
 	if got := r.get(t, w2.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING ||
 		!strings.Contains(got.GetReason(), want) {
 		t.Fatalf("W2's integration %v, want pending: %s", got, want)
