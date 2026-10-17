@@ -53,7 +53,8 @@ open it there (**Open it here**): it shows in a frame under its code, its title 
 give it the whole page, and **Close the tilasm**. Escape, or **Leave full size**, brings the page back.
 
 - **From a question.** A tilasm's link in a question opens it full size over the page you read, without leaving it.
-  Close it, or press Escape, and you are back on the link, ready to answer.
+  You comment it there as in the Tilasms tab. Close it, or press Escape, and you are back on the link, ready to
+  answer.
 - **From a block or the brief.** A link elsewhere in the window opens the wish's Tilasms tab on that tilasm.
 - **From outside.** The link opens Djinn on the tilasm from a browser, a chat, a terminal or a note, and starts Djinn
   if it does not run.
@@ -75,7 +76,8 @@ That is what lets you open any tilasm safely, whoever made it.
 ## Comments
 
 Read a tilasm and say what it calls for where you read it. **Comments** (the speech bubble on its head, with the count
-of your drafts) opens a column beside the frame, full size too; **On the whole tilasm** writes a comment on the
+of your drafts) opens a column beside the frame, full size too, and over the page when a question's link opened it;
+**On the whole tilasm** writes a comment on the
 whole of it. To comment a passage, select it in the page, as to copy it: a **Comment** button shows under it, and
 Ctrl+Alt+M does the same. The card keeps the passage and the heading above it, and the passage stays highlighted in
 gold in the page, again after a reload. To comment what you cannot select, a figure, a drawing, a table row, choose

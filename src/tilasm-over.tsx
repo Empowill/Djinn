@@ -1,7 +1,8 @@
 // A tilasm a link in a question names opens over the view the question shows in (the flying carpet, a wish's first
 // page), full size, in the Tilasms tab's own frame (TilasmFrame, tilasms.tsx), without navigating: the view underneath
-// stays mounted, made inert, its scroll and its open question as they were. Closing it, by its button or Escape, gives
-// the focus back to the link, or to its question if the link is gone, without scrolling: nothing underneath moves.
+// stays mounted, made inert, its scroll and its open question as they were. It is commented there as in the Tilasms
+// tab, with the drafts of its wish. Closing it, by its button or Escape, gives the focus back to the link, or to its
+// question if the link is gone, without scrolling: nothing underneath moves.
 import {
   type ReactNode,
   createContext,
@@ -12,10 +13,13 @@ import {
   useState,
 } from "react";
 
+import { Change } from "../gen/ts/plan/v1/plan_pb";
 import type { Tilasm } from "../gen/ts/plan/v1/tilasm_pb";
-import { useDjinn } from "./data/djinn";
+import { message } from "./data/client";
+import { draftsOn, sentOn } from "./data/comments";
+import { useDjinn, useWishDetail } from "./data/djinn";
 import { parseDjinnLink } from "./data/links";
-import { TilasmFrame } from "./tilasms";
+import { TilasmFrame, useCommentWrites } from "./tilasms";
 
 // Opens the tilasm a djinn:// link names over the view, from the element clicked; undefined outside a TilasmOver.
 type OpenOver = (href: string, from: HTMLElement) => void;
@@ -52,14 +56,16 @@ export function giveBack(back: Back, doc: Document = document) {
 
 // TilasmOver holds the tilasm opened over the view, for the links within; view names the view shown: another one
 // closes the tilasm, and gives the focus back to nothing, and so does a new landing (a wish clicked in the side panel,
-// even the one under the tilasm).
+// even the one under the tilasm). onToast tells what a comment's write did.
 export function TilasmOver({
   view,
   landing,
+  onToast = () => {},
   children,
 }: {
   view: string;
   landing?: object;
+  onToast?: (text: string) => void;
   children: ReactNode;
 }) {
   const djinn = useDjinn();
@@ -103,14 +109,41 @@ export function TilasmOver({
     <TilasmOverContext value={open}>
       {children}
       {over && (
-        <TilasmFrame
-          tilasm={over.tilasm}
-          full
-          over
-          onFull={close}
-          onClose={close}
-        />
+        <OverFrame tilasm={over.tilasm} onClose={close} onToast={onToast} />
       )}
     </TilasmOverContext>
+  );
+}
+
+// What the frame over a view reads of its wish: its tilasms, for a new version, the drafts and the tasks a reply names.
+const OVER_KINDS = [Change.TILASM, Change.TASK];
+
+// OverFrame is the tilasm's frame over the view, with the comments of its wish, read while it shows.
+function OverFrame({
+  tilasm,
+  onClose,
+  onToast,
+}: {
+  tilasm: Tilasm;
+  onClose: () => void;
+  onToast: (text: string) => void;
+}) {
+  const detail = useWishDetail(tilasm.wishId, OVER_KINDS);
+  const comments = useCommentWrites(tilasm.wishId, onToast);
+  const shown = detail.tilasms.find((t) => t.id === tilasm.id) ?? tilasm;
+  return (
+    <TilasmFrame
+      tilasm={shown}
+      full
+      over
+      onFull={onClose}
+      onClose={onClose}
+      drafts={draftsOn(detail.drafts, tilasm.id)}
+      sent={sentOn(detail.sent, tilasm.id)}
+      codes={new Map(detail.tasks.map((task) => [task.id, task.code]))}
+      hold={detail.holds.find((h) => h.tilasmId === tilasm.id)}
+      comments={comments}
+      onCommentError={(error) => onToast(message(error))}
+    />
   );
 }

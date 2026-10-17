@@ -298,10 +298,10 @@
 }
 /* Under 900 px, it slides over the right of the frame. */
 @container main (max-width: 899px) {
-  .tilasm-view.commenting:not(.full) {
+  .tilasm-view.commenting:not(.full, .over) {
     grid-template-columns: minmax(0, 1fr) var(--tilasm-margin-width);
   }
-  .tilasm-view.commenting:not(.full) > .tilasm-comments {
+  .tilasm-view.commenting:not(.full, .over) > .tilasm-comments {
     grid-column: 1;
     justify-self: end;
     width: min(var(--tilasm-comments-width), 90%);
@@ -310,13 +310,15 @@
       color-mix(in srgb, var(--shadow) 25%, transparent);
   }
 }
-/* Full size, the column stands at the right of the main shell and the frame narrows beside it. */
+/* Full size, and over a view, the column stands at the right of the main shell and the frame narrows beside it. */
 /* A frame stretches by its width alone: left and right set, it keeps the 300 px of a replaced element. */
 .tilasms.has-open .tilasm-view.full.commenting > .tilasm-frame,
-.tilasms.has-open .tilasm-view.full.dotted > .tilasm-frame {
+.tilasms.has-open .tilasm-view.full.dotted > .tilasm-frame,
+.tilasm-view.over.commenting > .tilasm-frame,
+.tilasm-view.over.dotted > .tilasm-frame {
   width: calc(100% - var(--tilasm-side));
 }
-.tilasm-view.full > .tilasm-margin {
+.tilasm-view:is(.full, .over) > .tilasm-margin {
   position: absolute;
   top: 0;
   right: var(--tilasm-column-width);
@@ -324,7 +326,7 @@
   z-index: 30;
   width: var(--tilasm-margin-width);
 }
-.tilasm-view.full > .tilasm-comments {
+.tilasm-view:is(.full, .over) > .tilasm-comments {
   position: absolute;
   top: 0;
   right: 0;
@@ -347,7 +349,7 @@
 .tilasm-full-aim {
   right: calc(var(--tilasm-side) + 5.75rem);
 }
-.tilasm-view.full > .tilasm-full-leave {
+.tilasm-view:is(.full, .over) > .tilasm-full-leave {
   right: calc(var(--tilasm-side) + 0.5rem);
 }
 .tilasm-aim {
