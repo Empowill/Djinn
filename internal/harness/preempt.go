@@ -56,7 +56,7 @@ func (h *Harness) lowestWorkTask(ctx context.Context, forSlot bool) (*planv1.Tas
 		if r.paused || r.watcher || r.light || r.stopping || r.final || r.shelved || r.worker == nil {
 			continue
 		}
-		t := r.task
+		t := r.shown // Not r.task: its pump changes it without a lock (W182).
 		if t == nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 			continue
 		}
@@ -81,7 +81,7 @@ func (h *Harness) lowestWorkTask(ctx context.Context, forSlot bool) (*planv1.Tas
 				continue
 			}
 		}
-		candidates = append(candidates, candidate{r: r, t: h.copyRunning(t)})
+		candidates = append(candidates, candidate{r: r, t: t})
 		ids = append(ids, t.GetId())
 	}
 	h.mu.Unlock()
