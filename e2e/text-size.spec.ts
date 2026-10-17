@@ -25,13 +25,23 @@ type Wish = { id: string; state: string };
 const wishes = (): Wish[] =>
   JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];
 
-// choose picks a step in the personal space, then closes it.
+// choose picks a step in the personal space, then closes it, once the step's transitions are over: the sidebar's
+// width eases to its new rem in 180 ms, and a card read before it ends was laid out narrower, its buttons on two rows
+// (W249).
 async function choose(page: Page, label: string) {
   await page.locator(".profile").click();
   const select = page.getByRole("combobox", { name: "Text size" });
   await select.selectOption({ label });
   await page.keyboard.press("Escape");
   await expect(select).toHaveCount(0);
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a instanceof CSSTransition)
+        .map((a) => a.finished.catch(() => {})),
+    ),
+  );
 }
 
 const rootSize = (page: Page) =>

@@ -183,6 +183,11 @@ the code does not say by itself; remove one when a change makes it false.
   on a big diff, while the window rendered in ~230 ms (W8); the config keeps no DOM snapshot since W249. *Do:* measure
   a budget inside one `page.evaluate` (act and poll with `requestAnimationFrame` there); profile with a CDP session
   (`Profiler.start/stop`) before blaming the interface. *Where:* `e2e/diff-chunks.spec.ts`.
+- **A transition holds while the page draws no frame.** A change of text size or theme starts CSS transitions (the
+  sidebar's width eases in 180 ms); a reading taken before they end sees their start, and on a loaded machine Chromium
+  drew no frame for over a second: text-size read a card laid out narrower, its buttons on two rows, 48 px taller
+  (W212, W249). *Do:* await the page's `CSSTransition`s (`document.getAnimations()`, their `finished`) before a
+  measure. *Where:* `choose` in `e2e/text-size.spec.ts`.
 - **The terminal panel is empty before its tabs come.** It lists the shells djinn up keeps (`running`) after it
   draws: `if (await empty.isVisible()) click` raced a shell another test left, the button gone under the click
   (W249). *Do:* open a shell of your own (`.lead-terminal-tab-new`) and close it before a reload. *Where:*
