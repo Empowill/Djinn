@@ -74,7 +74,8 @@ run. You may have as many paused wishes as you like.
 ## Rank: which wish comes first
 
 The side panel lists the active wishes by rank, the first first. **The first wish has priority**: when the machine is
-short, its workers start first, and its heavy commands take the [gates](#gates) first.
+short, its workers start first, and its heavy commands take the [gates](#gates) first. Within a wish, its
+[azimas](#azima) have a rank of their own, which orders its work the same way.
 
 - **Change a rank** by dragging a wish by its grip, on its left, or with Alt+Arrow. A thin line shows where it will land.
 - **Make a paused wish active** by dropping it among the active ones: it takes that rank, and if three are active the

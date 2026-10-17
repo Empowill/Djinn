@@ -1200,6 +1200,11 @@ message Task {
   // and is not held by its integration branch's red push checks. At most one task of a wish is urgent while it is to
   // run or runs (dispatch.Urgent).
   bool urgent = 70;
+  // For an azima: its place among the azimas of its wish, from 1 for the first, as the lead or the developer ranks them
+  // (djinn task rank, a drag in the window). Djinn starts the waiting work of the first azimas first, within its wish's
+  // own rank among the wishes, and the gates serve it first after Djinn's merges and pushes. 0 for an azima never
+  // ranked, a new one included: after the ranked ones, by code (plan.AzimaOrder). 0 for work.
+  int32 rank = 71;
 }
 
 // TaskBabysit is the pull or merge request a watcher babysits.
@@ -4462,7 +4467,7 @@ service TaskService {
   // or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
   // provider, model, prompt (for its next continue), azima, and integration (none clears it, pending puts its work back in
   // line), never its dependencies once it ran. An azima changes its title, whatever its state, written back to its plan
-  // file's heading when it has one; or its branch, alone.
+  // file's heading when it has one; or its branch, alone; or its rank among the wish's azimas, alone.
   rpc Update(TaskServiceUpdateRequest) returns (TaskServiceUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -4480,6 +4485,14 @@ service TaskService {
   }
   // Move an azima (a draft, or an azima no worker runs with parts that have not started) to another wish.
   rpc Move(TaskServiceMoveRequest) returns (TaskServiceMoveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Rank an azima among the azimas of its wish: first (--top), or just before or after another one (--before T46,
+  // --after T46). Djinn starts the waiting work of the first azimas first, within the wish's own rank among the wishes,
+  // and the gates serve it first after Djinn's merges and pushes. A new azima goes last; djinn task update --rank gives
+  // a place by number.
+  rpc Rank(TaskServiceRankRequest) returns (TaskServiceRankResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -5128,6 +5141,9 @@ message TaskServiceUpdateRequest {
   // Mark the task urgent (as djinn task spawn --urgent), or no longer with --urgent=false. Refused on an azima, a
   // watcher, a task that has ended, and while another task of the wish is urgent, which the refusal names.
   optional bool urgent = 14;
+  // An azima's place among the azimas of its wish, from 1 for the first; beyond the last, it goes last (djinn task rank
+  // places it before or after another). Goes alone; refused on a work task.
+  optional int32 rank = 15 [(buf.validate.field).int32.gte = 1];
 }
 
 message TaskServiceUpdateResponse {
@@ -5179,6 +5195,32 @@ message TaskServiceMoveRequest {
 message TaskServiceMoveResponse {
   // The azima moved, in its new wish.
   Task task = 1;
+}
+
+message TaskServiceRankRequest {
+  // The azima to rank: its code (T07) or identifier.
+  string azima = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 64
+  ];
+  // Its wish, when the azima is given by a code that several wishes have. Not set: the code's azima in the first
+  // active wish that has one.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Rank it first among the azimas of its wish. One of --top, --before and --after.
+  optional bool top = 3;
+  // Rank it just before another azima of the wish, by code (T46) or identifier.
+  string before = 4 [(buf.validate.field).string.max_len = 64];
+  // Rank it just after another azima of the wish, by code (T46) or identifier.
+  string after = 5 [(buf.validate.field).string.max_len = 64];
+}
+
+message TaskServiceRankResponse {
+  // The azimas of the wish in their new order, the first first.
+  repeated Task azimas = 1;
 }
 
 message TaskServiceCommentRequest {

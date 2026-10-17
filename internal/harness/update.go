@@ -22,7 +22,7 @@ import (
 // urgent mark only (one urgent task per wish, refuseSecondUrgent);
 // a finished task (done, failed, stopped, cut short) may change title, provider/model, prompt (for its next continue),
 // azima, and integration (none clears it, pending puts a done task's work back in line); never its dependencies once
-// it ran. An azima changes its title (renameAzima) or its branch (nameAzimaBranch) only.
+// it ran. An azima changes its title (renameAzima), its branch (nameAzimaBranch) or its rank (rankAzima) only.
 func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	h.answering.Lock()
@@ -33,6 +33,18 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	task, err := store.Get[*planv1.Task](ctx, h.store, id)
 	if err != nil {
 		return nil, plan.Status(err)
+	}
+	if req.Rank != nil {
+		if !plan.IsAzima(task) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"task %s is work: only an azima has a rank; its azima's rank orders it", task.GetCode()))
+		}
+		if req.Title != nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil || req.Urgent != nil ||
+			req.Branch != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--rank goes alone: rank an azima in a call of its own"))
+		}
+		return h.rankAzima(ctx, procedure, req, task)
 	}
 	if req.Branch != nil {
 		if !plan.IsAzima(task) {

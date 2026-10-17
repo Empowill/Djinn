@@ -244,7 +244,9 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   naming it.
 - The plan of a wish is a graph of azimas (`T07`): tasks no worker runs, which work is part of. `djinn task spawn …
   --part-of T07` spawns work in one, `djinn task group <task-id> --part-of T07` moves it, `djinn task spawn <wish>
-  --kind azima --title "…"` makes one. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes
+  --kind azima --title "…"` makes one, last in its wish's rank: `djinn task rank <azima> --top` (`--before T07`,
+  `--after T07`), `djinn task update <azima> --rank N`, or a drag in the Tasks tab ranks it, and the scheduler and
+  the gates serve the work of the first azimas first, within the wish's own rank. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes
   each one's `after:` back from the store ([T07](plan/8e8d3d76-orchestrator.md)). The Tasks tab groups work under its
   azima. One whose work is finished and whose file's unchecked "Done when" boxes all say `(needs: …)` awaits its
   proof ("Proof awaited"): a person, a machine, a release or a real model gives it, never a worker.

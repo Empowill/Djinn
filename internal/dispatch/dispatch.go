@@ -7,6 +7,7 @@ package dispatch
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -52,6 +53,7 @@ type Situation struct {
 	byID    map[string]*planv1.Task
 	wishes  map[string]*planv1.Wish
 	rank    map[string]int // position of each active wish
+	place   map[string]int // position of each azima among its wish's (plan.AzimaPlaces)
 	git     map[string]bool
 	machine *Machine
 	started map[string]bool // the workers started in this pass: each takes a slot and memory
@@ -116,6 +118,7 @@ func New(tasks []*planv1.Task, wishes []*planv1.Wish, git map[string]bool, machi
 	for i, w := range plan.Ranked(wishes) {
 		s.rank[w.GetId()] = i
 	}
+	s.place = plan.AzimaPlaces(tasks)
 	return s
 }
 
@@ -207,7 +210,8 @@ func UrgentOf(tasks []*planv1.Task, wishID, except string) *planv1.Task {
 	return nil
 }
 
-// Pass decides for every planned task, the first wish of the rank first, then the oldest: each task it starts
+// Pass decides for every planned task, in Order: the first wish of the rank first, then its first azima, then the
+// oldest. Each task it starts
 // counts as writing and takes a slot for the ones after it. An urgent task starts whatever the machine (Urgent).
 func (s *Situation) Pass() []Decision {
 	var out []Decision
@@ -227,15 +231,17 @@ func (s *Situation) Pass() []Decision {
 	return out
 }
 
-// Order is the planned tasks in the strict 5-tier order, the urgent tasks before all (Urgent):
+// Order is the planned tasks in the strict tiered order, the urgent tasks before all (Urgent):
 //  1. Investigator workers (Enlighten me), followed by answer workers;
 //  2. Correction workers, followed by review workers;
 //  3. Resumed work tasks (RESUMING: limits, restarts, preemptions);
-//  4. Work tasks that unblock others (graph's critical path: most planned and waiting dependents first);
-//  5. Other work tasks.
+//  4. Work tasks: the first wish of the rank first, then the work of the first azima of its rank (Task.rank, work of
+//     no azima after it), then the tasks that unblock others (graph's critical path: most planned and waiting
+//     dependents first), then the others.
 //
-// Within each level and sub-level, ties are broken by the wish's rank, then the oldest first, then by task ID.
-// The tasks of a wish that is not active come last; Blocker keeps them waiting.
+// Within the first tiers and their sub-levels, ties are broken by the wish's rank, then its azimas' rank; then, in
+// every tier, the oldest first, then by task ID. The tasks of a wish that is not active come last; Blocker keeps them
+// waiting.
 func (s *Situation) Order() []*planv1.Task {
 	var out []*planv1.Task
 	for _, t := range s.tasks {
@@ -250,19 +256,35 @@ func (s *Situation) Order() []*planv1.Task {
 		}
 		return len(s.rank)
 	}
+	// place is the position of the task's azima among its wish's: work of no azima comes after the azimas'.
+	place := func(t *planv1.Task) int {
+		if p, ok := s.place[t.GetPartOf()]; ok {
+			return p
+		}
+		return math.MaxInt
+	}
 	slices.SortStableFunc(out, func(a, b *planv1.Task) int {
 		aLevel, aSub := taskPriority(a, depCounts)
 		bLevel, bSub := taskPriority(b, depCounts)
+		ranks := cmp.Or(cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())), cmp.Compare(place(a), place(b)))
+		if aLevel == workLevel && bLevel == workLevel {
+			// The developer's order comes before the critical path: a higher azima's work before what unblocks a lower one's.
+			ranks, aSub, bSub = cmp.Or(ranks, cmp.Compare(aSub, bSub)), 0, 0
+		}
 		return cmp.Or(
 			cmp.Compare(aLevel, bLevel),
 			cmp.Compare(aSub, bSub),
-			cmp.Compare(pos(a.GetWishId()), pos(b.GetWishId())),
+			ranks,
 			a.GetCreateTime().AsTime().Compare(b.GetCreateTime().AsTime()),
 			strings.Compare(a.GetId(), b.GetId()),
 		)
 	})
 	return out
 }
+
+// workLevel is the tier of the work tasks (taskPriority): the ones that unblock others, then the others, within the
+// order of the wishes and of their azimas.
+const workLevel = 4
 
 func taskPriority(t *planv1.Task, depCounts map[string]int) (level int, sub int) {
 	switch {
@@ -278,10 +300,8 @@ func taskPriority(t *planv1.Task, depCounts map[string]int) (level int, sub int)
 		return 2, 1
 	case Resuming(t):
 		return 3, 0
-	case depCounts[t.GetId()] > 0:
-		return 4, -depCounts[t.GetId()]
 	default:
-		return 5, 0
+		return workLevel, -depCounts[t.GetId()]
 	}
 }
 

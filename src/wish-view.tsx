@@ -113,6 +113,7 @@ import {
   MoveAzimaDialog,
   useStickyRoom,
 } from "./azima";
+import { RankedAzimaList, type RankPlace } from "./azima-rank";
 import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
 import {
   kindsForView,
@@ -660,10 +661,34 @@ export function WishView({
     [quiet, write, clients.tasks],
   );
 
+  // A drag, or Alt+Arrow, ranks an azima just before or after another (azima-rank.tsx).
+  const handleRankAzima = useCallback(
+    (azima: Task, place: RankPlace) => {
+      quiet(
+        write(
+          azima.wishId,
+          () =>
+            clients.tasks.rank({
+              azima: azima.id,
+              ...("before" in place
+                ? { before: place.before.id }
+                : { after: place.after.id }),
+            }),
+          [Change.TASK],
+        ),
+      );
+    },
+    [quiet, write, clients.tasks],
+  );
+
   const renderAzima = useCallback(
-    ({ azima, parts }: { azima: Task; parts: readonly Task[] }) => (
+    (
+      { azima, parts }: { azima: Task; parts: readonly Task[] },
+      grip?: ReactNode,
+    ) => (
       <AzimaCard
         key={azima.id}
+        grip={grip}
         azima={azima}
         parts={parts}
         tasks={byId}
@@ -1273,6 +1298,13 @@ export function WishView({
                 showDone={showDone}
                 showDrafts={showDrafts}
                 renderAzima={renderAzima}
+                renderAzimas={(groups) => (
+                  <RankedAzimaList
+                    groups={groups}
+                    render={renderAzima}
+                    onRank={handleRankAzima}
+                  />
+                )}
                 renderDraft={renderDraft}
                 aside={
                   <>

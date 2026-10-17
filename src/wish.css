@@ -680,6 +680,39 @@
   gap: var(--space-2);
   padding-right: var(--space-2);
 }
+/* The azimas not done, in their rank (azima-rank.tsx): each dragged by its grip, on the left of its heading; a thin line
+   shows where it would land, in the middle of the space between two cards. */
+.azima-list.ranked {
+  position: relative;
+}
+.azima-rank-item.dragged {
+  opacity: 0.4;
+}
+.azima-grip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: stretch;
+  align-items: center;
+  margin-right: calc(-1 * var(--space-2));
+  padding: 0 0 0 var(--space-2);
+  color: var(--muted-dim);
+  opacity: 0.5;
+  cursor: grab;
+}
+.azima-row:hover .azima-grip,
+.azima-grip:focus-visible {
+  opacity: 1;
+}
+.azima-drop-line {
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  height: 0.125rem;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
 .azima-heading {
   width: 100%;
   display: flex;

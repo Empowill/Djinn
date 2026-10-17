@@ -246,6 +246,7 @@ export function TaskSections<T, A = never, D = never>({
   azimas = [],
   doneAzimas = [],
   renderAzima,
+  renderAzimas,
   drafts = [],
   renderDraft,
   fold = "",
@@ -264,6 +265,9 @@ export function TaskSections<T, A = never, D = never>({
   azimas?: readonly A[];
   doneAzimas?: readonly A[];
   renderAzima?: (azima: A) => ReactNode;
+  // Lays out the azimas not done yet, which the developer ranks by dragging them (azima-rank.tsx); by default one under
+  // the other, each with renderAzima.
+  renderAzimas?: (azimas: readonly A[]) => ReactNode;
   // The draft azimas, behind their Fold at the end of the Tasks tab.
   drafts?: readonly D[];
   renderDraft?: (draft: D) => ReactNode;
@@ -327,9 +331,14 @@ export function TaskSections<T, A = never, D = never>({
               <span className="count">{azimas.length + doneAzimas.length}</span>
             </h2>
           </div>
-          {azimas.length > 0 && (
-            <div className="azima-list">{azimas.map(renderAzima)}</div>
-          )}
+          {azimas.length > 0 &&
+            (renderAzimas ? (
+              renderAzimas(azimas)
+            ) : (
+              <div className="azima-list">
+                {azimas.map((x) => renderAzima(x))}
+              </div>
+            ))}
           {drafts.length > 0 && renderDraft && (
             <div className="tasks-drafts">
               <Fold
@@ -344,7 +353,9 @@ export function TaskSections<T, A = never, D = never>({
             </div>
           )}
           <Fold id={`azimas:${fold}`} count={doneAzimas.length} open={showDone}>
-            <div className="azima-list">{doneAzimas.map(renderAzima)}</div>
+            <div className="azima-list">
+              {doneAzimas.map((x) => renderAzima(x))}
+            </div>
           </Fold>
         </section>
       )}
