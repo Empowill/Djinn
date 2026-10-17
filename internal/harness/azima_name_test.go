@@ -155,6 +155,7 @@ func TestDewAdoptsItsBranchThenPushesPerAzima(t *testing.T) {
 // into the azima's branch, and once the azima's branch holds work the new one would lack.
 func TestAzimaBranchNamedIsCutFromMain(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.setAzimaStrategy(t)
 	cut := in.tip(t)
@@ -267,6 +268,7 @@ func (r *requests) mainMoves(t *testing.T) string {
 // its work merges into it and is pushed there.
 func TestAzimaBranchNamedFromTheRemote(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	r := withRequests(t)
 	const mr = "ET-4283-jest-sans-sentry"
 	request := r.onRemote(t, r.fork, mr, "jest.txt")
@@ -306,6 +308,7 @@ func TestAzimaBranchNamedFromTheRemote(t *testing.T) {
 // person aligns them.
 func TestAzimaBranchApartFromTheRemote(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	r := withRequests(t)
 	var mu sync.Mutex
 	var told []string

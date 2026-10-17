@@ -71,6 +71,7 @@ const lintAtCommit = "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN
 // file changes. Each runs through the gate of its name, and the project keeps their last runs.
 func TestSetupOncePerWorktree(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	in.ran()
@@ -122,6 +123,7 @@ func (in *integration) linted(t *testing.T, task *planv1.Task, code int32) {
 // to run. A file changed after the worker's lint, or a lint that failed last, and the check runs as before.
 func TestCommitLintPassedByTheWorker(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	const skipped = "commit checks: lint passed by the worker on this tree, not run again"
@@ -166,6 +168,7 @@ func TestCommitLintPassedByTheWorker(t *testing.T) {
 // TestSetupAgain: the setup runs again when a lock file changes, and in an integration worktree made anew.
 func TestSetupAgain(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	in.finished(t, "W1", map[string]string{"app/package-lock.json": "{}\n"})
@@ -192,6 +195,7 @@ func TestSetupAgain(t *testing.T) {
 // lock file changes.
 func TestSetupWhenNodeModulesMissing(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit, map[string]int{"setup": 0, "lint": 0})
 	in.finished(t, "W1", map[string]string{"app/package.json": "{}\n", "app/.gitignore": "node_modules\n"})
@@ -230,6 +234,7 @@ func TestSetupWhenNodeModulesMissing(t *testing.T) {
 // at the commit. Djinn's former test command is the check test at commit (the other integration tests).
 func TestARedCommitCheck(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "setup: \"setup\"\n"+lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n",
 		map[string]int{"setup": 0, "lint": 1})
@@ -269,6 +274,7 @@ func TestARedCommitCheck(t *testing.T) {
 // asks the person, who can retry, take it over, or push without checks.
 func TestPushChecksHoldThePush(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin"
@@ -383,6 +389,7 @@ func TestPushChecksHoldThePush(t *testing.T) {
 // again before the push.
 func TestPushWithoutTheChecks(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "correction_attempts: 0\n"+
 		"checks { name: \"lint\" command: \"lint\" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }\n"+
@@ -428,6 +435,7 @@ func TestPushWithoutTheChecks(t *testing.T) {
 // runs its checks again on the next pass and pushes when green.
 func TestPushChecksCorrectionCleared(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -477,6 +485,7 @@ func TestPushChecksCorrectionCleared(t *testing.T) {
 // clears its link, runs its checks again on the next pass and pushes when green.
 func TestPushChecksCorrectionCancelled(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -531,6 +540,7 @@ func TestPushChecksCorrectionCancelled(t *testing.T) {
 // pushes once corrected.
 func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -693,6 +703,7 @@ func TestPushCheckFailedCorrectionLeavesCommittedAndDependents(t *testing.T) {
 // once the correction makes the checks pass and the push clears, the task starts from the green head.
 func TestPushHeldBlocksPlannedTasksUntilGreen(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -769,6 +780,7 @@ func TestPushHeldBlocksPlannedTasksUntilGreen(t *testing.T) {
 // and notifies the lead; the waiting planned work task starts running.
 func TestPushHeldLiftsWhenApprovedUnchecked(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "correction_attempts: 0\n"+
 		lintAtCommit+
@@ -836,6 +848,7 @@ func (in *integration) questions(t *testing.T) []*planv1.Question {
 // correction, the push stays held on it; once it is committed, the push checks pass and the push lifts the hold.
 func TestPushCorrectionStoppedThenContinued(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -949,6 +962,7 @@ func (in *integration) leftToTheLead(t *testing.T) (bare, old string) {
 // longer: the branch moved since its push checks were red, they run again and, green, the push goes.
 func TestPushQuestionWithdrawn(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare, old := in.leftToTheLead(t)
 	q := in.attachPushQuestion(t)
@@ -976,6 +990,7 @@ func TestPushQuestionWithdrawn(t *testing.T) {
 // on: the next pass runs them on it and, green, records the push and lifts the hold, with nothing to push.
 func TestPushedByHandWhileHeld(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare, _ := in.leftToTheLead(t)
 	tip := in.handCommit(t)
@@ -1006,6 +1021,7 @@ func TestPushedByHandWhileHeld(t *testing.T) {
 // and acts on them, here with a correction, instead of leaving every task held with nobody on it.
 func TestPushRedAgainOnAStaleQuestion(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})

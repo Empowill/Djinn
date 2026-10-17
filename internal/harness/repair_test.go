@@ -25,6 +25,7 @@ func (in *integration) corrections(t *testing.T) []*planv1.Task {
 // once.
 func TestFreezeWhileRepairing(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit, map[string]int{"lint": 1})
 	in.correctWith(func(_, prompt string) string {
@@ -101,6 +102,7 @@ func TestFreezeWhileRepairing(t *testing.T) {
 // names every task of the batch and the failing output; its success brings the whole batch in.
 func TestRedBatchRepaired(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.testCode, in.testOut = 1, "--- FAIL: TestTogether"
 	var prompts []string
@@ -140,6 +142,7 @@ func TestRedBatchRepaired(t *testing.T) {
 // branch at a time: the green one goes in, the one that breaks the checks gets a correction of its own.
 func TestRedBatchStepByStep(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	// The tests fail while bad.txt is there and fixed.txt is not.
 	in.verdict = func(dir string) (string, int) {
@@ -201,6 +204,7 @@ func TestRedBatchStepByStep(t *testing.T) {
 // freezes the branch as any repair does.
 func TestConflictLeavesTheBatch(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.correctWith(func(_, prompt string) string {
 		if strings.Contains(prompt, "the work of W2") {
@@ -235,6 +239,7 @@ func TestConflictLeavesTheBatch(t *testing.T) {
 // it is merged and checked; a queue that does not empty holds it pushQueueCap at most, then it goes.
 func TestPushWaitsForTheQueue(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	bare := in.remote(t)
 	letters := in.azima(t, in.wishID, "Letters")
@@ -291,6 +296,7 @@ func TestPushWaitsForTheQueue(t *testing.T) {
 // the correction, then merges once the branch is pushed green.
 func TestCorrectionStartsOnARedBranch(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
 	in.testCode = 1

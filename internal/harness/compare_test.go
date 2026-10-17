@@ -19,6 +19,7 @@ import (
 // to feat/robustness, cut at feat/wails-go's tip); a parallel one does not.
 func TestCompareWithTheRunningDjinn(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	ctx := t.Context()
 	project, err := store.Get[*planv1.Project](ctx, in.db, in.projectID)

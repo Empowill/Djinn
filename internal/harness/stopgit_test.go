@@ -15,6 +15,7 @@ import (
 // (a correction starts on its conflict), and the person's checkout keeps its lock, which the restart line names (W52).
 func TestStartUnlocksDjinnsWorktrees(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	head := commitOf(t.Context(), in.repo, "HEAD")
 	mustGit(t, in.repo, "branch", "other")
@@ -60,6 +61,7 @@ func TestStartUnlocksDjinnsWorktrees(t *testing.T) {
 // TestRestartNamesWhatTheStopCut: the restart line names the integration a stop cut, its task and its step (W52).
 func TestRestartNamesWhatTheStopCut(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.afterTest = func() { in.h.cancel() } // djinn up stops during W1's check.
@@ -81,6 +83,7 @@ func TestRestartNamesWhatTheStopCut(t *testing.T) {
 }
 
 func TestCutPart(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		cut, integrating []string
 		want             string

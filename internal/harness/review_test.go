@@ -38,6 +38,7 @@ func (in *integration) wishTasks(t *testing.T) []*planv1.Task {
 // integrates as it is: no review worker, the ignored file left out.
 func TestIntegrateACleanWorktree(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n", ".gitignore": "*.log\n"})
 	in.leave(t, w1, map[string]string{"app/build.log": "built\n"})
@@ -60,6 +61,7 @@ func TestIntegrateACleanWorktree(t *testing.T) {
 // belongs to the task and drops the rest, and its work integrates like any task's, the reviewed work with it.
 func TestReviewUncommittedWork(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	old := in.tip(t)
 	azima := in.azima(t, in.wishID, "The sources")
@@ -148,6 +150,7 @@ func TestReviewUncommittedWork(t *testing.T) {
 // spend the attempts; Djinn then asks the person, and trying again starts a new review, its attempts counted from one.
 func TestReviewAttemptsThenAQuestion(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
@@ -219,6 +222,7 @@ func TestReviewAttemptsThenAQuestion(t *testing.T) {
 // work and the work it corrected.
 func TestReviewACorrectionsWork(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	azima := in.azima(t, in.wishID, "The readme")
 	partOf := func(task *planv1.Task) { task.PartOf = azima.GetId() }
@@ -274,6 +278,7 @@ func TestReviewACorrectionsWork(t *testing.T) {
 // the work waits to be merged, and integrates.
 func TestAReviewThatFailsAfterItsCommit(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
@@ -300,6 +305,7 @@ func TestAReviewThatFailsAfterItsCommit(t *testing.T) {
 // all the same, part of no azima, and says so in its events.
 func TestAReviewOfWorkWhoseAzimaIsGone(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	azima := in.azima(t, in.wishID, "Absorbed")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
@@ -322,6 +328,7 @@ func TestAReviewOfWorkWhoseAzimaIsGone(t *testing.T) {
 // it is left to the lead.
 func TestAReviewThatCannotStart(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	lead := &leadListener{}
 	in.h.TellLeads(lead.tell)

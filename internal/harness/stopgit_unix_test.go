@@ -19,6 +19,7 @@ import (
 // TestKilledResetLeavesALockTheNextPassTakes: a git killed mid-reset in an integration worktree leaves its
 // index.lock, and every reset there failed after it (W52); the next pass takes the dead git's lock away, and resets.
 func TestKilledResetLeavesALockTheNextPassTakes(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	first := commitOf(t.Context(), repo, "HEAD")
 	writeFile(t, repo, "app/README.md", "# App, second\n")
@@ -95,6 +96,7 @@ func heldRefs(t *testing.T, repo string) (held <-chan struct{}, let func()) {
 // whole: the checkout follows; or, when it cannot, the branch goes back, where the put back once failed on the cancel
 // and the person's checkout showed the work undone (W52).
 func TestMoveBranchEndsWholeAfterACancel(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name     string
 		inTheWay bool

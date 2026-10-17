@@ -286,6 +286,7 @@ func (in *integration) states(t *testing.T, tasks ...*planv1.Task) string {
 // once for all of them, the journal recording one commit; each worktree is then removed, its branch kept. Not marked
 // portable: the integration's smoke on Windows (CONTRIBUTING.md).
 func TestCommitABatch(t *testing.T) {
+	t.Parallel()
 	in := integrating(t)
 	old := in.tip(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -359,6 +360,7 @@ func TestCommitABatch(t *testing.T) {
 // does, its branch kept; a worktree that holds changes not committed stays, said.
 func TestRemoveTheWorktreeOnceCommitted(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.pass(t, 0)
@@ -389,6 +391,7 @@ func TestRemoveTheWorktreeOnceCommitted(t *testing.T) {
 
 func TestIntegrateGeneratedConflict(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	old := in.tip(t)
 	// Each worker made the generated index again on its own: the two branches change it differently.
@@ -425,6 +428,7 @@ func (in *integration) noCorrection(t *testing.T) {
 
 func TestIntegrateCodeConflict(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.noCorrection(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/README.md": "# One\n"})
@@ -485,6 +489,7 @@ func TestIntegrateCodeConflict(t *testing.T) {
 // no identity of its own.
 func TestIntegrateWithoutAGitIdentity(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	old := in.tip(t)
@@ -538,6 +543,7 @@ func TestIntegrateWithoutAGitIdentity(t *testing.T) {
 
 func TestIntegrateRedTests(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.noCorrection(t)
 	old := in.tip(t)
@@ -563,6 +569,7 @@ func TestIntegrateRedTests(t *testing.T) {
 // glance shows it beside the workers (W137). Once committed, no check is left said.
 func TestIntegrationSaysItsCheck(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
@@ -599,6 +606,7 @@ func TestIntegrationSaysItsCheck(t *testing.T) {
 
 func TestIntegrateLeavesADirtyCheckout(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	old := in.tip(t)
 	writeFile(t, in.repo, "app/README.md", "# Mine, not committed\n")
@@ -631,6 +639,7 @@ func TestIntegrateLeavesADirtyCheckout(t *testing.T) {
 
 func TestIntegrateFollowsACleanedCheckout(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	writeFile(t, in.repo, "app/README.md", "# Mine, not committed\n")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -648,6 +657,7 @@ func TestIntegrateFollowsACleanedCheckout(t *testing.T) {
 
 func TestIntegrateABranchNoCheckoutHolds(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.git(t, in.repo, "branch", "feat/x")
 	if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
@@ -674,6 +684,7 @@ func TestIntegrateABranchNoCheckoutHolds(t *testing.T) {
 
 func TestIntegrateADoneWorker(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	task := in.spawn(t, in.wishID, "write src/a.txt a")
 	in.watch(t.Context(), t, task.GetId(), 0)
@@ -694,6 +705,7 @@ func TestIntegrateADoneWorker(t *testing.T) {
 
 func TestIntegrateNeedsATestCommand(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "generate: \"gen\"\n")
 	task := in.spawn(t, in.wishID, "write src/a.txt a")
@@ -705,6 +717,7 @@ func TestIntegrateNeedsATestCommand(t *testing.T) {
 
 func TestRecoverAnIntegration(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	w1 := in.finished(t, "W1", nil, func(task *planv1.Task) {
 		task.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, Branch: "main"}
@@ -720,6 +733,7 @@ func TestRecoverAnIntegration(t *testing.T) {
 }
 
 func TestMatchGlob(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		pattern, name string
 		want          bool
@@ -745,6 +759,7 @@ func TestMatchGlob(t *testing.T) {
 // branch, its worktree holding the dependency's change, even when the person's checkout is on another branch.
 func TestADependentStartsFromTheCommit(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t, WithTick(time.Hour)) // Only the commit wakes the scheduler.
 	in.git(t, in.repo, "checkout", "--quiet", "-b", "elsewhere")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -785,6 +800,7 @@ func TestADependentStartsFromTheCommit(t *testing.T) {
 
 func TestTaskEndsWithUnreadableSettingsGetsMergedOnceFixed(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	// Corrupt settings file
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "provider: [broken\n")
@@ -837,6 +853,7 @@ func TestTaskEndsWithUnreadableSettingsGetsMergedOnceFixed(t *testing.T) {
 // queued afterwards: nil means Djinn did not integrate it, by design.
 func TestOldTaskWithoutIntegrationRecordIsNotQueued(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
@@ -859,6 +876,7 @@ func TestOldTaskWithoutIntegrationRecordIsNotQueued(t *testing.T) {
 // no other line would (incident W1 of wish Dew, 12/10/2026).
 func TestNoOpBatchTellsTheEndOnly(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	var told []string
@@ -905,6 +923,7 @@ func TestNoOpBatchTellsTheEndOnly(t *testing.T) {
 // tells the lead exactly one line (Decision Q173).
 func TestRealMergeTellsOneLine(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	var told []string
@@ -932,6 +951,7 @@ func TestRealMergeTellsOneLine(t *testing.T) {
 // coalesce into a single line for the lead (Decision Q173).
 func TestThreeMergesInPassTellOneLine(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 
 	var told []string
@@ -970,6 +990,7 @@ func TestThreeMergesInPassTellOneLine(t *testing.T) {
 // of 16/10 lost the lines of W44, W51 and W76). The queue fails on a cancelled context, as the store does.
 func TestStopAfterAMergeStillTellsIt(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	var mu sync.Mutex
 	var told []string

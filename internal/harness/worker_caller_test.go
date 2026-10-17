@@ -19,6 +19,7 @@ import (
 )
 
 func TestHarnessCallerUnit(t *testing.T) {
+	t.Parallel()
 	h := &Harness{
 		runs: make(map[string]*run),
 	}
@@ -81,6 +82,7 @@ func (w *workerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 func TestWorkerClearedTaskIDCannotMakeWish(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
 
@@ -203,6 +205,7 @@ func TestWorkerClearedTaskIDCannotMakeWish(t *testing.T) {
 }
 
 func TestWorkerClearedTaskIDAndTokenIdentifiedByPID(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix socket peer credentials not available on Windows")
 	}

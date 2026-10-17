@@ -133,6 +133,7 @@ func storedTexts(t *testing.T, db *store.Store, id string) []string {
 // and the failed task's, which says it was corrected. The task committed before stays as it went in.
 func TestCorrectACodeConflict(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	old := in.tip(t)
 	azima := in.azima(t, in.wishID, "The readme")
@@ -216,6 +217,7 @@ func TestCorrectACodeConflict(t *testing.T) {
 // first prompt.
 func TestCorrectRedTests(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin\nFAIL"
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -254,6 +256,7 @@ func TestCorrectRedTests(t *testing.T) {
 // leaves it to the lead, and starts nothing more by itself.
 func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin"
 	in.correctWith(func(string, string) string { return "" })
@@ -292,6 +295,7 @@ func TestCorrectionAttemptsThenAQuestion(t *testing.T) {
 // the work out, saying so.
 func TestAnswerAFailedIntegration(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	// Djinn settles the question itself.
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
@@ -336,6 +340,7 @@ func TestAnswerAFailedIntegration(t *testing.T) {
 // correction_attempts spent, Djinn asks.
 func TestACorrectionWorkerThatFails(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 1\n")
@@ -376,6 +381,7 @@ func TestACorrectionWorkerThatFails(t *testing.T) {
 // the correction worker starts all the same, part of no azima, and says so in its events.
 func TestCorrectWorkWhoseAzimaIsGone(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.testCode = 1
 	azima := in.azima(t, in.wishID, "Absorbed")
@@ -398,6 +404,7 @@ func TestCorrectWorkWhoseAzimaIsGone(t *testing.T) {
 // it is left to the lead.
 func TestACorrectionThatCannotStart(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.testCode = 1
 	lead := &leadListener{}
@@ -437,6 +444,7 @@ func TestACorrectionThatCannotStart(t *testing.T) {
 // clears that link when the correction's integration record is cleared.
 func TestIntegrationFailureCorrectionCleared(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.testCode = 1
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -466,6 +474,7 @@ func TestIntegrationFailureCorrectionCleared(t *testing.T) {
 // clears that link when the correction worker is cancelled.
 func TestIntegrationFailureCorrectionCancelled(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.testCode = 1
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -519,6 +528,7 @@ func TestIntegrationFailureCorrectionCancelled(t *testing.T) {
 // records the stop without asking a question.
 func TestIntegrationFailureCorrectionStopped(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.testCode = 1
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -576,6 +586,7 @@ func TestIntegrationFailureCorrectionStopped(t *testing.T) {
 // the integration branch settles immediately as COMMITTED without running tests or asking questions.
 func TestIntegrationWorkAlreadyInBranchSettlesSilently(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	// Even if testCode is 1 (tests fail), the task shouldn't run tests because it's already in the branch!
 	in.testCode = 1
@@ -608,6 +619,7 @@ func TestIntegrationWorkAlreadyInBranchSettlesSilently(t *testing.T) {
 // (--drop, task.Integration == nil) triggers no question or correction.
 func TestIntegrationDroppedTaskRaisesNoQuestion(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.testCode = 1
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})

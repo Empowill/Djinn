@@ -89,6 +89,7 @@ func creates(forge *fakeForge) []string {
 // it open, and the lead reads its address.
 func TestOpenMRWhenTheDeveloperSaysYes(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	forge := &fakeForge{created: "Creating draft merge request for djinn/T1-single-local-process into main\n\n" + mrURL + "\n"}
 	in, q, azima, branch := proposedMR(t, forge, "")
 
@@ -121,6 +122,7 @@ func TestOpenMRWhenTheDeveloperSaysYes(t *testing.T) {
 // named, none opened.
 func TestOpenMRFailsToTheLead(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	forge := &fakeForge{}
 	in, q, _, branch := proposedMR(t, forge, "")
 
@@ -147,6 +149,7 @@ func TestOpenMRFailsToTheLead(t *testing.T) {
 // nothing; Djinn runs no glab mr create of its own.
 func TestOpenMRWithTheProjectSkill(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	forge := &fakeForge{created: mrURL}
 	in, q, _, branch := proposedMR(t, forge, "provider: PROVIDER_FAKE\n")
 	skill := filepath.Join(in.repo, "app", ".agents", "skills", "open-mr-acme")

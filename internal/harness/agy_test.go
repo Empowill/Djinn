@@ -208,6 +208,7 @@ func TestAgyProjectDjinnDirDenials(t *testing.T) {
 // TestAgyReadURLStep tests that a recorded read_url step from W371 is parsed by agyParser as a tool call,
 // and not as a refusal or error.
 func TestAgyReadURLStep(t *testing.T) {
+	t.Parallel()
 	parser := &agyParser{}
 
 	// Recorded ACTIVE step from W371: agy calls read_url_content.
@@ -274,6 +275,7 @@ func TestAgyReadURLStep(t *testing.T) {
 // 3) fails if the idle pause happens again.
 // 4) is ignored if background tasks of its own are still running.
 func TestAgyIdleLoop(t *testing.T) {
+	t.Parallel()
 	stepDoneWithPause := `{"event":"step_update","step_update":{"conversation_id":"c1","step_index":1,"state":"DONE","step_type":"system","tool_info":{"output":"There are no tools called. Execution paused. Waiting for task completion."}}}`
 
 	// Case 1: work is committed.

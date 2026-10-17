@@ -960,6 +960,7 @@ func TestDependencyWorkIntegration(t *testing.T) {
 // TestStartAnyway: a planned task that waits for the machine alone says so, and starts at once when forced, under
 // pressure; one that waits for a dependency is refused, and keeps waiting.
 func TestStartAnyway(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 1, pressure: "simulated"}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, gitRepo(t))

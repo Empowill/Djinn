@@ -83,6 +83,7 @@ func eventually(t *testing.T, ok func() bool, last func() string) {
 // follow the remote, and a second push is up to date, not failed.
 func TestPushShowsOnItsSyncLine(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, testAtPush, nil)
 	bare := in.remote(t)
@@ -148,6 +149,7 @@ func TestPushShowsOnItsSyncLine(t *testing.T) {
 // printed, and the correction Djinn started.
 func TestHeldPushShowsWhy(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, testAtPush, nil)
 	in.testCode, in.testOut = 1, "--- FAIL: TestLogin\n    login_test.go:12: no session\nFAIL"
@@ -185,6 +187,7 @@ func TestHeldPushShowsWhy(t *testing.T) {
 // TestStalePushRunIsNotShown: a push recorded running that no longer runs, Djinn stopped during it, shows no spinner.
 func TestStalePushRunIsNotShown(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.remote(t)
 	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
@@ -201,6 +204,7 @@ func TestStalePushRunIsNotShown(t *testing.T) {
 
 // TestHeldNote: the check and why, then the first lines of what it printed last.
 func TestHeldNote(t *testing.T) {
+	t.Parallel()
 	out := strings.Repeat("line\n", 20) + "end"
 	got := heldNote("test: test exited 1", out)
 	if lines := strings.Split(got, "\n"); len(lines) != 1+heldLines || lines[0] != "test: test exited 1" {
