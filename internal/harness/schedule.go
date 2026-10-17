@@ -143,6 +143,7 @@ func (h *Harness) prepare() {
 	if h.beforeStart != nil {
 		h.beforeStart()
 	}
+	h.diskGuard(h.ctx) // Trims the Go build cache when space runs low; a worker starts all the same (disk.go).
 }
 
 // WithTick sets how often the scheduler looks at the planned tasks again without being woken: the pressure of the

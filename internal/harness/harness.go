@@ -148,6 +148,9 @@ type Harness struct {
 	// The network, as Djinn knows it (network.go).
 	net network
 
+	// The disks' free space, as Djinn knows it (disk.go).
+	disk disk
+
 	// Babysitting what tasks open (babysit.go).
 	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
 	babysitMu   sync.Mutex     // one watcher decided at a time
@@ -372,6 +375,7 @@ func (h *Harness) Close() {
 	h.wg.Wait()
 	h.babysitting.Wait()
 	h.net.wg.Wait()
+	h.disk.wg.Wait()
 	h.children.close() // What the workers left running stops with them.
 	h.writeCuts()
 }

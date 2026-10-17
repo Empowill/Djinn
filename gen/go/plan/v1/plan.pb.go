@@ -791,6 +791,10 @@ const (
 	// back to resume; back, it resumes them one per pass, repairs first, and runs again once the push checks that failed
 	// on the network.
 	LeadEventKind_LEAD_EVENT_KIND_NETWORK LeadEventKind = 19
+	// The disk is almost full, or space came back (W303): one line each, of no wish. Under the threshold (djinn up
+	// --disk-full-gb), the line names the free space, the detail the biggest folders Djinn knows; the push checks wait
+	// instead of failing, and run once space comes back.
+	LeadEventKind_LEAD_EVENT_KIND_DISK LeadEventKind = 20
 )
 
 // Enum value maps for LeadEventKind.
@@ -816,6 +820,7 @@ var (
 		17: "LEAD_EVENT_KIND_LANDED",
 		18: "LEAD_EVENT_KIND_ASKED",
 		19: "LEAD_EVENT_KIND_NETWORK",
+		20: "LEAD_EVENT_KIND_DISK",
 	}
 	LeadEventKind_value = map[string]int32{
 		"LEAD_EVENT_KIND_UNSPECIFIED": 0,
@@ -838,6 +843,7 @@ var (
 		"LEAD_EVENT_KIND_LANDED":      17,
 		"LEAD_EVENT_KIND_ASKED":       18,
 		"LEAD_EVENT_KIND_NETWORK":     19,
+		"LEAD_EVENT_KIND_DISK":        20,
 	}
 )
 
@@ -27563,7 +27569,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16WISH_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WISH_STATE_ACTIVE\x10\x01\x12\x15\n" +
 	"\x11WISH_STATE_PAUSED\x10\x02\x12\x16\n" +
-	"\x12WISH_STATE_GRANTED\x10\x03*\xc6\x04\n" +
+	"\x12WISH_STATE_GRANTED\x10\x03*\xe0\x04\n" +
 	"\rLeadEventKind\x12\x1f\n" +
 	"\x1bLEAD_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15LEAD_EVENT_KIND_ENDED\x10\x01\x12\x1a\n" +
@@ -27585,7 +27591,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16LEAD_EVENT_KIND_HEALTH\x10\x10\x12\x1a\n" +
 	"\x16LEAD_EVENT_KIND_LANDED\x10\x11\x12\x19\n" +
 	"\x15LEAD_EVENT_KIND_ASKED\x10\x12\x12\x1b\n" +
-	"\x17LEAD_EVENT_KIND_NETWORK\x10\x13*\x88\x01\n" +
+	"\x17LEAD_EVENT_KIND_NETWORK\x10\x13\x12\x18\n" +
+	"\x14LEAD_EVENT_KIND_DISK\x10\x14*\x88\x01\n" +
 	"\x0eLeadBatchState\x12 \n" +
 	"\x1cLEAD_BATCH_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18LEAD_BATCH_STATE_RUNNING\x10\x01\x12\x19\n" +

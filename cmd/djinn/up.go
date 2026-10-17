@@ -60,6 +60,7 @@ func runUp(args []string) (restart bool, err error) {
 		enlightenWorkers                          bool
 		profiles                                  bool
 		port, maxWorkers, workerCPU, workerMemory int
+		diskTrim, diskFull                        int
 		workerMemoryGuard                         float64
 		term, termDir, ifritIdle                  string
 	)
@@ -70,6 +71,8 @@ func runUp(args []string) (restart bool, err error) {
 		"enlighten-workers":   &enlightenWorkers,
 		"pprof":               &profiles,
 		"ifrit-idle":          &ifritIdle,
+		"disk-trim-gb":        &diskTrim,
+		"disk-full-gb":        &diskFull,
 	})
 	if err := flags.Parse(args); err != nil {
 		return false, err
@@ -125,6 +128,13 @@ func runUp(args []string) (restart bool, err error) {
 	}
 	if workerMemoryGuard < 0 {
 		return false, fmt.Errorf("--worker-memory-guard %g: expected a positive factor (e.g. 2 to 3), or 0 to turn off", workerMemoryGuard)
+	}
+	disk := harness.DiskGuard{Free: diskFree}
+	if disk.Trim, err = diskFlag(flags, "disk-trim-gb", diskTrim); err != nil {
+		return false, err
+	}
+	if disk.Full, err = diskFlag(flags, "disk-full-gb", diskFull); err != nil {
+		return false, err
 	}
 	idle, err := ifritIdleFlag(ifritIdle)
 	if err != nil {
@@ -222,6 +232,9 @@ func runUp(args []string) (restart bool, err error) {
 		// An outage Djinn suspects from its workers' and commands' errors is confirmed, and seen to end, by one HEAD
 		// to the provider's API host every 30 s, only while it is suspected (network.go).
 		harness.WithNetworkProbe(harness.ProbeHTTP),
+		// Before a worker starts and before push checks, the free space of the data folder's disk and the Go build
+		// cache's: low, the cache's old entries go; almost full, the lead hears it and the push checks wait (disk.go).
+		harness.WithDiskGuard(disk),
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))
@@ -779,6 +792,30 @@ func ifritIdleFlag(s string) (time.Duration, error) {
 }
 
 // flagSet tells whether the command line set the flag name.
+// diskFlag is a disk threshold of djinn up in bytes: the flag name, given; else its environment variable, set; else
+// the flag's default, v.
+func diskFlag(flags *flag.FlagSet, name string, v int) (uint64, error) {
+	env := "DJINN_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+	if e := os.Getenv(env); e != "" && !flagSet(flags, name) {
+		if _, err := fmt.Sscan(e, &v); err != nil {
+			return 0, fmt.Errorf("%s: %w", env, err)
+		}
+	}
+	if v < 0 {
+		return 0, fmt.Errorf("--%s %d: expected GB, or 0 for never", name, v)
+	}
+	return uint64(v) * harness.GB, nil
+}
+
+// diskFree is the space Djinn may use on the file system that holds dir.
+func diskFree(dir string) (uint64, error) {
+	d, err := machine.ReadDisk(dir)
+	if err != nil {
+		return 0, err
+	}
+	return d.Available, nil
+}
+
 func flagSet(flags *flag.FlagSet, name string) bool {
 	set := false
 	flags.Visit(func(f *flag.Flag) { set = set || f.Name == name })

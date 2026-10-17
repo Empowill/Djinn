@@ -165,4 +165,7 @@ To see where a frozen djinn up waits, without stopping it:
   In the dump, look for goroutines waiting in `database/sql.(*DB).conn` (waiting for the connection), and the one
   holding it.
 - **For profiles**, start it with `--pprof` (or `DJINN_PPROF=on`): it serves Go's profiles at `/debug/pprof/` on its own
-  address, `goroutine?debug=2` for the stacks, `profile?seconds=30` for where its CPU goes.
+  address, `goroutine?debug=2` for the stacks, `profile?seconds=30` for where its CPU goes. A Djinn that Djinn
+  installed was built with `-trimpath` (W303): its profiles name files by module path. Give pprof the checkout:
+  `go tool pprof -trim_path=github.com/empowill/djinn -source_path=$PWD profile.pb.gz`; or build one with full paths,
+  `go build -trimpath=false ./cmd/djinn`.

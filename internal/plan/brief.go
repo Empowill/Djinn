@@ -217,6 +217,9 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"resumes them one per pass, repairs first, and runs once again the push checks that failed on the network. Do " +
 		"nothing in between: no continue, no repair, no question; a failure or a red check during an outage is the " +
 		"network's, never the code's.\n" +
+		"- **A `disk` event is Djinn's disk guard (W303).** Almost full: Djinn trims the Go build cache entries unused " +
+		"for a day and holds the push checks; its detail names the biggest folders. Tell the developer what fills the " +
+		"disk; never delete anything yourself, nor have a worker do it. Back: the push checks run again by themselves.\n" +
 		"- **Review comments on a diff**: `djinn task comment <task> \"…\" --file <path> --line <n> [--end-line <n>]` " +
 		"goes to the task's running worker; once it has ended, `djinn task turn-comments <task>` continues it or " +
 		"spawns a correction task in its azima.\n" +

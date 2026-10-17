@@ -920,6 +920,10 @@ enum LeadEventKind {
   // back to resume; back, it resumes them one per pass, repairs first, and runs again once the push checks that failed
   // on the network.
   LEAD_EVENT_KIND_NETWORK = 19;
+  // The disk is almost full, or space came back (W303): one line each, of no wish. Under the threshold (djinn up
+  // --disk-full-gb), the line names the free space, the detail the biggest folders Djinn knows; the push checks wait
+  // instead of failing, and run once space comes back.
+  LEAD_EVENT_KIND_DISK = 20;
 }
 
 // LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the
