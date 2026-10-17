@@ -78,13 +78,17 @@ Read a tilasm and say what it calls for where you read it. **Comments** (the spe
 of your drafts) opens a column beside the frame, full size too; **On the whole tilasm** writes a comment on the
 whole of it. To comment a passage, select it in the page, as to copy it: a **Comment** button shows under it, and
 Ctrl+Alt+M does the same. The card keeps the passage and the heading above it, and the passage stays highlighted in
-gold in the page, again after a reload. A comment is a draft: it stays in Djinn's store on this machine, survives a
+gold in the page, again after a reload. To comment what you cannot select, a figure, a drawing, a table row, choose
+**Aim at an element** on the tilasm's head: the block under the mouse is framed, a click takes it, and Escape leaves.
+Numbered dots in a margin beside the frame stand at the height of each comment in the page and follow it as you
+scroll; a click on a dot opens its card, and a click on a card's anchor shows it in the page. A comment is a draft: it stays in Djinn's store on this machine, survives a
 restart, and no agent reads it. Edit one in place (Ctrl+Enter saves, Escape cancels); delete it at once, and **Undo**
 puts it back for five seconds. Your drafts are counted in gold on the tilasm's head, on its row and on the
 **Tilasms** tab.
 
 The page stays out of Djinn's reach: Djinn adds a small script to each page it serves, never to the tilasm's files,
-which tells the window what you select and highlights the passages, through the one channel a sandboxed frame keeps.
+which tells the window what you select or aim at and highlights the passages, through the one channel a sandboxed
+frame keeps.
 A tilasm that sets a content security policy of its own, in a meta tag, may refuse that script: its page reads as
 before, and you comment the whole of it.
 
@@ -111,7 +115,14 @@ it did with it, or why not, and the tasks it made of it, named under the reply. 
 a reply that asks. The card then reads **Replied**. Until each comment has its reply, the wish's brief reminds the
 Djinn which ones wait; your drafts never show there.
 
-Comments on an element of the page, and a passage found again in the next version, come next.
+### A new version
+
+A comment belongs to the tilasm, not to a version. When its next version comes, the frame finds each comment again:
+the same passage or element, perhaps moved, shows as before; one that changed but keeps most of its words says
+**Changed** on its card, the new passage above the one you wrote on; one that is gone waits under **Detached**, its
+quote struck, never lost. **Reattach** puts a detached draft on a passage you select or an element you aim at;
+otherwise it leaves as it is, and the Djinn reads it gone. Where each comment stands is kept with it, and the Djinn
+reads it with the comment.
 
 ## Making one yourself
 

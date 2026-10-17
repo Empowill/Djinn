@@ -27,12 +27,13 @@ const BUTTON_HEIGHT = 32;
 const GAP = 6;
 
 // usePassages listens to the bridge in frame while on: it returns the passage selected and where it ends in the
-// frame, and sends the bridge marks to highlight, again when they change or the page loads again. onPick comments a
-// passage: Ctrl+Alt+M calls it, as the Comment button does with pick.
+// frame, and sends the bridge marks to place and highlight in the page of that version, again when they change or the
+// page loads again. onPick comments a passage: Ctrl+Alt+M calls it, as the Comment button does with pick.
 export function usePassages(
   frame: RefObject<HTMLIFrameElement | null>,
   on: boolean,
   marks: readonly Mark[],
+  version: number,
   onPick: (passage: Passage) => void,
 ): {
   selected: { passage: Passage; at: Place } | null;
@@ -43,8 +44,8 @@ export function usePassages(
     at: Place;
   } | null>(null);
   // The latest of each, for the listeners set once.
-  const latest = useRef({ marks, onPick, selected });
-  latest.current = { marks, onPick, selected };
+  const latest = useRef({ marks, version, onPick, selected });
+  latest.current = { marks, version, onPick, selected };
   const post = (message: object) =>
     frame.current?.contentWindow?.postMessage(
       { ...message, djinn: "tilasm" },
@@ -76,14 +77,19 @@ export function usePassages(
         unselecting.current = false;
         setSelected(null);
         source.postMessage(
-          { djinn: "tilasm", type: "anchors", anchors: latest.current.marks },
+          {
+            djinn: "tilasm",
+            type: "anchors",
+            version: latest.current.version,
+            anchors: latest.current.marks,
+          },
           "*",
         );
       } else if (unselecting.current) {
         if (m.type === "selection" && !m.passage) unselecting.current = false;
       } else if (m.type === "selection")
         setSelected(m.passage ? { passage: m.passage, at: m.at } : null);
-      else picking.current();
+      else if (m.type === "key" && m.name === "comment") picking.current();
     };
     // Out of the frame, Ctrl+Alt+M comments what is selected in it.
     const onKey = (event: KeyboardEvent) => {
@@ -99,11 +105,15 @@ export function usePassages(
     };
   }, [on, frame]);
   // The marks, sent again only when they change.
-  const key = on ? JSON.stringify(marks) : "";
+  const key = on ? JSON.stringify({ version, anchors: marks }) : "";
   useEffect(() => {
     if (!key) return;
     frame.current?.contentWindow?.postMessage(
-      { djinn: "tilasm", type: "anchors", anchors: JSON.parse(key) as Mark[] },
+      {
+        djinn: "tilasm",
+        type: "anchors",
+        ...(JSON.parse(key) as { version: number; anchors: Mark[] }),
+      },
       "*",
     );
   }, [key, frame]);
@@ -115,11 +125,14 @@ export function usePassages(
 export function CommentPick({
   frame,
   at,
+  label = t("tilasms.comment_pick"),
   onPick,
 }: {
   frame: RefObject<HTMLIFrameElement | null>;
   // Where the passage's last line ends, in the frame's viewport.
   at: Place;
+  // What it does: Comment, or Reattach a detached comment there.
+  label?: string;
   onPick: () => void;
 }) {
   const [spot, setSpot] = useState<{ left: number; top: number } | null>(null);
@@ -164,7 +177,7 @@ export function CommentPick({
       onClick={onPick}
     >
       <MessageSquarePlus size={13} aria-hidden="true" />
-      {t("tilasms.comment_pick")}
+      {label}
     </button>
   );
 }
