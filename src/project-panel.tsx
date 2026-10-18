@@ -113,14 +113,16 @@ export function ProjectPanel({
     [allSources, project.name],
   );
 
-  const reshow = useCallback(
-    () =>
-      clients.projects
-        .show({ project: project.id })
-        .then(setShown)
-        .catch(() => undefined),
-    [clients, project.id],
-  );
+  const showSeq = useRef(0);
+  const reshow = useCallback(() => {
+    const seq = ++showSeq.current;
+    return clients.projects
+      .show({ project: project.id })
+      .then((res) => {
+        if (seq === showSeq.current) setShown(res);
+      })
+      .catch(() => undefined);
+  }, [clients, project.id]);
 
   useEffect(() => {
     let live = true;
@@ -128,9 +130,12 @@ export function ProjectPanel({
       .list({ project: project.id })
       .then((res) => live && setSkills(res.skills))
       .catch((err) => live && setError(message(err)));
+    const seq = ++showSeq.current;
     clients.projects
       .show({ project: project.id })
-      .then((res) => live && setShown(res))
+      .then((res) => {
+        if (live && seq === showSeq.current) setShown(res);
+      })
       .catch((err) => live && setError(message(err)));
     return () => {
       live = false;

@@ -206,10 +206,11 @@ func runUp(args []string) (restart bool, err error) {
 	policy.Workers = maxWorkers
 	policy.WorkerMemory = uint64(workerMemory) << 20
 	policy.WorkerMemoryGuard = workerMemoryGuard
+	calm := ui.StampedTestBuild() && os.Getenv("DJINN_TEST_MACHINE") == "calm"
 	read := readMachine
 	switch {
 	case read != nil:
-	case ui.StampedTestBuild() && os.Getenv("DJINN_TEST_MACHINE") == "calm":
+	case calm:
 		// The e2e suite's djinn (e2e/playwright.config.ts): its fake workers start whatever the machine runs besides.
 		read = machine.Calm
 	default:
@@ -233,9 +234,11 @@ func runUp(args []string) (restart bool, err error) {
 		// An outage Djinn suspects from its workers' and commands' errors is confirmed, and seen to end, by one HEAD
 		// to the provider's API host every 30 s, only while it is suspected (network.go).
 		harness.WithNetworkProbe(harness.ProbeHTTP),
+	}
+	if !calm {
 		// Before a worker starts and before push checks, the free space of the data folder's disk and the Go build
 		// cache's: low, the cache's old entries go; almost full, the lead hears it and the push checks wait (disk.go).
-		harness.WithDiskGuard(disk),
+		opts = append(opts, harness.WithDiskGuard(disk))
 	}
 	if machine.NotMeasured == "" {
 		opts = append(opts, harness.WithMeasure(5*time.Second, machine.ReadWorker))

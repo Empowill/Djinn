@@ -884,3 +884,142 @@ test("the tilasm comments foot sends Iterate or Launch in one click in its kind 
     /<p class="tilasm-send-hold">Send 1 left for the Djinn: it launches the work\.<\/p>/,
   );
 });
+
+test("the comments column gives the open creation form its own class and disables Edit, Delete, Reattach and On the whole tilasm while a save is in flight", async () => {
+  const container = setupMockDom();
+  const proto = Object.getPrototypeOf(container);
+  proto.focus = proto.focus ?? function () {};
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const text = (node) =>
+    node.childNodes.length > 0
+      ? node.childNodes.map(text).join("")
+      : (node.nodeValue ?? node.textContent ?? "");
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+
+  const l01 = "01a1223a-ae45-728f-8c37-c005eee91edb";
+  const c1 = {
+    id: "01a14600-0000-7000-8000-000000000001",
+    tilasmId: l01,
+    code: "C1",
+    text: "First note.",
+    state: s.CommentState.DRAFT,
+    anchor: {
+      page: "index.html",
+      exact: "old quote",
+      status: s.AnchorStatus.LOST,
+    },
+  };
+  let finishPut;
+  const writes = {
+    put: () =>
+      new Promise((resolve) => {
+        finishPut = resolve;
+      }),
+    remove: async () => {},
+    send: async () => {},
+  };
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () => {
+      root.render(
+        h(s.CommentsColumn, {
+          drafts: [c1],
+          sent: [],
+          reads: [],
+          tasks: [],
+          placed: [],
+          active: "",
+          reattaching: "",
+          onActive() {},
+          onReattach() {},
+          onWriting() {},
+          onClose() {},
+          onError() {},
+          writes,
+        }),
+      );
+    });
+
+    // Open the new-comment form via "On the whole tilasm": it uses .tilasm-comment-new, not .tilasm-comment.
+    const wholeBtn = below(container).find(
+      (el) =>
+        el.nodeName === "BUTTON" && text(el).includes("On the whole tilasm"),
+    );
+    await s.act(async () => {
+      props(wholeBtn).onClick();
+    });
+    const lis = below(container).filter((el) => el.nodeName === "LI");
+    assert.equal(
+      lis.filter((el) => el.attributes.class === "tilasm-comment-new").length,
+      1,
+    );
+    assert.equal(
+      lis.filter((el) =>
+        String(el.attributes.class ?? "")
+          .split(" ")
+          .includes("tilasm-comment"),
+      ).length,
+      1,
+      "only saved/draft cards have class tilasm-comment",
+    );
+
+    // Type and click Save: while writes.put is in flight (busy), Edit C1, Delete C1, Reattach and On the whole tilasm are disabled.
+    const textarea = below(container).find((el) => el.nodeName === "TEXTAREA");
+    await s.act(async () => {
+      props(textarea).onChange({
+        target: { value: "Second note." },
+        currentTarget: { style: {}, scrollHeight: 48 },
+      });
+    });
+    const saveBtn = below(container).find(
+      (el) => el.nodeName === "BUTTON" && text(el).includes("Save"),
+    );
+    let saving;
+    await s.act(async () => {
+      saving = props(saveBtn).onClick();
+    });
+    const buttonDisabled = (label) => {
+      const btn = below(container).find(
+        (el) =>
+          el.nodeName === "BUTTON" &&
+          (el.attributes["aria-label"] === label || text(el).includes(label)),
+      );
+      return Boolean(props(btn)?.disabled);
+    };
+    assert.equal(buttonDisabled("Edit C1"), true);
+    assert.equal(buttonDisabled("Delete C1"), true);
+    assert.equal(buttonDisabled("Reattach"), true);
+    assert.equal(buttonDisabled("On the whole tilasm"), true);
+
+    await s.act(async () => {
+      finishPut({
+        id: "01a14600-0000-7000-8000-000000000002",
+        tilasmId: l01,
+        code: "C2",
+        text: "Second note.",
+        state: s.CommentState.DRAFT,
+      });
+      await saving;
+    });
+    assert.equal(
+      below(container).filter(
+        (el) =>
+          el.nodeName === "LI" && el.attributes.class === "tilasm-comment-new",
+      ).length,
+      0,
+    );
+    assert.equal(buttonDisabled("Edit C1"), false);
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});

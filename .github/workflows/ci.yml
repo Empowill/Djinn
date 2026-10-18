@@ -135,12 +135,15 @@ jobs:
       - run: npm ci
       - name: Install the headless browser of the end-to-end tests
         run: npx playwright install chromium
+      # Windows gives 16,384 dynamic TCP ports (49152-65535) and holds closed ones in TIME_WAIT for 120 s: test-go's
+      # 240+ httptest servers and e2e's ~190 djinn.exe commands exhaust the pool (ERR_NO_BUFFER_SPACE, L41).
+      - run: |
+          netsh int ipv4 set dynamicport tcp start=10000 num=55535
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name TcpTimedWaitDelay -Value 30 -Type DWord
       # test-go builds the interface first: the djinn package embeds it.
       - run: go tool task test-go
       - if: ${{ !cancelled() }}
         run: go tool task test-ui
-      # Retries a failed test once on Windows (e2e/playwright.config.ts, temporary until Q108 is fixed) and lists the
-      # tests that passed on retry (Playwright flaky status) in $GITHUB_STEP_SUMMARY (e2e/reporter.ts).
       - if: ${{ !cancelled() }}
         run: go tool task e2e
       - name: Keep the traces and screenshots of the end-to-end tests that failed

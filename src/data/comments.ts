@@ -102,7 +102,7 @@ export type ColumnAction =
   // Escape, or Cancel: the card goes back to what is stored.
   | { type: "cancel" }
   // The card was stored.
-  | { type: "saved" }
+  | { type: "saved"; editing?: string }
   // A draft was deleted at now: its Undo stands until UNDO_MS later.
   | { type: "deleted"; comment: TilasmComment; now: number }
   // The Undo put the draft back, or was dismissed.
@@ -130,7 +130,9 @@ export function column(state: Column, action: ColumnAction): Column {
     case "type":
       return { ...state, text: action.text };
     case "cancel":
+      return { ...unanchored(state), editing: "", text: "" };
     case "saved":
+      if (action.editing && state.editing !== action.editing) return state;
       return { ...unanchored(state), editing: "", text: "" };
     case "deleted": {
       const editing = state.editing === action.comment.id;

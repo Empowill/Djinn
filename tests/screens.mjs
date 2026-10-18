@@ -162,6 +162,8 @@ export {
 } from "@/src/data/tilasms.ts";
 export { CommentsColumn, SendBar } from "@/src/tilasm-comments.tsx";
 export {
+  AnchorStatus,
+  CommentState,
   SendChoice,
   TilasmHoldReason,
   TilasmService,
@@ -400,6 +402,7 @@ export function setupMockDom() {
       this.childNodes = [];
       this.parentNode = null;
       this.attributes = {};
+      this.value = "";
       this.style = { setProperty() {} };
       this.ownerDocument = globalThis.document;
       this.namespaceURI = "http://www.w3.org/1999/xhtml";
@@ -435,8 +438,19 @@ export function setupMockDom() {
     }
     addEventListener() {}
     removeEventListener() {}
+    focus() {}
+    setSelectionRange() {}
+    closest() {
+      return null;
+    }
     querySelector() {
       return null;
+    }
+    querySelectorAll() {
+      return [];
+    }
+    contains() {
+      return false;
     }
     // Motion measures the box of an element it lays out (the wish's pill, workspace-action.tsx).
     getBoundingClientRect() {
