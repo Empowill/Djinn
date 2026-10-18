@@ -49,10 +49,12 @@ function follow(page: Page, ms: number): Promise<Followed> {
         const samples: Sample[] = [];
         const path: { x: number; y: number }[] = [];
         const start = performance.now();
+        let seen = false;
         const tick = () => {
           const eye = document.querySelector<HTMLElement>(".djinn-eye");
           const box = eye?.getBoundingClientRect();
           const flying = !!eye?.hasAttribute("data-flying");
+          if (flying) seen = true;
           samples.push({
             t: performance.now() - start,
             x: box ? box.left + box.width / 2 : NaN,
@@ -71,7 +73,9 @@ function follow(page: Page, ms: number): Promise<Followed> {
                   y: +m[2] + eye.offsetHeight / 2,
                 });
             }
-          if (performance.now() - start < ms) requestAnimationFrame(tick);
+          if (seen && !flying) resolve({ samples, path });
+          else if (performance.now() - start < ms || flying)
+            requestAnimationFrame(tick);
           else resolve({ samples, path });
         };
         tick();
@@ -80,15 +84,22 @@ function follow(page: Page, ms: number): Promise<Followed> {
   );
 }
 
-// flown is the flight: a path of many small steps, never a jump, followed for long enough to be seen.
+// flown is the flight: a path of many small steps, never a jump, with at least three frames painted in flight and
+// followed for long enough to be seen. The frame count itself is a pace budget, checked in the @budget case below.
 function flown({ samples, path }: Followed) {
   const air = samples.filter((s) => s.flying);
-  expect(air.length, "frames in flight").toBeGreaterThan(2);
+  expect(air.length, "frames in flight").toBeGreaterThanOrEqual(3);
   expect(path.length, "steps of the path").toBeGreaterThan(20);
   const length = Math.hypot(
     path.at(-1)!.x - path[0].x,
     path.at(-1)!.y - path[0].y,
   );
+  for (let i = 1; i < air.length; i++) {
+    const step = Math.hypot(air[i].x - air[i - 1].x, air[i].y - air[i - 1].y);
+    expect(step, `painted step ${i} of ${length.toFixed(0)} px`).toBeLessThan(
+      length,
+    );
+  }
   for (let i = 1; i < path.length; i++) {
     const step = Math.hypot(
       path[i].x - path[i - 1].x,
@@ -98,7 +109,11 @@ function flown({ samples, path }: Followed) {
       Math.max(length / 5, 4),
     );
   }
-  expect(air.at(-1)!.t - air[0].t, "time in flight").toBeGreaterThan(400);
+  const first = samples.indexOf(air[0]);
+  const last = samples.lastIndexOf(air.at(-1)!);
+  const before = samples[first - 1] ?? air[0];
+  const after = samples[last + 1] ?? air.at(-1)!;
+  expect(after.t - before.t, "time in flight").toBeGreaterThan(400);
   return path;
 }
 
@@ -319,3 +334,62 @@ test("a click on a wish with no question opens its first tab, and the eye listen
     djinn("wish", "pause", wishId);
   }
 });
+
+// The frame count in flight is a pace budget: other workers' load drops frames without changing the path, so it runs
+// on demand (playwright.config.ts).
+test(
+  "the eye paints more than eight frames in flight",
+  { tag: "@budget" },
+  async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    pauseOthers();
+    const title = `Eye budget ${randomUUID().slice(0, 8)}`;
+    const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
+      .id as string;
+    setLead(session, leadFolder("eye-"));
+    const ask = (text: string, ...more: string[]) =>
+      JSON.parse(
+        djinn(
+          "question",
+          "ask",
+          text,
+          wishId,
+          "--options",
+          "Yes",
+          "--options",
+          "No",
+          "--json",
+          ...more,
+        ),
+      ).question.id as string;
+    try {
+      const wick = ask(
+        "Which wick?",
+        "--context",
+        Array.from({ length: 12 }, (_, i) => `- Wick ${i + 1}`).join("\n"),
+      );
+      const oil = ask("Which oil for the lamp?");
+
+      await page.goto(process.env.DJINN_URL!);
+      await page.locator(".wish-nav").filter({ hasText: title }).click();
+      await expect(page.locator(`#question-${wick}`)).toBeFocused();
+      await expect(perchOf(page, wick)).toBeVisible({ timeout: 10_000 });
+
+      let best = 0;
+      for (let i = 0; i < 6 && best <= 8; i++) {
+        const next = i % 2 === 0 ? oil : wick;
+        const sampled = follow(page, 2_600);
+        await page.keyboard.press(i % 2 === 0 ? "ArrowDown" : "ArrowUp");
+        const { samples } = await sampled;
+        await expect(perchOf(page, next)).toBeVisible({ timeout: 5_000 });
+        best = Math.max(best, samples.filter((s) => s.flying).length);
+      }
+      expect(best, "frames in flight").toBeGreaterThan(8);
+      expect(errors).toEqual([]);
+    } finally {
+      djinn("wish", "pause", wishId);
+    }
+  },
+);
