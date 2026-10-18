@@ -180,7 +180,7 @@ type Settings struct {
 	Generated                []string
 	Generate, Setup, Install string
 	TestOne                  string
-	// The checks Djinn runs before it commits a task's work and before it pushes, in the order the file names them.
+	// The checks Djinn runs before it merges a task's work and before it pushes, in the order the file names them.
 	Checks []*planv1.ProjectCheck
 	// How many correction workers Djinn starts for a batch that conflicts in code or tests red, before it asks.
 	CorrectionAttempts int
@@ -830,8 +830,8 @@ func (s Settings) IfritChecksBrief() string {
 	return b.String()
 }
 
-// checksWhen writes to b which checks Djinn runs on the project's work, before it commits and before it pushes, and
-// returns them, each list "" when there is none.
+// checksWhen writes to b which checks Djinn runs on the project's work, before it merges a task's work and before it
+// pushes, and returns them, each list "" when there is none.
 func (s Settings) checksWhen(b *strings.Builder) (commit, push string) {
 	list := func(when planv1.CheckWhen) string {
 		var names []string
@@ -843,7 +843,7 @@ func (s Settings) checksWhen(b *strings.Builder) (commit, push string) {
 	b.WriteString("Djinn checks this project's work")
 	commit, push = list(planv1.CheckWhen_CHECK_WHEN_COMMIT), list(planv1.CheckWhen_CHECK_WHEN_PUSH)
 	if commit != "" {
-		b.WriteString(" before it commits a task's work, with " + commit)
+		b.WriteString(" before it merges a task's work, with " + commit)
 	}
 	if push != "" {
 		if commit != "" {

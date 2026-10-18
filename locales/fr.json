@@ -689,7 +689,7 @@
   "project.check_red": "Échouée sur {sha}, {when} : {reason}",
   "project.check_setup": "prépare un worktree",
   "project.checks": "Vérifications",
-  "project.checks_detail": "Ce que Djinn lance sur le travail de ce projet, chacune par une gate de son nom : avant de committer le travail d’une tâche dans la branche de son souhait, et avant de pousser cette branche. Les réglages les nomment (.agents/settings.txtpb, ou votre propre fichier).",
+  "project.checks_detail": "Ce que Djinn lance sur le travail de ce projet, chacune par une gate de son nom : avant de fusionner le travail d’une tâche dans la branche de son souhait, et avant de pousser cette branche. Les réglages les nomment (.agents/settings.txtpb, ou votre propre fichier).",
   "project.choose": "Choisir un dossier…",
   "project.choose_title": "Choisir le dossier du projet",
   "project.eyebrow": "CONFIGURATION DU PROJET",

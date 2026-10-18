@@ -89,16 +89,32 @@ func commandName(line string) string {
 	return ""
 }
 
+// pathPermissions are the names of refused calls a path decides, not a command: agy's file tools refused a path
+// outside the folders its project grants (agyDeniedPath). No mode grants them: auto judges commands only (W360).
+var pathPermissions = []string{"read_file", "write_file"}
+
+// pathsOnly tells whether every call t's worker had refused was refused for its path (pathPermissions).
+func pathsOnly(t *planv1.Task) bool {
+	names := t.GetRefused().GetNames()
+	return len(names) > 0 && !slices.ContainsFunc(names, func(n string) bool { return !slices.Contains(pathPermissions, n) })
+}
+
 // refusedClause says the calls t's worker had refused in its last run, naming shown of them at most, and the
 // command that would grant them, for the lead; "" when none was refused. An edit allowance adds no command
-// (allowedBy): only auto lets the agent judge them. refusedRight ends the sentence.
+// (allowedBy): only auto lets the agent judge them, and no command grants a path (pathsOnly). refusedEnd ends the
+// sentence.
 func refusedClause(t *planv1.Task, wish *planv1.Wish, shown int) string {
 	r := t.GetRefused()
 	if r.GetCount() == 0 {
 		return ""
 	}
 	noun := "commands"
-	if r.GetCount() == 1 {
+	switch {
+	case pathsOnly(t) && r.GetCount() == 1:
+		noun = "file access"
+	case pathsOnly(t):
+		noun = "file accesses"
+	case r.GetCount() == 1:
 		noun = "command"
 	}
 	clause := fmt.Sprintf("%d %s refused (permission)", r.GetCount(), noun)
@@ -107,6 +123,9 @@ func refusedClause(t *planv1.Task, wish *planv1.Wish, shown int) string {
 		if len(names) > shown {
 			clause += ", …"
 		}
+	}
+	if pathsOnly(t) {
+		return clause
 	}
 	clause += "; djinn wish allow " + t.GetWishId() + " --mode auto"
 	if len(wish.GetProjectIds()) > 1 && t.GetProjectId() != "" {
@@ -117,6 +136,17 @@ func refusedClause(t *planv1.Task, wish *planv1.Wish, shown int) string {
 
 // refusedRight ends the sentence of refusedClause: the command is a right, the developer's to grant.
 const refusedRight = " would let the agent judge them, a right only the developer grants."
+
+// refusedPaths ends the sentence of refusedClause for paths only: no mode grants them.
+const refusedPaths = ", paths outside the folders Djinn opens to the worker: no mode grants them."
+
+// refusedEnd ends the sentence of refusedClause for t.
+func refusedEnd(t *planv1.Task) string {
+	if pathsOnly(t) {
+		return refusedPaths
+	}
+	return refusedRight
+}
 
 // tellsDone tells whether the lead hears of t's end as done from tellDone: a work worker, not a watcher, a question
 // worker, an azima, nor a correction or a review worker, whose end the integration tells.
@@ -161,7 +191,7 @@ func doneLine(t *planv1.Task, wish *planv1.Wish, note, why, stopped string) stri
 		}) {
 			shown--
 		}
-		line += ", " + refusedClause(t, wish, shown) + refusedRight
+		line += ", " + refusedClause(t, wish, shown) + refusedEnd(t)
 	} else if why != "" {
 		line += ", " + why + "."
 	}

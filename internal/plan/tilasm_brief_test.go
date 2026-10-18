@@ -92,7 +92,8 @@ func TestTilasmCitationsBothWays(t *testing.T) {
 }
 
 // TestTilasmContext: what a worker's first prompt holds of the tilasms it is given, each once; a tilasm of another
-// wish, or none, is refused.
+// wish, or none, is refused. TilasmDirs reads the version folders back from the prompt, those in Djinn's data folder
+// only: the folders the worker reads (W360).
 func TestTilasmContext(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
@@ -124,6 +125,14 @@ func TestTilasmContext(t *testing.T) {
 	}
 	if strings.Count(text, "## L01") != 1 || strings.Contains(text, "secret") {
 		t.Errorf("the tilasm is given once, without its scripts:\n%s", text)
+	}
+	prompt := "Fix it.\n- Files, version 3: " + filepath.Join(home, "tilasms", "x", "v3") + "\n\n" + text +
+		"\n- Files, version 2: /etc\n"
+	if got, want := TilasmDirs(home, prompt), []string{filepath.Join(home, "tilasms", id, "v1")}; !slices.Equal(got, want) {
+		t.Errorf("TilasmDirs = %q, want %q", got, want)
+	}
+	if got := TilasmDirs(home, "Fix it."); got != nil {
+		t.Errorf("TilasmDirs without tilasms = %q", got)
 	}
 	if text, err := TilasmContext(ctx, c.store, home, wish, nil); err != nil || text != "" {
 		t.Errorf("no tilasm: %q, %v; want nothing", text, err)

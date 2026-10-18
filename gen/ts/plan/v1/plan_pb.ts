@@ -833,7 +833,7 @@ export type ProjectSettings = Message<"plan.v1.ProjectSettings"> & {
   setup?: string | undefined;
 
   /**
-   * The commands Djinn runs on the project's work, each through a gate of its name, before it commits a task's work
+   * The commands Djinn runs on the project's work, each through a gate of its name, before it merges a task's work
    * into its wish's integration branch, before it pushes that branch, or both. Djinn integrates the project's finished
    * work only once one is set. A file that sets some sets them all; names ignore case and are unique.
    *

@@ -693,7 +693,7 @@ func TestIfritChecksBrief(t *testing.T) {
 		atCommit("lint", "go tool task lint"),
 		{Name: "test", Command: "go tool task test", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}},
 	}}
-	want := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
+	want := "Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- go tool task lint`; " +
 		"before it pushes, with `djinn gate run test -- go tool task test`. Run neither after a change: Djinn runs the " +
 		"commit checks once you are finished, the push checks before it pushes. A test the developer asks for runs with " +
 		"`go tool task test-pkg -- {pkg}`. A fresh worktree needs `npm ci` first."
@@ -701,7 +701,7 @@ func TestIfritChecksBrief(t *testing.T) {
 		t.Errorf("both:\n%s\nwant:\n%s", got, want)
 	}
 	commit := Settings{Checks: []*planv1.ProjectCheck{atCommit("test", "make test")}}
-	want = "Djinn checks this project's work before it commits a task's work, with `djinn gate run test -- make test`. " +
+	want = "Djinn checks this project's work before it merges a task's work, with `djinn gate run test -- make test`. " +
 		"Do not run them after a change: Djinn runs them once you are finished."
 	if got := commit.IfritChecksBrief(); got != want {
 		t.Errorf("commit only:\n%s\nwant:\n%s", got, want)
@@ -727,7 +727,7 @@ func TestChecksBrief(t *testing.T) {
 		atCommit("lint", "go tool task lint"),
 		{Name: "test", Command: "go tool task test", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}},
 	}}
-	want := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
+	want := "Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- go tool task lint`; " +
 		"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
 		"and fixes what they find, then only the tests that cover what it changed; do not run the push checks (`djinn gate run test -- go tool task test`): " +
 		"Djinn runs them before pushing. A fresh worktree needs `npm ci` first."
@@ -744,7 +744,7 @@ func TestChecksBrief(t *testing.T) {
 		},
 		TestOne: "go tool task test-pkg -- {pkg}",
 	}
-	wantTestOne := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
+	wantTestOne := "Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- go tool task lint`; " +
 		"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
 		"and fixes what they find, then only the tests that cover what it changed (`go tool task test-pkg -- {pkg}`); " +
 		"do not run the push checks (`djinn gate run test -- go tool task test`): Djinn runs them before pushing. A fresh worktree needs `npm ci` first."
@@ -754,7 +754,7 @@ func TestChecksBrief(t *testing.T) {
 
 	// When a commit check is the whole suite (name "test")
 	sWhole := Settings{Checks: []*planv1.ProjectCheck{atCommit("test", "make test")}}
-	wantWhole := "Djinn checks this project's work before it commits a task's work, with `djinn gate run test -- make test`. " +
+	wantWhole := "Djinn checks this project's work before it merges a task's work, with `djinn gate run test -- make test`. " +
 		"A worker runs the commit checks before it ends, and fixes what they find (the commit check is the whole suite)."
 	if got := sWhole.ChecksBrief(); got != wantWhole {
 		t.Errorf("brief whole suite at commit:\n%s\nwant:\n%s", got, wantWhole)

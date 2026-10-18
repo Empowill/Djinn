@@ -37,7 +37,7 @@ Like the genie of the lamp, Djinn has limits, and they are the project's first r
   and no secret it stores or reads.
 - **Three wishes at a time.** One Djinn holds three active wishes at most, and as many set aside as you like.
 
-**Workers never commit, and never push.** They edit their worktree; Djinn commits each one's work as it ends,
+**Workers commit, and never push.** Each commits its work in its worktree; Djinn merges each one's work as it ends,
 checked, and pushes on a cadence: one CI run per push instead of one per worker.
 
 ## Install

@@ -103,7 +103,7 @@ func TestBrief(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Read `AGENTS.md`, `contributing.md` at its root first", "**notes**, outside Git", "**api**, a Git repository",
-		"  Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
+		"  Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- go tool task lint`; " +
 			"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
 			"and fixes what they find, then only the tests that cover what it changed; do not run the push checks (`djinn gate run test -- go tool task test`): " +
 			"Djinn runs them before pushing. A fresh worktree needs `npm ci` first. Djinn says so in each worker's first prompt.\n",

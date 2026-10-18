@@ -81,9 +81,9 @@ work, each one after the tasks it needs. Then work starts:
 - **The Tasks tab** shows what moves: each task with its status, its agent and model, how long it ran, what it cost,
   and, for a running worker, its live CPU and memory. Click a task to read what its worker did and said, and to see its
   diff.
-- **Workers never commit.** When a task ends, Djinn commits its work. In a project whose settings name its checks,
-  Djinn merges that work into the wish's branch, runs the checks, and starts a correction worker when they fail. It
-  pushes on a cadence, not once per worker.
+- **Workers commit, never push.** A worker commits its work before it ends. In a project whose settings name its
+  checks, Djinn merges that work into the wish's branch, runs the checks, and starts a correction worker when they
+  fail. It pushes on a cadence, not once per worker.
 - **The Djinn hears of each task's end**, reads what was done, and decides what comes next: the next task, a
   correction, or a question for you.
 

@@ -689,7 +689,7 @@
   "project.check_red": "Failed on {sha}, {when}: {reason}",
   "project.check_setup": "makes a worktree ready",
   "project.checks": "Checks",
-  "project.checks_detail": "What Djinn runs on this project's work, each through a gate of its name: before it commits a task's work into its wish's branch, and before it pushes that branch. The settings name them (.agents/settings.txtpb, or your own file).",
+  "project.checks_detail": "What Djinn runs on this project's work, each through a gate of its name: before it merges a task's work into its wish's branch, and before it pushes that branch. The settings name them (.agents/settings.txtpb, or your own file).",
   "project.choose": "Choose a folder…",
   "project.choose_title": "Choose the project's folder",
   "project.eyebrow": "PROJECT CONFIGURATION",

@@ -67,7 +67,7 @@ Djinn, wait for your look (see the `change` topic below).
 | `generated`      | The files code generation makes, as globs (`gen/**`), repeated: see [integration](#integration). | none |
 | `generate`       | The command that makes them, in the project's folder.                   | none                       |
 | `setup`          | The command that makes a fresh worktree ready (`npm ci`), in the project's folder: see [checks](#checks). | none |
-| `checks`         | The commands Djinn runs before it commits a task's work, before it pushes, or both, each through a gate of its name: see [checks](#checks). Set, Djinn integrates finished work. A file that sets some sets them all. | none: integration into a wish's own branch only, untested |
+| `checks`         | The commands Djinn runs before it merges a task's work, before it pushes, or both, each through a gate of its name: see [checks](#checks). Set, Djinn integrates finished work. A file that sets some sets them all. | none: integration into a wish's own branch only, untested |
 | `test_one`       | The command template a worker runs for targeted tests (`go tool task test-pkg -- {pkg}`): see [checks](#checks). | none: worker runs tests covering what it changed |
 | `test`           | The former name of a check run before each commit: `test: "make test"` is the check `test` at `commit`. | none |
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
@@ -341,9 +341,10 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
    left, and the task says `uncommitted: reviewed by W5`; its worktree stays, holding what was left, and the lead reads
    that line under the merge line. A path the review leaves without naming it after `Left:` in that line (whole, from a
    folder of the project down, or by a folder ending with `/`) is not judged; a review that fails, or leaves such a path,
-   counts as an attempt; past `correction_attempts`, Djinn tells the lead, as above. Review and correction workers may run
+   counts as an attempt; past `correction_attempts`, Djinn tells the lead, as above. Every worker that may edit may run
    `git status`, `git diff`, `git log`, `git add`, `git commit`, `git restore` and `git rm` besides the project's
-   `commands`, a correction worker `git clean` too; its `denied_commands` still win. A review worker is denied
+   `commands`, as it commits its own work before it ends; a correction worker `git clean` too; its `denied_commands`
+   still win. A review worker is denied
    `git add -A`, `git add --all`, `git add .`, `git add -u`, `git commit -a`, `git clean` and `git stash`.
 
 In a project whose settings name no check, Djinn does the same, no check run, when the wish has a branch of its own

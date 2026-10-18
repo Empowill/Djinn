@@ -468,6 +468,48 @@ func catalog() []catalogCase {
 					t.Errorf("continuations in input = %d, want 1; input = %q", n, input)
 				}
 			}},
+		// W308's lines (agy 1.4.1, W360): a tool error that is no denial goes back to the model, and the turn goes on.
+		{provider: "antigravity", fixture: "tool-error",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, input string) {
+				if got := texts(events, "TOOL_RESULT"); len(got) != 3 || !strings.HasSuffix(got[1], "brief_test.go: no such file or directory") {
+					t.Errorf("results = %q", got)
+				}
+				if strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("Djinn continued a turn that went on: %q", input)
+				}
+			}},
+		// "task-" in a branch name is no background task: the process that then ends mid-turn fails it.
+		{provider: "antigravity", fixture: "task-in-branch", end: "exit:1", want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "ERROR"},
+			exit: 1, err: "agy ended before the end of its turn",
+			check: func(t *testing.T, events []Event, _, _ string) {
+				if got := texts(events, "TOOL_RESULT"); len(got) != 1 || !strings.Contains(got[0], "-task-of-8e0eb518") {
+					t.Errorf("results = %q", got)
+				}
+			}},
+		// A background command is a tool step ACTIVE until it ends; the steps held meanwhile, then the system message
+		// of its end, which says nothing.
+		{provider: "antigravity", fixture: "background-task",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT",
+				"TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, _ string) {
+				if got := texts(events, "TOOL_RESULT"); !strings.HasPrefix(got[0], "ok  \tgithub.com/empowill/djinn/internal/dispatch") ||
+					!strings.HasPrefix(got[3], "Task: a7b0d8e7-4941-4195-bd26-dbf86d65ef8d/task-19\nStatus: RUNNING") {
+					t.Errorf("results = %q", got)
+				}
+			}},
+		{provider: "antigravity", fixture: "command-runs", end: "exit:1", want: []string{"STATUS", "TOOL_CALL", "ERROR"},
+			exit: 1, err: "agy ended before the end of its turn"},
+		// agy's own retry of an idle model call: an error_message step, without text; the turn goes on.
+		{provider: "antigravity", fixture: "error-message", want: []string{"STATUS", "OTHER", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, input string) {
+				if got := texts(events, "OTHER"); !slices.Equal(got, []string{"step error_message DONE"}) {
+					t.Errorf("others = %q", got)
+				}
+				if strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("Djinn continued a turn agy retried by itself: %q", input)
+				}
+			}},
 
 		// Codex.
 		{provider: "codex", fixture: "success", want: []string{"STATUS", "TEXT", "USAGE", "STATUS"},

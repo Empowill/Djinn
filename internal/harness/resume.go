@@ -442,7 +442,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	}
 	spec := Spec{
 		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: model, MaxBudgetUSD: budget,
-		Resume: t.GetSessionId(), Prompt: line,
+		Resume: t.GetSessionId(), Prompt: line, ReadDirs: plan.TilasmDirs(h.home, prompt),
 	}
 	var err error
 	if spec.WriteDirs, err = h.questionWriteDirs(t); err != nil {

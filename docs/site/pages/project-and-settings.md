@@ -128,7 +128,7 @@ worker's worktree. A task keeps what it got: changing a file changes the tasks t
 | Agent and model | Which agent runs the workers (Claude Code, Codex, Antigravity), and its model. | Claude Code, its default model |
 | Budget | The most one worker may spend, when its agent can enforce it. | No limit |
 | Branch names | How each worker's branch is named, from the task's code, its title and a unique part. | Code, title, unique part |
-| Checks | What Djinn runs before it commits a task's work, before it pushes, or both. See [Gates](#gates). | None: see below |
+| Checks | What Djinn runs before it merges a task's work, before it pushes, or both. See [Gates](#gates). | None: see below |
 | Setup | What makes a fresh worktree ready, such as installing dependencies. | None |
 | Generated files | Files code generation makes, and the command that makes them: a conflict only there is settled by running it again. | None |
 | Targeted tests | How a worker runs only the tests covering what it changed. | The worker finds them |

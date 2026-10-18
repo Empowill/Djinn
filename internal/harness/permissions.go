@@ -68,10 +68,14 @@ func LeadPermissions() *djinnv1.Permissions {
 	return &djinnv1.Permissions{Commands: plan.LeadCommands, Mode: djinnv1.Mode_MODE_LISTED}
 }
 
-// commitCommands are what a worker Djinn starts to commit work, a correction or a review worker, may run besides what
-// the project lists: it commits what belongs to the task in its worktree, and drops the rest. Other workers never
-// commit. The project's denied_commands still win.
-var commitCommands = []string{"git status", "git diff", "git log", "git add", "git commit", "git restore", "git rm", "git clean"}
+// commitCommands are what a worker that may edit runs to commit its work besides what the project lists (W360): it
+// commits its work before it ends (workerCommitRule), and Djinn commits nothing for it. A correction worker may also
+// git clean; a review worker commits what belongs to the task, and drops the rest. The project's denied_commands
+// still win.
+var commitCommands = []string{"git status", "git diff", "git log", "git add", "git commit", "git restore", "git rm"}
+
+// correctionCommands are what a correction worker runs besides commitCommands.
+var correctionCommands = []string{"git clean"}
 
 // reviewDenied are what a review worker may not run: it stages each path it judges by its name, and leaves what it
 // leaves out where it is, never staged all at once, removed or stashed.
@@ -80,14 +84,18 @@ var reviewDenied = []string{
 	"git commit --all", "git clean", "git stash",
 }
 
-// withCommit is perms with commitCommands for t when it is a correction or a review worker that may edit, a review
-// worker denied reviewDenied; perms as it is otherwise.
+// withCommit is perms with commitCommands when t's worker may edit, correctionCommands too for a correction worker, a
+// review worker denied reviewDenied; perms as it is otherwise.
 func withCommit(t *planv1.Task, perms *djinnv1.Permissions) *djinnv1.Permissions {
-	if perms == nil || !perms.GetEdit() || t.GetCorrection() == nil && t.GetReview() == nil {
+	if perms == nil || !perms.GetEdit() {
 		return perms
 	}
 	perms = proto.CloneOf(perms)
-	for _, c := range commitCommands {
+	commands := commitCommands
+	if t.GetCorrection() != nil {
+		commands = append(slices.Clone(commitCommands), correctionCommands...)
+	}
+	for _, c := range commands {
 		if !slices.Contains(perms.GetCommands(), c) && (t.GetReview() == nil || !slices.Contains(reviewDenied, c)) {
 			perms.Commands = append(perms.Commands, c)
 		}

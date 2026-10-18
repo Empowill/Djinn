@@ -365,7 +365,7 @@ message ProjectSettings {
   // once in each integration worktree, before the first command there, and again when its lock files change. Its
   // words are split on spaces, without a shell.
   optional string setup = 13 [(buf.validate.field).string.max_len = 500];
-  // The commands Djinn runs on the project's work, each through a gate of its name, before it commits a task's work
+  // The commands Djinn runs on the project's work, each through a gate of its name, before it merges a task's work
   // into its wish's integration branch, before it pushes that branch, or both. Djinn integrates the project's finished
   // work only once one is set. A file that sets some sets them all; names ignore case and are unique.
   repeated ProjectCheck checks = 14 [(buf.validate.field).repeated.max_items = 20];

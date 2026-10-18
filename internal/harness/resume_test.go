@@ -318,7 +318,7 @@ func TestResumeFromTheFirstPromptKeepsTheChecks(t *testing.T) {
 	e.down()
 
 	e = upWith(t, home, providers)
-	checks := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- lint`."
+	checks := "Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- lint`."
 	for _, tk := range []*planv1.Task{unknown, agyUnknown, agySession, session} {
 		e.until(t, tk.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	}

@@ -364,13 +364,14 @@ func TestWishAllow(t *testing.T) {
 	if task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_AGENTS || spec.Permissions.GetEdit() {
 		t.Errorf("no allowance: %v, %+v", task, spec)
 	}
-	// Edit: the worker may edit, the project's commands stay, nothing more.
+	// Edit: the worker may edit, the project's commands stay, with the Git commands it commits its work with (W360).
 	if w := allow(planv1.Allowance_ALLOWANCE_EDIT); len(w.GetAllowances()) != 1 || w.GetAllowances()[0].GetProjectId() != projectID {
 		t.Errorf("allowed wish = %v", w)
 	}
 	task, spec = spawn(wishID)
 	if p := spec.Permissions; task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_WISH_EDIT || spec.ReadOnly || !p.GetEdit() ||
-		p.GetMode() != djinnv1.Mode_MODE_LISTED || p.GetNetwork() || !slices.Equal(p.GetCommands(), []string{"ls"}) {
+		p.GetMode() != djinnv1.Mode_MODE_LISTED || p.GetNetwork() ||
+		!slices.Equal(p.GetCommands(), append([]string{"ls"}, commitCommands...)) {
 		t.Errorf("edit: %v, %+v", task, spec)
 	}
 	// Auto: the agent's auto mode, editing.

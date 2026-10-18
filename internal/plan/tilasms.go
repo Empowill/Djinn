@@ -1334,6 +1334,31 @@ const tilasmPromptText = 20000
 // tilasmPromptFiles is how many of a tilasm's files a worker's first prompt names.
 const tilasmPromptFiles = 20
 
+// tilasmFilesLine starts the line of TilasmContext that names the folder of a tilasm's version (TilasmDirs).
+const tilasmFilesLine = "- Files, version "
+
+// TilasmDirs are the version folders of the tilasms a worker's first prompt gives it (TilasmContext), in Djinn's
+// data folder home: the folders the worker reads besides its own (harness.Spec.ReadDirs).
+func TilasmDirs(home, prompt string) []string {
+	_, context, ok := strings.Cut(prompt, tilasmContextHead)
+	if !ok || home == "" {
+		return nil
+	}
+	root := filepath.Join(home, "tilasms") + string(filepath.Separator)
+	var dirs []string
+	for l := range strings.Lines(context) {
+		rest, ok := strings.CutPrefix(l, tilasmFilesLine)
+		if !ok {
+			continue
+		}
+		_, dir, ok := strings.Cut(strings.TrimSpace(rest), ": ")
+		if dir = filepath.Clean(dir); ok && strings.HasPrefix(dir, root) && !slices.Contains(dirs, dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
+}
+
 // TilasmContext is what a worker's first prompt holds of the tilasms it is given (djinn task spawn --tilasm): for each,
 // its code, title, link, what it explains, the folder of its latest version's files and the text of its page. names
 // are codes (L01, any case) or identifiers of tilasms of the wish, repeated or separated by commas or spaces; home is
@@ -1382,7 +1407,7 @@ func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, nam
 		if err != nil {
 			return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("read the files of %s: %w", tilasm.GetCode(), err))
 		}
-		fmt.Fprintf(&b, "- Files, version %d: %s\n", n, dir)
+		fmt.Fprintf(&b, tilasmFilesLine+"%d: %s\n", n, dir)
 		if len(files) > tilasmPromptFiles {
 			files = append(files[:tilasmPromptFiles], fmt.Sprintf("and %d more", len(files)-tilasmPromptFiles))
 		}

@@ -97,13 +97,15 @@ only, and asks you whether it may edit: its task shows **Waits for your answer**
 **What it may do in Djinn:** ask you a question, or revise one it asked; write a [block](#block) for the wish; put a
 tilasm; read anything in its wish; and run its heavy commands under the project's [gates](#gates).
 
-**Committing** is Djinn's: a worker leaves its work in its worktree, and when it ends done, Djinn merges it. When a
-worker leaves changes not committed, Djinn starts a review worker in the same worktree, which commits what belongs to
-the task, leaves the rest where it is, and says which files it left and why.
+**Committing** is the worker's: it commits its work in its worktree before it ends, and when it ends done, Djinn
+merges it. Djinn commits nothing for it: when a worker leaves changes not committed, Djinn starts a review worker in
+the same worktree, which commits what belongs to the task, leaves the rest where it is, and says which files it left
+and why.
 
 **What it is told.** Besides its prompt, a worker that edits is told the project's checks, to run them before it ends,
-never to make a wish, a question or a task in your Djinn to try something, and to ask you only for a decision or a
-move only a person can make.
+to commit its work before it ends, in the repository's style, leaving nothing not committed, never to make a wish, a
+question or a task in your Djinn to try something, and to ask you only for a decision or a move only a person can
+make.
 
 **Refused calls.** A call its permissions refuse, with no one to approve it, never reaches the window: the Djinn hears
 of it when the task ends, with the right that would allow it, and decides. When a new right is needed, it asks you.
