@@ -193,6 +193,8 @@ const (
 	LeadServiceEventProcedure = "/plan.v1.LeadService/Event"
 	// LeadServiceTellProcedure is the fully-qualified name of the LeadService's Tell RPC.
 	LeadServiceTellProcedure = "/plan.v1.LeadService/Tell"
+	// LeadServiceSayProcedure is the fully-qualified name of the LeadService's Say RPC.
+	LeadServiceSayProcedure = "/plan.v1.LeadService/Say"
 	// LeadServiceJournalProcedure is the fully-qualified name of the LeadService's Journal RPC.
 	LeadServiceJournalProcedure = "/plan.v1.LeadService/Journal"
 	// LeadServiceMoveProcedure is the fully-qualified name of the LeadService's Move RPC.
@@ -2296,6 +2298,11 @@ type LeadServiceClient interface {
 	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
 	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// Answer the developer in the window, in a bubble held to the Lamp pill: a short reply to a message from the
+	// window, or, with --decided, a decision the lead took alone that the developer would want to know. Puts a block of
+	// kind "reply" (or "decided") on the wish, from the lead, at most 600 characters; for a longer answer, write a
+	// report block and name it here. A worker cannot call it.
+	Say(context.Context, *connect.Request[v1.LeadServiceSayRequest]) (*connect.Response[v1.LeadServiceSayResponse], error)
 	// The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
 	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
 	// prompt carries the latest entries of its wishes; this prints them for the developer.
@@ -2388,6 +2395,12 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("Tell")),
 			connect.WithClientOptions(opts...),
 		),
+		say: connect.NewClient[v1.LeadServiceSayRequest, v1.LeadServiceSayResponse](
+			httpClient,
+			baseURL+LeadServiceSayProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Say")),
+			connect.WithClientOptions(opts...),
+		),
 		journal: connect.NewClient[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse](
 			httpClient,
 			baseURL+LeadServiceJournalProcedure,
@@ -2452,6 +2465,7 @@ type leadServiceClient struct {
 	watch         *connect.Client[v1.LeadServiceWatchRequest, v1.LeadServiceWatchResponse]
 	event         *connect.Client[v1.LeadServiceEventRequest, v1.LeadServiceEventResponse]
 	tell          *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
+	say           *connect.Client[v1.LeadServiceSayRequest, v1.LeadServiceSayResponse]
 	journal       *connect.Client[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse]
 	move          *connect.Client[v1.LeadServiceMoveRequest, v1.LeadServiceMoveResponse]
 	accounts      *connect.Client[v1.LeadServiceAccountsRequest, v1.LeadServiceAccountsResponse]
@@ -2500,6 +2514,11 @@ func (c *leadServiceClient) Event(ctx context.Context, req *connect.Request[v1.L
 // Tell calls plan.v1.LeadService.Tell.
 func (c *leadServiceClient) Tell(ctx context.Context, req *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
 	return c.tell.CallUnary(ctx, req)
+}
+
+// Say calls plan.v1.LeadService.Say.
+func (c *leadServiceClient) Say(ctx context.Context, req *connect.Request[v1.LeadServiceSayRequest]) (*connect.Response[v1.LeadServiceSayResponse], error) {
+	return c.say.CallUnary(ctx, req)
 }
 
 // Journal calls plan.v1.LeadService.Journal.
@@ -2591,6 +2610,11 @@ type LeadServiceHandler interface {
 	// next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
 	// call it, and djinn mcp has no tool for it.
 	Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error)
+	// Answer the developer in the window, in a bubble held to the Lamp pill: a short reply to a message from the
+	// window, or, with --decided, a decision the lead took alone that the developer would want to know. Puts a block of
+	// kind "reply" (or "decided") on the wish, from the lead, at most 600 characters; for a longer answer, write a
+	// report block and name it here. A worker cannot call it.
+	Say(context.Context, *connect.Request[v1.LeadServiceSayRequest]) (*connect.Response[v1.LeadServiceSayResponse], error)
 	// The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
 	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
 	// prompt carries the latest entries of its wishes; this prints them for the developer.
@@ -2679,6 +2703,12 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("Tell")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceSayHandler := connect.NewUnaryHandler(
+		LeadServiceSayProcedure,
+		svc.Say,
+		connect.WithSchema(leadServiceMethods.ByName("Say")),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceJournalHandler := connect.NewUnaryHandler(
 		LeadServiceJournalProcedure,
 		svc.Journal,
@@ -2748,6 +2778,8 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceEventHandler.ServeHTTP(w, r)
 		case LeadServiceTellProcedure:
 			leadServiceTellHandler.ServeHTTP(w, r)
+		case LeadServiceSayProcedure:
+			leadServiceSayHandler.ServeHTTP(w, r)
 		case LeadServiceJournalProcedure:
 			leadServiceJournalHandler.ServeHTTP(w, r)
 		case LeadServiceMoveProcedure:
@@ -2803,6 +2835,10 @@ func (UnimplementedLeadServiceHandler) Event(context.Context, *connect.Request[v
 
 func (UnimplementedLeadServiceHandler) Tell(context.Context, *connect.Request[v1.LeadServiceTellRequest]) (*connect.Response[v1.LeadServiceTellResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Tell is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Say(context.Context, *connect.Request[v1.LeadServiceSayRequest]) (*connect.Response[v1.LeadServiceSayResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Say is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error) {

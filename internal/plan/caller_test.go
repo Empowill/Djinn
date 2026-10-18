@@ -200,6 +200,14 @@ func TestWorkerGuard(t *testing.T) {
 			},
 			want: &planv1.ServeServiceLogsRequest{Name: "front", TaskId: "task-1"},
 		},
+		{
+			name: "lead say refused",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.LeadServiceSayResponse](planv1connect.LeadServiceSayProcedure, c,
+					&planv1.LeadServiceSayRequest{WishId: "wish-1", Text: "Hello"})
+			},
+			refused: "a worker cannot call " + planv1connect.LeadServiceSayProcedure,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

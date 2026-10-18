@@ -45,4 +45,15 @@ func TestShownThemeKept(t *testing.T) {
 	if !strings.Contains(dark, "dark theme") || !strings.HasSuffix(dark, tones.Dark()) || strings.Contains(dark, tones.Light()) {
 		t.Errorf("dark: %q", dark)
 	}
+	if stable := StableBrief(home, nil); !strings.Contains(stable, "## Your tone\n\nThe window shows its light theme") ||
+		!strings.Contains(stable, tones.Light()) || !strings.Contains(stable, "`djinn lead say <wish> \"<text>\"`") ||
+		!strings.Contains(stable, "never say that a worker or a task started") {
+		t.Errorf("StableBrief with light theme:\n%s", stable)
+	}
+	if driven := DrivenRules(nil, home); !strings.Contains(driven, "rules 4") ||
+		!strings.Contains(driven, "`djinn lead say <wish> \"<text>\"`") ||
+		!strings.Contains(driven, "--decided") ||
+		!strings.Contains(driven, "never say that a worker or a task started") {
+		t.Errorf("DrivenRules:\n%s", driven)
+	}
 }

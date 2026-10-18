@@ -150,8 +150,14 @@ dark. The eye opens and rests by what has the focus, the element your keys act o
 | --- | --- |
 | In the margin of a question, reading it | The question has the focus: the first one when you click the wish, the one you go to by a click or the arrows |
 | Under a tab, looking up at it | The tab has the focus |
-| On **Write to the Djinn**, in the round porthole on its left | The pill or its field has the focus, or nothing that has a place does |
+| On **Write to the Djinn**, in the round porthole on its left | An unseen reply or decision from the Djinn waits in its bubble, the pill or its field has the focus, or nothing that has a place does |
 | Home, in the seal | A page with none of those; closed while the lead is stopped; pale while Djinn's stream is cut |
+
+When the Djinn answers a message you sent from **Write to the Djinn** or tells a decision it took alone, the eye comes to
+the porthole on **Write to the Djinn**, blinks once, and holds a speech bubble to the left of the pill (or above the box
+when open or in a narrow window). At rest, the bubble shows two lines and a count when several messages wait; hovering
+over it unfolds the full text and, for a reply, the line you sent; clicking it marks the message seen and shows the next
+one in line, or closes the bubble. Unseen messages from the last twenty-four hours come back after a reload.
 
 From one place to the next it flies on a curve, slowly enough to be followed, and lands in the margin: at rest, it
 covers nothing and scrolls with what it watches. It flies under Write to the Djinn, never over it: there its porthole

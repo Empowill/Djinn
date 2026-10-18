@@ -4,8 +4,23 @@ import assert from "node:assert/strict";
 
 import { bundle } from "./bundle.mjs";
 
-const { eyeTarget, eyeLook, flight, calmWait, clampTo, easeInOut } =
-  await bundle("eye", `export * from "@/src/data/eye.ts";`);
+const {
+  LEAD_SAY_WINDOW_MS,
+  advanceLeadSay,
+  bubblePlace,
+  calmWait,
+  clampTo,
+  easeInOut,
+  eyeLook,
+  eyeTarget,
+  flight,
+  isLeadSayBlock,
+  leadSayQueue,
+  readLastSent,
+  readSeenIds,
+  writeLastSent,
+  writeSeenIds,
+} = await bundle("eye", `export * from "@/src/data/eye.ts";`);
 
 const all = new Set(["home", "pill", "q:a", "q:b", "tab:main", "tab:tasks"]);
 const base = {
@@ -34,6 +49,15 @@ test("the eye rests by the element that has the focus, and only there", () => {
     mood: "watching",
     shine: false,
   });
+  // While the lead speaks in its bubble on Write to the Djinn, the eye comes to its socket.
+  assert.deepEqual(
+    eyeTarget({ ...base, focus: "q:b", speaking: true, blocking: true }),
+    {
+      perch: "pill",
+      mood: "listening",
+      shine: true,
+    },
+  );
 });
 
 test("with the focus on nothing that has a place, the eye listens on Write to the Djinn, else rests home", () => {
@@ -159,4 +183,100 @@ test("an eye out of sight leaves from the edge of the view", () => {
     clampTo({ x: 30, y: -80 }, { width: 800, height: 600 }, 12),
     { x: 30, y: 12 },
   );
+});
+
+test("unseen reply and decided blocks queue in order, click advances and persists seen ids", () => {
+  const now = 1_700_000_000_000;
+  const ts = (ms) => ({
+    seconds: BigInt(Math.floor(ms / 1000)),
+    nanos: (ms % 1000) * 1_000_000,
+  });
+  const blocks = [
+    {
+      id: "old",
+      kind: "reply",
+      content: "Too old",
+      createTime: ts(now - LEAD_SAY_WINDOW_MS - 1000),
+      position: 1,
+    },
+    {
+      id: "worker",
+      kind: "reply",
+      taskId: "t1",
+      content: "From worker",
+      createTime: ts(now - 5000),
+      position: 2,
+    },
+    {
+      id: "note",
+      kind: "decision",
+      content: "Regular decision block",
+      createTime: ts(now - 4000),
+      position: 3,
+    },
+    {
+      id: "b2",
+      kind: "decided",
+      content: "Picked the uniform border.",
+      createTime: ts(now - 2000),
+      position: 5,
+    },
+    {
+      id: "b1",
+      kind: "reply",
+      content: "Two workers run on the wish.",
+      createTime: ts(now - 3000),
+      position: 4,
+    },
+  ];
+  assert.equal(isLeadSayBlock(blocks[1]), false);
+  assert.equal(isLeadSayBlock(blocks[2]), false);
+  assert.equal(isLeadSayBlock(blocks[3]), true);
+  assert.equal(isLeadSayBlock(blocks[4]), true);
+
+  const mem = new Map();
+  const store = {
+    getItem: (k) => mem.get(k) ?? null,
+    setItem: (k, v) => mem.set(k, v),
+  };
+
+  let seen = readSeenIds(store);
+  let q = leadSayQueue(blocks, seen, now);
+  assert.deepEqual(
+    q.map((b) => b.id),
+    ["b1", "b2"],
+  );
+
+  // First click marks b1 seen and advances to b2.
+  const step1 = advanceLeadSay(q, seen);
+  writeSeenIds(step1.seen, store);
+  assert.equal(step1.next?.id, "b2");
+  assert.deepEqual(
+    step1.remaining.map((b) => b.id),
+    ["b2"],
+  );
+
+  // Reloading within 24h brings back only the unseen b2.
+  seen = readSeenIds(store);
+  q = leadSayQueue(blocks, seen, now + 60_000);
+  assert.deepEqual(
+    q.map((b) => b.id),
+    ["b2"],
+  );
+
+  // Second click marks b2 seen and empties the queue.
+  const step2 = advanceLeadSay(q, seen);
+  writeSeenIds(step2.seen, store);
+  assert.equal(step2.next, undefined);
+  assert.equal(
+    leadSayQueue(blocks, readSeenIds(store), now + 60_000).length,
+    0,
+  );
+
+  // Last-sent message is trimmed and stored per wish, and bubblePlace chooses side vs above.
+  writeLastSent("w1", "  how many   workers\nrun? ", store);
+  assert.equal(readLastSent("w1", store), "how many workers run?");
+  assert.equal(bubblePlace(false, 420), "side");
+  assert.equal(bubblePlace(false, 280), "above");
+  assert.equal(bubblePlace(true, 600), "above");
 });

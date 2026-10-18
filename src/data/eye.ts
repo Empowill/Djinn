@@ -36,6 +36,8 @@ export interface EyeSignals {
   blocking: boolean;
   // Something else waits for the developer on the page: a worker waiting, a lit ifrit.
   needs: boolean;
+  // An unseen message from the lead waits in the bubble on Write to the Djinn: the eye comes to its socket.
+  speaking?: boolean;
   // The places shown now: "home" (the seal), "reading" (the questions' reading line), "pill" (Write to the Djinn), "q:<question id>", "tab:<view>".
   perches: ReadonlySet<string>;
   // The place of the element that has the focus, if it has one: its question, Write to the Djinn, its tab.
@@ -54,9 +56,10 @@ export const questionPerch = (id: string) => `q:${id}`;
 export const tabPerch = (view: string) => `tab:${view}`;
 
 // eyeTarget is where the eye rests and how: home while the stream wakes, is cut, the lead is stopped, or the wishes read;
-// else by the element that has the focus, and only there (W259): its question, Write to the Djinn, its tab. While
-// questions read for more than 150 ms without focus, it reads the questions' reading line ("reading"); with the focus on
-// nothing that has a place, it listens on Write to the Djinn, the Djinn's own place; with that not shown, home.
+// in the socket of Write to the Djinn while the lead speaks in its bubble; else by the element that has the focus, and
+// only there (W259): its question, Write to the Djinn, its tab. While questions read for more than 150 ms without focus,
+// it reads the questions' reading line ("reading"); with the focus on nothing that has a place, it listens on Write to
+// the Djinn, the Djinn's own place; with that not shown, home.
 export function eyeTarget(s: EyeSignals): EyeTarget {
   if (s.presence === "none")
     return { perch: "", mood: "resting", shine: false };
@@ -71,6 +74,8 @@ export function eyeTarget(s: EyeSignals): EyeTarget {
   const shine = s.needs || s.blocking;
   if (s.wishesReading) return { perch: home, mood: "resting", shine };
   if (s.presence === "alive") {
+    if (s.speaking && s.perches.has("pill"))
+      return { perch: "pill", mood: "listening", shine };
     if (s.focus && s.perches.has(s.focus))
       return { perch: s.focus, mood: moodAt(s.focus), shine };
     if (s.perches.has("reading"))
@@ -205,4 +210,149 @@ export function clampTo(
     x: Math.min(Math.max(p.x, margin), box.width - margin),
     y: Math.min(Math.max(p.y, margin), box.height - margin),
   };
+}
+
+// How long an unseen reply or decided block comes back after a reload (24 hours, tilasm L13 v5).
+export const LEAD_SAY_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const LEAD_SAY_SEEN_KEY = "djinn-lead-say-seen";
+export const LEAD_LAST_SENT_KEY = "djinn-lead-last-sent";
+
+export interface LeadSayBlock {
+  id: string;
+  kind: string;
+  taskId?: string;
+  content?: string;
+  wishId?: string;
+  position?: bigint | number;
+  createTime?: { seconds?: bigint | number | string; nanos?: number };
+}
+
+// isLeadSayBlock tells a block the lead said to the window: kind reply or decided, and not a worker's block.
+export function isLeadSayBlock(
+  block: Pick<LeadSayBlock, "kind" | "taskId">,
+): boolean {
+  if (block.taskId) return false;
+  const kind = (block.kind ?? "").toLowerCase();
+  return kind === "reply" || kind === "decided";
+}
+
+// blockTimeMs is when a block was created, in ms since the epoch (0 when unset).
+export function blockTimeMs(block: Pick<LeadSayBlock, "createTime">): number {
+  if (!block.createTime) return 0;
+  return (
+    Number(block.createTime.seconds ?? 0) * 1000 +
+    Math.floor((block.createTime.nanos ?? 0) / 1_000_000)
+  );
+}
+
+// leadSayQueue orders the lead's unseen reply and decided blocks, oldest first: those that arrived while the window was
+// open (freshIds) or within the last 24 hours when reloading.
+export function leadSayQueue<T extends LeadSayBlock>(
+  blocks: readonly T[],
+  seen: ReadonlySet<string>,
+  nowMs = Date.now(),
+  freshIds?: ReadonlySet<string>,
+): T[] {
+  return blocks
+    .filter((b) => {
+      if (!isLeadSayBlock(b) || seen.has(b.id)) return false;
+      if (freshIds?.has(b.id)) return true;
+      const at = blockTimeMs(b);
+      return at > 0 && nowMs - at <= LEAD_SAY_WINDOW_MS;
+    })
+    .slice()
+    .sort(
+      (a, b) =>
+        blockTimeMs(a) - blockTimeMs(b) ||
+        Number(a.position ?? 0) - Number(b.position ?? 0),
+    );
+}
+
+// advanceLeadSay marks the front message of the queue seen and steps to the next one (or undefined when none remains).
+export function advanceLeadSay<T extends Pick<LeadSayBlock, "id">>(
+  queue: readonly T[],
+  seen: ReadonlySet<string>,
+): { seen: Set<string>; next: T | undefined; remaining: T[] } {
+  const nextSeen = new Set(seen);
+  if (queue[0]) nextSeen.add(queue[0].id);
+  const remaining = queue.slice(1);
+  return { seen: nextSeen, next: remaining[0], remaining };
+}
+
+// bubblePlace places Bubble B to the left of the pill when closed and at least minSidePx (22rem = 352px) fits, else
+// above the composer.
+export function bubblePlace(
+  open: boolean,
+  roomLeftPx: number,
+  minSidePx = 352,
+): "side" | "above" {
+  return !open && roomLeftPx >= minSidePx ? "side" : "above";
+}
+
+type StoreLike = Pick<Storage, "getItem" | "setItem">;
+
+const defaultStore = (): StoreLike | undefined =>
+  typeof localStorage !== "undefined" ? localStorage : undefined;
+
+export function readSeenIds(
+  store: StoreLike | undefined = defaultStore(),
+): Set<string> {
+  if (!store) return new Set();
+  try {
+    const raw = store.getItem(LEAD_SAY_SEEN_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((x): x is string => typeof x === "string"))
+      : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function writeSeenIds(
+  seen: ReadonlySet<string>,
+  store: StoreLike | undefined = defaultStore(),
+): void {
+  if (!store) return;
+  try {
+    const list = [...seen].slice(-500);
+    store.setItem(LEAD_SAY_SEEN_KEY, JSON.stringify(list));
+  } catch {
+    // Storage may be unavailable or full.
+  }
+}
+
+export function readLastSent(
+  wishId?: string,
+  store: StoreLike | undefined = defaultStore(),
+): string {
+  if (!store) return "";
+  try {
+    const raw = store.getItem(LEAD_LAST_SENT_KEY);
+    if (!raw) return "";
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed?.[wishId || "_"] ?? parsed?.["_"] ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function writeLastSent(
+  wishId: string | undefined,
+  text: string,
+  store: StoreLike | undefined = defaultStore(),
+): void {
+  if (!store) return;
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return;
+  try {
+    const raw = store.getItem(LEAD_LAST_SENT_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    parsed[wishId || "_"] = clean;
+    parsed["_"] = clean;
+    store.setItem(LEAD_LAST_SENT_KEY, JSON.stringify(parsed));
+  } catch {
+    // Storage may be unavailable or full.
+  }
 }
