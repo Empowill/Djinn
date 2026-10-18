@@ -35,6 +35,7 @@ import {
   type TilasmComment,
   type TilasmHold,
   type TilasmSendRead,
+  type TilasmSends,
 } from "../gen/ts/plan/v1/tilasm_pb";
 import { type Pick, marksOf } from "./data/bridge";
 import { message } from "./data/client";
@@ -100,6 +101,7 @@ export function TilasmsTab({
   holds = [],
   sent = [],
   reads = [],
+  sends = [],
   tasks,
   readState = "ready",
   onRetry,
@@ -118,6 +120,8 @@ export function TilasmsTab({
   sent?: readonly TilasmComment[];
   // The sends on them the Djinn read.
   reads?: readonly TilasmSendRead[];
+  // What Iterate and Launch do on each tilasm linked to an open question.
+  sends?: readonly TilasmSends[];
   tasks: readonly Task[];
   readState?: ReadState;
   onRetry?: () => void;
@@ -173,6 +177,7 @@ export function TilasmsTab({
       holds={holds}
       sent={sent}
       reads={reads}
+      sends={sends}
       tasks={tasks}
       readState={readState}
       onRetry={onRetry}
@@ -269,11 +274,13 @@ export function useCommentWrites(
       await reread();
       const send = res.send?.number ?? 0;
       onToast(
-        res.answered
-          ? t("tilasms.sent_answered", { question: res.answered })
-          : choice === SendChoice.ITERATE
-            ? t("tilasms.sent_iterate", { send })
-            : t("tilasms.sent_launch", { send }),
+        res.iterate
+          ? t("tilasms.sent_mockup", { send })
+          : res.answered
+            ? t("tilasms.sent_answered", { question: res.answered })
+            : choice === SendChoice.ITERATE
+              ? t("tilasms.sent_iterate", { send })
+              : t("tilasms.sent_launch", { send }),
       );
     },
   };
@@ -302,6 +309,7 @@ export function TilasmList({
   holds = [],
   sent = [],
   reads = [],
+  sends = [],
   tasks = [],
   readState = "ready",
   onRetry,
@@ -330,6 +338,8 @@ export function TilasmList({
   sent?: readonly TilasmComment[];
   // The sends on them the Djinn read.
   reads?: readonly TilasmSendRead[];
+  // What Iterate and Launch do on each tilasm linked to an open question.
+  sends?: readonly TilasmSends[];
   // The wish's tasks: those the Djinn's replies name, with their state.
   tasks?: readonly Task[];
   readState?: ReadState;
@@ -426,6 +436,7 @@ export function TilasmList({
           reads={reads}
           tasks={tasks}
           hold={holds.find((h) => h.tilasmId === open.id)}
+          sends={sends.find((s) => s.tilasmId === open.id)}
           comments={comments}
           onCommentError={onCommentError}
         />
@@ -558,6 +569,7 @@ export function TilasmFrame({
   reads = [],
   tasks = [],
   hold,
+  sends,
   comments,
   onCommentError = () => {},
 }: {
@@ -578,6 +590,8 @@ export function TilasmFrame({
   tasks?: readonly Task[];
   // Why it takes no send for now; none: it does.
   hold?: TilasmHold;
+  // What Iterate and Launch do on this tilasm, as the server computes it.
+  sends?: TilasmSends;
   // What writes them: the Comments column shows beside the frame, on demand; without it, none.
   comments?: CommentWrites;
   onCommentError?: (error: unknown) => void;
@@ -777,6 +791,7 @@ export function TilasmFrame({
           tasks={taskById}
           origin={over && fromVars ? t("tilasms.version_for", fromVars) : ""}
           hold={hold}
+          sends={sends}
           writes={comments}
           onError={onCommentError}
           onClose={() => setCommenting(false)}

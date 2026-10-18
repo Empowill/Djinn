@@ -458,6 +458,7 @@
 .tilasm-comment-editor textarea {
   box-sizing: border-box;
   width: 100%;
+  max-height: 20rem;
   margin-top: 0.375rem;
   resize: vertical;
   font: inherit;
@@ -483,7 +484,7 @@
   border-top: 1px solid var(--line);
   font-size: var(--font-size-body);
 }
-/* The foot of the column (decision Q29): a last comment, then Launch and Iterate, or the line that confirms one. Square,
+/* The foot of the column (decision Q29, L25): a last comment, then Iterate and Launch in the tint of what starts. Square,
    under the cards: a straight separator on its top. */
 .tilasm-send {
   display: flex;
@@ -496,14 +497,12 @@
 .tilasm-send textarea {
   box-sizing: border-box;
   width: 100%;
+  max-height: 20rem;
   resize: vertical;
   font: inherit;
 }
-.tilasm-send-confirm p,
 .tilasm-send-hold {
   margin: 0;
-}
-.tilasm-send-hold {
   color: var(--muted);
 }
 .tilasm-send-buttons {
@@ -511,6 +510,21 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+.tilasm-send-buttons .button.accent.kind-work,
+html[data-theme="light"] .tilasm-send-buttons .button.accent.kind-work {
+  background: var(--k-work);
+  border-color: var(--k-work);
+  color: var(--k-ink);
+  font-weight: 650;
+}
+.tilasm-send-buttons .button.secondary:is(.kind-mock, .kind-lead),
+html[data-theme="light"]
+  .tilasm-send-buttons
+  .button.secondary:is(.kind-mock, .kind-lead) {
+  color: var(--kind);
+  border-color: color-mix(in srgb, var(--kind) 55%, transparent);
+  background: color-mix(in srgb, var(--kind) 10%, var(--surface));
 }
 /* Held: a task works on the tilasm, or its work was launched. Its cards grey, and wait. */
 .tilasm-comments.held .tilasm-comment-list {

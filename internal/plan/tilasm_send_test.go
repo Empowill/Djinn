@@ -2,13 +2,18 @@ package plan
 
 import (
 	"context"
+	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -495,5 +500,119 @@ func TestTilasmSendReads(t *testing.T) {
 	}
 	if got := reads(); len(got) != 1 || got[0].GetSend() != 1 || got[0].GetReadTime() != nil {
 		t.Errorf("reads once the event of send 1 is gone = %v, want send 1 without a time", got)
+	}
+}
+
+// TestTilasmSends: the server computes what an iterate send and a launch send without a comment do on each tilasm of a
+// wish, from the one open question that links it, its mockup option within its rounds and its recommended option.
+func TestTilasmSends(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	f := newSendFixture(t)
+	sends := func() *planv1.TilasmSends {
+		t.Helper()
+		res, err := f.c.tilasms.Drafts(ctx, connect.NewRequest(&planv1.TilasmServiceDraftsRequest{Wish: f.wish}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range res.Msg.GetSends() {
+			if s.GetTilasmId() == f.tilasm.GetId() {
+				return s
+			}
+		}
+		return nil
+	}
+	if got := sends(); got != nil {
+		t.Fatalf("without an open question = %v, want nil", got)
+	}
+	asked, err := f.c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		WishId: f.wish, Text: "Do the typed options suit you?",
+		Options:        []string{"Iterate the mockup", "Approve and build", "Other"},
+		Context:        "The mockup: " + TilasmLink(f.tilasm.GetId()),
+		Recommendation: "B: build it.",
+		Plan: []string{
+			"option: A\nkind: mockup\ntitle: Mockup v2\ntilasm: " + f.tilasm.GetCode() + "\nrounds: 3\n\nIterate.",
+			"option: B\ntitle: Typed options\n\nBuild.",
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := asked.Msg.GetQuestion()
+	want := &planv1.TilasmSends{
+		TilasmId: f.tilasm.GetId(), Question: q.GetCode(), IterateOption: "A", Round: 1, Rounds: 3,
+		LaunchOption: "B", LaunchKind: "work", LaunchTitle: "Typed options",
+	}
+	if got := sends(); !proto.Equal(got, want) {
+		t.Fatalf("with an open question = %v\nwant %v", got, want)
+	}
+
+	// At its last round, iterate goes to the lead; launch still answers with B.
+	if err := f.c.store.Tx(ctx, func(tx *store.Tx) error {
+		stored, err := store.Get[*planv1.Question](ctx, tx, q.GetId())
+		if err != nil {
+			return err
+		}
+		stored.Rounds = []*planv1.Round{
+			{Kind: planv1.RoundKind_ROUND_KIND_ITERATE},
+			{Kind: planv1.RoundKind_ROUND_KIND_ITERATE},
+		}
+		if err := tx.Journal(actor, "test/rounds", stored); err != nil {
+			return err
+		}
+		return tx.Put(stored)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantLast := &planv1.TilasmSends{
+		TilasmId: f.tilasm.GetId(), Question: q.GetCode(),
+		LaunchOption: "B", LaunchKind: "work", LaunchTitle: "Typed options",
+	}
+	if got := sends(); !proto.Equal(got, wantLast) {
+		t.Errorf("at the last round = %v\nwant %v", got, wantLast)
+	}
+
+	// Answered: no open question links the tilasm.
+	if _, err := f.c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}, Choice: planv1.Choice_CHOICE_B,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if got := sends(); got != nil {
+		t.Errorf("after the question is answered = %v, want nil", got)
+	}
+}
+
+// TestNoteMaxMatchesWindow: the 8000-character limit on notes and comments is the same in the proto, the digest and
+// the window.
+func TestNoteMaxMatchesWindow(t *testing.T) {
+	t.Parallel()
+	const want = 8000
+	if digestNoteMax != want {
+		t.Errorf("digestNoteMax = %d, want %d", digestNoteMax, want)
+	}
+	for _, field := range []struct {
+		msg  protoreflect.Message
+		name protoreflect.Name
+	}{
+		{(&planv1.Withdrawal{}).ProtoReflect(), "note"},
+		{(&planv1.QuestionServiceEnlightenRequest{}).ProtoReflect(), "note"},
+		{(&planv1.QuestionServiceAnswerRequest{}).ProtoReflect(), "note"},
+		{(&planv1.TilasmComment{}).ProtoReflect(), "text"},
+		{(&planv1.TilasmServiceSendCommentsRequest{}).ProtoReflect(), "text"},
+		{(&planv1.TilasmServicePutCommentRequest{}).ProtoReflect(), "text"},
+	} {
+		fd := field.msg.Descriptor().Fields().ByName(field.name)
+		rules, _ := proto.GetExtension(fd.Options(), validate.E_Field).(*validate.FieldRules)
+		if got := rules.GetString().GetMaxLen(); got != want {
+			t.Errorf("%s.%s max_len = %d, want %d", field.msg.Descriptor().Name(), field.name, got, want)
+		}
+	}
+	src, err := os.ReadFile("../../src/data/format.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`(?m)^export const NOTE_MAX = 8000;$`).Match(src) {
+		t.Errorf("src/data/format.ts lacks export const NOTE_MAX = %d", want)
 	}
 }

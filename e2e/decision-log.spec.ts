@@ -66,7 +66,7 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
       .locator(".question-card")
       .filter({ hasText: "Which oil for the wick?" });
     await card.getByRole("button", { name: /Paraffin/ }).click();
-    await card.getByRole("button", { name: "Rub the lamp" }).click();
+    await card.getByRole("button", { name: "To the lead" }).click();
     await expect(card).toHaveCount(0);
 
     // The lead spawns an azima and a task from that decision under it.

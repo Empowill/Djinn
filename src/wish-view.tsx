@@ -1352,6 +1352,7 @@ export function WishView({
               holds={detail.holds}
               sent={detail.sent}
               reads={detail.reads}
+              sends={detail.sends}
               tasks={detail.tasks}
               readState={tilasmsState}
               onRetry={retryTilasms}

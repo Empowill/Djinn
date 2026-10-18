@@ -21,7 +21,7 @@ export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { ProjectGear, WishSidebar } from "@/src/wish-sidebar.tsx";
 export { SyncLine, SyncLines, syncTitle } from "@/src/project-sync.tsx";
-export { WishQuestion } from "@/src/wish-question.tsx";
+export { WishQuestion, NoteCounter } from "@/src/wish-question.tsx";
 export {
   AsleepQuestions,
   QuestionColumn,
@@ -51,6 +51,9 @@ export {
   taskModelDisplay,
   runningOf,
   fixerOf,
+  answerOutcome,
+  planKind,
+  NOTE_MAX,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
 export { glanceOf, forgeMark, failingTests } from "@/src/glance.tsx";
@@ -157,7 +160,12 @@ export {
   entriesOf,
   readDrop,
 } from "@/src/data/tilasms.ts";
-export { TilasmService } from "@/gen/ts/plan/v1/tilasm_pb.ts";
+export { CommentsColumn, SendBar } from "@/src/tilasm-comments.tsx";
+export {
+  SendChoice,
+  TilasmHoldReason,
+  TilasmService,
+} from "@/gen/ts/plan/v1/tilasm_pb.ts";
 export { ConsumptionPanel, WorkerRow } from "@/src/consumption-panel.tsx";
 export { ResourceChart } from "@/src/resource-chart.tsx";
 export {

@@ -821,3 +821,66 @@ test("a folder, an .html file or a .zip dropped on the Tilasms tab is read with 
     ["model.zip"],
   );
 });
+
+test("the tilasm comments foot sends Iterate or Launch in one click in its kind tint, names what the question's options start, and shows what left", async () => {
+  const sent = [];
+  const send = async (choice, note) => {
+    sent.push([choice, note]);
+  };
+  // Without an open question's mockup option, Iterate goes to the lead in gold; Launch builds in green.
+  const leadFoot = live(s.SendBar, { drafts: 2, send });
+  const leadHtml = leadFoot.html();
+  assert.doesNotMatch(leadHtml, /tilasm-send-confirm/);
+  assert.match(
+    leadHtml,
+    /<textarea rows="2" maxLength="8000" aria-label="A comment on the whole tilasm, sent with the others"/,
+  );
+  assert.match(
+    leadHtml,
+    /<button type="button" class="button secondary small kind-lead" title="Ask the Djinn for the next version of this tilasm, with your comments\."><svg[^>]*lucide-lamp[\s\S]*?>Iterate · lead<\/button>/,
+  );
+  assert.match(
+    leadHtml,
+    /<button type="button" class="button accent small kind-work" title="Launch the work this tilasm explains, with your comments\. Without a comment: yes to the question that links it, with its recommended option\."><svg[^>]*lucide-hammer[\s\S]*?>Launch<\/button>/,
+  );
+  leadFoot.one("kind-lead").onClick();
+  await leadFoot.settle();
+  assert.deepEqual(sent, [[s.SendChoice.ITERATE, ""]]);
+  assert.match(
+    leadFoot.html(),
+    /<p class="tilasm-send-hold">Send 1 left for the Djinn: it makes the next version\.<\/p>/,
+  );
+
+  // With TilasmSends from a question that cites the tilasm, Iterate is purple (kind-mock) and both tooltips name the option and question.
+  const sends = {
+    tilasmId: "l25",
+    question: "Q25",
+    iterateOption: "Iterate on the mockup",
+    round: 1,
+    rounds: 3,
+    launchOption: "Proposal A",
+    launchKind: "work",
+    launchTitle: "Build the answer buttons",
+  };
+  const mockFoot = live(s.SendBar, { drafts: 1, sends, send });
+  const mockHtml = mockFoot.html();
+  assert.match(
+    mockHtml,
+    /<button type="button" class="button secondary small kind-mock" title="Starts the mockup worker on Iterate on the mockup, with your comments; puts the next version and revises Q25\."><svg[^>]*lucide-pencil-ruler[\s\S]*?>Iterate<\/button>/,
+  );
+  assert.match(
+    mockHtml,
+    /<button type="button" class="button accent small kind-work" title="Starts the work task \(Build the answer buttons\) on Proposal A of Q25, with your comments\."><svg[^>]*lucide-hammer[\s\S]*?>Launch<\/button>/,
+  );
+  mockFoot.one("textarea").onChange({
+    target: { value: "Keep 4.5:1 contrast" },
+    currentTarget: { style: {}, scrollHeight: 48 },
+  });
+  mockFoot.one("kind-work").onClick();
+  await mockFoot.settle();
+  assert.deepEqual(sent.at(-1), [s.SendChoice.LAUNCH, "Keep 4.5:1 contrast"]);
+  assert.match(
+    mockFoot.html(),
+    /<p class="tilasm-send-hold">Send 1 left for the Djinn: it launches the work\.<\/p>/,
+  );
+});

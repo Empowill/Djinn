@@ -219,13 +219,71 @@ func linkingQuestion(ctx context.Context, r store.Reader, tilasm *planv1.Tilasm)
 	if err != nil {
 		return nil, err
 	}
+	return openQuestionForTilasm(questions, tilasm), nil
+}
+
+// openQuestionForTilasm is the open question among questions that links tilasm, the latest asked; nil when none does.
+func openQuestionForTilasm(questions []*planv1.Question, tilasm *planv1.Tilasm) *planv1.Question {
 	var found *planv1.Question
 	for _, q := range questions {
 		if openQuestion(q) && linksTilasm(q, tilasm) && (found == nil || q.GetId() > found.GetId()) {
 			found = q
 		}
 	}
-	return found, nil
+	return found
+}
+
+// tilasmSends are what an iterate or a launch send on each tilasm of the wish wishID does now, from its open
+// question; a tilasm that no open question links is not in it.
+func tilasmSends(ctx context.Context, r store.Reader, wishID string, tilasms []*planv1.Tilasm) ([]*planv1.TilasmSends, error) {
+	if len(tilasms) == 0 {
+		return nil, nil
+	}
+	questions, err := store.List[*planv1.Question](ctx, r, store.Where{"wish_id": wishID})
+	if err != nil {
+		return nil, err
+	}
+	var out []*planv1.TilasmSends
+	for _, tilasm := range tilasms {
+		if s := tilasmSend(tilasm, questions); s != nil {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+// tilasmSend is what an iterate or a launch send on tilasm does now, from its wish's questions; nil when no open
+// question links it.
+func tilasmSend(tilasm *planv1.Tilasm, questions []*planv1.Question) *planv1.TilasmSends {
+	q := openQuestionForTilasm(questions, tilasm)
+	if q == nil {
+		return nil
+	}
+	s := &planv1.TilasmSends{TilasmId: tilasm.GetId(), Question: q.GetCode()}
+	if p := MockupOption(q, tilasm.GetId()); p != nil {
+		s.IterateOption = choiceLetter(p.GetOption())
+		s.Round = int32(Tour(q))
+		s.Rounds = int32(MockupRounds(p))
+	}
+	if rec, ok := Recommended(q); ok {
+		s.LaunchOption = choiceLetter(rec)
+		if p := planOf(q, rec); p != nil {
+			s.LaunchTitle = p.GetTitle()
+			if len(p.GetAfter()) == 0 && len(p.GetBlocks()) == 0 {
+				switch p.GetKind() {
+				case planv1.TaskKind_TASK_KIND_MOCKUP:
+					if Iterates(q, rec) != nil {
+						s.LaunchKind = "mockup"
+					}
+				case planv1.TaskKind_TASK_KIND_INVESTIGATION:
+					s.LaunchKind = "investigation"
+				default:
+					s.LaunchKind = "work"
+				}
+			}
+		}
+	}
+	return s
 }
 
 // openQuestion tells a question that waits for an answer: neither answered nor withdrawn.

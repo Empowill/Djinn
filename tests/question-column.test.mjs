@@ -106,7 +106,7 @@ test("the questions column groups the open questions by wish, the first open in 
       rows[0].indexOf(">Enlighten me<kbd"),
   );
   assert.ok(
-    rows[0].indexOf(">Enlighten me<kbd") < rows[0].indexOf("Rub the lamp"),
+    rows[0].indexOf(">Enlighten me<kbd") < rows[0].indexOf("To the lead"),
   );
   // The others are closed: their code, their title, how much they hold up, out of the tab order; no body. Each has a
   // perch for the Djinn's eye, empty, hidden from screen readers.
