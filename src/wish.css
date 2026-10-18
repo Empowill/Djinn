@@ -718,6 +718,11 @@ html[data-motion="reduced"]
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* A wait that is over, folded into the line that ended it: muted, never read as where the task stands (W371). */
+.wish-event-waited {
+  display: block;
+  color: var(--muted-dim);
+}
 .wish-event.kind-4,
 .wish-event.kind-6,
 .wish-event.kind-8 {

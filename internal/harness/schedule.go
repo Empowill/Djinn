@@ -530,6 +530,47 @@ func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, ma
 	h.writeAlone(ctx, actorHarness, methodWait, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
 }
 
+// waited says how long and for what a task waited before the start Djinn records now: ", after waiting 8 min 28 s:
+// waits for feat/qol to be green again (…)", from its last "waiting:" events, read from the last back as far as
+// another status (its end, its resuming); "" when it did not wait. The page then shows those lines as past (W371).
+func (h *Harness) waited(ctx context.Context, taskID string, now time.Time) string {
+	var since time.Time
+	why := ""
+	err := store.Latest(ctx, h.store, store.Where{"task_id": taskID}, func(ev *planv1.TaskEvent) bool {
+		if ev.GetKind() != planv1.TaskEventKind_TASK_EVENT_KIND_STATUS {
+			return true
+		}
+		text := ev.GetText()
+		switch {
+		case strings.HasPrefix(text, "preempted "):
+			return true // Written with the start, after the waits.
+		case !strings.HasPrefix(text, "waiting: "):
+			return false
+		}
+		if why == "" {
+			why = strings.TrimPrefix(text, "waiting: ")
+		}
+		since = ev.GetCreateTime().AsTime()
+		return true
+	})
+	if err != nil || why == "" {
+		return ""
+	}
+	return ", after waiting " + waitedFor(now.Sub(since)) + ": " + why
+}
+
+// waitedFor says a wait to the second, as a person reads it: "45 s", "8 min 28 s", "1 h 05 min".
+func waitedFor(d time.Duration) string {
+	d = max(d, 0).Round(time.Second)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%d s", d/time.Second)
+	case d < time.Hour:
+		return fmt.Sprintf("%d min %d s", d/time.Minute, d%time.Minute/time.Second)
+	}
+	return fmt.Sprintf("%d h %02d min", d/time.Hour, d%time.Hour/time.Minute)
+}
+
 // failPlanned ends a planned task that never will start.
 func (h *Harness) failPlanned(ctx context.Context, t *planv1.Task, why string) {
 	t = proto.CloneOf(t)

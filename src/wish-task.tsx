@@ -30,6 +30,7 @@ import {
   type ReactNode,
   memo,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -67,7 +68,9 @@ import {
 import {
   cancelledText,
   firstLine,
+  foldedWaits,
   gitReason,
+  liveWaitReason,
   taskActivity,
   taskFinished,
   taskModelDisplay,
@@ -343,6 +346,7 @@ export const WishTask = memo(function WishTask({
   const urgent = isUrgent(task);
   const hasActions = urgeable || holdable || stoppable || markable;
   const machineWait = task.status === TaskStatus.PENDING && task.machineWait;
+  const waitReason = liveWaitReason(task);
   return (
     <article
       className={`wish-task tone-${tone} ${open ? "open" : ""} ${focused ? "focused" : ""}`}
@@ -560,7 +564,7 @@ export const WishTask = memo(function WishTask({
       {machineWait ? (
         <div className="wish-task-note machine-wait">
           <strong>{t("task.machine_wait")}</strong>
-          <span>{task.waitReason}</span>
+          <span>{waitReason}</span>
           {onStart && (
             <button
               className="button secondary small"
@@ -573,21 +577,19 @@ export const WishTask = memo(function WishTask({
           )}
         </div>
       ) : (
-        (task.waitReason ||
+        (waitReason ||
           task.error ||
           after.length > 0 ||
           (watcher && task.lastLine)) && (
           <p className={`wish-task-note ${tone === "failed" ? "error" : ""}`}>
             {task.error ? (
               task.error
-            ) : isMemoryWait(task.waitReason) ? (
-              <span title={task.waitReason}>{t("task.waits_for_memory")}</span>
-            ) : isGreenWait(task.waitReason) ? (
-              <span title={task.waitReason}>
-                {compactGreenWait(task.waitReason)}
-              </span>
-            ) : task.waitReason ? (
-              <WaitReason reason={task.waitReason} codes={codes} />
+            ) : isMemoryWait(waitReason) ? (
+              <span title={waitReason}>{t("task.waits_for_memory")}</span>
+            ) : isGreenWait(waitReason) ? (
+              <span title={waitReason}>{compactGreenWait(waitReason)}</span>
+            ) : waitReason ? (
+              <WaitReason reason={waitReason} codes={codes} />
             ) : (
               watcher && task.lastLine
             )}
@@ -928,6 +930,12 @@ function TaskBody({
     opener.current = null;
   }, [diff]);
   const events = useTaskEvents(task.id, task.status, showLogs);
+  // A wait a start, a resume or another wait ended is past: folded, muted, into the line that ended it.
+  const folded = useMemo(() => foldedWaits(events), [events]);
+  const past = useMemo(
+    () => new Set([...folded.values()].flat().map((e) => e.id)),
+    [folded],
+  );
   const box = useRef<HTMLDivElement>(null);
   // Keep the newest event in sight while the worker runs, inside the box: the page stays where it is.
   useEffect(() => {
@@ -1008,14 +1016,17 @@ function TaskBody({
             ) : (
               <table className="compact-table event-table">
                 <tbody>
-                  {events.map((event) => (
-                    <EventLine
-                      key={event.id}
-                      event={event}
-                      model={task.model}
-                      provider={task.provider}
-                    />
-                  ))}
+                  {events
+                    .filter((event) => !past.has(event.id))
+                    .map((event) => (
+                      <EventLine
+                        key={event.id}
+                        event={event}
+                        waits={folded.get(event.id)}
+                        model={task.model}
+                        provider={task.provider}
+                      />
+                    ))}
                 </tbody>
               </table>
             )}
@@ -1161,13 +1172,16 @@ function SendBox({
   );
 }
 
-// An event never changes once kept: each push of new events draws only the new rows.
+// An event never changes once kept: each push of new events draws only the new rows, and the line that ends a wait,
+// which takes in the "waiting:" lines it ended (waits), muted, above its own text.
 const EventLine = memo(function EventLine({
   event,
+  waits,
   model,
   provider,
 }: {
   event: TaskEvent;
+  waits?: TaskEvent[];
   model?: string;
   provider?: Provider;
 }) {
@@ -1190,6 +1204,11 @@ const EventLine = memo(function EventLine({
         className="wish-event-text"
         title={usage ? costTitle(usage, model, provider) : undefined}
       >
+        {waits?.map((wait) => (
+          <span key={wait.id} className="wish-event-waited">
+            <time>{clock(wait)}</time> {wait.text}
+          </span>
+        ))}
         {text}
       </td>
     </tr>

@@ -27,6 +27,8 @@ import {
   type SleepCondition,
   SleepKind,
   type Task,
+  type TaskEvent,
+  TaskEventKind,
   TaskHold,
   TaskKind,
   TaskRole,
@@ -525,6 +527,42 @@ export function taskStatusText(
     }
   }
   return t(taskStatusKeys[task.status]);
+}
+
+// liveWaitReason is why a task waits, only while it does: planned or resuming. A copy of the reason left in the
+// store never shows on a task that started (W371).
+export function liveWaitReason(
+  task: Pick<Task, "status" | "waitReason">,
+): string {
+  return task.status === TaskStatus.PENDING ||
+    task.status === TaskStatus.RESUMING
+    ? task.waitReason
+    : "";
+}
+
+// endsWait tells whether a status line ends the wait before it: a start, a resume, or another wait.
+const endsWait = /^(started |resumed|resuming: |continued: |waiting: )/;
+
+// foldedWaits folds each "waiting:" line of a task's events that a later start, resume or wait ended into the line
+// that ended it: past, it never reads as where the task stands (W371). It gives the waits each line ended, oldest
+// first, by that line's id; a wait still going keeps its own line.
+export function foldedWaits<E extends Pick<TaskEvent, "id" | "kind" | "text">>(
+  events: readonly E[],
+): Map<string, E[]> {
+  const folded = new Map<string, E[]>();
+  let waits: E[] = [];
+  for (const event of events) {
+    if (event.kind !== TaskEventKind.STATUS || !endsWait.test(event.text))
+      continue;
+    if (event.text.startsWith("waiting: ")) {
+      waits.push(event);
+      continue;
+    }
+    if (waits.length > 0) folded.set(event.id, waits);
+    waits = [];
+  }
+  if (waits.length > 1) folded.set(waits.at(-1)!.id, waits.slice(0, -1));
+  return folded;
 }
 
 // cancelledText is what a cancelled task's badge says on hover, compact: who cancelled it, and why.
