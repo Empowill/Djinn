@@ -333,3 +333,158 @@ func TestAgyFailedAfterThreeContinuations(t *testing.T) {
 		t.Errorf("continuations = %d, want 3", continuations)
 	}
 }
+
+// TestAgyClosing429DoneAndMerges reproduces W409: when a turn already holds a final answer and its work is committed
+// (including after rebasing onto an advanced integration branch), a trailing 429 quota error ends the task DONE,
+// keeps the error as a status log line without holding or resuming, and merges the work; a 429 before final text or
+// without committed work still waits on the per-minute limit backoff.
+func TestAgyClosing429DoneAndMerges(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	t.Run("antigravity", func(t *testing.T) {
+		t.Parallel()
+		env, _, _ := fake{provider: "antigravity", fixture: "w409-closing-429", end: "exit:3"}.env(t)
+		repo := gitRepo(t)
+		providers := testProviders()
+		providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = hookProvider{
+			Provider: Antigravity{Command: os.Args[0]},
+			env:      env,
+			before: func(dir string) error {
+				if err := commitWork(dir); err != nil {
+					return err
+				}
+				// Advance feat/qol in the main repo and rebase the worker's branch onto it, as W409 did before its final turn.
+				if err := os.WriteFile(filepath.Join(repo, "upstream.txt"), []byte("upstream\n"), 0o644); err != nil {
+					return err
+				}
+				if _, err := git(context.Background(), repo, "add", "upstream.txt"); err != nil {
+					return err
+				}
+				if _, err := git(context.Background(), repo, "commit", "-m", "advance feat/qol"); err != nil {
+					return err
+				}
+				_, err := git(context.Background(), dir, "rebase", "feat/qol")
+				return err
+			},
+		}
+		e := upWith(t, t.TempDir(), providers)
+		wishID, projectID := e.wish(t, repo)
+		if _, err := e.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+			WishId: wishID, ProjectId: projectID, Branch: "feat/qol", CreateBranch: true,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := git(t.Context(), repo, "checkout", "feat/qol"); err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, ProjectId: projectID, Title: "W409 closing 429", Prompt: "x", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.Msg.GetTask().GetId()
+		events := e.watch(t.Context(), t, id, 0)
+		got := e.get(t, id)
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetError() != "" || got.GetExitCode() != 0 {
+			t.Fatalf("task = %v, want DONE with no error and exit code 0", got)
+		}
+		if got.GetHold() != planv1.TaskHold_TASK_HOLD_UNSPECIFIED || got.GetResumes() != 0 {
+			t.Fatalf("hold = %v, resumes = %d; want no hold and 0 resumes", got.GetHold(), got.GetResumes())
+		}
+		hasNote := false
+		for _, ev := range events {
+			if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
+				t.Errorf("unexpected error event: %v", ev)
+			}
+			if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS &&
+				strings.HasPrefix(ev.GetText(), "closing call failed: ") &&
+				strings.Contains(ev.GetText(), "RESOURCE_EXHAUSTED (code 429): TPM quota exhausted") {
+				hasNote = true
+			}
+		}
+		if !hasNote {
+			t.Errorf("events lack closing call failed 429 note: %v", events)
+		}
+		e.h.integratePass(t.Context())
+		if in := e.get(t, id).GetIntegration(); in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || in.GetBranch() != "feat/qol" {
+			t.Fatalf("integration = %v, want COMMITTED into feat/qol", in)
+		}
+	})
+
+	t.Run("fake", func(t *testing.T) {
+		t.Parallel()
+		repo := gitRepo(t)
+		providers := testProviders()
+		providers[planv1.Provider_PROVIDER_FAKE] = hookProvider{
+			Provider: Fake{},
+			before:   commitWork,
+		}
+		e := upWith(t, t.TempDir(), providers)
+		wishID, projectID := e.wish(t, repo)
+		if _, err := e.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+			WishId: wishID, ProjectId: projectID, Branch: "feat/qol", CreateBranch: true,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, ProjectId: projectID, Title: "Fake closing 429",
+			Prompt:   "text All checks green and ready to merge.\nerror RESOURCE_EXHAUSTED (code 429): TPM quota exhausted\nexit 3",
+			Provider: planv1.Provider_PROVIDER_FAKE,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.Msg.GetTask().GetId()
+		events := e.watch(t.Context(), t, id, 0)
+		got := e.get(t, id)
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetError() != "" || got.GetExitCode() != 0 {
+			t.Fatalf("task = %v, want DONE with no error and exit code 0", got)
+		}
+		if got.GetHold() != planv1.TaskHold_TASK_HOLD_UNSPECIFIED || got.GetResumes() != 0 {
+			t.Fatalf("hold = %v, resumes = %d; want no hold and 0 resumes", got.GetHold(), got.GetResumes())
+		}
+		const wantNote = "closing call failed: RESOURCE_EXHAUSTED (code 429): TPM quota exhausted"
+		hasNote := false
+		for _, ev := range events {
+			if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && ev.GetText() == wantNote {
+				hasNote = true
+			}
+		}
+		if !hasNote {
+			t.Errorf("events lack %q: %v", wantNote, events)
+		}
+		e.h.integratePass(t.Context())
+		if in := e.get(t, id).GetIntegration(); in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+			t.Fatalf("integration = %v, want COMMITTED", in)
+		}
+	})
+
+	t.Run("mid-turn", func(t *testing.T) {
+		t.Parallel()
+		now := time.Date(2026, 10, 18, 18, 19, 0, 0, time.UTC)
+		clock := &fakeClock{at: now}
+		e := upWith(t, t.TempDir(), testProviders(), WithClock(clock.now))
+		wishID, _ := e.wish(t, gitRepo(t))
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, Title: "Mid-turn 429 waits",
+			Prompt:   "tool Bash go test ./...\nresult ok\nfail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
+			Provider: planv1.Provider_PROVIDER_FAKE,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.Msg.GetTask().GetId()
+		got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_RESUMING))
+		if got.GetHold() != planv1.TaskHold_TASK_HOLD_LIMIT {
+			t.Fatalf("hold = %v, want TASK_HOLD_LIMIT", got.GetHold())
+		}
+		if got.GetResumes() != 0 {
+			t.Fatalf("resumes = %d, want 0 for per-minute quota backoff", got.GetResumes())
+		}
+		if wait := got.GetResumeAfter().AsTime().Sub(now); wait != 60*time.Second {
+			t.Fatalf("backoff = %v, want 60s", wait)
+		}
+	})
+}

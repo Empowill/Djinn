@@ -398,7 +398,10 @@ so. What each agent gets:
 The limits Djinn recognizes, in the failure a worker ends with (`internal/harness/limit.go`): Claude's
 `rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your
 session limit · resets …" or "Claude AI usage limit reached|<time>"; Codex's `usageLimitExceeded`; agy's
-`RESOURCE_EXHAUSTED` (supposed); a rate limit or HTTP 429 from any of them.
+`RESOURCE_EXHAUSTED` (captured in W409); a rate limit or HTTP 429 from any of them. When an agy turn already holds a
+final answer and its work is committed (or the deliverables of a no-code task exist), a trailing error or 429 ends the
+task done and is kept as a `closing call failed: …` status line without holding or resuming; before any final answer, a
+per-minute quota error keeps the short minute-scale backoff.
 
 ## The scheduler's order and preemption
 
@@ -965,6 +968,7 @@ use a personal or licensed account.
 | Malformed call retry    | `antigravity/malformed-call.jsonl`                | by hand, from W258    | retry prompt continued; done on second turn                         |
 | Token limit retry       | `antigravity/token-limit.jsonl`                   | by hand, from W281    | partial output `[cut]`, token limit prompt continued; done on second turn |
 | Three retries failed    | `antigravity/retry-failed.jsonl`                  | by hand               | three retry prompts continued in a row; fourth fails the task       |
+| Closing 429 after work  | `antigravity/w409-closing-429.jsonl`              | **real**, W409        | final answer + committed work then historical 429 ends done with `closing call failed: …` |
 
 ## The lead's seat and the accounts
 

@@ -510,6 +510,18 @@ func catalog() []catalogCase {
 					t.Errorf("Djinn continued a turn agy retried by itself: %q", input)
 				}
 			}},
+		// W409's closing 429: without committed work in the folder, it is a limit error and never retried on stdin.
+		{provider: "antigravity", fixture: "w409-closing-429", end: "eof:3",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TEXT", "ERROR", "USAGE"},
+			exit: 3, err: "RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
+			check: func(t *testing.T, events []Event, _, input string) {
+				if strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("Djinn continued a 429 quota error on stdin: %q", input)
+				}
+				if l, ok := limitIn(event(t, events, "ERROR").Text, time.Time{}); !ok || !l.PerMinute {
+					t.Errorf("limit not parsed as per-minute on closing 429 without committed work: %+v, %v", l, ok)
+				}
+			}},
 
 		// Codex.
 		{provider: "codex", fixture: "success", want: []string{"STATUS", "TEXT", "USAGE", "STATUS"},

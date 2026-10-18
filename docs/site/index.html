@@ -360,7 +360,8 @@
                 <p>
                   Every write is a transaction with its journal entry, durable through a power cut. A worker stopped by its
                   usage limit waits for the reset, or for another account, then goes on; a per-minute rate or TPM limit waits
-                  a short minute-scale backoff without spending its retry budget. <code>djinn backup</code> copies it all, even running.
+                  a short minute-scale backoff without spending its retry budget, while an error after the final answer and
+                  committed work ends the task done. <code>djinn backup</code> copies it all, even running.
                 </p>
               </article>
               <article class="card word" id="word-routing">
