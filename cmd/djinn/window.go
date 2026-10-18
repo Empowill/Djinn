@@ -37,11 +37,11 @@ const hasWindow = true
 // djinn:// link the system gives the app goes to links: macOS sends it to Djinn.app, and starts the app for it when it
 // does not run; Linux and Windows run djinn open instead.
 //
-// With a watch, the window's page is watched from the start, its load events logged: silent or dead, it loads again
-// once, then the window opens again once with a new view, the server and the workers going on. The new view draws in
-// software rendering (WebKit's hardware acceleration policy NEVER) only after a GPU hang: the environment cannot do
-// it here, WebKitGTK reads WEBKIT_DISABLE_DMABUF_RENDERER once per process, at its first view (W354's probe), and the
-// next start of Djinn renders on the GPU again (decision Q89).
+// With a watch, the window's page is watched from the start, its load events logged: when its web process ends, it
+// loads again once, then the window opens again once with a new view, the server and the workers going on. The new
+// view draws in software rendering (WebKit's hardware acceleration policy NEVER) only after a GPU hang: the
+// environment cannot do it here, WebKitGTK reads WEBKIT_DISABLE_DMABUF_RENDERER once per process, at its first view
+// (W354's probe), and the next start of Djinn renders on the GPU again (decision Q89).
 func openWindow(ctx context.Context, cfg windowConfig) error {
 	notices, shortcuts := cfg.notices, cfg.shortcuts
 	opts := application.Options{
@@ -181,7 +181,7 @@ func openWindow(ctx context.Context, cfg windowConfig) error {
 	if cfg.watch != nil {
 		var mu sync.Mutex
 		shown := first
-		// A silent page loads again in its view first, then the window gets a new view and a new web process.
+		// A dead page loads again in its view first, then the window gets a new view and a new web process.
 		cfg.watch.Reload = func() error {
 			mu.Lock()
 			defer mu.Unlock()
@@ -200,8 +200,7 @@ func openWindow(ctx context.Context, cfg windowConfig) error {
 			return nil
 		}
 	}
-	// The global shortcut is taken once the app runs: Wails then answers whether the system took it. The window's
-	// page has from then on to call the server.
+	// The global shortcut is taken once the app runs: Wails then answers whether the system took it.
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		shortcuts.Use(wailsShortcuts{app})
 		if cfg.watch != nil {

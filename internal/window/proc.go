@@ -15,7 +15,7 @@ var ProcRoot = "/proc"
 // clockTicks is the kernel's clock tick, the unit of a process's CPU time in /proc: 100 per second on Linux.
 const clockTicks = 100
 
-// Process is a process of WebKit, as the log of a silent page names it.
+// Process is a process of WebKit, as the log of a dead page names it.
 type Process struct {
 	PID int
 	// Name is the kernel's, cut at 15 characters: WebKitWebProces, WebKitNetworkPr.

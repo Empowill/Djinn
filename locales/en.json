@@ -1374,8 +1374,6 @@
   "wish.strategy_wish_detail": "One integration branch per wish and project.",
   "wish.tasks": "Tasks",
   "wish.title": "Title",
-  "window.silent_title": "Djinn's window stayed black",
-  "window.silent_body": "Its page made no call to Djinn within {seconds} s.",
   "window.ended_title": "Djinn's window lost its page",
   "window.ended_body": "The process that draws its page ended: {reason}.",
   "window.reason_crashed": "it crashed",

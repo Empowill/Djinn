@@ -373,27 +373,23 @@ the code does not say by itself; remove one when a change makes it false.
 - **The window approves nothing.** Its mark buttons toggle only the read mark; `MARK_KIND_APPROVED` reaches
   `MarkService.Put` only from `djinn mark put`. *Do:* test an approval through `MarkService`, not an e2e click.
   *Where:* `src/marks.tsx`.
-- **The window opens black.** Three causes seen: an i915 GPU hang and chip reset (W353; `journalctl -k | grep -E 'GPU
-  HANG|Resetting chip|context reset'`), a web process that dies mid-session (W366), and most often, with no GPU hang,
-  a web process alive and idle (~155 MB, 0 % CPU) whose page never calls the server: 4 update restarts in 8 and some
-  desktop starts (W373; a healthy page passes 300 MB at 40-60 % CPU within 5 s). *Sign:* no `UiService/*` call in
-  `djinn.log` after "djinn up starts". Since W354 `internal/window` watches it on Linux: no Connect call through the
-  window's handler within `window.Silence` (10 s; first call 0.5-3.6 s measured at rest and at load 58), or WebKit's
-  `web-process-terminated` (any time), logs "window: the page is silent" with `loads` (the load events since the last
-  rescue), `web_processes` (pid, state, RSS, CPU over 500 ms) and the kernel's lines, tells it on djinn up's output
-  and in a notification, loads the page again once (`SetURL`), then opens a new view once; the new view is in
-  software rendering (`WebviewGpuPolicyNever`) only after a GPU hang. Every start logs "window: load" (started,
-  redirected, committed, finished, failed) and WebKit writes the page's console ("CONSOLE …") on djinn up's
+- **The window's web process dies.** Causes seen: an i915 GPU hang and chip reset (W353; `journalctl -k | grep -E 'GPU
+  HANG|Resetting chip|context reset'`) or a web process that dies mid-session (W366). On Linux, `internal/window`
+  watches WebKit's `web-process-terminated` signal (W354, W416): when the web process ends, it logs "window: the page's
+  web process ended" with `loads` (the load events since the last rescue), `web_processes` (pid, state, RSS, CPU over
+  500 ms) and the kernel's GPU hang lines, tells it on djinn up's output and in a notification ("Djinn's window lost
+  its page"), loads the page again once (`SetURL`), then opens a new view once if the web process ends again; the new
+  view is in software rendering (`WebviewGpuPolicyNever`) only after a GPU hang. Every start logs "window: load"
+  (started, redirected, committed, finished, failed) and WebKit writes the page's console ("CONSOLE …") on djinn up's
   output: console.log when started in the background, the journal when started from the desktop. *Trap:*
   `WEBKIT_DISABLE_DMABUF_RENDERER` is read once per process, at the first view: set later, a new view still draws on
   the GPU (W354 probe), so only the hardware acceleration policy changes it in process. Never persist the fallback:
-  the next start draws on the GPU (Q89). *Test:* `go tool task e2e-native -- -run 'TestNativeRelaunch|TestNativeWebProcessEnds' -v`
-  (`DJINN_WINDOW_SILENCE=1ms` and `DJINN_WINDOW_KERNEL_LOG=<file>`, test builds only; the tests unset the `WEBKIT_*`
-  variables a hand-started Djinn passes to its workers; one SIGKILLs its own window's web process). The view's
-  signals and settings need our own cgo (`cmd/djinn/webprocess_gtk3*.go`, gtk3 tag, the gtk+-3.0 and webkit2gtk-4.1
-  Wails needs already, a no-op twin elsewhere): Wails exposes neither, and WebKitWebView's `settings` property is not
-  readable (use `webkit_web_view_get_settings`). Keep the C callbacks short and their panics recovered: a panic cannot
-  unwind through C. *Where:* `internal/window`, `openWindow` in `cmd/djinn/window.go`.
+  the next start draws on the GPU (Q89). *Test:* `go tool task e2e-native -- -run TestNativeWebProcessEnds -v`
+  (unsets the `WEBKIT_*` variables a hand-started Djinn passes to its workers and SIGKILLs its own window's web
+  process). The view's signals and settings need our own cgo (`cmd/djinn/webprocess_gtk3*.go`, gtk3 tag, the gtk+-3.0
+  and webkit2gtk-4.1 Wails needs already, a no-op twin elsewhere): Wails exposes neither, and WebKitWebView's
+  `settings` property is not readable (use `webkit_web_view_get_settings`). Keep the C callbacks short and their panics
+  recovered: a panic cannot unwind through C. *Where:* `internal/window`, `openWindow` in `cmd/djinn/window.go`.
 - **Why djinn up stopped.** The "shutdown begins" line names the first source (Q84): Ctrl+Q, the tray, SIGINT,
   SIGTERM, "restart: an install from the window", "restart: a restart on a newer Djinn from the command line (djinn
   update)", or "the window ended" when Wails returned by itself. A new way to stop names itself through

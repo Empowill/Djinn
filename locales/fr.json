@@ -1374,8 +1374,6 @@
   "wish.strategy_wish_detail": "Une branche d'intégration par vœu et par projet.",
   "wish.tasks": "Tâches",
   "wish.title": "Titre",
-  "window.silent_title": "La fenêtre de Djinn est restée noire",
-  "window.silent_body": "Sa page n’a fait aucun appel à Djinn en {seconds} s.",
   "window.ended_title": "La fenêtre de Djinn a perdu sa page",
   "window.ended_body": "Le processus qui dessine sa page s’est arrêté : {reason}.",
   "window.reason_crashed": "il a planté",

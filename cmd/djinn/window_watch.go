@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/empowill/djinn/internal/logx"
@@ -27,7 +26,7 @@ type windowConfig struct {
 	links func(string)
 	// quit names what quits Djinn from the window (Ctrl+Q, the tray) before it closes: stopContext's stop.
 	quit func(source string)
-	// watch follows the window's page, and rescues it when it is silent or dead: a reload, then a new view (Linux);
+	// watch follows the window's page, and rescues it when its web process ends: a reload, then a new view (Linux);
 	// nil watches nothing.
 	watch *window.Watch
 }
@@ -52,18 +51,12 @@ func windowNote(language string, e window.Event) (title, body string) {
 	reasons := map[string]string{
 		"crashed": "window.reason_crashed", "memory": "window.reason_memory", "terminated": "window.reason_terminated",
 	}
-	vars := map[string]string{"seconds": strconv.Itoa(int(e.After.Seconds())), "reason": e.Ended}
+	vars := map[string]string{"reason": e.Ended}
 	if key, ok := reasons[e.Ended]; ok {
 		vars["reason"] = locales.T(language, key, nil)
 	}
-	var lines []string
-	if e.Ended != "" {
-		title = locales.T(language, "window.ended_title", vars)
-		lines = append(lines, locales.T(language, "window.ended_body", vars))
-	} else {
-		title = locales.T(language, "window.silent_title", vars)
-		lines = append(lines, locales.T(language, "window.silent_body", vars))
-	}
+	title = locales.T(language, "window.ended_title", vars)
+	lines := []string{locales.T(language, "window.ended_body", vars)}
 	if n := len(e.Hangs); n > 0 && !e.Hangs[n-1].Time.IsZero() {
 		vars["time"] = e.Hangs[n-1].Time.Local().Format("15:04:05")
 		lines = append(lines, locales.T(language, "window.gpu_hang", vars))
