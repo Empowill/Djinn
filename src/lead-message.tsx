@@ -19,6 +19,7 @@ import { useClients, useStore } from "./data/djinn";
 import { EyePerch, useEyeLead } from "./djinn-eye";
 import { t } from "./i18n";
 import { useInstructionDraft } from "./instruction-draft";
+import { onTextSize } from "./text-size";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { WorkspaceAction } from "./workspace-action";
 import "./instruction.css";
@@ -50,8 +51,12 @@ export function useGrowTextarea(
         textarea.scrollHeight > height ? "auto" : "hidden";
     };
     resize();
+    const stopTextSize = onTextSize(resize);
     window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+    return () => {
+      stopTextSize();
+      window.removeEventListener("resize", resize);
+    };
   }, [box, text, active]);
 }
 
