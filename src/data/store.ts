@@ -514,6 +514,7 @@ export function createStore(
 
   function startReadKey(key: string) {
     inFlight.add(key);
+    inFlightChanges.delete(key);
     if (!loadedKeys.has(key)) {
       ensureSlowTimer(key);
     }
@@ -522,6 +523,7 @@ export function createStore(
   function finishReadKey(key: string, ok: boolean, notify = false) {
     inFlight.delete(key);
     inFlightPromises.delete(key);
+    inFlightChanges.delete(key);
     clearSlowTimer(key);
     if (ok) {
       const changed =
@@ -626,6 +628,9 @@ export function createStore(
   const loadingMore = new Set<string>();
   const pendingPrompts = new Map<string, Promise<string>>();
   const lastReadAt = new Map<string, number>();
+  // Incremental watch changes that arrived while a "${wishId}:${kind}" read was already in flight, re-applied when
+  // that read finishes so an older list snapshot does not overwrite a newer watch update.
+  const inFlightChanges = new Map<string, WishChanges[]>();
   // How long a read that failed waits before it is made again, by key: it doubles at each failure, up to a minute.
   const backoff = new Map<string, number>();
   // The store no longer follows djinn: a read that failed is not made again.
@@ -816,10 +821,19 @@ export function createStore(
       const next = { ...state.details };
       let touched = false;
       for (const [wishId, list] of changes) {
+        const eligible = details.find(([id]) => id === wishId)?.[1];
+        for (const k of CARRIED) {
+          const key = `${wishId}:${k}`;
+          if (inFlight.has(key) && !eligible?.has(k)) {
+            inFlightChanges.set(key, [
+              ...(inFlightChanges.get(key) ?? []),
+              ...list,
+            ]);
+          }
+        }
         const detail = next[wishId];
         if (!detail || (!detail.loaded && detail.loadedKinds.size === 0))
           continue;
-        const eligible = details.find(([id]) => id === wishId)?.[1];
         const mask: Partial<WishDetail> = {
           ...(eligible?.has(Change.TASK) ? { tasks: detail.tasks } : {}),
           ...(eligible?.has(Change.QUESTION)
@@ -885,29 +899,30 @@ export function createStore(
       update: (cur: WishDetail) => Partial<WishDetail>,
     ) => {
       const key = `${wishId}:${kind}`;
+      const queued = inFlightChanges.get(key);
       backoff.delete(key);
       finishReadKey(key, true);
       stale.get(wishId)?.delete(kind);
       const prevDetail = state.details[wishId] ?? EMPTY_DETAIL;
       const got = update(prevDetail);
-      const tasks = got.tasks ?? prevDetail.tasks;
-      const questions = got.questions
+      let tasks = got.tasks ?? prevDetail.tasks;
+      let questions = got.questions
         ? questionsAhead(prevDetail.questions, got.questions)
         : prevDetail.questions;
-      const blocks = got.blocks ?? prevDetail.blocks;
+      let blocks = got.blocks ?? prevDetail.blocks;
       const tilasms = got.tilasms ?? prevDetail.tilasms;
       const drafts = got.drafts ?? prevDetail.drafts;
       const holds = got.holds ?? prevDetail.holds;
       const sent = got.sent ?? prevDetail.sent;
       const readsList = got.reads ?? prevDetail.reads;
       const sends = got.sends ?? prevDetail.sends;
-      const tasksTotal =
+      let tasksTotal =
         got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
-      const questionsTotal =
+      let questionsTotal =
         got.questionsTotal !== undefined
           ? got.questionsTotal
           : prevDetail.questionsTotal;
-      const blocksTotal =
+      let blocksTotal =
         got.blocksTotal !== undefined
           ? got.blocksTotal
           : prevDetail.blocksTotal;
@@ -929,6 +944,38 @@ export function createStore(
         loadedKinds = new Set(loadedKinds);
         loadedKinds.add(kind);
         kindsChanged = true;
+      }
+      if (queued && queued.length > 0 && CARRIED.has(kind)) {
+        const mask: Partial<WishDetail> = {
+          ...(kind !== Change.TASK ? { tasks } : {}),
+          ...(kind !== Change.QUESTION ? { questions } : {}),
+          ...(kind !== Change.BLOCK ? { blocks } : {}),
+        };
+        const base: WishDetail = {
+          ...prevDetail,
+          tasks,
+          questions,
+          blocks,
+          tasksTotal,
+          questionsTotal,
+          blocksTotal,
+          loadedKinds,
+        };
+        const applied = queued.reduce((d, c) => apply(d, c, mask), base);
+        if (kind === Change.TASK) {
+          tasks = reconcile(TaskSchema, prevDetail.tasks, applied.tasks);
+          tasksTotal = applied.tasksTotal;
+        } else if (kind === Change.QUESTION) {
+          questions = reconcile(
+            QuestionSchema,
+            prevDetail.questions,
+            applied.questions,
+          );
+          questionsTotal = applied.questionsTotal;
+        } else if (kind === Change.BLOCK) {
+          blocks = reconcile(BlockSchema, prevDetail.blocks, applied.blocks);
+          blocksTotal = applied.blocksTotal;
+        }
       }
       const nowLoaded =
         prevDetail.loaded || isWishFullyLoaded(wishId, loadedKinds);
