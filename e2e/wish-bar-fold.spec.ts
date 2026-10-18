@@ -22,14 +22,19 @@ function djinn(...args: string[]): string {
   });
 }
 
-// The boxes of the wishes' icons whose titles carry tag, in the list's order, once the side panel stands still.
+// The boxes of the wishes' icons whose titles carry tag, in the list's order, once the side panel's fold has ended. Only
+// a finite animation is waited for: a loop never ends, such as a working project's flame an earlier spec left lit.
 async function icons(page: Page, tag: string) {
   await expect
     .poll(() =>
       page.evaluate(
         () =>
-          document.querySelector(".sidebar")!.getAnimations({ subtree: true })
-            .length,
+          document
+            .querySelector(".sidebar")!
+            .getAnimations({ subtree: true })
+            .filter(
+              (a) => a.effect?.getComputedTiming().iterations !== Infinity,
+            ).length,
       ),
     )
     .toBe(0);
