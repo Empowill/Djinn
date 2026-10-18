@@ -3,7 +3,7 @@
 // nothing; from the terminal, nothing; from the text of a new wish, the page. The side panel's entries name the
 // shortcut as an AZERTY keyboard writes it, from the layout map the browser gives.
 // Run alone with: go tool task e2e -- e2e/page-keys.spec.ts
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

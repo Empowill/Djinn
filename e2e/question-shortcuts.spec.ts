@@ -7,7 +7,7 @@
 // - Ctrl+Shift+Enter triggers Enlighten me from anywhere on the card.
 // - Ctrl+Shift+Backspace (Cmd+Shift+Delete on macOS) opens the Withdraw confirmation from anywhere on the card.
 // - Ctrl+Enter without an option selected shows an alert and selects nothing.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

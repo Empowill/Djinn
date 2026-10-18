@@ -2,7 +2,7 @@
 // interrupted task, imported with its wish, leaves what moves or waits and tops the finished tasks, saying who closed
 // it and why; a cancelled task wears its own badge, which says on hover who cancelled it and why. Every run makes
 // fresh identifiers, so --repeat-each works on the same djinn.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

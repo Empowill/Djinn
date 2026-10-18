@@ -2,7 +2,7 @@
 // azimas not done show in their rank; the developer drags one by its grip, a thin line showing where it would land,
 // or moves it one step with Alt+Arrow, and Djinn ranks it there (TaskService.Rank): the scheduler then starts the work
 // of the first azimas first (W134). Every run makes fresh identifiers, so --repeat-each works on the same djinn.
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

@@ -1,7 +1,7 @@
 // Wish templates, against the real djinn up --browser (see global-setup.ts): a project's skill declares a template,
 // a request that matches it becomes a card, rubbing the lamp makes the wish with its watcher, and the watcher's done
 // line asks whether to grant the wish. The watcher is a fake: a shell script that prints, waits, then prints MERGED.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

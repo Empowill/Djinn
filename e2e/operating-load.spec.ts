@@ -1,7 +1,7 @@
 // End-to-end test for the operating load slider: 5 notches, keyboard and click
 // navigation, round stops on the track, server synchronization via LoadService RPCs, and the live two-line forecast
 // shown while the gauge is hovered.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

@@ -6,7 +6,7 @@
 // of its tasks, and shows on arriving, without visiting the Tasks tab. A stopped worker continued goes back among the
 // running. The workers are fakes (the fake provider, the fake claude, a shell script for the watcher): no model is
 // called. Screenshots, dark and light, go to test-results/e2e/.
-import { type Locator, type Page, expect, test } from "@playwright/test";
+import { type Locator, type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

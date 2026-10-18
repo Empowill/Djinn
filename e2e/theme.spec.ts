@@ -1,7 +1,7 @@
 // The light theme everywhere, against the real djinn up --browser (see global-setup.ts): the system's theme by
 // default, then dark and light chosen in the settings, on the dialogs, the lead's blocks (Markdown, code, Mermaid) and
 // the terminal. Screenshots of each, dark and light, go to test-results/e2e/theme-*.png.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

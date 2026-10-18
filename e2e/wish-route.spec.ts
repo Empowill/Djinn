@@ -2,7 +2,7 @@
 // with djinn wish route --ask, the developer rubs the lamp on the card, and Djinn makes the new wish, the request in
 // its blocks, opens it in the window, and tells the one lead where the request went, in its terminal: no second lead
 // starts. The lead is a fake claude on djinn's PATH that repeats what it reads.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

@@ -1,7 +1,7 @@
 // djinn lead resume against the real djinn up --browser (see global-setup.ts): the command line asks djinn to resume the
 // one lead in the lead's terminal, focused on a wish, and to show that wish; the page follows. The lead is a fake claude
 // on djinn's PATH that says how it was called, then repeats what it reads.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { dropLead, leadFolder, leadRows, setLead } from "./lead";

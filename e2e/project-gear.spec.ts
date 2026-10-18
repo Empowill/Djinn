@@ -3,7 +3,7 @@
 // flame, which flickers by transform and opacity only and stands still in a window at rest; folded, the flame passes
 // onto its folder. The gear opens the project's panel; the flying carpet's inbox gives the project one line, which
 // opens it too. Said no to, the source settles it: the gear goes grey and the line goes.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

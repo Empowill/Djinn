@@ -4,7 +4,7 @@
 // the push of feat/lamp, TestLogin red. No worker runs, no model is called. A click on a line opens its task; on the
 // held push, its failing output. The lines stay with the sidebar folded and on a narrow page, and nothing loops.
 // Run alone with: go tool task e2e -- e2e/glance.spec.ts
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

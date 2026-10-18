@@ -8,6 +8,8 @@ export default defineConfig({
   ...e2e,
   testMatch: /.*\.shot\.ts/,
   outputDir: "../test-results/screenshots",
+  // One djinn of the setup, as before: each shot file starts its own anyway.
+  workers: 1,
   timeout: 60_000,
   use: { ...e2e.use, viewport: { width: 1440, height: 1340 } },
 });

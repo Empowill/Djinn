@@ -1,7 +1,7 @@
 // The text size of the personal space (W101): today's size by default, then Compact and Very compact condense the whole
 // window, a question card with it, and Large grows it; the step is kept by the page and set before its first paint, so a
 // reload draws at once at the chosen size. Shots of each step go to test-results/e2e/text-size-*.png.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

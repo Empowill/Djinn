@@ -4,7 +4,7 @@
 // has its entry); the navigation in the window's language; and the side panel's Grimoire, unfolded and folded (W89),
 // which shows it as a page of the window, never a dialog (W165). Screenshots, dark and light, go to
 // test-results/e2e/docs-*.png.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import path from "node:path";
 import { portable } from "./portable";
 

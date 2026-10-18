@@ -3,7 +3,7 @@
 // said to wait for you. What is finished folds, the done azimas and the finished parts, until a click shows it. Opened,
 // an azima's Markdown description is on the left, its parts on the right; a narrow window stacks them. Every run makes
 // fresh identifiers, so --repeat-each works on the same djinn.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

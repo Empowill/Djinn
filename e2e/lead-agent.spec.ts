@@ -2,7 +2,7 @@
 // found on djinn's PATH, and picking Antigravity starts a lead of it in the lead's terminal, from the same first
 // message as every lead, and it becomes the one lead. The description under the title edits in place.
 // The agents are fake: claude and agy scripts on djinn's PATH.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

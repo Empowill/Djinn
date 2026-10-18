@@ -1,7 +1,7 @@
 // The window's terminal opens in a project, never in the home folder: against a djinn of its own (no --terminal-dir,
 // as when djinn starts from a menu), on a data folder of its own. Without a project, the terminal asks for one; once
 // one is created from there, its shell starts in that project's folder. The spec stops only the djinn it started.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";

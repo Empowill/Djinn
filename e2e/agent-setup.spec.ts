@@ -2,7 +2,7 @@
 // simulated: the page reads them from UiService.GetEnvironment, answered here. The install command is a harmless
 // printf, run for real through the shell of a terminal of djinn; nothing is installed.
 import { create, toBinary } from "@bufbuild/protobuf";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 
 import {
   ProviderSchema,
