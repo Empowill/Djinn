@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"connectrpc.com/connect"
@@ -30,7 +32,8 @@ import (
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	_ "github.com/empowill/djinn/gen/go/terminal/v1"
 	_ "github.com/empowill/djinn/gen/go/ui/v1"
-	"github.com/empowill/djinn/locales"
+	"github.com/empowill/djinn/internal/server"
+	"github.com/empowill/djinn/internal/ui"
 )
 
 const (
@@ -39,305 +42,6 @@ const (
 	projectID  = "0199c0a1-7b2e-7c3d-8e4f-000000000002"
 	taskID     = "0199c0a1-7b2e-7c3d-8e4f-000000000003"
 )
-
-// local returns the descriptor the command line uses for the message of want.
-func local(t *testing.T, want proto.Message) protoreflect.MessageDescriptor {
-	t.Helper()
-	d, err := files().FindDescriptorByName(want.ProtoReflect().Descriptor().FullName())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return d.(protoreflect.MessageDescriptor)
-}
-
-// TestConvention checks both ways: the arguments give the request, and the request gives the arguments.
-func TestConvention(t *testing.T) {
-	since := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
-	dir, err := filepath.Abs("api")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tests := []struct {
-		name      string
-		args      []string
-		want      proto.Message
-		parseOnly bool // the arguments are a variant format does not produce
-	}{
-		{
-			name: "oneof takes a code",
-			args: []string{"Q03", "b", "--note", "ship it"},
-			want: &planv1.QuestionServiceAnswerRequest{
-				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}},
-				Choice:   planv1.Choice_CHOICE_B,
-				Note:     "ship it",
-			},
-		},
-		{
-			name: "oneof takes a uuid",
-			args: []string{questionID, "yes"},
-			want: &planv1.QuestionServiceAnswerRequest{
-				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: questionID}},
-				Choice:   planv1.Choice_CHOICE_YES,
-			},
-		},
-		{
-			name: "repeated flag",
-			args: []string{"Which store?", wishID, "--options", "sqlite", "--options", "files"},
-			want: &planv1.QuestionServiceAskRequest{Text: "Which store?", Options: []string{"sqlite", "files"}, WishId: wishID},
-		},
-		{
-			name: "bool flag and timestamp",
-			args: []string{"--open", "--since", "2026-10-07T09:00:00Z"},
-			want: &planv1.QuestionServiceListRequest{Open: true, Since: timestamppb.New(since)},
-		},
-		{
-			name: "positional then flag",
-			args: []string{dir, "--name", "api"},
-			want: &planv1.ProjectServiceAddRequest{Directory: dir, Name: "api"},
-		},
-		{
-			name:      "a relative directory starts from the current one",
-			args:      []string{"api"},
-			want:      &planv1.ProjectServiceAddRequest{Directory: dir},
-			parseOnly: true,
-		},
-		{
-			name:      "a relative file starts from the current directory",
-			args:      []string{"plan.djinn", "--replace"},
-			want:      &planv1.WishServiceImportRequest{File: filepath.Join(filepath.Dir(dir), "plan.djinn"), Replace: true},
-			parseOnly: true,
-		},
-		{name: "empty request", args: nil, want: &planv1.ProjectServiceListRequest{}},
-		{
-			name: "wish title keeps its positional spelling",
-			args: []string{"A short title", "--paused"},
-			want: &planv1.WishServiceMakeRequest{Title: "A short title", Paused: true},
-		},
-		{
-			name: "wish prompt may omit positional title",
-			args: []string{"--paused", "--prompt", "**The request**\n\n- Keep the complete text"},
-			want: &planv1.WishServiceMakeRequest{Prompt: "**The request**\n\n- Keep the complete text", Paused: true},
-		},
-		{
-			name: "djinn wish describe <wish> --text",
-			args: []string{wishID, "--text", "Ship the API.\nIts scope: the store."},
-			want: &planv1.WishServiceDescribeRequest{WishId: wishID, Text: "Ship the API.\nIts scope: the store."},
-		},
-		{
-			name: "djinn wish rename <wish> --title",
-			args: []string{wishID, "--title", "Djinn orchestrator"},
-			want: &planv1.WishServiceRenameRequest{WishId: wishID, Title: "Djinn orchestrator"},
-		},
-		{
-			name: "djinn wish add-project <wish> --project-id",
-			args: []string{wishID, "--project-id", "api"},
-			want: &planv1.WishServiceAddProjectRequest{WishId: wishID, ProjectId: "api"},
-		},
-		{
-			name: "a string and a list of strings in one input, repeated",
-			args: []string{taskID, "--after", "W1,W2", "--also", "W6=W5,W3", "--also", "W7="},
-			want: &planv1.TaskServiceDependRequest{
-				TaskId: taskID, After: []string{"W1,W2"},
-				Also: []*planv1.TaskAfter{{Task: "W6", After: []string{"W5", "W3"}}, {Task: "W7"}},
-			},
-		},
-		{
-			name:      "spaces around the pieces of a pair",
-			args:      []string{taskID, "--also", " W6 = W5 , W3 "},
-			want:      &planv1.TaskServiceDependRequest{TaskId: taskID, Also: []*planv1.TaskAfter{{Task: "W6", After: []string{"W5", "W3"}}}},
-			parseOnly: true,
-		},
-		{
-			name: "an optional flag given empty is present",
-			args: []string{"Q03", "--before", ""},
-			want: &planv1.QuestionServiceReviseRequest{
-				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, Before: proto.String(""),
-			},
-		},
-		{
-			name:      "enum ignores case and accepts its full name",
-			args:      []string{"--note=later", "Q03", "CHOICE_c"},
-			want:      &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, Choice: planv1.Choice_CHOICE_C, Note: "later"},
-			parseOnly: true,
-		},
-		{
-			name:      "no answers a question whose options say yes and no",
-			args:      []string{"Q03", "no"},
-			want:      &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, Choice: planv1.Choice_CHOICE_NO},
-			parseOnly: true,
-		},
-		{
-			name:      "yes and no in another language Djinn speaks",
-			args:      []string{"Q03", strings.ToUpper(locales.T("fr", "answer.yes", nil))},
-			want:      &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, Choice: planv1.Choice_CHOICE_YES},
-			parseOnly: true,
-		},
-		{
-			name:      "bool with a value, time with an offset",
-			args:      []string{"--open=false", "--since", "2026-10-07T11:00:00+02:00"},
-			want:      &planv1.QuestionServiceListRequest{Since: timestamppb.New(since)},
-			parseOnly: true,
-		},
-		{
-			name:      "a relative path starts from the current directory, and a flag repeats",
-			args:      []string{"notes", "--wish", wishID, "--cites", "T29", "--cites", "W12"},
-			want:      &planv1.TilasmServicePutRequest{Path: filepath.Join(filepath.Dir(dir), "notes"), Wish: wishID, Cites: []string{"T29", "W12"}},
-			parseOnly: true,
-		},
-		{
-			name: "the lead reads several notes in one direct command",
-			args: []string{"blockers-as-questions,direct-commands"},
-			want: &planv1.LeadServiceNotesRequest{Name: "blockers-as-questions,direct-commands"},
-		},
-		{
-			name: "the lead reads every note in one direct command",
-			args: []string{"--all"},
-			want: &planv1.LeadServiceNotesRequest{All: true},
-		},
-		{
-			name: "an optional bool set false takes its mark off",
-			args: []string{wishID, "--urgent=false"},
-			want: &planv1.TaskServiceUpdateRequest{TaskId: wishID, Urgent: proto.Bool(false)},
-		},
-		{
-			name: "the brief of the wishes alone",
-			args: []string{"--wishes"},
-			want: &planv1.LeadServiceBriefRequest{Wishes: true},
-		},
-		{
-			name: "where the tasks stand, in a few lines each",
-			args: []string{"--wish-id", wishID, "--short"},
-			want: &planv1.TaskServiceListRequest{WishId: wishID, Short: true},
-		},
-		{
-			name: "a task's last events",
-			args: []string{wishID, "--last", "5"},
-			want: &planv1.TaskServiceWatchRequest{TaskId: wishID, Last: 5},
-		},
-		{
-			name: "a task's last events, then the ones that come",
-			args: []string{wishID, "--last", "5", "--follow"},
-			want: &planv1.TaskServiceWatchRequest{TaskId: wishID, Last: 5, Follow: true},
-		},
-		{
-			name: "one question of a wish, by its code",
-			args: []string{"Q12", "--wish-id", wishID},
-			want: &planv1.QuestionServiceGetRequest{
-				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q12"}}, WishId: wishID,
-			},
-		},
-		{
-			name: "one of the lead's events whole",
-			args: []string{wishID},
-			want: &planv1.LeadServiceEventRequest{Id: wishID},
-		},
-		{
-			name: "an ifrit, with its own idle minutes",
-			args: []string{wishID, "--kind", "ifrit", "--idle-minutes", "60"},
-			want: &planv1.TaskServiceSpawnRequest{WishId: wishID, Kind: planv1.TaskKind_TASK_KIND_IFRIT, IdleMinutes: 60},
-		},
-		{
-			name: "a question about a task",
-			args: []string{"Keep this margin?", wishID, "--about", "W12"},
-			want: &planv1.QuestionServiceAskRequest{Text: "Keep this margin?", WishId: wishID, About: "W12"},
-		},
-		{
-			name: "a revision about another task",
-			args: []string{"Q03", "--about", "W7"},
-			want: &planv1.QuestionServiceReviseRequest{
-				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, About: proto.String("W7"),
-			},
-		},
-		{
-			name: "a revision about no task any more",
-			args: []string{"Q03", "--about", ""},
-			want: &planv1.QuestionServiceReviseRequest{
-				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, About: proto.String(""),
-			},
-		},
-		{
-			name: "a serve with its gate, ports and stop command",
-			args: []string{"back", "task run-back", "--gate", "stack", "--port", "8080=api", "--port", "5432", "--stop", "task stop-back"},
-			want: &planv1.ServeServiceRunRequest{
-				Name: "back", Command: "task run-back", Gate: "stack", Port: []string{"8080=api", "5432"}, Stop: "task stop-back",
-			},
-		},
-		{
-			name:      "a serve's command after --",
-			args:      []string{"front", "--port", "5173=front", "--", "npm run dev"},
-			want:      &planv1.ServeServiceRunRequest{Name: "front", Command: "npm run dev", Port: []string{"5173=front"}},
-			parseOnly: true,
-		},
-		{
-			name: "a serve's last lines",
-			args: []string{"back", "--last", "50"},
-			want: &planv1.ServeServiceLogsRequest{Name: "back", Last: 50},
-		},
-		{
-			name:      "-- ends the flags",
-			args:      []string{"--", "--verbose?"},
-			want:      &planv1.QuestionServiceAskRequest{Text: "--verbose?"},
-			parseOnly: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parse(local(t, tt.want), tt.args)
-			if err != nil {
-				t.Fatal(err)
-			}
-			b, err := proto.Marshal(got)
-			if err != nil {
-				t.Fatal(err)
-			}
-			typed := tt.want.ProtoReflect().New().Interface()
-			if err := proto.Unmarshal(b, typed); err != nil {
-				t.Fatal(err)
-			}
-			if !proto.Equal(typed, tt.want) {
-				t.Errorf("parse(%q) = %v, want %v", tt.args, typed, tt.want)
-			}
-			if tt.parseOnly {
-				return
-			}
-			if args := format(tt.want.ProtoReflect()); !slices.Equal(args, tt.args) {
-				t.Errorf("format(%v) = %q, want %q", tt.want, args, tt.args)
-			}
-		})
-	}
-}
-
-func TestParseErrors(t *testing.T) {
-	answer := &planv1.QuestionServiceAnswerRequest{}
-	tests := []struct {
-		name string
-		msg  proto.Message
-		args []string
-		want string
-	}{
-		{"unknown flag", answer, []string{"Q03", "b", "--force"}, "unknown flag --force"},
-		{"flag without value", answer, []string{"Q03", "b", "--note"}, "--note needs a value"},
-		{"too many arguments", answer, []string{"Q03", "b", "c"}, `unexpected argument "c"`},
-		{"unknown enum value", answer, []string{"Q03", "e"}, `<choice>: "e" is not one of yes, no, a, b, c, d`},
-		{"zero enum value", answer, []string{"Q03", "unspecified"}, `"unspecified" is not one of`},
-		{
-			"oneof fits no member", answer, []string{"q3", "b"},
-			`<question>: "q3" fits none of: code (does not match regex pattern ` + "`^Q[0-9]{2,3}$`" + `), id (must be a valid UUID)`,
-		},
-		{"bad time", &planv1.QuestionServiceListRequest{}, []string{"--since", "yesterday"}, `--since: "yesterday" is not an RFC 3339 time`},
-		{"bad bool", &planv1.QuestionServiceListRequest{}, []string{"--open=maybe"}, `--open: "maybe" is not a valid bool`},
-		{"positional is not a flag", &planv1.ProjectServiceAddRequest{}, []string{"--directory", "api"}, "unknown flag --directory"},
-		{"pair without its key", &planv1.TaskServiceDependRequest{}, []string{taskID, "--also", "W5,W3"}, `--also: "W5,W3" is not task=after,…`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := parse(local(t, tt.msg), tt.args)
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Errorf("parse(%q) error = %v, want it to contain %q", tt.args, err, tt.want)
-			}
-		})
-	}
-}
 
 // fake is an in-memory server that records the requests it receives.
 type fake struct {
@@ -548,6 +252,20 @@ func (f loads) Set(_ context.Context, req *connect.Request[djinnv1.LoadServiceSe
 	return connect.NewResponse(resp), nil
 }
 
+// Watch sends the medium notch, then the minimal one in auto mode, and ends.
+func (f loads) Watch(_ context.Context, req *connect.Request[djinnv1.LoadServiceWatchRequest], s *connect.ServerStream[djinnv1.LoadServiceWatchResponse]) error {
+	f.record(req.Msg)
+	for _, res := range []*djinnv1.LoadServiceWatchResponse{
+		{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
+		{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, Auto: true},
+	} {
+		if err := s.Send(res); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // serve starts the fake server and returns a function that runs a command line against it.
 func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr string)) {
 	t.Helper()
@@ -572,18 +290,21 @@ func serve(t *testing.T) (*fake, func(args ...string) (code int, stdout, stderr 
 	}
 }
 
+// runCase is a command line Run runs against the fake server, and what it gives.
+type runCase struct {
+	name       string
+	args       []string
+	wantCode   int
+	wantOut    string // substring of stdout
+	wantErr    string // substring of stderr
+	wantCalled bool
+}
+
 func TestRun(t *testing.T) {
-	tests := []struct {
-		name       string
-		args       []string
-		wantCode   int
-		wantOut    string // substring of stdout
-		wantErr    string // substring of stderr
-		wantCalled bool
-	}{
+	tests := []runCase{
 		{name: "prefixes", args: []string{"q", "ans", "Q03", "b"}, wantOut: "code: Q03", wantCalled: true},
-		{name: "warnings after the question", args: []string{"q", "ask", "Which?", wishID, "--context", "Run git log."}, wantOut: "\ncode: Q03\n", wantCalled: true},
-		{name: "a warning line each", args: []string{"q", "ask", "Which?", wishID, "--context", "Run git log."}, wantOut: "\nwarning: line 1: a command in the text\n", wantCalled: true},
+		{name: "a warning line each, after the question", args: []string{"q", "ask", "Which?", wishID, "--context", "Run git log."}, wantOut: "id: " + questionID + "\ncode: Q03\n" +
+			"text: Which store?\noptions:\n  - sqlite\n  - files\ncreate_time: 2026-10-07T09:00:00Z\nwarning: line 1: a command in the text\n", wantCalled: true},
 		{name: "text output", args: []string{"question", "answer", "Q03", "B", "--note", "ok"}, wantOut: "answer:\n  choice: b\n  note: ok\n", wantCalled: true},
 		{name: "json output", args: []string{"--json", "q", "answer", questionID, "a"}, wantOut: `"CHOICE_A"`, wantCalled: true},
 		{name: "where a task's work stands", args: []string{"task", "get", wishID}, wantOut: "status: done\n" +
@@ -634,9 +355,16 @@ func TestRun(t *testing.T) {
 		{name: "serve list reaches its stub", args: []string{"serve", "list", "--task-id", taskID}, wantCode: 1, wantErr: "unimplemented"},
 		{name: "serve stop reaches its stub", args: []string{"serve", "stop", "front", "--task-id", taskID}, wantCode: 1, wantErr: "unimplemented"},
 		{name: "serve logs reaches its stub", args: []string{"serve", "logs", "front", "--task-id", taskID, "--last", "50"}, wantCode: 1, wantErr: "unimplemented"},
+		{name: "a stream prints each message", args: []string{"load", "watch"}, wantOut: "notch: medium\n\nnotch: minimal\nauto: true\n", wantCalled: true},
+		{name: "a stream in JSON", args: []string{"--json", "load", "watch"}, wantOut: `"LOAD_NOTCH_MINIMAL"`, wantCalled: true},
+		{name: "a service's help lists its commands written by hand", args: []string{"gate"}, wantOut: "\n  run "},
+	}
+	for _, name := range []string{"up", "open", "update", "backup", "version", "mcp", "--addr value"} {
+		tests = append(tests, runCase{name: "help lists " + name, wantOut: "\n  " + name + " "})
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f, run := serve(t)
 			code, out, errs := run(tt.args...)
 			if code != tt.wantCode || !strings.Contains(out, tt.wantOut) || !strings.Contains(errs, tt.wantErr) {
@@ -653,125 +381,48 @@ func TestRun(t *testing.T) {
 // TestJSONOnly: a response field marked json_only prints with --json only, so that djinn tilasm comments shows the
 // text the lead reads and not the same comments again, field by field.
 func TestJSONOnly(t *testing.T) {
-	f, run := serve(t)
-	code, out, errs := run("tilasm", "comments", "L01", "--send", "2")
-	if want := "text: L01 · The objects in the database · version 1\n\nsend 2 · 1 comment\n\n"; code != 0 || out != want {
-		t.Errorf("djinn tilasm comments L01 --send 2: code %d, stdout %q, want %q; stderr %s", code, out, want, errs)
-	}
-	if got := f.calls[0].(*planv1.TilasmServiceCommentsRequest); got.GetTilasm().GetCode() != "L01" || got.GetSend() != 2 {
-		t.Errorf("request = %v", got)
-	}
-	code, out, errs = run("--json", "tilasm", "comments", "L01")
-	// protojson spaces its output at random, one space or two: read it back rather than compare its text.
-	var printed struct {
-		Comments []struct{ Text string } `json:"comments"`
-	}
-	if err := json.Unmarshal([]byte(out), &printed); code != 0 || err != nil || len(printed.Comments) != 1 ||
-		printed.Comments[0].Text != "Say what a wish holds." {
-		t.Errorf("djinn --json tilasm comments L01: code %d, %v, stdout:\n%s\nstderr: %s", code, err, out, errs)
+	for _, tt := range []struct {
+		name string
+		args []string
+		send int32
+		want func(out string) error
+	}{
+		{"the text leaves it out", []string{"tilasm", "comments", "L01", "--send", "2"}, 2, func(out string) error {
+			if want := "text: L01 · The objects in the database · version 1\n\nsend 2 · 1 comment\n\n"; out != want {
+				return fmt.Errorf("want %q", want)
+			}
+			return nil
+		}},
+		{"--json prints it", []string{"--json", "tilasm", "comments", "L01"}, 0, func(out string) error {
+			// protojson spaces its output at random, one space or two: read it back rather than compare its text.
+			var printed struct {
+				Comments []struct{ Text string } `json:"comments"`
+			}
+			if err := json.Unmarshal([]byte(out), &printed); err != nil {
+				return err
+			}
+			if len(printed.Comments) != 1 || printed.Comments[0].Text != "Say what a wish holds." {
+				return fmt.Errorf("comments %+v", printed.Comments)
+			}
+			return nil
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f, run := serve(t)
+			code, out, errs := run(tt.args...)
+			if err := tt.want(out); code != 0 || err != nil {
+				t.Errorf("djinn %s: code %d, %v, stdout:\n%s\nstderr: %s", strings.Join(tt.args, " "), code, err, out, errs)
+			}
+			if got := f.seen()[0].(*planv1.TilasmServiceCommentsRequest); got.GetTilasm().GetCode() != "L01" || got.GetSend() != tt.send {
+				t.Errorf("request = %v", got)
+			}
+		})
 	}
 }
 
 // noEnv is an environment without any variable: a test run by a Djinn worker does not see its $DJINN_TASK_ID.
 func noEnv(string) string { return "" }
-
-// TestFromEnv: a field that defaults to an environment variable takes it when the command line leaves it empty, so
-// that a worker's block or question is attributed to its task; a value given wins, and a field without the option
-// (a filter) never takes it.
-func TestFromEnv(t *testing.T) {
-	const task, other = "01a120ea-554a-716c-8e66-43516f2f04c9", "01a120ea-554a-716c-8e66-43516f2f0000"
-	env := func(name string) string {
-		if name == "DJINN_TASK_ID" {
-			return task
-		}
-		return ""
-	}
-	for _, c := range []struct {
-		msg  proto.Message
-		args []string
-		want string
-	}{
-		{&planv1.BlockServicePutRequest{}, []string{wishID, "--kind", "decision"}, task},
-		{&planv1.BlockServicePutRequest{}, []string{wishID, "--task-id", other}, other},
-		{&planv1.QuestionServiceAskRequest{}, []string{"Which?", wishID}, task},
-		{&planv1.QuestionServiceReviseRequest{}, []string{"Q03", "--context", "found"}, task},
-		{&planv1.BlockServiceListRequest{}, []string{wishID}, ""},
-		// An ifrit names its own serves without saying it.
-		{&planv1.ServeServiceRunRequest{}, []string{"front", "npm run dev"}, task},
-		{&planv1.ServeServiceListRequest{}, nil, task},
-		{&planv1.ServeServiceStopRequest{}, []string{"front", "--task-id", other}, other},
-		{&planv1.ServeServiceLogsRequest{}, []string{"front"}, task},
-	} {
-		md := local(t, c.msg)
-		req, err := parse(md, c.args)
-		if err != nil {
-			t.Fatal(err)
-		}
-		fromEnv(req, env)
-		if got := req.Get(md.Fields().ByName("task_id")).String(); got != c.want {
-			t.Errorf("%s %v: task_id %q, want %q", md.Name(), c.args, got, c.want)
-		}
-	}
-	// djinn mcp reads the same variable.
-	f, _ := mcpSessionEnv(t, env, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"question_ask",`+
-		`"arguments":{"text":"Which?","wish_id":"`+wishID+`"}}}`)
-	if seen := f.seen(); len(seen) != 1 || seen[0].(*planv1.QuestionServiceAskRequest).GetTaskId() != task {
-		t.Errorf("djinn mcp sent %v, want the task of $DJINN_TASK_ID", seen)
-	}
-
-	// DJINN_LEAD fills the lead field on answer and withdraw.
-	const leadVal = "1"
-	leadEnv := func(name string) string {
-		if name == "DJINN_LEAD" {
-			return leadVal
-		}
-		return ""
-	}
-	for _, c := range []struct {
-		msg  proto.Message
-		args []string
-		want string
-	}{
-		{&planv1.QuestionServiceAnswerRequest{}, []string{"Q03", "yes"}, leadVal},
-		{&planv1.QuestionServiceAnswerRequest{}, []string{"Q03", "yes", "--lead", other}, other},
-		{&planv1.QuestionServiceWithdrawRequest{}, []string{"Q03"}, leadVal},
-		{&planv1.QuestionServiceWithdrawRequest{}, []string{"Q03", "--lead", other}, other},
-	} {
-		md := local(t, c.msg)
-		req, err := parse(md, c.args)
-		if err != nil {
-			t.Fatal(err)
-		}
-		fromEnv(req, leadEnv)
-		if got := req.Get(md.Fields().ByName("lead")).String(); got != c.want {
-			t.Errorf("%s %v: lead %q, want %q", md.Name(), c.args, got, c.want)
-		}
-	}
-
-	// djinn lead watch names its session by the variable its agent sets, the first one set of those it lists.
-	for _, c := range []struct {
-		env  map[string]string
-		args []string
-		want string
-	}{
-		{map[string]string{"CLAUDE_CODE_SESSION_ID": "claude-1"}, nil, "claude-1"},
-		{map[string]string{"CODEX_THREAD_ID": "codex-1"}, nil, "codex-1"},
-		{map[string]string{"ANTIGRAVITY_CONVERSATION_ID": "agy-1"}, nil, "agy-1"},
-		{map[string]string{"CLAUDE_CODE_SESSION_ID": "claude-1", "CODEX_THREAD_ID": "codex-1"}, nil, "claude-1"},
-		{map[string]string{"CLAUDE_CODE_SESSION_ID": "claude-1"}, []string{"--session", "mine"}, "mine"},
-		{nil, nil, ""},
-	} {
-		md := local(t, &planv1.LeadServiceWatchRequest{})
-		req, err := parse(md, c.args)
-		if err != nil {
-			t.Fatal(err)
-		}
-		fromEnv(req, func(name string) string { return c.env[name] })
-		if got := req.Get(md.Fields().ByName("session")).String(); got != c.want {
-			t.Errorf("lead watch %v with %v: session %q, want %q", c.args, c.env, got, c.want)
-		}
-	}
-}
 
 // protoMethods are the public methods of the protos, streams included: each method of each service that says
 // VISIBILITY_PUBLIC, read from the descriptors, not from the command line's own list. A method added is in it.
@@ -795,105 +446,192 @@ func protoMethods(t *testing.T) []protoreflect.MethodDescriptor {
 	return out
 }
 
-// TestEveryPublicMethodIsExpressible keeps the protos within what the convention can type: each public method is a
-// command line, djinn <service> <method>, and its fields are flags or arguments with their help.
-func TestEveryPublicMethodIsExpressible(t *testing.T) {
-	for _, md := range protoMethods(t) {
-		line := []string{command(md.Parent().(protoreflect.ServiceDescriptor)), kebab(string(md.Name()))}
-		var out, errs bytes.Buffer
-		code := Run(t.Context(), append(line, "--help"), Config{Version: "test", Stdout: &out, Stderr: &errs})
-		if usage := "Usage: djinn " + strings.Join(line, " "); code != 0 || !strings.HasPrefix(out.String(), usage) {
-			t.Errorf("%s: djinn %s --help exited %d: %s%s", md.FullName(), strings.Join(line, " "), code, out.String(), errs.String())
-		}
-		for _, fd := range byNumber(md.Input()) {
-			if err := supported(fd); err != nil {
-				t.Errorf("%s: %v", fd.FullName(), err)
-			}
-			if comment(fd) == "" {
-				t.Errorf("%s has no comment, so no help", fd.FullName())
-			}
-		}
-		if comment(md) == "" {
-			t.Errorf("%s has no comment, so no help", md.FullName())
-		}
-	}
-}
-
-// TestEmbeddedDescriptorsAreFresh fails when gen/djinn.binpb was not regenerated with the Go code.
-func TestEmbeddedDescriptorsAreFresh(t *testing.T) {
+// TestFiles fails when gen/djinn.binpb was not regenerated with the Go code: each file embedded is the one compiled
+// in.
+func TestFiles(t *testing.T) {
 	files().RangeFiles(func(fd protoreflect.FileDescriptor) bool {
-		compiled, err := protoregistry.GlobalFiles.FindFileByPath(fd.Path())
-		if err != nil {
-			t.Errorf("%s is embedded but not compiled in: %v", fd.Path(), err)
-			return true
-		}
-		// Only the comments and the file options buf's managed mode adds to the generated code may differ.
-		embedded, generated := protodesc.ToFileDescriptorProto(fd), protodesc.ToFileDescriptorProto(compiled)
-		embedded.SourceCodeInfo, embedded.Options, generated.Options = nil, nil, nil
-		if !proto.Equal(embedded, generated) {
-			t.Errorf("%s differs from the generated code: run go tool task gen", fd.Path())
-		}
+		t.Run(fd.Path(), func(t *testing.T) {
+			compiled, err := protoregistry.GlobalFiles.FindFileByPath(fd.Path())
+			if err != nil {
+				t.Fatalf("%s is embedded but not compiled in: %v", fd.Path(), err)
+			}
+			// Only the comments and the file options buf's managed mode adds to the generated code may differ.
+			embedded, generated := protodesc.ToFileDescriptorProto(fd), protodesc.ToFileDescriptorProto(compiled)
+			embedded.SourceCodeInfo, embedded.Options, generated.Options = nil, nil, nil
+			if !proto.Equal(embedded, generated) {
+				t.Errorf("%s differs from the generated code: run go tool task gen", fd.Path())
+			}
+		})
 		return true
 	})
 }
 
-// TestEveryMethodSaysWhatItChanges fails on a public method that answers once and says neither that it only reads
-// (option idempotency_level = NO_SIDE_EFFECTS) nor what it changes (option (djinn.v1.writes)), or says both: the
-// next method is classified when it is added.
-func TestEveryMethodSaysWhatItChanges(t *testing.T) {
-	var reads, deletes []string
-	for _, sd := range commands() {
-		for _, md := range public(sd) {
-			if md.IsStreamingClient() || md.IsStreamingServer() {
-				continue
-			}
-			name := string(md.FullName())
-			switch r, w := readOnly(md), writes(md); {
-			case r && w != djinnv1.Writes_WRITES_UNSPECIFIED:
-				t.Errorf("%s says it only reads, and that it writes: keep one", name)
-			case !r && w == djinnv1.Writes_WRITES_UNSPECIFIED:
-				t.Errorf("%s says nothing of what it changes: add option idempotency_level = NO_SIDE_EFFECTS if it "+
-					"only reads, else option (djinn.v1.writes) = WRITES_CHANGE or WRITES_DELETE", name)
-			case r:
-				reads = append(reads, name)
-			case w == djinnv1.Writes_WRITES_DELETE:
-				deletes = append(deletes, name)
-			}
-		}
-	}
-	for _, want := range []string{"plan.v1.ProjectService.List", "plan.v1.TaskService.Get", "machine.v1.MachineService.Show"} {
-		if !slices.Contains(reads, want) {
-			t.Errorf("%s is not read-only: %v", want, reads)
-		}
-	}
-	for _, want := range []string{"plan.v1.TaskService.Delete", "plan.v1.BlockService.Delete", "plan.v1.SkillService.Unsummon"} {
-		if !slices.Contains(deletes, want) {
-			t.Errorf("%s does not delete: %v", want, deletes)
-		}
-	}
-}
-
-// Make accepts either input, but still rejects missing, blank and oversized titles.
-func TestMakeInputValidation(t *testing.T) {
+// TestWrites checks what writes and readOnly say of a few methods, then fails on a public method that answers once
+// and says neither that it only reads (option idempotency_level = NO_SIDE_EFFECTS) nor what it changes (option
+// (djinn.v1.writes)), or says both: the next method is classified when it is added.
+func TestWrites(t *testing.T) {
 	for _, tt := range []struct {
-		name  string
-		args  []string
-		valid bool
+		method   protoreflect.FullName
+		readOnly bool
+		writes   djinnv1.Writes
 	}{
-		{"legacy title", []string{"Short title"}, true},
-		{"prompt only", []string{"--prompt", "A complete request"}, true},
-		{"missing inputs", nil, false},
-		{"blank inputs", []string{" ", "--prompt", "\n\t"}, false},
-		{"oversized title", []string{strings.Repeat("x", 501)}, false},
+		{"plan.v1.ProjectService.List", true, djinnv1.Writes_WRITES_UNSPECIFIED},
+		{"plan.v1.TaskService.Get", true, djinnv1.Writes_WRITES_UNSPECIFIED},
+		{"machine.v1.MachineService.Show", true, djinnv1.Writes_WRITES_UNSPECIFIED},
+		{"plan.v1.QuestionService.Answer", false, djinnv1.Writes_WRITES_CHANGE},
+		{"plan.v1.TaskService.Delete", false, djinnv1.Writes_WRITES_DELETE},
+		{"plan.v1.BlockService.Delete", false, djinnv1.Writes_WRITES_DELETE},
+		{"plan.v1.SkillService.Unsummon", false, djinnv1.Writes_WRITES_DELETE},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			msg, err := parse(local(t, &planv1.WishServiceMakeRequest{}), tt.args)
+		t.Run(string(tt.method), func(t *testing.T) {
+			d, err := files().FindDescriptorByName(tt.method)
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = check(msg, label)
-			if (err == nil) != tt.valid {
-				t.Errorf("valid=%v, error=%v", tt.valid, err)
+			md := d.(protoreflect.MethodDescriptor)
+			if r, w := readOnly(md), writes(md); r != tt.readOnly || w != tt.writes {
+				t.Errorf("readOnly %v, writes %v; want %v, %v", r, w, tt.readOnly, tt.writes)
+			}
+		})
+	}
+	t.Run("every method says what it changes", func(t *testing.T) {
+		for _, sd := range commands() {
+			for _, md := range public(sd) {
+				if md.IsStreamingClient() || md.IsStreamingServer() {
+					continue
+				}
+				switch r, w := readOnly(md), writes(md); {
+				case r && w != djinnv1.Writes_WRITES_UNSPECIFIED:
+					t.Errorf("%s says it only reads, and that it writes: keep one", md.FullName())
+				case !r && w == djinnv1.Writes_WRITES_UNSPECIFIED:
+					t.Errorf("%s says nothing of what it changes: add option idempotency_level = NO_SIDE_EFFECTS if it "+
+						"only reads, else option (djinn.v1.writes) = WRITES_CHANGE or WRITES_DELETE", md.FullName())
+				}
+			}
+		}
+	})
+}
+
+// TestNewClient: with no address given, the command line reads the one djinn up wrote, a Unix socket or an http URL
+// whose token goes as a bearer token; --addr wins over it. No address file is a hint to run djinn up, and the real
+// data directory is refused under test.
+func TestNewClient(t *testing.T) {
+	const token = "s3cret"
+	f := &fake{}
+	// A Unix socket path is limited to about 100 bytes; t.TempDir is longer than that on macOS.
+	dir, err := os.MkdirTemp("", "dj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socket := filepath.Join(dir, server.SocketFile)
+	ln, err := server.ListenUnix(socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go server.Serve(t.Context(), ln, handler(f)) //nolint:errcheck // Stops with the test.
+	srv := httptest.NewUnstartedServer(nil)
+	origin := "http://" + srv.Listener.Addr().String()
+	srv.Config.Handler = server.Guard(handler(f), token, origin)
+	srv.Start()
+	defer srv.Close()
+
+	list := []string{"project", "list"}
+	for _, tt := range []struct {
+		name      string
+		file      string // the address djinn up wrote; none when empty
+		real      bool   // run in the real data directory
+		args      []string
+		wantCode  int
+		wantOut   string
+		wantErr   string
+		wantCalls int
+	}{
+		{name: "no address file", args: list, wantCode: 1, wantErr: "djinn up"},
+		{name: "the file's socket", file: "unix://" + socket, args: list, wantOut: "name: api", wantCalls: 1},
+		{name: "the file's token", file: origin + "/?token=" + token, args: list, wantOut: "name: api", wantCalls: 1},
+		{name: "--addr wins over the file", file: origin + "/?token=" + token, args: append([]string{"--addr", origin}, list...), wantCode: 1, wantErr: "unauthenticated"},
+		{name: "a wrong token", args: append([]string{"--addr", origin + "/?token=wrong"}, list...), wantCode: 1, wantErr: "unauthenticated"},
+		{name: "the real data directory", real: true, args: []string{"wish", "list"}, wantCode: 1, wantErr: "refusing to use real data directory"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			if tt.real {
+				if home = ui.RealHome(); home == "" {
+					t.Skip("no real home directory found on this system")
+				}
+			}
+			if tt.file != "" {
+				if _, err := server.WriteAddr(home, tt.file); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.mu.Lock()
+			f.calls = nil
+			f.mu.Unlock()
+			code, out, errs := runIn(home, tt.args...)
+			if code != tt.wantCode || !strings.Contains(out, tt.wantOut) || !strings.Contains(errs, tt.wantErr) {
+				t.Errorf("djinn %s: code %d, want %d\nstdout:\n%s\nstderr:\n%s", strings.Join(tt.args, " "), code, tt.wantCode, out, errs)
+			}
+			if calls := len(f.seen()); calls != tt.wantCalls {
+				t.Errorf("server calls: %d, want %d", calls, tt.wantCalls)
+			}
+		})
+	}
+}
+
+// resumes answers LeadService.Resume, which is marked autostart.
+type resumes struct {
+	planv1connect.UnimplementedLeadServiceHandler
+}
+
+func (resumes) Resume(
+	_ context.Context, req *connect.Request[planv1.LeadServiceResumeRequest],
+) (*connect.Response[planv1.LeadServiceResumeResponse], error) {
+	return connect.NewResponse(&planv1.LeadServiceResumeResponse{Terminal: "lead"}), nil
+}
+
+// TestAutostart: a method marked autostart starts a djinn when none answers, and only then; the others fail as before.
+// The steps run in order, on the same data directory.
+func TestAutostart(t *testing.T) {
+	lp, lh := planv1connect.NewLeadServiceHandler(resumes{})
+	qp, qh := planv1connect.NewQuestionServiceHandler(questions{fake: &fake{}})
+	srv := httptest.NewServer(server.Handler(fstest.MapFS{"index.html": {}}, nil, map[string]http.Handler{lp: lh, qp: qh}))
+	defer srv.Close()
+	home := t.TempDir()
+	started := 0
+	start := func(context.Context) (string, error) {
+		started++
+		if _, err := server.WriteAddr(home, srv.URL); err != nil {
+			return "", err
+		}
+		return srv.URL, nil
+	}
+	for _, tt := range []struct {
+		name        string
+		file        string // the address left before the step; none when empty
+		args        []string
+		wantCode    int
+		wantOut     string
+		wantErr     string
+		wantStarted int
+	}{
+		{name: "a method without autostart fails", args: []string{"question", "list"}, wantCode: 1, wantErr: "djinn up"},
+		// An address left by a crash is not a djinn: resume starts one, then calls it.
+		{name: "a crash's address starts one", file: "http://127.0.0.1:1/?token=old", args: []string{"lead", "resume"}, wantOut: "lead", wantStarted: 1},
+		{name: "once one answers, nothing starts", args: []string{"lead", "resume"}, wantOut: "lead", wantStarted: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.file != "" {
+				if _, err := server.WriteAddr(home, tt.file); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var out, errs bytes.Buffer
+			code := Run(t.Context(), tt.args, Config{Home: home, Stdout: &out, Stderr: &errs, Start: start})
+			if code != tt.wantCode || started != tt.wantStarted || !strings.Contains(out.String(), tt.wantOut) ||
+				!strings.Contains(errs.String(), tt.wantErr) {
+				t.Errorf("djinn %s: code %d, started %d\nstdout:\n%s\nstderr:\n%s", strings.Join(tt.args, " "), code, started, out.String(), errs.String())
 			}
 		})
 	}

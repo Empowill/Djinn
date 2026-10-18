@@ -68,7 +68,9 @@ func result[T any](t *testing.T, msg rpcMessage) T {
 	return v
 }
 
-func TestMCPListTools(t *testing.T) {
+// TestTools: an MCP client that starts the session and lists the tools sees every public method that answers once,
+// with its comment, its arguments and what it changes.
+func TestTools(t *testing.T) {
 	_, answers := mcpSession(t,
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
@@ -174,70 +176,84 @@ func TestMCPListTools(t *testing.T) {
 	}
 }
 
-func TestMCPCallTool(t *testing.T) {
-	f, answers := mcpSession(t,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"question_answer","arguments":{"question":"Q03","choice":"b","note":"ship it"}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"question_answer","arguments":{"choice":"b","wish_id":"W1"}}}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"question_answer","arguments":{"question":"Q99","choice":"a"}}}`,
-		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"question_answer","arguments":{"question":"Q03","choice":"b","colour":"red"}}}`,
-		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"ui_get_environment","arguments":{}}}`,
-		`{"jsonrpc":"2.0","id":6,"method":"resources/list"}`,
-		`not json`,
-		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"lead_tell","arguments":{"text":"merge W3"}}}`,
-	)
-	ok := result[mcpCallResult](t, answers["1"])
-	if ok.IsError || len(ok.Content) != 1 || !strings.Contains(ok.Content[0].Text, `"choice": "CHOICE_B"`) {
-		t.Errorf("call: %+v", ok)
+// TestServeMCP: a tool call is checked as the command line checks it, sent, and answered with the response or the
+// error; what is no tool, no method or no JSON is a JSON-RPC error.
+func TestServeMCP(t *testing.T) {
+	const task = "01a120ea-554a-716c-8e66-43516f2f04c9"
+	call := func(name, arguments string) string {
+		return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + name + `","arguments":` + arguments + `}}`
 	}
-	want := &planv1.QuestionServiceAnswerRequest{
-		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}},
-		Choice:   planv1.Choice_CHOICE_B,
-		Note:     "ship it",
-	}
-	calls := f.seen()
-	if !slices.ContainsFunc(calls, func(m proto.Message) bool { return proto.Equal(m, want) }) {
-		t.Errorf("the server did not receive %v: %v", want, calls)
-	}
-	if len(calls) != 2 {
-		t.Errorf("the server got %d calls, want 2 (the call that passes, the one it refuses): %v", len(calls), calls)
-	}
-
-	for id, wantText := range map[string]string{
-		"2": "question: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\nwish_id: must be a valid UUID; expected a UUID",
-		"3": "not_found: no question Q99",
-		"4": `unknown argument "colour"`,
+	for _, tt := range []struct {
+		name    string
+		env     map[string]string
+		request string
+		want    string        // the tool's text: a part of it when the call passes, all of it when it fails
+		isError bool          // the tool says the call failed
+		code    int           // the JSON-RPC error; 0 when the call is answered
+		sent    proto.Message // the request the server received; nil when none reached it
+	}{
+		{
+			name: "a call answers the response", request: call("question_answer", `{"question":"Q03","choice":"b","note":"ship it"}`),
+			want: `"choice": "CHOICE_B"`,
+			sent: &planv1.QuestionServiceAnswerRequest{
+				Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q03"}}, Choice: planv1.Choice_CHOICE_B, Note: "ship it",
+			},
+		},
+		{
+			name: "arguments are checked before sending", request: call("question_answer", `{"choice":"b","wish_id":"W1"}`), isError: true,
+			want: "question: value is required; expected a match of ^Q[0-9]{2,3}$ or a UUID\nwish_id: must be a valid UUID; expected a UUID",
+		},
+		{
+			name: "the server's error", request: call("question_answer", `{"question":"Q99","choice":"a"}`), isError: true,
+			want: "not_found: no question Q99",
+			sent: &planv1.QuestionServiceAnswerRequest{Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: "Q99"}}, Choice: planv1.Choice_CHOICE_A},
+		},
+		{name: "an unknown argument", request: call("question_answer", `{"question":"Q03","choice":"b","colour":"red"}`), isError: true, want: `unknown argument "colour"`},
+		{name: "an internal method is no tool", request: call("ui_get_environment", `{}`), code: rpcInvalidParams},
+		// No agent's client types into the lead through a tool: djinn lead tell is the developer's command.
+		{name: "the developer's command is no tool", request: call("lead_tell", `{"text":"merge W3"}`), code: rpcInvalidParams},
+		{name: "an unknown method", request: `{"jsonrpc":"2.0","id":1,"method":"resources/list"}`, code: rpcMethodNotFound},
+		{name: "not JSON", request: `not json`, code: rpcParseError},
+		// W234: a false is sent, not dropped, so that the urgent mark comes off.
+		{
+			name: "a false is sent", request: call("task_update", `{"task_id":"`+taskID+`","urgent":false}`), want: `"code": "W5"`,
+			sent: &planv1.TaskServiceUpdateRequest{TaskId: taskID, Urgent: proto.Bool(false)},
+		},
+		{
+			name: "a true is sent", request: call("task_update", `{"task_id":"`+taskID+`","feedback":true}`), want: `"code": "W5"`,
+			sent: &planv1.TaskServiceUpdateRequest{TaskId: taskID, Feedback: proto.Bool(true)},
+		},
+		{
+			name: "a field takes its variable", env: map[string]string{"DJINN_TASK_ID": task},
+			request: call("question_ask", `{"text":"Which?","wish_id":"`+wishID+`"}`), want: `"code": "Q03"`,
+			sent: &planv1.QuestionServiceAskRequest{Text: "Which?", WishId: wishID, TaskId: task},
+		},
 	} {
-		res := result[mcpCallResult](t, answers[id])
-		if !res.IsError || len(res.Content) != 1 || res.Content[0].Text != wantText {
-			t.Errorf("call %s: %+v, want the error %q", id, res, wantText)
-		}
-	}
-	// No agent's client types into the lead through a tool: djinn lead tell is the developer's command.
-	for id, code := range map[string]int{"5": rpcInvalidParams, "6": rpcMethodNotFound, "null": rpcParseError, "7": rpcInvalidParams} {
-		if e := answers[id].Error; e == nil || e.Code != code {
-			t.Errorf("answer %s: error %+v, want code %d", id, e, code)
-		}
-	}
-}
-
-// TestMCPUrgentMark (W234): task_update puts the urgent mark on and takes it off, as djinn task update --urgent and
-// --feedback do: a false is sent, not dropped, so that the mark comes off.
-func TestMCPUrgentMark(t *testing.T) {
-	f, answers := mcpSession(t,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"task_update","arguments":{"task_id":"`+taskID+`","urgent":false}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"task_update","arguments":{"task_id":"`+taskID+`","feedback":true}}}`,
-	)
-	for _, id := range []string{"1", "2"} {
-		if res := result[mcpCallResult](t, answers[id]); res.IsError {
-			t.Errorf("call %s: %+v", id, res)
-		}
-	}
-	for _, want := range []*planv1.TaskServiceUpdateRequest{
-		{TaskId: taskID, Urgent: proto.Bool(false)},
-		{TaskId: taskID, Feedback: proto.Bool(true)},
-	} {
-		if !slices.ContainsFunc(f.seen(), func(m proto.Message) bool { return proto.Equal(m, want) }) {
-			t.Errorf("the server did not receive %v: %v", want, f.seen())
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f, answers := mcpSessionEnv(t, func(name string) string { return tt.env[name] }, tt.request)
+			if len(answers) != 1 {
+				t.Fatalf("%d answers, want 1: %v", len(answers), answers)
+			}
+			var answer rpcMessage
+			for _, answer = range answers {
+			}
+			switch {
+			case tt.code != 0:
+				if answer.Error == nil || answer.Error.Code != tt.code {
+					t.Errorf("error %+v, want code %d", answer.Error, tt.code)
+				}
+			default:
+				res := result[mcpCallResult](t, answer)
+				if len(res.Content) != 1 || res.IsError != tt.isError ||
+					(tt.isError && res.Content[0].Text != tt.want) || !strings.Contains(res.Content[0].Text, tt.want) {
+					t.Errorf("result %+v, want isError %v and the text %q", res, tt.isError, tt.want)
+				}
+			}
+			calls := f.seen()
+			if tt.sent == nil && len(calls) != 0 || tt.sent != nil && (len(calls) != 1 || !proto.Equal(calls[0], tt.sent)) {
+				t.Errorf("the server received %v, want %v", calls, tt.sent)
+			}
+		})
 	}
 }
