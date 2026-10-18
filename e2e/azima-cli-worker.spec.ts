@@ -129,7 +129,7 @@ test("a worker spawned from the command line part of a new azima shows and count
       "false",
     );
 
-    // W1 starts a moment after its spawn, as the real one did: it waits for a task that sleeps.
+    // W1 starts after its spawn: it waits for a task that holds until W1 is grouped into T1.
     const before = JSON.parse(
       djinn(
         "task",
@@ -140,7 +140,7 @@ test("a worker spawned from the command line part of a new azima shows and count
         "--provider",
         "fake",
         "--prompt",
-        "sleep 1s",
+        "wait",
         "--project-id",
         projectId,
         "--json",
@@ -185,6 +185,11 @@ test("a worker spawned from the command line part of a new azima shows and count
     await expect(
       card.locator(".wish-task").filter({ hasText: "Silae feasibility study" }),
     ).toBeVisible();
+
+    await expect
+      .poll(() => task(before.id).status, { timeout: 20_000 })
+      .toBe("TASK_STATUS_RUNNING");
+    djinn("task", "send", before.id, "done");
 
     await expect
       .poll(() => task(w1.id).status, { timeout: 20_000 })
