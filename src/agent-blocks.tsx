@@ -9,9 +9,11 @@ import { type Block } from "../gen/ts/plan/v1/plan_pb";
 import { isDecisionBlock } from "./data/decisions";
 import { when } from "./data/format";
 import { isLog } from "./data/journal";
+import type { ReadState } from "./data/store";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
 import { MarkdownBody } from "./markdown-body";
+import { ReadingLine } from "./reading-line";
 import { SafeSvg } from "./safe-svg";
 
 // agentBlocks are the blocks of the For agents tab: neither a decision nor a log.
@@ -22,10 +24,14 @@ export function agentBlocks(blocks: readonly Block[]): Block[] {
 export function AgentBlocks({
   blocks,
   codes,
+  readState = "ready",
+  onRetry,
 }: {
   blocks: readonly Block[];
   // The code of each task, by its id: the task a block is about.
   codes: ReadonlyMap<string, string>;
+  readState?: ReadState;
+  onRetry?: () => void;
 }) {
   return (
     <section
@@ -34,9 +40,17 @@ export function AgentBlocks({
       aria-labelledby="view-tab-agents"
     >
       <p className="muted-text">{t("agents.detail")}</p>
-      {blocks.length === 0 && (
-        <EmptyState art="agents">{t("agents.none")}</EmptyState>
-      )}
+      {blocks.length === 0 &&
+        (readState !== "ready" ? (
+          <ReadingLine
+            kind="agents"
+            state={readState}
+            size="card-r"
+            onRetry={onRetry}
+          />
+        ) : (
+          <EmptyState art="agents">{t("agents.none")}</EmptyState>
+        ))}
       {blocks.map((block) => (
         <AgentBlock
           key={block.id}

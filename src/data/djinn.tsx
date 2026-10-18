@@ -9,16 +9,23 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import type { Change, Task } from "../../gen/ts/plan/v1/plan_pb";
+import {
+  type Change,
+  type Task,
+  WishState,
+} from "../../gen/ts/plan/v1/plan_pb";
 import { type Clients, createClients } from "./client";
 import { type DjinnFocus } from "./focus";
 import {
+  type ReadKind,
+  type ReadState,
   type State,
   type Store,
   type WishDetail,
   createStore,
   emptyDetail,
 } from "./store";
+export type { ReadKind, ReadState };
 import { type DjinnTerminal, createTerminal } from "./terminal";
 import { type DjinnLoad, createUi } from "./ui";
 import { type DjinnUpdate } from "./update";
@@ -172,4 +179,42 @@ export function useClients(): Clients {
 
 export function useStore(): Store {
   return useRequiredDjinn().store;
+}
+
+// useReadState reads whether a kind has answered yet (or "ready" when a screen is rendered alone in a test).
+export function useReadState(kind: ReadKind, wishId?: string): ReadState {
+  const djinn = useDjinn();
+  const read = () => (djinn ? djinn.store.readState(kind, wishId) : "ready");
+  return useSyncExternalStore(
+    (notify) => (djinn ? djinn.store.subscribe(notify) : () => {}),
+    read,
+    read,
+  );
+}
+
+// useRetryRead retries a read that failed.
+export function useRetryRead(kind: ReadKind, wishId?: string): () => void {
+  const djinn = useDjinn();
+  return () => djinn?.store.retryRead(kind, wishId);
+}
+
+// useSlowWishCode is the code of the first active wish still reading kind on the flying carpet.
+export function useSlowWishCode(kind: ReadKind): string {
+  const djinn = useDjinn();
+  const read = () => {
+    if (!djinn) return "";
+    const state = djinn.store.getState();
+    const active = state.wishes.filter(
+      (w) => w.state === WishState.ACTIVE || w.state === WishState.UNSPECIFIED,
+    );
+    const slow =
+      active.find((w) => djinn.store.readState(kind, w.id) === "slow") ??
+      active.find((w) => djinn.store.readState(kind, w.id) !== "ready");
+    return slow?.title || "";
+  };
+  return useSyncExternalStore(
+    (notify) => (djinn ? djinn.store.subscribe(notify) : () => {}),
+    read,
+    read,
+  );
 }

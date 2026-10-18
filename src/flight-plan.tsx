@@ -21,7 +21,15 @@ import {
 } from "../gen/ts/plan/v1/plan_pb";
 import { AttentionBar, attentionOf, useReach } from "./attention";
 import { type Decision, decisionOf } from "./data/decisions";
-import { useData, usePausable, useWishDetails } from "./data/djinn";
+import {
+  type ReadState,
+  useData,
+  usePausable,
+  useReadState,
+  useRetryRead,
+  useSlowWishCode,
+  useWishDetails,
+} from "./data/djinn";
 import {
   type AzimaGroup,
   flightPlan,
@@ -105,6 +113,28 @@ export function FlightPlan({
   const pausable = usePausable();
   const wishIds = useMemo(() => wishes.map((w) => w.id), [wishes]);
   const details = useWishDetails(wishIds);
+  const wishesState = useReadState(Change.WISH);
+  const questionsState = useReadState(Change.QUESTION);
+  const tasksState = useReadState(Change.TASK);
+  const blocksState = useReadState(Change.BLOCK);
+  const retryQuestions = useRetryRead(Change.QUESTION);
+  const retryTasks = useRetryRead(Change.TASK);
+  const retryBlocks = useRetryRead(Change.BLOCK);
+  const slowQuestionWish = useSlowWishCode(Change.QUESTION);
+  const decisionsState: ReadState =
+    questionsState === "failed" ||
+    blocksState === "failed" ||
+    tasksState === "failed"
+      ? "failed"
+      : questionsState === "slow" ||
+          blocksState === "slow" ||
+          tasksState === "slow"
+        ? "slow"
+        : questionsState === "reading" ||
+            blocksState === "reading" ||
+            tasksState === "reading"
+          ? "reading"
+          : "ready";
   const plan = useMemo(() => flightPlan(wishes, details), [wishes, details]);
   const allTasks = useMemo(
     () => wishes.flatMap((w) => details[w.id]?.tasks ?? []),
@@ -135,6 +165,8 @@ export function FlightPlan({
   // Nothing waits and nothing runs: the questions column shows the Djinn asleep, and says so.
   const calm =
     plan.loaded &&
+    questionsState === "ready" &&
+    tasksState === "ready" &&
     wishes.length > 0 &&
     waits +
       plan.running.length +
@@ -661,9 +693,11 @@ export function FlightPlan({
             <span className="eyebrow">{t("plan.eyebrow")}</span>
             <h1>{t("plan.title")}</h1>
             <p>
-              {wishes.length
+              {wishes.length > 0
                 ? t("plan.detail", { count: wishes.length })
-                : t("plan.empty")}
+                : wishesState === "ready"
+                  ? t("plan.empty")
+                  : null}
             </p>
           </div>
           <div className="hero-visual">
@@ -683,11 +717,18 @@ export function FlightPlan({
             view={view}
             main={t("plan.title")}
             tasks={
-              plan.moving.length +
-              plan.finished.length +
-              plan.azimas.reduce((n, { item }) => n + item.parts.length, 0)
+              tasksState === "ready" ||
+              plan.moving.length + plan.finished.length + plan.azimas.length > 0
+                ? plan.moving.length +
+                  plan.finished.length +
+                  plan.azimas.reduce((n, { item }) => n + item.parts.length, 0)
+                : null
             }
-            decisions={plan.decisions.length}
+            decisions={
+              decisionsState === "ready" || plan.decisions.length > 0
+                ? plan.decisions.length
+                : null
+            }
             onView={(to) => show(to)}
           />
           {view === "decisions" && (
@@ -696,6 +737,12 @@ export function FlightPlan({
               origin={renderDecisionOrigin}
               noLead={checkDecisionNoLead}
               focus={focus}
+              readState={decisionsState}
+              onRetry={() => {
+                retryQuestions();
+                retryBlocks();
+                retryTasks();
+              }}
               onTask={handleTaskFocus}
             />
           )}
@@ -710,6 +757,10 @@ export function FlightPlan({
               fold="plan"
               showDone={showDone}
               showDrafts={showDrafts}
+              readState={tasksState}
+              readingKind="carpet_tasks"
+              readingCount={wishes.length}
+              onRetry={retryTasks}
               renderAzima={renderAzimaItem}
               renderDraft={renderDraftItem}
               render={renderMovingItem}
@@ -732,6 +783,10 @@ export function FlightPlan({
                     headings
                     onOpenWish={onOpen}
                     noLead={noLead(lead)}
+                    readState={questionsState}
+                    wishCode={slowQuestionWish}
+                    eyePerch
+                    onRetry={retryQuestions}
                     onAnswer={handleQuestionAnswer}
                     onEnlighten={handleQuestionEnlighten}
                     onMove={moveQuestion}
@@ -807,11 +862,15 @@ export function FlightPlan({
                     />
                   )}
                 </div>
-                {wishes.length > 0 && (
+                {(wishes.length > 0 || wishesState !== "ready") && (
                   <Glance
                     wishes={wishes}
                     tasksOf={details}
                     all={allWishes.length > 0 ? allWishes : wishes}
+                    readState={
+                      wishesState !== "ready" ? wishesState : tasksState
+                    }
+                    onRetry={retryTasks}
                     onOpenWish={onOpen}
                     onOpenTask={openTask}
                   />
