@@ -64,6 +64,9 @@ jobs:
       - run: go tool task lint
       # Go, interface and end-to-end tests (browser mode, headless Chromium).
       - run: go tool task test
+      # cmd/djinn and its tests vet for Windows and macOS (TestCrossVet), here where a red blocks: the Windows job does
+      # not. Behind a tag, out of the push check: 48 s on a cold build cache.
+      - run: go test -tags headless,crossvet -run '^TestCrossVet$' ./cmd/djinn
       # Saved red or green, once per go.sum: the next run does not start cold.
       - if: ${{ !cancelled() && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

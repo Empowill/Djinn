@@ -736,7 +736,7 @@ cheapest model>`, then `djinn task watch <task> --raw --json > turn.jsonl`. A se
 configuration decides. Codex's `--approve-for-me` (its Auto) selects `workspace-write` and the automatic review of
 approvals by itself, and Codex refuses it beside `--sandbox` or `--ask-for-approval`. `codex --help` returns before it
 checks these conflicts: only a start of the installed CLI shows them, as a lead that ends at once. Djinn keeps how
-the lead's program ended, with its output, until Lead starts it again (`TestExitedCodexLeadIsRetainedUntilExplicitResume`).
+the lead's program ended, with its output, until Lead starts it again (`TestRunUp`, its case of an exited codex lead).
 
 ## Antigravity
 

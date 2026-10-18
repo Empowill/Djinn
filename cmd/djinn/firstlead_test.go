@@ -106,11 +106,29 @@ func leadGet(t *testing.T, env []string) string {
 	return out
 }
 
-// TestUpdateFromLeadsPerWish replays the incident of 11/10/2026: the first start after an update from a Djinn of one
+// TestCarryLead covers carryLead, with the restart note resumeTerminals reads: the first start after an update from
+// a Djinn of one lead per wish, whose wishes each kept their lead, makes a wish's lead the one lead.
+func TestCarryLead(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{"leads per wish", carryLeadsPerWish},
+		{"the note ran another session", carryLeadOtherSession},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			c.run(t)
+		})
+	}
+}
+
+// carryLeadsPerWish replays the incident of 11/10/2026: the first start after an update from a Djinn of one
 // lead per wish. Its restart note names its leads' terminals lead-<wish id>, the store keeps each wish's lead, and no
 // lead of Djinn is recorded. The first active wish's lead becomes the lead: one "lead" terminal resumes its session,
 // with DJINN_LEAD, shown in the window; no terminal runs a wish's lead under another name, nor that session twice.
-func TestUpdateFromLeadsPerWish(t *testing.T) {
+func carryLeadsPerWish(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
 	bin, count := fakeClaude(t)
@@ -166,9 +184,9 @@ func TestUpdateFromLeadsPerWish(t *testing.T) {
 	shows.Close()
 }
 
-// TestUpdateFromLeadsPerWishOtherSession: the note's terminal ran another session than the wish's lead recorded.
+// carryLeadOtherSession: the note's terminal ran another session than the wish's lead recorded.
 // It does not run again: the lead's terminal resumes the lead's session, and runs nothing else.
-func TestUpdateFromLeadsPerWishOtherSession(t *testing.T) {
+func carryLeadOtherSession(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
 	bin, count := fakeClaude(t)
@@ -207,9 +225,10 @@ func TestUpdateFromLeadsPerWishOtherSession(t *testing.T) {
 	}
 }
 
-// TestStartWithoutLead: a start with a project and no lead session at all starts a new claude lead from the brief
+// TestResumeLead: a start with a project and no lead session at all starts a new claude lead from the brief
 // in the lead's terminal, and records its session: never a shell in the lead's terminal.
-func TestStartWithoutLead(t *testing.T) {
+func TestResumeLead(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	bin, count := fakeClaude(t)
 	env := environ(home, bin, "DJINN_TEST_COUNT="+count)

@@ -316,5 +316,5 @@ say again after a restart, a fake `gh` on the `PATH`), and `e2e/wish-template.sp
 inbox: `TestReadSource`, `TestSources`, `TestKeepSourceRun`, `TestOwnSource`, `TestInbox`, `TestItemKey`
 (`internal/plan/inbox_test.go`), `TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceFails`, `TestSourceUnplugged`
 (`internal/harness/watch_source_test.go`),
-`TestInboxPlug` (`cmd/djinn/inbox_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from its project's panel, and a failing one, unplugged from its
+`TestRunUp`, its case of an inbox source (`cmd/djinn/up_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from its project's panel, and a failing one, unplugged from its
 card).
