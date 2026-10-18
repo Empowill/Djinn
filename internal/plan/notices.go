@@ -31,41 +31,38 @@ const (
 	nameBranch   = planv1.ProjectNoticeAction_PROJECT_NOTICE_ACTION_NAME_BRANCH
 )
 
-// projectNotices are what Djinn finds in project's configuration on this machine: its settings files, its
+// projectNoticesWith are what Djinn finds in project's configuration on this machine: its settings files, its
 // permissions, its reference branch, its setup's last run, its skills and the sources this machine has not decided
 // on. The things to fix come first, then the information, each in that order.
-func (p *Projects) projectNotices(ctx context.Context, project *planv1.Project) []*planv1.ProjectNotice {
-	files := readSettingsFiles(p.Home, project)
+func (p *Projects) projectNoticesWith(
+	ctx context.Context, project *planv1.Project, config Config, files []settingsRead, settings Settings, wantRef bool,
+) ([]*planv1.ProjectNotice, *planv1.ProjectReference) {
 	out := settingsNotices(files)
-	var repo, dev *planv1.ProjectSettings
 	repoFile, devFile := settingsFiles(p.Home, project)
-	for _, f := range files {
-		if f.team {
-			repo = f.settings
-		} else {
-			dev = f.settings
-		}
-	}
-	settings := ResolveSettings(repo, dev)
 	fileOf := func(from planv1.SettingSource) string {
 		if from == planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
 			return repoFile
 		}
 		return devFile
 	}
-	config := ProjectConfig(p.Home, project)
+	var ref *planv1.ProjectReference
 	if project.GetDirectory() != "" {
 		out = append(out, permissionNotices(config)...)
 		if project.GetGit() && p.Pusher != nil {
-			out = append(out, p.branchNotices(ctx, project, config, settings.MainBranch, fileOf(settings.MainBranchFrom))...)
+			var branch []*planv1.ProjectNotice
+			branch, ref = p.branchNoticesAndRef(
+				ctx, project, config, settings.MainBranch, settings.MainBranchFrom, fileOf(settings.MainBranchFrom), wantRef,
+			)
+			out = append(out, branch...)
 		}
 		out = append(out, setupNotices(project, settings.Setup, fileOf(settings.SetupFrom))...)
 	}
-	out = append(out, p.skillNotices(ctx, project, config)...)
-	out = append(out, p.sourceNotices(ctx, project)...)
+	skills, used := p.skillNoticesAndUsed(ctx, project, config)
+	out = append(out, skills...)
+	out = append(out, p.sourceNoticesWithUsed(ctx, project, used)...)
 	out = append(out, changeNotices(ctx, p.Store, project)...)
 	slices.SortStableFunc(out, func(a, b *planv1.ProjectNotice) int { return cmp.Compare(a.GetKind(), b.GetKind()) })
-	return out
+	return out, ref
 }
 
 // countToFix is how many of notices wait for you.
@@ -144,13 +141,22 @@ func permissionNotices(config Config) []*planv1.ProjectNotice {
 	return out
 }
 
-// branchNotices say whether Djinn finds project's reference branch, from name, its main_branch setting that file
-// holds or would hold; and which other branch the project's folder has checked out, config saying where Djinn reads
-// the project's configuration. No worker starts from that copy, whatever it has checked out (W227).
-func (p *Projects) branchNotices(
-	ctx context.Context, project *planv1.Project, config Config, name, file string,
-) []*planv1.ProjectNotice {
+// branchNoticesAndRef say whether Djinn finds project's reference branch, from name, its main_branch setting that
+// file holds or would hold, and which other branch the project's folder has checked out, config saying where Djinn
+// reads the project's configuration; and, when wantRef is true, return projectReference from the same lookup. No
+// worker starts from that copy, whatever it has checked out (W227).
+func (p *Projects) branchNoticesAndRef(
+	ctx context.Context, project *planv1.Project, config Config, name string, from planv1.SettingSource, file string, wantRef bool,
+) ([]*planv1.ProjectNotice, *planv1.ProjectReference) {
 	branch, ref, err := p.Pusher.Reference(ctx, project, name)
+	head, headErr := gitOut(ctx, project.GetDirectory(), "symbolic-ref", "--quiet", "--short", "HEAD")
+	var projRef *planv1.ProjectReference
+	if wantRef && branch != "" {
+		projRef = &planv1.ProjectReference{Branch: branch, Ref: shortRef(ref), Source: from, CheckedOut: head}
+		if err == nil {
+			projRef.Commit, _ = gitOut(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+		}
+	}
 	if err != nil {
 		n := &planv1.ProjectNotice{
 			Kind: toFix, Topic: topicBranch, Subject: cmp.Or(shortRef(ref), name), Action: nameBranch, File: file,
@@ -162,11 +168,10 @@ func (p *Projects) branchNotices(
 			n.Text = fmt.Sprintf("Djinn does not find the reference branch %s: it keeps no wish up to date with it "+
 				"until main_branch names a branch the repository holds.", n.GetSubject())
 		}
-		return []*planv1.ProjectNotice{n}
+		return []*planv1.ProjectNotice{n}, projRef
 	}
-	head, err := gitOut(ctx, project.GetDirectory(), "symbolic-ref", "--quiet", "--short", "HEAD")
-	if err != nil || head == "" || head == branch {
-		return nil // detached, or on the reference branch
+	if headErr != nil || head == "" || head == branch {
+		return nil, projRef // detached, or on the reference branch
 	}
 	text := fmt.Sprintf("Your copy has %s checked out, not the reference branch %s: Djinn reads the project's "+
 		"configuration from your copy, on %s, changes not committed included. No worker starts from it.",
@@ -175,7 +180,7 @@ func (p *Projects) branchNotices(
 		text = fmt.Sprintf("Your copy has %s checked out, not the reference branch %s: no matter, Djinn reads the "+
 			"project's configuration on %s, and no worker starts from your copy.", head, shortRef(ref), config.Ref)
 	}
-	return []*planv1.ProjectNotice{{Kind: information, Topic: topicBranch, Subject: head, Text: text}}
+	return []*planv1.ProjectNotice{{Kind: information, Topic: topicBranch, Subject: head, Text: text}}, projRef
 }
 
 // projectReference is project's reference branch, from name, its main_branch setting that from sets: the branch,
@@ -187,16 +192,8 @@ func (p *Projects) projectReference(
 	if p.Pusher == nil || !project.GetGit() || project.GetDirectory() == "" {
 		return nil
 	}
-	branch, ref, err := p.Pusher.Reference(ctx, project, name)
-	if branch == "" {
-		return nil
-	}
-	out := &planv1.ProjectReference{Branch: branch, Ref: shortRef(ref), Source: from}
-	if err == nil {
-		out.Commit, _ = gitOut(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", ref+"^{commit}")
-	}
-	out.CheckedOut, _ = gitOut(ctx, project.GetDirectory(), "symbolic-ref", "--quiet", "--short", "HEAD")
-	return out
+	_, ref := p.branchNoticesAndRef(ctx, project, Config{}, name, from, "", true)
+	return ref
 }
 
 // shortRef is ref without refs/remotes/ nor refs/heads/: origin/main, main.
@@ -223,11 +220,13 @@ func setupNotices(project *planv1.Project, setup, file string) []*planv1.Project
 	return nil
 }
 
-// skillNotices are what Djinn finds in the skills project holds and summons: a SKILL.md it cannot read, a wish
+// skillNoticesAndUsed are what Djinn finds in the skills project holds and summons: a SKILL.md it cannot read, a wish
 // template, inbox source or babysit it cannot use, a summoned skill it no longer finds; and, as an information, a
-// front matter that breaks the YAML outside its metadata. A summoned skill's babysit
-// does not count: it would run in the folder of the project that holds it.
-func (p *Projects) skillNotices(ctx context.Context, project *planv1.Project, config Config) []*planv1.ProjectNotice {
+// front matter that breaks the YAML outside its metadata; together with the skills project uses for sourceNotices. A
+// summoned skill's babysit does not count: it would run in the folder of the project that holds it.
+func (p *Projects) skillNoticesAndUsed(
+	ctx context.Context, project *planv1.Project, config Config,
+) ([]*planv1.ProjectNotice, []heldSkill) {
 	var out []*planv1.ProjectNotice
 	check := func(name, dir, folder string, own bool) {
 		file := filepath.Join(folder, SkillFile)
@@ -261,12 +260,13 @@ func (p *Projects) skillNotices(ctx context.Context, project *planv1.Project, co
 				"with it.", err)
 		}
 	}
-	for _, s := range ProjectSkills(config.Dir) {
+	own := ProjectSkills(config.Dir)
+	for _, s := range own {
 		check(s.Name, s.Dir, config.Shown(s.Dir), true)
 	}
 	summoned, err := SummonedSkills(ctx, p.Store, p.Home, project)
 	if err != nil {
-		return out
+		return out, usedSkillsFrom(project, own, nil)
 	}
 	for _, s := range summoned {
 		if s.Missing == "" {
@@ -279,14 +279,18 @@ func (p *Projects) skillNotices(ctx context.Context, project *planv1.Project, co
 			Text:    fmt.Sprintf("Djinn no longer finds the skill %s the project summons: its workers do not get it.", s.Source),
 		})
 	}
-	return out
+	return out, usedSkillsFrom(project, own, summoned)
 }
 
-// sourceNotices are the inbox sources of project's skills this machine has not decided on, plugged in or said no
-// to, and those it holds plugged in that no skill declares any more. A source that cannot be used is a notice of
+// sourceNoticesWithUsed are the inbox sources of project's skills this machine has not decided on, plugged in or said
+// no to, and those it holds plugged in that no skill declares any more. A source that cannot be used is a notice of
 // its skill.
-func (p *Projects) sourceNotices(ctx context.Context, project *planv1.Project) []*planv1.ProjectNotice {
-	srcs, err := declaredSources(ctx, p.Store, p.Home, []*planv1.Project{project})
+func (p *Projects) sourceNoticesWithUsed(
+	ctx context.Context, project *planv1.Project, used []heldSkill,
+) []*planv1.ProjectNotice {
+	srcs, err := declaredSourcesWithUsed(ctx, p.Store, p.Home, []*planv1.Project{project}, map[string][]heldSkill{
+		project.GetId(): used,
+	})
 	if err != nil {
 		return nil
 	}
