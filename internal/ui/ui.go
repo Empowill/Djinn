@@ -45,8 +45,9 @@ type Service struct {
 	// Window tells that Raise brings a native window to the front.
 	Window bool
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
-	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
-	Restart func() (version string, terminals int, err error)
+	// returns the version it restarts on and how many terminals it will run again; by names who asked, for the log
+	// of the stop (StopBy). Nil: Update is unavailable.
+	Restart func(by string) (version string, terminals int, err error)
 	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: Djinn's own, brought
 	// up to date by machine.ExtendPath, which the workers and the leads get too. Tests replace it.
 	AgentPath func() string
@@ -659,7 +660,7 @@ func (s *Service) Update(
 	if s.Restart == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn cannot update itself"))
 	}
-	version, terminals, err := s.Restart()
+	version, terminals, err := s.Restart(StopBy(ctx, req.Header(), installed != ""))
 	if err != nil {
 		s.setInstalling(nil)
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)

@@ -5,10 +5,10 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -29,16 +29,21 @@ const hasWindow = true
 // Closing the window does not quit Djinn: the lead in its terminal and the workers go on. On Linux and Windows the
 // window is minimised, so that it stays in the dock or the task bar; on macOS it is hidden, as macOS apps do, and the
 // Dock shows it again. Quitting is explicit: "Quit Djinn" in the tray menu, Ctrl+Q (Cmd+Q on macOS) in the window,
-// or stopping djinn up. Each value received on raise brings the window back to the front.
+// or stopping djinn up; each names itself to quit first. Each value received on raise brings the window back to the
+// front.
 //
 // While the window runs, notices show what waits for the developer as system notifications, except for the wish the
 // window shows while it is in front, and shortcuts takes the global shortcut that brings the window forward. A
 // djinn:// link the system gives the app goes to links: macOS sends it to Djinn.app, and starts the app for it when it
 // does not run; Linux and Windows run djinn open instead.
-func openWindow(
-	ctx context.Context, url string, assets http.Handler, raise <-chan struct{}, notices *ui.Notices, shortcuts *ui.Shortcuts,
-	links func(string),
-) error {
+//
+// With a watch, the window's page is watched from the start, its load events logged: silent or dead, it loads again
+// once, then the window opens again once with a new view, the server and the workers going on. The new view draws in
+// software rendering (WebKit's hardware acceleration policy NEVER) only after a GPU hang: the environment cannot do
+// it here, WebKitGTK reads WEBKIT_DISABLE_DMABUF_RENDERER once per process, at its first view (W354's probe), and the
+// next start of Djinn renders on the GPU again (decision Q89).
+func openWindow(ctx context.Context, cfg windowConfig) error {
+	notices, shortcuts := cfg.notices, cfg.shortcuts
 	opts := application.Options{
 		Name: "Djinn",
 		Icon: appIcon(),
@@ -69,58 +74,150 @@ func openWindow(
 			application.NewService(&noticeService{svc: notifications.New(), notices: notices, ctx: ctx}),
 		},
 	}
-	if assets != nil {
-		opts.Assets = application.AssetOptions{Handler: windowAssets(assets)}
+	url := cfg.url
+	if cfg.assets != nil {
+		opts.Assets = application.AssetOptions{Handler: windowAssets(cfg.assets)}
 		url = "/"
 	}
 	app := application.New(opts)
-	quit := func() { app.Quit() }
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  windowTitle,
-		Width:  1440,
-		Height: 1000,
-		URL:    url,
-		Mac: application.MacWindow{
-			// Extend the webview beneath a transparent titlebar while keeping the native
-			// traffic lights. Keep only a 6px native drag strip: the frontend extends
-			// the official wails:drag protocol through a transparent zone below it,
-			// while the persistent toolbar starts at y=6 and remains clickable.
-			TitleBar:                application.MacTitleBarHidden,
-			InvisibleTitleBarHeight: 6,
-		},
-		KeyBindings: map[string]func(application.Window){
-			"CmdOrCtrl+q": func(application.Window) { quit() },
-		},
-	})
+	quit := func(source string) {
+		if cfg.quit != nil {
+			cfg.quit(source)
+		}
+		app.Quit()
+	}
+	var current atomic.Pointer[application.WebviewWindow]
 	show := func() {
+		window := current.Load()
 		window.UnMinimise()
 		window.Show()
 		window.Focus()
 	}
-	// No notification for the wish the window shows while it is in front: the developer sees it already.
-	window.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) { notices.Focus(true) })
-	for _, e := range []events.WindowEventType{events.Common.WindowLostFocus, events.Common.WindowHide, events.Common.WindowMinimise} {
-		window.OnWindowEvent(e, func(*application.WindowEvent) { notices.Focus(false) })
-	}
-	// The close button, and anything that closes the window: out of sight, never gone.
-	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
-		e.Cancel()
-		if runtime.GOOS == "darwin" {
-			window.Hide()
-		} else {
-			window.Minimise()
+	// open makes the window, on the GPU or in software rendering.
+	open := func(software bool) *shownWindow {
+		gpu := application.WebviewGpuPolicyAlways
+		if software {
+			gpu = application.WebviewGpuPolicyNever
 		}
-	})
-	// The global shortcut is taken once the app runs: Wails then answers whether the system took it.
+		window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+			Title:  windowTitle,
+			Width:  1440,
+			Height: 1000,
+			URL:    url,
+			Mac: application.MacWindow{
+				// Extend the webview beneath a transparent titlebar while keeping the native
+				// traffic lights. Keep only a 6px native drag strip: the frontend extends
+				// the official wails:drag protocol through a transparent zone below it,
+				// while the persistent toolbar starts at y=6 and remains clickable.
+				TitleBar:                application.MacTitleBarHidden,
+				InvisibleTitleBarHeight: 6,
+			},
+			Linux: application.LinuxWindow{WebviewGpuPolicy: gpu},
+			KeyBindings: map[string]func(application.Window){
+				"CmdOrCtrl+q": func(application.Window) { quit(stopCtrlQ) },
+			},
+		})
+		// No notification for the wish the window shows while it is in front: the developer sees it already.
+		window.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) { notices.Focus(true) })
+		for _, e := range []events.WindowEventType{events.Common.WindowLostFocus, events.Common.WindowHide, events.Common.WindowMinimise} {
+			window.OnWindowEvent(e, func(*application.WindowEvent) { notices.Focus(false) })
+		}
+		// The close button, and anything that closes the window: out of sight, never gone, until it is replaced.
+		shown := &shownWindow{window: window}
+		// Each load event of the page goes to the log, at every start: a black start names where its load stopped.
+		if cfg.watch != nil {
+			for e, name := range map[events.WindowEventType]string{
+				events.Linux.WindowLoadStarted: "started", events.Linux.WindowLoadRedirected: "redirected",
+				events.Linux.WindowLoadCommitted: "committed", events.Linux.WindowLoadFinished: "finished",
+			} {
+				window.OnWindowEvent(e, func(*application.WindowEvent) {
+					if !shown.retired.Load() {
+						cfg.watch.Loaded(name)
+					}
+				})
+			}
+		}
+		window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+			if shown.retired.Load() {
+				return
+			}
+			e.Cancel()
+			if runtime.GOOS == "darwin" {
+				window.Hide()
+			} else {
+				window.Minimise()
+			}
+		})
+		current.Store(window)
+		return shown
+	}
+	first := open(false)
+	// The web process of a window's page that ends, at its start or any time after, tells the watch, and a load that
+	// fails goes to its log; not once the window is replaced, which ends them. The page's console goes to djinn up's
+	// output. Connected on the main thread, once the window is native.
+	watchPage := func(shown *shownWindow) {
+		if cfg.watch == nil {
+			return
+		}
+		application.InvokeSync(func() {
+			watchView(shown.window.NativeWindow(), viewHooks{
+				ended: func(reason string) {
+					if shown.retired.Load() {
+						return
+					}
+					go func() {
+						defer logx.Crash("window: web process ended")
+						cfg.watch.Ended(reason)
+					}()
+				},
+				failed: func(text string) {
+					if !shown.retired.Load() {
+						cfg.watch.Loaded("failed: " + text)
+					}
+				},
+			})
+		})
+	}
+	if cfg.watch != nil {
+		var mu sync.Mutex
+		shown := first
+		// A silent page loads again in its view first, then the window gets a new view and a new web process.
+		cfg.watch.Reload = func() error {
+			mu.Lock()
+			defer mu.Unlock()
+			shown.window.SetURL(url)
+			return nil
+		}
+		cfg.watch.Recreate = func(software bool) error {
+			mu.Lock()
+			defer mu.Unlock()
+			next := open(software)
+			watchPage(next)
+			shown.retired.Store(true)
+			shown.window.Close()
+			shown = next
+			show()
+			return nil
+		}
+	}
+	// The global shortcut is taken once the app runs: Wails then answers whether the system took it. The window's
+	// page has from then on to call the server.
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		shortcuts.Use(wailsShortcuts{app})
+		if cfg.watch != nil {
+			cfg.watch.Opened()
+			go func() {
+				defer logx.Crash("window: watch the page")
+				watchPage(first)
+			}()
+		}
 	})
 	defer shortcuts.Use(nil)
 	app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(e *application.ApplicationEvent) {
 		if raw := e.Context().URL(); raw != "" {
 			go func() {
 				defer logx.Crash("window: open a link")
-				links(raw)
+				cfg.links(raw)
 			}()
 		}
 	})
@@ -132,7 +229,7 @@ func openWindow(
 	menu := application.NewMenu()
 	menu.Add("Show Djinn").OnClick(func(*application.Context) { show() })
 	menu.AddSeparator()
-	menu.Add("Quit Djinn").OnClick(func(*application.Context) { quit() })
+	menu.Add("Quit Djinn").OnClick(func(*application.Context) { quit(stopTray) })
 	tray := app.SystemTray.New()
 	tray.SetIcon(djinn.Icon)
 	tray.SetTooltip("Djinn")
@@ -146,14 +243,29 @@ func openWindow(
 		for {
 			select {
 			case <-ctx.Done():
-				quit()
+				app.Quit() // Its source is named already.
 				return
-			case <-raise:
+			case <-cfg.raise:
 				show()
 			}
 		}
 	}()
 	return app.Run()
+}
+
+// viewHooks is what the watch hears of a window's view, beside its load events (watchView).
+type viewHooks struct {
+	// ended is called with the reason when the page's web process ends: "crashed", "memory" or "terminated".
+	ended func(reason string)
+	// failed is called with the URI and the error when a load fails.
+	failed func(text string)
+}
+
+// shownWindow is a window openWindow made, retired once another replaces it: then it closes for good, and the end
+// of its web process is no news.
+type shownWindow struct {
+	window  *application.WebviewWindow
+	retired atomic.Bool
 }
 
 // chooseFolder opens the system's folder dialog over the window, titled title and open in directory: one folder, a

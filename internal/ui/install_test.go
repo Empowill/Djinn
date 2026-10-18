@@ -74,7 +74,7 @@ func TestInstallPastItsDeadline(t *testing.T) {
 	s, _ := newService(t)
 	f := &installs{hang: true}
 	s.Install, s.InstallLimit = f.install, 100*time.Millisecond
-	s.Restart = func() (string, int, error) { t.Error("restarted on a build that failed"); return "", 0, nil }
+	s.Restart = func(string) (string, int, error) { t.Error("restarted on a build that failed"); return "", 0, nil }
 	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/x", Sha: "abc12345678"})
 
 	_, err := s.Update(t.Context(), connect.NewRequest(&uiv1.UiServiceUpdateRequest{Build: "abc12345678"}))
@@ -112,7 +112,7 @@ func TestInstallOutlivesItsCall(t *testing.T) {
 		s.SetReady("local-gabc", "", true) // As djinn up's check finds the newer Djinn at the path.
 		return true, "", ctx.Err()
 	}
-	s.Restart = func() (string, int, error) { t.Error("restarted without a call to answer"); return "", 0, nil }
+	s.Restart = func(string) (string, int, error) { t.Error("restarted without a call to answer"); return "", 0, nil }
 	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/x", Sha: "abc"})
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -143,7 +143,7 @@ func TestBuildsOfTheRunningLineInstallByThemselves(t *testing.T) {
 	s, _ := newService(t)
 	f := &installs{}
 	s.Install, s.AutoRetry = f.install, 10*time.Millisecond
-	s.Restart = func() (string, int, error) { t.Error("restarted by itself"); return "", 0, nil }
+	s.Restart = func(string) (string, int, error) { t.Error("restarted by itself"); return "", 0, nil }
 	var mu sync.Mutex
 	busy := "gate test: held by W5"
 	s.Busy = func() string {

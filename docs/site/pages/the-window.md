@@ -240,6 +240,25 @@ the gates held. When the machine is under pressure, it says why. While the netwo
 When a newer Djinn is ready, a banner takes its own row at the very top of the window, over nothing. See
 [Restarts and updates](#restarts-and-updates).
 
+## When the window stays black
+
+The window can open black, or turn black: its page never starts, or the process that draws it ends, and nothing in it
+can say so. It happens after a hang of the graphics card, and also without one, at some starts. On Linux, Djinn
+watches for it from outside. A page that has not called Djinn 10 seconds after its window opened, or whose drawing
+process ended, makes a silent window. Djinn then:
+
+- writes it in its log, djinn.log: how far the page loaded, the memory and processor its drawing process used, and the
+  hangs and resets of the graphics card the kernel logged from ten minutes before Djinn started;
+- says it outside the window, on the terminal that started Djinn and in a desktop notification, in your language:
+  **Djinn's window stayed black**;
+- loads the page again, once; if it stays silent, opens the window again with a new view, once. Nothing else stops:
+  the workers, the terminals and the Djinn go on.
+
+After a hang of the graphics card, the new view draws in software rendering, without the graphics card: slower, until
+Djinn restarts; the next start draws on the graphics card again. A window that stays silent after both is only told:
+quit Djinn and start it again. At every start, djinn.log also follows the page's loading, and the page's console goes
+where Djinn's output goes: what a black start needs to name its cause. On macOS and Windows, the window is not watched.
+
 ## Keys
 
 | Keys | What they do |
@@ -267,6 +286,8 @@ The **global shortcut**, set in Connections & preferences, brings Djinn forward 
 - **Leaving the Hourglass open to keep figures.** It reads only while it shows; Djinn records the machine's history
   anyway, for a week, across restarts.
 - **Waiting for the eye to move while you type.** It waits on purpose: it stays by the field you type in.
+- **Taking a slower window for a bug.** After a hang of the graphics card, Djinn draws a black window again in
+  software rendering until it restarts: restart Djinn to draw on the graphics card again.
 - **Closing the window to stop the work.** Closing the window pauses nothing: active wishes go on while Djinn runs.
   Pause a wish to stop its workers.
 

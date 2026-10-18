@@ -77,9 +77,9 @@ type updater struct {
 	version  string // version of the running binary
 	ui       *ui.Service
 	terms    *terminal.Manager
-	leads    *leadNote // where the note of the restart goes
-	stop     func()    // stops djinn up
-	releases source    // where a newer release comes from; nil for a development build
+	leads    *leadNote    // where the note of the restart goes
+	stop     func(string) // stops djinn up, for a source (stop.go)
+	releases source       // where a newer release comes from; nil for a development build
 	// fit says what a release found means for a Djinn built from a checkout (harness.Release); nil for another one.
 	fit func(ctx context.Context, tag string) (harness.ReleaseFit, error)
 	// describe names the newer Djinn of a version as a build (harness.DescribeVersion): nil when no project holds its
@@ -99,7 +99,7 @@ type updater struct {
 
 // newUpdater returns the updater of a djinn of version. A development build never updates: workers rebuild it all the
 // time, and it is not the Djinn in use.
-func newUpdater(version string, svc *ui.Service, terms *terminal.Manager, leads *leadNote, stop func()) (*updater, error) {
+func newUpdater(version string, svc *ui.Service, terms *terminal.Manager, leads *leadNote, stop func(string)) (*updater, error) {
 	if version == "dev" {
 		return nil, nil
 	}
@@ -301,9 +301,9 @@ func binaryVersion(ctx context.Context, exe string) (string, error) {
 	return fields[1], nil
 }
 
-// restart notes the running terminals, then stops djinn up, which starts the newer binary once everything is closed.
-// It is ui.Service.Restart.
-func (u *updater) restart() (string, int, error) {
+// restart notes the running terminals, then stops djinn up, which starts the newer binary once everything is closed;
+// by names who asked (ui.StopBy). It is ui.Service.Restart.
+func (u *updater) restart(by string) (string, int, error) {
 	ctx := context.Background()
 	version := u.check(ctx)
 	if version == "" && u.offered() {
@@ -327,11 +327,11 @@ func (u *updater) restart() (string, int, error) {
 		return "", 0, fmt.Errorf("note the terminals: %w", err)
 	}
 	u.restarting = true
-	logx.L().Info("restart asked", "from", u.version, "to", version, "terminals", len(note.Terminals))
+	logx.L().Info("restart asked", "from", u.version, "to", version, "terminals", len(note.Terminals), "by", by)
 	go func() {
 		defer logx.Crash("restart")
 		time.Sleep(restartDelay)
-		u.stop()
+		u.stop(restartStop + by)
 	}()
 	return version, len(note.Terminals), nil
 }

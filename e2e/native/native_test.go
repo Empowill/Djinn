@@ -21,6 +21,7 @@ import (
 	"os/user"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -318,11 +319,12 @@ type djinn struct {
 	token    string
 	endpoint string
 	done     chan struct{}
+	out      *logBuffer // what djinn writes on its output
 }
 
 // start runs binary up with a data folder, an MCP port and a token of its own, and waits for its MCP server. The
-// cleanup stops it by its PID and removes the folder.
-func start(t *testing.T, binary string) *djinn {
+// cleanup stops it by its PID and removes the folder. Each of env is NAME=value to set, or NAME to leave out.
+func start(t *testing.T, binary string, env ...string) *djinn {
 	t.Helper()
 	// Short: the socket path must fit in 104 bytes, and macOS's temporary folder is long.
 	base := os.TempDir()
@@ -351,6 +353,13 @@ func start(t *testing.T, binary string) *djinn {
 		// The terminal of the window runs a plain POSIX shell, whatever the developer's own shell is.
 		cmd.Env = append(cmd.Env, "SHELL=/bin/sh")
 	}
+	for _, e := range env {
+		if !strings.Contains(e, "=") {
+			cmd.Env = slices.DeleteFunc(cmd.Env, func(v string) bool { return strings.HasPrefix(v, e+"=") })
+			continue
+		}
+		cmd.Env = append(cmd.Env, e)
+	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -360,7 +369,7 @@ func start(t *testing.T, binary string) *djinn {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	d := &djinn{cmd: cmd, binary: binary, home: home, token: token, done: make(chan struct{})}
+	d := &djinn{cmd: cmd, binary: binary, home: home, token: token, done: make(chan struct{}), out: &out}
 	found := make(chan string, 1)
 	go func() {
 		endpoint := regexp.MustCompile(`url=(http://127\.0\.0\.1:\d+/mcp)`)
