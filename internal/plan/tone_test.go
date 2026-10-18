@@ -12,6 +12,7 @@ import (
 // TestShownThemeKept: the theme a page said is kept in settings.json beside the other settings; an unknown one keeps
 // it, and with none said the Djinn has no tone.
 func TestShownThemeKept(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	if got := ReadShownTheme(home); got != uiv1.ShownTheme_SHOWN_THEME_UNSPECIFIED || Tone(got) != "" || toneSection(got) != "" {
 		t.Errorf("no page said it: %v, tone %q", got, Tone(got))

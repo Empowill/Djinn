@@ -16,6 +16,7 @@ import (
 // TestLeadNotesCommand (Q260): djinn lead notes prints the index, djinn lead notes <name> one note whole, from the
 // notes built into djinn.
 func TestLeadNotesCommand(t *testing.T) {
+	t.Parallel()
 	s, err := store.Open(t.Context(), "", plan.Entities()...)
 	if err != nil {
 		t.Fatal(err)

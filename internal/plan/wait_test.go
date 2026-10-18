@@ -78,6 +78,7 @@ func answerIn(t *testing.T, q *Questions, question *planv1.Question) {
 // and three that do not block; past them it is told to decide. The lead hears of a blocking one; the window shows it
 // with the task that waits for it.
 func TestBlockingQuestionCaps(t *testing.T) {
+	t.Parallel()
 	q, task, asked := waitFixture(t)
 	first, err := ask(t, q, task, true)
 	if err != nil {
@@ -128,6 +129,7 @@ func TestBlockingQuestionCaps(t *testing.T) {
 // TestBlockingQuestionKinds: an investigation ends with its question, and an ifrit never waits: neither asks with
 // --wait; nor does a question that plans tasks, as its answer comes back to its worker.
 func TestBlockingQuestionKinds(t *testing.T) {
+	t.Parallel()
 	q, task, _ := waitFixture(t)
 	for _, c := range []struct {
 		kind planv1.TaskKind
@@ -164,6 +166,7 @@ func TestBlockingQuestionKinds(t *testing.T) {
 // TestDecisionPrompt: the decision a worker is continued with names the question, the option and its letter, the
 // note, and who answered when the lead did.
 func TestDecisionPrompt(t *testing.T) {
+	t.Parallel()
 	q := &planv1.Question{Code: "Q51", Options: []string{"Keep the cache.", "Drop the cache"},
 		Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_B, Note: " keep it small. "}}
 	if got, want := DecisionPrompt(q), "Decision Q51: Drop the cache (B) - keep it small. Go on with your task."; got != want {

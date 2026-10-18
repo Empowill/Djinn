@@ -17,6 +17,7 @@ import (
 // cancelled, deleted; an azima, closed), a request merged (by its babysit watcher, the task that opened it, its
 // address, or an azima's pull request), a time come. A question wakes once all its conditions hold.
 func TestSleepHolds(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)
 	task := func(id, code string, status planv1.TaskStatus) *planv1.Task {
 		return &planv1.Task{Id: id, WishId: "w", Code: code, Status: status}
@@ -103,6 +104,7 @@ func TestSleepHolds(t *testing.T) {
 // conditions typed, each task of its wish by code, and leaves the brief's open questions for its asleep ones; one that
 // waits for nothing, or names what is not, is refused. Woken by hand, it comes first, says so, and the lead hears of it.
 func TestQuestionSleep(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t, WithLeads(&fakeLeads{}))
 	wish := c.wish(t)
@@ -233,6 +235,7 @@ func TestQuestionSleep(t *testing.T) {
 // TestQuestionAskedAsleep: djinn question ask --sleep-until asks it asleep; djinn question revise --sleep-until puts a
 // question to sleep again, revised, its put-off date gone, and a decided one is not put to sleep.
 func TestQuestionAskedAsleep(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	wish := c.wish(t)

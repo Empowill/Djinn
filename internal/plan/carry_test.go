@@ -30,6 +30,7 @@ func oldWish(t *testing.T, title string, state planv1.WishState, rank int32, lea
 // TestCarryLead: the first start after the update from one lead per wish records the lead of the first active wish
 // by rank as the one lead, once; the store kept it as a field this build does not know.
 func TestCarryLead(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	put := func(ws ...*planv1.Wish) {

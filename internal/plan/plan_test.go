@@ -79,10 +79,8 @@ func take(t *testing.T, s *store.Store) {
 // serve runs the plan services on a store in memory, behind a real Connect server.
 func serve(t *testing.T, opts ...Option) clients {
 	t.Helper()
-	projectsDir := t.TempDir()
-	prev := AgyProjectsDir
-	AgyProjectsDir = func() (string, error) { return projectsDir, nil }
-	t.Cleanup(func() { AgyProjectsDir = prev })
+	// Antigravity's projects go to the folder testx.Main gives the package (AgyProjectsDir under DJINN_TEST): a test
+	// that reads them sets its own, and runs alone.
 	s, err := store.Open(t.Context(), "", Entities()...)
 	if err != nil {
 		t.Fatal(err)

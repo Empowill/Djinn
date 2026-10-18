@@ -13,6 +13,7 @@ import (
 )
 
 func TestRouteRanking(t *testing.T) {
+	t.Parallel()
 	shop := &planv1.Project{Id: store.NewID(), Name: "shop", Remote: "git@gitlab.com:acme/shop.git"}
 	lamp := &planv1.Project{Id: store.NewID(), Name: "lamp", Remote: "https://github.com/acme/lamp"}
 	projects := []*planv1.Project{shop, lamp}
@@ -154,6 +155,7 @@ func TestRouteRanking(t *testing.T) {
 }
 
 func TestProposeTitle(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"babysit shop!41. Then merge it":                     "Babysit shop!41",
 		"  fix the\nflaky test  ":                            "Fix the",
@@ -198,6 +200,7 @@ func (c clients) requests(t *testing.T, wishID string) []string {
 }
 
 func TestRouteAnswered(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the lines are checked for the shells of Unix")
 	}

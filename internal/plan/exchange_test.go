@@ -44,6 +44,7 @@ func gitRepo(t *testing.T, name, remote string) string {
 }
 
 func TestRemote(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"https://x-access-token:s3cret@github.com/Acme/Api.git": "https://github.com/Acme/Api.git",
 		"https://s3cret@github.com/Acme/Api":                    "https://github.com/Acme/Api",
@@ -70,6 +71,7 @@ func TestRemote(t *testing.T) {
 }
 
 func TestBlocks(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	wish := c.wish(t)
@@ -216,6 +218,7 @@ func export(t *testing.T, c clients, wishID, file string) []byte {
 }
 
 func TestExportImport(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	src, wish, repo := source(t)
 	dir := t.TempDir()
@@ -416,6 +419,7 @@ func TestScrubberShortNames(t *testing.T) {
 }
 
 func TestImportFindsProjects(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	src, wish, _ := source(t)
 	data := export(t, src, wish.GetId(), filepath.Join(t.TempDir(), "wish.djinn"))
@@ -446,6 +450,7 @@ func TestImportFindsProjects(t *testing.T) {
 }
 
 func TestImportRefusesBadFiles(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	wishID := store.NewID()
@@ -490,6 +495,7 @@ func TestImportRefusesBadFiles(t *testing.T) {
 // TestExportKeepsClosure: a task marked done by hand keeps who closed it, when and why, through an export and an
 // import.
 func TestExportKeepsClosure(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	src := serve(t)
 	made, err := src.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Close tasks"}))

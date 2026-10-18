@@ -8,6 +8,7 @@ import (
 )
 
 func TestFindUnknownFields(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		content string
@@ -47,6 +48,7 @@ func TestFindUnknownFields(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := FindUnknownFields([]byte(tc.content), &planv1.ProjectSettings{})
 			if !slices.Equal(got, tc.want) {
 				t.Errorf("FindUnknownFields() = %v, want %v", got, tc.want)
@@ -55,6 +57,7 @@ func TestFindUnknownFields(t *testing.T) {
 	}
 }
 
+// TestWarnUnknownField runs alone: it resets the warnings every test shares.
 func TestWarnUnknownField(t *testing.T) {
 	ResetWarnedUnknownFields()
 	w1 := WarnUnknownField(".agents/settings.txtpb", "future_setting")
