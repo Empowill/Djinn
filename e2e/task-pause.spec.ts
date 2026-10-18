@@ -1,7 +1,7 @@
 // Pause a worker from the window, then let it go on, against the real djinn up --browser (see global-setup.ts): the
 // button on the task's card pauses it, the card says it is paused, the other button resumes it. The worker is the fake
 // agent: no model is called. Not on Windows, where djinn refuses to pause and the window shows no button.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

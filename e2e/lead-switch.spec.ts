@@ -2,7 +2,7 @@
 // same lead's terminal and focuses it on that wish; switching the wish shown leaves that terminal as it is, and no
 // terminal starts by itself. The lead is a fake claude on djinn's PATH that says how it was called, then repeats what
 // it reads.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { dropLead, leadFolder, leadRows as rows, setLead } from "./lead";
@@ -36,11 +36,12 @@ async function lead(page: Page) {
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
 const made: string[] = [];
-// The next specs find room for their wishes, and no lead running.
-test.afterAll(async () => {
-  for (const id of made) djinn("wish", "delete", id);
+// The next specs find room for their wishes, and no lead running: after each test, before the fixture of e2e/test.ts
+// reads the place.
+test.afterEach(async () => {
+  await dropLead();
+  for (const id of made.splice(0)) djinn("wish", "delete", id);
 });
-test.afterEach(dropLead);
 
 test("Lead on each wish focuses the one lead on it, whatever wish is shown", async ({
   page,

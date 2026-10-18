@@ -1,6 +1,6 @@
 // Live update e2e test: creates an azima and groups a task into it from the CLI
 // while the window is open, verifying it moves under the azima without a reload.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

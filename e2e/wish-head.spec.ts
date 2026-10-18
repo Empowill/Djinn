@@ -3,7 +3,7 @@
 // in its terminal, focused on the wish, and on no wish from the flying carpet's header. The lead is a fake claude on
 // djinn's PATH that repeats what it reads. The chip beside the push strategy says where the wish's work lands, in a
 // real Git repository, and changes its branch. The trash has its own spec (wish-lifecycle.spec.ts).
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

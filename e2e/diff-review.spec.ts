@@ -5,7 +5,7 @@
 // goes where it leads. The worker is the fake agent: no model is called. While it waits, the spec commits files in the
 // task's worktree, then leaves a change and a new file there without committing them. Screenshots of the review, wide
 // and narrow, in both themes.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

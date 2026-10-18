@@ -5,7 +5,7 @@
 // Screenshots, dark and light, go to test-results/e2e/resources-*.png.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { timestampFromMs } from "@bufbuild/protobuf/wkt";
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -186,6 +186,12 @@ async function routeResources(
   );
 }
 
+// What each test makes, paused once it ends: the specs after find the place as they left it (e2e/test.ts).
+const made: string[] = [];
+test.afterEach(() => {
+  for (const id of made.splice(0)) djinn("wish", "pause", id);
+});
+
 test("the resources panel: values on hover and keys, live samples, and a worker's eye opening its task in its wish", async ({
   page,
 }) => {
@@ -196,6 +202,7 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
 
   const tag = randomUUID().slice(0, 8);
   const wishId = randomUUID();
+  made.push(wishId);
   const azimaId = randomUUID();
   const w1 = randomUUID();
   const title = `Measure the lamp's oil, then say in full what the wick burns while the flame holds steady ${tag}`;

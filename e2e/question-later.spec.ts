@@ -2,7 +2,7 @@
 // beside Move, puts it off. Djinn keeps when (later_time), so the question goes below those asked before, stays there
 // after a reload and in the brief, and one asked after still comes below it; the one after it opens. Pressed again,
 // it gives the question its place back. Every run makes fresh identifiers, so --repeat-each works on the same djinn.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -30,6 +30,12 @@ const wishes = (): Wish[] =>
 
 const at = "2026-10-16T09:10:00Z";
 
+// What each test makes, paused once it ends: the specs after find the place as they left it (e2e/test.ts).
+const made: string[] = [];
+test.afterEach(() => {
+  for (const id of made.splice(0)) djinn("wish", "pause", id);
+});
+
 test("Later sends a question to the bottom, kept across a reload and in the brief; pressed again, back in place", async ({
   page,
 }) => {
@@ -39,6 +45,7 @@ test("Later sends a question to the bottom, kept across a reload and in the brie
     djinn("wish", "pause", w.id);
 
   const wishId = randomUUID();
+  made.push(wishId);
   const title = `Later ${randomUUID().slice(0, 8)}`;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-later-"));
   const file = path.join(dir, "later.json");

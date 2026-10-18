@@ -4,7 +4,7 @@
 // Nothing moves under the reader (AGENTS.md, Interface): a question asked while you read comes below the older ones,
 // even one needed before something, a revision keeps the question's place, and the one you read stays where it is on
 // screen, scrolled or at the very top of the page, while the bar of what waits for you grows above it.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

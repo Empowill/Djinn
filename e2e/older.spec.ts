@@ -2,7 +2,8 @@
 // the latest 30 of each, and a line unfolds the others below them. Unfolding does not move what you read on screen,
 // not even for a frame (src/scroll-anchor.ts): twice, with Chromium's own scroll anchoring, and with the script that
 // stands in for it where WebKit lacks it (the window on Linux).
-import { type Locator, type Page, expect, test } from "@playwright/test";
+import { type Locator, type Page, expect, test } from "./test";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -40,6 +41,24 @@ async function steady(page: Page, row: Locator, act: () => Promise<void>) {
   ).toBeLessThanOrEqual(1);
 }
 
+const binary = path.resolve(
+  __dirname,
+  "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
+);
+
+function djinn(...args: string[]): string {
+  return execFileSync(binary, args, {
+    env: { ...process.env, DJINN_HOME: process.env.DJINN_E2E_HOME },
+    encoding: "utf8",
+  });
+}
+
+// What each test imports, paused once it ends: the specs after find the place as they left it (e2e/test.ts).
+const made: string[] = [];
+test.afterEach(() => {
+  for (const id of made.splice(0)) djinn("wish", "pause", id);
+});
+
 for (const engine of ["native", "script"] as const)
   test(`the older decisions and journal entries unfold below what you read (${engine})`, async ({
     page,
@@ -55,6 +74,7 @@ for (const engine of ["native", "script"] as const)
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
     const wishId = randomUUID();
+    made.push(wishId);
     const title = `Fold the old ${wishId.slice(0, 8)}`;
     const questions = Array.from({ length: 45 }, (_, i) => ({
       id: randomUUID(),

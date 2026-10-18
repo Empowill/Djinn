@@ -1,7 +1,7 @@
 // A lead that could not start, or ended at once, stays visible until Lead starts it again, against the real djinn up
 // --browser (see global-setup.ts): a dot on Lead, its tooltip saying why, and the lead's tab keeps its last output.
 // The lead is a fake codex, a POSIX script that fails while a marker file exists. No model runs.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

@@ -1,7 +1,7 @@
 // Typing an answer note stays fast, however rich the question. Each key re-renders the question card: its Markdown
 // (the recommendation, the context and its Mermaid diagram) must not be parsed again nor mounted again, or the box
 // gets slower with every key until it cannot be typed in.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

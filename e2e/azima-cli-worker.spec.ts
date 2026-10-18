@@ -4,7 +4,7 @@
 // agent: W1 shows in T1's card, opened by itself, and counts as running in the side panel, the wish's head and the
 // status bar. Then the window opens again while djinn fails to give the wish's tasks once: W1 shows and counts all
 // the same, without waiting for W1 to change, which the fake worker does not while it runs.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

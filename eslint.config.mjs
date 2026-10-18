@@ -77,4 +77,23 @@ export default defineConfig(
     files: ["e2e/**/*.ts"],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
+  {
+    // A spec takes its test from e2e/test.ts, whose fixture fails a test that leaves the place dirty (W306).
+    files: ["e2e/*.spec.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@playwright/test",
+              importNames: ["test", "expect"],
+              message:
+                "import test and expect from ./test: its fixture fails a test that leaves an active wish or an open question (e2e/test.ts).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

@@ -4,7 +4,7 @@
 // then links the answered question to the task it launched. The worker is the fake agent: no model is called. Every
 // run makes fresh identifiers, so --repeat-each works on the same djinn. A screenshot of the card goes to
 // test-results/e2e/.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
