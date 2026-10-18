@@ -176,13 +176,14 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
     show glyphs on the software WebGL2 of a headless browser; `go tool task e2e -- e2e/wish-composer.spec.ts --grep
     @solver` (or `e2e/theme.spec.ts`) runs them, the default run leaves them out. A story that changes the smoke runs
     them, and `go tool task e2e-native -- -run TestNativeSmokeGeometry` on the native window.
-- `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
-  can be.
+- `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it, with the Go and interface checks
+  running side by side. `go tool task format` fixes what can be.
   - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
     formats (gofmt) and runs vet with the linters, on the headless build and on cmd/djinn with the `mcp` tag.
   - Interface: [ESLint](eslint.config.mjs) (typescript-eslint, @eslint-react, the rules of hooks); `tsc` checks the
-    types, Prettier owns the layout. All three keep what they checked in `node_modules/.cache` (tsc's `tsBuildInfoFile`,
-    shared with the build's `tsc -b`): a lint again reads only the files that changed; `npm ci` empties it.
+    types, Prettier owns the layout. `tsc` keeps what it checked in `node_modules/.cache/tsc` (`tsBuildInfoFile`,
+    shared with the build's `tsc -b`); ESLint and Prettier keep theirs outside `node_modules` in the system temp
+    folder, keyed by project and content so every worktree shares them and `npm ci` never wipes them.
 - `go tool task gen`: code from the protos, and the descriptors the command line embeds.
 - `go tool task docs`: the Grimoire, Djinn's documentation, into `bin/docs` (open `bin/docs/index.html`, offline):
   its navigation on the left from the first view, beside it its splash page, then Introduction, a page per concept,

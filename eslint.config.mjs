@@ -1,12 +1,25 @@
 // ESLint flat config for the React interface (src/), its tests (tests/, e2e/) and the root configs. `go tool task
 // lint` runs it; `go tool task format` applies the fixes it knows. No formatting rule: Prettier owns the layout.
 // .mjs: package.json declares no "type", and the config is an ES module.
+import { createRequire } from "node:module";
+import path from "node:path";
 import react from "@eslint-react/eslint-plugin";
 import js from "@eslint/js";
 import { defineConfig } from "eslint/config";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+
+// Key ESLint's cache by path relative to the worktree root so one cache file outside node_modules is shared across
+// worktrees of the same project (`file-entry-cache` resolves relative keys against `this._cwd`, yet `createFileKey`
+// leaves absolute paths untouched unless normalized here).
+const { FileEntryCache } = createRequire(import.meta.url)("file-entry-cache");
+FileEntryCache.prototype.createFileKey = function (filePath) {
+  const rel = path.isAbsolute(filePath)
+    ? path.relative(this._cwd, filePath)
+    : filePath;
+  return rel.replaceAll("\\", "/");
+};
 
 export default defineConfig(
   // Generated, built or vendored: not ours to lint.
