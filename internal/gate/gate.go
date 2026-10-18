@@ -104,6 +104,7 @@ type waiter struct {
 	done                    chan struct{} // closed when the gate is given or taken back
 	why, cause              string        // guarded by Gates.mu
 	back                    string        // why Djinn took the gate back; guarded by Gates.mu
+	leaving                 bool          // given or taken back, its task being told; guarded by Gates.mu
 	use                     *planv1.Resources
 	cpu                     time.Duration // the holder's CPU time at the last reading
 	read                    time.Time     // when it was last read
@@ -270,13 +271,22 @@ func (g *Gates) Take(ctx context.Context, r Request, waiting func(why string)) (
 	}
 }
 
-// give gives the gate back, or takes it back saying why, and grants it to the next waiter.
+// give gives the gate back, or takes it back saying why, and grants it to the next waiter. Its task is told before
+// the gate frees: no waiter, whose own pass grants it, takes it before then.
 func (g *Gates) give(w *waiter, why string) {
 	g.mu.Lock()
-	if g.held[w.name] != w {
+	if g.held[w.name] != w || w.leaving {
 		g.mu.Unlock()
-		return // Taken back already.
+		return // Given or taken back already.
 	}
+	w.leaving = true
+	g.mu.Unlock()
+	if why != "" {
+		g.note(w, "taken back: "+why)
+	} else {
+		g.note(w, "given back after "+time.Since(w.since).Round(time.Second).String())
+	}
+	g.mu.Lock()
 	delete(g.held, w.name)
 	w.back = why
 	close(w.done)
@@ -299,11 +309,6 @@ func (g *Gates) give(w *waiter, why string) {
 		}
 	}
 	g.mu.Unlock()
-	if why != "" {
-		g.note(w, "taken back: "+why)
-	} else {
-		g.note(w, "given back after "+time.Since(w.since).Round(time.Second).String())
-	}
 	g.pass(context.Background())
 	if g.freed != nil {
 		g.freed()
