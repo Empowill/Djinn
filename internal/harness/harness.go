@@ -2148,10 +2148,10 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	case res.Err != nil:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, res.Err.Error()
-	case res.ExitCode != 0:
-		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, fmt.Sprintf("exit code %d", res.ExitCode)
 	case r.failure != "":
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, r.failure
+	case res.ExitCode != 0:
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, fmt.Sprintf("exit code %d", res.ExitCode)
 	case t.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_WAITING, "waiting for the answer to its edit question"
 	case r.light && r.refused != "" && questionWorker(t) && !h.questionDid(t):

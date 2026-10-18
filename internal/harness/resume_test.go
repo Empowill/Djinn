@@ -511,12 +511,14 @@ func TestResumeMixCountsOnlyLimits(t *testing.T) {
 func TestPerMinuteRateLimitBackoff(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	const w416Err = "API error (attempt 1): RESOURCE_EXHAUSTED (code 429): TPM quota exhausted. No spare capacity is currently available to serve over-limit requests. Please try again later, reduce your request rate or contact the sales team to discuss limit increase options. Details: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/standard-paygo."
+	now := time.Date(2026, 10, 18, 20, 12, 41, 0, time.UTC)
 
 	for _, tc := range []struct {
 		text      string
 		perMinute bool
 	}{
+		{w416Err, true},
 		{"RESOURCE_EXHAUSTED (code 429): TPM quota exhausted. No spare capacity available for model.", true},
 		{"rate limit exceeded", true},
 		{"HTTP 429 Too Many Requests", true},
@@ -535,10 +537,10 @@ func TestPerMinuteRateLimitBackoff(t *testing.T) {
 
 	home := t.TempDir()
 	p := &scriptStepProvider{steps: []string{
-		"fail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
-		"fail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
-		"fail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
-		"fail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
+		"tool Bash git status\nresult ok\nerror " + w416Err + "\nexit 3",
+		"tool Bash git status\nresult ok\nerror " + w416Err + "\nexit 3",
+		"tool Bash git status\nresult ok\nerror " + w416Err + "\nexit 3",
+		"tool Bash git status\nresult ok\nerror " + w416Err + "\nexit 3",
 		"text finished after 4 TPM waits",
 	}}
 	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
@@ -566,6 +568,11 @@ func TestPerMinuteRateLimitBackoff(t *testing.T) {
 		if gotWait != wantWait {
 			t.Fatalf("TPM hit %d: backoff = %v, want %v", i+1, gotWait, wantWait)
 		}
+		if i == 1 {
+			// Simulate a Djinn restart while waiting on the per-minute quota (W416 seq 274): in-memory rateHits are
+			// cleared, yet relaunch must recognize the short per-minute wait and not spend a resume.
+			e.h.clearRateHits(id)
+		}
 		clock.set(got.GetResumeAfter().AsTime().Add(time.Second))
 		e.h.wake()
 	}
@@ -573,6 +580,16 @@ func TestPerMinuteRateLimitBackoff(t *testing.T) {
 	got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	if got.GetResumes() != 0 {
 		t.Errorf("completed task Resumes = %d, want 0", got.GetResumes())
+	}
+
+	// Verify that an event-attached per-minute limit (r.limit.PerMinute = true) with a generic exit error ("exit code 3")
+	// and Resumes = 3 still uses the 60s per-minute backoff rather than falling into limitBackoff(3) = 2h (22:12:41 UTC).
+	r := &run{limit: &Limit{What: "the provider's quota", PerMinute: true}}
+	tk := &planv1.Task{Id: "w416-event-limit", Status: planv1.TaskStatus_TASK_STATUS_FAILED, Error: "exit code 3", Resumes: 3}
+	clock.set(now)
+	e.h.limited(r, tk)
+	if wait := tk.GetResumeAfter().AsTime().Sub(now); wait != 60*time.Second {
+		t.Fatalf("event-limit backoff = %v, want 60s", wait)
 	}
 }
 

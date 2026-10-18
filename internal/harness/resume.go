@@ -184,8 +184,16 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 	if r.limit != nil {
 		// The provider said so on a line of its own: what limit, and when it resets, to the second.
 		l.What = r.limit.What
-		if !r.limit.Until.IsZero() {
+		if r.limit.Model != "" {
+			l.Model = r.limit.Model
+		}
+		switch {
+		case !r.limit.Until.IsZero():
 			l.Until = r.limit.Until
+			l.PerMinute = false
+		case r.limit.PerMinute:
+			l.PerMinute = true
+		case multiHourQuotaRe.MatchString(r.limit.What):
 			l.PerMinute = false
 		}
 	} else if !ok {
@@ -213,6 +221,24 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 	t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_RESUMING, ""
 	t.WaitReason, t.ResumeAfter, t.Hold = limitText(l, after, now), timestamppb.New(after), planv1.TaskHold_TASK_HOLD_LIMIT
 	logx.L().Info("task held", "task", t.GetCode(), "hold", planv1.TaskHold_TASK_HOLD_LIMIT.String(), "why", t.WaitReason)
+}
+
+// perMinuteHits returns the number of consecutive per-minute rate limit hits implied by t's wait (1 for 60s, 2 for
+// 90s, 3 for 120s), or 0 when t is not waiting on a short per-minute rate or token bucket.
+func perMinuteHits(t *planv1.Task) int {
+	if t.GetResumeAfter() == nil || t.GetEndTime() == nil || !strings.Contains(t.GetWaitReason(), ", tries again at ") {
+		return 0
+	}
+	switch t.GetResumeAfter().AsTime().Sub(t.GetEndTime().AsTime()) {
+	case rateLimitBackoff(0):
+		return 1
+	case rateLimitBackoff(1):
+		return 2
+	case rateLimitBackoff(2):
+		return 3
+	default:
+		return 0
+	}
 }
 
 // relaunch starts again the worker of a task Djinn resumes: in its worktree (or its project's folder, or its own
@@ -244,6 +270,11 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		by = byContinue
 	case t.GetResumeAfter() != nil:
 		by = byLimit
+		if !h.hasRateHits(t.GetId()) {
+			for range perMinuteHits(t) {
+				h.incRateHits(t.GetId())
+			}
+		}
 		fromRateLimit = h.hasRateHits(t.GetId())
 	case strings.HasPrefix(t.GetWaitReason(), whyWishPaused):
 		by = byWish

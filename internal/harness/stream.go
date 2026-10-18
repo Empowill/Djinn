@@ -412,7 +412,8 @@ lines:
 				w.queued = kept
 			}
 		}
-		if end.retry != "" && !w.closed {
+		switch {
+		case end.retry != "" && !w.closed:
 			if end.backoff > 0 {
 				w.mu.Unlock()
 				select {
@@ -430,7 +431,7 @@ lines:
 					}
 				}
 			}
-		} else if len(w.queued) > 0 && !w.closed && end.failure == "" {
+		case len(w.queued) > 0 && !w.closed && end.failure == "":
 			next := w.queued[0]
 			w.queued = w.queued[1:]
 			if b, err := w.a.encode(next); err == nil {
@@ -440,6 +441,9 @@ lines:
 			} else {
 				w.pending--
 			}
+		case len(w.queued) > 0 && end.failure != "":
+			w.pending -= len(w.queued)
+			w.queued = nil
 		}
 		var listens []Event
 		if w.pending <= 0 && !w.closed {

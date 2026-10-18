@@ -461,15 +461,17 @@ func TestAgyClosing429DoneAndMerges(t *testing.T) {
 		}
 	})
 
+	const w416Err = "API error (attempt 1): RESOURCE_EXHAUSTED (code 429): TPM quota exhausted. No spare capacity is currently available to serve over-limit requests. Please try again later, reduce your request rate or contact the sales team to discuss limit increase options. Details: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/standard-paygo."
+
 	t.Run("mid-turn", func(t *testing.T) {
 		t.Parallel()
-		now := time.Date(2026, 10, 18, 18, 19, 0, 0, time.UTC)
+		now := time.Date(2026, 10, 18, 20, 12, 41, 0, time.UTC)
 		clock := &fakeClock{at: now}
 		e := upWith(t, t.TempDir(), testProviders(), WithClock(clock.now))
 		wishID, _ := e.wish(t, gitRepo(t))
 		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: wishID, Title: "Mid-turn 429 waits",
-			Prompt:   "tool Bash go test ./...\nresult ok\nfail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
+			Prompt:   "tool Bash go test ./...\nresult ok\nerror " + w416Err + "\nexit 3",
 			Provider: planv1.Provider_PROVIDER_FAKE,
 		}))
 		if err != nil {
@@ -484,7 +486,71 @@ func TestAgyClosing429DoneAndMerges(t *testing.T) {
 			t.Fatalf("resumes = %d, want 0 for per-minute quota backoff", got.GetResumes())
 		}
 		if wait := got.GetResumeAfter().AsTime().Sub(now); wait != 60*time.Second {
-			t.Fatalf("backoff = %v, want 60s", wait)
+			t.Fatalf("backoff = %v (resume_after %s), want 60s (20:13:41Z, not 2h at 22:12:41Z)", wait, got.GetResumeAfter().AsTime().UTC().Format(time.RFC3339))
+		}
+	})
+
+	t.Run("w416-continued-after-idle", func(t *testing.T) {
+		t.Parallel()
+		now := time.Date(2026, 10, 18, 20, 12, 41, 0, time.UTC)
+		clock := &fakeClock{at: now}
+		repo := gitRepo(t)
+		runNum := 0
+		providers := testProviders()
+		providers[planv1.Provider_PROVIDER_FAKE] = hookProvider{
+			Provider: Fake{},
+			before: func(dir string) error {
+				runNum++
+				if runNum == 1 {
+					return commitWork(dir)
+				}
+				if err := os.WriteFile(filepath.Join(repo, "upstream.txt"), []byte("upstream\n"), 0o644); err != nil {
+					return err
+				}
+				if _, err := git(context.Background(), repo, "add", "upstream.txt"); err != nil {
+					return err
+				}
+				if _, err := git(context.Background(), repo, "commit", "-m", "advance feat/qol"); err != nil {
+					return err
+				}
+				_, err := git(context.Background(), dir, "rebase", "feat/qol")
+				return err
+			},
+		}
+		e := upWith(t, t.TempDir(), providers, WithClock(clock.now))
+		wishID, projectID := e.wish(t, repo)
+		if _, err := e.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+			WishId: wishID, ProjectId: projectID, Branch: "feat/qol", CreateBranch: true,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := git(t.Context(), repo, "checkout", "feat/qol"); err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, ProjectId: projectID, Title: "W416 continued session",
+			Prompt:   "tool Bash go test ./...\nresult ok\nfail stream idle: no output from the agent for 30m0s",
+			Provider: planv1.Provider_PROVIDER_FAKE,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.Msg.GetTask().GetId()
+		_ = e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_FAILED))
+		contPrompt := "text All checks green and rebased onto feat/qol.\nerror " + w416Err + "\nexit 3"
+		if _, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{
+			TaskId: id,
+			Prompt: &contPrompt,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+		if got.GetError() != "" || got.GetExitCode() != 0 || got.GetHold() != planv1.TaskHold_TASK_HOLD_UNSPECIFIED {
+			t.Fatalf("task = %v, want DONE with no error, exit code 0, and no hold", got)
+		}
+		e.h.integratePass(t.Context())
+		if in := e.get(t, id).GetIntegration(); in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || in.GetBranch() != "feat/qol" {
+			t.Fatalf("integration = %v, want COMMITTED into feat/qol", in)
 		}
 	})
 }
