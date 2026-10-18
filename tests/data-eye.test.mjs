@@ -4,10 +4,8 @@ import assert from "node:assert/strict";
 
 import { bundle } from "./bundle.mjs";
 
-const { eyeTarget, flight, calmWait, clampTo, easeInOut } = await bundle(
-  "eye",
-  `export * from "@/src/data/eye.ts";`,
-);
+const { eyeTarget, eyeLook, flight, calmWait, clampTo, easeInOut } =
+  await bundle("eye", `export * from "@/src/data/eye.ts";`);
 
 const all = new Set(["home", "pill", "q:a", "q:b", "tab:main", "tab:tasks"]);
 const base = {
@@ -49,20 +47,53 @@ test("with the focus on nothing that has a place, the eye listens on Write to th
     eyeTarget({ ...base, focus: "q:a", perches: new Set(["home"]) }),
     { perch: "home", mood: "resting", shine: false },
   );
+  // While the questions' reading line holds a perch and wishes are read, the eye flies to it.
+  assert.deepEqual(
+    eyeTarget({
+      ...base,
+      perches: new Set(["home", "reading"]),
+      wishesReading: false,
+    }),
+    { perch: "reading", mood: "reading", shine: false },
+  );
+  assert.deepEqual(
+    eyeTarget({
+      ...base,
+      perches: new Set(["home", "reading"]),
+      wishesReading: true,
+    }),
+    { perch: "home", mood: "resting", shine: false },
+  );
 });
 
-test("the eye sleeps home while the lead is stopped, pales while the stream is cut", () => {
+test("the eye wakes before the first stream, sleeps home while stopped, pales while cut", () => {
   const focused = { ...base, focus: "q:a", blocking: true };
   assert.deepEqual(eyeTarget({ ...focused, stopped: true }), {
     perch: "home",
     mood: "asleep",
     shine: false,
   });
-  assert.deepEqual(eyeTarget({ ...focused, live: false }), {
+  assert.deepEqual(eyeTarget({ ...focused, live: false, everLive: false }), {
+    perch: "home",
+    mood: "waking",
+    shine: false,
+  });
+  assert.deepEqual(eyeTarget({ ...focused, live: false, everLive: true }), {
     perch: "home",
     mood: "restarting",
     shine: false,
   });
+  const waking = eyeTarget({ ...base, live: false, everLive: false });
+  assert.deepEqual(eyeLook({ ...base, wishesReading: true }, waking), {
+    x: 1,
+    y: 1.5,
+  });
+  const onQ = eyeTarget({ ...base, focus: "q:a" });
+  assert.deepEqual(eyeLook({ ...base, runsReading: true }, onQ), {
+    x: 2.2,
+    y: -0.4,
+  });
+  assert.equal(eyeLook(base, onQ), undefined);
 });
 
 test("discreet keeps the eye home, its flame still shining; none shows no eye", () => {

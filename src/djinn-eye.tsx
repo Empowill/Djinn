@@ -19,6 +19,8 @@ import {
   AFTER_SCROLL,
   calmWait,
   clampTo,
+  eyeLook,
+  type EyeSignals,
   type EyeTarget,
   eyeTarget,
   flight,
@@ -75,7 +77,17 @@ const signals: {
   stopped?: boolean;
   needs: boolean;
   live: boolean;
-} = { blocking: false, needs: false, live: true };
+  everLive: boolean;
+  wishesReading: boolean;
+  runsReading: boolean;
+} = {
+  blocking: false,
+  needs: false,
+  live: true,
+  everLive: true,
+  wishesReading: false,
+  runsReading: false,
+};
 const signalListeners = new Set<() => void>();
 const signalled = () => signalListeners.forEach((listener) => listener());
 
@@ -317,18 +329,21 @@ class Eye {
     this.quietUntil = Math.max(this.quietUntil, performance.now() + ms);
   }
 
-  private target(focus: string | undefined): EyeTarget {
+  private currentSignals(focus: string | undefined): EyeSignals {
     const names = new Set<string>();
     for (const [name, element] of perches) if (shown(element)) names.add(name);
-    return eyeTarget({
+    return {
       presence: presenceNow(),
       live: signals.live,
+      everLive: signals.everLive,
+      wishesReading: signals.wishesReading,
+      runsReading: signals.runsReading,
       stopped: signals.stopped,
       blocking: signals.blocking,
       needs: signals.needs,
       perches: names,
       focus,
-    });
+    };
   }
 
   // schedule moves the eye to its target as soon as the calm gate lets it; the last target wins.
@@ -336,7 +351,8 @@ class Eye {
     clearTimeout(this.timer);
     this.timer = undefined;
     const focus = focusPerch();
-    const target = this.target(focus);
+    const s = this.currentSignals(focus);
+    const target = eyeTarget(s);
     if (this.flying) return;
     // Not shown yet: it opens in the seal, and leaves it once the gate lets it.
     const home = perches.get("home");
@@ -348,14 +364,18 @@ class Eye {
       shown(home)
     ) {
       this.at = "home";
-      this.land(home, {
-        ...target,
-        perch: "home",
-        mood: target.perch === "home" ? target.mood : "resting",
-      });
+      this.land(
+        home,
+        {
+          ...target,
+          perch: "home",
+          mood: target.perch === "home" ? target.mood : "resting",
+        },
+        s,
+      );
     }
     if (target.perch === this.at && !this.parked) {
-      this.show(target);
+      this.show(target, s);
       return;
     }
     const wait = calmWait({
@@ -365,7 +385,7 @@ class Eye {
       pressed: this.pressed,
       dialog: dialogOpen(),
       still: still(),
-      quietUntil: this.quietUntil,
+      quietUntil: target.perch === "reading" ? 0 : this.quietUntil,
       flyingUntil: this.flyingUntil,
     });
     // Held until a field loses the focus, the button comes up, the dialog closes or the window wakes: each calls back.
@@ -377,22 +397,33 @@ class Eye {
       this.timer = setTimeout(this.schedule, wait + 10);
       return;
     }
-    this.move(target);
+    this.move(target, s);
   };
 
   private shines(target: EyeTarget) {
-    return target.shine && target.mood !== "asleep";
+    return target.shine && target.mood !== "asleep" && target.mood !== "waking";
   }
 
-  private show(target: EyeTarget) {
+  private show(target: EyeTarget, s?: EyeSignals) {
     this.el.dataset.mood = target.mood;
     this.el.toggleAttribute("data-shine", this.shines(target));
+    const look = s ? eyeLook(s, target) : undefined;
+    if (look) {
+      this.el.style.setProperty("--djinn-eye-look-x", `${look.x / 16}rem`);
+      this.el.style.setProperty("--djinn-eye-look-y", `${look.y / 16}rem`);
+      this.el.toggleAttribute("data-looking", true);
+    } else {
+      this.el.style.removeProperty("--djinn-eye-look-x");
+      this.el.style.removeProperty("--djinn-eye-look-y");
+      this.el.removeAttribute("data-looking");
+    }
   }
 
   // leave keeps the eye where it stood when its perch leaves the page (its question answered): it waits there, above
   // the page, for its next flight.
   private readonly leave = (perch: HTMLElement) => {
     if (!perch.contains(this.el)) return;
+    perch.parentElement?.classList.remove("has-eye");
     const box = this.el.getBoundingClientRect();
     this.at = "";
     if (!box.width) {
@@ -408,21 +439,24 @@ class Eye {
     this.at = "";
   };
 
-  private land(perch: HTMLElement, target: EyeTarget) {
+  private land(perch: HTMLElement, target: EyeTarget, s?: EyeSignals) {
+    this.el.parentElement?.parentElement?.classList.remove("has-eye");
     perch.appendChild(this.el);
+    if (target.perch === "reading")
+      perch.parentElement?.classList.add("has-eye");
     this.el.style.transform = "";
     this.el.style.removeProperty("--djinn-eye-look-x");
     this.el.style.removeProperty("--djinn-eye-look-y");
     delete this.el.dataset.flying;
     this.layer.style.clipPath = "";
     this.parked = undefined;
-    this.show(target);
+    this.show(target, s);
     clearTimeout(this.openTimer);
     if (perch.hasAttribute("data-opens"))
       this.openTimer = setTimeout(() => this.blink(), OPENED);
   }
 
-  private move(target: EyeTarget) {
+  private move(target: EyeTarget, s?: EyeSignals) {
     const to = target.perch ? perches.get(target.perch) : undefined;
     this.at = target.perch;
     if (!to) {
@@ -439,7 +473,7 @@ class Eye {
       end.x >= 0 && end.y >= 0 && end.x <= view.width && end.y <= view.height;
     // First shown, or its place out of sight: it is there, without a flight.
     if (!from || !inView) {
-      this.land(to, target);
+      this.land(to, target, s);
       return;
     }
     // Less motion asked: a fade out here, a fade in there.
@@ -452,7 +486,7 @@ class Eye {
       this.flying = out;
       out.onfinish = () => {
         this.flying = undefined;
-        this.land(to, target);
+        this.land(to, target, s);
         out.cancel();
         this.el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE });
         this.schedule();
@@ -462,7 +496,11 @@ class Eye {
     const start = clampTo(from, view, 12);
     const plan = flight(start, end, fromScale, scaleOf(to));
     // It opens to leave, and looks where it goes.
-    if (this.el.dataset.mood === "asleep" || !this.el.dataset.mood)
+    if (
+      this.el.dataset.mood === "asleep" ||
+      this.el.dataset.mood === "waking" ||
+      !this.el.dataset.mood
+    )
       this.el.dataset.mood = "watching";
     const dx = end.x - start.x;
     const dy = end.y - start.y;
@@ -470,6 +508,7 @@ class Eye {
     this.el.style.setProperty("--djinn-eye-look-x", `${(2 * dx) / look}px`);
     this.el.style.setProperty("--djinn-eye-look-y", `${dy / look}px`);
     this.el.dataset.flying = "";
+    this.el.parentElement?.parentElement?.classList.remove("has-eye");
     passUnder(this.layer);
     this.layer.appendChild(this.el);
     this.el.style.transform = "";
@@ -487,7 +526,8 @@ class Eye {
       if (this.flying !== anim) return;
       this.flying = undefined;
       // Its perch may have gone while it flew: the next schedule finds another.
-      if (to.isConnected) this.land(to, target);
+      if (to.isConnected)
+        this.land(to, target, this.currentSignals(focusPerch()));
       else {
         this.layer.style.clipPath = "";
         this.leave(this.layer);
@@ -516,6 +556,7 @@ class Eye {
       reduced() ||
       this.flying ||
       !this.el.isConnected ||
+      mood === "waking" ||
       mood === "asleep" ||
       mood === "restarting"
     )
@@ -526,7 +567,17 @@ class Eye {
 }
 
 // DjinnEye shows the eye in the window: mounted once, beside the pages; live is Djinn's stream.
-export function DjinnEye({ live }: { live: boolean }) {
+export function DjinnEye({
+  live,
+  everLive = true,
+  wishesReading = false,
+  runsReading = false,
+}: {
+  live: boolean;
+  everLive?: boolean;
+  wishesReading?: boolean;
+  runsReading?: boolean;
+}) {
   const [eye] = useState(() => {
     const element = document.createElement("span");
     element.className = "djinn-eye";
@@ -534,6 +585,9 @@ export function DjinnEye({ live }: { live: boolean }) {
     return element;
   });
   useEffect(() => signal("live", live), [live]);
+  useEffect(() => signal("everLive", everLive), [everLive]);
+  useEffect(() => signal("wishesReading", wishesReading), [wishesReading]);
+  useEffect(() => signal("runsReading", runsReading), [runsReading]);
   useEffect(() => {
     const layer = document.createElement("div");
     layer.className = "djinn-eye-flight";
@@ -650,6 +704,7 @@ function EyeFace() {
           strokeLinecap="round"
         />
         <path
+          className="djinn-eye-z"
           d="M41 1.5h4.2l-4.2 4.6h4.2"
           fill="none"
           stroke="var(--eye-ray)"

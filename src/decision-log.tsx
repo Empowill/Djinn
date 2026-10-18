@@ -11,10 +11,12 @@ import { type ReactNode, memo, useEffect, useState } from "react";
 
 import { type Decision, BY_LEAD } from "./data/decisions";
 import { answerText, firstLine, launchedPlan, when } from "./data/format";
+import type { ReadState } from "./data/store";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
+import { ReadingLine } from "./reading-line";
 import { StatusBadge } from "./status";
 
 import "./decision-log.css";
@@ -29,6 +31,8 @@ export function DecisionLog<T extends { item: Decision }>({
   origin,
   noLead,
   focus = "",
+  readState = "ready",
+  onRetry,
   onTask,
   onMore,
 }: {
@@ -41,6 +45,8 @@ export function DecisionLog<T extends { item: Decision }>({
   noLead?: (item: T) => boolean;
   // The decision to bring into sight: its id.
   focus?: string;
+  readState?: ReadState;
+  onRetry?: () => void;
   // Opens a task in the Tasks tab.
   onTask: (taskId: string) => void;
   // Loads more decisions from the server when unfolded.
@@ -68,13 +74,25 @@ export function DecisionLog<T extends { item: Decision }>({
       <div className="section-title">
         <h2>
           {t("tabs.decisions")}
-          <span className="count">{totalCount}</span>
+          {readState !== "ready" && items.length === 0 ? (
+            <span className="count unread">·</span>
+          ) : (
+            <span className="count">{totalCount}</span>
+          )}
         </h2>
         <p>{t("decision.detail")}</p>
       </div>
-      {items.length === 0 && (
-        <EmptyState art="decisions">{t("decision.none")}</EmptyState>
-      )}
+      {items.length === 0 &&
+        (readState !== "ready" ? (
+          <ReadingLine
+            kind="decisions"
+            state={readState}
+            size="card-r"
+            onRetry={onRetry}
+          />
+        ) : (
+          <EmptyState art="decisions">{t("decision.none")}</EmptyState>
+        ))}
       {items.length > 0 && (
         <div className="card-grid">
           {items.slice(0, shown).map((item) => (
