@@ -589,7 +589,7 @@ installer adds to the user's PATH after Djinn started), and the folder of a `cod
 application ships. The login shell is asked once, as `djinn up` starts from a launcher (`machine.AskLoginShell`; a
 `djinn up` started from a terminal has its PATH already); the folders are looked at again before each worker and
 each lead starts, so an agent installed in a folder created meanwhile is found without a restart
-(`TestExtendPathAfterAnInstall`). Gates inherit it from the worker that runs them.
+(`TestExtendPath`, its case after an install). Gates inherit it from the worker that runs them.
 
 **The lead.** A lead runs `claude` interactive in the window's terminal, not `-p`. Claude Code skips its workspace
 trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet (the
