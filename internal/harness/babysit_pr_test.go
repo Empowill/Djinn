@@ -230,13 +230,13 @@ func TestWatch_BabysitPR(t *testing.T) {
 		}
 		env := []string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "GH_DATA=" + data,
 			"DJINN_HOME=" + home, "DJINN_TASK_ID=w488"}
-		command := func(looks int) string { return fmt.Sprintf("sh '%s' 2 0.01 %d", script, looks) }
+		command := func(looks int) string { return fmt.Sprintf("sh '%s' 2 0.1 %d", script, looks) }
 
 		// watcher runs the script for so many looks as Djinn's watcher of a task whose last line is last, and gives each
 		// paragraph with whether it woke the lead.
 		watcher := func(looks int, last string) []string {
 			t.Helper()
-			w, err := Watch{Quiet: 10 * time.Millisecond}.Start(t.Context(), Spec{Dir: dir, Prompt: command(looks), Env: env, LastLine: last})
+			w, err := Watch{Quiet: 30 * time.Millisecond}.Start(t.Context(), Spec{Dir: dir, Prompt: command(looks), Env: env, LastLine: last})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -199,9 +199,9 @@ func TestNetProbePass(t *testing.T) {
 
 	probe.set(nil)
 	clock.set(start.Add(2 * time.Minute))
-	e.passes(1)
-	e.until(t, cut.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-	e.until(t, later.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	// The workers resume one per pass.
+	e.until(t, cut.GetId(), waking(e.h, isStatus(planv1.TaskStatus_TASK_STATUS_DONE)))
+	e.until(t, later.GetId(), waking(e.h, isStatus(planv1.TaskStatus_TASK_STATUS_DONE)))
 	if got := e.get(t, running.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Errorf("the paused worker, the network back: %v; want running again", got)
 	}

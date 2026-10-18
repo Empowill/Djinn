@@ -1065,7 +1065,7 @@ func TestPushHeldBlockReason(t *testing.T) {
 			t.Fatalf("push state still held: %v", s)
 		}
 
-		w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+		w2 = in.until(t, w2.GetId(), waking(in.h, isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING)))
 		wtHead := in.git(t, w2.GetWorktree(), "rev-parse", "HEAD")
 		if wtHead != tip {
 			t.Fatalf("W2 started at %s; want green tip %s", wtHead, tip)
@@ -1106,7 +1106,7 @@ func TestPushHeldBlockReason(t *testing.T) {
 
 		in.answer(t, in.attachPushQuestion(t), planv1.Choice_CHOICE_C)
 
-		w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+		w2 = in.until(t, w2.GetId(), waking(in.h, isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING)))
 		in.release(t, w2.GetId())
 		in.ended(t, w2.GetId())
 

@@ -121,8 +121,9 @@ func TestWatch_BabysitMR(t *testing.T) {
 	// The command's own environment, as a worker's: the test's stays as it is, and the other tests run beside it.
 	env := []string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "GLAB_DATA=" + data}
 
-	// One look every 20 ms instead of every minute: the script's second argument, still allowed.
-	w, err := Watch{Quiet: 10 * time.Millisecond}.Start(t.Context(), Spec{Dir: dir, Prompt: watch + " 0.02", Permissions: perms, Env: env})
+	// One look every 100 ms instead of every minute: the script's second argument, still allowed. The looks stay twice
+	// the Quiet apart: a Quiet of 10 ms cut a paragraph in two under -race (W317).
+	w, err := Watch{Quiet: 50 * time.Millisecond}.Start(t.Context(), Spec{Dir: dir, Prompt: watch + " 0.1", Permissions: perms, Env: env})
 	if err != nil {
 		t.Fatal(err)
 	}
