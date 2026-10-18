@@ -81,7 +81,7 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
 
 - **Your agent's usage limit.** The worker shows **Waiting for the limit**, with when the limit resets, and resumes a
   minute after, told that the limit has reset. A limit that names a model holds only the tasks of that agent on that
-  model; one that names none holds only the task itself (`djinn task start` passes it). When the reset time is unknown,
+  model; one that names none holds only the task itself (djinn task start passes it). When the reset time is unknown,
   Djinn tries again after 15 minutes, then waits longer each time, up to 2 hours. Sign the agent in with another
   account meanwhile and Djinn sees it within a minute: the tasks the limit stopped resume at once. Either way, the
   Djinn hears once which tasks resume.
