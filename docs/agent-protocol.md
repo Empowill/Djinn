@@ -271,6 +271,9 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   developer renames it from its card in the window too. `djinn task update <azima> --branch <name>` names its branch,
   adopting a branch that exists as it is, or cutting one from main under that name (refused on a work task and while a
   merge runs into it).
+  A worker's prompt is five to twenty lines of Markdown, a bullet or a short headed part each: Gain (the outcome in
+  one sentence), Scope (and the open tasks' files it must not touch), Validation (the number to reach when there is
+  one), References by link (lead note `worker-prompts`).
   When writing a worker's prompt, ask for the commit checks and the targeted tests, never "run the whole test suite"; the push checks are Djinn's.
 - **The plan is a graph of azimas.** An azima (Arabic ʿazīma, the incantation that binds and commands a djinn) is a
   part of the plan, coded `T07`: a task of kind `AZIMA` that no worker runs, the scheduler never starts, and that never

@@ -107,6 +107,7 @@ func TestBrief(t *testing.T) {
 			"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
 			"and fixes what they find, then only the tests that cover what it changed; do not run the push checks (`djinn gate run test -- go tool task test`): " +
 			"Djinn runs them before pushing. A fresh worktree needs `npm ci` first. Djinn says so in each worker's first prompt.\n",
+		"**Workers start from a short prompt**, five to twenty lines of Markdown", "**Gain**, the outcome in one sentence",
 		"When writing a worker's prompt, ask for the commit checks and the targeted tests, never \"run the whole test suite\"; the push checks are Djinn's.",
 		wish.GetId(), "**Q01** Which store? → A: SQLite", "**W1** Write the store (claude", "**W2** Write the docs: failed",
 		"### No CGO (decision)", "In api/internal", "https://example.com/acme.git",

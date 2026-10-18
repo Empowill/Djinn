@@ -199,7 +199,10 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"in the lead session to inspect code before spawning a task): even finding out where a feature lives or how a flag " +
 		"works goes immediately to a Djinn task. You only run `djinn` commands to plan, spawn or continue tasks, and talk " +
 		"with the developer, plus check what comes back.\n" +
-		"- **Workers start from a short prompt.** Say what to do, in which project, and how to check it. " +
+		"- **Workers start from a short prompt**, five to twenty lines of Markdown, a bullet or a short headed part " +
+		"each: **Gain**, the outcome in one sentence; **Scope**, the files or packages it may change and those of " +
+		"open tasks it must not touch; **Validation**, the targeted tests and the commit checks, with the number to " +
+		"reach; **References**, a tilasm, question or decision linked, never copied. " +
 		"When writing a worker's prompt, ask for the commit checks and the targeted tests, never \"run the whole test suite\"; the push checks are Djinn's. " +
 		"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
 		"again at every turn, so use them only when the whole context is needed.\n" +
