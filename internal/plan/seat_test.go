@@ -16,17 +16,20 @@ func TestAccountLoginAndEnv(t *testing.T) {
 	work := &planv1.Account{Name: "work", Provider: planv1.Provider_PROVIDER_CLAUDE, ConfigDirectory: "/home/d/.claude-work"}
 	odd := &planv1.Account{Name: "odd", Provider: planv1.Provider_PROVIDER_CODEX, ConfigDirectory: "/home/d/my codex's"}
 	for _, tt := range []struct {
+		name       string
 		a          *planv1.Account
 		goos, want string
 	}{
-		{work, "linux", "CLAUDE_CONFIG_DIR=/home/d/.claude-work claude auth login"},
-		{work, "windows", `set "CLAUDE_CONFIG_DIR=/home/d/.claude-work" && claude auth login`},
-		{odd, "darwin", `CODEX_HOME='/home/d/my codex'\''s' codex login`},
-		{&planv1.Account{Provider: planv1.Provider_PROVIDER_ANTIGRAVITY}, "linux", ""},
+		{"claude linux", work, "linux", "CLAUDE_CONFIG_DIR=/home/d/.claude-work claude auth login"},
+		{"claude windows", work, "windows", `set "CLAUDE_CONFIG_DIR=/home/d/.claude-work" && claude auth login`},
+		{"codex darwin quote", odd, "darwin", `CODEX_HOME='/home/d/my codex'\''s' codex login`},
+		{"antigravity", &planv1.Account{Provider: planv1.Provider_PROVIDER_ANTIGRAVITY}, "linux", ""},
 	} {
-		if got := AccountLogin(tt.a, tt.goos); got != tt.want {
-			t.Errorf("AccountLogin(%v, %s) = %q; want %q", tt.a, tt.goos, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AccountLogin(tt.a, tt.goos); got != tt.want {
+				t.Errorf("AccountLogin(%v, %s) = %q; want %q", tt.a, tt.goos, got, tt.want)
+			}
+		})
 	}
 	if env := AccountEnv(work); !slices.Equal(env, []string{"CLAUDE_CONFIG_DIR=/home/d/.claude-work",
 		"ANTHROPIC_API_KEY=", "ANTHROPIC_AUTH_TOKEN=", "CLAUDE_CODE_OAUTH_TOKEN="}) {

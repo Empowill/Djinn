@@ -122,6 +122,7 @@ func commentEvents(t *testing.T, s *store.Store) []*planv1.LeadEvent {
 // TestTilasmSendIterate: every draft and the comment written above the buttons leave in one send, one event whatever
 // their number, with the choice; the digest keeps its line whole; the send holds the buttons until the lead reads it.
 func TestTilasmSendIterate(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	f := newSendFixture(t)
 	if _, err := f.send(t, planv1.SendChoice_SEND_CHOICE_ITERATE, " "); connect.CodeOf(err) != connect.CodeInvalidArgument ||
@@ -215,164 +216,176 @@ func TestTilasmSendIterate(t *testing.T) {
 	}
 }
 
-// TestTilasmSendLaunchWithoutComment: launch without a comment answers the open question that links the tilasm with
-// its recommended option, as its approval does, once: no comments event, and a second launch is refused.
-func TestTilasmSendLaunchWithoutComment(t *testing.T) {
-	var answered []string
-	f := newSendFixture(t, WithAnswered(func(_ context.Context, q *planv1.Question) string {
-		answered = append(answered, q.GetCode()+" "+q.GetAnswer().GetChoice().String())
-		return ""
-	}))
-	other := f.c.ask(t, f.wish, "Yes", "No") // Links no tilasm.
-	q := f.ask(t)
-	res, err := f.send(t, planv1.SendChoice_SEND_CHOICE_LAUNCH, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.GetAnswered() != q.GetCode() || len(res.GetComments()) != 0 || res.GetSend().GetQuestionId() != q.GetId() {
-		t.Errorf("launch = %v, want %s answered", res, q.GetCode())
-	}
-	if strings.Join(answered, ",") != q.GetCode()+" CHOICE_A" {
-		t.Errorf("answered = %v, want %s A once", answered, q.GetCode())
-	}
-	got, err := store.Get[*planv1.Question](t.Context(), f.c.store, q.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.GetAnswer().GetChoice() != planv1.Choice_CHOICE_A || got.GetAnswer().GetActor() != planv1.Closer_CLOSER_DEVELOPER ||
-		!hasMark(got, planv1.MarkKind_MARK_KIND_APPROVED) {
-		t.Errorf("the question = %v, want approved as A", got)
-	}
-	if o, _ := store.Get[*planv1.Question](t.Context(), f.c.store, other.GetId()); o.GetAnswer() != nil {
-		t.Errorf("a question that links no tilasm was answered: %v", o)
-	}
-	if events := commentEvents(t, f.c.store); len(events) != 0 {
-		t.Errorf("a launch that answered makes no comments event: %v", events)
-	}
-	if h := f.hold(t); h.GetReason() != planv1.TilasmHoldReason_TILASM_HOLD_REASON_LAUNCHED || h.GetSend() != 1 || h.GetCode() != q.GetCode() {
-		t.Errorf("hold = %v, want launched by send 1", h)
-	}
-	f.draft(t, "Too late?", nil)
-	for _, choice := range []planv1.SendChoice{planv1.SendChoice_SEND_CHOICE_LAUNCH, planv1.SendChoice_SEND_CHOICE_ITERATE} {
-		if _, err := f.send(t, choice, ""); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-			!strings.Contains(err.Error(), "L01 was launched already, by send 1") {
-			t.Errorf("%s after the launch = %v", choice, err)
+func TestTilasmSendLaunch(t *testing.T) {
+	t.Parallel()
+	// launch without a comment answers the open question that links the tilasm with
+	// its recommended option, as its approval does, once: no comments event, and a second launch is refused.
+	t.Run("without_comment", func(t *testing.T) {
+		t.Parallel()
+		var answered []string
+		f := newSendFixture(t, WithAnswered(func(_ context.Context, q *planv1.Question) string {
+			answered = append(answered, q.GetCode()+" "+q.GetAnswer().GetChoice().String())
+			return ""
+		}))
+		other := f.c.ask(t, f.wish, "Yes", "No") // Links no tilasm.
+		q := f.ask(t)
+		res, err := f.send(t, planv1.SendChoice_SEND_CHOICE_LAUNCH, "")
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if len(answered) != 1 {
-		t.Errorf("answered = %v, want once", answered)
-	}
-}
-
-// TestTilasmSendLaunchWithComments: launch with comments is one event that names the question, left open for the
-// lead; launch never goes twice, even two at once.
-func TestTilasmSendLaunchWithComments(t *testing.T) {
-	f := newSendFixture(t)
-	q := f.ask(t)
-	f.draft(t, "Keep the count in the button.", nil)
-	var wg sync.WaitGroup
-	errs := make([]error, 2)
-	for i := range errs {
-		wg.Go(func() { _, errs[i] = f.send(t, planv1.SendChoice_SEND_CHOICE_LAUNCH, "") })
-	}
-	wg.Wait()
-	if (errs[0] == nil) == (errs[1] == nil) {
-		t.Fatalf("two launches at once = %v, want one refused", errs)
-	}
-	for _, err := range errs {
-		if err != nil && connect.CodeOf(err) != connect.CodeFailedPrecondition {
-			t.Errorf("the second launch = %v", err)
+		if res.GetAnswered() != q.GetCode() || len(res.GetComments()) != 0 || res.GetSend().GetQuestionId() != q.GetId() {
+			t.Errorf("launch = %v, want %s answered", res, q.GetCode())
 		}
-	}
-	events := commentEvents(t, f.c.store)
-	want := "Djinn: L01 v1, 1 comment (1 general), launch " + q.GetCode() + " with them: djinn tilasm comments L01 --send 1"
-	if len(events) != 1 || events[0].GetText() != want {
-		t.Errorf("events = %v, want one: %q", events, want)
-	}
-	if got, _ := store.Get[*planv1.Question](t.Context(), f.c.store, q.GetId()); got.GetAnswer() != nil {
-		t.Errorf("a launch with comments leaves the question to the lead: %v", got.GetAnswer())
-	}
-	take(t, f.c.store)
-	if h := f.hold(t); h.GetReason() != planv1.TilasmHoldReason_TILASM_HOLD_REASON_LAUNCHED || h.GetCode() != q.GetCode() {
-		t.Errorf("hold = %v, want launched", h)
-	}
-}
+		if strings.Join(answered, ",") != q.GetCode()+" CHOICE_A" {
+			t.Errorf("answered = %v, want %s A once", answered, q.GetCode())
+		}
+		got, err := store.Get[*planv1.Question](t.Context(), f.c.store, q.GetId())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.GetAnswer().GetChoice() != planv1.Choice_CHOICE_A || got.GetAnswer().GetActor() != planv1.Closer_CLOSER_DEVELOPER ||
+			!hasMark(got, planv1.MarkKind_MARK_KIND_APPROVED) {
+			t.Errorf("the question = %v, want approved as A", got)
+		}
+		if o, _ := store.Get[*planv1.Question](t.Context(), f.c.store, other.GetId()); o.GetAnswer() != nil {
+			t.Errorf("a question that links no tilasm was answered: %v", o)
+		}
+		if events := commentEvents(t, f.c.store); len(events) != 0 {
+			t.Errorf("a launch that answered makes no comments event: %v", events)
+		}
+		if h := f.hold(t); h.GetReason() != planv1.TilasmHoldReason_TILASM_HOLD_REASON_LAUNCHED || h.GetSend() != 1 || h.GetCode() != q.GetCode() {
+			t.Errorf("hold = %v, want launched by send 1", h)
+		}
+		f.draft(t, "Too late?", nil)
+		for _, choice := range []planv1.SendChoice{planv1.SendChoice_SEND_CHOICE_LAUNCH, planv1.SendChoice_SEND_CHOICE_ITERATE} {
+			if _, err := f.send(t, choice, ""); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+				!strings.Contains(err.Error(), "L01 was launched already, by send 1") {
+				t.Errorf("%s after the launch = %v", choice, err)
+			}
+		}
+		if len(answered) != 1 {
+			t.Errorf("answered = %v, want once", answered)
+		}
+	})
 
-// TestTilasmSendLaunchNoQuestion: a launch without a comment and without a question to answer tells the lead so.
-func TestTilasmSendLaunchNoQuestion(t *testing.T) {
-	f := newSendFixture(t)
-	res, err := f.send(t, planv1.SendChoice_SEND_CHOICE_LAUNCH, "")
-	if err != nil || res.GetAnswered() != "" {
-		t.Fatalf("launch = %v, %v", res, err)
-	}
-	want := "Djinn: L01 v1, launch its work: no comment, and no open question links it (djinn tilasm get L01)."
-	if events := commentEvents(t, f.c.store); len(events) != 1 || events[0].GetText() != want {
-		t.Errorf("events = %v, want %q", events, want)
-	}
+	// launch with comments is one event that names the question, left open for the
+	// lead; launch never goes twice, even two at once.
+	t.Run("with_comments", func(t *testing.T) {
+		t.Parallel()
+		f := newSendFixture(t)
+		q := f.ask(t)
+		f.draft(t, "Keep the count in the button.", nil)
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		for i := range errs {
+			wg.Go(func() { _, errs[i] = f.send(t, planv1.SendChoice_SEND_CHOICE_LAUNCH, "") })
+		}
+		wg.Wait()
+		if (errs[0] == nil) == (errs[1] == nil) {
+			t.Fatalf("two launches at once = %v, want one refused", errs)
+		}
+		for _, err := range errs {
+			if err != nil && connect.CodeOf(err) != connect.CodeFailedPrecondition {
+				t.Errorf("the second launch = %v", err)
+			}
+		}
+		events := commentEvents(t, f.c.store)
+		want := "Djinn: L01 v1, 1 comment (1 general), launch " + q.GetCode() + " with them: djinn tilasm comments L01 --send 1"
+		if len(events) != 1 || events[0].GetText() != want {
+			t.Errorf("events = %v, want one: %q", events, want)
+		}
+		if got, _ := store.Get[*planv1.Question](t.Context(), f.c.store, q.GetId()); got.GetAnswer() != nil {
+			t.Errorf("a launch with comments leaves the question to the lead: %v", got.GetAnswer())
+		}
+		take(t, f.c.store)
+		if h := f.hold(t); h.GetReason() != planv1.TilasmHoldReason_TILASM_HOLD_REASON_LAUNCHED || h.GetCode() != q.GetCode() {
+			t.Errorf("hold = %v, want launched", h)
+		}
+	})
+
+	// a launch without a comment and without a question to answer tells the lead so.
+	t.Run("no_question", func(t *testing.T) {
+		t.Parallel()
+		f := newSendFixture(t)
+		res, err := f.send(t, planv1.SendChoice_SEND_CHOICE_LAUNCH, "")
+		if err != nil || res.GetAnswered() != "" {
+			t.Fatalf("launch = %v, %v", res, err)
+		}
+		want := "Djinn: L01 v1, launch its work: no comment, and no open question links it (djinn tilasm get L01)."
+		if events := commentEvents(t, f.c.store); len(events) != 1 || events[0].GetText() != want {
+			t.Errorf("events = %v, want %q", events, want)
+		}
+	})
 }
 
 // TestTilasmHolds: the server computes why a tilasm takes no send, from the tasks that run or are planned on it and
 // the questions that link it; its put (--code) holds before its link.
 func TestTilasmHolds(t *testing.T) {
-	f := newSendFixture(t)
-	link := TilasmLink(f.tilasm.GetId())
-	given := "Do it.\n\n" + tilasmContextHead + "\n## L01 · Notes\n\n- Link: " + link + "\n"
-	reason := func() string {
-		h := f.hold(t)
-		if h == nil {
-			return "free"
+	t.Parallel()
+	t.Run("tasks", func(t *testing.T) {
+		t.Parallel()
+		f := newSendFixture(t)
+		link := TilasmLink(f.tilasm.GetId())
+		given := "Do it.\n\n" + tilasmContextHead + "\n## L01 · Notes\n\n- Link: " + link + "\n"
+		reason := func() string {
+			h := f.hold(t)
+			if h == nil {
+				return "free"
+			}
+			return strings.TrimPrefix(h.GetReason().String(), "TILASM_HOLD_REASON_") + " " + h.GetCode()
 		}
-		return strings.TrimPrefix(h.GetReason().String(), "TILASM_HOLD_REASON_") + " " + h.GetCode()
-	}
-	// Tasks that ended, an azima, and a task whose tilasm only quotes the put of L01: none holds it.
-	f.taskOn(t, "W1", given, planv1.TaskStatus_TASK_STATUS_DONE)
-	f.taskOn(t, "W2", "Put it: djinn tilasm put --code L01", planv1.TaskStatus_TASK_STATUS_CANCELLED)
-	f.taskOn(t, "W3", "Other.\n\n"+tilasmContextHead+"\n## L02\n\n- Link: djinn://tilasm/x\n\ndjinn tilasm put --code L01\n",
-		planv1.TaskStatus_TASK_STATUS_RUNNING)
-	f.taskOn(t, "T4", given, planv1.TaskStatus_TASK_STATUS_PENDING)
-	if got := reason(); got != "free" {
-		t.Fatalf("hold = %s, want free", got)
-	}
-	f.taskOn(t, "W5", given, planv1.TaskStatus_TASK_STATUS_PENDING)
-	if got := reason(); got != "WORK W5" {
-		t.Errorf("hold = %s, want WORK W5", got)
-	}
-	f.taskOn(t, "W6", "Its next version, as L01 C2 says: djinn tilasm put <folder> --code l01."+given[len("Do it."):],
-		planv1.TaskStatus_TASK_STATUS_RUNNING)
-	if got := reason(); got != "REWORK W6" {
-		t.Errorf("hold = %s, want REWORK W6", got)
-	}
-	f.draft(t, "Faster.", nil)
-	if _, err := f.send(t, planv1.SendChoice_SEND_CHOICE_LAUNCH, ""); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), "W6 puts the next version of L01") {
-		t.Errorf("a launch while W6 reworks = %v", err)
-	}
-}
+		// Tasks that ended, an azima, and a task whose tilasm only quotes the put of L01: none holds it.
+		f.taskOn(t, "W1", given, planv1.TaskStatus_TASK_STATUS_DONE)
+		f.taskOn(t, "W2", "Put it: djinn tilasm put --code L01", planv1.TaskStatus_TASK_STATUS_CANCELLED)
+		f.taskOn(t, "W3", "Other.\n\n"+tilasmContextHead+"\n## L02\n\n- Link: djinn://tilasm/x\n\ndjinn tilasm put --code L01\n",
+			planv1.TaskStatus_TASK_STATUS_RUNNING)
+		f.taskOn(t, "T4", given, planv1.TaskStatus_TASK_STATUS_PENDING)
+		if got := reason(); got != "free" {
+			t.Fatalf("hold = %s, want free", got)
+		}
+		f.taskOn(t, "W5", given, planv1.TaskStatus_TASK_STATUS_PENDING)
+		if got := reason(); got != "WORK W5" {
+			t.Errorf("hold = %s, want WORK W5", got)
+		}
+		f.taskOn(t, "W6", "Its next version, as L01 C2 says: djinn tilasm put <folder> --code l01."+given[len("Do it."):],
+			planv1.TaskStatus_TASK_STATUS_RUNNING)
+		if got := reason(); got != "REWORK W6" {
+			t.Errorf("hold = %s, want REWORK W6", got)
+		}
+		f.draft(t, "Faster.", nil)
+		if _, err := f.send(t, planv1.SendChoice_SEND_CHOICE_LAUNCH, ""); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+			!strings.Contains(err.Error(), "W6 puts the next version of L01") {
+			t.Errorf("a launch while W6 reworks = %v", err)
+		}
+	})
 
-// TestTilasmHoldAnswered: a question that links the tilasm answered, and none open, launched it.
-func TestTilasmHoldAnswered(t *testing.T) {
-	f := newSendFixture(t)
-	q := f.ask(t)
-	if h := f.hold(t); h != nil {
-		t.Fatalf("an open question holds nothing: %v", h)
-	}
-	_, err := f.c.questions.Answer(t.Context(), connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
-		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}, Choice: planv1.Choice_CHOICE_B,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if h := f.hold(t); h.GetReason() != planv1.TilasmHoldReason_TILASM_HOLD_REASON_LAUNCHED || h.GetCode() != q.GetCode() {
-		t.Errorf("hold = %v, want launched by %s", h, q.GetCode())
-	}
-	again := f.ask(t)
-	if h := f.hold(t); h != nil {
-		t.Errorf("a new open question %s frees it: %v", again.GetCode(), h)
-	}
+	// a question that links the tilasm answered, and none open, launched it.
+	t.Run("answered", func(t *testing.T) {
+		t.Parallel()
+		f := newSendFixture(t)
+		q := f.ask(t)
+		if h := f.hold(t); h != nil {
+			t.Fatalf("an open question holds nothing: %v", h)
+		}
+		_, err := f.c.questions.Answer(t.Context(), connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+			Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Id{Id: q.GetId()}}, Choice: planv1.Choice_CHOICE_B,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h := f.hold(t); h.GetReason() != planv1.TilasmHoldReason_TILASM_HOLD_REASON_LAUNCHED || h.GetCode() != q.GetCode() {
+			t.Errorf("hold = %v, want launched by %s", h, q.GetCode())
+		}
+		again := f.ask(t)
+		if h := f.hold(t); h != nil {
+			t.Errorf("a new open question %s frees it: %v", again.GetCode(), h)
+		}
+	})
 }
 
 // TestSendLineFits: the line of a send stays whole in a digest, whatever the numbers.
 func TestSendLineFits(t *testing.T) {
+	t.Parallel()
 	tilasm := &planv1.Tilasm{Code: "L123", Versions: []*planv1.TilasmVersion{{Number: 120}}}
 	var comments []*planv1.TilasmComment
 	for i := range 3000 {
@@ -404,6 +417,7 @@ func TestSendLineFits(t *testing.T) {
 // TestTilasmSendChangesTheTilasms: a send, and a task on a tilasm, change the wish's tilasms, which the window reads
 // again for their holds.
 func TestTilasmSendChangesTheTilasms(t *testing.T) {
+	t.Parallel()
 	f := newSendFixture(t)
 	s := watch(t, f.c.wishes, f.wish)
 	f.taskOn(t, "W1", "Read "+TilasmLink(f.tilasm.GetId()), planv1.TaskStatus_TASK_STATUS_RUNNING)
@@ -423,6 +437,7 @@ func hasChange(msg *planv1.WishServiceWatchResponse, kind planv1.Change) bool {
 // TestTilasmSendReads: the window reads when the Djinn read each send, from its comments event acknowledged; a send
 // that waits is not read, and one whose event Djinn no longer keeps stays read, without a time.
 func TestTilasmSendReads(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	f := newSendFixture(t)
 	reads := func() []*planv1.TilasmSendRead {

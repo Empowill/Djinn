@@ -35,6 +35,7 @@ const babysitFront = `metadata:
 // TestReadTemplate: Djinn's own babysit-pr template reads and fills; a skill without one has none; a template that
 // cannot be used says why.
 func TestReadTemplate(t *testing.T) {
+	t.Parallel()
 	own, err := ReadTemplate(filepath.Join("..", "..", ".agents", "skills", "babysit-pr"))
 	if err != nil || own == nil {
 		t.Fatalf("babysit-pr: %v, %v", own, err)
@@ -51,16 +52,18 @@ func TestReadTemplate(t *testing.T) {
 		"babysit the release, then open an issue":         "",
 		"babysit https://github.com/acme/lamp/issues/12 ": "",
 	} {
-		title, watch, ok := own.Fill(request)
-		if want == "" {
-			if ok {
-				t.Errorf("%q matched: %q, %q", request, title, watch)
+		t.Run(request, func(t *testing.T) {
+			title, watch, ok := own.Fill(request)
+			if want == "" {
+				if ok {
+					t.Errorf("matched: %q, %q", title, watch)
+				}
+				return
 			}
-			continue
-		}
-		if !ok || title != "Babysit PR #"+want || watch != "sh .agents/skills/babysit-pr/watch.sh "+want {
-			t.Errorf("%q: %q, %q, %v", request, title, watch, ok)
-		}
+			if !ok || title != "Babysit PR #"+want || watch != "sh .agents/skills/babysit-pr/watch.sh "+want {
+				t.Errorf("%q, %q, %v", title, watch, ok)
+			}
+		})
 	}
 
 	dir := t.TempDir()
@@ -69,9 +72,11 @@ func TestReadTemplate(t *testing.T) {
 		"other-meta":  "metadata:\n  author: someone\n",
 		"djinn-other": "metadata:\n  djinn:\n    colour: blue\n",
 	} {
-		if tmpl, err := ReadTemplate(agentSkill(t, dir, name, front)); tmpl != nil || err != nil {
-			t.Errorf("%s: %v, %v", name, tmpl, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			if tmpl, err := ReadTemplate(agentSkill(t, dir, name, front)); tmpl != nil || err != nil {
+				t.Errorf("%v, %v", tmpl, err)
+			}
+		})
 	}
 	for name, c := range map[string]struct{ front, want string }{
 		"no-title":    {"metadata:\n  djinn:\n    wish:\n      match: x\n", "no title"},
@@ -83,15 +88,18 @@ func TestReadTemplate(t *testing.T) {
 		"not-yaml":    {"metadata: [\n", "not YAML"},
 		"wish-string": {"metadata:\n  djinn:\n    wish: babysit\n", "metadata.djinn"},
 	} {
-		tmpl, err := ReadTemplate(agentSkill(t, dir, name, c.front))
-		if tmpl != nil || err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%s: %v, %v; want an error about %q", name, tmpl, err, c.want)
-		}
+		t.Run(name, func(t *testing.T) {
+			tmpl, err := ReadTemplate(agentSkill(t, dir, name, c.front))
+			if tmpl != nil || err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("%v, %v; want an error about %q", tmpl, err, c.want)
+			}
+		})
 	}
 }
 
 // TestFillQuotes: a value from a request is one word of the watcher's command line, whatever it holds.
 func TestFillQuotes(t *testing.T) {
+	t.Parallel()
 	tmpl, err := parseTemplate("s", "", templateYAML{Title: "Watch {what}", Match: `watch (?P<what>.+)`, Watch: "w --on {what}"})
 	if err != nil {
 		t.Fatal(err)
@@ -101,31 +109,38 @@ func TestFillQuotes(t *testing.T) {
 		"watch it's; rm -rf ~":   `w --on 'it'\''s; rm -rf ~'`,
 		"watch $(touch x) `x` y": "w --on '$(touch x) `x` y'",
 	} {
-		if _, watch, ok := tmpl.Fill(request); !ok || watch != want {
-			t.Errorf("%q: %q, want %q", request, watch, want)
-		}
+		t.Run(request, func(t *testing.T) {
+			if _, watch, ok := tmpl.Fill(request); !ok || watch != want {
+				t.Errorf("%q, want %q", watch, want)
+			}
+		})
 	}
 }
 
 // TestTemplateBuilds: a command is the template's when Fill could make it, each placeholder one word as Fill quotes
 // it; not one that merely starts like it, adds a word, or splits a value in two.
 func TestTemplateBuilds(t *testing.T) {
+	t.Parallel()
 	tmpl, err := parseTemplate("s", "", templateYAML{Title: "Watch {what}", Match: `watch (?P<what>.+)`, Watch: "w --on {what} -watch"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, request := range []string{"watch acme/lamp!12", "watch it's; rm -rf ~", "watch $(touch x) `x` y"} {
-		if _, watch, _ := tmpl.Fill(request); !tmpl.Builds(watch) || !tmpl.Builds(" "+watch+" ") {
-			t.Errorf("%q, filled from %q, is not the template's", watch, request)
-		}
+		t.Run(request, func(t *testing.T) {
+			if _, watch, _ := tmpl.Fill(request); !tmpl.Builds(watch) || !tmpl.Builds(" "+watch+" ") {
+				t.Errorf("%q, filled from %q, is not the template's", watch, request)
+			}
+		})
 	}
 	for _, command := range []string{
 		"w --on 12 -watch; rm -rf ~", "w --on 12 -watch --more", "w --on 12 13 -watch", "w --on $HOME -watch",
 		`w --on "a b" -watch`, "w --on 12", "w --on 'a'b' -watch",
 	} {
-		if tmpl.Builds(command) {
-			t.Errorf("%q is taken for the template's", command)
-		}
+		t.Run(command, func(t *testing.T) {
+			if tmpl.Builds(command) {
+				t.Errorf("%q is taken for the template's", command)
+			}
+		})
 	}
 	if (&Template{}).Builds("") {
 		t.Error("a template without a watcher builds a command")
@@ -133,6 +148,7 @@ func TestTemplateBuilds(t *testing.T) {
 }
 
 func TestDoneLine(t *testing.T) {
+	t.Parallel()
 	tmpl := &planv1.WishTemplate{DoneWhen: "MERGED"}
 	for text, want := range map[string]string{
 		"MERGED": "MERGED",
@@ -141,9 +157,11 @@ func TestDoneLine(t *testing.T) {
 		"NOT MERGED": "",
 		"merged":     "",
 	} {
-		if got := DoneLine(tmpl, text); got != want {
-			t.Errorf("%q: %q, want %q", text, got, want)
-		}
+		t.Run(text, func(t *testing.T) {
+			if got := DoneLine(tmpl, text); got != want {
+				t.Errorf("%q, want %q", got, want)
+			}
+		})
 	}
 	if got := DoneLine(&planv1.WishTemplate{}, "MERGED"); got != "" {
 		t.Errorf("without done_when: %q", got)
@@ -154,6 +172,7 @@ func TestDoneLine(t *testing.T) {
 // by the template; one that does not, or in a project without the skill, proposes none. A wish on the same piece of
 // work still takes the request.
 func TestRouteTemplate(t *testing.T) {
+	t.Parallel()
 	lamp := &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: t.TempDir(), Git: true,
 		Remote: "https://github.com/acme/lamp.git"}
 	bare := &planv1.Project{Id: store.NewID(), Name: "bare", Directory: t.TempDir(), Git: true}
@@ -214,6 +233,7 @@ func (s *spawned) spawn(_ context.Context, wishID, projectID, title, watch strin
 // the skill's project, and starts its lead on the skill. The watcher's done line asks once whether to grant the
 // wish; B keeps it open, A grants it.
 func TestTemplateWish(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the lines are checked for the shells of Unix")
 	}
@@ -312,6 +332,7 @@ func TestTemplateWish(t *testing.T) {
 // TestTemplateWithoutWatchers: where djinn up runs no tasks, the lead is told to start its watcher itself; a watcher
 // that fails to start says why.
 func TestTemplateWithoutWatchers(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	lamp := &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: t.TempDir()}
@@ -334,6 +355,7 @@ func TestTemplateWithoutWatchers(t *testing.T) {
 
 // TestSkillListTemplate: djinn skill list shows a skill's template, or why it cannot be used.
 func TestSkillListTemplate(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	lamp := &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: t.TempDir()}

@@ -18,6 +18,7 @@ import (
 )
 
 func TestParsePlan(t *testing.T) {
+	t.Parallel()
 	p, err := ParsePlan("\r\nOption: b\r\ntitle: Port the store\r\nprovider: codex\r\nmodel: gpt-5\r\npart_of: T07\r\n" +
 		"after: W1, W2\r\nafter: W3\r\nblocks: W5\r\ntilasm: L01\r\nkind: ifrit\r\nproject-id: p1\r\n\r\nPort it.\r\n\r\nThen test it.\r\n")
 	if err != nil {
@@ -40,9 +41,11 @@ func TestParsePlan(t *testing.T) {
 		"title: Port\nno colon here": "plan line \"no colon here\" is not \"key: value\"",
 		"prompt: one\n\ntwo":         "the plan gives its prompt twice",
 	} {
-		if _, err := ParsePlan(text); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("%q: %v, want %q", text, err, want)
-		}
+		t.Run(want, func(t *testing.T) {
+			if _, err := ParsePlan(text); err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%q: %v, want %q", text, err, want)
+			}
+		})
 	}
 }
 
@@ -83,6 +86,7 @@ func (c clients) askPlans(t *testing.T, req *planv1.QuestionServiceAskRequest) (
 // TestAskPlans: a question's options carry their plans, read from a file or given inline, the tasks they name kept by
 // identifier with how they stood; a plan that cannot launch is refused when asked.
 func TestAskPlans(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	wishID := c.wish(t)
 	before := testTask(wishID, "W1", "Buy oil", planv1.TaskStatus_TASK_STATUS_RUNNING)
@@ -143,10 +147,12 @@ func TestAskPlans(t *testing.T) {
 		"option: A\ntitle: x\ntilasm: L09":      "tilasm L09 is not a tilasm of the wish",
 		"option: A\ntitle: x\nproject-id: nope": "names project nope, not one of the wish's",
 	} {
-		if _, err := c.askPlans(t, &planv1.QuestionServiceAskRequest{WishId: wishID, Options: []string{"Olive", "Paraffin"},
-			Plan: []string{plan}}); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("%q: %v, want %q", plan, err, want)
-		}
+		t.Run(want, func(t *testing.T) {
+			if _, err := c.askPlans(t, &planv1.QuestionServiceAskRequest{WishId: wishID, Options: []string{"Olive", "Paraffin"},
+				Plan: []string{plan}}); err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("%q: %v, want %q", plan, err, want)
+			}
+		})
 	}
 	if _, err := c.askPlans(t, &planv1.QuestionServiceAskRequest{WishId: wishID, Options: []string{"Olive", "Paraffin"},
 		Plan: []string{"option: A\ntitle: x", "option: a\ntitle: y"}}); err == nil || !strings.Contains(err.Error(), "two plans for option A") {
@@ -157,6 +163,7 @@ func TestAskPlans(t *testing.T) {
 // TestRevisePlans: a revision replaces the plan of each option it names, removes one it names alone, keeps the
 // others, and drops the plans of options it takes away.
 func TestRevisePlans(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	wishID := c.wish(t)
 	q, err := c.askPlans(t, &planv1.QuestionServiceAskRequest{WishId: wishID, Options: []string{"Olive", "Paraffin", "Wax"},
@@ -192,6 +199,7 @@ func TestRevisePlans(t *testing.T) {
 // the answer and its note, the plan, how each task it names stands against when it was planned, why it no longer
 // holds, and the command that launches it. A new note changes it in place.
 func TestRevisionTellsTheLead(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	did := "Its plan waits for you, as the answer has a note: djinn question launch Q01 launches it"
 	c := serve(t, WithLeads(&fakeLeads{}), WithAnswered(func(context.Context, *planv1.Question) string { return did }))

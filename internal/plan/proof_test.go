@@ -12,6 +12,7 @@ import (
 // parenthesis that holds needs without opening on them (T16), a file that merged azimas, one section in each part
 // (T02). An unchecked box without needs is work: the azima gets no needs.
 func TestReadDoneWhen(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name               string
 		body               string
@@ -126,6 +127,7 @@ func TestReadDoneWhen(t *testing.T) {
 
 // TestProvers: who gives a proof is read from the plain words of its needs, as the plan files write them.
 func TestProvers(t *testing.T) {
+	t.Parallel()
 	const (
 		mac, windows, review = planv1.Prover_PROVER_MAC, planv1.Prover_PROVER_WINDOWS, planv1.Prover_PROVER_REVIEW
 		release, model       = planv1.Prover_PROVER_RELEASE, planv1.Prover_PROVER_REAL_MODEL
@@ -146,10 +148,12 @@ func TestProvers(t *testing.T) {
 		"after v1; two trusted machines":                                   {other},
 		"Macs and windowsill":                                              {other},
 	} {
-		got, _ := Provers(needs)
-		if !slices.Equal(got, want) {
-			t.Errorf("%q: %v, want %v", needs, got, want)
-		}
+		t.Run(needs, func(t *testing.T) {
+			got, _ := Provers(needs)
+			if !slices.Equal(got, want) {
+				t.Errorf("%q: %v, want %v", needs, got, want)
+			}
+		})
 	}
 	if _, who := Provers("Clément's review"); who != "Clément" {
 		t.Errorf("reviewer %q", who)
@@ -171,6 +175,7 @@ func TestProvers(t *testing.T) {
 }
 
 func TestReadTaskItemNeeds(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		line      string

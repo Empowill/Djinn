@@ -15,6 +15,7 @@ import (
 // azima graph says which tilasms explain each azima; and its rules tell the lead to make a tilasm to explain a concept,
 // and to cite it by its link.
 func TestBriefListsTilasms(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	c := serve(t, WithHome(home))
 	wish := c.wish(t)
@@ -68,6 +69,7 @@ func TestBriefListsTilasms(t *testing.T) {
 // TestTilasmCitationsBothWays: a tilasm cites the azimas and tasks it explains, and each of them shows the tilasms
 // that cite it, in code order.
 func TestTilasmCitationsBothWays(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	c := serve(t, WithHome(home))
 	wish := c.wish(t)
@@ -95,6 +97,7 @@ func TestTilasmCitationsBothWays(t *testing.T) {
 // wish, or none, is refused. TilasmDirs reads the version folders back from the prompt, those in Djinn's data folder
 // only: the folders the worker reads (W360).
 func TestTilasmContext(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	home := t.TempDir()
 	c := serve(t, WithHome(home))

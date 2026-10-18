@@ -17,6 +17,7 @@ import (
 // work, even behind the project's current branch, and keeps one with a commit beyond it, one with a change not
 // committed, and one with a file Git does not track, saying why. No branch goes.
 func TestDeleteWishWorktrees(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	repo := gitRepo(t, "app", "https://example.com/acme/app.git")
 	git := func(dir string, args ...string) string {

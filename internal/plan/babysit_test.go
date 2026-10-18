@@ -35,17 +35,19 @@ func TestReadBabysit(t *testing.T) {
 		{"unknown", "    babysit:\n      watch: \"mrwatch {mr} {branch}\"\n", "{branch} is none of"},
 		{"forge", "    babysit:\n      forge: bitbucket\n      watch: \"w {pr}\"\n", "neither github nor gitlab"},
 	} {
-		b, err := ReadBabysit(babysitSkill(t, dir, c.name, c.yaml))
-		switch {
-		case c.err != "" && (err == nil || !strings.Contains(err.Error(), c.err)):
-			t.Errorf("%s: %v, want %q", c.name, err, c.err)
-		case c.err == "" && err != nil:
-			t.Errorf("%s: %v", c.name, err)
-		case c.name == "none" && b != nil:
-			t.Errorf("none: %v, want nil", b)
-		case c.name == "ok" && (b.Forge != ForgeGitLab || !b.Restart || b.DoneWhen != "MERGED" || b.Skill != "ok"):
-			t.Errorf("ok: %+v", b)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			b, err := ReadBabysit(babysitSkill(t, dir, c.name, c.yaml))
+			switch {
+			case c.err != "" && (err == nil || !strings.Contains(err.Error(), c.err)):
+				t.Errorf("%s: %v, want %q", c.name, err, c.err)
+			case c.err == "" && err != nil:
+				t.Errorf("%s: %v", c.name, err)
+			case c.name == "none" && b != nil:
+				t.Errorf("none: %v, want nil", b)
+			case c.name == "ok" && (b.Forge != ForgeGitLab || !b.Restart || b.DoneWhen != "MERGED" || b.Skill != "ok"):
+				t.Errorf("ok: %+v", b)
+			}
+		})
 	}
 }
 
@@ -83,24 +85,27 @@ func TestBabysitWatches(t *testing.T) {
 	pr := &Babysit{Watch: "sh .agents/skills/babysit-pr/watch.sh {pr}"}
 	mr := &Babysit{Watch: "go run ./mrwatch -mr {mr} -watch -state {state}"}
 	for _, c := range []struct {
+		name    string
 		b       *Babysit
 		command string
 		number  int
 		want    bool
 	}{
-		{pr, "sh .agents/skills/babysit-pr/watch.sh 3", 3, true},
-		{pr, "  sh .agents/skills/babysit-pr/watch.sh 3\n", 3, true},
-		{pr, "sh .agents/skills/babysit-pr/watch.sh 33", 3, false},
-		{pr, "sh .agents/skills/babysit-pr/watch.sh 3 --once", 3, false},
-		{pr, "sh .agents/skills/babysit-pr/inbox.sh 3", 3, false},
-		{pr, "sh xagents/skills/babysit-pr/watch.sh 3", 3, false},
-		{mr, "go run ./mrwatch -mr 7 -watch -state /home/me/.djinn/watchers/x/babysit-it-7", 7, true},
-		{mr, "go run ./mrwatch -mr 7 -watch -state " + FillBabysit("{state}", 0, "/a b/it's"), 7, true},
-		{mr, "go run ./mrwatch -mr 7 -watch -state", 7, false},
-		{mr, "go run ./mrwatch -mr 8 -watch -state s", 7, false},
+		{"pr exact", pr, "sh .agents/skills/babysit-pr/watch.sh 3", 3, true},
+		{"pr trimmed", pr, "  sh .agents/skills/babysit-pr/watch.sh 3\n", 3, true},
+		{"pr wrong number", pr, "sh .agents/skills/babysit-pr/watch.sh 33", 3, false},
+		{"pr extra arg", pr, "sh .agents/skills/babysit-pr/watch.sh 3 --once", 3, false},
+		{"pr wrong script", pr, "sh .agents/skills/babysit-pr/inbox.sh 3", 3, false},
+		{"pr wrong path", pr, "sh xagents/skills/babysit-pr/watch.sh 3", 3, false},
+		{"mr exact", mr, "go run ./mrwatch -mr 7 -watch -state /home/me/.djinn/watchers/x/babysit-it-7", 7, true},
+		{"mr quoted state", mr, "go run ./mrwatch -mr 7 -watch -state " + FillBabysit("{state}", 0, "/a b/it's"), 7, true},
+		{"mr missing state", mr, "go run ./mrwatch -mr 7 -watch -state", 7, false},
+		{"mr wrong number", mr, "go run ./mrwatch -mr 8 -watch -state s", 7, false},
 	} {
-		if got := c.b.Watches(c.command, c.number); got != c.want {
-			t.Errorf("%q watches %q: %v, want %v", c.b.Watch, c.command, got, c.want)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.b.Watches(c.command, c.number); got != c.want {
+				t.Errorf("%q watches %q: %v, want %v", c.b.Watch, c.command, got, c.want)
+			}
+		})
 	}
 }
