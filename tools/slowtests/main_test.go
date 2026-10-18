@@ -298,7 +298,7 @@ func TestLoadBaseline(t *testing.T) {
 		{"as text", `{"sum": "95s", "wall_clock": "45s"}`, 95 * time.Second, 45 * time.Second, ""},
 		{"as seconds", `{"sum": 1.5, "wall_clock": 2}`, 1500 * time.Millisecond, 2 * time.Second, ""},
 		{"the sum alone", `{"sum": "3s"}`, 3 * time.Second, 0, ""},
-		{"no file", "", 0, 0, "no such file"},
+		{"no file", "", 0, 0, "open "},
 		{"not JSON", `{`, 0, 0, "unexpected end"},
 		{"a sum of another type", `{"sum": true}`, 0, 0, "invalid sum in"},
 		{"a wall clock not a duration", `{"wall_clock": "soon"}`, 0, 0, "invalid wall_clock in"},

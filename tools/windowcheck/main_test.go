@@ -130,7 +130,8 @@ func TestRun(t *testing.T) {
 		code int
 		want []string
 	}{
-		{"the wails path streams", stream, "stream", 0, []string{"path:    wails", "Received:   4 of 4 values", "PASS"}},
+		{"the wails path streams", append([]string{"-path", "wails"}, stream...), "stream", 0,
+			[]string{"path:    wails", "Received:   4 of 4 values", "PASS"}},
 		{"the http path streams in json", append([]string{"-path", "http", "-format", "json"}, stream...), "stream", 0,
 			[]string{"path:    http", "over Connect in json", "PASS"}},
 		{"the bench times both formats", append([]string{"-path", "http", "-bench"}, stream...), "stream", 0,

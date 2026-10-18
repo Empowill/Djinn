@@ -29,7 +29,11 @@ func machineServer(t *testing.T) (addr string, project *planv1.Project) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	project = &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: t.TempDir(), CreateTime: timestamppb.Now()}
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = &planv1.Project{Id: store.NewID(), Name: "lamp", Directory: folder, CreateTime: timestamppb.Now()}
 	if err := db.Tx(t.Context(), func(tx *store.Tx) error {
 		return errors.Join(tx.Journal("test", planv1connect.ProjectServiceAddProcedure,
 			&planv1.ProjectServiceAddRequest{Directory: project.GetDirectory()}), tx.Put(project))
