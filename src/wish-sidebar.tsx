@@ -50,10 +50,12 @@ import {
   waitCount,
   waitText,
 } from "./data/format";
+import { useReadState, useRetryRead } from "./data/djinn";
 import { t } from "./i18n";
 import { useOpenTerminal } from "./lead-terminal";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, usePageShortcut } from "./page-keys";
 import { SyncLines } from "./project-sync";
+import { ReadingLine } from "./reading-line";
 import { CountPill, IfritFlame, WaitingHand } from "./status";
 import { WishIcon } from "./wish-icon";
 
@@ -469,6 +471,12 @@ export function WishSidebar({
     );
   };
 
+  const wishesState = useReadState("wishes");
+  const projectsState = useReadState("projects");
+  const retryWishes = useRetryRead("wishes");
+  const retryProjects = useRetryRead("projects");
+  const wishesReady = wishes.length > 0 || wishesState === "ready";
+  const projectsReady = projects.length > 0 || projectsState === "ready";
   const waits = active.reduce(
     (sum, w) => sum + (counts[w.id]?.questions ?? 0),
     0,
@@ -537,13 +545,15 @@ export function WishSidebar({
         {!collapsed && <span>{t("sidebar.wishes")}</span>}
         {!collapsed && (
           <span
-            className={`nav-counter ${active.length >= MAX_ACTIVE ? "full" : ""}`}
+            className={`nav-counter ${wishesReady && active.length >= MAX_ACTIVE ? "full" : ""}${!wishesReady ? " unread" : ""}`}
             title={t("sidebar.active_detail", { max: MAX_ACTIVE })}
           >
-            {t("sidebar.active_count", {
-              count: active.length,
-              max: MAX_ACTIVE,
-            })}
+            {wishesReady
+              ? t("sidebar.active_count", {
+                  count: active.length,
+                  max: MAX_ACTIVE,
+                })
+              : "·"}
           </span>
         )}
       </div>
@@ -558,8 +568,16 @@ export function WishSidebar({
         }}
         onDrop={drop}
       >
-        {active.map((wish, i) => item(wish, wish.rank || i + 1))}
-        {!active.length && !collapsed && (
+        {!wishesReady && !collapsed && (
+          <ReadingLine
+            kind="wishes"
+            state={wishesState}
+            size="sb-r"
+            onRetry={retryWishes}
+          />
+        )}
+        {wishesReady && active.map((wish, i) => item(wish, wish.rank || i + 1))}
+        {wishesReady && !active.length && !collapsed && (
           <p
             ref={noActive}
             className="project-empty"
@@ -618,6 +636,14 @@ export function WishSidebar({
         </button>
       </div>
       <div className="mission-list project-list">
+        {!projectsReady && !collapsed && (
+          <ReadingLine
+            kind="projects"
+            state={projectsState}
+            size="sb-r"
+            onRetry={retryProjects}
+          />
+        )}
         {projects.map((project) => (
           <div
             key={project.id}

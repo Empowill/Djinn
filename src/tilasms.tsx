@@ -59,8 +59,10 @@ import {
   readDrop,
 } from "./data/tilasms";
 import { useFullSize } from "./full-size";
+import type { ReadState } from "./data/store";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
+import { ReadingLine } from "./reading-line";
 import {
   type CommentWrites,
   CommentsColumn,
@@ -99,6 +101,8 @@ export function TilasmsTab({
   sent = [],
   reads = [],
   tasks,
+  readState = "ready",
+  onRetry,
   onToast,
 }: {
   wishId: string;
@@ -115,6 +119,8 @@ export function TilasmsTab({
   // The sends on them the Djinn read.
   reads?: readonly TilasmSendRead[];
   tasks: readonly Task[];
+  readState?: ReadState;
+  onRetry?: () => void;
   onToast: (text: string) => void;
 }) {
   const clients = useClients();
@@ -168,6 +174,8 @@ export function TilasmsTab({
       sent={sent}
       reads={reads}
       tasks={tasks}
+      readState={readState}
+      onRetry={onRetry}
       comments={comments}
       onCommentError={(error) => onToast(message(error))}
       count={tilasms.length}
@@ -295,6 +303,8 @@ export function TilasmList({
   sent = [],
   reads = [],
   tasks = [],
+  readState = "ready",
+  onRetry,
   comments,
   onCommentError = () => {},
   count,
@@ -322,6 +332,8 @@ export function TilasmList({
   reads?: readonly TilasmSendRead[];
   // The wish's tasks: those the Djinn's replies name, with their state.
   tasks?: readonly Task[];
+  readState?: ReadState;
+  onRetry?: () => void;
   // What writes them; without it, the open tilasm shows no comments.
   comments?: CommentWrites;
   onCommentError?: (error: unknown) => void;
@@ -419,14 +431,23 @@ export function TilasmList({
         />
       )}
       {count === 0 ? (
-        <EmptyState
-          art="tilasms"
-          after={
-            <p className="empty-state-text">{t("tilasms.none_command")}</p>
-          }
-        >
-          {t("tilasms.none")}
-        </EmptyState>
+        readState !== "ready" ? (
+          <ReadingLine
+            kind="tilasms"
+            state={readState}
+            size="card-r"
+            onRetry={onRetry}
+          />
+        ) : (
+          <EmptyState
+            art="tilasms"
+            after={
+              <p className="empty-state-text">{t("tilasms.none_command")}</p>
+            }
+          >
+            {t("tilasms.none")}
+          </EmptyState>
+        )
       ) : sorted.length === 0 ? (
         <EmptyState art="nomatch" small>
           {t("tilasms.none_found", { search })}

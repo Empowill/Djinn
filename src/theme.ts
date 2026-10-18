@@ -48,7 +48,7 @@ export function followSystem() {
 // shownTheme is the theme on the page now.
 export const shownTheme = (): "dark" | "light" =>
   typeof document !== "undefined" &&
-  document.documentElement.dataset.theme === "light"
+  document.documentElement?.dataset?.theme === "light"
     ? "light"
     : "dark";
 

@@ -1904,3 +1904,117 @@ test("a wish view with a followed running task keeps at most 2 concurrent long-l
   release();
   stop();
 });
+
+test("each kind publishes as soon as its read answers without waiting for slower kinds", async () => {
+  const data = sample();
+  let releaseTasks;
+  data.listTasks = () =>
+    new Promise((r) => (releaseTasks = r)).then(() => ({
+      tasks: data.tasks,
+      total: data.tasks.length,
+      nextPageToken: "",
+    }));
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  assert.equal(store.getState().everLive, false);
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  assert.equal(store.getState().everLive, true);
+  assert.equal(store.readState("wishes"), "ready");
+  assert.equal(store.readState("projects"), "ready");
+
+  store.open(wishId);
+  // Questions and blocks answer immediately while tasks are still in flight.
+  const partial = await until(
+    store,
+    (s) =>
+      s.details[wishId]?.loadedKinds.has(Change.QUESTION) &&
+      s.details[wishId]?.loadedKinds.has(Change.BLOCK),
+  );
+  assert.equal(partial.details[wishId].questions[0].text, "Oil?");
+  assert.equal(partial.details[wishId].blocks[0].content, "A wick.");
+  assert.equal(store.readState(Change.QUESTION, wishId), "ready");
+  assert.equal(store.readState(Change.BLOCK, wishId), "ready");
+  assert.equal(store.readState(Change.TASK, wishId), "reading");
+  assert.equal(partial.details[wishId].loaded, false);
+
+  releaseTasks();
+  const full = await until(store, (s) => s.details[wishId]?.loaded);
+  assert.equal(full.details[wishId].tasks[0].title, "Polish");
+  assert.equal(store.readState(Change.TASK, wishId), "ready");
+  stop();
+});
+
+test("concurrent open and loadKinds while a read is in flight do not schedule duplicate reads", async () => {
+  const data = sample();
+  let releaseTasks;
+  data.listTasks = () =>
+    new Promise((r) => (releaseTasks = r)).then(() => ({
+      tasks: data.tasks,
+      total: data.tasks.length,
+      nextPageToken: "",
+    }));
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.QUESTION, Change.TASK, Change.BLOCK]);
+  store.open(wishId);
+  void store.loadKinds(wishId, [Change.TASK]);
+  await until(store, (s) =>
+    s.details[wishId]?.loadedKinds.has(Change.QUESTION),
+  );
+  assert.equal(reads.tasks, 1, "tasks read issued only once while in flight");
+  releaseTasks();
+  await until(store, (s) => s.details[wishId]?.loaded);
+  assert.equal(reads.tasks, 1);
+  stop();
+});
+
+test("readState transitions from reading to slow and ready, and failed to reading on retryRead", async () => {
+  const data = sample();
+  let shouldFail = false;
+  let releaseTasks;
+  data.listTasks = () => {
+    if (shouldFail) throw new Error("disk busy");
+    return new Promise((r) => (releaseTasks = r)).then(() => ({
+      tasks: data.tasks,
+      total: data.tasks.length,
+      nextPageToken: "",
+    }));
+  };
+  const { clients, watch } = server(data);
+  // retry = 5000ms so automatic retry doesn't fire before retryRead, slowMs = 30ms.
+  const store = createStore(clients, 5_000, 10, 5_000, 5_000, 30);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.TASK]);
+  assert.equal(store.readState(Change.TASK, wishId), "reading");
+  await until(store, () => store.readState(Change.TASK, wishId) === "slow");
+  assert.equal(store.readState(Change.TASK), "slow");
+  releaseTasks();
+  await until(store, () => store.readState(Change.TASK, wishId) === "ready");
+  assert.equal(store.readState(Change.TASK), "ready");
+
+  // Now test failure on a second wish and retryRead.
+  const wish2 = "01a11833-a440-7479-a067-52615c91da72";
+  shouldFail = true;
+  store.open(wish2, [Change.QUESTION]);
+  data.listQuestions = () => {
+    if (shouldFail) throw new Error("network glitch");
+    return { questions: data.questions, total: 1, nextPageToken: "" };
+  };
+  await until(
+    store,
+    () => store.readState(Change.QUESTION, wish2) === "failed",
+  );
+  shouldFail = false;
+  store.retryRead(Change.QUESTION, wish2);
+  await until(store, () => store.readState(Change.QUESTION, wish2) === "ready");
+  stop();
+});

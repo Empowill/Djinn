@@ -37,7 +37,7 @@ import {
   type Wish,
   type WishPush,
 } from "../gen/ts/plan/v1/plan_pb";
-import { useOptionalData } from "./data/djinn";
+import { type ReadState, useDjinn, useOptionalData } from "./data/djinn";
 import {
   compareCodes,
   compareWorkers,
@@ -60,6 +60,7 @@ import { ifritLit, ifritOut, ifritWord } from "./data/ifrit";
 import { ModalFrame } from "./frame";
 import { type TextKey, language, t } from "./i18n";
 import { Link, linkLabel } from "./link";
+import { ReadingLine } from "./reading-line";
 import { ToneIcon } from "./status";
 import { InvestigationLabel, UrgentLabel } from "./wish-task";
 
@@ -1029,20 +1030,29 @@ function mergeKey(row: MergeRow): string {
 
 function GlanceTree({
   glance,
+  readState = "ready",
+  onRetry,
   onOpenTask,
   onOpenHeld,
 }: {
   glance: WishGlance;
+  readState?: ReadState;
+  onRetry?: () => void;
   onOpenTask?: (task: Task) => void;
   onOpenHeld: (row: MergeRow & { kind: "held" }) => void;
 }) {
   const { rows, watchers, merges, repairs } = glance;
-  if (!rows.length && !watchers.length && !merges.length && !repairs.length)
+  if (!rows.length && !watchers.length && !merges.length && !repairs.length) {
+    if (readState !== "ready")
+      return (
+        <ReadingLine kind="runs" state={readState} size="g" onRetry={onRetry} />
+      );
     return (
       <ul className="glance-list">
         <li className="glance-quiet">{t("glance.quiet")}</li>
       </ul>
     );
+  }
   return (
     <>
       {rows.length > 0 && (
@@ -1086,10 +1096,12 @@ function GlanceTree({
 function GlanceLine({
   wish,
   glance,
+  readState = "ready",
   onOpen,
 }: {
   wish: Wish;
   glance: WishGlance;
+  readState?: ReadState;
   onOpen?: () => void;
 }) {
   const dots = glance.rows;
@@ -1158,6 +1170,8 @@ function GlanceLine({
         <Mark kind="held" state="held" label={t("glance.legend_held")} />
       )}
     </span>
+  ) : readState !== "ready" ? (
+    <span className="glance-line-marks zero unread">·</span>
   ) : (
     <span className="glance-line-marks zero">{t("glance.nothing")}</span>
   );
@@ -1189,6 +1203,8 @@ export function Glance({
   wishes: shown,
   tasksOf,
   all,
+  readState,
+  onRetry,
   onOpenWish,
   onOpenTask,
 }: {
@@ -1197,9 +1213,26 @@ export function Glance({
   tasksOf: Readonly<Record<string, { tasks: readonly Task[] } | undefined>>;
   // Every wish, for the title of a wish another waits on.
   all: readonly Wish[];
+  readState?: ReadState;
+  onRetry?: () => void;
   onOpenWish?: (wishId: string) => void;
   onOpenTask?: (task: Task) => void;
 }) {
+  const djinn = useDjinn();
+  useOptionalData((s) => s, undefined);
+  const stateOf = (wishId: string): ReadState => {
+    if (djinn) {
+      const s = djinn.store.readState("tasks", wishId);
+      if (s !== "ready" || readState === undefined) return s;
+    }
+    return readState ?? "ready";
+  };
+  const retryOf = (wishId: string) => () => {
+    if (onRetry) onRetry();
+    else djinn?.store.retryRead("tasks", wishId);
+  };
+  const overallState =
+    readState ?? (djinn ? djinn.store.readState("tasks") : "ready");
   const glances = useMemo(() => {
     const byId = new Map<string, Task>();
     for (const detail of Object.values(tasksOf))
@@ -1235,6 +1268,14 @@ export function Glance({
     <section className="glance" aria-label={t("glance.label")}>
       <h2 className="glance-label">{t("glance.label")}</h2>
       <div className="glance-wide">
+        {glances.length === 0 && overallState !== "ready" && (
+          <ReadingLine
+            kind="runs"
+            state={overallState}
+            size="g"
+            onRetry={onRetry ?? (() => djinn?.store.retryRead("tasks"))}
+          />
+        )}
         {glances.map(({ wish, glance }) => (
           <div className="glance-wish" key={wish.id}>
             {headings && (
@@ -1251,6 +1292,8 @@ export function Glance({
             )}
             <GlanceTree
               glance={glance}
+              readState={stateOf(wish.id)}
+              onRetry={retryOf(wish.id)}
               onOpenTask={onOpenTask}
               onOpenHeld={(row) => setHeld({ wish, row })}
             />
@@ -1312,6 +1355,7 @@ export function Glance({
             key={wish.id}
             wish={wish}
             glance={glance}
+            readState={stateOf(wish.id)}
             onOpen={onOpenWish ? () => onOpenWish(wish.id) : undefined}
           />
         ))}

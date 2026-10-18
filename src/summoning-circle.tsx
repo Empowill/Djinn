@@ -13,7 +13,7 @@ import { message } from "./data/client";
 import { useDjinn } from "./data/djinn";
 import { defaultModel } from "./data/format";
 import { ModalFrame } from "./frame";
-import { t } from "./i18n";
+import { type TextKey, t } from "./i18n";
 import "./project-panel.css";
 
 export interface CircleModel {
@@ -108,6 +108,8 @@ export interface CircleRowSpec {
     | "correction"
     | "review"
     | "question";
+  readonly labelKey: TextKey;
+  readonly detailKey: TextKey;
   readonly providers: readonly Provider[];
 }
 
@@ -115,41 +117,57 @@ export const CIRCLE_ROWS: readonly CircleRowSpec[] = [
   {
     kind: WorkerKind.LEAD,
     key: "lead",
+    labelKey: "summoning.kind_lead",
+    detailKey: "summoning.kind_lead_detail",
     providers: [Provider.CLAUDE, Provider.CODEX],
   },
   {
     kind: WorkerKind.INVESTIGATION,
     key: "investigation",
+    labelKey: "summoning.kind_investigation",
+    detailKey: "summoning.kind_investigation_detail",
     providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
   },
   {
     kind: WorkerKind.MOCKUP,
     key: "mockup",
+    labelKey: "summoning.kind_mockup",
+    detailKey: "summoning.kind_mockup_detail",
     providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
   },
   {
     kind: WorkerKind.IFRIT,
     key: "ifrit",
+    labelKey: "summoning.kind_ifrit",
+    detailKey: "summoning.kind_ifrit_detail",
     providers: [Provider.CLAUDE, Provider.ANTIGRAVITY],
   },
   {
     kind: WorkerKind.WORK,
     key: "work",
+    labelKey: "summoning.kind_work",
+    detailKey: "summoning.kind_work_detail",
     providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
   },
   {
     kind: WorkerKind.CORRECTION,
     key: "correction",
+    labelKey: "summoning.kind_correction",
+    detailKey: "summoning.kind_correction_detail",
     providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
   },
   {
     kind: WorkerKind.REVIEW,
     key: "review",
+    labelKey: "summoning.kind_review",
+    detailKey: "summoning.kind_review_detail",
     providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
   },
   {
     kind: WorkerKind.QUESTION,
     key: "question",
+    labelKey: "summoning.kind_question",
+    detailKey: "summoning.kind_question_detail",
     providers: [Provider.CLAUDE, Provider.CODEX],
   },
 ];
@@ -274,8 +292,8 @@ export function SummoningCircle({
             value,
             seat?.provider ?? Provider.UNSPECIFIED,
           );
-          const label = t(`summoning.kind_${spec.key}`);
-          const detail = t(`summoning.kind_${spec.key}_detail`);
+          const label = t(spec.labelKey);
+          const detail = t(spec.detailKey);
           return (
             <div className="setting-row summoning-row" key={spec.key}>
               <div>

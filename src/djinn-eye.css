@@ -97,18 +97,37 @@
 .djinn-eye[data-mood="listening"] .djinn-eye-iris {
   transform: translateY(-0.0625rem);
 }
-.djinn-eye[data-flying] .djinn-eye-iris {
+.djinn-eye[data-flying] .djinn-eye-iris,
+.djinn-eye[data-looking] .djinn-eye-iris {
   transform: translate(var(--djinn-eye-look-x, 0), var(--djinn-eye-look-y, 0));
+}
+.djinn-eye-perch[data-perch="reading"]
+  > .djinn-eye[data-mood="reading"]
+  .djinn-eye-iris {
+  animation: eye-read 1.8s ease-in-out infinite alternate;
+}
+@keyframes eye-read {
+  from {
+    transform: translateX(-0.0875rem);
+  }
+  to {
+    transform: translateX(0.1125rem);
+  }
 }
 .djinn-eye[data-blink] .djinn-eye-ball {
   transform: scaleY(0.1);
   transition-duration: 0.11s;
 }
-.djinn-eye[data-mood="asleep"] .djinn-eye-ball {
+.djinn-eye[data-mood="asleep"] .djinn-eye-ball,
+.djinn-eye[data-mood="waking"] .djinn-eye-ball {
   opacity: 0;
 }
-.djinn-eye[data-mood="asleep"] .djinn-eye-closed {
+.djinn-eye[data-mood="asleep"] .djinn-eye-closed,
+.djinn-eye[data-mood="waking"] .djinn-eye-closed {
   opacity: 1;
+}
+.djinn-eye[data-mood="waking"] .djinn-eye-z {
+  opacity: 0;
 }
 .djinn-eye[data-mood="restarting"] {
   opacity: 0.35;
@@ -149,11 +168,18 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .djinn-eye[data-shine] .djinn-eye-shine {
+  .djinn-eye[data-shine] .djinn-eye-shine,
+  .djinn-eye-perch[data-perch="reading"]
+    > .djinn-eye[data-mood="reading"]
+    .djinn-eye-iris {
     animation: none;
   }
 }
-html[data-motion="reduced"] .djinn-eye[data-shine] .djinn-eye-shine {
+html[data-motion="reduced"] .djinn-eye[data-shine] .djinn-eye-shine,
+html[data-motion="reduced"]
+  .djinn-eye-perch[data-perch="reading"]
+  > .djinn-eye[data-mood="reading"]
+  .djinn-eye-iris {
   animation: none;
 }
 
@@ -189,13 +215,17 @@ html[data-motion="reduced"] .djinn-eye[data-shine] .djinn-eye-shine {
 .brand.small .brand-mark > .djinn-eye-perch {
   --djinn-eye-scale: 0.68;
 }
-/* A question of the column: the middle of the page's margin on its left, by its first line. */
+/* A question of the column or its reading line: the middle of the page's margin on its left, by its first line. */
 .review .question-card.question-row {
   position: relative;
 }
 .question-row > .djinn-eye-perch {
   left: -1.03125rem;
   top: 1.0625rem;
+}
+.reading > .djinn-eye-perch {
+  left: -1.03125rem;
+  top: 0.9375rem;
 }
 /* A tab of the view: under its bar, in the gap above the tab's page, smaller, looking up at the tab. */
 .view-tabs > button {
