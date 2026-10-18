@@ -1218,3 +1218,122 @@ func TestUpdateIntegrationNoneUnmergedBranch(t *testing.T) {
 		t.Fatalf("task integration after update --integration none --force: got %v, want nil", after.GetIntegration())
 	}
 }
+
+func TestUpdatePlannedReflectedInListAndWatch(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	ctx := t.Context()
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	dep := e.mustSpawn(t, wishID, "Dependency task", "text dep", &planv1.TaskServiceSpawnRequest{Later: true})
+	first := e.mustSpawn(t, wishID, "Initial title", "text initial prompt", &planv1.TaskServiceSpawnRequest{
+		Provider: planv1.Provider_PROVIDER_FAKE,
+		Later:    true,
+	})
+
+	wishes := planv1connect.NewWishServiceClient(e.srv.Client(), e.srv.URL)
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	defer cancelWatch()
+	stream, err := wishes.Watch(watchCtx, connect.NewRequest(&planv1.WishServiceWatchRequest{}))
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+	if !stream.Receive() {
+		t.Fatalf("initial watch receive: %v", stream.Err())
+	}
+
+	// 1. Prompt-only update on a planned task is streamed by WishService.Watch and returned by TaskService.List.
+	onlyPrompt := "text prompt-only rewrite"
+	if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId: first.GetId(),
+		Prompt: &onlyPrompt,
+	})); err != nil {
+		t.Fatalf("Update prompt only: %v", err)
+	}
+
+	var watchedPromptOnly *planv1.Task
+	for stream.Receive() {
+		msg := stream.Msg()
+		if msg.GetWishId() != wishID {
+			continue
+		}
+		for _, ct := range msg.GetChanged().GetTasks() {
+			if ct.GetId() == first.GetId() {
+				watchedPromptOnly = ct
+				break
+			}
+		}
+		if watchedPromptOnly != nil {
+			break
+		}
+	}
+	if watchedPromptOnly == nil || watchedPromptOnly.GetPrompt() != onlyPrompt {
+		t.Fatalf("watched task after prompt-only update: got %v, want prompt %q", watchedPromptOnly, onlyPrompt)
+	}
+
+	// 2. Multi-field update (prompt, title, provider, model, dependencies).
+	newTitle := "Rewritten Title"
+	newPrompt := "text rewritten prompt"
+	newProvider := planv1.Provider_PROVIDER_ANTIGRAVITY
+	newModel := "gemini-3.8-flash-high"
+	after := []string{dep.GetCode()}
+
+	if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+		TaskId:   first.GetId(),
+		Title:    &newTitle,
+		Prompt:   &newPrompt,
+		Provider: &newProvider,
+		Model:    &newModel,
+		After:    after,
+	})); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	var watchedTask *planv1.Task
+	for stream.Receive() {
+		msg := stream.Msg()
+		if msg.GetWishId() != wishID {
+			continue
+		}
+		for _, ct := range msg.GetChanged().GetTasks() {
+			if ct.GetId() == first.GetId() {
+				watchedTask = ct
+				break
+			}
+		}
+		if watchedTask != nil {
+			break
+		}
+	}
+	if watchedTask == nil {
+		t.Fatalf("watch stream ended without updated task: %v", stream.Err())
+	}
+	if watchedTask.GetPrompt() != newPrompt || watchedTask.GetTitle() != newTitle ||
+		watchedTask.GetProvider() != newProvider || watchedTask.GetModel() != newModel ||
+		!slices.Equal(watchedTask.GetDependsOn(), []string{dep.GetId()}) {
+		t.Errorf("watched task after update: got prompt=%q title=%q provider=%v model=%q deps=%v",
+			watchedTask.GetPrompt(), watchedTask.GetTitle(), watchedTask.GetProvider(), watchedTask.GetModel(), watchedTask.GetDependsOn())
+	}
+
+	listRes, err := e.tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wishID}))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var listedTask *planv1.Task
+	for _, lt := range listRes.Msg.GetTasks() {
+		if lt.GetId() == first.GetId() {
+			listedTask = lt
+			break
+		}
+	}
+	if listedTask == nil {
+		t.Fatalf("task %s not found in List", first.GetId())
+	}
+	if listedTask.GetPrompt() != newPrompt || listedTask.GetTitle() != newTitle ||
+		listedTask.GetProvider() != newProvider || listedTask.GetModel() != newModel ||
+		!slices.Equal(listedTask.GetDependsOn(), []string{dep.GetId()}) {
+		t.Errorf("listed task after update: got prompt=%q title=%q provider=%v model=%q deps=%v",
+			listedTask.GetPrompt(), listedTask.GetTitle(), listedTask.GetProvider(), listedTask.GetModel(), listedTask.GetDependsOn())
+	}
+}

@@ -52,6 +52,9 @@ func (s *Tasks) fillTasks(ctx context.Context, tasks []*planv1.Task) ([]*planv1.
 	if err := plan.FillTimes(ctx, s.h.store, filled, s.h.now()); err != nil {
 		return nil, plan.Status(err)
 	}
+	if err := plan.FillPrompts(ctx, s.h.store, filled); err != nil {
+		return nil, plan.Status(err)
+	}
 	s.h.FillModels(ctx, filled)
 	return filled, nil
 }
@@ -207,9 +210,6 @@ func (s *Tasks) Get(
 	filled, err := s.fillTasks(ctx, []*planv1.Task{task})
 	if err != nil {
 		return nil, err
-	}
-	if p, err := lastPrompt(ctx, s.h.store, task.GetId()); err == nil {
-		filled[0].Prompt = p
 	}
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: filled[0]}), nil
 }

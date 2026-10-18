@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"google.golang.org/protobuf/proto"
+
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -89,4 +91,26 @@ func ClosesCycle(task *planv1.Task, deps []string, azima string, tasks []*planv1
 		}
 	}
 	return ""
+}
+
+var promptKind = func() []byte {
+	b, _ := proto.Marshal(&planv1.TaskEvent{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT})
+	return b
+}()
+
+// FillPrompts sets each task's Prompt from its last prompt event in r.
+func FillPrompts(ctx context.Context, r store.Reader, tasks []*planv1.Task) error {
+	for _, t := range tasks {
+		events, err := store.ListAfter[*planv1.TaskEvent](
+			ctx, r, store.Where{"task_id": t.GetId()},
+			store.After{Field: "seq", Contains: [][]byte{promptKind}},
+		)
+		if err != nil {
+			return err
+		}
+		if len(events) > 0 {
+			t.Prompt = events[len(events)-1].GetText()
+		}
+	}
+	return nil
 }

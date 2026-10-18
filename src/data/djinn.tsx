@@ -118,7 +118,7 @@ export function useWishDetails(wishIds: readonly string[]) {
   return useData((state) => state.details);
 }
 
-// useTaskPrompt reads the task's first prompt alone, without loading its other events.
+// useTaskPrompt reads the task's latest prompt alone, without loading its other events.
 export function useTaskPrompt(task: Task): string {
   const djinn = useDjinn();
   const cachedPrompt = useOptionalData(

@@ -945,7 +945,17 @@ export function createStore(
       next[wishId] = list.reduce((d, c) => apply(d, c, got), detail);
       touched ||= next[wishId] !== detail;
     }
-    if (touched) patch.details = next;
+    if (touched) {
+      patch.details = next;
+      let prompts = state.prompts;
+      for (const [wishId, detail] of Object.entries(next)) {
+        const prevTasks = state.details[wishId]?.tasks ?? [];
+        if (detail.tasks !== prevTasks) {
+          prompts = syncPrompts(prevTasks, detail.tasks, prompts) ?? prompts;
+        }
+      }
+      if (prompts !== state.prompts) patch.prompts = prompts;
+    }
     if (wishes && projects && !errors.length) patch.loaded = true;
     if (
       wishes ||
@@ -959,6 +969,26 @@ export function createStore(
       patch.error = errors[0] ?? "";
       set(patch);
     }
+  }
+
+  function syncPrompts(
+    prevTasks: Task[],
+    nextTasks: Task[],
+    base = state.prompts,
+  ): Record<string, string> | undefined {
+    const prevById = new Map(prevTasks.map((t) => [t.id, t.prompt]));
+    let next: Record<string, string> | undefined;
+    for (const t of nextTasks) {
+      if (!t.prompt) continue;
+      const cur = (next ?? base)[t.id];
+      if (!cur || t.prompt !== prevById.get(t.id)) {
+        if (cur !== t.prompt) {
+          next ??= { ...base };
+          next[t.id] = t.prompt;
+        }
+      }
+    }
+    return next;
   }
 
   function scheduleFlush(delay: number): Promise<void> {
@@ -1071,9 +1101,11 @@ export function createStore(
       const fresh = buffer.filter((e) => e.seq > lastSeq);
       buffer = [];
       if (!fresh.length) return;
-      const promptEvent = fresh.find((e) => e.kind === TaskEventKind.PROMPT);
+      const promptEvent = fresh
+        .filter((e) => e.kind === TaskEventKind.PROMPT)
+        .at(-1);
       const patchPrompts =
-        promptEvent && !state.prompts[taskId]
+        promptEvent && state.prompts[taskId] !== promptEvent.text
           ? { prompts: { ...state.prompts, [taskId]: promptEvent.text } }
           : undefined;
       const kept = [...known, ...fresh].slice(-MAX_EVENTS);
@@ -1255,6 +1287,7 @@ export function createStore(
             new Set(),
             byID,
           );
+          const prompts = syncPrompts(cur.tasks, res.tasks);
           set({
             details: {
               ...state.details,
@@ -1265,6 +1298,7 @@ export function createStore(
                 tasksNextToken: res.nextPageToken,
               },
             },
+            ...(prompts ? { prompts } : {}),
           });
         } else if (kind === Change.BLOCK && detail.blocksNextToken) {
           const res = await clients.blocks.list(

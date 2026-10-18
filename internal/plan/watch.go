@@ -439,6 +439,9 @@ func (sub *watcher) readTasks(ctx context.Context, s *store.Store, wishID string
 	if err := FillTimes(ctx, s, tasks, now); err != nil {
 		return nil, nil, false, err
 	}
+	if err := FillPrompts(ctx, s, tasks); err != nil {
+		return nil, nil, false, err
+	}
 	if sub.wishes != nil && sub.wishes.FillModels != nil {
 		sub.wishes.FillModels(ctx, tasks)
 	}
