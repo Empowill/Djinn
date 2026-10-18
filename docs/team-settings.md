@@ -264,7 +264,7 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   is kept in `projects/<id>/checks/` of Djinn's data folder (the last 100 red runs, any check), the events naming the
   file and the failing tests. Push checks never run twice on the same tree: when the push is due again on it, or at
   once when no work of the wish is left to commit in the project, Djinn starts a correction worker (within
-  `correction_attempts`) instead of running them; only a push the developer asks for or approves checks it again. If the correction fails, or its attempts are spent, or none can start, Djinn tells the lead
+  `correction_attempts`, on the project's `provider` and `model`) instead of running them; only a push the developer asks for or approves checks it again. If the correction fails, or its attempts are spent, or none can start, Djinn tells the lead
   (a move event, no question to the developer): retry a correction, drop the work, or leave it waiting. While the push
   is held, the wish's new tasks in the project wait (`waits for feat/x to be green again`), corrections and
   investigators aside; so they do while any correction repairs the branch (`waits for W9 to settle the conflict in
@@ -314,7 +314,8 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
 5. **Red** (a commit check, or the setup), or a **conflict** in code: the branch stays as it was, and the task says
    what failed. The tasks that end
    after it are committed on their own meanwhile.
-6. **A correction worker** starts by itself: a work task part of the same azima as the failed task, of its provider,
+6. **A correction worker** starts by itself: a work task part of the same azima as the failed task, on the project's
+   `provider` and `model` (whatever the failed task ran on),
    its worktree on the failed merge (the branch, and that merge again, its conflicts left in place; or the work merged,
    for a red check), what failed in its first prompt: the files in conflict, or the check's command,
    the end of its output and the file that keeps the whole of it. It commits its work, which concludes the merge, and its branch integrates like any task's,
@@ -331,7 +332,7 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
 9. **Work not committed is not merged, and Djinn commits nothing blindly.** Before merging a task, a correction
    worker's included, Djinn looks at its worktree (`git status --porcelain`, untracked files included, the project's
    `.gitignore` applying). Clean, it merges as above. With changes, the task is **uncommitted**: a **review worker**
-   starts by itself, a work task part of the same azima, of the task's provider, in that task's worktree and on its
+   starts by itself, a work task part of the same azima, on the project's `provider` and `model`, in that task's worktree and on its
    branch, the task's title, prompt and final note, the files (with a hint for a name that suggests a secret, an
    output or a screenshot) and their diff (clipped) in its first prompt. It judges each path: it commits what belongs
    to the task's change, staged by name, with a message in the repository's style, real work the task's worker forgot

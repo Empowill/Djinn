@@ -5,7 +5,7 @@
 // on nothing that has a place, it listens on Write to the Djinn. Both themes; with less motion asked, it fades from one
 // place to the next. A recorded lead, never started, keeps it awake: no agent runs.
 // Run alone with: go tool task e2e -- e2e/djinn-eye.spec.ts
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

@@ -110,7 +110,7 @@ func TestCorrectionWorkerFailingTellsLead(t *testing.T) {
 	t.Parallel()
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
-		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 2\n")
+		"provider: PROVIDER_FAKE\ngenerated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 2\n")
 	in.correctWith(func(string, string) string { return "fail I cannot settle it\nmore details" })
 	lead := &leadListener{}
 	in.h.TellLeads(lead.tell)
@@ -157,7 +157,7 @@ func TestCorrectionWorkerFailingAttemptsSpent(t *testing.T) {
 	t.Parallel()
 	in := integrating(t)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
-		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 1\n")
+		"provider: PROVIDER_FAKE\ngenerated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 1\n")
 	in.correctWith(func(string, string) string { return "fail I cannot settle it" })
 	lead := &leadListener{}
 	in.h.TellLeads(lead.tell)

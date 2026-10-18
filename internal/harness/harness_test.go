@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -49,11 +50,23 @@ func (e *env) lastDid() string {
 	return e.did[len(e.did)-1]
 }
 
-// testProviders are the providers of a test: a watcher's waits are the test's, not a second.
+// testProviders are the providers of a test: a watcher's waits are the test's, not a second; and no paid model. Claude,
+// the provider of a project that names none, which Djinn's own workers run on (Q95), plays a script like the fake; the
+// other agents refuse to start: a test that runs one sets its own.
 func testProviders() map[planv1.Provider]Provider {
 	providers := Providers()
 	providers[planv1.Provider_PROVIDER_WATCH] = fastWatch
+	providers[planv1.Provider_PROVIDER_CLAUDE] = Fake{}
+	providers[planv1.Provider_PROVIDER_CODEX] = noPaidModel{}
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = noPaidModel{}
 	return providers
+}
+
+// noPaidModel is an agent a test did not set: it never starts.
+type noPaidModel struct{}
+
+func (noPaidModel) Start(context.Context, Spec) (Worker, error) {
+	return nil, errors.New("no paid model in a test: set this provider in the test")
 }
 
 // fastWatch is a watcher whose command makes a paragraph after 50 ms of silence, and starts again 50 ms after it ends.

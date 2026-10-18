@@ -16,6 +16,19 @@ process.env.DJINN_TEST = "1";
 // tasks the specs wait for stayed pending (W181). Only a test build honours it.
 process.env.DJINN_TEST_MACHINE = "calm";
 
+// One djinn per worker (global-setup.ts starts them, DJINN_URL_i and DJINN_E2E_HOME_i): a worker's specs share theirs,
+// and two workers never touch the same one. This file is loaded again in each worker process, where
+// TEST_PARALLEL_INDEX is its slot: the specs read DJINN_URL and DJINN_E2E_HOME as they run. Three workers on the
+// developer's machine (W246: the e2e from 19.2 to 6.3 min), two on CI's four-core runners; DJINN_E2E_WORKERS or
+// --workers moves it.
+const slot = process.env.TEST_PARALLEL_INDEX;
+if (slot !== undefined && process.env[`DJINN_URL_${slot}`]) {
+  process.env.DJINN_URL = process.env[`DJINN_URL_${slot}`];
+  process.env.DJINN_E2E_HOME = process.env[`DJINN_E2E_HOME_${slot}`];
+}
+const workers =
+  Number(process.env.DJINN_E2E_WORKERS) || (process.env.CI ? 2 : 3);
+
 // The render performance spec (e2e/wish-render.spec.ts) runs on demand on the real-size wish of W174:
 // `go tool task e2e -- e2e/wish-render.spec.ts` (or --grep @render). It is kept out of the default e2e run.
 const args = process.argv.slice(2);
@@ -45,8 +58,9 @@ export default defineConfig({
   globalSetup: "./global-setup.ts",
   timeout: 30_000,
   expect: { timeout: 6_000 },
+  // A spec's tests run in its order, in one worker, on one djinn; the specs spread over the workers.
   fullyParallel: false,
-  workers: 1,
+  workers,
   forbidOnly: Boolean(process.env.CI),
   // The wall clock against the baseline first, then the list's summary: a push check keeps only the last lines of
   // its output (W124), and they must name the tests that failed, not the baseline's warning.

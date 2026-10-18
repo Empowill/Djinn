@@ -2,7 +2,7 @@
 // waits while it does, and nothing once it runs; its page shows the waiting line as past, folded and muted into the
 // start that ended it, which says how long it waited and for what (W371). The workers are the fake agent: no model is
 // called.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -80,8 +80,12 @@ test("a held task that starts loses its wait line, and its page shows the wait a
     await card.getByRole("button", { name: /Go second/ }).click();
     await card.locator(".wish-task-events-fold summary").click();
     const start = card.locator(".wish-event", { hasText: /started fake/ });
+    // The start names the last cause: on a machine that holds one worker (a 4-core CI runner), the second still waits
+    // for the first's slot a moment after the first ended.
     await expect(start).toContainText(
-      new RegExp(`after waiting \\d+ s: waits for ${first.code} \\(running\\)`),
+      new RegExp(
+        `after waiting \\d+ s: (waits for ${first.code} \\(running\\)|1 worker runs, the most this machine holds)`,
+      ),
     );
     // The waiting line is past: folded into the start, never a line of its own.
     await expect(start.locator(".wish-event-waited")).toContainText(

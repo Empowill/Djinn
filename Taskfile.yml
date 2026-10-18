@@ -84,11 +84,11 @@ tasks:
       - 'echo "Installed djinn local-{{.COMMIT}} in {{.DIR}}. A running Djinn offers to restart on it (or: djinn update)."'
 
   test:
-    desc: "Run every test: Go, interface, end-to-end"
+    desc: "Run every test: Go, interface and end-to-end at once (tools/testall), each part's output in test-results/<part>.log; a green part prints as it ends, a red one at the end, and the last line names the parts that failed"
+    # The interface once, before the parts: each of them would build it otherwise, at the same time.
+    deps: [ui]
     cmds:
-      - task: test-go
-      - task: test-ui
-      - task: e2e
+      - go run ./tools/testall test-go test-ui e2e
 
   test-ui:
     desc: Run the interface tests (Node), and those of its data module on in-memory services

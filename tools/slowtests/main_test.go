@@ -25,37 +25,42 @@ func TestRun(t *testing.T) {
 		in     string
 		goos   string
 		ci     bool
+		beside bool
 		code   int
 		stdout string
 		stderr []string
 	}{
-		{"fast tests pass", nil, pass("TestFast", "0.1"), "linux", false, 0, "Suite total: 0.1s sum", nil},
-		{"under the default 10 s passes", nil, pass("TestNine", "9.9"), "linux", false, 0, "Suite total", nil},
-		{"over the default 10 s fails on Linux", nil, pass("TestEleven", "11"), "linux", false, 1, "",
+		{"fast tests pass", nil, pass("TestFast", "0.1"), "linux", false, false, 0, "Suite total: 0.1s sum", nil},
+		{"under the default 10 s passes", nil, pass("TestNine", "9.9"), "linux", false, false, 0, "Suite total", nil},
+		{"over the default 10 s fails on Linux", nil, pass("TestEleven", "11"), "linux", false, false, 1, "",
 			[]string{"These tests take longer than 10s", "  11s  p TestEleven"}},
-		{"over -max is only reported on CI", nil, pass("TestFifteen", "15"), "linux", true, 0, "",
+		{"over -max is only reported on CI", nil, pass("TestFifteen", "15"), "linux", true, false, 0, "",
 			[]string{"On CI (linux) they are reported; only one over 20s fails", "p TestFifteen"}},
-		{"over twice -max fails on CI", nil, pass("TestHangs", "21"), "linux", true, 1, "", []string{"p TestHangs"}},
-		{"over -max is only reported on Windows", nil, pass("TestGit", "12"), "windows", false, 0, "",
+		{"over twice -max fails on CI", nil, pass("TestHangs", "21"), "linux", true, false, 1, "", []string{"p TestHangs"}},
+		{"over -max is only reported beside the end-to-end tests", nil, pass("TestSlow", "12"), "linux", false, true, 0, "",
+			[]string{"On linux beside the end-to-end tests they are reported; only one over 20s fails", "p TestSlow"}},
+		{"over twice -max fails beside the end-to-end tests", nil, pass("TestHangs", "21"), "linux", false, true, 1, "",
+			[]string{"p TestHangs"}},
+		{"over -max is only reported on Windows", nil, pass("TestGit", "12"), "windows", false, false, 0, "",
 			[]string{"On windows they are reported; only one over 15s fails"}},
-		{"over -max-elsewhere fails on macOS", []string{"-max-elsewhere", "11s"}, pass("TestGit", "12"), "darwin", false, 1, "",
+		{"over -max-elsewhere fails on macOS", []string{"-max-elsewhere", "11s"}, pass("TestGit", "12"), "darwin", false, false, 1, "",
 			[]string{"only one over 11s fails"}},
 		{"a failing test fails and is named last", nil, events(
 			`{"Action":"output","Package":"p","Test":"TestBad","Output":"--- FAIL: TestBad (0.00s)\n"}`,
 			`{"Action":"fail","Package":"p","Test":"TestBad","Elapsed":0}`,
 			`{"Action":"fail","Package":"p","Elapsed":0.1}`,
-		), "linux", false, 1, "--- FAIL: TestBad", []string{"\nFailed: p TestBad\n"}},
-		{"a line too long is an error", nil, strings.Repeat("x", 17*1024*1024), "linux", false, 1, "",
+		), "linux", false, false, 1, "--- FAIL: TestBad", []string{"\nFailed: p TestBad\n"}},
+		{"a line too long is an error", nil, strings.Repeat("x", 17*1024*1024), "linux", false, false, 1, "",
 			[]string{"slowtests: bufio.Scanner: token too long"}},
-		{"an unknown flag is a usage error", []string{"-nope"}, "", "linux", false, 2, "", []string{"flag provided but not defined"}},
-		{"help is no error", []string{"-h"}, "", "linux", false, 0, "", []string{"-max-elsewhere"}},
+		{"an unknown flag is a usage error", []string{"-nope"}, "", "linux", false, false, 2, "", []string{"flag provided but not defined"}},
+		{"help is no error", []string{"-h"}, "", "linux", false, false, 0, "", []string{"-max-elsewhere"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			args := append([]string{"-baseline", filepath.Join(t.TempDir(), "none.json")}, c.args...)
 			var stdout, stderr strings.Builder
-			if code := run(args, strings.NewReader(c.in), &stdout, &stderr, c.goos, c.ci); code != c.code {
+			if code := run(args, strings.NewReader(c.in), &stdout, &stderr, c.goos, c.ci, c.beside); code != c.code {
 				t.Fatalf("exit %d, want %d\nstdout: %s\nstderr: %s", code, c.code, stdout.String(), stderr.String())
 			}
 			if !strings.Contains(stdout.String(), c.stdout) {

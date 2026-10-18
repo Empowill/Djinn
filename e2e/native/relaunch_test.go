@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -118,7 +117,11 @@ func TestNativeWebProcessEnds(t *testing.T) {
 		t.Fatalf("web processes %v; want one", web)
 	}
 	// Only the web process of this test's own djinn, by its PID.
-	if err := syscall.Kill(web[0], syscall.SIGKILL); err != nil {
+	p, err := os.FindProcess(web[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Kill(); err != nil { // SIGKILL; syscall.Kill does not build on Windows.
 		t.Fatal(err)
 	}
 	logs(t, log, `msg="window: the web process of the page ended" reason=crashed`,

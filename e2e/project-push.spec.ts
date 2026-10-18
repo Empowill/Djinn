@@ -1,7 +1,7 @@
 // A push from the projects panel shows what it does (W489): its sync line spins while its push check runs (a check
 // that waits for a file), the same after a reload, then shows a check mark and leaves once the remote holds the
 // branch, its counts following the remote. Nothing is said as a toast. No model is called.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

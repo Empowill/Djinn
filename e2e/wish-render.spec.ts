@@ -1,7 +1,7 @@
 // End-to-end render performance on a real-size wish (W174): measures opening the wish, switching between tabs
 // (tasks, decisions, journal, blocks), opening a task, and change arrival over the live watch stream.
 // Run alone with: go tool task e2e -- e2e/wish-render.spec.ts
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

@@ -2,7 +2,7 @@
 // lead's terminal (LeadService.Tell), about the wish, as the developer would. Refused while the lead does not run, the
 // pill keeps the text and offers to start the lead. The lead is the fake claude of global-setup.ts, which repeats what
 // it reads: no model is called.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
@@ -24,6 +24,10 @@ function djinn(...args: string[]): string {
 
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
+// Before too: the events earlier specs of this djinn left waiting for the lead make Djinn type a reminder in its
+// terminal, which reopens the lead recorded below, and the refusal expected first never comes (W246: red with the
+// workers' order). dropLead hangs the lead up and acknowledges them.
+test.beforeEach(dropLead);
 test.afterEach(dropLead);
 
 test("a word written in the pill reaches the lead's terminal", async ({

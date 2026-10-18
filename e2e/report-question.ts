@@ -1,6 +1,6 @@
 // The shape of a real wish (Dew, 12/10/2026): a worker's report, and an open question whose long Markdown context
-// says what happened and names the report, with a djinn command in an option. The screens test
-// (tests/screens.test.mjs) and the e2e case (e2e/question-report.spec.ts) both read it.
+// says what happened and names the report, with a djinn command in an option. The screens tests
+// (tests/wish-question.test.mjs, tests/wish-view.test.mjs) and the e2e case (e2e/question-report.spec.ts) read it.
 
 export const REPORT_TITLE = "Payroll for acme: feasibility";
 

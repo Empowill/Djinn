@@ -4,7 +4,7 @@
 // a row of its own, over none of the toolbar's controls.
 // Screenshots, dark and light, go to test-results/e2e/update-banner-*.png.
 import { type MessageInitShape, create, toBinary } from "@bufbuild/protobuf";
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import path from "node:path";
 
 import {

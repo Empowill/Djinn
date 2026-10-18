@@ -11,6 +11,7 @@ import (
 // TestStopContext covers stopContext and stopWhy: djinn up's context stops at SIGINT, SIGTERM or a call, and the first
 // source is the one the log says (decision Q84).
 func TestStopContext(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name string
 		stop func(chan os.Signal, func(string))

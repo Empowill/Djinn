@@ -4,7 +4,7 @@
 // painting. A window at rest (not focused) pauses even those, never its data (W290). The worker is the fake agent: no
 // model is called.
 // Run alone with: go tool task e2e -- e2e/idle-frames.spec.ts
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

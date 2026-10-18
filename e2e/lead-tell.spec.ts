@@ -3,7 +3,7 @@
 // terminal, then Enter, "Djinn: N events waiting, run djinn lead watch", once the lead runs; the lead's watch prints
 // it. Answered in another wish while the lead's watch waits, it goes to that watch at once, and nothing is typed. The
 // lead is a fake claude on djinn's PATH that says each line it reads.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFile, execFileSync } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";

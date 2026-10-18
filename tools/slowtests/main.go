@@ -4,10 +4,11 @@
 // of its tests did (its test binary ended in the middle: a panic in a goroutine after its test ended, an os.Exit, a
 // kill) gets its raw output printed, and the tests it was running named.
 //
-// Linux is the reference: where the push check runs, -max fails. On CI (when CI is set) or on another system where a
-// process costs ten times more (a test spawning git takes 0.7 s on Linux and 7 s on the Windows runner, the same
-// test), a test over -max is reported and fails only over twice -max (or -max-elsewhere): a test that hangs or grows
-// tenfold is still caught there.
+// Linux is the reference: where the push check runs, -max fails. On CI (when CI is set), beside the other parts of
+// go tool task test (DJINN_TEST_BESIDE, set by tools/testall: the end-to-end tests' browsers share the cores) or on
+// another system where a process costs ten times more (a test spawning git takes 0.7 s on Linux and 7 s on the Windows
+// runner, the same test), a test over -max is reported and fails only over twice -max (or -max-elsewhere): a test that
+// hangs or grows tenfold is still caught there. `go tool task test-go` alone, on Linux, holds the strict limit.
 //
 //	go test -json ./... | go run ./tools/slowtests
 //
@@ -39,14 +40,11 @@ const (
 // allowed are the tests that may take longer than -max, by package and name ("github.com/…/cmd/djinn TestX"), each
 // with why it cannot be fast. Keep it empty.
 var allowed = map[string]string{
-	// Real djinn up processes: each test starts one or two full djinn up servers and CLI commands.
-	"github.com/empowill/djinn/cmd/djinn TestUpdateFromRelease":                                     "two real djinn up processes, one restarting into the other",
-	"github.com/empowill/djinn/cmd/djinn TestCrashReopensTheLeads":                                  "two real djinn up processes across a kill",
-	"github.com/empowill/djinn/cmd/djinn TestUpdate":                                                "two real djinn up processes across a restart",
-	"github.com/empowill/djinn/cmd/djinn TestWishResume":                                            "a real djinn up process and a djinn CLI invocation",
-	"github.com/empowill/djinn/cmd/djinn TestCrashResumesTheWorkers":                                "two real djinn up processes across a kill",
-	"github.com/empowill/djinn/cmd/djinn TestWindowTerminalOpensInAProject":                         "a real djinn up process and a djinn CLI invocation",
-	"github.com/empowill/djinn/cmd/djinn TestCrossVet":                                              "runs cross-platform go vet for Windows and Darwin targets across all dependencies on cold cache",
+	// Real djinn up processes. TestRunUp, TestRunUpdate, TestCarryLead and TestRunOpen start theirs in parallel subtests,
+	// whose time go test does not count in their parent's: only the tests below start them in turn.
+	"github.com/empowill/djinn/cmd/djinn TestLeadNote": "three real djinn up processes in turn, across a kill and a stop",
+	// Behind the crossvet tag, out of go tool task test: CI's Linux job runs it (.github/workflows/ci.yml).
+	"github.com/empowill/djinn/cmd/djinn TestCrossVet":                                              "go vet of cmd/djinn and its tests for Windows and Darwin, every dependency type-checked on a cold build cache (48 s)",
 	"github.com/empowill/djinn/internal/testx/bigwish TestSizes":                                    "generates a 10x wish with thousands of tasks and events",
 	"github.com/empowill/djinn/internal/harness TestRestartResumesInOrder":                          "starts 7 sequential workers across a simulated restart",
 	"github.com/empowill/djinn/internal/harness TestEnvFailureReplayOnVersionChange":                "starts 5 sequential harness instances across simulated version upgrades",
@@ -223,11 +221,13 @@ func reportTotal(out, errOut io.Writer, res result, baselinePath string, updateB
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, runtime.GOOS, os.Getenv("CI") != ""))
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, runtime.GOOS, os.Getenv("CI") != "",
+		os.Getenv("DJINN_TEST_BESIDE") != ""))
 }
 
-// run reads go test -json from in as the flags of args say, on goos and on CI or not, and returns the exit code.
-func run(args []string, in io.Reader, stdout, stderr io.Writer, goos string, ci bool) int {
+// run reads go test -json from in as the flags of args say, on goos, on CI or not, beside the other parts of go tool
+// task test or not, and returns the exit code.
+func run(args []string, in io.Reader, stdout, stderr io.Writer, goos string, ci, beside bool) int {
 	flags := flag.NewFlagSet("slowtests", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	limit := flags.Duration("max", defaultMax, "the longest a top-level test may take, on Linux")
@@ -250,14 +250,17 @@ func run(args []string, in io.Reader, stdout, stderr io.Writer, goos string, ci 
 	baselinePath := findBaseline(*baselineFlag)
 	reportTotal(stdout, stderr, res, baselinePath, *updateBaseline)
 
-	fail := failLimit(goos, ci, *limit, *elsewhere)
+	fail := failLimit(goos, ci || beside, *limit, *elsewhere)
 	if len(res.slow) > 0 {
 		fmt.Fprintf(stderr, "\nThese tests take longer than %s: make them fast (a fake clock, a short tick, a wait on an event "+
 			"instead of a sleep), or say why in tools/slowtests/main.go (allowed).\n", *limit)
 		if fail != *limit {
 			where := goos
-			if ci {
+			switch {
+			case ci:
 				where = "CI (" + goos + ")"
+			case beside:
+				where = goos + " beside the end-to-end tests"
 			}
 			fmt.Fprintf(stderr, "On %s they are reported; only one over %s fails (Linux is the reference).\n",
 				where, fail)
@@ -276,8 +279,9 @@ func run(args []string, in io.Reader, stdout, stderr io.Writer, goos string, ci 
 	return 0
 }
 
-// failLimit is how long a test may take before it fails on goos: limit on Linux outside CI (where the push check
-// runs), twice limit on Linux CI, and elsewhere (at least twice limit on CI) on the other systems.
+// failLimit is how long a test may take before it fails on goos: limit on Linux alone and outside CI (the reference
+// measure), twice limit on Linux CI or beside the end-to-end tests (ci), and elsewhere (at least twice limit on CI)
+// on the other systems.
 func failLimit(goos string, ci bool, limit, elsewhere time.Duration) time.Duration {
 	if goos == "linux" {
 		if ci {

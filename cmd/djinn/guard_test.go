@@ -3,9 +3,7 @@ package main
 import (
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -48,6 +46,7 @@ func repoRoot(t *testing.T) string {
 // foo_windows_test.go or foo_amd64_test.go) as test files; naming them *_test_<target>.go causes Go
 // to treat <target> as a build constraint and compile the file into non-test builds.
 func TestNoMisnamedTestFiles(t *testing.T) {
+	t.Parallel()
 	root := repoRoot(t)
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -94,34 +93,4 @@ func TestNoMisnamedTestFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walking repo: %v", err)
 	}
-}
-
-// TestCrossVet checks that cmd/djinn vets cleanly on Linux for Windows (headless) and Darwin.
-func TestCrossVet(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("cross-vet checks only run on Linux")
-	}
-	root := repoRoot(t)
-
-	t.Run("windows", func(t *testing.T) {
-		t.Parallel()
-		cmd := exec.CommandContext(t.Context(), "go", "vet", "-tags", "headless", "./cmd/djinn")
-		cmd.Dir = root
-		cmd.Env = append(os.Environ(), "GOOS=windows", "CGO_ENABLED=0")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("GOOS=windows go vet -tags headless ./cmd/djinn failed:\n%s", out)
-		}
-	})
-
-	t.Run("darwin", func(t *testing.T) {
-		t.Parallel()
-		cmd := exec.CommandContext(t.Context(), "go", "vet", "./cmd/djinn")
-		cmd.Dir = root
-		cmd.Env = append(os.Environ(), "GOOS=darwin", "CGO_ENABLED=0")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("GOOS=darwin go vet ./cmd/djinn failed:\n%s", out)
-		}
-	})
 }

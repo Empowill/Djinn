@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -64,12 +65,12 @@ func formatBytes(b uint64) string {
 	return fmt.Sprintf("%.1f GiB", float64(b)/(1<<30))
 }
 
-func runMachineCommands(args []string) int {
+func runMachineCommands(args []string, stdout, stderr io.Writer) int {
 	var project, addr string
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
 		case a == "-h" || a == "--help":
-			cli.MachineCommands.WriteHelp(os.Stdout)
+			cli.MachineCommands.WriteHelp(stdout)
 			return 0
 		case (a == "--project" || a == "--addr") && i+1 < len(args):
 			i++
@@ -83,8 +84,8 @@ func runMachineCommands(args []string) int {
 		case strings.HasPrefix(a, "--addr="):
 			addr = strings.TrimPrefix(a, "--addr=")
 		default:
-			fmt.Fprintf(os.Stderr, "error: unexpected argument %q\n", a)
-			cli.MachineCommands.WriteHelp(os.Stderr)
+			fmt.Fprintf(stderr, "error: unexpected argument %q\n", a)
+			cli.MachineCommands.WriteHelp(stderr)
 			return 2
 		}
 	}
@@ -92,17 +93,17 @@ func runMachineCommands(args []string) int {
 	if addr == "" {
 		home, err := ui.Home()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
+			fmt.Fprintln(stderr, "error:", err)
 			return 1
 		}
 		if addr, err = server.ReadAddr(home); err != nil {
-			fmt.Fprintln(os.Stderr, "error: no djinn answers: run djinn up first")
+			fmt.Fprintln(stderr, "error: no djinn answers: run djinn up first")
 			return 1
 		}
 	}
 	client, base, err := cli.Dial(addr)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(stderr, "error:", err)
 		return 1
 	}
 
@@ -112,17 +113,17 @@ func runMachineCommands(args []string) int {
 	cmdClient := machinev1connect.NewCommandServiceClient(client, base)
 	res, err := cmdClient.List(ctx, connect.NewRequest(&machinev1.CommandServiceListRequest{Project: project}))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(stderr, "error:", err)
 		return 1
 	}
 
 	costs := res.Msg.GetCosts()
 	if len(costs) == 0 {
-		fmt.Fprintln(os.Stdout, "no commands measured yet")
+		fmt.Fprintln(stdout, "no commands measured yet")
 		return 0
 	}
 
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "PROJECT\tCOMMAND\tRUNS\tHELD P50\tHELD P95\tHELD LAST\tWAIT P50\tWAIT P95\tWAIT LAST\tCPU\tPEAK MEM\tEXIT\tSPARKLINE")
 	for _, c := range costs {
 		proj := c.GetProjectName()

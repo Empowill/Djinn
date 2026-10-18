@@ -2,7 +2,7 @@
 // only a reload showed it waiting for the developer again. A revision reaches the card at once, by the investigator
 // or by the lead from the command line, in the wish and in the flying carpet. The store's own regression tests
 // (tests/data-store.test.mjs) replay the reads that crossed the revision, and a watch back after a restart.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

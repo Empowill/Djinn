@@ -1,7 +1,7 @@
 // Creation UI owns this spec. Requests are intercepted so these checks never launch a model, write a wish,
 // or depend on automatic title generation. The page itself is served by the isolated Djinn test server.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./test";
 import {
   Allowance,
   LeadServiceGetResponseSchema,

@@ -1,7 +1,7 @@
 // A file's diff past 2 000 lines comes by chunks: the window shows the first one, then asks for the next as the reader
 // scrolls near its end, never the whole file at once. The task's worker is the fake agent: no model is called. While
 // it waits, the spec commits a file of 6 000 lines in the task's worktree: its diff is 6 006 lines, four chunks.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

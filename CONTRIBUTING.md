@@ -130,15 +130,24 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 - Task, buf and the protobuf generators come with the Go module.
 
 **Everyday commands** (`go tool task --list` for all)
-- `go tool task test`: every test (Go, interface, end-to-end). Parts: `test-go`, `test-ui`, `e2e`;
-  `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 10 s on Linux,
-  the reference where the push check runs, and over twice the limit on CI (or 15 s elsewhere), where a test over 10 s
-  is reported (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
+- `go tool task test`: every test (Go, interface, end-to-end), the three parts at once (`tools/testall`), each
+  writing its output to `test-results/<part>.log`: a green part's output prints as it ends, a red one's at the end,
+  and the last line names the parts that failed. Parts: `test-go`, `test-ui`, `e2e`;
+  `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` alone fails on any Go test over 10 s on Linux,
+  the reference measure; beside the other parts (`test`, where the browsers share the cores), on CI, or elsewhere
+  (15 s), a test over 10 s is reported and fails only over twice the limit (`tools/slowtests`): a fake clock, a short
+  tick, a wait on an event, never a sleep that waits for luck.
   `slowtests` watches the suite's total time (sum and wall clock) against a repository baseline
   (`tools/slowtests/baseline.json`), warning without failing if the total grows past the baseline by over 25%
   (update with `go run ./tools/slowtests -update-baseline`). Its last line names the tests that failed: a red
   push check keeps only the end of the output. The `e2e` suite watches its wall clock against
   `e2e/baseline.json` similarly (update with `UPDATE_BASELINE=1`).
+  - **One djinn per Playwright worker.** `e2e/global-setup.ts` starts as many `djinn up --browser` as workers, a
+    data folder each; a worker's specs share theirs, in the order Playwright gives them. Three workers on a
+    developer's machine, two on CI (`DJINN_E2E_WORKERS` or `-- --workers N` moves it). A spec imports `test` and
+    `expect` from `e2e/test.ts`: its fixture fails a test that leaves an active wish it made or an open question it
+    asked, pausing or withdrawing them for the specs after. A spec makes its own state (`djinn wish make --json`
+    through `bin/djinn-e2e`) and deletes or pauses it before it ends.
   - **Windows runs what targets the system.** Linux and macOS run every test; the Windows job sets
     `DJINN_TEST_SYSTEM_ONLY=1`, which skips the tests marked portable: `testx.Portable(t)` first in a Go test
     (`internal/testx`), `portable()` in an end-to-end spec (`e2e/portable.ts`). Mark a test portable when it pays
@@ -184,7 +193,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   the side panel's Grimoire shows it as a page of the window, its navigation in the window's language. The Command line tab has nothing to regenerate by hand: `djinn up` and `go tool task docs`
   fill it from the command tree djinn is built from (`internal/cli`), so a method added to a proto, or a flag, is
   there at once. A command written by hand in `cmd/djinn` takes its entry in `cli.Builtins`, which is its `--help`
-  too; `TestEveryCommandIsDocumented` fails on one that runs without it.
+  too; `TestHandwritten` fails on one that runs without it.
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
 - `go tool task dev`: the page reloads as you edit React, djinn rebuilds and restarts as you edit Go; in the browser,
   on its own data (`bin/dev-home`). Open the URL it prints.
