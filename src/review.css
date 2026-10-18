@@ -35,6 +35,12 @@
   --lamp-lo: #d29f25;
   --lamp-edge: #b8891c;
   --lamp-ink: #1c1300;
+  /* A worker's kind (L18, L25): emerald for code, rose for a mockup, violet for an investigation, gold for the lead. */
+  --k-work: #43c29f;
+  --k-mock: #f28bd2;
+  --k-inv: #b39cff;
+  --k-lead: #e2b33c;
+  --k-ink: #0e0e10;
   --measure: 72ch;
 }
 html[data-theme="light"] {
@@ -73,6 +79,11 @@ html[data-theme="light"] {
   --lamp-hi: #f1d071;
   --lamp-lo: #d4a020;
   --lamp-edge: #b08415;
+  --k-work: #146b5a;
+  --k-mock: #a3307c;
+  --k-inv: #6a3fd4;
+  --k-lead: #805c00;
+  --k-ink: #ffffff;
 }
 
 /* The status language. */
@@ -97,6 +108,18 @@ html[data-theme="light"] {
 /* A failed merge an agent fixes: gold as what waits, a wrench and its words say no one waits for you. */
 .tone-fixing {
   --tone: var(--st-waiting);
+}
+.kind-work {
+  --kind: var(--k-work);
+}
+.kind-mock {
+  --kind: var(--k-mock);
+}
+.kind-inv {
+  --kind: var(--k-inv);
+}
+.kind-lead {
+  --kind: var(--k-lead);
 }
 .tone-interrupted {
   --tone: var(--st-interrupted);
@@ -1527,6 +1550,9 @@ button.glance-line:hover .name {
 .option-plan svg {
   flex: none;
 }
+.option-plan:is(.kind-work, .kind-mock, .kind-inv) svg {
+  color: var(--kind);
+}
 .option-plan-text {
   min-width: 0;
   overflow: hidden;
@@ -1540,9 +1566,24 @@ button.glance-line:hover .name {
 .review .question-card textarea {
   width: 100%;
   max-width: var(--measure);
+  max-height: 20rem;
   margin-top: 0;
   background: var(--surface-raised);
   border-color: var(--line-strong);
+}
+.note-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.note-count {
+  align-self: flex-end;
+  color: var(--muted);
+  font: 500 0.75rem/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.note-count.near {
+  color: var(--st-waiting);
 }
 .question-actions {
   display: flex;
@@ -1560,6 +1601,16 @@ html[data-theme="light"] .review .button.accent.lamp-rub {
   color: var(--lamp-ink);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 45%, transparent);
   font-weight: 650;
+}
+.review
+  .button.accent.lamp-rub:is(.kind-work, .kind-mock, .kind-inv, .kind-lead),
+html[data-theme="light"]
+  .review
+  .button.accent.lamp-rub:is(.kind-work, .kind-mock, .kind-inv, .kind-lead) {
+  background: var(--kind);
+  border-color: var(--kind);
+  color: var(--k-ink);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
 }
 .review .button.secondary.lamp-enlighten,
 html[data-theme="light"] .review .button.secondary.lamp-enlighten {
@@ -1608,11 +1659,36 @@ html[data-theme="light"] .review .question-card.gesture-rub {
 .review .lamp-enlighten.is-pressed {
   transform: translateY(1px) scale(0.96);
 }
-.review .button.accent.lamp-rub.is-pressed,
-html[data-theme="light"] .review .button.accent.lamp-rub.is-pressed {
+.review
+  .button.accent.lamp-rub.is-pressed:not(
+    :is(.kind-work, .kind-mock, .kind-inv, .kind-lead)
+  ),
+html[data-theme="light"]
+  .review
+  .button.accent.lamp-rub.is-pressed:not(
+    :is(.kind-work, .kind-mock, .kind-inv, .kind-lead)
+  ) {
   background: linear-gradient(var(--lamp-lo), var(--lamp));
   box-shadow: inset 0 0.125rem 0.25rem
     color-mix(in srgb, var(--lamp-ink) 40%, transparent);
+}
+.review
+  .button.accent.lamp-rub.is-pressed:is(
+    .kind-work,
+    .kind-mock,
+    .kind-inv,
+    .kind-lead
+  ),
+html[data-theme="light"]
+  .review
+  .button.accent.lamp-rub.is-pressed:is(
+    .kind-work,
+    .kind-mock,
+    .kind-inv,
+    .kind-lead
+  ) {
+  box-shadow: inset 0 0.125rem 0.25rem
+    color-mix(in srgb, var(--k-ink) 40%, transparent);
 }
 .review .button.secondary.lamp-enlighten.is-pressed,
 html[data-theme="light"] .review .button.secondary.lamp-enlighten.is-pressed {

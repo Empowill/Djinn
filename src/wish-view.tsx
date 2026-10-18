@@ -47,10 +47,13 @@ import {
 import { message } from "./data/client";
 import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
 import {
+  type ReadState,
   useClients,
   useData,
   useDjinn,
   usePausable,
+  useReadState,
+  useRetryRead,
   useWishDetail,
 } from "./data/djinn";
 import {
@@ -96,6 +99,7 @@ import { ifritOut, litIfrits } from "./data/ifrit";
 import { type Entry, isLog, journal } from "./data/journal";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
+import { ReadingLine } from "./reading-line";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
 import { AttentionBar, attentionOf, useReach } from "./attention";
 import { ModalFrame } from "./frame";
@@ -212,6 +216,28 @@ export function WishView({
     [opening],
   );
   const detail = useWishDetail(wish.id, initialKinds);
+  const questionsState = useReadState(Change.QUESTION, wish.id);
+  const tasksState = useReadState(Change.TASK, wish.id);
+  const blocksState = useReadState(Change.BLOCK, wish.id);
+  const tilasmsState = useReadState(Change.TILASM, wish.id);
+  const retryQuestions = useRetryRead(Change.QUESTION, wish.id);
+  const retryTasks = useRetryRead(Change.TASK, wish.id);
+  const retryBlocks = useRetryRead(Change.BLOCK, wish.id);
+  const retryTilasms = useRetryRead(Change.TILASM, wish.id);
+  const decisionsState: ReadState =
+    questionsState === "failed" ||
+    blocksState === "failed" ||
+    tasksState === "failed"
+      ? "failed"
+      : questionsState === "slow" ||
+          blocksState === "slow" ||
+          tasksState === "slow"
+        ? "slow"
+        : questionsState === "reading" ||
+            blocksState === "reading" ||
+            tasksState === "reading"
+          ? "reading"
+          : "ready";
   const projects = useMemo(
     () => projectsOf(wish, allProjects),
     [wish, allProjects],
@@ -274,6 +300,8 @@ export function WishView({
   // Nothing waits for you and nothing runs in the wish: its questions column shows the Djinn asleep (empty-art.tsx).
   const calm =
     detail.loaded &&
+    questionsState === "ready" &&
+    tasksState === "ready" &&
     open.length +
       waitingLead.length +
       digging.length +
@@ -1285,12 +1313,33 @@ export function WishView({
           <ViewTabs
             view={view}
             main={t("tabs.wish")}
-            tasks={workCount(detail.tasks)}
-            review={reviewLeft(review)}
-            decisions={decisionsTotal ?? decisions.length}
-            tilasms={detail.tilasms.length}
+            tasks={
+              tasksState === "ready" || detail.tasks.length > 0
+                ? workCount(detail.tasks)
+                : null
+            }
+            review={
+              tasksState === "ready" || detail.tasks.length > 0
+                ? reviewLeft(review)
+                : null
+            }
+            decisions={
+              decisionsState === "ready" ||
+              (decisionsTotal ?? decisions.length) > 0
+                ? (decisionsTotal ?? decisions.length)
+                : null
+            }
+            tilasms={
+              tilasmsState === "ready" || detail.tilasms.length > 0
+                ? detail.tilasms.length
+                : null
+            }
             drafts={detail.drafts.length}
-            agents={forAgents.length}
+            agents={
+              blocksState === "ready" || forAgents.length > 0
+                ? forAgents.length
+                : null
+            }
             onView={(to) => show(to)}
           />
           {view === "tilasms" && (
@@ -1303,18 +1352,28 @@ export function WishView({
               holds={detail.holds}
               sent={detail.sent}
               reads={detail.reads}
+              sends={detail.sends}
               tasks={detail.tasks}
+              readState={tilasmsState}
+              onRetry={retryTilasms}
               onToast={onToast}
             />
           )}
           {view === "agents" && (
-            <AgentBlocks blocks={forAgents} codes={codes} />
+            <AgentBlocks
+              blocks={forAgents}
+              codes={codes}
+              readState={blocksState}
+              onRetry={retryBlocks}
+            />
           )}
           {view === "review" && (
             <ReviewTab
               rows={review}
               fold={wish.id}
               codes={codes}
+              readState={tasksState}
+              onRetry={retryTasks}
               onReview={handleReview}
             />
           )}
@@ -1324,20 +1383,31 @@ export function WishView({
               total={decisionsTotal}
               noLead={checkNoLead}
               focus={focus}
+              readState={decisionsState}
+              onRetry={() => {
+                retryQuestions();
+                retryBlocks();
+                retryTasks();
+              }}
               onTask={handleTaskFocus}
               onMore={handleDecisionsMore}
             />
           )}
           {view === "tasks" &&
             (detail.tasks.length === 0 ? (
-              detail.loaded ? (
+              tasksState === "ready" ? (
                 <div role="tabpanel">
                   <EmptyState art="tasks">{t("wish.no_tasks")}</EmptyState>
                 </div>
               ) : (
-                <p className="muted-text" role="tabpanel">
-                  {t("common.loading")}
-                </p>
+                <div role="tabpanel">
+                  <ReadingLine
+                    kind={layout === "tree" ? "graph" : "tasks"}
+                    state={tasksState}
+                    size="card-r"
+                    onRetry={retryTasks}
+                  />
+                </div>
               )
             ) : tree ? (
               <TaskTree
@@ -1369,6 +1439,8 @@ export function WishView({
                 fold={wish.id}
                 showDone={showDone}
                 showDrafts={showDrafts}
+                readState={tasksState}
+                onRetry={retryTasks}
                 renderAzima={renderAzima}
                 renderAzimas={(groups) => (
                   <RankedAzimaList
@@ -1394,6 +1466,10 @@ export function WishView({
                   groups={questionGroup}
                   land={land}
                   noLead={noLead(leadRecord)}
+                  readState={questionsState}
+                  wishCode={wish.title}
+                  eyePerch
+                  onRetry={retryQuestions}
                   onAnswer={handleQuestionAnswer}
                   onEnlighten={handleQuestionEnlighten}
                   onMove={setMovingQuestion}
@@ -1430,6 +1506,8 @@ export function WishView({
                 wishes={glanceWish}
                 tasksOf={allDetails}
                 all={allWishes}
+                readState={tasksState}
+                onRetry={retryTasks}
                 onOpenTask={(task) => to(`task-${task.id}`)}
               />
 
@@ -1437,6 +1515,8 @@ export function WishView({
                 <Journal
                   wish={wish}
                   blocks={detail.blocks}
+                  blocksState={blocksState}
+                  onRetryBlocks={retryBlocks}
                   onMore={() => {
                     if (store) void store.loadMore(wish.id, Change.BLOCK);
                   }}
@@ -1617,10 +1697,14 @@ export function WaitingTasks({
 function Journal({
   wish,
   blocks,
+  blocksState = "ready",
+  onRetryBlocks,
   onMore,
 }: {
   wish: Wish;
   blocks: Block[];
+  blocksState?: ReadState;
+  onRetryBlocks?: () => void;
   onMore?: () => void;
 }) {
   const clients = useClients();
@@ -1684,6 +1768,17 @@ function Journal({
         )}
       </div>
       {shown && error && <p className="muted-text">{error}</p>}
+      {shown && showCommands && blocksState === "ready" && !exp && !error && (
+        <ReadingLine kind="commands" state="reading" size="card-r" />
+      )}
+      {shown && entries.length === 0 && blocksState !== "ready" && (
+        <ReadingLine
+          kind="agents"
+          state={blocksState}
+          size="card-r"
+          onRetry={onRetryBlocks}
+        />
+      )}
       {shown && entries.length > 0 && (
         <table className="compact-table journal-list">
           <tbody>

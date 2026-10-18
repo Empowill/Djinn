@@ -659,58 +659,45 @@ test("the journal of configuration changes says each change, and marks seen thos
   assert.doesNotMatch(none, /notice-detail/);
 });
 
-test("the Summoning Circle lists each project with its agent, worker model and question investigator pickers, where each value comes from, and Take back when set in your file", async () => {
-  const p1 = { id: "p1", name: "djinn", git: true, directory: "/tmp/djinn" };
-  const p2 = { id: "p2", name: "lamp", git: true, directory: "/tmp/lamp" };
-  const shownByProject = {
-    p1: {
-      project: p1,
-      repositoryFile: "/tmp/djinn/.agents/settings.txtpb",
-      developerFile: "/home/you/.config/djinn/projects/p1/settings.txtpb",
-      settings: [
-        {
-          name: "provider",
-          value: "antigravity",
-          source: s.SettingSource.DEVELOPER,
-        },
-        {
-          name: "model",
-          value: "Gemini 4 Argon (High)",
-          source: s.SettingSource.DEVELOPER,
-        },
-        {
-          name: "question_model",
-          value: "gemini-3.8-flash-high",
-          source: s.SettingSource.DEVELOPER,
-        },
-      ],
+test("the Summoning Circle lists one global row per kind of worker, shows each model once by label, stores and sends canonical model IDs, and defaults non-lead rows to Same as lead", async () => {
+  const initialRows = [
+    {
+      kind: s.WorkerKind.LEAD,
+      provider: s.Provider.CLAUDE,
+      model: "claude-sonnet-5-5",
     },
-    p2: {
-      project: p2,
-      repositoryFile: "/tmp/lamp/.agents/settings.txtpb",
-      developerFile: "/home/you/.config/djinn/projects/p2/settings.txtpb",
-      settings: [
-        {
-          name: "provider",
-          value: "claude",
-          source: s.SettingSource.REPOSITORY,
-        },
-        {
-          name: "model",
-          value: "",
-          source: s.SettingSource.DEFAULT,
-        },
-        {
-          name: "question_model",
-          value: "",
-          source: s.SettingSource.DEFAULT,
-        },
-      ],
+    {
+      kind: s.WorkerKind.INVESTIGATION,
+      provider: s.Provider.UNSPECIFIED,
+      model: "",
     },
-  };
+    { kind: s.WorkerKind.MOCKUP, provider: s.Provider.UNSPECIFIED, model: "" },
+    { kind: s.WorkerKind.IFRIT, provider: s.Provider.UNSPECIFIED, model: "" },
+    {
+      kind: s.WorkerKind.WORK,
+      provider: s.Provider.ANTIGRAVITY,
+      model: "Gemini 4 Argon (High)",
+    },
+    {
+      kind: s.WorkerKind.CORRECTION,
+      provider: s.Provider.UNSPECIFIED,
+      model: "",
+    },
+    { kind: s.WorkerKind.REVIEW, provider: s.Provider.UNSPECIFIED, model: "" },
+    {
+      kind: s.WorkerKind.QUESTION,
+      provider: s.Provider.UNSPECIFIED,
+      model: "",
+    },
+  ];
+  const calls = [];
   const transport = s.createRouterTransport(({ service }) => {
-    service(s.ProjectService, {
-      show: (req) => shownByProject[req.project],
+    service(s.LeadService, {
+      getCircle: () => ({ rows: initialRows }),
+      setCircle: (req) => {
+        calls.push(req);
+        return { rows: initialRows };
+      },
     });
   });
   const djinn = s.createDjinn(transport, 10);
@@ -718,56 +705,116 @@ test("the Summoning Circle lists each project with its agent, worker model and q
     h(
       s.DjinnProvider,
       { djinn },
-      h(
-        "div",
-        null,
-        h(s.SummoningProject, { project: p1, initialShown: shownByProject.p1 }),
-        h(s.SummoningProject, { project: p2, initialShown: shownByProject.p2 }),
-      ),
+      h(s.SummoningCircle, { initialRows, onClose() {} }),
     ),
   );
-  // Project 1 has developer settings: shows "your file" with hover path, Argon option selected, and Take back button.
-  assert.match(html, /<strong>djinn<\/strong>/);
-  assert.match(
-    html,
-    /title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span>/,
-  );
-  assert.match(
-    html,
-    /<option value="antigravity" selected="">Antigravity<\/option>/,
-  );
-  assert.match(
-    html,
-    /<option value="Gemini 4 Argon \(High\)" selected="">Gemini 4 Argon \(High\)<\/option>/,
-  );
-  assert.match(
-    html,
-    /<button type="button" class="button small secondary"[^>]*>Take back<\/button>/,
-  );
-  // Project 2 has team/default settings: shows "the team's file" and "Djinn's default", and no Take back button in its card.
-  const p2Card = html.slice(html.indexOf('aria-label="lamp"'));
-  assert.match(
-    p2Card,
-    /title="\/tmp\/lamp\/\.agents\/settings\.txtpb">the team(?:'|&#x27;)s file<\/span>/,
-  );
-  assert.match(p2Card, />Djinn(?:'|&#x27;)s default<\/span>/);
-  assert.match(
-    p2Card,
-    /<option value="" selected="">Agent(?:'|&#x27;)s default \(claude-sonnet-5-5\)<\/option>/,
-  );
-  assert.match(p2Card, /<option value="" selected="">Same as worker<\/option>/);
-  assert.doesNotMatch(p2Card, />Take back<\/button>/);
-  assert.doesNotMatch(html, /button accent/);
-  assert.equal(s.shortModel("Gemini 4 Argon (High)"), "gemini 4 argon");
 
-  // Empty state when there are no projects.
-  const empty = s.renderToStaticMarkup(
-    h(
-      s.DjinnProvider,
-      { djinn },
-      h(s.SummoningCircle, { projects: [], onClose() {} }),
-    ),
+  // All 8 worker kinds appear in order, global to Djinn.
+  const expectedLabels = [
+    "Djinn (lead)",
+    "Investigation",
+    "Mockup",
+    "Ifrit",
+    "Work",
+    "Merge correction",
+    "Merge review",
+    "Question investigator",
+  ];
+  const rowChunks = html
+    .split('<div class="setting-row summoning-row">')
+    .slice(1);
+  assert.equal(rowChunks.length, expectedLabels.length);
+  expectedLabels.forEach((label, idx) => {
+    assert.match(
+      rowChunks[idx],
+      new RegExp(`<strong>${label.replace(/[()]/g, "\\$&")}<\\/strong>`),
+    );
+  });
+
+  // Lead row does not offer "Same as lead" and selects its canonical model ID.
+  assert.doesNotMatch(rowChunks[0], /Same as lead/);
+  assert.match(
+    rowChunks[0],
+    /<option value="claude-sonnet-5-5" selected="">Claude Sonnet 5\.5<\/option>/,
   );
-  assert.match(empty, /Summoning Circle/);
-  assert.match(empty, /No project yet\. Add one first\./);
+
+  // Non-lead rows offer "Same as lead" (value="") as the first option and default to it when unset.
+  for (const idx of [1, 2, 3, 5, 6, 7]) {
+    assert.match(
+      rowChunks[idx],
+      /<option value="" selected="">Same as lead<\/option>/,
+    );
+  }
+
+  // Work row had legacy label "Gemini 4 Argon (High)": normalized to canonical ID "gemini-4-argon-high", shown once by label.
+  assert.match(
+    rowChunks[4],
+    /<option value="gemini-4-argon-high" selected="">Gemini 4 Argon \(High\)<\/option>/,
+  );
+
+  // Every dropdown shows each model at most once (unique values and unique labels), and every non-empty value is a canonical ID without spaces.
+  for (let i = 0; i < rowChunks.length; i++) {
+    const opts = [
+      ...rowChunks[i].matchAll(
+        /<option value="([^"]*)"[^>]*>([^<]+)<\/option>/g,
+      ),
+    ];
+    const values = opts.map((m) => m[1]);
+    const labels = opts.map((m) => m[2]);
+    assert.equal(
+      new Set(values).size,
+      values.length,
+      `row ${expectedLabels[i]} has duplicate option values: ${values.join(", ")}`,
+    );
+    assert.equal(
+      new Set(labels).size,
+      labels.length,
+      `row ${expectedLabels[i]} has duplicate option labels: ${labels.join(", ")}`,
+    );
+    for (const v of values) {
+      assert.doesNotMatch(
+        v,
+        /\s/,
+        `row ${expectedLabels[i]} option value "${v}" must not contain spaces`,
+      );
+    }
+  }
+
+  // Canonical IDs are sent when a model or "Same as lead" is chosen in the circle.
+  const circle = live(s.SummoningCircle, {
+    initialRows,
+    onChoose: async (req) => {
+      calls.push(req);
+      return initialRows.map((r) =>
+        r.kind === req.kind
+          ? { kind: req.kind, provider: req.provider, model: req.model }
+          : r,
+      );
+    },
+    onClose() {},
+  });
+  const selects = circle.all("select");
+  assert.equal(selects.length, 8);
+  // Choose "Gemini 4 Argon (High)" on Investigation (index 1) -> sends canonical ID "gemini-4-argon-high" and Provider.ANTIGRAVITY.
+  selects[1].props.onChange({ target: { value: "gemini-4-argon-high" } });
+  await circle.settle();
+  assert.deepEqual(calls[0], {
+    kind: s.WorkerKind.INVESTIGATION,
+    provider: s.Provider.ANTIGRAVITY,
+    model: "gemini-4-argon-high",
+  });
+  // Choose "Same as lead" on Work (index 4) -> sends empty model and Provider.UNSPECIFIED.
+  circle.all("select")[4].props.onChange({ target: { value: "" } });
+  await circle.settle();
+  assert.deepEqual(calls[1], {
+    kind: s.WorkerKind.WORK,
+    provider: s.Provider.UNSPECIFIED,
+    model: "",
+  });
+  assert.equal(
+    s.canonicalModelId("Gemini 4 Argon (High)"),
+    "gemini-4-argon-high",
+  );
+  assert.equal(s.canonicalModelId("sonnet"), "claude-sonnet-5-5");
+  assert.equal(s.shortModel("Gemini 4 Argon (High)"), "gemini 4 argon");
 });

@@ -143,6 +143,7 @@ function OverFrame({
       reads={detail.reads}
       tasks={detail.tasks}
       hold={detail.holds.find((h) => h.tilasmId === tilasm.id)}
+      sends={detail.sends.find((s) => s.tilasmId === tilasm.id)}
       comments={comments}
       onCommentError={(error) => onToast(message(error))}
     />

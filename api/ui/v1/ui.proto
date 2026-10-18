@@ -149,6 +149,8 @@ message Settings {
   // The theme the window shows, as the last page to say it did (UiService.View), kept across restarts: each batch of
   // the driven lead speaks in its tone (decision Q36). Unset: no page said it yet, and the Djinn stays plain.
   ShownTheme shown_theme = 7;
+  // Summoning Circle: one global model choice per kind of worker across all projects.
+  repeated plan.v1.WorkerSeat circle = 8;
 }
 
 // ShownTheme is the theme a page shows: the system's resolved by the page, never "system".

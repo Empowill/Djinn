@@ -98,7 +98,7 @@ message TilasmComment {
   // Short code within the tilasm, like C3: L42 C3 names it.
   string code = 4 [(buf.validate.field).string.pattern = "^C[0-9]{1,4}$"];
   // What the developer wrote.
-  string text = 5 [(buf.validate.field).string.max_len = 4000];
+  string text = 5 [(buf.validate.field).string.max_len = 8000];
   // Where it is; unset: the whole tilasm.
   TilasmAnchor anchor = 6;
   // The version it was written on.
@@ -231,6 +231,27 @@ enum TilasmHoldReason {
   TILASM_HOLD_REASON_LAUNCHED = 3;
   // A send waits for the Djinn to read it: only the send buttons wait.
   TILASM_HOLD_REASON_SENT = 4;
+}
+
+// TilasmSends is what an iterate or a launch send on a tilasm does now, computed on every read from the open question
+// that links it, never stored: the window labels and tints its buttons from it.
+message TilasmSends {
+  // The tilasm.
+  string tilasm_id = 1;
+  // The open question that links the tilasm, by code (Q01); empty when none does.
+  string question = 2;
+  // The option an iterate send starts a mockup round on (A, B, C, D, yes); empty when an iterate send goes to the lead.
+  string iterate_option = 3;
+  // The round of the mockup that option is on now (1 on v1), and how many rounds it allows; 0 when iterate_option is empty.
+  int32 round = 4;
+  int32 rounds = 5;
+  // The recommended option a launch send without a comment answers with (A, B, C, D, yes); empty when it answers none.
+  string launch_option = 6;
+  // What that recommended option's plan starts when it launches by itself (work, mockup, investigation); empty when it
+  // has no plan or waits for the lead.
+  string launch_kind = 7;
+  // The title of that recommended option's plan; empty when it has none.
+  string launch_title = 8;
 }
 
 // AnchorStatus is how a comment's anchor was found again in a later version.
@@ -415,7 +436,7 @@ message TilasmServiceSendCommentsRequest {
     not_in: [0]
   }];
   // A comment on the whole tilasm, written above the buttons: it leaves with the drafts.
-  string text = 3 [(buf.validate.field).string.max_len = 4000];
+  string text = 3 [(buf.validate.field).string.max_len = 8000];
 }
 
 message TilasmServiceSendCommentsResponse {
@@ -445,7 +466,7 @@ message TilasmServicePutCommentRequest {
     (buf.validate.field).string.uuid = true
   ];
   // What the developer wrote.
-  string text = 3 [(buf.validate.field).string.max_len = 4000];
+  string text = 3 [(buf.validate.field).string.max_len = 8000];
   // Where it is; unset: the whole tilasm. An edit keeps its anchor unless one is given.
   TilasmAnchor anchor = 4;
   // The comment it follows up, by code (C2).
@@ -490,6 +511,8 @@ message TilasmServiceDraftsResponse {
   repeated TilasmComment sent = 3;
   // The sends the Djinn read, by tilasm then send; one that waits for it is not in it.
   repeated TilasmSendRead reads = 4;
+  // What a send on each tilasm of the wish does now, computed from the open question that links it.
+  repeated TilasmSends sends = 5;
 }
 
 message TilasmServiceCommentsRequest {

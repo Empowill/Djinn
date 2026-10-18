@@ -8,9 +8,11 @@ import { memo, useState } from "react";
 import type { Task } from "../gen/ts/plan/v1/plan_pb";
 import { type ReviewRow, reviewedMark, rowReviewed } from "./data/review";
 import { when } from "./data/format";
+import type { ReadState } from "./data/store";
 import { TaskDiffView } from "./diff";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
+import { ReadingLine } from "./reading-line";
 import { Fold } from "./task-tabs";
 
 import "./review-tab.css";
@@ -22,12 +24,16 @@ export function ReviewTab({
   rows,
   fold,
   codes,
+  readState = "ready",
+  onRetry,
   onReview,
 }: {
   rows: readonly ReviewRow[];
   // The key of the fold: the wish's id.
   fold: string;
   codes: ReadonlyMap<string, string>;
+  readState?: ReadState;
+  onRetry?: () => void;
   // Checks a task reviewed, or takes the mark off.
   onReview: (task: Task, remove: boolean) => Promise<unknown>;
 }) {
@@ -64,9 +70,17 @@ export function ReviewTab({
       aria-labelledby="view-tab-review"
       className="review-tab"
     >
-      {rows.length === 0 && (
-        <EmptyState art="review">{t("review.none")}</EmptyState>
-      )}
+      {rows.length === 0 &&
+        (readState !== "ready" ? (
+          <ReadingLine
+            kind="review"
+            state={readState}
+            size="card-r"
+            onRetry={onRetry}
+          />
+        ) : (
+          <EmptyState art="review">{t("review.none")}</EmptyState>
+        ))}
       {left.length > 0 && <ul className="review-list">{left.map(row)}</ul>}
       <Fold
         id={`reviewed:${fold}`}

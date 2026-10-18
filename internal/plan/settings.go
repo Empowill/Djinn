@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -226,6 +227,16 @@ type Settings struct {
 func CanReadOnly(p planv1.Provider) bool {
 	switch p {
 	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_FAKE:
+		return true
+	default:
+		return false
+	}
+}
+
+// CanIfrit tells whether a provider can run an ifrit (keeps its input open between turns).
+func CanIfrit(p planv1.Provider) bool {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_ANTIGRAVITY, planv1.Provider_PROVIDER_FAKE:
 		return true
 	default:
 		return false
@@ -464,6 +475,9 @@ func readSettingsFilesConfig(home string, project *planv1.Project, config Config
 	for _, f := range []settingsRead{{path: repoFile, team: true}, {path: devFile}} {
 		if f.path == "" {
 			continue
+		}
+		if !f.team {
+			migrateDeveloperSettingsFile(home, f.path)
 		}
 		read, name := f.path, f.path
 		if f.team {
@@ -746,7 +760,7 @@ func IsClaudeModel(m string) bool {
 // IsAntigravityModel reports whether m is a model identifier of Antigravity.
 func IsAntigravityModel(m string) bool {
 	m = strings.ToLower(strings.TrimSpace(m))
-	return m == "gemini" || strings.HasPrefix(m, "gemini-") || strings.HasPrefix(m, "gemini ") ||
+	return m == "gemini" || strings.HasPrefix(m, "gemini-") ||
 		strings.HasPrefix(m, "gemini/") ||
 		strings.HasPrefix(m, "google/") ||
 		strings.Contains(m, ".gemini-") ||
@@ -831,68 +845,119 @@ func ValidateQuestionModel(workerProvider, questionProvider planv1.Provider, mod
 	return ValidateProviderModel(workerProvider, model)
 }
 
-// SaveDeveloperDefaults writes the developer's default provider, model, and question_model for project into their
-// settings file in home, or clears them when req.Unset is true, validating provider and models before writing.
-func SaveDeveloperDefaults(home string, project *planv1.Project, req *planv1.ProjectServiceSetDefaultsRequest) error {
-	if project == nil {
-		return errors.New("project is missing")
+var devModelLine = regexp.MustCompile(`(?m)^[ \t]*(provider|model|question_provider|question_model)[ \t]*:.*(?:\r?\n|$)`)
+
+// migrateDeveloperSettingsFile reads any legacy per-project provider/model choices from devFile once as the starting
+// value of the Summoning Circle in home, normalizing labels to canonical model IDs, then drops them from devFile.
+func migrateDeveloperSettingsFile(home, devFile string) {
+	if home == "" || devFile == "" {
+		return
 	}
-	repo, _, _, _ := loadSettings(home, project)
-	_, err := saveDeveloper(home, project.GetId(), func(s *planv1.ProjectSettings) error {
-		if req.GetUnset() {
-			s.Provider = nil
-			s.Model = nil
-			s.QuestionModel = nil
-			return nil
+	b, err := os.ReadFile(devFile)
+	if err != nil {
+		return
+	}
+	if line, _ := secretIn(b); line > 0 {
+		return
+	}
+	if line, _ := removedKeyIn(b); line > 0 {
+		return
+	}
+	s := &planv1.ProjectSettings{}
+	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
+		parts := normalizeInstallQuestions.FindSubmatch(match)
+		if len(parts) == 3 {
+			prefix := parts[1]
+			val := strings.ToUpper(string(parts[2]))
+			return append(prefix, []byte("INSTALL_QUESTIONS_"+val)...)
 		}
-		if req.Provider != nil {
-			p := req.GetProvider()
-			if !ValidWorkerProvider(p) {
-				return fmt.Errorf("provider %s cannot be a project's default: choose claude, codex or antigravity", providerName(p))
-			}
-			prev := s.GetProvider()
-			s.Provider = p.Enum()
-			if req.Model == nil {
-				s.Model = nil
-			}
-			if req.QuestionModel == nil && prev != p {
-				s.QuestionModel = nil
-			}
+		return match
+	})
+	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
+	if err := opts.Unmarshal(normalized, s); err != nil {
+		return
+	}
+	hasWorker := s.Provider != nil || s.Model != nil
+	hasQuestion := s.QuestionProvider != nil || s.QuestionModel != nil
+	if !hasWorker && !hasQuestion {
+		return
+	}
+
+	var workerProvider planv1.Provider
+	var workerModel string
+	if hasWorker {
+		workerProvider = s.GetProvider()
+		workerModel = NormalizeCircleModel(s.GetModel())
+		if workerProvider == planv1.Provider_PROVIDER_UNSPECIFIED && workerModel != "" {
+			workerProvider = ProviderForCircleModel(workerModel)
 		}
-		if req.Model != nil {
-			m := req.GetModel()
-			if m == "" && repo.GetModel() == "" {
-				s.Model = nil
+		if workerProvider != planv1.Provider_PROVIDER_UNSPECIFIED && workerModel == "" {
+			workerModel = DefaultCircleModel(workerProvider)
+		}
+		if !ValidWorkerProvider(workerProvider) || ValidateProviderModel(workerProvider, workerModel) != nil {
+			return
+		}
+	}
+
+	var qProvider planv1.Provider
+	var qModel string
+	if hasQuestion {
+		qProvider = s.GetQuestionProvider()
+		qModel = NormalizeCircleModel(s.GetQuestionModel())
+		if qProvider == planv1.Provider_PROVIDER_UNSPECIFIED && qModel != "" {
+			qProvider = ProviderForCircleModel(qModel)
+		}
+		if qProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+			if CanReadOnly(workerProvider) {
+				qProvider = workerProvider
 			} else {
-				s.Model = &m
+				qProvider = planv1.Provider_PROVIDER_CLAUDE
 			}
 		}
-		if req.QuestionModel != nil {
-			qm := req.GetQuestionModel()
-			if qm == "" && repo.GetQuestionModel() == "" {
-				s.QuestionModel = nil
-			} else {
-				s.QuestionModel = &qm
+		if qModel == "" {
+			qModel = DefaultCircleModel(qProvider)
+		}
+		if !CanReadOnly(qProvider) || ValidateProviderModel(qProvider, qModel) != nil {
+			return
+		}
+	}
+
+	_ = changeSettings(home, func(settings *uiv1.Settings) error {
+		setIfMissing := func(kind planv1.WorkerKind, p planv1.Provider, m string) {
+			for _, row := range settings.Circle {
+				if row.GetKind() == kind && (row.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || row.GetModel() != "") {
+					return
+				}
+			}
+			settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
+				Kind:     kind,
+				Provider: p,
+				Model:    m,
+			})
+		}
+		if hasWorker {
+			for _, kind := range []planv1.WorkerKind{
+				planv1.WorkerKind_WORKER_KIND_INVESTIGATION,
+				planv1.WorkerKind_WORKER_KIND_MOCKUP,
+				planv1.WorkerKind_WORKER_KIND_IFRIT,
+				planv1.WorkerKind_WORKER_KIND_WORK,
+				planv1.WorkerKind_WORKER_KIND_CORRECTION,
+				planv1.WorkerKind_WORKER_KIND_REVIEW,
+			} {
+				if kind == planv1.WorkerKind_WORKER_KIND_IFRIT && !CanIfrit(workerProvider) {
+					continue
+				}
+				setIfMissing(kind, workerProvider, workerModel)
 			}
 		}
-		resolved := ResolveSettings(repo, s)
-		if !ValidWorkerProvider(resolved.Provider) {
-			return fmt.Errorf("provider %s cannot be a project's default: choose claude, codex or antigravity", providerName(resolved.Provider))
-		}
-		if err := ValidateProviderModel(resolved.Provider, resolved.Model); err != nil {
-			return err
-		}
-		if req.QuestionModel != nil {
-			if err := ValidateQuestionModel(resolved.Provider, resolved.QuestionProvider, req.GetQuestionModel()); err != nil {
-				return fmt.Errorf("question_model: %w", err)
-			}
-		}
-		if err := ValidateQuestionModel(resolved.Provider, resolved.QuestionProvider, resolved.QuestionModel); err != nil {
-			return fmt.Errorf("question_model: %w", err)
+		if hasQuestion {
+			setIfMissing(planv1.WorkerKind_WORKER_KIND_QUESTION, qProvider, qModel)
 		}
 		return nil
 	})
-	return err
+
+	stripped := devModelLine.ReplaceAll(b, nil)
+	_ = fsx.WriteAtomic(devFile, stripped, 0o600)
 }
 
 // ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.

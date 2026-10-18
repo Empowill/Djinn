@@ -56,7 +56,7 @@ const (
 	digestLineMax = 160
 	// digestNoteMax is how many characters of an event's note a digest prints under its line: an answer's note
 	// whole, a final note up to a screen or two.
-	digestNoteMax = 2000
+	digestNoteMax = 8000
 	// digestTitleMax is how many characters of a wish's title name it in a digest.
 	digestTitleMax = 40
 	// leadEventsKept is how long an acknowledged event stays in the store.

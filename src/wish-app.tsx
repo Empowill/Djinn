@@ -15,9 +15,13 @@ import {
   useData,
   useDjinn,
   useMachine,
+  useReadState,
+  useRetryRead,
   useStore,
   useWishDetails,
 } from "./data/djinn";
+import type { ReadState } from "./data/store";
+import { ReadingLine } from "./reading-line";
 import { importWish } from "./data/exchange";
 import { followPresence } from "./data/presence";
 import {
@@ -275,8 +279,12 @@ export function WishApp() {
       ? undefined
       : (chosen ?? pendingWish ?? wishes[0]);
   // Until the wishes are read, no page is chosen: the home page would show, then give way to the flying carpet or a wish
-  // with a header of its own, and a gauge focused or measured in between would be gone. A failed read shows home.
-  const settling = !loaded && !error;
+  // with a header of its own, and a gauge focused or measured in between would be gone.
+  const wishesState = useReadState("wishes");
+  const projectsState = useReadState("projects");
+  const retryWishes = useRetryRead("wishes");
+  const retryProjects = useRetryRead("projects");
+  const settling = !loaded;
   const shownId = wish?.id ?? "";
   const newWishShortcut = platformShortcut("N");
   const sidebarShortcut = platformShortcut("\\");
@@ -501,7 +509,14 @@ export function WishApp() {
                 }}
               />
             ) : settling ? (
-              <div className="wish-view" aria-busy="true" />
+              <div className="wish-view" aria-busy={wishesState !== "failed"}>
+                <ReadingLine
+                  kind="wishes"
+                  state={wishesState}
+                  size="card-r"
+                  onRetry={retryWishes}
+                />
+              </div>
             ) : hourglass ? (
               <Hourglass
                 wishes={active}
@@ -528,7 +543,11 @@ export function WishApp() {
                 onSetupAgents={() => setModal("agents")}
               />
             ) : (
-              <HomePlaceholder projects={projects.length} />
+              <HomePlaceholder
+                projects={projects.length}
+                projectsState={projectsState}
+                onRetryProjects={retryProjects}
+              />
             )}
             <StatusBar live={live} error={error} />
           </LayoutGroup>
@@ -548,7 +567,7 @@ export function WishApp() {
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
         {modal === "summoning" && (
-          <SummoningCircle projects={projects} onClose={() => setModal(null)} />
+          <SummoningCircle onClose={() => setModal(null)} />
         )}
         {project && modal !== "make" && (
           <ProjectPanel
@@ -577,15 +596,32 @@ export function WishApp() {
 }
 
 // HomePlaceholder is the window with no wish at all: the lamp waits, for a first project, or for a first wish.
-function HomePlaceholder({ projects }: { projects: number }) {
+function HomePlaceholder({
+  projects,
+  projectsState = "ready",
+  onRetryProjects,
+}: {
+  projects: number;
+  projectsState?: ReadState;
+  onRetryProjects?: () => void;
+}) {
   return (
     <div className="wish-view">
       <PageHeader middle={<OperatingLoad />} />
       <div className="wish-home-placeholder">
         <h1>{t("home.title")}</h1>
-        <EmptyState art="home">
-          {projects ? t("home.no_wish") : t("home.no_project")}
-        </EmptyState>
+        {projectsState !== "ready" ? (
+          <ReadingLine
+            kind="projects"
+            state={projectsState}
+            size="card-r"
+            onRetry={onRetryProjects}
+          />
+        ) : (
+          <EmptyState art="home">
+            {projects ? t("home.no_wish") : t("home.no_project")}
+          </EmptyState>
+        )}
       </div>
     </div>
   );
@@ -594,14 +630,43 @@ function HomePlaceholder({ projects }: { projects: number }) {
 // StatusBar says whether the page follows djinn, how the machine is doing, quietly whether the network is down (W285),
 // and the gates held (HeldGates).
 function StatusBar({ live, error }: { live: boolean; error: string }) {
+  const store = useStore();
   const machine = useMachine();
   const gates = useData((s) => s.gates);
+  const everLive = useData((s) => s.everLive);
+  const wishes = useData((s) => s.wishes);
+  useData((s) => s);
   const down = date(machine?.networkDownSince);
+  const active = wishes.filter(isActive);
+  const wishesReady = store.readState("wishes") === "ready";
+  const tasksDone = active.filter(
+    (w) => store.readState(Change.TASK, w.id) === "ready",
+  ).length;
+  const failed = [
+    store.readState("wishes") === "failed" ? 1 : 0,
+    store.readState("projects") === "failed" ? 1 : 0,
+    ...active.flatMap((w) => [
+      store.readState(Change.TASK, w.id) === "failed" ? 1 : 0,
+      store.readState(Change.QUESTION, w.id) === "failed" ? 1 : 0,
+      store.readState(Change.BLOCK, w.id) === "failed" ? 1 : 0,
+    ]),
+  ].reduce((a, b) => a + b, 0);
+  const label = !live
+    ? everLive || error
+      ? t("status.reconnecting")
+      : t("status.connecting")
+    : failed > 0
+      ? t("status.failed", { count: failed })
+      : !wishesReady
+        ? t("reading.wishes")
+        : tasksDone < active.length
+          ? t("status.reading_of", { n: tasksDone, count: active.length })
+          : t("status.live");
   return (
     <footer className="app-statusbar">
       <span title={error || undefined}>
         <span className={`status-dot ${live ? "green" : "neutral"}`} />
-        {live ? t("status.live") : t("status.reconnecting")}
+        {label}
       </span>
       <span title={down ? t("status.network_down_hint") : undefined}>
         {machine &&

@@ -230,15 +230,14 @@ Djinn's default does. The project's configuration in the window does the same wi
 branch, which lists the remote's branches as your copy last fetched them (`djinn project branches <project>
 --reference`).
 
-`djinn project set-defaults <project> --provider <provider> --model <model> [--question-model <model>]` chooses the
-default provider and model of the project's new workers (and the model of its question investigators) for you: it
-validates the provider and models first (never writing a value the reader would refuse or a model of another provider),
-then writes `provider`, `model` and `question_model` in your own file (`--unset` takes your choice back so the team's
-file or Djinn's default applies again), and `djinn project show` reflects it at once. Both display names with spaces and
-parentheses (`"Gemini 4 Argon (High)"`) and identifiers (`"gemini-4-argon-high"`) are accepted in the file and on the
-command line, and passed to `agy` as `"Gemini 4 Argon (High)"`. The **Summoning Circle** in the window (below the
-Grimoire in the side panel, and at the top of each project's configuration) edits the same defaults, one row per
-project, with where each value comes from.
+The **Summoning Circle** in the window (below the Grimoire in the side panel; `djinn lead get-circle` and `djinn lead
+set-circle` on the command line) chooses the model for each kind of worker across all projects: Djinn (lead),
+investigation, mockup, ifrit, work, merge correction, merge review, and question investigator. Each dropdown shows each
+model once by its label (`"Gemini 4 Argon (High)"`) while storing and sending its canonical model identifier
+(`"gemini-4-argon-high"`, passed to `agy` as `"Gemini 4 Argon (High)"`). Every row except the lead defaults to **Same
+as lead**, following the lead's choice when it changes. Any legacy per-project `provider`, `model` or `question_model`
+in your developer settings file (`projects/<id>/settings.txtpb`) is migrated once into the Summoning Circle and dropped
+from the per-project file; `djinn task spawn --provider --model` remains the lead's per-task escape hatch.
 
 ## No secret, ever
 

@@ -266,7 +266,9 @@
               <article class="card word" id="word-workers">
                 <h3><a href="#task-and-worker">Workers</a></h3>
                 <p>
-                  An agent on one task, in its own worktree and branch. Send it an instruction, pause it, stop it. Stopping
+                  An agent on one task, in its own worktree and branch. Send it an instruction, pause it, stop it: on
+                  Antigravity, a message sent mid-turn waits for the next turn before it is marked received, and workers
+                  search with <code>rg -n</code> before reading narrow file slices so context stays below compaction. Stopping
                   Djinn interrupts workers, never loses them: the next start resumes each one in its own session, even while
                   the push checks are red. A planned task's card says why it waits only while it waits; once it starts, its
                   start says how long it waited and for what, and the waiting line above it turns grey. A worker
@@ -282,7 +284,8 @@
                 <p>
                   A short study or audit to agree fast: it goes before the work, takes a slot even on a full machine, reads
                   and runs everything, and ends in a tilasm and a question. Its code is never merged; at its time limit, Djinn
-                  asks it to publish what it has. <code>djinn task spawn &lt;wish&gt; --kind investigation</code>. A mockup
+                  asks it to publish what it has, and once its tilasm, question or block is published, a closing stream error
+                  still completes the task cleanly. <code>djinn task spawn &lt;wish&gt; --kind investigation</code>. A mockup
                   you judge is urgent work for your feedback instead: <code>--feedback</code>.
                 </p>
               </article>
@@ -290,15 +293,18 @@
                 <h3><a href="#question-and-move">Questions, and the lamp's rub</a></h3>
                 <p>
                   When the lead needs you, it asks: its options, and the one it recommends.
-                  <span class="chip">Rub the lamp</span> takes the option selected, the recommended one until you pick
-                  another, and a small worker turns the decision into tasks, or launches the one the option says it
-                  <span class="chip ghost">Launches</span>; <span class="chip ghost">Enlighten me</span> sends one to dig first, then revise
-                  the question. A revised question shows its current version only; <span class="chip ghost">Versions (3)</span>,
-                  in its corner, opens the earlier ones below it, to read. <span class="chip ghost">Sleep</span> puts one away until
-                  tasks are over, requests merged or a date comes; it then wakes first, checked by the Djinn. A worker's
-                  blocking question holds its task, which waits for you: your answer sends it back to work, with your
-                  decision, once a slot is free. An answered question is a decision: who took it, and the tasks it led to, stay in the
-                  Decisions tab.
+                  The answer button names what starts, in its colour (<span class="chip">Build</span>,
+                  <span class="chip ghost">Iterate · round 1/3</span>, <span class="chip ghost">Investigate</span> or
+                  <span class="chip ghost">To the lead</span>), for the option selected, the recommended one until you
+                  pick another; an option with a plan says what it starts (<span class="chip ghost">Builds:</span>,
+                  <span class="chip ghost">Iterates:</span> or <span class="chip ghost">Investigates:</span>);
+                  <span class="chip ghost">Enlighten me</span> sends a worker to dig first, then revise the question. A
+                  revised question shows its current version only; <span class="chip ghost">Versions (3)</span>, in its
+                  corner, opens the earlier ones below it, to read. <span class="chip ghost">Sleep</span> puts one away
+                  until tasks are over, requests merged or a date comes; it then wakes first, checked by the Djinn. A
+                  worker's blocking question holds its task, which waits for you: your answer sends it back to work, with
+                  your decision, once a slot is free. An answered question is a decision: who took it, and the tasks it
+                  led to, stay in the Decisions tab.
                 </p>
               </article>
               <article class="card word" id="word-push-strategy">
@@ -337,7 +343,8 @@
                 <p>
                   The engraved object that holds a power, origin of “talisman”: the material that explains a wish. A folder
                   with an <code>index.html</code> and its sources, kept on your machine, in its own tab, opened by a
-                  <code>djinn://</code> link from anywhere.
+                  <code>djinn://</code> link from anywhere. Comment any passage or element and send in one click with
+                  <span class="chip ghost">Iterate</span> or <span class="chip ghost">Launch</span>, in their colour.
                 </p>
               </article>
               <article class="card word" id="word-blocks">
@@ -352,7 +359,8 @@
                 <h3><a href="#restarts-and-updates">Nothing is lost</a></h3>
                 <p>
                   Every write is a transaction with its journal entry, durable through a power cut. A worker stopped by its
-                  usage limit waits for the reset, or for another account, then goes on. <code>djinn backup</code> copies it all, even running.
+                  usage limit waits for the reset, or for another account, then goes on; a per-minute rate or TPM limit waits
+                  a short minute-scale backoff without spending its retry budget. <code>djinn backup</code> copies it all, even running.
                 </p>
               </article>
               <article class="card word" id="word-routing">
@@ -386,13 +394,13 @@
                 </p>
               </article>
               <article class="card word" id="word-summoning-circle">
-                <h3><a href="#project-and-settings">The Summoning Circle</a></h3>
+                <h3><a href="#the-window">The Summoning Circle</a></h3>
                 <p>
-                  Where you choose which spirit answers the call: one row per project in the side bar's panel (or at the top of
-                  each project's configuration) sets the default agent and model of new workers, and the model of question
-                  investigators, with where each value comes from. Your choice goes to your own file, never the repository's
-                  (<code>djinn project set-defaults &lt;project&gt; --provider … --model …</code>; <code>--unset</code> takes it
-                  back).
+                  Where you choose which spirit answers the call: one row per kind of worker (Djinn the lead, investigation,
+                  mockup, ifrit, work, merge correction, merge review, and question investigator), for all projects. Each
+                  dropdown lists each model once by its label and stores its model identifier; every row but the lead offers
+                  <strong>Same as lead</strong> by default, following the lead's choice when it changes
+                  (<code>djinn lead get-circle</code>, <code>djinn lead set-circle</code>).
                 </p>
               </article>
             </div>

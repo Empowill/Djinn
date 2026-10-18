@@ -153,7 +153,11 @@ func (h *Harness) healthOf(ctx context.Context, t *planv1.Task, now time.Time) (
 			l, _ := limitIn(t.GetError(), endOf(t, now))
 			reset := l.Until
 			if reset.IsZero() {
-				reset = endOf(t, now).Add(limitBackoff(0))
+				if l.PerMinute {
+					reset = endOf(t, now).Add(rateLimitBackoff(0))
+				} else {
+					reset = endOf(t, now).Add(limitBackoff(0))
+				}
 			}
 			health, _ := h.limitHealth(ctx, t, now, reset, why)
 			if health.GetState() == planv1.HealthState_HEALTH_STATE_LIMITED {

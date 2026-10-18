@@ -62,122 +62,244 @@ func (e *env) group(t *testing.T, task *planv1.Task, azima string) (*planv1.Task
 	return res.Msg.GetTask(), nil
 }
 
-// TestAzimasAreNeverScheduled: an azima is never started nor said to wait; work part of an azima that is not ready
-// runs at once, its azima under way; work that depends on an azima waits until it is marked done.
-func TestAzimasAreNeverScheduled(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	e := up(t, t.TempDir(), WithTick(5*time.Millisecond))
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	first := e.azima(t, wishID, "Lay the ground")
-	second := e.azima(t, wishID, "Build on it", first.GetCode())
-	if first.GetCode() != "T1" || second.GetCode() != "T2" || second.GetKind() != planv1.TaskKind_TASK_KIND_AZIMA ||
-		second.GetScheduled() || second.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
-		t.Fatalf("azimas: %v, %v", first, second)
-	}
-	// Part of T2, which waits for T1: the work runs all the same.
-	part := e.mustSpawn(t, wishID, "A part", "text part", &planv1.TaskServiceSpawnRequest{PartOf: "t2"})
-	if part.GetPartOf() != second.GetId() {
-		t.Fatalf("part of: %q", part.GetPartOf())
-	}
-	e.until(t, part.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-	got := e.get(t, second.GetId())
-	// Its only part done, nothing is left for Djinn: it is to validate.
-	if s := got.GetAzima(); s.GetState() != planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF || s.GetReady() || s.GetParts() != 1 ||
-		s.GetPartsDone() != 1 {
-		t.Errorf("T2 with its part done: %v", s)
-	}
-	if s := e.get(t, first.GetId()).GetAzima(); s.GetState() != planv1.AzimaState_AZIMA_STATE_OPEN || !s.GetReady() {
-		t.Errorf("T1: %v", s)
-	}
-
-	// Work that depends on T1 waits for it to be marked done.
-	after := e.mustSpawn(t, wishID, "After the ground", "text after", &planv1.TaskServiceSpawnRequest{DependsOn: []string{"T1"}})
-	if after.GetWaitReason() != "waits for the azima T1 to be done" {
-		t.Errorf("waits: %q", after.GetWaitReason())
-	}
-	if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: first.GetId(), Note: "laid"})); err != nil {
-		t.Fatal(err)
-	}
-	e.until(t, after.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-	if s := e.get(t, second.GetId()).GetAzima(); !s.GetReady() {
-		t.Errorf("T2 once T1 is done: %v", s)
-	}
-
-	// Through every pass, the scheduler never touched an azima: no worker, no reason, no event.
-	for _, ep := range []*planv1.Task{e.get(t, second.GetId())} {
-		if ep.GetStartTime() != nil || ep.GetWaitReason() != "" || ep.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
-			t.Errorf("azima %s: %v", ep.GetCode(), ep)
-		}
-		if events := e.storedEvents(t, ep.GetId()); len(events) != 0 {
-			t.Errorf("azima %s has events: %v", ep.GetCode(), events)
-		}
-	}
-	listed := e.list(t, wishID)
-	if i := slices.IndexFunc(listed, func(x *planv1.Task) bool { return x.GetId() == second.GetId() }); listed[i].GetAzima() == nil {
-		t.Error("the list leaves the azima's state out")
-	}
-	if _, err := e.tasks.Stop(ctx, connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: second.GetId()})); err == nil {
-		t.Error("an azima was stopped")
-	}
-
-	// What only a worker uses is refused for an azima; a task is part of an azima, never of work.
-	_, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Odd", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Prompt: "do it",
-	}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("an azima with a prompt: %v", err)
-	}
-	if _, err := e.spawnReq(t, wishID, "Odd", "text odd", &planv1.TaskServiceSpawnRequest{PartOf: part.GetCode()}); connect.CodeOf(err) != connect.CodeInvalidArgument ||
-		!strings.Contains(err.Error(), "not an azima") {
-		t.Errorf("part of work: %v", err)
-	}
+// writeAzimaFile writes a plan file of the azima code in dir's plan folder.
+func writeAzimaFile(t *testing.T, dir, name, code string) {
+	t.Helper()
+	writeFile(t, dir, filepath.Join(plan.PlanDir, name), "---\ncode: "+code+"\nstatus: in-progress\n---\n\n# "+code+" · "+name+"\n")
 }
 
-// TestGroupRefusesCycles: a task's azima is set and cleared after it was made; one that would close a cycle through
-// what the tasks depend on and the azimas they are part of is refused, naming it, and so is Depend's.
-func TestGroupRefusesCycles(t *testing.T) {
+func TestSpawn_Azima(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	// No slot: the work only waits, nothing runs.
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
-	wishID, _ := e.wish(t, gitRepo(t))
-	t1, t2 := e.azima(t, wishID, "One"), e.azima(t, wishID, "Two")
-	w := e.mustSpawn(t, wishID, "Work", "text work", &planv1.TaskServiceSpawnRequest{Later: true})
 
-	got, err := e.group(t, w, "T1")
-	if err != nil || got.GetPartOf() != t1.GetId() {
-		t.Fatalf("W1 part of T1: %v, %v", got, err)
-	}
-	// T1 waiting for its own part would close T1 → W1 → T1.
-	_, err = e.tasks.Depend(t.Context(), connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: t1.GetId(), DependsOn: []string{w.GetCode()}}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "T1 → W1 → T1") {
-		t.Errorf("T1 on W1: %v", err)
-	}
-	// T2 part of T1, then T1 waiting for T2: T1 → T2 → T1.
-	if _, err := e.group(t, t2, t1.GetId()); err != nil {
-		t.Fatal(err)
-	}
-	_, err = e.tasks.Depend(t.Context(), connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: t1.GetId(), DependsOn: []string{"T2"}}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "T1 → T2 → T1") {
-		t.Errorf("T1 on T2: %v", err)
-	}
-	// T1 part of T2 closes the same cycle, from the other side; an azima is never part of itself, nor of work.
-	if _, err := e.group(t, t1, "T2"); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no cycle") {
-		t.Errorf("T1 part of T2: %v", err)
-	}
-	if _, err := e.group(t, t1, "T1"); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("T1 part of itself: %v", err)
-	}
-	if _, err := e.group(t, t2, w.GetCode()); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("T2 part of work: %v", err)
-	}
-	// None takes the task out of its azima.
-	if got, err := e.group(t, w, ""); err != nil || got.GetPartOf() != "" {
-		t.Errorf("W1 out of T1: %v, %v", got, err)
-	}
+	// An azima is never started nor said to wait; work part of an azima that is not ready runs at once, its azima under
+	// way; work that depends on an azima waits until it is marked done.
+	t.Run("never scheduled and blocks dependents", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		e := up(t, t.TempDir(), WithTick(5*time.Millisecond))
+		wishID, _ := e.wish(t, gitRepo(t))
+
+		first := e.azima(t, wishID, "Lay the ground")
+		second := e.azima(t, wishID, "Build on it", first.GetCode())
+		if first.GetCode() != "T1" || second.GetCode() != "T2" || second.GetKind() != planv1.TaskKind_TASK_KIND_AZIMA ||
+			second.GetScheduled() || second.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
+			t.Fatalf("azimas: %v, %v", first, second)
+		}
+		// Part of T2, which waits for T1: the work runs all the same.
+		part := e.mustSpawn(t, wishID, "A part", "text part", &planv1.TaskServiceSpawnRequest{PartOf: "t2"})
+		if part.GetPartOf() != second.GetId() {
+			t.Fatalf("part of: %q", part.GetPartOf())
+		}
+		e.until(t, part.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+		got := e.get(t, second.GetId())
+		// Its only part done, nothing is left for Djinn: it is to validate.
+		if s := got.GetAzima(); s.GetState() != planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF || s.GetReady() || s.GetParts() != 1 ||
+			s.GetPartsDone() != 1 {
+			t.Errorf("T2 with its part done: %v", s)
+		}
+		if s := e.get(t, first.GetId()).GetAzima(); s.GetState() != planv1.AzimaState_AZIMA_STATE_OPEN || !s.GetReady() {
+			t.Errorf("T1: %v", s)
+		}
+
+		// Work that depends on T1 waits for it to be marked done.
+		after := e.mustSpawn(t, wishID, "After the ground", "text after", &planv1.TaskServiceSpawnRequest{DependsOn: []string{"T1"}})
+		if after.GetWaitReason() != "waits for the azima T1 to be done" {
+			t.Errorf("waits: %q", after.GetWaitReason())
+		}
+		if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: first.GetId(), Note: "laid"})); err != nil {
+			t.Fatal(err)
+		}
+		e.until(t, after.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+		if s := e.get(t, second.GetId()).GetAzima(); !s.GetReady() {
+			t.Errorf("T2 once T1 is done: %v", s)
+		}
+
+		// Through every pass, the scheduler never touched an azima: no worker, no reason, no event.
+		for _, ep := range []*planv1.Task{e.get(t, second.GetId())} {
+			if ep.GetStartTime() != nil || ep.GetWaitReason() != "" || ep.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
+				t.Errorf("azima %s: %v", ep.GetCode(), ep)
+			}
+			if events := e.storedEvents(t, ep.GetId()); len(events) != 0 {
+				t.Errorf("azima %s has events: %v", ep.GetCode(), events)
+			}
+		}
+		listed := e.list(t, wishID)
+		if i := slices.IndexFunc(listed, func(x *planv1.Task) bool { return x.GetId() == second.GetId() }); listed[i].GetAzima() == nil {
+			t.Error("the list leaves the azima's state out")
+		}
+		if _, err := e.tasks.Stop(ctx, connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: second.GetId()})); err == nil {
+			t.Error("an azima was stopped")
+		}
+
+		// What only a worker uses is refused for an azima; a task is part of an azima, never of work.
+		_, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, Title: "Odd", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Prompt: "do it",
+		}))
+		if connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("an azima with a prompt: %v", err)
+		}
+		if _, err := e.spawnReq(t, wishID, "Odd", "text odd", &planv1.TaskServiceSpawnRequest{PartOf: part.GetCode()}); connect.CodeOf(err) != connect.CodeInvalidArgument ||
+			!strings.Contains(err.Error(), "not an azima") {
+			t.Errorf("part of work: %v", err)
+		}
+	})
+
+	// A draft azima is spawned with --draft and an optional description; spawning a task part of a draft azima is
+	// refused, asking to open it first; spawning with --draft or --description for work is refused.
+	t.Run("draft and description", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, gitRepo(t))
+
+		res, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId:      wishID,
+			Title:       "Research spreading work",
+			Kind:        planv1.TaskKind_TASK_KIND_AZIMA,
+			Draft:       true,
+			Description: "Explore multi-machine setups.",
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		az := res.Msg.GetTask()
+		if !az.GetDraft() {
+			t.Errorf("draft = false, want true")
+		}
+		if az.GetDescription() != "Explore multi-machine setups." {
+			t.Errorf("description = %q", az.GetDescription())
+		}
+		got := e.get(t, az.GetId())
+		if got.GetAzima().GetState() != planv1.AzimaState_AZIMA_STATE_DRAFT {
+			t.Errorf("state = %v, want DRAFT", got.GetAzima().GetState())
+		}
+
+		// Spawning --part-of a draft is refused.
+		_, err = e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID,
+			Title:  "A part of draft",
+			PartOf: az.GetCode(),
+		}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "is a draft: open it first with djinn task open") {
+			t.Errorf("spawn part of draft err = %v", err)
+		}
+
+		// Spawning work with --draft or --description is refused.
+		_, err = e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID,
+			Title:  "Work draft",
+			Draft:  true,
+		}))
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "only an azima can be a draft or have a description") {
+			t.Errorf("spawn work draft err = %v", err)
+		}
+		_, err = e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId:      wishID,
+			Title:       "Work desc",
+			Description: "desc",
+		}))
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "only an azima can be a draft or have a description") {
+			t.Errorf("spawn work with description err = %v", err)
+		}
+	})
+}
+
+func TestGroup(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	// A task's azima is set and cleared after it was made; one that would close a cycle through what the tasks depend
+	// on and the azimas they are part of is refused, naming it, and so is Depend's.
+	t.Run("refuses cycles", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
+		wishID, _ := e.wish(t, gitRepo(t))
+		t1, t2 := e.azima(t, wishID, "One"), e.azima(t, wishID, "Two")
+		w := e.mustSpawn(t, wishID, "Work", "text work", &planv1.TaskServiceSpawnRequest{Later: true})
+
+		got, err := e.group(t, w, "T1")
+		if err != nil || got.GetPartOf() != t1.GetId() {
+			t.Fatalf("W1 part of T1: %v, %v", got, err)
+		}
+		// T1 waiting for its own part would close T1 → W1 → T1.
+		_, err = e.tasks.Depend(t.Context(), connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: t1.GetId(), DependsOn: []string{w.GetCode()}}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "T1 → W1 → T1") {
+			t.Errorf("T1 on W1: %v", err)
+		}
+		// T2 part of T1, then T1 waiting for T2: T1 → T2 → T1.
+		if _, err := e.group(t, t2, t1.GetId()); err != nil {
+			t.Fatal(err)
+		}
+		_, err = e.tasks.Depend(t.Context(), connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: t1.GetId(), DependsOn: []string{"T2"}}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "T1 → T2 → T1") {
+			t.Errorf("T1 on T2: %v", err)
+		}
+		// T1 part of T2 closes the same cycle, from the other side; an azima is never part of itself, nor of work.
+		if _, err := e.group(t, t1, "T2"); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no cycle") {
+			t.Errorf("T1 part of T2: %v", err)
+		}
+		if _, err := e.group(t, t1, "T1"); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("T1 part of itself: %v", err)
+		}
+		if _, err := e.group(t, t2, w.GetCode()); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("T2 part of work: %v", err)
+		}
+		// None takes the task out of its azima.
+		if got, err := e.group(t, w, ""); err != nil || got.GetPartOf() != "" {
+			t.Errorf("W1 out of T1: %v, %v", got, err)
+		}
+	})
+
+	// An azima with tasks part of it is not deleted, which are named; once they are regrouped it goes, and no task can
+	// be grouped into it any more. Its code is never given again, nor a deleted task's.
+	t.Run("azima with parts stays on delete", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
+		wishID, _ := e.wish(t, gitRepo(t))
+		t1 := e.azima(t, wishID, "Templates")
+		w1 := e.mustSpawn(t, wishID, "Work", "text work", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
+		w2 := e.mustSpawn(t, wishID, "More", "text more", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
+		del := func(task *planv1.Task) error {
+			_, err := e.tasks.Delete(ctx, connect.NewRequest(&planv1.TaskServiceDeleteRequest{TaskId: task.GetId()}))
+			return err
+		}
+
+		if err := del(t1); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "W1, W2") ||
+			!strings.Contains(err.Error(), "djinn task group") {
+			t.Fatalf("delete T1 with its parts: %v", err)
+		}
+		if e.get(t, t1.GetId()).GetCode() != "T1" {
+			t.Fatal("T1 is gone")
+		}
+		for _, w := range []*planv1.Task{w1, w2} {
+			if _, err := e.group(t, w, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := del(t1); err != nil {
+			t.Fatalf("delete T1 regrouped: %v", err)
+		}
+		if _, err := e.group(t, w1, "T1"); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("W1 into T1, gone: %v", err)
+		}
+
+		// T1 and W2 deleted: the next azima is T2, the next work W3.
+		if err := del(w2); err != nil {
+			t.Fatal(err)
+		}
+		if t2 := e.azima(t, wishID, "Releases"); t2.GetCode() != "T2" {
+			t.Errorf("the next azima is %s, want T2", t2.GetCode())
+		}
+		if w3 := e.mustSpawn(t, wishID, "Last", "text last", &planv1.TaskServiceSpawnRequest{Later: true}); w3.GetCode() != "W3" {
+			t.Errorf("the next work is %s, want W3", w3.GetCode())
+		}
+		wish, err := store.Get[*planv1.Wish](ctx, e.db, wishID)
+		if err != nil || !slices.Equal(wish.GetRetiredCodes(), []string{"T1", "W2"}) {
+			t.Errorf("retired %q, %v", wish.GetRetiredCodes(), err)
+		}
+	})
 }
 
 // TestMigrateAzimas: djinn up marks as azimas the T tasks a wish imported from its plan before tasks had kinds; a task
@@ -222,669 +344,573 @@ func TestMigrateAzimas(t *testing.T) {
 	}
 }
 
-// copyPlan copies the repository's plan files into a new project folder.
+// copyPlan writes a representative subset of plan files into a new project folder.
 func copyPlan(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, plan.PlanDir), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	names, err := filepath.Glob(filepath.Join("..", "..", plan.PlanDir, "*.md"))
-	if err != nil || len(names) == 0 {
-		t.Fatalf("plan files: %v, %v", names, err)
-	}
-	for _, name := range names {
-		data, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, plan.PlanDir, filepath.Base(name)), data, 0o600); err != nil {
-			t.Fatal(err)
-		}
+	for name, body := range map[string]string{
+		"6d8f8b2a-proto.md":            "---\nid: 01a1184f-cf1b-7a9e-90f4-3c596d8f8b2a\ncode: T02\nphase: 1\nstatus: done\n---\n\n# T02 · Proto\n\n## Done when\n- [x] Proto compiles\n",
+		"8e8d3d76-orchestrator.md":     "---\nid: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76\ncode: T07\nphase: 2\nstatus: in-progress\n---\n\n# T07 · The orchestrator\n\n## Done when\n- [ ] Real stream (needs: manual run)\n",
+		"13131313-ui.md":               "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5913131313\ncode: T13\nphase: 3\nstatus: done\nafter: T02\n---\n\n# T13 · UI\n\n## Done when\n- [x] Renders\n",
+		"14141414-store.md":            "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5914141414\ncode: T14\nphase: 1\nstatus: done\n---\n\n# T14 · Store\n\n## Done when\n- [x] Persists\n",
+		"18181818-git.md":              "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5918181818\ncode: T18\nphase: 2\nstatus: done\n---\n\n# T18 · Git\n\n## Done when\n- [x] Merges\n",
+		"20202020-polish.md":           "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5920202020\ncode: T20\nphase: 4\nstatus: in-progress\n---\n\n# T20 · Polish\n\n## Done when\n- [ ] E2E green (needs: display)\n",
+		"21212121-c1.md":               "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5921212121\ncode: T21\nwish: Collaborative Djinn\nstatus: open\n---\n\n# T21 · Collab 1\n",
+		"22222222-c2.md":               "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5922222222\ncode: T22\nwish: Collaborative Djinn\nstatus: open\n---\n\n# T22 · Collab 2\n",
+		"23232323-c3.md":               "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5923232323\ncode: T23\nwish: Collaborative Djinn\nstatus: open\n---\n\n# T23 · Collab 3\n",
+		"24242424-c4.md":               "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5924242424\ncode: T24\nwish: Collaborative Djinn\nstatus: open\n---\n\n# T24 · Collab 4\n",
+		"25252525-new1.md":             "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5925252525\ncode: T25\nphase: 4\nstatus: in-progress\n---\n\n# T25 · New one\n",
+		"26262626-new2.md":             "---\nid: 01a1184f-cf1b-7a9e-90f4-3c5926262626\ncode: T26\nphase: 4\nstatus: in-progress\n---\n\n# T26 · New two\n",
+		"9ac1c08b-djinn-stays-fast.md": "---\nid: 01a1184f-cf1b-7a9e-90f4-3c599ac1c08b\ncode: T27\nphase: 4\nstatus: in-progress\n---\n\n# T27 · Djinn stays fast\n\n## Done when\n- [ ] Cold start under 1 s\n",
+	} {
+		writeFile(t, dir, filepath.Join(plan.PlanDir, name), body)
 	}
 	return dir
 }
 
-// TestSyncPlan: on a copy of the repository's plan, the azimas a wish imported before kinds (T01…T20, without the
-// last ones) become azimas and keep the graph the store holds; the missing ones are made, one taking its file's after
-// line; every file then says what its azima depends on; a file's status closes and opens its azima; a second sync
-// changes nothing; the boxes that wait for a proof go on their azima; a file whose boxes are all checked closes its
-// azima whatever its status says, and is reported.
-func TestSyncPlan(t *testing.T) {
+func TestSync_Azimas(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	ctx := t.Context()
-	dir := copyPlan(t)
-	// Give one azima an unchecked box without needs so work > 0 is exercised.
-	t27Path := filepath.Join(dir, "plan", "9ac1c08b-djinn-stays-fast.md")
-	if data, err := os.ReadFile(t27Path); err == nil {
-		_ = os.WriteFile(t27Path, []byte(strings.Replace(string(data), " (needs: startup profiling)", "", 1)), 0o600)
-	}
-	files, err := plan.ReadAzimaFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files = slices.DeleteFunc(files, func(f plan.AzimaFile) bool { return f.Wish != "" })
-	newer := []string{"T25", "T26", "T27"}
-	// A made azima takes its file's after line, once.
-	t26 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T26" })
-	if _, err := plan.WriteAfter(filepath.Join(dir, files[t26].Path), []string{"T13"}); err != nil {
-		t.Fatal(err)
-	}
-	e := up(t, t.TempDir())
-	wishID, projectID := e.wish(t, dir)
-	// T01…T20, as a plan import left them before kinds: tasks with the files' ids, which no worker ran.
-	err = e.db.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
-			return err
+
+	// The azimas a wish imported before kinds become azimas and keep the graph the store holds; the missing ones are
+	// made, one taking its file's after line; every file then says what its azima depends on; a file's status closes
+	// and opens its azima; a second sync changes nothing; the boxes that wait for a proof go on their azima; a file
+	// whose boxes are all checked closes its azima whatever its status says, and is reported.
+	t.Run("imports and updates plan files", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		dir := copyPlan(t)
+		files, err := plan.ReadAzimaFiles(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = slices.DeleteFunc(files, func(f plan.AzimaFile) bool { return f.Wish != "" })
+		newer := []string{"T25", "T26", "T27"}
+		// A made azima takes its file's after line, once.
+		t26 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T26" })
+		if _, err := plan.WriteAfter(filepath.Join(dir, files[t26].Path), []string{"T13"}); err != nil {
+			t.Fatal(err)
+		}
+		e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
+		wishID, projectID := e.wish(t, dir)
+		// T02…T20, as a plan import left them before kinds: tasks with the files' ids, which no worker ran.
+		err = e.db.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
+				return err
+			}
+			for _, f := range files {
+				if slices.Contains(newer, f.Code) {
+					continue
+				}
+				err := tx.Put(&planv1.Task{
+					Id: f.ID, WishId: wishID, Code: f.Code, Title: f.Title, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+					CreateTime: timestamppb.Now(),
+				})
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := func(code string) string {
+			t.Helper()
+			i := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == code })
+			return files[i].ID
+		}
+		depend := func(code string, on ...string) {
+			t.Helper()
+			_, err := e.tasks.Depend(ctx, connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: id(code), DependsOn: on}))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		depend("T07", "T02", "T14")
+		depend("T20", "T02", "T07", "T13", "T14", "T18")
+		depend("T13")
+
+		sync := func() *planv1.PlanServiceSyncResponse {
+			t.Helper()
+			res, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return res.Msg
+		}
+		res := sync()
+		if !slices.Equal(res.GetMade(), newer) || len(res.GetAzimas()) != len(files) {
+			t.Fatalf("made %v, %d azimas", res.GetMade(), len(res.GetAzimas()))
+		}
+		byCode := map[string]*planv1.Task{}
+		codes := map[string]string{}
+		for _, task := range e.list(t, wishID) {
+			byCode[task.GetCode()], codes[task.GetId()] = task, task.GetCode()
+		}
+		after := func(code string) []string {
+			var out []string
+			for _, d := range byCode[code].GetDependsOn() {
+				out = append(out, codes[d])
+			}
+			slices.SortFunc(out, plan.CompareCodes)
+			return out
 		}
 		for _, f := range files {
-			if slices.Contains(newer, f.Code) {
-				continue
+			task := byCode[f.Code]
+			if task.GetKind() != planv1.TaskKind_TASK_KIND_AZIMA || task.GetPlanFile() != f.Path || task.GetPhase() != f.Phase ||
+				task.GetTitle() != f.Title || task.GetAzima() == nil {
+				t.Errorf("%s: %v", f.Code, task)
 			}
-			err := tx.Put(&planv1.Task{
-				Id: f.ID, WishId: wishID, Code: f.Code, Title: f.Title, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
-				CreateTime: timestamppb.Now(),
-			})
-			if err != nil {
-				return err
+			if done := task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE; done != f.Closes() ||
+				done && task.GetClosed().GetActor() != planv1.Closer_CLOSER_PLAN_FILE {
+				t.Errorf("%s: %v, its file says %s", f.Code, task.GetStatus(), f.Status)
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := func(code string) string {
-		t.Helper()
-		i := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == code })
-		return files[i].ID
-	}
-	depend := func(code string, on ...string) {
-		t.Helper()
-		_, err := e.tasks.Depend(ctx, connect.NewRequest(&planv1.TaskServiceDependRequest{TaskId: id(code), DependsOn: on}))
+		if got := after("T07"); !slices.Equal(got, []string{"T02", "T14"}) {
+			t.Errorf("T07 after %v", got)
+		}
+		if got := after("T20"); !slices.Equal(got, []string{"T02", "T07", "T13", "T14", "T18"}) {
+			t.Errorf("T20 after %v", got)
+		}
+		if got := after("T26"); !slices.Equal(got, []string{"T13"}) {
+			t.Errorf("T26 after %v", got)
+		}
+		again, err := plan.ReadAzimaFiles(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	depend("T07", "T02", "T14")
-	depend("T20", "T02", "T07", "T13", "T14", "T18")
-	depend("T13")
-
-	sync := func() *planv1.PlanServiceSyncResponse {
-		t.Helper()
-		res, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID}))
+		again = slices.DeleteFunc(again, func(f plan.AzimaFile) bool { return f.Wish != "" })
+		for _, f := range again {
+			if !slices.Equal(f.After, after(f.Code)) {
+				t.Errorf("%s says after %v, the store %v", f.Path, f.After, after(f.Code))
+			}
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "plan", "8e8d3d76-orchestrator.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		return res.Msg
-	}
-	res := sync()
-	if !slices.Equal(res.GetMade(), newer) || len(res.GetAzimas()) != len(files) {
-		t.Fatalf("made %v, %d azimas", res.GetMade(), len(res.GetAzimas()))
-	}
-	byCode := map[string]*planv1.Task{}
-	codes := map[string]string{}
-	for _, task := range e.list(t, wishID) {
-		byCode[task.GetCode()], codes[task.GetId()] = task, task.GetCode()
-	}
-	after := func(code string) []string {
-		var out []string
-		for _, d := range byCode[code].GetDependsOn() {
-			out = append(out, codes[d])
+		if !strings.HasPrefix(string(data), "---\nid: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76\ncode: T07\nphase: 2\nstatus: in-progress\nafter: T02 T14\n---\n\n# T07") {
+			t.Errorf("T07's file:\n%s", data)
 		}
-		slices.SortFunc(out, plan.CompareCodes)
-		return out
-	}
-	for _, f := range files {
-		task := byCode[f.Code]
-		if task.GetKind() != planv1.TaskKind_TASK_KIND_AZIMA || task.GetPlanFile() != f.Path || task.GetPhase() != f.Phase ||
-			task.GetTitle() != f.Title || task.GetAzima() == nil {
-			t.Errorf("%s: %v", f.Code, task)
+
+		// A second sync changes nothing.
+		if res := sync(); len(res.GetMade())+len(res.GetChanged())+len(res.GetWritten()) != 0 {
+			t.Errorf("second sync: %v", res)
 		}
-		// A file that says done, or checks every box, marks its azima done, closed by its file.
-		if done := task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE; done != f.Closes() ||
-			done && task.GetClosed().GetActor() != planv1.Closer_CLOSER_PLAN_FILE {
-			t.Errorf("%s: %v, its file says %s", f.Code, task.GetStatus(), f.Status)
-		}
-	}
-	// The graph is the store's, the made azima took its file's line.
-	if got := after("T07"); !slices.Equal(got, []string{"T02", "T14"}) {
-		t.Errorf("T07 after %v", got)
-	}
-	if got := after("T20"); !slices.Equal(got, []string{"T02", "T07", "T13", "T14", "T18"}) {
-		t.Errorf("T20 after %v", got)
-	}
-	if got := after("T26"); !slices.Equal(got, []string{"T13"}) {
-		t.Errorf("T26 after %v", got)
-	}
-	// Every file says what its azima depends on, none for T13.
-	again, err := plan.ReadAzimaFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	again = slices.DeleteFunc(again, func(f plan.AzimaFile) bool { return f.Wish != "" })
-	for _, f := range again {
-		if !slices.Equal(f.After, after(f.Code)) {
-			t.Errorf("%s says after %v, the store %v", f.Path, f.After, after(f.Code))
-		}
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "plan", "8e8d3d76-orchestrator.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(string(data), "---\nid: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76\ncode: T07\nphase: 2\nstatus: in-progress\nafter: T02 T14\n---\n\n# T07") {
-		t.Errorf("T07's file:\n%s", data[:200])
-	}
-
-	// A second sync changes nothing.
-	if res := sync(); len(res.GetMade())+len(res.GetChanged())+len(res.GetWritten()) != 0 {
-		t.Errorf("second sync: %v", res)
-	}
-	// The boxes waiting for a proof no worker can give go on the azima, those of every merged part; a box without needs
-	// leaves it none, as do boxes all checked (T02).
-	proofs, work := 0, 0
-	for _, f := range files {
-		got := byCode[f.Code].GetProofNeeds()
-		if len(got) != len(f.DoneWhen.Needs) || !slices.EqualFunc(got, f.DoneWhen.Needs, func(a, b *planv1.ProofNeed) bool { return proto.Equal(a, b) }) {
-			t.Errorf("%s needs %v, its file %v", f.Code, got, f.DoneWhen.Needs)
-		}
-		if len(got) > 0 {
-			proofs++
-		}
-		if f.DoneWhen.Unchecked > 0 && len(got) == 0 {
-			work++
-		}
-	}
-	if proofs == 0 || len(byCode["T02"].GetProofNeeds()) != 0 {
-		t.Errorf("%d azimas wait for a proof, %d hold work; T02 %v", proofs, work, byCode["T02"].GetProofNeeds())
-	}
-
-	// A file that says in-progress with every box checked is reported, and its azima stays done.
-	t02 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T02" })
-	path := filepath.Join(dir, files[t02].Path)
-	data, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := strings.Replace(string(data), "status: done", "status: in-progress", 1)
-	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if res := sync(); !slices.Equal(res.GetAllChecked(), []string{files[t02].Path}) || len(res.GetChanged()) != 0 {
-		t.Errorf("T02 all checked: %v", res)
-	}
-	if got := e.get(t, id("T02")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("T02: %v", got)
-	}
-	// A box unchecked again opens the azima the file closed.
-	if err := os.WriteFile(path, []byte(strings.Replace(text, "- [x]", "- [ ]", 1)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if res := sync(); !slices.Equal(res.GetChanged(), []string{"T02"}) || len(res.GetAllChecked()) != 0 {
-		t.Errorf("T02 reopened: %v", res)
-	}
-	if got := e.get(t, id("T02")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
-		t.Errorf("T02: %v", got)
-	}
-
-	// A second wish for "Collaborative Djinn" reads only its own 4 moved azimas without clashing.
-	wCollab, err := e.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
-		Title: "Collaborative Djinn", ProjectIds: []string{projectID},
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	resCollab, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wCollab.Msg.GetWish().GetId()}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(resCollab.Msg.GetAzimas()) != 4 {
-		t.Errorf("collab sync azimas = %d, want 4", len(resCollab.Msg.GetAzimas()))
-	}
-}
-
-// TestAnAzimaWithPartsStays: an azima with tasks part of it is not deleted, which are named; once they are regrouped
-// it goes, and no task can be grouped into it any more. Its code is never given again, nor a deleted task's.
-func TestAnAzimaWithPartsStays(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity)) // No slot: the work only waits.
-	wishID, _ := e.wish(t, gitRepo(t))
-	t1 := e.azima(t, wishID, "Templates")
-	w1 := e.mustSpawn(t, wishID, "Work", "text work", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
-	w2 := e.mustSpawn(t, wishID, "More", "text more", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
-	del := func(task *planv1.Task) error {
-		_, err := e.tasks.Delete(ctx, connect.NewRequest(&planv1.TaskServiceDeleteRequest{TaskId: task.GetId()}))
-		return err
-	}
-
-	if err := del(t1); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "W1, W2") ||
-		!strings.Contains(err.Error(), "djinn task group") {
-		t.Fatalf("delete T1 with its parts: %v", err)
-	}
-	if e.get(t, t1.GetId()).GetCode() != "T1" {
-		t.Fatal("T1 is gone")
-	}
-	for _, w := range []*planv1.Task{w1, w2} {
-		if _, err := e.group(t, w, ""); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := del(t1); err != nil {
-		t.Fatalf("delete T1 regrouped: %v", err)
-	}
-	if _, err := e.group(t, w1, "T1"); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("W1 into T1, gone: %v", err)
-	}
-
-	// T1 and W2 deleted: the next azima is T2, the next work W3.
-	if err := del(w2); err != nil {
-		t.Fatal(err)
-	}
-	if t2 := e.azima(t, wishID, "Releases"); t2.GetCode() != "T2" {
-		t.Errorf("the next azima is %s, want T2", t2.GetCode())
-	}
-	if w3 := e.mustSpawn(t, wishID, "Last", "text last", &planv1.TaskServiceSpawnRequest{Later: true}); w3.GetCode() != "W3" {
-		t.Errorf("the next work is %s, want W3", w3.GetCode())
-	}
-	wish, err := store.Get[*planv1.Wish](ctx, e.db, wishID)
-	if err != nil || !slices.Equal(wish.GetRetiredCodes(), []string{"T1", "W2"}) {
-		t.Errorf("retired %q, %v", wish.GetRetiredCodes(), err)
-	}
-}
-
-// writeAzimaFile writes a plan file of the azima code in dir's plan folder.
-func writeAzimaFile(t *testing.T, dir, name, code string) {
-	t.Helper()
-	writeFile(t, dir, filepath.Join(plan.PlanDir, name), "---\ncode: "+code+"\nstatus: in-progress\n---\n\n# "+code+" · "+name+"\n")
-}
-
-// TestSyncKeepsTheAzimas: a plan file removed leaves its azima, and the tasks part of it, as they were; a file that
-// gives the code of an azima deleted makes no azima: a code is never given twice.
-func TestSyncKeepsTheAzimas(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	dir := t.TempDir()
-	writeAzimaFile(t, dir, "one.md", "T1")
-	writeAzimaFile(t, dir, "two.md", "T2")
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
-	wishID, _ := e.wish(t, dir)
-	sync := func() error {
-		_, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID}))
-		return err
-	}
-	if err := sync(); err != nil {
-		t.Fatal(err)
-	}
-	w1 := e.mustSpawn(t, wishID, "Work", "text work", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T2"})
-
-	// two.md absorbed into one.md: T2 stays, W1 with it.
-	if err := os.Remove(filepath.Join(dir, plan.PlanDir, "two.md")); err != nil {
-		t.Fatal(err)
-	}
-	if err := sync(); err != nil {
-		t.Fatal(err)
-	}
-	t2 := e.get(t, w1.GetId()).GetPartOf()
-	if got, err := store.Get[*planv1.Task](ctx, e.db, t2); err != nil || got.GetCode() != "T2" {
-		t.Fatalf("W1 part of %q: %v, %v", t2, got, err)
-	}
-
-	// T2 deleted once W1 is regrouped: a new file with its code makes nothing.
-	if _, err := e.group(t, w1, "T1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.tasks.Delete(ctx, connect.NewRequest(&planv1.TaskServiceDeleteRequest{TaskId: t2})); err != nil {
-		t.Fatal(err)
-	}
-	writeAzimaFile(t, dir, "again.md", "T2")
-	if err := sync(); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "never given twice") ||
-		!strings.Contains(err.Error(), "T3 is free") {
-		t.Errorf("a file with a retired code: %v", err)
-	}
-	for _, task := range e.list(t, wishID) {
-		if task.GetCode() == "T2" {
-			t.Errorf("T2 given again: %v", task)
-		}
-	}
-}
-
-// TestRecoverUngroupsOrphans: djinn up finds tasks part of an azima that is gone (deleted before Delete refused it):
-// part of none from then on, journaled, the work saying so in its events; a task part of an azima that is still
-// there keeps it.
-func TestRecoverUngroupsOrphans(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home := t.TempDir()
-	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wishID, gone := store.NewID(), store.NewID()
-	azima := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
-		Status: planv1.TaskStatus_TASK_STATUS_PENDING}
-	kept := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W1", PartOf: azima.GetId(), Status: planv1.TaskStatus_TASK_STATUS_DONE}
-	orphan := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W2", PartOf: gone, Status: planv1.TaskStatus_TASK_STATUS_DONE}
-	sub := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T2", Kind: planv1.TaskKind_TASK_KIND_AZIMA, PartOf: gone,
-		Status: planv1.TaskStatus_TASK_STATUS_PENDING}
-	err = db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("local", "test", azima); err != nil {
-			return err
-		}
-		for _, task := range []*planv1.Task{azima, kept, orphan, sub} {
-			if err := tx.Put(task); err != nil {
-				return err
+		proofs, work := 0, 0
+		for _, f := range files {
+			got := byCode[f.Code].GetProofNeeds()
+			if len(got) != len(f.DoneWhen.Needs) || !slices.EqualFunc(got, f.DoneWhen.Needs, func(a, b *planv1.ProofNeed) bool { return proto.Equal(a, b) }) {
+				t.Errorf("%s needs %v, its file %v", f.Code, got, f.DoneWhen.Needs)
+			}
+			if len(got) > 0 {
+				proofs++
+			}
+			if f.DoneWhen.Unchecked > 0 && len(got) == 0 {
+				work++
 			}
 		}
-		return nil
+		if proofs == 0 || work == 0 || len(byCode["T02"].GetProofNeeds()) != 0 {
+			t.Errorf("%d azimas wait for a proof, %d hold work; T02 %v", proofs, work, byCode["T02"].GetProofNeeds())
+		}
+
+		// A file that says in-progress with every box checked is reported, and its azima stays done.
+		t02 := slices.IndexFunc(files, func(f plan.AzimaFile) bool { return f.Code == "T02" })
+		path := filepath.Join(dir, files[t02].Path)
+		data, err = os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.Replace(string(data), "status: done", "status: in-progress", 1)
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if res := sync(); !slices.Equal(res.GetAllChecked(), []string{files[t02].Path}) || len(res.GetChanged()) != 0 {
+			t.Errorf("T02 all checked: %v", res)
+		}
+		if got := e.get(t, id("T02")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Errorf("T02: %v", got)
+		}
+		// A box unchecked again opens the azima the file closed.
+		if err := os.WriteFile(path, []byte(strings.Replace(text, "- [x]", "- [ ]", 1)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if res := sync(); !slices.Equal(res.GetChanged(), []string{"T02"}) || len(res.GetAllChecked()) != 0 {
+			t.Errorf("T02 reopened: %v", res)
+		}
+		if got := e.get(t, id("T02")); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+			t.Errorf("T02: %v", got)
+		}
+
+		// A second wish for "Collaborative Djinn" reads only its own 4 moved azimas without clashing.
+		wCollab, err := e.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+			Title: "Collaborative Djinn", ProjectIds: []string{projectID},
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resCollab, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wCollab.Msg.GetWish().GetId()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(resCollab.Msg.GetAzimas()) != 4 {
+			t.Errorf("collab sync azimas = %d, want 4", len(resCollab.Msg.GetAzimas()))
+		}
 	})
-	db.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := up(t, home)
-	for task, want := range map[*planv1.Task]string{kept: azima.GetId(), orphan: "", sub: ""} {
-		if got := e.get(t, task.GetId()).GetPartOf(); got != want {
-			t.Errorf("%s part of %q, want %q", task.GetCode(), got, want)
-		}
-	}
-	if texts := storedTexts(t, e.db, orphan.GetId()); !slices.Equal(texts, []string{
-		"part of no azima: its azima " + gone[:8] + " is no longer one of the wish's"}) {
-		t.Errorf("W2's events %q", texts)
-	}
-	if ungrouped, err := store.Commands(t.Context(), e.db, func(c store.Command) bool { return c.Method == methodUngroup }); err != nil || len(ungrouped) != 2 {
-		t.Errorf("%d journaled, %v; want W2 and T2", len(ungrouped), err)
-	}
-}
 
-// TestAzimaReopenOnSpawnGroupContinue: when an azima is closed (by the developer or lead), adding new work
-// (spawning a part, grouping a task into it, or continuing/starting a part) reopens it (PENDING, Closed nil),
-// recording a reopened event. An azima with unfinished parts cannot be marked done.
-func TestAzimaReopenOnSpawnGroupContinue(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	top := e.azima(t, wishID, "Top Azima")
-	parent := e.azima(t, wishID, "Parent Azima")
-	if _, err := e.group(t, parent, top.GetCode()); err != nil {
-		t.Fatal(err)
-	}
-	// Mark both done by developer when they have no work parts: leaf first, then top.
-	for _, a := range []*planv1.Task{parent, top} {
-		if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
-			TaskId: a.GetId(), By: planv1.Closer_CLOSER_DEVELOPER, Note: "approved",
-		})); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got := e.get(t, parent.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetClosed().GetActor() != planv1.Closer_CLOSER_DEVELOPER {
-		t.Fatalf("parent after Done: %v", got)
-	}
-	if got0 := e.get(t, top.GetId()); got0.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Fatalf("top after Done: %v", got0)
-	}
-
-	// 1. Spawning a part reopens it and its ancestor azima.
-	w1 := e.mustSpawn(t, wishID, "Part One", "text part", &planv1.TaskServiceSpawnRequest{PartOf: parent.GetCode()})
-	for _, a := range []*planv1.Task{parent, top} {
-		got := e.get(t, a.GetId())
-		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
-			t.Errorf("%s after spawn: status %v, closed %v; want PENDING and nil", a.GetCode(), got.GetStatus(), got.GetClosed())
-		}
-		events := storedTexts(t, e.db, a.GetId())
-		if !slices.Contains(events, "reopened: W1 spawned") {
-			t.Errorf("%s events after spawn: %v, want 'reopened: W1 spawned'", a.GetCode(), events)
-		}
-	}
-
-	// Wait for W1 to finish.
-	e.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-
-	// Now mark parent and top done again (leaf first).
-	for _, a := range []*planv1.Task{parent, top} {
-		if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
-			TaskId: a.GetId(), By: planv1.Closer_CLOSER_DEVELOPER,
-		})); err != nil {
-			t.Fatal(err)
-		}
-		if e.get(t, a.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-			t.Fatalf("%s not done", a.GetCode())
-		}
-	}
-
-	// 2. Grouping a task into it reopens it and its ancestor azima.
-	w2 := e.mustSpawn(t, wishID, "Part Two", "text part 2", nil)
-	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-	if _, err := e.group(t, w2, parent.GetCode()); err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range []*planv1.Task{parent, top} {
-		got := e.get(t, a.GetId())
-		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
-			t.Errorf("%s after group: status %v, closed %v; want PENDING and nil", a.GetCode(), got.GetStatus(), got.GetClosed())
-		}
-		events := storedTexts(t, e.db, a.GetId())
-		if !slices.Contains(events, "reopened: W2 grouped") {
-			t.Errorf("%s events after group: %v, want 'reopened: W2 grouped'", a.GetCode(), events)
-		}
-	}
-
-	// Close parent and top again (leaf first).
-	for _, a := range []*planv1.Task{parent, top} {
-		if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
-			TaskId: a.GetId(), By: planv1.Closer_CLOSER_DEVELOPER,
-		})); err != nil {
-			t.Fatal(err)
-		}
-		if e.get(t, a.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-			t.Fatalf("%s not done", a.GetCode())
-		}
-	}
-
-	// 3. Continuing a part reopens it and its ancestor azima.
-	if _, err := e.continueTask(t, w1.GetId(), "continue w1"); err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range []*planv1.Task{parent, top} {
-		got := e.get(t, a.GetId())
-		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
-			t.Errorf("%s after continue: status %v, closed %v; want PENDING and nil", a.GetCode(), got.GetStatus(), got.GetClosed())
-		}
-		events := storedTexts(t, e.db, a.GetId())
-		if !slices.Contains(events, "reopened: W1 started") {
-			t.Errorf("%s events after continue: %v, want 'reopened: W1 started'", a.GetCode(), events)
-		}
-	}
-	e.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-}
-
-// TestAzimaDoneRefusedWithUnfinishedParts: an azima cannot be marked done while any of its parts is unfinished.
-func TestAzimaDoneRefusedWithUnfinishedParts(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	t1 := e.azima(t, wishID, "Azima With Parts")
-	w1 := e.mustSpawn(t, wishID, "Part One", "text part", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
-
-	// W1 is PENDING: Done on T1 must fail.
-	_, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: t1.GetId()}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "has parts still to finish") {
-		t.Fatalf("Done on T1 with unfinished part: %v, want CodeFailedPrecondition", err)
-	}
-
-	// Mark W1 done.
-	_, err = e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: w1.GetId()}))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Now Done on T1 succeeds.
-	_, err = e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: t1.GetId()}))
-	if err != nil {
-		t.Fatalf("Done on T1 with all parts finished: %v", err)
-	}
-	if e.get(t, t1.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("T1 status: %v, want DONE", e.get(t, t1.GetId()).GetStatus())
-	}
-}
-
-// TestSyncPlanReopensDeveloperClosedAzima: an azima closed by the developer is reopened at plan sync
-// if its plan file says in-progress with open boxes, or if it has unfinished parts.
-func TestSyncPlanReopensDeveloperClosedAzima(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	dir := t.TempDir()
-	writeAzimaFile(t, dir, "one.md", "T1")
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
-	wishID, _ := e.wish(t, dir)
-	sync := func() error {
-		_, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID}))
-		return err
-	}
-	if err := sync(); err != nil {
-		t.Fatal(err)
-	}
-	t1 := e.list(t, wishID)[0]
-	// Close it as developer.
-	_, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
-		TaskId: t1.GetId(), By: planv1.Closer_CLOSER_DEVELOPER,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if e.get(t, t1.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Fatal("t1 not done")
-	}
-	// Plan file says in-progress: sync reopens it.
-	if err := sync(); err != nil {
-		t.Fatal(err)
-	}
-	got := e.get(t, t1.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
-		t.Errorf("t1 after sync: status %v, closed %v; want PENDING and nil", got.GetStatus(), got.GetClosed())
-	}
-	texts := storedTexts(t, e.db, t1.GetId())
-	if !slices.Contains(texts, "reopened: plan file in progress") {
-		t.Errorf("t1 events: %v, want 'reopened: plan file in progress'", texts)
-	}
-}
-
-// TestRecoverReopensAzimasWithUnfinishedParts: at startup, djinn up reopens any azima whose status
-// is DONE while a part is not finished.
-func TestRecoverReopensAzimasWithUnfinishedParts(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home := t.TempDir()
-	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wishID := store.NewID()
-	azima := &planv1.Task{
-		Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
-		Status: planv1.TaskStatus_TASK_STATUS_DONE,
-		Closed: &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, Note: "closed prematurely"},
-	}
-	part := &planv1.Task{
-		Id: store.NewID(), WishId: wishID, Code: "W1", PartOf: azima.GetId(),
-		Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
-	}
-	err = db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("local", "test", azima); err != nil {
+	// A plan file removed leaves its azima, and the tasks part of it, as they were; a file that gives the code of an
+	// azima deleted makes no azima: a code is never given twice.
+	t.Run("keeps removed and retires deleted codes", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		dir := t.TempDir()
+		writeAzimaFile(t, dir, "one.md", "T1")
+		writeAzimaFile(t, dir, "two.md", "T2")
+		e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
+		wishID, _ := e.wish(t, dir)
+		sync := func() error {
+			_, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID}))
 			return err
 		}
-		return errors.Join(tx.Put(azima), tx.Put(part))
-	})
-	db.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+		if err := sync(); err != nil {
+			t.Fatal(err)
+		}
+		w1 := e.mustSpawn(t, wishID, "Work", "text work", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T2"})
 
-	e := up(t, home, WithCapacity((&limit{slots: 0}).capacity))
-	got := e.get(t, azima.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
-		t.Errorf("azima recovered: status %v, closed %v; want PENDING and nil", got.GetStatus(), got.GetClosed())
-	}
-	texts := storedTexts(t, e.db, azima.GetId())
-	if !slices.Contains(texts, "reopened: parts not finished") {
-		t.Errorf("azima events: %v, want 'reopened: parts not finished'", texts)
-	}
+		// two.md absorbed into one.md: T2 stays, W1 with it.
+		if err := os.Remove(filepath.Join(dir, plan.PlanDir, "two.md")); err != nil {
+			t.Fatal(err)
+		}
+		if err := sync(); err != nil {
+			t.Fatal(err)
+		}
+		t2 := e.get(t, w1.GetId()).GetPartOf()
+		if got, err := store.Get[*planv1.Task](ctx, e.db, t2); err != nil || got.GetCode() != "T2" {
+			t.Fatalf("W1 part of %q: %v, %v", t2, got, err)
+		}
+
+		// T2 deleted once W1 is regrouped: a new file with its code makes nothing.
+		if _, err := e.group(t, w1, "T1"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.tasks.Delete(ctx, connect.NewRequest(&planv1.TaskServiceDeleteRequest{TaskId: t2})); err != nil {
+			t.Fatal(err)
+		}
+		writeAzimaFile(t, dir, "again.md", "T2")
+		if err := sync(); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "never given twice") ||
+			!strings.Contains(err.Error(), "T3 is free") {
+			t.Errorf("a file with a retired code: %v", err)
+		}
+		for _, task := range e.list(t, wishID) {
+			if task.GetCode() == "T2" {
+				t.Errorf("T2 given again: %v", task)
+			}
+		}
+	})
+
+	// An azima closed by the developer is reopened at plan sync if its plan file says in-progress with open boxes, or
+	// if it has unfinished parts.
+	t.Run("reopens developer closed azima", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		dir := t.TempDir()
+		writeAzimaFile(t, dir, "one.md", "T1")
+		e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
+		wishID, _ := e.wish(t, dir)
+		sync := func() error {
+			_, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID}))
+			return err
+		}
+		if err := sync(); err != nil {
+			t.Fatal(err)
+		}
+		t1 := e.list(t, wishID)[0]
+		_, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
+			TaskId: t1.GetId(), By: planv1.Closer_CLOSER_DEVELOPER,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.get(t, t1.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Fatal("t1 not done")
+		}
+		if err := sync(); err != nil {
+			t.Fatal(err)
+		}
+		got := e.get(t, t1.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+			t.Errorf("t1 after sync: status %v, closed %v; want PENDING and nil", got.GetStatus(), got.GetClosed())
+		}
+		texts := storedTexts(t, e.db, t1.GetId())
+		if !slices.Contains(texts, "reopened: plan file in progress") {
+			t.Errorf("t1 events: %v, want 'reopened: plan file in progress'", texts)
+		}
+	})
+
+	// Sync creates draft azimas from plan files with status: draft.
+	t.Run("creates draft azima", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		dir := t.TempDir()
+		content := "---\ncode: T1\nstatus: draft\n---\n\n# T1 · Multi-machine\n\n## Goal\nSpread work over machines.\n"
+		writeFile(t, dir, filepath.Join(plan.PlanDir, "t1.md"), content)
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, dir)
+		if _, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID})); err != nil {
+			t.Fatal(err)
+		}
+		var t1 *planv1.Task
+		for _, task := range e.list(t, wishID) {
+			if task.GetCode() == "T1" {
+				t1 = task
+				break
+			}
+		}
+		if t1 == nil {
+			t.Fatal("T1 not found")
+		}
+		if !t1.GetDraft() {
+			t.Errorf("draft = false, want true")
+		}
+		if t1.GetKind() != planv1.TaskKind_TASK_KIND_AZIMA {
+			t.Errorf("kind = %v, want AZIMA", t1.GetKind())
+		}
+		if !strings.Contains(t1.GetDescription(), "Spread work over machines.") {
+			t.Errorf("description = %q", t1.GetDescription())
+		}
+		if s := t1.GetAzima().GetState(); s != planv1.AzimaState_AZIMA_STATE_DRAFT {
+			t.Errorf("state = %v, want DRAFT", s)
+		}
+	})
 }
 
-// TestDraftAzimaSpawn: a draft azima is spawned with --draft and an optional description; spawning a task part of a
-// draft azima is refused, asking to open it first; spawning with --draft or --description for work is refused.
-func TestDraftAzimaSpawn(t *testing.T) {
+func TestRecover_Azimas(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	ctx := t.Context()
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
 
-	// Spawn a draft azima with description.
-	res, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId:      wishID,
-		Title:       "Research spreading work",
-		Kind:        planv1.TaskKind_TASK_KIND_AZIMA,
-		Draft:       true,
-		Description: "Explore multi-machine setups.",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	az := res.Msg.GetTask()
-	if !az.GetDraft() {
-		t.Errorf("draft = false, want true")
-	}
-	if az.GetDescription() != "Explore multi-machine setups." {
-		t.Errorf("description = %q", az.GetDescription())
-	}
-	got := e.get(t, az.GetId())
-	if got.GetAzima().GetState() != planv1.AzimaState_AZIMA_STATE_DRAFT {
-		t.Errorf("state = %v, want DRAFT", got.GetAzima().GetState())
-	}
+	// djinn up finds tasks part of an azima that is gone: part of none from then on, journaled, the work saying so in
+	// its events; a task part of an azima that is still there keeps it.
+	t.Run("ungroups orphans", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wishID, gone := store.NewID(), store.NewID()
+		azima := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+			Status: planv1.TaskStatus_TASK_STATUS_PENDING}
+		kept := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W1", PartOf: azima.GetId(), Status: planv1.TaskStatus_TASK_STATUS_DONE}
+		orphan := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W2", PartOf: gone, Status: planv1.TaskStatus_TASK_STATUS_DONE}
+		sub := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "T2", Kind: planv1.TaskKind_TASK_KIND_AZIMA, PartOf: gone,
+			Status: planv1.TaskStatus_TASK_STATUS_PENDING}
+		err = db.Tx(t.Context(), func(tx *store.Tx) error {
+			if err := tx.Journal("local", "test", azima); err != nil {
+				return err
+			}
+			for _, task := range []*planv1.Task{azima, kept, orphan, sub} {
+				if err := tx.Put(task); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		db.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		e := up(t, home)
+		for task, want := range map[*planv1.Task]string{kept: azima.GetId(), orphan: "", sub: ""} {
+			if got := e.get(t, task.GetId()).GetPartOf(); got != want {
+				t.Errorf("%s part of %q, want %q", task.GetCode(), got, want)
+			}
+		}
+		if texts := storedTexts(t, e.db, orphan.GetId()); !slices.Equal(texts, []string{
+			"part of no azima: its azima " + gone[:8] + " is no longer one of the wish's"}) {
+			t.Errorf("W2's events %q", texts)
+		}
+		if ungrouped, err := store.Commands(t.Context(), e.db, func(c store.Command) bool { return c.Method == methodUngroup }); err != nil || len(ungrouped) != 2 {
+			t.Errorf("%d journaled, %v; want W2 and T2", len(ungrouped), err)
+		}
+	})
 
-	// Spawning --part-of a draft is refused.
-	_, err = e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID,
-		Title:  "A part of draft",
-		PartOf: az.GetCode(),
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "is a draft: open it first with djinn task open") {
-		t.Errorf("spawn part of draft err = %v", err)
-	}
+	// At startup, djinn up reopens any azima whose status is DONE while a part is not finished.
+	t.Run("reopens azimas with unfinished parts", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wishID := store.NewID()
+		azima := &planv1.Task{
+			Id: store.NewID(), WishId: wishID, Code: "T1", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+			Status: planv1.TaskStatus_TASK_STATUS_DONE,
+			Closed: &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, Note: "closed prematurely"},
+		}
+		part := &planv1.Task{
+			Id: store.NewID(), WishId: wishID, Code: "W1", PartOf: azima.GetId(),
+			Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+		}
+		err = db.Tx(t.Context(), func(tx *store.Tx) error {
+			if err := tx.Journal("local", "test", azima); err != nil {
+				return err
+			}
+			return errors.Join(tx.Put(azima), tx.Put(part))
+		})
+		db.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	// Spawning work with --draft or --description is refused.
-	_, err = e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID,
-		Title:  "Work draft",
-		Draft:  true,
-	}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "only an azima can be a draft or have a description") {
-		t.Errorf("spawn work draft err = %v", err)
-	}
-	_, err = e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId:      wishID,
-		Title:       "Work desc",
-		Description: "desc",
-	}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "only an azima can be a draft or have a description") {
-		t.Errorf("spawn work with description err = %v", err)
-	}
+		e := up(t, home, WithCapacity((&limit{slots: 0}).capacity))
+		got := e.get(t, azima.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+			t.Errorf("azima recovered: status %v, closed %v; want PENDING and nil", got.GetStatus(), got.GetClosed())
+		}
+		texts := storedTexts(t, e.db, azima.GetId())
+		if !slices.Contains(texts, "reopened: parts not finished") {
+			t.Errorf("azima events: %v, want 'reopened: parts not finished'", texts)
+		}
+	})
 }
 
-// TestDescribeAzima: describe updates the azima's description in the store and in its plan file on disk, if it has
-// one; calling describe on work is refused.
-func TestDescribeAzima(t *testing.T) {
+func TestDone_Azima(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	// When an azima is closed (by the developer or lead), adding new work (spawning a part, grouping a task into it,
+	// or continuing/starting a part) reopens it (PENDING, Closed nil), recording a reopened event.
+	t.Run("reopens on spawn group or continue", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, gitRepo(t))
+
+		top := e.azima(t, wishID, "Top Azima")
+		parent := e.azima(t, wishID, "Parent Azima")
+		if _, err := e.group(t, parent, top.GetCode()); err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range []*planv1.Task{parent, top} {
+			if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
+				TaskId: a.GetId(), By: planv1.Closer_CLOSER_DEVELOPER, Note: "approved",
+			})); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := e.get(t, parent.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetClosed().GetActor() != planv1.Closer_CLOSER_DEVELOPER {
+			t.Fatalf("parent after Done: %v", got)
+		}
+		if got0 := e.get(t, top.GetId()); got0.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Fatalf("top after Done: %v", got0)
+		}
+
+		// 1. Spawning a part reopens it and its ancestor azima.
+		w1 := e.mustSpawn(t, wishID, "Part One", "text part", &planv1.TaskServiceSpawnRequest{PartOf: parent.GetCode()})
+		for _, a := range []*planv1.Task{parent, top} {
+			got := e.get(t, a.GetId())
+			if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+				t.Errorf("%s after spawn: status %v, closed %v; want PENDING and nil", a.GetCode(), got.GetStatus(), got.GetClosed())
+			}
+			events := storedTexts(t, e.db, a.GetId())
+			if !slices.Contains(events, "reopened: W1 spawned") {
+				t.Errorf("%s events after spawn: %v, want 'reopened: W1 spawned'", a.GetCode(), events)
+			}
+		}
+
+		e.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+
+		for _, a := range []*planv1.Task{parent, top} {
+			if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
+				TaskId: a.GetId(), By: planv1.Closer_CLOSER_DEVELOPER,
+			})); err != nil {
+				t.Fatal(err)
+			}
+			if e.get(t, a.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+				t.Fatalf("%s not done", a.GetCode())
+			}
+		}
+
+		// 2. Grouping a task into it reopens it and its ancestor azima.
+		w2 := e.mustSpawn(t, wishID, "Part Two", "text part 2", nil)
+		e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+		if _, err := e.group(t, w2, parent.GetCode()); err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range []*planv1.Task{parent, top} {
+			got := e.get(t, a.GetId())
+			if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+				t.Errorf("%s after group: status %v, closed %v; want PENDING and nil", a.GetCode(), got.GetStatus(), got.GetClosed())
+			}
+			events := storedTexts(t, e.db, a.GetId())
+			if !slices.Contains(events, "reopened: W2 grouped") {
+				t.Errorf("%s events after group: %v, want 'reopened: W2 grouped'", a.GetCode(), events)
+			}
+		}
+
+		for _, a := range []*planv1.Task{parent, top} {
+			if _, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{
+				TaskId: a.GetId(), By: planv1.Closer_CLOSER_DEVELOPER,
+			})); err != nil {
+				t.Fatal(err)
+			}
+			if e.get(t, a.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+				t.Fatalf("%s not done", a.GetCode())
+			}
+		}
+
+		// 3. Continuing a part reopens it and its ancestor azima.
+		if _, err := e.continueTask(t, w1.GetId(), "continue w1"); err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range []*planv1.Task{parent, top} {
+			got := e.get(t, a.GetId())
+			if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || got.GetClosed() != nil {
+				t.Errorf("%s after continue: status %v, closed %v; want PENDING and nil", a.GetCode(), got.GetStatus(), got.GetClosed())
+			}
+			events := storedTexts(t, e.db, a.GetId())
+			if !slices.Contains(events, "reopened: W1 started") {
+				t.Errorf("%s events after continue: %v, want 'reopened: W1 started'", a.GetCode(), events)
+			}
+		}
+		e.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	})
+
+	// An azima cannot be marked done while any of its parts is unfinished.
+	t.Run("refused with unfinished parts", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
+		wishID, _ := e.wish(t, gitRepo(t))
+
+		t1 := e.azima(t, wishID, "Azima With Parts")
+		w1 := e.mustSpawn(t, wishID, "Part One", "text part", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
+
+		_, err := e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: t1.GetId()}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "has parts still to finish") {
+			t.Fatalf("Done on T1 with unfinished part: %v, want CodeFailedPrecondition", err)
+		}
+
+		_, err = e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: w1.GetId()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = e.tasks.Done(ctx, connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: t1.GetId()}))
+		if err != nil {
+			t.Fatalf("Done on T1 with all parts finished: %v", err)
+		}
+		if e.get(t, t1.GetId()).GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Errorf("T1 status: %v, want DONE", e.get(t, t1.GetId()).GetStatus())
+		}
+	})
+}
+
+// TestDescribe: describe updates the azima's description in the store and in its plan file on disk, if it has one;
+// calling describe on work is refused.
+func TestDescribe(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	ctx := t.Context()
@@ -906,7 +932,6 @@ func TestDescribeAzima(t *testing.T) {
 		t.Fatal("T1 not found")
 	}
 
-	// Describe updates store and plan file on disk.
 	res, err := e.tasks.Describe(ctx, connect.NewRequest(&planv1.TaskServiceDescribeRequest{
 		Azima: t1.GetId(),
 		Text:  "Revised description.",
@@ -925,7 +950,6 @@ func TestDescribeAzima(t *testing.T) {
 		t.Errorf("plan file description: %v, %v", files, err)
 	}
 
-	// Calling describe on a work task is refused.
 	work := e.mustSpawn(t, wishID, "Work", "prompt", &planv1.TaskServiceSpawnRequest{Later: true})
 	_, err = e.tasks.Describe(ctx, connect.NewRequest(&planv1.TaskServiceDescribeRequest{
 		Azima: work.GetId(),
@@ -936,9 +960,9 @@ func TestDescribeAzima(t *testing.T) {
 	}
 }
 
-// TestOpenAzima: open turns a draft azima OPEN, clears its draft flag, updates its plan file to status: open, and tells
+// TestOpen: open turns a draft azima OPEN, clears its draft flag, updates its plan file to status: open, and tells
 // the lead; calling open on an azima that is not a draft is refused.
-func TestOpenAzima(t *testing.T) {
+func TestOpen(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	ctx := t.Context()
@@ -980,16 +1004,15 @@ func TestOpenAzima(t *testing.T) {
 		t.Errorf("told = %v, want %v", got, want)
 	}
 
-	// Calling open again is refused since it's already open (not a draft).
 	_, err = e.tasks.Open(ctx, connect.NewRequest(&planv1.TaskServiceOpenRequest{Azima: t1.GetId()}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "is not a draft") {
 		t.Errorf("open non-draft err = %v", err)
 	}
 }
 
-// TestMoveAzima: move moves an azima and its unstarted parts to another wish, preserving its plan file reference and
+// TestMove: move moves an azima and its unstarted parts to another wish, preserving its plan file reference and
 // renumbering conflicting codes; moving is refused if parts are running or have started.
-func TestMoveAzima(t *testing.T) {
+func TestMove(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	ctx := t.Context()
@@ -1002,10 +1025,7 @@ func TestMoveAzima(t *testing.T) {
 	if _, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wish1})); err != nil {
 		t.Fatal(err)
 	}
-	// wish2 also has a task T1 to test code collision renumbering.
 	_ = e.azima(t, wish2, "Existing T1 in wish2")
-
-	// Create work part of T1 in wish1.
 	w1Wish1 := e.mustSpawn(t, wish1, "Pending work", "text", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: "T1"})
 
 	// Refused if a part has started/done.
@@ -1049,7 +1069,6 @@ func TestMoveAzima(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Find T1's ID in wish1.
 	var t1ID string
 	for _, task := range e.list(t, wish1) {
 		if task.GetCode() == "T1" {
@@ -1061,7 +1080,6 @@ func TestMoveAzima(t *testing.T) {
 		t.Fatal("T1 not found in wish1")
 	}
 
-	// Watch both wishes before move.
 	wCtx, wCancel := context.WithCancel(ctx)
 	t.Cleanup(wCancel)
 	s1, err := e.wishes.Watch(wCtx, connect.NewRequest(&planv1.WishServiceWatchRequest{WishId: wish1}))
@@ -1079,7 +1097,6 @@ func TestMoveAzima(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Move failed: %v", err)
 	}
-	// The move publishes changes for both wishes: deleted from wish1, added to wish2.
 	msg1 := nextWatch(t, s1)
 	if !slices.Contains(msg1.GetChanges(), planv1.Change_CHANGE_TASK) {
 		t.Errorf("wish1 changes = %v, want CHANGE_TASK", msg1.GetChanges())
@@ -1100,7 +1117,6 @@ func TestMoveAzima(t *testing.T) {
 		t.Errorf("wish2 tasks = %v, want T1 (%s) and W1 (%s)", gotWish2IDs, t1ID, w1Wish1.GetId())
 	}
 
-	// In wish2, T1 conflicted with existing T1, so it got renumbered to T2.
 	if moved.Msg.GetTask().GetWishId() != wish2 {
 		t.Errorf("moved wishID = %q, want %q", moved.Msg.GetTask().GetWishId(), wish2)
 	}
@@ -1110,18 +1126,15 @@ func TestMoveAzima(t *testing.T) {
 	if moved.Msg.GetTask().GetPlanFile() != "plan/one.md" {
 		t.Errorf("plan file = %q, want plan/one.md", moved.Msg.GetTask().GetPlanFile())
 	}
-	// Part was also moved to wish2.
 	w1After := e.get(t, w1Wish1.GetId())
 	if w1After.GetWishId() != wish2 || w1After.GetPartOf() != moved.Msg.GetTask().GetId() {
 		t.Errorf("part after move: wishID=%q, partOf=%q", w1After.GetWishId(), w1After.GetPartOf())
 	}
-	// Source wish retired T1.
 	w1Stored, err := store.Get[*planv1.Wish](ctx, e.db, wish1)
 	if err != nil || !slices.Contains(w1Stored.GetRetiredCodes(), "T1") {
 		t.Errorf("source wish retired codes: %v", w1Stored.GetRetiredCodes())
 	}
 
-	// The plan file of the moved azima was updated with wish and the renumbered code.
 	planPath := filepath.Join(dir1, "plan", "one.md")
 	data, err := os.ReadFile(planPath)
 	if err != nil {
@@ -1138,7 +1151,6 @@ func TestMoveAzima(t *testing.T) {
 		t.Errorf("plan file does not contain '# T2 · one.md':\n%s", content)
 	}
 
-	// Syncing source wish succeeds without error: the moved azima file belongs to wish2 and is ignored.
 	sync1, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wish1}))
 	if err != nil {
 		t.Fatalf("sync source wish: %v", err)
@@ -1147,7 +1159,6 @@ func TestMoveAzima(t *testing.T) {
 		t.Errorf("source wish sync made=%v changed=%v, want none", sync1.Msg.GetMade(), sync1.Msg.GetChanged())
 	}
 
-	// Syncing target wish succeeds and reads the moved azima.
 	sync2, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wish2}))
 	if err != nil {
 		t.Fatalf("sync target wish: %v", err)
@@ -1158,42 +1169,5 @@ func TestMoveAzima(t *testing.T) {
 	}
 	if !slices.Contains(sync2Codes, "T2") {
 		t.Errorf("target wish azimas = %v, want T2", sync2Codes)
-	}
-}
-
-// TestSyncPlanDraft: sync creates draft azimas from plan files with status: draft.
-func TestSyncPlanDraft(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	dir := t.TempDir()
-	content := "---\ncode: T1\nstatus: draft\n---\n\n# T1 · Multi-machine\n\n## Goal\nSpread work over machines.\n"
-	writeFile(t, dir, filepath.Join(plan.PlanDir, "t1.md"), content)
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, dir)
-	if _, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID})); err != nil {
-		t.Fatal(err)
-	}
-	var t1 *planv1.Task
-	for _, task := range e.list(t, wishID) {
-		if task.GetCode() == "T1" {
-			t1 = task
-			break
-		}
-	}
-	if t1 == nil {
-		t.Fatal("T1 not found")
-	}
-	if !t1.GetDraft() {
-		t.Errorf("draft = false, want true")
-	}
-	if t1.GetKind() != planv1.TaskKind_TASK_KIND_AZIMA {
-		t.Errorf("kind = %v, want AZIMA", t1.GetKind())
-	}
-	if !strings.Contains(t1.GetDescription(), "Spread work over machines.") {
-		t.Errorf("description = %q", t1.GetDescription())
-	}
-	if s := t1.GetAzima().GetState(); s != planv1.AzimaState_AZIMA_STATE_DRAFT {
-		t.Errorf("state = %v, want DRAFT", s)
 	}
 }

@@ -260,7 +260,7 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
     await oilCard.click();
     await expect(oilCard).toHaveClass(/current/);
     await oilCard.getByLabel("Note with the answer").fill("Pour it.");
-    await oilCard.getByRole("button", { name: "Rub the lamp" }).click();
+    await oilCard.getByRole("button", { name: "To the lead" }).click();
     await expect(oilCard).toHaveCount(0);
     // It is a decision of its wish, taken by you, in the Decisions tab.
     await page.getByRole("tab", { name: /^Decisions/ }).click();

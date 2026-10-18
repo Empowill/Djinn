@@ -174,6 +174,7 @@ type Harness struct {
 	runs         map[string]*run              // by task id
 	changed      chan struct{}                // closed at the next change of a task without worker (notifyLocked)
 	preempted    map[string]string            // investigator or merge task ID -> paused work task ID, guarded by mu
+	rateHits     map[string]int               // task ID -> consecutive per-minute rate limit hits, guarded by mu
 	goos         func() string                // runtime.GOOS; nil: runtime.GOOS
 	aliasesMu    sync.RWMutex
 	aliases      map[string]string // alias -> model ID
@@ -255,6 +256,7 @@ type run struct {
 	turnsBefore    int           // the task's model turns before this worker
 	restart        bool          // the worker stops to start again, allowed to edit
 	unread         []string      // messages the worker took on its input and has said nothing after yet
+	unreadWaitTurn bool          // messages in unread were delivered while an agy turn was under way: acknowledged once the next turn speaks
 	tools          int           // tool calls of the current worker without a result yet: it is mid-turn (take)
 	held           *message      // a message for the end of the worker's turn, written once tools is 0 (turnOver)
 	branch         string        // the branch template of the project's settings, for launch; empty: the default
@@ -287,6 +289,10 @@ func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 		token:        store.NewID(),
 		lastActivity: h.now(),
 	}
+	if pt := task.GetInvestigation().GetPublishTime(); pt != nil && pt.IsValid() {
+		r.publishAt = pt.AsTime()
+		r.publishWhy = task.GetInvestigation().GetPublishWhy()
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	switch {
@@ -313,7 +319,7 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
 		integrateKick: make(chan struct{}, 1), configKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, referenceFetched: map[string]time.Time{}, mergedLooks: map[string]time.Time{},
 		pushJobs:  map[string]*pushJob{},
-		installed: map[string]string{}, preempted: map[string]string{}, aliases: map[string]string{},
+		installed: map[string]string{}, preempted: map[string]string{}, rateHits: map[string]int{}, aliases: map[string]string{},
 		resident: map[string]uint64{},
 	}
 	h.ctx = gitx.OnCut(ctx, h.cutGit) // The gits a stop cuts are told to the next start (cut.go).
@@ -844,16 +850,22 @@ func (h *Harness) spawn(
 		return nil, err
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
-	// The project's settings fill what the request leaves out (docs/team-settings.md). A watcher runs a command:
-	// none applies to it.
+	// The Summoning Circle (settings.json) and the project's settings fill what the request leaves out
+	// (docs/team-settings.md). A watcher runs a command: none applies to it.
 	var settings plan.Settings
 	var settingsErr error
+	defaultProvider := planv1.Provider_PROVIDER_UNSPECIFIED
+	defaultModel := ""
 	if req.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		if settings, settingsErr = plan.LoadSettings(h.home, project); settingsErr != nil {
 			settings = plan.ResolveSettings(nil, nil)
 		}
+		defaultProvider, defaultModel = settings.Provider, settings.Model
+		if cp, cm, ok := plan.ResolveWorkerSeat(h.home, workerKindOf(req, task)); ok {
+			defaultProvider, defaultModel = cp, cm
+		}
 	}
-	kind := cmp.Or(req.GetProvider(), settings.Provider, planv1.Provider_PROVIDER_CLAUDE)
+	kind := cmp.Or(req.GetProvider(), defaultProvider, planv1.Provider_PROVIDER_CLAUDE)
 	src, err := forkSource(ctx, h.store, wish, req)
 	if err != nil {
 		return nil, plan.Status(err)
@@ -878,8 +890,8 @@ func (h *Harness) spawn(
 	}
 	// A question worker's model and budget are the project's question workers', in its request.
 	if kind != planv1.Provider_PROVIDER_WATCH && !questionWorker(task) {
-		if task.Model == "" && kind == settings.Provider {
-			task.Model = settings.Model
+		if task.Model == "" && kind == defaultProvider {
+			task.Model = defaultModel
 		}
 		if task.MaxBudgetUsd == 0 {
 			task.MaxBudgetUsd = settings.MaxBudgetUSD
@@ -1235,12 +1247,19 @@ const workerDoubtRule = "Ask a blocking question (`djinn question ask --wait`) o
 	"choice you made that the developer may want to revisit is a question without --wait: go on with your pick. One " +
 	"blocking question at a time, two per task, and three that do not block; past them, decide, and say it in your " +
 	"final note."
+
+// workerReadRule (W405): locate symbols with rg -n or grep -n before reading a file, and pass StartLine/EndLine (<= 200
+// lines) instead of paging 800 lines at a time so agy stays below its ~120k compaction threshold.
+const workerReadRule = "Locate symbols and lines with `rg -n` or `grep -n` before reading a file; never page through a " +
+	"file with `view_file` 800 lines at a time. Pass `StartLine` and `EndLine` (`<= 200` lines) around the match so the " +
+	"context stays below compaction."
 const workerRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule + " " +
-	workerDoubtRule
+	workerDoubtRule + " " + workerReadRule
 
 // investigationRules are an investigation's or a mockup's: a worker's, but for the blocking question, as it ends with
 // its question.
-const investigationRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule
+const investigationRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule + " " +
+	workerReadRule
 
 // ifritRule (T51, Q11) is how an ifrit works: a turn per request, then it listens; Djinn runs what lasts, and keeps it
 // alive. It replaces workerWaitRule, whose wait in the foreground would hold its turn open.
@@ -1251,7 +1270,7 @@ const ifritRule = "You are an ifrit: Djinn keeps you lit between the developer's
 	"`--gate <gate>`, `--stop \"<command>\"`), never with `&` or `nohup`: Djinn shows its ports as links, and stops it " +
 	"when you go out or end. Never wait in a loop or sleep. Run no check and no test suite after a change: only the " +
 	"tests a request names, when it asks."
-const ifritRules = workerHandRule + " " + workerCheckRule + " " + ifritRule + " " + workerMoveRule
+const ifritRules = workerHandRule + " " + workerCheckRule + " " + ifritRule + " " + workerMoveRule + " " + workerReadRule
 
 // briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
@@ -1521,7 +1540,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		if wt == "" {
 			wt = spec.Dir
 		}
-		return agyWorkDone(h.ctx, wt, r.startHead, t.GetBranch())
+		return h.taskWorkDone(r, t, wt)
 	}
 	h.prepare()
 	w, err := provider.Start(h.ctx, spec)
@@ -1646,7 +1665,7 @@ func (h *Harness) drain(r *run) Result {
 		case ev, ok := <-events:
 			if !ok {
 				h.rebased(r)
-				r.unread, r.held, r.tools = nil, nil, 0 // A worker started again never had them.
+				r.unread, r.unreadWaitTurn, r.held, r.tools = nil, false, nil, 0 // A worker started again never had them.
 				h.mu.Lock()
 				r.inTool = false
 				h.mu.Unlock()
@@ -1763,6 +1782,7 @@ func (h *Harness) record(r *run, ev Event) {
 		h.turnOver(r)
 	case planv1.TaskEventKind_TASK_EVENT_KIND_USAGE: // A turn's result says its usage: a call cut short has no result.
 		r.tools = 0
+		r.unreadWaitTurn = false
 		h.turnOver(r)
 		h.resulted(r)
 	}
@@ -1924,8 +1944,40 @@ func (h *Harness) finish(r *run, res Result) {
 	}
 }
 
+// taskWorkDone reports whether task t has completed its deliverables: for a ChangesNoCode task (investigation or
+// question worker), a published tilasm, question or plan block; for a code task, a clean worktree ahead of startHead.
+func (h *Harness) taskWorkDone(r *run, t *planv1.Task, wt string) bool {
+	if dispatch.ChangesNoCode(t) && changesNoCodeDone(h.ctx, h.store, t) {
+		return true
+	}
+	if wt == "" {
+		return false
+	}
+	return agyWorkDone(h.ctx, wt, r.startHead, t.GetBranch())
+}
+
+func (h *Harness) incRateHits(taskID string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.rateHits[taskID]++
+	return h.rateHits[taskID]
+}
+
+func (h *Harness) hasRateHits(taskID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.rateHits[taskID] > 0
+}
+
+func (h *Harness) clearRateHits(taskID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.rateHits, taskID)
+}
+
 // agyDoneAfterWork checks whether an antigravity worker already gave its final answer and committed its work
-// (worktree clean, branch ahead with commits made in this run) and only then hit an error.
+// (worktree clean, branch ahead with commits made in this run, or published its ChangesNoCode deliverables) and only
+// then hit an error.
 func (h *Harness) agyDoneAfterWork(r *run, res Result) bool {
 	if r.task.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY {
 		return false
@@ -1936,11 +1988,7 @@ func (h *Harness) agyDoneAfterWork(r *run, res Result) bool {
 	if !r.answered {
 		return false
 	}
-	wt := r.task.GetWorktree()
-	if wt == "" {
-		return false
-	}
-	return agyWorkDone(h.ctx, wt, r.startHead, r.task.GetBranch())
+	return h.taskWorkDone(r, r.task, r.task.GetWorktree())
 }
 
 // end gives the task its final status, then lets its watchers go. A task whose worker read while it asks whether
@@ -2116,6 +2164,7 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+		h.clearRateHits(t.GetId())
 		if err := h.replayEnvFailures(context.Background(), t.GetProvider()); err != nil {
 			logx.L().Error("start again the tasks failed for their environment", "task", t.GetCode(), "err", err)
 		}
@@ -2925,6 +2974,33 @@ func DefaultModel(p planv1.Provider) string {
 		return "gpt-5.5"
 	default:
 		return ""
+	}
+}
+
+// workerKindOf returns the Summoning Circle worker kind for a task being spawned or inspected.
+func workerKindOf(req *planv1.TaskServiceSpawnRequest, t *planv1.Task) planv1.WorkerKind {
+	if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+		return planv1.WorkerKind_WORKER_KIND_QUESTION
+	}
+	if t.GetReview() != nil {
+		return planv1.WorkerKind_WORKER_KIND_REVIEW
+	}
+	if t.GetCorrection() != nil {
+		return planv1.WorkerKind_WORKER_KIND_CORRECTION
+	}
+	k := t.GetKind()
+	if req != nil && k == planv1.TaskKind_TASK_KIND_UNSPECIFIED {
+		k = req.GetKind()
+	}
+	switch k {
+	case planv1.TaskKind_TASK_KIND_INVESTIGATION:
+		return planv1.WorkerKind_WORKER_KIND_INVESTIGATION
+	case planv1.TaskKind_TASK_KIND_MOCKUP:
+		return planv1.WorkerKind_WORKER_KIND_MOCKUP
+	case planv1.TaskKind_TASK_KIND_IFRIT:
+		return planv1.WorkerKind_WORKER_KIND_IFRIT
+	default:
+		return planv1.WorkerKind_WORKER_KIND_WORK
 	}
 }
 

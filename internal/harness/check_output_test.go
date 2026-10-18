@@ -31,155 +31,156 @@ func redOutput() string {
 	return b.String()
 }
 
-// TestRedTreeChecksOnce replays 17/10/2026 (W245, L15 step 4): feat/qol's push checks ran 9 times red on the same
-// tree, no correction starting, each keeping 10 lines. Red once while other work may still land, the push is held;
-// due again on the very same tree, its push checks do not run again: the correction starts at once. The red check's
-// whole output is kept in a file under Djinn's data folder, with what it names failing; the integration's events link
-// it, and the correction's prompt names it, which the correction reads.
-func TestRedTreeChecksOnce(t *testing.T) {
+// TestKeepCheckOutput (W245, L15 step 4): a red push or commit check keeps its whole output in a file under Djinn's
+// data folder, with what it names failing; the integration's events link it, and the correction's prompt names it.
+func TestKeepCheckOutput(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	in := integrating(t)
-	in.checking(t, lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
-	out := redOutput()
-	in.testCode, in.testOut = 1, out
-	bare := in.remote(t)
-	old := in.tip(t)
 
-	var (
-		mu     sync.Mutex
-		prompt string
-		read   string
-	)
-	in.correctWith(func(dir, p string) string {
-		if !strings.HasPrefix(p, "The push checks of ") {
-			return ""
+	// Red once while other work may still land, the push is held; due again on the very same tree, its push checks do
+	// not run again: the correction starts at once and reads the kept output file.
+	t.Run("push check red once per tree", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		in.checking(t, lintAtCommit+"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+		out := redOutput()
+		in.testCode, in.testOut = 1, out
+		bare := in.remote(t)
+		old := in.tip(t)
+
+		var (
+			mu     sync.Mutex
+			prompt string
+			read   string
+		)
+		in.correctWith(func(dir, p string) string {
+			if !strings.HasPrefix(p, "The push checks of ") {
+				return ""
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			prompt = p
+			if m := regexp.MustCompile(`whole output in (\S+\.log)`).FindStringSubmatch(p); m != nil {
+				b, _ := os.ReadFile(m[1])
+				read = string(b)
+			}
+			return "text read the whole output"
+		})
+		other := in.mustSpawn(t, in.wishID, "Other work", "wait\ntext other", nil) // Work left: the first red waits for it.
+		in.until(t, other.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+		azima := in.azima(t, in.wishID, "Login")
+		w1 := in.finished(t, "W9", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+		in.ran()
+
+		// Red once, other work running: held, no correction yet. The push checks wait until the pass is over: the pass's own
+		// look at the push finds them running.
+		wait := make(chan struct{})
+		in.mu.Lock()
+		in.testWait = wait
+		in.mu.Unlock()
+		in.passApart(t, 0)
+		in.mu.Lock()
+		in.testWait = nil
+		in.mu.Unlock()
+		close(wait)
+		in.h.waitPushes()
+		if got := in.remoteTip(t, bare); got != old {
+			t.Fatalf("pushed red: origin at %s", got)
+		}
+		if runs, _ := in.ran(); !slices.Contains(runs, "test") {
+			t.Fatalf("runs %q; want the push checks", runs)
+		}
+		state := in.pushState(t)
+		if state.GetHeldRuns() != 1 || state.GetCorrectedBy() != "" {
+			t.Fatalf("the push %v; want held once, no correction while other work runs", state)
+		}
+		f := state.GetFailure()
+		file := f.GetOutputFile()
+		if dir := filepath.Join(in.home, "projects", in.projectID, "checks"); filepath.Dir(file) != dir {
+			t.Fatalf("output file %q; want one in %s", file, dir)
+		}
+		if b, err := os.ReadFile(file); err != nil || !strings.HasSuffix(string(b), out) || !strings.HasPrefix(string(b), "# test (test) at ") {
+			t.Fatalf("output file %s = %q, %v; want a heading line, then the whole output", file, b, err)
+		}
+		if want := []string{"auth TestLogin", "docs.spec.ts:32"}; !slices.Equal(f.GetFailed(), want) {
+			t.Errorf("failing %q; want %q", f.GetFailed(), want)
+		}
+		if strings.Contains(f.GetOutput(), "TestLogin (0.01s)") {
+			t.Errorf("the failure's output %q; want its end only, the whole in the file", f.GetOutput())
+		}
+		link := "the whole output of test is in " + file + "; failing: auth TestLogin, docs.spec.ts:32"
+		if _, texts := in.integration(t, w1); !slices.Contains(texts, link) {
+			t.Errorf("W9's events %q lack %q", texts, link)
+		}
+
+		// Due again on the same tree: the push checks do not run, the correction starts at once.
+		tip := in.tip(t)
+		in.pass(t, time.Minute)
+		if runs, _ := in.ran(); slices.Contains(runs, "test") {
+			t.Fatalf("runs %q; want the push checks not run again on a tree they were red on", runs)
+		}
+		state = in.pushState(t)
+		if state.GetCorrectedBy() == "" || state.GetAttempts() != 1 || state.GetHeldRuns() != 1 || state.GetFailedSha() != tip {
+			t.Fatalf("the push %v; want held, run once, corrected at once", state)
+		}
+		again := fmt.Sprintf("the push checks of %s at %s do not run again: they were red on this very tree at %s (test: test exited 1); "+
+			"the whole output is in %s", in.branch, short8(tip), short8(tip), file)
+		if _, texts := in.integration(t, w1); !slices.Contains(texts, again) {
+			t.Errorf("W9's events %q lack %q", texts, again)
+		}
+		c := in.ended(t, state.GetCorrectedBy())
+		if c.GetTitle() != "Merge: push checks — auth TestLogin, docs.spec.ts:32" {
+			t.Errorf("correction title %q; want what failed", c.GetTitle())
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		prompt = p
-		if m := regexp.MustCompile(`whole output in (\S+\.log)`).FindStringSubmatch(p); m != nil {
-			b, _ := os.ReadFile(m[1])
-			read = string(b)
+		for _, s := range []string{"Djinn kept the check's whole output in " + file, "It names as failing: auth TestLogin, docs.spec.ts:32."} {
+			if !strings.Contains(prompt, s) {
+				t.Errorf("the correction's prompt lacks %q:\n%s", s, prompt)
+			}
 		}
-		return "text read the whole output"
+		if !strings.HasSuffix(read, out) {
+			t.Errorf("the correction read %q; want the whole output", read)
+		}
 	})
-	other := in.mustSpawn(t, in.wishID, "Other work", "wait\ntext other", nil) // Work left: the first red waits for it.
-	in.until(t, other.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	azima := in.azima(t, in.wishID, "Login")
-	w1 := in.finished(t, "W9", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
-	in.ran()
 
-	// Red once, other work running: held, no correction yet. The push checks wait until the pass is over: the pass's own
-	// look at the push finds them running.
-	wait := make(chan struct{})
-	in.mu.Lock()
-	in.testWait = wait
-	in.mu.Unlock()
-	in.passApart(t, 0)
-	in.mu.Lock()
-	in.testWait = nil
-	in.mu.Unlock()
-	close(wait)
-	in.h.waitPushes()
-	if got := in.remoteTip(t, bare); got != old {
-		t.Fatalf("pushed red: origin at %s", got)
-	}
-	if runs, _ := in.ran(); !slices.Contains(runs, "test") {
-		t.Fatalf("runs %q; want the push checks", runs)
-	}
-	state := in.pushState(t)
-	if state.GetHeldRuns() != 1 || state.GetCorrectedBy() != "" {
-		t.Fatalf("the push %v; want held once, no correction while other work runs", state)
-	}
-	f := state.GetFailure()
-	file := f.GetOutputFile()
-	if dir := filepath.Join(in.home, "projects", in.projectID, "checks"); filepath.Dir(file) != dir {
-		t.Fatalf("output file %q; want one in %s", file, dir)
-	}
-	if b, err := os.ReadFile(file); err != nil || !strings.HasSuffix(string(b), out) || !strings.HasPrefix(string(b), "# test (test) at ") {
-		t.Fatalf("output file %s = %q, %v; want a heading line, then the whole output", file, b, err)
-	}
-	if want := []string{"auth TestLogin", "docs.spec.ts:32"}; !slices.Equal(f.GetFailed(), want) {
-		t.Errorf("failing %q; want %q", f.GetFailed(), want)
-	}
-	if strings.Contains(f.GetOutput(), "TestLogin (0.01s)") {
-		t.Errorf("the failure's output %q; want its end only, the whole in the file", f.GetOutput())
-	}
-	link := "the whole output of test is in " + file + "; failing: auth TestLogin, docs.spec.ts:32"
-	if _, texts := in.integration(t, w1); !slices.Contains(texts, link) {
-		t.Errorf("W9's events %q lack %q", texts, link)
-	}
+	// A red commit check keeps its whole output too, linked from the task's events and named in its correction's prompt.
+	t.Run("commit check red", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		in.checking(t, "checks { name: \"test\" command: \"test\" when: CHECK_WHEN_COMMIT }\n", nil)
+		in.testCode, in.testOut = 1, redOutput()
+		prompts := make(chan string, 1)
+		in.correctWith(func(dir, p string) string {
+			select {
+			case prompts <- p:
+			default:
+			}
+			return "text corrected"
+		})
+		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 
-	// Due again on the same tree: the push checks do not run, the correction starts at once.
-	tip := in.tip(t)
-	in.pass(t, time.Minute)
-	if runs, _ := in.ran(); slices.Contains(runs, "test") {
-		t.Fatalf("runs %q; want the push checks not run again on a tree they were red on", runs)
-	}
-	state = in.pushState(t)
-	if state.GetCorrectedBy() == "" || state.GetAttempts() != 1 || state.GetHeldRuns() != 1 || state.GetFailedSha() != tip {
-		t.Fatalf("the push %v; want held, run once, corrected at once", state)
-	}
-	again := fmt.Sprintf("the push checks of %s at %s do not run again: they were red on this very tree at %s (test: test exited 1); "+
-		"the whole output is in %s", in.branch, short8(tip), short8(tip), file)
-	if _, texts := in.integration(t, w1); !slices.Contains(texts, again) {
-		t.Errorf("W9's events %q lack %q", texts, again)
-	}
-	c := in.ended(t, state.GetCorrectedBy())
-	if c.GetTitle() != "Merge: push checks — auth TestLogin, docs.spec.ts:32" {
-		t.Errorf("correction title %q; want what failed", c.GetTitle())
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	for _, s := range []string{"Djinn kept the check's whole output in " + file, "It names as failing: auth TestLogin, docs.spec.ts:32."} {
-		if !strings.Contains(prompt, s) {
-			t.Errorf("the correction's prompt lacks %q:\n%s", s, prompt)
+		in.pass(t, 0)
+		got, texts := in.integration(t, w1)
+		file := got.GetFailure().GetOutputFile()
+		if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_RED || file == "" {
+			t.Fatalf("W1's integration %v; want red, its whole output kept", got)
 		}
-	}
-	if !strings.HasSuffix(read, out) {
-		t.Errorf("the correction read %q; want the whole output", read)
-	}
-}
-
-// TestRedCommitCheckKeepsItsOutput: a red commit check keeps its whole output too, linked from the task's events and
-// named in its correction's prompt.
-func TestRedCommitCheckKeepsItsOutput(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	in.checking(t, "checks { name: \"test\" command: \"test\" when: CHECK_WHEN_COMMIT }\n", nil)
-	in.testCode, in.testOut = 1, redOutput()
-	prompts := make(chan string, 1)
-	in.correctWith(func(dir, p string) string {
+		if b, err := os.ReadFile(file); err != nil || !strings.HasSuffix(string(b), redOutput()) {
+			t.Fatalf("output file %s = %q, %v", file, b, err)
+		}
+		if link := "the whole output of test is in " + file + "; failing: auth TestLogin, docs.spec.ts:32"; !slices.Contains(texts, link) {
+			t.Errorf("W1's events %q lack %q", texts, link)
+		}
 		select {
-		case prompts <- p:
-		default:
+		case p := <-prompts:
+			if !strings.Contains(p, "Djinn kept the check's whole output in "+file) {
+				t.Errorf("the correction's prompt lacks the output file:\n%s", p)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("no correction started")
 		}
-		return "text corrected"
 	})
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-
-	in.pass(t, 0)
-	got, texts := in.integration(t, w1)
-	file := got.GetFailure().GetOutputFile()
-	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_RED || file == "" {
-		t.Fatalf("W1's integration %v; want red, its whole output kept", got)
-	}
-	if b, err := os.ReadFile(file); err != nil || !strings.HasSuffix(string(b), redOutput()) {
-		t.Fatalf("output file %s = %q, %v", file, b, err)
-	}
-	if link := "the whole output of test is in " + file + "; failing: auth TestLogin, docs.spec.ts:32"; !slices.Contains(texts, link) {
-		t.Errorf("W1's events %q lack %q", texts, link)
-	}
-	select {
-	case p := <-prompts:
-		if !strings.Contains(p, "Djinn kept the check's whole output in "+file) {
-			t.Errorf("the correction's prompt lacks the output file:\n%s", p)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("no correction started")
-	}
 }
 
 // TestFailingTests: what a red check's output names failing, whatever reports it.
@@ -200,9 +201,12 @@ func TestFailingTests(t *testing.T) {
 		{"node spec", "✖ no unused class (1.2ms)\nℹ fail 1\n✖ failing tests:\n\n✖ no unused class (1.2ms)\n", []string{"no unused class"}},
 		{"none", "lint exited 1: 3 issues\n", nil},
 	} {
-		if got := failingTests(c.out); !slices.Equal(got, c.want) {
-			t.Errorf("%s: failingTests = %q; want %q", c.name, got, c.want)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := failingTests(c.out); !slices.Equal(got, c.want) {
+				t.Errorf("failingTests = %q; want %q", got, c.want)
+			}
+		})
 	}
 }
 
