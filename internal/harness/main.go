@@ -490,6 +490,9 @@ func (h *Harness) mainMerged(
 		if err := tx.Journal(actorHarness, methodMain, record); err != nil {
 			return err
 		}
+		if err := tx.Change(&planv1.ProjectSync{WishId: wish.GetId(), Branch: branch}); err != nil {
+			return err
+		}
 		merged := func(m *planv1.WishMain) {
 			m.Last, m.CorrectedBy, m.Attempts, m.FailedSha, m.Held = record, "", 0, "", ""
 		}

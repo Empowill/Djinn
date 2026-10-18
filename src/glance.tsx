@@ -1,16 +1,16 @@
-// The glance (Decision Q08, mockup L04 v2): beside the questions column, and on a wish's page, each wish's workers,
+// The glance (Decision Q08, mockup L04 v2): beside the questions column, and on a wish's page, what runs in each wish
+// from top to bottom. On top come the watchers (watch providers, babysits), a line each: what they said last and since
+// when, and the request they watch, a click away in the browser. Below them comes the work on its way into the wish's
+// branch (W137): the batch being merged and the check it runs, with its gate and time, the merges waiting in line, the
+// push checks running or a push they hold, and the repair workers (corrections of a merge, of main's merge or of the
+// push checks, reviews of work left not committed), a wrench in place of their dot. Below them come the wish's workers,
 // running now, paused and to come, nothing else, in one order whatever their kind (compareGlance, W219): what is in
 // progress on top, the one begun first above (a filled dot, blue; an investigator, the worker Enlighten me starts,
 // violet; a lit ifrit a vermilion flame with the word of its state), then the paused ones (a circled pause, the reason
 // on hover: stopped by you or the lead, cut short by a restart or a usage limit until Djinn resumes it), then what waits
 // on a task (a circle, listed under that task when it waits too, else naming it: "waits on W26 · Djinn QoL"), then what
-// is planned (a dotted circle). An urgent task carries its label, as in the tasks view. Below them the watchers
-// (watch providers, babysits), a line each: what they said last and since when, and the request they watch, a click
-// away in the browser.
-// Below them, the work on its way into the wish's branch (W137): the batch being merged and the check it runs, with its
-// gate and time, the merges waiting in line, the push checks running or a push they hold, and the repair workers
-// (corrections of a merge, of main's merge or of the push checks, reviews of work left not committed), a wrench in
-// place of their dot. Every line opens its task; a held push opens its failing output.
+// is planned (a dotted circle). An urgent task carries its label, as in the tasks view. Every line opens its task; a
+// held push opens its failing output.
 // Gold stays for what waits on you, in the questions column. It stays in sight while a long question scrolls; on a
 // narrow view it comes above the questions, one line per wish. Read from the tasks the window already has: the
 // details of the active wishes, which the window always reads.
@@ -1055,13 +1055,6 @@ function GlanceTree({
   }
   return (
     <>
-      {rows.length > 0 && (
-        <ul className="glance-list">
-          {rows.map((row) => (
-            <Row key={row.task.id} row={row} onOpenTask={onOpenTask} />
-          ))}
-        </ul>
-      )}
       {watchers.length > 0 && (
         <ul className="glance-list glance-watchers">
           {watchers.map((row) => (
@@ -1084,6 +1077,13 @@ function GlanceTree({
           ))}
           {repairs.map((row) => (
             <RepairItem key={row.task.id} row={row} onOpenTask={onOpenTask} />
+          ))}
+        </ul>
+      )}
+      {rows.length > 0 && (
+        <ul className="glance-list">
+          {rows.map((row) => (
+            <Row key={row.task.id} row={row} onOpenTask={onOpenTask} />
           ))}
         </ul>
       )}

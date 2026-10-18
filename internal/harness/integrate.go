@@ -1462,6 +1462,9 @@ func (h *Harness) settleIntegration(
 			if err := tx.Journal(actorHarness, methodCommit, commit); err != nil {
 				return err
 			}
+			if err := tx.Change(&planv1.ProjectSync{WishId: commit.GetWishId(), Branch: commit.GetBranch()}); err != nil {
+				return err
+			}
 		}
 		for _, b := range batch {
 			t, err := store.Get[*planv1.Task](ctx, tx, b.GetId())

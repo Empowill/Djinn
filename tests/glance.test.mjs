@@ -7,12 +7,13 @@ import { screens, wish } from "./screens.mjs";
 
 const { s, h } = await screens();
 
-// The glance (Decision Q08, mockup L04 v2, W219): beside the questions and on a wish's page, each wish's workers in
-// one order whatever their kind: what is in progress on top, the one begun first above (work, investigation,
-// investigator, lit ifrit), then the paused ones, a circled pause with why on hover, then what waits (under the task it
-// waits on when that one waits too, else naming it and its wish), then what is planned; an urgent task carries its
-// label. Below them, the watchers, a line each, with what they said last, since when, and the request they watch.
-test("the glance lists every worker in one order by state: in progress, paused, waiting, planned; then the watchers", async () => {
+// The glance (Decision Q08, mockup L04 v2, W219, W406): beside the questions and on a wish's page, on top the watchers,
+// a line each, with what they said last, since when, and the request they watch; below them the merges and repairs; then
+// each wish's workers in one order whatever their kind: what is in progress on top, the one begun first above (work,
+// investigation, investigator, lit ifrit), then the paused ones, a circled pause with why on hover, then what waits
+// (under the task it waits on when that one waits too, else naming it and its wish), then what is planned; an urgent
+// task carries its label.
+test("the glance lists watchers on top, then every worker in one order by state: in progress, paused, waiting, planned", async () => {
   const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
   const nowS = Math.floor(Date.now() / 1000);
   const lamp = wish(
@@ -223,6 +224,9 @@ test("the glance lists every worker in one order by state: in progress, paused, 
       ),
     ].map((m) => `${m[2]} ${m[1]}`),
     [
+      "W7 watch watch",
+      "W8 watch watch",
+      "W9 watch paused",
       "W6 investigate",
       "W1 run",
       "W13 run",
@@ -235,9 +239,6 @@ test("the glance lists every worker in one order by state: in progress, paused, 
       "W3 wait child",
       "W5 wait",
       "W4 plan",
-      "W7 watch watch",
-      "W8 watch watch",
-      "W9 watch paused",
     ],
   );
   // Running blue; the investigator violet, naming its question; the lit ifrit's flame.
@@ -567,8 +568,40 @@ test("the glance shows the merges in progress, the queue, a held push and the re
   );
   assert.match(
     plan,
-    /<ul class="glance-list glance-flow" aria-label="Merges and repairs">/,
+    /<ul class="glance-list glance-flow" aria-label="Merges and repairs">[\s\S]*?<ul class="glance-list"><li class="glance-item"><button type="button" class="glance-row run" title="Running · W13 Task W13">/,
   );
+  // Top-down order of What runs: watchers, merges and repairs, then workers.
+  details[qolId] = [
+    ...tasks,
+    task("W14", s.TaskStatus.RUNNING, {
+      provider: s.Provider.WATCH,
+      babysit: {
+        url: "https://github.com/acme/qol/pull/42",
+        number: 42,
+      },
+      lastLine: "GREEN",
+    }),
+  ];
+  const closeQol = djinn.store.open(qolId);
+  await djinn.store.changed(qolId, [s.Change.TASKS]);
+  const withWatcher = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.FlightPlan, { wishes: [qol], onOpen() {}, onToast() {} }),
+    ),
+  );
+  const wideWithWatcher = withWatcher.slice(
+    withWatcher.indexOf('class="glance-wide"'),
+    withWatcher.indexOf('class="glance-narrow"'),
+  );
+  assert.deepEqual(
+    [...wideWithWatcher.matchAll(/<ul class="([^"]+)"/g)].map((m) => m[1]),
+    ["glance-list glance-watchers", "glance-list glance-flow", "glance-list"],
+  );
+  details[qolId] = tasks;
+  await djinn.store.changed(qolId, [s.Change.TASKS]);
+  closeQol();
   // The batch merging, its check and for how long; a click opens its first task.
   assert.match(
     plan,
