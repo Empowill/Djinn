@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/empowill/djinn/internal/dispatch"
 )
 
 // Limit is a provider's usage limit that stopped a worker: the account's session or weekly limit, a quota, a rate
@@ -12,6 +14,8 @@ import (
 type Limit struct {
 	// What is the limit, for a reader: "the account's session limit".
 	What string
+	// Model is the model the limit message names ("claude-opus-4-6"), or "" when the message names no model.
+	Model string
 	// Until is when it resets; zero when the provider did not say.
 	Until time.Time
 	// PerMinute is true for a short per-minute rate or token bucket (TPM/RPM, HTTP 429) that refills within a minute
@@ -44,7 +48,7 @@ func limitIn(reason string, now time.Time) (Limit, bool) {
 		if k.re.MatchString(reason) {
 			until := resetIn(reason, now)
 			perMin := k.perMinute && until.IsZero() && !multiHourQuotaRe.MatchString(reason)
-			return Limit{What: k.what, Until: until, PerMinute: perMin}, true
+			return Limit{What: k.what, Model: dispatch.LimitModel(reason), Until: until, PerMinute: perMin}, true
 		}
 	}
 	return Limit{}, false
@@ -136,10 +140,14 @@ func rateLimitBackoff(hits int) time.Duration {
 
 // limitText says what a task waits for: "the account's session limit, resets at 07:20", in the machine's time.
 func limitText(l Limit, after time.Time, now time.Time) string {
-	if !l.Until.IsZero() {
-		return l.What + ", resets at " + ClockText(l.Until, now)
+	what := l.What
+	if l.Model != "" && !strings.Contains(strings.ToLower(what), strings.ToLower(l.Model)) {
+		what += " for model " + l.Model
 	}
-	return l.What + ", tries again at " + ClockText(after, now)
+	if !l.Until.IsZero() {
+		return what + ", resets at " + ClockText(l.Until, now)
+	}
+	return what + ", tries again at " + ClockText(after, now)
 }
 
 // ClockText writes a time of the machine's day: 07:20, or with its date when it is not today.

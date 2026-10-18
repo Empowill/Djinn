@@ -8,6 +8,7 @@ import (
 	"cmp"
 	"fmt"
 	"math"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -579,9 +580,6 @@ func (s *Situation) held(t *planv1.Task) (why, failed string, hold planv1.TaskHo
 	if why := s.pushHeld(t); why != "" {
 		return why, "", planv1.TaskHold_TASK_HOLD_PUSH
 	}
-	if why := s.limited(t); why != "" {
-		return why, "", planv1.TaskHold_TASK_HOLD_LIMIT
-	}
 	if Watcher(t) {
 		return "", "", 0 // It sleeps until its command prints: no slot, and it writes nothing.
 	}
@@ -596,6 +594,9 @@ func (s *Situation) held(t *planv1.Task) (why, failed string, hold planv1.TaskHo
 					ScopeText(t.GetWriteScopes())), "", planv1.TaskHold_TASK_HOLD_PLACE
 			}
 		}
+	}
+	if why := s.limited(t); why != "" {
+		return why, "", planv1.TaskHold_TASK_HOLD_LIMIT
 	}
 	return "", "", 0
 }
@@ -831,16 +832,56 @@ func (s *Situation) forkedAs(d *planv1.Task) *planv1.Task {
 	return d
 }
 
-// limited says why the task waits for a usage limit: its own, until it resets, or its provider's, which a task
-// waiting for it holds; "" when none holds.
+// limitModelRe extracts the model name a provider limit message proves exhausted ("quota exceeded for model
+// claude-opus-4-6", "rate limit on model 'gemini-2.5-pro'", "models/gemini-2.5-pro"). A limit message that names no
+// model proves only that the task's own run hit a limit, never every task of the provider (W409).
+var limitModelRe = regexp.MustCompile(`(?i)(?:\b(?:for|on)\s+model\s+['"]?([a-z0-9][a-z0-9._-]*)['"]?|\bmodel(?:\s*[:=]|\s+['"])\s*([a-z0-9][a-z0-9._-]*)['"]?|\bmodels/([a-z0-9][a-z0-9._-]*)\b)`)
+
+// LimitModel returns the model name a limit message or wait reason proves exhausted, or "" when the message names no
+// model.
+func LimitModel(text string) string {
+	m := limitModelRe.FindStringSubmatch(text)
+	if len(m) == 0 {
+		return ""
+	}
+	for _, g := range m[1:] {
+		if g != "" {
+			return strings.TrimRight(g, ".,;:")
+		}
+	}
+	return ""
+}
+
+// taskModel is the model a task runs on, when known: its chosen Model, or the last model recorded in Models.
+func taskModel(t *planv1.Task) string {
+	if m := strings.TrimSpace(t.GetModel()); m != "" {
+		return m
+	}
+	if ms := t.GetModels(); len(ms) > 0 {
+		return strings.TrimSpace(ms[len(ms)-1])
+	}
+	return ""
+}
+
+// limited says why the task waits for a usage limit: its own, until it resets, or a model's limit that another task of
+// the same provider on that model hit and still waits for; "" when none holds. A limit message that names no model
+// holds only the task that hit it, never every task of the provider (W409).
 func (s *Situation) limited(t *planv1.Task) string {
 	if Resuming(t) && t.GetResumeAfter() != nil && t.GetResumeAfter().AsTime().After(s.now) {
 		return cmp.Or(t.GetWaitReason(), "its provider's usage limit")
+	}
+	tm := taskModel(t)
+	if tm == "" {
+		return ""
 	}
 	var holder *planv1.Task
 	for _, o := range s.tasks {
 		if o.GetId() == t.GetId() || !Resuming(o) || o.GetResumeAfter() == nil || !o.GetResumeAfter().AsTime().After(s.now) ||
 			provider(o) != provider(t) {
+			continue
+		}
+		m := LimitModel(cmp.Or(o.GetWaitReason(), o.GetError()))
+		if m == "" || !strings.EqualFold(tm, m) {
 			continue
 		}
 		if holder == nil || o.GetResumeAfter().AsTime().After(holder.GetResumeAfter().AsTime()) {

@@ -483,6 +483,26 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
   [TaskStatus.CANCELLED]: "task.status_cancelled",
 };
 
+// ownLimitWait reports whether a resuming task waits for its own usage limit to reset rather than running/resuming or
+// being held by another task, a slot, a push hold, or a provider-wide wait string (W409).
+function ownLimitWait(
+  task: Pick<Task, "status" | "resumeAfter"> &
+    Partial<Pick<Task, "hold" | "waitReason">>,
+): boolean {
+  if (task.status !== TaskStatus.RESUMING || !task.resumeAfter) return false;
+  if (
+    task.hold !== undefined &&
+    task.hold !== TaskHold.UNSPECIFIED &&
+    task.hold !== TaskHold.LIMIT
+  ) {
+    return false;
+  }
+  if (task.waitReason && /^[a-z0-9_-]+ waits for /i.test(task.waitReason)) {
+    return false;
+  }
+  return true;
+}
+
 // taskStatusText names where a task stands: a task Djinn resumes once its provider's limit resets waits for the
 // limit; one cut short and resumed as another task (forkedAs) says which; a running watcher watches, and a running
 // investigator investigates.
@@ -490,15 +510,25 @@ const taskStatusKeys: Record<TaskStatus, TextKey> = {
 // being fixed, not failed.
 export function taskStatusText(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration" | "role" | "kind" | "ifrit">>,
+    Partial<
+      Pick<
+        Task,
+        | "provider"
+        | "integration"
+        | "role"
+        | "kind"
+        | "ifrit"
+        | "hold"
+        | "waitReason"
+      >
+    >,
   forkedAs = "",
   fixedBy = "",
 ): string {
   if (watcherRuns(task)) return t("task.status_watching");
   if (ifritLit(task) || ifritOut(task)) return ifritWord(task);
   if (investigatorRuns(task)) return t("task.status_investigating");
-  if (task.status === TaskStatus.RESUMING && task.resumeAfter)
-    return t("task.status_limit");
+  if (ownLimitWait(task)) return t("task.status_limit");
   if (task.status === TaskStatus.INTERRUPTED && forkedAs)
     return t("task.status_forked", { task: forkedAs });
   if (task.status === TaskStatus.DONE) {
@@ -520,19 +550,33 @@ export function taskStatusText(
   return t(taskStatusKeys[task.status]);
 }
 
-// liveWaitReason is why a task waits, only while it does: planned or resuming. A copy of the reason left in the
-// store never shows on a task that started (W371).
+// liveWaitReason is why a task waits, only while it does: planned or resuming, and only from its own state (never a
+// provider-wide limit flag on a running/resuming task, W409). A copy of the reason left in the store never shows on a
+// task that started (W371).
 export function liveWaitReason(
-  task: Pick<Task, "status" | "waitReason">,
+  task: Pick<Task, "status" | "waitReason"> &
+    Partial<Pick<Task, "resumeAfter" | "hold">>,
 ): string {
-  return task.status === TaskStatus.PENDING ||
-    task.status === TaskStatus.RESUMING
-    ? task.waitReason
-    : "";
+  if (
+    task.status !== TaskStatus.PENDING &&
+    task.status !== TaskStatus.RESUMING
+  ) {
+    return "";
+  }
+  if (
+    task.status === TaskStatus.RESUMING &&
+    !ownLimitWait(task) &&
+    (task.hold === TaskHold.LIMIT ||
+      /^[a-z0-9_-]+ waits for /i.test(task.waitReason))
+  ) {
+    return "";
+  }
+  return task.waitReason;
 }
 
 // endsWait tells whether a status line ends the wait before it: a start, a resume, or another wait.
-const endsWait = /^(started |resumed|resuming: |continued: |waiting: )/;
+const endsWait =
+  /^(started |resumed|resuming: |continued: |waiting: |waiting for the limit: )/;
 
 // foldedWaits folds each "waiting:" line of a task's events that a later start, resume or wait ended into the line
 // that ended it: past, it never reads as where the task stands (W371). It gives the waits each line ended, oldest
@@ -545,7 +589,10 @@ export function foldedWaits<E extends Pick<TaskEvent, "id" | "kind" | "text">>(
   for (const event of events) {
     if (event.kind !== TaskEventKind.STATUS || !endsWait.test(event.text))
       continue;
-    if (event.text.startsWith("waiting: ")) {
+    if (
+      event.text.startsWith("waiting: ") ||
+      event.text.startsWith("waiting for the limit: ")
+    ) {
       waits.push(event);
       continue;
     }
@@ -605,7 +652,18 @@ export type Tone =
 // that failed is red, unless a correction task fixes it while it works (fixedBy, fixerOf): orange, Djinn handles it.
 export function taskTone(
   task: Pick<Task, "status" | "resumeAfter"> &
-    Partial<Pick<Task, "provider" | "integration" | "role" | "kind" | "ifrit">>,
+    Partial<
+      Pick<
+        Task,
+        | "provider"
+        | "integration"
+        | "role"
+        | "kind"
+        | "ifrit"
+        | "hold"
+        | "waitReason"
+      >
+    >,
   forkedAs = "",
   fixedBy = "",
 ): Tone {
@@ -613,7 +671,7 @@ export function taskTone(
   if (watcherRuns(task)) return "watching";
   if (ifritLit(task)) return "ifrit";
   if (ifritOut(task)) return "out";
-  if (status === TaskStatus.RESUMING && task.resumeAfter) return "paused";
+  if (ownLimitWait(task)) return "paused";
   if (status === TaskStatus.INTERRUPTED && forkedAs) return "stopped";
   switch (status) {
     case TaskStatus.RUNNING:

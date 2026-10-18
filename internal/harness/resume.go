@@ -195,7 +195,8 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 		hits := h.incRateHits(t.GetId()) - 1
 		after := now.Add(rateLimitBackoff(hits))
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_RESUMING, ""
-		t.WaitReason, t.ResumeAfter = limitText(l, after, now), timestamppb.New(after)
+		t.WaitReason, t.ResumeAfter, t.Hold = limitText(l, after, now), timestamppb.New(after), planv1.TaskHold_TASK_HOLD_LIMIT
+		logx.L().Info("task held", "task", t.GetCode(), "hold", planv1.TaskHold_TASK_HOLD_LIMIT.String(), "why", t.WaitReason)
 		return
 	}
 	h.clearRateHits(t.GetId())
@@ -210,7 +211,8 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 		after = after.Add(time.Minute) // Once it has reset, not at the very second.
 	}
 	t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_RESUMING, ""
-	t.WaitReason, t.ResumeAfter = limitText(l, after, now), timestamppb.New(after)
+	t.WaitReason, t.ResumeAfter, t.Hold = limitText(l, after, now), timestamppb.New(after), planv1.TaskHold_TASK_HOLD_LIMIT
+	logx.L().Info("task held", "task", t.GetCode(), "hold", planv1.TaskHold_TASK_HOLD_LIMIT.String(), "why", t.WaitReason)
 }
 
 // relaunch starts again the worker of a task Djinn resumes: in its worktree (or its project's folder, or its own

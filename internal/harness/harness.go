@@ -1178,6 +1178,7 @@ func (h *Harness) plan(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	logx.L().Info("task held", "task", task.GetCode(), "hold", task.GetHold().String(), "why", why)
 	h.notify()
 	h.wake()
 	return task, nil
@@ -1452,6 +1453,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		t.FirstStartTime = nowPb
 	}
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, nowPb, nil, 0, ""
+	t.WaitReason, t.MachineWait, t.RoomWait, t.Hold, t.ResumeAfter = "", false, false, 0, nil
 	t.LastActivityTime = nowPb
 	h.mu.Lock()
 	r.startTime = now
@@ -2081,7 +2083,7 @@ func (h *Harness) end(r *run, res Result) {
 	h.useMu.Unlock()
 	switch {
 	case preemptedWhy != "":
-		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
+		t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy, nil
 	case stopping:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, cmp.Or(stoppingReason, "stopped on request")
 	case out != "":
@@ -2209,7 +2211,7 @@ func (h *Harness) end(r *run, res Result) {
 		text = "waiting: " + whyStoppedFirst
 	case networkWait(t):
 		text = "resuming: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it once the network is back"
-	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil:
 		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
 	case t.GetError() != "":
 		text += ": " + t.GetError()

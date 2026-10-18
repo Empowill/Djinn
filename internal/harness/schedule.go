@@ -522,11 +522,17 @@ func (h *Harness) GatesOutside(n func() (outside, merges int)) {
 // that goes first too), and what holds it, when one changed, with an event.
 func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine, room bool, hold planv1.TaskHold) {
 	why = networkWhy(t, grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why))))
-	if t.GetWaitReason() == why && t.GetMachineWait() == machine && t.GetRoomWait() == room && t.GetHold() == hold {
+	clearLimit := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil &&
+		hold != planv1.TaskHold_TASK_HOLD_LIMIT && !t.GetResumeAfter().AsTime().After(h.now())
+	if t.GetWaitReason() == why && t.GetMachineWait() == machine && t.GetRoomWait() == room && t.GetHold() == hold && !clearLimit {
 		return
 	}
 	t = proto.CloneOf(t)
+	if clearLimit {
+		t.ResumeAfter = nil
+	}
 	t.WaitReason, t.MachineWait, t.RoomWait, t.Hold = why, machine, room, hold
+	logx.L().Info("task held", "task", t.GetCode(), "hold", hold.String(), "why", why)
 	h.writeAlone(ctx, actorHarness, methodWait, t, t.GetId(), t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})
 }
 
@@ -544,11 +550,11 @@ func (h *Harness) waited(ctx context.Context, taskID string, now time.Time) stri
 		switch {
 		case strings.HasPrefix(text, "preempted "):
 			return true // Written with the start, after the waits.
-		case !strings.HasPrefix(text, "waiting: "):
+		case !strings.HasPrefix(text, "waiting: ") && !strings.HasPrefix(text, "waiting for the limit: "):
 			return false
 		}
 		if why == "" {
-			why = strings.TrimPrefix(text, "waiting: ")
+			why = strings.TrimPrefix(strings.TrimPrefix(text, "waiting: "), "waiting for the limit: ")
 		}
 		since = ev.GetCreateTime().AsTime()
 		return true
@@ -733,9 +739,10 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 
 // Start starts a planned task that waits for the machine alone, now: the developer asked for it, whatever the slots,
 // the pressure and the memory. Its worker takes a slot all the same: the next tasks wait for it, and the load bar
-// counts it among the workers started by hand (Forced). A task held by anything else (its wish, a dependency, a push hold, its provider's usage
-// limit, a write scope) is refused, with why, and so is one that waits for a task going first: Start frees the
-// machine, never the priority order. The scheduler's pass decides, as it would now.
+// counts it among the workers started by hand (Forced). A task held by a usage limit (TASK_HOLD_LIMIT) passes too when
+// started by hand; a task held by anything else (its wish, a dependency, a push hold, a write scope) is refused, with
+// why, and so is one that waits for a task going first: Start frees the machine and a limit hold, never the priority
+// order. The scheduler's pass decides, as it would now.
 func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskServiceStartRequest) (*planv1.Task, error) {
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
@@ -755,7 +762,7 @@ func (h *Harness) Start(ctx context.Context, procedure string, req *planv1.TaskS
 		return nil, plan.Status(err)
 	}
 	for _, d := range s.Pass() {
-		if d.Task.GetId() == task.GetId() && (d.Failed != "" || d.Why != "" && !d.Machine) {
+		if d.Task.GetId() == task.GetId() && (d.Failed != "" || d.Why != "" && !d.Machine && d.Hold != planv1.TaskHold_TASK_HOLD_LIMIT) {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s waits for more than the machine: %s", task.GetCode(), cmp.Or(d.Failed, d.Why)))
 		}
 	}

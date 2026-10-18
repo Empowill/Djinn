@@ -280,7 +280,7 @@ func notWoken(t *planv1.Task, why string) string {
 // markWoken makes t, whose worker the Lamplighter ended for why, wait to be continued on its session: its last run
 // ends woken.
 func markWoken(t *planv1.Task, why string, end *timestamppb.Timestamp) {
-	t.Status, t.Error, t.Continuing, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true, why
+	t.Status, t.Error, t.Continuing, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true, why, nil
 	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].GetEndTime() == nil {
 		t.Runs[len(t.Runs)-1].EndTime = end
 	}

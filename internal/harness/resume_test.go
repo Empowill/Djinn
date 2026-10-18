@@ -114,8 +114,8 @@ func waking(h *Harness, ok func(*planv1.Task) bool) func(*planv1.Task) bool {
 var resetAt = time.Unix(1791436800, 0)
 
 // TestSessionLimitWaitsThenResumes replays the real end of a claude worker the account's session limit stopped: the
-// task does not fail, it waits for the reset the provider gave, and no other claude worker starts meanwhile. Once
-// the reset is past, the scheduler resumes it on its session, and it finishes.
+// task does not fail, it waits for the reset the provider gave, and another claude worker is not held because the
+// message names no model (W409). Once the reset is past, the scheduler resumes it on its session, and it finishes.
 func TestSessionLimitWaitsThenResumes(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -140,25 +140,26 @@ func TestSessionLimitWaitsThenResumes(t *testing.T) {
 		t.Fatalf("after the limit: %v, want waiting for %q", got, why)
 	}
 
-	// No other claude worker starts while the limit holds; a fake one does.
+	// Because the limit message names no model, it holds only the task that hit it (W409): another claude worker starts
+	// right away with no wait reason.
+	sw.play(success)
 	other, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "Another", Prompt: "x", Provider: planv1.Provider_PROVIDER_CLAUDE,
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if o := other.Msg.GetTask(); o.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || o.GetWaitReason() != "claude waits for "+why {
+	if o := other.Msg.GetTask(); o.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || o.GetWaitReason() != "" || o.GetHold() != 0 {
 		t.Errorf("another claude task: %v", o)
 	}
-	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: other.Msg.GetTask().GetId()})); err != nil {
-		t.Fatal(err)
+	if o := e.ended(t, other.Msg.GetTask().GetId()); o.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("another claude task ended: %v", o)
 	}
 	if f := e.spawn(t, wishID, "text free"); f.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Errorf("a fake task while claude's limit holds: %v", f)
 	}
 
-	// Before the reset nothing starts; after it, the task resumes on its session and finishes.
-	sw.play(success)
+	// Before the reset the limited task waits; after it, the scheduler resumes it on its session and it finishes.
 	clock.set(resetAt.Add(30 * time.Second))
 	e.h.wake()
 	time.Sleep(50 * time.Millisecond)
@@ -650,4 +651,87 @@ func TestReplayEnvFailuresResetsResumesAndHonorsCooldown(t *testing.T) {
 	clock.set(resumingA.GetResumeAfter().AsTime().Add(time.Second))
 	e.h.wake()
 	e.until(t, idA, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+}
+
+// TestQuotaHoldsOnlyProvenModelAndStartPasses (W409): with the fake provider, a quota message that names no model holds
+// only the task that hit it; a quota message that names a model holds another task of the same provider on that model,
+// never another model; and djinn task start passes the limit hold and clears the running task's wait reason.
+func TestQuotaHoldsOnlyProvenModelAndStartPasses(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	home := t.TempDir()
+	e := upWith(t, home, map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: Fake{}}, WithClock(func() time.Time { return now }))
+	wishID, _ := e.wish(t, gitRepo(t))
+
+	// 1. Unscoped quota on W1 holds W1 alone, never W2.
+	w1Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "W1 unscoped quota", Prompt: "fail RESOURCE_EXHAUSTED: quota exceeded",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w1 := e.until(t, w1Res.Msg.GetTask().GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RESUMING))
+	if w1.GetHold() != planv1.TaskHold_TASK_HOLD_LIMIT || w1.GetResumeAfter() == nil {
+		t.Fatalf("w1 after unscoped quota = %v", w1)
+	}
+
+	w2Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "W2 same model", Prompt: "text w2 done",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w2 := e.ended(t, w2Res.Msg.GetTask().GetId()); w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("w2 held by unscoped quota on w1: %v", w2)
+	}
+
+	// 2. Model-scoped quota on W3 holds W4 (same model), does not hold W5 (another model), and Start passes it for W4.
+	w3Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "W3 model quota", Prompt: "fail RESOURCE_EXHAUSTED: quota exceeded for model claude-opus-4-6",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w3 := e.until(t, w3Res.Msg.GetTask().GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RESUMING))
+	if !strings.Contains(w3.GetWaitReason(), "for model claude-opus-4-6") {
+		t.Fatalf("w3 WaitReason = %q, want model claude-opus-4-6", w3.GetWaitReason())
+	}
+
+	w4Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "W4 held by model quota", Prompt: "text w4 done",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w4 := w4Res.Msg.GetTask()
+	if w4.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(w4.GetWaitReason(), "fake waits for") {
+		t.Fatalf("w4 = %v, want held by claude-opus-4-6 quota", w4)
+	}
+
+	w5Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "W5 other model", Prompt: "text w5 done",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-sonnet-4-6",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w5 := e.ended(t, w5Res.Msg.GetTask().GetId()); w5.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("w5 on another model held by opus quota: %v", w5)
+	}
+
+	started, err := e.tasks.Start(t.Context(), connect.NewRequest(&planv1.TaskServiceStartRequest{TaskId: w4.GetId()}))
+	if err != nil {
+		t.Fatalf("Start(w4) held by model quota: %v", err)
+	}
+	if s := started.Msg.GetTask(); s.GetWaitReason() != "" || s.GetHold() != 0 || s.GetResumeAfter() != nil {
+		t.Errorf("started w4 = %v, want empty WaitReason, Hold 0, nil ResumeAfter", s)
+	}
+	if w4Done := e.ended(t, w4.GetId()); w4Done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("w4 after Start: %v", w4Done)
+	}
 }

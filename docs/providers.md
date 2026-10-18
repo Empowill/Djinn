@@ -350,11 +350,12 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in four 
   (it reads "resumed as W47").
 - **Its provider's usage limit stopped it.** The task waits for the reset (status "waiting for the limit", with
   "the account's session limit, resets at 07:20"), then resumes. Without a reset time, it waits 15 minutes, then 30,
-  doubling up to 2 hours. While a limit holds, no new worker of that provider starts. The scheduler notes the
-  account the agent was signed in with when the limit stopped it (`TaskHealth.account`: a hash of what its status
-  command prints of it, `claude auth status`'s email and organization, `codex login status`'s line; never the account
-  itself) and reads it again once a minute while the task waits: another account, and the task resumes at once.
-  agy documents no status command: its limit waits for the reset.
+  doubling up to 2 hours. While a limit holds, a limit that names a model holds only the tasks of that provider on
+  that model, and one that names none holds only the task itself (`djinn task start` passes a limit hold). The
+  scheduler notes the account the agent was signed in with when the limit stopped it (`TaskHealth.account`: a hash of
+  what its status command prints of it, `claude auth status`'s email and organization, `codex login status`'s line;
+  never the account itself) and reads it again once a minute while the task waits: another account, and the task
+  resumes at once. agy documents no status command: its limit waits for the reset.
 - **Preemption for an investigator worker.** When memory is short and an investigator worker ("Qxx: enlighten")
   cannot start, Djinn makes room: it interrupts the running work task of lowest priority so that it resumes later in
   its session or conversation (Claude, Antigravity), RESUMING with the wait reason "made room for Qxx: enlighten",
