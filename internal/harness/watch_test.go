@@ -662,10 +662,14 @@ func TestWatcherLineTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.until(t, other.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 1" })
+	run := func(t *planv1.Task) int {
+		n, _ := strconv.Atoi(strings.TrimPrefix(t.GetLastLine(), "run "))
+		return n
+	}
+	seen := run(e.until(t, other.GetId(), func(t *planv1.Task) bool { return run(t) >= 1 }))
 	clock.set(clock.now().Add(time.Hour))
-	got := e.until(t, other.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 3" }).GetLastLineTime()
+	got := e.until(t, other.GetId(), func(t *planv1.Task) bool { return run(t) >= seen+2 }).GetLastLineTime()
 	if !got.AsTime().Equal(clock.now()) {
-		t.Errorf("run 3 since %v, want %v", got.AsTime(), clock.now())
+		t.Errorf("a new line since %v, want %v", got.AsTime(), clock.now())
 	}
 }

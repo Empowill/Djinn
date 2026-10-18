@@ -234,37 +234,41 @@ func TestWrite(t *testing.T) {
 			time.Sleep(every)
 		}
 		out = output(t, term, uint64(len(out)), contains("done"))
-		// One line a read: the byte count of the read and when it came, in microseconds since the epoch. A read that
-		// came a whole key repeat after its space was typed (two for a read of several spaces, which a terminal
-		// holding one space until the next shows as one repeat) says the program was late, not the terminal: under
-		// load (the end-to-end tests run beside these, W306) the check proves nothing, and the test says so.
+		// One line a read: the byte count of the read and when it came, in microseconds since the epoch. When the
+		// helper is descheduled past the next space (one key repeat, 30 ms), the kernel buffer already holds two
+		// spaces and Read returns both; a terminal that holds or batches spaces itself does so across the run, never
+		// delivering most spaces on their own before the next is typed.
 		reads := regexp.MustCompile(`read (\d+) at (\d+)`).FindAllStringSubmatch(out, -1)
-		var late int64
+		var alone int
+		var late, maxLate int64
 		i := 0
 		for _, r := range reads {
 			n, _ := strconv.Atoi(r[1])
 			at, _ := strconv.ParseInt(r[2], 10, 64)
-			if i >= repeats {
+			if i+n > repeats {
 				t.Fatalf("the program read more than %d spaces:\n%s", repeats, out)
 			}
-			if at-typed[i] >= every.Microseconds()*int64(min(n, 2)) {
-				t.Skipf("read %d came %d ms after its space was typed, the program was late (the machine is under "+
-					"load): the check needs a calm machine", i, (at-typed[i])/1000)
+			if n < 1 || at < typed[i+n-1] {
+				t.Fatalf("read %d got %d bytes before they were typed:\n%s", i, n, out)
 			}
-			if n != 1 {
-				t.Fatalf("read %d got %d bytes, want one space at a time", i, n)
+			maxLate = max(maxLate, at-typed[i])
+			if n == 1 && (i+1 == repeats || at < typed[i+1]) {
+				alone++
+				late = max(late, at-typed[i])
 			}
-			if i+1 < repeats && at >= typed[i+1] {
-				t.Fatalf("read %d came %d ms after the next space was typed: held back, not as typed",
-					i, (at-typed[i+1])/1000)
-			}
-			late = max(late, at-typed[i])
 			i += n
 		}
 		if i != repeats {
 			t.Fatalf("the program read %d spaces, want %d:\n%s", i, repeats, out)
 		}
-		t.Logf("%d spaces, one read each, at most %d ms after they were typed", repeats, late/1000)
+		if alone < repeats/2 {
+			if maxLate >= 2*every.Microseconds() {
+				t.Skipf("a read came %d ms after its space was typed, the program was late (the machine is under "+
+					"load): the check needs a calm machine", maxLate/1000)
+			}
+			t.Fatalf("only %d of %d spaces arrived on their own before the next was typed:\n%s", alone, repeats, out)
+		}
+		t.Logf("%d/%d spaces on their own, at most %d ms after they were typed", alone, repeats, late/1000)
 	})
 }
 
