@@ -6,6 +6,9 @@ run:
   # Tests and CI build headless (no CGO, no webview): the window's code needs the native toolkit to type-check. The
   # lint task runs a second pass with the mcp tag on cmd/djinn, the build of the native end-to-end tests.
   build-tags: [headless]
+  # Workers and integration checks share one machine: wait on /tmp/golangci-lint.lock instead of failing after 5 s
+  # when another worktree runs golangci-lint at the same time.
+  allow-serial-runners: true
 linters:
   default: none
   enable:
