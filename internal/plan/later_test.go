@@ -13,6 +13,7 @@ import (
 // before, above one asked after; the date is read again from the store. Clearing it gives the question its place
 // back. A decided or withdrawn question is not put off.
 func TestQuestionLater(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	wish := c.wish(t)

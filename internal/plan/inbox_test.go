@@ -37,6 +37,7 @@ const babysitMRFront = `metadata:
 // TestReadSource: a skill's source reads with its period, five minutes by default, and its summary on one line, the
 // skill's description without one; one that cannot be used says why, in djinn skill list too.
 func TestReadSource(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	src, err := ReadSource(agentSkill(t, dir, "babysit-mr", babysitMRFront))
 	if err != nil || src == nil || src.Skill != "babysit-mr" || src.Watch != "sh assigned.sh" || src.Every != 10*time.Minute ||
@@ -84,6 +85,7 @@ func TestReadSource(t *testing.T) {
 // until it is plugged in on this machine; a source is named <project>/<skill>, or by its skill alone when one
 // project holds it. Unplugged, it runs no more; one plugged in whose skill is gone is listed, to be unplugged.
 func TestSources(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	gong := &planv1.Project{Id: store.NewID(), Name: "gong", Directory: t.TempDir()}
@@ -189,6 +191,7 @@ func TestSources(t *testing.T) {
 // and why it failed, with the failures in a row and since when. djinn inbox sources shows it beside the summary. One
 // not plugged in keeps nothing, and unplugging a source forgets its run.
 func TestKeepSourceRun(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	gong := &planv1.Project{Id: store.NewID(), Name: "gong", Directory: t.TempDir()}
@@ -255,6 +258,7 @@ func TestKeepSourceRun(t *testing.T) {
 // Djinn cannot read it, and why. One whose other key breaks it, as dolmen's argument-hint lines do, is an
 // information only. Plugged in before it broke, it stays listed with why, to be unplugged.
 func TestUnreadableSkill(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	dolmen := &planv1.Project{Id: store.NewID(), Name: "dolmen", Directory: t.TempDir()}
@@ -329,6 +333,7 @@ func TestUnreadableSkill(t *testing.T) {
 // gh, it lists the pull requests assigned to the developer and those that request their review, read only. An assigned
 // one proposes the skill's wish; one to review proposes none of the skill.
 func TestOwnSource(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the source and the fake gh are shell scripts")
 	}
@@ -401,6 +406,7 @@ esac
 // until an answer. The same item, or one whose link a wish holds, is not proposed again; a dismissed or routed item
 // neither. Routing it makes the template's wish with its watcher and lead, or files it and tells the lead.
 func TestInbox(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the lines are checked for the shells of Unix")
 	}
@@ -549,6 +555,7 @@ func TestInbox(t *testing.T) {
 }
 
 func TestItemKey(t *testing.T) {
+	t.Parallel()
 	for text, want := range map[string]string{
 		"Babysit !12\nhttps://gitlab.example.com/acme/gong/-/merge_requests/12.": "https://gitlab.example.com/acme/gong/-/merge_requests/12",
 		"  carol   mentioned you\nlunch?":                                        "carol mentioned you",

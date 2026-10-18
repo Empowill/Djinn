@@ -116,6 +116,7 @@ func setLead(t *testing.T, c clients, req *planv1.LeadServiceSetRequest) (*planv
 }
 
 func TestSetLead(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	dir := t.TempDir()
@@ -180,6 +181,7 @@ func TestSetLead(t *testing.T) {
 }
 
 func TestResume(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	if _, err := serve(t).lead.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{})); code(err) != connect.CodeUnimplemented {
 		t.Errorf("resume without terminals: %v, want unimplemented", err)
@@ -255,6 +257,7 @@ func TestResume(t *testing.T) {
 }
 
 func TestLeadFolders(t *testing.T) {
+	t.Parallel()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip(err)
@@ -280,7 +283,7 @@ func TestLeadFolders(t *testing.T) {
 
 // TestLeadStartsInAProject: a lead never starts in the home folder. A session recorded there is not resumed: a new
 // lead starts from the brief in the first of Djinn's projects; with no project at all, nothing starts, and the
-// error says to create one.
+// error says to create one. It sets HOME: it runs alone.
 func TestLeadStartsInAProject(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the home folder comes from USERPROFILE there; HoldsHome is the same code")
@@ -381,6 +384,7 @@ func TestLeadStartsInAProject(t *testing.T) {
 	}
 }
 
+// TestHoldsHome sets HOME: it runs alone.
 func TestHoldsHome(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the home folder comes from USERPROFILE there")
@@ -410,6 +414,7 @@ func TestHoldsHome(t *testing.T) {
 // from the brief in the lead's terminal; an antigravity or codex one leaves the claude record as it is, a claude one
 // over a codex record takes its place. While the terminal runs a lead, nothing starts, and the note says so.
 func TestResumeAnotherAgent(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the lines are checked for the shells of Unix; TestLeadLine checks cmd.exe")
 	}
@@ -484,6 +489,7 @@ func TestResumeAnotherAgent(t *testing.T) {
 // TestLeadTell: what the developer writes reaches the lead's terminal as their own words, its line breaks kept,
 // about a wish when they name one, and whether it waits for them; never a terminal that runs no lead, nor a shell.
 func TestLeadTell(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	tellReq := func(text, wishID string) *connect.Request[planv1.LeadServiceTellRequest] {
 		return connect.NewRequest(&planv1.LeadServiceTellRequest{Text: text, WishId: wishID})
@@ -549,11 +555,10 @@ func TestLeadTell(t *testing.T) {
 	}
 }
 
-// TestLeadChoose: the choice the lead's agent shows comes with the lead, and the window's answer goes to the lead's
-// terminal, only while that very choice shows: the same options on another command need a new decision.
 // TestLeadStartFailureVisibleUntilRetry: why the lead could not start, and how it ended, stay on LeadService.Get, for
 // the window to show beside Lead, until Lead starts it again.
 func TestLeadStartFailureVisibleUntilRetry(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	leads := &fakeLeads{err: errors.New("agent executable unavailable")}
 	c := serve(t, WithLeads(leads))
@@ -601,7 +606,10 @@ func TestLeadStartFailureVisibleUntilRetry(t *testing.T) {
 	}
 }
 
+// TestLeadChoose: the choice the lead's agent shows comes with the lead, and the window's answer goes to the lead's
+// terminal, only while that very choice shows: the same options on another command need a new decision.
 func TestLeadChoose(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	choose := func(c clients, req *planv1.LeadServiceChooseRequest) error {
 		_, err := c.lead.Choose(ctx, connect.NewRequest(req))
@@ -652,6 +660,7 @@ func TestLeadChoose(t *testing.T) {
 	}
 }
 
+// TestLeadAgyProject points AgyProjectsDir, the package's, at its own folder: it runs alone.
 func TestLeadAgyProject(t *testing.T) {
 	projectsDir := t.TempDir()
 	prev := AgyProjectsDir

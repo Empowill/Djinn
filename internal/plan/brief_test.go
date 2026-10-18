@@ -21,7 +21,12 @@ import (
 	"github.com/empowill/djinn/lead/notes"
 )
 
+// TestBrief: djinn wish brief says where the wish stands on its own, in this order: the description, the azimas,
+// what runs and waits, the open questions, the latest decisions and blocks; then how to lead it, Djinn's rules, then the
+// projects' own. It never carries a local path, a credential or a raw line, and its stable part is one cache for every
+// wish on the same projects.
 func TestBrief(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c, wish, repo := source(t)
 	home := t.TempDir()
@@ -31,9 +36,14 @@ func TestBrief(t *testing.T) {
 		}
 	}
 	// The checks Djinn runs on the project's work, which the lead and each worker learn.
-	writeSettings(t, filepath.Join(repo, SettingsFile), "setup: \"npm ci\"\n"+
+	writeSettings(t, filepath.Join(repo, SettingsFile), "setup: \"npm ci\"\ninstall_questions: when_needed\n"+
 		"checks { name: \"lint\" command: \"go tool task lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"go tool task test\" when: CHECK_WHEN_PUSH }\n")
+	// A description and an azima, which the wish's part opens with.
+	description := "Ship the API to the shop.\nScope: the store, not the web."
+	if _, err := c.wishes.Describe(ctx, connect.NewRequest(&planv1.WishServiceDescribeRequest{WishId: wish.GetId(), Text: description})); err != nil {
+		t.Fatal(err)
+	}
 	// What a brief must never carry: a local path, credentials in a URL, a raw line, a tool's result.
 	if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
 		WishId: wish.GetId(), Kind: "report", Title: "Where the code is",
@@ -58,17 +68,14 @@ func TestBrief(t *testing.T) {
 		Id: store.NewID(), WishId: wish.GetId(), Code: "W5", Title: "Pause a worker, again", Status: planv1.TaskStatus_TASK_STATUS_DONE,
 		ForkOf: "W4", CreateTime: timestamppb.Now(), EndTime: timestamppb.Now(),
 	}
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		for _, task := range []*planv1.Task{failed, resuming, cut, fork} {
-			if err := tx.Journal(actor, "test/put", task); err != nil {
-				return err
-			}
-			if err := tx.Put(task); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
+	azima := &planv1.Task{Id: store.NewID(), WishId: wish.GetId(), Code: "T01", Title: "The store", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now()}
+	part := &planv1.Task{Id: store.NewID(), WishId: wish.GetId(), Code: "W6", Title: "Back the store up", PartOf: azima.GetId(),
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now()}
+	putTasks(t, c.store, failed, resuming, cut, fork, azima, part)
+	if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
+		WishId: wish.GetId(), Kind: "report", Title: "Where the store stands", Content: "Written, not backed up.",
+	})); err != nil {
 		t.Fatal(err)
 	}
 
@@ -88,8 +95,10 @@ func TestBrief(t *testing.T) {
 		t.Errorf("the open questions come before X, then can wait:\n%s", text)
 	}
 	// The wish first, where it stands; then how to lead it: Djinn's rules, then the projects' own.
-	order := []string{"# The wish: Ship the API", "## Running", "## Waiting", "## Open questions", "## Latest decisions",
-		"## Latest blocks", "# Leading in Djinn", "## Commands", "## The projects' rules"}
+	order := []string{"# The wish: Ship the API\n\n" + description + "\n\n- Identifier:", "## Azimas", "**T01** The store: ready",
+		"## Running", "**W1** Write the store", "## Waiting", "**W6** Back the store up (part of T01)", "## Open questions",
+		"## Latest decisions", "## Latest blocks", "### Where the store stands (report)",
+		"# Leading in Djinn", "**Start from the brief.**", "## Commands", "`djinn wish describe <wish> --text", "## The projects' rules"}
 	last := -1
 	for _, s := range order {
 		i := strings.Index(text, s)
@@ -111,7 +120,7 @@ func TestBrief(t *testing.T) {
 		"When writing a worker's prompt, ask for the commit checks and the targeted tests, never \"run the whole test suite\"; the push checks are Djinn's.",
 		wish.GetId(), "**Q01** Which store? → A: SQLite", "**W1** Write the store (claude", "**W2** Write the docs: failed",
 		"### No CGO (decision)", "In api/internal", "https://example.com/acme.git",
-		"`djinn wish sync <wish>`", "republish that file as it is, in one call",
+		"grant a right, install and restart (api: when_needed, notes: always)", "`djinn wish sync <wish>`", "republish that file as it is, in one call",
 		"**W3** Reopen the leads: resuming by itself, the account's session limit, resets at 07:20",
 		"**W4** Pause a worker: resumed as W5",
 		"**To follow up on a task, continue it**", "Fork it only to start a different task from its context",
@@ -187,15 +196,16 @@ func TestBrief(t *testing.T) {
 // serveLeads serves the plan with fake terminals and pages in home, as djinn up does.
 func serveLeads(t *testing.T, home string, opts ...Option) (clients, *fakeLeads) {
 	t.Helper()
-	projectsDir := filepath.Join(home, "agy-projects")
-	prev := AgyProjectsDir
-	AgyProjectsDir = func() (string, error) { return projectsDir, nil }
-	t.Cleanup(func() { AgyProjectsDir = prev })
 	s, err := store.Open(t.Context(), "", Entities()...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { s.Close() })
+	// As in serve: the line that says the lead's events wait is typed by a timer, which would type into the fake
+	// terminals while the test reads them.
+	l := &leadWatch{timing: defaultWatchTiming}
+	l.timing.remind, l.timing.grace = time.Hour, time.Hour
+	leadWatches.Store(s, l)
+	t.Cleanup(func() { l.stop(); leadWatches.Delete(s); s.Close() })
 	leads := &fakeLeads{}
 	mux := http.NewServeMux()
 	for prefix, h := range Handlers(s, append([]Option{WithLeads(leads), WithPages(NewPages(s, home, "v0-test"))}, opts...)...) {
@@ -216,6 +226,7 @@ func serveLeads(t *testing.T, home string, opts ...Option) (clients, *fakeLeads)
 }
 
 func TestResumeFromBrief(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the lines are checked for the shells of Unix; TestBriefLine checks cmd.exe")
 	}
@@ -317,6 +328,7 @@ func TestResumeFromBrief(t *testing.T) {
 }
 
 func TestLeadLine(t *testing.T) {
+	t.Parallel()
 	data := `C:\Users\Ann Lee\AppData\Roaming\djinn\lead`
 	file := data + `\` + LeadFirstFile
 	claude := &planv1.Lead{Provider: planv1.Provider_PROVIDER_CLAUDE, SessionId: "s1"}
@@ -358,179 +370,226 @@ func TestLeadLine(t *testing.T) {
 	}
 }
 
-// TestBriefFinished: finished tasks leave the live lists; only the latest few show, the latest ended first, with who
-// closed one by hand and why.
-func TestBriefFinished(t *testing.T) {
-	ctx := t.Context()
-	c := serve(t)
-	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Old work"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wishID := made.Msg.GetWish().GetId()
+// TestBuildBrief: what the moving part of a wish's brief says of its tasks, case by case: the tasks Djinn would have
+// stored, then the lines the brief must hold, in order where it matters, and those it must not.
+func TestBuildBrief(t *testing.T) {
+	t.Parallel()
 	day := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
-	var tasks []*planv1.Task
-	for i := range briefDone + 2 {
-		tasks = append(tasks, &planv1.Task{
-			Id: store.NewID(), WishId: wishID, Code: fmt.Sprintf("W%d", i+1), Title: "Old task", Status: planv1.TaskStatus_TASK_STATUS_DONE,
-			CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(time.Duration(i) * time.Hour)),
+	for _, tc := range []struct {
+		name  string
+		tasks func(wishID string) []*planv1.Task
+		wish  func(w *planv1.Wish, tasks []*planv1.Task) // edits the wish before the brief, when set
+		want  []string                                   // in the moving part
+		order []string                                   // in the moving part, in this order
+		never []string                                   // nowhere in the moving part
+	}{{
+		// Finished tasks leave the live lists; only the latest few show, the latest ended first, with who closed one by
+		// hand and why. What waits comes by status: failed, waiting, then planned; a task cut short and not resumed by
+		// Djinn (W9) is history.
+		name: "finished",
+		tasks: func(wishID string) []*planv1.Task {
+			var tasks []*planv1.Task
+			for i := range briefDone + 2 {
+				tasks = append(tasks, &planv1.Task{
+					Id: store.NewID(), WishId: wishID, Code: fmt.Sprintf("W%d", i+1), Title: "Old task", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+					CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(time.Duration(i) * time.Hour)),
+				})
+			}
+			// W7 ended last; W3 was closed by hand, later than W6 ended.
+			tasks[2].EndTime = timestamppb.New(day.Add(5*time.Hour + 30*time.Minute))
+			tasks[2].Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: tasks[2].GetEndTime(), Note: "merged in Git"}
+			for code, status := range map[string]planv1.TaskStatus{
+				"W10": planv1.TaskStatus_TASK_STATUS_PENDING, "W11": planv1.TaskStatus_TASK_STATUS_WAITING,
+				"W12": planv1.TaskStatus_TASK_STATUS_FAILED, "W9": planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
+			} {
+				tasks = append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: code, Title: "Live", Status: status,
+					CreateTime: timestamppb.New(day)})
+			}
+			return tasks
+		},
+		want: []string{"## Finished: 8, the latest\n\n" +
+			"- **W7** Old task: done\n- **W3** Old task: done, closed by the developer: merged in Git\n- **W6** Old task: done\n" +
+			"- **W5** Old task: done\n- **W4** Old task: done\n"},
+		order: []string{"**W12**", "**W11**", "**W10**", "## Finished"},
+		never: []string{"**W9**", "**W1** "},
+	}, {
+		name: "cancelled",
+		tasks: func(wishID string) []*planv1.Task {
+			return []*planv1.Task{{
+				Id: store.NewID(), WishId: wishID, Code: "W1", Title: "Useless task", Status: planv1.TaskStatus_TASK_STATUS_CANCELLED,
+				CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(time.Hour)),
+				Cancelled: &planv1.Cancellation{Actor: planv1.Closer_CLOSER_LEAD, CreateTime: timestamppb.New(day.Add(time.Hour)), Note: "no longer needed"},
+			}}
+		},
+		want: []string{"- **W1** Useless task: cancelled, by the lead: no longer needed\n"},
+	}, {
+		// Where each finished task's work stands on its way into the wish's integration branch, and why a task waits for
+		// a dependency's work to be committed.
+		name: "work stands",
+		tasks: func(wishID string) []*planv1.Task {
+			in := func(state planv1.IntegrationState, reason, by string) *planv1.TaskIntegration {
+				return &planv1.TaskIntegration{State: state, Branch: "feat/x", Sha: "1a2b3c4d5e6f", Reason: reason, CorrectedBy: by}
+			}
+			var tasks []*planv1.Task
+			for i, integration := range []*planv1.TaskIntegration{
+				nil,
+				in(planv1.IntegrationState_INTEGRATION_STATE_PENDING, "", ""),
+				in(planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, "", ""),
+				in(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, "W4 conflicts with feat/x in a.go", "W9"),
+				in(planv1.IntegrationState_INTEGRATION_STATE_RED, "test exited 1", ""),
+			} {
+				tasks = append(tasks, &planv1.Task{
+					Id: store.NewID(), WishId: wishID, Code: fmt.Sprintf("W%d", i+1), Title: "Work", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+					CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(time.Duration(5-i) * time.Minute)), Integration: integration,
+				})
+			}
+			tasks = append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W6", Title: "Next", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+				Scheduled: true, DependsOn: []string{tasks[1].GetId()}, WaitReason: "waits for W2 to be committed", CreateTime: timestamppb.New(day)})
+			return append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W7", Title: "Work", Status: planv1.TaskStatus_TASK_STATUS_DONE,
+				CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(6 * time.Minute)), Integration: &planv1.TaskIntegration{
+					State: planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED, Branch: "feat/x", ReviewedBy: tasks[1].GetId(),
+				}})
+		},
+		want: []string{
+			"- **W6** Next: planned, waits for W2 to be committed\n",
+			"- **W7** Work: changes not committed, not merged, reviewed by W2\n" +
+				"- **W1** Work: done\n" +
+				"- **W2** Work: waiting to be committed\n" +
+				"- **W3** Work: committed into feat/x as 1a2b3c4d\n" +
+				"- **W4** Work: conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9\n",
+		},
+	}, {
+		// A running task's line names its model when set.
+		name: "running model",
+		tasks: func(wishID string) []*planv1.Task {
+			return []*planv1.Task{{Id: store.NewID(), WishId: wishID, Code: "W1", Title: "Write the store", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+				Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "claude-sonnet-4-5", CreateTime: timestamppb.Now(), StartTime: timestamppb.Now()}}
+		},
+		want: []string{"**W1** Write the store (claude · claude-sonnet-4-5, since "},
+	}, {
+		// Diff review comments on a task show with their file, lines and resolution.
+		name: "comments",
+		tasks: func(wishID string) []*planv1.Task {
+			return []*planv1.Task{{Id: store.NewID(), WishId: wishID, Code: "W1", Title: "Write the store", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+				CreateTime: timestamppb.Now(), StartTime: timestamppb.Now(), Comments: []*planv1.TaskComment{
+					{Id: store.NewID(), File: "src/main.go", Line: 10, EndLine: 10, Text: "Check boundary condition"},
+					{Id: store.NewID(), File: "src/utils.go", Line: 20, EndLine: 25, Text: "Refactored helper function", Resolved: true},
+				}}}
+		},
+		want: []string{
+			"- Comment on src/main.go, line 10 (unresolved): Check boundary condition",
+			"- Comment on src/utils.go, lines 20-25 (resolved): Refactored helper function",
+		},
+	}, {
+		// A push the checks held names the project, why, and the task correcting it.
+		name: "held push",
+		tasks: func(wishID string) []*planv1.Task {
+			return []*planv1.Task{{Id: store.NewID(), WishId: wishID, Code: "W10", Title: "Fix push", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+				CreateTime: timestamppb.Now()}}
+		},
+		wish: func(w *planv1.Wish, tasks []*planv1.Task) {
+			w.Pushes = []*planv1.WishPush{{ProjectId: w.GetProjectIds()[0], Held: "push checks failed: test exited 1", CorrectedBy: tasks[0].GetId()}}
+		},
+		want: []string{"- Push held in api: push checks failed: test exited 1, corrected by W10.\n"},
+	}, {
+		// An investigation's line is marked, running, waiting or finished (W213).
+		name: "investigations",
+		tasks: func(wishID string) []*planv1.Task {
+			start := timestamppb.New(time.Date(2026, 10, 17, 11, 0, 0, 0, time.UTC))
+			inv := func(code, title string, status planv1.TaskStatus) *planv1.Task {
+				return &planv1.Task{Id: store.NewID(), WishId: wishID, Code: code, Title: title, Status: status, StartTime: start,
+					Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION, Scheduled: true}
+			}
+			tasks := []*planv1.Task{inv("W1", "Study the flakes", planv1.TaskStatus_TASK_STATUS_RUNNING),
+				inv("W2", "Audit the gates", planv1.TaskStatus_TASK_STATUS_PENDING), inv("W3", "Audit the merges", planv1.TaskStatus_TASK_STATUS_DONE)}
+			tasks[1].StartTime, tasks[2].EndTime = nil, start
+			return tasks
+		},
+		want: []string{"**W1** Study the flakes [investigation] (claude", "**W2** Audit the gates [investigation]:",
+			"**W3** Audit the merges [investigation]: done"},
+	}, {
+		// A running ifrit says where it stands (T51, Q11); one put out is lit again only at the developer's word; a task
+		// that is no ifrit is not called one.
+		name: "ifrits",
+		tasks: func(wishID string) []*planv1.Task {
+			start := timestamppb.New(time.Date(2026, 10, 16, 15, 0, 0, 0, time.UTC))
+			return []*planv1.Task{
+				{Id: store.NewID(), WishId: wishID, Code: "W12", Title: "Front of dolmen", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+					Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_WORKING}, StartTime: start},
+				{Id: store.NewID(), WishId: wishID, Code: "W13", Title: "Stack of dolmen", Status: planv1.TaskStatus_TASK_STATUS_STOPPED,
+					Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_OUT},
+					Error: "out: you left Djinn alone at 15:12", StartTime: start, EndTime: timestamppb.New(start.AsTime().Add(time.Hour))},
+				{Id: store.NewID(), WishId: wishID, Code: "W14", Title: "Cards", Status: planv1.TaskStatus_TASK_STATUS_RUNNING, StartTime: start},
+			}
+		},
+		want: []string{
+			"Front of dolmen (claude, ifrit, working, since",
+			"**W13** Stack of dolmen: an ifrit out: you left Djinn alone at 15:12, lit again by a message only at the developer's word",
+			"**W14** Cards (claude, since",
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			c := serve(t)
+			// Two projects, so that a line about one names it.
+			var projects []string
+			for _, name := range []string{"api", "web"} {
+				dir := filepath.Join(t.TempDir(), name)
+				if err := os.Mkdir(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				projects = append(projects, project.Msg.GetProject().GetId())
+			}
+			made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Work", ProjectIds: projects}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wishID := made.Msg.GetWish().GetId()
+			tasks := tc.tasks(wishID)
+			putTasks(t, c.store, tasks...)
+			if tc.wish != nil {
+				wish, err := store.Get[*planv1.Wish](ctx, c.store, wishID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tc.wish(wish, tasks)
+				putAll(t, c, wish)
+			}
+			brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(brief.Moving, want) {
+					t.Errorf("the brief lacks\n%s\nin\n%s", want, brief.Moving)
+				}
+			}
+			last := -1
+			for _, s := range tc.order {
+				i := strings.Index(brief.Moving, s)
+				if i <= last {
+					t.Fatalf("%q at %d, after %d: the brief is out of order\n%s", s, i, last, brief.Moving)
+				}
+				last = i
+			}
+			for _, never := range tc.never {
+				if strings.Contains(brief.Moving, never) {
+					t.Errorf("the brief holds %q:\n%s", never, brief.Moving)
+				}
+			}
 		})
-	}
-	// W7 ended last; W3 was closed by hand, later than W6 ended.
-	tasks[2].EndTime = timestamppb.New(day.Add(5*time.Hour + 30*time.Minute))
-	tasks[2].Closed = &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, CreateTime: tasks[2].GetEndTime(), Note: "merged in Git"}
-	for code, status := range map[string]planv1.TaskStatus{
-		"W10": planv1.TaskStatus_TASK_STATUS_PENDING, "W11": planv1.TaskStatus_TASK_STATUS_WAITING,
-		"W12": planv1.TaskStatus_TASK_STATUS_FAILED, "W9": planv1.TaskStatus_TASK_STATUS_INTERRUPTED,
-	} {
-		tasks = append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: code, Title: "Live", Status: status,
-			CreateTime: timestamppb.New(day)})
-	}
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		for _, task := range tasks {
-			if err := tx.Journal(actor, "test/put", task); err != nil {
-				return err
-			}
-			if err := tx.Put(task); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, finished, ok := strings.Cut(brief.Moving, "## Finished: 8, the latest\n\n")
-	if !ok {
-		t.Fatalf("no finished section:\n%s", brief.Moving)
-	}
-	want := "- **W7** Old task: done\n- **W3** Old task: done, closed by the developer: merged in Git\n- **W6** Old task: done\n" +
-		"- **W5** Old task: done\n- **W4** Old task: done\n"
-	if !strings.HasPrefix(finished, want) {
-		t.Errorf("finished =\n%s\nwant\n%s", finished, want)
-	}
-	// What waits, by status: failed, waiting, then planned. W9, cut short and not resumed by Djinn, is history.
-	waiting, _, _ := strings.Cut(brief.Moving, "## Finished")
-	if strings.Contains(waiting, "**W9**") {
-		t.Errorf("a task cut short for good waits:\n%s", brief.Moving)
-	}
-	last := -1
-	for _, code := range []string{"**W12**", "**W11**", "**W10**"} {
-		i := strings.Index(waiting, code)
-		if i <= last {
-			t.Fatalf("%s at %d, after %d: the waiting list is out of order\n%s", code, i, last, waiting)
-		}
-		last = i
-	}
-	if strings.Contains(waiting, "**W1** ") {
-		t.Errorf("a finished task in the live list:\n%s", waiting)
-	}
-}
-
-// TestBriefCancelled: the brief lists a cancelled task in its finished list with who and why.
-func TestBriefCancelled(t *testing.T) {
-	ctx := t.Context()
-	c := serve(t)
-	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Cancelled work"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wishID := made.Msg.GetWish().GetId()
-	day := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
-	task := &planv1.Task{
-		Id: store.NewID(), WishId: wishID, Code: "W1", Title: "Useless task",
-		Status:     planv1.TaskStatus_TASK_STATUS_CANCELLED,
-		CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(time.Hour)),
-		Cancelled: &planv1.Cancellation{Actor: planv1.Closer_CLOSER_LEAD, CreateTime: timestamppb.New(day.Add(time.Hour)), Note: "no longer needed"},
-	}
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(actor, "test/put", task); err != nil {
-			return err
-		}
-		return tx.Put(task)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "- **W1** Useless task: cancelled, by the lead: no longer needed\n"
-	if !strings.Contains(brief.Moving, want) {
-		t.Errorf("brief does not list cancelled task:\n%s\nwant:\n%s", brief.Moving, want)
-	}
-}
-
-// TestBriefWorkStands: the brief says where each finished task's work stands on its way into the wish's integration
-// branch, and why a task waits for a dependency's work to be committed.
-func TestBriefWorkStands(t *testing.T) {
-	ctx := t.Context()
-	c := serve(t)
-	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Integrates"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wishID := made.Msg.GetWish().GetId()
-	day := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
-	in := func(state planv1.IntegrationState, reason, by string) *planv1.TaskIntegration {
-		return &planv1.TaskIntegration{State: state, Branch: "feat/x", Sha: "1a2b3c4d5e6f", Reason: reason, CorrectedBy: by}
-	}
-	var tasks []*planv1.Task
-	for i, integration := range []*planv1.TaskIntegration{
-		nil,
-		in(planv1.IntegrationState_INTEGRATION_STATE_PENDING, "", ""),
-		in(planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, "", ""),
-		in(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, "W4 conflicts with feat/x in a.go", "W9"),
-		in(planv1.IntegrationState_INTEGRATION_STATE_RED, "test exited 1", ""),
-	} {
-		tasks = append(tasks, &planv1.Task{
-			Id: store.NewID(), WishId: wishID, Code: fmt.Sprintf("W%d", i+1), Title: "Work", Status: planv1.TaskStatus_TASK_STATUS_DONE,
-			CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(time.Duration(5-i) * time.Minute)), Integration: integration,
-		})
-	}
-	tasks = append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W6", Title: "Next", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
-		Scheduled: true, DependsOn: []string{tasks[1].GetId()}, WaitReason: "waits for W2 to be committed", CreateTime: timestamppb.New(day)})
-	tasks = append(tasks, &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W7", Title: "Work", Status: planv1.TaskStatus_TASK_STATUS_DONE,
-		CreateTime: timestamppb.New(day), EndTime: timestamppb.New(day.Add(6 * time.Minute)), Integration: &planv1.TaskIntegration{
-			State: planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED, Branch: "feat/x", ReviewedBy: tasks[1].GetId(),
-		}})
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		for _, task := range tasks {
-			if err := tx.Journal(actor, "test/put", task); err != nil {
-				return err
-			}
-			if err := tx.Put(task); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"- **W6** Next: planned, waits for W2 to be committed\n",
-		"- **W7** Work: changes not committed, not merged, reviewed by W2\n" +
-			"- **W1** Work: done\n" +
-			"- **W2** Work: waiting to be committed\n" +
-			"- **W3** Work: committed into feat/x as 1a2b3c4d\n" +
-			"- **W4** Work: conflict, not committed: W4 conflicts with feat/x in a.go, corrected by W9\n",
-	} {
-		if !strings.Contains(brief.Moving, want) {
-			t.Errorf("the brief lacks\n%s\nin\n%s", want, brief.Moving)
-		}
 	}
 }
 
 // TestDescribe: a wish's description is a few lines in place of what it had; the title stands for an empty one, so
 // writing the title, or nothing, takes it back there.
 func TestDescribe(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	id := c.wish(t)
@@ -565,6 +624,7 @@ func TestDescribe(t *testing.T) {
 // TestWishIcon: a wish's icon is a name of the bank, set in place of what it had and taken back to its mark by an empty
 // one; a name outside the bank is refused. Until it has one, its brief asks the Djinn to choose it.
 func TestWishIcon(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	id := c.wish(t)
@@ -609,232 +669,224 @@ func TestWishIcon(t *testing.T) {
 	}
 }
 
-// TestBriefOrder: djinn wish brief says where the wish stands on its own, in this order: the description, the azimas,
-// what runs and waits, the open questions, the latest decisions and blocks, the last lead and when a lead last
-// acted; then how to lead it.
-func TestBriefOrder(t *testing.T) {
-	ctx := t.Context()
-	c, wish, _ := source(t)
-	id := wish.GetId()
-	description := "Ship the API to the shop.\nScope: the store, not the web."
-	if _, err := c.wishes.Describe(ctx, connect.NewRequest(&planv1.WishServiceDescribeRequest{WishId: id, Text: description})); err != nil {
-		t.Fatal(err)
-	}
-	azima := &planv1.Task{Id: store.NewID(), WishId: id, Code: "T01", Title: "The store", Kind: planv1.TaskKind_TASK_KIND_AZIMA,
-		Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now()}
-	part := &planv1.Task{Id: store.NewID(), WishId: id, Code: "W2", Title: "Back the store up", PartOf: azima.GetId(),
-		Status: planv1.TaskStatus_TASK_STATUS_PENDING, CreateTime: timestamppb.Now()}
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		for _, task := range []*planv1.Task{azima, part} {
-			if err := tx.Journal("test", "test/put", task); err != nil {
-				return err
-			}
-			if err := tx.Put(task); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
-		WishId: id, Kind: "report", Title: "Where the store stands", Content: "Written, not backed up.",
-	})); err != nil {
-		t.Fatal(err)
-	}
-
-	brief, err := BuildBrief(ctx, c.store, t.TempDir(), id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := brief.Text()
-	last := -1
-	for _, s := range []string{"# The wish: Ship the API\n\n" + description + "\n\n- Identifier:", "## Azimas", "**T01** The store: ready",
-		"## Running", "**W1** Write the store", "## Waiting", "**W2** Back the store up (part of T01)", "## Open questions",
-		"## Latest decisions", "## Latest blocks", "### Where the store stands (report)",
-		"# Leading in Djinn", "**Start from the brief.**", "`djinn wish describe <wish> --text", "## The projects' rules"} {
-		i := strings.Index(text, s)
-		if i <= last {
-			t.Fatalf("%q at %d, after %d: the brief is out of order\n%s", s, i, last, text)
-		}
-		last = i
-	}
-}
-
-// TestBriefRunningTaskModel: a running task's line includes the model when set.
-func TestBriefRunningTaskModel(t *testing.T) {
-	ctx := t.Context()
-	c, wish, _ := source(t)
-	tasks, err := store.List[*planv1.Task](ctx, c.store, store.Where{"wish_id": wish.GetId(), "code": "W1"})
-	if err != nil || len(tasks) != 1 {
-		t.Fatalf("W1: %v, %v", tasks, err)
-	}
-	task := tasks[0]
-	task.Model = "claude-sonnet-4-5"
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal("test", "test/put", task); err != nil {
-			return err
-		}
-		return tx.Put(task)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wish.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(brief.Moving, "(claude · claude-sonnet-4-5, since ") {
-		t.Errorf("brief = %s\nwant to contain (claude · claude-sonnet-4-5, since ", brief.Moving)
-	}
-}
-
-// TestBriefInstallQuestionsRule: the lead's rule in briefRules reads the install_questions setting.
-func TestBriefInstallQuestionsRule(t *testing.T) {
+// TestBriefRules: the rules the lead reads, rule by rule: the bullet a rule must open when its place matters, the words
+// it must hold, and the words of a rule it replaced.
+func TestBriefRules(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
-		name string
-		iq   planv1.InstallQuestions
-		want string
-	}{
-		{
-			name: "always",
-			iq:   planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS,
-			want: "grant a right, install and restart (djinn: always)",
+		name    string
+		install planv1.InstallQuestions // the project's install_questions, when set
+		bullet  int                     // the rule that opens with first, counted from 1, when set
+		first   string
+		want    []string
+		gone    []string
+	}{{
+		// Q259 C: the lead is the Djinn, first among the rules; workers never bear the name.
+		name: "the Djinn", bullet: 1,
+		first: "**You are the Djinn.** In Djinn, the lead is called the Djinn, and you alone bear that name: the one of " +
+			"your kind who lives in the lamp, the developer's single voice for every wish. Workers are your hands, never " +
+			"Djinns; the app is \"Djinn\", you are \"the Djinn\". Speak of yourself that way in questions and blocks " +
+			"(\"the Djinn recommends…\").",
+	}, {
+		// W234: the developer does not read the lead's terminal, second among the rules, and it says why: every
+		// question, doubt or choice goes into a question in the window, statements included, withdrawn once a task or
+		// Djinn does what it asked; the terminal reply stays one short line at most.
+		name: "unread terminal", bullet: 2, first: "**The developer does not read your terminal.**",
+		want: []string{
+			"costs output tokens for nothing",
+			"Every question, doubt or choice you have goes into a question (`djinn question ask`) in the wish concerned, " +
+				"never only into your text; a fact or a decision for the next leads and workers goes into a block.",
+			"Your terminal reply stays one short line at most, what you did and what you wait for: no recap, no summary, no \"done\"",
+			"Everything for the developer goes through questions in the window",
+			"statements included",
+			"\"OK, nothing to do\" as an option",
+			"A real wait on the developer is a `--move` question that says so plainly",
+			"Never two questions for one gesture",
+			"withdraw a question (`djinn question withdraw`) the moment a task or Djinn does what it asked",
+			"A line the developer types in your terminal is a request like any other: answer it in the window, never in the terminal",
+			"Withdraw the open questions its work made needless",
 		},
-		{
-			name: "when_needed",
-			iq:   planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED,
-			want: "grant a right, install and restart (djinn: when_needed)",
+		gone: []string{"Say nothing in your terminal, ever", "A turn ends with no text at all", "naming the questions you asked"},
+	}, {
+		// The incident of 15/10/2026: each djinn command runs alone, and the commands that read what a lead needs are named.
+		name: "direct commands",
+		want: []string{DirectCommandsRule, DirectFlags, "`djinn brief --wishes`", "`djinn lead notes --all`",
+			"`djinn task list --wish-id <wish> --short`", "`djinn task watch <task>` follows a task until it ends; `--last 5`",
+			"`djinn question get <question> --wish-id <wish>`"},
+	}, {
+		// W230: the lead owns the wish's DAG: before a spawn it reads the open work and the files it touches; work on the
+		// same files is bundled or ordered, never side by side; big work is a chain, not a fan.
+		name: "conflicts",
+		want: []string{
+			"**You own the wish's DAG (W230).** Whether two workers collide is your plan's doing, not Djinn's.",
+			"`djinn task list --wish-id <wish> --open --short`", "`djinn task overlaps <wish>`",
+			"Work on files an open task touches is never run beside it: send it to that task (`djinn task update " +
+				"<task> --prompt` while planned, `djinn task send <task> \"…\"` while it runs), or spawn it `--after` that task.",
+			"Give `--write-scopes` when you know the paths",
+			"Big work is a chain of small steps, each `--after` the one before",
+			"never chain tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe",
+			"W174 `--after W160`",
+			"A task starts from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine",
+			"W399 brought the replay sink's node_modules link into feat/wails-go on 11/10",
+			"A conflict or a red merge is a signal to re-sequence, not only to correct",
+			"`--open` for what runs and what comes",
 		},
-		{
-			name: "never",
-			iq:   planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER,
-			want: "grant a right, install and restart (djinn: never)",
+		gone: []string{"Keep the graph free of conflicts"},
+	}, {
+		// Djinn's operational decisions go to the lead as events, not questions.
+		name: "operational decisions",
+		want: []string{
+			"**Operational decisions are yours (Decision Q196).**",
+			"Djinn's operational questions",
+			"go to you as an event, never as a question to the developer",
+			"retry a correction, drop the work (`djinn task done <task> --drop` or `djinn task cancel`), re-sequence the graph (`djinn task depend`), or leave it waiting",
+			"Ask the developer only for moves only a person can make (a tag, a PR, a release, a right) or a real choice",
 		},
-	} {
+	}, {
+		// Every question's title starts with the emoji of its subject, the same as its --icon.
+		name: "question emoji",
+		want: []string{
+			"**Every question's title starts with its emoji.** One emoji that tells its subject at a glance, then a space and the title",
+			"🚀 a merge or a release, 🔎 a review, 🔐 a right or a permission, 🧪 a check or a test, 📦 a build, " +
+				"🌿 a branch, 🧭 an organisation choice, 🪵 logs, ⚠️ an incident",
+			"The same emoji goes in `--icon`",
+			"`djinn question ask \"🔐 <question>\" <wish>",
+			"--icon 🔐` (the emoji its title starts with)",
+			"its verb first after its emoji (\"🔎 Review MR !123",
+		},
+	}, {
+		// The lead keeps the developer's moves, each a call to action with the links where they act; a pull or merge
+		// request a task opens is a review move at once.
+		name: "moves",
+		want: []string{
+			"**You keep the developer's moves.**",
+			"Each such move is one `--move` question whose title is a call to action, its verb first after its emoji",
+			"clickable links to where they act: the PR or MR, the CI run, the ticket, the file and line",
+			"every command to run in a code block, to copy as it is",
+			"When a task opens a pull or merge request, ask \"Review it and take it out of draft\" with its link at once",
+			"marking it ready is the developer's",
+			"No move is left implied in a note, a block or your terminal",
+			"withdraw a move the moment it is done or superseded",
+		},
+	}, {
+		// W575: the lead reads the shape a question's context keeps, and where its example is.
+		name: "question shape",
+		want: []string{
+			"- **A question reads at a glance (W575).** " + QuestionShape,
+			"every command the developer must run, in one fenced code block, in run order",
+			"No command, flag, path or hash inside a sentence",
+			"`djinn lead notes readable-questions`",
+			"- `readable-questions`: ",
+		},
+	}, {
+		// Q246: a check is never asked of the developer: a task or a watcher runs it; a question is for a decision or a
+		// person's move only, its command in a code block at the top of the context.
+		name: "no check asked",
+		want: []string{
+			"**Never ask the developer to check (Q246).**",
+			"A check, a measure, a log to read, a CI result to look at, a command to run is never asked of the developer",
+			"Spawn a task that runs it and investigates what it finds, or let a watcher report it",
+			"a CI result comes from the PR's or MR's babysit watcher",
+			"When a worker's final note says what remains to verify, spawn that task or watcher",
+			"A question to the developer is only for a decision or a move only a person can make",
+			"the exact command goes in the code block at the top of its `--context`, never in a sentence",
+			"what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task",
+		},
+	}, {
+		// A lead starts no work from an answer it does not fully understand; it asks again.
+		name: "understand an answer",
+		want: []string{
+			"**Understand an answer before you act on it.**",
+			"never start work or spawn a task from an answer while any part of it (the choice, its note, how they fit together) is unclear to you",
+			"Ask again, a new question that quotes what you did not understand, even on a question they answered",
+		},
+	}, {
+		// A task no longer useful is cancelled, never marked done; W370: one ended on purpose is never left stopped.
+		name: "cancel",
+		want: []string{
+			"a task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note \"…\"` " +
+				"stops its worker, removes its worktree (its branch stays), drops its work from integration and takes it out of " +
+				"the window's lists",
+			"a task you end on purpose (a watcher no longer needed, a task made useless) is cancelled, never left stopped or " +
+				"paused, which the window lists as waiting: `djinn task stop` only for a worker you continue at once",
+		},
+	}, {
+		// Q273: a worker's refused calls reach the lead alone, who decides; a new right is asked of the developer
+		// explicitly, in a --move question.
+		name: "refused calls",
+		want: []string{
+			"**Refused calls are yours, rights stay explicit (Q273).**",
+			"names the calls its permissions refused and the right that would allow them; the developer never sees them",
+			"nor a failed worker: the window never counts one as waiting for them, it is yours alone.",
+			"ask for it in one `--move` question naming exactly that right, the command that grants it, and why.",
+			"continue the task otherwise (`djinn task continue`)",
+			"close it as seen (`djinn task done <task> --note \"…\"`)",
+			"spawn it again where a right the wish or project grants already covers them",
+			"a done task left with refused calls holds its wish's grant",
+			"Never take a broad right by default",
+		},
+	}, {
+		// T51, Q11: when to light an ifrit and how to lead one; its commands name --kind ifrit and --about.
+		name: "ifrits",
+		want: []string{
+			IfritRule,
+			"never for work a task with its checks does alone. One lit per wish.",
+			"`djinn task send <ifrit> \"…\"`, instead of spawning tasks",
+			"`--about <ifrit>`",
+			"do not repeat its reply",
+			"When a task waits for a gate it holds, offer the developer to stop it",
+			"never send it one without the developer's word",
+			"`djinn task done <ifrit> --note \"…\"`: its work integrates",
+			"`--kind ifrit` with `--idle-minutes`",
+			"`--about W12` names the task it is about",
+			"to an ifrit out, it lights it again",
+			"- `ifrit`: ",
+		},
+	}, {
+		// W213: when to spawn an investigation, and when a task is urgent work for feedback instead.
+		name: "investigations",
+		want: []string{"--kind investigation", "--feedback", "a mockup", "is a repair, always first"},
+	}, {
+		// The rule on installs reads each project's install_questions.
+		name: "install always", install: planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS,
+		want: []string{"grant a right, install and restart (djinn: always)"},
+	}, {
+		name: "install when needed", install: planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED,
+		want: []string{"grant a right, install and restart (djinn: when_needed)"},
+	}, {
+		name: "install never", install: planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER,
+		want: []string{"grant a right, install and restart (djinn: never)"},
+	}} {
 		t.Run(tc.name, func(t *testing.T) {
-			home := t.TempDir()
-			repo := t.TempDir()
-			writeSettings(t, filepath.Join(repo, SettingsFile), fmt.Sprintf("install_questions: %s\n", InstallQuestionsWord(tc.iq)))
-			proj := &planv1.Project{Name: "djinn", Directory: repo}
-			rules := briefRules([]*planv1.Project{proj}, home)
-			if !strings.Contains(rules, tc.want) {
-				t.Errorf("briefRules(%v) lacks %q:\n%s", tc.iq, tc.want, rules)
+			t.Parallel()
+			var projects []*planv1.Project
+			if tc.install != planv1.InstallQuestions_INSTALL_QUESTIONS_UNSPECIFIED {
+				repo := t.TempDir()
+				writeSettings(t, filepath.Join(repo, SettingsFile), "install_questions: "+InstallQuestionsWord(tc.install)+"\n")
+				projects = []*planv1.Project{{Name: "djinn", Directory: repo}}
+			}
+			rules := briefRules(projects, t.TempDir())
+			if bullets := strings.Split(rules, "\n- "); tc.bullet > 0 && (len(bullets) <= tc.bullet || !strings.HasPrefix(bullets[tc.bullet], tc.first)) {
+				t.Errorf("rule %d does not open with %q:\n%s", tc.bullet, tc.first, rules)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(rules, want) {
+					t.Errorf("briefRules lacks %q:\n%s", want, rules)
+				}
+			}
+			for _, gone := range tc.gone {
+				if strings.Contains(rules, gone) {
+					t.Errorf("briefRules still holds %q:\n%s", gone, rules)
+				}
 			}
 		})
 	}
-
-	// Integration test with project settings
-	ctx := t.Context()
-	c, wish, repo := source(t)
-	home := t.TempDir()
-	writeSettings(t, filepath.Join(repo, SettingsFile), "install_questions: when_needed\n")
-
-	brief, err := BuildBrief(ctx, c.store, home, wish.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantRule := "grant a right, install and restart (api: when_needed, notes: always)"
-	if !strings.Contains(brief.Stable, wantRule) {
-		t.Errorf("brief.Stable lacks %q with when_needed settings:\n%s", wantRule, brief.Stable)
-	}
 }
 
-// TestBriefConflictsRule: the lead owns the wish's DAG (W230): before a spawn it reads the open work and the files it
-// touches; work on the same files is bundled or ordered, never side by side; big work is a chain, not a fan.
-func TestBriefConflictsRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	for _, want := range []string{
-		"**You own the wish's DAG (W230).** Whether two workers collide is your plan's doing, not Djinn's.",
-		"`djinn task list --wish-id <wish> --open --short`", "`djinn task overlaps <wish>`",
-		"Work on files an open task touches is never run beside it: send it to that task (`djinn task update " +
-			"<task> --prompt` while planned, `djinn task send <task> \"…\"` while it runs), or spawn it `--after` that task.",
-		"Give `--write-scopes` when you know the paths",
-		"Big work is a chain of small steps, each `--after` the one before",
-		"never chain tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe",
-		"W174 `--after W160`",
-		"A task starts from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine",
-		"W399 brought the replay sink's node_modules link into feat/wails-go on 11/10",
-		"A conflict or a red merge is a signal to re-sequence, not only to correct",
-		"`--open` for what runs and what comes",
-	} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q:\n%s", want, rules)
-		}
-	}
-	if strings.Contains(rules, "Keep the graph free of conflicts") {
-		t.Error("briefRules still holds the rule W230 replaced")
-	}
-}
-
-// TestBriefOperationalDecisionsRule: Djinn's operational decisions go to the lead as events, not questions.
-func TestBriefOperationalDecisionsRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	for _, want := range []string{
-		"**Operational decisions are yours (Decision Q196).**",
-		"Djinn's operational questions",
-		"go to you as an event, never as a question to the developer",
-		"retry a correction, drop the work (`djinn task done <task> --drop` or `djinn task cancel`), re-sequence the graph (`djinn task depend`), or leave it waiting",
-		"Ask the developer only for moves only a person can make (a tag, a PR, a release, a right) or a real choice",
-	} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q:\n%s", want, rules)
-		}
-	}
-}
-
-// TestBriefDjinnRule (Q259 C): the lead is the Djinn, first among the rules; workers never bear the name.
-func TestBriefDjinnRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	want := "- **You are the Djinn.** In Djinn, the lead is called the Djinn, and you alone bear that name: the one of " +
-		"your kind who lives in the lamp, the developer's single voice for every wish. Workers are your hands, never " +
-		"Djinns; the app is \"Djinn\", you are \"the Djinn\". Speak of yourself that way in questions and blocks " +
-		"(\"the Djinn recommends…\")."
-	if i := strings.Index(rules, "\n- "); i < 0 || !strings.HasPrefix(rules[i+1:], want) {
-		t.Errorf("briefRules does not start its rules with %q:\n%s", want, rules)
-	}
-}
-
-// TestBriefUnreadTerminalRule (W234): the developer does not read the lead's terminal, second among the rules, and
-// says why: every question, doubt or choice goes into a question in the window, statements included, withdrawn once a
-// task or Djinn does what it asked; the terminal reply stays one short line at most. The brief says it at its start
-// and at its end, and the first message of every lead too.
-func TestBriefUnreadTerminalRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	bullets := strings.Split(rules, "\n- ")
-	if len(bullets) < 3 || !strings.HasPrefix(bullets[2], "**The developer does not read your terminal.**") {
-		t.Errorf("the second rule is not the terminal's:\n%s", rules)
-	}
-	for _, want := range []string{
-		"costs output tokens for nothing",
-		"Every question, doubt or choice you have goes into a question (`djinn question ask`) in the wish concerned, " +
-			"never only into your text; a fact or a decision for the next leads and workers goes into a block.",
-		"Your terminal reply stays one short line at most, what you did and what you wait for: no recap, no summary, no \"done\"",
-		"Everything for the developer goes through questions in the window",
-		"statements included",
-		"\"OK, nothing to do\" as an option",
-		"A real wait on the developer is a `--move` question that says so plainly",
-		"Never two questions for one gesture",
-		"withdraw a question (`djinn question withdraw`) the moment a task or Djinn does what it asked",
-		"A line the developer types in your terminal is a request like any other: answer it in the window, never in the terminal",
-		"Withdraw the open questions its work made needless",
-	} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q:\n%s", want, rules)
-		}
-	}
-	for _, gone := range []string{"Say nothing in your terminal, ever", "A turn ends with no text at all", "naming the questions you asked"} {
-		if strings.Contains(rules, gone) {
-			t.Errorf("briefRules still holds %q:\n%s", gone, rules)
-		}
-	}
-	if !strings.Contains(StartLine(), UnreadTerminalRule) || strings.Contains(StartLine(), "write nothing in this terminal") {
-		t.Errorf("StartLine lacks the rule on the terminal: %s", StartLine())
-	}
-}
-
-// TestDrivenRulesUnreadText (W234): the driven lead's first rule says the developer reads none of its text: every
-// question, doubt or choice goes into a question, its last text one short line for the journal.
-func TestDrivenRulesUnreadText(t *testing.T) {
+// TestDrivenRules (W234): the driven lead's first rule says the developer reads none of its text: every question, doubt
+// or choice goes into a question, its last text one short line for the journal.
+func TestDrivenRules(t *testing.T) {
+	t.Parallel()
 	rules := DrivenRules(nil, "")
 	bullets := strings.Split(rules, "\n- ")
 	if len(bullets) < 2 || !strings.HasPrefix(bullets[1], "**The developer reads none of your text.**") {
@@ -852,137 +904,39 @@ func TestDrivenRulesUnreadText(t *testing.T) {
 	}
 }
 
-// TestBriefQuestionEmojiRule: every question's title starts with the emoji of its subject, the same as its --icon.
-func TestBriefQuestionEmojiRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	for _, want := range []string{
-		"**Every question's title starts with its emoji.** One emoji that tells its subject at a glance, then a space and the title",
-		"🚀 a merge or a release, 🔎 a review, 🔐 a right or a permission, 🧪 a check or a test, 📦 a build, " +
-			"🌿 a branch, 🧭 an organisation choice, 🪵 logs, ⚠️ an incident",
-		"The same emoji goes in `--icon`",
-		"`djinn question ask \"🔐 <question>\" <wish>",
-		"--icon 🔐` (the emoji its title starts with)",
-		"its verb first after its emoji (\"🔎 Review MR !123",
-	} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q:\n%s", want, rules)
+// TestStartLine: the first message of every lead forbids pipes, chains, loops, redirections and substitutions, names
+// the brief that no tool cuts, and carries the rule on the terminal no one reads (W234); cmd.exe still carries it as
+// one argument.
+func TestStartLine(t *testing.T) {
+	t.Parallel()
+	start := StartLine()
+	for _, want := range []string{"never a pipe (`|`)", "`&&`, `||`, `;`", "a loop (`for`)", "(`>`, `<<`)", "(`$(...)`)", "`djinn brief --wishes`",
+		UnreadTerminalRule} {
+		if !strings.Contains(start, want) {
+			t.Errorf("StartLine lacks %q: %s", want, start)
+		}
+	}
+	if strings.Contains(start, "write nothing in this terminal") {
+		t.Errorf("StartLine holds the rule W234 replaced: %s", start)
+	}
+	for _, goos := range []string{"linux", "windows"} {
+		if _, ok := quoteArg(goos, start); !ok {
+			t.Errorf("StartLine does not go through the shell of %s: %s", goos, start)
 		}
 	}
 }
 
-// TestBriefMovesRule: the lead keeps the developer's moves, each a call to action with the links where they act;
-// a pull or merge request a task opens is a review move at once.
-func TestBriefMovesRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	for _, want := range []string{
-		"**You keep the developer's moves.**",
-		"Each such move is one `--move` question whose title is a call to action, its verb first after its emoji",
-		"clickable links to where they act: the PR or MR, the CI run, the ticket, the file and line",
-		"every command to run in a code block, to copy as it is",
-		"When a task opens a pull or merge request, ask \"Review it and take it out of draft\" with its link at once",
-		"marking it ready is the developer's",
-		"No move is left implied in a note, a block or your terminal",
-		"withdraw a move the moment it is done or superseded",
-	} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q:\n%s", want, rules)
-		}
-	}
-}
-
-// TestBriefQuestionShapeRule (W575): the lead reads the shape a question's context keeps, and where its example is.
-func TestBriefQuestionShapeRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	for _, want := range []string{
-		"- **A question reads at a glance (W575).** " + QuestionShape,
-		"every command the developer must run, in one fenced code block, in run order",
-		"No command, flag, path or hash inside a sentence",
-		"`djinn lead notes readable-questions`",
-		"- `readable-questions`: ",
-	} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q:\n%s", want, rules)
-		}
-	}
-}
-
-// TestBriefNoCheckAskedRule (Q246): a check is never asked of the developer: a task or a watcher runs it; a question
-// is for a decision or a person's move only, its command in a code block at the top of the context.
-func TestBriefNoCheckAskedRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	for _, want := range []string{
-		"**Never ask the developer to check (Q246).**",
-		"A check, a measure, a log to read, a CI result to look at, a command to run is never asked of the developer",
-		"Spawn a task that runs it and investigates what it finds, or let a watcher report it",
-		"a CI result comes from the PR's or MR's babysit watcher",
-		"When a worker's final note says what remains to verify, spawn that task or watcher",
-		"A question to the developer is only for a decision or a move only a person can make",
-		"the exact command goes in the code block at the top of its `--context`, never in a sentence",
-		"what it leaves to verify (something it did not verify, a failing test it calls unrelated) goes to a task",
-	} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q:\n%s", want, rules)
-		}
-	}
-}
-
-// TestBriefUnderstandAnswerRule:a lead starts no work from an answer it does not fully understand; it asks again.
-func TestBriefUnderstandAnswerRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	for _, want := range []string{
-		"**Understand an answer before you act on it.**",
-		"never start work or spawn a task from an answer while any part of it (the choice, its note, how they fit together) is unclear to you",
-		"Ask again, a new question that quotes what you did not understand, even on a question they answered",
-	} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q:\n%s", want, rules)
-		}
-	}
-}
-
-// TestBriefCancelRule: the lead cancels a task no longer useful with djinn task cancel, never marks it done.
-func TestBriefCancelRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	want := "a task no longer useful is cancelled, never marked done: `djinn task cancel <task> --note \"…\"` " +
-		"stops its worker, removes its worktree (its branch stays), drops its work from integration and takes it out of " +
-		"the window's lists"
-	if !strings.Contains(rules, want) {
-		t.Errorf("briefRules lacks %q:\n%s", want, rules)
-	}
-	// W370: a task ended on purpose is cancelled, never left stopped; stop is only to continue at once.
-	want = "a task you end on purpose (a watcher no longer needed, a task made useless) is cancelled, never left stopped or " +
-		"paused, which the window lists as waiting: `djinn task stop` only for a worker you continue at once"
-	if !strings.Contains(rules, want) {
-		t.Errorf("briefRules lacks %q:\n%s", want, rules)
-	}
-}
-
-// TestBriefRefusedCallsRule (Q273): a worker's refused calls reach the lead alone, who decides; a new right is asked
-// of the developer explicitly, in a --move question.
-func TestBriefRefusedCallsRule(t *testing.T) {
-	rules := briefRules(nil, "")
-	for _, want := range []string{
-		"**Refused calls are yours, rights stay explicit (Q273).**",
-		"names the calls its permissions refused and the right that would allow them; the developer never sees them",
-		"nor a failed worker: the window never counts one as waiting for them, it is yours alone.",
-		"ask for it in one `--move` question naming exactly that right, the command that grants it, and why.",
-		"continue the task otherwise (`djinn task continue`)",
-		"close it as seen (`djinn task done <task> --note \"…\"`)",
-		"spawn it again where a right the wish or project grants already covers them",
-		"a done task left with refused calls holds its wish's grant",
-		"Never take a broad right by default",
-		"ask for it in one `--move` question naming exactly that right, the command that grants it, and why",
-	} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q:\n%s", want, rules)
-		}
-	}
-}
-
+// TestGlobalBrief: djinn brief, the lead's brief of every wish: the active wishes in full, a line for the others, the
+// rules and the lead's notes; djinn brief --wishes, the same without the rules.
 func TestGlobalBrief(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	home := t.TempDir()
+	// No wish yet: both the wishes and their glance say so.
+	if empty, err := BuildGlobalBrief(ctx, c.store, home); err != nil || strings.Count(empty, "No active wishes.\n") != 2 {
+		t.Errorf("the brief of no wish (%v):\n%s", err, empty)
+	}
 
 	repo := filepath.Join(t.TempDir(), "djinn")
 	if err := os.MkdirAll(repo, 0o700); err != nil {
@@ -1080,6 +1034,44 @@ func TestGlobalBrief(t *testing.T) {
 		t.Errorf("c.lead.Brief text mismatch: got %d bytes, want %d bytes", len(resp.Msg.GetText()), len(brief))
 	}
 
+	// Q260: the lead's notes come as an index, a line per note with its name and description, never a note's text; the
+	// rule says to open one before acting in its area, and to change them by a task that edits lead/notes, never at run
+	// time, and (Q262 B) to update or remove a note in the same breath as the task that fixes what it describes.
+	all, err := notes.Notes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"**Read the lead's notes before you act in their area.**",
+		"**Run direct `djinn` commands and native file tools.**",
+		"Run each `djinn` command alone, as one direct command: never a pipe (`|`), a chain (`&&`, `||`, `;`), a loop (`for`)",
+		"a backtick between double quotes is a substitution too",
+		"(`Read`, `Write`, `view_file`, `write_to_file`)",
+		"**Delegate.**",
+		"Never read or search source code yourself (no `Read`, `Grep`, `Glob`, or `view_file` in the lead session to inspect code before spawning a task)",
+		"even finding out where a feature lives or how a flag works goes immediately to a Djinn task",
+		"open it: `djinn lead notes <name>`",
+		"spawns a task there that edits `lead/notes/`",
+		"nothing writes them at run time",
+		"When a task fixes what a note describes, update or remove that note in the same breath",
+		"that task, or one spawned with it, edits `lead/notes/`; no cleanup waits for later",
+		"\n## The lead's notes\n\n",
+	} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("the brief lacks %q:\n%s", want, brief)
+		}
+	}
+	for _, n := range all {
+		if line := "- `" + n.Name + "`: " + n.Description + "\n"; !strings.Contains(brief, line) {
+			t.Errorf("the brief lacks the index line %q", line)
+		}
+		for para := range strings.SplitSeq(n.Body, "\n\n") {
+			if strings.Contains(brief, strings.TrimSpace(para)) {
+				t.Errorf("the brief holds the text of note %s: %q", n.Name, para)
+			}
+		}
+	}
+
 	// The incident of 15/10/2026: Antigravity's run_command kept only the end of the brief, and the lead piped it
 	// through head and sed. The rule on direct commands opens it; its end names every active wish and the rule again.
 	if !strings.HasPrefix(brief, DirectCommandsRule) {
@@ -1125,31 +1117,9 @@ func TestGlobalBrief(t *testing.T) {
 	}
 }
 
-// TestStartLineRunsCommandsAlone: the first message of every lead forbids pipes, chains, loops, redirections and
-// substitutions, and names the brief that no tool cuts; cmd.exe still carries it as one argument.
-func TestStartLineRunsCommandsAlone(t *testing.T) {
-	start := StartLine()
-	for _, want := range []string{"never a pipe (`|`)", "`&&`, `||`, `;`", "a loop (`for`)", "(`>`, `<<`)", "(`$(...)`)", "`djinn brief --wishes`"} {
-		if !strings.Contains(start, want) {
-			t.Errorf("StartLine lacks %q: %s", want, start)
-		}
-	}
-	for _, goos := range []string{"linux", "windows"} {
-		if _, ok := quoteArg(goos, start); !ok {
-			t.Errorf("StartLine does not go through the shell of %s: %s", goos, start)
-		}
-	}
-	rules := briefRules(nil, "")
-	for _, want := range []string{DirectCommandsRule, DirectFlags, "`djinn brief --wishes`", "`djinn lead notes --all`",
-		"`djinn task list --wish-id <wish> --short`", "`djinn task watch <task>` follows a task until it ends; `--last 5`", "`djinn question get <question> --wish-id <wish>`"} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("briefRules lacks %q", want)
-		}
-	}
-}
-
 // TestLeadNotesAtOnce: djinn lead notes prints several notes, or all of them, in one command, never in a shell loop.
 func TestLeadNotesAtOnce(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	read := func(req *planv1.LeadServiceNotesRequest) (string, error) {
@@ -1193,164 +1163,10 @@ func TestLeadNotesAtOnce(t *testing.T) {
 	}
 }
 
-func TestBriefHeldPush(t *testing.T) {
-	ctx := t.Context()
-	c := serve(t)
-	dir1 := t.TempDir()
-	p1, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir1}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir2 := t.TempDir()
-	p2, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir2}))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
-		Title: "Held push", ProjectIds: []string{p1.Msg.GetProject().GetId(), p2.Msg.GetProject().GetId()},
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wishID := made.Msg.GetWish().GetId()
-	wish, err := store.Get[*planv1.Wish](ctx, c.store, wishID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	corr := &planv1.Task{
-		Id: store.NewID(), WishId: wishID, Code: "W10", Title: "Fix push", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
-		CreateTime: timestamppb.Now(),
-	}
-	wish.Pushes = []*planv1.WishPush{
-		{
-			ProjectId:   p1.Msg.GetProject().GetId(),
-			Held:        "push checks failed: test exited 1",
-			CorrectedBy: corr.GetId(),
-		},
-	}
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal(actor, "test/put", corr); err != nil {
-			return err
-		}
-		if err := tx.Put(corr); err != nil {
-			return err
-		}
-		if err := tx.Journal(actor, "test/put", wish); err != nil {
-			return err
-		}
-		return tx.Put(wish)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := fmt.Sprintf("- Push held in %s: push checks failed: test exited 1, corrected by W10.\n", p1.Msg.GetProject().GetName())
-	if !strings.Contains(brief.Moving, want) {
-		t.Errorf("brief lacks %q:\n%s", want, brief.Moving)
-	}
-}
-
-// TestBriefComments: diff review comments on tasks appear in the brief with file, lines, and resolution status.
-func TestBriefComments(t *testing.T) {
-	ctx := t.Context()
-	c, wish, _ := source(t)
-	tasks, err := store.List[*planv1.Task](ctx, c.store, store.Where{"wish_id": wish.GetId(), "code": "W1"})
-	if err != nil || len(tasks) != 1 {
-		t.Fatalf("W1: %v, %v", tasks, err)
-	}
-	task := tasks[0]
-	task.Comments = []*planv1.TaskComment{
-		{
-			Id:       store.NewID(),
-			File:     "src/main.go",
-			Line:     10,
-			EndLine:  10,
-			Text:     "Check boundary condition",
-			Resolved: false,
-		},
-		{
-			Id:       store.NewID(),
-			File:     "src/utils.go",
-			Line:     20,
-			EndLine:  25,
-			Text:     "Refactored helper function",
-			Resolved: true,
-		},
-	}
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal("test", "test/put", task); err != nil {
-			return err
-		}
-		return tx.Put(task)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wish.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(brief.Moving, "- Comment on src/main.go, line 10 (unresolved): Check boundary condition") {
-		t.Errorf("brief lacks unresolved comment:\n%s", brief.Moving)
-	}
-	if !strings.Contains(brief.Moving, "- Comment on src/utils.go, lines 20-25 (resolved): Refactored helper function") {
-		t.Errorf("brief lacks resolved comment:\n%s", brief.Moving)
-	}
-}
-
-// TestBriefListsNotes (Q260): every brief gives the lead's notes as an index, a line per note with its name and
-// description, never a note's text; the rule says to open one before acting in its area, and to change them by a task
-// that edits lead/notes, never at run time, and (Q262 B) to update or remove a note in the same breath as the task
-// that fixes what it describes.
-func TestBriefListsNotes(t *testing.T) {
-	all, err := notes.Notes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := serve(t)
-	res, err := c.lead.Brief(t.Context(), connect.NewRequest(&planv1.LeadServiceBriefRequest{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	brief := res.Msg.GetText()
-	for _, want := range []string{
-		"**Read the lead's notes before you act in their area.**",
-		"**Run direct `djinn` commands and native file tools.**",
-		"Run each `djinn` command alone, as one direct command: never a pipe (`|`), a chain (`&&`, `||`, `;`), a loop (`for`)",
-		"a backtick between double quotes is a substitution too",
-		"(`Read`, `Write`, `view_file`, `write_to_file`)",
-		"**Delegate.**",
-		"Never read or search source code yourself (no `Read`, `Grep`, `Glob`, or `view_file` in the lead session to inspect code before spawning a task)",
-		"even finding out where a feature lives or how a flag works goes immediately to a Djinn task",
-		"open it: `djinn lead notes <name>`",
-		"spawns a task there that edits `lead/notes/`",
-		"nothing writes them at run time",
-		"When a task fixes what a note describes, update or remove that note in the same breath",
-		"that task, or one spawned with it, edits `lead/notes/`; no cleanup waits for later",
-		"\n## The lead's notes\n\n",
-	} {
-		if !strings.Contains(brief, want) {
-			t.Errorf("the brief lacks %q:\n%s", want, brief)
-		}
-	}
-	for _, n := range all {
-		if line := "- `" + n.Name + "`: " + n.Description + "\n"; !strings.Contains(brief, line) {
-			t.Errorf("the brief lacks the index line %q", line)
-		}
-		for para := range strings.SplitSeq(n.Body, "\n\n") {
-			if strings.Contains(brief, strings.TrimSpace(para)) {
-				t.Errorf("the brief holds the text of note %s: %q", n.Name, para)
-			}
-		}
-	}
-}
-
 // TestBriefSaysWhoWaitsForTheIfrit: the lead's briefs, of the wish and of all of them, say who waits for the gates a
 // lit ifrit holds, so that the lead offers the developer to end it (Q11); an ifrit nobody waits for has no such line.
 func TestBriefSaysWhoWaitsForTheIfrit(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Front"}))
@@ -1401,120 +1217,5 @@ func TestBriefSaysWhoWaitsForTheIfrit(t *testing.T) {
 	}
 	if plain, err := BuildBrief(ctx, c.store, home, wishID); err != nil || strings.Contains(plain.Moving, "Waiting for the gates") {
 		t.Errorf("no gates known, the brief says who waits (%v):\n%s", err, plain.Moving)
-	}
-}
-
-// TestBriefLeadsAnIfrit (T51, Q11): the lead's rules say when to light an ifrit and how to lead one, its commands
-// name --kind ifrit and --about; the wish's brief says which running task is an ifrit and where it stands, and that
-// one put out is lit again only at the developer's word.
-func TestBriefLeadsAnIfrit(t *testing.T) {
-	ctx := t.Context()
-	c := serve(t)
-	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Front"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wishID := made.Msg.GetWish().GetId()
-	start := timestamppb.New(time.Date(2026, 10, 16, 15, 0, 0, 0, time.UTC))
-	working := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W12", Title: "Front of dolmen", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
-		Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_WORKING}, StartTime: start}
-	out := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W13", Title: "Stack of dolmen", Status: planv1.TaskStatus_TASK_STATUS_STOPPED,
-		Kind: planv1.TaskKind_TASK_KIND_IFRIT, Ifrit: &planv1.TaskIfrit{State: planv1.IfritState_IFRIT_STATE_OUT},
-		Error: "out: you left Djinn alone at 15:12", StartTime: start, EndTime: timestamppb.New(start.AsTime().Add(time.Hour))}
-	task := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W14", Title: "Cards", Status: planv1.TaskStatus_TASK_STATUS_RUNNING, StartTime: start}
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		for _, task := range []*planv1.Task{working, out, task} {
-			if err := tx.Journal(actor, "test/put", task); err != nil {
-				return err
-			}
-			if err := tx.Put(task); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"Front of dolmen (claude, ifrit, working, since",
-		"**W13** Stack of dolmen: an ifrit out: you left Djinn alone at 15:12, lit again by a message only at the developer's word",
-	} {
-		if !strings.Contains(brief.Moving, want) {
-			t.Errorf("the wish's brief lacks %q:\n%s", want, brief.Moving)
-		}
-	}
-	if !strings.Contains(brief.Moving, "**W14** Cards (claude, since") {
-		t.Errorf("a task that is no ifrit is called one:\n%s", brief.Moving)
-	}
-	for _, want := range []string{
-		IfritRule,
-		"never for work a task with its checks does alone. One lit per wish.",
-		"`djinn task send <ifrit> \"…\"`, instead of spawning tasks",
-		"`--about <ifrit>`",
-		"do not repeat its reply",
-		"When a task waits for a gate it holds, offer the developer to stop it",
-		"never send it one without the developer's word",
-		"`djinn task done <ifrit> --note \"…\"`: its work integrates",
-		"`--kind ifrit` with `--idle-minutes`",
-		"`--about W12` names the task it is about",
-		"to an ifrit out, it lights it again",
-		"- `ifrit`: ",
-	} {
-		if !strings.Contains(brief.Stable, want) {
-			t.Errorf("the lead's rules lack %q", want)
-		}
-	}
-}
-
-// TestBriefMarksInvestigations (W213): the lead's brief marks an investigation's line, running, waiting or finished,
-// and its rules say when to spawn one, and when a task is urgent work for feedback instead.
-func TestBriefMarksInvestigations(t *testing.T) {
-	ctx := t.Context()
-	c := serve(t)
-	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Studies"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wishID := made.Msg.GetWish().GetId()
-	start := timestamppb.New(time.Date(2026, 10, 17, 11, 0, 0, 0, time.UTC))
-	inv := func(code, title string, status planv1.TaskStatus) *planv1.Task {
-		return &planv1.Task{Id: store.NewID(), WishId: wishID, Code: code, Title: title, Status: status, StartTime: start,
-			Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION, Scheduled: true}
-	}
-	tasks := []*planv1.Task{inv("W1", "Study the flakes", planv1.TaskStatus_TASK_STATUS_RUNNING),
-		inv("W2", "Audit the gates", planv1.TaskStatus_TASK_STATUS_PENDING), inv("W3", "Audit the merges", planv1.TaskStatus_TASK_STATUS_DONE)}
-	tasks[1].StartTime, tasks[2].EndTime = nil, start
-	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
-		for _, task := range tasks {
-			if err := tx.Journal(actor, "test/put", task); err != nil {
-				return err
-			}
-			if err := tx.Put(task); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	brief, err := BuildBrief(ctx, c.store, t.TempDir(), wishID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"**W1** Study the flakes [investigation] (claude", "**W2** Audit the gates [investigation]:",
-		"**W3** Audit the merges [investigation]: done"} {
-		if !strings.Contains(brief.Moving, want) {
-			t.Errorf("the brief lacks %q:\n%s", want, brief.Moving)
-		}
-	}
-	rules := briefRules(nil, "")
-	for _, want := range []string{"--kind investigation", "--feedback", "a mockup", "is a repair, always first"} {
-		if !strings.Contains(rules, want) {
-			t.Errorf("the lead's rules lack %q", want)
-		}
 	}
 }

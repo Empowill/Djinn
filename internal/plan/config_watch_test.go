@@ -51,6 +51,7 @@ func skillMD(description, djinn, body string) string {
 // TestConfigLines (W151): the difference between two configurations, told in sentences: what gives the workers more,
 // or changes what a skill makes or runs for Djinn, asks for your look; the rest is applied without asking.
 func TestConfigLines(t *testing.T) {
+	t.Parallel()
 	template := "    wish:\n      title: Babysit PR {pr}\n      match: 'PR #(?P<pr>\\d+)'\n      watch: sh watch.sh {pr}\n"
 	source := "    source:\n      watch: sh inbox.sh\n"
 	old := configFolder(t, map[string]string{
@@ -194,6 +195,7 @@ func (e *watchEnv) writes() int {
 // the last commits as history; a permission given asks for your look, which lights the project until it is marked
 // seen; a new source asks through its own notice.
 func TestLookAtConfig(t *testing.T) {
+	t.Parallel()
 	e := newWatchEnv(t, map[string]string{".agents/settings.txtpb": "setup: \"npm ci\"\n", "README.md": "# App\n"})
 	e.look()
 	shown := e.show()
@@ -292,6 +294,7 @@ func TestLookAtConfig(t *testing.T) {
 // TestLookAtConfigManyCommits (W151): past configCommitsMax commits in one look, the older ones are told together,
 // from the last look to the oldest told alone.
 func TestLookAtConfigManyCommits(t *testing.T) {
+	t.Parallel()
 	e := newWatchEnv(t, map[string]string{".agents/permissions.txtpb": "commands: \"c0\"\n"})
 	e.look()
 	n := configCommitsMax + 3
@@ -337,6 +340,7 @@ func TestLookAtConfigManyCommits(t *testing.T) {
 // TestLookAtConfigBranchChange (W151): when the reference branch itself changes, one entry tells the whole difference,
 // and the watch fetches the new branch.
 func TestLookAtConfigBranchChange(t *testing.T) {
+	t.Parallel()
 	e := newWatchEnv(t, map[string]string{".agents/settings.txtpb": "setup: \"npm ci\"\n"})
 	e.look()
 	dir := e.project.GetDirectory()

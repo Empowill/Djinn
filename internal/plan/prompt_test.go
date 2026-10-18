@@ -21,6 +21,7 @@ import (
 )
 
 func TestMakePrompt(t *testing.T) {
+	t.Parallel()
 	c := serve(t, WithLanguage("fr"))
 	// The made wish's commit, before the lead's event is queued in its own.
 	var committed []proto.Message
@@ -78,6 +79,7 @@ func TestMakePrompt(t *testing.T) {
 }
 
 func TestPromptCreationJournalExact(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	var wishes []*planv1.Wish
 	for _, prompt := range []string{"First request", "Second request", "Third request"} {
@@ -110,6 +112,7 @@ func TestPromptCreationJournalExact(t *testing.T) {
 // A wish made from a request queues an event for the one lead: name it when its title is provisional, then take it
 // on. A wish made from a title alone, or routed from another wish, tells the lead nothing new.
 func TestMadeFromRequestTellsTheLead(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	res, err := c.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Prompt: "Ship the export", Paused: true}))
 	if err != nil {
@@ -147,6 +150,7 @@ func TestMadeFromRequestTellsTheLead(t *testing.T) {
 // A wish made before its identifier was its creation's keeps its own creation after a rename, never the creation of
 // a wish made just after it under its new title.
 func TestLegacyRenameKeepsItsOwnCreation(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	legacy := &planv1.Wish{Id: store.NewID(), Title: "Original title", State: planv1.WishState_WISH_STATE_PAUSED}
 	if err := c.store.Tx(t.Context(), func(tx *store.Tx) error {
@@ -180,6 +184,7 @@ func TestLegacyRenameKeepsItsOwnCreation(t *testing.T) {
 }
 
 func TestMakePromptValidationAndRollback(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	for _, m := range []*planv1.WishServiceMakeRequest{
 		{}, {Prompt: " \n\t "}, {Title: "  "}, {Prompt: "\u00a0\u2003\u0085"}, {Title: strings.Repeat("x", 501)},
@@ -217,6 +222,7 @@ func TestMakePromptValidationAndRollback(t *testing.T) {
 }
 
 func TestBriefOriginalPromptWholeAndPortable(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	repo, home := t.TempDir(), t.TempDir()
 	p, err := c.projects.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: repo, Name: "api"}))
@@ -286,6 +292,7 @@ func promptDiskClient(t *testing.T, file string) clients {
 }
 
 func TestPromptRestartExportImport(t *testing.T) {
+	t.Parallel()
 	file := filepath.Join(t.TempDir(), store.File)
 	c := promptDiskClient(t, file)
 	prompt := "# Original\n\n" + strings.Repeat("**Requirement**\n\n", 100) + "FINAL DETAIL\n"

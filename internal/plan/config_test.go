@@ -67,6 +67,7 @@ func writeFileAt(t *testing.T, path, content string) {
 // TestProjectConfigInFolder (W150): outside Git, without a remote, without Djinn's data folder, or when the reference
 // branch is not fetched, Djinn reads a project's configuration in its folder, as before.
 func TestProjectConfigInFolder(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	plain := &planv1.Project{Id: store.NewID(), Directory: t.TempDir()}
 	if c := ProjectConfig(home, plain); c.Dir != plain.GetDirectory() || c.FromReference() {
@@ -103,6 +104,7 @@ func TestProjectConfigInFolder(t *testing.T) {
 // the settings, the permissions, the skills and what they declare. A message names the file on the branch; a fix is
 // made in the folder.
 func TestProjectConfigReadsReference(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	skill := "---\nname: ship\ndescription: Ships it.\nmetadata:\n  djinn:\n    babysit:\n      watch: sh watch.sh {pr}\n---\n"
 	p := configProject(t, map[string]string{
@@ -178,6 +180,7 @@ func TestProjectConfigReadsReference(t *testing.T) {
 // TestProjectConfigFollowsFetch (W150): a fetch that moves the reference branch changes the configuration Djinn
 // reads; a commit that leaves the configuration as it was reads the same folder of the cache.
 func TestProjectConfigFollowsFetch(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	p := configProject(t, map[string]string{".agents/settings.txtpb": "setup: \"echo one\"\n"})
 	dir := p.GetDirectory()
@@ -200,6 +203,7 @@ func TestProjectConfigFollowsFetch(t *testing.T) {
 // TestProjectConfigMemo (W150): once the repository's files are old enough, Djinn keeps where it reads a project's
 // configuration without running git; a change of a remote ref shows at once.
 func TestProjectConfigMemo(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	p := configProject(t, map[string]string{".agents/settings.txtpb": "setup: \"echo one\"\n"})
 	dir := p.GetDirectory()
@@ -246,6 +250,7 @@ func TestProjectConfigMemo(t *testing.T) {
 // TestProjectConfigBranch (W150): the reference branch is the one your file names, else the one the team's file
 // names in the default branch's tree, else the default branch; one not fetched leaves the folder's configuration.
 func TestProjectConfigBranch(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	p := configProject(t, map[string]string{".agents/settings.txtpb": "main_branch: \"dev\"\nsetup: \"echo main\"\n"})
 	dir := p.GetDirectory()
@@ -272,6 +277,7 @@ func TestProjectConfigBranch(t *testing.T) {
 
 // TestProjectConfigSubfolder (W150): a project in a folder of its repository reads that folder of the tree.
 func TestProjectConfigSubfolder(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	root := configProject(t, map[string]string{
 		".agents/settings.txtpb":     "setup: \"echo root\"\n",
@@ -288,6 +294,7 @@ func TestProjectConfigSubfolder(t *testing.T) {
 // fix; a copy on another branch is told that it does not matter. A summoned skill is read on its own project's
 // reference branch.
 func TestProjectConfigNotices(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	home := t.TempDir()
 	c := serve(t, WithHome(home), WithPusher(&refPusher{}))
