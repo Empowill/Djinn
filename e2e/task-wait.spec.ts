@@ -54,7 +54,7 @@ test("a held task that starts loses its wait line, and its page shows the wait a
         "--json",
       ),
     ).task as { id: string; code: string };
-  const first = spawn("Go first", "text working\nsleep 6s\ntext done");
+  const first = spawn("Go first", "text working\nwait\ntext done");
   const second = spawn(
     "Go second",
     "text started\nsleep 60s\ntext after",
@@ -69,11 +69,12 @@ test("a held task that starts loses its wait line, and its page shows the wait a
     const card = page.locator(`#task-${second.id}`);
     const badge = card.locator(".wish-task-heading .status-badge");
     const waitNote = card.locator(".wish-task-note", {
-      hasText: `waits for ${first.code}`,
+      hasText: `waits for ${first.code} (running)`,
     });
     await expect(waitNote).toBeVisible();
 
     // The first ends; the second starts, and its card no longer says it waits.
+    djinn("task", "send", first.id, "done");
     await expect(badge).toHaveText("Running", { timeout: 20_000 });
     await expect(waitNote).toHaveCount(0);
 
