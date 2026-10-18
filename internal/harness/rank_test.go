@@ -14,10 +14,10 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// TestAzimaRank (W134): the lead ranks the azimas of a wish (djinn task rank --top, --before, --after; djinn task
+// TestRankAzima (W134): the lead ranks the azimas of a wish (djinn task rank --top, --before, --after; djinn task
 // update --rank), a new azima goes last, and on a full machine the waiting work of the higher azima starts first,
 // whatever came first.
-func TestAzimaRank(t *testing.T) {
+func TestRankAzima(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, gitRepo(t))

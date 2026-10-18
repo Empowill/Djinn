@@ -453,9 +453,9 @@ func TestDiff(t *testing.T) {
 	}
 }
 
-// TestDiffChunks reads a diff of several hunks by chunks of every size: put end to end, the chunks give back the whole
+// TestNewDiffChunk reads a diff of several hunks by chunks of every size: put end to end, the chunks give back the whole
 // diff's lines, a hunk cut by a chunk carried on in the next.
-func TestDiffChunks(t *testing.T) {
+func TestNewDiffChunk(t *testing.T) {
 	t.Parallel()
 	diff := []string{
 		"diff --git a/a.go b/a.go", "index 1..2 100644", "--- a/a.go", "+++ b/a.go",
