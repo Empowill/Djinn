@@ -547,3 +547,25 @@ func TestNoticesWarnAnIfritGoesOut(t *testing.T) {
 		t.Errorf("Keep lit: kept %d, shown %d; want kept once, no window", kept, shown)
 	}
 }
+
+// TestNoticesWindow: what djinn up found about the window's page shows each time, even while the window is in front
+// on a wish, under one ID that replaces the last; with no notifier, nothing shows and nothing fails.
+func TestNoticesWindow(t *testing.T) {
+	n, notes := newNotices(t, "en")
+	n.View("w")
+	n.Focus(true)
+	for range 2 {
+		if err := n.Window("Djinn's window stayed black", "Djinn opened it again."); err != nil {
+			t.Fatal(err)
+		}
+		if got := notes.next(t); got.ID != "djinn-window" || got.Title != "Djinn's window stayed black" ||
+			got.Body != "Djinn opened it again." || got.WishID != "" {
+			t.Errorf("notification = %+v", got)
+		}
+	}
+	n.Use(nil)
+	if err := n.Window("t", "b"); err != nil {
+		t.Errorf("without a notifier: %v", err)
+	}
+	notes.none(t)
+}

@@ -71,6 +71,10 @@ depend on how:
 
 The terminals that install or sign in an agent never come back.
 
+Djinn's log, djinn.log in the logs folder of its data folder, names what stopped it, on its line **shutdown begins**:
+Ctrl+Q (Cmd+Q on macOS) in the window, Quit Djinn in the tray, Ctrl+C or a kill in the terminal that runs Djinn
+(SIGINT, SIGTERM), an install or a restart from the window, or a restart from the command line.
+
 ## Limits and wakes
 
 A few things stop a worker without a restart, and Djinn handles them the same way:

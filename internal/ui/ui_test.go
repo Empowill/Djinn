@@ -473,7 +473,7 @@ func TestOpenLink(t *testing.T) {
 func TestUpdateInstallsABuild(t *testing.T) {
 	s, _ := newService(t)
 	var installed []string
-	newer, restarts := false, 0
+	newer, restarts, restartBy := false, 0, ""
 	proceed := make(chan struct{}) // the first install waits until the window has seen it wait
 	s.Install = func(_ context.Context, b *uiv1.Build, run InstallRun) (bool, string, error) {
 		if proceed != nil {
@@ -484,7 +484,7 @@ func TestUpdateInstallsABuild(t *testing.T) {
 		installed = append(installed, b.GetSha())
 		return newer, "", nil
 	}
-	s.Restart = func() (string, int, error) { restarts++; return "v2", 1, nil }
+	s.Restart = func(by string) (string, int, error) { restarts++; restartBy = by; return "v2", 1, nil }
 	s.SetBuild(&uiv1.Build{WishId: "w", ProjectId: "p", Branch: "feat/x", Sha: "abc", Changes: []string{"Work of W1"}})
 
 	path, handler := uiv1connect.NewUiServiceHandler(s)
@@ -547,6 +547,9 @@ func TestUpdateInstallsABuild(t *testing.T) {
 	s.SetBuild(&uiv1.Build{ProjectId: "p", Branch: "feat/x", Sha: "def"})
 	if res, err := update("def"); err != nil || res.GetInstalled() != "def" || res.GetVersion() != "v2" || restarts != 1 {
 		t.Errorf("a build that installed a newer Djinn: %v, %v, %d restarts", res, err, restarts)
+	}
+	if restartBy != "an install from the command line (djinn update)" {
+		t.Errorf("restart by %q", restartBy)
 	}
 	restarting := false
 	for !restarting && watch.Receive() {

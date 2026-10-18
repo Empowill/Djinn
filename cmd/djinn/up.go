@@ -9,14 +9,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
@@ -42,6 +40,7 @@ import (
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/terminal"
 	"github.com/empowill/djinn/internal/ui"
+	"github.com/empowill/djinn/internal/window"
 )
 
 // readMachine reads the machine for the scheduler and the gates; nil reads this machine, the disk of its data folder
@@ -168,6 +167,7 @@ func runUp(args []string) (restart bool, err error) {
 		return false, fmt.Errorf("open the log: %w", err)
 	}
 	defer stopLog() //nolint:errcheck // The last line is written; nothing to tell.
+	started := time.Now()
 	logx.L().Info("djinn up starts", "version", version, "pid", os.Getpid(), "os", runtime.GOOS, "arch", runtime.GOARCH,
 		"flags", flagNames(flags))
 	if unclean {
@@ -181,8 +181,9 @@ func runUp(args []string) (restart bool, err error) {
 	defer logx.Crash("djinn up")
 	down := logx.NewShutdown(logx.Folder(home))
 	defer down.End()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	// Each stop names its source, which the log says (decision Q84): a signal, Ctrl+Q, the tray, an install.
+	ctx, stop, release := stopContext(context.Background(), nil)
+	defer release()
 	// kill -USR2 <pid>, or djinn debug dump, writes where each goroutine waits to the log folder, without stopping
 	// djinn (W504, W511).
 	dump := make(chan os.Signal, 1)
@@ -575,13 +576,7 @@ func runUp(args []string) (restart bool, err error) {
 	go func() {
 		defer logx.Crash("shutdown")
 		<-ctx.Done()
-		why := "quit or a signal"
-		if updates != nil && updates.Restarting() {
-			why = "restart"
-		} else if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
-			why = cause.Error()
-		}
-		down.Begin(why)
+		down.Begin(stopWhy(ctx))
 		defer down.Start("window and server")()
 		<-closed
 	}()
@@ -633,12 +628,35 @@ func runUp(args []string) (restart bool, err error) {
 		fmt.Println("djinn: open", url)
 		err = <-served
 	default:
+		cfg := windowConfig{raise: raise, notices: notices, shortcuts: shortcuts, links: openLinks, quit: stop}
 		if transport == server.Wails {
-			err = openWindow(ctx, "", server.WholeWrites(h), raise, notices, shortcuts, openLinks)
+			cfg.assets = ui.FromWindow(server.WholeWrites(h))
+			// The window's page may never start, or die (W353, W366, W373): on Linux, a page silent past
+			// window.Silence, or whose web process ended, is logged with WebKit's state and the kernel's GPU hangs,
+			// told here and by a notification, loaded again, then given a new view (software rendering after a GPU
+			// hang only).
+			if runtime.GOOS == "linux" {
+				cfg.watch = &window.Watch{Started: started, Tell: windowTold(os.Stderr, notices, render.SystemLanguage())}
+				// A test build takes another threshold and another kernel log, to see each rescue (e2e/native
+				// relaunch_test.go).
+				if ui.StampedTestBuild() {
+					if after, err := time.ParseDuration(os.Getenv("DJINN_WINDOW_SILENCE")); err == nil {
+						cfg.watch.After = after
+					}
+					if log := os.Getenv("DJINN_WINDOW_KERNEL_LOG"); log != "" {
+						cfg.watch.Hangs = func(context.Context, time.Time) ([]window.Hang, error) {
+							b, err := os.ReadFile(log)
+							return window.Hangs(b), err
+						}
+					}
+				}
+				cfg.assets = cfg.watch.Handler(cfg.assets)
+			}
 		} else {
-			err = openWindow(ctx, url, nil, raise, notices, shortcuts, openLinks)
+			cfg.url = url
 		}
-		stop() // The window is closed: stop the server too.
+		err = openWindow(ctx, cfg)
+		stop(stopWindow) // The window is closed: stop the server too.
 		err = errors.Join(err, <-served)
 	}
 	// Stopped as asked (Quit, Ctrl+Q, a signal): the leads are not reopened at the next start, unless it restarts.
