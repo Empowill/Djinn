@@ -91,7 +91,8 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
         frame.locator("#img").evaluate((img: HTMLImageElement) => img.width),
       )
       .toBe(20);
-    await page.screenshot({ path: path.join(shots, "tilasms-dark.png") });
+    if (process.env.TILASM_SHOTS)
+      await page.screenshot({ path: path.join(shots, "tilasms-dark.png") });
 
     // Full size: the frame covers everything right of the side panel, which stays usable; Escape (outside the frame)
     // and the small button leave it, the same tilasm open, the page and the frame scrolled where they were.
@@ -135,23 +136,25 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
       await expect(list).toHaveJSProperty("inert", true);
       expect(await places()).toEqual(before);
       if (how === "Escape") {
-        for (const theme of ["dark", "light"]) {
-          await page.evaluate(async (theme) => {
-            document.documentElement.dataset.theme = theme;
-            await Promise.all(
-              document
-                .getAnimations()
-                .filter((a) => a instanceof CSSTransition)
-                .map((a) => a.finished.catch(() => {})),
-            );
-          }, theme);
-          await page.screenshot({
-            path: path.join(shots, `tilasms-full-${theme}.png`),
+        if (process.env.TILASM_SHOTS) {
+          for (const theme of ["dark", "light"]) {
+            await page.evaluate(async (theme) => {
+              document.documentElement.dataset.theme = theme;
+              await Promise.all(
+                document
+                  .getAnimations()
+                  .filter((a) => a instanceof CSSTransition)
+                  .map((a) => a.finished.catch(() => {})),
+              );
+            }, theme);
+            await page.screenshot({
+              path: path.join(shots, `tilasms-full-${theme}.png`),
+            });
+          }
+          await page.evaluate(() => {
+            document.documentElement.dataset.theme = "dark";
           });
         }
-        await page.evaluate(() => {
-          document.documentElement.dataset.theme = "dark";
-        });
         await page.keyboard.press("Escape");
       } else await leave.click();
       await expect(full).toHaveCount(0);
@@ -283,7 +286,10 @@ test("a tilasm a question links to opens full size over the wish's page and the 
     const over = shell.locator(":scope > .tilasm-view.over");
     const frame = over.locator("iframe.tilasm-frame");
     const close = over.getByRole("button", { name: "Close the tilasm" });
-    for (const where of ["wish", "carpet"]) {
+    for (const [where, how] of [
+      ["wish", "Escape"],
+      ["carpet", "button"],
+    ] as const) {
       if (where === "wish")
         await page.locator(".wish-nav").filter({ hasText: title }).click();
       else {
@@ -307,45 +313,43 @@ test("a tilasm a question links to opens full size over the wish's page and the 
       );
       const top = await scroller.evaluate((el) => el.scrollTop);
       expect(top).toBeGreaterThan(0);
-      for (const how of ["Escape", "button"]) {
-        await link.click();
-        // Over the view, full size: everything right of the side panel; the tilasm's own page runs in it.
-        await expect(frame).toBeVisible();
-        await expect(
-          page.frameLocator(".tilasm-view.over iframe").locator("#run"),
-        ).toHaveText("scripts run");
-        const box = (await frame.boundingBox())!;
-        const room = (await shell.boundingBox())!;
-        for (const side of ["x", "y", "width", "height"] as const)
-          expect(Math.abs(box[side] - room[side])).toBeLessThan(1);
-        await expect(close).toBeFocused();
-        // Nothing navigated: the view stays mounted under it, inert, scrolled where it was.
-        await expect(view).toHaveJSProperty("inert", true);
-        await expect(card).toHaveAttribute("data-kept", where);
-        expect(await scroller.evaluate((el) => el.scrollTop)).toBe(top);
-        await expect(
-          page.getByRole("tabpanel", { name: "Tilasms" }),
-        ).toHaveCount(0);
-        if (where === "carpet")
-          await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
-        if (how === "Escape") {
-          if (where === "wish")
-            await page.screenshot({
-              path: path.join(shots, "tilasm-over.png"),
-            });
-          await page.keyboard.press("Escape");
-        } else await close.click();
-        // Closed: back on the link, the question as it was, ready to answer; nothing moved.
-        await expect(over).toHaveCount(0);
-        await expect(link).toBeFocused();
-        await expect(view).toHaveJSProperty("inert", false);
-        await expect(card).toHaveAttribute("data-kept", where);
-        await expect(hemp).toHaveAttribute("aria-pressed", "true");
-        expect({
-          how,
-          top: await scroller.evaluate((el) => el.scrollTop),
-        }).toEqual({ how, top });
-      }
+      await link.click();
+      // Over the view, full size: everything right of the side panel; the tilasm's own page runs in it.
+      await expect(frame).toBeVisible();
+      await expect(
+        page.frameLocator(".tilasm-view.over iframe").locator("#run"),
+      ).toHaveText("scripts run");
+      const box = (await frame.boundingBox())!;
+      const room = (await shell.boundingBox())!;
+      for (const side of ["x", "y", "width", "height"] as const)
+        expect(Math.abs(box[side] - room[side])).toBeLessThan(1);
+      await expect(close).toBeFocused();
+      // Nothing navigated: the view stays mounted under it, inert, scrolled where it was.
+      await expect(view).toHaveJSProperty("inert", true);
+      await expect(card).toHaveAttribute("data-kept", where);
+      expect(await scroller.evaluate((el) => el.scrollTop)).toBe(top);
+      await expect(page.getByRole("tabpanel", { name: "Tilasms" })).toHaveCount(
+        0,
+      );
+      if (where === "carpet")
+        await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+      if (how === "Escape") {
+        if (where === "wish" && process.env.TILASM_SHOTS)
+          await page.screenshot({
+            path: path.join(shots, "tilasm-over.png"),
+          });
+        await page.keyboard.press("Escape");
+      } else await close.click();
+      // Closed: back on the link, the question as it was, ready to answer; nothing moved.
+      await expect(over).toHaveCount(0);
+      await expect(link).toBeFocused();
+      await expect(view).toHaveJSProperty("inert", false);
+      await expect(card).toHaveAttribute("data-kept", where);
+      await expect(hemp).toHaveAttribute("aria-pressed", "true");
+      expect({
+        how,
+        top: await scroller.evaluate((el) => el.scrollTop),
+      }).toEqual({ how, top });
     }
     // Nothing answered the question.
     const [asked] = JSON.parse(

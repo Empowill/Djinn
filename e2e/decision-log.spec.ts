@@ -116,7 +116,10 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
     const block = rows.filter({ hasText: "Ship on Friday" });
     await expect(block.locator(".decision-icon")).toHaveText("🧱");
     await expect(block.locator(".decision-by")).toHaveText("By the Djinn");
-    await page.screenshot({ path: path.join(shots, "decision-log-dark.png") });
+    if (process.env.DECISION_SHOTS)
+      await page.screenshot({
+        path: path.join(shots, "decision-log-dark.png"),
+      });
 
     // The decision opens its task in the Tasks tab, and the task leads back.
     await answered.getByRole("link", { name: "W1" }).click();
@@ -137,13 +140,17 @@ test("a decision answered in the window leads to a task, both ways, in the Decis
       }),
     ).toBeInViewport();
 
-    await page.evaluate(() => localStorage.setItem("djinn.theme", "light"));
-    await page.reload();
-    await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await page.getByRole("tab", { name: /^Decisions/ }).click();
-    await expect(page.locator(".decision-row")).toHaveCount(2);
-    await page.screenshot({ path: path.join(shots, "decision-log-light.png") });
-    await page.evaluate(() => localStorage.removeItem("djinn.theme"));
+    if (process.env.DECISION_SHOTS) {
+      await page.evaluate(() => localStorage.setItem("djinn.theme", "light"));
+      await page.reload();
+      await page.locator(".wish-nav").filter({ hasText: title }).click();
+      await page.getByRole("tab", { name: /^Decisions/ }).click();
+      await expect(page.locator(".decision-row")).toHaveCount(2);
+      await page.screenshot({
+        path: path.join(shots, "decision-log-light.png"),
+      });
+      await page.evaluate(() => localStorage.removeItem("djinn.theme"));
+    }
     expect(errors).toEqual([]);
   } finally {
     djinn("wish", "pause", wishId);

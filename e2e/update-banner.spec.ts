@@ -2,7 +2,7 @@
 // two branches and a newer Djinn ready (W468): each on one line, named by commit, branch and wish, what it adds and
 // lacks unfolded on demand, the other branch's build folded, and a × that dismisses it for good, across a reload; on
 // a row of its own, over none of the toolbar's controls.
-// Screenshots, dark and light, go to test-results/e2e/update-banner-*.png.
+// UPDATE_SHOTS=1 writes screenshots, dark and light, to test-results/e2e/update-banner-*.png.
 import { type MessageInitShape, create, toBinary } from "@bufbuild/protobuf";
 import { type Page, expect, test } from "./test";
 import path from "node:path";
@@ -117,14 +117,15 @@ test("the update banner names each build, unfolds what it holds, and its × dism
     await page
       .locator(`.operating-load-notch[data-notch="${notch}"]`)
       .click({ trial: true, timeout: 2_000 });
-  for (const theme of ["dark", "light"]) {
-    await page.evaluate((v) => localStorage.setItem("djinn.theme", v), theme);
-    await page.reload();
-    await expect(parts).toHaveCount(3);
-    await banner.screenshot({
-      path: path.join(shots, `update-banner-${theme}.png`),
-    });
-  }
+  if (process.env.UPDATE_SHOTS)
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate((v) => localStorage.setItem("djinn.theme", v), theme);
+      await page.reload();
+      await expect(parts).toHaveCount(3);
+      await banner.screenshot({
+        path: path.join(shots, `update-banner-${theme}.png`),
+      });
+    }
 
   // The details of the ready Djinn: the tasks it adds, then the commits it lacks of the running one, folded.
   await parts.nth(0).getByRole("button", { name: "Details" }).click();
@@ -247,9 +248,10 @@ test("an install that never answers ends at its deadline, as Djinn says it", asy
   await expect(part.locator(".update-banner-log")).toHaveText(
     "task: [ui] npm run build\ntask: [install] go build ./cmd/djinn",
   );
-  await part.screenshot({
-    path: path.join(shots, "update-banner-failed.png"),
-  });
+  if (process.env.UPDATE_SHOTS)
+    await part.screenshot({
+      path: path.join(shots, "update-banner-failed.png"),
+    });
 });
 
 // W554: a green push of the running line installed by itself: the banner only offers the restart, with what the
@@ -316,7 +318,8 @@ test("a build of the running line installed by itself is offered as a restart, a
       .locator(".update-banner-others")
       .getByRole("button", { name: "Install and restart" }),
   ).toBeVisible();
-  await page.locator(".update-banner").screenshot({
-    path: path.join(shots, "update-banner-restart.png"),
-  });
+  if (process.env.UPDATE_SHOTS)
+    await page.locator(".update-banner").screenshot({
+      path: path.join(shots, "update-banner-restart.png"),
+    });
 });

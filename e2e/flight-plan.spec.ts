@@ -250,10 +250,11 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
       oilTitle,
     ]);
     await expect(page.locator(".plan-wish")).toHaveCount(0);
-    await page.screenshot({
-      path: path.join(__dirname, "../test-results/e2e/flight-plan.png"),
-      fullPage: true,
-    });
+    if (process.env.PLAN_SHOTS)
+      await page.screenshot({
+        path: path.join(__dirname, "../test-results/e2e/flight-plan.png"),
+        fullPage: true,
+      });
 
     // Answered from the merged view: the answer goes to its own wish. Closed, a click opens it.
     await oilCard.click();
@@ -274,13 +275,14 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
     ).questions;
     expect(answered.answer.choice).toBe("CHOICE_YES");
     expect(answered.answer.note).toBe("Pour it.");
-    await page.screenshot({
-      path: path.join(
-        __dirname,
-        "../test-results/e2e/flight-plan-answered.png",
-      ),
-      fullPage: true,
-    });
+    if (process.env.PLAN_SHOTS)
+      await page.screenshot({
+        path: path.join(
+          __dirname,
+          "../test-results/e2e/flight-plan-answered.png",
+        ),
+        fullPage: true,
+      });
     // The other wish's question still waits.
     await expect(lampCard).toBeVisible();
     const [open] = JSON.parse(
@@ -388,7 +390,7 @@ test("a wish's page keeps its header chrome, its tasks' tokens and price across 
     await expect(page.locator(".journal-list")).toContainText("Kick-off");
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     // Its Tasks tab says what it spent: one price, then its tokens; the price's hover tells what was reported and what
-    // has no price.
+    // has no price (its grey in both themes: tests/styles.test.cjs).
     const lampSpent = page.locator(".wish-spent");
     await expect(lampSpent).toContainText("cache read");
     const lampPrice = lampSpent.locator(".spent-price");
@@ -399,40 +401,44 @@ test("a wish's page keeps its header chrome, its tasks' tokens and price across 
     );
     await expect(lampSpent).not.toContainText("reported");
     await expect(lampSpent).not.toContainText("without a price");
-    // The price reads in both themes, in a grey of each; the page then shows its own again.
-    const shown = await page.evaluate(
-      () => document.documentElement.dataset.theme,
-    );
-    const colours: string[] = [];
-    for (const theme of ["dark", "light"]) {
-      await page.evaluate(
-        (t) => document.documentElement.setAttribute("data-theme", t),
-        theme,
+    if (process.env.PLAN_SHOTS) {
+      const shown = await page.evaluate(
+        () => document.documentElement.dataset.theme,
       );
-      await expect(lampPrice).toBeVisible();
-      colours.push(await lampPrice.evaluate((e) => getComputedStyle(e).color));
-      await lampSpent.screenshot({
-        path: path.join(
-          __dirname,
-          `../test-results/e2e/flight-plan-wish-spent-${theme}.png`,
-        ),
-      });
+      const colours: string[] = [];
+      for (const theme of ["dark", "light"]) {
+        await page.evaluate(
+          (t) => document.documentElement.setAttribute("data-theme", t),
+          theme,
+        );
+        await expect(lampPrice).toBeVisible();
+        colours.push(
+          await lampPrice.evaluate((e) => getComputedStyle(e).color),
+        );
+        await lampSpent.screenshot({
+          path: path.join(
+            __dirname,
+            `../test-results/e2e/flight-plan-wish-spent-${theme}.png`,
+          ),
+        });
+      }
+      expect(colours[0]).not.toBe(colours[1]);
+      await page.evaluate(
+        (t) => document.documentElement.setAttribute("data-theme", t ?? "dark"),
+        shown,
+      );
     }
-    expect(colours[0]).not.toBe(colours[1]);
-    await page.evaluate(
-      (t) => document.documentElement.setAttribute("data-theme", t ?? "dark"),
-      shown,
-    );
     await azimaCard.locator(".azima-heading").click();
     await page
       .locator(".wish-task")
       .filter({ hasText: "Trim the wick" })
       .locator(".wish-task-heading")
       .click();
-    await page.screenshot({
-      path: path.join(__dirname, "../test-results/e2e/flight-plan-wish.png"),
-      fullPage: true,
-    });
+    if (process.env.PLAN_SHOTS)
+      await page.screenshot({
+        path: path.join(__dirname, "../test-results/e2e/flight-plan-wish.png"),
+        fullPage: true,
+      });
   } finally {
     djinn("wish", "delete", lampId);
     fs.rmSync(dir, { recursive: true, force: true });

@@ -150,7 +150,9 @@ test("drafts on the whole tilasm are written, edited, deleted with an Undo, and 
   );
   await column.getByRole("button", { name: "On the whole tilasm" }).click();
   await editor.fill("A second thought, being written.");
-  await page.screenshot({ path: path.join(shots, "tilasm-comments.png") });
+  if (process.env.TILASM_SHOTS) {
+    await page.screenshot({ path: path.join(shots, "tilasm-comments.png") });
+  }
   await editor.press("Escape");
 
   // Full size, the column stays beside the frame, which narrows for it; Escape gives up a card, not full size.
@@ -165,7 +167,11 @@ test("drafts on the whole tilasm are written, edited, deleted with an Undo, and 
       return f && c ? Math.round(c.x - (f.x + f.width)) : NaN;
     })
     .toBe(0);
-  await page.screenshot({ path: path.join(shots, "tilasm-comments-full.png") });
+  if (process.env.TILASM_SHOTS) {
+    await page.screenshot({
+      path: path.join(shots, "tilasm-comments-full.png"),
+    });
+  }
   await column.getByRole("button", { name: "On the whole tilasm" }).click();
   await expect(editor).toBeFocused();
   await editor.press("Escape");
@@ -338,8 +344,10 @@ test("the comments leave in one send, Iterate or Launch, and a launched tilasm g
   expect(djinn("tilasm", "comments", "L01", "--wish", wishId)).toContain(
     "1 without a reply.",
   );
-  await cards.nth(0).evaluate((el) => el.scrollIntoView({ block: "center" }));
-  await page.screenshot({ path: path.join(shots, "tilasm-reply.png") });
+  if (process.env.TILASM_SHOTS) {
+    await cards.nth(0).evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: path.join(shots, "tilasm-reply.png") });
+  }
 
   // L02: Launch without a comment is a yes to the question that links it.
   await view.getByRole("button", { name: "Close the tilasm" }).click();
@@ -374,7 +382,9 @@ test("the comments leave in one send, Iterate or Launch, and a launched tilasm g
       .questions as { code: string; answer?: { choice: string } }[]
   ).find((q) => q.code === question);
   expect(answered?.answer?.choice).toBe("CHOICE_A");
-  await page.screenshot({ path: path.join(shots, "tilasm-send-held.png") });
+  if (process.env.TILASM_SHOTS) {
+    await page.screenshot({ path: path.join(shots, "tilasm-send-held.png") });
+  }
 
   expect(errors).toEqual([]);
 });
@@ -502,7 +512,11 @@ test("a passage selected in the frame with the mouse is commented from the Comme
   const button = (await pick.boundingBox())!;
   expect(button.y).toBeGreaterThan(at.y + at.height - 1);
   expect(button.y).toBeLessThan(at.y + at.height + 40);
-  await page.screenshot({ path: path.join(shots, "tilasm-passage-pick.png") });
+  if (process.env.TILASM_SHOTS) {
+    await page.screenshot({
+      path: path.join(shots, "tilasm-passage-pick.png"),
+    });
+  }
 
   // Comment: the column opens on a new card on the passage, its quote and the heading above it; the passage stays
   // highlighted while it is written, the frame's own selection gone.
@@ -551,7 +565,11 @@ test("a passage selected in the frame with the mouse is commented from the Comme
   expect(
     await frame.evaluate(() => document.body.querySelectorAll("*").length),
   ).toBe(10);
-  await page.screenshot({ path: path.join(shots, "tilasm-passage-draft.png") });
+  if (process.env.TILASM_SHOTS) {
+    await page.screenshot({
+      path: path.join(shots, "tilasm-passage-draft.png"),
+    });
+  }
 
   // Ctrl+Alt+M, pressed in the frame on another selection, does what the button does; Escape gives the card up.
   await drag(page, inFrame.locator("#tab"));
@@ -578,10 +596,8 @@ test("a passage selected in the frame with the mouse is commented from the Comme
   await inFrame.locator("h1").click();
   await expect(pick).toHaveCount(0);
 
-  // Reloaded, the frame's page finds the draft's passage again.
-  await page.reload();
-  await page.locator(".wish-nav").filter({ hasText: title }).click();
-  await page.getByRole("tab", { name: /^Tilasms/ }).click();
+  // Reopened, the frame's page finds the draft's passage again.
+  await view.getByRole("button", { name: "Close the tilasm" }).click();
   await page
     .getByRole("tabpanel", { name: "Tilasms" })
     .locator(".tilasm-title")
@@ -702,7 +718,11 @@ test("a tilasm opened from a question's link is commented over the view, as in t
       "djinn-writing": [],
       "djinn-sent": [],
     });
-  await page.screenshot({ path: path.join(shots, "tilasm-over-comments.png") });
+  if (process.env.TILASM_SHOTS) {
+    await page.screenshot({
+      path: path.join(shots, "tilasm-over-comments.png"),
+    });
+  }
 
   // Aim mode too: a click on a heading takes it; Escape gives the card up and leaves the tilasm open.
   await over.getByRole("button", { name: "Aim at an element" }).click();
@@ -890,7 +910,9 @@ test("Aim mode comments an element, Escape leaves it in the window or the frame,
       return Math.abs(d.y - f.y) < 4;
     })
     .toBe(true);
-  await page.screenshot({ path: path.join(shots, "tilasm-margin-dots.png") });
+  if (process.env.TILASM_SHOTS) {
+    await page.screenshot({ path: path.join(shots, "tilasm-margin-dots.png") });
+  }
 
   // The page scrolls: a dot whose anchor leaves the frame goes, and comes back with it.
   await frame.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -1021,20 +1043,9 @@ test("a new version put with --code finds each comment found, changed or lost, a
   await bring(page, inFrame.locator("#digest"));
   await expect(margin.getByRole("button", { name: "Open C1" })).toBeVisible();
   await expect(margin.getByRole("button", { name: "Open C3" })).toHaveCount(0);
-  await page.screenshot({ path: path.join(shots, "tilasm-reanchored.png") });
-
-  // Written in Djinn's store: after a reload, the cards say the same.
-  await page.reload();
-  await page.locator(".wish-nav").filter({ hasText: title }).click();
-  await page.getByRole("tab", { name: /^Tilasms/ }).click();
-  await page
-    .getByRole("tabpanel", { name: "Tilasms" })
-    .locator(".tilasm-title")
-    .click();
-  await view.locator(".tilasm-view-head .tilasm-comments-toggle").click();
-  await expect(detached).toContainText("C3");
-  await expect(card("C2")).toContainText("Changed in v2");
-  await expect(card("C4")).toContainText("Changed in v2");
+  if (process.env.TILASM_SHOTS) {
+    await page.screenshot({ path: path.join(shots, "tilasm-reanchored.png") });
+  }
 
   // Reattach C3: on a passage selected in the new version, it leaves Detached.
   await card("C3").getByRole("button", { name: "Reattach C3" }).click();
@@ -1226,7 +1237,9 @@ test("a sent comment is read by the Djinn, replied with its tasks' state, and th
   await expect(column.getByRole("region", { name: "Detached" })).toContainText(
     "C3",
   );
-  await page.screenshot({ path: path.join(shots, "tilasm-becomes.png") });
+  if (process.env.TILASM_SHOTS) {
+    await page.screenshot({ path: path.join(shots, "tilasm-becomes.png") });
+  }
 
   // After a reload, nothing toasts again: each comment stands in v2 already.
   await page.reload();
@@ -1236,7 +1249,11 @@ test("a sent comment is read by the Djinn, replied with its tasks' state, and th
   await view.locator(".tilasm-view-head .tilasm-comments-toggle").click();
   await expect(head).toContainText("v2 by W2, for C1, C4");
   await expect(card("C1")).toContainText("Replied");
+  await expect(card("C2")).toContainText("Changed in v2");
   await expect(card("C3")).toContainText(/Read by the Djinn · \S/);
+  await expect(column.getByRole("region", { name: "Detached" })).toContainText(
+    "C3",
+  );
   await expect(inFrame.locator("h1")).toBeVisible();
   await page.waitForTimeout(500);
   await expect(page.getByText(/your comments:/)).toHaveCount(0);

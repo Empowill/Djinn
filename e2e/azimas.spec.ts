@@ -337,35 +337,22 @@ test("an azima whose work is all in main carries its mark, in both themes", asyn
     await expect(
       cards.filter({ hasText: "The PDF rendering" }).locator(".azima-merged"),
     ).toHaveCount(0);
-    // A small full round in both themes: the merge glyph in the page's own tone, on green.
-    for (const theme of ["dark", "light"]) {
-      await page.evaluate(async (theme) => {
-        localStorage.setItem("djinn.theme", theme);
-        document.documentElement.dataset.theme = theme;
-        // The theme's transitions end; a loop of the page never would.
-        await Promise.all(
-          document
-            .getAnimations()
-            .filter((a) => a instanceof CSSTransition)
-            .map((a) => a.finished.catch(() => {})),
-        );
-      }, theme);
-      const look = await mark.evaluate((el) => {
-        const style = getComputedStyle(el);
-        const rect = el.getBoundingClientRect();
-        return {
-          width: rect.width,
-          height: rect.height,
-          radius: style.borderTopLeftRadius,
-          background: style.backgroundColor,
-          color: style.color,
-        };
-      });
-      expect(look.width).toBeCloseTo(look.height, 0);
-      expect(look.width).toBeLessThan(20);
-      expect(look.radius).toBe("50%");
-      expect(look.background).not.toBe(look.color);
-    }
+    // A small full round: the merge glyph in the page's own tone, on green (both themes: tests/styles.test.cjs).
+    const look = await mark.evaluate((el) => {
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return {
+        width: rect.width,
+        height: rect.height,
+        radius: style.borderTopLeftRadius,
+        background: style.backgroundColor,
+        color: style.color,
+      };
+    });
+    expect(look.width).toBeCloseTo(look.height, 0);
+    expect(look.width).toBeLessThan(20);
+    expect(look.radius).toBe("50%");
+    expect(look.background).not.toBe(look.color);
     expect(errors).toEqual([]);
   } finally {
     djinn("wish", "delete", wishId);

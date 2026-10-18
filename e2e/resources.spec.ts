@@ -315,9 +315,10 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await expect(commands.locator(".resource-command-args").first()).toHaveText(
     "2 sets of arguments: -- e2e/wish-render.spec.ts, -- e2e/resources.spec.ts",
   );
-  await commands.screenshot({
-    path: path.join(shots, "resources-commands-dark.png"),
-  });
+  if (process.env.RESOURCE_SHOTS)
+    await commands.screenshot({
+      path: path.join(shots, "resources-commands-dark.png"),
+    });
 
   // Djinn apart from what it started, both named.
   await expect(panel.locator(".resource-legend li")).toHaveText([
@@ -343,10 +344,11 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   expect(seen).toContain("Djinn and what it started 8%");
   expect(seen).toContain("Djinn itself 1%");
   await expect(cpu.locator(".resource-chart-cursor")).toHaveCount(1);
-  await page.screenshot({
-    path: path.join(shots, "resources-hover-dark.png"),
-    clip: (await panel.locator(".resource-machine").boundingBox())!,
-  });
+  if (process.env.RESOURCE_SHOTS)
+    await page.screenshot({
+      path: path.join(shots, "resources-hover-dark.png"),
+      clip: (await panel.locator(".resource-machine").boundingBox())!,
+    });
 
   // The keys, the pointer away: the last sample.
   await page.mouse.move(0, 0);
@@ -376,21 +378,23 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await expect(cpu.locator(".resource-chart-readout")).toHaveCount(0);
 
   // The light theme.
-  await page.evaluate(async () => {
-    document.documentElement.dataset.theme = "light";
-    // The colours' transitions end; an endless animation elsewhere (a running worker's orb) is not waited for.
-    await Promise.all(
-      document
-        .getAnimations()
-        .filter((a) => a instanceof CSSTransition)
-        .map((a) => a.finished.catch(() => {})),
-    );
-  });
-  await page.mouse.move(0, 0);
-  await panel.screenshot({ path: path.join(shots, "resources-light.png") });
-  await page.evaluate(() => {
-    document.documentElement.dataset.theme = "dark";
-  });
+  if (process.env.RESOURCE_SHOTS) {
+    await page.evaluate(async () => {
+      document.documentElement.dataset.theme = "light";
+      // The colours' transitions end; an endless animation elsewhere (a running worker's orb) is not waited for.
+      await Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a instanceof CSSTransition)
+          .map((a) => a.finished.catch(() => {})),
+      );
+    });
+    await page.mouse.move(0, 0);
+    await panel.screenshot({ path: path.join(shots, "resources-light.png") });
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = "dark";
+    });
+  }
 
   // The eye, by the keyboard: the wish opens on its Tasks tab, the task's card open and in sight.
   const eye = worker.getByRole("button", { name: "Open W1 in its wish" });

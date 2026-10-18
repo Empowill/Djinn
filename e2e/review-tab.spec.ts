@@ -146,8 +146,10 @@ test("the Review tab lists a merged task, opens its diff with its comment, and k
     await expect(item.locator(".diff-comment-item")).toContainText(
       "Shine it more",
     );
-    fs.mkdirSync(shots, { recursive: true });
-    await page.screenshot({ path: path.join(shots, "review-tab-dark.png") });
+    if (process.env.REVIEW_SHOTS) {
+      fs.mkdirSync(shots, { recursive: true });
+      await page.screenshot({ path: path.join(shots, "review-tab-dark.png") });
+    }
 
     // Checked: the count falls to 0, the line folds with who checked it; the lamp keeps it.
     const check = item.getByRole("checkbox");
@@ -163,7 +165,8 @@ test("the Review tab lists a merged task, opens its diff with its comment, and k
     expect(marks[0].mark.kind).toBe("MARK_KIND_REVIEWED");
     expect(marks[0].mark.actor).toBe("local");
 
-    await theme(page, "light");
+    if (process.env.REVIEW_SHOTS) await theme(page, "light");
+    else await page.reload();
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await page.getByRole("tab", { name: /^Review/ }).click();
     await page.getByRole("button", { name: "Show 1 reviewed" }).click();
@@ -175,8 +178,10 @@ test("the Review tab lists a merged task, opens its diff with its comment, and k
       "true",
     );
     await expect(kept.locator(".review-by")).toContainText("you, ");
-    await page.screenshot({ path: path.join(shots, "review-tab-light.png") });
-    await theme(page, "");
+    if (process.env.REVIEW_SHOTS) {
+      await page.screenshot({ path: path.join(shots, "review-tab-light.png") });
+      await theme(page, "");
+    }
     expect(errors).toEqual([]);
   } finally {
     djinn("wish", "pause", wishId);

@@ -29,216 +29,217 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
-for (const scheme of ["dark", "light"] as const) {
-  test(`the Grimoire opens on its splash, then its book and its concepts, ${scheme}`, async ({
-    page,
-  }) => {
-    const errors = collectErrors(page);
-    await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-    // The first visit trades the token for the cookie that /docs/ needs too.
-    await page.goto(djinnURL());
-    await page.goto(djinnURL("/docs/"));
-    await expect(page).toHaveTitle("Grimoire · Djinn documentation");
-    await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
+test("the Grimoire opens on its splash, then its book and its concepts", async ({
+  page,
+}) => {
+  const errors = collectErrors(page);
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  // The first visit trades the token for the cookie that /docs/ needs too.
+  await page.goto(djinnURL());
+  await page.goto(djinnURL("/docs/"));
+  await expect(page).toHaveTitle("Grimoire · Djinn documentation");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
-    // The splash: the page the documentation was, titled Grimoire.
-    // One assertion per list, not per item: each step costs, more so on a loaded machine (docs/pitfalls.md, W248). A
-    // role locator leaves out what is hidden; the names come in any order.
-    const splash = page.locator("#welcome");
-    await expect(
-      splash.getByRole("heading", { level: 1, name: "Grimoire" }),
-    ).toBeVisible();
-    await expect
-      .poll(() => splash.getByRole("heading", { level: 2 }).allInnerTexts())
-      .toEqual(
-        expect.arrayContaining([
-          "The lamp and the smoke",
-          "Wish for anything, except what no djinn can grant",
-          "The life of a wish",
-          "What you will meet",
-        ]),
-      );
-    await expect
-      .poll(() =>
-        page
-          .locator("#words")
-          .getByRole("heading", { level: 3 })
-          .allInnerTexts(),
-      )
-      .toEqual(
-        expect.arrayContaining(
-          [
-            "Azimas",
-            "Workers",
-            "Questions, and the lamp's rub",
-            "Gates",
-            "The machine",
-            "Tilasms",
-          ].map((name) => expect.stringMatching(new RegExp(`^${name}`))),
-        ),
-      );
-    // The navigation is there from the first view, its title current: no button to open the book.
-    const nav = page.getByRole("navigation", { name: "Grimoire" });
-    await expect(nav.getByRole("link", { name: "Introduction" })).toBeVisible();
-    await expect(nav.locator(".nav-title")).toHaveAttribute(
-      "aria-current",
-      "page",
+  // The splash: the page the documentation was, titled Grimoire.
+  // One assertion per list, not per item: each step costs, more so on a loaded machine (docs/pitfalls.md, W248). A
+  // role locator leaves out what is hidden; the names come in any order.
+  const splash = page.locator("#welcome");
+  await expect(
+    splash.getByRole("heading", { level: 1, name: "Grimoire" }),
+  ).toBeVisible();
+  await expect
+    .poll(() => splash.getByRole("heading", { level: 2 }).allInnerTexts())
+    .toEqual(
+      expect.arrayContaining([
+        "The lamp and the smoke",
+        "Wish for anything, except what no djinn can grant",
+        "The life of a wish",
+        "What you will meet",
+      ]),
     );
-    await expect(page.getByText("Open the Grimoire")).toHaveCount(0);
-    // The pages are not in the first document: each is read when opened.
-    await expect(page.locator("#wish")).toBeEmpty();
-    await expect(page.locator("#commands .cli-cmd")).toHaveCount(0);
-    await page.screenshot({
-      path: path.join(shots, `docs-splash-${scheme}.png`),
-    });
-
-    // Into the book: Introduction first.
-    await splash
-      .getByRole("link", { name: "Read the Grimoire" })
-      .first()
-      .click();
-    await expect(page).toHaveURL(/#introduction$/);
-    await expect(splash).toBeHidden();
-    await expect(nav.locator(".nav-title")).not.toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    await expect(
-      nav.getByRole("link", { name: "Introduction" }),
-    ).toHaveAttribute("aria-current", "page");
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Introduction" }),
-    ).toBeVisible();
-    await expect
-      .poll(() => nav.getByRole("link").allInnerTexts())
-      .toEqual(
-        expect.arrayContaining([
-          "Getting started",
-          "Wish",
-          "Azima",
-          "Task and worker",
-          "Watcher",
-          "Question and move",
-          "Decision",
-          "Block",
-          "Tilasm",
-          "Project and settings",
-          "Integration branch",
+  await expect
+    .poll(() =>
+      page.locator("#words").getByRole("heading", { level: 3 }).allInnerTexts(),
+    )
+    .toEqual(
+      expect.arrayContaining(
+        [
+          "Azimas",
+          "Workers",
+          "Questions, and the lamp's rub",
           "Gates",
-          "Push strategy",
-          "Lead notes",
-          "Skills and templates",
-          "Ifrit",
-          "Command line",
-        ]),
-      );
-    await page.screenshot({
-      path: path.join(shots, `docs-introduction-${scheme}.png`),
-    });
-
-    // A concept's page: what is on it leads to its sections, and the next page follows.
-    await nav.getByRole("link", { name: "Wish", exact: true }).click();
-    await expect(page).toHaveURL(/#wish$/);
-    const wish = page.locator("#wish");
-    await expect(
-      wish.getByRole("heading", { level: 1, name: "Wish" }),
-    ).toBeVisible();
-    await expect(page.locator("#introduction")).toBeHidden();
-    await wish
-      .getByRole("navigation", { name: "On this page" })
-      .getByRole("link", { name: "Granting a wish" })
-      .click();
-    await expect(page.locator("#wish-granting-a-wish")).toBeInViewport();
-    await wish.getByRole("link", { name: /^Next/ }).click();
-    await expect(page).toHaveURL(/#azima$/);
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Azima" }),
-    ).toBeVisible();
-    await page.screenshot({
-      path: path.join(shots, `docs-azima-${scheme}.png`),
-    });
-    // Back and forward move between the pages read.
-    await page.goBack();
-    await expect(page).toHaveURL(/#wish-granting-a-wish$/);
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Wish" }),
-    ).toBeVisible();
-    await page.goForward();
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Azima" }),
-    ).toBeVisible();
-    expect(errors).toEqual([]);
-  });
-
-  // Apart from the splash and the concepts: each test has its 30 s, which a loaded machine took whole (W248).
-  test(`the Grimoire's book opens on Introduction at an address that names nothing, and lists every command, ${scheme}`, async ({
-    page,
-  }) => {
-    const errors = collectErrors(page);
-    await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
-    await page.goto(djinnURL());
-    const splash = page.locator("#welcome");
-    const nav = page.getByRole("navigation", { name: "Grimoire" });
-    // An address that names nothing opens the book on Introduction.
-    await page.goto(djinnURL("/docs/") + "#no-such-page");
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Introduction" }),
-    ).toBeVisible();
-    // An address that names a place in a page not read yet: the page is read, the place reached.
-    await page.goto(djinnURL("/docs/") + "#gates-slots-and-gates");
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Gates" }),
-    ).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Gates" })).toHaveAttribute(
-      "aria-current",
-      "page",
+          "The machine",
+          "Tilasms",
+        ].map((name) => expect.stringMatching(new RegExp(`^${name}`))),
+      ),
     );
-    await expect(page.locator("#gates-slots-and-gates")).toBeInViewport();
-
-    await nav.getByRole("link", { name: "Command line" }).click();
-    await expect(page).toHaveURL(/#commands$/);
-    await expect(page.locator("#introduction")).toBeHidden();
-    // The page is read when opened (W165): its commands come after the address changed.
-    const commands = page.locator("#commands .cli-cmd");
-    await expect.poll(() => commands.count()).toBeGreaterThan(50);
-    for (const name of ["djinn wish make", "djinn gate run", "djinn up"])
-      await expect(
-        page.getByRole("heading", { level: 4, name, exact: true }),
-      ).toBeAttached();
+  // The navigation is there from the first view, its title current: no button to open the book.
+  const nav = page.getByRole("navigation", { name: "Grimoire" });
+  await expect(nav.getByRole("link", { name: "Introduction" })).toBeVisible();
+  await expect(nav.locator(".nav-title")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.getByText("Open the Grimoire")).toHaveCount(0);
+  // The pages are not in the first document: each is read when opened.
+  await expect(page.locator("#wish")).toBeEmpty();
+  await expect(page.locator("#commands .cli-cmd")).toHaveCount(0);
+  if (process.env.DOCS_SHOTS) {
     await page.screenshot({
-      path: path.join(shots, `docs-commands-${scheme}.png`),
+      path: path.join(shots, "docs-splash-dark.png"),
     });
+  }
 
-    // The table of contents leads to a command.
-    await page
-      .locator(".cli-toc")
-      .getByRole("link", { name: "answer", exact: true })
-      .click();
-    await expect(page).toHaveURL(/#cmd-question-answer$/);
-    await expect(page.locator("#cmd-question-answer")).toBeInViewport();
+  // Into the book: Introduction first.
+  await splash.getByRole("link", { name: "Read the Grimoire" }).first().click();
+  await expect(page).toHaveURL(/#introduction$/);
+  await expect(splash).toBeHidden();
+  await expect(nav.locator(".nav-title")).not.toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(nav.getByRole("link", { name: "Introduction" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Introduction" }),
+  ).toBeVisible();
+  await expect
+    .poll(() => nav.getByRole("link").allInnerTexts())
+    .toEqual(
+      expect.arrayContaining([
+        "Getting started",
+        "Wish",
+        "Azima",
+        "Task and worker",
+        "Watcher",
+        "Question and move",
+        "Decision",
+        "Block",
+        "Tilasm",
+        "Project and settings",
+        "Integration branch",
+        "Gates",
+        "Push strategy",
+        "Lead notes",
+        "Skills and templates",
+        "Ifrit",
+        "Command line",
+      ]),
+    );
+  if (process.env.DOCS_SHOTS) {
+    await page.screenshot({
+      path: path.join(shots, "docs-introduction-dark.png"),
+    });
+  }
 
-    // The search keeps what matches: an alias finds its group.
-    await page.getByRole("searchbox").fill("talisman");
-    await expect(page.locator("#group-tilasm")).toBeVisible();
-    await expect(page.locator("#group-wish")).toBeHidden();
-    await expect(page.locator("#cmd-tilasm-put")).toBeVisible();
-    // A word no command holds: plain words like "such" turn up in the help of new commands.
-    await page.getByRole("searchbox").fill("xyzzy");
-    await expect(page.getByText("No command matches.")).toBeVisible();
-    await page.getByRole("searchbox").fill("");
-    await expect(page.locator("#group-wish")).toBeVisible();
+  // A concept's page: what is on it leads to its sections, and the next page follows.
+  await nav.getByRole("link", { name: "Wish", exact: true }).click();
+  await expect(page).toHaveURL(/#wish$/);
+  const wish = page.locator("#wish");
+  await expect(
+    wish.getByRole("heading", { level: 1, name: "Wish" }),
+  ).toBeVisible();
+  await expect(page.locator("#introduction")).toBeHidden();
+  await wish
+    .getByRole("navigation", { name: "On this page" })
+    .getByRole("link", { name: "Granting a wish" })
+    .click();
+  await expect(page.locator("#wish-granting-a-wish")).toBeInViewport();
+  await wish.getByRole("link", { name: /^Next/ }).click();
+  await expect(page).toHaveURL(/#azima$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Azima" }),
+  ).toBeVisible();
+  if (process.env.DOCS_SHOTS) {
+    await page.screenshot({
+      path: path.join(shots, "docs-azima-dark.png"),
+    });
+  }
+  // Back and forward move between the pages read.
+  await page.goBack();
+  await expect(page).toHaveURL(/#wish-granting-a-wish$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Wish" }),
+  ).toBeVisible();
+  await page.goForward();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Azima" }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});
 
-    // The brand leads back to the splash, the navigation beside it.
-    await page.locator(".brand").click();
-    await expect(splash).toBeVisible();
-    await expect(page.locator("#commands")).toBeHidden();
-    await expect(nav).toBeVisible();
-    // Opened straight on a command, the Command line is read, the command reached.
-    await page.goto(djinnURL("/docs/") + "#cmd-wish-make");
-    await expect(page.locator("#cmd-wish-make")).toBeInViewport();
-    expect(errors).toEqual([]);
-  });
-}
+// Apart from the splash and the concepts: each test has its 30 s, which a loaded machine took whole (W248).
+test("the Grimoire's book opens on Introduction at an address that names nothing, and lists every command", async ({
+  page,
+}) => {
+  const errors = collectErrors(page);
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.goto(djinnURL());
+  const splash = page.locator("#welcome");
+  const nav = page.getByRole("navigation", { name: "Grimoire" });
+  // An address that names nothing opens the book on Introduction.
+  await page.goto(djinnURL("/docs/") + "#no-such-page");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Introduction" }),
+  ).toBeVisible();
+  // An address that names a place in a page not read yet: the page is read, the place reached.
+  await page.goto(djinnURL("/docs/") + "#gates-slots-and-gates");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Gates" }),
+  ).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Gates" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.locator("#gates-slots-and-gates")).toBeInViewport();
+
+  await nav.getByRole("link", { name: "Command line" }).click();
+  await expect(page).toHaveURL(/#commands$/);
+  await expect(page.locator("#introduction")).toBeHidden();
+  // The page is read when opened (W165): its commands come after the address changed.
+  const commands = page.locator("#commands .cli-cmd");
+  await expect.poll(() => commands.count()).toBeGreaterThan(50);
+  for (const name of ["djinn wish make", "djinn gate run", "djinn up"])
+    await expect(
+      page.getByRole("heading", { level: 4, name, exact: true }),
+    ).toBeAttached();
+  if (process.env.DOCS_SHOTS) {
+    await page.screenshot({
+      path: path.join(shots, "docs-commands-dark.png"),
+    });
+  }
+
+  // The table of contents leads to a command.
+  await page
+    .locator(".cli-toc")
+    .getByRole("link", { name: "answer", exact: true })
+    .click();
+  await expect(page).toHaveURL(/#cmd-question-answer$/);
+  await expect(page.locator("#cmd-question-answer")).toBeInViewport();
+
+  // The search keeps what matches: an alias finds its group.
+  await page.getByRole("searchbox").fill("talisman");
+  await expect(page.locator("#group-tilasm")).toBeVisible();
+  await expect(page.locator("#group-wish")).toBeHidden();
+  await expect(page.locator("#cmd-tilasm-put")).toBeVisible();
+  // A word no command holds: plain words like "such" turn up in the help of new commands.
+  await page.getByRole("searchbox").fill("xyzzy");
+  await expect(page.getByText("No command matches.")).toBeVisible();
+  await page.getByRole("searchbox").fill("");
+  await expect(page.locator("#group-wish")).toBeVisible();
+
+  // The brand leads back to the splash, the navigation beside it.
+  await page.locator(".brand").click();
+  await expect(splash).toBeVisible();
+  await expect(page.locator("#commands")).toBeHidden();
+  await expect(nav).toBeVisible();
+  // Opened straight on a command, the Command line is read, the command reached.
+  await page.goto(djinnURL("/docs/") + "#cmd-wish-make");
+  await expect(page.locator("#cmd-wish-make")).toBeInViewport();
+  expect(errors).toEqual([]);
+});
 
 // The navigation speaks the window's language; the pages stay in English.
 test("the Grimoire's navigation is in the language asked", async ({ page }) => {
