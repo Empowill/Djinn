@@ -312,7 +312,7 @@ Tests: `TestReadTemplate`, `TestFillQuotes`, `TestDoneLine`, `TestRouteTemplate`
 `TestWatcherFinishes` (`internal/harness/watch_test.go`), `TestBabysitMRReadsOnly`
 (`internal/harness/babysit_mr_test.go`: babysit-mr's template and watcher, a fake `glab` on the `PATH`),
 `TestBabysitPRSpeaksOnlyForTheLead` (`internal/harness/babysit_pr_test.go`: what babysit-pr's watcher says, and does not
-say again after a restart, a fake `gh` on the `PATH`), and `e2e/wish-template.spec.ts` (a fake watcher). The
+say again after a restart, a fake `gh` on the `PATH`), and `e2e/inbox.spec.ts` (a fake watcher). The
 inbox: `TestReadSource`, `TestSources`, `TestKeepSourceRun`, `TestOwnSource`, `TestInbox`, `TestItemKey`
 (`internal/plan/inbox_test.go`), `TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceFails`, `TestSourceUnplugged`
 (`internal/harness/watch_source_test.go`),

@@ -80,6 +80,40 @@ test("question card keyboard shortcuts: letters, 1-4, Shift+Enter, Enter, Ctrl+S
     await expect(diesel).toHaveAttribute("aria-pressed", "false");
     await expect(electric).toHaveAttribute("aria-pressed", "false");
 
+    // Clicking, double-clicking, or pressing Enter/Space on an option button, or pressing Enter on the card body,
+    // only picks the option and never submits an answer (W574).
+    await diesel.click();
+    await expect(diesel).toHaveAttribute("aria-pressed", "true");
+    await expect(steam).toHaveAttribute("aria-pressed", "false");
+    await expect(card1).not.toHaveClass(/gesture-/);
+
+    await electric.dblclick();
+    await expect(electric).toHaveAttribute("aria-pressed", "true");
+    await expect(diesel).toHaveAttribute("aria-pressed", "false");
+    await expect(card1).not.toHaveClass(/gesture-/);
+
+    await steam.focus();
+    await page.keyboard.press("Enter");
+    await expect(steam).toHaveAttribute("aria-pressed", "true");
+    await expect(electric).toHaveAttribute("aria-pressed", "false");
+    await expect(card1).not.toHaveClass(/gesture-/);
+
+    await diesel.focus();
+    await page.keyboard.press(" ");
+    await expect(diesel).toHaveAttribute("aria-pressed", "true");
+    await expect(steam).toHaveAttribute("aria-pressed", "false");
+    await expect(card1).not.toHaveClass(/gesture-/);
+
+    await card1.getByText("Pick an engine").click();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(500);
+    await expect(card1).toBeVisible();
+    await expect(card1).not.toHaveClass(/gesture-/);
+    const [q1StillOpen] = JSON.parse(
+      djinn("question", "list", "--wish-id", wishId, "--json"),
+    ).questions;
+    expect(q1StillOpen.answer).toBeUndefined();
+
     // Focus the question and pick by letter.
     await card1.focus();
     await page.keyboard.press("b");

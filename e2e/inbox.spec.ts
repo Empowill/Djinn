@@ -1,9 +1,10 @@
-// The inbox, against the real djinn up --browser (see global-setup.ts): a project's skill declares a source and a wish
-// template. The source runs nothing until plugged in, from its project's panel: the inbox never lists the sources.
-// Plugged in, it prints a merge request assigned to you, which becomes a card in the flying carpet, saying what it is,
-// what Djinn will do and what each choice changes, proposing the template's wish; a click makes the wish, with its
-// watcher. A second source fails: its card says why, and unplugs it. The sources and the watcher are fakes: shell
-// scripts.
+// The inbox and wish templates, against the real djinn up --browser (see global-setup.ts): a project's skill declares
+// a source and a wish template. Routing a request that matches the template proposes its wish. The source runs nothing
+// until plugged in, from its project's panel: the inbox never lists the sources. Plugged in, it prints a merge request
+// assigned to you, which becomes a card in the flying carpet, saying what it is, what Djinn will do and what each
+// choice changes, proposing the template's wish; a click makes the wish, with its watcher, whose done line asks
+// whether to grant the wish, and rubbing the lamp grants it. A second source fails: its card says why, and unplugs it.
+// The sources and the watcher are fakes: shell scripts.
 import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -56,7 +57,7 @@ test.skip(
   "the fake claude, the fake source and the fake watcher are shell scripts",
 );
 
-test("a source runs once plugged in from its project's panel; its assigned merge request becomes a card that says what it is, what Djinn will do and what each choice changes; a click makes the wish with its watcher; a failing source gets its own card", async ({
+test("a source runs once plugged in from its project's panel; its assigned merge request becomes a card that makes the template's wish with its watcher, whose done line offers to grant it; a failing source gets its own card", async ({
   page,
 }) => {
   // Three wishes at a time: the earlier specs' wishes make way, and one stays active for the flying carpet.
@@ -97,16 +98,33 @@ test("a source runs once plugged in from its project's panel; its assigned merge
   );
   fs.writeFileSync(
     path.join(folder, "fake-watch.sh"),
-    'echo "!$1 · checks: pending"\nsleep 30\n',
+    'echo "!$1 · checks: pending"\nsleep 1\necho "MERGED: !$1 is merged."\n',
   );
   djinn("project", "add", folder, "--name", "bell");
   const skills = JSON.parse(
     djinn("skill", "list", "--project", "bell", "--json"),
   ).skills;
-  expect(
-    skills.find((k: { name: string }) => k.name === "babysit-fake-mr")
-      .inbox_source,
-  ).toBe("sh fake-source.sh");
+  const fakeSkill = skills.find(
+    (k: { name: string }) => k.name === "babysit-fake-mr",
+  );
+  expect(fakeSkill.template).toBe("Babysit !{mr}");
+  expect(fakeSkill.inbox_source).toBe("sh fake-source.sh");
+
+  // Routing a request that matches the skill's template proposes the template's wish.
+  const asked = JSON.parse(
+    djinn(
+      "wish",
+      "route",
+      "babysit the bell MR !7",
+      "--wish-id",
+      here,
+      "--ask",
+      "--json",
+    ),
+  );
+  expect(asked.question.options[0]).toBe(
+    "New wish “Babysit !7”, in bell, from the skill babysit-fake-mr",
+  );
 
   let madeId: string | undefined;
   let taskId: string | undefined;
@@ -183,7 +201,9 @@ test("a source runs once plugged in from its project's panel; its assigned merge
     madeId = made.id;
     expect(made.template).toMatchObject({
       skill: "babysit-fake-mr",
+      project_id: expect.any(String),
       watch: "sh fake-watch.sh 12",
+      done_when: "MERGED",
     });
     const tasks = JSON.parse(
       djinn("task", "list", "--wish-id", made.id, "--json"),
@@ -199,6 +219,28 @@ test("a source runs once plugged in from its project's panel; its assigned merge
     expect(
       JSON.parse(djinn("inbox", "list", "--json")).items ?? [],
     ).toHaveLength(0);
+
+    // The watcher's done line: a card asks whether to grant the wish; rubbing the lamp grants it.
+    const grantCard = page
+      .locator(".question-card")
+      .filter({ hasText: "grant “Babysit !12”?" });
+    await expect(grantCard).toContainText("MERGED: !12 is merged.", {
+      timeout: 20_000,
+    });
+    expect(
+      JSON.parse(djinn("wish", "list", "--json")).wishes.find(
+        (w: { id: string }) => w.id === made.id,
+      ).state,
+    ).toBe("WISH_STATE_ACTIVE");
+    await grantCard.getByRole("button", { name: "Rub the lamp" }).click();
+    await expect
+      .poll(
+        () =>
+          JSON.parse(djinn("wish", "list", "--json")).wishes.find(
+            (w: { id: string }) => w.id === made.id,
+          ).state,
+      )
+      .toBe("WISH_STATE_GRANTED");
 
     djinn("inbox", "unplug", "bell/babysit-fake-mr");
     expect(
