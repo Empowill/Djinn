@@ -1,6 +1,6 @@
 // A wish set aside and taken back, from the top of its screen: Pause, then Resume; a paused wish sent first from the
 // side panel; and a wish deleted with its trash, its tasks and blocks with it.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

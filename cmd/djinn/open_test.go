@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -20,9 +21,38 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// TestOpenHandsTheLinkToTheRunningDjinn: djinn open, what the system runs for a djinn:// link, starts djinn when none
+// TestRunOpen covers runOpen, djinn open: its usage, and the link it hands to the running djinn, started if need be.
+func TestRunOpen(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		args []string
+		code int
+		out  string
+		errs string
+	}{
+		{name: "help", args: []string{"--help"}, out: "Usage: djinn open"},
+		{name: "no link", code: 2, errs: "djinn open: one link expected"},
+		{name: "two links", args: []string{"djinn://wish/a", "djinn://wish/b"}, code: 2, errs: "Usage: djinn open"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			var out, errs bytes.Buffer
+			code := runOpen(c.args, &out, &errs)
+			if code != c.code || !strings.Contains(out.String(), c.out) || !strings.Contains(errs.String(), c.errs) {
+				t.Errorf("djinn open %q = %d\n%s%s", c.args, code, out.String(), errs.String())
+			}
+		})
+	}
+	t.Run("a link", func(t *testing.T) {
+		t.Parallel()
+		openHandsTheLinkToTheRunningDjinn(t)
+	})
+}
+
+// openHandsTheLinkToTheRunningDjinn: djinn open, what the system runs for a djinn:// link, starts djinn when none
 // runs, then hands the link to the one that runs: one djinn per data folder, as djinn up and djinn lead resume.
-func TestOpenHandsTheLinkToTheRunningDjinn(t *testing.T) {
+func openHandsTheLinkToTheRunningDjinn(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
 	env := environ(home, t.TempDir())

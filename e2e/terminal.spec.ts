@@ -1,6 +1,6 @@
 // The terminal pinned at the bottom of the window, against the real djinn up --browser (see global-setup.ts): a
 // POSIX shell on a pseudo-terminal of djinn, reached through the shim.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import fs from "node:fs";
 import path from "node:path";
 

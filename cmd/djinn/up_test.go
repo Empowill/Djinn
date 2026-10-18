@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -200,7 +201,114 @@ func stopStarted(t *testing.T, home, stderr string) {
 	})
 }
 
-func TestUpTwiceShowsTheFirst(t *testing.T) {
+// fakeClaude writes a claude command in a new folder that says how it was called and where, counts its starts in
+// the file count, then waits for its terminal to hang up.
+func fakeClaude(t *testing.T) (bin, count string) {
+	t.Helper()
+	bin = t.TempDir()
+	count = filepath.Join(t.TempDir(), "starts")
+	script := "#!/bin/sh\nargs=\"\"\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    --allowedTools|--project) shift 2 ;;\n    *) args=\"${args:+$args }$1\"; shift ;;\n  esac\ndone\necho \"fake-claude $args in $(pwd)\"\necho start >> \"$DJINN_TEST_COUNT\"\nexec cat\n"
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin, count
+}
+
+// read follows the output of a terminal until it holds want, or with an empty want until the program ends.
+func read(t *testing.T, c terminalv1connect.TerminalServiceClient, id, want string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	stream, err := c.Read(ctx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	var got bytes.Buffer
+	for stream.Receive() {
+		got.Write(stream.Msg().GetData())
+		if want != "" && lineOf(got.String(), want) || want == "" && stream.Msg().GetExited() {
+			return
+		}
+	}
+	t.Fatalf("terminal %s: %v; want %q in:\n%q", id, stream.Err(), want, got.String())
+}
+
+// lineOf tells whether a line of out, terminal line ends aside, is want.
+func lineOf(out, want string) bool {
+	s := bufio.NewScanner(strings.NewReader(out))
+	for s.Scan() {
+		if strings.TrimRight(s.Text(), "\r") == want {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRunUp covers runUp, djinn up, on processes of this test binary, each with a data folder of its own: the flags
+// and variables it refuses, and what a djinn up does once it runs, case by case. The cases run in parallel; a case
+// starts one or two djinn up and runs djinn commands against them, about a second each here, more on a loaded machine.
+func TestRunUp(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		args []string
+		env  []string
+		errs string // what djinn up says before it exits
+	}{
+		{name: "help", args: []string{"--help"}, errs: "Usage: djinn up"},
+		{name: "an argument", args: []string{"now"}, errs: `djinn up: unexpected argument "now"`},
+		{name: "--workers 17", args: []string{"--workers", "17"}, errs: "--workers 17: expected 1 to 16"},
+		{name: "DJINN_WORKERS", env: []string{"DJINN_WORKERS=many"}, errs: "DJINN_WORKERS: "},
+		{name: "--worker-cpu -1", args: []string{"--worker-cpu", "-1"}, errs: "--worker-cpu -1: expected 1 to "},
+		{name: "DJINN_WORKER_CPU", env: []string{"DJINN_WORKER_CPU=half"}, errs: "DJINN_WORKER_CPU: "},
+		{name: "--worker-memory -1", args: []string{"--worker-memory", "-1"}, errs: "--worker-memory -1: expected MiB"},
+		{name: "DJINN_WORKER_MEMORY", env: []string{"DJINN_WORKER_MEMORY=lots"}, errs: "DJINN_WORKER_MEMORY: "},
+		{name: "--worker-memory-guard -1", args: []string{"--worker-memory-guard", "-1"}, errs: "--worker-memory-guard -1"},
+		{name: "DJINN_WORKER_MEMORY_GUARD", env: []string{"DJINN_WORKER_MEMORY_GUARD=invalid"}, errs: "DJINN_WORKER_MEMORY_GUARD: "},
+		{name: "DJINN_ENLIGHTEN_WORKERS", env: []string{"DJINN_ENLIGHTEN_WORKERS=maybe"}, errs: `DJINN_ENLIGHTEN_WORKERS: "maybe": expected on or off`},
+		{name: "DJINN_PPROF", env: []string{"DJINN_PPROF=maybe"}, errs: `DJINN_PPROF: "maybe": expected on or off`},
+		{name: "--disk-trim-gb -1", args: []string{"--disk-trim-gb", "-1"}, errs: "--disk-trim-gb -1: expected GB, or 0 for never"},
+		{name: "DJINN_DISK_FULL_GB", env: []string{"DJINN_DISK_FULL_GB=ten"}, errs: "DJINN_DISK_FULL_GB: "},
+		{name: "--ifrit-idle 4m", args: []string{"--ifrit-idle", "4m"}, errs: "expected whole minutes from 5m to 4h"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			want := 1
+			if c.args != nil && c.args[0] == "--help" {
+				want = 0
+			}
+			code, out, errs := runDjinn(t, environ(t.TempDir(), t.TempDir(), c.env...), append([]string{"up"}, c.args...)...)
+			if code != want || !strings.Contains(out+errs, c.errs) {
+				t.Errorf("djinn up %q with %q: exit %d, want %d saying %q\n%s%s", c.args, c.env, code, want, c.errs, out, errs)
+			}
+		})
+	}
+	for _, c := range []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{"twice shows the first", upTwiceShowsTheFirst},
+		{"replaces the address of a crash", upReplacesTheAddressOfACrash},
+		{"a development build keeps its own data", upDevelopmentBuildKeepsItsOwnData},
+		{"lead resume", upLeadResume},
+		{"an exited codex lead stays until resumed", upExitedCodexLeadIsRetainedUntilExplicitResume},
+		{"a lead that cannot start at start shows", upLeadStartFailureAtStartShows},
+		{"read-only methods answer a GET", upReadOnlyMethodsAnswerAGet},
+		{"the window's terminal opens in a project", upWindowTerminalOpensInAProject},
+		{"DJINN_PPROF serves the profiles", upProfiles},
+		{"an inbox source plugged runs in djinn up", upInboxPlug},
+		{"a crash resumes the workers", upCrashResumesTheWorkers},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			c.run(t)
+		})
+	}
+}
+
+// upTwiceShowsTheFirst: a second djinn up on the same data folder shows the first one, which says its address again.
+func upTwiceShowsTheFirst(t *testing.T) {
 	home := t.TempDir()
 	env := environ(home, t.TempDir())
 	first, addr := up(t, home, env)
@@ -221,7 +329,8 @@ func TestUpTwiceShowsTheFirst(t *testing.T) {
 	}
 }
 
-func TestUpReplacesTheAddressOfACrash(t *testing.T) {
+// upReplacesTheAddressOfACrash: the address a crashed djinn left is replaced, and djinn up says the last one did not stop cleanly.
+func upReplacesTheAddressOfACrash(t *testing.T) {
 	home := t.TempDir()
 	// A port that was open, and no longer is: the address of a djinn that crashed.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -247,15 +356,16 @@ func TestUpReplacesTheAddressOfACrash(t *testing.T) {
 	}
 }
 
-func TestDevelopmentBuildKeepsItsOwnData(t *testing.T) {
+// upDevelopmentBuildKeepsItsOwnData: without a data folder given, a development build opens djinn-dev in the user's
+// config folder, a build with a version djinn, never the other one.
+func upDevelopmentBuildKeepsItsOwnData(t *testing.T) {
 	for _, c := range []struct{ version, dir string }{{"", "djinn-dev"}, {"local-1234abcd", "djinn"}} {
 		t.Run(c.dir, func(t *testing.T) {
+			t.Parallel()
 			user := t.TempDir()
-			t.Setenv("HOME", user)
-			t.Setenv("XDG_CONFIG_HOME", "")
-			config, err := os.UserConfigDir()
-			if err != nil {
-				t.Fatal(err)
+			config := filepath.Join(user, ".config") // os.UserConfigDir without XDG_CONFIG_HOME
+			if runtime.GOOS == "darwin" {
+				config = filepath.Join(user, "Library", "Application Support")
 			}
 			env := environ("", t.TempDir(), "HOME="+user, "XDG_CONFIG_HOME=")
 			if c.version != "" {
@@ -271,20 +381,9 @@ func TestDevelopmentBuildKeepsItsOwnData(t *testing.T) {
 	}
 }
 
-// fakeClaude writes a claude command in a new folder that says how it was called and where, counts its starts in
-// the file count, then waits for its terminal to hang up.
-func fakeClaude(t *testing.T) (bin, count string) {
-	t.Helper()
-	bin = t.TempDir()
-	count = filepath.Join(t.TempDir(), "starts")
-	script := "#!/bin/sh\nargs=\"\"\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    --allowedTools|--project) shift 2 ;;\n    *) args=\"${args:+$args }$1\"; shift ;;\n  esac\ndone\necho \"fake-claude $args in $(pwd)\"\necho start >> \"$DJINN_TEST_COUNT\"\nexec cat\n"
-	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return bin, count
-}
-
-func TestWishResume(t *testing.T) {
+// upLeadResume: djinn lead resume starts djinn up in the background when none runs, resumes the wish's lead in its
+// terminal and shows it; again, it attaches to the same terminal; a session another terminal runs is not resumed twice.
+func upLeadResume(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
 	bin, count := fakeClaude(t)
@@ -373,10 +472,10 @@ func TestWishResume(t *testing.T) {
 	}
 }
 
-// TestExitedCodexLeadIsRetainedUntilExplicitResume: a codex lead that ends at once keeps its terminal, its output and
+// upExitedCodexLeadIsRetainedUntilExplicitResume: a codex lead that ends at once keeps its terminal, its output and
 // its exit code, which LeadService.Get gives; opening its terminal attaches to it and starts nothing. Only Lead
 // (LeadService.Resume) starts it again.
-func TestExitedCodexLeadIsRetainedUntilExplicitResume(t *testing.T) {
+func upExitedCodexLeadIsRetainedUntilExplicitResume(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
 	bin := t.TempDir()
@@ -482,9 +581,9 @@ exec cat
 	}
 }
 
-// TestLeadStartFailureAtStartShows: the lead djinn up could not resume at its start shows beside Lead, as a
+// upLeadStartFailureAtStartShows: the lead djinn up could not resume at its start shows beside Lead, as a
 // failed Lead would, where a Djinn started from a menu has no terminal to print it in.
-func TestLeadStartFailureAtStartShows(t *testing.T) {
+func upLeadStartFailureAtStartShows(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
 	bin, count := fakeClaude(t)
@@ -522,50 +621,9 @@ func TestLeadStartFailureAtStartShows(t *testing.T) {
 	}
 }
 
-// read follows the output of a terminal until it holds want, or with an empty want until the program ends.
-func read(t *testing.T, c terminalv1connect.TerminalServiceClient, id, want string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	stream, err := c.Read(ctx, connect.NewRequest(&terminalv1.TerminalServiceReadRequest{Id: id}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stream.Close()
-	var got bytes.Buffer
-	for stream.Receive() {
-		got.Write(stream.Msg().GetData())
-		if want != "" && lineOf(got.String(), want) || want == "" && stream.Msg().GetExited() {
-			return
-		}
-	}
-	t.Fatalf("terminal %s: %v; want %q in:\n%q", id, stream.Err(), want, got.String())
-}
-
-// lineOf tells whether a line of out, terminal line ends aside, is want.
-func lineOf(out, want string) bool {
-	s := bufio.NewScanner(strings.NewReader(out))
-	for s.Scan() {
-		if strings.TrimRight(s.Text(), "\r") == want {
-			return true
-		}
-	}
-	return false
-}
-
-// TestModuleVersion: a stamped version wins; without one, a test binary (built from the checkout) stays "dev".
-func TestModuleVersion(t *testing.T) {
-	if got := moduleVersion("local-abc"); got != "local-abc" {
-		t.Errorf("moduleVersion(local-abc) = %q", got)
-	}
-	if got := moduleVersion("dev"); got != "dev" {
-		t.Errorf("moduleVersion(dev) from a checkout = %q, want dev", got)
-	}
-}
-
-// TestReadOnlyMethodsAnswerAGet calls a method that only reads as a GET on a real djinn up, the request in the
+// upReadOnlyMethodsAnswerAGet calls a method that only reads as a GET on a real djinn up, the request in the
 // query; a method that writes refuses the GET.
-func TestReadOnlyMethodsAnswerAGet(t *testing.T) {
+func upReadOnlyMethodsAnswerAGet(t *testing.T) {
 	home := t.TempDir()
 	env := environ(home, t.TempDir())
 	_, addr := up(t, home, env)
@@ -602,9 +660,9 @@ func TestReadOnlyMethodsAnswerAGet(t *testing.T) {
 	}
 }
 
-// TestWindowTerminalOpensInAProject: started without --terminal-dir, as from a menu, the window's terminal opens in
+// upWindowTerminalOpensInAProject: started without --terminal-dir, as from a menu, the window's terminal opens in
 // the first project's folder, never in the home folder; with no project, it does not start, and says to create one.
-func TestWindowTerminalOpensInAProject(t *testing.T) {
+func upWindowTerminalOpensInAProject(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
 	user, err := filepath.EvalSymlinks(t.TempDir())
@@ -635,46 +693,9 @@ func TestWindowTerminalOpensInAProject(t *testing.T) {
 	}
 }
 
-// TestWorkerScopesFallback: without systemd-run, djinn up says once that workers run in their process group,
-// uncapped when caps were asked, and starts no scope.
-func TestWorkerScopesFallback(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	var out bytes.Buffer
-	if s := workerScopes(t.Context(), &out, 150, 1<<30, 0); s != nil {
-		t.Errorf("scopes %+v without systemd-run", s)
-	}
-	if got := out.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "no systemd scope per worker") ||
-		!strings.HasSuffix(got, "workers run in their process group, uncapped\n") {
-		t.Errorf("djinn up said %q", got)
-	}
-	out.Reset()
-	workerScopes(t.Context(), &out, 0, 0, 0)
-	if got := out.String(); strings.Contains(got, "uncapped") || !strings.HasSuffix(got, "workers run in their process group\n") {
-		t.Errorf("without caps, djinn up said %q", got)
-	}
-	out.Reset()
-	workerScopes(t.Context(), &out, 0, 0, 2.5)
-	if got := out.String(); !strings.HasSuffix(got, "workers run in their process group, uncapped\n") {
-		t.Errorf("with guardrail without systemd-run, djinn up said %q", got)
-	}
-}
-
-// TestOnOff: $DJINN_ANSWER_WORKERS, $DJINN_ENLIGHTEN_WORKERS, $DJINN_QUESTION_WORKERS read on or off, in any case,
-// and what strconv.ParseBool reads; anything else is an error that says what it expects.
-func TestOnOff(t *testing.T) {
-	for v, want := range map[string]bool{"on": true, "OFF": false, " off ": false, "true": true, "0": false} { //nolint:gocritic // " off " checks that the value is trimmed
-		if got, err := onOff(v); err != nil || got != want {
-			t.Errorf("onOff(%q) = %v, %v; want %v", v, got, err, want)
-		}
-	}
-	if _, err := onOff("maybe"); err == nil || !strings.Contains(err.Error(), "expected on or off") {
-		t.Errorf("onOff(maybe): %v", err)
-	}
-}
-
-// TestProfiles: with $DJINN_PPROF on, djinn up serves Go's profiles on its own address, as its services; off, the path
+// upProfiles: with $DJINN_PPROF on, djinn up serves Go's profiles on its own address, as its services; off, the path
 // is the interface's, as any other.
-func TestProfiles(t *testing.T) {
+func upProfiles(t *testing.T) {
 	home := t.TempDir()
 	_, addr := up(t, home, environ(home, t.TempDir(), "DJINN_PPROF=on"))
 	httpClient, base, err := cli.Dial(addr)
@@ -696,27 +717,238 @@ func TestProfiles(t *testing.T) {
 	}
 }
 
-// TestWorkerMemoryGuardFlag: invalid values for --worker-memory-guard or $DJINN_WORKER_MEMORY_GUARD return an error.
-func TestWorkerMemoryGuardFlag(t *testing.T) {
-	if _, err := runUp([]string{"--worker-memory-guard", "-1"}); err == nil || !strings.Contains(err.Error(), "--worker-memory-guard -1") {
-		t.Errorf("runUp with negative guard: got %v, want error", err)
+// upInboxPlug: a project's skill declares an inbox source; djinn inbox sources lists it, not plugged in; djinn inbox
+// plug runs it in djinn up, and its item comes; djinn inbox unplug stops it, having run it once.
+func upInboxPlug(t *testing.T) {
+	home := t.TempDir()
+	env := environ(home, t.TempDir())
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Setenv("DJINN_WORKER_MEMORY_GUARD", "invalid")
-	if _, err := runUp(nil); err == nil || !strings.Contains(err.Error(), "DJINN_WORKER_MEMORY_GUARD") {
-		t.Errorf("runUp with invalid env guard: got %v, want error", err)
+	runs := filepath.Join(t.TempDir(), "runs")
+	skill := filepath.Join(folder, ".agents", "skills", "mentions")
+	if err := os.MkdirAll(skill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	front := "---\nname: mentions\ndescription: Where I am mentioned.\nmetadata:\n  djinn:\n    source:\n" +
+		"      watch: \"sh source.sh\"\n---\n"
+	script := "echo run >> '" + runs + "'\necho 'carol mentioned you'\necho https://forge.example.com/acme/bell/issues/7\n"
+	if err := errors.Join(
+		os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte(front), 0o644),
+		os.WriteFile(filepath.Join(folder, "source.sh"), []byte(script), 0o644),
+	); err != nil {
+		t.Fatal(err)
+	}
+	up(t, home, env)
+	djinn := func(args ...string) string {
+		t.Helper()
+		code, out, errs := runDjinn(t, env, args...)
+		if code != 0 {
+			t.Fatalf("djinn %s: exit %d\n%s%s", strings.Join(args, " "), code, out, errs)
+		}
+		return out
+	}
+	djinn("project", "add", folder, "--name", "bell")
+
+	// Declared, not plugged in: listed as such. That its command never starts is TestSourceUnplugged's.
+	out := djinn("inbox", "sources")
+	if !strings.Contains(out, "name: bell/mentions") || !strings.Contains(out, "watch: sh source.sh") ||
+		strings.Contains(out, "plugged: true") {
+		t.Errorf("sources:\n%s", out)
+	}
+
+	if out := djinn("inbox", "plug", "mentions"); !strings.Contains(out, "plugged: true") {
+		t.Errorf("plug:\n%s", out)
+	}
+	// The plug wakes the sources at once: its item comes as soon as the command has printed it.
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(djinn("inbox", "list"), "carol mentioned you") {
+		if time.Now().After(deadline) {
+			t.Fatal("the plugged source's item never came")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if out := djinn("inbox", "unplug", "bell/mentions"); !strings.Contains(out, "name: bell/mentions") ||
+		strings.Contains(out, "plugged: true") {
+		t.Errorf("unplug:\n%s", out)
+	}
+	if out := djinn("inbox", "sources"); strings.Contains(out, "plugged: true") {
+		t.Errorf("sources after unplugging:\n%s", out)
+	}
+	if b, err := os.ReadFile(runs); err != nil || string(b) != "run\n" {
+		t.Errorf("runs %q, %v; want one", b, err)
+	}
+	if code, _, errs := runDjinn(t, env, "inbox", "plug", "bell/bells"); code != 1 || !strings.Contains(errs, "no inbox source bell/bells") {
+		t.Errorf("plug an unknown source: exit %d, %s", code, errs)
+	}
+}
+
+// upCrashResumesTheWorkers: a djinn killed while a worker runs leaves its task running in the store; the next
+// djinn up resumes it by itself, in the same task, and it finishes. The wish keeps one task.
+func upCrashResumesTheWorkers(t *testing.T) {
+	ctx := t.Context()
+	home := t.TempDir()
+	bin, _ := fakeClaude(t)
+	env := environ(home, bin)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An agent configuration: the worker edits as the project says, without asking first.
+	if err := os.WriteFile(filepath.Join(folder, "AGENTS.md"), []byte("# Rules\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wish := seedWish(t, home, folder, "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69")
+
+	first, addr := startUp(t, home, env)
+	res, err := taskClient(t, addr).Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wish.GetId(), Title: "Long", Prompt: "text halfway\nsleep 1h", Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+	waitTask(t, taskClient(t, addr), id, func(task *planv1.Task) bool {
+		return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && task.GetSessionId() != ""
+	})
+	first.stop(t, syscall.SIGKILL)
+
+	second, addr := startUp(t, home, env)
+	tasks := taskClient(t, addr)
+	got := waitTask(t, tasks, id, func(task *planv1.Task) bool { return task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE })
+	if got.GetResumes() != 0 {
+		t.Errorf("the task after the crash: %v\n%s", got, second.errs.String())
+	}
+	list, err := tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wish.GetId()}))
+	if err != nil || len(list.Msg.GetTasks()) != 1 {
+		t.Errorf("the wish's tasks after the crash: %v, %v; want the one resumed", list, err)
+	}
+}
+
+// TestAnswer: a button of a notification answers its question through the server, guarded by
+// its token like any client.
+func TestAnswer(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	_, addr := up(t, home, environ(home, t.TempDir()))
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	wish, err := planv1connect.NewWishServiceClient(httpClient, base).Make(ctx,
+		connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Ship it"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	questions := planv1connect.NewQuestionServiceClient(httpClient, base)
+	asked, err := questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		WishId: wish.Msg.GetWish().GetId(), Text: "Which one?", Options: []string{"this", "that"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := asked.Msg.GetQuestion().GetId()
+	if err := answer(ctx, addr, id, planv1.Choice_CHOICE_B); err != nil {
+		t.Fatal(err)
+	}
+	list, err := questions.List(ctx, connect.NewRequest(&planv1.QuestionServiceListRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := list.Msg.GetQuestions()[0].GetAnswer().GetChoice(); got != planv1.Choice_CHOICE_B {
+		t.Errorf("answer = %v, want B", got)
+	}
+	// A choice the question does not offer is refused: the window shows the question instead.
+	if err := answer(ctx, addr, id, planv1.Choice_CHOICE_D); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("answer D of two options: %v", err)
+	}
+}
+
+// TestWorkerScopes: without systemd-run, djinn up says once that workers run in their process group, uncapped when
+// caps or the memory guard were asked, and starts no scope.
+func TestWorkerScopes(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	for _, c := range []struct {
+		name   string
+		cpu    int
+		memory uint64
+		guard  float64
+		want   string
+	}{
+		{"caps asked", 150, 1 << 30, 0, "workers run in their process group, uncapped\n"},
+		{"no caps", 0, 0, 0, "workers run in their process group\n"},
+		{"the memory guard", 0, 0, 2.5, "workers run in their process group, uncapped\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if s := workerScopes(t.Context(), &out, c.cpu, c.memory, c.guard); s != nil {
+				t.Errorf("scopes %+v without systemd-run", s)
+			}
+			if got := out.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "no systemd scope per worker") ||
+				!strings.HasSuffix(got, c.want) {
+				t.Errorf("djinn up said %q, want it to end with %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestOnOff: $DJINN_ANSWER_WORKERS, $DJINN_ENLIGHTEN_WORKERS, $DJINN_QUESTION_WORKERS read on or off, in any case,
+// and what strconv.ParseBool reads; anything else is an error that says what it expects.
+func TestOnOff(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		in   string
+		want bool
+		err  string
+	}{
+		{in: "on", want: true},
+		{in: "OFF"},
+		{in: " off "}, // trimmed
+		{in: "true", want: true},
+		{in: "0"},
+		{in: "maybe", err: "expected on or off"},
+	} {
+		t.Run(c.in, func(t *testing.T) {
+			got, err := onOff(c.in)
+			if c.err != "" {
+				if err == nil || !strings.Contains(err.Error(), c.err) {
+					t.Errorf("onOff(%q): %v, want %q", c.in, err, c.err)
+				}
+				return
+			}
+			if err != nil || got != c.want {
+				t.Errorf("onOff(%q) = %v, %v; want %v", c.in, got, err, c.want)
+			}
+		})
 	}
 }
 
 // TestIfritIdleFlag: djinn up --ifrit-idle takes whole minutes from 5m to 4h; none given leaves it to the settings.
 func TestIfritIdleFlag(t *testing.T) {
-	for in, want := range map[string]time.Duration{"": 0, "30m": 30 * time.Minute, "1h30m": 90 * time.Minute, "5m": 5 * time.Minute, "4h": 4 * time.Hour} {
-		if got, err := ifritIdleFlag(in); err != nil || got != want {
-			t.Errorf("--ifrit-idle %q = %v, %v; want %v", in, got, err, want)
-		}
-	}
-	for _, in := range []string{"4m", "4h1m", "30", "30m30s", "half an hour", "-30m"} {
-		if _, err := ifritIdleFlag(in); err == nil || !strings.Contains(err.Error(), "expected whole minutes from 5m to 4h") {
-			t.Errorf("--ifrit-idle %q: %v, want refused", in, err)
-		}
+	t.Parallel()
+	for _, c := range []struct {
+		in   string
+		want time.Duration // 0 with refused: the value is refused
+		ok   bool
+	}{
+		{"", 0, true}, {"30m", 30 * time.Minute, true}, {"1h30m", 90 * time.Minute, true}, {"5m", 5 * time.Minute, true},
+		{"4h", 4 * time.Hour, true},
+		{"4m", 0, false}, {"4h1m", 0, false}, {"30", 0, false}, {"30m30s", 0, false}, {"half an hour", 0, false}, {"-30m", 0, false},
+	} {
+		t.Run(c.in, func(t *testing.T) {
+			got, err := ifritIdleFlag(c.in)
+			if !c.ok {
+				if err == nil || !strings.Contains(err.Error(), "expected whole minutes from 5m to 4h") {
+					t.Errorf("--ifrit-idle %q: %v, want refused", c.in, err)
+				}
+				return
+			}
+			if err != nil || got != c.want {
+				t.Errorf("--ifrit-idle %q = %v, %v; want %v", c.in, got, err, c.want)
+			}
+		})
 	}
 }

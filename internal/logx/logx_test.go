@@ -81,17 +81,19 @@ func TestStart(t *testing.T) {
 func TestTook(t *testing.T) {
 	for _, tc := range []struct {
 		name, msg string
-		start     time.Time
+		ago       time.Duration
 		args      []any
 		want      string
 	}{
-		{"quick", "quick", time.Now(), nil, "level=DEBUG msg=quick"},
-		{"slow", "slow", time.Now().Add(-2 * Slow), []any{"method", "/x.v1.S/M"},
+		{"quick", "quick", 0, nil, "level=DEBUG msg=quick"},
+		{"slow", "slow", 2 * Slow, []any{"method", "/x.v1.S/M"},
 			"level=WARN msg=slow took=2s method=/x.v1.S/M"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := capture(t)
-			Took(slog.LevelDebug, tc.msg, tc.start, tc.args...)
+			// The start is taken here, not when the table was built: under load the milliseconds between them
+			// showed in the duration (took=2.001s).
+			Took(slog.LevelDebug, tc.msg, time.Now().Add(-tc.ago), tc.args...)
 			if s := b.String(); !strings.Contains(s, tc.want) {
 				t.Errorf("log:\n%s", s)
 			}

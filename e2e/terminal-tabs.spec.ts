@@ -1,6 +1,6 @@
 // The terminal's tabs, against the real djinn up --browser (see global-setup.ts): a terminal opened at a project's
 // root from the side panel, another one with Ctrl+Shift+T, and a tab closed with its ×, its program hung up.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

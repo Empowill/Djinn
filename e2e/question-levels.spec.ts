@@ -3,7 +3,7 @@
 // with --before "" makes a question one that can wait. The attention bar, the page and the brief list them in that
 // order; the window's cards list them as they were asked, each under its level (AGENTS.md, Interface: nothing moves
 // under the reader). Every run makes fresh identifiers, so --repeat-each works on the same djinn.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -31,6 +31,12 @@ const wishes = (): Wish[] =>
 
 const at = "2026-10-08T09:10:00Z";
 
+// What each test makes, paused once it ends: the specs after find the place as they left it (e2e/test.ts).
+const made: string[] = [];
+test.afterEach(() => {
+  for (const id of made.splice(0)) djinn("wish", "pause", id);
+});
+
 test("open questions come blocking, then before X, then can wait, in the bar, the page and the brief; as asked in the cards", async ({
   page,
 }) => {
@@ -41,6 +47,7 @@ test("open questions come blocking, then before X, then can wait, in the bar, th
 
   // W1 waits for Q01, which blocks it.
   const wishId = randomUUID();
+  made.push(wishId);
   const title = `Three levels ${randomUUID().slice(0, 8)}`;
   const q1 = randomUUID();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-levels-"));

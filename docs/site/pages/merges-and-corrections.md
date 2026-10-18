@@ -91,8 +91,8 @@ Once committed, each task's work shows in the **Review** tab, a line per task, t
 
 ## Correction workers
 
-A correction worker is a work task Djinn starts by itself, in the same azima as the task that failed, on the same agent
-and model. Its worktree is the failed merge itself:
+A correction worker is a work task Djinn starts by itself, in the same azima as the task that failed, on the project's
+agent and model, whatever agent the failed task ran on. Its worktree is the failed merge itself:
 
 - **For a conflict**, the task's branch merged again, its conflicts left in place for the worker to settle.
 - **For a red check**, the merge as it was, the check failing on it.
@@ -164,7 +164,7 @@ Djinn commits nothing blindly. Before merging a task, a correction's included, i
 changed or added that no commit took, ignored files aside.
 
 When there are some, the task says **To review**: its changes are not committed, not merged. A **review worker** starts
-by itself, in that task's worktree and on its branch, with the task's instructions, its worker's final note, the files
+by itself, on the project's agent and model, in that task's worktree and on its branch, with the task's instructions, its worker's final note, the files
 and their changes. It judges each file:
 
 - **It commits what belongs to the task's change**, file by file, in the repository's style: the work the task asked

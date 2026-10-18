@@ -145,7 +145,7 @@ A few commands run on the caller's side or without a server, so `cmd/djinn` writ
 `update`, `backup`, `backup restore` and `gate run`; `djinn version` and `djinn mcp` are the cli package's own. Each
 has its entry in `cli.Builtins` (`internal/cli/builtin.go`): its usage, its help, its arguments and its flags, with
 their types and defaults. That entry is what its `--help` prints and what the documentation shows; `djinn up` builds
-its flags from it. `TestEveryCommandIsDocumented` fails when `cmd/djinn` runs a command that has no entry, or when an
+its flags from it. `TestHandwritten` fails when `cmd/djinn` runs a command that has no entry, or when an
 entry runs nowhere.
 
 ## Documentation

@@ -2,7 +2,7 @@
 // answered and stay so. The window read its questions again after the answer, the first page and the open ones: the
 // answered question, on neither, left the screens, and the card that stayed open made the developer answer again and
 // again. The read now goes as far as the questions shown went, and the card takes the answer the server returned.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

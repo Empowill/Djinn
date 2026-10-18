@@ -159,8 +159,8 @@ still show the end of the output, on hover.
 ### Its correction
 
 When the push is due again on the files its push checks were red on, or at once when the wish has no work left to commit
-in the project, Djinn starts a correction worker: a task told to make the push checks pass without undoing what the
-branch did. Its instructions say that only a commit of its own has them run again: a correction that changes nothing
+in the project, Djinn starts a correction worker, on the project's agent and model: a task told to make the push checks
+pass without undoing what the branch did. Its instructions say that only a commit of its own has them run again: a correction that changes nothing
 leaves the push held, and the next attempt, or the Djinn, takes over. It is the
 branch's one repair: while it runs, nothing else merges into the branch, and when another correction already repairs
 it, the push stays held until that one's work is in (see

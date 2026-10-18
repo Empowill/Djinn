@@ -2,7 +2,7 @@
 // "Enlighten me" read by the lead in the brief, a revision from the command line, "Rub the lamp" read back from the
 // command line, a block for agents only in its discreet tab, folded, with no mark. Screenshots of the flying carpet and of the wish, dark and
 // light, go to test-results/e2e/.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

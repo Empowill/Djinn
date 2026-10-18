@@ -3,7 +3,7 @@
 // whose list says what each waits for, and Wake brings it back first. One the lead puts to sleep until a time wakes by
 // itself at a pass of the scheduler, above the questions asked before it. Every run makes fresh identifiers, so
 // --repeat-each works on the same djinn.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -31,6 +31,12 @@ const wishes = (): Wish[] =>
 
 const at = "2026-10-16T09:10:00Z";
 
+// What each test makes, paused once it ends: the specs after find the place as they left it (e2e/test.ts).
+const made: string[] = [];
+test.afterEach(() => {
+  for (const id of made.splice(0)) djinn("wish", "pause", id);
+});
+
 test("Sleep puts a question out of the column until its conditions hold; it wakes first, by hand or by itself", async ({
   page,
 }) => {
@@ -40,6 +46,7 @@ test("Sleep puts a question out of the column until its conditions hold; it wake
     djinn("wish", "pause", w.id);
 
   const wishId = randomUUID();
+  made.push(wishId);
   const title = `Sleep ${randomUUID().slice(0, 8)}`;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-sleep-"));
   const file = path.join(dir, "sleep.json");

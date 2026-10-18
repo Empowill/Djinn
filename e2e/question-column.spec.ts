@@ -7,7 +7,7 @@
 // none focused, the first arrow gives the focus to the open one and the next moves (W59). Moving to another question
 // scrolls its title to the top of the view, wherever the page was, with Chromium's scroll anchoring and with the script
 // that stands in for it in WebKit. Shots, wide and narrow, dark and light, go to test-results/e2e/question-column-*.png.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

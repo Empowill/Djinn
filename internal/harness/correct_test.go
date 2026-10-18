@@ -34,9 +34,11 @@ func (c corrector) Start(ctx context.Context, spec Spec) (Worker, error) {
 	return c.Fake.Start(ctx, spec)
 }
 
-// correctWith makes the fake agent correct as work says. The test sets it before any worker starts.
+// correctWith makes the fake agent correct as work says, the tasks' and Djinn's own workers', which run on the
+// project's provider, claude by default (Q95). The test sets it before any worker starts.
 func (in *integration) correctWith(work func(dir, prompt string) string) {
 	in.h.providers[planv1.Provider_PROVIDER_FAKE] = corrector{work: work}
+	in.h.providers[planv1.Provider_PROVIDER_CLAUDE] = corrector{work: work}
 }
 
 // correction is the correction worker that corrects task's work, once it has ended.
@@ -128,8 +130,8 @@ func storedTexts(t *testing.T, db *store.Store, id string) []string {
 	return eventTexts(events)
 }
 
-// TestCorrectACodeConflict: a conflict in code starts a correction worker by itself, part of the azima, of the failed
-// task's provider, in a worktree on the failed merge, the conflict in its first prompt; its success commits its work
+// TestCorrectACodeConflict: a conflict in code starts a correction worker by itself, part of the azima, of the
+// project's provider, in a worktree on the failed merge, the conflict in its first prompt; its success commits its work
 // and the failed task's, which says it was corrected. The task committed before stays as it went in.
 func TestCorrectACodeConflict(t *testing.T) {
 	testx.Portable(t)
@@ -164,9 +166,9 @@ func TestCorrectACodeConflict(t *testing.T) {
 	if w1, _ := in.integration(t, w1); w1.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || w1.GetCorrectedBy() != "" {
 		t.Errorf("W1, committed before W2 alone: %v", w1)
 	}
-	// The correction worker: work part of the azima, of W2's provider, Djinn's own, its first prompt saying the
-	// conflict, its worktree on W1 merged and W2's merge under way.
-	if w3.GetCode() != "W3" || w3.GetPartOf() != azima.GetId() || w3.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
+	// The correction worker: work part of the azima, of the project's provider (claude by default), Djinn's own, its
+	// first prompt saying the conflict, its worktree on W1 merged and W2's merge under way.
+	if w3.GetCode() != "W3" || w3.GetPartOf() != azima.GetId() || w3.GetProvider() != planv1.Provider_PROVIDER_CLAUDE ||
 		w3.GetCorrection().GetAttempt() != 1 || w3.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Fatalf("the correction worker %v", w3)
 	}
@@ -410,7 +412,7 @@ func TestACorrectionThatCannotStart(t *testing.T) {
 	lead := &leadListener{}
 	in.h.TellLeads(lead.tell)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	delete(in.h.providers, planv1.Provider_PROVIDER_FAKE) // W1's provider: its correction worker cannot start.
+	delete(in.h.providers, planv1.Provider_PROVIDER_CLAUDE) // The project's provider: its correction worker cannot start.
 
 	in.pass(t, 0)
 	got, texts := in.integration(t, w1)

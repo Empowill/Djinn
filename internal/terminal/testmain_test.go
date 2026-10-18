@@ -50,7 +50,9 @@ func output(t *testing.T, term *Terminal, from uint64, match func(string) bool) 
 		})
 		read <- found
 	}()
-	timeout := time.AfterFunc(5*time.Second, func() { close(stop) })
+	// A wait, not a budget: beside the end-to-end tests of go tool task test, under other workers' load, a program's
+	// answer took more than 5 s to come (W306).
+	timeout := time.AfterFunc(15*time.Second, func() { close(stop) })
 	found := <-read
 	timeout.Stop()
 	if !found {

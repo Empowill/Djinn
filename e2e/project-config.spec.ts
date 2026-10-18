@@ -4,7 +4,7 @@
 // panel says what to fix first, with its choices; then the reference branch, its commit and where its name comes from;
 // the checks and settings with where each comes from; and each skill's role. Saying no to the source settles it.
 // PROJECT_SHOTS=<folder> also writes the panel's reference box, where workers start, there.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

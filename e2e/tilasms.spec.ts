@@ -5,7 +5,7 @@
 // --repeat-each works on the same djinn. A tilasm a question links to opens full size over the wish's first page and
 // over the flying carpet, and closes back on the link. Screenshots of the tab, and of a tilasm full size in both
 // themes, go to test-results/e2e/.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

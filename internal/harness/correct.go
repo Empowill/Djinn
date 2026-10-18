@@ -151,8 +151,9 @@ func didStart(t *planv1.Task) string {
 	return fmt.Sprintf("Djinn started %s: %s", t.GetCode(), t.GetTitle())
 }
 
-// spawnCorrection starts the attempt-th correction worker of group, tasks whose work failed as in says: a work task of
-// the failed task's provider, part of its azima, in a worktree on the failed merge, what failed in its first prompt.
+// spawnCorrection starts the attempt-th correction worker of group, tasks whose work failed as in says: a work task on
+// the project's provider and model, not the failed task's (Q95), part of its azima, in a worktree on the failed merge,
+// what failed in its first prompt.
 func (h *Harness) spawnCorrection(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, group []*planv1.Task, in *planv1.TaskIntegration, attempt int32,
 ) (*planv1.Task, error) {
@@ -165,8 +166,8 @@ func (h *Harness) spawnCorrection(
 	azima, note := h.azimaOf(ctx, from)
 	c, err := h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: mergeTitle(servedTasks(ctx, h.store, group), failureWhat(f)),
-		Prompt:   correctionPrompt("the work of "+codes(group), f.GetMergeBranch(), f, in.GetBranch(), settings, attempt),
-		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: azima,
+		Prompt: correctionPrompt("the work of "+codes(group), f.GetMergeBranch(), f, in.GetBranch(), settings, attempt),
+		PartOf: azima,
 	}, &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}})
 	if err == nil && note != "" {
 		h.Note(c.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: note})

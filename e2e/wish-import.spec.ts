@@ -1,6 +1,6 @@
 // Import a wish file from the interface, against the real djinn up --browser (see global-setup.ts). Every run makes
 // fresh identifiers, so --repeat-each works on the same djinn: a wish imported twice is already here.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -96,12 +96,20 @@ const exportOf = (wishId: string) => ({
   ],
 });
 
+// What a test imports, paused once it ends: the specs after find the place as they left it (e2e/test.ts).
+const made: string[] = [];
+test.afterEach(() => {
+  for (const id of made.splice(0)) djinn("wish", "pause", id);
+});
+
 test("a wish file imports from the interface", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-import-"));
   const file = path.join(dir, "lamp.json");
-  fs.writeFileSync(file, JSON.stringify(exportOf(randomUUID())));
+  const wishId = randomUUID();
+  made.push(wishId);
+  fs.writeFileSync(file, JSON.stringify(exportOf(wishId)));
 
   await open(page);
   await importFile(page, file);

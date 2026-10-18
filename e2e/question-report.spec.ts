@@ -4,7 +4,7 @@
 // - a command in an option or in the context is selectable and copies exactly, and copying never answers;
 // - the card opens the report it names, on demand; the report itself is a note for agents: no section of its own on
 //   the wish, it waits in the For agents tab with the other blocks.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

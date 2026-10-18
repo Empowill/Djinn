@@ -4,7 +4,7 @@
 // offers Finish, which ends it and its band. The ifrit is the fake agent spawned with --kind ifrit: it says its line,
 // then listens on its open input; no model is called. Screenshots of the band and the card, dark and light, go to
 // test-results/e2e/.
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

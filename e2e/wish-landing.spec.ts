@@ -4,7 +4,7 @@
 // when another had it. A click on another wish opens it on its questions too. Twice:
 // with Chromium's own scroll anchoring, and with the script that stands in for it where WebKit lacks it (the window on
 // Linux), which must not bring the page back.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

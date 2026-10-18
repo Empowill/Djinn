@@ -3,7 +3,7 @@
 // the developer's with the human label; its link opens the task in the Tasks tab, and the task links back. The worker
 // is the fake agent: no model is called. Every run makes fresh identifiers, so --repeat-each works on the same djinn.
 // Screenshots of the tab, dark and light, go to test-results/e2e/.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

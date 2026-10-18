@@ -4,7 +4,7 @@
 // what Djinn will do and what each choice changes, proposing the template's wish; a click makes the wish, with its
 // watcher. A second source fails: its card says why, and unplugs it. The sources and the watcher are fakes: shell
 // scripts.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

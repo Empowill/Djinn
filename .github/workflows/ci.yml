@@ -62,8 +62,22 @@ jobs:
           key: golangci-lint-${{ runner.os }}-${{ github.sha }}
           restore-keys: golangci-lint-${{ runner.os }}-
       - run: go tool task lint
-      # Go, interface and end-to-end tests (browser mode, headless Chromium).
+      # Go, interface and end-to-end tests (browser mode, headless Chromium), the three at once; the end-to-end on
+      # two workers, two djinns (e2e/playwright.config.ts reads CI).
       - run: go tool task test
+      # cmd/djinn and its tests vet for Windows and macOS (TestCrossVet), here where a red blocks: the Windows job does
+      # not. Behind a tag, out of the push check: 48 s on a cold build cache.
+      - run: go test -tags headless,crossvet -run '^TestCrossVet$' ./cmd/djinn
+      - name: Keep the output of each part and the traces of the end-to-end tests that failed
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-linux
+          path: |
+            test-results/*.log
+            test-results/e2e
+          if-no-files-found: ignore
+          retention-days: 7
       # Saved red or green, once per go.sum: the next run does not start cold.
       - if: ${{ !cancelled() && steps.go-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

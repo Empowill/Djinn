@@ -2,7 +2,7 @@
 // thin line shows where it would land. A paused wish dropped among the paused ones changes place there, an order the
 // server keeps; dropped among the active ones, it becomes active at that rank, and the last active wish is paused,
 // first among the paused ones.
-import { type Locator, type Page, expect, test } from "@playwright/test";
+import { type Locator, type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -74,15 +74,24 @@ async function drag(
   await expect(line).toHaveCount(0);
 }
 
+// The six wishes of a test, deleted once it ends: the specs after find the place as they left it (e2e/test.ts).
+const made: string[] = [];
+test.afterEach(() => {
+  for (const id of made.splice(0)) djinn("wish", "delete", id);
+});
+
 test("a paused wish is dragged among the paused ones, then among the active ones", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const tag = randomUUID().slice(0, 6);
-  const make = (title: string) =>
-    JSON.parse(djinn("wish", "make", title, "--paused", "--json")).wish
-      .id as string;
+  const make = (title: string) => {
+    const id = JSON.parse(djinn("wish", "make", title, "--paused", "--json"))
+      .wish.id as string;
+    made.push(id);
+    return id;
+  };
   // Three active wishes, A1 first: each moved to the first rank pushes the others down, and those of earlier specs out.
   const [a1, a2, a3] = ["A1", "A2", "A3"].map((n) => `${n} ${tag}`);
   for (const title of [a3, a2, a1])

@@ -2,7 +2,7 @@
 // once, finished. To leave a task interrupted, the spec runs a djinn of its own, on a data folder of its own, and
 // stops it while the fake worker runs; its wish granted meanwhile, the next start does not resume the task by itself.
 // The spec stops only the djinn it started, by its process.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
