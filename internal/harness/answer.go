@@ -459,7 +459,6 @@ func (h *Harness) again(r *run) error {
 		return err
 	}
 	readOnly, perms := accessSpec(t.GetAccess(), nil)
-	r.base = t.GetUsage()
 	model := t.GetModel()
 	if foreignModel(t.GetProvider(), model) && !r.watcher {
 		model = DefaultModel(t.GetProvider())

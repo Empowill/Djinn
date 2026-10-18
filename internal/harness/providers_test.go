@@ -233,7 +233,7 @@ func catalog() []catalogCase {
 					t.Errorf("text = %q", got)
 				}
 				u := event(t, events, "USAGE").Usage
-				if u.GetInputTokens() != 30384 || u.GetOutputTokens() != 9 || u.GetCostUsd() != 0 {
+				if u.GetInputTokens() != 30384 || u.GetOutputTokens() != 9 || u.GetCostUsd() < 0.02282 || u.GetCostUsd() > 0.02283 {
 					t.Errorf("usage = %v", u)
 				}
 				if args != "--input-format\nstream-json\n--output-format\nstream-json" {
@@ -738,6 +738,10 @@ func TestProviderArgs(t *testing.T) {
 		{Spec{}, []string{"--input-format", "stream-json", "--output-format", "stream-json"}, false},
 		{Spec{Model: "gemini-3.8-flash-medium", Resume: "c1"},
 			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--conversation", "c1", "--model", "gemini-3.8-flash-medium"}, false},
+		{Spec{Model: "argon"},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-4-argon-high"}, false},
+		{Spec{Model: "flash"},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-3.8-flash-high"}, false},
 		{Spec{ReadOnly: true}, nil, true},
 		{Spec{Resume: "c1", Fork: true}, nil, true},
 		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
@@ -892,5 +896,35 @@ func TestSpawnOutsideProject(t *testing.T) {
 	events := e.watch(t.Context(), t, task.GetId(), 0)
 	if !strings.Contains(events[1].GetText(), "read-only: outside any project") {
 		t.Errorf("start = %q", events[1].GetText())
+	}
+}
+
+func TestClaudeThinkingTokens(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		line string
+		want int64
+	}{
+		{
+			name: "modelUsage thinkingTokens",
+			line: `{"type":"result","subtype":"success","total_cost_usd":0.12,"usage":{"input_tokens":100,"output_tokens":50},"modelUsage":{"claude-opus-5-6":{"inputTokens":100,"outputTokens":50,"thinkingTokens":340},"claude-haiku-5-5":{"inputTokens":20,"outputTokens":10,"thinkingTokens":60}}}`,
+			want: 400,
+		},
+		{
+			name: "top-level thinking_tokens fallback",
+			line: `{"type":"result","subtype":"success","total_cost_usd":0.05,"usage":{"input_tokens":100,"output_tokens":50,"thinking_tokens":250}}`,
+			want: 250,
+		},
+		{
+			name: "output_tokens_details thinking_tokens fallback",
+			line: `{"type":"result","subtype":"success","total_cost_usd":0.05,"usage":{"input_tokens":100,"output_tokens":50,"output_tokens_details":{"thinking_tokens":175}}}`,
+			want: 175,
+		},
+	} {
+		evs, res := parseClaude(tc.line)
+		if res == nil || len(evs) != 1 || evs[0].Usage.GetThinkingTokens() != tc.want {
+			t.Errorf("%s: usage = %v, want thinking_tokens = %d", tc.name, evs, tc.want)
+		}
 	}
 }

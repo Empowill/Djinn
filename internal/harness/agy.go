@@ -23,6 +23,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/ui"
+	usagepkg "github.com/empowill/djinn/internal/usage"
 )
 
 // Antigravity runs Google's Antigravity CLI headless: `agy --input-format stream-json --output-format stream-json`,
@@ -105,12 +106,18 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 	return args, nil
 }
 
-// agyModel maps short aliases or legacy labels for Antigravity's Argon model ("gemini-4-argon", "argon",
-// "Gemini 4 Argon (High)") to the canonical model ID agy expects on --model: "gemini-4-argon-high".
+// agyModel maps short aliases or legacy labels for Antigravity's Argon and Flash models to the canonical
+// model IDs agy expects on --model.
 func agyModel(model string) string {
 	switch strings.ToLower(strings.TrimSpace(model)) {
-	case "gemini 4 argon (high)", "gemini-4-argon-high", "gemini-4-argon", "argon":
+	case "gemini 4 argon (high)", "gemini-4-argon-high", "gemini-4-argon", "gemini 4 argon", "gemini-argon", "argon":
 		return "gemini-4-argon-high"
+	case "gemini 4 argon (medium)", "gemini-4-argon-medium":
+		return "gemini-4-argon-medium"
+	case "gemini 3.8 flash (high)", "gemini-3.8-flash-high", "gemini-3.8-flash", "gemini 3.8 flash", "gemini-flash", "flash":
+		return "gemini-3.8-flash-high"
+	case "gemini 3.8 flash (medium)", "gemini-3.8-flash-medium":
+		return "gemini-3.8-flash-medium"
 	default:
 		return model
 	}
@@ -140,7 +147,7 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 		}
 	}
 	idle, toolIdle := cmp.Or(a.IdleTimeout, AgyIdleTimeout), cmp.Or(a.ToolIdleTimeout, AgyToolIdleTimeout)
-	parser := &agyParser{isWorkDone: isWorkDone, toolIdle: toolIdle}
+	parser := &agyParser{isWorkDone: isWorkDone, toolIdle: toolIdle, model: spec.Model}
 	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: parser, idle: idle, holdTurn: true, encode: agyMessageLine})
 }
 
@@ -761,6 +768,7 @@ type agyParser struct {
 	toolIdle    time.Duration            // how long agy may say nothing while a tool or a background task runs
 
 	sessionID   string
+	model       string
 	turnEnded   bool
 	turnRetried bool
 
@@ -957,6 +965,7 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 		if m.Init != nil && m.Init.Model != "" {
 			text += ", model " + m.Init.Model
 			model = m.Init.Model
+			p.model = m.Init.Model
 		}
 		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
 		ev.SessionID = m.ConversationID
@@ -1182,12 +1191,19 @@ func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
 		}
 	}
 	// The usage of a result is what the whole conversation spent so far. agy gives no cost: tokens only. Its
-	// thinking tokens are counted as written ones.
+	// thinking tokens are counted as written ones, and the cost is estimated from the price table.
 	usage := &planv1.Usage{}
 	if u := r.Usage; u != nil {
 		usage.InputTokens, usage.OutputTokens = u.InputTokens, u.OutputTokens+u.ThinkingTokens
 		usage.CacheReadTokens = u.CacheReadTokens
 		usage.ThinkingTokens = u.ThinkingTokens
+		if usage.InputTokens > 0 || usage.OutputTokens > 0 || usage.CacheReadTokens > 0 {
+			if tbl, err := usagepkg.DefaultTable(); err == nil {
+				if cost, priced, _ := tbl.Estimate(usage, p.model, planv1.Provider_PROVIDER_ANTIGRAVITY); priced {
+					usage.CostUsd = cost
+				}
+			}
+		}
 	}
 	ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_USAGE, fmt.Sprintf("%d turns, %d tokens in, %d out",
 		r.NumTurns, usage.GetInputTokens(), usage.GetOutputTokens()))
