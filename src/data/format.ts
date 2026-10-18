@@ -45,6 +45,13 @@ import { ifritLit, ifritOut, ifritWord, isIfrit } from "./ifrit";
 // A djinn grants three wishes at a time, never more. The lamp refuses a fourth; the page only says so beforehand.
 export const MAX_ACTIVE = 3;
 
+// NOTE_MAX is the character limit on a developer note (answer, enlighten, withdraw) or a tilasm comment: matches the
+// proto max_len on those fields and digestNoteMax in internal/plan/leadwatch.go.
+export const NOTE_MAX = 8000;
+
+// DEFAULT_MOCKUP_ROUNDS is how many versions of its tilasm a mockup plan shows when it names none (plan.DefaultMockupRounds).
+export const DEFAULT_MOCKUP_ROUNDS = 3;
+
 // firstLine is a text's first line of words, trimmed to 140 characters.
 export function firstLine(text: string): string {
   const line =
@@ -958,6 +965,103 @@ export function planOf(
 export function launchedPlan(question: Question): PlannedTask | undefined {
   const plan = planOf(question, question.answer?.choice);
   return plan?.taskId ? plan : undefined;
+}
+
+// isMockupPlan tells whether a planned task plans a mockup (plan.IsMockupPlan).
+export function isMockupPlan(plan?: PlannedTask): boolean {
+  return !!plan && plan.kind === TaskKind.MOCKUP;
+}
+
+// isInvestigatePlan tells whether a planned task plans an investigation.
+export function isInvestigatePlan(plan?: PlannedTask): boolean {
+  return !!plan && plan.kind === TaskKind.INVESTIGATION;
+}
+
+// mockupRounds is how many versions of its tilasm a mockup plan shows, the first one included (plan.MockupRounds).
+export function mockupRounds(plan?: PlannedTask): number {
+  const n = plan?.rounds ?? 0;
+  return n > 0 ? n : DEFAULT_MOCKUP_ROUNDS;
+}
+
+// iterations is how many iteration rounds a question went through (plan.Iterations).
+export function iterations(question: Question): number {
+  return (question.rounds ?? []).filter((r) => r.kind === RoundKind.ITERATE)
+    .length;
+}
+
+// tour is the version of its mockup the question shows: 1 before any iteration, one more per iteration round (plan.Tour).
+export function tour(question: Question): number {
+  return 1 + iterations(question);
+}
+
+// iterates tells whether an answer choice to an open question iterates on its mockup plan within its rounds (plan.Iterates).
+export function iterates(question: Question, choice?: Choice): boolean {
+  if (!isOpen(question)) return false;
+  const plan = planOf(question, choice);
+  return isMockupPlan(plan) && tour(question) < mockupRounds(plan);
+}
+
+// whyLeadLaunches tells why a non-mockup plan is left to the lead rather than launched at once (plan.WhyLeadLaunches):
+// a note on the answer, or dependencies (after/blocks).
+export function whyLeadLaunches(
+  plan: PlannedTask,
+  note: string,
+): "note" | "dependencies" | "" {
+  if (isMockupPlan(plan)) return "";
+  if (note.trim() !== "") return "note";
+  if ((plan.after?.length ?? 0) > 0 || (plan.blocks?.length ?? 0) > 0) {
+    return "dependencies";
+  }
+  return "";
+}
+
+export type PlanKind = "work" | "mock" | "inv";
+
+export function planKind(plan: PlannedTask): PlanKind {
+  if (isMockupPlan(plan)) return "mock";
+  if (isInvestigatePlan(plan)) return "inv";
+  return "work";
+}
+
+export type AnswerKind = PlanKind | "lead";
+
+export interface AnswerOutcome {
+  kind: AnswerKind;
+  plan?: PlannedTask;
+  whyLead?: "no_plan" | "note" | "dependencies" | "last_round";
+  round?: number;
+  rounds?: number;
+}
+
+// answerOutcome mirrors what the server does when an open question is answered with choice and note:
+// - a mockup plan within its rounds records an iteration round and starts a mockup task ("mock");
+// - a work or investigation plan without a note and without after/blocks launches at once ("work" or "inv");
+// - no plan, a note on a non-mockup plan, dependencies on a non-mockup plan, or a mockup at its last round goes to the lead ("lead").
+export function answerOutcome(
+  question: Question,
+  choice: Choice | undefined,
+  note = "",
+): AnswerOutcome {
+  const plan = planOf(question, choice);
+  if (!plan) {
+    return { kind: "lead", whyLead: "no_plan" };
+  }
+  if (isMockupPlan(plan)) {
+    const round = tour(question);
+    const rounds = mockupRounds(plan);
+    if (round < rounds) {
+      return { kind: "mock", plan, round, rounds };
+    }
+    return { kind: "lead", plan, whyLead: "last_round", round, rounds };
+  }
+  const why = whyLeadLaunches(plan, note);
+  if (why) {
+    return { kind: "lead", plan, whyLead: why };
+  }
+  if (isInvestigatePlan(plan)) {
+    return { kind: "inv", plan };
+  }
+  return { kind: "work", plan };
 }
 
 export function isOpen(question: Question): boolean {

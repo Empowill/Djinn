@@ -82,9 +82,7 @@ test("an option with a plan says what it launches; the answer launches it and li
     const options = card.locator(".option");
     await expect(options).toHaveCount(2);
     const line = options.nth(0).locator(".option-plan");
-    await expect(line).toHaveText(
-      `Launches: ${planned}· ${azima.code} Lighting`,
-    );
+    await expect(line).toHaveText(`Builds: ${planned}· ${azima.code} Lighting`);
     // The title is cut short, the azima never.
     await expect(line.locator(".option-plan-azima")).toBeInViewport({
       ratio: 1,
@@ -103,13 +101,13 @@ test("an option with a plan says what it launches; the answer launches it and li
     );
     await expect(line).toHaveAttribute(
       "title",
-      `Launches: ${planned} · ${azima.code} Lighting`,
+      `Builds: ${planned} · ${azima.code} Lighting`,
     );
 
     await card.screenshot({ path: path.join(shots, "question-plans.png") });
 
     // A plain answer on A launches its plan at once.
-    await card.getByRole("button", { name: "Rub the lamp" }).click();
+    await card.getByRole("button", { name: "Build", exact: true }).click();
     await expect(card).toHaveCount(0);
     const tab = page.getByRole("tab", { name: /^Decisions/ });
     await tab.click();

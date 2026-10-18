@@ -6,13 +6,22 @@
 // quote struck, until Reattach puts a draft on a new passage or element. A click on a card's anchor shows it in the
 // page; a dot of the margin opens its card. A draft is edited in place (Ctrl+Enter saves, Escape cancels) and
 // deleted at once, with an Undo that stands five seconds instead of a dialog. A draft stays in Djinn's store and
-// reaches no agent until its foot sends them all (decision Q29): a last comment on the whole tilasm, then Launch or
-// Iterate, confirmed in a line. A tilasm held, as the server computes it, greys its buttons, and its comments when a
+// reaches no agent until its foot sends them all (decision Q29, Q77): a last comment on the whole tilasm, then Iterate
+// or Launch in one click, tinted for the worker that starts, with a line that says what left. A tilasm held, as the
+// server computes it, greys its buttons, and its comments when a
 // task works on it or its work was launched, with a line that says why. Then each card says what became of it: sent,
 // read by the Djinn (its lead event acknowledged), replied, with the state of each task the reply names. Its model is
 // src/data/comments.ts.
 import type { MessageInitShape } from "@bufbuild/protobuf";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  Hammer,
+  Lamp,
+  Pencil,
+  PencilRuler,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
 
 import type { Task } from "../gen/ts/plan/v1/plan_pb";
@@ -25,6 +34,7 @@ import {
   type TilasmHold,
   TilasmHoldReason,
   type TilasmSendRead,
+  type TilasmSends,
 } from "../gen/ts/plan/v1/tilasm_pb";
 import { type Pick, type Placed, isPassage } from "./data/bridge";
 import {
@@ -40,10 +50,12 @@ import {
   emptyColumn,
   sendFoot,
 } from "./data/comments";
-import { taskStatusText, taskTone, when } from "./data/format";
+import { NOTE_MAX, taskStatusText, taskTone, when } from "./data/format";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
+import { useGrowTextarea } from "./lead-message";
 import { StatusBadge } from "./status";
+import { NoteCounter } from "./wish-question";
 
 // What the column asks of the store; each resolves once the drafts shown are read again.
 export interface CommentWrites {
@@ -110,14 +122,13 @@ const Quote = ({
 
 export function CommentsColumn({
   tilasmId,
-  code,
-  version,
   drafts,
   sent = [],
   reads = [],
   tasks,
   origin,
   hold,
+  sends,
   writes,
   onError,
   onClose,
@@ -131,9 +142,9 @@ export function CommentsColumn({
   onReattach = () => {},
 }: {
   tilasmId: string;
-  // The tilasm's code and latest version, as the confirmation names them.
-  code: string;
-  version: number;
+  // The tilasm's code and latest version.
+  code?: string;
+  version?: number;
   // The tilasm's drafts, in the order written.
   drafts: readonly TilasmComment[];
   // The comments sent on it, with the Djinn's replies.
@@ -146,6 +157,8 @@ export function CommentsColumn({
   origin?: string;
   // Why it takes no send for now; none: it does.
   hold?: TilasmHold;
+  // What Iterate and Launch do on this tilasm, as the server computes it.
+  sends?: TilasmSends;
   writes: CommentWrites;
   onError: (error: unknown) => void;
   onClose: () => void;
@@ -447,10 +460,9 @@ export function CommentsColumn({
         </div>
       )}
       <SendBar
-        code={code}
-        version={version}
         drafts={drafts.length}
         hold={hold}
+        sends={sends}
         send={(choice, text) => writes.send(tilasmId, choice, text)}
         onError={onError}
       />
@@ -531,128 +543,109 @@ const newKey = (pick?: Pick) =>
       ? `${pick.start}-${pick.end}`
       : pick.path || pick.elementId;
 
-// SendBar is the foot of the column: a last comment on the whole tilasm, then Launch or Iterate, which a line confirms
-// (Enter sends, Escape gives up) before anything leaves for the Djinn.
-function SendBar({
-  code,
-  version,
+// SendBar is the foot of the column: a last comment on the whole tilasm, then Iterate or Launch in one click, tinted
+// for the worker that starts, with a line that says what left.
+export function SendBar({
   drafts,
   hold,
+  sends,
   send,
   onError,
 }: {
-  code: string;
-  version: number;
   drafts: number;
   hold?: TilasmHold;
+  sends?: TilasmSends;
   send: (choice: SendChoice, text: string) => Promise<void>;
   onError: (error: unknown) => void;
 }) {
   const [text, setText] = useState("");
-  // The button the confirmation stands for.
-  const [confirming, setConfirming] = useState<SendChoice>();
+  const [sent, setSent] = useState("");
   const [busy, setBusy] = useState(false);
+  const area = useRef<HTMLTextAreaElement>(null);
+  useGrowTextarea(area, text);
   const foot = sendFoot(drafts, text, hold);
-  const allowed =
-    confirming === SendChoice.LAUNCH
-      ? foot.launch
-      : confirming === SendChoice.ITERATE && foot.iterate;
-  const confirm = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (confirming !== undefined)
-      confirm.current?.focus({ preventScroll: true });
-  }, [confirming]);
-  // A hold that comes meanwhile gives the confirmation up.
-  if (confirming !== undefined && !allowed && !busy) setConfirming(undefined);
-  const go = () => {
-    if (confirming === undefined || busy) return;
+  const mockIterate = Boolean(sends?.iterateOption);
+  const iterateTitle = mockIterate
+    ? t("tilasms.iterate_mockup_title", {
+        option: sends?.iterateOption ?? "",
+        question: sends?.question ?? "",
+      })
+    : t("tilasms.iterate_title");
+  const launchTitle =
+    sends?.launchOption && sends.launchTitle
+      ? t("tilasms.launch_plan_title", {
+          option: sends.launchOption,
+          question: sends.question,
+          title: sends.launchTitle,
+        })
+      : t("tilasms.launch_title");
+  const go = (choice: SendChoice) => {
+    const allowed = choice === SendChoice.LAUNCH ? foot.launch : foot.iterate;
+    if (!allowed || busy) return;
+    const count = foot.count;
     setBusy(true);
-    send(confirming, text)
+    send(choice, text)
       .then(() => {
         setText("");
-        setConfirming(undefined);
+        setSent(
+          choice === SendChoice.ITERATE
+            ? sends?.iterateOption
+              ? t("tilasms.sent_mockup", { send: 1 })
+              : t("tilasms.sent_iterate", { send: 1 })
+            : sends?.launchOption && sends.question && count === 0
+              ? t("tilasms.sent_answered", { question: sends.question })
+              : t("tilasms.sent_launch", { send: 1 }),
+        );
       })
       .catch(onError)
       .finally(() => setBusy(false));
   };
-  const vars = { count: foot.count, code, version };
-  const asked =
-    confirming === SendChoice.ITERATE
-      ? t("tilasms.send_confirm_iterate", vars)
-      : foot.count > 0
-        ? t("tilasms.send_confirm_launch", vars)
-        : t("tilasms.send_confirm_launch_none", { code });
+  const statusLine =
+    hold && hold.reason !== TilasmHoldReason.UNSPECIFIED
+      ? holdLine(hold)
+      : sent;
   return (
-    <div
-      className="tilasm-send"
-      onKeyDown={(event) => {
-        if (event.key !== "Escape" || confirming === undefined) return;
-        // Escape gives up the confirmation, and only it: full size stays.
-        event.preventDefault();
-        setConfirming(undefined);
-      }}
-    >
-      {hold && hold.reason !== TilasmHoldReason.UNSPECIFIED && (
-        <p className="tilasm-send-hold">{holdLine(hold)}</p>
-      )}
-      <textarea
-        value={text}
-        rows={2}
-        maxLength={4000}
-        aria-label={t("tilasms.send_text")}
-        placeholder={t("tilasms.send_placeholder")}
-        disabled={busy || foot.greyed}
-        onChange={(event) => setText(event.target.value)}
-      />
-      {confirming !== undefined ? (
-        <div
-          className="tilasm-send-confirm"
-          role="group"
-          aria-label={t("tilasms.send_confirm_label")}
+    <div className="tilasm-send">
+      {statusLine && <p className="tilasm-send-hold">{statusLine}</p>}
+      <div className="note-field">
+        <textarea
+          ref={area}
+          value={text}
+          rows={2}
+          maxLength={NOTE_MAX}
+          aria-label={t("tilasms.send_text")}
+          placeholder={t("tilasms.send_placeholder")}
+          disabled={busy || foot.greyed}
+          onChange={(event) => setText(event.target.value)}
+        />
+        <NoteCounter length={text.length} />
+      </div>
+      <div className="tilasm-send-buttons">
+        <button
+          type="button"
+          className={`button secondary small ${mockIterate ? "kind-mock" : "kind-lead"}`}
+          title={iterateTitle}
+          disabled={busy || !foot.iterate}
+          onClick={() => go(SendChoice.ITERATE)}
         >
-          <p>{asked}</p>
-          <div className="tilasm-send-buttons">
-            <button
-              type="button"
-              className="button secondary small"
-              disabled={busy}
-              onClick={() => setConfirming(undefined)}
-            >
-              {t("tilasms.send_not_yet")}
-            </button>
-            <button
-              ref={confirm}
-              type="button"
-              className="button accent small"
-              disabled={busy}
-              onClick={go}
-            >
-              {t("tilasms.send_go")}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="tilasm-send-buttons">
-          <button
-            type="button"
-            className="button secondary small"
-            title={t("tilasms.iterate_title")}
-            disabled={!foot.iterate}
-            onClick={() => setConfirming(SendChoice.ITERATE)}
-          >
-            {t("tilasms.iterate")}
-          </button>
-          <button
-            type="button"
-            className="button accent small"
-            title={t("tilasms.launch_title")}
-            disabled={!foot.launch}
-            onClick={() => setConfirming(SendChoice.LAUNCH)}
-          >
-            {t("tilasms.launch")}
-          </button>
-        </div>
-      )}
+          {mockIterate ? (
+            <PencilRuler size={13} aria-hidden="true" />
+          ) : (
+            <Lamp size={13} aria-hidden="true" />
+          )}
+          {mockIterate ? t("tilasms.iterate") : t("tilasms.iterate_lead")}
+        </button>
+        <button
+          type="button"
+          className="button accent small kind-work"
+          title={launchTitle}
+          disabled={busy || !foot.launch}
+          onClick={() => go(SendChoice.LAUNCH)}
+        >
+          <Hammer size={13} aria-hidden="true" />
+          {t("tilasms.launch")}
+        </button>
+      </div>
     </div>
   );
 }
@@ -676,6 +669,7 @@ function CommentEditor({
   onCancel: () => void;
 }) {
   const area = useRef<HTMLTextAreaElement>(null);
+  useGrowTextarea(area, text);
   useEffect(() => {
     const el = area.current;
     if (!el) return;
@@ -691,26 +685,29 @@ function CommentEditor({
   }, []);
   return (
     <div className="tilasm-comment-editor">
-      <textarea
-        ref={area}
-        value={text}
-        rows={3}
-        maxLength={4000}
-        aria-label={label}
-        aria-keyshortcuts="Control+Enter Escape"
-        disabled={busy}
-        onChange={(event) => onType(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-            event.preventDefault();
-            onSave();
-          } else if (event.key === "Escape") {
-            // Escape gives up the card, and only the card: full size stays.
-            event.preventDefault();
-            onCancel();
-          }
-        }}
-      />
+      <div className="note-field">
+        <textarea
+          ref={area}
+          value={text}
+          rows={3}
+          maxLength={NOTE_MAX}
+          aria-label={label}
+          aria-keyshortcuts="Control+Enter Escape"
+          disabled={busy}
+          onChange={(event) => onType(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+              event.preventDefault();
+              onSave();
+            } else if (event.key === "Escape") {
+              // Escape gives up the card, and only the card: full size stays.
+              event.preventDefault();
+              onCancel();
+            }
+          }}
+        />
+        <NoteCounter length={text.length} />
+      </div>
       <div className="tilasm-comment-editor-foot">
         <span className="muted-text">{t("tilasms.comment_keys")}</span>
         <button

@@ -47,6 +47,8 @@ import {
   TilasmSchema,
   type TilasmSendRead,
   TilasmSendReadSchema,
+  type TilasmSends,
+  TilasmSendsSchema,
 } from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound, unimplemented } from "./client";
 
@@ -82,6 +84,8 @@ export interface WishDetail {
   sent: TilasmComment[];
   // The sends on its tilasms the Djinn read, read with the drafts: computed by the server.
   reads: TilasmSendRead[];
+  // What an iterate or launch send does for each tilasm linked to an open question, read with the drafts: computed by the server.
+  sends: TilasmSends[];
   // Read at least once.
   loaded: boolean;
   // Totals from the server for paginated lists.
@@ -182,6 +186,7 @@ const EMPTY_DETAIL: WishDetail = {
   holds: [],
   sent: [],
   reads: [],
+  sends: [],
   loaded: false,
   loadedKinds: new Set<Change>(),
 };
@@ -895,6 +900,7 @@ export function createStore(
       const holds = got.holds ?? prevDetail.holds;
       const sent = got.sent ?? prevDetail.sent;
       const readsList = got.reads ?? prevDetail.reads;
+      const sends = got.sends ?? prevDetail.sends;
       const tasksTotal =
         got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
       const questionsTotal =
@@ -936,6 +942,7 @@ export function createStore(
         holds === prevDetail.holds &&
         sent === prevDetail.sent &&
         readsList === prevDetail.reads &&
+        sends === prevDetail.sends &&
         tasksTotal === prevDetail.tasksTotal &&
         questionsTotal === prevDetail.questionsTotal &&
         blocksTotal === prevDetail.blocksTotal &&
@@ -957,6 +964,7 @@ export function createStore(
         holds,
         sent,
         reads: readsList,
+        sends,
         loaded: nowLoaded,
         tasksTotal,
         questionsTotal,
@@ -1240,7 +1248,13 @@ export function createStore(
               .drafts({ wish: wishId }, call)
               .catch((error: unknown) => {
                 if (unimplemented(error))
-                  return { comments: [], holds: [], sent: [], reads: [] };
+                  return {
+                    comments: [],
+                    holds: [],
+                    sent: [],
+                    reads: [],
+                    sends: [],
+                  };
                 throw error;
               }),
           ]);
@@ -1255,6 +1269,12 @@ export function createStore(
               draftsRes.reads.every((r, i) =>
                 equals(TilasmSendReadSchema, r, cur.reads[i]),
               );
+            const resSends = draftsRes.sends ?? [];
+            const sameSends =
+              cur.sends.length === resSends.length &&
+              resSends.every((s, i) =>
+                equals(TilasmSendsSchema, s, cur.sends[i]),
+              );
             return {
               tilasms: reconcile(TilasmSchema, cur.tilasms, listRes.tilasms),
               drafts: reconcile(
@@ -1264,6 +1284,7 @@ export function createStore(
               ),
               holds: sameHolds ? cur.holds : draftsRes.holds,
               reads: sameReads ? cur.reads : draftsRes.reads,
+              sends: sameSends ? cur.sends : resSends,
               sent: reconcile(TilasmCommentSchema, cur.sent, draftsRes.sent),
             };
           };

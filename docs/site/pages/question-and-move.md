@@ -30,9 +30,9 @@ bottom:
 3. **Report:** with a report's title, when the question names one of the wish's reports: a click opens it in place.
 4. **The recommendation**: the option the Djinn recommends, and why. Read it first; it is often enough.
 5. **The options**, A to D, four at most, the recommended one marked **Recommended**. A question may have none: then it
-   asks for a yes, or for your answer in words. An option that launches a task once picked says so on one grey line
-   under it: **Launches:** the task's title, and the azima it belongs to. An option without that line leaves the
-   tasks to the Djinn.
+   asks for a yes, or for your answer in words. An option with a plan says on one line under it what it starts once
+   picked, in its worker's colour: **Builds:**, **Iterates:** (with its round, as **round 1/3**) or **Investigates:**,
+   the task's title, and the azima it belongs to. An option without that line leaves the tasks to the Djinn.
 6. **The note** and the gestures to answer.
 
 A card outside the questions column, among those being investigated for instance, folds a long context under **Read
@@ -101,7 +101,7 @@ leaves, answered, withdrawn or moved, the one below opens, else the one above.
 | Home, End | The first or the last question |
 | A to D, or 1 to 4 | Pick an option (not while typing in the note) |
 | Enter on the question | Put the caret in the note |
-| Enter in the note | Rub the lamp: answer with the option selected |
+| Enter in the note | Answer with the option selected |
 | Shift+Enter | A new line in the note |
 | Ctrl+Enter (Cmd+Enter on macOS) | Answer, from anywhere on the card |
 | Ctrl+Shift+Enter (Cmd+Shift+Enter on macOS) | Enlighten me, from anywhere on the card |
@@ -115,12 +115,16 @@ key from the terminal or another field. On a card outside the column, the arrows
 
 ## Answering
 
-Under the options, one field takes your note, **Note with the answer**, with three gestures:
+Under the options, one field takes your note, **Note with the answer** (or **What to change on the next version** when
+a mockup option is selected), which grows as you write up to 8,000 characters, with the gestures to answer:
 
-- **Rub the lamp** answers with the option selected and your note. The recommended option is selected from the start,
-  so one click takes the Djinn's advice; pick another option and the lamp sends that one. With options and none
+- **The answer button** names the worker that starts, in its colour, for the option selected: **Build**,
+  **Iterate · round 1/3**, **Investigate** or **To the lead** (and **Send to the lead** when a note on a planned build
+  or investigation sends the answer to the Djinn first). The recommended option is selected from the start, so one
+  click takes the Djinn's advice; pick another option and the button takes its verb and colour. With options and none
   recommended, pick one first. A question with no options takes your words as the answer.
-- **Enlighten me** asks for more before you decide. See [Enlighten me](#enlighten).
+- **Enlighten me** asks for more before you decide. See [Enlighten me](#enlighten). When a mockup option is selected,
+  **Cancel · nothing starts** replaces it and **Withdraw question…**, leaving only **Iterate** beside it.
 - **Withdraw question…** closes a question that no longer matters, without an answer, once you confirm, with a note on
   why if you like. It shows as **Withdrawn**, and is no decision.
 
@@ -129,13 +133,15 @@ Under the options, one field takes your note, **Note with the answer**, with thr
 Your answer goes to the Djinn, which turns it into tasks itself, placing them in the plan. Three answers act without
 it:
 
-- **A planned option.** On an option that says **Launches:**, picking it without a note launches that task at once,
-  if it waits on no other task and holds none back. A note, or such a link, goes to the Djinn first, which launches
-  the task as planned or adjusted to it. The decision then links the task it launched, on its own line: **Launched
-  as planned**. It is given the tilasms of its plan at the version you saw when you answered.
-- **An option that iterates on a mockup.** When its plan is a [mockup](#mockup), picking it is no answer: the question
-  stays open, one version further, and a mockup task puts the tilasm's next version with your note, then brings the
-  question back. At the plan's last version, the answer goes to the Djinn instead.
+- **A planned option.** On an option that says **Builds:** or **Investigates:**, picking it without a note launches
+  that task at once, if it waits on no other task and holds none back. A note, or such a link, goes to the Djinn first
+  (**Send to the lead**), which launches the task as planned or adjusted to it. The decision then links the task it
+  launched, on its own line: **Launched as planned**. It is given the tilasms of its plan at the version you saw when
+  you answered.
+- **An option that iterates on a mockup.** When its plan is a [mockup](#mockup) (**Iterates:**), picking it is no
+  answer: the question stays open, one version further, and a mockup task puts the tilasm's next version with your
+  note, then brings the question back. At the plan's last version, the answer goes to the Djinn instead (**To the
+  lead**).
 - **A worker's request to edit.** Your yes lets the waiting worker go on.
 - **Djinn's own moves**, below.
 

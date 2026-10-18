@@ -73,7 +73,7 @@ test("a request routed to a new wish makes it, the window opens it, and the one 
     .locator(".question-card")
     .filter({ hasText: "Where does this request go?" });
   await expect(card).toContainText(request);
-  await card.getByRole("button", { name: "Rub the lamp" }).click();
+  await card.getByRole("button", { name: "To the lead" }).click();
 
   // The window goes to the new wish, active, the request in its blocks.
   await expect(page.locator(".hero h1")).toHaveText(title);

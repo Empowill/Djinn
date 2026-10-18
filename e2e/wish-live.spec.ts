@@ -73,7 +73,7 @@ test("a wish made by the command line and its question show live in the window",
     await expect(card.locator(".question-actions button")).toHaveText([
       /Withdraw question…/,
       /Enlighten me/,
-      /Rub the lamp/,
+      /To the lead/,
     ]);
 
     const brass = card.getByRole("button", { name: /Brass — the old one/ });
@@ -105,7 +105,7 @@ test("a wish made by the command line and its question show live in the window",
       await card.screenshot({
         path: path.join(shots, "question-card-light.png"),
       });
-      await card.getByRole("button", { name: "Rub the lamp" }).click();
+      await card.getByRole("button", { name: "To the lead" }).click();
       await expect(page.locator(".question-column .question-card")).toHaveCount(
         0,
       );

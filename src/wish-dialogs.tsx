@@ -42,7 +42,7 @@ import { AgentSetupPanel, needsSetup, useAgents } from "./agent-setup";
 import { CommandText } from "./copy-command";
 import { message } from "./data/client";
 import { useClients, useDjinn, useOptionalData } from "./data/djinn";
-import { MAX_ACTIVE, noLead } from "./data/format";
+import { MAX_ACTIVE, NOTE_MAX, noLead } from "./data/format";
 import { Brand, ModalFrame } from "./frame";
 import {
   chosenLanguage,
@@ -1086,6 +1086,7 @@ export function WithdrawQuestionDialog({
           <textarea
             autoFocus
             rows={3}
+            maxLength={NOTE_MAX}
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder={t("question.withdraw_note_placeholder")}

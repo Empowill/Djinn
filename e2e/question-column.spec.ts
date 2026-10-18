@@ -177,7 +177,7 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     await expect(first.locator(".question-actions button")).toHaveText([
       /Withdraw question…/,
       /Enlighten me/,
-      /Rub the lamp/,
+      /To the lead/,
     ]);
     for (const text of order.slice(1)) {
       await expect(row(text)).toHaveClass(/closed/);
@@ -262,7 +262,7 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     const buy = row("Where to buy the oil?");
     await open("Where to buy the oil?");
     await expect(buy).toBeFocused();
-    const rub = buy.getByRole("button", { name: "Rub the lamp" });
+    const rub = buy.getByRole("button", { name: "To the lead" });
     const option = (name: string) => buy.getByRole("button", { name });
     await expect(rub).toBeDisabled();
     await page.keyboard.press("c");
