@@ -266,7 +266,9 @@
               <article class="card word" id="word-workers">
                 <h3><a href="#task-and-worker">Workers</a></h3>
                 <p>
-                  An agent on one task, in its own worktree and branch. Send it an instruction, pause it, stop it. Stopping
+                  An agent on one task, in its own worktree and branch. Send it an instruction, pause it, stop it: on
+                  Antigravity, a message sent mid-turn waits for the next turn before it is marked received, and workers
+                  search with <code>rg -n</code> before reading narrow file slices so context stays below compaction. Stopping
                   Djinn interrupts workers, never loses them: the next start resumes each one in its own session, even while
                   the push checks are red. A planned task's card says why it waits only while it waits; once it starts, its
                   start says how long it waited and for what, and the waiting line above it turns grey. A worker
@@ -282,7 +284,8 @@
                 <p>
                   A short study or audit to agree fast: it goes before the work, takes a slot even on a full machine, reads
                   and runs everything, and ends in a tilasm and a question. Its code is never merged; at its time limit, Djinn
-                  asks it to publish what it has. <code>djinn task spawn &lt;wish&gt; --kind investigation</code>. A mockup
+                  asks it to publish what it has, and once its tilasm, question or block is published, a closing stream error
+                  still completes the task cleanly. <code>djinn task spawn &lt;wish&gt; --kind investigation</code>. A mockup
                   you judge is urgent work for your feedback instead: <code>--feedback</code>.
                 </p>
               </article>
@@ -352,7 +355,8 @@
                 <h3><a href="#restarts-and-updates">Nothing is lost</a></h3>
                 <p>
                   Every write is a transaction with its journal entry, durable through a power cut. A worker stopped by its
-                  usage limit waits for the reset, or for another account, then goes on. <code>djinn backup</code> copies it all, even running.
+                  usage limit waits for the reset, or for another account, then goes on; a per-minute rate or TPM limit waits
+                  a short minute-scale backoff without spending its retry budget. <code>djinn backup</code> copies it all, even running.
                 </p>
               </article>
               <article class="card word" id="word-routing">

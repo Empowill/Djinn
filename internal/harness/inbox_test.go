@@ -199,3 +199,45 @@ func TestSendRefused(t *testing.T) {
 		}
 	}
 }
+
+// TestAgyAcknowledgeWaitsForNextTurn (W405): on Antigravity, a message delivered while a turn is under way is not
+// marked RECEIVED by the remaining events of that turn; it is marked RECEIVED only after TASK_EVENT_KIND_USAGE closes
+// the turn and the next turn emits text or a tool call.
+func TestAgyAcknowledgeWaitsForNextTurn(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = Fake{}
+	e := upWith(t, t.TempDir(), providers)
+	wishID, _ := e.wish(t, t.TempDir())
+	task := e.mustSpawn(t, wishID, "Agy turn ack", "text step1\nwait\ntext step2\nusage 100 50 0.01\ntext turn2",
+		&planv1.TaskServiceSpawnRequest{Provider: planv1.Provider_PROVIDER_ANTIGRAVITY})
+
+	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: task.GetId()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var events []*planv1.TaskEvent
+	for s.Receive() {
+		events = append(events, s.Msg().GetEvent())
+		if s.Msg().GetEvent().GetText() == "step1" {
+			break
+		}
+	}
+	if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{
+		TaskId: task.GetId(), Text: "update docs",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	for s.Receive() {
+		events = append(events, s.Msg().GetEvent())
+	}
+	want := []string{"PROMPT", "STATUS", "STATUS", "TEXT", "MESSAGE", "TEXT", "USAGE", "RECEIVED", "TEXT", "TEXT", "STATUS"}
+	if got := eventKinds(events); !slices.Equal(got, want) {
+		t.Fatalf("events = %v\nwant %v", got, want)
+	}
+	if events[5].GetText() != "step2" || events[7].GetText() != "update docs" || events[8].GetText() != "turn2" {
+		t.Errorf("got step2=%q, received=%q, turn2=%q", events[5].GetText(), events[7].GetText(), events[8].GetText())
+	}
+}

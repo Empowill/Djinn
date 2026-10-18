@@ -14,28 +14,37 @@ type Limit struct {
 	What string
 	// Until is when it resets; zero when the provider did not say.
 	Until time.Time
+	// PerMinute is true for a short per-minute rate or token bucket (TPM/RPM, HTTP 429) that refills within a minute
+	// or two rather than a multi-hour session or daily quota.
+	PerMinute bool
 }
+
+// multiHourQuotaRe matches quota messages that name a multi-hour or multi-day window rather than a per-minute bucket.
+var multiHourQuotaRe = regexp.MustCompile(`(?i)\b(per[ _]day|daily|per[ _]hour|hourly|five_hour|seven_day|session|weekly|monthly)\b`)
 
 // limitKinds name the limits a provider's message speaks of, the most precise first. The messages are the
 // providers' own: Claude's "You've hit your session limit · resets 7:20am (Europe/Paris)" (real, claude 2.1.293),
 // its older "Claude AI usage limit reached|<unix time>", Codex's usageLimitExceeded, agy's RESOURCE_EXHAUSTED
 // (supposed, docs/providers.md).
 var limitKinds = []struct {
-	re   *regexp.Regexp
-	what string
+	re        *regexp.Regexp
+	what      string
+	perMinute bool
 }{
-	{regexp.MustCompile(`(?i)\bsession limit\b|\bfive_hour\b`), "the account's session limit"},
-	{regexp.MustCompile(`(?i)\bweekly limit\b|\bseven_day`), "the account's weekly limit"},
-	{regexp.MustCompile(`(?i)usage limit|usageLimitExceeded|usage_limit_reached`), "the account's usage limit"},
-	{regexp.MustCompile(`(?i)RESOURCE_EXHAUSTED|quota exceeded|quota exhausted`), "the provider's quota"},
-	{regexp.MustCompile(`(?i)rate[ _]limit(ed)?\b|too many requests|\bHTTP 429\b`), "the provider's rate limit"},
+	{regexp.MustCompile(`(?i)\bsession limit\b|\bfive_hour\b`), "the account's session limit", false},
+	{regexp.MustCompile(`(?i)\bweekly limit\b|\bseven_day`), "the account's weekly limit", false},
+	{regexp.MustCompile(`(?i)usage limit|usageLimitExceeded|usage_limit_reached`), "the account's usage limit", false},
+	{regexp.MustCompile(`(?i)RESOURCE_EXHAUSTED|quota exceeded|quota exhausted`), "the provider's quota", true},
+	{regexp.MustCompile(`(?i)rate[ _]limit(ed)?\b|too many requests|\b(?:HTTP|code) 429\b`), "the provider's rate limit", true},
 }
 
 // limitIn finds a usage limit in the reason a worker failed with, and when it resets when the message says it.
 func limitIn(reason string, now time.Time) (Limit, bool) {
 	for _, k := range limitKinds {
 		if k.re.MatchString(reason) {
-			return Limit{What: k.what, Until: resetIn(reason, now)}, true
+			until := resetIn(reason, now)
+			perMin := k.perMinute && until.IsZero() && !multiHourQuotaRe.MatchString(reason)
+			return Limit{What: k.what, Until: until, PerMinute: perMin}, true
 		}
 	}
 	return Limit{}, false
@@ -110,6 +119,19 @@ func limitBackoff(resumes int32) time.Duration {
 		}
 	}
 	return d
+}
+
+// rateLimitBackoff is how long a task waits for a per-minute rate or token bucket (TPM/RPM, HTTP 429 without a reset
+// clock): 60s -> 90s -> 120s.
+func rateLimitBackoff(hits int) time.Duration {
+	switch {
+	case hits <= 0:
+		return 60 * time.Second
+	case hits == 1:
+		return 90 * time.Second
+	default:
+		return 120 * time.Second
+	}
 }
 
 // limitText says what a task waits for: "the account's session limit, resets at 07:20", in the machine's time.

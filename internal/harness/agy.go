@@ -141,7 +141,7 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 	}
 	idle, toolIdle := cmp.Or(a.IdleTimeout, AgyIdleTimeout), cmp.Or(a.ToolIdleTimeout, AgyToolIdleTimeout)
 	parser := &agyParser{isWorkDone: isWorkDone, toolIdle: toolIdle}
-	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: parser, idle: idle, encode: agyMessageLine})
+	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: parser, idle: idle, holdTurn: true, encode: agyMessageLine})
 }
 
 // agyMessageLine is a user message as agy reads it in stream-json.
@@ -859,6 +859,10 @@ func (p *agyParser) systemMessage(text string) {
 
 func (p *agyParser) canFinishNow() bool {
 	return p.answered && len(p.toolsIn) == 0 && p.isWorkDone != nil && p.isWorkDone()
+}
+
+func (p *agyParser) canFinishTurn() bool {
+	return p != nil && (p.closingFailed || p.canFinishNow())
 }
 
 func (p *agyParser) finishClosingError(events *lineEvents, why string) *turnEnd {

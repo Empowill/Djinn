@@ -29,6 +29,9 @@ repeat them.
   `CONTRIBUTING.md`, and name every new dependency in your change description.
 - **What you add to a wish's plan is smoke** unless the code computes on it: write a block, do
   not add a field.
+- **Locate symbols and lines with `rg -n` or `grep -n` before reading a file.** Never page through a file with
+  `view_file` 800 lines at a time: pass `StartLine` and `EndLine` (`<= 200` lines) around the match so the context
+  stays below compaction.
 
 ## Interface
 - Rounded elements use a uniform border on all sides, or no border. Never combine a rounded card with a
