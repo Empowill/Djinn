@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -65,12 +66,264 @@ func changeSettings(home string, change func(*uiv1.Settings) error) error {
 	return fsx.WriteAtomic(filepath.Join(home, settingsFile), data, 0o600)
 }
 
+// CircleRowOrder is the order of worker rows in the Summoning Circle (W400): Djinn (lead) first, then each kind of
+// worker that calls a model.
+var CircleRowOrder = []planv1.WorkerKind{
+	planv1.WorkerKind_WORKER_KIND_LEAD,
+	planv1.WorkerKind_WORKER_KIND_INVESTIGATION,
+	planv1.WorkerKind_WORKER_KIND_MOCKUP,
+	planv1.WorkerKind_WORKER_KIND_IFRIT,
+	planv1.WorkerKind_WORKER_KIND_WORK,
+	planv1.WorkerKind_WORKER_KIND_CORRECTION,
+	planv1.WorkerKind_WORKER_KIND_REVIEW,
+	planv1.WorkerKind_WORKER_KIND_QUESTION,
+}
+
+// circleModelAliases maps human-readable labels and short aliases to canonical model identifiers so Djinn always
+// stores and sends model IDs, never labels with spaces.
+var circleModelAliases = map[string]string{
+	"claude sonnet 5.5":       "claude-sonnet-5-5",
+	"sonnet":                  "claude-sonnet-5-5",
+	"claude opus 5.8":         "claude-opus-5-8",
+	"claude opus 5.5":         "claude-opus-5-5",
+	"opus":                    "claude-opus-5-8",
+	"claude haiku 5.5":        "claude-haiku-5-5",
+	"haiku":                   "claude-haiku-5-5",
+	"gpt-5.5":                 "gpt-5.5",
+	"gpt 5.5":                 "gpt-5.5",
+	"gpt-5.5 codex":           "gpt-5.5-codex",
+	"gpt 5.5 codex":           "gpt-5.5-codex",
+	"gpt-5.5 mini":            "gpt-5.5-mini",
+	"gpt 5.5 mini":            "gpt-5.5-mini",
+	"gemini 4 argon (high)":   "gemini-4-argon-high",
+	"gemini 4 argon":          "gemini-4-argon-high",
+	"argon":                   "gemini-4-argon-high",
+	"gemini 3.8 flash (high)": "gemini-3.8-flash-high",
+	"gemini 3.8 flash":        "gemini-3.8-flash-high",
+	"gemini 3.8 pro (high)":   "gemini-3.8-pro-high",
+	"gemini 3.8 pro":          "gemini-3.8-pro-high",
+}
+
+// NormalizeCircleModel maps a human-readable model label or short alias to its canonical model ID.
+func NormalizeCircleModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return ""
+	}
+	if id, ok := circleModelAliases[strings.ToLower(trimmed)]; ok {
+		return id
+	}
+	return trimmed
+}
+
+// DefaultCircleModel returns the default canonical model ID for a provider in the Summoning Circle.
+func DefaultCircleModel(p planv1.Provider) string {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE:
+		return "claude-sonnet-5-5"
+	case planv1.Provider_PROVIDER_CODEX:
+		return "gpt-5.5"
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		return "gemini-4-argon-high"
+	default:
+		return ""
+	}
+}
+
+// ProviderForCircleModel infers the provider for a model ID or label; PROVIDER_UNSPECIFIED when unknown.
+func ProviderForCircleModel(model string) planv1.Provider {
+	m := NormalizeCircleModel(model)
+	switch {
+	case m == "":
+		return planv1.Provider_PROVIDER_UNSPECIFIED
+	case IsClaudeModel(m):
+		return planv1.Provider_PROVIDER_CLAUDE
+	case IsCodexModel(m):
+		return planv1.Provider_PROVIDER_CODEX
+	case IsAntigravityModel(m):
+		return planv1.Provider_PROVIDER_ANTIGRAVITY
+	default:
+		return planv1.Provider_PROVIDER_UNSPECIFIED
+	}
+}
+
+// setCircleRowSlice sets or replaces the row for seat.Kind in circle.
+func setCircleRowSlice(circle []*planv1.WorkerSeat, seat *planv1.WorkerSeat) []*planv1.WorkerSeat {
+	out := make([]*planv1.WorkerSeat, 0, len(circle)+1)
+	replaced := false
+	for _, r := range circle {
+		if r.GetKind() == seat.GetKind() {
+			out = append(out, proto.CloneOf(seat))
+			replaced = true
+		} else {
+			out = append(out, proto.CloneOf(r))
+		}
+	}
+	if !replaced {
+		out = append(out, proto.CloneOf(seat))
+	}
+	return out
+}
+
+// MigrateCircle reads any legacy per-project provider/model settings from projects/*/settings.txtpb in home once,
+// seeds the Summoning Circle in settings.json for rows not yet configured, and drops those fields from the
+// per-project developer files.
+func MigrateCircle(home string) {
+	if home == "" {
+		return
+	}
+	matches, err := filepath.Glob(filepath.Join(home, "projects", "*", "settings.txtpb"))
+	if err != nil {
+		return
+	}
+	for _, devFile := range matches {
+		migrateDeveloperSettingsFile(home, devFile)
+	}
+}
+
+// ReadCircle returns the Summoning Circle rows in CircleRowOrder from settings.json in home after migrating any
+// legacy per-project settings. The lead row always carries a concrete provider and model ID; every other row carries
+// PROVIDER_UNSPECIFIED and "" when set to "Same as lead".
+func ReadCircle(home string) []*planv1.WorkerSeat {
+	MigrateCircle(home)
+	settings := readSettings(home)
+	byKind := make(map[planv1.WorkerKind]*planv1.WorkerSeat, len(settings.GetCircle()))
+	for _, r := range settings.GetCircle() {
+		byKind[r.GetKind()] = r
+	}
+	leadSeat := ReadLeadSeat(home)
+	leadProvider := leadSeat.GetProvider()
+	if leadProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+		leadProvider = planv1.Provider_PROVIDER_CLAUDE
+	}
+	leadModel := NormalizeCircleModel(leadSeat.GetModel())
+	if r := byKind[planv1.WorkerKind_WORKER_KIND_LEAD]; r != nil {
+		if r.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
+			leadProvider = r.GetProvider()
+		}
+		if r.GetModel() != "" {
+			leadModel = NormalizeCircleModel(r.GetModel())
+		}
+	}
+	if leadModel == "" {
+		leadModel = DefaultCircleModel(leadProvider)
+	}
+
+	out := make([]*planv1.WorkerSeat, 0, len(CircleRowOrder))
+	for _, kind := range CircleRowOrder {
+		if kind == planv1.WorkerKind_WORKER_KIND_LEAD {
+			out = append(out, &planv1.WorkerSeat{
+				Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
+				Provider: leadProvider,
+				Model:    leadModel,
+			})
+			continue
+		}
+		r := byKind[kind]
+		if r == nil || (r.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED && r.GetModel() == "") {
+			out = append(out, &planv1.WorkerSeat{Kind: kind})
+			continue
+		}
+		p := r.GetProvider()
+		m := NormalizeCircleModel(r.GetModel())
+		if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+			p = ProviderForCircleModel(m)
+		}
+		if m == "" && p != planv1.Provider_PROVIDER_UNSPECIFIED {
+			m = DefaultCircleModel(p)
+		}
+		out = append(out, &planv1.WorkerSeat{
+			Kind:     kind,
+			Provider: p,
+			Model:    m,
+		})
+	}
+	return out
+}
+
+// ResolveWorkerSeat returns the effective provider and canonical model ID for kind from the Summoning Circle in home.
+// When the row is set to "Same as lead", it follows the lead's provider and model ID. explicit is true when the
+// circle or lead seat has been configured in settings.json (or migrated from a per-project developer file).
+func ResolveWorkerSeat(home string, kind planv1.WorkerKind) (provider planv1.Provider, model string, explicit bool) {
+	if home == "" {
+		return planv1.Provider_PROVIDER_CLAUDE, "", false
+	}
+	MigrateCircle(home)
+	settings := readSettings(home)
+	for _, r := range settings.GetCircle() {
+		if r.GetKind() == kind && (r.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || r.GetModel() != "") {
+			p := r.GetProvider()
+			m := NormalizeCircleModel(r.GetModel())
+			if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+				p = ProviderForCircleModel(m)
+			}
+			if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+				p = planv1.Provider_PROVIDER_CLAUDE
+			}
+			if m == "" {
+				m = DefaultCircleModel(p)
+			}
+			return p, m, true
+		}
+	}
+	// Row is "Same as lead" (or WORKER_KIND_LEAD): follow the lead's choice if the circle or lead seat is configured.
+	followLead := func(p planv1.Provider, m string) (planv1.Provider, string, bool) {
+		if kind == planv1.WorkerKind_WORKER_KIND_IFRIT && !CanIfrit(p) {
+			return planv1.Provider_PROVIDER_CLAUDE, DefaultCircleModel(planv1.Provider_PROVIDER_CLAUDE), true
+		}
+		if kind == planv1.WorkerKind_WORKER_KIND_QUESTION && !CanReadOnly(p) {
+			return planv1.Provider_PROVIDER_CLAUDE, DefaultCircleModel(planv1.Provider_PROVIDER_CLAUDE), true
+		}
+		return p, m, true
+	}
+	for _, r := range settings.GetCircle() {
+		if r.GetKind() == planv1.WorkerKind_WORKER_KIND_LEAD && (r.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || r.GetModel() != "") {
+			p := r.GetProvider()
+			m := NormalizeCircleModel(r.GetModel())
+			if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+				p = cmp.Or(settings.GetLead().GetProvider(), ProviderForCircleModel(m), planv1.Provider_PROVIDER_CLAUDE)
+			}
+			if m == "" {
+				m = DefaultCircleModel(p)
+			}
+			return followLead(p, m)
+		}
+	}
+	if lead := settings.GetLead(); lead != nil && (lead.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || lead.GetModel() != "") {
+		p := lead.GetProvider()
+		m := NormalizeCircleModel(lead.GetModel())
+		if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+			p = cmp.Or(ProviderForCircleModel(m), planv1.Provider_PROVIDER_CLAUDE)
+		}
+		if m == "" {
+			m = DefaultCircleModel(p)
+		}
+		return followLead(p, m)
+	}
+	if len(settings.GetCircle()) > 0 {
+		return planv1.Provider_PROVIDER_CLAUDE, DefaultCircleModel(planv1.Provider_PROVIDER_CLAUDE), true
+	}
+	return planv1.Provider_PROVIDER_CLAUDE, "", false
+}
+
 // ReadLeadSeat is where the lead Djinn drives runs, from settings.json in home: Claude, its default model and
 // sign-in, unless the developer moved it.
 func ReadLeadSeat(home string) *planv1.LeadSeat {
-	seat := proto.CloneOf(readSettings(home).GetLead())
+	settings := readSettings(home)
+	seat := proto.CloneOf(settings.GetLead())
 	if seat == nil {
 		seat = &planv1.LeadSeat{}
+	}
+	for _, r := range settings.GetCircle() {
+		if r.GetKind() == planv1.WorkerKind_WORKER_KIND_LEAD {
+			if seat.Provider == planv1.Provider_PROVIDER_UNSPECIFIED && r.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
+				seat.Provider = r.GetProvider()
+			}
+			if seat.Model == "" && r.GetModel() != "" {
+				seat.Model = NormalizeCircleModel(r.GetModel())
+			}
+			break
+		}
 	}
 	if seat.Provider == planv1.Provider_PROVIDER_UNSPECIFIED {
 		seat.Provider = planv1.Provider_PROVIDER_CLAUDE
@@ -275,6 +528,13 @@ func (s *LeadService) Move(
 	err := write(ctx, s.Wishes.Store, req.Spec(), m, func(*store.Tx) error {
 		return changeSettings(home, func(settings *uiv1.Settings) error {
 			settings.Lead = seat
+			if len(settings.Circle) > 0 {
+				settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
+					Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
+					Provider: seat.GetProvider(),
+					Model:    NormalizeCircleModel(seat.GetModel()),
+				})
+			}
 			return nil
 		})
 	})
@@ -294,6 +554,120 @@ func (s *LeadService) Move(
 	}
 	s.Wishes.ChangeLead()
 	return connect.NewResponse(&planv1.LeadServiceMoveResponse{Seat: seat, Note: note}), nil
+}
+
+// GetCircle implements LeadService.GetCircle: returns the global Summoning Circle rows for all worker kinds.
+func (s *LeadService) GetCircle(
+	_ context.Context, _ *connect.Request[planv1.LeadServiceGetCircleRequest],
+) (*connect.Response[planv1.LeadServiceGetCircleResponse], error) {
+	return connect.NewResponse(&planv1.LeadServiceGetCircleResponse{
+		Rows: ReadCircle(s.Wishes.home()),
+	}), nil
+}
+
+// SetCircle implements LeadService.SetCircle: validates and stores one row of the global Summoning Circle in
+// settings.json, keeping the lead seat in sync when WORKER_KIND_LEAD changes.
+func (s *LeadService) SetCircle(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceSetCircleRequest],
+) (*connect.Response[planv1.LeadServiceSetCircleResponse], error) {
+	home := s.Wishes.home()
+	MigrateCircle(home)
+	kind := req.Msg.GetKind()
+	if !slices.Contains(CircleRowOrder, kind) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown worker kind %v", kind))
+	}
+	rawModel := req.Msg.GetModel()
+	leadMoved := false
+	if kind == planv1.WorkerKind_WORKER_KIND_LEAD {
+		p := req.Msg.GetProvider()
+		if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+			if rawModel != "" {
+				p = ProviderForCircleModel(rawModel)
+			}
+			if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+				p = ReadLeadSeat(home).GetProvider()
+			}
+		}
+		if err := LeadAgent(p); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		if p != planv1.Provider_PROVIDER_FAKE {
+			if err := ValidateProviderModel(p, rawModel); err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+		}
+		leadMoved = true
+	} else if req.Msg.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || rawModel != "" {
+		p := req.Msg.GetProvider()
+		if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+			p = ProviderForCircleModel(rawModel)
+		}
+		if kind == planv1.WorkerKind_WORKER_KIND_QUESTION && !CanReadOnly(p) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"provider %s cannot run a question worker (read-only): choose claude or codex", providerName(p)))
+		}
+		if kind == planv1.WorkerKind_WORKER_KIND_IFRIT && !CanIfrit(p) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"provider %s cannot run an ifrit: choose claude or antigravity", providerName(p)))
+		}
+		if err := ValidateProviderModel(p, rawModel); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+	}
+	err := write(ctx, s.Wishes.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+		return changeSettings(home, func(settings *uiv1.Settings) error {
+			if kind == planv1.WorkerKind_WORKER_KIND_LEAD {
+				p := req.Msg.GetProvider()
+				m := NormalizeCircleModel(req.Msg.GetModel())
+				if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+					p = cmp.Or(ProviderForCircleModel(m), settings.GetLead().GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
+				}
+				if m == "" {
+					m = DefaultCircleModel(p)
+				}
+				account := settings.GetLead().GetAccount()
+				if account != "" && settings.GetLead().GetProvider() != p {
+					account = ""
+				}
+				settings.Lead = &planv1.LeadSeat{Provider: p, Model: m, Account: account}
+				settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
+					Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
+					Provider: p,
+					Model:    m,
+				})
+				return nil
+			}
+			if req.Msg.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED && req.Msg.GetModel() == "" {
+				settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{Kind: kind})
+				return nil
+			}
+			p := req.Msg.GetProvider()
+			m := NormalizeCircleModel(req.Msg.GetModel())
+			if p == planv1.Provider_PROVIDER_UNSPECIFIED {
+				p = ProviderForCircleModel(m)
+			}
+			if m == "" {
+				m = DefaultCircleModel(p)
+			}
+			settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
+				Kind:     kind,
+				Provider: p,
+				Model:    m,
+			})
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	if leadMoved {
+		if d := s.Wishes.drive(); d != nil && (d.Failure() != "" || d.LeadLimit() != nil) {
+			d.SetLimit(nil, "")
+			d.askRetry()
+		}
+	}
+	s.Wishes.ChangeLead()
+	return connect.NewResponse(&planv1.LeadServiceSetCircleResponse{Rows: ReadCircle(home)}), nil
 }
 
 // providerWord is how a command names an agent: claude, codex.

@@ -844,16 +844,22 @@ func (h *Harness) spawn(
 		return nil, err
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
-	// The project's settings fill what the request leaves out (docs/team-settings.md). A watcher runs a command:
-	// none applies to it.
+	// The Summoning Circle (settings.json) and the project's settings fill what the request leaves out
+	// (docs/team-settings.md). A watcher runs a command: none applies to it.
 	var settings plan.Settings
 	var settingsErr error
+	defaultProvider := planv1.Provider_PROVIDER_UNSPECIFIED
+	defaultModel := ""
 	if req.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		if settings, settingsErr = plan.LoadSettings(h.home, project); settingsErr != nil {
 			settings = plan.ResolveSettings(nil, nil)
 		}
+		defaultProvider, defaultModel = settings.Provider, settings.Model
+		if cp, cm, ok := plan.ResolveWorkerSeat(h.home, workerKindOf(req, task)); ok {
+			defaultProvider, defaultModel = cp, cm
+		}
 	}
-	kind := cmp.Or(req.GetProvider(), settings.Provider, planv1.Provider_PROVIDER_CLAUDE)
+	kind := cmp.Or(req.GetProvider(), defaultProvider, planv1.Provider_PROVIDER_CLAUDE)
 	src, err := forkSource(ctx, h.store, wish, req)
 	if err != nil {
 		return nil, plan.Status(err)
@@ -878,8 +884,8 @@ func (h *Harness) spawn(
 	}
 	// A question worker's model and budget are the project's question workers', in its request.
 	if kind != planv1.Provider_PROVIDER_WATCH && !questionWorker(task) {
-		if task.Model == "" && kind == settings.Provider {
-			task.Model = settings.Model
+		if task.Model == "" && kind == defaultProvider {
+			task.Model = defaultModel
 		}
 		if task.MaxBudgetUsd == 0 {
 			task.MaxBudgetUsd = settings.MaxBudgetUSD
@@ -2925,6 +2931,33 @@ func DefaultModel(p planv1.Provider) string {
 		return "gpt-5.5"
 	default:
 		return ""
+	}
+}
+
+// workerKindOf returns the Summoning Circle worker kind for a task being spawned or inspected.
+func workerKindOf(req *planv1.TaskServiceSpawnRequest, t *planv1.Task) planv1.WorkerKind {
+	if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+		return planv1.WorkerKind_WORKER_KIND_QUESTION
+	}
+	if t.GetReview() != nil {
+		return planv1.WorkerKind_WORKER_KIND_REVIEW
+	}
+	if t.GetCorrection() != nil {
+		return planv1.WorkerKind_WORKER_KIND_CORRECTION
+	}
+	k := t.GetKind()
+	if req != nil && k == planv1.TaskKind_TASK_KIND_UNSPECIFIED {
+		k = req.GetKind()
+	}
+	switch k {
+	case planv1.TaskKind_TASK_KIND_INVESTIGATION:
+		return planv1.WorkerKind_WORKER_KIND_INVESTIGATION
+	case planv1.TaskKind_TASK_KIND_MOCKUP:
+		return planv1.WorkerKind_WORKER_KIND_MOCKUP
+	case planv1.TaskKind_TASK_KIND_IFRIT:
+		return planv1.WorkerKind_WORKER_KIND_IFRIT
+	default:
+		return planv1.WorkerKind_WORKER_KIND_WORK
 	}
 }
 

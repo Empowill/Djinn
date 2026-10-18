@@ -105,12 +105,12 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 	return args, nil
 }
 
-// agyModel maps model identifiers for Antigravity's Argon model ("gemini-4-argon-high", "gemini-4-argon", "argon")
-// and case variants of "Gemini 4 Argon (High)" to the exact name agy expects on --model: "Gemini 4 Argon (High)".
+// agyModel maps short aliases or legacy labels for Antigravity's Argon model ("gemini-4-argon", "argon",
+// "Gemini 4 Argon (High)") to the canonical model ID agy expects on --model: "gemini-4-argon-high".
 func agyModel(model string) string {
 	switch strings.ToLower(strings.TrimSpace(model)) {
 	case "gemini 4 argon (high)", "gemini-4-argon-high", "gemini-4-argon", "argon":
-		return "Gemini 4 Argon (High)"
+		return "gemini-4-argon-high"
 	default:
 		return model
 	}

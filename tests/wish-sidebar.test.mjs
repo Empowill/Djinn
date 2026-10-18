@@ -478,10 +478,10 @@ test("the Summoning Circle sits below the Grimoire at the bottom of the side pan
   assert.ok(grimoire >= 0 && summoning > grimoire, open);
   assert.match(
     open,
-    /<button class="nav-item summoning-nav" title="Choose per project which agent and model answer new workers and question investigations" aria-label="Summoning Circle"><svg[^>]*lucide-compass[^>]*>[^]*?<\/svg><span>Summoning Circle<\/span><\/button>$/,
+    /<button class="nav-item summoning-nav" title="Choose for each kind of worker which model answers across all projects" aria-label="Summoning Circle"><svg[^>]*lucide-compass[^>]*>[^]*?<\/svg><span>Summoning Circle<\/span><\/button>$/,
   );
   assert.match(
     render(true, () => {}),
-    /<button class="nav-item summoning-nav" title="Choose per project which agent and model answer new workers and question investigations" aria-label="Summoning Circle"><svg[^>]*lucide-compass[^>]*>[^]*?<\/svg><\/button>$/,
+    /<button class="nav-item summoning-nav" title="Choose for each kind of worker which model answers across all projects" aria-label="Summoning Circle"><svg[^>]*lucide-compass[^>]*>[^]*?<\/svg><\/button>$/,
   );
 });

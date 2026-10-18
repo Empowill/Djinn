@@ -107,9 +107,6 @@ const (
 	// ProjectServiceAcknowledgeProcedure is the fully-qualified name of the ProjectService's
 	// Acknowledge RPC.
 	ProjectServiceAcknowledgeProcedure = "/plan.v1.ProjectService/Acknowledge"
-	// ProjectServiceSetDefaultsProcedure is the fully-qualified name of the ProjectService's
-	// SetDefaults RPC.
-	ProjectServiceSetDefaultsProcedure = "/plan.v1.ProjectService/SetDefaults"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -209,6 +206,10 @@ const (
 	LeadServiceRemoveAccountProcedure = "/plan.v1.LeadService/RemoveAccount"
 	// LeadServiceChooseProcedure is the fully-qualified name of the LeadService's Choose RPC.
 	LeadServiceChooseProcedure = "/plan.v1.LeadService/Choose"
+	// LeadServiceGetCircleProcedure is the fully-qualified name of the LeadService's GetCircle RPC.
+	LeadServiceGetCircleProcedure = "/plan.v1.LeadService/GetCircle"
+	// LeadServiceSetCircleProcedure is the fully-qualified name of the LeadService's SetCircle RPC.
+	LeadServiceSetCircleProcedure = "/plan.v1.LeadService/SetCircle"
 	// BlockServicePutProcedure is the fully-qualified name of the BlockService's Put RPC.
 	BlockServicePutProcedure = "/plan.v1.BlockService/Put"
 	// BlockServiceListProcedure is the fully-qualified name of the BlockService's List RPC.
@@ -696,10 +697,6 @@ type ProjectServiceClient interface {
 	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
 	// them. They are applied already; djinn project show lists the journal of changes.
 	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
-	// Set your default provider and models for a project's workers and question workers (the Summoning Circle), or take
-	// your choices back (--unset). Stored in your own settings file, never in the repository: it wins over the team's
-	// .agents/settings.txtpb. Setting the provider sets its model with it. Refused for an unknown provider or model.
-	SetDefaults(context.Context, *connect.Request[v1.ProjectServiceSetDefaultsRequest]) (*connect.Response[v1.ProjectServiceSetDefaultsResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -788,12 +785,6 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
 			connect.WithClientOptions(opts...),
 		),
-		setDefaults: connect.NewClient[v1.ProjectServiceSetDefaultsRequest, v1.ProjectServiceSetDefaultsResponse](
-			httpClient,
-			baseURL+ProjectServiceSetDefaultsProcedure,
-			connect.WithSchema(projectServiceMethods.ByName("SetDefaults")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
@@ -811,7 +802,6 @@ type projectServiceClient struct {
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
 	setBranch    *connect.Client[v1.ProjectServiceSetBranchRequest, v1.ProjectServiceSetBranchResponse]
 	acknowledge  *connect.Client[v1.ProjectServiceAcknowledgeRequest, v1.ProjectServiceAcknowledgeResponse]
-	setDefaults  *connect.Client[v1.ProjectServiceSetDefaultsRequest, v1.ProjectServiceSetDefaultsResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -874,11 +864,6 @@ func (c *projectServiceClient) Acknowledge(ctx context.Context, req *connect.Req
 	return c.acknowledge.CallUnary(ctx, req)
 }
 
-// SetDefaults calls plan.v1.ProjectService.SetDefaults.
-func (c *projectServiceClient) SetDefaults(ctx context.Context, req *connect.Request[v1.ProjectServiceSetDefaultsRequest]) (*connect.Response[v1.ProjectServiceSetDefaultsResponse], error) {
-	return c.setDefaults.CallUnary(ctx, req)
-}
-
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
@@ -917,10 +902,6 @@ type ProjectServiceHandler interface {
 	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
 	// them. They are applied already; djinn project show lists the journal of changes.
 	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
-	// Set your default provider and models for a project's workers and question workers (the Summoning Circle), or take
-	// your choices back (--unset). Stored in your own settings file, never in the repository: it wins over the team's
-	// .agents/settings.txtpb. Setting the provider sets its model with it. Refused for an unknown provider or model.
-	SetDefaults(context.Context, *connect.Request[v1.ProjectServiceSetDefaultsRequest]) (*connect.Response[v1.ProjectServiceSetDefaultsResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1005,12 +986,6 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
 		connect.WithHandlerOptions(opts...),
 	)
-	projectServiceSetDefaultsHandler := connect.NewUnaryHandler(
-		ProjectServiceSetDefaultsProcedure,
-		svc.SetDefaults,
-		connect.WithSchema(projectServiceMethods.ByName("SetDefaults")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceAddProcedure:
@@ -1037,8 +1012,6 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceSetBranchHandler.ServeHTTP(w, r)
 		case ProjectServiceAcknowledgeProcedure:
 			projectServiceAcknowledgeHandler.ServeHTTP(w, r)
-		case ProjectServiceSetDefaultsProcedure:
-			projectServiceSetDefaultsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1094,10 +1067,6 @@ func (UnimplementedProjectServiceHandler) SetBranch(context.Context, *connect.Re
 
 func (UnimplementedProjectServiceHandler) Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Acknowledge is not implemented"))
-}
-
-func (UnimplementedProjectServiceHandler) SetDefaults(context.Context, *connect.Request[v1.ProjectServiceSetDefaultsRequest]) (*connect.Response[v1.ProjectServiceSetDefaultsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetDefaults is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.
@@ -2349,6 +2318,11 @@ type LeadServiceClient interface {
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
 	Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error)
+	// Read the global Summoning Circle: one row per kind of model-calling worker across all projects.
+	GetCircle(context.Context, *connect.Request[v1.LeadServiceGetCircleRequest]) (*connect.Response[v1.LeadServiceGetCircleResponse], error)
+	// Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
+	// question). For every kind except lead, an empty model means "Same as lead".
+	SetCircle(context.Context, *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error)
 }
 
 // NewLeadServiceClient constructs a client for the plan.v1.LeadService service. By default, it uses
@@ -2452,6 +2426,19 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("Choose")),
 			connect.WithClientOptions(opts...),
 		),
+		getCircle: connect.NewClient[v1.LeadServiceGetCircleRequest, v1.LeadServiceGetCircleResponse](
+			httpClient,
+			baseURL+LeadServiceGetCircleProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("GetCircle")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		setCircle: connect.NewClient[v1.LeadServiceSetCircleRequest, v1.LeadServiceSetCircleResponse](
+			httpClient,
+			baseURL+LeadServiceSetCircleProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("SetCircle")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -2471,6 +2458,8 @@ type leadServiceClient struct {
 	addAccount    *connect.Client[v1.LeadServiceAddAccountRequest, v1.LeadServiceAddAccountResponse]
 	removeAccount *connect.Client[v1.LeadServiceRemoveAccountRequest, v1.LeadServiceRemoveAccountResponse]
 	choose        *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
+	getCircle     *connect.Client[v1.LeadServiceGetCircleRequest, v1.LeadServiceGetCircleResponse]
+	setCircle     *connect.Client[v1.LeadServiceSetCircleRequest, v1.LeadServiceSetCircleResponse]
 }
 
 // Set calls plan.v1.LeadService.Set.
@@ -2541,6 +2530,16 @@ func (c *leadServiceClient) RemoveAccount(ctx context.Context, req *connect.Requ
 // Choose calls plan.v1.LeadService.Choose.
 func (c *leadServiceClient) Choose(ctx context.Context, req *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
 	return c.choose.CallUnary(ctx, req)
+}
+
+// GetCircle calls plan.v1.LeadService.GetCircle.
+func (c *leadServiceClient) GetCircle(ctx context.Context, req *connect.Request[v1.LeadServiceGetCircleRequest]) (*connect.Response[v1.LeadServiceGetCircleResponse], error) {
+	return c.getCircle.CallUnary(ctx, req)
+}
+
+// SetCircle calls plan.v1.LeadService.SetCircle.
+func (c *leadServiceClient) SetCircle(ctx context.Context, req *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error) {
+	return c.setCircle.CallUnary(ctx, req)
 }
 
 // LeadServiceHandler is an implementation of the plan.v1.LeadService service.
@@ -2614,6 +2613,11 @@ type LeadServiceHandler interface {
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
 	Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error)
+	// Read the global Summoning Circle: one row per kind of model-calling worker across all projects.
+	GetCircle(context.Context, *connect.Request[v1.LeadServiceGetCircleRequest]) (*connect.Response[v1.LeadServiceGetCircleResponse], error)
+	// Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
+	// question). For every kind except lead, an empty model means "Same as lead".
+	SetCircle(context.Context, *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error)
 }
 
 // NewLeadServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -2713,6 +2717,19 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("Choose")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceGetCircleHandler := connect.NewUnaryHandler(
+		LeadServiceGetCircleProcedure,
+		svc.GetCircle,
+		connect.WithSchema(leadServiceMethods.ByName("GetCircle")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceSetCircleHandler := connect.NewUnaryHandler(
+		LeadServiceSetCircleProcedure,
+		svc.SetCircle,
+		connect.WithSchema(leadServiceMethods.ByName("SetCircle")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.LeadService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LeadServiceSetProcedure:
@@ -2743,6 +2760,10 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceRemoveAccountHandler.ServeHTTP(w, r)
 		case LeadServiceChooseProcedure:
 			leadServiceChooseHandler.ServeHTTP(w, r)
+		case LeadServiceGetCircleProcedure:
+			leadServiceGetCircleHandler.ServeHTTP(w, r)
+		case LeadServiceSetCircleProcedure:
+			leadServiceSetCircleHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2806,6 +2827,14 @@ func (UnimplementedLeadServiceHandler) RemoveAccount(context.Context, *connect.R
 
 func (UnimplementedLeadServiceHandler) Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Choose is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) GetCircle(context.Context, *connect.Request[v1.LeadServiceGetCircleRequest]) (*connect.Response[v1.LeadServiceGetCircleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.GetCircle is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) SetCircle(context.Context, *connect.Request[v1.LeadServiceSetCircleRequest]) (*connect.Response[v1.LeadServiceSetCircleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.SetCircle is not implemented"))
 }
 
 // BlockServiceClient is a client for the plan.v1.BlockService service.

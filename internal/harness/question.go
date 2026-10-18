@@ -238,6 +238,9 @@ func (h *Harness) startQuestionWorker(
 		return nil, err
 	}
 	provider, model, _ := questionProvider(settings)
+	if cp, cm, ok := plan.ResolveWorkerSeat(h.home, planv1.WorkerKind_WORKER_KIND_QUESTION); ok && plan.CanReadOnly(cp) {
+		provider, model = cp, cm
+	}
 	task := &planv1.Task{Id: store.NewID(), Role: role, Question: q.GetCode()}
 	contextFile := ""
 	if writesDirs(provider) {

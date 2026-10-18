@@ -302,7 +302,7 @@ message ProjectSettings {
   // provider's own default. It applies only to a task that runs this provider.
   optional string model = 2 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
   ];
   // Most a worker may spend, in US dollars, when a task gives none and its provider can enforce it. 0: no limit.
   optional double max_budget_usd = 3 [(buf.validate.field).double = {
@@ -354,7 +354,7 @@ message ProjectSettings {
   // default for another; empty: the provider's own default.
   optional string question_model = 11 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
   ];
   // Most a question worker may spend, in US dollars, when its provider can enforce it. Not set: 2. 0: no limit.
   optional double question_budget_usd = 12 [(buf.validate.field).double = {
@@ -977,6 +977,40 @@ message Account {
   string label = 3;
   // The agent's folder for it, absolute: ~/.claude-<name> or ~/.codex-<name> unless given.
   string config_directory = 4;
+}
+
+// WorkerKind is a kind of model-calling worker in the Summoning Circle.
+enum WorkerKind {
+  // Unspecified worker kind.
+  WORKER_KIND_UNSPECIFIED = 0;
+  // Djinn (the lead session).
+  WORKER_KIND_LEAD = 1;
+  // Investigation worker (read-only codebase research).
+  WORKER_KIND_INVESTIGATION = 2;
+  // Mockup worker (HTML/CSS interface options).
+  WORKER_KIND_MOCKUP = 3;
+  // Ifrit (the interactive room).
+  WORKER_KIND_IFRIT = 4;
+  // Work task (standard code implementation).
+  WORKER_KIND_WORK = 5;
+  // Merge correction worker (branch conflict resolution and lint/test repair).
+  WORKER_KIND_CORRECTION = 6;
+  // Merge review worker (adversarial review before merge).
+  WORKER_KIND_REVIEW = 7;
+  // Question investigator (fact verification before asking a question).
+  WORKER_KIND_QUESTION = 8;
+}
+
+// WorkerSeat is the chosen provider and model for one kind of worker in the
+// global Summoning Circle. For every kind except WORKER_KIND_LEAD, an empty
+// model means "Same as lead".
+message WorkerSeat {
+  // Kind of worker.
+  WorkerKind kind = 1;
+  // Agent provider. PROVIDER_UNSPECIFIED means "Same as lead" (or Claude for lead).
+  Provider provider = 2;
+  // Model ID (e.g. "claude-sonnet-5-5", "gemini-4-argon-high"). Empty means "Same as lead".
+  string model = 3;
 }
 
 // LeadSeat is where the lead Djinn drives runs: its agent, its model, its account. Each batch's session starts there,
@@ -2909,13 +2943,6 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Set your default provider and models for a project's workers and question workers (the Summoning Circle), or take
-  // your choices back (--unset). Stored in your own settings file, never in the repository: it wins over the team's
-  // .agents/settings.txtpb. Setting the provider sets its model with it. Refused for an unknown provider or model.
-  rpc SetDefaults(ProjectServiceSetDefaultsRequest) returns (ProjectServiceSetDefaultsResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
-    option (djinn.v1.writes) = WRITES_CHANGE;
-  }
 }
 
 message ProjectServiceAddRequest {
@@ -3183,38 +3210,6 @@ message ProjectServiceAcknowledgeResponse {
 message ProjectServiceSetBranchResponse {
   // The reference branch now, as Djinn finds it; unset when it finds none.
   ProjectReference reference = 1;
-  // Your settings file, in Djinn's data folder.
-  string developer_file = 2;
-}
-
-message ProjectServiceSetDefaultsRequest {
-  // The project, by name (case ignored) or identifier.
-  string project = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.max_len = 100
-  ];
-  // Kind of agent of the project's workers, when a task names none: claude, codex or antigravity.
-  optional Provider provider = 2 [(buf.validate.field).enum = {
-    defined_only: true
-    not_in: [0, 5]
-  }];
-  // Model of the project's workers, a model of the provider; empty for the provider's own default.
-  optional string model = 3 [
-    (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
-  ];
-  // Model of the project's question workers, a model of the provider; empty for the provider's own default.
-  optional string question_model = 4 [
-    (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
-  ];
-  // Take your choices back: the team's file names the provider and models again, else Djinn's defaults.
-  bool unset = 5;
-}
-
-message ProjectServiceSetDefaultsResponse {
-  // The settings the project's workers get now, and where each comes from.
-  repeated ProjectSetting settings = 1;
   // Your settings file, in Djinn's data folder.
   string developer_file = 2;
 }
@@ -4434,6 +4429,17 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Read the global Summoning Circle: one row per kind of model-calling worker across all projects.
+  rpc GetCircle(LeadServiceGetCircleRequest) returns (LeadServiceGetCircleResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
+  // question). For every kind except lead, an empty model means "Same as lead".
+  rpc SetCircle(LeadServiceSetCircleRequest) returns (LeadServiceSetCircleResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 // LeadPrompt is a choice the lead's agent shows in its terminal, waiting for the developer, as read from its screen:
@@ -4516,6 +4522,8 @@ message LeadServiceGetResponse {
   repeated Account accounts = 8;
   // The usage limit the driven lead hit, and where it may move; unset once a batch ends its turn, or it moves.
   LeadLimit limit = 9;
+  // The global Summoning Circle: one row per kind of model-calling worker across all projects.
+  repeated WorkerSeat circle = 10;
 }
 
 // LeadExit is how the program of the lead's terminal ended.
@@ -4605,7 +4613,7 @@ message LeadServiceMoveRequest {
   // The model; empty for the agent's default.
   string model = 2 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
   ];
   // The account, by its name (djinn lead accounts); empty for the agent's own sign-in.
   string account = 3 [
@@ -4619,6 +4627,34 @@ message LeadServiceMoveResponse {
   LeadSeat seat = 1;
   // What changes, in a line: where the next batch runs.
   string note = 2;
+}
+
+message LeadServiceGetCircleRequest {}
+
+message LeadServiceGetCircleResponse {
+  // One row per kind of model-calling worker in the Summoning Circle, in order:
+  // lead, investigation, mockup, ifrit, work, correction, review, question.
+  repeated WorkerSeat rows = 1;
+}
+
+message LeadServiceSetCircleRequest {
+  // The kind of worker whose row to set.
+  WorkerKind kind = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // The model ID (e.g. "claude-sonnet-5-5", "gemini-4-argon-high"), or empty for "Same as lead".
+  string model = 2 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+  ];
+  // Optional provider when the model is not in the standard catalog; inferred from model when omitted.
+  Provider provider = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+message LeadServiceSetCircleResponse {
+  // All rows of the Summoning Circle after the update.
+  repeated WorkerSeat rows = 1;
 }
 
 message LeadServiceAccountsRequest {}
@@ -5120,7 +5156,7 @@ message TaskServiceSpawnRequest {
   // Model of the agent; by default the provider's.
   string model = 6 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
   ];
   // Most the worker may spend, in US dollars, when the provider can enforce it.
   double max_budget_usd = 7 [(buf.validate.field).double.gte = 0];
@@ -5790,7 +5826,7 @@ message TaskServiceUpdateRequest {
   // Model of the agent; empty for the provider's default.
   optional string model = 5 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
   ];
   // The azima the task belongs to: its code (T07) or its identifier. Empty: the task is part of no azima.
   optional string part_of = 6 [(buf.validate.field).string.max_len = 64];
