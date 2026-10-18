@@ -272,11 +272,13 @@ type Projects struct {
 
 // fillProject adds to project what is computed on every read, and returns what Djinn finds in its configuration:
 // project.to_fix counts the things to fix, project.first_fix says the first.
-func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) []*planv1.ProjectNotice {
+func (p *Projects) fillProject(ctx context.Context, project *planv1.Project, wantRef bool) (Settings, []*planv1.ProjectNotice, *planv1.ProjectReference) {
 	if project == nil {
-		return nil
+		return Settings{}, nil, nil
 	}
-	repo, dev, _, _ := loadSettings(p.Home, project)
+	cfg := ProjectConfig(p.Home, project)
+	files := readSettingsFilesConfig(p.Home, project, cfg)
+	repo, dev, _, _ := loadSettingsFiles(files)
 	settings := ResolveSettings(repo, dev)
 	project.Push = settings.Push
 	project.PushStrategy = settings.PushStrategy
@@ -286,10 +288,10 @@ func (p *Projects) fillProject(ctx context.Context, project *planv1.Project) []*
 			project.Syncs = syncs
 		}
 	}
-	notices := p.projectNotices(ctx, project)
+	notices, ref := p.projectNoticesWith(ctx, project, cfg, files, settings, wantRef)
 	project.ToFix = countToFix(notices)
 	project.FirstFix = firstFix(notices)
-	return notices
+	return settings, notices, ref
 }
 
 func (p *Projects) wishForProject(ctx context.Context, projectID, wishNameOrID string) (*planv1.Wish, error) {
@@ -391,7 +393,7 @@ func (p *Projects) Add(
 	if err != nil {
 		return nil, err
 	}
-	p.fillProject(ctx, project)
+	p.fillProject(ctx, project, false)
 	return connect.NewResponse(&planv1.ProjectServiceAddResponse{Project: project}), nil
 }
 
@@ -406,7 +408,7 @@ func (p *Projects) List(
 	// fill side by side, or the window waits for their sum before it shows the wishes.
 	var wg sync.WaitGroup
 	for _, project := range projects {
-		wg.Go(func() { p.fillProject(ctx, project) })
+		wg.Go(func() { p.fillProject(ctx, project, false) })
 	}
 	wg.Wait()
 	return connect.NewResponse(&planv1.ProjectServiceListResponse{Projects: projects}), nil
@@ -419,13 +421,11 @@ func (p *Projects) Show(
 	if err != nil {
 		return nil, Status(err)
 	}
-	notices := p.fillProject(ctx, project)
-	repo, dev, _, _ := loadSettings(p.Home, project)
-	settings := ResolveSettings(repo, dev)
+	settings, notices, ref := p.fillProject(ctx, project, true)
 	out := &planv1.ProjectServiceShowResponse{
 		Project: project, Settings: settings.Rows(), Setup: settings.Setup, Checks: settings.Checks,
 		WatchCommands: settings.WatchCommands, ServeCommands: settings.ServeCommands, Notices: notices,
-		Reference: p.projectReference(ctx, project, settings.MainBranch, settings.MainBranchFrom),
+		Reference: ref,
 	}
 	out.RepositoryFile, out.DeveloperFile = settingsFiles(p.Home, project)
 	if watches, err := store.List[*planv1.ConfigWatch](ctx, p.Store, store.Where{"project_id": project.GetId()}); err == nil && len(watches) > 0 {
@@ -494,7 +494,7 @@ func (p *Projects) SetPush(
 	if err != nil {
 		return nil, Status(err)
 	}
-	p.fillProject(ctx, project)
+	p.fillProject(ctx, project, false)
 	return connect.NewResponse(&planv1.ProjectServiceSetPushResponse{Project: project}), nil
 }
 

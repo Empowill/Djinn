@@ -118,13 +118,18 @@ type heldSkill struct {
 
 // usedSkills are the skills project uses, its own then those it summons that are found.
 func usedSkills(ctx context.Context, r store.Reader, home string, project *planv1.Project) ([]heldSkill, error) {
-	var out []heldSkill
-	for _, d := range ProjectSkills(ConfigDir(home, project)) {
-		out = append(out, heldSkill{SkillDir: d, HolderID: project.GetId(), Holder: project.GetName()})
-	}
+	own := ProjectSkills(ConfigDir(home, project))
 	summoned, err := SummonedSkills(ctx, r, home, project)
 	if err != nil {
 		return nil, err
+	}
+	return usedSkillsFrom(project, own, summoned), nil
+}
+
+func usedSkillsFrom(project *planv1.Project, own []SkillDir, summoned []Summoned) []heldSkill {
+	var out []heldSkill
+	for _, d := range own {
+		out = append(out, heldSkill{SkillDir: d, HolderID: project.GetId(), Holder: project.GetName()})
 	}
 	for _, s := range summoned {
 		if s.Missing == "" {
@@ -132,7 +137,7 @@ func usedSkills(ctx context.Context, r store.Reader, home string, project *planv
 			out = append(out, heldSkill{SkillDir: s.SkillDir, HolderID: s.ProjectID, Holder: holder})
 		}
 	}
-	return out, nil
+	return out
 }
 
 // declaredSources are the inbox sources of the skills the projects use, their own then those they summon, in the
@@ -141,6 +146,12 @@ func usedSkills(ctx context.Context, r store.Reader, home string, project *planv
 // by several projects is one source, run in the first one's folder. A source plugged in whose skill no longer
 // declares it comes last, with why: it runs nothing, and can be unplugged.
 func declaredSources(ctx context.Context, r store.Reader, home string, projects []*planv1.Project) ([]*Source, error) {
+	return declaredSourcesWithUsed(ctx, r, home, projects, nil)
+}
+
+func declaredSourcesWithUsed(
+	ctx context.Context, r store.Reader, home string, projects []*planv1.Project, knownUsed map[string][]heldSkill,
+) ([]*Source, error) {
 	plugged, err := store.List[*planv1.PluggedSource](ctx, r, nil)
 	if err != nil {
 		return nil, err
@@ -174,9 +185,12 @@ func declaredSources(ctx context.Context, r store.Reader, home string, projects 
 		if p.GetDirectory() == "" {
 			continue
 		}
-		used, err := usedSkills(ctx, r, home, p)
-		if err != nil {
-			return nil, err
+		used, ok := knownUsed[p.GetId()]
+		if !ok {
+			used, err = usedSkills(ctx, r, home, p)
+			if err != nil {
+				return nil, err
+			}
 		}
 		for _, d := range used {
 			// The skill of its holder, not its folder: projects with the same configuration share a folder of the cache.

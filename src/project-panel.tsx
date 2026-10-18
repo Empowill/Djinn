@@ -140,7 +140,10 @@ export function ProjectPanel({
   // A source plugged in or said no to here, or from the command line, changes what waits: read the notices again.
   const firstSources = useRef(sources);
   useEffect(() => {
-    if (firstSources.current !== sources) void reshow();
+    if (firstSources.current !== sources) {
+      firstSources.current = sources;
+      void reshow();
+    }
   }, [sources, reshow]);
 
   // The projects read again (a look at the reference branch found a change, one was marked seen elsewhere): read
@@ -148,7 +151,10 @@ export function ProjectPanel({
   const listed = useData((s) => s.projects.find((p) => p.id === project.id));
   const firstListed = useRef(listed);
   useEffect(() => {
-    if (firstListed.current !== listed) void reshow();
+    if (firstListed.current !== listed) {
+      firstListed.current = listed;
+      void reshow();
+    }
   }, [listed, reshow]);
 
   const currentPush =
