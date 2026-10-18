@@ -17,10 +17,12 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// gitIn runs git with args in dir, as a test identity; what it printed, trimmed.
+// gitIn runs git with args in dir, as a test identity; what it printed, trimmed. No automatic maintenance after a
+// commit: one more git each time, which costs on Windows (W396).
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	args = append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)
+	args = append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false",
+		"-c", "maintenance.auto=false"}, args...)
 	out, err := exec.Command("git", args...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, out)
