@@ -328,66 +328,79 @@ test.describe("wish render performance @render", () => {
     }
 
     const changeMeasures: number[] = [];
-    for (let i = 0; i < runs; i++) {
-      const questionTitle = `Measure Question ${label} ${i + 1} ${randomUUID().slice(0, 8)}`;
-      const startMark = `change-start-${i}-${label}`;
-      const endMark = `change-end-${i}-${label}`;
-      const measureName = `change-duration-${i}-${label}`;
+    const asked: string[] = [];
+    try {
+      for (let i = 0; i < runs; i++) {
+        const questionTitle = `Measure Question ${label} ${i + 1} ${randomUUID().slice(0, 8)}`;
+        const startMark = `change-start-${i}-${label}`;
+        const endMark = `change-end-${i}-${label}`;
+        const measureName = `change-duration-${i}-${label}`;
 
-      // Start observer in the page before triggering the command
-      const waitPromise = page.evaluate(
-        async ({ questionTitle, startMark, endMark, measureName }) => {
-          return new Promise<number>((resolve) => {
-            const check = () => {
-              const cards = Array.from(
-                document.querySelectorAll(".question-card"),
-              );
-              const found = cards.some((c) =>
-                c.textContent?.includes(questionTitle),
-              );
-              if (found) {
-                performance.mark(endMark);
-                performance.measure(measureName, startMark, endMark);
-                const entries = performance.getEntriesByName(measureName);
-                resolve(entries[entries.length - 1]?.duration ?? 0);
-                return true;
-              }
-              return false;
-            };
+        // Start observer in the page before triggering the command
+        const waitPromise = page.evaluate(
+          async ({ questionTitle, startMark, endMark, measureName }) => {
+            return new Promise<number>((resolve) => {
+              const check = () => {
+                const cards = Array.from(
+                  document.querySelectorAll(".question-card"),
+                );
+                const found = cards.some((c) =>
+                  c.textContent?.includes(questionTitle),
+                );
+                if (found) {
+                  performance.mark(endMark);
+                  performance.measure(measureName, startMark, endMark);
+                  const entries = performance.getEntriesByName(measureName);
+                  resolve(entries[entries.length - 1]?.duration ?? 0);
+                  return true;
+                }
+                return false;
+              };
 
-            if (check()) return;
+              if (check()) return;
 
-            const observer = new MutationObserver(() => {
-              if (check()) {
-                observer.disconnect();
-              }
+              const observer = new MutationObserver(() => {
+                if (check()) {
+                  observer.disconnect();
+                }
+              });
+              observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+              });
             });
-            observer.observe(document.body, { childList: true, subtree: true });
-          });
-        },
-        { questionTitle, startMark, endMark, measureName },
-      );
+          },
+          { questionTitle, startMark, endMark, measureName },
+        );
 
-      await page.evaluate(
-        ({ startMark }) => {
-          performance.mark(startMark);
-        },
-        { startMark },
-      );
+        await page.evaluate(
+          ({ startMark }) => {
+            performance.mark(startMark);
+          },
+          { startMark },
+        );
 
-      djinn(
-        "question",
-        "ask",
-        questionTitle,
-        wishId,
-        "--options",
-        "A",
-        "--options",
-        "B",
-      );
+        const res = JSON.parse(
+          djinn(
+            "question",
+            "ask",
+            questionTitle,
+            wishId,
+            "--options",
+            "A",
+            "--options",
+            "B",
+            "--json",
+          ),
+        );
+        asked.push(res.question.id);
 
-      const duration = await waitPromise;
-      changeMeasures.push(duration);
+        const duration = await waitPromise;
+        changeMeasures.push(duration);
+      }
+    } finally {
+      for (const id of asked)
+        djinn("question", "withdraw", id, "--note", "measured");
     }
 
     const medianOpen = median(openMeasures);
