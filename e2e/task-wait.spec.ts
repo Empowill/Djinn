@@ -88,10 +88,12 @@ test("a held task that starts loses its wait line, and its page shows the wait a
         `after waiting \\d+ s: (waits for ${first.code} \\(running\\)|1 worker runs, the most this machine holds)`,
       ),
     );
-    // The waiting line is past: folded into the start, never a line of its own.
-    await expect(start.locator(".wish-event-waited")).toContainText(
-      `waiting: waits for ${first.code} (running)`,
-    );
+    // The waiting line is past: folded into the start (with the slot wait when one followed), never a line of its own.
+    await expect(
+      start.locator(".wish-event-waited", {
+        hasText: `waiting: waits for ${first.code} (running)`,
+      }),
+    ).toBeVisible();
     await expect(
       card.locator(".wish-event-text").filter({ hasText: /^waiting: / }),
     ).toHaveCount(0);
