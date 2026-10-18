@@ -554,7 +554,7 @@
   "page.events_sub": "Ce que les workers ont dit, leurs changements d’état et leurs erreurs, le plus récent d’abord.",
   "page.finished": "Terminées",
   "page.investigating": "En investigation",
-  "page.journal": "Journal",
+  "page.journal": "Historique",
   "page.journal_cut": "Entrées plus anciennes non affichées : {count}.",
   "page.journal_sub": "Les commandes et le journal du souhait, le plus récent d’abord.",
   "page.last_event": "Dernier événement",

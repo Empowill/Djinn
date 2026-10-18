@@ -117,7 +117,7 @@ test("the older decisions and journal entries unfold below what you read", async
   await expect(scroller).toHaveCSS("overflow-anchor", "none");
 
   // The journal: the 30 latest entries, then the line for the 10 others.
-  await page.getByRole("button", { name: /^Journal/ }).click();
+  await page.getByRole("button", { name: /^History/ }).click();
   const entries = page.locator(".journal-list tr");
   await expect(entries).toHaveCount(30);
   await expect(entries.first()).toContainText("Entry number 40");
