@@ -229,8 +229,8 @@ it, once the window knows your layout: at once in a Chromium browser, elsewhere 
 
 ## A wish's view
 
-The **Wish** tab: what waits for you (**Your move**), the questions being investigated, the journal (**Show the
-commands**), and the **Rights** of its workers in each project. Beside it, the **Tasks**, **Review**, **Decisions**
+The **Wish** tab: what waits for you (**Your move**), the questions being investigated, its **History**, and the
+**Rights** of its workers in each project. Beside it, the **Tasks**, **Review**, **Decisions**
 and **Tilasms** tabs, and last, discreet, **For agents**.
 
 **Rights** says what the wish's workers may do in a project, for every task to come: **The project decides** (its
@@ -476,7 +476,7 @@ and asks a new one only on a real doubt.
 What the Djinn and the workers write down for one another is a block: a hand-off, a reference, a report. Blocks are
 not for you: they wait in the last tab of the wish, **For agents**, with their count, each folded under its title. A
 click opens one: Markdown, shown as written, where a `mermaid` code block is drawn as a diagram, which **Expand**
-enlarges. A block of kind `decision` shows in the **Decisions** tab instead, the log blocks in the journal.
+enlarges. A block of kind `decision` shows in the **Decisions** tab instead, the log blocks under **History**.
 
 A report (a block of kind `report`) is one of these notes: nothing counts it nor asks you to read it. When one
 concerns you, it comes as a question that names it, by its title or its id: the card then shows **Report: …** with the

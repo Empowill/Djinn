@@ -93,7 +93,7 @@ import {
   isWithdrawn,
 } from "./data/format";
 import { ifritOut, litIfrits } from "./data/ifrit";
-import { type Entry, journal } from "./data/journal";
+import { type Entry, isLog, journal } from "./data/journal";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
@@ -1437,7 +1437,6 @@ export function WishView({
                 <Journal
                   wish={wish}
                   blocks={detail.blocks}
-                  total={detail.blocksTotal}
                   onMore={() => {
                     if (store) void store.loadMore(wish.id, Change.BLOCK);
                   }}
@@ -1612,18 +1611,16 @@ export function WaitingTasks({
   );
 }
 
-// Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for. The
-// latest entries show, the older ones fold behind a line (older.tsx).
+// Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for (or at
+// once when it has no log block). The latest entries show, the older ones fold behind a line (older.tsx).
 // WishService.Snapshot reads the whole wish, events included: it is read on a click, then again as the wish changes.
 function Journal({
   wish,
   blocks,
-  total,
   onMore,
 }: {
   wish: Wish;
   blocks: Block[];
-  total?: number;
   onMore?: () => void;
 }) {
   const clients = useClients();
@@ -1631,10 +1628,12 @@ function Journal({
   const [commands, setCommands] = useState(false);
   const [exp, setExp] = useState<WishExport>();
   const [error, setError] = useState("");
+  const hasLogs = useMemo(() => blocks.some(isLog), [blocks]);
+  const showCommands = commands || !hasLogs;
   // What the store read of the wish: a new one means the wish changed.
   const detail = useData((s) => s.details[wish.id]);
   useEffect(() => {
-    if (!commands || !shown) return;
+    if (!showCommands || !shown) return;
     let current = true;
     clients.wishes
       .snapshot({ wishId: wish.id })
@@ -1649,12 +1648,12 @@ function Journal({
     return () => {
       current = false;
     };
-  }, [clients, wish, commands, shown, detail]);
+  }, [clients, wish, showCommands, shown, detail]);
   const entries = useMemo(
-    () => journal(commands ? exp : undefined, blocks),
-    [commands, exp, blocks],
+    () => journal(showCommands ? exp : undefined, blocks),
+    [showCommands, exp, blocks],
   );
-  const totalCount = commands ? entries.length : (total ?? entries.length);
+  const totalCount = entries.length;
   const { shown: recent, more } = useRecent(totalCount);
   return (
     <section
@@ -1673,7 +1672,7 @@ function Journal({
             {totalCount > 0 && <span className="count">{totalCount}</span>}
           </h3>
         </button>
-        {shown && (
+        {shown && hasLogs && (
           <button
             className="text-button"
             onClick={() => setCommands(!commands)}

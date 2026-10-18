@@ -882,3 +882,135 @@ test("a new question renders after the older ones, a revision keeps the order an
   for (const handle of process._getActiveHandles())
     if (handle?.constructor?.name === "MessagePort") handle.unref();
 });
+
+// History (L27, Q81): its label is "History", its count matches only what its list shows (never BlockService's total
+// across decisions, reports and agent blocks), and when there are no log blocks, unfolding it shows the commands
+// without an extra click on "Show the commands".
+test("History counts only the entries it shows and shows commands without an extra click when there are no log blocks", async () => {
+  const container = setupMockDom();
+  const wishId = "01a14ba9-36fd-7e8a-92b9-3ffb1b873300";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  let blocks = [
+    { id: "b1", wishId, kind: "decision", title: "Pick brass", content: "Yes" },
+    { id: "b2", wishId, kind: "report", title: "Audit", content: "Clean" },
+    { id: "b3", wishId, kind: "section", title: "Plan", content: "Steps" },
+  ];
+  const commands = [
+    {
+      id: "c1",
+      at: at(1000),
+      method: "/plan.v1.WishService/Make",
+    },
+    {
+      id: "c2",
+      at: at(2000),
+      method: "/plan.v1.QuestionService/Answer",
+    },
+  ];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [lamp] }),
+      describe: () => ({ wish: lamp }),
+      snapshot: () => ({ export: { wish: lamp, commands } }),
+      watch: async function* () {},
+    });
+    service(s.TaskService, { list: () => ({ tasks: [] }) });
+    service(s.QuestionService, { list: () => ({ questions: [] }) });
+    service(s.BlockService, {
+      list: () => ({ blocks, total: 40 }),
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const close = djinn.store.open(wishId);
+  await djinn.store.changed(wishId, [s.Change.WISH]);
+  const root = s.createRoot(container);
+  try {
+    s.act(() => {
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(s.WishView, { wish: lamp, onToast() {} }),
+        ),
+      );
+    });
+    const nodes = (node, out = []) => {
+      out.push(node);
+      for (const child of node.childNodes ?? []) nodes(child, out);
+      return out;
+    };
+    const textOf = (node) =>
+      node.nodeType === 3
+        ? node.nodeValue
+        : node.childNodes.length
+          ? node.childNodes.map(textOf).join("")
+          : (node.textContent ?? "");
+    const props = (el) =>
+      el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+    const settle = async () => {
+      for (let i = 0; i < 4; i++)
+        await s.act(() => new Promise((r) => setTimeout(r, 0)));
+    };
+    const section = () =>
+      nodes(container).find((n) =>
+        /\bwish-journal\b/.test(n.attributes?.class ?? ""),
+      );
+    const foldBtn = () =>
+      nodes(section()).find((n) =>
+        /\bfold-heading\b/.test(n.attributes?.class ?? ""),
+      );
+    const countNode = () =>
+      nodes(foldBtn()).find((n) => /\bcount\b/.test(n.attributes?.class ?? ""));
+    const rows = () => nodes(section()).filter((n) => n.tagName === "TR");
+    const showCommandsBtn = () =>
+      nodes(section()).find((n) => n.tagName === "BUTTON" && n !== foldBtn());
+
+    // Folded with 0 log blocks and 40 total blocks: heading says "History" with no lying count.
+    assert.equal(textOf(foldBtn()), "History");
+    assert.equal(countNode(), undefined);
+
+    // Unfolding when there are no log blocks fetches and shows commands immediately without an extra click.
+    s.act(() => props(foldBtn()).onClick());
+    await settle();
+    assert.equal(showCommandsBtn(), undefined);
+    assert.equal(rows().length, 2);
+    assert.equal(textOf(countNode()), String(rows().length));
+    assert.match(textOf(section()), /question answer/);
+    assert.match(textOf(section()), /wish make/);
+
+    // Fold back and add a log block alongside the non-log blocks (total still 40): count matches the 1 log block.
+    s.act(() => props(foldBtn()).onClick());
+    blocks = [
+      ...blocks,
+      {
+        id: "b4",
+        wishId,
+        kind: "log",
+        title: "Kick-off",
+        content: "Started.",
+        createTime: at(1500),
+      },
+    ];
+    await s.act(async () => {
+      await djinn.store.changed(wishId, [s.Change.BLOCK]);
+    });
+    assert.equal(textOf(countNode()), "1");
+
+    // Unfolding shows the 1 log block; clicking "Show the commands" adds the 2 commands, count matching all 3 rows.
+    s.act(() => props(foldBtn()).onClick());
+    await settle();
+    assert.equal(rows().length, 1);
+    assert.equal(textOf(countNode()), String(rows().length));
+    assert.equal(textOf(showCommandsBtn()), "Show the commands");
+    s.act(() => props(showCommandsBtn()).onClick());
+    await settle();
+    assert.equal(rows().length, 3);
+    assert.equal(textOf(countNode()), String(rows().length));
+    assert.equal(textOf(showCommandsBtn()), "Hide the commands");
+  } finally {
+    s.act(() => root.unmount());
+    close();
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});

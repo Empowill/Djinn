@@ -158,7 +158,7 @@ func TestPage(t *testing.T) {
 			t.Errorf("an empty wish has no section, got %v", got)
 		}
 		for _, s := range []string{
-			"To decide", "Waiting for you", "Decisions", "Journal", "Tasks", "Who runs now", "Worker events", `class="toc"`,
+			"To decide", "Waiting for you", "Decisions", "History", "Tasks", "Who runs now", "Worker events", `class="toc"`,
 			`class="bar"`, `class="counts"`, "<details",
 		} {
 			if strings.Contains(html, s) {

@@ -33,7 +33,7 @@ Some kinds go elsewhere than the other blocks:
 | Kind | Where it shows |
 | --- | --- |
 | Decision | The **Decisions** tab, as a decision by the Djinn or by a task |
-| Log | The wish's journal |
+| Log | The wish's **History** |
 | Report | **For agents**, and on the card of a question that names it |
 | Original request | **For agents**: the request the wish was made from, as you wrote it |
 | Request | **For agents**: a request handed over from another wish |
@@ -93,7 +93,7 @@ When a block concerns you, the Djinn asks you a question that names it: that is 
 - **The wish's brief**, which every session of the Djinn starts from, holds its original request whole and its latest
   blocks, cut short when long.
 - **Sharing a wish** carries its blocks to the other machine. See [Sharing a wish](#sharing).
-- **The wish's page**, rendered to one file, shows them as notes, decisions under Decisions and the log in the journal.
+- **The wish's page**, rendered to one file, shows them as notes, decisions under Decisions and the log under History.
 
 ## Good to know
 

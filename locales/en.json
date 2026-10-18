@@ -554,7 +554,7 @@
   "page.events_sub": "What the workers said, their changes of status and their errors, the latest first.",
   "page.finished": "Finished",
   "page.investigating": "Being investigated",
-  "page.journal": "Journal",
+  "page.journal": "History",
   "page.journal_cut": "Earlier entries not shown: {count}.",
   "page.journal_sub": "The commands and the log of the wish, the latest first.",
   "page.last_event": "Last event",
