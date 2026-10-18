@@ -48,21 +48,23 @@ func (h *Harness) Send(ctx context.Context, procedure string, req *planv1.TaskSe
 	h.mu.Lock()
 	r := h.runs[task.GetId()]
 	ready := r != nil && r.worker != nil && !r.final && !r.stopping && r.out == ""
-	going := r != nil && r.out != "" && !r.stopping
+	ending := r != nil && (r.out != "" || r.final || r.stopping)
 	h.mu.Unlock()
 	if ready {
 		res, err := h.sendTo(ctx, r, task.GetCode(), &message{procedure: procedure, req: req, reply: make(chan sent, 1)})
 		if !errors.Is(err, errGoingOut) {
 			return res, err
 		}
-		going = true
+		ending = true
 	}
-	if going { // It goes out as its turn ended: lit again once it is.
+	if ending { // A run ending (or an ifrit going out) writes its new status before r.done closes.
 		select {
 		case <-r.done:
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
+	}
+	if ending || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING {
 		if task, err = store.Get[*planv1.Task](ctx, h.store, req.GetTaskId()); err != nil {
 			return nil, plan.Status(err)
 		}
@@ -70,8 +72,12 @@ func (h *Harness) Send(ctx context.Context, procedure string, req *planv1.TaskSe
 	if ifritOut(task) {
 		return h.relight(ctx, req, task)
 	}
+	state := short(task.GetStatus())
+	if state == "running" {
+		state = "starting"
+	}
 	return nil, connect.NewError(connect.CodeFailedPrecondition,
-		fmt.Errorf("task %s is not running: %s", task.GetCode(), short(task.GetStatus())))
+		fmt.Errorf("task %s is not running: %s", task.GetCode(), state))
 }
 
 // sendTo hands m to the pump of r, the run of the task code, and returns what delivering it gave.
