@@ -631,4 +631,43 @@ test.describe("wish render performance @render", () => {
       djinn("wish", "delete", workerWish.id);
     }
   });
+
+  test("waking splash shows from the first frame in dark and light system theme, then leaves once the first reads complete", async ({
+    page,
+  }) => {
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      let releaseWishes: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        releaseWishes = resolve;
+      });
+      await page.route("**/plan.v1.WishService/List", async (route) => {
+        await held;
+        await route.continue();
+      });
+
+      await page.goto(process.env.DJINN_URL!, {
+        waitUntil: "domcontentloaded",
+      });
+      const splash = page.locator("#djinn-splash");
+      await expect(splash).toBeVisible();
+      await expect(page.locator("#djinn-splash-text")).toHaveText(
+        "Djinn wakes…",
+      );
+      const bg = await splash.evaluate(
+        (el) => getComputedStyle(el).backgroundColor,
+      );
+      expect(bg).toBe(
+        scheme === "dark" ? "rgb(14, 14, 16)" : "rgb(245, 242, 235)",
+      );
+
+      releaseWishes?.();
+      await expect(splash).toHaveCount(0);
+      await expect(page.locator("#djinn-splash-style")).toHaveCount(0);
+      await expect(
+        page.locator(".app-statusbar").getByText("Live"),
+      ).toBeVisible();
+      await page.unroute("**/plan.v1.WishService/List");
+    }
+  });
 });

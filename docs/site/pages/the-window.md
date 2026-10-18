@@ -1,9 +1,12 @@
 # The window
 
 Everything you do in Djinn, you do in its window: make a wish, answer a question, follow the workers, watch the
-machine. It has four parts: the **side panel** on the left, with your wishes and projects; the **page** in the middle,
-a wish, the flying carpet or the Hourglass; the **terminal** pinned at the bottom, with the Djinn's tab; and a thin
-**status bar** below.
+machine. From its very first frame, before its bundle and its first reads finish, it shows the seal and its lamp with
+smoke and sparks turning around the flame and **Djinn wakes…**, in the system's dark or light theme; once the wishes
+and projects are read, the interface takes its place and each panel's reading line follows what still loads. It has
+four parts: the **side panel** on the left, with your wishes and projects; the **page** in the middle, a wish, the
+flying carpet or the Hourglass; the **terminal** pinned at the bottom, with the Djinn's tab; and a thin **status bar**
+below.
 
 ## Why it is laid out this way
 
@@ -83,7 +86,7 @@ corners, and back. On the rail, never on a background:
 The **Summoning Circle**, below the Grimoire in the side panel, chooses for each kind of worker which model answers the
 call across all projects: **Djinn (lead)** first, then **Investigation**, **Mockup**, **Ifrit**, **Work**, **Merge
 correction**, **Merge review**, and **Question investigator**. Each dropdown lists each model once by its human-readable
-label (such as `Gemini 4 Argon (High)`) while storing and sending its canonical model identifier (`gemini-4-argon-high`).
+label (such as Gemini 4 Argon (High)) while storing and sending its canonical model identifier (gemini-4-argon-high).
 Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes.
 
 ### The personal space
