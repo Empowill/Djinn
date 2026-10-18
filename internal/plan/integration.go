@@ -267,6 +267,9 @@ func createIntegrationBranch(ctx context.Context, tx store.Reader, home string, 
 // pushRemote is the remote Djinn pushes a branch with no upstream to, from the repository holding dir: origin, else
 // the only one; "" when there is none to choose.
 func pushRemote(ctx context.Context, dir string) string {
+	if common, ok := gitCommonDir(dir); ok && !mayHaveRemote(common) {
+		return ""
+	}
 	out, err := gitOut(ctx, dir, "remote")
 	if err != nil || out == "" {
 		return ""

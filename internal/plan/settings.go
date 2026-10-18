@@ -415,7 +415,11 @@ func LoadSettings(home string, project *planv1.Project) (Settings, error) {
 
 // loadSettings reads both files of project, and why each one that could not be read was not.
 func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.ProjectSettings, warnings []string, problems []error) {
-	for _, f := range readSettingsFiles(home, project) {
+	return loadSettingsFiles(readSettingsFiles(home, project))
+}
+
+func loadSettingsFiles(files []settingsRead) (repo, dev *planv1.ProjectSettings, warnings []string, problems []error) {
+	for _, f := range files {
 		if f.err != nil {
 			problems = append(problems, f.err)
 			continue
@@ -459,8 +463,14 @@ func readSettingsFiles(home string, project *planv1.Project) []settingsRead {
 	if project == nil {
 		return nil
 	}
+	return readSettingsFilesConfig(home, project, ProjectConfig(home, project))
+}
+
+func readSettingsFilesConfig(home string, project *planv1.Project, config Config) []settingsRead {
+	if project == nil {
+		return nil
+	}
 	repoFile, devFile := settingsFiles(home, project)
-	config := ProjectConfig(home, project)
 	var out []settingsRead
 	for _, f := range []settingsRead{{path: repoFile, team: true}, {path: devFile}} {
 		if f.path == "" {

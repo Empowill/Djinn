@@ -11,6 +11,7 @@ import { language } from "./i18n";
 import { LeadTerminalFrame } from "./lead-terminal";
 import { installNativeWindowDrag } from "./native-window";
 import { followStillness } from "./stillness";
+import { syncSplash } from "./splash";
 import "./theme.css";
 import "./styles.css";
 import { applyTextSize } from "./text-size";
@@ -41,6 +42,7 @@ hotModule?.dispose(() => {
 });
 applyTheme();
 applyTextSize();
+syncSplash();
 followSystem();
 // djinn serves the page and its API on the same origin, over http:// in a browser or wails:// in the window; fetch
 // sends the session cookie on its own.

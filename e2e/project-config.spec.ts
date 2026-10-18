@@ -24,7 +24,19 @@ function djinn(...args: string[]): string {
 }
 
 function git(dir: string, ...args: string[]): string {
-  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
+  return execFileSync(
+    "git",
+    [
+      "-C",
+      dir,
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "maintenance.auto=false",
+      ...args,
+    ],
+    { encoding: "utf8" },
+  ).trim();
 }
 
 const skills: Record<string, string> = {

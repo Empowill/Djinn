@@ -43,6 +43,7 @@
   "app.share": "Share",
   "app.shortcut_enter": "Enter",
   "app.shortcut_escape": "Esc",
+  "app.waking": "Djinn wakes…",
   "attention.about_ifrit": "the Djinn, about {code}",
   "attention.asked_by_ifrit": "asked by {code}",
   "attention.label": "What waits for you",

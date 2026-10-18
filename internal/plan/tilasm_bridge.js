@@ -540,9 +540,10 @@
     parent.postMessage(message, "*");
   }
 
-  // The selection, told a moment after it stops changing, as a mouse drags or a key extends it; at once once gone.
+  // The selection, told when the mouse lets go of a drag or a moment after a key extends it; at once once gone.
   var current = null;
   var timer = 0;
+  var dragging = false;
   function tell() {
     clearTimeout(timer);
     timer = 0;
@@ -551,6 +552,23 @@
     current = now;
     post(now ? { type: "selection", passage: now.passage, at: placeOf(now.range) } : { type: "selection", passage: null });
   }
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    tell();
+  }
+  window.addEventListener(
+    "mousedown",
+    function (event) {
+      if (aiming || event.button !== 0) return;
+      dragging = true;
+      clearTimeout(timer);
+      timer = 0;
+    },
+    true,
+  );
+  window.addEventListener("mouseup", endDrag, true);
+  window.addEventListener("blur", endDrag);
   document.addEventListener("selectionchange", function () {
     var selection = window.getSelection();
     if (!selection || selection.isCollapsed) {
@@ -558,6 +576,8 @@
       return;
     }
     clearTimeout(timer);
+    timer = 0;
+    if (dragging) return;
     timer = setTimeout(tell, 120);
   });
   // The frame scrolls, or changes size: the button follows the passage.
@@ -593,7 +613,8 @@
       )
         return;
       event.preventDefault();
-      if (timer) tell();
+      dragging = false;
+      tell();
       post({ type: "key", name: "comment" });
     },
     true,
@@ -635,6 +656,7 @@
   document.addEventListener(
     "mousemove",
     function (event) {
+      if (dragging && (event.buttons & 1) === 0) endDrag();
       if (aiming) hover(aimed(event.target));
     },
     { passive: true, capture: true },
@@ -810,6 +832,7 @@
       // The window commented the selection: it goes, and the window learns when, past what was on its way to it.
       clearTimeout(timer);
       timer = 0;
+      dragging = false;
       current = null;
       window.getSelection().removeAllRanges();
       post({ type: "selection", passage: null });
