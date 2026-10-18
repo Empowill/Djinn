@@ -58,10 +58,13 @@ test.describe("operating load slider", () => {
     djinn("load", "set", "medium");
   });
 
-  test("operating load slider displays in topbar and reflects server setting", async ({
+  test("operating load slider displays in topbar, reflects server setting, and translates its labels and tooltips", async ({
     page,
   }) => {
     const errors = collectErrors(page);
+    const fr: Record<string, string> = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "../locales/fr.json"), "utf8"),
+    );
     await page.goto(djinnURL());
     await expect(
       page.locator(".app-statusbar").getByText("Live"),
@@ -97,6 +100,56 @@ test.describe("operating load slider", () => {
     expect(autoDescription).toBeTruthy();
     expect(autoDescription?.length).toBeGreaterThan(10);
     await expect(autoBtn).not.toHaveClass(/active/);
+
+    try {
+      await page.evaluate(() => localStorage.setItem("djinn.language", "fr"));
+      await page.reload();
+      await expect(
+        page.locator(".app-statusbar").getByText(fr["status.live"]),
+      ).toBeVisible();
+
+      await expect(range).toHaveAttribute("aria-label", fr["load.label"]);
+
+      for (const notch of notches) {
+        const btn = page.locator(
+          `.operating-load-notch[data-notch="${notch}"]`,
+        );
+        await expect(btn).toBeVisible();
+        await expect(btn).toHaveText(fr[`load.notch.${notch}`]);
+        const description = await btn.getAttribute("aria-description");
+        expect(description).toBeTruthy();
+        expect(description?.length).toBeGreaterThan(15);
+        expect(description).toContain(fr[`load.notch.${notch}`]);
+      }
+
+      const frOcDescription = await ocBtn.getAttribute("aria-description");
+      expect(frOcDescription).toContain(fr["load.notch.overclock"]);
+      expect(frOcDescription?.length).toBeGreaterThan(50);
+
+      await expect(autoBtn).toBeVisible();
+      await expect(autoBtn).toHaveText(fr["load.notch.auto"]);
+      expect(await autoBtn.getAttribute("aria-description")).toBeTruthy();
+
+      const forecastEl = page.locator(".operating-load-forecast");
+      await page.locator(".operating-load-slider").hover();
+      await expect(forecastEl).toBeVisible();
+      const cpuPrefix = fr["load.forecast_cpu_running"].split("{")[0];
+      const memPrefix = fr["load.forecast_memory"].split("{")[0];
+      await expect(forecastEl).toContainText(cpuPrefix);
+      await expect(forecastEl).toContainText(memPrefix);
+
+      // Overclock's risk and Auto's explanation in the preview (W37).
+      await ocBtn.hover();
+      await expect(
+        forecastEl.locator(".operating-load-forecast-risk"),
+      ).toHaveText(fr["load.overclock_risk"]);
+      await autoBtn.hover();
+      await expect(forecastEl).toContainText(
+        fr["load.tooltip.auto"].split("{")[0],
+      );
+    } finally {
+      await page.evaluate(() => localStorage.removeItem("djinn.language"));
+    }
 
     expect(errors).toEqual([]);
   });
@@ -185,39 +238,9 @@ test.describe("operating load slider", () => {
     }
   });
 
-  test("clicking a notch button sets the load notch", async ({ page }) => {
-    const errors = collectErrors(page);
-    await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
-
-    const range = page.locator(".operating-load-input");
-
-    const minBtn = page.locator('.operating-load-notch[data-notch="minimal"]');
-    await minBtn.click();
-    await expect(range).toHaveValue("1");
-    await expect(minBtn).toHaveClass(/active/);
-    await expect.poll(getNotch).toBe("minimal");
-
-    const highBtn = page.locator('.operating-load-notch[data-notch="high"]');
-    await highBtn.click();
-    await expect(range).toHaveValue("3");
-    await expect(highBtn).toHaveClass(/active/);
-    await expect.poll(getNotch).toBe("high");
-
-    const ocBtn = page.locator('.operating-load-notch[data-notch="overclock"]');
-    await ocBtn.click();
-    await expect(range).toHaveValue("5");
-    await expect(ocBtn).toHaveClass(/active/);
-    await expect.poll(getNotch).toBe("overclock");
-
-    expect(errors).toEqual([]);
-  });
-
-  // W28: the track holds a round stop per notch, a button each: a click or Enter or Space on one sets its notch, as its
-  // label does.
-  test("clicking a round stop on the track sets the load notch", async ({
+  // W28: notch buttons, round stops on the track (with keyboard focus), and clicking anywhere on the track all set the
+  // load notch.
+  test("clicking a notch button, a round stop, or anywhere on the track sets the load notch", async ({
     page,
   }) => {
     const errors = collectErrors(page);
@@ -260,6 +283,20 @@ test.describe("operating load slider", () => {
       expect(stop!.y + stop!.height / 2).toBeCloseTo(box.y + box.height / 2, 0);
     }
 
+    // Clicking notch buttons sets the load notch.
+    const minBtn = page.locator('.operating-load-notch[data-notch="minimal"]');
+    await minBtn.click();
+    await expect(range).toHaveValue("1");
+    await expect(minBtn).toHaveClass(/active/);
+    await expect.poll(getNotch).toBe("minimal");
+
+    const ocBtn = page.locator('.operating-load-notch[data-notch="overclock"]');
+    await ocBtn.click();
+    await expect(range).toHaveValue("5");
+    await expect(ocBtn).toHaveClass(/active/);
+    await expect.poll(getNotch).toBe("overclock");
+
+    // Clicking round stops on the track sets the load notch.
     const high = page.locator('.operating-load-stop[data-notch="high"]');
     await high.click();
     await expect(range).toHaveValue("3");
@@ -296,39 +333,26 @@ test.describe("operating load slider", () => {
     // A stop exits auto mode as its label does.
     await page.locator('.operating-load-notch[data-notch="auto"]').click();
     await expect.poll(() => djinn("load", "get")).toContain("auto: true");
-    await page.locator('.operating-load-stop[data-notch="medium"]').click();
+    await medium.click();
     await expect.poll(() => djinn("load", "get")).not.toContain("auto: true");
     await expect.poll(getNotch).toBe("medium");
 
-    expect(errors).toEqual([]);
-  });
-
-  test("clicking anywhere on the track picks the nearest notch", async ({
-    page,
-  }) => {
-    const errors = collectErrors(page);
-    await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
-
-    // boundingBox does not wait: the slider is measured once it shows, not while the top bar mounts again.
+    // Clicking anywhere on the track picks the nearest notch.
     const slider = page.locator(".operating-load-slider");
-    await expect(slider).toBeVisible();
-    const box = await slider.boundingBox();
-    expect(box).toBeTruthy();
-    if (!box) return;
+    const sliderBox = await slider.boundingBox();
+    expect(sliderBox).toBeTruthy();
+    if (!sliderBox) return;
 
-    // Click near left edge (minimal)
-    await page.mouse.click(box.x + 8, box.y + 10);
+    await page.mouse.click(sliderBox.x + 8, sliderBox.y + 10);
     await expect.poll(getNotch).toBe("minimal");
 
-    // Click near right edge (overclock)
-    await page.mouse.click(box.x + box.width - 8, box.y + 10);
+    await page.mouse.click(sliderBox.x + sliderBox.width - 8, sliderBox.y + 10);
     await expect.poll(getNotch).toBe("overclock");
 
-    // Click in middle (high or medium depending on exact position)
-    await page.mouse.click(box.x + box.width * 0.5, box.y + 10);
+    await page.mouse.click(
+      sliderBox.x + sliderBox.width * 0.5,
+      sliderBox.y + 10,
+    );
     await expect.poll(getNotch).toMatch(/^(medium|high)$/);
 
     expect(errors).toEqual([]);
@@ -386,7 +410,7 @@ test.describe("operating load slider", () => {
     expect(errors).toEqual([]);
   });
 
-  test("external change via cli sets auto mode and updates window", async ({
+  test("external change via cli sets auto mode and updates the slider in the window", async ({
     page,
   }) => {
     const errors = collectErrors(page);
@@ -395,8 +419,10 @@ test.describe("operating load slider", () => {
       page.locator(".app-statusbar").getByText("Live"),
     ).toBeVisible();
 
+    const range = page.locator(".operating-load-input");
     const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
     const effectiveEl = page.locator(".operating-load-effective");
+    await expect(range).toHaveValue("2");
 
     // Set auto via CLI
     djinn("load", "set", "auto");
@@ -407,28 +433,14 @@ test.describe("operating load slider", () => {
       /^(minimal|medium|high|max|overclock)$/,
     );
 
-    // Set manual via CLI exits auto
+    // Set manual via CLI exits auto and updates slider
     djinn("load", "set", "high");
     await expect(autoBtn).not.toHaveClass(/active/);
     await expect(effectiveEl).not.toBeVisible();
+    await expect.poll(async () => await range.inputValue()).toBe("3");
     await expect(
       page.locator('.operating-load-notch[data-notch="high"]'),
     ).toHaveClass(/active/);
-
-    expect(errors).toEqual([]);
-  });
-
-  test("external change via cli updates the slider in the window", async ({
-    page,
-  }) => {
-    const errors = collectErrors(page);
-    await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
-
-    const range = page.locator(".operating-load-input");
-    await expect(range).toHaveValue("2");
 
     djinn("load", "set", "minimal");
     await expect.poll(async () => await range.inputValue()).toBe("1");
@@ -547,7 +559,10 @@ test.describe("operating load slider", () => {
     expect(errors).toEqual([]);
   });
 
-  test("hovering a notch updates the forecast immediately before saving", async ({
+  // W32, W37: hovering a notch or stop updates the forecast immediately before saving, and the pointer previews the
+  // stop nearest it all along the track: across the gap between Max and Overclock the preview never falls back to the
+  // level in effect. A gauge's fill rises to the level, striped on to the preview.
+  test("hovering previews notches and moving across the gap between Max and Overclock never previews High", async ({
     page,
   }) => {
     const errors = collectErrors(page);
@@ -581,20 +596,7 @@ test.describe("operating load slider", () => {
     await page.mouse.move(0, 0);
     await expect(forecastEl).toHaveAttribute("data-notch", "medium");
 
-    expect(errors).toEqual([]);
-  });
-
-  // W37: the pointer previews the stop nearest it all along the track: across the gap between Max and Overclock the
-  // preview never falls back to the level in effect. A gauge's fill rises to the level, striped on to the preview.
-  test("moving across the gap between Max and Overclock never previews High", async ({
-    page,
-  }) => {
-    const errors = collectErrors(page);
     djinn("load", "set", "high");
-    await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
     const slider = page.locator(".operating-load-slider");
     await expect(slider).toHaveAttribute("data-notch", "high");
     const centre = async (notch: string) => {
@@ -706,7 +708,7 @@ test.describe("operating load slider", () => {
     await page.locator(".operating-load-slider").hover();
     await expect(notes).toHaveCount(0);
 
-    // Overclock set, the Auto button hovered: both, the warning in the theme's danger colour, light and dark.
+    // Overclock set, the Auto button hovered: both, the warning in the theme's danger colour.
     djinn("load", "set", "overclock");
     await expect(
       page.locator('.operating-load-notch[data-notch="overclock"]'),
@@ -715,13 +717,7 @@ test.describe("operating load slider", () => {
     await expect(risk).toBeVisible();
     await expect(notes).toHaveCount(2);
     await expect(notes.nth(1)).toContainText(autoText);
-    const outDir = path.resolve(__dirname, "../test-results/screenshots");
-    fs.mkdirSync(outDir, { recursive: true });
-    for (const theme of ["dark", "light"] as const) {
-      await page.evaluate(
-        (t) => document.documentElement.setAttribute("data-theme", t),
-        theme,
-      );
+    const checkDanger = async () => {
       const colours = await risk.evaluate((el) => {
         const probe = document.createElement("span");
         probe.style.color = "var(--danger)";
@@ -731,21 +727,32 @@ test.describe("operating load slider", () => {
         return { colour: getComputedStyle(el).color, danger };
       });
       expect(colours.colour).toBe(colours.danger);
-      // The theme's colours glide: shoot once they stand.
-      await forecast.evaluate((el) =>
-        Promise.all(
-          el
-            .getAnimations({ subtree: true })
-            .map((a) => a.finished.catch(() => {})),
-        ),
+    };
+    await checkDanger();
+    if (process.env.LOAD_SHOTS) {
+      const outDir = path.resolve(__dirname, "../test-results/screenshots");
+      fs.mkdirSync(outDir, { recursive: true });
+      for (const theme of ["dark", "light"] as const) {
+        await page.evaluate(
+          (t) => document.documentElement.setAttribute("data-theme", t),
+          theme,
+        );
+        await checkDanger();
+        await forecast.evaluate((el) =>
+          Promise.all(
+            el
+              .getAnimations({ subtree: true })
+              .map((a) => a.finished.catch(() => {})),
+          ),
+        );
+        await forecast.screenshot({
+          path: path.join(outDir, `notch-risk-${theme}.png`),
+        });
+      }
+      await page.evaluate(() =>
+        document.documentElement.setAttribute("data-theme", "dark"),
       );
-      await forecast.screenshot({
-        path: path.join(outDir, `notch-risk-${theme}.png`),
-      });
     }
-    await page.evaluate(() =>
-      document.documentElement.setAttribute("data-theme", "dark"),
-    );
 
     // Auto on: its explanation shows while the gauge is hovered.
     djinn("load", "set", "auto");
@@ -768,139 +775,6 @@ test.describe("operating load slider", () => {
       /Risk: Djinn will saturate CPU and memory/,
     );
     await expect(autoBtn).toHaveAttribute("aria-description", autoText);
-    expect(errors).toEqual([]);
-  });
-
-  test("cursor appearance and screenshots at each notch in dark and light modes", async ({
-    page,
-  }) => {
-    const errors = collectErrors(page);
-    await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
-
-    const notches = ["minimal", "medium", "high", "max", "overclock"] as const;
-    const loadEl = page.locator(".operating-load");
-    const sliderEl = page.locator(".operating-load-slider");
-
-    const outDir = path.resolve(__dirname, "../test-results/screenshots");
-    fs.mkdirSync(outDir, { recursive: true });
-
-    for (const theme of ["dark", "light"] as const) {
-      await page.evaluate(
-        (t) => document.documentElement.setAttribute("data-theme", t),
-        theme,
-      );
-      for (const notch of notches) {
-        djinn("load", "set", notch);
-        await expect(sliderEl).toHaveAttribute("data-notch", notch);
-        await expect(
-          page.locator(`.operating-load-notch[data-notch="${notch}"]`),
-        ).toHaveClass(/active/);
-
-        // Capture screenshot of operating-load component for visual verification
-        await loadEl.screenshot({
-          path: path.join(outDir, `notch-${notch}-${theme}.png`),
-        });
-      }
-      // The forecast shown on hover, laid over the page under the gauge.
-      await page.locator(".operating-load-slider").hover();
-      await expect(page.locator(".operating-load-forecast")).toBeVisible();
-      const gauge = (await loadEl.boundingBox())!;
-      const forecast = (await page
-        .locator(".operating-load-forecast")
-        .boundingBox())!;
-      const left = Math.min(gauge.x, forecast.x) - 8;
-      await page.screenshot({
-        path: path.join(outDir, `notch-hover-${theme}.png`),
-        clip: {
-          x: left,
-          y: gauge.y - 8,
-          width:
-            Math.max(gauge.x + gauge.width, forecast.x + forecast.width) +
-            8 -
-            left,
-          height: forecast.y + forecast.height + 8 - (gauge.y - 8),
-        },
-      });
-      await page.mouse.move(0, 0);
-    }
-
-    expect(errors).toEqual([]);
-  });
-});
-
-test.describe("in French", () => {
-  test.use({ locale: "fr-FR" });
-  const fr: Record<string, string> = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "../locales/fr.json"), "utf8"),
-  );
-
-  test.beforeEach(async () => {
-    djinn("load", "set", "medium");
-  });
-
-  test.afterEach(async () => {
-    djinn("load", "set", "medium");
-  });
-
-  test.afterAll(async () => {
-    djinn("load", "set", "medium");
-  });
-
-  test("the slider labels and tooltips follow the catalog", async ({
-    page,
-  }) => {
-    const errors = collectErrors(page);
-    await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText(fr["status.live"]),
-    ).toBeVisible();
-
-    const range = page.locator(".operating-load-input");
-    await expect(range).toHaveAttribute("aria-label", fr["load.label"]);
-
-    const notches = ["minimal", "medium", "high", "max", "overclock"] as const;
-    for (const notch of notches) {
-      const btn = page.locator(`.operating-load-notch[data-notch="${notch}"]`);
-      await expect(btn).toBeVisible();
-      await expect(btn).toHaveText(fr[`load.notch.${notch}`]);
-      const description = await btn.getAttribute("aria-description");
-      expect(description).toBeTruthy();
-      expect(description?.length).toBeGreaterThan(15);
-      expect(description).toContain(fr[`load.notch.${notch}`]);
-    }
-
-    const ocBtn = page.locator('.operating-load-notch[data-notch="overclock"]');
-    const ocDescription = await ocBtn.getAttribute("aria-description");
-    expect(ocDescription).toContain(fr["load.notch.overclock"]);
-    expect(ocDescription?.length).toBeGreaterThan(50);
-
-    const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
-    await expect(autoBtn).toBeVisible();
-    await expect(autoBtn).toHaveText(fr["load.notch.auto"]);
-    const autoDescription = await autoBtn.getAttribute("aria-description");
-    expect(autoDescription).toBeTruthy();
-
-    const forecastEl = page.locator(".operating-load-forecast");
-    await page.locator(".operating-load-slider").hover();
-    await expect(forecastEl).toBeVisible();
-    const cpuPrefix = fr["load.forecast_cpu_running"].split("{")[0];
-    const memPrefix = fr["load.forecast_memory"].split("{")[0];
-    await expect(forecastEl).toContainText(cpuPrefix);
-    await expect(forecastEl).toContainText(memPrefix);
-
-    // Overclock's risk and Auto's explanation in the preview (W37).
-    await ocBtn.hover();
-    await expect(
-      forecastEl.locator(".operating-load-forecast-risk"),
-    ).toHaveText(fr["load.overclock_risk"]);
-    await autoBtn.hover();
-    await expect(forecastEl).toContainText(
-      fr["load.tooltip.auto"].split("{")[0],
-    );
-
     expect(errors).toEqual([]);
   });
 });

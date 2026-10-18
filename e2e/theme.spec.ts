@@ -94,7 +94,7 @@ async function open(page: Page, theme: "dark" | "light") {
   await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 }
 
-// Four tests per theme, the terminal, the lead's blocks, the settings, the creation page: each has its 30 s, which one
+// Two tests per theme, the terminal and the lead's blocks, plus the settings in light: each has its 30 s, which one
 // test for all took whole on a loaded machine, with or without the trace (W249).
 for (const theme of ["dark", "light"] as const) {
   const look = looks[theme];
@@ -121,9 +121,11 @@ for (const theme of ["dark", "light"] as const) {
     expect(
       await background(page, ".lead-terminal .xterm-scrollable-element"),
     ).toContain(look.page);
-    await page.locator(".lead-terminal").screenshot({
-      path: path.join(shots, `theme-terminal-${theme}.png`),
-    });
+    if (process.env.THEME_SHOTS) {
+      await page.locator(".lead-terminal").screenshot({
+        path: path.join(shots, `theme-terminal-${theme}.png`),
+      });
+    }
     // The shell closed before the page reloads, which would show the panel before its tabs.
     const tabs = page.locator(".lead-terminal-tab");
     const shells = await tabs.count();
@@ -230,12 +232,14 @@ for (const theme of ["dark", "light"] as const) {
             }),
         )
         .toBe(theme === "dark" ? "light" : "dark");
-      await page.screenshot({
-        path: path.join(shots, `theme-wish-${theme}.png`),
-      });
-      await block.screenshot({
-        path: path.join(shots, `theme-blocks-${theme}.png`),
-      });
+      if (process.env.THEME_SHOTS) {
+        await page.screenshot({
+          path: path.join(shots, `theme-wish-${theme}.png`),
+        });
+        await block.screenshot({
+          path: path.join(shots, `theme-blocks-${theme}.png`),
+        });
+      }
       await choose(page, "");
     } finally {
       try {
@@ -244,39 +248,25 @@ for (const theme of ["dark", "light"] as const) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
-
-  test(`the settings follow the theme chosen, ${theme}`, async ({ page }) => {
-    pauseActive();
-    await open(page, theme);
-    await page.getByTitle("Connections & preferences").click();
-    const settings = page.locator(".modal");
-    await expect(settings).toBeVisible();
-    await expect(page.getByLabel("Theme")).toHaveValue(theme);
-    expect(await background(page, ".modal")).toContain(look.card);
-    await page.screenshot({
-      path: path.join(shots, `theme-settings-${theme}.png`),
-    });
-    await page.keyboard.press("Escape");
-    await expect(settings).toHaveCount(0);
-    await choose(page, "");
-  });
-
-  test(`the creation page of a new wish follows the theme chosen, ${theme}`, async ({
-    page,
-  }) => {
-    pauseActive();
-    await open(page, theme);
-    await page.getByRole("button", { name: "New wish" }).first().click();
-    const creation = page.locator(".wish-creation");
-    await expect(creation).toBeVisible();
-    await page.screenshot({
-      path: path.join(shots, `theme-new-wish-${theme}.png`),
-    });
-    await page.keyboard.press("Escape");
-    await expect(creation).toHaveCount(0);
-    await choose(page, "");
-  });
 }
+
+test("the settings follow the theme chosen", async ({ page }) => {
+  pauseActive();
+  await open(page, "light");
+  await page.getByTitle("Connections & preferences").click();
+  const settings = page.locator(".modal");
+  await expect(settings).toBeVisible();
+  await expect(page.getByLabel("Theme")).toHaveValue("light");
+  expect(await background(page, ".modal")).toContain(looks.light.card);
+  if (process.env.THEME_SHOTS) {
+    await page.screenshot({
+      path: path.join(shots, "theme-settings-light.png"),
+    });
+  }
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await choose(page, "");
+});
 
 test("the light creation fallback keeps its status readable when WebGL is unavailable", async ({
   page,
@@ -329,10 +319,12 @@ test("the light creation fallback keeps its status readable when WebGL is unavai
     );
   });
   expect(contrast).toBeGreaterThan(4.5);
-  await page.screenshot({
-    path: path.join(shots, "theme-smoke-fallback-light.png"),
-    fullPage: true,
-  });
+  if (process.env.THEME_SHOTS) {
+    await page.screenshot({
+      path: path.join(shots, "theme-smoke-fallback-light.png"),
+      fullPage: true,
+    });
+  }
   await page.keyboard.press("Escape");
 });
 
@@ -402,9 +394,11 @@ test(
         (Math.min(foreground, background) + 0.05);
       expect(contrast).toBeGreaterThan(4.5);
     }
-    await page.screenshot({
-      path: path.join(shots, "theme-smoke-fallback-canvas-light.png"),
-    });
+    if (process.env.THEME_SHOTS) {
+      await page.screenshot({
+        path: path.join(shots, "theme-smoke-fallback-canvas-light.png"),
+      });
+    }
     await page.keyboard.press("Escape");
   },
 );

@@ -177,10 +177,12 @@ test("a lit ifrit shows on its wish in vermilion, its band first in what waits f
         .locator(".review-pills .status-badge.tone-ifrit")
         .filter({ hasText: `Ifrit ${code} · Lit` }),
     ).toBeVisible();
-    await page.screenshot({ path: path.join(shots, "ifrit-band-dark.png") });
-    await theme(page, "light");
-    await page.screenshot({ path: path.join(shots, "ifrit-band-light.png") });
-    await theme(page, "dark");
+    if (process.env.IFRIT_SHOTS) {
+      await page.screenshot({ path: path.join(shots, "ifrit-band-dark.png") });
+      await theme(page, "light");
+      await page.screenshot({ path: path.join(shots, "ifrit-band-light.png") });
+      await theme(page, "dark");
+    }
 
     // The band leads to its card, in the Tasks tab: Lit, in vermilion, with Finish.
     await band.locator(".attention-ifrit-title").click();
@@ -193,10 +195,12 @@ test("a lit ifrit shows on its wish in vermilion, its band first in what waits f
     await expect(card.locator(".status-badge").first()).toHaveText("Lit");
     const finish = card.getByRole("button", { name: "Finish" });
     await expect(finish).toBeVisible();
-    await card.screenshot({ path: path.join(shots, "ifrit-card-dark.png") });
-    await theme(page, "light");
-    await card.screenshot({ path: path.join(shots, "ifrit-card-light.png") });
-    await theme(page, "dark");
+    if (process.env.IFRIT_SHOTS) {
+      await card.screenshot({ path: path.join(shots, "ifrit-card-dark.png") });
+      await theme(page, "light");
+      await card.screenshot({ path: path.join(shots, "ifrit-card-light.png") });
+      await theme(page, "dark");
+    }
 
     // Finished, it ends: no band, no flame on its wish, and its card is no longer lit.
     await finish.click();

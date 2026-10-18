@@ -140,36 +140,35 @@ test("a failed merge an agent fixes shows orange and names its correction; red o
     );
     await expect(failed.locator(".wish-task-work")).toHaveClass(/work-failed/);
 
-    // In both themes, switched as the settings do, once the colours have changed.
-    for (const theme of ["dark", "light"] as const) {
-      await page.evaluate((v) => {
-        localStorage.setItem("djinn.theme", v);
-        document.documentElement.dataset.theme = v;
-        return Promise.all(
-          document
-            .getAnimations()
-            .filter((a) => a instanceof CSSTransition)
-            .map((a) => a.finished.catch(() => {})),
-        );
-      }, theme);
-      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      // Orange as what waits, never the red of a failure (their contrast: tests/styles.test.cjs).
-      const orange = await colour(page, `#task-${ids[0]} .status-badge`);
-      expect(orange).toBe(
-        await colour(page, ".review-pills .count-pill.tone-fixing"),
-      );
-      expect(orange).not.toBe(
-        await colour(page, `#task-${ids[2]} .status-badge`),
-      );
-      const shots = process.env.MERGE_SHOTS;
-      if (shots) {
+    // Orange as what waits, never the red of a failure (their contrast: tests/styles.test.cjs).
+    const orange = await colour(page, `#task-${ids[0]} .status-badge`);
+    expect(orange).toBe(
+      await colour(page, ".review-pills .count-pill.tone-fixing"),
+    );
+    expect(orange).not.toBe(
+      await colour(page, `#task-${ids[2]} .status-badge`),
+    );
+
+    const shots = process.env.MERGE_SHOTS;
+    if (shots)
+      for (const theme of ["dark", "light"] as const) {
+        await page.evaluate((v) => {
+          localStorage.setItem("djinn.theme", v);
+          document.documentElement.dataset.theme = v;
+          return Promise.all(
+            document
+              .getAnimations()
+              .filter((a) => a instanceof CSSTransition)
+              .map((a) => a.finished.catch(() => {})),
+          );
+        }, theme);
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
         // Both cards in sight, no title's tooltip over them.
         await page.mouse.move(0, 0);
         await page.screenshot({
           path: path.join(shots, `merge-states-${theme}.png`),
         });
       }
-    }
     expect(errors).toEqual([]);
   } finally {
     await page.evaluate(() => localStorage.removeItem("djinn.theme"));

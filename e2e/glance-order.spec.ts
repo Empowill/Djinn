@@ -362,15 +362,17 @@ test("the glance lists every worker in one order by state, its waiting work past
       "https://github.com/acme/lamp/pull/40",
     );
     await expect(watching.locator("a.glance-link")).toHaveText("PR #40");
-    await glance.evaluate((el) => el.scrollIntoView({ block: "start" }));
-    await page.screenshot({
-      path: path.join(shots, "glance-order-wish-dark.png"),
-    });
-    await theme(page, "light");
-    await page.screenshot({
-      path: path.join(shots, "glance-order-wish-light.png"),
-    });
-    await theme(page, "dark");
+    if (process.env.GLANCE_SHOTS) {
+      await glance.evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await page.screenshot({
+        path: path.join(shots, "glance-order-wish-dark.png"),
+      });
+      await theme(page, "light");
+      await page.screenshot({
+        path: path.join(shots, "glance-order-wish-light.png"),
+      });
+      await theme(page, "dark");
+    }
     // A click on the paused worker goes to its task.
     await row(stopped.code).click();
     await expect(page.locator(`[id="task-${stopped.id}"]`)).toBeVisible();
@@ -392,15 +394,17 @@ test("the glance lists every worker in one order by state, its waiting work past
     await expect(nav.locator(".wish-counts .wish-sign.tone-paused")).toHaveText(
       "1",
     );
-    await carpet.scrollIntoViewIfNeeded();
-    await page.screenshot({
-      path: path.join(shots, "glance-order-carpet-dark.png"),
-    });
-    await theme(page, "light");
-    await page.screenshot({
-      path: path.join(shots, "glance-order-carpet-light.png"),
-    });
-    await theme(page, "dark");
+    if (process.env.GLANCE_SHOTS) {
+      await carpet.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: path.join(shots, "glance-order-carpet-dark.png"),
+      });
+      await theme(page, "light");
+      await page.screenshot({
+        path: path.join(shots, "glance-order-carpet-light.png"),
+      });
+      await theme(page, "dark");
+    }
 
     // Continued, the stopped worker is at work again: among the running, by when it first began.
     djinn("task", "continue", stopped.id, "--prompt", "text filling on\nwait");
