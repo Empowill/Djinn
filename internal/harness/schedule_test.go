@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -131,6 +132,10 @@ func TestDependsOn(t *testing.T) {
 	if len(texts) < 4 || texts[1] != "waiting: waits for W1 (running)" || !strings.HasPrefix(texts[2], "started fake") ||
 		texts[len(texts)-1] != "done" {
 		t.Errorf("events of the second task: %q", texts)
+	}
+	// Its start says how long it waited, and for what (W371): the page shows the waiting line as past.
+	if len(texts) > 2 && !regexp.MustCompile(`, after waiting \d+ s: waits for W1 \(running\)$`).MatchString(texts[2]) {
+		t.Errorf("start of the second task: %q; want the wait it ended", texts[2])
 	}
 	first, second = e.get(t, first.GetId()), e.get(t, second.GetId())
 	if second.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || second.GetWaitReason() != "" ||
@@ -1018,5 +1023,21 @@ func TestStartAnyway(t *testing.T) {
 	}
 	if _, err := start(held.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("forcing a task that ran: %v", err)
+	}
+}
+
+// TestWaitedFor: a wait says itself to the second under an hour, to the minute above.
+func TestWaitedFor(t *testing.T) {
+	t.Parallel()
+	for d, want := range map[time.Duration]string{
+		-time.Second:                               "0 s",
+		45*time.Second + 400*time.Millisecond:      "45 s",
+		8*time.Minute + 28*time.Second:             "8 min 28 s",
+		21*time.Minute + 22*time.Second:            "21 min 22 s",
+		time.Hour + 5*time.Minute + 59*time.Second: "1 h 05 min",
+	} {
+		if got := waitedFor(d); got != want {
+			t.Errorf("waitedFor(%v) = %q; want %q", d, got, want)
+		}
 	}
 }

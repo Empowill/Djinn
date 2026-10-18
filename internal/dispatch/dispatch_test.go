@@ -1860,6 +1860,60 @@ func TestHeld(t *testing.T) {
 		}
 	})
 
+	// TestResumedStartOnARedBranch (W371): a restart put four running workers, two of them watchers, on "waits for
+	// feat/qol to be green again" for 21 minutes. A worker Djinn resumes and a watcher start while the push is held, and
+	// while a correction repairs the branch; a new task still waits.
+	t.Run("resumed_and_watcher_start_on_a_red_branch", func(t *testing.T) {
+		t.Parallel()
+		wish := &planv1.Wish{
+			Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE,
+			IntegrationBranches: []*planv1.IntegrationBranch{{ProjectId: "p", Branch: "feat/qol"}},
+			Pushes: []*planv1.WishPush{{ProjectId: "p", Held: "at d88c0ef3, test: exit status 1", FailedSha: "d88c0ef31234",
+				CorrectedBy: "repair"}},
+		}
+		task := func(id string, status planv1.TaskStatus) *planv1.Task {
+			return &planv1.Task{Id: id, WishId: "w", ProjectId: "p", Code: id, Status: status, Scheduled: true}
+		}
+		resumed := task("resumed", planv1.TaskStatus_TASK_STATUS_RESUMING)
+		resumed.WaitReason = "Djinn restarted"
+		watcher := task("watcher", planv1.TaskStatus_TASK_STATUS_PENDING)
+		watcher.Provider = planv1.Provider_PROVIDER_WATCH
+		resumedWatcher := task("resumed-watcher", planv1.TaskStatus_TASK_STATUS_RESUMING)
+		resumedWatcher.Provider = planv1.Provider_PROVIDER_WATCH
+		fresh := task("new", planv1.TaskStatus_TASK_STATUS_PENDING)
+		repair := task("repair", planv1.TaskStatus_TASK_STATUS_RUNNING)
+		repair.Correction = &planv1.TaskCorrection{Attempt: 1}
+		tasks := []*planv1.Task{resumed, watcher, resumedWatcher, fresh, repair}
+		git := map[string]bool{"p": true}
+		for _, held := range []bool{true, false} {
+			if !held {
+				wish.Pushes[0].Unchecked = true // The correction alone holds the branch now.
+			}
+			sit := New(tasks, []*planv1.Wish{wish}, git, &Machine{Slots: 8, Rule: "test"})
+			for _, tk := range []*planv1.Task{resumed, watcher, resumedWatcher} {
+				if why, failed := sit.Blocker(tk); why != "" || failed != "" {
+					t.Errorf("held %v: %s waits: %q %q; want it started", held, tk.GetId(), why, failed)
+				}
+			}
+			want := "waits for feat/qol to be green again (push checks red at d88c0ef3: test)"
+			if !held {
+				want = "waits for repair to repair feat/qol"
+			}
+			if why, _ := sit.Blocker(fresh); why != want {
+				t.Errorf("held %v: new task: %q; want %q", held, why, want)
+			}
+			started := map[string]bool{}
+			for _, d := range sit.Pass() {
+				if d.Why == "" {
+					started[d.Task.GetId()] = true
+				}
+			}
+			if !started["resumed"] || !started["watcher"] || !started["resumed-watcher"] || started["new"] {
+				t.Errorf("held %v: the pass started %v; want the resumed worker and the watchers, not the new task", held, started)
+			}
+		}
+	})
+
 	// TestMachineAlone: a decision says the task waits for the machine alone when slots, pressure or memory hold it, never
 	// when its provider's usage limit, a push hold, a dependency or a task going first in the order does: djinn task start
 	// frees the machine only. It waits for room (Task.room_wait, the window's count of workers waiting for a place) in the

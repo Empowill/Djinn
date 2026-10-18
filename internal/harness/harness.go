@@ -1412,8 +1412,8 @@ func (h *Harness) launch(
 	return started, nil
 }
 
-// start marks the run's task running, says so with text, and starts its worker with spec. On an error the task is
-// left to the caller to end.
+// start marks the run's task running, says so with text, and how long and for what it waited before (waited), and
+// starts its worker with spec. On an error the task is left to the caller to end.
 func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error {
 	t := r.task
 	now := h.now()
@@ -1473,6 +1473,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	if (t.GetModel() == "" || foreignModel(t.GetProvider(), t.GetModel())) && !r.watcher {
 		t.Model = DefaultModel(t.GetProvider())
 	}
+	text += h.waited(h.ctx, t.GetId(), now)
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	if r.ifrit {
 		h.relightServes(r, spec.Dir) // Before its agent: the message it was lit for may be about them.

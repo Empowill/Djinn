@@ -13,8 +13,10 @@ export {
   cancelledText,
   deletedText,
   fixerOf,
+  foldedWaits,
   gateWaiters,
   isTaskMerging,
+  liveWaitReason,
   runningOf,
   span,
   taskFinished,
@@ -1611,4 +1613,49 @@ test("a question asleep waits for its conditions, out of the open ones; woken, i
     ),
     [],
   );
+});
+
+// W371: a "waiting:" line a later start, resume or wait ended is past, folded into the line that ended it; the wait
+// still going keeps its line. The card shows a wait reason only while the task is planned or resuming.
+test("past waits fold into the line that ended them, and a started task shows no wait", () => {
+  const ev = (id, text, kind = f.TaskEventKind.STATUS) => ({ id, kind, text });
+  const events = [
+    ev("p", "do it", f.TaskEventKind.PROMPT),
+    ev("w1", "waiting: waits for a slot"),
+    ev(
+      "w2",
+      "waiting: waits for feat/qol to be green again (push checks red at d88c0ef3: test)",
+    ),
+    ev(
+      "s",
+      "started claude in /w, after waiting 8 min 28 s: waits for feat/qol to be green again",
+    ),
+    ev("t", "Read a.go", f.TaskEventKind.TOOL_CALL),
+    ev("i", "interrupted: Djinn restarted"),
+    ev("r", "resuming: Djinn restarted; Djinn starts it again by itself"),
+    ev("w3", "waiting: waits for W1 (running)"),
+    ev("w4", "waiting: waits for W2 (running)"),
+  ];
+  const folded = f.foldedWaits(events);
+  assert.deepEqual(
+    [...folded].map(([id, waits]) => [id, waits.map((w) => w.id)]),
+    [
+      ["s", ["w1", "w2"]],
+      ["w4", ["w3"]],
+    ],
+  );
+  assert.equal(
+    f.foldedWaits(events.slice(0, 2)).size,
+    0,
+    "a wait still going keeps its line",
+  );
+
+  const reason = "waits for feat/qol to be green again";
+  for (const [status, want] of [
+    [f.TaskStatus.PENDING, reason],
+    [f.TaskStatus.RESUMING, reason],
+    [f.TaskStatus.RUNNING, ""],
+    [f.TaskStatus.DONE, ""],
+  ])
+    assert.equal(f.liveWaitReason({ status, waitReason: reason }), want);
 });

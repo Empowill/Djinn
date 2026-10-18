@@ -744,10 +744,10 @@ func pushCheckHeld(p *planv1.WishPush) (sha, check string) {
 // a new worker would start from the branch without that work, its own merge conflicting in turn); "" when neither
 // holds it. A correction, a review, a question worker, an urgent task, which the lead marks to repair the branch or for
 // quick feedback, and an investigation or a mockup, whose work is never merged (ChangesNoCode), never wait; neither do
-// the workers Djinn resumes,
-// nor, for a repair, a watcher, which starts from no branch. The workers already running go on.
+// the workers Djinn resumes (after a restart, a usage limit, a network outage: they were running, and go on, W371), nor
+// a watcher, which starts from no branch and merges nothing. The workers already running go on.
 func (s *Situation) pushHeld(t *planv1.Task) string {
-	if plan.IsMerge(t) || QuestionWorker(t) || Urgent(t) || ChangesNoCode(t) {
+	if plan.IsMerge(t) || QuestionWorker(t) || Urgent(t) || ChangesNoCode(t) || Resuming(t) || Watcher(t) {
 		return ""
 	}
 	wish := s.wishes[t.GetWishId()]
@@ -757,9 +757,6 @@ func (s *Situation) pushHeld(t *planv1.Task) string {
 	if p := plan.PushStateOf(wish, t.GetProjectId()); p != nil && p.GetHeld() != "" && !p.GetUnchecked() && p.GetCorrectedBy() != t.GetId() {
 		sha, check := pushCheckHeld(p)
 		return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", s.integrationBranch(t), sha, check)
-	}
-	if Resuming(t) || Watcher(t) {
-		return ""
 	}
 	for _, c := range s.tasks {
 		if c.GetWishId() == t.GetWishId() && strings.EqualFold(c.GetProjectId(), t.GetProjectId()) && repairing(c) {

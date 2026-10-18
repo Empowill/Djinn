@@ -24,7 +24,7 @@ The Djinn plans the tasks and spawns them; you follow them, answer their questio
 1. **Spawned.** The Djinn spawns a task with a title, a prompt, a project, an agent and its model. It is part of an
    azima or of none, and it comes after the tasks it needs.
 2. **Planned.** It waits until it can start: its dependencies done, a slot free on the machine. Its card says why it
-   waits.
+   waits, and only while it waits: a task that started never shows a wait.
 3. **Running.** Djinn makes its worktree and its branch, from the wish's branch, and starts the worker on its prompt.
 4. **Ended.** The worker's turn ends. Done, its work goes in line to be merged; failed or stopped, it stays as it is
    until someone decides. A worker that asked you a blocking question ends its turn but not its task: the task waits
@@ -62,8 +62,12 @@ The status is one colour, one icon and one word:
 | Watching | A [watcher](#watcher) running |
 | Investigating | A worker finding out more for a question you asked to [enlighten](#enlighten) |
 
-A planned task's card says why it waits: for the tasks it comes after, for the machine, for its wish to be resumed.
-See [Dependencies](#dependencies).
+A planned task's card says why it waits: for the tasks it comes after, for the machine, for its wish to be resumed,
+for its wish's branch to be green again. A task Djinn resumes says it too, until it runs again. Once the task starts,
+the card no longer says it waits, and its page keeps the wait as history: the line that starts the worker says how
+long it waited and for what (*started claude … after waiting 8 min 28 s: waits for feat/qol to be green again*), and
+the *waiting* lines before it fold into that line, greyed. Only the last *waiting* line of a task that still waits
+reads as where it stands. See [Dependencies](#dependencies).
 
 ## Where a worker works
 

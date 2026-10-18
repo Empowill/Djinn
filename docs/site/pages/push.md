@@ -137,7 +137,10 @@ When a push check is red, the push is **held**:
   red branch. Corrections, investigators and [investigations](#investigation) still start, and so do the **urgent**
   tasks the Djinn marks: the one that repairs the branch once Djinn's corrections gave up on it, and one for your
   quick feedback ([Task and worker](#task-and-worker)). A repair of the red push checks the Djinn spawns starts too:
-  it becomes their correction (see below).
+  it becomes their correction (see below). The workers already running go on, and so do those Djinn resumes, after a
+  restart, a usage limit or a network outage: they were running, and their work goes in line like any. A
+  [watcher](#watcher) starts too: it merges nothing. On 17/10/2026, before this rule, a restart held four running
+  workers, two of them watchers, for 21 minutes behind a red branch.
 - Djinn runs the push checks again when new work is committed, or when the branch moves, even by a push of yours.
   Green, the hold lifts and the push goes on.
 - Never twice on the same files: a branch whose files are those the push checks were red on is not checked again,

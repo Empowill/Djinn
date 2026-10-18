@@ -49,6 +49,7 @@ import {
   date,
   firstLine,
   gitReason,
+  liveWaitReason,
   span,
   takenOver,
   taskStatusText,
@@ -514,7 +515,7 @@ function pausedWhy(task: Task): string {
   const resume = date(task.resumeAfter);
   return (
     task.error ||
-    task.waitReason ||
+    liveWaitReason(task) ||
     (resume
       ? t("glance.resumes_at", {
           time: resume.toLocaleTimeString(language, {

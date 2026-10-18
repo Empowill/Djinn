@@ -275,7 +275,9 @@
                 <h3><a href="#task-and-worker">Workers</a></h3>
                 <p>
                   An agent on one task, in its own worktree and branch. Send it an instruction, pause it, stop it. Stopping
-                  Djinn interrupts workers, never loses them: the next start resumes each one in its own session. A worker
+                  Djinn interrupts workers, never loses them: the next start resumes each one in its own session, even while
+                  the push checks are red. A planned task's card says why it waits only while it waits; once it starts, its
+                  start says how long it waited and for what, and the waiting line above it turns grey. A worker
                   that fails, or whose permissions refused a call, is the Djinn's, never yours: it takes it up again or
                   closes it, and asks you only for a right it lacks, naming the command that grants it. A worker stalled, or
                   failed for a reason a new turn may get past, shows a small arrow beside its code, and the Djinn hears the
