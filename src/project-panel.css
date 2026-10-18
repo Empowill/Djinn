@@ -222,10 +222,10 @@
 .summoning-select {
   min-width: 14rem;
   padding: 0.35rem 0.6rem;
-  border: 1px solid var(--n-33);
-  border-radius: var(--radius-xs);
-  background: var(--n-1b);
-  color: var(--n-f0);
+  border: 1px solid var(--n-57);
+  border-radius: var(--radius-control, 0.4375rem);
+  background: var(--n-25);
+  color: var(--n-c4);
   font-size: var(--font-size-body, 0.75rem);
 }
 .summoning-select:disabled {
