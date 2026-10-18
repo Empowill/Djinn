@@ -711,6 +711,180 @@ func SaveDeveloperMainBranch(home, projectID, branch string) error {
 	return err
 }
 
+// ValidWorkerProvider reports whether p is a provider a project's workers may run by default.
+func ValidWorkerProvider(p planv1.Provider) bool {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_ANTIGRAVITY:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsClaudeModel reports whether m is a model identifier of Claude.
+func IsClaudeModel(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	return m == "claude" || strings.HasPrefix(m, "claude-") ||
+		strings.HasPrefix(m, "claude/") ||
+		strings.HasPrefix(m, "anthropic/") ||
+		strings.Contains(m, ".claude-") ||
+		m == "sonnet" || strings.HasPrefix(m, "sonnet-") || strings.HasPrefix(m, "sonnet/") || strings.HasPrefix(m, "sonnet[") ||
+		m == "opus" || strings.HasPrefix(m, "opus-") || strings.HasPrefix(m, "opus/") || strings.HasPrefix(m, "opus[") ||
+		m == "haiku" || strings.HasPrefix(m, "haiku-") || strings.HasPrefix(m, "haiku/") || strings.HasPrefix(m, "haiku[")
+}
+
+// IsAntigravityModel reports whether m is a model identifier of Antigravity.
+func IsAntigravityModel(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	return m == "gemini" || strings.HasPrefix(m, "gemini-") || strings.HasPrefix(m, "gemini ") ||
+		strings.HasPrefix(m, "gemini/") ||
+		strings.HasPrefix(m, "google/") ||
+		strings.Contains(m, ".gemini-") ||
+		m == "argon" || strings.Contains(m, "argon")
+}
+
+// IsCodexModel reports whether m is a model identifier of Codex.
+func IsCodexModel(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	return m == "codex" || strings.HasPrefix(m, "codex-") ||
+		strings.HasPrefix(m, "gpt-") ||
+		strings.HasPrefix(m, "openai/") ||
+		strings.Contains(m, ".gpt-") ||
+		strings.HasSuffix(m, "-codex") ||
+		strings.HasPrefix(m, "code-") ||
+		m == "o1" || strings.HasPrefix(m, "o1-") || strings.HasPrefix(m, "o1.") || strings.HasPrefix(m, "o1/") ||
+		m == "o3" || strings.HasPrefix(m, "o3-") || strings.HasPrefix(m, "o3.") || strings.HasPrefix(m, "o3/") ||
+		m == "o4" || strings.HasPrefix(m, "o4-") || strings.HasPrefix(m, "o4.") || strings.HasPrefix(m, "o4/")
+}
+
+// ValidateProviderModel checks that model is empty (the provider's own default) or a well-formed model of provider p.
+func ValidateProviderModel(p planv1.Provider, model string) error {
+	if !ValidWorkerProvider(p) {
+		return fmt.Errorf("provider %s cannot be a project's default: choose claude, codex or antigravity", providerName(p))
+	}
+	if model == "" {
+		return nil
+	}
+	if strings.TrimSpace(model) == "" {
+		return fmt.Errorf("model %q is blank", model)
+	}
+	if err := protovalidate.Validate(&planv1.ProjectSettings{Model: &model}); err != nil {
+		return fmt.Errorf("model %q: %w", model, err)
+	}
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE:
+		if IsAntigravityModel(model) || IsCodexModel(model) {
+			return fmt.Errorf("model %q belongs to another provider, not claude", model)
+		}
+		if !IsClaudeModel(model) {
+			return fmt.Errorf("unknown model %q for provider claude", model)
+		}
+	case planv1.Provider_PROVIDER_CODEX:
+		if IsClaudeModel(model) || IsAntigravityModel(model) {
+			return fmt.Errorf("model %q belongs to another provider, not codex", model)
+		}
+		if !IsCodexModel(model) {
+			return fmt.Errorf("unknown model %q for provider codex", model)
+		}
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		if IsClaudeModel(model) || IsCodexModel(model) {
+			return fmt.Errorf("model %q belongs to another provider, not antigravity", model)
+		}
+		if !IsAntigravityModel(model) {
+			return fmt.Errorf("unknown model %q for provider antigravity", model)
+		}
+	}
+	return nil
+}
+
+// ValidateQuestionModel checks that model is empty or a valid model for the project's question workers.
+func ValidateQuestionModel(workerProvider, questionProvider planv1.Provider, model string) error {
+	if model == "" {
+		return nil
+	}
+	eff := questionProvider
+	if eff == planv1.Provider_PROVIDER_UNSPECIFIED {
+		if CanReadOnly(workerProvider) {
+			eff = workerProvider
+		} else {
+			eff = planv1.Provider_PROVIDER_CLAUDE
+		}
+	}
+	if err := ValidateProviderModel(workerProvider, model); err == nil {
+		return nil
+	}
+	if eff != workerProvider {
+		if err := ValidateProviderModel(eff, model); err == nil {
+			return nil
+		}
+	}
+	return ValidateProviderModel(workerProvider, model)
+}
+
+// SaveDeveloperDefaults writes the developer's default provider, model, and question_model for project into their
+// settings file in home, or clears them when req.Unset is true, validating provider and models before writing.
+func SaveDeveloperDefaults(home string, project *planv1.Project, req *planv1.ProjectServiceSetDefaultsRequest) error {
+	if project == nil {
+		return errors.New("project is missing")
+	}
+	repo, _, _, _ := loadSettings(home, project)
+	_, err := saveDeveloper(home, project.GetId(), func(s *planv1.ProjectSettings) error {
+		if req.GetUnset() {
+			s.Provider = nil
+			s.Model = nil
+			s.QuestionModel = nil
+			return nil
+		}
+		if req.Provider != nil {
+			p := req.GetProvider()
+			if !ValidWorkerProvider(p) {
+				return fmt.Errorf("provider %s cannot be a project's default: choose claude, codex or antigravity", providerName(p))
+			}
+			prev := s.GetProvider()
+			s.Provider = p.Enum()
+			if req.Model == nil {
+				s.Model = nil
+			}
+			if req.QuestionModel == nil && prev != p {
+				s.QuestionModel = nil
+			}
+		}
+		if req.Model != nil {
+			m := req.GetModel()
+			if m == "" && repo.GetModel() == "" {
+				s.Model = nil
+			} else {
+				s.Model = &m
+			}
+		}
+		if req.QuestionModel != nil {
+			qm := req.GetQuestionModel()
+			if qm == "" && repo.GetQuestionModel() == "" {
+				s.QuestionModel = nil
+			} else {
+				s.QuestionModel = &qm
+			}
+		}
+		resolved := ResolveSettings(repo, s)
+		if !ValidWorkerProvider(resolved.Provider) {
+			return fmt.Errorf("provider %s cannot be a project's default: choose claude, codex or antigravity", providerName(resolved.Provider))
+		}
+		if err := ValidateProviderModel(resolved.Provider, resolved.Model); err != nil {
+			return err
+		}
+		if req.QuestionModel != nil {
+			if err := ValidateQuestionModel(resolved.Provider, resolved.QuestionProvider, req.GetQuestionModel()); err != nil {
+				return fmt.Errorf("question_model: %w", err)
+			}
+		}
+		if err := ValidateQuestionModel(resolved.Provider, resolved.QuestionProvider, resolved.QuestionModel); err != nil {
+			return fmt.Errorf("question_model: %w", err)
+		}
+		return nil
+	})
+	return err
+}
+
 // ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.
 func ResolveWishPushStrategy(wish *planv1.Wish, settings Settings) (planv1.PushStrategy, planv1.SettingSource) {
 	if wish != nil && wish.GetPushStrategy() != planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED {

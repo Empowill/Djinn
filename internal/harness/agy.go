@@ -99,10 +99,21 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 		args = append(args, "--conversation", spec.Resume)
 	}
 	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_ANTIGRAVITY, spec.Model) {
-		args = append(args, "--model", spec.Model)
+		args = append(args, "--model", agyModel(spec.Model))
 	}
 	// agy has no spending cap: MaxBudgetUSD is not enforced.
 	return args, nil
+}
+
+// agyModel maps model identifiers for Antigravity's Argon model ("gemini-4-argon-high", "gemini-4-argon", "argon")
+// and case variants of "Gemini 4 Argon (High)" to the exact name agy expects on --model: "Gemini 4 Argon (High)".
+func agyModel(model string) string {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "gemini 4 argon (high)", "gemini-4-argon-high", "gemini-4-argon", "argon":
+		return "Gemini 4 Argon (High)"
+	default:
+		return model
+	}
 }
 
 func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {

@@ -451,3 +451,37 @@ test("the side panel's Grimoire sits under the Hourglass, shows the documentatio
   // No way to the documentation, no entry.
   assert.doesNotMatch(sidebar(false), /grimoire-nav/);
 });
+
+test("the Summoning Circle sits below the Grimoire at the bottom of the side panel", () => {
+  const render = (collapsed, onOpenSummoningCircle) =>
+    s.renderToStaticMarkup(
+      h(s.WishSidebar, {
+        wishes: [wish("w1", "Ship the lamp", s.WishState.ACTIVE, 1)],
+        projects: [],
+        onSelectPlan() {},
+        onSelectHourglass() {},
+        onSelectGrimoire() {},
+        onOpenSummoningCircle,
+        selectedWishId: "",
+        selectedProjectId: "",
+        collapsed,
+        onSelectWish() {},
+        onSelectProject() {},
+        onMove() {},
+        onNewProject() {},
+        onImportWish() {},
+      }),
+    );
+  const open = render(false, () => {});
+  const grimoire = open.indexOf("grimoire-nav");
+  const summoning = open.indexOf("summoning-nav");
+  assert.ok(grimoire >= 0 && summoning > grimoire, open);
+  assert.match(
+    open,
+    /<button class="nav-item summoning-nav" title="Choose per project which agent and model answer new workers and question investigations" aria-label="Summoning Circle"><svg[^>]*lucide-compass[^>]*>[^]*?<\/svg><span>Summoning Circle<\/span><\/button>$/,
+  );
+  assert.match(
+    render(true, () => {}),
+    /<button class="nav-item summoning-nav" title="Choose per project which agent and model answer new workers and question investigations" aria-label="Summoning Circle"><svg[^>]*lucide-compass[^>]*>[^]*?<\/svg><\/button>$/,
+  );
+});

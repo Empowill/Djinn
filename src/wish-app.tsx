@@ -38,6 +38,7 @@ import { EmptyState } from "./empty-art";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { useInboxCount } from "./inbox";
 import { ProjectPanel } from "./project-panel";
+import { SummoningCircle } from "./summoning-circle";
 import { AddProject, MakeWish, Settings } from "./wish-dialogs";
 import { Docs, GRIMOIRE } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
@@ -56,7 +57,7 @@ import { CARPET_DIGIT, HOURGLASS_DIGIT, pageDigit } from "./page-keys";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | "agents" | null;
+type Modal = "make" | "project" | "settings" | "agents" | "summoning" | null;
 
 // What the window shows instead of a wish: the flying carpet of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -435,6 +436,7 @@ export function WishApp() {
             onSelectHourglass={() => showPage(HOURGLASS)}
             grimoireSelected={grimoire}
             onSelectGrimoire={() => showPage(GRIMOIRE)}
+            onOpenSummoningCircle={() => setModal("summoning")}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
@@ -545,6 +547,9 @@ export function WishApp() {
         )}
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
+        {modal === "summoning" && (
+          <SummoningCircle projects={projects} onClose={() => setModal(null)} />
+        )}
         {project && modal !== "make" && (
           <ProjectPanel
             project={project}
