@@ -818,3 +818,127 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
   assert.equal(s.canonicalModelId("sonnet"), "claude-sonnet-5-5");
   assert.equal(s.shortModel("Gemini 4 Argon (High)"), "gemini 4 argon");
 });
+
+test("a slower in-flight ProjectService/Show response does not overwrite a newer reshow after saying no to a source", async () => {
+  const { setupMockDom } = await import("./screens.mjs");
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+
+  const text = (node) =>
+    node.childNodes.length > 0
+      ? node.childNodes.map(text).join("")
+      : (node.nodeValue ?? node.textContent ?? "");
+  const p1 = { id: "p1", name: "gong", git: true, directory: "/tmp/gong" };
+  const sourceItem = {
+    name: "gong/babysit-mr",
+    skill: "babysit-mr",
+    project: "gong",
+    watch: "sh .agents/skills/babysit-mr/assigned.sh",
+    every: "5m0s",
+  };
+  const staleNotice = {
+    kind: s.ProjectNoticeKind.TO_FIX,
+    topic: s.ProjectNoticeTopic.SOURCE,
+    subject: "gong/babysit-mr",
+    text: "The skill babysit-mr offers an inbox source this machine has not decided on.",
+    detail: "",
+    action: s.ProjectNoticeAction.PLUG_SOURCE,
+    file: "",
+    command: "djinn inbox plug gong/babysit-mr",
+  };
+  let showCalls = 0;
+  let resolveSlowShow;
+  let currentSources = [sourceItem];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.WishService, {
+      list: () => ({ wishes: [] }),
+      watch: async function* () {},
+    });
+    service(s.ProjectService, {
+      list: () => ({ projects: [p1] }),
+      show: () => {
+        showCalls++;
+        if (showCalls === 1) {
+          return { project: p1, notices: [staleNotice], settings: [] };
+        }
+        if (showCalls === 2) {
+          // Slow in-flight Show that still carries the stale toFix notice.
+          return new Promise((resolve) => {
+            resolveSlowShow = () =>
+              resolve({ project: p1, notices: [staleNotice], settings: [] });
+          });
+        }
+        return { project: p1, notices: [], settings: [] };
+      },
+    });
+    service(s.SkillService, { list: () => ({ skills: [] }) });
+    service(s.InboxService, {
+      list: () => ({ items: [] }),
+      sources: () => ({ sources: currentSources }),
+      unplug: () => ({}),
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  await djinn.store.changed("", [s.Change.PROJECT, s.Change.INBOX]);
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () => {
+      root.render(
+        h(
+          s.DjinnProvider,
+          { djinn },
+          h(s.ProjectPanel, { project: p1, onClose() {} }),
+        ),
+      );
+    });
+    await settle();
+    const hasToFix = () =>
+      below(container).some((el) =>
+        String(el.attributes?.class ?? "").includes("to-fix"),
+      );
+    assert.equal(hasToFix(), true);
+
+    // Trigger a second Show (slow) by refreshing sources, then a third Show (fast, empty notices) by clicking "Say no".
+    currentSources = [{ ...sourceItem, every: "10m0s" }];
+    await s.act(async () => {
+      await djinn.store.changed("", [s.Change.INBOX]);
+    });
+    await settle();
+    assert.equal(showCalls, 2);
+
+    const sayNo = below(container).find(
+      (el) => el.nodeName === "BUTTON" && text(el).includes("Say no"),
+    );
+    assert.ok(sayNo);
+    await s.act(async () => {
+      props(sayNo).onClick();
+    });
+    await settle();
+    assert.ok(showCalls >= 3);
+    assert.equal(hasToFix(), false);
+
+    // Now let the slower Show #2 finish: it must not put the stale to-fix notice back.
+    await s.act(async () => {
+      resolveSlowShow();
+    });
+    await settle();
+    assert.equal(hasToFix(), false);
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});

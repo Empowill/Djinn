@@ -223,10 +223,11 @@ export function CommentsColumn({
   };
   const save = () => {
     if (!canSave(state) || busy) return;
-    const id = state.editing === NEW ? undefined : state.editing;
+    const editing = state.editing;
+    const id = editing === NEW ? undefined : editing;
     act(async () => {
       await writes.put(tilasmId, state.text, id, state.anchor);
-      dispatch({ type: "saved" });
+      dispatch({ type: "saved", editing });
     });
   };
   const editor = (label: string) => (
@@ -279,7 +280,7 @@ export function CommentsColumn({
               <button
                 type="button"
                 className="icon-button"
-                disabled={greyed}
+                disabled={busy || greyed}
                 title={t("tilasms.comment_edit", { code: comment.code })}
                 aria-label={t("tilasms.comment_edit", {
                   code: comment.code,
@@ -352,7 +353,7 @@ export function CommentsColumn({
             <button
               type="button"
               className="text-button tilasm-reattach-button"
-              disabled={greyed}
+              disabled={busy || greyed}
               title={t("tilasms.reattach_title")}
               onClick={() => onReattach(comment.id)}
             >
@@ -378,7 +379,7 @@ export function CommentsColumn({
         <button
           type="button"
           className="text-button"
-          disabled={state.editing === NEW || greyed}
+          disabled={busy || state.editing === NEW || greyed}
           onClick={() => dispatch({ type: "write" })}
         >
           <Plus size={13} aria-hidden="true" />
@@ -403,7 +404,10 @@ export function CommentsColumn({
           {groups.attached.map(card)}
           {state.editing === NEW && (
             // A new passage or element asked for focuses the card again.
-            <li key={`new-${newKey(state.anchor)}`} className="tilasm-comment">
+            <li
+              key={`new-${newKey(state.anchor)}`}
+              className="tilasm-comment-new"
+            >
               <div className="tilasm-comment-head">
                 <span className="tilasm-comment-anchor">
                   {state.anchor

@@ -393,7 +393,8 @@
   padding: 0;
   list-style: none;
 }
-.tilasm-comment {
+.tilasm-comment,
+.tilasm-comment-new {
   padding: 0.5rem 0.625rem;
   border: 1px solid var(--line);
   border-radius: 0.5rem;

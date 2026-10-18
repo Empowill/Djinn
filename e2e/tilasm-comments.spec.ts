@@ -512,8 +512,9 @@ test("a passage selected in the frame with the mouse is commented from the Comme
   });
   await expect(editor).toBeFocused();
   const cards = column.locator(".tilasm-comment");
-  await expect(cards.last()).toContainText("§ Grouping");
-  await expect(cards.last().locator(".tilasm-comment-quote")).toHaveText(
+  const newCard = column.locator(".tilasm-comment-new");
+  await expect(newCard).toContainText("§ Grouping");
+  await expect(newCard.locator(".tilasm-comment-quote")).toHaveText(
     "two seconds",
   );
   await expect
@@ -560,8 +561,8 @@ test("a passage selected in the frame with the mouse is commented from the Comme
   await expect(pick).toBeVisible();
   await page.keyboard.press("Control+Alt+KeyM");
   await expect(editor).toBeFocused();
-  await expect(cards.last()).toContainText("§ Display");
-  await expect(cards.last().locator(".tilasm-comment-quote")).toHaveText(
+  await expect(newCard).toContainText("§ Display");
+  await expect(newCard.locator(".tilasm-comment-quote")).toHaveText(
     "tab of the wish",
   );
   await editor.press("Escape");
@@ -600,7 +601,9 @@ test("a passage selected in the frame with the mouse is commented from the Comme
   await drag(page, inFrame.locator("#again"));
   await expect(pick).toBeVisible();
   await pick.click();
-  await expect(cards.last()).toContainText("§ Display");
+  await expect(column.locator(".tilasm-comment-new")).toContainText(
+    "§ Display",
+  );
   await editor.fill("Which tab?");
   await editor.press("Control+Enter");
   await expect(cards).toHaveCount(2);
@@ -677,8 +680,9 @@ test("a tilasm opened from a question's link is commented over the view, as in t
   });
   await expect(editor).toBeFocused();
   const cards = column.locator(".tilasm-comment");
-  await expect(cards.last()).toContainText("§ Grouping");
-  await expect(cards.last().locator(".tilasm-comment-quote")).toHaveText(
+  const newCard = column.locator(".tilasm-comment-new");
+  await expect(newCard).toContainText("§ Grouping");
+  await expect(newCard.locator(".tilasm-comment-quote")).toHaveText(
     "two seconds",
   );
   const box = over.locator("iframe.tilasm-frame");
@@ -858,7 +862,7 @@ test("Aim mode comments an element, Escape leaves it in the window or the frame,
   await expect(aim).toHaveAttribute("aria-pressed", "false");
   await expect(editor).toBeFocused();
   const cards = column.locator(".tilasm-comment");
-  await expect(cards.last()).toContainText(
+  await expect(column.locator(".tilasm-comment-new")).toContainText(
     "figure: Figure 1 - The path of a notice",
   );
   await editor.fill("The arrow to the window is missing.");

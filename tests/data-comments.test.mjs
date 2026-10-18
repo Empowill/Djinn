@@ -194,6 +194,12 @@ test("a draft is edited in place from its text", () => {
   s = c.column(s, { type: "type", text: "First, edited." });
   // Opening the same card again keeps the edit.
   assert.equal(c.column(s, { type: "edit", comment: c1 }), s);
+  // A previous save finishing for another editor does not close the one now open.
+  assert.equal(c.column(s, { type: "saved", editing: c.NEW }), s);
+  assert.deepEqual(c.column(s, { type: "saved", editing: c1.id }), {
+    editing: "",
+    text: "",
+  });
   // Another card replaces it.
   assert.deepEqual(c.column(s, { type: "edit", comment: c2 }), {
     editing: c2.id,

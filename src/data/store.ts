@@ -641,6 +641,18 @@ export function createStore(
   let scheduledResolve: (() => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timerAt = 0;
+  // Waiters from changed(): each resolves as soon as a read that started at or after its registration completes for
+  // its keys, without waiting an extra THROTTLE_MS if the write's own WatchChanges event arrived while that read was
+  // in flight.
+  const waiters = new Map<string, (() => void)[]>();
+  const claimWaiters = (key: string, p: Promise<void>) => {
+    const list = waiters.get(key);
+    if (!list?.length) return;
+    waiters.delete(key);
+    void p.finally(() => {
+      for (const r of list) r();
+    });
+  };
 
   // mark notes what to read again; with changed, the tasks, questions and blocks it brings need no read. A change
   // this page does not know reads everything again. Only loaded kinds of opened wishes are re-read.
@@ -890,6 +902,7 @@ export function createStore(
         },
       );
       inFlightPromises.set(key, p);
+      claimWaiters(key, p);
       reads.push(p);
     };
 
@@ -1059,6 +1072,7 @@ export function createStore(
         },
       );
       inFlightPromises.set(key, p);
+      claimWaiters(key, p);
       reads.push(p);
     };
 
@@ -1666,6 +1680,8 @@ export function createStore(
         abort.abort();
         for (const t of slowTimers.values()) clearTimeout(t);
         slowTimers.clear();
+        for (const list of waiters.values()) for (const r of list) r();
+        waiters.clear();
         if (timer !== undefined) {
           clearTimeout(timer);
           timer = undefined;
@@ -1861,20 +1877,59 @@ export function createStore(
         set({ details: { ...state.details, [question.wishId]: next } });
     },
     changed(wishId, changes) {
+      mark(wishId, changes);
+      const keys = new Set<string>();
+      const ids = wishId ? [wishId] : [...opened.keys()];
       for (const change of changes) {
-        if (change === Change.WISH) lastReadAt.delete("wishes");
-        else if (change === Change.PROJECT) lastReadAt.delete("projects");
-        else if (change === Change.INBOX) lastReadAt.delete("inbox");
-        else if (wishId && DETAIL.includes(change))
-          lastReadAt.delete(`${wishId}:${change}`);
+        if (!Change[change] || change === Change.UNSPECIFIED) {
+          lastReadAt.clear();
+          if (pending.wishes) keys.add("wishes");
+          if (pending.projects) keys.add("projects");
+          if (pending.inbox) keys.add("inbox");
+          for (const id of ids) {
+            for (const k of pending.details.get(id) ?? []) {
+              keys.add(`${id}:${k}`);
+            }
+          }
+        } else if (change === Change.WISH) {
+          lastReadAt.delete("wishes");
+          if (pending.wishes) keys.add("wishes");
+        } else if (change === Change.PROJECT) {
+          lastReadAt.delete("projects");
+          if (pending.projects) keys.add("projects");
+        } else if (change === Change.INBOX) {
+          lastReadAt.delete("inbox");
+          if (pending.inbox) keys.add("inbox");
+        } else if (DETAIL.includes(change)) {
+          for (const id of ids) {
+            const key = `${id}:${change}`;
+            lastReadAt.delete(key);
+            if (pending.details.get(id)?.has(change)) {
+              keys.add(key);
+            }
+          }
+        }
       }
       if (timer !== undefined) {
         clearTimeout(timer);
         timer = undefined;
         timerAt = 0;
       }
-      mark(wishId, changes);
-      return flush();
+      const awaited = Promise.all(
+        [...keys].map(
+          (key) =>
+            new Promise<void>((resolve) => {
+              let list = waiters.get(key);
+              if (!list) {
+                list = [];
+                waiters.set(key, list);
+              }
+              list.push(resolve);
+            }),
+        ),
+      ).then(() => {});
+      void flush();
+      return keys.size > 0 ? awaited : Promise.resolve();
     },
     readMachine,
     readState,

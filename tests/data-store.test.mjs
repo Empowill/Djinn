@@ -2062,3 +2062,54 @@ test("an in-flight task list read does not overwrite a newer watch update that a
   assert.equal(after?.status, 4);
   assert.equal(after?.lastLine, "Done");
 });
+
+test("changed() resolves as soon as the read it started completes, without waiting for the throttle when its own watch event arrives in flight", async () => {
+  const data = sample();
+  const { clients, watch } = server(data);
+  // Use a 5s throttle so waiting for the throttled second read would time out or fail the elapsed check.
+  const store = createStore(clients, 10, 5_000);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId, [Change.QUESTION]);
+  await until(store, (s) =>
+    s.details[wishId]?.loadedKinds.has(Change.QUESTION),
+  );
+
+  let releaseQuestions;
+  let questionReads = 0;
+  data.listQuestions = () => {
+    questionReads++;
+    const updated = [
+      ...data.questions,
+      { id: "q2", wishId, code: "Q02", text: "Wick?" },
+    ];
+    if (questionReads === 1) {
+      return new Promise((r) => (releaseQuestions = r)).then(() => ({
+        questions: updated,
+        total: updated.length,
+        nextPageToken: "",
+      }));
+    }
+    return { questions: updated, total: updated.length, nextPageToken: "" };
+  };
+
+  const startedAt = Date.now();
+  const changedPromise = store.changed(wishId, [Change.QUESTION]);
+  await new Promise((r) => setTimeout(r, 15));
+
+  // While the first read of QUESTION is in flight, the server's WatchChanges SSE event for that write arrives.
+  watch.push({ wishId, changes: [Change.QUESTION] });
+  await new Promise((r) => setTimeout(r, 10));
+
+  releaseQuestions();
+  await changedPromise;
+  const elapsed = Date.now() - startedAt;
+  assert.ok(
+    elapsed < 1_000,
+    `changed() resolved in ${elapsed}ms without waiting for the 5000ms throttle`,
+  );
+  assert.equal(store.getState().details[wishId]?.questions.length, 2);
+  assert.equal(store.getState().details[wishId]?.questions[1].code, "Q02");
+  stop();
+});

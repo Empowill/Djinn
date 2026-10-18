@@ -1,5 +1,4 @@
-// Reporter measuring the e2e suite's wall clock and comparing it with e2e/baseline.json,
-// and listing tests that passed on retry (Playwright `flaky` status) in its summary and $GITHUB_STEP_SUMMARY.
+// Reporter measuring the e2e suite's wall clock and comparing it with e2e/baseline.json.
 // Warns if the wall clock exceeds the baseline by >25% without failing the check.
 // Update baseline with UPDATE_BASELINE=1 or by editing e2e/baseline.json directly.
 import fs from "node:fs";
@@ -9,7 +8,6 @@ import type {
   FullResult,
   Reporter,
   Suite,
-  TestCase,
 } from "@playwright/test/reporter";
 
 const WARN_MARGIN = 0.25; // 25% margin
@@ -33,55 +31,11 @@ function formatDuration(sec: number): string {
   return `${rounded.toFixed(1)}s`;
 }
 
-export function formatFlakyTest(
-  test: Pick<TestCase, "title"> & {
-    location?: { file: string; line?: number; column?: number };
-    titlePath?: () => string[];
-  },
-  rootDir: string = __dirname,
-): string {
-  const file = test.location?.file
-    ? path.relative(rootDir, test.location.file).replaceAll("\\", "/")
-    : "";
-  const loc = file
-    ? test.location?.line
-      ? `${file}:${test.location.line}`
-      : file
-    : "";
-  const rawTitles = test.titlePath
-    ? test.titlePath().filter(Boolean)
-    : [test.title];
-  const titles = rawTitles.filter(
-    (part, idx) =>
-      !(idx === 0 && part === "chromium") &&
-      !(file && (part === file || part === path.basename(file))),
-  );
-  const title = (titles.length ? titles : [test.title]).join(" › ");
-  return loc ? `${loc} › ${title}` : title;
-}
-
-export function flakyTests(
-  suite?: Pick<Suite, "allTests">,
-  rootDir: string = __dirname,
-): string[] {
-  if (!suite) return [];
-  return suite
-    .allTests()
-    .filter((test) => test.outcome() === "flaky")
-    .map((test) => formatFlakyTest(test, rootDir));
-}
-
 export default class E2EReporter implements Reporter {
   private startTime = 0;
-  private suite?: Suite;
-  private rootDir = __dirname;
 
-  onBegin(config: FullConfig, suite: Suite): void {
+  onBegin(_config: FullConfig, _suite: Suite): void {
     this.startTime = Date.now();
-    this.suite = suite;
-    if (config?.rootDir) {
-      this.rootDir = config.rootDir;
-    }
   }
 
   onEnd(_result: FullResult): void {
@@ -121,22 +75,6 @@ export default class E2EReporter implements Reporter {
       }
     } else {
       console.log(`E2E total: ${formattedElapsed} wall clock`);
-    }
-
-    const flaky = flakyTests(this.suite, this.rootDir);
-    if (flaky.length > 0) {
-      console.log(
-        `Flaky e2e tests (${flaky.length} passed on retry):\n` +
-          flaky.map((name) => `  flaky: ${name}`).join("\n"),
-      );
-      const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-      if (summaryPath) {
-        const md =
-          `### Flaky e2e tests (${flaky.length} passed on retry)\n\n` +
-          flaky.map((name) => `- \`${name}\``).join("\n") +
-          "\n";
-        fs.appendFileSync(summaryPath, md);
-      }
     }
   }
 }
