@@ -713,6 +713,40 @@ func (p *Projects) SetBranch(
 	}), nil
 }
 
+// SetDefaults writes the developer's default provider and models for a project's workers and question workers into
+// their own settings file, or takes them back with unset.
+func (p *Projects) SetDefaults(
+	ctx context.Context, req *connect.Request[planv1.ProjectServiceSetDefaultsRequest],
+) (*connect.Response[planv1.ProjectServiceSetDefaultsResponse], error) {
+	project, err := ProjectNamed(ctx, p.Store, req.Msg.GetProject())
+	if err != nil {
+		return nil, Status(err)
+	}
+	hasChoice := req.Msg.Provider != nil || req.Msg.Model != nil || req.Msg.QuestionModel != nil
+	switch {
+	case !hasChoice && !req.Msg.GetUnset():
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			errors.New("give --provider, --model, --question-model, or take your choices back with --unset"))
+	case hasChoice && req.Msg.GetUnset():
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			errors.New("--unset takes back your provider and models: do not give --provider, --model or --question-model with it"))
+	}
+	err = write(ctx, p.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+		if err := SaveDeveloperDefaults(p.Home, project, req.Msg); err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, Status(err)
+	}
+	settings, _ := LoadSettings(p.Home, project)
+	return connect.NewResponse(&planv1.ProjectServiceSetDefaultsResponse{
+		Settings:      settings.Rows(),
+		DeveloperFile: DeveloperSettingsFile(p.Home, project.GetId()),
+	}), nil
+}
+
 func (p *Projects) Acknowledge(
 	ctx context.Context, req *connect.Request[planv1.ProjectServiceAcknowledgeRequest],
 ) (*connect.Response[planv1.ProjectServiceAcknowledgeResponse], error) {

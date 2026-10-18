@@ -1423,5 +1423,18 @@
   "glance.paused.other": "{count} paused",
   "glance.resumes_at": "resumes after {time}, once its usage limit resets",
   "plan.paused.one": "{count} worker paused: stopped, its work kept until it goes on",
-  "plan.paused.other": "{count} workers paused: stopped, their work kept until they go on"
+  "plan.paused.other": "{count} workers paused: stopped, their work kept until they go on",
+  "sidebar.summoning_circle": "Summoning Circle",
+  "summoning.eyebrow": "DEFAULT SPIRIT PER PROJECT",
+  "summoning.title": "Summoning Circle",
+  "summoning.subtitle": "Choose per project which agent and model answer new workers and question investigations",
+  "summoning.detail": "What a new worker and a question investigator run when a task names nothing else. Written in your own file for the project, never in the repository.",
+  "summoning.empty": "No project yet. Add one first.",
+  "summoning.provider": "Agent",
+  "summoning.model": "Worker model",
+  "summoning.question_model": "Question investigator",
+  "summoning.default_model": "Agent's default ({model})",
+  "summoning.same_as_worker": "Same as worker",
+  "summoning.unset": "Take back",
+  "summoning.unset_detail": "Take your choices back: the team's file, else Djinn's default"
 }

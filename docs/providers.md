@@ -751,7 +751,9 @@ the lead's program ended, with its output, until Lead starts it again (`TestRunU
 **Command.** `agy --input-format stream-json --output-format stream-json`, then, with permissions, `--mode
 accept-edits` and `--project <Djinn's agy project>` (run without `--sandbox`: developer choice Decision Q66, as agy's sandbox
 blocks UNIX domain sockets needed for `djinn gate run lint`, which triggers an `unsandboxed` request that headless mode denies);
-`--conversation <id>` to resume, `--model`; outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
+`--conversation <id>` to resume, `--model` (both `"Gemini 4 Argon (High)"` and its identifier `"gemini-4-argon-high"`,
+`"gemini-4-argon"` or `"argon"` are accepted in `settings.txtpb`, `djinn project set-defaults` and `djinn task spawn`,
+and Djinn passes `"Gemini 4 Argon (High)"` to `agy --model`, the name `agy` expects; W383, Q101, Q102); outside a project, refused until a real capture proves a read-only mode. No `-p`: it takes the prompt as its value, and stream-json
 input replaces it. Each message on the input is `{"event":"user","message":{"content":"…"}}` and runs one turn;
 the input is closed once every message has its result. agy cannot fork a conversation, and has no spending cap.
  

@@ -2927,36 +2927,9 @@ func DefaultModel(p planv1.Provider) string {
 	}
 }
 
-func isClaudeModel(m string) bool {
-	m = strings.ToLower(strings.TrimSpace(m))
-	return m == "claude" || strings.HasPrefix(m, "claude-") ||
-		strings.HasPrefix(m, "claude/") ||
-		strings.HasPrefix(m, "anthropic/") ||
-		strings.Contains(m, ".claude-") ||
-		m == "sonnet" || strings.HasPrefix(m, "sonnet-") || strings.HasPrefix(m, "sonnet/") ||
-		m == "opus" || strings.HasPrefix(m, "opus-") || strings.HasPrefix(m, "opus/") ||
-		m == "haiku" || strings.HasPrefix(m, "haiku-") || strings.HasPrefix(m, "haiku/")
-}
-
-func isAntigravityModel(m string) bool {
-	m = strings.ToLower(strings.TrimSpace(m))
-	return m == "gemini" || strings.HasPrefix(m, "gemini-") ||
-		strings.HasPrefix(m, "gemini/") ||
-		strings.HasPrefix(m, "google/") ||
-		strings.Contains(m, ".gemini-")
-}
-
-func isCodexModel(m string) bool {
-	m = strings.ToLower(strings.TrimSpace(m))
-	return strings.HasPrefix(m, "gpt-") ||
-		strings.HasPrefix(m, "openai/") ||
-		strings.Contains(m, ".gpt-") ||
-		strings.HasSuffix(m, "-codex") ||
-		strings.HasPrefix(m, "code-") ||
-		m == "o1" || strings.HasPrefix(m, "o1-") || strings.HasPrefix(m, "o1.") || strings.HasPrefix(m, "o1/") ||
-		m == "o3" || strings.HasPrefix(m, "o3-") || strings.HasPrefix(m, "o3.") || strings.HasPrefix(m, "o3/") ||
-		m == "o4" || strings.HasPrefix(m, "o4-") || strings.HasPrefix(m, "o4.") || strings.HasPrefix(m, "o4/")
-}
+func isClaudeModel(m string) bool      { return plan.IsClaudeModel(m) }
+func isAntigravityModel(m string) bool { return plan.IsAntigravityModel(m) }
+func isCodexModel(m string) bool       { return plan.IsCodexModel(m) }
 
 // foreignModel reports whether model is a model identifier belonging to a provider other than p.
 // Unknown or custom models are not considered foreign.

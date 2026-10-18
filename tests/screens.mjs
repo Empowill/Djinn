@@ -104,6 +104,11 @@ export {
   WatchCommands,
 } from "@/src/project-panel.tsx";
 export {
+  KNOWN_MODELS,
+  SummoningCircle,
+  SummoningProject,
+} from "@/src/summoning-circle.tsx";
+export {
   LastPushes,
   LeadButton,
   LeadMenu,
