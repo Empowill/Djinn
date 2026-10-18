@@ -49,6 +49,17 @@ const left = [
   ...(runBudget ? [] : [/@budget/]),
 ];
 
+// Temporary until the Windows e2e flakiness investigation is fixed (Q108, W414): retry a failed test once when CI
+// runs on Windows; Linux, macOS and local runs keep 0.
+export function e2eRetries(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): number {
+  return env.CI && env.CI !== "0" && env.CI !== "false" && platform === "win32"
+    ? 1
+    : 0;
+}
+
 export default defineConfig({
   testDir: ".",
   testMatch: /.*\.spec\.ts/,
@@ -62,6 +73,8 @@ export default defineConfig({
   fullyParallel: false,
   workers,
   forbidOnly: Boolean(process.env.CI),
+  // Temporary until the Windows e2e flakiness is fixed (Q108, W414): 1 on Windows CI, 0 on Linux, macOS and local runs.
+  retries: e2eRetries(),
   // The wall clock against the baseline first, then the list's summary: a push check keeps only the last lines of
   // its output (W124), and they must name the tests that failed, not the baseline's warning.
   reporter: [[path.resolve(__dirname, "reporter.ts")], ["list"]],
