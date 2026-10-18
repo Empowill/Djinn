@@ -170,6 +170,10 @@ test("ultrawide, tall, 4K, 6K, and tiny surfaces all stay bounded", () => {
     [1000, 5000, 1],
     [1, 1, 3],
     [320, 180, 2],
+    // Bottom-aligned, the HTML coverage never samples beyond the surface (assertLayoutInvariants: offsetY, coverage).
+    [2560, 1080, 1],
+    [1024, 1200, 1],
+    [5120, 1440, 1],
   ];
   for (const [width, height, dpr] of cases) {
     const layout = computeWishSmokeLayout(width, height, 6, dpr);
@@ -192,25 +196,6 @@ test("canvas backing keeps one CSS aspect ratio on ultrawide and portrait surfac
   assert.equal(portrait.canvasWidth * portrait.canvasHeight, 839_680);
   assert.ok(Math.abs(portrait.backgroundPixelRatio - 0.4096) < 1e-12);
   assertLayoutInvariants(portrait, 1000, 5000, 3);
-});
-
-test("bottom-aligned HTML coverage never samples beyond the surface", () => {
-  for (const [width, height] of [
-    [1280, 800],
-    [2560, 1080],
-    [1024, 1200],
-    [5120, 1440],
-    [1000, 5000],
-  ]) {
-    const layout = computeWishSmokeLayout(width, height, 6, 1);
-    const textHeight = layout.gridHeight * layout.lineHeight;
-    assert.ok(textHeight <= height + 1e-9 || height < layout.lineHeight);
-    assert.ok(layout.coverage[1] <= 1);
-    assert.ok(layout.offsetY >= 0);
-    assert.ok(
-      Math.abs(layout.offsetY - Math.max(0, height - textHeight)) < 1e-9,
-    );
-  }
 });
 
 test("camera scale settles format changes without changing the fluid zoom", () => {
