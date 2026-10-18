@@ -117,7 +117,7 @@ opens a wish that already knows how to work. How a project declares one: [`docs/
   pull request open then merged: a summary, then `MERGED` and exit 0; `docs/wish-templates.md`)
 - [x] `babysit-mr` for GitLab: its template matches a merge request's link or `!12`, not a pull request; its watcher,
   under Djinn's permissions, prints each change of the pipeline's jobs, merge status and comments, `MERGED` on the
-  merge and exits, and only reads. (`TestBabysitMRReadsOnly`, a fake `glab` on the `PATH`; `docs/wish-templates.md`)
+  merge and exits, and only reads. (`TestWatch_BabysitMR`, a fake `glab` on the `PATH`; `docs/wish-templates.md`)
 - [ ] `babysit-mr` run by hand on a real merge request open then merged. (needs: a person and a GitLab project)
 - [x] The brief's rules tell a lead to spawn a watcher (`--provider watch`, `--restart`) instead of polling, and to
   propose a template (`metadata.djinn.wish`) for a request that comes back. (`TestBrief`, `briefRules`;

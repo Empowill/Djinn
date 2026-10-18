@@ -304,14 +304,14 @@ with its link, read with `gh pr list`; its `summary` says so. Unplugged until yo
 babysit-pr`. `babysit-mr` declares no source.
 
 Babysitting: `TestReadBabysit`, `TestProjectBabysit`, `TestFillBabysit`, `TestBabysitSettings`
-(`internal/plan`), `TestBabysitWhatATaskOpens`, `TestBabysitTheTaskBranch`, `TestBabysitOffOrUndeclared`,
-`TestBabysitByHand` (`internal/harness/babysit_test.go`: a fake `gh` and `glab`, no network).
+(`internal/plan`), `TestBabysit` (`internal/harness/babysit_test.go`: a fake `gh` and `glab`,
+no network).
 
 Tests: `TestReadTemplate`, `TestFillQuotes`, `TestDoneLine`, `TestRouteTemplate`, `TestTemplateWish`,
 `TestTemplateWithoutWatchers`, `TestSkillListTemplate` (`internal/plan/templates_test.go`), `TestWatcherDoneLine`,
-`TestWatcherFinishes` (`internal/harness/watch_test.go`), `TestBabysitMRReadsOnly`
+`TestWatcherFinishes` (`internal/harness/watch_test.go`), `TestWatch_BabysitMR`
 (`internal/harness/babysit_mr_test.go`: babysit-mr's template and watcher, a fake `glab` on the `PATH`),
-`TestBabysitPRSpeaksOnlyForTheLead` (`internal/harness/babysit_pr_test.go`: what babysit-pr's watcher says, and does not
+`TestWatch_BabysitPR` (`internal/harness/babysit_pr_test.go`: what babysit-pr's watcher says, and does not
 say again after a restart, a fake `gh` on the `PATH`), and `e2e/inbox.spec.ts` (a fake watcher). The
 inbox: `TestReadSource`, `TestSources`, `TestKeepSourceRun`, `TestOwnSource`, `TestInbox`, `TestItemKey`
 (`internal/plan/inbox_test.go`), `TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceFails`, `TestSourceUnplugged`

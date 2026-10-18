@@ -101,6 +101,15 @@ func isStatus(s planv1.TaskStatus) func(*planv1.Task) bool {
 	return func(t *planv1.Task) bool { return t.GetStatus() == s }
 }
 
+// waking is ok, waking the scheduler at each look: a task its next pass starts or resumes does so at once, not at its
+// next tick, 2 s away.
+func waking(h *Harness, ok func(*planv1.Task) bool) func(*planv1.Task) bool {
+	return func(t *planv1.Task) bool {
+		h.Wake()
+		return ok(t)
+	}
+}
+
 // resetAt is when the account's session limit of the recorded stream resets: its rate_limit_event's resetsAt.
 var resetAt = time.Unix(1791436800, 0)
 
