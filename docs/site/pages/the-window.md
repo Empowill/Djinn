@@ -85,8 +85,11 @@ corners, and back. On the rail, never on a background:
 
 The **Summoning Circle**, below the Grimoire in the side panel, chooses for each kind of worker which model answers the
 call across all projects: **Djinn (lead)** first, then **Investigation**, **Mockup**, **Ifrit**, **Work**, **Merge
-correction**, **Merge review**, and **Question investigator**. Each dropdown lists each model once by its human-readable
-label (such as **Gemini 4 Argon (High)**) while storing and sending its canonical model identifier.
+correction**, **Merge review**, and **Question investigator**. Each dropdown lists only models from providers installed
+and signed in on this machine (unsigned providers appear greyed out with their sign-in command), taking Antigravity's
+models from the agent itself and Claude and Codex models from Djinn's shared price table, shown once by human-readable
+label (such as **Gemini 4 Argon (High)**) while storing and sending the canonical model identifier. The lead row offers
+Antigravity when the lead runs in a terminal, and shows it greyed out with a tooltip when a driven lead cannot run it.
 Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes.
 
 ### The personal space

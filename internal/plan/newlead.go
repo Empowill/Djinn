@@ -53,7 +53,7 @@ func (w *Wishes) newLead(
 				"djinn lead set records the session of a lead"))
 	}
 	if provider == planv1.Provider_PROVIDER_UNSPECIFIED {
-		provider = planv1.Provider_PROVIDER_CLAUDE
+		provider = ReadLeadSeat(home).GetProvider()
 	}
 	msg := StartLine()
 	own := filepath.Join(home, "lead")

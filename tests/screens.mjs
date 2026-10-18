@@ -105,8 +105,8 @@ export {
   WatchCommands,
 } from "@/src/project-panel.tsx";
 export {
-  CIRCLE_MODELS,
   CIRCLE_ROWS,
+  DEFAULT_CIRCLE_PROVIDERS,
   SummoningCircle,
   canonicalModelId,
 } from "@/src/summoning-circle.tsx";
@@ -189,7 +189,11 @@ export {
   CommentBox,
   appendChunk,
 } from "@/src/diff.tsx";
-export { setPriceTable } from "@/src/data/prices.ts";
+export {
+  catalogFromPriceTable,
+  getDefaultPriceTable,
+  setPriceTable,
+} from "@/src/data/prices.ts";
 export {
   OperatingLoad,
   OperatingLoadSlider,

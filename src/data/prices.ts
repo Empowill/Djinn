@@ -4,6 +4,7 @@ import rawPrices from "../../internal/usage/prices.yaml?raw";
 import { defaultModel, resolveModelAlias } from "./format";
 
 export interface ModelPrice {
+  label?: string;
   input: number;
   output: number;
   cacheRead: number;
@@ -17,6 +18,27 @@ export interface PriceTable {
   date: string;
   currency: string;
   models: Record<string, ModelPrice>;
+  order?: string[];
+}
+
+export function providerForModel(model: string): Provider {
+  const m = model.trim().toLowerCase();
+  if (
+    m.startsWith("claude-") ||
+    m.includes("sonnet") ||
+    m.includes("opus") ||
+    m.includes("haiku") ||
+    m.includes("fable")
+  ) {
+    return Provider.CLAUDE;
+  }
+  if (m.startsWith("gpt-")) {
+    return Provider.CODEX;
+  }
+  if (m.startsWith("gemini-") || m.includes("argon") || m.includes("flash")) {
+    return Provider.ANTIGRAVITY;
+  }
+  return Provider.UNSPECIFIED;
 }
 
 // parsePriceTable parses the simple 2-level YAML structure of prices.yaml.
@@ -25,6 +47,7 @@ export function parsePriceTable(yamlText: string): PriceTable {
   let date = "";
   let currency = "USD";
   const models: Record<string, ModelPrice> = {};
+  const order: string[] = [];
 
   let currentModel: string | null = null;
   let inModels = false;
@@ -49,7 +72,9 @@ export function parsePriceTable(yamlText: string): PriceTable {
     } else if (inModels && indent === 2) {
       if (trimmed.endsWith(":")) {
         currentModel = trimmed.slice(0, -1).trim();
+        order.push(currentModel);
         models[currentModel] = {
+          label: "",
           input: 0,
           output: 0,
           cacheRead: 0,
@@ -74,6 +99,9 @@ export function parsePriceTable(yamlText: string): PriceTable {
           .replace(/^["']|["']$/g, "");
         const entry = models[currentModel];
         switch (key) {
+          case "label":
+            entry.label = val;
+            break;
           case "input":
             entry.input = parseFloat(val) || 0;
             break;
@@ -100,7 +128,7 @@ export function parsePriceTable(yamlText: string): PriceTable {
     }
   }
 
-  return { date, currency, models };
+  return { date, currency, models, order };
 }
 
 let customTable: PriceTable | null = null;
@@ -111,12 +139,29 @@ export function setPriceTable(table: PriceTable | null): void {
   customTable = table;
 }
 
-export function getPriceTable(): PriceTable {
-  if (customTable) return customTable;
+export function getDefaultPriceTable(): PriceTable {
   if (!cachedTable) {
     cachedTable = parsePriceTable(rawPrices);
   }
   return cachedTable;
+}
+
+export function getPriceTable(): PriceTable {
+  if (customTable) return customTable;
+  return getDefaultPriceTable();
+}
+
+export function catalogFromPriceTable(table = getDefaultPriceTable()): {
+  id: string;
+  label: string;
+  provider: Provider;
+}[] {
+  const keys = table.order ?? Object.keys(table.models);
+  return keys.map((id) => ({
+    id,
+    label: table.models[id]?.label || id,
+    provider: providerForModel(id),
+  }));
 }
 
 // resolveModelToTable resolves a model string and provider to a canonical key in the price table.

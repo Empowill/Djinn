@@ -16,6 +16,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/usage"
 )
 
 // writeSettings writes content at path, creating its folders.
@@ -1027,11 +1028,11 @@ func TestLeadCircleAndMigration(t *testing.T) {
 		t.Errorf("devFile lost push setting during migration: %v", rem)
 	}
 
-	// 3. SetCircle sets lead to codex / gpt-5.5-codex, work to "Same as lead", and review to claude-opus-5-8; work follows the lead.
+	// 3. SetCircle sets lead to codex / gpt-5.3-codex, work to "Same as lead", and review to claude-fable-5-1; work follows the lead.
 	if _, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
 		Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
 		Provider: planv1.Provider_PROVIDER_CODEX,
-		Model:    "gpt-5.5-codex",
+		Model:    "gpt-5.3-codex",
 	})); err != nil {
 		t.Fatalf("SetCircle lead: %v", err)
 	}
@@ -1043,7 +1044,7 @@ func TestLeadCircleAndMigration(t *testing.T) {
 	setRes, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
 		Kind:     planv1.WorkerKind_WORKER_KIND_REVIEW,
 		Provider: planv1.Provider_PROVIDER_CLAUDE,
-		Model:    "claude-opus-5-8",
+		Model:    "claude-fable-5-1",
 	}))
 	if err != nil {
 		t.Fatalf("SetCircle review: %v", err)
@@ -1055,30 +1056,44 @@ func TestLeadCircleAndMigration(t *testing.T) {
 	if got := byKind[planv1.WorkerKind_WORKER_KIND_WORK]; got.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || got.GetModel() != "" {
 		t.Errorf("work row = %v, want Same as lead", got)
 	}
-	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CODEX || m != "gpt-5.5-codex" {
-		t.Errorf("work seat following lead = (%v, %q, %v), want (CODEX, gpt-5.5-codex, true)", p, m, ok)
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CODEX || m != "gpt-5.3-codex" {
+		t.Errorf("work seat following lead = (%v, %q, %v), want (CODEX, gpt-5.3-codex, true)", p, m, ok)
 	}
-	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_REVIEW); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-opus-5-8" {
-		t.Errorf("review seat = (%v, %q, %v), want (CLAUDE, claude-opus-5-8, true)", p, m, ok)
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_REVIEW); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-fable-5-1" {
+		t.Errorf("review seat = (%v, %q, %v), want (CLAUDE, claude-fable-5-1, true)", p, m, ok)
 	}
 
 	// Moving the lead updates what "Same as lead" resolves to.
 	if _, err := lead.Move(ctx, connect.NewRequest(&planv1.LeadServiceMoveRequest{
 		Provider: planv1.Provider_PROVIDER_CLAUDE,
-		Model:    "claude-opus-5-8",
+		Model:    "claude-opus-5-5",
 	})); err != nil {
 		t.Fatalf("Move lead: %v", err)
 	}
-	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-opus-5-8" {
-		t.Errorf("work seat after lead Move = (%v, %q, %v), want (CLAUDE, claude-opus-5-8, true)", p, m, ok)
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-opus-5-5" {
+		t.Errorf("work seat after lead Move = (%v, %q, %v), want (CLAUDE, claude-opus-5-5, true)", p, m, ok)
 	}
 
-	// 4. SetCircle refuses unspecified kind, labels with spaces, foreign models, unknown models, and Antigravity for lead or question.
+	// Terminal lead (lead.Turns == nil) accepts Antigravity on the lead row.
+	if _, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
+		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+		Model:    "gemini-4-argon-high",
+	})); err != nil {
+		t.Fatalf("SetCircle terminal lead to Antigravity: %v", err)
+	}
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_LEAD); !ok || p != planv1.Provider_PROVIDER_ANTIGRAVITY || m != "gemini-4-argon-high" {
+		t.Errorf("lead seat = (%v, %q, %v), want (ANTIGRAVITY, gemini-4-argon-high, true)", p, m, ok)
+	}
+
+	// 4. SetCircle refuses unspecified kind, labels with spaces, unverified models not in prices.yaml, foreign models, unknown models, and Antigravity for question.
 	for _, bad := range []*planv1.LeadServiceSetCircleRequest{
 		{Kind: planv1.WorkerKind_WORKER_KIND_UNSPECIFIED, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "claude-sonnet-5-5"},
 		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "Gemini 4 Argon (High)"},
 		{Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "Claude Sonnet 5.5"},
-		{Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "gemini-4-argon-high"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "claude-opus-5-8"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: planv1.Provider_PROVIDER_CODEX, Model: "gpt-5.5-codex"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "gemini-3.8-pro-high"},
 		{Kind: planv1.WorkerKind_WORKER_KIND_QUESTION, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "gemini-4-argon-high"},
 		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "gpt-5.5"},
 		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "unknown-model-xyz"},
@@ -1086,5 +1101,123 @@ func TestLeadCircleAndMigration(t *testing.T) {
 		if _, err := lead.SetCircle(ctx, connect.NewRequest(bad)); err == nil {
 			t.Errorf("SetCircle(%v): succeeded, want error", bad)
 		}
+	}
+}
+
+// TestLeadCircleProvidersAndModels (W417): GetCircle offers only providers that are installed and signed in,
+// takes Antigravity models from `agy models` and Claude/Codex models from the shared price table, ensures every
+// offered model ID is in usage.DefaultTable().Models, and offers Antigravity on the lead row when terminal-driven
+// while explaining why when the driven lead is active.
+func TestLeadCircleProvidersAndModels(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st, err := store.Open(ctx, "", Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	home := t.TempDir()
+	userHome := t.TempDir()
+	binDir := t.TempDir()
+
+	writeExecutable := func(name, script string) {
+		t.Helper()
+		p := filepath.Join(binDir, name)
+		if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeExecutable("claude", "#!/bin/sh\nexit 0\n")
+	writeExecutable("codex", "#!/bin/sh\nexit 0\n")
+	writeExecutable("agy", "#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf 'Available models:\\n\\n  gemini-4-argon-high\\n  gemini-3.8-flash-high (default)\\n  unpriced-experimental-model\\n'\n  exit 0\nfi\nexit 0\n")
+
+	// Sign in Claude and Antigravity, leave Codex unsigned.
+	if err := os.MkdirAll(filepath.Join(userHome, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userHome, ".claude", ".credentials.json"), []byte(`{"claudeAiOauth":{"accessToken":"tok"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(userHome, ".gemini", "antigravity-cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userHome, ".gemini", "antigravity-cli", "antigravity-oauth-token"), []byte("tok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	wishes := &Wishes{Store: st, Home: home}
+	lead := &LeadService{Wishes: wishes, UserHome: userHome, Path: binDir}
+
+	res, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
+	if err != nil {
+		t.Fatalf("GetCircle: %v", err)
+	}
+
+	byProv := make(map[planv1.Provider]*planv1.CircleProvider)
+	for _, p := range res.Msg.GetProviders() {
+		byProv[p.GetProvider()] = p
+	}
+	if got := byProv[planv1.Provider_PROVIDER_CLAUDE]; !got.GetSignedIn() || !got.GetLeadSupported() {
+		t.Errorf("Claude provider = %v, want signed_in=true lead_supported=true", got)
+	}
+	if got := byProv[planv1.Provider_PROVIDER_CODEX]; got.GetSignedIn() || got.GetLoginCommand() != "codex login" {
+		t.Errorf("Codex provider = %v, want signed_in=false login_command='codex login'", got)
+	}
+	if got := byProv[planv1.Provider_PROVIDER_ANTIGRAVITY]; !got.GetSignedIn() || !got.GetLeadSupported() || got.GetLoginCommand() != "agy" {
+		t.Errorf("Antigravity provider (terminal lead) = %v, want signed_in=true lead_supported=true login_command='agy'", got)
+	}
+
+	table, err := usage.DefaultTable()
+	if err != nil {
+		t.Fatalf("usage.DefaultTable: %v", err)
+	}
+	seenModels := make(map[string]*planv1.CircleModel)
+	for _, m := range res.Msg.GetModels() {
+		seenModels[m.GetId()] = m
+		if _, ok := table.Models[m.GetId()]; !ok {
+			t.Errorf("offered model %q is not in usage.DefaultTable().Models", m.GetId())
+		}
+		if m.GetLabel() == "" {
+			t.Errorf("offered model %q has empty label", m.GetId())
+		}
+		if m.GetProvider() == planv1.Provider_PROVIDER_CODEX {
+			t.Errorf("unsigned provider CODEX model %q was offered in GetCircle.Models", m.GetId())
+		}
+	}
+	// Claude models from shared table, including claude-fable-5-1, must be offered.
+	if _, ok := seenModels["claude-fable-5-1"]; !ok {
+		t.Errorf("claude-fable-5-1 missing from offered models: %v", res.Msg.GetModels())
+	}
+	// Antigravity models come from `agy models` intersected with shared table.
+	if _, ok := seenModels["gemini-4-argon-high"]; !ok {
+		t.Errorf("gemini-4-argon-high from agy models missing from offered models")
+	}
+	if _, ok := seenModels["gemini-3.8-flash-high"]; !ok {
+		t.Errorf("gemini-3.8-flash-high from agy models missing from offered models")
+	}
+	if _, ok := seenModels["gemini-4-argon-medium"]; ok {
+		t.Errorf("gemini-4-argon-medium was offered even though `agy models` did not list it")
+	}
+
+	// When DriveLead is enabled on the store (driven lead), Antigravity is marked lead_supported=false with reason, and SetCircle rejects it on WORKER_KIND_LEAD.
+	DriveLead(st, nil)
+	drivenRes, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
+	if err != nil {
+		t.Fatalf("driven lead.GetCircle: %v", err)
+	}
+	for _, p := range drivenRes.Msg.GetProviders() {
+		if p.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY {
+			if p.GetLeadSupported() || p.GetLeadUnavailableReason() == "" {
+				t.Errorf("drivenLead Antigravity provider = %v, want lead_supported=false with reason", p)
+			}
+		}
+	}
+	if _, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
+		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+		Model:    "gemini-4-argon-high",
+	})); err == nil {
+		t.Errorf("driven lead.SetCircle(LEAD, ANTIGRAVITY) succeeded, want error")
 	}
 }

@@ -448,14 +448,14 @@ func TestSummoningCircleWorkerKinds(t *testing.T) {
 		}
 	}
 
-	setRow(planv1.WorkerKind_WORKER_KIND_LEAD, "claude-opus-5-8")
+	setRow(planv1.WorkerKind_WORKER_KIND_LEAD, "claude-fable-5-1")
 	setRow(planv1.WorkerKind_WORKER_KIND_INVESTIGATION, "claude-haiku-5-5")
 	setRow(planv1.WorkerKind_WORKER_KIND_MOCKUP, "gemini-4-argon-high")
 	setRow(planv1.WorkerKind_WORKER_KIND_IFRIT, "gemini-3.8-flash-high")
 	setRow(planv1.WorkerKind_WORKER_KIND_WORK, "claude-sonnet-5-5")
 	setRow(planv1.WorkerKind_WORKER_KIND_CORRECTION, "gpt-5.5")
-	setRow(planv1.WorkerKind_WORKER_KIND_REVIEW, "gemini-3.8-pro-high")
-	setRow(planv1.WorkerKind_WORKER_KIND_QUESTION, "gpt-5.5-mini")
+	setRow(planv1.WorkerKind_WORKER_KIND_REVIEW, "gemini-4-argon-medium")
+	setRow(planv1.WorkerKind_WORKER_KIND_QUESTION, "gpt-5.3-codex")
 
 	if _, err := lead.SetCircle(t.Context(), connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
 		Kind:  planv1.WorkerKind_WORKER_KIND_MOCKUP,
@@ -464,8 +464,8 @@ func TestSummoningCircleWorkerKinds(t *testing.T) {
 		t.Fatal("SetCircle with label containing spaces succeeded; want error")
 	}
 
-	if seat := plan.ReadLeadSeat(home); seat.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || seat.GetModel() != "claude-opus-5-8" {
-		t.Fatalf("ReadLeadSeat = (%v, %q), want (CLAUDE, claude-opus-5-8)", seat.GetProvider(), seat.GetModel())
+	if seat := plan.ReadLeadSeat(home); seat.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || seat.GetModel() != "claude-fable-5-1" {
+		t.Fatalf("ReadLeadSeat = (%v, %q), want (CLAUDE, claude-fable-5-1)", seat.GetProvider(), seat.GetModel())
 	}
 
 	// 1. Investigation
@@ -487,8 +487,8 @@ func TestSummoningCircleWorkerKinds(t *testing.T) {
 		t.Fatalf("start question worker: %v", err)
 	}
 	qTask = e.ended(t, qTask.GetId())
-	if qTask.GetProvider() != planv1.Provider_PROVIDER_CODEX || qTask.GetModel() != "gpt-5.5-mini" {
-		t.Errorf("question worker = (%v, %q), want (CODEX, gpt-5.5-mini)", qTask.GetProvider(), qTask.GetModel())
+	if qTask.GetProvider() != planv1.Provider_PROVIDER_CODEX || qTask.GetModel() != "gpt-5.3-codex" {
+		t.Errorf("question worker = (%v, %q), want (CODEX, gpt-5.3-codex)", qTask.GetProvider(), qTask.GetModel())
 	}
 
 	// 3. Mockup
@@ -549,8 +549,8 @@ func TestSummoningCircleWorkerKinds(t *testing.T) {
 		t.Fatalf("spawn review: %v", err)
 	}
 	revTask = e.ended(t, revTask.GetId())
-	if revTask.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || revTask.GetModel() != "gemini-3.8-pro-high" {
-		t.Errorf("review = (%v, %q), want (ANTIGRAVITY, gemini-3.8-pro-high)", revTask.GetProvider(), revTask.GetModel())
+	if revTask.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || revTask.GetModel() != "gemini-4-argon-medium" {
+		t.Errorf("review = (%v, %q), want (ANTIGRAVITY, gemini-4-argon-medium)", revTask.GetProvider(), revTask.GetModel())
 	}
 
 	// "Same as lead" follows a lead change.
@@ -564,12 +564,12 @@ func TestSummoningCircleWorkerKinds(t *testing.T) {
 		t.Fatal(err)
 	}
 	same1 := e.ended(t, same1Res.Msg.GetTask().GetId())
-	if same1.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || same1.GetModel() != "claude-opus-5-8" {
-		t.Errorf("same as lead (before move) = (%v, %q), want (CLAUDE, claude-opus-5-8)", same1.GetProvider(), same1.GetModel())
+	if same1.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || same1.GetModel() != "claude-fable-5-1" {
+		t.Errorf("same as lead (before move) = (%v, %q), want (CLAUDE, claude-fable-5-1)", same1.GetProvider(), same1.GetModel())
 	}
 
-	// Change the lead row to gpt-5.5-codex: "Same as lead" rows follow at once.
-	setRow(planv1.WorkerKind_WORKER_KIND_LEAD, "gpt-5.5-codex")
+	// Change the lead row to gpt-5.3-codex: "Same as lead" rows follow at once.
+	setRow(planv1.WorkerKind_WORKER_KIND_LEAD, "gpt-5.3-codex")
 	same2Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "Work following lead 2", Prompt: "text ok",
 	}))
@@ -577,8 +577,8 @@ func TestSummoningCircleWorkerKinds(t *testing.T) {
 		t.Fatal(err)
 	}
 	same2 := e.ended(t, same2Res.Msg.GetTask().GetId())
-	if same2.GetProvider() != planv1.Provider_PROVIDER_CODEX || same2.GetModel() != "gpt-5.5-codex" {
-		t.Errorf("same as lead (after move) = (%v, %q), want (CODEX, gpt-5.5-codex)", same2.GetProvider(), same2.GetModel())
+	if same2.GetProvider() != planv1.Provider_PROVIDER_CODEX || same2.GetModel() != "gpt-5.3-codex" {
+		t.Errorf("same as lead (after move) = (%v, %q), want (CODEX, gpt-5.3-codex)", same2.GetProvider(), same2.GetModel())
 	}
 
 	// Per-task --provider/--model flags remain the lead's escape hatch.

@@ -402,9 +402,11 @@
                 <h3><a href="#the-window">The Summoning Circle</a></h3>
                 <p>
                   Where you choose which spirit answers the call: one row per kind of worker (Djinn the lead, investigation,
-                  mockup, ifrit, work, merge correction, merge review, and question investigator), for all projects. Each
-                  dropdown lists each model once by its label and stores its model identifier; every row but the lead offers
-                  <strong>Same as lead</strong> by default, following the lead's choice when it changes
+                  mockup, ifrit, work, merge correction, merge review, and question investigator), for all projects. Only
+                  providers installed and signed in on this machine are offered as choices (unsigned providers appear greyed
+                  out with their sign-in command), models come from the agent itself (<code>agy models</code>) and Djinn's
+                  shared price table, and the lead row offers Antigravity when the lead runs in a terminal (or shows a
+                  tooltip when a driven lead cannot). Every row but the lead offers <strong>Same as lead</strong> by default
                   (<code>djinn lead get-circle</code>, <code>djinn lead set-circle</code>).
                 </p>
               </article>
