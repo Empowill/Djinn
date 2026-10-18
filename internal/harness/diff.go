@@ -33,7 +33,9 @@ func (h *Harness) Diff(ctx context.Context, procedure string, req *planv1.TaskSe
 	if err != nil {
 		return nil, err
 	}
-	_, _ = h.checkCommentsResolution(ctx, task)
+	if req.GetFile() == "" && !req.GetUncommitted() {
+		_, _ = h.checkCommentsResolution(ctx, task)
+	}
 	if task.GetProjectId() == "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s has no project", task.GetCode()))
 	}
@@ -334,14 +336,6 @@ func (h *Harness) resolveBaseAndHead(ctx context.Context, project *planv1.Projec
 	var bSha string
 	if branch != "" {
 		bSha, _ = git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
-		if task.GetReview() == nil && task.GetCorrection() == nil && branchHasNoCommits(ctx, dir, branch) {
-			if bSha != "" {
-				return bSha, bSha, nil
-			}
-			if sha := task.GetIntegration().GetSha(); sha != "" {
-				return sha, sha, nil
-			}
-		}
 	}
 
 	// If integrated and committed, use the merge commit and its first parent, unless
@@ -350,12 +344,20 @@ func (h *Harness) resolveBaseAndHead(ctx context.Context, project *planv1.Projec
 		sha := task.GetIntegration().GetSha()
 		if bSha != "" && task.GetReview() == nil && task.GetCorrection() == nil {
 			if p2, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", sha+"^2^{commit}"); err != nil || p2 != bSha {
-				if start := branchStartCommit(ctx, dir, branch); start != "" && start != bSha {
+				if start := branchStartCommit(ctx, dir, branch); start != "" {
 					return start, bSha, nil
 				}
 			}
 		}
 		return sha + "^1", sha, nil
+	}
+
+	var start string
+	if bSha != "" && task.GetReview() == nil && task.GetCorrection() == nil {
+		start = branchStartCommit(ctx, dir, branch)
+		if start == bSha {
+			return bSha, bSha, nil
+		}
 	}
 
 	if branch == "" {
@@ -369,19 +371,15 @@ func (h *Harness) resolveBaseAndHead(ctx context.Context, project *planv1.Projec
 	}
 	if targetBranch != "" {
 		if mb, err := git(ctx, dir, "merge-base", branch, targetBranch); err == nil && mb != "" {
-			if bSha != "" && mb == bSha {
-				if start := branchStartCommit(ctx, dir, branch); start != "" && start != bSha {
-					return start, head, nil
-				}
+			if bSha != "" && mb == bSha && start != "" {
+				return start, head, nil
 			}
 			return mb, head, nil
 		}
 	}
 	if mb, err := git(ctx, dir, "merge-base", branch, "HEAD"); err == nil && mb != "" {
-		if bSha != "" && mb == bSha {
-			if start := branchStartCommit(ctx, dir, branch); start != "" && start != bSha {
-				return start, head, nil
-			}
+		if bSha != "" && mb == bSha && start != "" {
+			return start, head, nil
 		}
 		return mb, head, nil
 	}

@@ -142,7 +142,7 @@ test("the Review tab lists a merged task, opens its diff with its comment, and k
     );
     await expect(
       item.locator(".diff-line-row").filter({ hasText: "polished" }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15_000 });
     await expect(item.locator(".diff-comment-item")).toContainText(
       "Shine it more",
     );

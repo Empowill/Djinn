@@ -2175,7 +2175,6 @@ func (h *Harness) end(r *run, res Result) {
 			text = "integration: waiting: " + t.GetIntegration().GetReason()
 		}
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
-		h.kickIntegrate()
 	}
 	if left != "" && left != nothingToMerge { // Work that brings nothing: its end's line says it (tellDone).
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: none: " + left})
@@ -2200,7 +2199,6 @@ func (h *Harness) end(r *run, res Result) {
 		h.tellDone(context.Background(), t, notIntegrated(left), silentWhy)
 	}
 	if t.GetCorrection() != nil || t.GetReview() != nil {
-		h.kickIntegrate()
 		h.unpausePreempted(t) // The work task it paused for its slot resumes once that slot is free.
 	}
 	if r.light {
@@ -2209,6 +2207,9 @@ func (h *Harness) end(r *run, res Result) {
 	// The links to the summoned skills go with the worker; a worker started again makes them anew.
 	_ = os.RemoveAll(skillsDir(h.home, r.id))
 	h.forget(r)
+	if integrate || t.GetCorrection() != nil || t.GetReview() != nil {
+		h.kickIntegrate()
+	}
 	if decision != nil {
 		h.decideLater(t, decision)
 	}
