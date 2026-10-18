@@ -1,7 +1,6 @@
-// A comment on a line of a task's diff, from the window: it goes to the task's running worker as an instruction that
-// quotes the file and the line, then "received" once the worker says something after it. The worker is the fake
-// agent: no model is called. While it waits, the spec commits in the task's worktree itself, for the diff to show a
-// line.
+// An instruction sent from the window to a running worker, and a comment on a line of its diff: each is an event of the
+// task at once, then "received" once the worker says something after it. The worker is the fake agent: no model is
+// called. While it waits, the spec commits in the task's worktree itself, for the diff to show a line.
 import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -31,7 +30,7 @@ function git(dir: string, ...args: string[]): string {
   );
 }
 
-test("a comment on a line of a running task's diff goes to its worker", async ({
+test("an instruction and a comment on a line of a running task's diff go to its worker", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -63,7 +62,9 @@ test("a comment on a line of a running task's diff goes to its worker", async ({
       "--provider",
       "fake",
       "--prompt",
-      "text working\nwait\ntext after\nsleep 4s",
+      "text working\nwait\ntext mid\n" +
+        "sleep 300ms\ntext tick\n".repeat(40) +
+        "sleep 5s",
       "--json",
     ),
   ).task.id as string;
@@ -84,6 +85,26 @@ test("a comment on a line of a running task's diff goes to its worker", async ({
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await page.getByRole("button", { name: /Trim the wick/ }).click();
+    await page.locator(".wish-task-events-fold summary").click();
+    await expect(
+      page.locator(".wish-event").getByText("working", { exact: true }),
+    ).toBeVisible();
+
+    const box = page.getByLabel(
+      "An instruction for the worker, while it works",
+    );
+    await box.fill("Also update the docs");
+    await box.press("Enter");
+    await expect(box).toHaveValue("", { timeout: 10000 });
+    await expect(
+      page.locator(".wish-event.kind-11").getByText("Also update the docs"),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator(".wish-event.kind-12")
+        .getByText("Received: Also update the docs"),
+    ).toBeVisible({ timeout: 15_000 });
+
     await page.locator(".wish-task-diff-button").click();
     const line = page
       .locator(".diff-line-row")
@@ -99,7 +120,6 @@ test("a comment on a line of a running task's diff goes to its worker", async ({
     await page.keyboard.press("Escape");
     await expect(page.locator(".task-review")).toHaveCount(0);
 
-    await page.locator(".wish-task-events-fold summary").click();
     await expect(
       page
         .locator(".wish-event.kind-11")

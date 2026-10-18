@@ -45,8 +45,11 @@ const lines = (word: string, n: number) =>
   Array.from({ length: n }, (_, i) => `${word} line ${i + 1}`).join("\n") +
   "\n";
 
+const SHOTS = Boolean(process.env.DIFF_SHOTS);
+
 // shoot takes the window in both themes, once their transitions end.
 async function shoot(page: Page, name: string) {
+  if (!SHOTS) return;
   for (const theme of ["dark", "light"]) {
     await page.evaluate(async (theme) => {
       document.documentElement.dataset.theme = theme;
@@ -66,22 +69,26 @@ async function shoot(page: Page, name: string) {
   });
 }
 
-test("a task's diffs open full size beside the side panel, its files as a tree of folders", async ({
+test("a task's diffs open full size beside the side panel, its files as a tree of folders, uncommitted tab, narrow layout, and closing", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
-  const { title, clean } = await setupTask();
+  const { title, worktree, clean } = await setupTask();
   try {
     await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await page.getByRole("button", { name: /Rub the lamp/ }).click();
+    const scroller = page.locator(".wish-view .mission-scroll");
+    await scroller.evaluate((el) => (el.scrollTop = 120));
+    const before = await scroller.evaluate((el) => el.scrollTop);
 
     // Full size: the review covers everything right of the side panel, which stays in reach; the view under it is
     // out of the keyboard's reach.
-    await page.getByRole("button", { name: "See the diff" }).click();
+    const see = page.getByRole("button", { name: "See the diff" });
+    await see.click();
     const review = page.getByRole("region", { name: /^Diff of / });
     await expect(review).toBeVisible();
     const shell = (await page.locator(".main-shell").boundingBox())!;
@@ -171,42 +178,6 @@ test("a task's diffs open full size beside the side panel, its files as a tree o
     await expect(row("brass")).toHaveAttribute("aria-expanded", "false");
     // The keys stayed in the tree: the review is still open.
     await expect(review).toBeVisible();
-    expect(errors).toEqual([]);
-  } finally {
-    clean();
-  }
-});
-
-test("the worktree's uncommitted files, narrow layout, and closing the diff", async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on("pageerror", (err) => errors.push(err.message));
-  const { title, worktree, clean } = await setupTask();
-  try {
-    await page.setViewportSize({ width: 1600, height: 1000 });
-    await page.goto(process.env.DJINN_URL!);
-    await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await page.getByRole("tab", { name: /^Tasks/ }).click();
-    await page.getByRole("button", { name: /Rub the lamp/ }).click();
-    const scroller = page.locator(".wish-view .mission-scroll");
-    await scroller.evaluate((el) => (el.scrollTop = 120));
-    const before = await scroller.evaluate((el) => el.scrollTop);
-
-    const see = page.getByRole("button", { name: "See the diff" });
-    await see.click();
-    const review = page.getByRole("region", { name: /^Diff of / });
-    await expect(review).toBeVisible();
-    const committed = review.getByRole("tab", {
-      name: "Committed",
-      exact: true,
-    });
-    const tree = review.getByRole("tree", { name: "Changed files" });
-    const rows = tree.getByRole("treeitem");
-    const row = (name: string) => rows.filter({ hasText: name });
-    const column = review.locator(".diff-files");
-    await row("brass").click();
-    await expect(row("brass")).toHaveAttribute("aria-expanded", "false");
 
     // The worktree's tab: the change and the new file, not the commit, and no comment on them.
     await review.getByRole("tab", { name: "Not committed" }).click();

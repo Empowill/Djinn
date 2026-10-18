@@ -22,6 +22,7 @@ const {
   AzimaState,
   azimaGroups,
   loose,
+  movingTasks,
   azimasDone,
   workCount,
   workDoneCount,
@@ -30,7 +31,7 @@ const {
   `export { createStore } from "@/src/data/store.ts";
 export { createClients } from "@/src/data/client.ts";
 export { createRouterTransport } from "@connectrpc/connect";
-export { azimaGroups, loose, azimasDone, workCount, workDoneCount } from "@/src/data/flight.ts";
+export { azimaGroups, loose, movingTasks, azimasDone, workCount, workDoneCount } from "@/src/data/flight.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 
@@ -829,7 +830,7 @@ test("incremental updates refresh derived views: azima groups, loose tasks, depe
     tasks: [w1, w2],
   };
 
-  const { clients, watch } = server(data);
+  const { clients, reads, watch } = server(data);
   const store = createStore(clients, 10);
   const stop = store.start();
   watch.push({ wishId: "", changes: everything });
@@ -837,11 +838,16 @@ test("incremental updates refresh derived views: azima groups, loose tasks, depe
 
   store.open(wish1, [Change.TASK]);
   await until(store, (s) => s.details[wish1]?.loadedKinds.has(Change.TASK));
+  const initialTaskReads = reads.tasks;
 
   let tasks = store.getState().details[wish1].tasks;
   assert.equal(tasks.length, 2);
   assert.deepEqual(
     loose(tasks).map((t) => t.id),
+    [w1.id, w2.id],
+  );
+  assert.deepEqual(
+    movingTasks(tasks).map((t) => t.id),
     [w1.id, w2.id],
   );
   assert.equal(azimaGroups(tasks).length, 0);
@@ -893,6 +899,10 @@ test("incremental updates refresh derived views: azima groups, loose tasks, depe
     loose(tasks).map((t) => t.id),
     [w2.id],
   );
+  assert.deepEqual(
+    movingTasks(tasks).map((t) => t.id),
+    [w2.id],
+  );
   assert.equal(azimaGroups(tasks).length, 1);
   assert.equal(azimaGroups(tasks)[0].parts.length, 1);
   assert.equal(azimaGroups(tasks)[0].parts[0].id, w1.id);
@@ -934,6 +944,7 @@ test("incremental updates refresh derived views: azima groups, loose tasks, depe
     azimaGroups(tasks)[0].azima.description,
     "A detailed azima description",
   );
+  assert.equal(reads.tasks, initialTaskReads);
 
   stop();
 });
@@ -1696,6 +1707,200 @@ test("updating a planned task's prompt, title, provider, model and dependencies 
     (s) => s.prompts[taskId] === "Latest event prompt",
   );
   assert.equal(state.prompts[taskId], "Latest event prompt");
+  release();
+  stop();
+});
+
+test("answering open questions past two full pages of decided questions keeps each answer and updates the remaining open questions", async () => {
+  const data = sample();
+  const decided = Array.from({ length: 100 }, (_, i) => ({
+    id: `01a11800-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
+    wishId,
+    code: `Q${String(i + 1).padStart(2, "0")}`,
+    text: `Decided question ${i + 1}?`,
+    options: ["Yes", "No"],
+    answer: { choice: 1, note: "yes" },
+  }));
+  const q101 = {
+    id: "01a11800-0000-0000-0000-000000000101",
+    wishId,
+    code: "Q101",
+    text: "Can wait question 101?",
+    options: ["Option A", "Option B"],
+  };
+  const q102 = {
+    id: "01a11800-0000-0000-0000-000000000102",
+    wishId,
+    code: "Q102",
+    text: "Blocking question 102?",
+    options: ["Proceed", "Stop"],
+  };
+  data.listQuestions = (req) => {
+    const all = [...decided, q101, q102];
+    if (req.open) {
+      const openList = all.filter((q) => !q.answer);
+      return { questions: openList, total: openList.length, nextPageToken: "" };
+    }
+    if (!req.pageToken) {
+      return {
+        questions: decided.slice(0, 50),
+        total: 102,
+        nextPageToken: "token-p2",
+      };
+    }
+    if (req.pageToken === "token-p2") {
+      return {
+        questions: decided.slice(50, 100),
+        total: 102,
+        nextPageToken: "token-p3",
+      };
+    }
+    return {
+      questions: [q101, q102],
+      total: 102,
+      nextPageToken: "",
+    };
+  };
+
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.QUESTION]);
+  await until(
+    store,
+    (s) =>
+      s.details[wishId]?.questions.some((q) => q.code === "Q101") &&
+      s.details[wishId]?.questions.some((q) => q.code === "Q102"),
+  );
+
+  // Answer Q101 on page 3: putQuestion + changed(QUESTION, WISH) reads up to the furthest known question (page 3),
+  // keeping Q101 decided with its note and Q102 open.
+  q101.answer = { choice: 2, note: "Option B chosen" };
+  store.putQuestion({ ...q101 });
+  await store.changed(wishId, [Change.QUESTION, Change.WISH]);
+
+  let questions = store.getState().details[wishId].questions;
+  const shown101 = questions.find((q) => q.code === "Q101");
+  const shown102 = questions.find((q) => q.code === "Q102");
+  assert.equal(shown101?.answer?.choice, 2);
+  assert.equal(shown101?.answer?.note, "Option B chosen");
+  assert.equal(shown102?.answer, undefined);
+  assert.equal(questions.filter((q) => !q.answer).length, 1);
+
+  // Answer Q102 on page 3: both Q101 and Q102 remain in the store as decided, with 0 open questions left.
+  q102.answer = { choice: 1, note: "Proceed now" };
+  store.putQuestion({ ...q102 });
+  await store.changed(wishId, [Change.QUESTION, Change.WISH]);
+
+  questions = store.getState().details[wishId].questions;
+  stop();
+  assert.equal(
+    questions.find((q) => q.code === "Q101")?.answer?.note,
+    "Option B chosen",
+  );
+  assert.equal(
+    questions.find((q) => q.code === "Q102")?.answer?.note,
+    "Proceed now",
+  );
+  assert.equal(questions.filter((q) => !q.answer).length, 0);
+});
+
+test("a wish view with a followed running task keeps at most 2 concurrent long-lived streams", async () => {
+  const data = sample();
+  data.running = true;
+  const watch = channel();
+  let activeStreams = 0;
+  let peakStreams = 0;
+  const activeByPath = new Map();
+
+  const trackStream = async function* (path, inner) {
+    activeStreams++;
+    activeByPath.set(path, (activeByPath.get(path) ?? 0) + 1);
+    if (activeStreams > peakStreams) peakStreams = activeStreams;
+    try {
+      yield* inner;
+    } finally {
+      activeStreams--;
+      const next = (activeByPath.get(path) ?? 1) - 1;
+      if (next <= 0) activeByPath.delete(path);
+      else activeByPath.set(path, next);
+    }
+  };
+
+  const transport = createRouterTransport(({ service }) => {
+    service(WishService, {
+      list: () => ({ wishes: data.wishes }),
+      watch: () =>
+        trackStream("/djinn.plan.v1.WishService/Watch", watch.stream()),
+    });
+    service(ProjectService, {
+      list: () => ({ projects: data.projects }),
+    });
+    service(LeadService, {
+      get: () => ({ lead: data.lead }),
+    });
+    service(TaskService, {
+      list: () => ({
+        tasks: data.tasks,
+        total: data.tasks.length,
+        nextPageToken: "",
+      }),
+      get: (req) => ({ task: data.tasks.find((t) => t.id === req.taskId) }),
+      watch: (req) =>
+        trackStream(
+          "/djinn.plan.v1.TaskService/Watch",
+          (async function* () {
+            for (const event of data.events.filter((e) => e.seq > req.afterSeq))
+              yield { event };
+            await new Promise(() => {});
+          })(),
+        ),
+    });
+    service(QuestionService, {
+      list: () => ({
+        questions: data.questions,
+        total: data.questions.length,
+        nextPageToken: "",
+      }),
+    });
+    service(BlockService, {
+      list: () => ({
+        blocks: data.blocks,
+        total: data.blocks.length,
+        nextPageToken: "",
+      }),
+    });
+    service(InboxService, {
+      list: () => ({ items: data.inbox }),
+      sources: () => ({ sources: data.sources }),
+    });
+  });
+
+  const store = createStore(createClients(transport), 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.loaded);
+
+  const release = store.follow(taskId);
+  await until(store, (s) => (s.events[taskId]?.length ?? 0) === 2);
+
+  assert.equal(activeStreams, 2);
+  assert.ok(
+    peakStreams <= 4,
+    `peak concurrent streams ${peakStreams} exceeded 4`,
+  );
+  assert.equal(activeByPath.get("/djinn.plan.v1.WishService/Watch"), 1);
+  assert.equal(activeByPath.get("/djinn.plan.v1.TaskService/Watch"), 1);
+  assert.equal(activeByPath.get("/djinn.ui.v1.UiService/WatchShow") ?? 0, 0);
+  assert.equal(activeByPath.get("/djinn.ui.v1.UiService/WatchUpdate") ?? 0, 0);
+  assert.equal(activeByPath.get("/djinn.load.v1.LoadService/Watch") ?? 0, 0);
+
   release();
   stop();
 });

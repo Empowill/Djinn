@@ -98,6 +98,11 @@ test("a worker spawned from the command line part of a new azima shows and count
   const title = `Dew ${suffix}`;
   djinn("wish", "rename", wishId, "--title", title);
   try {
+    // Open the wish's Tasks tab while T1 is created and W1 is grouped into it from the command line.
+    const nav = page.locator(".wish-nav").filter({ hasText: title });
+    await nav.click();
+    await page.getByRole("tab", { name: /^Tasks/ }).click();
+
     // T1: an azima made from the command line, with no plan file in the project.
     const t1 = JSON.parse(
       djinn(
@@ -117,6 +122,13 @@ test("a worker spawned from the command line part of a new azima shows and count
     ).task as Task;
     expect(t1.code).toBe("T1");
     expect(fs.existsSync(path.join(folder, "plan"))).toBe(false);
+    const card = page.locator(".azima-card").filter({ hasText: "Silae" });
+    await expect(card).toBeVisible();
+    await expect(card.locator(".azima-heading")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
     // W1 starts a moment after its spawn, as the real one did: it waits for a task that sleeps.
     const before = JSON.parse(
       djinn(
@@ -128,7 +140,7 @@ test("a worker spawned from the command line part of a new azima shows and count
         "--provider",
         "fake",
         "--prompt",
-        "sleep 2s",
+        "sleep 1s",
         "--project-id",
         projectId,
         "--json",
@@ -145,8 +157,6 @@ test("a worker spawned from the command line part of a new azima shows and count
         "fake",
         "--prompt",
         "wait",
-        "--part-of",
-        "T1",
         "--after",
         before.code,
         "--project-id",
@@ -155,6 +165,27 @@ test("a worker spawned from the command line part of a new azima shows and count
       ),
     ).task as Task;
     expect(w1.status).not.toBe("TASK_STATUS_RUNNING");
+    await expect(
+      page
+        .locator(".tasks-moving .wish-task")
+        .filter({ hasText: "Silae feasibility study" }),
+    ).toBeVisible();
+
+    // Grouping W1 into T1 from the command line moves it out of loose tasks and opens T1's card without a reload.
+    djinn("task", "update", w1.id, "--part-of", "T1");
+    await expect(
+      page
+        .locator(".tasks-moving .wish-task")
+        .filter({ hasText: "Silae feasibility study" }),
+    ).toHaveCount(0);
+    await expect(card.locator(".azima-heading")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(
+      card.locator(".wish-task").filter({ hasText: "Silae feasibility study" }),
+    ).toBeVisible();
+
     await expect
       .poll(() => task(w1.id).status, { timeout: 20_000 })
       .toBe("TASK_STATUS_RUNNING");

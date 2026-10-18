@@ -54,7 +54,10 @@ const lampOf = (wishId: string, title: string) => ({
   })),
 });
 
+const SHOTS = Boolean(process.env.REVIEW_SHOTS);
+
 async function shoot(page: Page, name: string) {
+  if (!SHOTS) return;
   // The cards fade in: the shot waits for them.
   for (const card of await page.locator(".question-card").all())
     await expect(card).toHaveCSS("opacity", "1");
@@ -166,10 +169,12 @@ test("the attention bar names what holds up the wish on the flying carpet and on
         .filter({ hasText: title })
         .locator(".question-group-count"),
     ).toHaveText("2");
-    await shoot(page, "review-flight-plan-dark");
-    await theme(page, "light");
-    await shoot(page, "review-flight-plan-light");
-    await theme(page, "");
+    if (SHOTS) {
+      await shoot(page, "review-flight-plan-dark");
+      await theme(page, "light");
+      await shoot(page, "review-flight-plan-light");
+      await theme(page, "");
+    }
 
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await expect(page.locator(".hero h1")).toHaveText(title);
@@ -185,7 +190,9 @@ test("the attention bar names what holds up the wish on the flying carpet and on
       "What it changes",
     );
     await shoot(page, "review-wish-dark");
-    await theme(page, "light");
+    if (SHOTS) {
+      await theme(page, "light");
+    }
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await page
       .locator(".wish-task")
@@ -203,14 +210,16 @@ test("the attention bar names what holds up the wish on the flying carpet and on
       "true",
     );
     await expect(card).toBeFocused();
-    await theme(page, "");
+    if (SHOTS) {
+      await theme(page, "");
+    }
   } finally {
     cleanup();
   }
   expect(errors).toEqual([]);
 });
 
-test("a question is enlightened, revised by the lead, then rubbed in one click; a block waits in the agents' tab", async ({
+test("a question is enlightened, revised by its investigator and on the flying carpet, then rubbed in one click; a block waits in the agents' tab", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -245,9 +254,11 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     await expect(digging.locator("textarea, .option")).toHaveCount(0);
     // Out of the bar too: the question that can wait never was in it, so nothing waits there.
     await expect(bar.locator(".attention-item")).toHaveCount(0);
-    await digging.screenshot({
-      path: path.join(shots, "review-question-folded.png"),
-    });
+    if (SHOTS) {
+      await digging.screenshot({
+        path: path.join(shots, "review-question-folded.png"),
+      });
+    }
     await digging.locator(".question-fold").click();
     await expect(digging).not.toHaveClass(/folded/);
     await expect(digging.locator(".investigating-note")).toHaveText(
@@ -259,18 +270,33 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     expect(brief).toContain("## To investigate");
     expect(brief).toContain("How long does each burn?");
 
-    // The lead revises from the command line: the question waits for you again, revised, its earlier version apart.
+    const tasks = JSON.parse(
+      djinn("task", "list", "--wish-id", wishId, "--json"),
+    ).tasks as Array<{ id: string; code: string; role: string }>;
+    const investigator = tasks.find((t) => t.role === "TASK_ROLE_INVESTIGATOR");
+    expect(investigator).toBeDefined();
+
+    // The investigator revises from the command line: the question waits for you again, revised, its earlier version apart.
     djinn(
       "question",
       "revise",
       "Q01",
       "--wish-id",
       wishId,
+      "--task-id",
+      investigator!.id,
       "--context",
       "## What we found\n\nOlive burns 6 hours, paraffin 9.",
+      "--options",
+      "Olive — the classic",
+      "--options",
+      "Paraffin — brighter",
+      "--options",
+      "Beeswax — cleanest",
       "--recommendation",
       "B: it lasts half as long again.",
     );
+    await expect(page.locator(".investigating-section")).toHaveCount(0);
     const revised = page
       .locator(".decisions-section .question-card")
       .filter({ hasText: "Which oil for the wick?" });
@@ -312,6 +338,9 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     await expect(
       revised.locator(".option", { has: page.locator(".option-recommended") }),
     ).toContainText("Paraffin");
+    await expect(
+      revised.getByRole("button", { name: /Beeswax/ }),
+    ).toBeVisible();
     // The new recommendation is the option chosen until you pick another.
     await expect(
       revised.getByRole("button", { name: /Paraffin/ }),
@@ -319,17 +348,61 @@ test("a question is enlightened, revised by the lead, then rubbed in one click; 
     await revised.scrollIntoViewIfNeeded();
     await shoot(page, "review-wish-revised-dark");
 
+    // On the Flying carpet too, a question sent back under investigation and revised returns to the open column without a reload.
+    await page.keyboard.press("Control+1");
+    await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+    djinn(
+      "question",
+      "enlighten",
+      "Q01",
+      "--wish-id",
+      wishId,
+      "--note",
+      "And the price?",
+    );
+    await expect(
+      page
+        .locator(".investigating-section .question-card")
+        .filter({ hasText: "Which oil for the wick?" }),
+    ).toBeVisible();
+    djinn(
+      "question",
+      "revise",
+      "Q01",
+      "--wish-id",
+      wishId,
+      "--context",
+      "## The price\n\nParaffin costs three dinars.",
+      "--options",
+      "Olive — the classic",
+      "--options",
+      "Paraffin — brighter",
+      "--options",
+      "Beeswax — cleanest",
+      "--recommendation",
+      "B: it lasts half as long again.",
+    );
+    await expect(page.locator(".investigating-section")).toHaveCount(0);
+    const onCarpet = page
+      .locator(".decisions-section .question-card")
+      .filter({ hasText: "Which oil for the wick?" });
+    await expect(onCarpet).toContainText("Revised ×2");
+    await onCarpet.locator(".question-row-title").click();
+    await expect(onCarpet).toContainText("Versions (3)");
+    await expect(onCarpet).toContainText("The price");
+
     // Rub the lamp: one click answers with the option selected, here the recommended one, and the lead reads it from
     // the command line.
-    await revised.getByRole("button", { name: "Rub the lamp" }).click();
-    await expect(revised).toHaveCount(0);
+    await onCarpet.getByRole("button", { name: "Rub the lamp" }).click();
+    await expect(onCarpet).toHaveCount(0);
     const [q01] = JSON.parse(
       djinn("question", "list", "--wish-id", wishId, "--json"),
     ).questions;
     expect(q01.answer.choice).toBe("CHOICE_B");
-    expect(q01.revision).toBe(1);
+    expect(q01.revision).toBe(2);
 
     // A block is for agents: not on the wish's tab, but in the last one, folded, with no mark; opened, its Markdown.
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
     await expect(page.locator(".wish-block")).toHaveCount(0);
     const agents = page.getByRole("tab", { name: /^For agents/ });
     await expect(agents).toHaveText("For agents1");
