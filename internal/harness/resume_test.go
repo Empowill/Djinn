@@ -425,13 +425,13 @@ func TestResumeMixCountsOnlyLimits(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	p := &scriptStepProvider{steps: []string{
-		"text mix0\nsleep 1h",      // Run 0: interrupted by Restart 1
-		"fail rate limit exceeded", // Run 1: hits limit 1 (resumes with Resumes == 1)
-		"text mix1\nsleep 1h",      // Run 2: interrupted by Restart 2
-		"fail rate limit exceeded", // Run 3: hits limit 2 (resumes with Resumes == 2)
-		"text mix2\nsleep 1h",      // Run 4: interrupted by Restart 3
-		"fail rate limit exceeded", // Run 5: hits limit 3 (resumes with Resumes == 3)
-		"fail rate limit exceeded", // Run 6: hits limit 4 -> exhausted!
+		"text mix0\nsleep 1h",       // Run 0: interrupted by Restart 1
+		"fail usage limit exceeded", // Run 1: hits limit 1 (resumes with Resumes == 1)
+		"text mix1\nsleep 1h",       // Run 2: interrupted by Restart 2
+		"fail usage limit exceeded", // Run 3: hits limit 2 (resumes with Resumes == 2)
+		"text mix2\nsleep 1h",       // Run 4: interrupted by Restart 3
+		"fail usage limit exceeded", // Run 5: hits limit 3 (resumes with Resumes == 3)
+		"fail usage limit exceeded", // Run 6: hits limit 4 -> exhausted!
 	}}
 	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
 	clock := &fakeClock{at: time.Date(2026, 10, 8, 4, 28, 30, 0, time.UTC)}
@@ -456,7 +456,7 @@ func TestResumeMixCountsOnlyLimits(t *testing.T) {
 		e.down()
 		e = upWith(t, home, providers, WithClock(clock.now))
 
-		// Worker fails on rate limit: limited sets RESUMING with ResumeAfter.
+		// Worker fails on usage limit: limited sets RESUMING with ResumeAfter.
 		got := e.until(t, id, func(tk *planv1.Task) bool {
 			return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && tk.GetResumeAfter() != nil
 		})
@@ -494,4 +494,151 @@ func TestResumeMixCountsOnlyLimits(t *testing.T) {
 	if strings.Contains(all, "resumed after djinn restarted (") {
 		t.Errorf("restart events should not contain counter:\n%s", all)
 	}
+}
+
+// TestPerMinuteRateLimitBackoff checks that per-minute TPM/RPM quotas use a 60s -> 90s -> 120s backoff without
+// incrementing Resumes or exhausting maxResumes = 3, whereas multi-hour session/daily quotas use 15m -> 30m -> 60m.
+func TestPerMinuteRateLimitBackoff(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+
+	for _, tc := range []struct {
+		text      string
+		perMinute bool
+	}{
+		{"RESOURCE_EXHAUSTED (code 429): TPM quota exhausted. No spare capacity available for model.", true},
+		{"rate limit exceeded", true},
+		{"HTTP 429 Too Many Requests", true},
+		{"You've hit your session limit · resets 5pm (UTC)", false},
+		{"daily quota exhausted", false},
+		{"usage limit exceeded", false},
+	} {
+		l, ok := limitIn(tc.text, now)
+		if !ok {
+			t.Fatalf("limitIn(%q) = _, false, want Limit", tc.text)
+		}
+		if l.PerMinute != tc.perMinute {
+			t.Errorf("limitIn(%q).PerMinute = %v, want %v", tc.text, l.PerMinute, tc.perMinute)
+		}
+	}
+
+	home := t.TempDir()
+	p := &scriptStepProvider{steps: []string{
+		"fail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
+		"fail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
+		"fail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
+		"fail RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
+		"text finished after 4 TPM waits",
+	}}
+	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
+	clock := &fakeClock{at: now}
+	e := upWith(t, home, providers, WithClock(clock.now))
+	wishID, _ := e.wish(t, gitRepo(t))
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "TPM quota task", Prompt: "start", Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := res.Msg.GetTask().GetId()
+
+	wantBackoffs := []time.Duration{60 * time.Second, 90 * time.Second, 120 * time.Second, 120 * time.Second}
+	for i, wantWait := range wantBackoffs {
+		stepAt := clock.now()
+		got := e.until(t, id, func(tk *planv1.Task) bool {
+			return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && len(tk.GetRuns()) == i+1 && tk.GetResumeAfter() != nil
+		})
+		if got.GetResumes() != 0 {
+			t.Fatalf("TPM hit %d: Resumes = %d, want 0", i+1, got.GetResumes())
+		}
+		gotWait := got.GetResumeAfter().AsTime().Sub(stepAt)
+		if gotWait != wantWait {
+			t.Fatalf("TPM hit %d: backoff = %v, want %v", i+1, gotWait, wantWait)
+		}
+		clock.set(got.GetResumeAfter().AsTime().Add(time.Second))
+		e.h.wake()
+	}
+
+	got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if got.GetResumes() != 0 {
+		t.Errorf("completed task Resumes = %d, want 0", got.GetResumes())
+	}
+}
+
+// TestReplayEnvFailuresResetsResumesAndHonorsCooldown checks that replayEnvFailures waits for the limit cooldown
+// before replaying a task that exhausted maxResumes, and resets Resumes to 0 when replaying so the next 429 does not
+// immediately fail the task.
+func TestReplayEnvFailuresResetsResumesAndHonorsCooldown(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	home := t.TempDir()
+	p := &scriptStepProvider{steps: []string{
+		"fail usage limit exceeded", // Task A run 0 -> Resumes 0 -> 1
+		"fail usage limit exceeded", // Task A run 1 -> Resumes 1 -> 2
+		"fail usage limit exceeded", // Task A run 2 -> Resumes 2 -> 3
+		"fail usage limit exceeded", // Task A run 3 -> FAILED (resumed 3 times without finishing)
+		"text sibling done",         // Task B run 0 -> DONE (within cooldown: does not replay Task A yet)
+		"text sibling2 done",        // Task C run 0 -> DONE (past cooldown: replays Task A with Resumes = 0)
+		"fail usage limit exceeded", // Task A run 4 (replayed) -> hits limit again, must RESUME (not FAIL!)
+		"text task A done",          // Task A run 5 -> DONE
+	}}
+	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
+	clock := &fakeClock{at: now}
+	e := upWith(t, home, providers, WithClock(clock.now))
+	wishID, _ := e.wish(t, gitRepo(t))
+	resA, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Task A", Prompt: "start A", Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	idA := resA.Msg.GetTask().GetId()
+
+	for i := range maxResumes {
+		got := e.until(t, idA, func(tk *planv1.Task) bool {
+			return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && len(tk.GetRuns()) == i+1 && tk.GetResumeAfter() != nil
+		})
+		clock.set(got.GetResumeAfter().AsTime().Add(time.Second))
+		e.h.wake()
+	}
+	failedA := e.until(t, idA, isStatus(planv1.TaskStatus_TASK_STATUS_FAILED))
+	if failedA.GetResumes() != maxResumes {
+		t.Fatalf("failedA.Resumes = %d, want %d", failedA.GetResumes(), maxResumes)
+	}
+
+	// Only 10 seconds after Task A failed (well within the 15m usage limit cooldown), Task B finishes.
+	clock.set(clock.now().Add(10 * time.Second))
+	resB, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Task B", Prompt: "start B", Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.until(t, resB.Msg.GetTask().GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if gotA := e.get(t, idA); gotA.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		t.Fatalf("Task A status after sibling finished during cooldown = %v, want FAILED", gotA.GetStatus())
+	}
+
+	// Advance past the 15m cooldown and run Task C -> Task A is replayed with Resumes reset to 0.
+	clock.set(clock.now().Add(16 * time.Minute))
+	resC, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Task C", Prompt: "start C", Provider: planv1.Provider_PROVIDER_FAKE,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.until(t, resC.Msg.GetTask().GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+
+	// Replayed Task A hits another usage limit and must enter RESUMING with Resumes == 0 (not fail immediately).
+	resumingA := e.until(t, idA, func(tk *planv1.Task) bool {
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && len(tk.GetRuns()) == 5 && tk.GetResumeAfter() != nil
+	})
+	if resumingA.GetResumes() != 0 {
+		t.Fatalf("replayed Task A Resumes = %d, want 0", resumingA.GetResumes())
+	}
+	clock.set(resumingA.GetResumeAfter().AsTime().Add(time.Second))
+	e.h.wake()
+	e.until(t, idA, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 }

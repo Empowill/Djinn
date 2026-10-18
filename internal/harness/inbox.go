@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -112,6 +113,9 @@ func (h *Harness) turnOver(r *run) {
 		return
 	}
 	r.held = nil
+	if m.publish != "" && dispatch.ChangesNoCode(r.task) && changesNoCodeDone(h.ctx, h.store, r.task) {
+		return
+	}
 	if res := h.deliver(r, m); res.err != nil {
 		logx.L().Info("a message held for the end of a turn is lost", "task", r.task.GetCode(), "err", res.err)
 	}
@@ -121,9 +125,13 @@ func (h *Harness) turnOver(r *run) {
 func (h *Harness) deliver(r *run, m *message) sent {
 	h.mu.Lock()
 	going := r.out != ""
+	midAgyTurn := r.task.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && r.resultAt.IsZero() && r.listenSince.IsZero()
 	h.mu.Unlock()
 	if going {
 		return sent{err: errGoingOut}
+	}
+	if m.publish != "" && dispatch.ChangesNoCode(r.task) && changesNoCodeDone(h.ctx, h.store, r.task) {
+		return sent{}
 	}
 	if err := r.worker.Send(m.req.GetText()); err != nil {
 		code := connect.CodeInternal
@@ -141,14 +149,19 @@ func (h *Harness) deliver(r *run, m *message) sent {
 	if err != nil {
 		return sent{err: plan.Status(fmt.Errorf("the worker has the message, but it is not recorded: %w", err))}
 	}
+	if midAgyTurn {
+		r.unreadWaitTurn = true
+	}
 	r.unread = append(r.unread, m.req.GetText())
 	return sent{event: ev}
 }
 
 // acknowledge records that the worker took its unread messages in, when ev is something it says: text, or a tool
 // it calls. What comes on its error output, its usage or its other lines do not show that it read anything.
+// On Antigravity, messages delivered while a turn is under way wait for the next turn to speak before being
+// acknowledged, as agy queues stdin lines between turns instead of injecting them mid-turn.
 func (h *Harness) acknowledge(r *run, ev Event) {
-	if len(r.unread) == 0 {
+	if len(r.unread) == 0 || r.unreadWaitTurn {
 		return
 	}
 	switch ev.Kind {
