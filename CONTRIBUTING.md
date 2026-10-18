@@ -183,7 +183,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   the side panel's Grimoire shows it as a page of the window, its navigation in the window's language. The Command line tab has nothing to regenerate by hand: `djinn up` and `go tool task docs`
   fill it from the command tree djinn is built from (`internal/cli`), so a method added to a proto, or a flag, is
   there at once. A command written by hand in `cmd/djinn` takes its entry in `cli.Builtins`, which is its `--help`
-  too; `TestEveryCommandIsDocumented` fails on one that runs without it.
+  too; `TestHandwritten` fails on one that runs without it.
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
 - `go tool task dev`: the page reloads as you edit React, djinn rebuilds and restarts as you edit Go; in the browser,
   on its own data (`bin/dev-home`). Open the URL it prints.

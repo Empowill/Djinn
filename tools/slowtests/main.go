@@ -39,14 +39,11 @@ const (
 // allowed are the tests that may take longer than -max, by package and name ("github.com/…/cmd/djinn TestX"), each
 // with why it cannot be fast. Keep it empty.
 var allowed = map[string]string{
-	// Real djinn up processes: each test starts one or two full djinn up servers and CLI commands.
-	"github.com/empowill/djinn/cmd/djinn TestUpdateFromRelease":                                     "two real djinn up processes, one restarting into the other",
-	"github.com/empowill/djinn/cmd/djinn TestCrashReopensTheLeads":                                  "two real djinn up processes across a kill",
-	"github.com/empowill/djinn/cmd/djinn TestUpdate":                                                "two real djinn up processes across a restart",
-	"github.com/empowill/djinn/cmd/djinn TestWishResume":                                            "a real djinn up process and a djinn CLI invocation",
-	"github.com/empowill/djinn/cmd/djinn TestCrashResumesTheWorkers":                                "two real djinn up processes across a kill",
-	"github.com/empowill/djinn/cmd/djinn TestWindowTerminalOpensInAProject":                         "a real djinn up process and a djinn CLI invocation",
-	"github.com/empowill/djinn/cmd/djinn TestCrossVet":                                              "runs cross-platform go vet for Windows and Darwin targets across all dependencies on cold cache",
+	// Real djinn up processes. TestRunUp, TestRunUpdate, TestCarryLead and TestRunOpen start theirs in parallel subtests,
+	// whose time go test does not count in their parent's: only the tests below start them in turn.
+	"github.com/empowill/djinn/cmd/djinn TestLeadNote": "three real djinn up processes in turn, across a kill and a stop",
+	// Behind the crossvet tag, out of go tool task test: CI's Linux job runs it (.github/workflows/ci.yml).
+	"github.com/empowill/djinn/cmd/djinn TestCrossVet":                                              "go vet of cmd/djinn and its tests for Windows and Darwin, every dependency type-checked on a cold build cache (48 s)",
 	"github.com/empowill/djinn/internal/testx/bigwish TestSizes":                                    "generates a 10x wish with thousands of tasks and events",
 	"github.com/empowill/djinn/internal/harness TestRestartResumesInOrder":                          "starts 7 sequential workers across a simulated restart",
 	"github.com/empowill/djinn/internal/harness TestEnvFailureReplayOnVersionChange":                "starts 5 sequential harness instances across simulated version upgrades",

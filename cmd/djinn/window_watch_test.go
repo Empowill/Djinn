@@ -21,6 +21,7 @@ func (f *fakeNotifier) Notify(n ui.Notification) error { f.notes = append(f.note
 // notification, in English or French, saying the GPU hang the kernel logged and that the window runs in software
 // rendering until Djinn restarts.
 func TestWindowTold(t *testing.T) {
+	t.Parallel()
 	hang := []window.Hang{{Time: time.Date(2026, 10, 17, 21, 26, 55, 0, time.Local), Line: "i915: GPU HANG"}}
 	for _, c := range []struct {
 		name, language string

@@ -89,7 +89,7 @@ overloaded. Part of the orchestrator (T07).
   `TestProbeScopesFallback` with no systemd-run then a fake one on PATH, and `TestProbeScopes` in `internal/machine`;
   `TestScopePrefix`, `TestMeasurePeaks` and `TestScopeTakesTheTree` in `internal/harness`, which on a machine with a
   user systemd measures, freezes and stops a real scope whose child left its session, and reads its 512 MiB
-  `memory.max`, and skips elsewhere, as in CI; `TestWorkerScopesFallback` in `cmd/djinn`. On this Ubuntu 22.04 laptop
+  `memory.max`, and skips elsewhere, as in CI; `TestWorkerScopes` in `cmd/djinn`. On this Ubuntu 22.04 laptop
   the probe made its scope and said the cpu controller is not delegated. A worker killed at its memory ceiling is not
   tried yet)
 
