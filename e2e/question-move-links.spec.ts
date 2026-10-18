@@ -4,7 +4,7 @@
 // - a link in the context or an option opens where it points, and never picks the option around it;
 // - the command block of the context copies as it is.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

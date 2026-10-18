@@ -1,7 +1,7 @@
 // An instruction sent from the window to a running worker: an event of the task at once, then "received" once the
 // worker says something after it. The worker is the fake agent: no model is called. It stays a while after, since a
 // finished task folds its events.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

@@ -2,7 +2,7 @@
 // wish's branch (a project check that always passes), with a comment on a line of its diff. The tab counts it, opens
 // its diff, checks it reviewed, and the mark is kept: the command line lists it, and a reload shows it still. No
 // model is called. Screenshots, dark and light, go to test-results/e2e/.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

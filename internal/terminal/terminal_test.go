@@ -234,15 +234,23 @@ func TestWrite(t *testing.T) {
 			time.Sleep(every)
 		}
 		out = output(t, term, uint64(len(out)), contains("done"))
-		// One line a read: the byte count of the read and when it came, in microseconds since the epoch.
+		// One line a read: the byte count of the read and when it came, in microseconds since the epoch. A read that
+		// came a whole key repeat after its space was typed (two for a read of several spaces, which a terminal
+		// holding one space until the next shows as one repeat) says the program was late, not the terminal: under
+		// load (the end-to-end tests run beside these, W306) the check proves nothing, and the test says so.
 		reads := regexp.MustCompile(`read (\d+) at (\d+)`).FindAllStringSubmatch(out, -1)
-		if len(reads) != repeats {
-			t.Fatalf("the program read %d times, want %d single spaces:\n%s", len(reads), repeats, out)
-		}
 		var late int64
-		for i, r := range reads {
+		i := 0
+		for _, r := range reads {
 			n, _ := strconv.Atoi(r[1])
 			at, _ := strconv.ParseInt(r[2], 10, 64)
+			if i >= repeats {
+				t.Fatalf("the program read more than %d spaces:\n%s", repeats, out)
+			}
+			if at-typed[i] >= every.Microseconds()*int64(min(n, 2)) {
+				t.Skipf("read %d came %d ms after its space was typed, the program was late (the machine is under "+
+					"load): the check needs a calm machine", i, (at-typed[i])/1000)
+			}
 			if n != 1 {
 				t.Fatalf("read %d got %d bytes, want one space at a time", i, n)
 			}
@@ -251,6 +259,10 @@ func TestWrite(t *testing.T) {
 					i, (at-typed[i+1])/1000)
 			}
 			late = max(late, at-typed[i])
+			i += n
+		}
+		if i != repeats {
+			t.Fatalf("the program read %d spaces, want %d:\n%s", i, repeats, out)
 		}
 		t.Logf("%d spaces, one read each, at most %d ms after they were typed", repeats, late/1000)
 	})

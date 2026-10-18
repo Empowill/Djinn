@@ -2,7 +2,7 @@
 // whose correction failed shows red, merge failed (W8). The wish is imported, its tasks as Djinn leaves them: no
 // worker runs, the correction waits unscheduled. MERGE_SHOTS=<folder> also writes the Tasks tab, both states in sight, in both themes there.
 // Run alone with: go tool task e2e -- e2e/merge-fixing.spec.ts
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

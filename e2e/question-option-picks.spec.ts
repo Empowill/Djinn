@@ -1,6 +1,6 @@
 // An option of a question picks, it never answers (W574): a click, a double click, Enter or Space on a focused option,
 // Enter on the card around it only select; the answer leaves by Rub the lamp alone, with the option picked last.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

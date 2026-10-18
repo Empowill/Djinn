@@ -1,7 +1,7 @@
 // The flying carpet of the active wishes, against the real djinn up --browser (see global-setup.ts): two wishes, a
 // question each, merged in one view; a question answered there reads as answered by the command line. A wish's
 // tasks show what they spent: tokens, and one price.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

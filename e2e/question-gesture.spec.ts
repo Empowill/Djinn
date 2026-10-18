@@ -1,7 +1,7 @@
 // A gesture on a question card shows: its button stays down a moment before the answer leaves, the card glows in the
 // gesture's colour and a wisp of smoke rises from the button; with reduced motion, the glow is a plain colour flash
 // and nothing moves. The states last a few hundred milliseconds: a MutationObserver in the page records them.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

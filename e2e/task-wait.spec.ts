@@ -2,7 +2,7 @@
 // waits while it does, and nothing once it runs; its page shows the waiting line as past, folded and muted into the
 // start that ended it, which says how long it waited and for what (W371). The workers are the fake agent: no model is
 // called.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

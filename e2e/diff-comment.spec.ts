@@ -2,7 +2,7 @@
 // quotes the file and the line, then "received" once the worker says something after it. The worker is the fake
 // agent: no model is called. While it waits, the spec commits in the task's worktree itself, for the diff to show a
 // line.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";

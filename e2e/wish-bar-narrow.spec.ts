@@ -1,7 +1,7 @@
 // The wish bar under 820px wide: the CSS narrows it to its icons, the wish unfolded, and hides an active wish's second
 // line; the wish's own icon shows, as on the folded rail (L09 v6), with the small hand and the questions' count on its
 // corner. Wider, the icon is the same, the hand on its corner stays hidden and the second line says the count.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

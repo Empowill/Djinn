@@ -2,7 +2,7 @@
 // around it; only its states move, from the second line onto the icon's corners and back. Unfolded, the second line
 // says them, the small hand and the questions' count; folded, the hand sits on the icon's corner. A paused wish's icon
 // is grey; a selected row keeps its ground and takes no hover's tint.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

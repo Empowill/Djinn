@@ -1,7 +1,7 @@
 // The window and the command line on one djinn (see global-setup.ts): a wish made by the command line shows in the
 // window as it is made, and a question answered in the window, option B picked over the recommended A and the lamp
 // rubbed, reads as answered by the command line. Shots of the card, dark and light, go to test-results/e2e/.
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

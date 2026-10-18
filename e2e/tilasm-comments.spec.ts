@@ -4,13 +4,7 @@
 // reads a draft: djinn tilasm comments still has none sent. Full size, the column stays beside the narrowed frame, and
 // Escape gives up a card without leaving full size. Every run makes a fresh wish, so --repeat-each works on the same
 // djinn. Screenshots of the column, beside the frame and full size, go to test-results/e2e/.
-import {
-  type Frame,
-  type Locator,
-  type Page,
-  expect,
-  test,
-} from "@playwright/test";
+import { type Frame, type Locator, type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -41,6 +35,7 @@ test("drafts on the whole tilasm are written, edited, deleted with an Undo, and 
   const title = `Comment the lamp ${randomUUID().slice(0, 8)}`;
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
     .id as string;
+  made.push(wishId);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-comments-"));
   try {
     fs.writeFileSync(
@@ -198,6 +193,7 @@ test("the comments leave in one send, Iterate or Launch, and a launched tilasm g
   const title = `Send the lamp ${randomUUID().slice(0, 8)}`;
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
     .id as string;
+  made.push(wishId);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-send-"));
   let launched = "";
   try {

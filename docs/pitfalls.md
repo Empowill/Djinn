@@ -158,12 +158,17 @@ the code does not say by itself; remove one when a change makes it false.
 
 ## End-to-end specs
 
-- **All specs share one djinn.** `e2e/global-setup.ts` starts one `djinn up --browser`; specs leave wishes and
-  terminals behind (W32). *Sign:* a spec passes alone and fails in the full run. *Do:* reproduce with the spec
-  before it (`npx playwright test --config e2e/playwright.config.ts e2e/decision-log.spec.ts e2e/<spec>`), and make
-  the spec create its own state (`djinn wish make --json` through `bin/djinn-e2e`). A spec that fails half way
-  leaves its state too: `project-config` failed on Windows before it said no to its source, and the flying carpet of
-  every later spec held an inbox line for it (W270). Fix the first red spec before the ones after it.
+- **A worker's specs share one djinn.** `e2e/global-setup.ts` starts one `djinn up --browser` per Playwright worker
+  (three on a developer's machine, two on CI, W306); the specs spread over the workers, so which specs share a djinn,
+  and in which order, changes from one run to the next. Specs leave wishes and terminals behind (W32). *Sign:* a spec
+  passes alone and fails in the full run, or in one run out of three. *Do:* the fixture of `e2e/test.ts` names the
+  test that left an active wish or an open question: fix that one. Reproduce with the spec before it on one worker
+  (`npx playwright test --config e2e/playwright.config.ts --workers 1 e2e/decision-log.spec.ts e2e/<spec>`), and
+  make the spec create its own state (`djinn wish make --json` through `bin/djinn-e2e`) and delete it before it
+  ends. A spec that fails half way leaves its state too: `project-config` failed on Windows before it said no to its
+  source, and the flying carpet of every later spec held an inbox line for it (W270). Fix the first red spec before
+  the ones after it. A lead's state leaks too: `lead-message` expected "djinn lead resume" while an earlier spec's
+  lead was still recorded (W246); `dropLead` (`e2e/lead.ts`) before and after.
 - **Content that grows above a read item moves the scroll offset.** The browser keeps the item on screen
   (`overflow-anchor`), so `scrollTop` grows by what was added above: the inbox line of a project fetched its sentence
   after its first paint, and on Windows the longer sentence took a second line, 21 px (W270, `tilasms.spec.ts`). *Do:*
@@ -224,9 +229,13 @@ the code does not say by itself; remove one when a change makes it false.
   (`expect.poll` on a role locator's `allInnerTexts()`) rather than one per item, a test per screen, one load a test
   (the theme set by `addInitScript`, not a reload); measure with `--trace off` against the default.
 - **Every spec after one point refuses: the specs' djinn ended.** `ERR_CONNECTION_REFUSED`, "djinn is not running
-  … no …/server.addr": the shared djinn of the suite is gone, and each spec after it fails (W248: a push check at
-  56a98a21, from the tilasms spec on). *Do:* read `test-results/e2e/djinn-logs/` (`exit.txt` says when and how it
-  ended; its `djinn.log` and `crash.txt`, which the teardown keeps).
+  … no …/server.addr": the djinn of that worker is gone, and each spec after it on the same worker fails (W248: a
+  push check at 56a98a21, from the tilasms spec on). *Do:* read `test-results/e2e/djinn-logs/<worker>/` (`exit.txt`
+  says when and how it ended; its `djinn.log` and `crash.txt`, which the teardown keeps).
+- **A red part of `go tool task test` and the output of another.** The three parts run at once (`tools/testall`),
+  each to `test-results/<part>.log`; a red part's log prints at the end, after the green ones', and the last line is
+  `Failed: <parts>`. *Do:* read `test-results/test-go.log`, `test-ui.log` or `e2e.log` whole; the e2e's traces stay
+  in `test-results/e2e/`.
 - **Two Playwright runs in one worktree erase each other's traces.** `go tool task test` runs the e2e too; beside
   `go tool task e2e` (or a second agent in the same worktree) both write `test-results/`. *Sign:*
   `ENOENT … .playwright-artifacts-0/traces/*.trace`. *Do:* one run at a time.
