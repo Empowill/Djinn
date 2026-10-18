@@ -97,8 +97,8 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
   the background still alive, and every task of its wish waited for it.
 - **A watcher** is never ended for its silence, which is its normal state. A command of it that dies starts again; five
   deaths in a row fail it, and the Djinn hears why.
-- **A budget.** A task is stopped, "budget exceeded", past 2 hours of work in total across its runs, or a worker past
-  500 model turns in one run. It stays stopped until it is given a new turn.
+- **A budget.** A task is stopped, "budget exceeded", past 2 hours of work in total across its runs (automatic resumes
+  keep counting), or a worker past 500 model turns in one run. Continuing it gives it a new 2-hour and 500-turn budget.
 
 Only the resumes after a usage limit count against a task, and those after a network error when no outage was
 confirmed: after three of them, it fails. A restart, a pause, a lost process or a confirmed network outage costs it

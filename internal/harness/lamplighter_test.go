@@ -285,7 +285,8 @@ func TestLamplighterBudgetWallTimeExceeded(t *testing.T) {
 
 	e := up(t, t.TempDir(),
 		WithClock(clock.now),
-		WithTaskMaxWallTime(100*time.Millisecond),
+		WithSilenceLimit(10*time.Hour),
+		WithTaskMaxWallTime(2*time.Hour),
 		WithTellDelay(10*time.Millisecond),
 	)
 	e.h.TellLeads(tell)
@@ -295,11 +296,34 @@ func TestLamplighterBudgetWallTimeExceeded(t *testing.T) {
 	id := task.GetId()
 
 	e.until(t, id, func(tk *planv1.Task) bool {
-		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && tk.GetSessionId() != ""
 	})
 
-	// Advance clock past wall time budget.
+	// Run 1 works 1 h, then pauses for 3 h and resumes: the 3 h hold is left out, and the automatic resume keeps the 1 h count.
+	clock.set(clock.now().Add(time.Hour))
+	if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: id})); err != nil {
+		t.Fatal(err)
+	}
 	clock.set(clock.now().Add(3 * time.Hour))
+	if _, err := e.tasks.Resume(t.Context(), connect.NewRequest(&planv1.TaskServiceResumeRequest{TaskId: id})); err != nil {
+		t.Fatal(err)
+	}
+	resumed := e.until(t, id, func(tk *planv1.Task) bool {
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && len(tk.GetRuns()) == 2
+	})
+
+	// 30 min into Run 2 (1h30m of work across the two runs, 4h30m elapsed since first start): still within the 2 h budget.
+	clock.set(clock.now().Add(30 * time.Minute))
+	e.h.lamplighter(t.Context(), []*planv1.Task{resumed})
+	e.h.mu.Lock()
+	stopping := e.h.runs[id].stopping
+	e.h.mu.Unlock()
+	if stopping {
+		t.Fatal("stopped at 1h30m of work after a 3 h hold")
+	}
+
+	// 31 min later (2h01m of work across Run 1 and Run 2, though Run 2 alone ran 1h01m): the automatic resume kept the old count.
+	clock.set(clock.now().Add(31 * time.Minute))
 	e.h.Wake()
 
 	done := e.ended(t, id)
@@ -312,7 +336,6 @@ func TestLamplighterBudgetWallTimeExceeded(t *testing.T) {
 
 	e.h.batcher.Flush(t.Context())
 	toldMu.Lock()
-	defer toldMu.Unlock()
 	found := false
 	for _, line := range told {
 		if strings.Contains(line, "budget exceeded") {
@@ -320,8 +343,87 @@ func TestLamplighterBudgetWallTimeExceeded(t *testing.T) {
 			break
 		}
 	}
+	toldMu.Unlock()
 	if !found {
 		t.Errorf("lead not told of budget failure, got told: %v", told)
+	}
+
+	// Continued by the lead (W282): opens a fresh 2 h wall-time budget.
+	if _, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{TaskId: id})); err != nil {
+		t.Fatal(err)
+	}
+	continued := e.until(t, id, func(tk *planv1.Task) bool {
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && len(tk.GetRuns()) == 3
+	})
+
+	// 15 s and then 1 h into the continued run: still within the new 2 h budget.
+	clock.set(clock.now().Add(15 * time.Second))
+	e.h.lamplighter(t.Context(), []*planv1.Task{continued})
+	clock.set(clock.now().Add(time.Hour))
+	e.h.lamplighter(t.Context(), []*planv1.Task{continued})
+	e.h.mu.Lock()
+	stopping = e.h.runs[id].stopping
+	e.h.mu.Unlock()
+	if stopping {
+		t.Fatal("continued task stopped before its new 2 h budget")
+	}
+
+	// Past the new 2 h budget (2h01m15s since the continue): now stopped.
+	clock.set(clock.now().Add(time.Hour + time.Minute))
+	e.h.Wake()
+
+	done2 := e.ended(t, id)
+	if done2.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || !strings.Contains(done2.GetError(), "budget exceeded") {
+		t.Fatalf("after continue: status = %v, error = %q; want STOPPED, budget exceeded", done2.GetStatus(), done2.GetError())
+	}
+
+	// Direct check on runs: time spent held by a limit is left out; automatic resumes keep counting; continues reset.
+	t0 := time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC)
+	run := func(startMin, endMin int, reason string) *planv1.TaskRun {
+		r := &planv1.TaskRun{StartTime: timestamppb.New(t0.Add(time.Duration(startMin) * time.Minute)), Reason: reason}
+		if endMin >= 0 {
+			r.EndTime = timestamppb.New(t0.Add(time.Duration(endMin) * time.Minute))
+		}
+		return r
+	}
+	now := t0.Add(300 * time.Minute)
+	for _, tc := range []struct {
+		name string
+		task *planv1.Task
+		want time.Duration
+	}{
+		{
+			name: "limit hold excluded and automatic resumes summed",
+			task: &planv1.Task{Runs: []*planv1.TaskRun{
+				run(0, 40, "limit"),     // 40m work, then held 60m by limit (40..100)
+				run(100, 130, runWoken), // 30m work, woken
+				run(130, 150, "restart"),
+				run(280, -1, ""), // 20m work up to now (300)
+			}},
+			want: (40 + 30 + 20 + 20) * time.Minute,
+		},
+		{
+			name: "continue after stopped resets budget",
+			task: &planv1.Task{Runs: []*planv1.TaskRun{
+				run(0, 120, "stopped"),
+				run(130, 160, "limit"), // 30m work after continue, then held 120m by limit
+				run(280, -1, ""),       // 20m work up to now (300)
+			}},
+			want: 50 * time.Minute,
+		},
+		{
+			name: "continue after failed or done resets budget",
+			task: &planv1.Task{Runs: []*planv1.TaskRun{
+				run(0, 90, "done"),
+				run(100, 180, "failed"),
+				run(285, -1, ""), // 15m work since last continue
+			}},
+			want: 15 * time.Minute,
+		},
+	} {
+		if got := taskWallTime(tc.task, now); got != tc.want {
+			t.Errorf("%s: taskWallTime = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 

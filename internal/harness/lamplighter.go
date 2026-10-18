@@ -32,9 +32,11 @@ import (
 // command is excluded by checking the gate it holds or waits for. An idle or dead worker past this limit is ended.
 const SilenceLimit = 15 * time.Minute
 
-// TaskMaxWallTime is how long a task may run in total before being stopped: the sum of its runs (taskWallTime), time
-// waiting for a gate included, never reset by a continue. Generous for heavy builds and e2e-heavy tasks (past an hour),
-// while stopping 4h runaway zombies.
+// TaskMaxWallTime is how long a task may run before being stopped: the sum of its runs in the current budget
+// (taskWallTime), time waiting for a gate included, time held between runs (a usage limit, a pause) left out.
+// Automatic resumes (restart, limit lifted, Lamplighter wakes) keep counting; a deliberate continue (djinn task
+// continue) opens a new budget. Generous for heavy builds and e2e-heavy tasks (past an hour), while stopping 4h
+// runaway zombies.
 const TaskMaxWallTime = 2 * time.Hour
 
 // TaskMaxTurns is how many model turns a worker may take before being stopped: a guard against an endless loop, not a
@@ -306,27 +308,55 @@ func (h *Harness) endLostProcess(ctx context.Context, t *planv1.Task) {
 	h.wake()
 }
 
-// taskWallTime computes the total wall time consumed by task t up to now across all its runs.
+// continuedAfter reports whether a run that ended for reason ended the task (stopped, failed or done), so any run
+// after it comes from a deliberate continue (djinn task continue) with a fresh wall-time budget. Automatic resumes
+// (wake, silent, limit, network, restart, interrupted, pause, preemption, waiting) keep counting the same budget.
+func continuedAfter(reason string) bool {
+	switch reason {
+	case "stopped", "failed", "done":
+		return true
+	default:
+		return false
+	}
+}
+
+// taskWallTime computes the wall time task t has spent in its current budget up to now: the sum of its runs since the
+// first start or the last deliberate continue (continuedAfter), leaving out time spent held between runs (a usage
+// limit, a network outage, a pause, a restart).
 func taskWallTime(t *planv1.Task, now time.Time) time.Duration {
 	if t == nil {
 		return 0
 	}
+	runs := t.GetRuns()
+	if len(runs) == 0 {
+		if t.GetStartTime() != nil && now.After(t.GetStartTime().AsTime()) {
+			return now.Sub(t.GetStartTime().AsTime())
+		}
+		return 0
+	}
 	var total time.Duration
-	for _, run := range t.GetRuns() {
+	for i, run := range runs {
 		if run.GetStartTime() == nil {
 			continue
 		}
 		start := run.GetStartTime().AsTime()
 		end := now
-		if run.GetEndTime() != nil {
+		switch {
+		case run.GetEndTime() != nil:
 			end = run.GetEndTime().AsTime()
+		case t.GetStatus() != planv1.TaskStatus_TASK_STATUS_UNSPECIFIED && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING:
+			if t.GetEndTime() != nil {
+				end = t.GetEndTime().AsTime()
+			} else {
+				end = start
+			}
 		}
 		if end.After(start) {
 			total += end.Sub(start)
 		}
-	}
-	if total == 0 && t.GetStartTime() != nil {
-		total = now.Sub(t.GetStartTime().AsTime())
+		if continuedAfter(run.GetReason()) && (i < len(runs)-1 || t.GetContinuing()) {
+			total = 0
+		}
 	}
 	return total
 }

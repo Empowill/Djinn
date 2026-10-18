@@ -704,8 +704,8 @@ continued on its session; only after three wakes in a row does its task fail, sa
 watcher (`--provider watch`) is supervised apart, for as long as its wish needs it: never ended for its silence,
 which is its normal state, nor for a budget; a command of it that dies starts again in the same task, and only five
 deaths in a row fail it, the Djinn told why. A budget is no wake: a task is stopped, "budget exceeded", past 2 hours
-of work in total across its runs, or a worker past 500 model turns in one run, and stays stopped; `djinn task
-continue` gives a stopped worker 500 turns again, not more time. These budgets are part of the task's
+of work across its runs, or a worker past 500 model turns in one run, and stays stopped; `djinn task
+continue` gives a stopped worker 2 hours and 500 turns again. These budgets are part of the task's
 [seal](providers.md#a-tasks-seal). A Claude worker's count grows as it works; Antigravity
 reports its own at the end of each answer, Codex none.
 
