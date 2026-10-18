@@ -172,29 +172,14 @@ changes its state, or **None**.
 
 ## The workers glance
 
-**What runs**, beside the questions and on a wish's page, says what each wish's workers are doing, in a line each: a
-mark, the task's code and title, and what it waits on. A click on a line opens its task. An urgent task carries its
-**Urgent** label, an investigation its **Investigation** label, as in the Tasks tab.
+**What runs**, beside the questions and on a wish's page, says what is active and what is on its way into the wish's
+branch, from top to bottom.
 
-Every worker comes in one order, whatever its kind: what is in progress first (work, investigations, investigators, lit
-ifrits), then the paused workers, then what waits on a task, then what is planned. Within each, the worker that began
-first comes first, so a worker that starts or ends never moves the others. The panel reads every live task of the wish
-from the start: a task waiting far down a long wish shows without opening the Tasks tab.
+On top come the wish's [watchers](#watcher), a line each: an eye, what the watcher said last (GREEN, CI_FAILED,
+NEW_NOTES) and since when, and the request it watches, which opens in your browser. A paused watcher shows the grey
+pause.
 
-| Mark | What it means |
-| --- | --- |
-| Filled blue dot, pulsing | Running |
-| Filled violet dot | Investigating a question, named after "on" |
-| Flame | A lit [ifrit](#ifrit) |
-| Grey pause | Paused: stopped by you or the lead, put out, or cut short by a restart or a usage limit until Djinn resumes it; why shows on hover. Its work is kept; continued, it goes back among the running |
-| Hollow blue circle | Waiting on a task, under that task when it waits too, else naming it |
-| Dotted grey circle | Planned |
-
-Below the workers come the wish's [watchers](#watcher), a line each: an eye, what the watcher said last (GREEN,
-CI_FAILED, NEW_NOTES) and since when, and the request it watches, which opens in your browser. A paused watcher shows
-the grey pause.
-
-Below its workers, each wish shows the work on its way into its branch, and the workers that repair it:
+Below the watchers, each wish shows the work on its way into its branch, and the workers that repair it:
 
 | Mark | What it means |
 | --- | --- |
@@ -206,6 +191,22 @@ Below its workers, each wish shows the work on its way into its branch, and the 
 
 A click on a line opens its task in the Tasks tab. A held push opens what failed: the check, its command, the end of
 its output, and the correction at work, which opens in turn. See [Merges and corrections](#merges-and-corrections).
+
+Below them come the wish's workers, in a line each: a mark, the task's code and title, and what it waits on. A click on
+a line opens its task. An urgent task carries its **Urgent** label, an investigation its **Investigation** label, as in
+the Tasks tab. Every worker comes in one order, whatever its kind: what is in progress first (work, investigations,
+investigators, lit ifrits), then the paused workers, then what waits on a task, then what is planned. Within each, the
+worker that began first comes first, so a worker that starts or ends never moves the others. The panel reads every live
+task of the wish from the start: a task waiting far down a long wish shows without opening the Tasks tab.
+
+| Mark | What it means |
+| --- | --- |
+| Filled blue dot, pulsing | Running |
+| Filled violet dot | Investigating a question, named after "on" |
+| Flame | A lit [ifrit](#ifrit) |
+| Grey pause | Paused: stopped by you or the lead, put out, or cut short by a restart or a usage limit until Djinn resumes it; why shows on hover. Its work is kept; continued, it goes back among the running |
+| Hollow blue circle | Waiting on a task, under that task when it waits too, else naming it |
+| Dotted grey circle | Planned |
 
 On the flying carpet each wish has its title and counts, "1 running, 2 to come, 1 merging, push held, 1 repair"; a
 legend names only the marks shown. It stays in view while a long question scrolls. In a narrow page it shrinks to a
