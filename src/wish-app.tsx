@@ -58,6 +58,7 @@ import { DjinnEye } from "./djinn-eye";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, pageDigit } from "./page-keys";
+import { hideSplash } from "./splash";
 import "./wish.css";
 import "./review.css";
 
@@ -285,6 +286,18 @@ export function WishApp() {
   const retryWishes = useRetryRead("wishes");
   const retryProjects = useRetryRead("projects");
   const settling = !loaded;
+  // The waking splash in index.html stays from the first frame until the first wishes read completes, or hands off to
+  // the in-app reading lines when a read goes slow or fails.
+  useEffect(() => {
+    if (
+      loaded ||
+      wishesState !== "reading" ||
+      projectsState === "slow" ||
+      projectsState === "failed"
+    ) {
+      hideSplash();
+    }
+  }, [loaded, projectsState, wishesState]);
   const shownId = wish?.id ?? "";
   const newWishShortcut = platformShortcut("N");
   const sidebarShortcut = platformShortcut("\\");
