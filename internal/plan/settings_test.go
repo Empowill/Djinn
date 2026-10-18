@@ -52,9 +52,12 @@ func TestReadSettings(t *testing.T) {
 				t.Errorf("branch %s: %v, %v", branch, s, err)
 			}
 		}
-		for _, model := range []string{"claude-sonnet-4-5-20250929", "us.anthropic.claude-opus-4-1-20250805-v1:0", "opus[1m]"} {
-			writeSettings(t, path, "model: \""+model+"\"\n")
-			if s, err := ReadSettings(path); err != nil || s.GetModel() != model {
+		for _, model := range []string{
+			"claude-sonnet-4-5-20250929", "us.anthropic.claude-opus-4-1-20250805-v1:0", "opus[1m]",
+			"Gemini 4 Argon (High)", "gemini-4-argon-high",
+		} {
+			writeSettings(t, path, "model: \""+model+"\"\nquestion_model: \""+model+"\"\n")
+			if s, err := ReadSettings(path); err != nil || s.GetModel() != model || s.GetQuestionModel() != model {
 				t.Errorf("model %s: %v, %v", model, s, err)
 			}
 		}
@@ -950,5 +953,141 @@ func TestChecksBrief(t *testing.T) {
 		if got := tc.s.ChecksBrief(); got != tc.want {
 			t.Errorf("%s:\n%s\nwant:\n%s", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestProjectSetDefaults (W383): ProjectService.SetDefaults writes the developer's default provider, model, and
+// question_model, validates provider and model before writing, and ProjectService.Show reflects it at once.
+func TestProjectSetDefaults(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st, err := store.Open(ctx, "", Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	home := t.TempDir()
+	repo := t.TempDir()
+	writeSettings(t, filepath.Join(repo, ".agents", "settings.txtpb"),
+		"provider: PROVIDER_CLAUDE\nmodel: \"sonnet\"\nquestion_model: \"haiku\"\n")
+
+	projects := &Projects{Store: st, Home: home}
+	added, err := projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{
+		Directory: repo, Name: "lamp",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := added.Msg.GetProject().GetId()
+
+	settingMap := func(rows []*planv1.ProjectSetting) map[string]*planv1.ProjectSetting {
+		m := make(map[string]*planv1.ProjectSetting, len(rows))
+		for _, r := range rows {
+			m[r.GetName()] = r
+		}
+		return m
+	}
+
+	// 1. Set Antigravity with "Gemini 4 Argon (High)" and question_model "sonnet".
+	agy := planv1.Provider_PROVIDER_ANTIGRAVITY
+	res, err := projects.SetDefaults(ctx, connect.NewRequest(&planv1.ProjectServiceSetDefaultsRequest{
+		Project:       "lamp",
+		Provider:      &agy,
+		Model:         proto.String("Gemini 4 Argon (High)"),
+		QuestionModel: proto.String("sonnet"),
+	}))
+	if err != nil {
+		t.Fatalf("SetDefaults(antigravity, Gemini 4 Argon (High)): %v", err)
+	}
+	if res.Msg.GetDeveloperFile() != DeveloperSettingsFile(home, projectID) {
+		t.Errorf("developer_file = %q, want %q", res.Msg.GetDeveloperFile(), DeveloperSettingsFile(home, projectID))
+	}
+	devSettings, err := ReadSettings(res.Msg.GetDeveloperFile())
+	if err != nil {
+		t.Fatalf("ReadSettings(developer_file): %v", err)
+	}
+	if devSettings.GetProvider() != agy || devSettings.GetModel() != "Gemini 4 Argon (High)" || devSettings.GetQuestionModel() != "sonnet" {
+		t.Errorf("written developer file = %v", devSettings)
+	}
+
+	// ProjectService.Show reflects it at once.
+	shown, err := projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "lamp"}))
+	if err != nil {
+		t.Fatalf("Show: %v", err)
+	}
+	rows := settingMap(shown.Msg.GetSettings())
+	if got := rows["provider"]; got.GetValue() != "antigravity" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("show provider = %v", got)
+	}
+	if got := rows["model"]; got.GetValue() != "Gemini 4 Argon (High)" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("show model = %v", got)
+	}
+	if got := rows["question_model"]; got.GetValue() != "sonnet" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("show question_model = %v", got)
+	}
+
+	// 2. Switching provider without --model resets model to "" (provider's own default).
+	codex := planv1.Provider_PROVIDER_CODEX
+	res, err = projects.SetDefaults(ctx, connect.NewRequest(&planv1.ProjectServiceSetDefaultsRequest{
+		Project:  "lamp",
+		Provider: &codex,
+	}))
+	if err != nil {
+		t.Fatalf("SetDefaults(codex): %v", err)
+	}
+	rows = settingMap(res.Msg.GetSettings())
+	if got := rows["provider"]; got.GetValue() != "codex" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("codex provider = %v", got)
+	}
+	if got := rows["model"]; got.GetValue() != "" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+		t.Errorf("codex model = %v, want empty from developer", got)
+	}
+
+	// 3. Refusal of unknown, foreign, or ill-formed models and invalid flags.
+	claude := planv1.Provider_PROVIDER_CLAUDE
+	watch := planv1.Provider_PROVIDER_WATCH
+	fake := planv1.Provider_PROVIDER_FAKE
+	for _, bad := range []*planv1.ProjectServiceSetDefaultsRequest{
+		{Project: "lamp"},
+		{Project: "lamp", Provider: &claude, Unset: true},
+		{Project: "lamp", Provider: &watch},
+		{Project: "lamp", Provider: &fake},
+		{Project: "lamp", Provider: &claude, Model: proto.String("unknown-model-xyz")},
+		{Project: "lamp", Provider: &claude, Model: proto.String("gpt-5.5")},
+		{Project: "lamp", Provider: &claude, Model: proto.String("Gemini 4 Argon (High)")},
+		{Project: "lamp", Provider: &agy, Model: proto.String("opus")},
+		{Project: "lamp", Provider: &codex, Model: proto.String("sonnet")},
+		{Project: "lamp", Provider: &claude, Model: proto.String("opus; rm -rf /")},
+		{Project: "lamp", Provider: &claude, Model: proto.String("   ")},
+		{Project: "lamp", Provider: &claude, QuestionModel: proto.String("gpt-5.5")},
+		{Project: "lamp", Provider: &claude, QuestionModel: proto.String("not-a-model")},
+	} {
+		if _, err := projects.SetDefaults(ctx, connect.NewRequest(bad)); err == nil {
+			t.Errorf("SetDefaults(%v): succeeded, want error", bad)
+		}
+	}
+	// File remains valid and unchanged after refused requests.
+	if s, err := ReadSettings(DeveloperSettingsFile(home, projectID)); err != nil || s.GetProvider() != codex {
+		t.Errorf("after refused calls: %v, %v", s, err)
+	}
+
+	// 4. --unset restores repository settings.
+	res, err = projects.SetDefaults(ctx, connect.NewRequest(&planv1.ProjectServiceSetDefaultsRequest{
+		Project: "lamp",
+		Unset:   true,
+	}))
+	if err != nil {
+		t.Fatalf("SetDefaults(--unset): %v", err)
+	}
+	rows = settingMap(res.Msg.GetSettings())
+	if got := rows["provider"]; got.GetValue() != "claude" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
+		t.Errorf("after unset provider = %v", got)
+	}
+	if got := rows["model"]; got.GetValue() != "sonnet" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
+		t.Errorf("after unset model = %v", got)
+	}
+	if got := rows["question_model"]; got.GetValue() != "haiku" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
+		t.Errorf("after unset question_model = %v", got)
 	}
 }

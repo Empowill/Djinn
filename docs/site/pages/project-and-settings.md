@@ -152,12 +152,15 @@ into the wish's branch, checked, and pushes it once its push checks pass. With n
 
 ### Changing a setting
 
-- **From the window**: the push cadence switch, the reference branch (**Change**, then **Choose**), and the watcher
-  commands you allow, in the project's configuration. Each writes your own file.
+- **From the window**: the **Summoning Circle** (below the Grimoire in the side panel) and each project's
+  configuration let you choose the agent and model of its new workers, and the model of its investigators, with where
+  each value comes from; the project's configuration also has the push cadence switch, the reference branch
+  (**Change**, then **Choose**), and the watcher commands you allow. Each writes your own file, and **Take back**
+  removes your choice so the repository's file or Djinn's default applies again.
 - **For the team**: edit the repository's file and commit it, like any change of the project, or ask the Djinn for a
   task that does.
-- **For yourself**: your own file, or Djinn's command line, whose project details list every setting with where it
-  comes from: the repository, your file, or the default. The window does not say where a setting comes from.
+- **For yourself**: your own file, the window, or Djinn's command line, whose project details and project
+  configuration list every setting with where it comes from: the repository, your file, or the default.
 
 ### The reference branch
 

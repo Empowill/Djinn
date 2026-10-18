@@ -302,7 +302,7 @@ message ProjectSettings {
   // provider's own default. It applies only to a task that runs this provider.
   optional string model = 2 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
   ];
   // Most a worker may spend, in US dollars, when a task gives none and its provider can enforce it. 0: no limit.
   optional double max_budget_usd = 3 [(buf.validate.field).double = {
@@ -354,7 +354,7 @@ message ProjectSettings {
   // default for another; empty: the provider's own default.
   optional string question_model = 11 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
   ];
   // Most a question worker may spend, in US dollars, when its provider can enforce it. Not set: 2. 0: no limit.
   optional double question_budget_usd = 12 [(buf.validate.field).double = {
@@ -2910,6 +2910,13 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Set your default provider and models for a project's workers and question workers (the Summoning Circle), or take
+  // your choices back (--unset). Stored in your own settings file, never in the repository: it wins over the team's
+  // .agents/settings.txtpb. Setting the provider sets its model with it. Refused for an unknown provider or model.
+  rpc SetDefaults(ProjectServiceSetDefaultsRequest) returns (ProjectServiceSetDefaultsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message ProjectServiceAddRequest {
@@ -3177,6 +3184,38 @@ message ProjectServiceAcknowledgeResponse {
 message ProjectServiceSetBranchResponse {
   // The reference branch now, as Djinn finds it; unset when it finds none.
   ProjectReference reference = 1;
+  // Your settings file, in Djinn's data folder.
+  string developer_file = 2;
+}
+
+message ProjectServiceSetDefaultsRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // Kind of agent of the project's workers, when a task names none: claude, codex or antigravity.
+  optional Provider provider = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0, 5]
+  }];
+  // Model of the project's workers, a model of the provider; empty for the provider's own default.
+  optional string model = 3 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+  ];
+  // Model of the project's question workers, a model of the provider; empty for the provider's own default.
+  optional string question_model = 4 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+  ];
+  // Take your choices back: the team's file names the provider and models again, else Djinn's defaults.
+  bool unset = 5;
+}
+
+message ProjectServiceSetDefaultsResponse {
+  // The settings the project's workers get now, and where each comes from.
+  repeated ProjectSetting settings = 1;
   // Your settings file, in Djinn's data folder.
   string developer_file = 2;
 }
@@ -4594,7 +4633,7 @@ message LeadServiceMoveRequest {
   // The model; empty for the agent's default.
   string model = 2 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
   ];
   // The account, by its name (djinn lead accounts); empty for the agent's own sign-in.
   string account = 3 [
@@ -5107,7 +5146,10 @@ message TaskServiceSpawnRequest {
   // Kind of agent; by default claude.
   Provider provider = 5 [(buf.validate.field).enum.defined_only = true];
   // Model of the agent; by default the provider's.
-  string model = 6 [(buf.validate.field).string.max_len = 200];
+  string model = 6 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+  ];
   // Most the worker may spend, in US dollars, when the provider can enforce it.
   double max_budget_usd = 7 [(buf.validate.field).double.gte = 0];
   // Same as after, the name it had: kept so that what spawns with --depends-on still works.
@@ -5774,7 +5816,10 @@ message TaskServiceUpdateRequest {
     not_in: [0, 5]
   }];
   // Model of the agent; empty for the provider's default.
-  optional string model = 5 [(buf.validate.field).string.max_len = 200];
+  optional string model = 5 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+  ];
   // The azima the task belongs to: its code (T07) or its identifier. Empty: the task is part of no azima.
   optional string part_of = 6 [(buf.validate.field).string.max_len = 64];
   // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.

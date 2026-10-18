@@ -1423,5 +1423,18 @@
   "glance.paused.other": "{count} en pause",
   "glance.resumes_at": "reprend après {time}, une fois sa limite d’usage levée",
   "plan.paused.one": "{count} worker en pause : arrêté, son travail gardé jusqu’à ce qu’il reprenne",
-  "plan.paused.other": "{count} workers en pause : arrêtés, leur travail gardé jusqu’à ce qu’ils reprennent"
+  "plan.paused.other": "{count} workers en pause : arrêtés, leur travail gardé jusqu’à ce qu’ils reprennent",
+  "sidebar.summoning_circle": "Cercle d’invocation",
+  "summoning.eyebrow": "ESPRIT PAR DÉFAUT PAR PROJET",
+  "summoning.title": "Cercle d’invocation",
+  "summoning.subtitle": "Choisir par projet quel agent et quel modèle répondent aux nouveaux workers et aux investigations",
+  "summoning.detail": "Ce que lancent un nouveau worker et un enquêteur de question quand la tâche ne précise rien. Écrit dans votre propre fichier pour le projet, jamais dans le dépôt.",
+  "summoning.empty": "Aucun projet pour l’instant. Ajoutez-en un d’abord.",
+  "summoning.provider": "Agent",
+  "summoning.model": "Modèle des workers",
+  "summoning.question_model": "Enquêteur de questions",
+  "summoning.default_model": "Par défaut de l’agent ({model})",
+  "summoning.same_as_worker": "Comme le worker",
+  "summoning.unset": "Retirer",
+  "summoning.unset_detail": "Reprendre vos choix : le fichier de l’équipe, sinon le défaut de Djinn"
 }

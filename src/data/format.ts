@@ -1216,10 +1216,17 @@ export function shortModel(model: string): string {
   }
 
   // Gemini: gemini-X.Y-tier(-level)? -> gemini X.Y tier
-  // e.g. gemini-3.8-flash-high -> gemini 3.8 flash, gemini-3.8-flash-medium -> gemini 3.8 flash
+  // e.g. gemini-3.8-flash-high -> gemini 3.8 flash, Gemini 4 Argon (High) -> gemini 4 argon
   // Strip -high, -medium, -low
   if (m.startsWith("gemini-")) {
     return m.replace(/-(high|medium|low)$/, "").replace(/-/g, " ");
+  }
+  const geminiSpaced =
+    /^gemini\s+(\d+(?:\.\d+)?)\s+([a-z0-9-]+)(?:\s+\((?:high|medium|low)\))?$/i.exec(
+      m,
+    );
+  if (geminiSpaced) {
+    return `gemini ${geminiSpaced[1]} ${geminiSpaced[2].toLowerCase()}`;
   }
 
   // Codex / GPT: gpt-X.Y-codex -> gpt-X.Y, gpt-5.5 -> gpt-5.5

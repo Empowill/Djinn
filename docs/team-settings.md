@@ -230,6 +230,16 @@ Djinn's default does. The project's configuration in the window does the same wi
 branch, which lists the remote's branches as your copy last fetched them (`djinn project branches <project>
 --reference`).
 
+`djinn project set-defaults <project> --provider <provider> --model <model> [--question-model <model>]` chooses the
+default provider and model of the project's new workers (and the model of its question investigators) for you: it
+validates the provider and models first (never writing a value the reader would refuse or a model of another provider),
+then writes `provider`, `model` and `question_model` in your own file (`--unset` takes your choice back so the team's
+file or Djinn's default applies again), and `djinn project show` reflects it at once. Both display names with spaces and
+parentheses (`"Gemini 4 Argon (High)"`) and identifiers (`"gemini-4-argon-high"`) are accepted in the file and on the
+command line, and passed to `agy` as `"Gemini 4 Argon (High)"`. The **Summoning Circle** in the window (below the
+Grimoire in the side panel, and at the top of each project's configuration) edits the same defaults, one row per
+project, with where each value comes from.
+
 ## No secret, ever
 
 The file is shared and versioned: it holds no key. Djinn refuses a file, comments included, where a field name says

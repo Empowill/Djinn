@@ -15,6 +15,7 @@ import {
   ChevronDown,
   CirclePause,
   ChevronRight,
+  Compass,
   Eye,
   Flame,
   Folder,
@@ -106,6 +107,7 @@ export function WishSidebar({
   onSelectHourglass,
   grimoireSelected = false,
   onSelectGrimoire,
+  onOpenSummoningCircle,
   selectedWishId,
   selectedProjectId,
   collapsed,
@@ -134,6 +136,8 @@ export function WishSidebar({
   // The Grimoire, the documentation, shows.
   grimoireSelected?: boolean;
   onSelectGrimoire?: () => void;
+  // Opens the Summoning Circle: the default agent and model per project.
+  onOpenSummoningCircle?: () => void;
   selectedWishId: string;
   selectedProjectId: string;
   collapsed: boolean;
@@ -700,6 +704,17 @@ export function WishSidebar({
         >
           <BookMarked size={15} />
           {!collapsed && <span>{t("sidebar.grimoire")}</span>}
+        </button>
+      )}
+      {onOpenSummoningCircle && (
+        <button
+          className="nav-item summoning-nav"
+          onClick={onOpenSummoningCircle}
+          title={t("summoning.subtitle")}
+          aria-label={t("sidebar.summoning_circle")}
+        >
+          <Compass size={15} />
+          {!collapsed && <span>{t("sidebar.summoning_circle")}</span>}
         </button>
       )}
     </>

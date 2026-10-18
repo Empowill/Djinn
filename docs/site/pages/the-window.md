@@ -23,10 +23,10 @@ From top to bottom:
   opens a terminal at its root, and a line shows each of its branches out of step with its remote. The gear turns red
   with a small flame while the project has something for you to fix, and its tooltip counts them; folded to the rail,
   the flame sits on the project's folder.
-- **Import a wish**, **Hourglass** (Ctrl+2), **Grimoire**, this documentation, and your profile, **Connections &
-  preferences**. The Grimoire is a page of the window, like the Hourglass, never a dialog over it: its navigation
-  shows beside its splash page from the first view, each page is read when you open it, and back and forward move
-  between the pages you read.
+- **Import a wish**, **Hourglass** (Ctrl+2), **Grimoire**, this documentation, **Summoning Circle**, and your profile,
+  **Connections & preferences**. The Grimoire is a page of the window, like the Hourglass, never a dialog over it: its
+  navigation shows beside its splash page from the first view, each page is read when you open it, and back and forward
+  move between the pages you read.
 
 ### The wish bar
 
@@ -77,6 +77,14 @@ corners, and back. On the rail, never on a background:
 | Violet dot, under it | Questions being investigated |
 | Grey seat and a number, lower right | Workers waiting, whatever holds them |
 | Grey pause and a number, lower left | Workers paused |
+
+### The Summoning Circle
+
+The **Summoning Circle**, below the Grimoire in the side panel, chooses for each project which spirit answers the call:
+the default agent and model of its new workers, and the model of its question investigators, with where each value
+comes from (the repository, your file, or Djinn's default). Choosing an agent or a model writes your own file for the
+project, never the repository's; **Take back** removes your choice so the team's file or Djinn's default applies again.
+Each project's own configuration panel has the same pickers at the top of its settings.
 
 ### The personal space
 

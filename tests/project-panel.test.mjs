@@ -658,3 +658,116 @@ test("the journal of configuration changes says each change, and marks seen thos
   );
   assert.doesNotMatch(none, /notice-detail/);
 });
+
+test("the Summoning Circle lists each project with its agent, worker model and question investigator pickers, where each value comes from, and Take back when set in your file", async () => {
+  const p1 = { id: "p1", name: "djinn", git: true, directory: "/tmp/djinn" };
+  const p2 = { id: "p2", name: "lamp", git: true, directory: "/tmp/lamp" };
+  const shownByProject = {
+    p1: {
+      project: p1,
+      repositoryFile: "/tmp/djinn/.agents/settings.txtpb",
+      developerFile: "/home/you/.config/djinn/projects/p1/settings.txtpb",
+      settings: [
+        {
+          name: "provider",
+          value: "antigravity",
+          source: s.SettingSource.DEVELOPER,
+        },
+        {
+          name: "model",
+          value: "Gemini 4 Argon (High)",
+          source: s.SettingSource.DEVELOPER,
+        },
+        {
+          name: "question_model",
+          value: "gemini-3.8-flash-high",
+          source: s.SettingSource.DEVELOPER,
+        },
+      ],
+    },
+    p2: {
+      project: p2,
+      repositoryFile: "/tmp/lamp/.agents/settings.txtpb",
+      developerFile: "/home/you/.config/djinn/projects/p2/settings.txtpb",
+      settings: [
+        {
+          name: "provider",
+          value: "claude",
+          source: s.SettingSource.REPOSITORY,
+        },
+        {
+          name: "model",
+          value: "",
+          source: s.SettingSource.DEFAULT,
+        },
+        {
+          name: "question_model",
+          value: "",
+          source: s.SettingSource.DEFAULT,
+        },
+      ],
+    },
+  };
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.ProjectService, {
+      show: (req) => shownByProject[req.project],
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  const html = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(
+        "div",
+        null,
+        h(s.SummoningProject, { project: p1, initialShown: shownByProject.p1 }),
+        h(s.SummoningProject, { project: p2, initialShown: shownByProject.p2 }),
+      ),
+    ),
+  );
+  // Project 1 has developer settings: shows "your file" with hover path, Argon option selected, and Take back button.
+  assert.match(html, /<strong>djinn<\/strong>/);
+  assert.match(
+    html,
+    /title="\/home\/you\/\.config\/djinn\/projects\/p1\/settings\.txtpb">your file<\/span>/,
+  );
+  assert.match(
+    html,
+    /<option value="antigravity" selected="">Antigravity<\/option>/,
+  );
+  assert.match(
+    html,
+    /<option value="Gemini 4 Argon \(High\)" selected="">Gemini 4 Argon \(High\)<\/option>/,
+  );
+  assert.match(
+    html,
+    /<button type="button" class="button small secondary"[^>]*>Take back<\/button>/,
+  );
+  // Project 2 has team/default settings: shows "the team's file" and "Djinn's default", and no Take back button in its card.
+  const p2Card = html.slice(html.indexOf('aria-label="lamp"'));
+  assert.match(
+    p2Card,
+    /title="\/tmp\/lamp\/\.agents\/settings\.txtpb">the team(?:'|&#x27;)s file<\/span>/,
+  );
+  assert.match(p2Card, />Djinn(?:'|&#x27;)s default<\/span>/);
+  assert.match(
+    p2Card,
+    /<option value="" selected="">Agent(?:'|&#x27;)s default \(claude-sonnet-5-5\)<\/option>/,
+  );
+  assert.match(p2Card, /<option value="" selected="">Same as worker<\/option>/);
+  assert.doesNotMatch(p2Card, />Take back<\/button>/);
+  assert.doesNotMatch(html, /button accent/);
+  assert.equal(s.shortModel("Gemini 4 Argon (High)"), "gemini 4 argon");
+
+  // Empty state when there are no projects.
+  const empty = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.SummoningCircle, { projects: [], onClose() {} }),
+    ),
+  );
+  assert.match(empty, /Summoning Circle/);
+  assert.match(empty, /No project yet\. Add one first\./);
+});

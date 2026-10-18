@@ -107,6 +107,9 @@ const (
 	// ProjectServiceAcknowledgeProcedure is the fully-qualified name of the ProjectService's
 	// Acknowledge RPC.
 	ProjectServiceAcknowledgeProcedure = "/plan.v1.ProjectService/Acknowledge"
+	// ProjectServiceSetDefaultsProcedure is the fully-qualified name of the ProjectService's
+	// SetDefaults RPC.
+	ProjectServiceSetDefaultsProcedure = "/plan.v1.ProjectService/SetDefaults"
 	// SkillServiceSummonProcedure is the fully-qualified name of the SkillService's Summon RPC.
 	SkillServiceSummonProcedure = "/plan.v1.SkillService/Summon"
 	// SkillServiceListProcedure is the fully-qualified name of the SkillService's List RPC.
@@ -695,6 +698,10 @@ type ProjectServiceClient interface {
 	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
 	// them. They are applied already; djinn project show lists the journal of changes.
 	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
+	// Set your default provider and models for a project's workers and question workers (the Summoning Circle), or take
+	// your choices back (--unset). Stored in your own settings file, never in the repository: it wins over the team's
+	// .agents/settings.txtpb. Setting the provider sets its model with it. Refused for an unknown provider or model.
+	SetDefaults(context.Context, *connect.Request[v1.ProjectServiceSetDefaultsRequest]) (*connect.Response[v1.ProjectServiceSetDefaultsResponse], error)
 }
 
 // NewProjectServiceClient constructs a client for the plan.v1.ProjectService service. By default,
@@ -783,6 +790,12 @@ func NewProjectServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
 			connect.WithClientOptions(opts...),
 		),
+		setDefaults: connect.NewClient[v1.ProjectServiceSetDefaultsRequest, v1.ProjectServiceSetDefaultsResponse](
+			httpClient,
+			baseURL+ProjectServiceSetDefaultsProcedure,
+			connect.WithSchema(projectServiceMethods.ByName("SetDefaults")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -800,6 +813,7 @@ type projectServiceClient struct {
 	branches     *connect.Client[v1.ProjectServiceBranchesRequest, v1.ProjectServiceBranchesResponse]
 	setBranch    *connect.Client[v1.ProjectServiceSetBranchRequest, v1.ProjectServiceSetBranchResponse]
 	acknowledge  *connect.Client[v1.ProjectServiceAcknowledgeRequest, v1.ProjectServiceAcknowledgeResponse]
+	setDefaults  *connect.Client[v1.ProjectServiceSetDefaultsRequest, v1.ProjectServiceSetDefaultsResponse]
 }
 
 // Add calls plan.v1.ProjectService.Add.
@@ -862,6 +876,11 @@ func (c *projectServiceClient) Acknowledge(ctx context.Context, req *connect.Req
 	return c.acknowledge.CallUnary(ctx, req)
 }
 
+// SetDefaults calls plan.v1.ProjectService.SetDefaults.
+func (c *projectServiceClient) SetDefaults(ctx context.Context, req *connect.Request[v1.ProjectServiceSetDefaultsRequest]) (*connect.Response[v1.ProjectServiceSetDefaultsResponse], error) {
+	return c.setDefaults.CallUnary(ctx, req)
+}
+
 // ProjectServiceHandler is an implementation of the plan.v1.ProjectService service.
 type ProjectServiceHandler interface {
 	// Add a folder as a project. It need not be a Git repository.
@@ -900,6 +919,10 @@ type ProjectServiceHandler interface {
 	// permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
 	// them. They are applied already; djinn project show lists the journal of changes.
 	Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error)
+	// Set your default provider and models for a project's workers and question workers (the Summoning Circle), or take
+	// your choices back (--unset). Stored in your own settings file, never in the repository: it wins over the team's
+	// .agents/settings.txtpb. Setting the provider sets its model with it. Refused for an unknown provider or model.
+	SetDefaults(context.Context, *connect.Request[v1.ProjectServiceSetDefaultsRequest]) (*connect.Response[v1.ProjectServiceSetDefaultsResponse], error)
 }
 
 // NewProjectServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -984,6 +1007,12 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 		connect.WithSchema(projectServiceMethods.ByName("Acknowledge")),
 		connect.WithHandlerOptions(opts...),
 	)
+	projectServiceSetDefaultsHandler := connect.NewUnaryHandler(
+		ProjectServiceSetDefaultsProcedure,
+		svc.SetDefaults,
+		connect.WithSchema(projectServiceMethods.ByName("SetDefaults")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.ProjectService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ProjectServiceAddProcedure:
@@ -1010,6 +1039,8 @@ func NewProjectServiceHandler(svc ProjectServiceHandler, opts ...connect.Handler
 			projectServiceSetBranchHandler.ServeHTTP(w, r)
 		case ProjectServiceAcknowledgeProcedure:
 			projectServiceAcknowledgeHandler.ServeHTTP(w, r)
+		case ProjectServiceSetDefaultsProcedure:
+			projectServiceSetDefaultsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1065,6 +1096,10 @@ func (UnimplementedProjectServiceHandler) SetBranch(context.Context, *connect.Re
 
 func (UnimplementedProjectServiceHandler) Acknowledge(context.Context, *connect.Request[v1.ProjectServiceAcknowledgeRequest]) (*connect.Response[v1.ProjectServiceAcknowledgeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.Acknowledge is not implemented"))
+}
+
+func (UnimplementedProjectServiceHandler) SetDefaults(context.Context, *connect.Request[v1.ProjectServiceSetDefaultsRequest]) (*connect.Response[v1.ProjectServiceSetDefaultsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.ProjectService.SetDefaults is not implemented"))
 }
 
 // SkillServiceClient is a client for the plan.v1.SkillService service.

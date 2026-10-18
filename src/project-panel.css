@@ -200,3 +200,34 @@
 .config-more > summary:hover {
   color: var(--n-d1);
 }
+.summoning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.summoning-project-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+.summoning-project-head h3 {
+  margin: 0;
+}
+.summoning-row + .summoning-row {
+  border-top: 1px solid var(--n-33);
+}
+.summoning-select {
+  min-width: 14rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--n-33);
+  border-radius: var(--radius-xs);
+  background: var(--n-1b);
+  color: var(--n-f0);
+  font-size: var(--font-size-body, 0.75rem);
+}
+.summoning-select:disabled {
+  opacity: 0.6;
+}

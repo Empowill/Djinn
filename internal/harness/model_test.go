@@ -5,7 +5,10 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -417,5 +420,48 @@ func TestTaskModelAliasResolution(t *testing.T) {
 
 	if got, ok := e.h.resolveAlias("sonnet"); !ok || got != "claude-sonnet-5-5" {
 		t.Errorf("resolveAlias(sonnet) = (%q, %v), want %q", got, ok, "claude-sonnet-5-5")
+	}
+}
+
+// TestArgonModelRoundTrip (W383): "Gemini 4 Argon (High)" and "gemini-4-argon-high" are written to the project's
+// developer settings file, read back without error, and passed to agy as "Gemini 4 Argon (High)".
+func TestArgonModelRoundTrip(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	home := t.TempDir()
+	project := &planv1.Project{Id: "01946059-e68b-7cb8-8c1d-6b586e3f4ea2", Name: "djinn", Directory: t.TempDir(), Git: true}
+	agy := planv1.Provider_PROVIDER_ANTIGRAVITY
+
+	for _, input := range []string{"Gemini 4 Argon (High)", "gemini-4-argon-high", "argon"} {
+		err := plan.SaveDeveloperDefaults(home, project, &planv1.ProjectServiceSetDefaultsRequest{
+			Project:  project.GetName(),
+			Provider: &agy,
+			Model:    proto.String(input),
+		})
+		if err != nil {
+			t.Fatalf("SaveDeveloperDefaults(%q): %v", input, err)
+		}
+		s, err := plan.LoadSettings(home, project)
+		if err != nil {
+			t.Fatalf("LoadSettings(%q): %v", input, err)
+		}
+		if s.Provider != agy || s.Model != input {
+			t.Fatalf("LoadSettings(%q) = (%v, %q), want (%v, %q)", input, s.Provider, s.Model, agy, input)
+		}
+		if foreignModel(agy, s.Model) {
+			t.Errorf("foreignModel(antigravity, %q) = true, want false", s.Model)
+		}
+		if !foreignModel(planv1.Provider_PROVIDER_CLAUDE, s.Model) {
+			t.Errorf("foreignModel(claude, %q) = false, want true", s.Model)
+		}
+		args, err := (Antigravity{}).args(Spec{Dir: project.GetDirectory(), Model: s.Model})
+		if err != nil {
+			t.Fatalf("Antigravity.args(%q): %v", input, err)
+		}
+		idx := slices.Index(args, "--model")
+		if idx < 0 || idx+1 >= len(args) || args[idx+1] != "Gemini 4 Argon (High)" {
+			t.Errorf("Antigravity.args(%q) = %v, want --model \"Gemini 4 Argon (High)\"", input, args)
+		}
 	}
 }
