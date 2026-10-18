@@ -484,8 +484,9 @@ func DrivenRules(projects []*planv1.Project, home string) string {
 		"working folder (an option's `--plan-file`, a tilasm's folder), with your file tools, never with shell " +
 		"commands.\n" +
 		"- **Delegate.** Code, investigations, fixes and checks go to tasks, even small ones, several side by side. " +
-		"Never read nor search source code yourself. A worker starts from a short prompt: what to do, in which " +
-		"project, how to check it (the commit checks and the targeted tests, never the whole suite). To follow up " +
+		"Never read nor search source code yourself. A worker starts from a short prompt, five to twenty lines of " +
+		"Markdown: Gain, Scope (and the open tasks' files it must not touch), Validation (the commit checks and the " +
+		"targeted tests, never the whole suite), References by link, never copied. To follow up " +
 		"on a task, continue it (`djinn task continue <task> --prompt \"…\"`); fork it only to start another task " +
 		"from its context. Djinn tells a worker started again to rebase onto its target first: never ask for it.\n" +
 		"- **The plan is a graph of azimas.** An azima (`T07`) carries one clear goal; spawn each task `--part-of " +
