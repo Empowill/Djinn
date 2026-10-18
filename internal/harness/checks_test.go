@@ -256,7 +256,7 @@ func TestARedCommitCheck(t *testing.T) {
 	}
 	w2 := in.correction(t, w1)
 	for _, s := range []string{"The command, run in the project's folder: `lint`", "its commit checks (`djinn gate run lint -- lint`)",
-		"Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- lint`; before it pushes, " +
+		"Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- lint`; before it pushes, " +
 			"with `djinn gate run test -- test`. A worker runs the commit checks before it ends", "A fresh worktree needs `setup` first."} {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("%s's prompt lacks %q:\n%s", w2.GetCode(), s, prompt)

@@ -52,8 +52,8 @@ off.
 - **Three wishes at a time.** Three wishes are active at most, and as many set aside as you like. It guards your
   attention, not the machine.
 
-> **Workers never commit, and never push.** They edit the place they work in; Djinn commits each one's work as it
-> ends, checked, and pushes on a cadence.
+> **Workers commit, and never push.** Each commits its work in the place it works in; Djinn merges each one's work
+> as it ends, checked, and pushes on a cadence.
 
 ## Who it is for
 

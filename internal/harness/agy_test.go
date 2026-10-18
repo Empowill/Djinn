@@ -1,6 +1,8 @@
 package harness
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -196,6 +198,30 @@ func TestAgyProjectDjinnDirDenials(t *testing.T) {
 		t.Errorf("worktree %s was denied!", w1)
 	}
 
+	// The version folder of a tilasm given to the task (Spec.ReadDirs, W360) is granted, and no denial of an ancestor
+	// shadows it; the tilasm's other versions and the other tilasms stay denied.
+	given := filepath.Join(djinnHome, "tilasms", "l1", "v2")
+	other, otherTilasm := filepath.Join(djinnHome, "tilasms", "l1", "v1"), filepath.Join(djinnHome, "tilasms", "l2")
+	for _, d := range []string{given, other, otherTilasm} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gTilasm := agyProject(Spec{Dir: w1, Permissions: &djinnv1.Permissions{Edit: true}, ReadDirs: []string{given}}).PermissionGrants.PermissionGrants
+	if !slices.Contains(gTilasm.Allow, "read_file("+given+")") {
+		t.Errorf("missing read_file grant for the tilasm %s in %+v", given, gTilasm.Allow)
+	}
+	for _, d := range []string{filepath.Join(djinnHome, "tilasms"), filepath.Dir(given), given} {
+		if slices.Contains(gTilasm.Deny, "read_file("+d+")") {
+			t.Errorf("%s is denied: %+v", d, gTilasm.Deny)
+		}
+	}
+	for _, d := range []string{other, otherTilasm, w2} {
+		if !slices.Contains(gTilasm.Deny, "read_file("+d+")") {
+			t.Errorf("missing denial of %s in %+v", d, gTilasm.Deny)
+		}
+	}
+
 	// When worktree is outside DJINN_HOME, the entire DJINN_HOME is denied.
 	outside := t.TempDir()
 	fOutside := agyProject(Spec{Dir: outside, Permissions: &djinnv1.Permissions{Edit: true}})
@@ -321,10 +347,103 @@ func TestAgyIdleLoop(t *testing.T) {
 
 	// Case 4: background tasks still running: not treated as idle loop.
 	pWithBg := &agyParser{
-		bgTasks: map[string]bool{"task-bg-123": true},
+		bgTasks: []agyBgTask{{id: "c1/task-9", step: 9}},
 	}
 	_, end = pWithBg.stdout(stepDoneWithPause)
 	if end != nil {
 		t.Fatalf("expected no turn end when background task is running, got %+v", end)
+	}
+}
+
+// TestAgyBackgroundTask: only agy's own notice records a background task; "task-" in an output (a branch, a spec file)
+// is none (W360). A system message, a kill or a status no longer RUNNING by manage_task, or the end of its step ends
+// it. While one runs, the stream idle timer waits for the tool cap instead of stopping.
+func TestAgyBackgroundTask(t *testing.T) {
+	t.Parallel()
+	const conv = "a7b0d8e7-4941-4195-bd26-dbf86d65ef8d"
+	step := func(i int, state, tool, params, output string) string {
+		out := ""
+		if output != "" {
+			b, _ := json.Marshal(output)
+			out = `,"output":` + string(b)
+		}
+		return fmt.Sprintf(`{"event":"step_update","step_update":{"conversation_id":%q,"step_index":%d,"state":%q,"step_type":"tool",`+
+			`"tool_name":%q,"tool_info":{"name":%q,"parameters":%s%s}}}`, conv, i, state, tool, tool, params, out)
+	}
+	notice := func(n int) string {
+		return fmt.Sprintf("Created At: 2026-10-17T23:49:15+02:00\nTool is running as a background task with task id: %s/task-%d\n"+
+			"Task Description: go test ./internal/dispatch\n", conv, n)
+	}
+	sysmsg := func(i int, content string) string {
+		c := ""
+		if content != "" {
+			b, _ := json.Marshal(content)
+			c = `,"content":` + string(b)
+		}
+		return fmt.Sprintf(`{"event":"step_update","step_update":{"conversation_id":%q,"step_index":%d,"state":"DONE","step_type":"system_message"%s}}`,
+			conv, i, c)
+	}
+	run := `{"CommandLine":"go test ./internal/dispatch"}`
+	gitLog := "dbab85af Merge branch 'w334-the-seat-counts-every-waiting-task-of-8e0eb518' into feat/qol\r\n" +
+		"e2e/task-continue.spec.ts | 4 ++\r\n"
+	for _, c := range []struct {
+		name  string
+		lines []string
+		want  []string // the background tasks still running
+		kinds []string
+	}{
+		{name: "task- in an output is no task", lines: []string{step(30, "ACTIVE", "run_command", `{"CommandLine":"git log"}`, ""),
+			step(30, "DONE", "run_command", `{"CommandLine":"git log"}`, gitLog)},
+			kinds: []string{"TOOL_CALL", "TOOL_RESULT"}},
+		{name: "the notice records it", lines: []string{step(19, "ACTIVE", "run_command", run, ""), step(19, "RUNNING", "run_command", run, notice(19))},
+			want: []string{conv + "/task-19"}, kinds: []string{"TOOL_CALL", "TOOL_RESULT"}},
+		{name: "its step ends it", lines: []string{step(19, "ACTIVE", "run_command", run, ""), step(19, "RUNNING", "run_command", run, notice(19)),
+			step(19, "DONE", "run_command", run, "ok\r\n")},
+			kinds: []string{"TOOL_CALL", "TOOL_RESULT", "TOOL_RESULT"}},
+		{name: "a system message without text ends the oldest", lines: []string{step(19, "DONE", "run_command", run, notice(19)),
+			step(20, "DONE", "run_command", run, notice(20)), sysmsg(21, "")},
+			want: []string{conv + "/task-20"}, kinds: []string{"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT"}},
+		{name: "a system message names the one that ended", lines: []string{step(19, "DONE", "run_command", run, notice(19)),
+			step(20, "DONE", "run_command", run, notice(20)), sysmsg(21, `Task id "`+conv+`/task-20" finished with result:`)},
+			want: []string{conv + "/task-19"}, kinds: []string{"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT"}},
+		{name: "a restart stops them all", lines: []string{step(19, "DONE", "run_command", run, notice(19)),
+			step(20, "DONE", "run_command", run, notice(20)),
+			sysmsg(21, "[Notice] All your subagents and background tasks have been stopped due to server restart.")},
+			kinds: []string{"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT"}},
+		{name: "manage_task kills it", lines: []string{step(19, "DONE", "run_command", run, notice(19)),
+			step(25, "DONE", "manage_task", `{"Action":"kill","TaskId":"`+conv+`/task-19"}`, `Task "`+conv+`/task-19" cancelled.`)},
+			kinds: []string{"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT"}},
+		{name: "manage_task sees it running", lines: []string{step(19, "DONE", "run_command", run, notice(19)),
+			step(25, "DONE", "manage_task", `{"Action":"status","TaskId":"`+conv+`/task-19"}`, "Task: "+conv+"/task-19\nStatus: RUNNING\n")},
+			want: []string{conv + "/task-19"}, kinds: []string{"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT"}},
+		{name: "manage_task sees it done", lines: []string{step(19, "DONE", "run_command", run, notice(19)),
+			step(25, "DONE", "manage_task", `{"Action":"status","TaskId":"`+conv+`/task-19"}`, "Task: "+conv+"/task-19\nStatus: DONE\n")},
+			kinds: []string{"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			p := &agyParser{toolIdle: AgyToolIdleTimeout}
+			var events []Event
+			for _, l := range c.lines {
+				evs, end := p.stdout(l)
+				if end != nil {
+					t.Fatalf("turn end on %s: %+v", l, end)
+				}
+				events = append(events, evs...)
+			}
+			var ids []string
+			for _, bg := range p.bgTasks {
+				ids = append(ids, bg.id)
+			}
+			if !slices.Equal(ids, c.want) {
+				t.Errorf("background tasks = %q, want %q", ids, c.want)
+			}
+			if got := kinds(events); !slices.Equal(got, c.kinds) {
+				t.Errorf("kinds = %v, want %v", got, c.kinds)
+			}
+			if p.toolRunning() != (len(c.want) > 0) || p.idleCap() != AgyToolIdleTimeout {
+				t.Errorf("toolRunning = %v, idleCap = %v", p.toolRunning(), p.idleCap())
+			}
+		})
 	}
 }

@@ -66,6 +66,10 @@ scopes. The other parts are Djinn's, and the same for every task.
 **Cross-agent first: a project says once, in `.agents/permissions.txtpb`, what any agent may do in it, and Djinn
 translates it for the agent it starts. A task outside any project only reads.**
 
+**A worker that may edit commits its own work** (W360): its first prompt tells it to commit before it ends, in the
+repository's style, leaving nothing not committed, and Djinn adds `git status`, `git diff`, `git log`, `git add`,
+`git commit`, `git restore` and `git rm` to the commands it lists (`commitCommands`); the denied commands still win.
+
 ### The order of decision
 
 Djinn decides when it spawns a task, and records the outcome in the task's `access` (`TaskAccess`, in
@@ -352,7 +356,8 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in four 
   fails: a worker silent past the silence limit with no process busy and no gate held or awaited, a worker whose
   stream went idle, or a task running without a process (a lost process) is ended, then continued on its session
   ("continue where you stopped…"), its run ending `wake` (`TaskRun.reason`). A paused worker is none of these: the
-  Lamplighter skips it, and its stream's idle timer (`StreamIdleTimeout`, 5 minutes) and quiet timer stop while it is
+  Lamplighter skips it, and its stream's idle timer (`StreamIdleTimeout`, 5 minutes; `AgyIdleTimeout`, 8 minutes, for
+  Antigravity: see [silences](#antigravity)) and quiet timer stop while it is
   held still and start again from zero when it resumes (W226). Messages sent to a worker that ended before it read
   them (no text nor tool call after them) are told to the worker started again, after its prompt, whatever started
   it (a wake, a restart, a preemption, a continue), and are received once it says something. Only after 3 wakes in a row does the
@@ -745,7 +750,8 @@ the input is closed once every message has its result. agy cannot fork a convers
 **Resume.** A worker's worktree is its own isolated workspace. When resumed (after a restart, a session limit, an answer, or `djinn task continue`), Djinn resumes an agy worker with `--conversation <id>` and its resume line, falling back to the first prompt only when no conversation id is known. An Antigravity lead starts interactively with `agy -i '<start line>'` in the wish's project directory; because interactive `agy` does not expose its conversation id on launch, Djinn records the lead by provider and folder (without a session id), and resumes it with `agy --continue` in the lead's folder, documented as "the folder's most recent conversation".
 
 **Stream.** `{"event":"init","conversation_id":…}`, then `step_update` lines (`step_type` `user_input`,
-`agent_response` with `text_delta`, `tool` with `tool_info` {name, parameters, output}, `checkpoint`), and one
+`agent_response` with `text_delta`, `tool` with `tool_info` {name, parameters, output}, `checkpoint`,
+`system_message` and `error_message` without text), and one
 `result` per turn (`status` `SUCCESS`, `ERROR`, `CANCELED`, `INTERRUPTED`, `INVALID`, `WAITING`; `usage` with
 `input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens`, cumulative over the conversation;
 `denied_actions` when it refused a permission). On a
@@ -813,7 +819,43 @@ workspace, so reading Go's sources (`/usr/local/go/src/…`), caches, or externa
 allow grant (prefix matching). Djinn adds deny `read_file(<dir>)` for secrets (`~/.ssh`, `~/.gnupg`, `~/.config/gh`,
 `~/.config/gcloud`, `~/.aws`, `~/.netrc`, `~/.git-credentials`) and Djinn's own data folder (`~/.config/djinn` or
 `$DJINN_HOME`), recursively denying sibling projects, sibling worktrees, and database files while keeping only the
-task's own worktree accessible.
+task's own worktree accessible, and the version folders of the tilasms the task is given (below).
+
+**Silences, timeouts and background tasks (W360, agy 1.4.1, 2026-10-18).** agy is 1.4.1 now. Its stream-json
+carries neither the model's thinking nor its planner steps: a long model call is silence on Djinn's side. What W308's
+events, agy's transcripts (`~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/transcript.jsonl`)
+and its log (`~/.gemini/antigravity-cli/log/cli-<second>.log`) show:
+
+- **agy retries an idle model call by itself.** Its own idle timeout on the model's stream is 5 minutes; past it, it
+  retries the call 4 s later in the same session ("stream idle timeout (5m0s)…, retrying in 4s"), and writes an
+  `error_message` step, without text in the stream ("The stream was interrupted. Please continue" in its transcript).
+  Djinn keeps that step as an `OTHER` line, and the turn goes on. Djinn's own idle timeout for agy is above agy's:
+  `AgyIdleTimeout`, 8 minutes (`Antigravity.IdleTimeout`), so that agy's retry comes first and keeps the session; at 5
+  minutes, Djinn used to kill agy 6 s before its retry.
+- **A background command says nothing until it ends.** agy's transcript says "Tool is running as a background task
+  with task id: <conversation>/task-19"; the stream does not: the command is a `tool` step `ACTIVE` until it ends, its
+  `DONE` carrying the output, and agy holds back the steps the model ran meanwhile, then sends them at once, then a
+  `system_message` step without text that tells the task ended (W16, agy 1.3.3; W308, agy 1.4.1). While a tool step
+  runs, the stream idle timer waits for `AgyToolIdleTimeout`, 30 minutes (`Antigravity.ToolIdleTimeout`), instead
+  of stopping: a model call that returns nothing is always cut. Djinn records a background task only from agy's own
+  notice in a step's output, never from an output that holds "task-": a branch `…-task-of-8e0eb518`, a file
+  `task-continue.spec.ts` or a tilasm's text once stopped the idle timer for the whole run. A task recorded ends with
+  its step, a `system_message` (the oldest task when it has no text), or `manage_task` (killed, or a status no longer
+  `RUNNING`). While one runs, the timer waits for the same cap, and "Execution paused" is no idle loop.
+- **A tool error is the tool's result.** A tool step in `ERROR` without a deny rule (`view_file` on a file that does
+  not exist) goes back to the model, which goes on: Djinn records the error as the tool's result.
+- **The tilasms a task is given are readable.** Their version folders, read from the first prompt's "Files, version"
+  lines (`plan.TilasmDirs`, given as `Spec.ReadDirs`), get a `read_file` grant, and no denial of Djinn's data folder
+  shadows them. A path a deny grant refuses to a file tool is said `permission denied: read_file <path>`; the lead's
+  line names it a path outside the worker's folders, and proposes no `--mode auto`, which grants no path.
+
+| Case                                   | Fixture                              | Source                  | What Djinn records                                                                    |
+| -------------------------------------- | ------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------- |
+| Tool error without a deny rule         | `antigravity/tool-error.jsonl`       | **real**, W308, 1.4.1   | the error as the tool's result; the turn goes on, nothing continued                    |
+| "task-" in a branch name, then silence | `antigravity/task-in-branch.jsonl`   | **real**, W308, 1.4.1   | no background task: the idle timer cuts the silence (`TestAgyStreamIdle`)              |
+| A background command and its end       | `antigravity/background-task.jsonl`  | **real**, W308 and W16  | a tool step `ACTIVE` until its end, the held steps, a silent system message           |
+| A command that never ends              | `antigravity/command-runs.jsonl`     | **real**, W308, 1.4.1   | the idle timer waits for the tool cap instead of stopping (`TestAgyStreamIdle`)        |
+| agy retries its idle model call        | `antigravity/error-message.jsonl`    | **real**, W308, 1.4.1   | the `error_message` step as `OTHER`; the turn goes on, nothing continued               |
 
 **Model retry prompts (W258, W281, 2026-10-10).** agy sometimes ends its turn on its own internal retry prompts to
 its model (improperly formatted function call, exceeding the output token limit, or transient model retry errors)

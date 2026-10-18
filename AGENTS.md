@@ -15,8 +15,9 @@ repeat them.
 ## For agents
 - **Run the tasks, not the tools.** `go tool task test`, `go tool task gen`, `go tool task e2e`,
   `go tool task build`: they set the tags and the order.
-- **Run Djinn's commit checks before you end.** [`.agents/settings.txtpb`](.agents/settings.txtpb) names them: the
-  lint before Djinn commits your work (`djinn gate run lint -- go tool task lint`), the tests before it pushes.
+- **Run Djinn's commit checks, then commit your work, before you end.** [`.agents/settings.txtpb`](.agents/settings.txtpb)
+  names them: the lint before Djinn merges your work (`djinn gate run lint -- go tool task lint`), the tests before it
+  pushes. Commit in the repository's style and leave nothing not committed: Djinn commits nothing for you.
 - **A story that touches the window** (interface under the UI folder, the stream it reads, the server calls it makes)
   runs this spec before it ends (`go tool task e2e -- e2e/wish-render.spec.ts`); other stories do not.
 - **A change to what Djinn does updates its documentation in the same change**: a feature, a concept, a screen, a

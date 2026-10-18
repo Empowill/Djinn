@@ -467,7 +467,7 @@ func (h *Harness) again(r *run) error {
 	}
 	spec := Spec{
 		TaskID: t.GetId(), Dir: project.GetDirectory(), ReadOnly: readOnly, Permissions: perms, Model: model,
-		MaxBudgetUSD: budget, Resume: t.GetSessionId(), Prompt: editLine + prompt,
+		MaxBudgetUSD: budget, Resume: t.GetSessionId(), Prompt: editLine + prompt, ReadDirs: plan.TilasmDirs(h.home, prompt),
 	}
 	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)
 	return h.start(r, provider, spec, "started "+short(t.GetProvider())+" again in "+project.GetDirectory()+", "+

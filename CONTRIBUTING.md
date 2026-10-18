@@ -64,10 +64,11 @@ Each one is a decision. Changing one is a discussion first.
 - **Heavy runs take a gate.** Workers share one machine: tests, e2e, code generation and builds run
   through the running Djinn, one at a time: `djinn gate run <name> -- go tool task test`. `.agents/`
   allows no heavy command directly; light ones (`lint`, `test-pkg` on a package) run as they are.
-- **Workers never commit.** A worker edits its worktree; `.agents/` gives it no `git commit` and no
-  `git push`. Djinn commits each task's work as it ends, tested, and pushes the branch on a cadence: one CI
-  run per push instead of one per worker. Only the review and correction workers Djinn starts by itself commit, in
-  their worktree ([integration](docs/team-settings.md#integration)); Djinn commits nothing blindly.
+- **Workers commit, never push.** A worker commits its work in its worktree before it ends, in the repository's
+  style, and leaves nothing not committed; Djinn commits nothing for it. Djinn merges each task's commits as it ends,
+  checked, and pushes the branch on a cadence: one CI run per push instead of one per worker. What a worker leaves
+  not committed is not merged: a review worker sorts it out ([integration](docs/team-settings.md#integration)).
+  `git push` fails for every worker.
 - **Two words from the theme, no more.** You make a *wish*; you *summon* a skill. Everything
   else is plain.
 - **Names ignore case.** Two names that differ only by case are one name.

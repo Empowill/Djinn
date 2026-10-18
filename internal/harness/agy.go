@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -36,9 +37,25 @@ type Antigravity struct {
 	Command string
 	// Grace is how long a worker asked to stop has before it is killed; Grace by default.
 	Grace time.Duration
-	// IdleTimeout is how long a model call that returns nothing may wait before being cut and continued; StreamIdleTimeout by default.
+	// IdleTimeout is how long a model call that returns nothing may wait before being cut and continued;
+	// AgyIdleTimeout by default.
 	IdleTimeout time.Duration
+	// ToolIdleTimeout is how long agy may say nothing while a tool step or a background task of its own runs, before
+	// being cut and continued all the same; AgyToolIdleTimeout by default.
+	ToolIdleTimeout time.Duration
 }
+
+// AgyIdleTimeout is Antigravity's IdleTimeout by default: above agy's own idle timeout on its model's stream (5 min,
+// then agy retries the call by itself 4 s later and keeps its session; agy 1.4.1, W360), so that agy's retry comes
+// first, and Djinn cuts only a call that its retry did not save either.
+const AgyIdleTimeout = 8 * time.Minute
+
+// AgyToolIdleTimeout is Antigravity's ToolIdleTimeout by default. agy's stream-json says nothing while a command runs,
+// in the foreground or in the background: a background command is a tool step that stays ACTIVE until the command
+// ends, and agy holds back the steps that follow it until then, the model's own included (agy 1.3.3 and 1.4.1, W16
+// and W308). Past this cap, a silence is taken as a model call that returns nothing: a worker runs commands under 9
+// minutes each (workerWaitRule), and a gate wait seldom lasts longer.
+const AgyToolIdleTimeout = 30 * time.Minute
 
 // args are the arguments of agy for spec. The prompt goes on the input, not on the command line: -p takes the
 // prompt as its value, and stream-json input replaces it.
@@ -111,7 +128,9 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 			return agyWorkDone(ctx, spec.Dir, spec.StartHead, spec.Branch)
 		}
 	}
-	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: &agyParser{isWorkDone: isWorkDone}, idle: a.IdleTimeout, encode: agyMessageLine})
+	idle, toolIdle := cmp.Or(a.IdleTimeout, AgyIdleTimeout), cmp.Or(a.ToolIdleTimeout, AgyToolIdleTimeout)
+	parser := &agyParser{isWorkDone: isWorkDone, toolIdle: toolIdle}
+	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: parser, idle: idle, encode: agyMessageLine})
 }
 
 // agyMessageLine is a user message as agy reads it in stream-json.
@@ -272,7 +291,8 @@ func djinnDenials(dir string, keepPaths []string) []string {
 // For reading, agy headless requires explicit read_file grants (W254, W269). Djinn grants read_file on what a
 // worker needs to read: the repository (main checkout and .git), Go's root, module and build caches, npm's cache,
 // /usr and /etc read-only, and the user's home with denials for secrets and Djinn's own data folder except the
-// task's worktree.
+// task's worktree and the folders it reads there (Spec.ReadDirs: the versions of the tilasms it is given, W360), as a
+// denial wins over any grant.
 func agyProject(spec Spec) agyProjectFile {
 	p := spec.Permissions
 	f := agyProjectFile{ID: agyProjectID(spec.Dir), Name: "Djinn " + filepath.Base(spec.Dir)}
@@ -304,6 +324,9 @@ func agyProject(spec Spec) agyProjectFile {
 	if spec.SkillsDir != "" {
 		addKeep(spec.SkillsDir)
 	}
+	for _, d := range spec.ReadDirs {
+		addKeep(d)
+	}
 
 	if p.GetEdit() {
 		for _, d := range append([]string{cleanDir}, gitDirs...) {
@@ -321,6 +344,9 @@ func agyProject(spec Spec) agyProjectFile {
 	}
 	if spec.SkillsDir != "" {
 		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(spec.SkillsDir)+")")
+	}
+	for _, d := range spec.ReadDirs {
+		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(d)+")")
 	}
 	goRoot, modCache, buildCache, npmCache := agyCaches()
 	if goRoot != "" {
@@ -533,6 +559,8 @@ type agyStep struct {
 	} `json:"tool_info"`
 	Error   json.RawMessage `json:"error"`
 	Message json.RawMessage `json:"message"`
+	// Content is the text of a step, a system message's in agy's transcript; the stream has carried none so far.
+	Content json.RawMessage `json:"content"`
 }
 
 type agyResult struct {
@@ -563,15 +591,21 @@ const agyContinuePrompt = "continue where you stopped, keep answers and edits sh
 // agyIdlePause is what agy prints when execution is paused waiting for tasks to complete.
 const agyIdlePause = "There are no tools called. Execution paused. Waiting for task completion."
 
-var agyBgTaskIDRegex = regexp.MustCompile(`\b(task-[a-zA-Z0-9_\-]+)\b`)
+// agyBgNotice is agy's own notice of a command sent to the background, in the output of its tool step: "Tool is
+// running as a background task with task id: <conversation>/task-19" (agy 1.4.1, its transcript). Nothing else names
+// a background task: a branch, a file or a text that holds "task-" is no task (W360). The stream has not carried the
+// notice so far (W16, W308): a background command stays an ACTIVE tool step there until it ends.
+var agyBgNotice = regexp.MustCompile(`Tool is running as a background task with task id: (\S+/task-\d+)`)
 
-func extractBgTaskID(s string) string {
-	m := agyBgTaskIDRegex.FindStringSubmatch(s)
-	if len(m) > 1 {
-		return m[1]
-	}
-	return ""
+// agyBgTask is a background task agy said it started, and the tool step that started it.
+type agyBgTask struct {
+	id   string
+	step int
 }
+
+// agyBgStopped is in the system message agy writes when it stopped every background task: "[Notice] All your
+// subagents and background tasks have been stopped due to server restart." (agy 1.4.1, its transcript).
+const agyBgStopped = "background tasks have been stopped"
 
 const (
 	agyMaxRetryPromptContinuations = 3
@@ -711,8 +745,9 @@ type agyParser struct {
 	order       []int                    // their indexes, in the order they started
 	toolsIn     map[int]bool             // tool steps whose call is said already
 	retries     int                      // retry prompt continuations sent by Djinn
-	bgTasks     map[string]bool          // background tasks started by agy
+	bgTasks     []agyBgTask              // background tasks agy said it started (agyBgNotice), the oldest first
 	idleRetries int                      // idle pause continuations sent by Djinn
+	toolIdle    time.Duration            // how long agy may say nothing while a tool or a background task runs
 
 	sessionID   string
 	turnEnded   bool
@@ -733,6 +768,12 @@ type agyParser struct {
 
 func (p *agyParser) toolRunning() bool {
 	return p != nil && (len(p.toolsIn) > 0 || len(p.bgTasks) > 0)
+}
+
+// idleCap is how long agy may say nothing while a tool step or a background task runs: the stream idle timer stays
+// armed, so that a model call that returns nothing is always cut (AgyToolIdleTimeout).
+func (p *agyParser) idleCap() time.Duration {
+	return p.toolIdle
 }
 
 func (p *agyParser) handleIdlePause(events *lineEvents) *turnEnd {
@@ -760,44 +801,48 @@ func (p *agyParser) handleIdlePause(events *lineEvents) *turnEnd {
 	return &turnEnd{failure: errText}
 }
 
-func (p *agyParser) recordBgTask(name string, params json.RawMessage, output *string) {
-	if p.bgTasks == nil {
-		p.bgTasks = make(map[string]bool)
+// bgStep is the index in bgTasks of the background task the tool step started; -1 for none.
+func (p *agyParser) bgStep(step int) int {
+	return slices.IndexFunc(p.bgTasks, func(t agyBgTask) bool { return t.step == step })
+}
+
+// endBg forgets the background tasks that end tells ended.
+func (p *agyParser) endBg(ended func(t agyBgTask) bool) {
+	p.bgTasks = slices.DeleteFunc(p.bgTasks, ended)
+}
+
+// manageTask reads a manage_task step: a task killed, or whose status is no longer RUNNING, has ended.
+func (p *agyParser) manageTask(params json.RawMessage, output string) {
+	var mp struct {
+		Action string `json:"Action"`
+		TaskID string `json:"TaskId"`
 	}
-	switch name {
-	case "run_command":
-		if output != nil && (strings.Contains(*output, "sent to the background") || strings.Contains(*output, "background task") || strings.Contains(*output, "task-")) {
-			if id := extractBgTaskID(*output); id != "" {
-				p.bgTasks[id] = true
-			}
+	if json.Unmarshal(params, &mp) != nil || mp.TaskID == "" {
+		return
+	}
+	status := ""
+	for l := range strings.Lines(output) {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "Status:"); ok {
+			status = strings.TrimSpace(v)
 		}
-	case "schedule":
-		if output != nil {
-			if id := extractBgTaskID(*output); id != "" {
-				p.bgTasks[id] = true
-			}
-		}
-	case "manage_task":
-		var mp struct {
-			Action string `json:"Action"`
-			TaskID string `json:"TaskId"`
-		}
-		if json.Unmarshal(params, &mp) == nil {
-			if mp.Action == "kill" && mp.TaskID != "" {
-				delete(p.bgTasks, mp.TaskID)
-			}
-		}
+	}
+	if mp.Action == "kill" || status != "" && status != "RUNNING" {
+		p.endBg(func(t agyBgTask) bool { return t.id == mp.TaskID })
 	}
 }
 
-func (p *agyParser) checkBgTaskFinished(text string) {
-	if len(p.bgTasks) == 0 {
-		return
-	}
-	if strings.Contains(text, "completed") || strings.Contains(text, "exited with code") || strings.Contains(text, "finished") {
-		if id := extractBgTaskID(text); id != "" {
-			delete(p.bgTasks, id)
-		}
+// systemMessage reads a system_message step: agy writes one as each background task ends, and as it stops them all.
+// In the stream it carries no text (agy 1.3.3 and 1.4.1, W16 and W308): it ends the oldest background task. A text,
+// when one comes, names the tasks that ended.
+func (p *agyParser) systemMessage(text string) {
+	switch {
+	case len(p.bgTasks) == 0:
+	case strings.TrimSpace(text) == "":
+		p.bgTasks = p.bgTasks[1:]
+	case strings.Contains(text, agyBgStopped):
+		p.bgTasks = nil
+	default:
+		p.endBg(func(t agyBgTask) bool { return strings.Contains(text, t.id) })
 	}
 }
 
@@ -969,7 +1014,11 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		return true, p.handleIdlePause(events)
 	}
 	switch s.StepType {
-	case "user_input", "checkpoint", "system_message", "system":
+	case "system_message":
+		if s.State == "DONE" {
+			p.systemMessage(extractAgyError(s.Content, s.TextDelta))
+		}
+	case "user_input", "checkpoint", "system":
 		// The prompt Djinn sent, and agy's own bookkeeping: nothing to say.
 	case "agent_response":
 		b := p.text[s.StepIndex]
@@ -984,7 +1033,6 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		b.WriteString(s.TextDelta)
 		if s.State == "DONE" {
 			text := b.String()
-			p.checkBgTaskFinished(text)
 			if strings.TrimSpace(text) != "" {
 				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, strings.TrimRight(text, "\n"))
 				p.answered = true
@@ -1006,7 +1054,8 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 				failure = ti.Error.Message
 			}
 		}
-		if !p.toolsIn[s.StepIndex] {
+		bg := p.bgStep(s.StepIndex)
+		if !p.toolsIn[s.StepIndex] && bg < 0 {
 			if p.toolsIn == nil {
 				p.toolsIn = map[int]bool{}
 			}
@@ -1014,14 +1063,30 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 			p.lastStep, p.lastCall, p.lastAnswered = s.StepIndex, agyCall(name, params), false
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, strings.TrimSpace(name+" "+compactOrEmpty(params)))
 		}
+		if m := agyBgNotice.FindStringSubmatch(outputStr); m != nil {
+			// The command goes on in the background, and the turn without it, until a system message tells its end.
+			if bg < 0 {
+				p.bgTasks = append(p.bgTasks, agyBgTask{id: m[1], step: s.StepIndex})
+				p.lastAnswered = p.lastAnswered || s.StepIndex == p.lastStep
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, strings.TrimRight(outputStr, "\r\n"))
+			}
+			delete(p.toolsIn, s.StepIndex)
+			break
+		}
+		if s.State == "DONE" || s.State == "ERROR" {
+			if bg >= 0 { // The background command ended: its step says how.
+				p.endBg(func(t agyBgTask) bool { return t.step == s.StepIndex })
+			}
+		}
 		if s.State == "DONE" {
 			text := ""
 			if output != nil {
 				text = strings.TrimRight(*output, "\r\n")
 				p.lastAnswered = p.lastAnswered || s.StepIndex == p.lastStep
 			}
-			p.recordBgTask(name, params, output)
-			p.checkBgTaskFinished(text)
+			if name == "manage_task" {
+				p.manageTask(params, text)
+			}
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
 			delete(p.toolsIn, s.StepIndex)
 		}
@@ -1030,7 +1095,9 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 			if s.StepIndex == p.lastStep {
 				p.lastAnswered = true
 			}
-			if strings.Contains(failure, agyDenyRule) {
+			if m := agyDeniedPath.FindStringSubmatch(failure); m != nil && strings.Contains(failure, agyDenyRule) {
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+m[1]+" "+m[2])
+			} else if strings.Contains(failure, agyDenyRule) {
 				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+agyCall(name, params))
 			} else {
 				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, strings.TrimSpace(failure))
@@ -1174,6 +1241,11 @@ const agyDenied = "headless mode cannot prompt for"
 // origin w1": Permission denied for command(git push origin w1). Matches user-configured deny rule.` (real runs, agy
 // 1.3.3), a project's deny grant included.
 const agyDenyRule = "deny rule"
+
+// agyDeniedPath finds the path a deny grant refused to a file tool: `permission check failed for read_file "/x/a.html":
+// Permission denied for read_file(/x/a.html). Matches user-configured deny rule.` (real runs, agy 1.4.1, W308): a
+// path outside the folders Djinn's project grants, which no mode grants (pathPermissions).
+var agyDeniedPath = regexp.MustCompile(`Permission denied for (read_file|write_file)\((.+?)\)\. `)
 
 // agyDeniedPermission finds the permission in the denial notice.
 var agyDeniedPermission = regexp.MustCompile(`required the "([^"]+)" permission`)

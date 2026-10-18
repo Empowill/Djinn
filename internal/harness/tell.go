@@ -295,7 +295,7 @@ func (h *Harness) workerFailedLine(ctx context.Context, t *planv1.Task) string {
 	}
 
 	if wish, _ := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId()); t.GetRefused().GetCount() > 0 {
-		action += " " + refusedClause(t, wish, refusedShown) + refusedRight
+		action += " " + refusedClause(t, wish, refusedShown) + refusedEnd(t)
 	}
 	if role != "" {
 		return fmt.Sprintf("Djinn: %s (%s)%s failed (%s): %s. %s", code, title, role, agent, errLine, action)

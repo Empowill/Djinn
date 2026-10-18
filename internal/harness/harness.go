@@ -1214,6 +1214,11 @@ const workerHandRule = "To try a command by hand, start a Djinn of your own with
 const workerCheckRule = "Never ask the developer for a check, a measure, a log to read, a CI result to look at or a command to run: do it yourself when you can; otherwise say in your final note what remains to verify, and the lead spawns a task for it or lets a watcher report it (a CI result comes from the PR's babysit watcher)."
 const workerMoveRule = "A question to the developer is only for a decision or a move only a person can make (grant a right, push a tag, open or merge a PR, start a release, check on a Mac or Windows Djinn does not have, install): ask it with `djinn question ask` before you end. " + plan.QuestionShape
 
+// workerCommitRule (W360): a worker that edits a worktree commits its work itself; Djinn commits nothing for it, and
+// starts a review worker on what it leaves (docs/team-settings.md#integration). Review and correction workers are
+// told how to commit in their own prompts.
+const workerCommitRule = "Commit your work before you end, with a message in the repository's style (`git log` shows it), and leave nothing not committed: Djinn commits nothing for you, and a review worker judges what you leave."
+
 // workerWaitRule (W80): a worker that ends its turn on a run still going ends its task, and Djinn removes the worktree
 // the run writes to.
 const workerWaitRule = "Never end a turn while a long run you started is going (a benchmark, a build, a background command, a monitor): your task ends with your turn, and Djinn removes its worktree. Wait for it in the foreground, in commands under 9 minutes each (`sleep`, then read its output), until it ends; then report what it gave."
@@ -1250,7 +1255,8 @@ const ifritRules = workerHandRule + " " + workerCheckRule + " " + ifritRule + " 
 
 // briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
-// ends, to run what it can check itself, and to ask only a decision or a move only the developer can make. An ifrit
+// ends, to commit its work (workerCommitRule), to run what it can check itself, and to ask only a decision or a move
+// only the developer can make. An ifrit
 // learns its own rules instead (ifritRule), whatever folder it works in.
 func briefed(r *run, prompt string, readOnly bool) string {
 	rules := workerRules
@@ -1266,6 +1272,10 @@ func briefed(r *run, prompt string, readOnly bool) string {
 	edits := r.task.GetBranch() != "" && !readOnly
 	if r.ifrit && !edits && r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
 		return prompt + "\n\n" + rules
+	}
+	if edits && !r.ifrit && !dispatch.Investigation(r.task) && !dispatch.Mockup(r.task) && r.task.GetReview() == nil &&
+		r.task.GetCorrection() == nil {
+		rules = workerCommitRule + " " + rules
 	}
 	if edits {
 		if r.checks != "" {
@@ -1348,7 +1358,7 @@ func (h *Harness) launch(
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: model,
 		MaxBudgetUSD: providerBudget(task), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
-		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(),
+		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(), ReadDirs: plan.TilasmDirs(h.home, prompt),
 	}
 	var err error
 	if spec.WriteDirs, err = h.questionWriteDirs(task); err != nil {

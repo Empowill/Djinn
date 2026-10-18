@@ -3917,7 +3917,7 @@ type ProjectSettings struct {
 	// once in each integration worktree, before the first command there, and again when its lock files change. Its
 	// words are split on spaces, without a shell.
 	Setup *string `protobuf:"bytes,13,opt,name=setup,proto3,oneof" json:"setup,omitempty"`
-	// The commands Djinn runs on the project's work, each through a gate of its name, before it commits a task's work
+	// The commands Djinn runs on the project's work, each through a gate of its name, before it merges a task's work
 	// into its wish's integration branch, before it pushes that branch, or both. Djinn integrates the project's finished
 	// work only once one is set. A file that sets some sets them all; names ignore case and are unique.
 	Checks []*ProjectCheck `protobuf:"bytes,14,rep,name=checks,proto3" json:"checks,omitempty"`

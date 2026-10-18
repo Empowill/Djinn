@@ -64,6 +64,13 @@ type toolTracker interface {
 	toolRunning() bool
 }
 
+// idleCapper is a parser whose agent says nothing while a tool runs, whatever the tool does (agy): the stream idle
+// timer stays armed with its cap then, instead of stopping, so that a model call that returns nothing is cut all the
+// same. 0 stops it.
+type idleCapper interface {
+	idleCap() time.Duration
+}
+
 // startStream starts command with args, writes the prompt as the first message, and reads what the agent says.
 // The input stays open for more messages, and is closed once every message has its result: the agent then exits.
 // Started with Spec.Listen (an ifrit), it stays open until CloseInput: the agent listens between turns.
@@ -270,6 +277,7 @@ func (w *streamWorker) read() {
 	}
 	var idleTimer *time.Timer
 	var idleCh <-chan time.Time
+	armed := idleTimeout // what the timer waits for now: idleTimeout, or the parser's cap while a tool runs
 	if idleTimeout > 0 {
 		idleTimer = time.NewTimer(idleTimeout)
 		idleTimer.Stop()
@@ -285,12 +293,10 @@ func (w *streamWorker) read() {
 		closed := w.closed
 		paused := w.paused
 		w.mu.Unlock()
-		var toolRunning bool
-		if tt, ok := w.a.parser.(toolTracker); ok {
-			toolRunning = tt.toolRunning()
-		}
-		if pending > 0 && !closed && !toolRunning && !paused {
-			idleTimer.Reset(idleTimeout)
+		var waits bool
+		armed, waits = idleWait(w.a.parser, idleTimeout)
+		if pending > 0 && !closed && waits && !paused {
+			idleTimer.Reset(armed)
 		} else {
 			idleTimer.Stop()
 		}
@@ -323,7 +329,7 @@ lines:
 				w.mu.Unlock()
 				continue
 			}
-			w.failure = formatStreamIdle(idleTimeout)
+			w.failure = formatStreamIdle(armed)
 			w.closed = true
 			w.p.stdin.Close()
 			failure := w.failure
@@ -455,6 +461,19 @@ func (l lineEvents) done(raw, what string) []Event {
 	}
 	l[0].Raw = raw
 	return l
+}
+
+// idleWait is how long the stream idle timer waits now, idle by default, and whether it waits at all: a tool running
+// stops it, unless the parser caps the silence of a tool (idleCapper).
+func idleWait(parser streamParser, idle time.Duration) (time.Duration, bool) {
+	tt, ok := parser.(toolTracker)
+	if !ok || !tt.toolRunning() {
+		return idle, true
+	}
+	if ic, ok := parser.(idleCapper); ok && ic.idleCap() > 0 {
+		return max(ic.idleCap(), idle), true
+	}
+	return idle, false
 }
 
 // formatStreamIdle formats the idle duration as "stream idle for N min".

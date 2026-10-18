@@ -130,7 +130,8 @@ func TestRefusedCallsToldAndCarried(t *testing.T) {
 	}
 }
 
-// TestDoneLine: the names refused come as many as the digest keeps with the whole command, djinn first.
+// TestDoneLine: the names refused come as many as the digest keeps with the whole command, djinn first; paths an agy
+// project refused propose no mode, which would not grant them (W360).
 func TestDoneLine(t *testing.T) {
 	t.Parallel()
 	wishID, projectID := store.NewID(), store.NewID()
@@ -151,6 +152,12 @@ func TestDoneLine(t *testing.T) {
 		{task: &planv1.Task{Code: "W3"}, note: "Done.", why: "nothing to merge into djinn/dew",
 			want: "Djinn: W3 done, nothing to merge into djinn/dew. Its final note: Done."},
 		{task: &planv1.Task{Code: "W4"}, want: "Djinn: W4 done. It left no final note."},
+		{task: &planv1.Task{Code: "W5", WishId: wishID, Refused: &planv1.TaskRefusals{Count: 2, Names: []string{"read_file"}}},
+			note: "Read the tilasm with djinn tilasm get.", want: "Djinn: W5 done, 2 file accesses refused (permission): " +
+				"read_file, paths outside the folders Djinn opens to the worker: no mode grants them. Its final note: Read the tilasm with djinn tilasm get."},
+		{task: &planv1.Task{Code: "W6", WishId: wishID, Refused: &planv1.TaskRefusals{Count: 2, Names: []string{"read_file", "gcloud"}}},
+			want: "Djinn: W6 done, 2 commands refused (permission): read_file, gcloud; djinn wish allow " + wishID +
+				" --mode auto would let the agent judge them, a right only the developer grants. It left no final note."},
 	} {
 		got := doneLine(c.task, one, c.note, c.why, "")
 		if got != c.want {
@@ -175,6 +182,7 @@ func TestRefusedName(t *testing.T) {
 		`Edit {"file_path":"/x/a.go"}`:                                                 "Edit",
 		`Write notes.md`:                                                               "Write",
 		`commandExecution gcloud auth list (network)`:                                  "gcloud",
+		`read_file /home/u/.config/djinn/tilasms/01a1/v5/index.html`:                   "read_file",
 	} {
 		if got := refusedName(what); got != want {
 			t.Errorf("refusedName(%s) = %q, want %q", what, got, want)

@@ -21,7 +21,8 @@ import (
 
 // TestWorkerPromptMoveRule verifies that every worker's first prompt (next to ChecksBrief)
 // includes the move rule instructing the worker to ask moves only the developer can make
-// with `djinn question ask`.
+// with `djinn question ask`, and the commit rule for a worker that edits (W360): review and correction workers are told
+// how to commit in their own prompts, an investigation, a mockup or an ifrit has no work to deliver by commit.
 func TestWorkerPromptMoveRule(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -32,7 +33,7 @@ func TestWorkerPromptMoveRule(t *testing.T) {
 		checks: "Djinn checks this project's work with `go tool task test`.",
 	}
 	got1 := briefed(r1, "do the work", false)
-	wantChecks := "Djinn checks this project's work with `go tool task test`. " + workerRules
+	wantChecks := "Djinn checks this project's work with `go tool task test`. " + workerCommitRule + " " + workerRules
 	if !strings.Contains(got1, wantChecks) {
 		t.Errorf("briefed with checks:\ngot: %q\nwant to contain: %q", got1, wantChecks)
 	}
@@ -65,8 +66,19 @@ func TestWorkerPromptMoveRule(t *testing.T) {
 			task: &planv1.Task{Branch: "w-branch", Provider: provider},
 		}
 		got := briefed(r, "prompt text", false)
-		if !strings.HasSuffix(got, "\n\n"+workerRules) {
-			t.Errorf("provider %s prompt:\ngot: %q\nwant suffix: %q", provider, got, "\n\n"+workerRules)
+		if want := "\n\n" + workerCommitRule + " " + workerRules; !strings.HasSuffix(got, want) {
+			t.Errorf("provider %s prompt:\ngot: %q\nwant suffix: %q", provider, got, want)
+		}
+	}
+	for name, task := range map[string]*planv1.Task{
+		"review":        {Branch: "w-branch", Provider: planv1.Provider_PROVIDER_CLAUDE, Review: &planv1.TaskReview{}},
+		"correction":    {Branch: "w-branch", Provider: planv1.Provider_PROVIDER_CLAUDE, Correction: &planv1.TaskCorrection{}},
+		"investigation": {Branch: "w-branch", Provider: planv1.Provider_PROVIDER_CLAUDE, Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION},
+		"ifrit":         {Branch: "w-branch", Provider: planv1.Provider_PROVIDER_CLAUDE, Kind: planv1.TaskKind_TASK_KIND_IFRIT},
+	} {
+		r := &run{task: task, ifrit: name == "ifrit"}
+		if got := briefed(r, "prompt text", false); strings.Contains(got, workerCommitRule) {
+			t.Errorf("%s prompt has the commit rule: %q", name, got)
 		}
 	}
 

@@ -86,6 +86,10 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
 - **A silent worker.** The Lamplighter, Djinn's watchdog, wakes a worker that printed nothing for 15 minutes with no
   process busy and no gate held or awaited, or whose process is lost: it ends it and continues it on its session. After
   three wakes in a row the task fails, saying so, and the Djinn is told.
+- **A model that answers nothing.** A worker whose model call returns nothing in the middle of its turn is cut and
+  continued on its session: after 5 minutes on Claude Code; after 8 on Antigravity, which retries such a call by itself
+  after 5 and keeps its session that way. Antigravity says nothing while one of its commands runs, in the foreground
+  or in the background, until it ends: its silence then is cut after 30 minutes only.
 - **A worker silent after its result.** A worker whose turn ended, silent since for ten minutes with its processes
   idle and no gate held or awaited, is stopped: done if it wrote its final note, its work then integrated; otherwise
   continued once, told to finish its task and write its final note, and failed if silent so again. One line to the
