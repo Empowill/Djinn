@@ -26,17 +26,20 @@ func writeSkill(t *testing.T, dir, folder, name, front string) string {
 }
 
 func TestDescription(t *testing.T) {
-	tests := []struct{ front, want string }{
-		{"name: x\ndescription: Watch a merge request.\n", "Watch a merge request."},
-		{"description: \"Quoted: yes\"\n", "Quoted: yes"},
-		{"description: >-\n  Folded over\n  two lines.\nlicense: MIT\n", "Folded over two lines."},
-		{"name: x\n", ""},
+	t.Parallel()
+	tests := []struct{ name, front, want string }{
+		{"plain", "name: x\ndescription: Watch a merge request.\n", "Watch a merge request."},
+		{"quoted", "description: \"Quoted: yes\"\n", "Quoted: yes"},
+		{"folded", "description: >-\n  Folded over\n  two lines.\nlicense: MIT\n", "Folded over two lines."},
+		{"missing", "name: x\n", ""},
 	}
 	for _, tt := range tests {
-		dir := writeSkill(t, t.TempDir(), "s", "x", tt.front)
-		if got := Description(dir); got != tt.want {
-			t.Errorf("Description(%q) = %q, want %q", tt.front, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeSkill(t, t.TempDir(), "s", "x", tt.front)
+			if got := Description(dir); got != tt.want {
+				t.Errorf("Description(%q) = %q, want %q", tt.front, got, tt.want)
+			}
+		})
 	}
 	if got := Description(t.TempDir()); got != "" {
 		t.Errorf("Description without SKILL.md = %q", got)
@@ -46,6 +49,7 @@ func TestDescription(t *testing.T) {
 // TestProjectSkills: a project's skills are read in .agents/skills then .claude/skills; a name in both counts once,
 // and a folder without SKILL.md is no skill.
 func TestProjectSkills(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeSkill(t, dir, SkillFolders[0], "babysit-mr", "description: From agents.\n")
 	writeSkill(t, dir, SkillFolders[1], "Babysit-MR", "description: From claude.\n")
@@ -68,6 +72,7 @@ func TestProjectSkills(t *testing.T) {
 // TestSummon: a skill of one project is summoned into another, listed, refused when it cannot be, said missing
 // when its source loses it, and unsummoned. Neither project's folder changes.
 func TestSummon(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	skills := c.skills
 	app, infra := resolvedTempDir(t), resolvedTempDir(t)
@@ -114,9 +119,11 @@ func TestSummon(t *testing.T) {
 		{"app/../x", "infra", connect.CodeInvalidArgument},
 		{"app/babysit-mr", "", connect.CodeInvalidArgument},
 	} {
-		if _, err := summon(tt.skill, tt.into); code(err) != tt.code {
-			t.Errorf("summon %s into %q = %v, want %v", tt.skill, tt.into, err, tt.code)
-		}
+		t.Run(tt.skill+"_"+tt.into, func(t *testing.T) {
+			if _, err := summon(tt.skill, tt.into); code(err) != tt.code {
+				t.Errorf("summon %s into %q = %v, want %v", tt.skill, tt.into, err, tt.code)
+			}
+		})
 	}
 	// A project's own skill is never hidden by a summoned one.
 	writeSkill(t, app, SkillFolders[0], "terraform", "description: Another.\n")
@@ -184,6 +191,7 @@ func tree(t *testing.T, dir string) string {
 // argument-hint lines do, is read all the same: metadata apart, and a warning that names the lines at fault. When
 // metadata itself breaks, the skill cannot be read.
 func TestSkillFrontApart(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	const source = "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n"
 	notion := writeSkill(t, dir, SkillFolders[0], "notion-ticket", "name: notion-ticket\ndescription: Tickets.\n"+
@@ -213,12 +221,14 @@ func TestSkillFrontApart(t *testing.T) {
 		"meta-broken": "argument-hint: [a] [b]\nmetadata:\n  djinn: [\n",
 		"meta-twice":  "argument-hint: [a] [b]\n" + source + source,
 	} {
-		skill := writeSkill(t, dir, SkillFolders[0], name, front)
-		var unreadable *UnreadableSkillError
-		if _, err := ReadSource(skill); !errors.As(err, &unreadable) ||
-			!strings.HasPrefix(err.Error(), "SKILL.md: its front matter is not YAML: ") {
-			t.Errorf("%s: %v; want unreadable", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			skill := writeSkill(t, dir, SkillFolders[0], name, front)
+			var unreadable *UnreadableSkillError
+			if _, err := ReadSource(skill); !errors.As(err, &unreadable) ||
+				!strings.HasPrefix(err.Error(), "SKILL.md: its front matter is not YAML: ") {
+				t.Errorf("%v; want unreadable", err)
+			}
+		})
 	}
 
 	_, warning, err = skillFront(open)

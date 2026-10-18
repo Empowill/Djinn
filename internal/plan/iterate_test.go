@@ -17,6 +17,7 @@ import (
 // TestParsePlanRounds (W268): a mockup plan gives how many versions of its tilasm the developer reviews; rounds are a
 // mockup's, from 1 to 9.
 func TestParsePlanRounds(t *testing.T) {
+	t.Parallel()
 	p, err := ParsePlan("option: A\nkind: mockup\nrounds: 4\ntitle: Next version\ntilasm: L18\n\nRework it.")
 	if err != nil {
 		t.Fatal(err)
@@ -103,88 +104,91 @@ func (f *iterateFixture) revise(t *testing.T) {
 	}
 }
 
-// TestAnswerIterates (W268): answering the option whose plan is a mockup stores no answer: an iteration round, with
-// the note, the tilasm and the version seen, and the question waits for its mockup task; the round names it. At the
-// plan's last version, the same answer is an answer, which goes to the hooks and the lead.
+// TestAnswerIterates (W268, T55): answering the option whose plan is a mockup stores an iteration round; the build
+// option stores an answer; comments sent to iterate start the question's iteration round.
 func TestAnswerIterates(t *testing.T) {
-	f := newIterateFixture(t, "")
-	stored, err := store.Get[*planv1.Question](t.Context(), f.c.store, f.q.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := f.answer(t, planv1.Choice_CHOICE_A, "bigger icons")
-	if q.GetAnswer() != nil {
-		t.Fatalf("answer stored: %v", q.GetAnswer())
-	}
-	round := Iterating(q)
-	if round == nil || round.GetNote() != "bigger icons" || round.GetOption() != planv1.Choice_CHOICE_A ||
-		round.GetTilasmId() != f.tilasm.GetId() || round.GetVersion() != 1 || round.GetContext() != stored.GetContext() {
-		t.Fatalf("rounds = %v", q.GetRounds())
-	}
-	if !Investigating(q) || Tour(q) != 2 || f.answered != 0 || len(f.rounds) != 1 {
-		t.Errorf("investigating %v, tour %d, answers %d, iterations %d", Investigating(q), Tour(q), f.answered, len(f.rounds))
-	}
-	// No mockup task started: the lead is told how to spawn one.
-	events, err := store.List[*planv1.LeadEvent](t.Context(), f.c.store, store.Where{"wish_id": f.wish})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 1 || !strings.Contains(events[0].GetText(), "No mockup task started: spawn one with djinn task spawn "+
-		f.wish+" --kind mockup --question "+q.GetCode()+" --tilasm L01") || events[0].GetNote() != "bigger icons" {
-		t.Errorf("lead events: %v", events)
-	}
-	// The mockup task revises; the developer iterates once more, then at the last version the answer is one.
-	f.revise(t)
-	f.code = "W9"
-	if q := f.answer(t, planv1.Choice_CHOICE_A, ""); q.GetAnswer() != nil || Tour(q) != 3 {
-		t.Fatalf("second iteration: answer %v, tour %d", q.GetAnswer(), Tour(q))
-	}
-	f.revise(t)
-	q = f.answer(t, planv1.Choice_CHOICE_A, "still not it")
-	if q.GetAnswer().GetChoice() != planv1.Choice_CHOICE_A || f.answered != 1 || len(f.rounds) != 2 {
-		t.Errorf("past the rounds: answer %v, answers %d, iterations %d", q.GetAnswer(), f.answered, len(f.rounds))
-	}
-}
+	t.Parallel()
 
-// TestAnswerBuildIsAnAnswer (W268): the build option of the same question is an answer as before.
-func TestAnswerBuildIsAnAnswer(t *testing.T) {
-	f := newIterateFixture(t, "W9")
-	if q := f.answer(t, planv1.Choice_CHOICE_B, ""); q.GetAnswer().GetChoice() != planv1.Choice_CHOICE_B || len(f.rounds) != 0 ||
-		f.answered != 1 {
-		t.Errorf("build: answer %v, iterations %d, answers %d", q.GetAnswer(), len(f.rounds), f.answered)
-	}
-}
+	t.Run("answer iterates until last round", func(t *testing.T) {
+		t.Parallel()
+		f := newIterateFixture(t, "")
+		stored, err := store.Get[*planv1.Question](t.Context(), f.c.store, f.q.GetId())
+		if err != nil {
+			t.Fatal(err)
+		}
+		q := f.answer(t, planv1.Choice_CHOICE_A, "bigger icons")
+		if q.GetAnswer() != nil {
+			t.Fatalf("answer stored: %v", q.GetAnswer())
+		}
+		round := Iterating(q)
+		if round == nil || round.GetNote() != "bigger icons" || round.GetOption() != planv1.Choice_CHOICE_A ||
+			round.GetTilasmId() != f.tilasm.GetId() || round.GetVersion() != 1 || round.GetContext() != stored.GetContext() {
+			t.Fatalf("rounds = %v", q.GetRounds())
+		}
+		if !Investigating(q) || Tour(q) != 2 || f.answered != 0 || len(f.rounds) != 1 {
+			t.Errorf("investigating %v, tour %d, answers %d, iterations %d", Investigating(q), Tour(q), f.answered, len(f.rounds))
+		}
+		// No mockup task started: the lead is told how to spawn one.
+		events, err := store.List[*planv1.LeadEvent](t.Context(), f.c.store, store.Where{"wish_id": f.wish})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) != 1 || !strings.Contains(events[0].GetText(), "No mockup task started: spawn one with djinn task spawn "+
+			f.wish+" --kind mockup --question "+q.GetCode()+" --tilasm L01") || events[0].GetNote() != "bigger icons" {
+			t.Errorf("lead events: %v", events)
+		}
+		// The mockup task revises; the developer iterates once more, then at the last version the answer is one.
+		f.revise(t)
+		f.code = "W9"
+		if q := f.answer(t, planv1.Choice_CHOICE_A, ""); q.GetAnswer() != nil || Tour(q) != 3 {
+			t.Fatalf("second iteration: answer %v, tour %d", q.GetAnswer(), Tour(q))
+		}
+		f.revise(t)
+		q = f.answer(t, planv1.Choice_CHOICE_A, "still not it")
+		if q.GetAnswer().GetChoice() != planv1.Choice_CHOICE_A || f.answered != 1 || len(f.rounds) != 2 {
+			t.Errorf("past the rounds: answer %v, answers %d, iterations %d", q.GetAnswer(), f.answered, len(f.rounds))
+		}
+	})
 
-// TestSendIterates (W268, T55): comments sent to iterate on the tilasm that the open question's mockup option
-// iterates on start that question's iteration round, its send named, and no comments event: the mockup task reads
-// them. A mockup task that puts the tilasm's next version holds its sends meanwhile.
-func TestSendIterates(t *testing.T) {
-	f := newIterateFixture(t, "W9")
-	f.draft(t, "Bigger", &planv1.TilasmAnchor{Exact: "Notices group."})
-	res, err := f.send(t, planv1.SendChoice_SEND_CHOICE_ITERATE, "and darker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.GetIterated() != f.q.GetCode() || res.GetIterate() != "W9" || len(res.GetComments()) != 2 {
-		t.Errorf("send: %v", res)
-	}
-	if len(f.rounds) != 1 || f.rounds[0].GetSend() != res.GetSend().GetNumber() || f.rounds[0].GetTilasmId() != f.tilasm.GetId() {
-		t.Errorf("iterations: %v", f.rounds)
-	}
-	if events := commentEvents(t, f.c.store); len(events) != 0 {
-		t.Errorf("comments events: %v", events)
-	}
-	task := f.taskOn(t, "W9", "Rework L01: djinn tilasm put mock --code L01", planv1.TaskStatus_TASK_STATUS_RUNNING)
-	task.Kind = planv1.TaskKind_TASK_KIND_MOCKUP
-	putTasks(t, f.c.store, task)
-	if h := f.hold(t); h.GetReason() != planv1.TilasmHoldReason_TILASM_HOLD_REASON_REWORK || h.GetCode() != "W9" {
-		t.Errorf("hold = %v, want W9 reworking L01", h)
-	}
+	t.Run("build option is an answer", func(t *testing.T) {
+		t.Parallel()
+		f := newIterateFixture(t, "W9")
+		if q := f.answer(t, planv1.Choice_CHOICE_B, ""); q.GetAnswer().GetChoice() != planv1.Choice_CHOICE_B || len(f.rounds) != 0 ||
+			f.answered != 1 {
+			t.Errorf("build: answer %v, iterations %d, answers %d", q.GetAnswer(), len(f.rounds), f.answered)
+		}
+	})
+
+	t.Run("send iterates", func(t *testing.T) {
+		t.Parallel()
+		f := newIterateFixture(t, "W9")
+		f.draft(t, "Bigger", &planv1.TilasmAnchor{Exact: "Notices group."})
+		res, err := f.send(t, planv1.SendChoice_SEND_CHOICE_ITERATE, "and darker")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.GetIterated() != f.q.GetCode() || res.GetIterate() != "W9" || len(res.GetComments()) != 2 {
+			t.Errorf("send: %v", res)
+		}
+		if len(f.rounds) != 1 || f.rounds[0].GetSend() != res.GetSend().GetNumber() || f.rounds[0].GetTilasmId() != f.tilasm.GetId() {
+			t.Errorf("iterations: %v", f.rounds)
+		}
+		if events := commentEvents(t, f.c.store); len(events) != 0 {
+			t.Errorf("comments events: %v", events)
+		}
+		task := f.taskOn(t, "W9", "Rework L01: djinn tilasm put mock --code L01", planv1.TaskStatus_TASK_STATUS_RUNNING)
+		task.Kind = planv1.TaskKind_TASK_KIND_MOCKUP
+		putTasks(t, f.c.store, task)
+		if h := f.hold(t); h.GetReason() != planv1.TilasmHoldReason_TILASM_HOLD_REASON_REWORK || h.GetCode() != "W9" {
+			t.Errorf("hold = %v, want W9 reworking L01", h)
+		}
+	})
 }
 
 // TestPinnedTilasm (W268): a tilasm named with a version, L01@1, gives that version to a worker and to a plan, the
 // later ones aside; a version it lacks is refused.
 func TestPinnedTilasm(t *testing.T) {
+	t.Parallel()
 	f := newSendFixture(t)
 	home := f.c.tilasmHome(t)
 	next := folder(t, map[string]string{"index.html": page("Notifications, second", "Notices apart.")})

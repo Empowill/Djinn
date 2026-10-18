@@ -16,6 +16,7 @@ import (
 // identifier; a revision changes it, keeps it when not given, and clears it given empty. A task of another wish, or
 // none, is refused (T51).
 func TestQuestionAbout(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	wish, other := c.wish(t), c.wish(t)
@@ -95,21 +96,24 @@ func TestQuestionAbout(t *testing.T) {
 	}
 
 	for name, about := range map[string]string{"another wish's task": stranger.GetId(), "no such task": "W99"} {
-		_, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{Text: "Which?", WishId: wish, About: about}))
-		if code := connect.CodeOf(err); code != connect.CodeInvalidArgument && code != connect.CodeNotFound {
-			t.Errorf("a question about %s: %v, want invalid_argument or not_found", name, err)
-		}
-		if _, err := c.questions.Revise(ctx, connect.NewRequest(&planv1.QuestionServiceReviseRequest{
-			Question: ref, WishId: wish, Context: "Again.", About: proto.String(about),
-		})); err == nil {
-			t.Errorf("a revision about %s was taken", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			_, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{Text: "Which?", WishId: wish, About: about}))
+			if code := connect.CodeOf(err); code != connect.CodeInvalidArgument && code != connect.CodeNotFound {
+				t.Errorf("a question about %s: %v, want invalid_argument or not_found", name, err)
+			}
+			if _, err := c.questions.Revise(ctx, connect.NewRequest(&planv1.QuestionServiceReviseRequest{
+				Question: ref, WishId: wish, Context: "Again.", About: proto.String(about),
+			})); err == nil {
+				t.Errorf("a revision about %s was taken", name)
+			}
+		})
 	}
 }
 
 // TestIfritStored: an ifrit's state, timers and serves are stored as given and read back whole; an export leaves out
 // what only this machine knows of its serves, their processes and folders (T51).
 func TestIfritStored(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	wish := c.wish(t)

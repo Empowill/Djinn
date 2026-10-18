@@ -32,25 +32,27 @@ func noteExamples(t *testing.T) []string {
 	return examples
 }
 
-// TestContextWarningsNoteExamples (W575): the developer's example breaks the shape, where its commands are lost in
-// one paragraph; the note's rewrite keeps it.
-func TestContextWarningsNoteExamples(t *testing.T) {
-	examples := noteExamples(t)
-	bad := ContextWarnings(examples[0])
-	for _, want := range []string{
-		"line 1: a command or a flag in the text, outside the code block",
-		"line 1: a paragraph of",
-	} {
-		if !containsPrefix(bad, want) {
-			t.Errorf("the developer's example: warnings %q, want one starting %q", bad, want)
-		}
-	}
-	if good := ContextWarnings(examples[1]); len(good) > 0 {
-		t.Errorf("the note's rewrite: warnings %q, want none", good)
-	}
-}
-
 func TestContextWarnings(t *testing.T) {
+	t.Parallel()
+
+	// W575: the developer's example breaks the shape, where its commands are lost in
+	// one paragraph; the note's rewrite keeps it.
+	t.Run("note examples", func(t *testing.T) {
+		examples := noteExamples(t)
+		bad := ContextWarnings(examples[0])
+		for _, want := range []string{
+			"line 1: a command or a flag in the text, outside the code block",
+			"line 1: a paragraph of",
+		} {
+			if !containsPrefix(bad, want) {
+				t.Errorf("the developer's example: warnings %q, want one starting %q", bad, want)
+			}
+		}
+		if good := ContextWarnings(examples[1]); len(good) > 0 {
+			t.Errorf("the note's rewrite: warnings %q, want none", good)
+		}
+	})
+
 	long := strings.Repeat("This sentence says something worth reading. ", 20)
 	for _, c := range []struct {
 		name, context string
@@ -158,6 +160,7 @@ func containsPrefix(list []string, prefix string) bool {
 // TestAskReviseWarn (W575): ask and revise store a context as given, and say how it breaks the shape; a revision
 // that fixes it, or keeps a context in shape, says nothing.
 func TestAskReviseWarn(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	wish := c.wish(t)

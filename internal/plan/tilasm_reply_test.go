@@ -26,6 +26,7 @@ func (f sendFixture) reply(t *testing.T, m *planv1.TilasmServiceReplyRequest) (*
 // comments' reading and the window's cards show; a draft, a comment or a task that is not there, and an empty reply are
 // refused; a second reply replaces the first.
 func TestTilasmReply(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	f := newSendFixture(t)
 	f.draft(t, "A paused wish: do its notices wait?", nil)
@@ -49,9 +50,11 @@ func TestTilasmReply(t *testing.T) {
 		{&planv1.TilasmServiceReplyRequest{Comment: "C1", Text: "Done.", Task: []string{"W99"}}, connect.CodeInvalidArgument, "W99"},
 		{&planv1.TilasmServiceReplyRequest{Tilasm: ref("L02"), Comment: "C1", Text: "Done."}, connect.CodeNotFound, "no tilasm L02"},
 	} {
-		if _, err := f.reply(t, bad.m); connect.CodeOf(err) != bad.code || !strings.Contains(err.Error(), bad.says) {
-			t.Errorf("reply %v = %v, want %v saying %q", bad.m, err, bad.code, bad.says)
-		}
+		t.Run(bad.says, func(t *testing.T) {
+			if _, err := f.reply(t, bad.m); connect.CodeOf(err) != bad.code || !strings.Contains(err.Error(), bad.says) {
+				t.Errorf("reply %v = %v, want %v saying %q", bad.m, err, bad.code, bad.says)
+			}
+		})
 	}
 
 	res, err := f.reply(t, &planv1.TilasmServiceReplyRequest{
@@ -114,6 +117,7 @@ func TestTilasmReply(t *testing.T) {
 // TestBriefUnansweredComments: the wish's brief has a line for a tilasm whose sent comments wait for a reply, saying
 // how many and which, gone once each has one; a draft never shows in it. The rules tell the lead to reply to each.
 func TestBriefUnansweredComments(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	f := newSendFixture(t, WithHome(home))
 	brief := func() string {

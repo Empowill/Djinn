@@ -10,6 +10,7 @@ import (
 // TestMergeCountsWithItsOriginal: a correction of a correction (W422 of W419 of W401) is shown and counted with W401,
 // the original task it serves in its azima: the azima counts one part, running while the correction runs.
 func TestMergeCountsWithItsOriginal(t *testing.T) {
+	t.Parallel()
 	conflict := planv1.IntegrationState_INTEGRATION_STATE_CONFLICT
 	w401 := &planv1.Task{Id: "w401", Code: "W401", PartOf: "t1", Status: planv1.TaskStatus_TASK_STATUS_DONE,
 		Integration: &planv1.TaskIntegration{State: conflict}}

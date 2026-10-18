@@ -19,6 +19,7 @@ import (
 // land, the branches of Djinn's tasks left out; and while a merge runs into the branch, the change is refused with what
 // runs, the branch kept.
 func TestChangeIntegrationBranch(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	origin := filepath.Join(t.TempDir(), "origin.git")
 	if out, err := exec.Command("git", "init", "-q", "--bare", origin).CombinedOutput(); err != nil {
@@ -182,6 +183,7 @@ func TestChangeIntegrationBranch(t *testing.T) {
 // TestBriefSaysWhereWorkLands: the wish's brief and the brief of every active wish name, in one line, where a wish's
 // work lands: its integration branch, the project named when it has several; or per azima, each azima's own branch.
 func TestBriefSaysWhereWorkLands(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	home := t.TempDir()
 	c := serve(t, WithHome(home))

@@ -35,6 +35,7 @@ func fetch(t *testing.T, method, url string) (*http.Response, string) {
 }
 
 func TestTilasmFilesServeTheLatestVersionWithTheirPolicy(t *testing.T) {
+	t.Parallel()
 	c := serve(t, WithHome(t.TempDir()))
 	wish := c.wish(t)
 	tilasm := putTilasm(t, c, &planv1.TilasmServicePutRequest{Wish: wish, Path: folder(t, map[string]string{
@@ -136,6 +137,7 @@ func TestTilasmFilesServeTheLatestVersionWithTheirPolicy(t *testing.T) {
 // export and what djinn tilasm get reads are its files byte for byte, and the policy is the same for the page, its
 // files and the bridge.
 func TestTilasmFilesEndEachPageWithTheBridge(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t, WithHome(t.TempDir()))
 	wish := c.wish(t)
@@ -161,16 +163,18 @@ func TestTilasmFilesEndEachPageWithTheBridge(t *testing.T) {
 		"/bridge.js":      files["bridge.js"],
 		"/data.json":      files["data.json"],
 	} {
-		res, body := fetch(t, http.MethodGet, base+address)
-		if want == "" {
-			if res.StatusCode != http.StatusNotFound {
-				t.Errorf("GET %s = %d, want 404", address, res.StatusCode)
+		t.Run(address, func(t *testing.T) {
+			res, body := fetch(t, http.MethodGet, base+address)
+			if want == "" {
+				if res.StatusCode != http.StatusNotFound {
+					t.Errorf("GET %s = %d, want 404", address, res.StatusCode)
+				}
+				return
 			}
-			continue
-		}
-		if res.StatusCode != http.StatusOK || body != want || res.Header.Get("Content-Security-Policy") != policy {
-			t.Errorf("GET %s = %d %q, policy %q; want %q", address, res.StatusCode, body, res.Header.Get("Content-Security-Policy"), want)
-		}
+			if res.StatusCode != http.StatusOK || body != want || res.Header.Get("Content-Security-Policy") != policy {
+				t.Errorf("GET %s = %d %q, policy %q; want %q", address, res.StatusCode, body, res.Header.Get("Content-Security-Policy"), want)
+			}
+		})
 	}
 	// A request for part of a page counts the tag in.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/notes/more.htm", nil)
@@ -232,46 +236,55 @@ func TestTilasmFilesEndEachPageWithTheBridge(t *testing.T) {
 	}
 }
 
-// The policy is the one before the bridge: it already lets a tilasm load a script from the server's origin.
-func TestTilasmPolicyUnchangedByTheBridge(t *testing.T) {
-	const want = "default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; " +
-		"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; " +
-		"media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self'; connect-src 'none'; " +
-		"object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts"
-	if TilasmPolicy != want {
-		t.Errorf("TilasmPolicy = %q, want %q", TilasmPolicy, want)
-	}
-}
+func TestTilasmPolicy(t *testing.T) {
+	t.Parallel()
+	// The policy is the one before the bridge: it already lets a tilasm load a script from the server's origin.
+	t.Run("unchanged_by_bridge", func(t *testing.T) {
+		t.Parallel()
+		const want = "default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; " +
+			"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; " +
+			"media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self'; connect-src 'none'; " +
+			"object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts"
+		if TilasmPolicy != want {
+			t.Errorf("TilasmPolicy = %q, want %q", TilasmPolicy, want)
+		}
+	})
 
-// WebKit reads 'self' in a sandboxed frame as its opaque origin, which matches nothing: the policy names the server's
-// origin too, or a tilasm loads none of its files, its scripts, fonts and pictures refused.
-func TestTilasmPolicyNamesTheServersOrigin(t *testing.T) {
-	for host, want := range map[string]string{
-		// The window's Wails asset server on macOS and Linux.
-		"localhost": "'self' wails://localhost",
-		// The loopback server, as a browser or the window on Windows reaches it.
-		"127.0.0.1:41234": "'self' http://127.0.0.1:41234",
-		"localhost:8080":  "'self' http://localhost:8080",
-		// A host a policy would read as more: only 'self'.
-		"evil.example:1; script-src *": "'self'",
-		"a b:1":                        "'self'",
-		"127.0.0.1:80x":                "'self'",
-		"127.0.0.1:":                   "'self'",
-		"[::1]:5":                      "'self'",
-		"example.com":                  "'self'",
-		"":                             "'self'",
-	} {
-		policy := tilasmPolicy(host)
-		if policy != strings.ReplaceAll(TilasmPolicy, "'self'", want) {
-			t.Errorf("tilasmPolicy(%q) = %q, want 'self' as %q", host, policy, want)
+	// WebKit reads 'self' in a sandboxed frame as its opaque origin, which matches nothing: the policy names the server's
+	// origin too, or a tilasm loads none of its files, its scripts, fonts and pictures refused.
+	t.Run("names_servers_origin", func(t *testing.T) {
+		t.Parallel()
+		for host, want := range map[string]string{
+			// The window's Wails asset server on macOS and Linux.
+			"localhost": "'self' wails://localhost",
+			// The loopback server, as a browser or the window on Windows reaches it.
+			"127.0.0.1:41234": "'self' http://127.0.0.1:41234",
+			"localhost:8080":  "'self' http://localhost:8080",
+			// A host a policy would read as more: only 'self'.
+			"evil.example:1; script-src *": "'self'",
+			"a b:1":                        "'self'",
+			"127.0.0.1:80x":                "'self'",
+			"127.0.0.1:":                   "'self'",
+			"[::1]:5":                      "'self'",
+			"example.com":                  "'self'",
+			"":                             "'self'",
+		} {
+			t.Run(host, func(t *testing.T) {
+				t.Parallel()
+				policy := tilasmPolicy(host)
+				if policy != strings.ReplaceAll(TilasmPolicy, "'self'", want) {
+					t.Errorf("tilasmPolicy(%q) = %q, want 'self' as %q", host, policy, want)
+				}
+				if !strings.Contains(policy, "script-src "+want+" 'unsafe-inline'") || !strings.Contains(policy, "font-src "+want+" data:") {
+					t.Errorf("tilasmPolicy(%q): its scripts and fonts load from %q only, got %q", host, want, policy)
+				}
+			})
 		}
-		if !strings.Contains(policy, "script-src "+want+" 'unsafe-inline'") || !strings.Contains(policy, "font-src "+want+" data:") {
-			t.Errorf("tilasmPolicy(%q): its scripts and fonts load from %q only, got %q", host, want, policy)
-		}
-	}
+	})
 }
 
 func TestTilasmPutData(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t, WithHome(t.TempDir()))
 	wish := c.wish(t)
