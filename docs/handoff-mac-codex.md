@@ -165,7 +165,7 @@ under the main view only.
 only, with fake folders.
 
 ```sh
-grep -n 'TestExtendPathAfterAnInstall' internal/machine/path_test.go
+grep -n 'after an install' internal/machine/path_test.go
 go tool task build
 go run ./tools/macapp bundle --binary bin/djinn --version v0.0.1 bin/app
 open -R bin/app/Djinn.app # shows it in the Finder: open it from there, not from a terminal
