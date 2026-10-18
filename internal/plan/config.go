@@ -296,6 +296,9 @@ func resolveReference(ctx context.Context, home, folder, devFile string, repo gi
 // (refs/remotes/origin/main), as ProjectConfig finds it, home its data folder: empty outside Git, without a remote or
 // without a branch to take.
 func ConfigReference(ctx context.Context, home string, project *planv1.Project) (string, error) {
+	if c := ProjectConfig(home, project); c.FromReference() {
+		return "refs/remotes/" + c.Ref, nil
+	}
 	folder := project.GetDirectory()
 	if folder == "" || home == "" || !project.GetGit() {
 		return "", nil
@@ -405,58 +408,121 @@ func (r gitRefs) reference(name string) string {
 // extractConfig is the folder of home's cache that holds the configuration folders (ConfigFolders) of the commit
 // sha, as the project in folder lays them out: extracted once by the digest of their trees, then shared.
 func extractConfig(ctx context.Context, home, folder, sha string) (string, error) {
-	digest, err := configDigest(ctx, folder, sha)
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(ConfigCache(home), digest)
-	if _, err := os.Stat(dir); err == nil {
-		return dir, nil
-	}
-	if err := os.MkdirAll(ConfigCache(home), 0o700); err != nil {
-		return "", err
-	}
-	tmp, err := os.MkdirTemp(ConfigCache(home), "."+digest+"-")
-	if err != nil {
-		return "", err
-	}
-	if err := writeTrees(ctx, folder, sha, tmp); err != nil {
-		_ = os.RemoveAll(tmp)
-		return "", err
-	}
-	if err := os.Rename(tmp, dir); err != nil {
-		_ = os.RemoveAll(tmp)
-		if _, statErr := os.Stat(dir); statErr != nil {
-			return "", err
+	if digest, ok := cachedDigest(folder, sha); ok {
+		if dir := filepath.Join(ConfigCache(home), digest); exists(dir) {
+			return dir, nil
 		}
-		// Another read extracted it first.
 	}
-	return dir, nil
+	if err := extractConfigs(ctx, home, folder, sha); err != nil {
+		return "", err
+	}
+	digest, _ := cachedDigest(folder, sha)
+	return filepath.Join(ConfigCache(home), digest), nil
 }
 
-// configDigest is the digest of the configuration folders' trees in the commit sha, the folders relative to folder:
-// the same configuration has the same digest whatever the commit.
-func configDigest(ctx context.Context, folder, sha string) (string, error) {
-	key := sha + "\x00" + folder
-	configDigests.Lock()
-	digest, ok := configDigests.m[key]
-	configDigests.Unlock()
-	if ok {
-		return digest, nil
+// extractConfigs extracts into home's cache the configuration folders of each of shas not already there, reading all
+// their files in one git cat-file (W421).
+func extractConfigs(ctx context.Context, home, folder string, shas ...string) error {
+	type pendingTree struct {
+		tmp, dir string
 	}
-	out, err := gitRawOut(ctx, folder, append([]string{"ls-tree", "-z", sha, "--"}, slashed(ConfigFolders)...)...)
+	var pending []pendingTree
+	clean := func() {
+		for _, p := range pending {
+			_ = os.RemoveAll(p.tmp)
+		}
+	}
+	seen := map[string]bool{}
+	var files []treeFile
+	for _, sha := range shas {
+		if sha == "" {
+			continue
+		}
+		if digest, ok := cachedDigest(folder, sha); ok && (seen[digest] || exists(filepath.Join(ConfigCache(home), digest))) {
+			continue
+		}
+		digest, tree, err := listConfigTree(ctx, folder, sha)
+		if err != nil {
+			clean()
+			return err
+		}
+		dir := filepath.Join(ConfigCache(home), digest)
+		if seen[digest] || exists(dir) {
+			continue
+		}
+		seen[digest] = true
+		if err := os.MkdirAll(ConfigCache(home), 0o700); err != nil {
+			clean()
+			return err
+		}
+		tmp, err := os.MkdirTemp(ConfigCache(home), "."+digest+"-")
+		if err != nil {
+			clean()
+			return err
+		}
+		pending = append(pending, pendingTree{tmp: tmp, dir: dir})
+		for _, f := range tree {
+			files = append(files, treeFile{mode: f.mode, id: f.id, path: filepath.Join(tmp, f.path)})
+		}
+	}
+	if len(files) > 0 {
+		if err := catFiles(ctx, folder, files, func(f treeFile, content []byte) error {
+			return writeTreeFile(folder, f, content)
+		}); err != nil {
+			clean()
+			return err
+		}
+	}
+	for _, p := range pending {
+		if err := os.Rename(p.tmp, p.dir); err != nil {
+			_ = os.RemoveAll(p.tmp)
+			if !exists(p.dir) {
+				clean()
+				return err
+			}
+			// Another read extracted it first.
+		}
+	}
+	return nil
+}
+
+// cachedDigest is the digest of the configuration folders' trees in the commit sha, when configDigests holds it.
+func cachedDigest(folder, sha string) (string, bool) {
+	configDigests.Lock()
+	defer configDigests.Unlock()
+	d, ok := configDigests.m[sha+"\x00"+folder]
+	return d, ok
+}
+
+// listConfigTree lists the files of the configuration folders in the commit sha, the folders relative to folder, and
+// returns the digest of their trees: the same configuration has the same digest whatever the commit. One ls-tree
+// gives both the digest and the files (W421).
+func listConfigTree(ctx context.Context, folder, sha string) (string, []treeFile, error) {
+	out, err := gitRawOut(ctx, folder, append([]string{"ls-tree", "-r", "-z", sha, "--"}, slashed(ConfigFolders)...)...)
 	if err != nil {
-		return "", err
+		return "", nil, err
+	}
+	var files []treeFile
+	for entry := range strings.SplitSeq(string(out), "\x00") {
+		meta, path, ok := strings.Cut(entry, "\t")
+		fields := strings.Fields(meta)
+		if !ok || len(fields) != 3 || fields[1] != "blob" {
+			continue
+		}
+		if !filepath.IsLocal(filepath.FromSlash(path)) {
+			return "", nil, fmt.Errorf("git lists %q in %s: not a path under the project", path, sha)
+		}
+		files = append(files, treeFile{mode: fields[0], id: fields[2], path: filepath.FromSlash(path)})
 	}
 	sum := sha256.Sum256(out)
-	digest = hex.EncodeToString(sum[:])[:32]
+	digest := hex.EncodeToString(sum[:])[:32]
 	configDigests.Lock()
 	if len(configDigests.m) >= configDigestsMax {
 		clear(configDigests.m)
 	}
-	configDigests.m[key] = digest
+	configDigests.m[sha+"\x00"+folder] = digest
 	configDigests.Unlock()
-	return digest, nil
+	return digest, files, nil
 }
 
 // slashed are paths, with slashes: git's own separator.
@@ -473,44 +539,21 @@ type treeFile struct {
 	mode, id, path string
 }
 
-// writeTrees writes into dir the files of the configuration folders of the commit sha, the folders relative to
-// folder: each with its mode, executable or not, and a symbolic link as one. A submodule is left out.
-func writeTrees(ctx context.Context, folder, sha, dir string) error {
-	out, err := gitRawOut(ctx, folder, append([]string{"ls-tree", "-r", "-z", sha, "--"}, slashed(ConfigFolders)...)...)
-	if err != nil {
+// writeTreeFile writes f's content at f.path with its mode, executable or not, and a symbolic link as one.
+func writeTreeFile(folder string, f treeFile, content []byte) error {
+	if err := os.MkdirAll(filepath.Dir(f.path), 0o700); err != nil {
 		return err
 	}
-	var files []treeFile
-	for entry := range strings.SplitSeq(string(out), "\x00") {
-		meta, path, ok := strings.Cut(entry, "\t")
-		fields := strings.Fields(meta)
-		if !ok || len(fields) != 3 || fields[1] != "blob" {
-			continue
+	switch f.mode {
+	case "120000":
+		if err := os.Symlink(string(content), f.path); err != nil {
+			warnOnce(folder, "leave a link of the configuration out", err)
 		}
-		if !filepath.IsLocal(filepath.FromSlash(path)) {
-			return fmt.Errorf("git lists %q in %s: not a path under the project", path, sha)
-		}
-		files = append(files, treeFile{mode: fields[0], id: fields[2], path: filepath.FromSlash(path)})
-	}
-	if len(files) == 0 {
 		return nil
+	case "100755":
+		return os.WriteFile(f.path, content, 0o700) // #nosec G306 -- an executable, in Djinn's own data folder
 	}
-	return catFiles(ctx, folder, files, func(f treeFile, content []byte) error {
-		path := filepath.Join(dir, f.path)
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return err
-		}
-		switch f.mode {
-		case "120000":
-			if err := os.Symlink(string(content), path); err != nil {
-				warnOnce(folder, "leave a link of the configuration out", err)
-			}
-			return nil
-		case "100755":
-			return os.WriteFile(path, content, 0o700) // #nosec G306 -- an executable, in Djinn's own data folder
-		}
-		return os.WriteFile(path, content, 0o600)
-	})
+	return os.WriteFile(f.path, content, 0o600)
 }
 
 // catFiles reads the content of each of files in one git, and gives it to write in their order.
