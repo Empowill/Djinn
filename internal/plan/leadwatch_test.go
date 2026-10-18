@@ -565,7 +565,7 @@ func TestDigestCarriesTheNote(t *testing.T) {
 	}
 	queue("W01", "Djinn: W01 done: Added djinn question get.", note)
 	queue("W02", "Djinn: W02 done: fine.", "fine.")
-	long := strings.Repeat("A line of a long final note, one of many.\n", 100)
+	long := strings.Repeat("A line of a long final note, one of many.\n", 250)
 	queue("W03", "Djinn: W03 done: A line of a long final note, one of many.", long)
 	got := leadWatchOnce(t, s, &planv1.LeadServiceWatchRequest{Timeout: durationpb.New(0)})
 
@@ -578,7 +578,7 @@ func TestDigestCarriesTheNote(t *testing.T) {
 		t.Errorf("a note the line holds comes again:\n%s", got)
 	}
 	_, w03, _ := strings.Cut(got, "- W03")
-	if n := len([]rune(w03)); n > digestNoteMax+800 {
+	if n := len([]rune(strings.ReplaceAll(w03, "\n    ", "\n"))); n > digestNoteMax+800 {
 		t.Errorf("the long note takes %d characters of the digest:\n%s", n, got)
 	}
 	all, err := store.List[*planv1.LeadEvent](t.Context(), w.Store, nil)
@@ -594,7 +594,7 @@ func TestDigestCarriesTheNote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text := res.Msg.GetText(); strings.Count(text, "> A line of a long final note, one of many.") != 100 ||
+	if text := res.Msg.GetText(); strings.Count(text, "> A line of a long final note, one of many.") != 250 ||
 		!strings.Contains(text, "### W03 ended · wish Djinn QoL (`"+wish+"`)") {
 		t.Errorf("djinn lead event = %s", text)
 	}

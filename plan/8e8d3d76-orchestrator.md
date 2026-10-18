@@ -92,7 +92,7 @@ Decide who does what, run each worker safely, and protect the machine.
   `TestWorkerScopesFallback` in `cmd/djinn`; T17 has the rest)
 - [x] An azima whose work is done and whose plan file only waits for proofs no worker can give says so, apart from
   in progress and done, in the brief and the window. (`TestReadDoneWhen`, `TestProvers`, `TestAwaitingProof`,
-  `TestBriefAzimas`, `TestSyncPlan`; `screens.test.mjs`: "an azima whose work is done awaits its proof")
+  `TestBriefAzimas`, `TestSync_Azimas`; `screens.test.mjs`: "an azima whose work is done awaits its proof")
 - [x] The orchestrator reads the developer's answers: an answer ("Rub the lamp") goes to the lead to turn into tasks
   itself, placing them in the graph, unless Djinn settles the question itself (an edit question, work that failed to integrate,
   a routed request, a grant); "Enlighten me" starts one investigator that revises the question; it takes no slot but waits
@@ -292,9 +292,9 @@ Decide who does what, run each worker safely, and protect the machine.
   scheduled, never waiting for the person, never in the moving or waiting work). Work is part of an azima
   (`Task.part_of`, `djinn task spawn --part-of T07`, changed by `djinn task group <task> --part-of T07`), a grouping
   and never a wait: only `depends_on` makes a task wait, so a part runs while its azima still waits for others
-  (`TestAzimasAreNeverScheduled`). A task that depends on an azima waits "for the azima T1 to be done". The tasks of a
+  (`TestSpawn_Azima`). A task that depends on an azima waits "for the azima T1 to be done". The tasks of a
   wish, through `depends_on` and `part_of` together, form a graph without cycle: `Depend` and `Group` refuse one,
-  naming it ("T1 → W1 → T1", `TestGroupRefusesCycles`). Where an azima stands is computed on every read, never stored
+  naming it ("T1 → W1 → T1", `TestGroup`). Where an azima stands is computed on every read, never stored
   (`Task.azima`, `plan.FillAzimas`): done when marked done (`djinn task done`) or its plan file says so, in progress
   when a part has a worker on it or is done, open otherwise, ready when every task it depends on is done; with its
   parts, done and running. `djinn task spawn --kind azima` makes one (T1, T2… after the highest).
@@ -304,7 +304,7 @@ Decide who does what, run each worker safely, and protect the machine.
   whose status is `done` closes its azima (`Closure.actor` `PLAN_FILE`), and opens it again once it says otherwise.
   Then it writes each azima's dependencies back into its front matter, `after: T08 T17` after `status`, so that Git
   carries the graph; the store stays the source of truth, and an azima made by a sync takes its file's `after` once
-  (`TestSyncPlan`, on a copy of this folder). The T01…T24 a plan import stored as work, never run, become azimas at
+  (`TestSync_Azimas`, on a copy of this folder). The T01…T24 a plan import stored as work, never run, become azimas at
   the next `djinn up` (`migrateAzimas`, journaled `harness/azima`, `TestMigrateAzimas`).
 - **The lead plans with them**: the brief shows the azimas as a graph, the ready ones first (under way before open),
   then the blocked ones with what they wait for, the done ones on one line (`TestBriefAzimas`), and its rules say to
@@ -322,7 +322,7 @@ Decide who does what, run each worker safely, and protect the machine.
   read from the plain words of the needs, no model (`plan.Provers`): a Mac, a Windows machine, a review by a named
   person ("Clément's review"), a release, a real model, a person, else the needs' own words (`TestReadDoneWhen`,
   `TestProvers`). A file whose boxes are all checked closes its azima whatever its status line says, and the sync
-  reports it (`all_checked`, T17's case; `TestSyncPlan`). The brief lists these azimas apart, "Work done, waiting for
+  reports it (`all_checked`, T17's case; `TestSync_Azimas`). The brief lists these azimas apart, "Work done, waiting for
   its proof: T11 needs a Windows machine, Clément's review" (`TestBriefAzimas`), and tells the lead to spawn no work
   for them. The window gives them their own tone and label ("Proof awaited", "Preuve attendue"), what they need on
   hover and in their card; the wish's head counts them apart ("3 done · 18 awaiting proof / 30 azimas"); the flying
@@ -487,8 +487,7 @@ lead spends its tokens on mechanical work.
   hour since the last push, checked as each merge ends; `ask` mode by a question; a refused push never forced. Each
   push in the journal and on the wish (its head shows the last one); the build proposed after a push; a task's
   worktree removed once its work is committed, kept with changes not committed. Fake clock, bare remote in a temporary
-  folder. (TestCommitABatch, TestPushAtAnAzimasEnd, TestPushAfterThreeTasksAndAnHour, TestPushDue,
-  TestCommittedSince, TestPushAskMode, TestARefusedPushIsNotForced, TestNoRemoteNoPush, TestABuildIsProposed,
+  folder. (TestCommitABatch, TestPushIfDue, TestPushDue, TestCommittedSince,
   TestRemoveTheWorktreeOnceCommitted, the screens test "the wish's head says where Djinn last pushed its integration
   branch, and a push refused")
 - [x] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
@@ -510,7 +509,7 @@ lead spends its tokens on mechanical work.
   Merges alone bring nothing to take: no line. The events say "asked to rebase … onto …", then, after a tool's result
   or at the worker's end, "rebased <branch> onto <target> (at …): <from> → <to>" (or "merged" when it merged). Djinn
   never rebases itself; read-only, watcher, question, ifrit, correction and review workers are not asked.
-  (TestContinuedWorkerRebasesFirst, TestPausedWorkerRebasesPastThreshold, TestRebaseText)
+  (TestContinue_RebasesFirst, TestResume_RebasesPastThreshold, TestRebaseText)
 - [x] Work not committed is never merged nor committed blindly: before a task's merge, a correction worker's
   included, Djinn reads its worktree (`git status --porcelain`, untracked files included, `.gitignore` applying);
   with changes, a review worker starts in that worktree, part of the same azima, of the task's provider, the task's
@@ -535,19 +534,18 @@ lead spends its tokens on mechanical work.
   (TestWorkersNeverStartFromTheCopy, TestWishAddProject, TestChangeIntegrationBranch)
 - [x] A task with no commit of its own is never merged, and no merge commit that changes nothing is made; a done
   azima's branch is never made again nor pushed by itself, its work waiting, the lead told once; a live azima merges
-  and pushes as before. (TestNoCommitTaskIsNotMerged, TestEmptyMergeMakesNoCommit, TestNoOpBatchTellsTheEndOnly,
-  TestDoneAzimaBranchNotMadeAgain, TestLiveAzimaMergesAndPushes)
+  and pushes as before. (TestIntegrate_AzimaBranch, TestNoOpBatchTellsTheEndOnly)
 - [x] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
   conflict, red), and propose installing once a batch is integrated. (TestWorkStands, TestBriefWorkStands, TestRun
   "where a task's work stands", the screens tests "the Tasks tab says where each task's work stands" and "the update
-  banner proposes to install a build committed", TestABuildIsProposed, TestUpdate)
+  banner proposes to install a build committed", TestPushIfDue, TestUpdate)
 
 - [x] Each project says what Djinn checks (W141): `setup`, the command that makes a fresh integration worktree ready,
   run once and again when its lock files change; `checks`, each with its gate and when it runs, before a commit (red,
   a correction worker) or before a push (red, the push held and said, a question if it stays red); the former `test`
   a check at commit. The brief and each worker's first prompt say them; `djinn project show` and the project view
-  show them with their last runs. Djinn's own: `npm ci`, lint at commit, test at push. (TestSetupOncePerWorktree,
-  TestSetupAgain, TestARedCommitCheck, TestPushChecksHoldThePush, TestPushWithoutTheChecks, TestReadSettings,
+  show them with their last runs. Djinn's own: `npm ci`, lint at commit, test at push. (TestEnsureSetup,
+  TestCheck_RedCommitCheck, TestHoldPush, TestReadSettings,
   TestResolveSettings, TestProjectShow, TestChecksBrief, TestDjinnsOwnSettings, TestBrief, the screens tests "the
   project view lists the setup and the checks, when each runs, and how each last ran" and "the wish's head says a push
   its checks hold, why on hover")
@@ -555,8 +553,7 @@ lead spends its tokens on mechanical work.
   queued or repairing its branch, its checks run on the commit the branch was at, in the wish's push worktree, while
   merges go on; a merge that lands meanwhile makes them moot (nothing pushed nor held; checked again once the queue is
   empty); the step that holds or pushes takes the integration's lock, so one repair at a time still holds (Q39).
-  (TestMergesGoOnDuringPushChecks, TestPushAfterTheLastMerge, TestYourPushChecksTheNewTip, TestPushWaitsForTheQueue,
-  TestPushCheckFailedCorrectionLeavesCommittedAndDependents)
+  (TestPushApart, TestPushWaitsForTheQueue, TestPushHeldBlockReason)
 
 ### Merged by hand into feat/wails-go
 

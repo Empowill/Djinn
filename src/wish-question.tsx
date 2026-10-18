@@ -10,8 +10,10 @@
 // investigated) it is Clément's question card, its context in a first view that unfolds in place.
 // One note field for the gestures at the bottom: "Withdraw", on the left, closes the question without an answer;
 // "Enlighten me", in the middle, asks the lead to find out more first (QuestionService.Enlighten), the note saying
-// what to look into; "Rub the lamp", on the right in the lamp's yellow, answers with the option selected, the
-// recommended one until you pick another, and the note with it. An option only picks: nothing but the lamp's button,
+// what to look into; the answer button, on the right in the colour of what starts (Build, Iterate, Investigate, To the
+// lead), answers with the option selected, the recommended one until you pick another, and the note with it. When a
+// mockup option is selected within its rounds, only "Cancel · nothing starts" and "Iterate · round n/m" stay. An option
+// only picks: nothing but the answer button,
 // Enter in the note or Ctrl+Enter on the card answers (W574). Open, it says how much it holds up: red when a task
 // waits for it, orange under its before words ("before the merge"), grey when it can wait. Being investigated, it
 // folds to one line out of the way, and opens on a click; revised, it waits for you again, in its place. Answered, it
@@ -22,8 +24,9 @@
 // bottom of its list, where it stays (Djinn keeps when, Question.laterTime), and, pressed, gives it its place back;
 // Sleep puts it out of the list until conditions hold (Question.sleep), and Djinn wakes it to the top; Move takes it
 // to another wish.
-// An option that launches a task once picked (Question.plans, decision Q25) says so on one grey line under its text:
-// Launches: its title, and the azima it belongs to. Always one line, cut short, it never moves the card.
+// An option that launches a task once picked (Question.plans, decision Q25) says so on one tinted line under its text:
+// Builds, Mockup or Investigates, its title, and the azima it belongs to. Always one line, cut short, it never moves
+// the card.
 // A gesture shows, by key or by click: its button stays pressed a moment and the answer leaves as it comes back up,
 // while the card glows in the colour of the gesture, the lamp's brass or a cool light, and a wisp of smoke rises
 // from the button (review.css). Reduced motion keeps the colour, without the movement.
@@ -36,10 +39,13 @@ import {
   ClockArrowUp,
   CornerDownRight,
   FileText,
+  Hammer,
   History,
   Lamp,
   Lightbulb,
   Moon,
+  PencilRuler,
+  Telescope,
 } from "lucide-react";
 import { timestampMs } from "@bufbuild/protobuf/wkt";
 import { motion } from "motion/react";
@@ -62,6 +68,8 @@ import {
 import { useOptionalData } from "./data/djinn";
 import { EMPTY_BLOCKING } from "./data/flight";
 import {
+  type AnswerOutcome,
+  answerOutcome,
   answerText,
   askedWhen,
   choiceOf,
@@ -69,6 +77,8 @@ import {
   investigating,
   isWithdrawn,
   letter,
+  NOTE_MAX,
+  planKind,
   planOf,
   questionVersions,
   type QuestionVersion,
@@ -83,6 +93,7 @@ import { questionPerch } from "./data/eye";
 import { EyePerch } from "./djinn-eye";
 import { t } from "./i18n";
 import { CommandText } from "./copy-command";
+import { useGrowTextarea } from "./lead-message";
 import { MoveLink } from "./link";
 import { FoldedMarkdown, MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
@@ -213,6 +224,32 @@ export const WishQuestion = memo(function WishQuestion({
   const row = !!onSelect && !answered && !withdrawn;
   const card = useRef<HTMLElement>(null);
   const noteField = useRef<HTMLTextAreaElement>(null);
+  useGrowTextarea(noteField, note);
+  const outcome = useMemo(
+    () => (choice !== undefined ? answerOutcome(q, choice, note) : undefined),
+    [q, choice, note],
+  );
+  const kind = outcome?.kind ?? "lead";
+  const isMock = kind === "mock";
+  const RubIcon =
+    kind === "work"
+      ? Hammer
+      : kind === "mock"
+        ? PencilRuler
+        : kind === "inv"
+          ? Telescope
+          : Lamp;
+  const rubLabel =
+    kind === "work"
+      ? t("question.build")
+      : kind === "mock"
+        ? t("question.iterate_round", {
+            round: outcome?.round ?? 1,
+            rounds: outcome?.rounds ?? 1,
+          })
+        : kind === "inv"
+          ? t("question.investigate")
+          : t("question.to_lead");
   const focusNote = () => {
     const field = noteField.current;
     if (!field) return;
@@ -238,7 +275,7 @@ export const WishQuestion = memo(function WishQuestion({
   };
 
   const triggerEnlighten = () => {
-    if (sending || !onEnlighten || digging) return;
+    if (sending || !onEnlighten || digging || isMock) return;
     void play("enlighten", async () => {
       await onEnlighten(note.trim(), q);
       setNote("");
@@ -479,9 +516,11 @@ export const WishQuestion = memo(function WishQuestion({
       aria-label={t("page.options")}
     >
       {q.options.map((option, index) => {
-        const selected = choice === choiceOf(index);
+        const optChoice = choiceOf(index);
+        const selected = choice === optChoice;
+        const optOutcome = answerOutcome(q, optChoice, note);
         const pick = () => {
-          setPicked(choiceOf(index));
+          setPicked(optChoice);
           setUnpicked(false);
         };
         // Not a <button>: its text is selectable, and a command in it has a copy button of its own. A
@@ -493,6 +532,7 @@ export const WishQuestion = memo(function WishQuestion({
             role="button"
             tabIndex={0}
             aria-pressed={selected}
+            title={outcomeTitle(optOutcome)}
             onClick={() => {
               // Selecting words in it picks nothing.
               if (globalThis.getSelection?.()?.toString()) return;
@@ -516,12 +556,12 @@ export const WishQuestion = memo(function WishQuestion({
             <p>
               <CommandText text={option} />
             </p>
-            {recommended === choiceOf(index) && (
+            {recommended === optChoice && (
               <span className="option-recommended">
                 {t("question.recommended")}
               </span>
             )}
-            <PlanLine question={q} plan={planOf(q, choiceOf(index))} />
+            <PlanLine question={q} plan={planOf(q, optChoice)} />
           </div>
         );
       })}
@@ -543,9 +583,10 @@ export const WishQuestion = memo(function WishQuestion({
             : t("question.answer_placeholder")
         }
         rows={2}
-        maxLength={2000}
+        maxLength={NOTE_MAX}
         aria-label={t("question.note_label")}
       />
+      <NoteCounter length={note.length} />
       {(unpicked || noLead) && (
         <p
           className={`question-hint${unpicked ? " unpicked" : ""}`}
@@ -566,7 +607,7 @@ export const WishQuestion = memo(function WishQuestion({
               onClick={triggerWithdraw}
             >
               <CircleOff size={14} aria-hidden="true" />
-              {t("question.withdraw")}
+              {t(isMock ? "question.cancel_nothing" : "question.withdraw")}
               <kbd className="key-hint" aria-hidden="true">
                 {mod}⇧⌫
               </kbd>
@@ -574,7 +615,7 @@ export const WishQuestion = memo(function WishQuestion({
             <span className="spacer" />
           </>
         )}
-        {onEnlighten && !digging && (
+        {onEnlighten && !digging && !isMock && (
           <button
             className={`button secondary lamp-enlighten${gesture === "enlighten" && pressed ? " is-pressed" : ""}`}
             title={`${t("question.enlighten_detail")} (${mod}⇧↵)`}
@@ -591,17 +632,17 @@ export const WishQuestion = memo(function WishQuestion({
         )}
         <span className="spacer" />
         <button
-          className={`button accent lamp-rub${gesture === "rub" && pressed ? " is-pressed" : ""}`}
+          className={`button accent lamp-rub kind-${kind}${gesture === "rub" && pressed ? " is-pressed" : ""}`}
           title={
-            choice === undefined
+            choice === undefined || !outcome
               ? t("question.rub_pick")
-              : `${t("question.rub_detail")} (↵)`
+              : `${outcomeTitle(outcome)} (↵)`
           }
           disabled={sending || choice === undefined}
           onClick={triggerRub}
         >
-          <Lamp size={14} />
-          {t("question.rub")}
+          <RubIcon size={14} />
+          {rubLabel}
           <kbd className="key-hint" aria-hidden="true">
             ↵
           </kbd>
@@ -848,9 +889,47 @@ export const WishQuestion = memo(function WishQuestion({
   );
 });
 
-// PlanLine is the task an option launches once picked, on one grey line: its title, cut short when long, then the
-// azima it belongs to, whole, by its code and title once the wish's tasks are read. Nothing for an option without a
-// plan.
+// outcomeTitle says what starts, how long it takes, and what comes back when an option is answered.
+function outcomeTitle(o: AnswerOutcome): string {
+  const title = o.plan ? o.plan.title || firstLine(o.plan.prompt) : "";
+  if (o.kind === "work") return t("question.outcome_build", { title });
+  if (o.kind === "mock")
+    return t("question.outcome_iterate", {
+      round: o.round ?? 1,
+      rounds: o.rounds ?? 1,
+      title,
+    });
+  if (o.kind === "inv") return t("question.outcome_investigate", { title });
+  if (o.whyLead === "last_round")
+    return t("question.outcome_lead_last_round", {
+      round: o.round ?? 1,
+      rounds: o.rounds ?? 1,
+    });
+  if (o.whyLead === "note") return t("question.outcome_lead_note", { title });
+  if (o.whyLead === "dependencies")
+    return t("question.outcome_lead_deps", { title });
+  return t("question.outcome_lead");
+}
+
+// NoteCounter shows a character count from 80 % of the limit (6400 / 8000), warming at 95 % (7600 / 8000).
+export function NoteCounter({
+  length,
+  max = NOTE_MAX,
+}: {
+  length: number;
+  max?: number;
+}) {
+  if (length < max * 0.8) return null;
+  return (
+    <span className={`note-count${length >= max * 0.95 ? " near" : ""}`}>
+      {length} / {max}
+    </span>
+  );
+}
+
+// PlanLine is the task an option launches once picked, on one tinted line: its verb (Builds, Mockup, Investigates)
+// and title, cut short when long, then the azima it belongs to, whole, by its code and title once the wish's tasks
+// are read. Nothing for an option without a plan.
 function PlanLine({
   question,
   plan,
@@ -867,12 +946,25 @@ function PlanLine({
     undefined,
   );
   if (!plan) return null;
+  const kind = planKind(plan);
   const title = plan.title || firstLine(plan.prompt);
   const part = azima ? `${azima.code} ${azima.title}`.trim() : "";
-  const text = t("question.plan_launches", { title });
+  const text = t(
+    kind === "mock"
+      ? "question.plan_mockup"
+      : kind === "inv"
+        ? "question.plan_investigates"
+        : "question.plan_builds",
+    { title },
+  );
+  const Icon =
+    kind === "mock" ? PencilRuler : kind === "inv" ? Telescope : Hammer;
   return (
-    <span className="option-plan" title={part ? `${text} · ${part}` : text}>
-      <CornerDownRight size={12} aria-hidden="true" />
+    <span
+      className={`option-plan kind-${kind}`}
+      title={part ? `${text} · ${part}` : text}
+    >
+      <Icon size={12} aria-hidden="true" />
       <span className="option-plan-text">{text}</span>
       {part && <span className="option-plan-azima">· {part}</span>}
     </span>

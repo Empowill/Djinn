@@ -240,12 +240,10 @@ test("the comments leave in one send, Iterate or Launch, and a launched tilasm g
   const view = panel.locator(".tilasm-view");
   const column = view.getByRole("complementary", { name: "Comments" });
   const launch = column.getByRole("button", { name: "Launch", exact: true });
-  const iterate = column.getByRole("button", { name: "Iterate", exact: true });
+  const iterate = column.getByRole("button", { name: /^Iterate/ });
   const word = column.getByRole("textbox", {
     name: "A comment on the whole tilasm, sent with the others",
   });
-  const confirm = column.getByRole("group", { name: "Confirm the send" });
-  const go = confirm.getByRole("button", { name: "Send to the Djinn" });
 
   // L01: a draft and a last word leave in one send, to iterate.
   await panel
@@ -268,16 +266,6 @@ test("the comments leave in one send, Iterate or Launch, and a launched tilasm g
   await expect(launch).toHaveAttribute("title", /recommended option/);
   await word.fill("And say what a granted wish does.");
   await iterate.click();
-  await expect(go).toBeFocused();
-  await expect(confirm).toContainText(
-    "The 2 comments on L01 · v1 leave for the Djinn in one send",
-  );
-  await page.keyboard.press("Escape");
-  await expect(confirm).toHaveCount(0);
-  await expect(view).not.toHaveClass(/\bfull\b/);
-  await iterate.click();
-  await expect(go).toBeFocused();
-  await page.keyboard.press("Enter");
   await expect(
     page.getByText("Send 1 left for the Djinn: it makes the next version."),
   ).toBeVisible();
@@ -359,10 +347,6 @@ test("the comments leave in one send, Iterate or Launch, and a launched tilasm g
   await view.locator(".tilasm-view-head .tilasm-comments-toggle").click();
   await expect(iterate).toBeDisabled();
   await launch.click();
-  await expect(confirm).toContainText(
-    `No comment: the question that links L02 gets its recommended option`,
-  );
-  await go.click();
   await expect(
     page.getByText(
       `${question} answered with its recommended option: the work launches.`,
@@ -1152,13 +1136,7 @@ test("a sent comment is read by the Djinn, replied with its tasks' state, and th
       name: "A comment on the whole tilasm, sent with the others",
     })
     .fill("And a paused wish?");
-  await column.getByRole("button", { name: "Iterate", exact: true }).click();
-  await expect(
-    column
-      .getByRole("group", { name: "Confirm the send" })
-      .getByRole("button", { name: "Send to the Djinn" }),
-  ).toBeFocused();
-  await page.keyboard.press("Enter");
+  await column.getByRole("button", { name: /^Iterate/ }).click();
   await expect(cards).toHaveCount(4);
   await expect(card("C1")).toContainText("Sent · send 1");
   await expect(card("C4")).toContainText("Sent · send 1");

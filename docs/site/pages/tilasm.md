@@ -96,17 +96,20 @@ before, and you comment the whole of it.
 
 ### Send them to the Djinn
 
-Nothing leaves until you send, and nothing costs before. At the foot of the column, write a last word on the whole
-tilasm if you like, then choose:
+Nothing leaves until you send, and nothing costs before. At the foot of the column, a line names what the open
+question's options start when a question links the tilasm. Write a last word on the whole tilasm if you like (up to
+8,000 characters), then choose in one click, in its worker's colour:
 
+- **Iterate** (or **Iterate · lead** when the send goes to the Djinn instead of starting a mockup round): the Djinn, or
+  the mockup task when the open question that links the tilasm has a [mockup](#mockup) option with rounds left, makes
+  the tilasm's next version as your comments say, and the question comes back with it.
 - **Launch**: the Djinn launches the work the tilasm explains, as your comments change it. With no comment at all,
-  Launch is your yes to the question that links the tilasm: it gets its recommended option, as approving it would.
-- **Iterate**: the Djinn makes the tilasm's next version, as your comments say. When the open question that links it
-  iterates on it with a [mockup](#mockup) option, your send starts that iteration: its mockup task reads your
-  comments, and the question comes back with the next version.
+  Launch is your yes to the question that links the tilasm: it gets its recommended option, as approving it would, and
+  starts its planned task at once when that option has one.
 
-A line confirms the send (Enter sends, Escape gives up). Every draft and your last word leave together, in one send:
-the Djinn reads them all at once, each with what it is on, and your choice.
+Every draft and your last word leave together, in one click, with no confirmation step: the Djinn reads them all at
+once, each with what it is on, and your choice, and a line at the foot says what left (the mockup round started, the
+planned task launched, or what was sent to the lead).
 
 A tilasm greys its comments and both buttons once its work was launched, or while a task works on it or makes its
 next version; a line says why, and which task or question. A send the Djinn has not read yet holds the buttons only.

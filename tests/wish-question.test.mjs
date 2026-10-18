@@ -1,5 +1,6 @@
 // A question's card (src/wish-question.tsx): its options, its gestures and keys, its links, its answer; the decision
 // log of a launched plan. Run with `go tool task test-ui`.
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -129,12 +130,12 @@ test("W100: an option with a planned task says on one grey line what it launches
     assert.equal(options.length, 3);
     assert.match(
       options[0],
-      /<p>Olive<\/p><span class="option-plan" title="Launches: Fill the lamp with olive oil · T58 Lighting"><svg[^>]*lucide-corner-down-right[^]*?<\/svg><span class="option-plan-text">Launches: Fill the lamp with olive oil<\/span><span class="option-plan-azima">· T58 Lighting<\/span><\/span><\/div>/,
+      /<p>Olive<\/p><span class="option-plan kind-work" title="Builds: Fill the lamp with olive oil · T58 Lighting"><svg[^>]*lucide-hammer[^]*?<\/svg><span class="option-plan-text">Builds: Fill the lamp with olive oil<\/span><span class="option-plan-azima">· T58 Lighting<\/span><\/span><\/div>/,
     );
     // Untitled, its prompt's first line; no azima, nothing after it.
     assert.match(
       options[1],
-      /<span class="option-plan-text">Launches: Buy paraffin<\/span><\/span><\/div>/,
+      /<span class="option-plan-text">Builds: Buy paraffin<\/span><\/span><\/div>/,
     );
     // An option without a plan says nothing.
     assert.doesNotMatch(options[2], /option-plan/);
@@ -145,7 +146,7 @@ test("W100: an option with a planned task says on one grey line what it launches
   );
   assert.match(
     alone,
-    /<span class="option-plan" title="Launches: Fill the lamp with olive oil">.*?<span class="option-plan-text">Launches: Fill the lamp with olive oil<\/span>/,
+    /<span class="option-plan kind-work" title="Builds: Fill the lamp with olive oil">.*?<span class="option-plan-text">Builds: Fill the lamp with olive oil<\/span>/,
   );
   assert.doesNotMatch(alone, /T58/);
   // A question without options: the plan of its yes, above the note.
@@ -159,7 +160,7 @@ test("W100: an option with a planned task says on one grey line what it launches
       onAnswer: async () => {},
     }),
   );
-  assert.match(yes, /Launches: Light the lamp<\/span><\/span><textarea/);
+  assert.match(yes, /Builds: Light the lamp<\/span><\/span><textarea/);
 });
 
 test("W100: an answer that launched its option's plan links the launched task on its own line in the decision log", () => {
@@ -263,11 +264,11 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.doesNotMatch(open, /Confirm/);
   assert.match(
     open,
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">A</,
   );
   assert.match(
     open,
-    /title="Answer with the selected option and your note \(↵\)"><svg[^]*?Rub the lamp<kbd class="key-hint" aria-hidden="true">↵<\/kbd><\/button>/,
+    /title="Goes to the lead: no option plan on this choice; the lead reads your answer and spawns what follows\. \(↵\)"><svg[^]*?To the lead<kbd class="key-hint" aria-hidden="true">↵<\/kbd><\/button>/,
   );
   // The recommendation is boxed first, its option marked.
   assert.ok(open.indexOf("Recommendation · A") < open.indexOf("Olive"));
@@ -326,10 +327,10 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.ok(
     lamp.indexOf("Withdraw question…") < lamp.indexOf(">Enlighten me<kbd"),
   );
-  assert.ok(lamp.indexOf(">Enlighten me<kbd") < lamp.indexOf("Rub the lamp"));
+  assert.ok(lamp.indexOf(">Enlighten me<kbd") < lamp.indexOf("To the lead"));
   assert.match(
     lamp,
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">B</,
   );
   assert.doesNotMatch(
     lamp,
@@ -355,7 +356,7 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.doesNotMatch(vague, /option selected/);
   assert.match(
     vague,
-    /title="Pick an option first" disabled=""><svg[^]*?Rub the lamp<kbd class="key-hint" aria-hidden="true">↵<\/kbd><\/button>/,
+    /title="Pick an option first" disabled=""><svg[^]*?To the lead<kbd class="key-hint" aria-hidden="true">↵<\/kbd><\/button>/,
   );
 
   // Being investigated, then revised: one line out of the way, which opens on its state, the note, the badge, the
@@ -559,7 +560,7 @@ test("a gesture presses its button and the card answers back in its colour", asy
   });
   let html = card.html();
   assert.match(html, /class="question-card open can-wait gesture-rub"/);
-  assert.match(html, /class="button accent lamp-rub is-pressed"/);
+  assert.match(html, /class="button accent lamp-rub kind-lead is-pressed"/);
   assert.match(
     html,
     /<span class="question-wisp" aria-hidden="true"><\/span><\/button>/,
@@ -572,7 +573,7 @@ test("a gesture presses its button and the card answers back in its colour", asy
   await card.settle();
   assert.deepEqual(answered, [s.Choice.A]);
   html = card.html();
-  assert.match(html, /class="button accent lamp-rub"/);
+  assert.match(html, /class="button accent lamp-rub kind-lead"/);
   assert.match(html, /gesture-rub/);
 
   // A click plays the same; Enlighten me plays its own, the wisp on its button.
@@ -690,7 +691,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   // 1. Initial state: option A is recommended and preselected.
   assert.match(
     card.html(),
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">A</,
   );
   assert.doesNotMatch(card.html(), /question-hint unpicked/);
 
@@ -705,7 +706,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   assert.ok(prevented);
   assert.match(
     card.html(),
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">B</,
   );
 
   card.one("question-card").onKeyDown({
@@ -714,7 +715,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">C</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">C</,
   );
 
   card.one("question-card").onKeyDown({
@@ -723,7 +724,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">B</,
   );
 
   card.one("question-card").onKeyDown({
@@ -732,7 +733,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">A</,
   );
 
   // Number keys 1-4 pick options
@@ -742,7 +743,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">D</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">D</,
   );
 
   card.one("question-card").onKeyDown({
@@ -751,7 +752,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     card.html(),
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">B</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">B</,
   );
 
   // Typing in the textarea
@@ -905,7 +906,7 @@ test("keyboard shortcuts on a question card: Enter, Shift+Enter, Ctrl+Enter, Enl
   });
   assert.match(
     cardNoRec.html(),
-    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</,
+    /<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">A</,
   );
   assert.doesNotMatch(cardNoRec.html(), /question-hint unpicked/);
 
@@ -1014,7 +1015,7 @@ test("a question reads top-down: its title, what is at stake folded, its report,
     "<textarea",
     "Withdraw question…",
     ">Enlighten me<kbd",
-    "Rub the lamp",
+    "To the lead",
   ].map(at);
   assert.deepEqual(
     order,
@@ -1042,7 +1043,7 @@ test("a question reads top-down: its title, what is at stake folded, its report,
   assert.match(
     html,
     new RegExp(
-      `<div class="option selected" role="button" tabindex="0" aria-pressed="true"><strong class="option-letter">A</strong><p>Done: I ran <span class="command"><code>djinn wish allow ${wishId} --mode auto</code><button type="button" class="copy-command" title="Copy the command" aria-label="Copy the command">`,
+      `<div class="option selected" role="button" tabindex="0" aria-pressed="true"[^>]*><strong class="option-letter">A</strong><p>Done: I ran <span class="command"><code>djinn wish allow ${wishId} --mode auto</code><button type="button" class="copy-command" title="Copy the command" aria-label="Copy the command">`,
     ),
   );
   assert.doesNotMatch(html, /<button class="option/);
@@ -1359,4 +1360,238 @@ test("a question iterating on its mockup waits for its mockup task, not for you:
   assert.match(folded, /question-card investigating {2}folded/);
   assert.match(folded, /You asked: Bigger icons/);
   assert.doesNotMatch(folded, /<textarea/);
+});
+
+test("L25 / Q77: the answer button names the worker that starts (Build, Iterate, Investigate, To the lead) in its colour, and a mockup option leaves Cancel · nothing starts and Iterate", () => {
+  const question = {
+    id: "q25",
+    code: "Q25",
+    wishId: "w1",
+    text: "Does the layout of L25 suit you?",
+    options: [
+      "Build it as shown",
+      "Iterate on the mockup",
+      "Investigate contrast first",
+      "Build after W10",
+      "Something else",
+    ],
+    recommendation: "A: ready to build.",
+    rounds: [],
+    plans: [
+      {
+        option: s.Choice.A,
+        title: "Build typed answer buttons",
+        kind: s.TaskKind.WORK,
+      },
+      {
+        option: s.Choice.B,
+        title: "Draw L25 v2",
+        kind: s.TaskKind.MOCKUP,
+        rounds: 3,
+      },
+      {
+        option: s.Choice.C,
+        title: "Audit contrast ratios",
+        kind: s.TaskKind.INVESTIGATION,
+      },
+      {
+        option: s.Choice.D,
+        title: "Build after W10",
+        kind: s.TaskKind.WORK,
+        after: ["t10"],
+      },
+    ],
+  };
+
+  // 1. Direct unit checks on answerOutcome for every server rule:
+  assert.deepEqual(s.answerOutcome(question, s.Choice.A, ""), {
+    kind: "work",
+    plan: question.plans[0],
+  });
+  assert.deepEqual(s.answerOutcome(question, s.Choice.A, "Use 14px icons"), {
+    kind: "lead",
+    plan: question.plans[0],
+    whyLead: "note",
+  });
+  assert.deepEqual(s.answerOutcome(question, s.Choice.B, ""), {
+    kind: "mock",
+    plan: question.plans[1],
+    round: 1,
+    rounds: 3,
+  });
+  // A note on a mockup option still iterates: the mockup worker reads the note.
+  assert.deepEqual(s.answerOutcome(question, s.Choice.B, "Softer amber"), {
+    kind: "mock",
+    plan: question.plans[1],
+    round: 1,
+    rounds: 3,
+  });
+  assert.deepEqual(s.answerOutcome(question, s.Choice.C, ""), {
+    kind: "inv",
+    plan: question.plans[2],
+  });
+  assert.deepEqual(s.answerOutcome(question, s.Choice.C, "Also check dark"), {
+    kind: "lead",
+    plan: question.plans[2],
+    whyLead: "note",
+  });
+  assert.deepEqual(s.answerOutcome(question, s.Choice.D, ""), {
+    kind: "lead",
+    plan: question.plans[3],
+    whyLead: "dependencies",
+  });
+  assert.deepEqual(s.answerOutcome(question, s.Choice.E, ""), {
+    kind: "lead",
+    whyLead: "no_plan",
+  });
+
+  // At the last mockup round (tour === rounds), answering the mockup option goes to the lead.
+  const lastRoundQuestion = {
+    ...question,
+    rounds: [
+      { kind: s.RoundKind.ITERATE, note: "v2" },
+      { kind: s.RoundKind.REVISE },
+      { kind: s.RoundKind.ITERATE, note: "v3" },
+      { kind: s.RoundKind.REVISE },
+    ],
+  };
+  assert.deepEqual(s.answerOutcome(lastRoundQuestion, s.Choice.B, ""), {
+    kind: "lead",
+    plan: question.plans[1],
+    whyLead: "last_round",
+    round: 3,
+    rounds: 3,
+  });
+
+  // 2. Rendered Question card: PlanLine verbs/tints and answer button transitions.
+  const card = live(s.WishQuestion, {
+    question,
+    onAnswer: async () => {},
+    onEnlighten: async () => {},
+    onWithdraw: () => {},
+  });
+
+  // Option A (work) is preselected: button is Build (kind-work, hammer), Enlighten me and Withdraw question… are present.
+  let html = card.html();
+  assert.match(
+    html,
+    /<span class="option-plan kind-work" title="Builds: Build typed answer buttons"><svg[^>]*lucide-hammer[^]*?<span class="option-plan-text">Builds: Build typed answer buttons<\/span><\/span>/,
+  );
+  assert.match(
+    html,
+    /<span class="option-plan kind-mock" title="Mockup: Draw L25 v2"><svg[^>]*lucide-pencil-ruler[^]*?<span class="option-plan-text">Mockup: Draw L25 v2<\/span><\/span>/,
+  );
+  assert.match(
+    html,
+    /<span class="option-plan kind-inv" title="Investigates: Audit contrast ratios"><svg[^>]*lucide-telescope[^]*?<span class="option-plan-text">Investigates: Audit contrast ratios<\/span><\/span>/,
+  );
+  assert.match(
+    html,
+    /class="button accent lamp-rub kind-work" title="Starts a work task \(Build typed answer buttons\) in its own worktree, ~5–15 min; lands in Review\. \(↵\)"><svg[^>]*lucide-hammer[^]*?Build<kbd/,
+  );
+  assert.match(html, /Withdraw question…/);
+  assert.match(html, /lamp-enlighten/);
+
+  // Typing a note on a work option switches the button to "To the lead" (kind-lead, lamp) with the note tooltip.
+  card.one("textarea").onChange({ target: { value: "Keep the border 1px" } });
+  html = card.html();
+  assert.match(
+    html,
+    /class="button accent lamp-rub kind-lead" title="Goes to the lead: your note lets the lead adjust the planned task \(Build typed answer buttons\) before launching it\. \(↵\)"><svg[^>]*lucide-lamp[^]*?To the lead<kbd/,
+  );
+  card.one("textarea").onChange({ target: { value: "" } });
+  assert.match(card.html(), /lamp-rub kind-work".*?Build<kbd/);
+
+  // Selecting option B (mockup): button is "Iterate · round 1/3" (kind-mock, pencil-ruler), Enlighten me is hidden,
+  // and Withdraw becomes "Cancel · nothing starts".
+  card.one("question-card").onKeyDown({ key: "2", preventDefault() {} });
+  html = card.html();
+  assert.match(
+    html,
+    /class="button accent lamp-rub kind-mock" title="Starts a mockup task \(Draw L25 v2\), round 1 of 3, ~2–5 min; puts the next version of the tilasm and revises this question\. \(↵\)"><svg[^>]*lucide-pencil-ruler[^]*?Iterate · round 1\/3<kbd/,
+  );
+  assert.doesNotMatch(html, /lamp-enlighten/);
+  assert.match(html, /Cancel · nothing starts/);
+  assert.doesNotMatch(html, /Withdraw question…/);
+
+  // Selecting option C (investigation): button is "Investigate" (kind-inv, telescope), Enlighten me and Withdraw question… return.
+  card.one("question-card").onKeyDown({ key: "3", preventDefault() {} });
+  html = card.html();
+  assert.match(
+    html,
+    /class="button accent lamp-rub kind-inv" title="Starts an investigation task \(Audit contrast ratios\) in read-only, ~2–5 min; comes back with a tilasm and a question\. \(↵\)"><svg[^>]*lucide-telescope[^]*?Investigate<kbd/,
+  );
+  assert.match(html, /lamp-enlighten/);
+  assert.match(html, /Withdraw question…/);
+
+  // Selecting option D (work with dependencies): button is "To the lead" (kind-lead) with dependencies tooltip.
+  card.one("question-card").onKeyDown({ key: "4", preventDefault() {} });
+  html = card.html();
+  assert.match(
+    html,
+    /class="button accent lamp-rub kind-lead" title="Goes to the lead: the planned task \(Build after W10\) has dependencies; the lead checks them and launches it\. \(↵\)"><svg[^>]*lucide-lamp[^]*?To the lead<kbd/,
+  );
+
+  // Selecting option E (no plan): button is "To the lead" (kind-lead).
+  card.one("question-card").onKeyDown({ key: "5", preventDefault() {} });
+  html = card.html();
+  assert.match(
+    html,
+    /class="button accent lamp-rub kind-lead" title="Goes to the lead: no option plan on this choice; the lead reads your answer and spawns what follows\. \(↵\)"><svg[^>]*lucide-lamp[^]*?To the lead<kbd/,
+  );
+});
+
+test("L25 / Q77: note and comment fields allow 8000 characters in the window and in the proto, and NoteCounter shows from 80 % (6400 / 8000) and warms at 95 % (7600 / 8000)", () => {
+  assert.equal(s.NOTE_MAX, 8000);
+
+  // Verify the window constant and the proto max_len rules agree on 8000.
+  const planProto = readFileSync(
+    new URL("../api/plan/v1/plan.proto", import.meta.url),
+    "utf8",
+  );
+  const tilasmProto = readFileSync(
+    new URL("../api/plan/v1/tilasm.proto", import.meta.url),
+    "utf8",
+  );
+  for (const msg of [
+    "QuestionServiceAnswerRequest",
+    "QuestionServiceEnlightenRequest",
+    "QuestionServiceWithdrawRequest",
+  ]) {
+    const block = planProto.match(
+      new RegExp(`message ${msg}\\s*\\{[\\s\\S]*?\\n\\}`),
+    )?.[0];
+    assert.ok(block, `${msg} in plan.proto`);
+    assert.match(
+      block,
+      new RegExp(
+        `string note = \\d+ \\[\\(buf\\.validate\\.field\\)\\.string\\.max_len = ${s.NOTE_MAX}\\];`,
+      ),
+      `${msg}.note max_len matches NOTE_MAX (${s.NOTE_MAX})`,
+    );
+  }
+  const putCommentBlock = tilasmProto.match(
+    /message TilasmServicePutCommentRequest\s*\{[\s\S]*?\n\}/,
+  )?.[0];
+  assert.ok(putCommentBlock, "TilasmServicePutCommentRequest in tilasm.proto");
+  assert.match(
+    putCommentBlock,
+    new RegExp(`max_len = ${s.NOTE_MAX}\\b`),
+    `TilasmServicePutCommentRequest.text max_len matches NOTE_MAX (${s.NOTE_MAX})`,
+  );
+
+  // NoteCounter stays hidden below 80 %, shows from 6400 / 8000, and adds .near from 95 % (7600 / 8000).
+  assert.equal(s.renderToStaticMarkup(h(s.NoteCounter, { length: 6399 })), "");
+  assert.equal(
+    s.renderToStaticMarkup(h(s.NoteCounter, { length: 6400 })),
+    '<span class="note-count">6400 / 8000</span>',
+  );
+  assert.equal(
+    s.renderToStaticMarkup(h(s.NoteCounter, { length: 7599 })),
+    '<span class="note-count">7599 / 8000</span>',
+  );
+  assert.equal(
+    s.renderToStaticMarkup(h(s.NoteCounter, { length: 7600 })),
+    '<span class="note-count near">7600 / 8000</span>',
+  );
 });

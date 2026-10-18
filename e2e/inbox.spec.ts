@@ -232,7 +232,7 @@ test("a source runs once plugged in from its project's panel; its assigned merge
         (w: { id: string }) => w.id === made.id,
       ).state,
     ).toBe("WISH_STATE_ACTIVE");
-    await grantCard.getByRole("button", { name: "Rub the lamp" }).click();
+    await grantCard.getByRole("button", { name: "To the lead" }).click();
     await expect
       .poll(
         () =>

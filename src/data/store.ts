@@ -47,6 +47,8 @@ import {
   TilasmSchema,
   type TilasmSendRead,
   TilasmSendReadSchema,
+  type TilasmSends,
+  TilasmSendsSchema,
 } from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound, unimplemented } from "./client";
 
@@ -82,6 +84,8 @@ export interface WishDetail {
   sent: TilasmComment[];
   // The sends on its tilasms the Djinn read, read with the drafts: computed by the server.
   reads: TilasmSendRead[];
+  // What an iterate or launch send does for each tilasm linked to an open question, read with the drafts: computed by the server.
+  sends: TilasmSends[];
   // Read at least once.
   loaded: boolean;
   // Totals from the server for paginated lists.
@@ -182,6 +186,7 @@ const EMPTY_DETAIL: WishDetail = {
   holds: [],
   sent: [],
   reads: [],
+  sends: [],
   loaded: false,
   loadedKinds: new Set<Change>(),
 };
@@ -509,6 +514,7 @@ export function createStore(
 
   function startReadKey(key: string) {
     inFlight.add(key);
+    inFlightChanges.delete(key);
     if (!loadedKeys.has(key)) {
       ensureSlowTimer(key);
     }
@@ -517,6 +523,7 @@ export function createStore(
   function finishReadKey(key: string, ok: boolean, notify = false) {
     inFlight.delete(key);
     inFlightPromises.delete(key);
+    inFlightChanges.delete(key);
     clearSlowTimer(key);
     if (ok) {
       const changed =
@@ -621,6 +628,9 @@ export function createStore(
   const loadingMore = new Set<string>();
   const pendingPrompts = new Map<string, Promise<string>>();
   const lastReadAt = new Map<string, number>();
+  // Incremental watch changes that arrived while a "${wishId}:${kind}" read was already in flight, re-applied when
+  // that read finishes so an older list snapshot does not overwrite a newer watch update.
+  const inFlightChanges = new Map<string, WishChanges[]>();
   // How long a read that failed waits before it is made again, by key: it doubles at each failure, up to a minute.
   const backoff = new Map<string, number>();
   // The store no longer follows djinn: a read that failed is not made again.
@@ -811,10 +821,19 @@ export function createStore(
       const next = { ...state.details };
       let touched = false;
       for (const [wishId, list] of changes) {
+        const eligible = details.find(([id]) => id === wishId)?.[1];
+        for (const k of CARRIED) {
+          const key = `${wishId}:${k}`;
+          if (inFlight.has(key) && !eligible?.has(k)) {
+            inFlightChanges.set(key, [
+              ...(inFlightChanges.get(key) ?? []),
+              ...list,
+            ]);
+          }
+        }
         const detail = next[wishId];
         if (!detail || (!detail.loaded && detail.loadedKinds.size === 0))
           continue;
-        const eligible = details.find(([id]) => id === wishId)?.[1];
         const mask: Partial<WishDetail> = {
           ...(eligible?.has(Change.TASK) ? { tasks: detail.tasks } : {}),
           ...(eligible?.has(Change.QUESTION)
@@ -880,28 +899,30 @@ export function createStore(
       update: (cur: WishDetail) => Partial<WishDetail>,
     ) => {
       const key = `${wishId}:${kind}`;
+      const queued = inFlightChanges.get(key);
       backoff.delete(key);
       finishReadKey(key, true);
       stale.get(wishId)?.delete(kind);
       const prevDetail = state.details[wishId] ?? EMPTY_DETAIL;
       const got = update(prevDetail);
-      const tasks = got.tasks ?? prevDetail.tasks;
-      const questions = got.questions
+      let tasks = got.tasks ?? prevDetail.tasks;
+      let questions = got.questions
         ? questionsAhead(prevDetail.questions, got.questions)
         : prevDetail.questions;
-      const blocks = got.blocks ?? prevDetail.blocks;
+      let blocks = got.blocks ?? prevDetail.blocks;
       const tilasms = got.tilasms ?? prevDetail.tilasms;
       const drafts = got.drafts ?? prevDetail.drafts;
       const holds = got.holds ?? prevDetail.holds;
       const sent = got.sent ?? prevDetail.sent;
       const readsList = got.reads ?? prevDetail.reads;
-      const tasksTotal =
+      const sends = got.sends ?? prevDetail.sends;
+      let tasksTotal =
         got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
-      const questionsTotal =
+      let questionsTotal =
         got.questionsTotal !== undefined
           ? got.questionsTotal
           : prevDetail.questionsTotal;
-      const blocksTotal =
+      let blocksTotal =
         got.blocksTotal !== undefined
           ? got.blocksTotal
           : prevDetail.blocksTotal;
@@ -924,6 +945,38 @@ export function createStore(
         loadedKinds.add(kind);
         kindsChanged = true;
       }
+      if (queued && queued.length > 0 && CARRIED.has(kind)) {
+        const mask: Partial<WishDetail> = {
+          ...(kind !== Change.TASK ? { tasks } : {}),
+          ...(kind !== Change.QUESTION ? { questions } : {}),
+          ...(kind !== Change.BLOCK ? { blocks } : {}),
+        };
+        const base: WishDetail = {
+          ...prevDetail,
+          tasks,
+          questions,
+          blocks,
+          tasksTotal,
+          questionsTotal,
+          blocksTotal,
+          loadedKinds,
+        };
+        const applied = queued.reduce((d, c) => apply(d, c, mask), base);
+        if (kind === Change.TASK) {
+          tasks = reconcile(TaskSchema, prevDetail.tasks, applied.tasks);
+          tasksTotal = applied.tasksTotal;
+        } else if (kind === Change.QUESTION) {
+          questions = reconcile(
+            QuestionSchema,
+            prevDetail.questions,
+            applied.questions,
+          );
+          questionsTotal = applied.questionsTotal;
+        } else if (kind === Change.BLOCK) {
+          blocks = reconcile(BlockSchema, prevDetail.blocks, applied.blocks);
+          blocksTotal = applied.blocksTotal;
+        }
+      }
       const nowLoaded =
         prevDetail.loaded || isWishFullyLoaded(wishId, loadedKinds);
       if (
@@ -936,6 +989,7 @@ export function createStore(
         holds === prevDetail.holds &&
         sent === prevDetail.sent &&
         readsList === prevDetail.reads &&
+        sends === prevDetail.sends &&
         tasksTotal === prevDetail.tasksTotal &&
         questionsTotal === prevDetail.questionsTotal &&
         blocksTotal === prevDetail.blocksTotal &&
@@ -957,6 +1011,7 @@ export function createStore(
         holds,
         sent,
         reads: readsList,
+        sends,
         loaded: nowLoaded,
         tasksTotal,
         questionsTotal,
@@ -1240,7 +1295,13 @@ export function createStore(
               .drafts({ wish: wishId }, call)
               .catch((error: unknown) => {
                 if (unimplemented(error))
-                  return { comments: [], holds: [], sent: [], reads: [] };
+                  return {
+                    comments: [],
+                    holds: [],
+                    sent: [],
+                    reads: [],
+                    sends: [],
+                  };
                 throw error;
               }),
           ]);
@@ -1255,6 +1316,12 @@ export function createStore(
               draftsRes.reads.every((r, i) =>
                 equals(TilasmSendReadSchema, r, cur.reads[i]),
               );
+            const resSends = draftsRes.sends ?? [];
+            const sameSends =
+              cur.sends.length === resSends.length &&
+              resSends.every((s, i) =>
+                equals(TilasmSendsSchema, s, cur.sends[i]),
+              );
             return {
               tilasms: reconcile(TilasmSchema, cur.tilasms, listRes.tilasms),
               drafts: reconcile(
@@ -1264,6 +1331,7 @@ export function createStore(
               ),
               holds: sameHolds ? cur.holds : draftsRes.holds,
               reads: sameReads ? cur.reads : draftsRes.reads,
+              sends: sameSends ? cur.sends : resSends,
               sent: reconcile(TilasmCommentSchema, cur.sent, draftsRes.sent),
             };
           };

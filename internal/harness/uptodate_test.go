@@ -41,12 +41,13 @@ func (in *integration) stopped(t *testing.T, task *planv1.Task) {
 	in.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_STOPPED))
 }
 
-// TestContinuedWorkerRebasesFirst (W250): a stopped task continued while its branch holds all of its target says
+// TestContinue_RebasesFirst (W250): a stopped task continued while its branch holds all of its target says
 // nothing of a rebase; continued once work went into the target, the first line of what its worker is told asks it to
 // rebase onto the target, listing what came in, and its events say it was asked. Once its branch holds the target,
 // after a tool's result, its events say it rebased, from which commit to which. Djinn touches no worktree.
-func TestContinuedWorkerRebasesFirst(t *testing.T) {
+func TestContinue_RebasesFirst(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	late := in.mustSpawn(t, in.wishID, "Late", "wait", nil)
 	in.follow(t, late.GetId())("its session", saidSession(late.GetId()))
@@ -104,11 +105,12 @@ func TestContinuedWorkerRebasesFirst(t *testing.T) {
 	}
 }
 
-// TestPausedWorkerRebasesPastThreshold (W250): a worker paused while work went into its target is asked to rebase on
+// TestResume_RebasesPastThreshold (W250): a worker paused while work went into its target is asked to rebase on
 // resuming only when its pause lasted PauseRebaseAfter or more: a message between two turns, the events saying it was
 // asked. A shorter pause says nothing; neither pause fails it for its silence (the Lamplighter skips a paused worker).
-func TestPausedWorkerRebasesPastThreshold(t *testing.T) {
+func TestResume_RebasesPastThreshold(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	held := in.mustSpawn(t, in.wishID, "Held", "wait\ntext told", nil)
 	in.follow(t, held.GetId())("its session", saidSession(held.GetId()))
@@ -144,6 +146,7 @@ func TestPausedWorkerRebasesPastThreshold(t *testing.T) {
 
 // TestRebaseText: the rebase line lists what came in, the newest first, as W184's message does: twenty at most.
 func TestRebaseText(t *testing.T) {
+	t.Parallel()
 	subjects := make([]string, repairedSubjects+3)
 	for i := range subjects {
 		subjects[i] = fmt.Sprintf("commit %d", i)

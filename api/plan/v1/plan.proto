@@ -2397,7 +2397,7 @@ message Answer {
 // The withdrawal of an open question: closed without an answer, not a decision.
 message Withdrawal {
   // Why the question was withdrawn.
-  string note = 1 [(buf.validate.field).string.max_len = 2000];
+  string note = 1 [(buf.validate.field).string.max_len = 8000];
   // When the question was withdrawn.
   google.protobuf.Timestamp create_time = 2;
   // Who withdrew: the developer, the lead, or a worker (task_id).
@@ -2540,7 +2540,7 @@ message QuestionServiceEnlightenRequest {
   // The question: its code, like Q03, or its identifier.
   QuestionRef question = 1 [(buf.validate.field).required = true];
   // What to dig into before deciding.
-  string note = 2 [(buf.validate.field).string.max_len = 2000];
+  string note = 2 [(buf.validate.field).string.max_len = 8000];
   // Wish of the question, needed only when its code exists in several wishes.
   string wish_id = 3 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
@@ -2703,7 +2703,7 @@ message QuestionServiceAnswerRequest {
     (buf.validate.field).enum.defined_only = true
   ];
   // Why this choice, or what to do with it.
-  string note = 3 [(buf.validate.field).string.max_len = 2000];
+  string note = 3 [(buf.validate.field).string.max_len = 8000];
   // Wish of the question, needed only when its code exists in several wishes.
   string wish_id = 4 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
@@ -2800,7 +2800,7 @@ message QuestionServiceWithdrawRequest {
   // The question to withdraw: its code, like Q03, or its identifier.
   QuestionRef question = 1 [(buf.validate.field).required = true];
   // Why the question was withdrawn.
-  string note = 2 [(buf.validate.field).string.max_len = 2000];
+  string note = 2 [(buf.validate.field).string.max_len = 8000];
   // Wish of the question, needed only when its code exists in several wishes.
   string wish_id = 3 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,

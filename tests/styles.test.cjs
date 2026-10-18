@@ -172,6 +172,24 @@ test("the status colours keep their contrast in the dark and the light theme", (
           `${name}: ${state} on ${ground} reads at ${r.toFixed(2)}:1`,
         );
       }
+    const kinds = ["k-work", "k-mock", "k-inv", "k-lead"];
+    const ink = rgb(theme["k-ink"]);
+    for (const kind of kinds) {
+      const tone = rgb(theme[kind]);
+      const solid = ratio(ink, tone);
+      assert.ok(
+        solid >= 4.5,
+        `${name}: k-ink on ${kind} reads at ${solid.toFixed(2)}:1`,
+      );
+      for (const ground of theme.grounds) {
+        const tint = mix(tone, rgb(ground), 0.1);
+        const r = ratio(tone, tint);
+        assert.ok(
+          r >= 4.5,
+          `${name}: ${kind} on 10% tint over ${ground} reads at ${r.toFixed(2)}:1`,
+        );
+      }
+    }
   }
 });
 
@@ -664,6 +682,7 @@ test("every class of the stylesheets is used by a component", () => {
     /^tone-/, // status.tsx and the task, wish and plan lines: tone-${tone}
     /^level-/, // attention.tsx: level-${item.level}
     /^kind-\d+$/, // wish-task.tsx: kind-${event.kind}, a TaskEvent kind
+    /^kind-(?:work|mock|inv|lead)$/, // wish-question.tsx, tilasm-comments.tsx: kind-${kind}, a worker's kind
     /^work-/, // wish-task.tsx: work-${work.tone}, where a task's work stands
     /^wish-duo-[slem]$/, // wish-icon.tsx: wish-duo-${duo}, the colours of a wish icon of the bank
     /^lucide$/, // lucide-react's icons carry it (styles.css sizes them in rem)

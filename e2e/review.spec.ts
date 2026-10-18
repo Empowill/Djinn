@@ -393,7 +393,7 @@ test("a question is enlightened, revised by its investigator and on the flying c
 
     // Rub the lamp: one click answers with the option selected, here the recommended one, and the lead reads it from
     // the command line.
-    await onCarpet.getByRole("button", { name: "Rub the lamp" }).click();
+    await onCarpet.getByRole("button", { name: "To the lead" }).click();
     await expect(onCarpet).toHaveCount(0);
     const [q01] = JSON.parse(
       djinn("question", "list", "--wish-id", wishId, "--json"),

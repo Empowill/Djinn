@@ -86,7 +86,7 @@ corners, and back. On the rail, never on a background:
 The **Summoning Circle**, below the Grimoire in the side panel, chooses for each kind of worker which model answers the
 call across all projects: **Djinn (lead)** first, then **Investigation**, **Mockup**, **Ifrit**, **Work**, **Merge
 correction**, **Merge review**, and **Question investigator**. Each dropdown lists each model once by its human-readable
-label (such as Gemini 4 Argon (High)) while storing and sending its canonical model identifier (gemini-4-argon-high).
+label (such as **Gemini 4 Argon (High)**) while storing and sending its canonical model identifier.
 Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes.
 
 ### The personal space

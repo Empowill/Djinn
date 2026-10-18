@@ -6,6 +6,7 @@
 import { Check, Clock, MessageSquare, Send, Terminal, X } from "lucide-react";
 import {
   type KeyboardEvent,
+  type RefObject,
   useEffect,
   useId,
   useLayoutEffect,
@@ -18,9 +19,46 @@ import { useClients, useStore } from "./data/djinn";
 import { EyePerch, useEyeLead } from "./djinn-eye";
 import { t } from "./i18n";
 import { useInstructionDraft } from "./instruction-draft";
+import { onTextSize } from "./text-size";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { WorkspaceAction } from "./workspace-action";
 import "./instruction.css";
+
+// Auto-grows a textarea up to its CSS max-height, then scrolls inside.
+export function useGrowTextarea(
+  box: RefObject<HTMLTextAreaElement | null>,
+  text: string,
+  active = true,
+) {
+  useLayoutEffect(() => {
+    if (!active) return;
+    const textarea = box.current;
+    if (!textarea) return;
+
+    const resize = () => {
+      textarea.style.height = "auto";
+      textarea.style.overflowY = "hidden";
+      const maxHeight =
+        typeof window !== "undefined" &&
+        typeof window.getComputedStyle === "function"
+          ? Number.parseFloat(window.getComputedStyle(textarea).maxHeight)
+          : Number.NaN;
+      const height = Number.isFinite(maxHeight)
+        ? Math.min(textarea.scrollHeight, maxHeight)
+        : textarea.scrollHeight;
+      textarea.style.height = `${height}px`;
+      textarea.style.overflowY =
+        textarea.scrollHeight > height ? "auto" : "hidden";
+    };
+    resize();
+    const stopTextSize = onTextSize(resize);
+    window.addEventListener("resize", resize);
+    return () => {
+      stopTextSize();
+      window.removeEventListener("resize", resize);
+    };
+  }, [box, text, active]);
+}
 
 export function LeadMessage({
   wishId = "",
@@ -71,28 +109,7 @@ export function LeadMessage({
     );
     return () => window.cancelAnimationFrame(frame);
   }, [open, wishId, id]);
-  useLayoutEffect(() => {
-    if (!open) return;
-    const textarea = box.current;
-    if (!textarea) return;
-
-    const resize = () => {
-      textarea.style.height = "auto";
-      textarea.style.overflowY = "hidden";
-      const maxHeight = Number.parseFloat(
-        window.getComputedStyle(textarea).maxHeight,
-      );
-      const height = Number.isFinite(maxHeight)
-        ? Math.min(textarea.scrollHeight, maxHeight)
-        : textarea.scrollHeight;
-      textarea.style.height = `${height}px`;
-      textarea.style.overflowY =
-        textarea.scrollHeight > height ? "auto" : "hidden";
-    };
-    resize();
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, [open, state.text]);
+  useGrowTextarea(box, state.text, open);
   useEffect(() => {
     const keys = (event: globalThis.KeyboardEvent) => {
       if (
