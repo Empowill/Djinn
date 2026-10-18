@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -136,28 +139,74 @@ type watchEnv struct {
 	fetched []string
 	fail    error
 	clock   time.Time
+	stamp   time.Time
+	commits int
 }
 
 func newWatchEnv(t *testing.T, files map[string]string) *watchEnv {
 	t.Helper()
-	e := &watchEnv{t: t, home: t.TempDir(), clock: time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)}
-	e.c = serve(t, WithHome(e.home))
-	dir := configProject(t, files).GetDirectory()
-	res, err := e.c.projects.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
-	if err != nil {
-		t.Fatal(err)
+	dir := resolvedTempDir(t)
+	gitIn(t, dir, "init", "-q", "-b", "main")
+	writeFileAt(t, filepath.Join(dir, ".git", "config"), "[remote \"origin\"]\n\turl = https://example.com/repo.git\n")
+	e := &watchEnv{
+		t:       t,
+		home:    t.TempDir(),
+		project: &planv1.Project{Id: store.NewID(), Name: "repo", Directory: dir, Git: true},
+		clock:   time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC),
+		stamp:   time.Now().Add(-time.Hour),
 	}
-	e.project = res.Msg.GetProject()
+	e.c = serve(t, WithHome(e.home))
+	e.c.put(t, e.project)
+	e.commit(files)
 	return e
 }
 
-// commit commits files in the project's repository, and moves origin/main to it, as a fetch would.
-func (e *watchEnv) commit(files map[string]string) string {
+// commit commits each of commits in the project's repository, and moves origin/main to the last, as a fetch would.
+func (e *watchEnv) commit(commits ...map[string]string) string {
 	e.t.Helper()
-	for name, content := range files {
-		writeFileAt(e.t, filepath.Join(e.project.GetDirectory(), filepath.FromSlash(name)), content)
+	return e.commitOn("refs/remotes/origin/main", commits...)
+}
+
+// commitOn commits each of commits on main in one git fast-import, moves ref to the last, and ages .git past
+// configSettle so ProjectConfig caches between commits (W421).
+func (e *watchEnv) commitOn(ref string, commits ...map[string]string) string {
+	e.t.Helper()
+	dir := e.project.GetDirectory()
+	var stream strings.Builder
+	for i, files := range commits {
+		e.commits++
+		fmt.Fprintf(&stream, "commit refs/heads/main\nmark :1\ncommitter t <t@example.com> %d +0000\ndata 6\nconfig\n",
+			1700000000+e.commits)
+		if i == 0 && e.commits > 1 {
+			stream.WriteString("from refs/heads/main^0\n")
+		}
+		for _, name := range slices.Sorted(maps.Keys(files)) {
+			content := files[name]
+			fmt.Fprintf(&stream, "M 100644 inline %s\ndata %d\n%s\n", name, len(content), content)
+		}
 	}
-	return commitAs(e.t, e.project.GetDirectory(), "refs/remotes/origin/main")
+	fmt.Fprintf(&stream, "reset %s\nfrom :1\n\nget-mark :1\n", ref)
+	cmd := exec.Command("git", "-C", dir, "-c", "maintenance.auto=false", "fast-import", "--quiet")
+	cmd.Stdin = strings.NewReader(stream.String())
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		e.t.Fatalf("git fast-import: %v: %s", err, out)
+	}
+	e.ageGit()
+	return strings.TrimSpace(string(out))
+}
+
+func (e *watchEnv) ageGit() {
+	e.t.Helper()
+	e.stamp = e.stamp.Add(time.Second)
+	gitDir := filepath.Join(e.project.GetDirectory(), ".git")
+	_ = os.Chtimes(filepath.Join(gitDir, "config"), e.stamp, e.stamp)
+	_ = filepath.WalkDir(filepath.Join(gitDir, "refs", "remotes"), func(path string, d os.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			_ = os.Chtimes(path, e.stamp, e.stamp)
+		}
+		return nil
+	})
 }
 
 func (e *watchEnv) look() {
@@ -297,14 +346,12 @@ func TestLookAtConfigManyCommits(t *testing.T) {
 	t.Parallel()
 	e := newWatchEnv(t, map[string]string{".agents/permissions.txtpb": "commands: \"c0\"\n"})
 	e.look()
-	// One git per commit, origin/main moved once: four per commit made it pass 20 s on Windows (W396).
-	n := configCommitsMax + 3
-	dir := e.project.GetDirectory()
-	for i := 1; i <= n; i++ {
-		writeFileAt(t, filepath.Join(dir, ".agents", "permissions.txtpb"), fmt.Sprintf("commands: \"c%d\"\n", i))
-		gitIn(t, dir, "commit", "-q", "-a", "-m", "config")
+	// All commits in one git fast-import: spawning one git per commit made it pass 20 s on Windows (W396, W421).
+	commits := make([]map[string]string, configCommitsMax+3)
+	for i := range commits {
+		commits[i] = map[string]string{".agents/permissions.txtpb": fmt.Sprintf("commands: \"c%d\"\n", i+1)}
 	}
-	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+	e.commit(commits...)
 	e.look()
 	changes, err := ProjectChanges(t.Context(), e.c.store, e.project.GetId())
 	if err != nil {
@@ -347,13 +394,11 @@ func TestLookAtConfigBranchChange(t *testing.T) {
 	t.Parallel()
 	e := newWatchEnv(t, map[string]string{".agents/settings.txtpb": "setup: \"npm ci\"\n"})
 	e.look()
-	dir := e.project.GetDirectory()
-	gitIn(t, dir, "checkout", "-q", "-b", "dev")
-	e.commit(map[string]string{".agents/settings.txtpb": "setup: \"make\"\n"})
-	gitIn(t, dir, "update-ref", "refs/remotes/origin/dev", "HEAD")
+	e.commitOn("refs/remotes/origin/dev", map[string]string{".agents/settings.txtpb": "setup: \"make\"\n"})
 	if err := SaveDeveloperMainBranch(e.home, e.project.GetId(), "dev"); err != nil {
 		t.Fatal(err)
 	}
+	_ = os.Chtimes(DeveloperSettingsFile(e.home, e.project.GetId()), e.stamp, e.stamp)
 	e.fetched = nil
 	e.look()
 	if !slices.Equal(e.fetched, []string{"refs/remotes/origin/dev"}) {

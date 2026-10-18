@@ -255,6 +255,11 @@ func firstChanges(ctx context.Context, home string, project *planv1.Project, con
 		warnOnce(config.Folder, "read the history of the configuration", err)
 		return nil
 	}
+	var shas []string
+	for _, c := range commits {
+		shas = append(shas, c.parent, c.sha)
+	}
+	_ = extractConfigs(ctx, home, config.Folder, shas...)
 	none := func(string) bool { return false }
 	var out []*planv1.ConfigChange
 	for _, c := range commits {
@@ -299,6 +304,14 @@ func commitChanges(ctx context.Context, home string, project *planv1.Project, la
 	if len(commits) > configCommitsMax {
 		kept, older = commits[:configCommitsMax], commits[configCommitsMax:]
 	}
+	var shas []string
+	for _, c := range kept {
+		shas = append(shas, c.parent, c.sha)
+	}
+	if len(older) > 0 {
+		shas = append(shas, last.GetCommit())
+	}
+	_ = extractConfigs(ctx, home, config.Folder, shas...)
 	for _, c := range kept {
 		change, err := commitChange(ctx, home, project, config, c, plugged, now)
 		if err != nil {
