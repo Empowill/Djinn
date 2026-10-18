@@ -1246,7 +1246,7 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 				return "Djinn could not try again: " + err.Error(), true
 			}
 			settings.CorrectionAttempts = max(settings.CorrectionAttempts, 1)
-			c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, 1, committed)
+			c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, 1)
 			if err != nil {
 				logx.L().Error("start a push correction", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID,
 					"branch", branch, "err", err)
