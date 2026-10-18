@@ -54,7 +54,7 @@ func TestReadSettings(t *testing.T) {
 		}
 		for _, model := range []string{
 			"claude-sonnet-4-5-20250929", "us.anthropic.claude-opus-4-1-20250805-v1:0", "opus[1m]",
-			"Gemini 4 Argon (High)", "gemini-4-argon-high",
+			"gemini-4-argon-high",
 		} {
 			writeSettings(t, path, "model: \""+model+"\"\nquestion_model: \""+model+"\"\n")
 			if s, err := ReadSettings(path); err != nil || s.GetModel() != model || s.GetQuestionModel() != model {
@@ -111,6 +111,8 @@ func TestReadSettings(t *testing.T) {
 			"provider: PROVIDER_UNSPECIFIED\n",
 			"max_budget_usd: -1\n",
 			"model: \"opus; rm -rf /\"\n",
+			"model: \"Gemini 4 Argon (High)\"\n",
+			"question_model: \"Gemini 4 Argon (High)\"\n",
 			"branch: \"\"\n",
 			"branch: \"{code}-{slug}\"\n",
 			"branch: \"{code}-{ticket}-{uuid8}\"\n",
@@ -842,11 +844,14 @@ func TestProjectShow(t *testing.T) {
 	writeSettings(t, repoFile, "provider: PROVIDER_CLAUDE\nmodel: \"opus\"\nmax_budget_usd: 3\nbranch: \"djinn/{code}-{uuid8}\"\n"+
 		"generated: \"gen/**\"\ngenerated: \"docs/schema.json\"\ngenerate: \"go tool task gen\"\ntest: \"go tool task test\"\ncorrection_attempts: 3\ninstall: \"go tool task install\"\n")
 	writeSettings(t, devFile, "model: \"sonnet\"\nbranch: \"me/{slug}-{uuid8}\"\ntest: \"go tool task test-go\"\n")
-	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
+	if got, want := rows(show()), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
 		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
+	}
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-sonnet-5-5" {
+		t.Errorf("migrated work seat = (%v, %q, %v); want (PROVIDER_CLAUDE, claude-sonnet-5-5, true)", p, m, ok)
 	}
 
 	// A malformed file is a problem shown, not a failure: the other file still counts.
@@ -956,9 +961,10 @@ func TestChecksBrief(t *testing.T) {
 	}
 }
 
-// TestProjectSetDefaults (W383): ProjectService.SetDefaults writes the developer's default provider, model, and
-// question_model, validates provider and model before writing, and ProjectService.Show reflects it at once.
-func TestProjectSetDefaults(t *testing.T) {
+// TestLeadCircleAndMigration (W400): LeadService.GetCircle and SetCircle configure the global Summoning Circle by
+// canonical model ID across all worker kinds, "Same as lead" follows lead changes, labels with spaces are refused,
+// and an existing per-project developer settings file migrates once and drops its model fields.
+func TestLeadCircleAndMigration(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	st, err := store.Open(ctx, "", Entities()...)
@@ -968,126 +974,117 @@ func TestProjectSetDefaults(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	home := t.TempDir()
-	repo := t.TempDir()
-	writeSettings(t, filepath.Join(repo, ".agents", "settings.txtpb"),
-		"provider: PROVIDER_CLAUDE\nmodel: \"sonnet\"\nquestion_model: \"haiku\"\n")
+	wishes := &Wishes{Store: st, Home: home}
+	lead := &LeadService{Wishes: wishes}
 
-	projects := &Projects{Store: st, Home: home}
-	added, err := projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{
-		Directory: repo, Name: "lamp",
-	}))
+	// 1. Fresh circle: lead defaults to claude-sonnet-5-5; every other row is "Same as lead" (empty).
+	initRes, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("GetCircle: %v", err)
 	}
-	projectID := added.Msg.GetProject().GetId()
-
-	settingMap := func(rows []*planv1.ProjectSetting) map[string]*planv1.ProjectSetting {
-		m := make(map[string]*planv1.ProjectSetting, len(rows))
-		for _, r := range rows {
-			m[r.GetName()] = r
+	if len(initRes.Msg.GetRows()) != len(CircleRowOrder) {
+		t.Fatalf("len(rows) = %d, want %d", len(initRes.Msg.GetRows()), len(CircleRowOrder))
+	}
+	for i, row := range initRes.Msg.GetRows() {
+		if row.GetKind() != CircleRowOrder[i] {
+			t.Errorf("row %d kind = %v, want %v", i, row.GetKind(), CircleRowOrder[i])
 		}
-		return m
+		if i == 0 {
+			if row.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || row.GetModel() != "claude-sonnet-5-5" {
+				t.Errorf("lead row = %v, want claude / claude-sonnet-5-5", row)
+			}
+		} else if row.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || row.GetModel() != "" {
+			t.Errorf("row %v = %v, want Same as lead (unspecified / empty)", row.GetKind(), row)
+		}
 	}
 
-	// 1. Set Antigravity with "Gemini 4 Argon (High)" and question_model "sonnet".
-	agy := planv1.Provider_PROVIDER_ANTIGRAVITY
-	res, err := projects.SetDefaults(ctx, connect.NewRequest(&planv1.ProjectServiceSetDefaultsRequest{
-		Project:       "lamp",
-		Provider:      &agy,
-		Model:         proto.String("Gemini 4 Argon (High)"),
-		QuestionModel: proto.String("sonnet"),
+	// 2. Old per-project developer file with a human-readable label migrates once to canonical IDs and drops its model lines.
+	devFile := DeveloperSettingsFile(home, "proj-1")
+	writeSettings(t, devFile, "provider: PROVIDER_ANTIGRAVITY\nmodel: \"Gemini 4 Argon (High)\"\nquestion_model: \"haiku\"\npush: PROJECT_PUSH_ON_DEMAND\n")
+
+	migRes, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
+	if err != nil {
+		t.Fatalf("GetCircle after devFile write: %v", err)
+	}
+	byKind := make(map[planv1.WorkerKind]*planv1.WorkerSeat)
+	for _, r := range migRes.Msg.GetRows() {
+		byKind[r.GetKind()] = r
+	}
+	if got := byKind[planv1.WorkerKind_WORKER_KIND_WORK]; got.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || got.GetModel() != "gemini-4-argon-high" {
+		t.Errorf("migrated work row = %v, want antigravity / gemini-4-argon-high", got)
+	}
+	if got := byKind[planv1.WorkerKind_WORKER_KIND_QUESTION]; got.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || got.GetModel() != "claude-haiku-5-5" {
+		t.Errorf("migrated question row = %v, want claude / claude-haiku-5-5", got)
+	}
+	rem, err := ReadSettings(devFile)
+	if err != nil {
+		t.Fatalf("ReadSettings(devFile) after migration: %v", err)
+	}
+	if rem.Provider != nil || rem.Model != nil || rem.QuestionProvider != nil || rem.QuestionModel != nil {
+		t.Errorf("devFile still holds model fields after migration: %v", rem)
+	}
+	if rem.GetPush() != planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND {
+		t.Errorf("devFile lost push setting during migration: %v", rem)
+	}
+
+	// 3. SetCircle sets lead to codex / gpt-5.5-codex, work to "Same as lead", and review to claude-opus-5-8; work follows the lead.
+	if _, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
+		Provider: planv1.Provider_PROVIDER_CODEX,
+		Model:    "gpt-5.5-codex",
+	})); err != nil {
+		t.Fatalf("SetCircle lead: %v", err)
+	}
+	if _, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind: planv1.WorkerKind_WORKER_KIND_WORK,
+	})); err != nil {
+		t.Fatalf("SetCircle work: %v", err)
+	}
+	setRes, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind:     planv1.WorkerKind_WORKER_KIND_REVIEW,
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+		Model:    "claude-opus-5-8",
 	}))
 	if err != nil {
-		t.Fatalf("SetDefaults(antigravity, Gemini 4 Argon (High)): %v", err)
+		t.Fatalf("SetCircle review: %v", err)
 	}
-	if res.Msg.GetDeveloperFile() != DeveloperSettingsFile(home, projectID) {
-		t.Errorf("developer_file = %q, want %q", res.Msg.GetDeveloperFile(), DeveloperSettingsFile(home, projectID))
+	byKind = make(map[planv1.WorkerKind]*planv1.WorkerSeat)
+	for _, r := range setRes.Msg.GetRows() {
+		byKind[r.GetKind()] = r
 	}
-	devSettings, err := ReadSettings(res.Msg.GetDeveloperFile())
-	if err != nil {
-		t.Fatalf("ReadSettings(developer_file): %v", err)
+	if got := byKind[planv1.WorkerKind_WORKER_KIND_WORK]; got.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || got.GetModel() != "" {
+		t.Errorf("work row = %v, want Same as lead", got)
 	}
-	if devSettings.GetProvider() != agy || devSettings.GetModel() != "Gemini 4 Argon (High)" || devSettings.GetQuestionModel() != "sonnet" {
-		t.Errorf("written developer file = %v", devSettings)
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CODEX || m != "gpt-5.5-codex" {
+		t.Errorf("work seat following lead = (%v, %q, %v), want (CODEX, gpt-5.5-codex, true)", p, m, ok)
 	}
-
-	// ProjectService.Show reflects it at once.
-	shown, err := projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "lamp"}))
-	if err != nil {
-		t.Fatalf("Show: %v", err)
-	}
-	rows := settingMap(shown.Msg.GetSettings())
-	if got := rows["provider"]; got.GetValue() != "antigravity" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
-		t.Errorf("show provider = %v", got)
-	}
-	if got := rows["model"]; got.GetValue() != "Gemini 4 Argon (High)" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
-		t.Errorf("show model = %v", got)
-	}
-	if got := rows["question_model"]; got.GetValue() != "sonnet" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
-		t.Errorf("show question_model = %v", got)
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_REVIEW); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-opus-5-8" {
+		t.Errorf("review seat = (%v, %q, %v), want (CLAUDE, claude-opus-5-8, true)", p, m, ok)
 	}
 
-	// 2. Switching provider without --model resets model to "" (provider's own default).
-	codex := planv1.Provider_PROVIDER_CODEX
-	res, err = projects.SetDefaults(ctx, connect.NewRequest(&planv1.ProjectServiceSetDefaultsRequest{
-		Project:  "lamp",
-		Provider: &codex,
-	}))
-	if err != nil {
-		t.Fatalf("SetDefaults(codex): %v", err)
+	// Moving the lead updates what "Same as lead" resolves to.
+	if _, err := lead.Move(ctx, connect.NewRequest(&planv1.LeadServiceMoveRequest{
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+		Model:    "claude-opus-5-8",
+	})); err != nil {
+		t.Fatalf("Move lead: %v", err)
 	}
-	rows = settingMap(res.Msg.GetSettings())
-	if got := rows["provider"]; got.GetValue() != "codex" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
-		t.Errorf("codex provider = %v", got)
-	}
-	if got := rows["model"]; got.GetValue() != "" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
-		t.Errorf("codex model = %v, want empty from developer", got)
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-opus-5-8" {
+		t.Errorf("work seat after lead Move = (%v, %q, %v), want (CLAUDE, claude-opus-5-8, true)", p, m, ok)
 	}
 
-	// 3. Refusal of unknown, foreign, or ill-formed models and invalid flags.
-	claude := planv1.Provider_PROVIDER_CLAUDE
-	watch := planv1.Provider_PROVIDER_WATCH
-	fake := planv1.Provider_PROVIDER_FAKE
-	for _, bad := range []*planv1.ProjectServiceSetDefaultsRequest{
-		{Project: "lamp"},
-		{Project: "lamp", Provider: &claude, Unset: true},
-		{Project: "lamp", Provider: &watch},
-		{Project: "lamp", Provider: &fake},
-		{Project: "lamp", Provider: &claude, Model: proto.String("unknown-model-xyz")},
-		{Project: "lamp", Provider: &claude, Model: proto.String("gpt-5.5")},
-		{Project: "lamp", Provider: &claude, Model: proto.String("Gemini 4 Argon (High)")},
-		{Project: "lamp", Provider: &agy, Model: proto.String("opus")},
-		{Project: "lamp", Provider: &codex, Model: proto.String("sonnet")},
-		{Project: "lamp", Provider: &claude, Model: proto.String("opus; rm -rf /")},
-		{Project: "lamp", Provider: &claude, Model: proto.String("   ")},
-		{Project: "lamp", Provider: &claude, QuestionModel: proto.String("gpt-5.5")},
-		{Project: "lamp", Provider: &claude, QuestionModel: proto.String("not-a-model")},
+	// 4. SetCircle refuses unspecified kind, labels with spaces, foreign models, unknown models, and Antigravity for lead or question.
+	for _, bad := range []*planv1.LeadServiceSetCircleRequest{
+		{Kind: planv1.WorkerKind_WORKER_KIND_UNSPECIFIED, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "claude-sonnet-5-5"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "Gemini 4 Argon (High)"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "Claude Sonnet 5.5"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "gemini-4-argon-high"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_QUESTION, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "gemini-4-argon-high"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "gpt-5.5"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "unknown-model-xyz"},
 	} {
-		if _, err := projects.SetDefaults(ctx, connect.NewRequest(bad)); err == nil {
-			t.Errorf("SetDefaults(%v): succeeded, want error", bad)
+		if _, err := lead.SetCircle(ctx, connect.NewRequest(bad)); err == nil {
+			t.Errorf("SetCircle(%v): succeeded, want error", bad)
 		}
-	}
-	// File remains valid and unchanged after refused requests.
-	if s, err := ReadSettings(DeveloperSettingsFile(home, projectID)); err != nil || s.GetProvider() != codex {
-		t.Errorf("after refused calls: %v, %v", s, err)
-	}
-
-	// 4. --unset restores repository settings.
-	res, err = projects.SetDefaults(ctx, connect.NewRequest(&planv1.ProjectServiceSetDefaultsRequest{
-		Project: "lamp",
-		Unset:   true,
-	}))
-	if err != nil {
-		t.Fatalf("SetDefaults(--unset): %v", err)
-	}
-	rows = settingMap(res.Msg.GetSettings())
-	if got := rows["provider"]; got.GetValue() != "claude" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
-		t.Errorf("after unset provider = %v", got)
-	}
-	if got := rows["model"]; got.GetValue() != "sonnet" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
-		t.Errorf("after unset model = %v", got)
-	}
-	if got := rows["question_model"]; got.GetValue() != "haiku" || got.GetSource() != planv1.SettingSource_SETTING_SOURCE_REPOSITORY {
-		t.Errorf("after unset question_model = %v", got)
 	}
 }

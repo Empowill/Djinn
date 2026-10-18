@@ -102,9 +102,10 @@ export {
   WatchCommands,
 } from "@/src/project-panel.tsx";
 export {
-  KNOWN_MODELS,
+  CIRCLE_MODELS,
+  CIRCLE_ROWS,
   SummoningCircle,
-  SummoningProject,
+  canonicalModelId,
 } from "@/src/summoning-circle.tsx";
 export {
   LastPushes,

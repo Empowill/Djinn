@@ -548,7 +548,7 @@ export function WishApp() {
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
         {modal === "summoning" && (
-          <SummoningCircle projects={projects} onClose={() => setModal(null)} />
+          <SummoningCircle onClose={() => setModal(null)} />
         )}
         {project && modal !== "make" && (
           <ProjectPanel

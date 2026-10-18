@@ -489,7 +489,9 @@ func (h *Harness) FillModels(ctx context.Context, tasks []*planv1.Task) {
 		}
 		if t.GetModel() == "" {
 			var model string
-			if t.GetProjectId() != "" {
+			if cp, cm, ok := plan.ResolveWorkerSeat(h.home, workerKindOf(nil, t)); ok && cm != "" && (cp == t.GetProvider() || t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED) {
+				model = cm
+			} else if t.GetProjectId() != "" {
 				if project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId()); err == nil {
 					if settings, err := plan.LoadSettings(h.home, project); err == nil {
 						if settings.Model != "" && (settings.Provider == t.GetProvider() || settings.Provider == planv1.Provider_PROVIDER_UNSPECIFIED || t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED) {

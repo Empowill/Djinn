@@ -1,78 +1,249 @@
-// The Summoning Circle: choose per project, in one place, which agent and model answer new workers and question
-// investigations. Writes the developer's own settings file of the project (ProjectService.SetDefaults), never the
-// repository's.
+// The Summoning Circle (W383, W400): one row per kind of worker, global to Djinn (every project).
+// Each model is listed once by its human-readable label while Djinn stores and sends only its canonical model ID.
+// Every row except the lead offers "Same as lead" as the default and follows the lead's choice when it changes.
 import { useEffect, useState } from "react";
 
 import {
   Change,
-  type Project,
-  type ProjectServiceShowResponse,
-  type ProjectSetting,
   Provider,
-  SettingSource,
+  WorkerKind,
+  type WorkerSeat,
 } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { useClients, useStore } from "./data/djinn";
+import { useDjinn } from "./data/djinn";
 import { defaultModel } from "./data/format";
 import { ModalFrame } from "./frame";
 import { t } from "./i18n";
-import { From } from "./project-panel";
 import "./project-panel.css";
 
-const PROVIDERS: readonly {
-  id: string;
-  enum: Provider;
-  label: string;
-}[] = [
-  { id: "claude", enum: Provider.CLAUDE, label: "Claude Code" },
-  { id: "codex", enum: Provider.CODEX, label: "Codex" },
-  { id: "antigravity", enum: Provider.ANTIGRAVITY, label: "Antigravity" },
+export interface CircleModel {
+  readonly id: string;
+  readonly label: string;
+  readonly provider: Provider;
+}
+
+export const CIRCLE_MODELS: readonly CircleModel[] = [
+  {
+    id: "claude-sonnet-5-5",
+    label: "Claude Sonnet 5.5",
+    provider: Provider.CLAUDE,
+  },
+  {
+    id: "claude-opus-5-8",
+    label: "Claude Opus 5.8",
+    provider: Provider.CLAUDE,
+  },
+  {
+    id: "claude-haiku-5-5",
+    label: "Claude Haiku 5.5",
+    provider: Provider.CLAUDE,
+  },
+  {
+    id: "gpt-5.5",
+    label: "GPT-5.5",
+    provider: Provider.CODEX,
+  },
+  {
+    id: "gpt-5.5-codex",
+    label: "GPT-5.5 Codex",
+    provider: Provider.CODEX,
+  },
+  {
+    id: "gpt-5.5-mini",
+    label: "GPT-5.5 Mini",
+    provider: Provider.CODEX,
+  },
+  {
+    id: "gemini-4-argon-high",
+    label: "Gemini 4 Argon (High)",
+    provider: Provider.ANTIGRAVITY,
+  },
+  {
+    id: "gemini-3.8-flash-high",
+    label: "Gemini 3.8 Flash (High)",
+    provider: Provider.ANTIGRAVITY,
+  },
+  {
+    id: "gemini-3.8-pro-high",
+    label: "Gemini 3.8 Pro (High)",
+    provider: Provider.ANTIGRAVITY,
+  },
 ];
 
-export const KNOWN_MODELS: Readonly<Record<string, readonly string[]>> = {
-  claude: [
-    "claude-sonnet-5-5",
-    "claude-opus-5-8",
-    "claude-haiku-5-5",
-    "sonnet",
-    "opus",
-    "haiku",
-  ],
-  codex: ["gpt-5.5", "gpt-5.5-codex", "gpt-5.5-mini"],
-  antigravity: [
-    "gemini-3.8-flash-high",
-    "Gemini 4 Argon (High)",
-    "gemini-4-argon-high",
-    "gemini-3.8-pro-high",
-  ],
+const MODEL_ALIASES: Readonly<Record<string, string>> = {
+  sonnet: "claude-sonnet-5-5",
+  "claude sonnet 5.5": "claude-sonnet-5-5",
+  opus: "claude-opus-5-8",
+  "claude opus 5.8": "claude-opus-5-8",
+  haiku: "claude-haiku-5-5",
+  "claude haiku 5.5": "claude-haiku-5-5",
+  "gpt-5.5": "gpt-5.5",
+  "gpt-5.5 codex": "gpt-5.5-codex",
+  "gpt-5.5 mini": "gpt-5.5-mini",
+  "gemini 4 argon (high)": "gemini-4-argon-high",
+  "gemini 4 argon": "gemini-4-argon-high",
+  argon: "gemini-4-argon-high",
+  "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
+  "gemini 3.8 flash": "gemini-3.8-flash-high",
+  flash: "gemini-3.8-flash-high",
+  "gemini 3.8 pro (high)": "gemini-3.8-pro-high",
+  "gemini 3.8 pro": "gemini-3.8-pro-high",
+  pro: "gemini-3.8-pro-high",
 };
 
-function settingOf(
-  shown: ProjectServiceShowResponse | undefined,
-  name: string,
-): ProjectSetting | undefined {
-  return shown?.settings.find((s) => s.name === name);
+export function canonicalModelId(model: string): string {
+  const trimmed = model.trim();
+  if (!trimmed) return "";
+  return MODEL_ALIASES[trimmed.toLowerCase()] ?? trimmed;
 }
 
-function providerEnumOf(id: string): Provider {
-  return PROVIDERS.find((p) => p.id === id)?.enum ?? Provider.CLAUDE;
+export interface CircleRowSpec {
+  readonly kind: WorkerKind;
+  readonly key:
+    | "lead"
+    | "investigation"
+    | "mockup"
+    | "ifrit"
+    | "work"
+    | "correction"
+    | "review"
+    | "question";
+  readonly providers: readonly Provider[];
 }
 
-function modelOptionsFor(provider: string, current: string): string[] {
-  const known = KNOWN_MODELS[provider] ?? [];
-  if (current && !known.includes(current)) {
-    return [current, ...known];
+export const CIRCLE_ROWS: readonly CircleRowSpec[] = [
+  {
+    kind: WorkerKind.LEAD,
+    key: "lead",
+    providers: [Provider.CLAUDE, Provider.CODEX],
+  },
+  {
+    kind: WorkerKind.INVESTIGATION,
+    key: "investigation",
+    providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
+  },
+  {
+    kind: WorkerKind.MOCKUP,
+    key: "mockup",
+    providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
+  },
+  {
+    kind: WorkerKind.IFRIT,
+    key: "ifrit",
+    providers: [Provider.CLAUDE, Provider.ANTIGRAVITY],
+  },
+  {
+    kind: WorkerKind.WORK,
+    key: "work",
+    providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
+  },
+  {
+    kind: WorkerKind.CORRECTION,
+    key: "correction",
+    providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
+  },
+  {
+    kind: WorkerKind.REVIEW,
+    key: "review",
+    providers: [Provider.CLAUDE, Provider.CODEX, Provider.ANTIGRAVITY],
+  },
+  {
+    kind: WorkerKind.QUESTION,
+    key: "question",
+    providers: [Provider.CLAUDE, Provider.CODEX],
+  },
+];
+
+function modelsForRow(
+  spec: CircleRowSpec,
+  currentId: string,
+  currentProvider: Provider,
+): CircleModel[] {
+  const allowed = CIRCLE_MODELS.filter((m) =>
+    spec.providers.includes(m.provider),
+  );
+  if (currentId && !allowed.some((m) => m.id === currentId)) {
+    const known = CIRCLE_MODELS.find((m) => m.id === currentId);
+    return [
+      known ?? {
+        id: currentId,
+        label: currentId,
+        provider: currentProvider || spec.providers[0],
+      },
+      ...allowed,
+    ];
   }
-  return [...known];
+  return allowed;
 }
 
 export function SummoningCircle({
-  projects,
+  initialRows,
+  onChoose,
   onClose,
 }: {
-  projects: Project[];
+  initialRows?: WorkerSeat[];
+  onChoose?: (req: {
+    kind: WorkerKind;
+    provider: Provider;
+    model: string;
+  }) => Promise<WorkerSeat[]>;
   onClose: () => void;
 }) {
+  const djinn = useDjinn();
+  const [rows, setRows] = useState<WorkerSeat[]>(initialRows ?? []);
+  const [loaded, setLoaded] = useState(Boolean(initialRows));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (initialRows || !djinn) return;
+    let live = true;
+    djinn.clients.lead
+      .getCircle({})
+      .then((res) => {
+        if (!live) return;
+        setRows(res.rows);
+        setLoaded(true);
+      })
+      .catch((err) => {
+        if (!live) return;
+        setError(message(err));
+        setLoaded(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [djinn, initialRows]);
+
+  const apply = (
+    spec: CircleRowSpec,
+    value: string,
+    options: CircleModel[],
+  ) => {
+    setBusy(true);
+    setError("");
+    const entry = options.find((m) => m.id === value);
+    const provider =
+      value === ""
+        ? Provider.UNSPECIFIED
+        : (entry?.provider ?? spec.providers[0]);
+    const model = value === "" ? "" : (entry?.id ?? value);
+    const call = onChoose
+      ? onChoose({ kind: spec.kind, provider, model })
+      : djinn
+        ? djinn.clients.lead
+            .setCircle({ kind: spec.kind, provider, model })
+            .then((res) => {
+              void djinn.store.changed("", [Change.PROJECT]);
+              return res.rows;
+            })
+        : Promise.resolve(rows);
+    call
+      .then((nextRows) => setRows(nextRows))
+      .catch((err) => setError(message(err)))
+      .finally(() => setBusy(false));
+  };
+
   return (
     <ModalFrame
       eyebrow={t("summoning.eyebrow")}
@@ -81,193 +252,56 @@ export function SummoningCircle({
       wide
     >
       <p className="panel-lead">
-        {t("summoning.subtitle")} {t("summoning.detail")}
+        {t("summoning.subtitle")}. {t("summoning.detail")}
       </p>
-      {projects.length === 0 ? (
-        <div className="config-box">
-          <p className="muted">{t("summoning.empty")}</p>
-        </div>
-      ) : (
-        <div className="summoning-list">
-          {projects.map((project) => (
-            <SummoningProject key={project.id} project={project} />
-          ))}
-        </div>
-      )}
-    </ModalFrame>
-  );
-}
-
-export function SummoningProject({
-  project,
-  initialShown,
-}: {
-  project: Project;
-  initialShown?: ProjectServiceShowResponse;
-}) {
-  const clients = useClients();
-  const store = useStore();
-  const [shown, setShown] = useState<ProjectServiceShowResponse | undefined>(
-    initialShown,
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (initialShown) return;
-    let live = true;
-    clients.projects
-      .show({ project: project.id })
-      .then((res) => live && setShown(res))
-      .catch((err) => live && setError(message(err)));
-    return () => {
-      live = false;
-    };
-  }, [clients, initialShown, project.id]);
-
-  const providerSetting = settingOf(shown, "provider");
-  const modelSetting = settingOf(shown, "model");
-  const questionModelSetting = settingOf(shown, "question_model");
-
-  const provider = providerSetting?.value || "claude";
-  const providerSource = providerSetting?.source ?? SettingSource.DEFAULT;
-  const model = modelSetting?.value ?? "";
-  const modelSource = modelSetting?.source ?? SettingSource.DEFAULT;
-  const questionModel = questionModelSetting?.value ?? "";
-  const questionModelSource =
-    questionModelSetting?.source ?? SettingSource.DEFAULT;
-
-  const hasDeveloper =
-    providerSource === SettingSource.DEVELOPER ||
-    modelSource === SettingSource.DEVELOPER ||
-    questionModelSource === SettingSource.DEVELOPER;
-
-  const defModel = defaultModel(providerEnumOf(provider)) || "default";
-  const workerModels = modelOptionsFor(provider, model);
-  const questionModels = modelOptionsFor(provider, questionModel);
-
-  const apply = (req: {
-    provider?: Provider;
-    model?: string;
-    questionModel?: string;
-    unset?: boolean;
-  }) => {
-    setBusy(true);
-    setError("");
-    clients.projects
-      .setDefaults({ project: project.id, ...req })
-      .then((res) => {
-        setShown((prev) =>
-          prev
-            ? {
-                ...prev,
-                settings: res.settings,
-                developerFile: res.developerFile,
-              }
-            : ({
-                settings: res.settings,
-                developerFile: res.developerFile,
-              } as ProjectServiceShowResponse),
-        );
-        void store.changed("", [Change.PROJECT]);
-      })
-      .catch((err) => setError(message(err)))
-      .finally(() => setBusy(false));
-  };
-
-  return (
-    <section className="config-box summoning-project" aria-label={project.name}>
-      <div className="summoning-project-head">
-        <h3>
-          <strong>{project.name}</strong>
-          {project.directory && (
-            <span className="config-from">{project.directory}</span>
-          )}
-        </h3>
-        {hasDeveloper && (
-          <button
-            type="button"
-            className="button small secondary"
-            disabled={busy}
-            title={t("summoning.unset_detail")}
-            onClick={() => apply({ unset: true })}
-          >
-            {t("summoning.unset")}
-          </button>
-        )}
-      </div>
       {error && (
         <p className="field-error" role="alert">
           {error}
         </p>
       )}
-      <div className="setting-row summoning-row">
-        <div>
-          <strong>
-            {t("summoning.provider")}
-            <From source={providerSource} shown={shown} />
-          </strong>
-        </div>
-        <select
-          className="summoning-select"
-          aria-label={`${project.name} ${t("summoning.provider")}`}
-          value={provider}
-          disabled={busy || !shown}
-          onChange={(e) => apply({ provider: providerEnumOf(e.target.value) })}
-        >
-          {PROVIDERS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="setting-row summoning-row">
-        <div>
-          <strong>
-            {t("summoning.model")}
-            <From source={modelSource} shown={shown} />
-          </strong>
-        </div>
-        <select
-          className="summoning-select"
-          aria-label={`${project.name} ${t("summoning.model")}`}
-          value={model}
-          disabled={busy || !shown}
-          onChange={(e) => apply({ model: e.target.value })}
-        >
-          <option value="">
-            {t("summoning.default_model", { model: defModel })}
-          </option>
-          {workerModels.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="setting-row summoning-row">
-        <div>
-          <strong>
-            {t("summoning.question_model")}
-            <From source={questionModelSource} shown={shown} />
-          </strong>
-        </div>
-        <select
-          className="summoning-select"
-          aria-label={`${project.name} ${t("summoning.question_model")}`}
-          value={questionModel}
-          disabled={busy || !shown}
-          onChange={(e) => apply({ questionModel: e.target.value })}
-        >
-          <option value="">{t("summoning.same_as_worker")}</option>
-          {questionModels.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      </div>
-    </section>
+      <section className="config-box summoning-list">
+        {CIRCLE_ROWS.map((spec) => {
+          const seat = rows.find((r) => r.kind === spec.kind);
+          const isLead = spec.kind === WorkerKind.LEAD;
+          const rawModel = isLead
+            ? seat?.model || defaultModel(seat?.provider || Provider.CLAUDE)
+            : seat && seat.provider !== Provider.UNSPECIFIED
+              ? seat.model || defaultModel(seat.provider)
+              : "";
+          const value = canonicalModelId(rawModel);
+          const options = modelsForRow(
+            spec,
+            value,
+            seat?.provider ?? Provider.UNSPECIFIED,
+          );
+          const label = t(`summoning.kind_${spec.key}`);
+          const detail = t(`summoning.kind_${spec.key}_detail`);
+          return (
+            <div className="setting-row summoning-row" key={spec.key}>
+              <div>
+                <strong>{label}</strong>
+                <p>{detail}</p>
+              </div>
+              <select
+                className="summoning-select"
+                aria-label={label}
+                value={value}
+                disabled={busy || !loaded}
+                onChange={(e) => apply(spec, e.target.value, options)}
+              >
+                {!isLead && (
+                  <option value="">{t("summoning.same_as_lead")}</option>
+                )}
+                {options.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </section>
+    </ModalFrame>
   );
 }

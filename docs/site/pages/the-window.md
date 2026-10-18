@@ -80,11 +80,11 @@ corners, and back. On the rail, never on a background:
 
 ### The Summoning Circle
 
-The **Summoning Circle**, below the Grimoire in the side panel, chooses for each project which spirit answers the call:
-the default agent and model of its new workers, and the model of its question investigators, with where each value
-comes from (the repository, your file, or Djinn's default). Choosing an agent or a model writes your own file for the
-project, never the repository's; **Take back** removes your choice so the team's file or Djinn's default applies again.
-Each project's own configuration panel has the same pickers at the top of its settings.
+The **Summoning Circle**, below the Grimoire in the side panel, chooses for each kind of worker which model answers the
+call across all projects: **Djinn (lead)** first, then **Investigation**, **Mockup**, **Ifrit**, **Work**, **Merge
+correction**, **Merge review**, and **Question investigator**. Each dropdown lists each model once by its human-readable
+label (such as `Gemini 4 Argon (High)`) while storing and sending its canonical model identifier (`gemini-4-argon-high`).
+Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes.
 
 ### The personal space
 
