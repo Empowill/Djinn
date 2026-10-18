@@ -46,11 +46,11 @@ esac
 exec jq -r "$expr" "$file"
 `
 
-// TestBabysitMRReadsOnly: Djinn's babysit-mr template makes a wish from a GitLab merge request link, and its
+// TestWatch_BabysitMR: Djinn's babysit-mr template makes a wish from a GitLab merge request link, and its
 // watcher, run as Djinn runs it under the repository's permissions, prints a paragraph on each change of the merge
 // request (the same look twice prints nothing) and its done line on the merge, then exits. A fake glab on the PATH
 // serves the merge request: the watcher only reads it, and the project's folder is as it was.
-func TestBabysitMRReadsOnly(t *testing.T) {
+func TestWatch_BabysitMR(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the watcher is a POSIX shell script: on Windows the sh of Git for Windows runs it")
@@ -121,8 +121,8 @@ func TestBabysitMRReadsOnly(t *testing.T) {
 	// The command's own environment, as a worker's: the test's stays as it is, and the other tests run beside it.
 	env := []string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "GLAB_DATA=" + data}
 
-	// One look every 150 ms instead of every minute: the script's second argument, still allowed.
-	w, err := Watch{Quiet: 50 * time.Millisecond}.Start(t.Context(), Spec{Dir: dir, Prompt: watch + " 0.15", Permissions: perms, Env: env})
+	// One look every 20 ms instead of every minute: the script's second argument, still allowed.
+	w, err := Watch{Quiet: 10 * time.Millisecond}.Start(t.Context(), Spec{Dir: dir, Prompt: watch + " 0.02", Permissions: perms, Env: env})
 	if err != nil {
 		t.Fatal(err)
 	}

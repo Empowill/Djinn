@@ -70,10 +70,10 @@ func (p resumedPlays) Start(ctx context.Context, spec Spec) (Worker, error) {
 	return p.Fake.Start(ctx, spec)
 }
 
-// TestNetworkSigns: what a worker's agent and a command say when the network is down is a sign of an outage; an
+// TestNetSign: what a worker's agent and a command say when the network is down is a sign of an outage; an
 // API's refusal, a local connection refused, a code failure are not. A weak sign (Chromium's ERR_NETWORK_CHANGED, which
 // Docker's interfaces make too) counts only within two minutes of a strong one.
-func TestNetworkSigns(t *testing.T) {
+func TestNetSign(t *testing.T) {
 	t.Parallel()
 	clock := &fakeClock{at: time.Date(2026, 10, 17, 15, 12, 0, 0, time.UTC)}
 	h := &Harness{clock: clock.now, kick: make(chan struct{}, 1)}
@@ -118,12 +118,12 @@ func TestNetworkSigns(t *testing.T) {
 	}
 }
 
-// TestNetworkOutageRidden (W285): a worker its provider's connection error cuts is not failed: it waits as resuming,
+// TestNetProbePass (W285): a worker its provider's connection error cuts is not failed: it waits as resuming,
 // "network down since 10:00", and its lead hears no failure. The probe confirms the outage: the Djinn hears one line,
 // the running worker is paused, a new task waits, the window sees since when; the probe asks again every 30 s, no
 // sooner. The network back, the Djinn hears one line, the paused worker resumes first, then the task cut, told the
 // network came back, at no resume's cost, then the new task; and no probe is made any more.
-func TestNetworkOutageRidden(t *testing.T) {
+func TestNetProbePass(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	start := time.Date(2026, 10, 17, 10, 0, 0, 0, time.Local)
@@ -248,96 +248,98 @@ func TestNetworkOutageRidden(t *testing.T) {
 	}
 }
 
-// pushDueOnW3 makes a push due as W3 is committed: W1 and W2 committed two hours before, nothing pushed yet. It returns
+// pushDueOnW3 makes a push due as W3 is committed: W3 finishes its azima, so its push is due at once. It returns
 // the remote and W3.
 func (in *integration) pushDueOnW3(t *testing.T) (bare string, w3 *planv1.Task) {
 	t.Helper()
 	bare = in.remote(t)
-	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	in.pass(t, 0)
-	in.later(2 * time.Hour)
-	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
-	in.pass(t, 0)
+	az := in.azima(t, in.wishID, "NetPush")
 	in.ran()
-	return bare, in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+	return bare, in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) {
+		task.PartOf = az.GetId()
+	})
 }
 
 // networkOut is what the end of an e2e run printed on 17/10/2026, its setup's npm unable to reach its registry.
 const networkOut = "npm error code EAI_AGAIN\nnpm error syscall getaddrinfo\nnpm error getaddrinfo EAI_AGAIN registry.npmjs.org\n" +
 	"Error: page.goto: net::ERR_NETWORK_CHANGED"
 
-// TestNetworkPushChecksRunAgain (W285): push checks that fail on the network hold nothing and start no correction:
-// the outage confirmed, no push nor fetch runs while it lasts; once the network is back, the push checks run once
-// again, and green, the branch is pushed.
-func TestNetworkPushChecksRunAgain(t *testing.T) {
+// TestIntegrate_NetworkPushChecks (W285): push checks that fail on the network hold nothing and start no correction
+// on their first failure; once the network is back (or if it stayed up and they fail again), Djinn runs them again.
+func TestIntegrate_NetworkPushChecks(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	probe := &fakeProbe{down: errors.New("dial tcp: lookup api.anthropic.com: no such host")}
-	in := integrating(t, WithNetworkProbe(probe.probe))
-	in.checking(t, testAtPush, nil)
-	in.correctWith(func(dir, p string) string { return "wait" })
-	in.testCode, in.testOut = 1, networkOut
-	bare, w3 := in.pushDueOnW3(t)
-	old := in.remoteTip(t, bare)
-	in.pass(t, 0)
-	if runs, _ := in.ran(); !slices.Contains(runs, "test") {
-		t.Fatalf("runs %q; want the push checks", runs)
-	}
-	if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" || len(in.corrections(t)) != 0 {
-		t.Fatalf("push checks failed on the network: %v, %d corrections; want nothing held, no correction", state,
-			len(in.corrections(t)))
-	}
-	_, texts := in.integration(t, w3)
-	if want := "the push checks of " + in.branch; !slices.ContainsFunc(texts, func(s string) bool {
-		return strings.HasPrefix(s, want) && strings.Contains(s, "failed on the network (test: test exited 1") &&
-			strings.HasSuffix(s, "Djinn runs them again once it is back, with no correction")
-	}) {
-		t.Errorf("W3's events %q", texts)
-	}
-	eventually(t, func() bool { return in.h.NetworkDownSince() != nil }, func() string { return "the network still up" })
 
-	// Down: no push, no fetch.
-	in.testCode, in.testOut = 0, "ok"
-	in.pass(t, time.Minute)
-	if runs, _ := in.ran(); len(runs) != 0 {
-		t.Errorf("runs %q while the network is down; want none", runs)
-	}
+	// The outage confirmed, no push nor fetch runs while it lasts; once the network is back, the push checks run once
+	// again, and green, the branch is pushed.
+	t.Run("run again when back", func(t *testing.T) {
+		t.Parallel()
+		probe := &fakeProbe{down: errors.New("dial tcp: lookup api.anthropic.com: no such host")}
+		in := integrating(t, WithNetworkProbe(probe.probe))
+		in.checking(t, testAtPush, nil)
+		in.correctWith(func(dir, p string) string { return "wait" })
+		in.testCode, in.testOut = 1, networkOut
+		bare, w3 := in.pushDueOnW3(t)
+		old := in.remoteTip(t, bare)
+		in.pass(t, 0)
+		if runs, _ := in.ran(); !slices.Contains(runs, "test") {
+			t.Fatalf("runs %q; want the push checks", runs)
+		}
+		if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" || len(in.corrections(t)) != 0 {
+			t.Fatalf("push checks failed on the network: %v, %d corrections; want nothing held, no correction", state,
+				len(in.corrections(t)))
+		}
+		_, texts := in.integration(t, w3)
+		if want := "the push checks of " + in.branch; !slices.ContainsFunc(texts, func(s string) bool {
+			return strings.HasPrefix(s, want) && strings.Contains(s, "failed on the network (test: test exited 1") &&
+				strings.HasSuffix(s, "Djinn runs them again once it is back, with no correction")
+		}) {
+			t.Errorf("W3's events %q", texts)
+		}
+		eventually(t, func() bool { return in.h.NetworkDownSince() != nil }, func() string { return "the network still up" })
 
-	// Back: the push checks run once again, green, and the branch is pushed.
-	probe.set(nil)
-	in.later(time.Minute)
-	eventually(t, func() bool { in.h.Wake(); return !in.h.netHolds() }, func() string { return "the network still down" })
-	in.pass(t, 0)
-	if runs, _ := in.ran(); !slices.Equal(runs, []string{"test"}) {
-		t.Errorf("runs %q once the network is back; want the push checks once", runs)
-	}
-	if got := in.remoteTip(t, bare); got == old || got != in.tip(t) {
-		t.Errorf("origin at %s, the branch at %s; want it pushed", got, in.tip(t))
-	}
-	if n := len(in.corrections(t)); n != 0 {
-		t.Errorf("%d corrections; want none", n)
-	}
-}
+		// Down: no push, no fetch.
+		in.testCode, in.testOut = 0, "ok"
+		in.pass(t, time.Minute)
+		if runs, _ := in.ran(); len(runs) != 0 {
+			t.Errorf("runs %q while the network is down; want none", runs)
+		}
 
-// TestNetworkPushChecksRunAgainOnce: push checks that fail on the network again once it is up (here no probe ever
-// confirms an outage) are red as any: the push is held, and a correction starts.
-func TestNetworkPushChecksRunAgainOnce(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	in.checking(t, testAtPush, nil)
-	in.correctWith(func(dir, p string) string { return "wait" })
-	in.testCode, in.testOut = 1, networkOut
-	in.pushDueOnW3(t)
-	in.pass(t, 0)
-	if state := in.pushState(t); state.GetHeld() != "" || len(in.corrections(t)) != 0 {
-		t.Fatalf("the first failure on the network: %v; want nothing held, no correction", state)
-	}
-	in.pass(t, time.Minute)
-	if state := in.pushState(t); state.GetHeld() == "" || state.GetCorrectedBy() == "" {
-		t.Errorf("failed on the network again, the network up: %v; want held, corrected", state)
-	}
-	if runs, _ := in.ran(); !slices.Equal(slices.DeleteFunc(runs, func(r string) bool { return r != "test" }), []string{"test", "test"}) {
-		t.Errorf("runs %q; want the push checks twice", runs)
-	}
+		// Back: the push checks run once again, green, and the branch is pushed.
+		probe.set(nil)
+		in.later(time.Minute)
+		eventually(t, func() bool { in.h.Wake(); return !in.h.netHolds() }, func() string { return "the network still down" })
+		in.pass(t, 0)
+		if runs, _ := in.ran(); !slices.Equal(runs, []string{"test"}) {
+			t.Errorf("runs %q once the network is back; want the push checks once", runs)
+		}
+		if got := in.remoteTip(t, bare); got == old || got != in.tip(t) {
+			t.Errorf("origin at %s, the branch at %s; want it pushed", got, in.tip(t))
+		}
+		if n := len(in.corrections(t)); n != 0 {
+			t.Errorf("%d corrections; want none", n)
+		}
+	})
+
+	// Push checks that fail on the network again once it is up (here no probe ever confirms an outage) are red as any:
+	// the push is held, and a correction starts.
+	t.Run("run again once when up", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		in.checking(t, testAtPush, nil)
+		in.correctWith(func(dir, p string) string { return "wait" })
+		in.testCode, in.testOut = 1, networkOut
+		in.pushDueOnW3(t)
+		in.pass(t, 0)
+		if state := in.pushState(t); state.GetHeld() != "" || len(in.corrections(t)) != 0 {
+			t.Fatalf("the first failure on the network: %v; want nothing held, no correction", state)
+		}
+		in.pass(t, time.Minute)
+		if state := in.pushState(t); state.GetHeld() == "" || state.GetCorrectedBy() == "" {
+			t.Errorf("failed on the network again, the network up: %v; want held, corrected", state)
+		}
+		if runs, _ := in.ran(); !slices.Equal(slices.DeleteFunc(runs, func(r string) bool { return r != "test" }), []string{"test", "test"}) {
+			t.Errorf("runs %q; want the push checks twice", runs)
+		}
+	})
 }

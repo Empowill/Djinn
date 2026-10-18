@@ -41,8 +41,7 @@ func proposedMR(t *testing.T, forge *fakeForge, settings string) (*integration, 
 	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
 	in.pass(t, 0)
 	branch := "djinn/T1-single-local-process"
-	in.git(t, in.repo, "push", "origin", branch)
-	in.git(t, in.repo, "update-ref", "refs/remotes/origin/"+branch, in.git(t, in.repo, "rev-parse", "refs/heads/"+branch))
+	in.git(t, in.repo, "push", "--quiet", "origin", branch)
 	in.pass(t, 0)
 
 	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
@@ -83,122 +82,118 @@ func creates(forge *fakeForge) []string {
 	return out
 }
 
-// TestOpenMRWhenTheDeveloperSaysYes replays Q21 of wish Dew (13/10/2026): the developer answered "Open pull request"
-// for an azima of a GitLab project, Djinn noted it and opened nothing. A yes now opens the merge request, as a draft,
-// from the azima's branch into its base, with the title and description the question drafted; the azima's card shows
-// it open, and the lead reads its address.
-func TestOpenMRWhenTheDeveloperSaysYes(t *testing.T) {
+func TestOpenRequest(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	forge := &fakeForge{created: "Creating draft merge request for djinn/T1-single-local-process into main\n\n" + mrURL + "\n"}
-	in, q, azima, branch := proposedMR(t, forge, "")
 
-	did := in.answer(t, q, planv1.Choice_CHOICE_A)
-	if want := "Djinn opened draft MR !41: " + mrURL; did != want {
-		t.Errorf("what Djinn did: %q, want %q", did, want)
-	}
-	digestKeeps(t, q, did)
-	got := creates(forge)
-	want := "glab mr create --draft --source-branch " + branch + " --target-branch " + in.branch +
-		" --title One local process. --description ## Goal\n\nOne local process.\n\n### Parts\n\n- **W1**: Work of W1 --yes"
-	if len(got) != 1 || got[0] != want {
-		t.Errorf("forge created %q, want one %q", got, want)
-	}
-	if pr := in.get(t, azima.GetId()).GetAzima().GetPr(); pr.GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN || pr.GetUrl() != mrURL {
-		t.Errorf("the azima records %v, want its merge request open at %s", pr, mrURL)
-	}
+	// Replays Q21 of wish Dew (13/10/2026): the developer answered "Open pull request" for an azima of a GitLab
+	// project, Djinn noted it and opened nothing. A yes now opens the merge request, as a draft, from the azima's
+	// branch into its base, with the title and description the question drafted; the azima's card shows it open, and
+	// the lead reads its address.
+	t.Run("opens draft mr on yes", func(t *testing.T) {
+		t.Parallel()
+		forge := &fakeForge{created: "Creating draft merge request for djinn/T1-single-local-process into main\n\n" + mrURL + "\n"}
+		in, q, azima, branch := proposedMR(t, forge, "")
 
-	// No: nothing is opened, the answer left for later.
-	if did := in.answer(t, q, planv1.Choice_CHOICE_B); did != "left for later" {
-		t.Errorf("a no: %q", did)
-	}
-	if got := creates(forge); len(got) != 1 {
-		t.Errorf("a no opened %q", got)
-	}
-}
-
-// TestOpenMRFailsToTheLead: glab cannot open the merge request (no token, a network down). The lead reads why, and that
-// the developer must open it: never a yes noted and nothing opened. A merge request open for the branch already is
-// named, none opened.
-func TestOpenMRFailsToTheLead(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	forge := &fakeForge{}
-	in, q, _, branch := proposedMR(t, forge, "")
-
-	did := in.answer(t, q, planv1.Choice_CHOICE_A)
-	if want := "Djinn could not open the MR of " + branch + " (fake forge: 401 Unauthorized): the developer must open it"; did != want {
-		t.Errorf("what Djinn did: %q, want %q", did, want)
-	}
-	digestKeeps(t, q, did)
-
-	forge.mu.Lock()
-	forge.lists = map[string]string{branch: `[{"iid":12,"web_url":"https://gitlab.com/acme/dolmen/-/merge_requests/12"}]`}
-	forge.mu.Unlock()
-	did = in.answer(t, q, planv1.Choice_CHOICE_A)
-	if want := "MR !12 is open already: https://gitlab.com/acme/dolmen/-/merge_requests/12"; did != want {
-		t.Errorf("what Djinn did: %q, want %q", did, want)
-	}
-	if got := creates(forge); len(got) != 1 {
-		t.Errorf("forge created %q, want the one that failed", got)
-	}
-}
-
-// TestOpenMRWithTheProjectSkill: dolmen holds open-mr-empowill, its house rules for a merge request (title, template,
-// ticket link). A yes spawns a worker in the wish that opens it with that skill, from the azima's branch, pushing
-// nothing; Djinn runs no glab mr create of its own.
-func TestOpenMRWithTheProjectSkill(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	forge := &fakeForge{created: mrURL}
-	in, q, _, branch := proposedMR(t, forge, "provider: PROVIDER_FAKE\n")
-	// A teammate pushes the skill on the reference branch, which Djinn reads it on once fetched (W150).
-	bare := in.git(t, in.repo, "remote", "get-url", "origin")
-	mate := filepath.Join(t.TempDir(), "mate")
-	in.git(t, in.repo, "clone", "--quiet", "--branch", in.branch, bare, mate)
-	skill := filepath.Join(mate, "app", ".agents", "skills", "open-mr-acme")
-	if err := os.MkdirAll(skill, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: open-mr-acme\ndescription: Open a MR.\n---\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	in.git(t, mate, "add", ".")
-	in.git(t, mate, "-c", "user.name=Mate", "-c", "user.email=mate@example.com", "commit", "--quiet", "-m", "The skill")
-	in.git(t, mate, "push", "--quiet", "origin", in.branch)
-	in.git(t, in.repo, "fetch", "--quiet", "origin")
-
-	did := in.answer(t, q, planv1.Choice_CHOICE_A)
-	tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var opener *planv1.Task
-	for _, task := range tasks {
-		if task.GetTitle() == "Open the draft MR of "+branch {
-			opener = task
+		did := in.answer(t, q, planv1.Choice_CHOICE_A)
+		if want := "Djinn opened draft MR !41: " + mrURL; did != want {
+			t.Errorf("what Djinn did: %q, want %q", did, want)
 		}
-	}
-	if opener == nil {
-		t.Fatalf("no task opens the merge request; Djinn did %q", did)
-	}
-	if want := "Djinn spawned " + opener.GetCode() + ": it opens the draft MR of " + branch + " with the skill open-mr-acme"; did != want {
-		t.Errorf("what Djinn did: %q, want %q", did, want)
-	}
-	digestKeeps(t, q, did)
-	if opener.GetPartOf() != "" || opener.GetProjectId() != in.projectID {
-		t.Errorf("the opener is part of %q in %q: it reopens no azima, works in the project", opener.GetPartOf(), opener.GetProjectId())
-	}
-	prompt := openPrompt(&opening{branch: branch, base: in.branch, title: "One local process.",
-		body: "## Goal\n\nOne local process.\n\n### Parts\n\n- **W1**: Work of W1"}, "MR", "open-mr-acme")
-	for _, want := range []string{"following the project's skill open-mr-acme", "of branch " + branch + " into " + in.branch, "push nothing"} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("the opener's prompt lacks %q: %q", want, prompt)
+		digestKeeps(t, q, did)
+		got := creates(forge)
+		want := "glab mr create --draft --source-branch " + branch + " --target-branch " + in.branch +
+			" --title One local process. --description ## Goal\n\nOne local process.\n\n### Parts\n\n- **W1**: Work of W1 --yes"
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("forge created %q, want one %q", got, want)
 		}
-	}
-	if got := creates(forge); len(got) != 0 {
-		t.Errorf("Djinn created %q itself", got)
-	}
+		if pr := in.get(t, azima.GetId()).GetAzima().GetPr(); pr.GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_OPEN || pr.GetUrl() != mrURL {
+			t.Errorf("the azima records %v, want its merge request open at %s", pr, mrURL)
+		}
+
+		// No: nothing is opened, the answer left for later.
+		if did := in.answer(t, q, planv1.Choice_CHOICE_B); did != "left for later" {
+			t.Errorf("a no: %q", did)
+		}
+		if got := creates(forge); len(got) != 1 {
+			t.Errorf("a no opened %q", got)
+		}
+	})
+
+	// glab cannot open the merge request (no token, a network down). The lead reads why, and that the developer must
+	// open it: never a yes noted and nothing opened. A merge request open for the branch already is named, none opened.
+	t.Run("reports failure or existing mr", func(t *testing.T) {
+		t.Parallel()
+		forge := &fakeForge{}
+		in, q, _, branch := proposedMR(t, forge, "")
+
+		did := in.answer(t, q, planv1.Choice_CHOICE_A)
+		if want := "Djinn could not open the MR of " + branch + " (fake forge: 401 Unauthorized): the developer must open it"; did != want {
+			t.Errorf("what Djinn did: %q, want %q", did, want)
+		}
+		digestKeeps(t, q, did)
+
+		forge.mu.Lock()
+		forge.lists = map[string]string{branch: `[{"iid":12,"web_url":"https://gitlab.com/acme/dolmen/-/merge_requests/12"}]`}
+		forge.mu.Unlock()
+		did = in.answer(t, q, planv1.Choice_CHOICE_A)
+		if want := "MR !12 is open already: https://gitlab.com/acme/dolmen/-/merge_requests/12"; did != want {
+			t.Errorf("what Djinn did: %q, want %q", did, want)
+		}
+		if got := creates(forge); len(got) != 1 {
+			t.Errorf("forge created %q, want the one that failed", got)
+		}
+	})
+
+	// dolmen holds open-mr-acme, its house rules for a merge request (title, template, ticket link). A yes spawns a
+	// worker in the wish that opens it with that skill, from the azima's branch, pushing nothing; Djinn runs no glab
+	// mr create of its own.
+	t.Run("spawns worker with project skill", func(t *testing.T) {
+		t.Parallel()
+		forge := &fakeForge{created: mrURL}
+		in, q, _, branch := proposedMR(t, forge, "provider: PROVIDER_FAKE\n")
+		// A teammate pushes the skill on the reference branch, which Djinn reads it on once fetched (W150).
+		head := in.git(t, in.repo, "rev-parse", "HEAD")
+		in.git(t, in.repo, "checkout", "--quiet", "--detach")
+		writeFile(t, in.repo, filepath.Join("app", ".agents", "skills", "open-mr-acme", "SKILL.md"),
+			"---\nname: open-mr-acme\ndescription: Open a MR.\n---\n")
+		in.git(t, in.repo, "add", ".")
+		in.git(t, in.repo, "commit", "--quiet", "-m", "The skill")
+		in.git(t, in.repo, "push", "--quiet", "origin", "HEAD:refs/heads/"+in.branch)
+		in.git(t, in.repo, "checkout", "--quiet", in.branch)
+		in.git(t, in.repo, "reset", "--quiet", "--hard", head)
+
+		did := in.answer(t, q, planv1.Choice_CHOICE_A)
+		tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var opener *planv1.Task
+		for _, task := range tasks {
+			if task.GetTitle() == "Open the draft MR of "+branch {
+				opener = task
+			}
+		}
+		if opener == nil {
+			t.Fatalf("no task opens the merge request; Djinn did %q", did)
+		}
+		if want := "Djinn spawned " + opener.GetCode() + ": it opens the draft MR of " + branch + " with the skill open-mr-acme"; did != want {
+			t.Errorf("what Djinn did: %q, want %q", did, want)
+		}
+		digestKeeps(t, q, did)
+		if opener.GetPartOf() != "" || opener.GetProjectId() != in.projectID {
+			t.Errorf("the opener is part of %q in %q: it reopens no azima, works in the project", opener.GetPartOf(), opener.GetProjectId())
+		}
+		prompt := openPrompt(&opening{branch: branch, base: in.branch, title: "One local process.",
+			body: "## Goal\n\nOne local process.\n\n### Parts\n\n- **W1**: Work of W1"}, "MR", "open-mr-acme")
+		for _, want := range []string{"following the project's skill open-mr-acme", "of branch " + branch + " into " + in.branch, "push nothing"} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("the opener's prompt lacks %q: %q", want, prompt)
+			}
+		}
+		if got := creates(forge); len(got) != 0 {
+			t.Errorf("Djinn created %q itself", got)
+		}
+	})
 }
 
 // TestOpenSkill: a skill whose name says it opens a request; reviewing or babysitting one is not it.
@@ -210,18 +205,21 @@ func TestOpenSkill(t *testing.T) {
 		"create-pull-request":                 "create-pull-request",
 		"babysit-pr,review-mr,open-dashboard": "",
 	} {
-		dir := t.TempDir()
-		for name := range strings.SplitSeq(names, ",") {
-			skill := filepath.Join(dir, ".agents", "skills", name)
-			if err := os.MkdirAll(skill, 0o700); err != nil {
-				t.Fatal(err)
+		t.Run(names, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			for name := range strings.SplitSeq(names, ",") {
+				skill := filepath.Join(dir, ".agents", "skills", name)
+				if err := os.MkdirAll(skill, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: "+name+"\n---\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
-			if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: "+name+"\n---\n"), 0o600); err != nil {
-				t.Fatal(err)
+			if got := openSkill("", &planv1.Project{Directory: dir}); got != want {
+				t.Errorf("skills %s: %q, want %q", names, got, want)
 			}
-		}
-		if got := openSkill("", &planv1.Project{Directory: dir}); got != want {
-			t.Errorf("skills %s: %q, want %q", names, got, want)
-		}
+		})
 	}
 }
