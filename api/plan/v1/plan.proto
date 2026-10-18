@@ -4389,6 +4389,14 @@ service LeadService {
     option (djinn.v1.writes) = WRITES_CHANGE;
     option (djinn.v1.command_line_only) = true;
   }
+  // Answer the developer in the window, in a bubble held to the Lamp pill: a short reply to a message from the
+  // window, or, with --decided, a decision the lead took alone that the developer would want to know. Puts a block of
+  // kind "reply" (or "decided") on the wish, from the lead, at most 600 characters; for a longer answer, write a
+  // report block and name it here. A worker cannot call it.
+  rpc Say(LeadServiceSayRequest) returns (LeadServiceSayResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
   // session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
   // prompt carries the latest entries of its wishes; this prints them for the developer.
@@ -4587,6 +4595,27 @@ message LeadServiceTellResponse {
   // The text waits in the lead's terminal: something is being typed there, or a choice is on screen. It goes once
   // they are done.
   bool waiting = 1;
+}
+
+message LeadServiceSayRequest {
+  // The wish the reply or decision is about.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What to show in the window's bubble, at most 600 characters; for a longer answer, write a report block and name it
+  // here.
+  string text = 2 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.max_len = 20000
+  ];
+  // Mark this as a decision the lead took alone, instead of a reply to a message from the window.
+  bool decided = 3;
+}
+
+message LeadServiceSayResponse {
+  // The block added to the wish.
+  Block block = 1;
 }
 
 message LeadServiceJournalRequest {

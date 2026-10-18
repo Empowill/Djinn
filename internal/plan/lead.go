@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 
@@ -350,6 +351,48 @@ func (s *LeadService) Tell(
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the lead's terminal: %w", err))
 	}
 	return connect.NewResponse(&planv1.LeadServiceTellResponse{Waiting: waiting}), nil
+}
+
+// MaxLeadSayRunes is the longest text LeadService.Say puts in the window's bubble: a longer answer belongs in a
+// report block that the bubble names.
+const MaxLeadSayRunes = 600
+
+// Say puts a reply or a decision the lead took alone on the wish, as a block of kind "reply" or "decided" from the
+// lead: the wish's stream brings it to the window's bubble held to the Lamp pill.
+func (s *LeadService) Say(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceSayRequest],
+) (*connect.Response[planv1.LeadServiceSayResponse], error) {
+	if CallerFromContext(ctx) != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New(
+			"only the lead speaks in the Lamp's bubble: a worker cannot call djinn lead say"))
+	}
+	text := strings.TrimSpace(req.Msg.GetText())
+	if text == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("text: nothing to say"))
+	}
+	if n := utf8.RuneCountInString(text); n > MaxLeadSayRunes {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"text is %d characters, at most %d fit in the window's bubble: shorten it, or write a report block (`djinn block put %s --kind report`) and name it here",
+			n, MaxLeadSayRunes, req.Msg.GetWishId()))
+	}
+	kind := "reply"
+	if req.Msg.GetDecided() {
+		kind = "decided"
+	}
+	var block *planv1.Block
+	err := write(ctx, s.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		var err error
+		block, err = PutBlock(ctx, tx, &planv1.BlockServicePutRequest{
+			WishId:  req.Msg.GetWishId(),
+			Kind:    kind,
+			Content: text,
+		})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.LeadServiceSayResponse{Block: block}), nil
 }
 
 // Choose answers the choice the lead's agent shows in its terminal, as its keys would: the window's answer to an
