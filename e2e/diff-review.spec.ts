@@ -71,69 +71,17 @@ test("a task's diffs open full size beside the side panel, its files as a tree o
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
-  const suffix = randomUUID().slice(0, 8);
-  const folder = fs.realpathSync(
-    fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "review-")),
-  );
-  git(folder, "init", "--quiet", "-b", "main");
-  fs.writeFileSync(path.join(folder, "lamp.txt"), "a brass lamp\n");
-  git(folder, "add", ".");
-  git(folder, "commit", "--quiet", "-m", "A lamp");
-  const projectId = JSON.parse(
-    djinn("project", "add", folder, "--name", `review-${suffix}`, "--json"),
-  ).project.id as string;
-  const title = `Polish the lamp ${suffix}`;
-  const wishId = JSON.parse(
-    djinn("wish", "make", title, "--project-ids", projectId, "--json"),
-  ).wish.id as string;
-  const taskId = JSON.parse(
-    djinn(
-      "task",
-      "spawn",
-      wishId,
-      "--project-id",
-      projectId,
-      "--title",
-      "Rub the lamp",
-      "--provider",
-      "fake",
-      "--prompt",
-      "text working\nwait",
-      "--json",
-    ),
-  ).task.id as string;
+  const { title, clean } = await setupTask();
   try {
-    let worktree = "";
-    await expect
-      .poll(() => {
-        const task = JSON.parse(djinn("task", "get", taskId, "--json")).task;
-        worktree = task.status === "TASK_STATUS_RUNNING" ? task.worktree : "";
-        return worktree;
-      })
-      .not.toBe("");
-    write(worktree, "lamp/brass/wick.txt", "a committed wick\n");
-    write(worktree, "lamp/brass/oil.txt", lines("oil", 150));
-    write(worktree, "lamp/glass.txt", lines("glass", 150));
-    write(worktree, "wishes/kept/in/a/jar.txt", lines("jar", 150));
-    write(worktree, "notes.md", "a note\n");
-    git(worktree, "add", ".");
-    git(worktree, "commit", "--quiet", "-m", "A wick, oil, glass and a jar");
-    fs.writeFileSync(path.join(worktree, "lamp.txt"), "a shining lamp\n");
-    fs.writeFileSync(path.join(worktree, "smoke.md"), "a wisp of smoke\n");
-
     await page.setViewportSize({ width: 1600, height: 1000 });
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     await page.getByRole("button", { name: /Rub the lamp/ }).click();
-    const scroller = page.locator(".wish-view .mission-scroll");
-    await scroller.evaluate((el) => (el.scrollTop = 120));
-    const before = await scroller.evaluate((el) => el.scrollTop);
 
     // Full size: the review covers everything right of the side panel, which stays in reach; the view under it is
     // out of the keyboard's reach.
-    const see = page.getByRole("button", { name: "See the diff" });
-    await see.click();
+    await page.getByRole("button", { name: "See the diff" }).click();
     const review = page.getByRole("region", { name: /^Diff of / });
     await expect(review).toBeVisible();
     const shell = (await page.locator(".main-shell").boundingBox())!;
@@ -223,6 +171,42 @@ test("a task's diffs open full size beside the side panel, its files as a tree o
     await expect(row("brass")).toHaveAttribute("aria-expanded", "false");
     // The keys stayed in the tree: the review is still open.
     await expect(review).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    clean();
+  }
+});
+
+test("the worktree's uncommitted files, narrow layout, and closing the diff", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const { title, worktree, clean } = await setupTask();
+  try {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto(process.env.DJINN_URL!);
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+    await page.getByRole("tab", { name: /^Tasks/ }).click();
+    await page.getByRole("button", { name: /Rub the lamp/ }).click();
+    const scroller = page.locator(".wish-view .mission-scroll");
+    await scroller.evaluate((el) => (el.scrollTop = 120));
+    const before = await scroller.evaluate((el) => el.scrollTop);
+
+    const see = page.getByRole("button", { name: "See the diff" });
+    await see.click();
+    const review = page.getByRole("region", { name: /^Diff of / });
+    await expect(review).toBeVisible();
+    const committed = review.getByRole("tab", {
+      name: "Committed",
+      exact: true,
+    });
+    const tree = review.getByRole("tree", { name: "Changed files" });
+    const rows = tree.getByRole("treeitem");
+    const row = (name: string) => rows.filter({ hasText: name });
+    const column = review.locator(".diff-files");
+    await row("brass").click();
+    await expect(row("brass")).toHaveAttribute("aria-expanded", "false");
 
     // The worktree's tab: the change and the new file, not the commit, and no comment on them.
     await review.getByRole("tab", { name: "Not committed" }).click();
@@ -290,7 +274,85 @@ test("a task's diffs open full size beside the side panel, its files as a tree o
     await expect(page.locator(".hourglass-nav")).toHaveClass(/\bselected\b/);
     expect(errors).toEqual([]);
   } finally {
-    djinn("task", "stop", taskId);
-    djinn("wish", "pause", wishId);
+    clean();
   }
 });
+
+let project: { folder: string; id: string } | undefined;
+
+test.afterAll(() => {
+  if (project) fs.rmSync(project.folder, { recursive: true, force: true });
+  project = undefined;
+});
+
+async function setupTask() {
+  if (!project) {
+    const suffix = randomUUID().slice(0, 8);
+    const folder = fs.realpathSync(
+      fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "review-")),
+    );
+    git(folder, "init", "--quiet", "-b", "main");
+    fs.writeFileSync(path.join(folder, "lamp.txt"), "a brass lamp\n");
+    git(folder, "add", ".");
+    git(folder, "commit", "--quiet", "-m", "A lamp");
+    const id = JSON.parse(
+      djinn("project", "add", folder, "--name", `review-${suffix}`, "--json"),
+    ).project.id as string;
+    project = { folder, id };
+  }
+  const suffix = randomUUID().slice(0, 8);
+  const existing = (JSON.parse(djinn("wish", "list", "--json")).wishes ??
+    []) as {
+    id: string;
+    state: string;
+  }[];
+  for (const w of existing)
+    if (w.state === "WISH_STATE_ACTIVE") djinn("wish", "pause", w.id);
+  const title = `Polish the lamp ${suffix}`;
+  const wishId = JSON.parse(
+    djinn("wish", "make", title, "--project-ids", project.id, "--json"),
+  ).wish.id as string;
+  const taskId = JSON.parse(
+    djinn(
+      "task",
+      "spawn",
+      wishId,
+      "--project-id",
+      project.id,
+      "--title",
+      "Rub the lamp",
+      "--provider",
+      "fake",
+      "--prompt",
+      "text working\nwait",
+      "--json",
+    ),
+  ).task.id as string;
+  const clean = () => {
+    djinn("task", "stop", taskId);
+    djinn("wish", "delete", wishId);
+  };
+  try {
+    let worktree = "";
+    await expect
+      .poll(() => {
+        const task = JSON.parse(djinn("task", "get", taskId, "--json")).task;
+        worktree = task.status === "TASK_STATUS_RUNNING" ? task.worktree : "";
+        return worktree;
+      })
+      .not.toBe("");
+    write(worktree, "lamp/brass/wick.txt", "a committed wick\n");
+    write(worktree, "lamp/brass/oil.txt", lines("oil", 150));
+    write(worktree, "lamp/glass.txt", lines("glass", 150));
+    write(worktree, "wishes/kept/in/a/jar.txt", lines("jar", 150));
+    write(worktree, "notes.md", "a note\n");
+    git(worktree, "add", ".");
+    git(worktree, "commit", "--quiet", "-m", "A wick, oil, glass and a jar");
+    fs.writeFileSync(path.join(worktree, "lamp.txt"), "a shining lamp\n");
+    fs.writeFileSync(path.join(worktree, "smoke.md"), "a wisp of smoke\n");
+    return { title, worktree, clean };
+  } catch (err) {
+    clean();
+    throw err;
+  }
+}
