@@ -1,11 +1,11 @@
-// The glance in one order (W219): on a wish's page and on the questions page, the panel "What runs" lists every worker
-// by state, whatever its kind: what is in progress on top, the one begun first above (work, the investigator Enlighten
-// me starts, a lit ifrit, an urgent task with its label), then a worker stopped and kept (a circled pause, why on
-// hover), then what waits, then what is planned; below them the watchers, each with what it said last, since when and
-// the request it watches, a link out. The wish holds 60 finished tasks first: its waiting work sits past the first page
-// of its tasks, and shows on arriving, without visiting the Tasks tab. A stopped worker continued goes back among the
-// running. The workers are fakes (the fake provider, the fake claude, a shell script for the watcher): no model is
-// called. Screenshots, dark and light, go to test-results/e2e/.
+// The glance in one order (W219, W406): on a wish's page and on the questions page, on top the watchers, each with
+// what it said last, since when and the request it watches, a link out; then the workers by state, whatever their kind:
+// what is in progress on top, the one begun first above (work, the investigator Enlighten me starts, a lit ifrit, an
+// urgent task with its label), then a worker stopped and kept (a circled pause, why on hover), then what waits, then
+// what is planned. The wish holds 60 finished tasks first: its waiting work sits past the first page of its tasks, and
+// shows on arriving, without visiting the Tasks tab. A stopped worker continued goes back among the running. The
+// workers are fakes (the fake provider, the fake claude, a shell script for the watcher): no model is called.
+// Screenshots, dark and light, go to test-results/e2e/.
 import { type Locator, type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -325,6 +325,7 @@ test("the glance lists every worker in one order by state, its waiting work past
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     const glance = page.locator(".wish-view .glance-wide");
     const expected = [
+      `${watcher.code} watch watch`,
       `${work.code} run`,
       `${investigator} investigate`,
       `${ifrit.code} run`,
@@ -333,7 +334,6 @@ test("the glance lists every worker in one order by state, its waiting work past
       "W61 wait",
       "W62 wait child",
       "W63 plan",
-      `${watcher.code} watch watch`,
     ];
     await expect
       .poll(() => order(glance), { timeout: 15_000 })
@@ -412,6 +412,7 @@ test("the glance lists every worker in one order by state, its waiting work past
     await expect
       .poll(() => order(carpet))
       .toEqual([
+        `${watcher.code} watch watch`,
         `${work.code} run`,
         `${investigator} investigate`,
         `${ifrit.code} run`,
@@ -420,7 +421,6 @@ test("the glance lists every worker in one order by state, its waiting work past
         "W61 wait",
         "W62 wait child",
         "W63 plan",
-        `${watcher.code} watch watch`,
       ]);
     await expect(
       nav.locator(".wish-counts .wish-sign.tone-paused"),
