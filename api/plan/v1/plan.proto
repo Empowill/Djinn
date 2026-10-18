@@ -4658,12 +4658,38 @@ message LeadServiceMoveResponse {
   string note = 2;
 }
 
+message CircleModel {
+  // The canonical model ID accepted by the provider CLI (e.g. "claude-sonnet-5-5", "gemini-4-argon-high").
+  string id = 1;
+  // The display label shown in the Summoning Circle (e.g. "Claude Sonnet 5.5", "Gemini 4 Argon (High)").
+  string label = 2;
+  // The provider that runs this model.
+  Provider provider = 3;
+}
+
+message CircleProvider {
+  // The provider agent (Claude, Codex, Antigravity).
+  Provider provider = 1;
+  // True when the provider CLI is installed and signed in on this machine.
+  bool signed_in = 2;
+  // The terminal command to sign in when signed_in is false (e.g. "claude auth login", "codex login", "agy").
+  string login_command = 3;
+  // True when the lead row can run on this provider in the current lead mode.
+  bool lead_supported = 4;
+  // Why the lead row cannot run on this provider when lead_supported is false.
+  string lead_unavailable_reason = 5;
+}
+
 message LeadServiceGetCircleRequest {}
 
 message LeadServiceGetCircleResponse {
   // One row per kind of model-calling worker in the Summoning Circle, in order:
   // lead, investigation, mockup, ifrit, work, correction, review, question.
   repeated WorkerSeat rows = 1;
+  // Models available to the Summoning Circle, from the agent CLI where it can tell or the shared price table.
+  repeated CircleModel models = 2;
+  // Provider sign-in status and lead capability on this machine.
+  repeated CircleProvider providers = 3;
 }
 
 message LeadServiceSetCircleRequest {
@@ -4684,6 +4710,10 @@ message LeadServiceSetCircleRequest {
 message LeadServiceSetCircleResponse {
   // All rows of the Summoning Circle after the update.
   repeated WorkerSeat rows = 1;
+  // Models available to the Summoning Circle.
+  repeated CircleModel models = 2;
+  // Provider sign-in status and lead capability on this machine.
+  repeated CircleProvider providers = 3;
 }
 
 message LeadServiceAccountsRequest {}

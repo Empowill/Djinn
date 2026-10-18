@@ -731,11 +731,19 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
     );
   });
 
-  // Lead row does not offer "Same as lead" and selects its canonical model ID.
+  // Lead row does not offer "Same as lead", selects its canonical model ID, and offers Antigravity (gemini-4-argon-high) and Claude Fable 5.1.
   assert.doesNotMatch(rowChunks[0], /Same as lead/);
   assert.match(
     rowChunks[0],
     /<option value="claude-sonnet-5-5" selected="">Claude Sonnet 5\.5<\/option>/,
+  );
+  assert.match(
+    rowChunks[0],
+    /<option value="claude-fable-5-1">Claude Fable 5\.1<\/option>/,
+  );
+  assert.match(
+    rowChunks[0],
+    /<option value="gemini-4-argon-high">Gemini 4 Argon \(High\)<\/option>/,
   );
 
   // Non-lead rows offer "Same as lead" (value="") as the first option and default to it when unset.
@@ -752,7 +760,8 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
     /<option value="gemini-4-argon-high" selected="">Gemini 4 Argon \(High\)<\/option>/,
   );
 
-  // Every dropdown shows each model at most once (unique values and unique labels), and every non-empty value is a canonical ID without spaces.
+  // Every dropdown shows each model at most once (unique values and unique labels), and every non-empty value is in the shared price table (internal/usage/prices.yaml).
+  const sharedModels = s.getDefaultPriceTable().models;
   for (let i = 0; i < rowChunks.length; i++) {
     const opts = [
       ...rowChunks[i].matchAll(
@@ -777,8 +786,94 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
         /\s/,
         `row ${expectedLabels[i]} option value "${v}" must not contain spaces`,
       );
+      if (v !== "") {
+        assert.ok(
+          Object.hasOwn(sharedModels, v),
+          `row ${expectedLabels[i]} option value "${v}" is not in internal/usage/prices.yaml`,
+        );
+      }
     }
   }
+
+  // Unverified hand-written IDs never appear in the circle.
+  for (const unverified of [
+    "claude-opus-5-8",
+    "gemini-3.8-pro-high",
+    "gpt-5.5-codex",
+  ]) {
+    assert.doesNotMatch(html, new RegExp(unverified));
+  }
+
+  // Unsigned provider (Codex not signed in) and driven lead (Antigravity leadSupported=false):
+  // - Codex models are never offered as selectable choices; Codex shows greyed with how to sign in (`codex login`).
+  // - On the Lead row, Antigravity shows greyed with the tooltip explaining why the driven lead cannot run it, while non-lead rows still offer Antigravity models.
+  const leadReason =
+    "antigravity cannot be driven as a lead: agy demands its own workspace trust file and refuses a session that may not edit every file of its folder; move the lead to claude or codex";
+  const restrictedProviders = [
+    {
+      provider: s.Provider.CLAUDE,
+      signedIn: true,
+      loginCommand: "claude auth login",
+      leadSupported: true,
+    },
+    {
+      provider: s.Provider.CODEX,
+      signedIn: false,
+      loginCommand: "codex login",
+      leadSupported: true,
+    },
+    {
+      provider: s.Provider.ANTIGRAVITY,
+      signedIn: true,
+      loginCommand: "agy",
+      leadSupported: false,
+      leadUnavailableReason: leadReason,
+    },
+  ];
+  const restrictedHtml = s.renderToStaticMarkup(
+    h(
+      s.DjinnProvider,
+      { djinn },
+      h(s.SummoningCircle, {
+        initialRows,
+        initialProviders: restrictedProviders,
+        onClose() {},
+      }),
+    ),
+  );
+  assert.match(
+    restrictedHtml,
+    /<span class="summoning-provider unsigned" title="sign in with codex login">Codex · sign in with <code>codex login<\/code><\/span>/,
+  );
+  // No Codex model is offered as a choice anywhere when Codex is not signed in.
+  assert.doesNotMatch(restrictedHtml, /value="gpt-5\.5"/);
+  assert.doesNotMatch(restrictedHtml, /value="gpt-5\.3-codex"/);
+  assert.match(
+    restrictedHtml,
+    /<option disabled="" title="sign in with codex login">Codex — sign in with codex login<\/option>/,
+  );
+  const restrictedRows = restrictedHtml
+    .split('<div class="setting-row summoning-row">')
+    .slice(1);
+  // Lead row shows Antigravity greyed with the tooltip instead of offering its models or hiding it.
+  assert.doesNotMatch(restrictedRows[0], /value="gemini-4-argon-high"/);
+  assert.match(
+    restrictedRows[0],
+    new RegExp(
+      `<span class="summoning-provider unsigned lead-unavailable" title="${leadReason}">Antigravity<\\/span>`,
+    ),
+  );
+  assert.match(
+    restrictedRows[0],
+    new RegExp(
+      `<option disabled="" title="${leadReason}">Antigravity — ${leadReason}<\\/option>`,
+    ),
+  );
+  // Work row still offers Antigravity models when Antigravity is signed in.
+  assert.match(
+    restrictedRows[4],
+    /<option value="gemini-4-argon-high" selected="">Gemini 4 Argon \(High\)<\/option>/,
+  );
 
   // Canonical IDs are sent when a model or "Same as lead" is chosen in the circle.
   const circle = live(s.SummoningCircle, {
@@ -795,10 +890,20 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
   });
   const selects = circle.all("select");
   assert.equal(selects.length, 8);
-  // Choose "Gemini 4 Argon (High)" on Investigation (index 1) -> sends canonical ID "gemini-4-argon-high" and Provider.ANTIGRAVITY.
-  selects[1].props.onChange({ target: { value: "gemini-4-argon-high" } });
+  // Choose "Gemini 4 Argon (High)" on Lead (index 0) -> sends canonical ID "gemini-4-argon-high" and Provider.ANTIGRAVITY.
+  selects[0].props.onChange({ target: { value: "gemini-4-argon-high" } });
   await circle.settle();
   assert.deepEqual(calls[0], {
+    kind: s.WorkerKind.LEAD,
+    provider: s.Provider.ANTIGRAVITY,
+    model: "gemini-4-argon-high",
+  });
+  // Choose "Gemini 4 Argon (High)" on Investigation (index 1) -> sends canonical ID "gemini-4-argon-high" and Provider.ANTIGRAVITY.
+  circle.all("select")[1].props.onChange({
+    target: { value: "gemini-4-argon-high" },
+  });
+  await circle.settle();
+  assert.deepEqual(calls[1], {
     kind: s.WorkerKind.INVESTIGATION,
     provider: s.Provider.ANTIGRAVITY,
     model: "gemini-4-argon-high",
@@ -806,7 +911,7 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
   // Choose "Same as lead" on Work (index 4) -> sends empty model and Provider.UNSPECIFIED.
   circle.all("select")[4].props.onChange({ target: { value: "" } });
   await circle.settle();
-  assert.deepEqual(calls[1], {
+  assert.deepEqual(calls[2], {
     kind: s.WorkerKind.WORK,
     provider: s.Provider.UNSPECIFIED,
     model: "",
@@ -816,6 +921,7 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
     "gemini-4-argon-high",
   );
   assert.equal(s.canonicalModelId("sonnet"), "claude-sonnet-5-5");
+  assert.equal(s.canonicalModelId("fable"), "claude-fable-5-1");
   assert.equal(s.shortModel("Gemini 4 Argon (High)"), "gemini 4 argon");
 });
 

@@ -48,6 +48,12 @@ func TestDefaultTable(t *testing.T) {
 	}
 
 	for name, model := range tbl.Models {
+		if model.Label == "" {
+			t.Errorf("model %q has no label", name)
+		}
+		if ProviderForModel(name) == planv1.Provider_PROVIDER_UNSPECIFIED {
+			t.Errorf("model %q has unspecified provider", name)
+		}
 		if model.Source == "" {
 			t.Errorf("model %q has no source URL", name)
 		}
@@ -57,6 +63,9 @@ func TestDefaultTable(t *testing.T) {
 		if model.Input <= 0 || model.Output <= 0 {
 			t.Errorf("model %q has non-positive input (%f) or output (%f) price", name, model.Input, model.Output)
 		}
+	}
+	if got := len(tbl.Catalog()); got != len(tbl.Models) {
+		t.Errorf("len(Catalog()) = %d, want %d", got, len(tbl.Models))
 	}
 }
 

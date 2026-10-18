@@ -752,6 +752,7 @@ func IsClaudeModel(m string) bool {
 		strings.HasPrefix(m, "claude/") ||
 		strings.HasPrefix(m, "anthropic/") ||
 		strings.Contains(m, ".claude-") ||
+		m == "fable" || strings.HasPrefix(m, "fable-") || strings.HasPrefix(m, "fable/") || strings.HasPrefix(m, "fable[") ||
 		m == "sonnet" || strings.HasPrefix(m, "sonnet-") || strings.HasPrefix(m, "sonnet/") || strings.HasPrefix(m, "sonnet[") ||
 		m == "opus" || strings.HasPrefix(m, "opus-") || strings.HasPrefix(m, "opus/") || strings.HasPrefix(m, "opus[") ||
 		m == "haiku" || strings.HasPrefix(m, "haiku-") || strings.HasPrefix(m, "haiku/") || strings.HasPrefix(m, "haiku[")

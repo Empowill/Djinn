@@ -1,12 +1,15 @@
 package plan
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -21,6 +24,7 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/usage"
 )
 
 // Where the lead Djinn drives runs (W132, decision Q31): its seat, an agent, a model and an account, chosen by the
@@ -79,29 +83,43 @@ var CircleRowOrder = []planv1.WorkerKind{
 	planv1.WorkerKind_WORKER_KIND_QUESTION,
 }
 
-// circleModelAliases maps human-readable labels and short aliases to canonical model identifiers so Djinn always
-// stores and sends model IDs, never labels with spaces.
+// circleModelAliases maps human-readable labels, short aliases, and legacy unverified identifiers to canonical model
+// identifiers in the shared price table (internal/usage/prices.yaml) so Djinn always stores and sends verified IDs.
 var circleModelAliases = map[string]string{
-	"claude sonnet 5.5":       "claude-sonnet-5-5",
-	"sonnet":                  "claude-sonnet-5-5",
-	"claude opus 5.8":         "claude-opus-5-8",
-	"claude opus 5.5":         "claude-opus-5-5",
-	"opus":                    "claude-opus-5-8",
-	"claude haiku 5.5":        "claude-haiku-5-5",
-	"haiku":                   "claude-haiku-5-5",
-	"gpt-5.5":                 "gpt-5.5",
-	"gpt 5.5":                 "gpt-5.5",
-	"gpt-5.5 codex":           "gpt-5.5-codex",
-	"gpt 5.5 codex":           "gpt-5.5-codex",
-	"gpt-5.5 mini":            "gpt-5.5-mini",
-	"gpt 5.5 mini":            "gpt-5.5-mini",
-	"gemini 4 argon (high)":   "gemini-4-argon-high",
-	"gemini 4 argon":          "gemini-4-argon-high",
-	"argon":                   "gemini-4-argon-high",
-	"gemini 3.8 flash (high)": "gemini-3.8-flash-high",
-	"gemini 3.8 flash":        "gemini-3.8-flash-high",
-	"gemini 3.8 pro (high)":   "gemini-3.8-pro-high",
-	"gemini 3.8 pro":          "gemini-3.8-pro-high",
+	"claude fable 5.1":          "claude-fable-5-1",
+	"fable":                     "claude-fable-5-1",
+	"claude sonnet 5.5":         "claude-sonnet-5-5",
+	"sonnet":                    "claude-sonnet-5-5",
+	"claude sonnet 4.5":         "claude-sonnet-4-5",
+	"claude opus 5.8":           "claude-opus-5-5",
+	"claude-opus-5-8":           "claude-opus-5-5",
+	"claude opus 5.5":           "claude-opus-5-5",
+	"opus":                      "claude-opus-5-5",
+	"claude haiku 5.5":          "claude-haiku-5-5",
+	"haiku":                     "claude-haiku-5-5",
+	"gpt-5.5":                   "gpt-5.5",
+	"gpt 5.5":                   "gpt-5.5",
+	"gpt-5.3-codex":             "gpt-5.3-codex",
+	"gpt-5.3 codex":             "gpt-5.3-codex",
+	"gpt 5.3 codex":             "gpt-5.3-codex",
+	"gpt-5.5 codex":             "gpt-5.3-codex",
+	"gpt 5.5 codex":             "gpt-5.3-codex",
+	"gpt-5.5-codex":             "gpt-5.3-codex",
+	"codex":                     "gpt-5.3-codex",
+	"gpt-5.5 mini":              "gpt-5.5",
+	"gpt 5.5 mini":              "gpt-5.5",
+	"gpt-5.5-mini":              "gpt-5.5",
+	"gemini 4 argon (high)":     "gemini-4-argon-high",
+	"gemini 4 argon":            "gemini-4-argon-high",
+	"argon":                     "gemini-4-argon-high",
+	"gemini 4 argon (medium)":   "gemini-4-argon-medium",
+	"gemini 3.8 flash (high)":   "gemini-3.8-flash-high",
+	"gemini 3.8 flash":          "gemini-3.8-flash-high",
+	"flash":                     "gemini-3.8-flash-high",
+	"gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
+	"gemini 3.8 pro (high)":     "gemini-4-argon-high",
+	"gemini 3.8 pro":            "gemini-4-argon-high",
+	"gemini-3.8-pro-high":       "gemini-4-argon-high",
 }
 
 // NormalizeCircleModel maps a human-readable model label or short alias to its canonical model ID.
@@ -314,6 +332,9 @@ func ReadLeadSeat(home string) *planv1.LeadSeat {
 	if seat == nil {
 		seat = &planv1.LeadSeat{}
 	}
+	if seat.Model != "" {
+		seat.Model = NormalizeCircleModel(seat.Model)
+	}
 	for _, r := range settings.GetCircle() {
 		if r.GetKind() == planv1.WorkerKind_WORKER_KIND_LEAD {
 			if seat.Provider == planv1.Provider_PROVIDER_UNSPECIFIED && r.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
@@ -355,11 +376,26 @@ var accountVars = map[planv1.Provider]string{
 	planv1.Provider_PROVIDER_CODEX:  "CODEX_HOME",
 }
 
-// accountDefaults are the agents' own folders, which an account never takes, and the prefix of an account's folder
-// in the home folder: ~/.claude-work beside ~/.claude, as Claude Code's documentation names it.
+// accountDefaults are the agents' own folders under the user's home folder, which an account never takes, and the
+// prefix of an account's folder: ~/.claude-work beside ~/.claude, as Claude Code's documentation names it.
 var accountDefaults = map[planv1.Provider]string{
-	planv1.Provider_PROVIDER_CLAUDE: ".claude",
-	planv1.Provider_PROVIDER_CODEX:  ".codex",
+	planv1.Provider_PROVIDER_CLAUDE:      ".claude",
+	planv1.Provider_PROVIDER_CODEX:       ".codex",
+	planv1.Provider_PROVIDER_ANTIGRAVITY: filepath.Join(".gemini", "antigravity-cli"),
+}
+
+// providerPrograms are the CLI binary names for each agent provider.
+var providerPrograms = map[planv1.Provider]string{
+	planv1.Provider_PROVIDER_CLAUDE:      "claude",
+	planv1.Provider_PROVIDER_CODEX:       "codex",
+	planv1.Provider_PROVIDER_ANTIGRAVITY: "agy",
+}
+
+// CircleProviderOrder is the display order of providers in the Summoning Circle.
+var CircleProviderOrder = []planv1.Provider{
+	planv1.Provider_PROVIDER_CLAUDE,
+	planv1.Provider_PROVIDER_CODEX,
+	planv1.Provider_PROVIDER_ANTIGRAVITY,
 }
 
 // claudeKeys are the variables that come before the login of a Claude Code folder (code.claude.com/docs/en/
@@ -384,10 +420,17 @@ func AccountEnv(a *planv1.Account) []string {
 }
 
 // accountLogins are the commands that sign each agent in, from its documentation: claude auth login
-// (code.claude.com/docs/en/cli-reference), codex login (developers.openai.com/codex/cli/reference).
+// (code.claude.com/docs/en/cli-reference), codex login (developers.openai.com/codex/cli/reference), agy
+// (antigravity.google/docs/cli/install).
 var accountLogins = map[planv1.Provider]string{
-	planv1.Provider_PROVIDER_CLAUDE: "claude auth login",
-	planv1.Provider_PROVIDER_CODEX:  "codex login",
+	planv1.Provider_PROVIDER_CLAUDE:      "claude auth login",
+	planv1.Provider_PROVIDER_CODEX:       "codex login",
+	planv1.Provider_PROVIDER_ANTIGRAVITY: "agy",
+}
+
+// ProviderLogin returns the terminal command that signs in provider on its default home folder.
+func ProviderLogin(provider planv1.Provider) string {
+	return accountLogins[provider]
 }
 
 // AccountLogin is the command line that signs account a in, in its folder, for the user's shell on goos: cmd.exe on
@@ -479,6 +522,236 @@ func LeadAgent(provider planv1.Provider) error {
 	return fmt.Errorf("%s is not an agent that can lead: move the lead to claude or codex", provider)
 }
 
+var circleStatusTimeout = 3 * time.Second
+
+var ansiEscapeSeq = regexp.MustCompile(`\x1b\[[?0-9;]*[a-zA-Z]`)
+
+func lookProgram(name, path string) (string, error) {
+	exts := []string{""}
+	if runtime.GOOS == "windows" {
+		exts = strings.Split(strings.ToLower(os.Getenv("PATHEXT")), ";")
+		if os.Getenv("PATHEXT") == "" {
+			exts = []string{".com", ".exe", ".bat", ".cmd"}
+		}
+	}
+	for _, dir := range filepath.SplitList(path) {
+		if !filepath.IsAbs(dir) {
+			continue
+		}
+		for _, ext := range exts {
+			file := filepath.Join(dir, name+ext)
+			if info, err := os.Stat(file); err == nil && !info.IsDir() && (runtime.GOOS == "windows" || info.Mode()&0o111 != 0) {
+				return file, nil
+			}
+		}
+	}
+	return "", exec.ErrNotFound
+}
+
+func runProviderCmd(ctx context.Context, command string, args []string, userHome, path string, extraEnv []string, out *bytes.Buffer) error {
+	ctx, cancel := context.WithTimeout(ctx, circleStatusTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, command, args...)
+	cmd.WaitDelay = time.Second
+	cmd.Env = append(os.Environ(), "PATH="+path, "NO_COLOR=1")
+	if userHome != "" {
+		cmd.Env = append(cmd.Env, "HOME="+userHome, "USERPROFILE="+userHome)
+	}
+	cmd.Env = append(cmd.Env, extraEnv...)
+	if out != nil {
+		cmd.Stdout = out
+	}
+	return cmd.Run()
+}
+
+func isProviderSignedIn(ctx context.Context, p planv1.Provider, djinnHome, userHome, path string) bool {
+	program := providerPrograms[p]
+	if program == "" {
+		return false
+	}
+	command, err := lookProgram(program, path)
+	if err != nil {
+		return false
+	}
+	if statusArgs := AccountStatus(p); statusArgs != nil {
+		if userHome != "" {
+			if info, err := os.Stat(filepath.Join(userHome, accountDefaults[p])); err == nil && info.IsDir() {
+				if runProviderCmd(ctx, command, statusArgs, userHome, path, nil, nil) == nil {
+					return true
+				}
+			}
+		}
+		for _, acc := range ReadAccounts(djinnHome) {
+			if acc.GetProvider() != p || acc.GetConfigDirectory() == "" {
+				continue
+			}
+			if info, err := os.Stat(acc.GetConfigDirectory()); err == nil && info.IsDir() {
+				if runProviderCmd(ctx, command, statusArgs, userHome, path, AccountEnv(acc), nil) == nil {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if p == planv1.Provider_PROVIDER_ANTIGRAVITY && userHome != "" {
+		agHome := filepath.Join(userHome, accountDefaults[p])
+		info, err := os.Stat(agHome)
+		if err != nil || !info.IsDir() {
+			return false
+		}
+		if _, err := os.Stat(filepath.Join(agHome, "antigravity-oauth-token")); err == nil {
+			return true
+		}
+		// A test fixture that creates ~/.gemini/antigravity-cli without running an unauthenticated agy binary has no installation_id.
+		if _, err := os.Stat(filepath.Join(agHome, "installation_id")); errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+	}
+	return false
+}
+
+// CircleProviders returns the sign-in status, sign-in command, and lead capability for each provider on this machine.
+func CircleProviders(ctx context.Context, djinnHome, userHome, path string, leadDriven bool) []*planv1.CircleProvider {
+	out := make([]*planv1.CircleProvider, len(CircleProviderOrder))
+	var wg sync.WaitGroup
+	for i, p := range CircleProviderOrder {
+		wg.Go(func() {
+			cp := &planv1.CircleProvider{
+				Provider:      p,
+				SignedIn:      isProviderSignedIn(ctx, p, djinnHome, userHome, path),
+				LoginCommand:  accountLogins[p],
+				LeadSupported: true,
+			}
+			if leadDriven {
+				if err := LeadAgent(p); err != nil {
+					cp.LeadSupported = false
+					cp.LeadUnavailableReason = err.Error()
+				}
+			}
+			out[i] = cp
+		})
+	}
+	wg.Wait()
+	return out
+}
+
+// parseAgyModels extracts Antigravity models reported by `agy models` that are present in the shared price table.
+func parseAgyModels(raw string, table *usage.PriceTable) []*planv1.CircleModel {
+	if table == nil {
+		return nil
+	}
+	var out []*planv1.CircleModel
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(raw, "\n") {
+		if idx := strings.LastIndexByte(line, '\r'); idx >= 0 {
+			line = line[idx+1:]
+		}
+		line = ansiEscapeSeq.ReplaceAllString(line, "")
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		id := fields[0]
+		if id == "" || seen[id] || usage.ProviderForModel(id) != planv1.Provider_PROVIDER_ANTIGRAVITY {
+			continue
+		}
+		price, ok := table.Models[id]
+		if !ok {
+			continue
+		}
+		label := price.Label
+		if rest := strings.TrimSpace(strings.TrimPrefix(line, id)); rest != "" && rest != "(default)" {
+			label = rest
+		}
+		if label == "" {
+			label = id
+		}
+		seen[id] = true
+		out = append(out, &planv1.CircleModel{
+			Id:       id,
+			Label:    label,
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+		})
+	}
+	return out
+}
+
+// CircleModels returns the models offered in the Summoning Circle for signed-in providers: from `agy models` where the
+// agent CLI can report its models (intersected with the shared price table), and from internal/usage/prices.yaml for
+// providers whose CLI has no model-listing command. Providers that are not signed in are never offered as choices.
+func CircleModels(ctx context.Context, providers []*planv1.CircleProvider, userHome, path string) []*planv1.CircleModel {
+	table, err := usage.DefaultTable()
+	if err != nil {
+		return nil
+	}
+	signedIn := make(map[planv1.Provider]bool, len(providers))
+	for _, cp := range providers {
+		if cp.GetSignedIn() {
+			signedIn[cp.GetProvider()] = true
+		}
+	}
+	var agyModels []*planv1.CircleModel
+	if signedIn[planv1.Provider_PROVIDER_ANTIGRAVITY] {
+		if command, err := lookProgram(providerPrograms[planv1.Provider_PROVIDER_ANTIGRAVITY], path); err == nil {
+			var buf bytes.Buffer
+			if runProviderCmd(ctx, command, []string{"models"}, userHome, path, nil, &buf) == nil {
+				agyModels = parseAgyModels(buf.String(), table)
+			}
+		}
+	}
+	catalog := table.Catalog()
+	var out []*planv1.CircleModel
+	agyAdded := false
+	for _, m := range catalog {
+		if !signedIn[m.GetProvider()] {
+			continue
+		}
+		if m.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY && len(agyModels) > 0 {
+			if !agyAdded {
+				out = append(out, agyModels...)
+				agyAdded = true
+			}
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func (s *LeadService) circleState(ctx context.Context) ([]*planv1.CircleProvider, []*planv1.CircleModel) {
+	djinnHome := s.Wishes.home()
+	userHome := s.UserHome
+	if userHome == "" {
+		userHome, _ = os.UserHomeDir()
+	}
+	path := s.Path
+	if path == "" {
+		path = os.Getenv("PATH")
+	}
+	leadDriven := s.Wishes.drive() != nil || readSettings(djinnHome).GetLeadDriven()
+	providers := CircleProviders(ctx, djinnHome, userHome, path, leadDriven)
+	models := CircleModels(ctx, providers, userHome, path)
+	return providers, models
+}
+
+func validateSharedModel(model string) error {
+	if model == "" {
+		return nil
+	}
+	table, err := usage.DefaultTable()
+	if err != nil {
+		return err
+	}
+	if _, ok := table.Models[model]; !ok {
+		return fmt.Errorf("unknown model %q: not in the shared model table", model)
+	}
+	return nil
+}
+
 // LeadLimit is the usage limit the lead Djinn drives hit, and where it may move, until a batch ends its turn or it
 // moves; nil when none.
 func (d *LeadDrive) LeadLimit() *planv1.LeadLimit {
@@ -556,12 +829,16 @@ func (s *LeadService) Move(
 	return connect.NewResponse(&planv1.LeadServiceMoveResponse{Seat: seat, Note: note}), nil
 }
 
-// GetCircle implements LeadService.GetCircle: returns the global Summoning Circle rows for all worker kinds.
+// GetCircle implements LeadService.GetCircle: returns the global Summoning Circle rows, signed-in providers, and
+// available models for all worker kinds.
 func (s *LeadService) GetCircle(
-	_ context.Context, _ *connect.Request[planv1.LeadServiceGetCircleRequest],
+	ctx context.Context, _ *connect.Request[planv1.LeadServiceGetCircleRequest],
 ) (*connect.Response[planv1.LeadServiceGetCircleResponse], error) {
+	providers, models := s.circleState(ctx)
 	return connect.NewResponse(&planv1.LeadServiceGetCircleResponse{
-		Rows: ReadCircle(s.Wishes.home()),
+		Rows:      ReadCircle(s.Wishes.home()),
+		Models:    models,
+		Providers: providers,
 	}), nil
 }
 
@@ -588,11 +865,20 @@ func (s *LeadService) SetCircle(
 				p = ReadLeadSeat(home).GetProvider()
 			}
 		}
-		if err := LeadAgent(p); err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		leadDriven := s.Wishes.drive() != nil || readSettings(home).GetLeadDriven()
+		if leadDriven {
+			if err := LeadAgent(p); err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+		} else if p != planv1.Provider_PROVIDER_FAKE && !ValidWorkerProvider(p) {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"%s is not an agent that can lead: move the lead to claude, codex or antigravity", providerName(p)))
 		}
 		if p != planv1.Provider_PROVIDER_FAKE {
 			if err := ValidateProviderModel(p, rawModel); err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			if err := validateSharedModel(rawModel); err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, err)
 			}
 		}
@@ -611,6 +897,9 @@ func (s *LeadService) SetCircle(
 				"provider %s cannot run an ifrit: choose claude or antigravity", providerName(p)))
 		}
 		if err := ValidateProviderModel(p, rawModel); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		if err := validateSharedModel(rawModel); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
 		}
 	}
@@ -667,7 +956,12 @@ func (s *LeadService) SetCircle(
 		}
 	}
 	s.Wishes.ChangeLead()
-	return connect.NewResponse(&planv1.LeadServiceSetCircleResponse{Rows: ReadCircle(home)}), nil
+	providers, models := s.circleState(ctx)
+	return connect.NewResponse(&planv1.LeadServiceSetCircleResponse{
+		Rows:      ReadCircle(home),
+		Models:    models,
+		Providers: providers,
+	}), nil
 }
 
 // providerWord is how a command names an agent: claude, codex.

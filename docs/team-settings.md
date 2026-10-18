@@ -232,12 +232,16 @@ branch, which lists the remote's branches as your copy last fetched them (`djinn
 
 The **Summoning Circle** in the window (below the Grimoire in the side panel; `djinn lead get-circle` and `djinn lead
 set-circle` on the command line) chooses the model for each kind of worker across all projects: Djinn (lead),
-investigation, mockup, ifrit, work, merge correction, merge review, and question investigator. Each dropdown shows each
-model once by its label (`"Gemini 4 Argon (High)"`) while storing and sending its canonical model identifier
-(`"gemini-4-argon-high"`, passed to `agy` as `"Gemini 4 Argon (High)"`). Every row except the lead defaults to **Same
-as lead**, following the lead's choice when it changes. Any legacy per-project `provider`, `model` or `question_model`
-in your developer settings file (`projects/<id>/settings.txtpb`) is migrated once into the Summoning Circle and dropped
-from the per-project file; `djinn task spawn --provider --model` remains the lead's per-task escape hatch.
+investigation, mockup, ifrit, work, merge correction, merge review, and question investigator. Only providers installed
+and signed in on this machine are offered as choices (unsigned providers appear greyed out with how to sign in); models
+come from the agent itself where it reports them (`agy models`) and from the shared price table (`internal/usage/prices.yaml`),
+never a second hand-written list in the UI. Each dropdown shows each model once by its label (`"Gemini 4 Argon (High)"`)
+while storing and sending its canonical model identifier (`"gemini-4-argon-high"`, passed to `agy` as `"Gemini 4 Argon (High)"`).
+The lead row offers Antigravity when the lead runs in a terminal, and shows a tooltip when a driven lead cannot run it.
+Every row except the lead defaults to **Same as lead**, following the lead's choice when it changes. Any legacy
+per-project `provider`, `model` or `question_model` in your developer settings file (`projects/<id>/settings.txtpb`) is
+migrated once into the Summoning Circle and dropped from the per-project file; `djinn task spawn --provider --model`
+remains the lead's per-task escape hatch.
 
 ## No secret, ever
 

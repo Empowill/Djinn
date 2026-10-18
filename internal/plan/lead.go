@@ -132,7 +132,9 @@ func resumeLine(lead *planv1.Lead) (string, error) {
 
 // LeadService implements planv1connect.LeadServiceHandler.
 type LeadService struct {
-	Wishes *Wishes
+	Wishes   *Wishes
+	UserHome string
+	Path     string
 }
 
 func (s *LeadService) Set(
