@@ -161,6 +161,39 @@ func TestRunUpdate(t *testing.T) {
 	}
 }
 
+// startInstalled starts djinn up at djinnPath and stops it at cleanup. While another parallel test forks, its child may
+// hold the freshly written binary open for writing until it execs (ETXTBSY).
+func startInstalled(t *testing.T, djinnPath string, env []string) (<-chan struct{}, *buffer) {
+	t.Helper()
+	var old *exec.Cmd
+	oldErrs := &buffer{}
+	for {
+		old = exec.Command(djinnPath, "up")
+		old.Env = env
+		old.Stdout, old.Stderr = &buffer{}, oldErrs
+		err := old.Start()
+		if errors.Is(err, syscall.ETXTBSY) {
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+	exited := make(chan struct{})
+	go func() { _ = old.Wait(); close(exited) }()
+	t.Cleanup(func() {
+		_ = old.Process.Signal(syscall.SIGINT)
+		select {
+		case <-exited:
+		case <-time.After(15 * time.Second):
+			_ = old.Process.Kill()
+		}
+	})
+	return exited, oldErrs
+}
+
 // updateInstalled installs a newer djinn while one runs a lead, checks that nothing restarts until asked, then runs
 // djinn update: the new djinn runs the lead again on its session, in its folder, and reports the terminal it could not.
 func updateInstalled(t *testing.T) {
@@ -177,24 +210,7 @@ func updateInstalled(t *testing.T) {
 	djinnPath := filepath.Join(t.TempDir(), "djinn")
 	install(t, djinnPath, "v1")
 
-	// Djinn v1 runs from the installed path; the test stops it by its PID.
-	old := exec.Command(djinnPath, "up")
-	old.Env = env
-	oldErrs := &buffer{}
-	old.Stdout, old.Stderr = &buffer{}, oldErrs
-	if err := old.Start(); err != nil {
-		t.Fatal(err)
-	}
-	exited := make(chan struct{})
-	go func() { _ = old.Wait(); close(exited) }()
-	t.Cleanup(func() {
-		_ = old.Process.Signal(syscall.SIGINT)
-		select {
-		case <-exited:
-		case <-time.After(15 * time.Second):
-			_ = old.Process.Kill()
-		}
-	})
+	exited, oldErrs := startInstalled(t, djinnPath, env)
 	addr := answering(t, home, oldErrs.String)
 
 	// The lead runs in its terminal; a second terminal runs in a folder that will be gone at the restart.
@@ -318,23 +334,7 @@ func updateFromRelease(t *testing.T) {
 	fake.publish(t, "v1.0.0", "djinn_test", v1, nil)
 	env := environ(home, t.TempDir(), "DJINN_TEST_RELEASE_API="+fake.srv.URL, "DJINN_TEST_RELEASE_ASSET=djinn_test")
 
-	old := exec.Command(djinnPath, "up")
-	old.Env = env
-	oldErrs := &buffer{}
-	old.Stdout, old.Stderr = &buffer{}, oldErrs
-	if err := old.Start(); err != nil {
-		t.Fatal(err)
-	}
-	exited := make(chan struct{})
-	go func() { _ = old.Wait(); close(exited) }()
-	t.Cleanup(func() {
-		_ = old.Process.Signal(syscall.SIGINT)
-		select {
-		case <-exited:
-		case <-time.After(15 * time.Second):
-			_ = old.Process.Kill()
-		}
-	})
+	exited, oldErrs := startInstalled(t, djinnPath, env)
 	ui, _ := clients(t, answering(t, home, oldErrs.String))
 	alive := func(when string) {
 		t.Helper()
