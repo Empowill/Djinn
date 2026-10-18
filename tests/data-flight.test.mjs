@@ -799,10 +799,54 @@ test("a task Djinn resumes, or one resumed as another task, is not the user's mo
 
 test("the states Djinn handles by itself speak the window's status language", () => {
   const S = f.TaskStatus;
+  const H = f.TaskHold;
   assert.equal(f.taskTone({ status: S.RESUMING }), "running");
   assert.equal(
     f.taskTone({ status: S.RESUMING, resumeAfter: at(100) }),
     "paused",
+  );
+  assert.equal(
+    f.taskStatusText({ status: S.RESUMING, resumeAfter: at(100) }),
+    "Waiting for the limit",
+  );
+  // A stale resumeAfter while another hold is active, or a provider-wide wait reason on a task without its own
+  // resumeAfter, never gives the task a limit badge or a paused tone.
+  assert.equal(
+    f.taskTone({ status: S.RESUMING, resumeAfter: at(100), hold: H.PLACE }),
+    "running",
+  );
+  assert.equal(
+    f.taskStatusText({
+      status: S.RESUMING,
+      resumeAfter: at(100),
+      hold: H.PLACE,
+    }),
+    "Resuming",
+  );
+  assert.equal(
+    f.taskTone({
+      status: S.RESUMING,
+      hold: H.LIMIT,
+      waitReason: "antigravity waits for W317's quota until 15:29",
+    }),
+    "running",
+  );
+  assert.equal(
+    f.taskStatusText({
+      status: S.RESUMING,
+      hold: H.LIMIT,
+      waitReason: "antigravity waits for W317's quota until 15:29",
+    }),
+    "Resuming",
+  );
+  assert.equal(
+    f.taskStatusText({
+      status: S.RUNNING,
+      resumeAfter: at(100),
+      hold: H.LIMIT,
+      waitReason: "antigravity waits for W317's quota until 15:29",
+    }),
+    "Running",
   );
   assert.equal(f.taskTone({ status: S.INTERRUPTED }, "W5"), "stopped");
   assert.equal(f.taskTone({ status: S.INTERRUPTED }), "interrupted");
@@ -1631,6 +1675,11 @@ test("past waits fold into the line that ended them, and a started task shows no
       "started claude in /w, after waiting 8 min 28 s: waits for feat/qol to be green again",
     ),
     ev("t", "Read a.go", f.TaskEventKind.TOOL_CALL),
+    ev(
+      "wl",
+      "waiting for the limit: exhausted your capacity on this model, resets in 42m; Djinn resumes it by itself at 15:29",
+    ),
+    ev("rl", "resumed claude in /w, after waiting 42 min"),
     ev("i", "interrupted: Djinn restarted"),
     ev("r", "resuming: Djinn restarted; Djinn starts it again by itself"),
     ev("w3", "waiting: waits for W1 (running)"),
@@ -1641,6 +1690,7 @@ test("past waits fold into the line that ended them, and a started task shows no
     [...folded].map(([id, waits]) => [id, waits.map((w) => w.id)]),
     [
       ["s", ["w1", "w2"]],
+      ["rl", ["wl"]],
       ["w4", ["w3"]],
     ],
   );
@@ -1658,6 +1708,26 @@ test("past waits fold into the line that ended them, and a started task shows no
     [f.TaskStatus.DONE, ""],
   ])
     assert.equal(f.liveWaitReason({ status, waitReason: reason }), want);
+
+  const providerLimit = "antigravity waits for W317's quota until 15:29";
+  const ownLimit = "the provider's quota, resets at 15:29";
+  assert.equal(
+    f.liveWaitReason({
+      status: f.TaskStatus.RESUMING,
+      hold: f.TaskHold.LIMIT,
+      waitReason: providerLimit,
+    }),
+    "",
+  );
+  assert.equal(
+    f.liveWaitReason({
+      status: f.TaskStatus.RESUMING,
+      resumeAfter: at(100),
+      hold: f.TaskHold.LIMIT,
+      waitReason: ownLimit,
+    }),
+    ownLimit,
+  );
 });
 
 test("flightPlan includes waitingLead questions", () => {

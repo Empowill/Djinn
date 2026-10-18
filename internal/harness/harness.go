@@ -1178,6 +1178,7 @@ func (h *Harness) plan(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	logx.L().Info("task held", "task", task.GetCode(), "hold", task.GetHold().String(), "why", why)
 	h.notify()
 	h.wake()
 	return task, nil
@@ -1452,6 +1453,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		t.FirstStartTime = nowPb
 	}
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, nowPb, nil, 0, ""
+	t.WaitReason, t.MachineWait, t.RoomWait, t.Hold, t.ResumeAfter = "", false, false, 0, nil
 	t.LastActivityTime = nowPb
 	h.mu.Lock()
 	r.startTime = now
@@ -1493,8 +1495,13 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 			wt = spec.Dir
 		}
 		if wt != "" {
-			if head, err := git(h.ctx, wt, "rev-parse", "HEAD"); err == nil {
-				r.startHead = strings.TrimSpace(head)
+			if t.GetBranch() != "" && t.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+				r.startHead = branchStartCommit(h.ctx, wt, t.GetBranch())
+			}
+			if r.startHead == "" {
+				if head, err := git(h.ctx, wt, "rev-parse", "HEAD"); err == nil {
+					r.startHead = strings.TrimSpace(head)
+				}
 			}
 		}
 	}
@@ -1740,6 +1747,13 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
 		h.setTurns(r, func(n int) int { return n + 1 })
 	}
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR &&
+		(r.task.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY || r.task.GetProvider() == planv1.Provider_PROVIDER_FAKE) &&
+		(r.closingFailed || (r.answered && r.tools == 0 && h.taskWorkDone(r, r.task, r.task.GetWorktree()))) {
+		ev.Kind = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS
+		ev.Text = "closing call failed: " + ev.Text
+		ev.Limit = nil
+	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
 		h.netSign(r.task.GetProvider(), ev.Text, true) // Its agent cannot reach its provider: the network may be down.
@@ -1755,6 +1769,7 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.HasPrefix(ev.Text, "closing call failed: ") {
 		r.closingFailed = true
+		logx.L().Info("closing call failed after final answer", "task", r.task.GetCode(), "why", strings.TrimPrefix(ev.Text, "closing call failed: "))
 	}
 	if ev.Limit != nil {
 		r.limit = ev.Limit
@@ -1985,11 +2000,14 @@ func (h *Harness) clearRateHits(taskID string) {
 // (worktree clean, branch ahead with commits made in this run, or published its ChangesNoCode deliverables) and only
 // then hit an error.
 func (h *Harness) agyDoneAfterWork(r *run, res Result) bool {
-	if r.task.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY {
+	if r.task.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY && r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
 		return false
 	}
 	if r.closingFailed {
 		return true
+	}
+	if res.Err == nil && res.ExitCode == 0 && r.failure == "" {
+		return false
 	}
 	if !r.answered {
 		return false
@@ -2081,7 +2099,7 @@ func (h *Harness) end(r *run, res Result) {
 	h.useMu.Unlock()
 	switch {
 	case preemptedWhy != "":
-		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
+		t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy, nil
 	case stopping:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, cmp.Or(stoppingReason, "stopped on request")
 	case out != "":
@@ -2122,9 +2140,10 @@ func (h *Harness) end(r *run, res Result) {
 		if why == "" {
 			why = "model error"
 		}
-		res.Err, res.ExitCode, r.failure = nil, 0, ""
+		res.Err, res.ExitCode, r.failure, r.limit = nil, 0, "", nil
 		if !r.closingFailed {
 			r.closingFailed = true
+			logx.L().Info("closing call failed after final answer", "task", t.GetCode(), "why", why)
 			h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "closing call failed: " + why})
 		}
 	case res.Err != nil:
@@ -2209,7 +2228,7 @@ func (h *Harness) end(r *run, res Result) {
 		text = "waiting: " + whyStoppedFirst
 	case networkWait(t):
 		text = "resuming: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it once the network is back"
-	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil:
 		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
 	case t.GetError() != "":
 		text += ": " + t.GetError()

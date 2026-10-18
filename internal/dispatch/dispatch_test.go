@@ -160,29 +160,32 @@ func TestPass(t *testing.T) {
 	t.Parallel()
 
 	// TestResumingFirst: the tasks Djinn resumes start before new ones, whatever their age; one waiting for its
-	// provider's usage limit waits until it resets, and holds every task of that provider meanwhile.
+	// provider's usage limit waits until it resets, and holds only tasks of that provider on the model the message proves
+	// exhausted (or the task alone when the message names no model, W409).
 	t.Run("resuming_first", func(t *testing.T) {
 		t.Parallel()
 		now := time.Date(2026, 10, 8, 4, 30, 0, 0, time.UTC)
 		wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1}
-		task := func(id string, s planv1.TaskStatus, p planv1.Provider, after time.Duration) *planv1.Task {
-			t := &planv1.Task{Id: id, WishId: "w", Code: id, Status: s, Provider: p, Scheduled: true,
+		task := func(id string, s planv1.TaskStatus, p planv1.Provider, model string, after time.Duration, reason string) *planv1.Task {
+			t := &planv1.Task{Id: id, WishId: "w", Code: id, Status: s, Provider: p, Model: model, Scheduled: true,
 				CreateTime: timestamppb.New(now.Add(-time.Hour))}
 			if s == planv1.TaskStatus_TASK_STATUS_RESUMING {
 				t.CreateTime = timestamppb.New(now) // Newer than the planned ones, still first.
 			}
 			if after != 0 {
-				t.ResumeAfter, t.WaitReason = timestamppb.New(now.Add(after)), "the account's session limit, resets at 05:20"
+				t.ResumeAfter, t.WaitReason = timestamppb.New(now.Add(after)), reason
 			}
 			return t
 		}
 		tasks := []*planv1.Task{
-			task("new-claude", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.Provider_PROVIDER_CLAUDE, 0),
-			task("new-codex", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.Provider_PROVIDER_CODEX, 0),
-			task("restarted", planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.Provider_PROVIDER_CODEX, 0),
-			task("limited", planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.Provider_PROVIDER_UNSPECIFIED, 50*time.Minute),
+			task("new-claude-opus", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.Provider_PROVIDER_CLAUDE, "claude-opus-4-6", 0, ""),
+			task("new-claude-sonnet", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.Provider_PROVIDER_CLAUDE, "claude-sonnet-4-6", 0, ""),
+			task("new-codex", planv1.TaskStatus_TASK_STATUS_PENDING, planv1.Provider_PROVIDER_CODEX, "", 0, ""),
+			task("restarted", planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.Provider_PROVIDER_CODEX, "", 0, ""),
+			task("limited", planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.Provider_PROVIDER_UNSPECIFIED, "claude-opus-4-6", 50*time.Minute,
+				"the provider's quota for model claude-opus-4-6, resets at 05:20"),
 		}
-		m := &Machine{Slots: 2, Rule: "test"}
+		m := &Machine{Slots: 3, Rule: "test"}
 		got := map[string]string{}
 		var order []string
 		for _, d := range New(tasks, []*planv1.Wish{wish}, nil, m).At(now).Pass() {
@@ -193,20 +196,30 @@ func TestPass(t *testing.T) {
 			t.Errorf("order = %v, want the resumed first", order)
 		}
 		want := map[string]string{
-			"restarted":  "",
-			"limited":    "the account's session limit, resets at 05:20",
-			"new-claude": "claude waits for the account's session limit, resets at 05:20",
-			"new-codex":  "",
+			"restarted":         "",
+			"limited":           "the provider's quota for model claude-opus-4-6, resets at 05:20",
+			"new-claude-opus":   "claude waits for the provider's quota for model claude-opus-4-6, resets at 05:20",
+			"new-claude-sonnet": "",
+			"new-codex":         "",
 		}
 		if !maps.Equal(got, want) {
 			t.Errorf("decisions = %v, want %v", got, want)
+		}
+		// When the limit message names no model, it holds only the task that hit it, never another task of the provider.
+		tasks[4].WaitReason = "the account's session limit, resets at 05:20"
+		got = map[string]string{}
+		for _, d := range New(tasks, []*planv1.Wish{wish}, nil, &Machine{Slots: 4, Rule: "test"}).At(now).Pass() {
+			got[d.Task.GetId()] = d.Why
+		}
+		if got["limited"] == "" || got["new-claude-opus"] != "" || got["new-claude-sonnet"] != "" {
+			t.Errorf("unscoped limit message: %v, want only limited held", got)
 		}
 		// Once the limit has reset, it starts, and claude's tasks with it.
 		got = map[string]string{}
 		for _, d := range New(tasks, []*planv1.Wish{wish}, nil, nil).At(now.Add(time.Hour)).Pass() {
 			got[d.Task.GetId()] = d.Why
 		}
-		if got["limited"] != "" || got["new-claude"] != "" {
+		if got["limited"] != "" || got["new-claude-opus"] != "" {
 			t.Errorf("after the reset: %v", got)
 		}
 	})
@@ -1929,9 +1942,10 @@ func TestHeld(t *testing.T) {
 		}
 		free := task("free", planv1.Provider_PROVIDER_CODEX)
 		limitHolder := task("limit", planv1.Provider_PROVIDER_CLAUDE)
-		limitHolder.Status = planv1.TaskStatus_TASK_STATUS_RESUMING
-		limitHolder.ResumeAfter, limitHolder.WaitReason = timestamppb.New(now.Add(time.Hour)), "the session limit"
+		limitHolder.Status, limitHolder.Model = planv1.TaskStatus_TASK_STATUS_RESUMING, "claude-opus-4-6"
+		limitHolder.ResumeAfter, limitHolder.WaitReason = timestamppb.New(now.Add(time.Hour)), "the provider's quota for model claude-opus-4-6"
 		limited := task("limited", planv1.Provider_PROVIDER_CLAUDE)
+		limited.Model = "claude-opus-4-6"
 		pushed := task("pushed", planv1.Provider_PROVIDER_CODEX)
 		pushed.ProjectId = "held"
 		after := task("after", planv1.Provider_PROVIDER_CODEX)
@@ -1996,10 +2010,12 @@ func TestHeld(t *testing.T) {
 		tasks := []*planv1.Task{
 			task("full", nil),
 			task("limit", func(t *planv1.Task) {
-				t.Status, t.Provider = planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.Provider_PROVIDER_CLAUDE
-				t.ResumeAfter, t.WaitReason = timestamppb.New(now.Add(time.Hour)), "the session limit"
+				t.Status, t.Provider, t.Model = planv1.TaskStatus_TASK_STATUS_RESUMING, planv1.Provider_PROVIDER_CLAUDE, "claude-opus-4-6"
+				t.ResumeAfter, t.WaitReason = timestamppb.New(now.Add(time.Hour)), "the provider's quota for model claude-opus-4-6"
 			}),
-			task("limited", func(t *planv1.Task) { t.Provider = planv1.Provider_PROVIDER_CLAUDE }),
+			task("limited", func(t *planv1.Task) {
+				t.Provider, t.Model = planv1.Provider_PROVIDER_CLAUDE, "claude-opus-4-6"
+			}),
 			task("pushed", func(t *planv1.Task) { t.ProjectId = "held" }),
 			task("after", func(t *planv1.Task) { t.DependsOn = []string{"full"} }),
 			task("asked", func(t *planv1.Task) {

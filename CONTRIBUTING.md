@@ -228,9 +228,9 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. The buttons on
   its card in the window do the same. Not on Windows yet.
 - A planned task that waits for the machine alone (no slot free, or the machine under pressure) says so in the window,
-  with "Start anyway"; `djinn task start <task-id>` does the same. It never jumps a usage limit, a push hold or a
-  task that goes first. On macOS, the system's memory pressure holds workers back at warning on the Minimal notch,
-  at critical only from Medium up.
+  with "Start anyway"; `djinn task start <task-id>` does the same, and passes a usage limit hold too. It never jumps a
+  push hold or a task that goes first. On macOS, the system's memory pressure holds workers back at warning on the
+  Minimal notch, at critical only from Medium up.
 - The lead marks the one task that unblocks a wish urgent (`djinn task spawn --urgent`,
   `djinn task update <task-id> --urgent`, `--urgent=false` to take it off): it goes before every planned task, takes
   a slot whatever the machine, as `djinn task start` does, and starts while the push checks are red, to repair the

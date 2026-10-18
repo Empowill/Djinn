@@ -29,12 +29,14 @@ func TestLimitIn(t *testing.T) {
 		{"usageLimitExceeded: You've hit your usage limit. Try again later.", Limit{What: "the account's usage limit"}, true},
 		{"RESOURCE_EXHAUSTED: quota exceeded for aiplatform.googleapis.com/generate_content_requests_per_minute",
 			Limit{What: "the provider's quota", PerMinute: true}, true},
+		{"RESOURCE_EXHAUSTED: quota exceeded for model claude-opus-4-6",
+			Limit{What: "the provider's quota", Model: "claude-opus-4-6", PerMinute: true}, true},
 		{"API Error: 500 Internal server error", Limit{}, false},
 		{"exit code 1", Limit{}, false},
 	}
 	for _, c := range cases {
 		got, ok := limitIn(c.reason, now)
-		if ok != c.ok || got.What != c.want.What || !got.Until.Equal(c.want.Until) || got.PerMinute != c.want.PerMinute {
+		if ok != c.ok || got.What != c.want.What || got.Model != c.want.Model || !got.Until.Equal(c.want.Until) || got.PerMinute != c.want.PerMinute {
 			t.Errorf("limitIn(%q) = %+v, %v; want %+v, %v", c.reason, got, ok, c.want, c.ok)
 		}
 	}

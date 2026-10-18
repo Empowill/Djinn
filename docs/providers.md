@@ -350,11 +350,12 @@ Djinn resumes a worker by itself, in the same task (status `resuming`), in four 
   (it reads "resumed as W47").
 - **Its provider's usage limit stopped it.** The task waits for the reset (status "waiting for the limit", with
   "the account's session limit, resets at 07:20"), then resumes. Without a reset time, it waits 15 minutes, then 30,
-  doubling up to 2 hours. While a limit holds, no new worker of that provider starts. The scheduler notes the
-  account the agent was signed in with when the limit stopped it (`TaskHealth.account`: a hash of what its status
-  command prints of it, `claude auth status`'s email and organization, `codex login status`'s line; never the account
-  itself) and reads it again once a minute while the task waits: another account, and the task resumes at once.
-  agy documents no status command: its limit waits for the reset.
+  doubling up to 2 hours. While a limit holds, a limit that names a model holds only the tasks of that provider on
+  that model, and one that names none holds only the task itself (`djinn task start` passes a limit hold). The
+  scheduler notes the account the agent was signed in with when the limit stopped it (`TaskHealth.account`: a hash of
+  what its status command prints of it, `claude auth status`'s email and organization, `codex login status`'s line;
+  never the account itself) and reads it again once a minute while the task waits: another account, and the task
+  resumes at once. agy documents no status command: its limit waits for the reset.
 - **Preemption for an investigator worker.** When memory is short and an investigator worker ("Qxx: enlighten")
   cannot start, Djinn makes room: it interrupts the running work task of lowest priority so that it resumes later in
   its session or conversation (Claude, Antigravity), RESUMING with the wait reason "made room for Qxx: enlighten",
@@ -397,7 +398,10 @@ so. What each agent gets:
 The limits Djinn recognizes, in the failure a worker ends with (`internal/harness/limit.go`): Claude's
 `rate_limit_event` with status `rejected` (its `rateLimitType` and `resetsAt`) and its messages "You've hit your
 session limit · resets …" or "Claude AI usage limit reached|<time>"; Codex's `usageLimitExceeded`; agy's
-`RESOURCE_EXHAUSTED` (supposed); a rate limit or HTTP 429 from any of them.
+`RESOURCE_EXHAUSTED` (captured in W409); a rate limit or HTTP 429 from any of them. When an agy turn already holds a
+final answer and its work is committed (or the deliverables of a no-code task exist), a trailing error or 429 ends the
+task done and is kept as a `closing call failed: …` status line without holding or resuming; before any final answer, a
+per-minute quota error keeps the short minute-scale backoff.
 
 ## The scheduler's order and preemption
 
@@ -964,6 +968,7 @@ use a personal or licensed account.
 | Malformed call retry    | `antigravity/malformed-call.jsonl`                | by hand, from W258    | retry prompt continued; done on second turn                         |
 | Token limit retry       | `antigravity/token-limit.jsonl`                   | by hand, from W281    | partial output `[cut]`, token limit prompt continued; done on second turn |
 | Three retries failed    | `antigravity/retry-failed.jsonl`                  | by hand               | three retry prompts continued in a row; fourth fails the task       |
+| Closing 429 after work  | `antigravity/w409-closing-429.jsonl`              | **real**, W409        | final answer + committed work then historical 429 ends done with `closing call failed: …` |
 
 ## The lead's seat and the accounts
 

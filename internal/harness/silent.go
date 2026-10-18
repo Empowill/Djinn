@@ -130,7 +130,7 @@ func endedSilent(t *planv1.Task, why string, note bool) {
 	case note:
 		t.Status, t.Error, t.ExitCode = planv1.TaskStatus_TASK_STATUS_DONE, "", 0
 	case plan.CanResume(t.GetProvider()) && !finishAsked(t):
-		t.Status, t.Error, t.Continuing, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true, why+", with no final note"
+		t.Status, t.Error, t.Continuing, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true, why+", with no final note", nil
 	case plan.CanResume(t.GetProvider()):
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, why+", with no final note, once more after it was told to write it"
 	default:

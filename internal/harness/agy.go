@@ -674,6 +674,9 @@ var re5xx = regexp.MustCompile(`\b5\d{2}\b`)
 
 // isAgyTransientNetworkError reports whether text is a transient network error from agy or its API.
 func isAgyTransientNetworkError(text string) bool {
+	if _, ok := limitIn(text, time.Time{}); ok {
+		return false
+	}
 	lower := strings.ToLower(text)
 	switch {
 	case strings.Contains(lower, "stream was interrupted") || strings.Contains(lower, "stream interrupted") ||
@@ -699,6 +702,9 @@ func isAgyTransientNetworkError(text string) bool {
 // isAgyRetryPrompt says whether text is one of agy's own retry prompts to its model (malformed
 // function call, output token limit, or transient model retry error) rather than the agent's final answer.
 func isAgyRetryPrompt(text string) bool {
+	if _, ok := limitIn(text, time.Time{}); ok {
+		return false
+	}
 	lower := strings.ToLower(text)
 	switch {
 	case strings.Contains(lower, "improperly formatted function call"):
@@ -718,9 +724,25 @@ func isAgyRetryPrompt(text string) bool {
 	}
 }
 
-// agyWorkDone reports whether the worktree at dir is clean and branch has commits since startHead.
+func agyAheadOf(ctx context.Context, dir, base, curHead string) bool {
+	if base == "" || curHead == "" || base == curHead {
+		return false
+	}
+	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", base, curHead); err != nil {
+		return false
+	}
+	countStr, err := git(ctx, dir, "rev-list", "--count", base+".."+curHead)
+	if err != nil {
+		return false
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(countStr))
+	return err == nil && count > 0
+}
+
+// agyWorkDone reports whether the worktree at dir is clean and branch has commits since startHead
+// (or since the branch's base commit when the branch was resumed or rebased across runs).
 func agyWorkDone(ctx context.Context, dir, startHead, branch string) bool {
-	if dir == "" || startHead == "" {
+	if dir == "" || (startHead == "" && branch == "") {
 		return false
 	}
 	uncomm, err := uncommittedDir(ctx, dir)
@@ -732,20 +754,6 @@ func agyWorkDone(ctx context.Context, dir, startHead, branch string) bool {
 		return false
 	}
 	curHead = strings.TrimSpace(curHead)
-	if curHead == startHead {
-		return false
-	}
-	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", startHead, curHead); err != nil {
-		return false
-	}
-	countStr, err := git(ctx, dir, "rev-list", "--count", startHead+".."+curHead)
-	if err != nil {
-		return false
-	}
-	count, err := strconv.Atoi(strings.TrimSpace(countStr))
-	if err != nil || count <= 0 {
-		return false
-	}
 	if branch != "" {
 		if branchHead, err := git(ctx, dir, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
 			if strings.TrimSpace(branchHead) != curHead {
@@ -753,7 +761,19 @@ func agyWorkDone(ctx context.Context, dir, startHead, branch string) bool {
 			}
 		}
 	}
-	return true
+	if agyAheadOf(ctx, dir, startHead, curHead) {
+		return true
+	}
+	if branch != "" {
+		branchStart := branchStartCommit(ctx, dir, branch)
+		if agyAheadOf(ctx, dir, branchStart, curHead) {
+			return true
+		}
+		if branchStart != "" && branchStart != curHead && startHead != "" && startHead != curHead {
+			return true
+		}
+	}
+	return false
 }
 
 // agyParser reads agy's stream-json. The agent's text comes in deltas: it is gathered per step, and said once
@@ -866,7 +886,7 @@ func (p *agyParser) systemMessage(text string) {
 }
 
 func (p *agyParser) canFinishNow() bool {
-	return p.answered && len(p.toolsIn) == 0 && p.isWorkDone != nil && p.isWorkDone()
+	return p.answered && len(p.toolsIn) == 0 && len(p.bgTasks) == 0 && p.isWorkDone != nil && p.isWorkDone()
 }
 
 func (p *agyParser) canFinishTurn() bool {
@@ -875,9 +895,11 @@ func (p *agyParser) canFinishTurn() bool {
 
 func (p *agyParser) finishClosingError(events *lineEvents, why string) *turnEnd {
 	p.turnEnded = true
-	p.closingFailed = true
 	*events = append(*events, p.cut()...)
-	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "closing call failed: "+why)
+	if !p.closingFailed {
+		p.closingFailed = true
+		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "closing call failed: "+why)
+	}
 	return &turnEnd{}
 }
 
@@ -909,7 +931,7 @@ func (p *agyParser) retryOrEnd(events *lineEvents, convID, retryText string, isT
 }
 
 func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
-	if p.closingFailed {
+	if p.closingFailed && p.turnEnded {
 		return nil
 	}
 	convID := m.ConversationID
@@ -923,7 +945,7 @@ func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
 	if strings.Contains(errText, agyIdlePause) && len(p.bgTasks) == 0 {
 		return p.handleIdlePause(events)
 	}
-	if p.canFinishNow() {
+	if p.closingFailed || p.canFinishNow() {
 		return p.finishClosingError(events, errText)
 	}
 	if isAgyRetryPrompt(errText) {
@@ -987,7 +1009,7 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 
 // step reads a step update, and says whether Djinn knows its kind: a known step may say nothing yet.
 func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
-	if p.closingFailed {
+	if p.closingFailed && p.turnEnded {
 		return false, nil
 	}
 	if s.ConversationID != "" {
@@ -1001,6 +1023,9 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		p.turnEnded = false
 		p.answered = false
 	}
+	if s.StepType == "tool" {
+		p.answered = false
+	}
 	stepErr := extractAgyError(s.Error, extractAgyError(s.Message, ""))
 	if s.ToolInfo != nil && s.ToolInfo.Error != nil && stepErr == "" {
 		stepErr = s.ToolInfo.Error.Message
@@ -1010,7 +1035,7 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		if convID == "" {
 			convID = p.sessionID
 		}
-		if p.canFinishNow() {
+		if s.StepType != "tool" && (p.closingFailed || p.canFinishNow()) {
 			delete(p.toolsIn, s.StepIndex)
 			p.forget(s.StepIndex)
 			return true, p.finishClosingError(events, stepErr)
@@ -1135,9 +1160,6 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 }
 
 func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
-	if p.closingFailed {
-		return nil
-	}
 	convID := r.ConversationID
 	if convID == "" {
 		convID = p.sessionID
@@ -1156,7 +1178,7 @@ func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
 			errText = retryText
 		}
 		switch {
-		case p.canFinishNow() && (r.Status != "SUCCESS" || errText != "" || isAgyTransientNetworkError(errText)):
+		case (p.closingFailed || p.canFinishNow()) && (r.Status != "SUCCESS" || errText != "" || isAgyTransientNetworkError(errText)):
 			if errText == "" {
 				errText = "agy ended its turn with status " + r.Status
 			}
@@ -1303,7 +1325,6 @@ func (p *agyParser) stderr(raw string) []Event {
 			}
 		}
 		if p.canFinishNow() {
-			p.turnEnded = true
 			p.closingFailed = true
 			return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "closing call failed: " + text, Raw: raw}}
 		}

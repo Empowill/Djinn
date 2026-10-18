@@ -80,9 +80,11 @@ Ctrl+Q (Cmd+Q on macOS) in the window, Quit Djinn in the tray, Ctrl+C or a kill 
 A few things stop a worker without a restart, and Djinn handles them the same way:
 
 - **Your agent's usage limit.** The worker shows **Waiting for the limit**, with when the limit resets, and resumes a
-  minute after, told that the limit has reset. When the reset time is unknown, Djinn tries again after 15 minutes,
-  then waits longer each time, up to 2 hours. Sign the agent in with another account meanwhile and Djinn sees it
-  within a minute: the tasks the limit stopped resume at once. Either way, the Djinn hears once which tasks resume.
+  minute after, told that the limit has reset. A limit that names a model holds only the tasks of that agent on that
+  model; one that names none holds only the task itself (`djinn task start` passes it). When the reset time is unknown,
+  Djinn tries again after 15 minutes, then waits longer each time, up to 2 hours. Sign the agent in with another
+  account meanwhile and Djinn sees it within a minute: the tasks the limit stopped resume at once. Either way, the
+  Djinn hears once which tasks resume.
 - **A silent worker.** The Lamplighter, Djinn's watchdog, wakes a worker that printed nothing for 15 minutes with no
   process busy and no gate held or awaited, or whose process is lost: it ends it and continues it on its session. After
   three wakes in a row the task fails, saying so, and the Djinn is told.

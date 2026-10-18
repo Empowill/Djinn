@@ -463,6 +463,10 @@ lines:
 	send(w.a.parser.flush())
 	<-w.p.done
 	w.mu.Lock()
+	if tf, ok := w.a.parser.(turnFinisher); ok && tf.canFinishTurn() {
+		w.pending = 0
+		w.failure, lastError = "", ""
+	}
 	if w.failure == "" {
 		w.failure = lastError
 	}

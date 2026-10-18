@@ -990,10 +990,11 @@ func TestStartAnyway(t *testing.T) {
 		!strings.Contains(err.Error(), "waits for W1") {
 		t.Errorf("forcing a task held by a dependency: %v", err)
 	}
-	// Its provider's usage limit holds it as well: forced, it is refused; Start frees the machine only.
+	// A provider limit hold (TASK_HOLD_LIMIT) passes when started by hand (W409).
+	held.Model = "claude-opus-4-6"
 	limit := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W9", Title: "Limited", Provider: held.GetProvider(),
-		Status: planv1.TaskStatus_TASK_STATUS_RESUMING, Scheduled: true, CreateTime: timestamppb.Now(),
-		ResumeAfter: timestamppb.New(time.Now().Add(time.Hour)), WaitReason: "the session limit"}
+		Model: "claude-opus-4-6", Status: planv1.TaskStatus_TASK_STATUS_RESUMING, Scheduled: true, CreateTime: timestamppb.Now(),
+		ResumeAfter: timestamppb.New(time.Now().Add(time.Hour)), WaitReason: "the provider's quota for model claude-opus-4-6"}
 	put := func(task *planv1.Task) {
 		if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
 			if err := tx.Journal("test", "put", task); err != nil {
@@ -1004,16 +1005,11 @@ func TestStartAnyway(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	put(limit)
-	if _, err := start(held.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), "waits for the session limit") {
-		t.Errorf("forcing a task held by its provider's usage limit: %v", err)
-	}
-	limit.Status, limit.ResumeAfter, limit.WaitReason = planv1.TaskStatus_TASK_STATUS_CANCELLED, nil, ""
+	put(held)
 	put(limit)
 	got, err := start(held.GetId())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("forcing a task held by its provider's usage limit: %v", err)
 	}
 	if got.GetStartTime() == nil || got.GetMachineWait() || got.GetRoomWait() || got.GetHold() != 0 || got.GetWaitReason() != "" {
 		t.Errorf("forced = %v", got)
