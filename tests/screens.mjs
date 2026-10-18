@@ -49,8 +49,6 @@ export {
   recordModelAlias,
   clearModelAliases,
   taskModelDisplay,
-  isPrincipal,
-  principalWish,
   runningOf,
   fixerOf,
 } from "@/src/data/format.ts";

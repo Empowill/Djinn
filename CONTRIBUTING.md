@@ -349,7 +349,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   … --icon 🧱` give it its subject's emoji (one emoji); `djinn task spawn … --decision Q43` (a question's code, or a
   decision block's id) says which decision a task comes from. The window lists them in a "Decisions" tab, read only:
   who took each one (you, the lead, a worker) and the tasks it led to; the page and the brief follow.
-- An answer goes to the wish's lead (or to the principal lead), which turns the decision into tasks itself (`--decision Q43`),
+- An answer goes to the lead, which turns the decision into tasks itself (`--decision Q43`),
   placing them in the graph; "Enlighten me" starts an investigator, "Q43: enlighten", which revises the question. Investigators read,
   take a slot like any agent (on a full machine, the newest work task's, paused until they end), and tell the lead what they did. `enlighten_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md))
   or `djinn up --enlighten-workers=false` turns them off. A worker's `djinn block put`, `question ask` and `revise` name its task from

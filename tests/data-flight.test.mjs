@@ -15,10 +15,8 @@ export {
   fixerOf,
   foldedWaits,
   gateWaiters,
-  isPrincipal,
   isTaskMerging,
   liveWaitReason,
-  principalWish,
   runningOf,
   span,
   taskFinished,
@@ -1660,23 +1658,6 @@ test("past waits fold into the line that ended them, and a started task shows no
     [f.TaskStatus.DONE, ""],
   ])
     assert.equal(f.liveWaitReason({ status, waitReason: reason }), want);
-});
-
-test("principal wish: rank 1 is principal by default, wish with principal: true overrides rank", () => {
-  const w1 = wish("w1", "First wish", 1);
-  const w2 = wish("w2", "Second wish", 2);
-  const w3 = wish("w3", "Third wish", 3);
-  assert.equal(f.principalWish([w1, w2, w3])?.id, "w1");
-  assert.equal(f.isPrincipal(w1, [w1, w2, w3]), true);
-  assert.equal(f.isPrincipal(w2, [w1, w2, w3]), false);
-
-  const w2Explicit = { ...w2, principal: true };
-  assert.equal(f.principalWish([w1, w2Explicit, w3])?.id, "w2");
-  assert.equal(f.isPrincipal(w1, [w1, w2Explicit, w3]), false);
-  assert.equal(f.isPrincipal(w2Explicit, [w1, w2Explicit, w3]), true);
-
-  const pausedW1 = { ...w1, state: f.WishState.PAUSED };
-  assert.equal(f.principalWish([pausedW1, w2, w3])?.id, "w2");
 });
 
 test("flightPlan includes waitingLead questions", () => {

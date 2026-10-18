@@ -83,30 +83,6 @@ func Ranked(all []*planv1.Wish) []*planv1.Wish {
 	return out
 }
 
-// PrincipalWish returns the principal wish: one explicitly marked as principal by the developer
-// (preferring an active wish if marked), or the first active wish by rank.
-func PrincipalWish(ctx context.Context, r store.Reader) (*planv1.Wish, error) {
-	all, err := store.List[*planv1.Wish](ctx, r, nil)
-	if err != nil {
-		return nil, err
-	}
-	for _, w := range all {
-		if w.GetPrincipal() && Active(w) {
-			return w, nil
-		}
-	}
-	for _, w := range all {
-		if w.GetPrincipal() {
-			return w, nil
-		}
-	}
-	actives := Ranked(all)
-	if len(actives) > 0 {
-		return actives[0], nil
-	}
-	return nil, nil
-}
-
 // Ready tells whether Djinn proposes to grant a wish that has these tasks and questions: it has tasks, every one
 // finished (done, stopped by the user, or cut short for good), none done with problems nobody looked at
 // (DoneWithProblems), and no question is open. A draft azima is not
@@ -611,56 +587,4 @@ func ResolveWish(ctx context.Context, r store.Reader, name string) (*planv1.Wish
 		}
 	}
 	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("wish %s not found", name))
-}
-
-// Principal sets or reports whether a wish is the principal wish.
-func (w *Wishes) Principal(
-	ctx context.Context, req *connect.Request[planv1.WishServicePrincipalRequest],
-) (*connect.Response[planv1.WishServicePrincipalResponse], error) {
-	if req.Msg.Principal != nil {
-		err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-			wish, err := store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId())
-			if err != nil {
-				return err
-			}
-			if *req.Msg.Principal {
-				all, err := store.List[*planv1.Wish](ctx, tx, nil)
-				if err != nil {
-					return err
-				}
-				for _, other := range all {
-					if other.GetPrincipal() && other.GetId() != wish.GetId() {
-						other.Principal = false
-						if err := tx.Put(other); err != nil {
-							return err
-						}
-					}
-				}
-				wish.Principal = true
-			} else {
-				wish.Principal = false
-			}
-			return tx.Put(wish)
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
-	if err != nil {
-		return nil, Status(err)
-	}
-	pw, err := PrincipalWish(ctx, w.Store)
-	if err != nil {
-		return nil, Status(err)
-	}
-	principalWishID := ""
-	if pw != nil {
-		principalWishID = pw.GetId()
-	}
-	return connect.NewResponse(&planv1.WishServicePrincipalResponse{
-		Principal:       principalWishID == wish.GetId(),
-		Explicit:        wish.GetPrincipal(),
-		PrincipalWishId: principalWishID,
-	}), nil
 }
