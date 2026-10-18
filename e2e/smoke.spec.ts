@@ -273,82 +273,89 @@ test("sidebar collapse honors reduced motion", async ({ page }) => {
 // native drag strip (window.go): the toolbar's toggle starts below it, beside the lights, in the same place folded or
 // not, and the topbar's controls keep their row under the toolbar's, a wish's actions included.
 test("native mac titlebar reserves only its chrome space", async ({ page }) => {
+  const existing = (JSON.parse(djinn("wish", "list", "--json")).wishes ??
+    []) as {
+    id: string;
+    state: string;
+  }[];
+  for (const w of existing)
+    if (w.state === "WISH_STATE_ACTIVE") djinn("wish", "pause", w.id);
   const title = `Mind the strip ${randomUUID().slice(0, 8)}`;
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
     .id as string;
-  await page.addInitScript(() => {
-    const userAgent = navigator.userAgent;
-    Object.defineProperty(navigator, "userAgent", {
-      configurable: true,
-      get: () => `${userAgent} wails.io`,
-    });
-    Object.defineProperty(navigator, "platform", {
-      configurable: true,
-      get: () => "MacIntel",
-    });
-  });
-  await page.setViewportSize({ width: 760, height: 720 });
-  await page.goto(djinnURL());
-
-  await expect(page.locator("html")).toHaveClass(/native-mac/);
-  await expect(page.locator(".sidebar")).toHaveCSS("padding-top", "28px");
-  const sidebarBox = await page.locator(".sidebar").boundingBox();
-  expect(sidebarBox).toMatchObject({ width: 67 });
-  const toggle = page.locator(".app-toolbar-toggle");
-  const toolbar = page.locator(".app-toolbar");
-  const toggleBox = await toggle.boundingBox();
-  expect(toggleBox).toMatchObject({ width: 20, height: 20, x: 92, y: 6 });
-  expect(await toolbar.boundingBox()).toMatchObject({
-    x: 92,
-    y: 6,
-    height: 20,
-  });
-  const iconBefore = await toggle
-    .locator("svg")
-    .evaluate((svg) => svg.outerHTML);
-  expect(await page.locator(".app-toolbar > button").count()).toBe(1);
-  // The creation page adds Back after the toggle, which stays where it is.
-  await page.locator(".sidebar .new-mission").click();
-  const back = page.locator(".app-toolbar-back");
-  await expect(back).toBeEnabled();
-  expect(await toggle.boundingBox()).toEqual(toggleBox);
-  expect(await back.boundingBox()).toMatchObject({
-    width: 20,
-    height: 20,
-    y: 6,
-  });
-  expect((await back.boundingBox())!.x).toBeGreaterThan(
-    toggleBox!.x + toggleBox!.width,
-  );
-  await back.click();
-  await expect(back).toHaveCount(0);
-  await expect(page.locator(".sidebar-brand")).toHaveCSS(
-    "--wails-draggable",
-    "drag",
-  );
-  await expect(page.locator(".sidebar .new-mission")).toHaveCSS(
-    "--wails-draggable",
-    "no-drag",
-  );
-  const planNav = page.locator(".sidebar .plan-nav");
-  if (await planNav.count()) await planNav.click();
-  const topbar = page.locator(".main-shell .topbar");
-  if (await topbar.count()) {
-    const breadcrumbs = page.locator(".main-shell .topbar .breadcrumbs");
-    const breadcrumbsBox = await breadcrumbs.boundingBox();
-    expect(breadcrumbsBox).not.toBeNull();
-    const pageHeader = page.locator(".page-header");
-    if (await pageHeader.count()) {
-      await expect(pageHeader).toHaveCSS("padding-top", "6px");
-      expect(breadcrumbsBox!.x).toBeCloseTo(166, 0);
-    } else {
-      expect(breadcrumbsBox!.x).toBeGreaterThanOrEqual(
-        toggleBox!.x + toggleBox!.width,
-      );
-    }
-  }
-
   try {
+    await page.addInitScript(() => {
+      const userAgent = navigator.userAgent;
+      Object.defineProperty(navigator, "userAgent", {
+        configurable: true,
+        get: () => `${userAgent} wails.io`,
+      });
+      Object.defineProperty(navigator, "platform", {
+        configurable: true,
+        get: () => "MacIntel",
+      });
+    });
+    await page.setViewportSize({ width: 760, height: 720 });
+    await page.goto(djinnURL());
+
+    await expect(page.locator("html")).toHaveClass(/native-mac/);
+    await expect(page.locator(".sidebar")).toHaveCSS("padding-top", "28px");
+    const sidebarBox = await page.locator(".sidebar").boundingBox();
+    expect(sidebarBox).toMatchObject({ width: 67 });
+    const toggle = page.locator(".app-toolbar-toggle");
+    const toolbar = page.locator(".app-toolbar");
+    const toggleBox = await toggle.boundingBox();
+    expect(toggleBox).toMatchObject({ width: 20, height: 20, x: 92, y: 6 });
+    expect(await toolbar.boundingBox()).toMatchObject({
+      x: 92,
+      y: 6,
+      height: 20,
+    });
+    const iconBefore = await toggle
+      .locator("svg")
+      .evaluate((svg) => svg.outerHTML);
+    expect(await page.locator(".app-toolbar > button").count()).toBe(1);
+    // The creation page adds Back after the toggle, which stays where it is.
+    await page.locator(".sidebar .new-mission").click();
+    const back = page.locator(".app-toolbar-back");
+    await expect(back).toBeEnabled();
+    expect(await toggle.boundingBox()).toEqual(toggleBox);
+    expect(await back.boundingBox()).toMatchObject({
+      width: 20,
+      height: 20,
+      y: 6,
+    });
+    expect((await back.boundingBox())!.x).toBeGreaterThan(
+      toggleBox!.x + toggleBox!.width,
+    );
+    await back.click();
+    await expect(back).toHaveCount(0);
+    await expect(page.locator(".sidebar-brand")).toHaveCSS(
+      "--wails-draggable",
+      "drag",
+    );
+    await expect(page.locator(".sidebar .new-mission")).toHaveCSS(
+      "--wails-draggable",
+      "no-drag",
+    );
+    const planNav = page.locator(".sidebar .plan-nav");
+    if (await planNav.count()) await planNav.click();
+    const topbar = page.locator(".main-shell .topbar");
+    if (await topbar.count()) {
+      const breadcrumbs = page.locator(".main-shell .topbar .breadcrumbs");
+      const breadcrumbsBox = await breadcrumbs.boundingBox();
+      expect(breadcrumbsBox).not.toBeNull();
+      const pageHeader = page.locator(".page-header");
+      if (await pageHeader.count()) {
+        await expect(pageHeader).toHaveCSS("padding-top", "6px");
+        expect(breadcrumbsBox!.x).toBeCloseTo(166, 0);
+      } else {
+        expect(breadcrumbsBox!.x).toBeGreaterThanOrEqual(
+          toggleBox!.x + toggleBox!.width,
+        );
+      }
+    }
+
     await page.locator(".sidebar").getByRole("button", { name: title }).click();
     await expect(
       page.locator(".main-shell .topbar").getByRole("button", {
@@ -368,15 +375,15 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
       .locator(".main-shell .topbar > :first-child")
       .boundingBox();
     expect(first!.x).toBeGreaterThanOrEqual(toggleBox!.x + toggleBox!.width);
+    await toggle.click();
+    await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+    expect(await toggle.boundingBox()).toEqual(toggleBox);
+    expect(await toggle.locator("svg").evaluate((svg) => svg.outerHTML)).toBe(
+      iconBefore,
+    );
   } finally {
     djinn("wish", "delete", wishId);
   }
-  await toggle.click();
-  await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
-  expect(await toggle.boundingBox()).toEqual(toggleBox);
-  expect(await toggle.locator("svg").evaluate((svg) => svg.outerHTML)).toBe(
-    iconBefore,
-  );
 });
 
 // Without Wails' JavaScript runtime, --wails-draggable does nothing: src/native-window.ts posts Wails' own drag and

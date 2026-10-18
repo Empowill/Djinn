@@ -131,8 +131,8 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 **Everyday commands** (`go tool task --list` for all)
 - `go tool task test`: every test (Go, interface, end-to-end). Parts: `test-go`, `test-ui`, `e2e`;
   `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 10 s on Linux,
-  the reference, and over 15 s elsewhere, where a process costs ten times more and a test over 10 s is only reported
-  (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
+  the reference where the push check runs, and over twice the limit on CI (or 15 s elsewhere), where a test over 10 s
+  is reported (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
   `slowtests` watches the suite's total time (sum and wall clock) against a repository baseline
   (`tools/slowtests/baseline.json`), warning without failing if the total grows past the baseline by over 25%
   (update with `go run ./tools/slowtests -update-baseline`). Its last line names the tests that failed: a red
