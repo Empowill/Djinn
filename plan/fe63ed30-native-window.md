@@ -249,7 +249,7 @@ included, so the session that builds Djinn can move into Djinn and keep going.
   as found on this machine (`UiService.GetEnvironment`, `agy` for antigravity), the missing ones disabled with why,
   the recorded lead's marked; picking another starts a new lead of that agent in the lead's terminal, from the same
   first message as every lead: run `djinn wish brief <wish>` and continue (`TestResumeAnotherAgent`,
-  `TestEnvironmentProviders`, the screens test of the split button, e2e `lead-agent.spec.ts` with a fake `agy`).
+  `TestGetEnvironment`, the screens test of the split button, e2e `lead-agent.spec.ts` with a fake `agy`).
 - [x] This flight plan's session resumes inside Djinn's terminal and goes on by voice. (the lead's session 3b4bd887 came back in Djinn's terminal after each update on 09–10/10/2026, and the developer leads it by voice)
 
 ### Decided along the way

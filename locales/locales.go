@@ -7,6 +7,7 @@ package locales
 import (
 	"embed"
 	"encoding/json"
+	"io/fs"
 	"path"
 	"regexp"
 	"sort"
@@ -20,16 +21,18 @@ const Source = "en"
 var files embed.FS
 
 // catalogs maps a language to its texts, loaded once from the embedded files.
-var catalogs = load()
+var catalogs = load(files)
 
-func load() map[string]map[string]string {
-	entries, err := files.ReadDir(".")
+// load reads the catalogs of a folder of JSON files, one per language named after it. A file that is no catalog
+// panics: the embedded files are read at start, and the tests catch a broken one before any build ships.
+func load(folder fs.FS) map[string]map[string]string {
+	entries, err := fs.ReadDir(folder, ".")
 	if err != nil {
 		panic(err) // The embedded directory always exists.
 	}
 	all := map[string]map[string]string{}
 	for _, entry := range entries {
-		data, err := files.ReadFile(entry.Name())
+		data, err := fs.ReadFile(folder, entry.Name())
 		if err != nil {
 			panic(err)
 		}

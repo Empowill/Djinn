@@ -213,7 +213,7 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
 - [x] E2e: a fake source prints an assigned merge request, the card proposes the babysit template, a click makes the
   wish with its watcher. (`e2e/inbox.spec.ts`)
 - [x] The inbox shows outside the flying carpet: a count in the side panel, a notification for a new item.
-  (`TestNoticesShowNewInboxItems`: a new item is notified once, with its source and its text; a dismissed, routed or
+  (`TestNoticesRun/shows_new_inbox_items`: a new item is notified once, with its source and its text; a dismissed, routed or
   old one is not; `tests/screens.test.mjs` "the side panel counts the new inbox items on the flying carpet's entry,
   even with no active wish")
 - [x] A source runs only once plugged in, per machine; an unplugged one never starts a command. (`TestSourceUnplugged`:

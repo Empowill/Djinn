@@ -61,10 +61,6 @@ the code does not say by itself; remove one when a change makes it false.
   before the usage) or is continued once (without), at the scheduler's next pass (W272): a test that expected it to
   run on, or to be stalled at thirty minutes, sees it ended. *Do:* give it busy readings, or end its turn on an error
   (`error …` before `usage`), as `TestHealthAfterTurn` does. *Where:* `internal/harness/silent.go`.
-- **`TestUpdateInstallsABuild` races under `-race`, before your change.** A test variable is written while Update's
-  goroutine reads it; `test-go` and `test-pkg` run without `-race` and pass. Still true today. *Do:* run
-  `go tool task test-race -- -skip TestUpdateInstallsABuild ./internal/ui`, and do not take it for your regression.
-  *Where:* `internal/ui/ui_test.go`.
 - **Go tests have no git identity.** `testx.Main`/`testx.Guard` hide the machine's (`HideGitIdentity`), as on a CI
   runner (W2). *Sign:* "empty ident name" on a commit in a test. *Do:* set a repo-local `user.name`/`user.email` in
   any test repository that commits or where Djinn merges (`gitRepo` does; worktrees share it). *Where:*

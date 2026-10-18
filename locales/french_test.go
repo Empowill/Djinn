@@ -1,3 +1,6 @@
+// The check that the repository is in English, and the signs of French it reads. It has no french.go beside it: it
+// tests the files of the repository, not code of the package, and it lives here because French belongs in
+// locales/fr.json only.
 package locales
 
 import (
@@ -62,6 +65,7 @@ var skipFrench = regexp.MustCompile(`\.(png|ico|icns|jpg|jpeg|gif|webp|woff2?|tt
 // is in English. A text a person reads in French is a key of the catalogs; a test of the French interface reads its
 // text from locales/fr.json.
 func TestNoFrench(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git lists the files of the repository: not found")
 	}
@@ -189,26 +193,29 @@ func wordByte(b byte) bool {
 	return 'a' <= b && b <= 'z' || 'A' <= b && b <= 'Z' || '0' <= b && b <= '9' || b == '_'
 }
 
-func TestFrenchSigns(t *testing.T) {
-	for _, line := range []string{
-		"// Le souhait est prêt.",
-		"title: \"Ajouter les tâches\"",
-		"// Vérifie que le worker est arrêté",
-		"expect(text).toBe(\"Il faut une réponse dans la question\")",
-		"// d'abord l'interface",
+// TestFrench: a line with a French letter or two French words is French; English with a lone French-looking word,
+// or with a quoted French name, is not.
+func TestFrench(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, line string
+		french     bool
+	}{
+		{"a French comment", "// Le souhait est prêt.", true},
+		{"a French title", "title: \"Ajouter les tâches\"", true},
+		{"an accented verb", "// Vérifie que le worker est arrêté", true},
+		{"a French expectation", "expect(text).toBe(\"Il faut une réponse dans la question\")", true},
+		{"two elisions", "// d'abord l'interface", true},
+		{"an English comment", "// The wish is ready: its lead pours the oil.", false},
+		{"one French-looking word", "font-family: sans-serif; // la la la", false},
+		{"an English identifier", "des := cipher.NewDES(key) // a test of it", false},
+		{"a quoted name", "Clément's tokens", false},
 	} {
-		if french(line, nil) == "" {
-			t.Errorf("%q: French not found", line)
-		}
-	}
-	for _, line := range []string{
-		"// The wish is ready: its lead pours the oil.",
-		"font-family: sans-serif; // la la la",
-		"des := cipher.NewDES(key) // a test of it",
-		"Clément's tokens",
-	} {
-		if sign := french(line, []string{"Clément"}); sign != "" {
-			t.Errorf("%q: English taken for French (%s)", line, sign)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if sign := french(c.line, []string{"Clément"}); (sign != "") != c.french {
+				t.Errorf("%q: French %v, want %v (%s)", c.line, sign != "", c.french, sign)
+			}
+		})
 	}
 }

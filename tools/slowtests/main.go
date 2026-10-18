@@ -17,6 +17,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -222,45 +223,57 @@ func reportTotal(out, errOut io.Writer, res result, baselinePath string, updateB
 }
 
 func main() {
-	limit := flag.Duration("max", defaultMax, "the longest a top-level test may take, on Linux")
-	elsewhere := flag.Duration("max-elsewhere", 15*time.Second,
-		"the longest a top-level test may take on another system, where one over -max is only reported")
-	baselineFlag := flag.String("baseline", "", "path to baseline.json (defaults to tools/slowtests/baseline.json)")
-	updateBaseline := flag.Bool("update-baseline", false, "update baseline.json with measured totals")
-	flag.Parse()
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, runtime.GOOS, os.Getenv("CI") != ""))
+}
 
-	res, err := check(os.Stdin, os.Stdout, *limit)
+// run reads go test -json from in as the flags of args say, on goos and on CI or not, and returns the exit code.
+func run(args []string, in io.Reader, stdout, stderr io.Writer, goos string, ci bool) int {
+	flags := flag.NewFlagSet("slowtests", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	limit := flags.Duration("max", defaultMax, "the longest a top-level test may take, on Linux")
+	elsewhere := flags.Duration("max-elsewhere", 15*time.Second,
+		"the longest a top-level test may take on another system, where one over -max is only reported")
+	baselineFlag := flags.String("baseline", "", "path to baseline.json (defaults to tools/slowtests/baseline.json)")
+	updateBaseline := flags.Bool("update-baseline", false, "update baseline.json with measured totals")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+
+	res, err := check(in, stdout, *limit)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "slowtests:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "slowtests:", err)
+		return 1
 	}
 	baselinePath := findBaseline(*baselineFlag)
-	reportTotal(os.Stdout, os.Stderr, res, baselinePath, *updateBaseline)
+	reportTotal(stdout, stderr, res, baselinePath, *updateBaseline)
 
-	ci := os.Getenv("CI") != ""
-	fail := failLimit(runtime.GOOS, ci, *limit, *elsewhere)
+	fail := failLimit(goos, ci, *limit, *elsewhere)
 	if len(res.slow) > 0 {
-		fmt.Fprintf(os.Stderr, "\nThese tests take longer than %s: make them fast (a fake clock, a short tick, a wait on an event "+
+		fmt.Fprintf(stderr, "\nThese tests take longer than %s: make them fast (a fake clock, a short tick, a wait on an event "+
 			"instead of a sleep), or say why in tools/slowtests/main.go (allowed).\n", *limit)
 		if fail != *limit {
-			where := runtime.GOOS
+			where := goos
 			if ci {
-				where = "CI (" + runtime.GOOS + ")"
+				where = "CI (" + goos + ")"
 			}
-			fmt.Fprintf(os.Stderr, "On %s they are reported; only one over %s fails (Linux is the reference).\n",
+			fmt.Fprintf(stderr, "On %s they are reported; only one over %s fails (Linux is the reference).\n",
 				where, fail)
 		}
 		for _, s := range res.slow {
-			fmt.Fprintf(os.Stderr, "  %s  %s\n", s.elapsed.Round(10*time.Millisecond), s.name)
+			fmt.Fprintf(stderr, "  %s  %s\n", s.elapsed.Round(10*time.Millisecond), s.name)
 		}
 	}
 	// Last, since a push check keeps only the end of the output (W135: it kept "FAIL …/internal/harness", not which test).
 	if len(res.failures) > 0 {
-		fmt.Fprintf(os.Stderr, "\nFailed: %s\n", strings.Join(res.failures, ", "))
+		fmt.Fprintf(stderr, "\nFailed: %s\n", strings.Join(res.failures, ", "))
 	}
 	if res.failed || len(over(res.slow, fail)) > 0 {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 // failLimit is how long a test may take before it fails on goos: limit on Linux outside CI (where the push check

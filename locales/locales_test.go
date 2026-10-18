@@ -1,6 +1,7 @@
 package locales
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // pluralForms are the suffixes of a text with plural forms (CLDR categories), used through its base key.
@@ -34,6 +36,7 @@ func placeholders(text string) []string {
 // TestCatalogs checks that every language translates every key of the source, and nothing else,
 // with the same placeholders.
 func TestCatalogs(t *testing.T) {
+	t.Parallel()
 	source := catalogs[Source]
 	if len(source) == 0 {
 		t.Fatal("locales/en.json is empty")
@@ -71,6 +74,7 @@ var (
 // TestKeysInCode checks that the code only uses keys of en.json, and that en.json holds no key
 // the code never names: a key is used when its quoted name appears in a source file.
 func TestKeysInCode(t *testing.T) {
+	t.Parallel()
 	source := catalogs[Source]
 	exists := func(key string) bool {
 		if _, ok := source[key]; ok {
@@ -79,7 +83,10 @@ func TestKeysInCode(t *testing.T) {
 		_, ok := source[key+".other"]
 		return ok
 	}
-	var code strings.Builder
+	// quoted holds every text between two quote marks that follow each other in the code: a key is used when its
+	// quoted name appears in a source file. A set read once, not a search of all the code per key: that took most of
+	// the test's time.
+	quoted := map[string]bool{}
 	walk := func(dir string, exts ...string) {
 		err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, err error) error {
 			if err != nil {
@@ -107,7 +114,18 @@ func TestKeysInCode(t *testing.T) {
 					t.Errorf("%s: key %q is not in locales/en.json", filepath.ToSlash(name), match[1])
 				}
 			}
-			code.Write(data)
+			for text := string(data); ; {
+				_, after, ok := strings.Cut(text, `"`)
+				if !ok {
+					break
+				}
+				between, _, ok := strings.Cut(after, `"`)
+				if !ok {
+					break
+				}
+				quoted[between] = true
+				text = after
+			}
 			return nil
 		})
 		if err != nil {
@@ -116,46 +134,136 @@ func TestKeysInCode(t *testing.T) {
 	}
 	walk(filepath.Join("..", "src"), ".ts", ".tsx")
 	walk("..", ".go")
-	all := code.String()
 	for key := range source {
 		name := key
 		if base, ok := pluralBase(key); ok {
 			name = base
 		}
-		if !strings.Contains(all, `"`+name+`"`) {
+		if !quoted[name] {
 			t.Errorf("locales/en.json: key %q is used nowhere in src/ or the Go code", key)
 		}
 	}
 }
 
+// TestLoad: a folder of JSON files gives one catalog per language, named after its file; a file that is no catalog
+// panics, naming it.
+func TestLoad(t *testing.T) {
+	t.Parallel()
+	t.Run("one catalog per file", func(t *testing.T) {
+		t.Parallel()
+		got := load(fstest.MapFS{
+			"en.json": {Data: []byte(`{"common.cancel": "Cancel"}`)},
+			"de.json": {Data: []byte(`{"common.cancel": "Abbrechen"}`)},
+		})
+		if len(got) != 2 || got["en"]["common.cancel"] != "Cancel" || got["de"]["common.cancel"] != "Abbrechen" {
+			t.Errorf("load = %v", got)
+		}
+	})
+	for _, c := range []struct {
+		name   string
+		folder fstest.MapFS
+		want   string
+	}{
+		{"a file that is no JSON panics", fstest.MapFS{"en.json": {Data: []byte(`{"common.cancel": `)}}, "locales/en.json: "},
+		{"a file that is not read panics", fstest.MapFS{"en.json/x": {}}, "en.json"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if got := fmt.Sprint(recover()); !strings.Contains(got, c.want) {
+					t.Errorf("panic %q, want it to hold %q", got, c.want)
+				}
+			}()
+			load(c.folder)
+		})
+	}
+}
+
+// TestLanguages lists a language per catalog file, sorted.
+func TestLanguages(t *testing.T) {
+	t.Parallel()
+	files, err := filepath.Glob("*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []string
+	for _, file := range files {
+		want = append(want, strings.TrimSuffix(file, ".json"))
+	}
+	slices.Sort(want)
+	if got := Languages(); !slices.Equal(got, want) || !slices.Contains(got, Source) {
+		t.Errorf("Languages() = %v, want %v, with %s", got, want, Source)
+	}
+}
+
+func TestMatch(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		tags []string
+		want string
+	}{
+		{"the first translated tag wins", []string{"de-DE", "fr-CA;q=0.8"}, "fr"},
+		{"an underscore splits like a dash", []string{" FR_fr "}, "fr"},
+		{"no translated tag gives the source", []string{"de"}, Source},
+		{"no tag gives the source", nil, Source},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := Match(c.tags...); got != c.want {
+				t.Errorf("Match(%q) = %q, want %q", c.tags, got, c.want)
+			}
+		})
+	}
+}
+
 func TestT(t *testing.T) {
-	if got := T("fr", "common.cancel", nil); got != catalogs["fr"]["common.cancel"] || got == "Cancel" {
-		t.Errorf("T(fr, common.cancel) = %q", got)
+	t.Parallel()
+	if french := catalogs["fr"]["common.cancel"]; french == "" || french == "Cancel" {
+		t.Fatalf("fr.json translates common.cancel as %q", french)
 	}
-	if got := T("xx", "common.cancel", nil); got != "Cancel" {
-		t.Errorf("an unknown language falls back to English, got %q", got)
-	}
-	if got := T("fr", "no.such.key", nil); got != "no.such.key" {
-		t.Errorf("an unknown key falls back to itself, got %q", got)
-	}
-	if got := T("en", "settings.language_system", map[string]string{"language": "English"}); got != "System (English)" {
-		t.Errorf("placeholders: got %q", got)
-	}
-	if got := Match("de-DE", "fr-CA;q=0.8"); got != "fr" {
-		t.Errorf("Match = %q, want fr", got)
-	}
-	if got := Match("de"); got != Source {
-		t.Errorf("Match = %q, want the source language", got)
+	for _, c := range []struct {
+		name, language, key string
+		params              map[string]string
+		want                string
+	}{
+		{"a language reads its catalog", "fr", "common.cancel", nil, catalogs["fr"]["common.cancel"]},
+		{"an unknown language falls back to English", "xx", "common.cancel", nil, "Cancel"},
+		{"an unknown key falls back to itself", "fr", "no.such.key", nil, "no.such.key"},
+		{"placeholders take their values", "en", "settings.language_system", map[string]string{"language": "English"}, "System (English)"},
+		{"a placeholder without a value stays", "en", "settings.language_system", map[string]string{"other": "x"}, "System ({language})"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := T(c.language, c.key, c.params); got != c.want {
+				t.Errorf("T(%s, %s) = %q, want %q", c.language, c.key, got, c.want)
+			}
+		})
 	}
 }
 
 func TestMeans(t *testing.T) {
+	t.Parallel()
+	// Every language's yes, in capitals between spaces, means yes, and only yes.
 	for language, texts := range catalogs {
-		if word := " " + strings.ToUpper(texts["answer.yes"]) + " "; !Means(word, "answer.yes") || Means(word, "answer.no") {
-			t.Errorf("%s: %q means yes, and only yes", language, word)
-		}
+		t.Run(language+" yes means yes only", func(t *testing.T) {
+			t.Parallel()
+			if word := " " + strings.ToUpper(texts["answer.yes"]) + " "; !Means(word, "answer.yes") || Means(word, "answer.no") {
+				t.Errorf("%s: %q means yes, and only yes", language, word)
+			}
+		})
 	}
-	if Means("y", "answer.yes") || Means("", "answer.yes") || Means("yes", "no.such.key") {
-		t.Error("only a whole word of the catalogs means something")
+	// Only a whole word of the catalogs means something.
+	for _, c := range []struct{ name, word, key string }{
+		{"a part of a word means nothing", "y", "answer.yes"},
+		{"an empty word means nothing", "", "answer.yes"},
+		{"an unknown key means nothing", "yes", "no.such.key"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if Means(c.word, c.key) {
+				t.Errorf("Means(%q, %q) = true", c.word, c.key)
+			}
+		})
 	}
 }
