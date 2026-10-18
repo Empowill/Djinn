@@ -147,9 +147,13 @@ the code does not say by itself; remove one when a change makes it false.
 
 ## Interface tests
 
-- **A copy change breaks tests that quote it, HTML-escaped.** `tests/screens.test.mjs` matches rendered HTML, where
-  an apostrophe is `&#x27;` (W457). *Do:* after editing `locales/en.json`, grep `e2e/`, `tests/` and Go tests for a
-  fragment of the old text without its quote, and run `go tool task test-ui`.
+- **A copy change breaks tests that quote it, HTML-escaped.** The screens tests (`tests/<component>.test.mjs`, on
+  `tests/screens.mjs`) match rendered HTML, where an apostrophe is `&#x27;` (W457). *Do:* after editing
+  `locales/en.json`, grep `e2e/`, `tests/` and Go tests for a fragment of the old text without its quote, and run
+  `go tool task test-ui`.
+- **A Node test runs an old bundle.** `tests/bundle.mjs` keeps each bundle under `node_modules/.cache/djinn-tests`
+  with the size and time of every file it read, and builds again when one changed; a file changed by a tool that
+  keeps both (a copy with its times) goes unseen (W318). *Do:* delete that folder. *Where:* `tests/bundle.mjs`.
 - **A CSS rule no component uses fails `test-ui`.** "Classes no component uses: remove their rules"; lint and e2e
   pass regardless (W17). *Do:* drop a component's rules with the component. *Where:* `tests/styles.test.cjs`.
 - **`node --test tests/data-store.test.mjs` never ends, silently.** A store retry loop that never stops keeps it

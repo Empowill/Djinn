@@ -96,7 +96,7 @@ test("each text size has its root font size, the same in the documentation site"
   const steps = [
     ...source.match(/textSizes[^=]*=\s*\[([^\]]*)\]/)[1].matchAll(/"([^"]*)"/g),
   ].map((m) => m[1]);
-  assert.deepEqual(steps, ["large", "", "compact", "very-compact"]);
+  // The steps themselves, in order: text-size.test.mjs.
   const sizes = (css) =>
     Object.fromEntries(
       [
@@ -436,8 +436,8 @@ test("the theme's tokens keep their contrast in the dark and the light theme", (
 
 // No grey is written by hand outside the tokens: a new rule takes a token, and so follows the theme.
 // The update banner reads as Djinn's (src/update-banner.css): on its ground, the raised surface (no warm tint, which
-// turned brown in the dark, L17), the brass button's ink on the lamp's gradient, the violet of Dismiss on its 10% tint
-// and its quiet text (--n-9c) keep 4.5:1 in both themes.
+// turned brown in the dark, L17), the violet of Dismiss on its 10% tint and its quiet text (--n-9c) keep 4.5:1 in both
+// themes. The brass button's ink on the lamp's gradient is the pill's label at rest: Write to the Djinn's test checks it.
 test("the update banner's buttons keep their contrast in the dark and the light theme", () => {
   const read = (file, selector) => {
     const css = fs.readFileSync(path.join(root, file), "utf8");
@@ -491,14 +491,6 @@ test("the update banner's buttons keep their contrast in the dark and the light 
     const ground = rgb(theme["surface-raised"]);
     const violet = rgb(theme["st-investigating"]);
     const pairs = {
-      "the brass button's ink at its top": [
-        rgb(theme["lamp-ink"]),
-        rgb(theme["lamp-hi"]),
-      ],
-      "the brass button's ink at its foot": [
-        rgb(theme["lamp-ink"]),
-        rgb(theme["lamp-lo"]),
-      ],
       Dismiss: [violet, mix(violet, ground, 0.1)],
       "the quiet text": [rgb(theme["n-9c"]), ground],
       "the title": [rgb(theme.text), ground],
@@ -622,59 +614,16 @@ test("Write to the Djinn's pill keeps its contrast in every state, in the dark a
   }
 });
 
-// The task row's model identifier uses Djinn's violet (--st-investigating), keeping WCAG AA contrast (4.5:1)
-// in both light and dark themes on the task card's surface.
-test("the task model uses Djinn's violet token and keeps contrast in both themes", () => {
+// The task row's model identifier uses Djinn's violet (--st-investigating). Its WCAG AA contrast (4.5:1) on the page
+// and on a card, in both themes, is the status colours' test's: it reads --st-investigating on a 13% badge of itself
+// over the same grounds, which is closer to the violet than the bare ground.
+test("the task model uses Djinn's violet token", () => {
   const css = fs.readFileSync(path.join(root, "wish.css"), "utf8");
   assert.match(
     css,
     /\.task-model\s*\{[^}]*color:\s*var\(--st-investigating\);/,
     "task-model uses var(--st-investigating)",
   );
-  const read = (file, selector) => {
-    const content = fs.readFileSync(path.join(root, file), "utf8");
-    const start = content.indexOf(selector + " {");
-    return Object.fromEntries(
-      [
-        ...content
-          .slice(start, content.indexOf("}", start))
-          .matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/g),
-      ].map((m) => [m[1], m[2]]),
-    );
-  };
-  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  const lum = (c) => {
-    const [r, g, b] = c.map((v) => {
-      v /= 255;
-      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-    });
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  };
-  const ratio = (a, b) => {
-    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
-    return (x + 0.05) / (y + 0.05);
-  };
-  const darkReview = read("review.css", ":root");
-  const lightReview = read("review.css", 'html[data-theme="light"]');
-  const themes = {
-    dark: {
-      violet: darkReview["st-investigating"],
-      grounds: ["#0e0e10", "#151517"],
-    },
-    light: {
-      violet: lightReview["st-investigating"],
-      grounds: ["#f6f6f8", "#ffffff"],
-    },
-  };
-  for (const [name, { violet, grounds }] of Object.entries(themes)) {
-    for (const ground of grounds) {
-      const r = ratio(rgb(violet), rgb(ground));
-      assert.ok(
-        r >= 4.5,
-        `${name}: task-model violet (${violet}) on ${ground} reads at ${r.toFixed(2)}:1`,
-      );
-    }
-  }
 });
 
 test("the stylesheets take their greys from the tokens", () => {
