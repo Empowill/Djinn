@@ -76,6 +76,7 @@ const signals: {
   blocking: boolean;
   stopped?: boolean;
   needs: boolean;
+  speaking: boolean;
   live: boolean;
   everLive: boolean;
   wishesReading: boolean;
@@ -83,6 +84,7 @@ const signals: {
 } = {
   blocking: false,
   needs: false,
+  speaking: false,
   live: true,
   everLive: true,
   wishesReading: false,
@@ -116,6 +118,12 @@ export function useEyeLead(stopped: boolean) {
 export function useEyeNeeds(needs: boolean) {
   useEffect(() => signal("needs", needs), [needs]);
   useEffect(() => () => signal("needs", false), []);
+}
+
+// useEyeSpeaking tells the eye whether an unseen message from the lead waits in the bubble on Write to the Djinn.
+export function useEyeSpeaking(speaking: boolean) {
+  useEffect(() => signal("speaking", speaking), [speaking]);
+  useEffect(() => () => signal("speaking", false), []);
 }
 
 // The perches shown, by name: "home", "pill", "q:<question id>", "tab:<view>".
@@ -250,6 +258,7 @@ function passUnder(layer: HTMLElement) {
 // Eye moves one element, built once, between the perches and the flight layer.
 class Eye {
   private at = "";
+  private speaking = false;
   private parked?: { scale: number };
   private flying?: Animation;
   private flyingUntil = 0;
@@ -341,6 +350,7 @@ class Eye {
       stopped: signals.stopped,
       blocking: signals.blocking,
       needs: signals.needs,
+      speaking: signals.speaking,
       perches: names,
       focus,
     };
@@ -407,6 +417,10 @@ class Eye {
   private show(target: EyeTarget, s?: EyeSignals) {
     this.el.dataset.mood = target.mood;
     this.el.toggleAttribute("data-shine", this.shines(target));
+    const wasSpeaking = this.speaking;
+    this.speaking = Boolean(s?.speaking);
+    if (this.speaking && !wasSpeaking && this.at === "pill" && !this.openTimer)
+      this.blink();
     const look = s ? eyeLook(s, target) : undefined;
     if (look) {
       this.el.style.setProperty("--djinn-eye-look-x", `${look.x / 16}rem`);
@@ -450,10 +464,14 @@ class Eye {
     delete this.el.dataset.flying;
     this.layer.style.clipPath = "";
     this.parked = undefined;
-    this.show(target, s);
     clearTimeout(this.openTimer);
+    this.openTimer = undefined;
     if (perch.hasAttribute("data-opens"))
-      this.openTimer = setTimeout(() => this.blink(), OPENED);
+      this.openTimer = setTimeout(() => {
+        this.openTimer = undefined;
+        this.blink();
+      }, OPENED);
+    this.show(target, s);
   }
 
   private move(target: EyeTarget, s?: EyeSignals) {

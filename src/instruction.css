@@ -17,7 +17,7 @@
   min-height: 2.625rem;
   overflow: hidden;
   isolation: isolate;
-  border-radius: 62.4375rem;
+  border-radius: 1.375rem;
   color: var(--workspace-action-ink, var(--text));
   box-shadow: 0 0.3125rem 1rem var(--workspace-action-shadow);
 }
@@ -197,7 +197,7 @@
 .workspace-action-editor {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
-  align-items: center;
+  align-items: end;
   width: 100%;
   min-width: 0;
   gap: 0.125rem;

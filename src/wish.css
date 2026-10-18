@@ -1191,11 +1191,21 @@ html[data-motion="reduced"]
   align-items: center;
   pointer-events: none;
 }
-.lead-message > .workspace-action {
+.lead-message > .workspace-action,
+.lead-message-anchor {
   pointer-events: auto;
 }
-.lead-message .workspace-action-lead.is-expanded {
+.lead-message-anchor {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  max-width: calc(100% - 2rem);
+}
+.lead-message-anchor:has(.workspace-action-lead.is-expanded) {
   width: min(42.5rem, calc(100% - 2rem));
+}
+.lead-message .workspace-action-lead.is-expanded {
+  width: 100%;
 }
 .lead-message-sent {
   display: inline-flex;

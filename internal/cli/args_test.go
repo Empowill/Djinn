@@ -214,6 +214,11 @@ func parseCases(t *testing.T) []parseCase {
 			want: &planv1.LeadServiceEventRequest{Id: wishID},
 		},
 		{
+			name: "the lead speaks in the Lamp's bubble",
+			args: []string{wishID, "Two tasks run on the lamp.", "--decided"},
+			want: &planv1.LeadServiceSayRequest{WishId: wishID, Text: "Two tasks run on the lamp.", Decided: true},
+		},
+		{
 			name: "an ifrit, with its own idle minutes",
 			args: []string{wishID, "--kind", "ifrit", "--idle-minutes", "60"},
 			want: &planv1.TaskServiceSpawnRequest{WishId: wishID, Kind: planv1.TaskKind_TASK_KIND_IFRIT, IdleMinutes: 60},

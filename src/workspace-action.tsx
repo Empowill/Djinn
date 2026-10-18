@@ -46,7 +46,7 @@ export function WorkspaceAction({
       className={`workspace-action ${ACTION_TONE_CLASS[tone]}${expanded ? " is-expanded" : ""} ${className}`}
       initial={false}
       transition={transition}
-      style={{ borderRadius: 999 }}
+      style={{ borderRadius: 22 }}
       data-eye-under={perch ? "" : undefined}
     >
       <div className="workspace-action-surface" aria-hidden="true">

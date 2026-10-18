@@ -536,3 +536,91 @@ func TestOneAnswerReachesTheLeadOnce(t *testing.T) {
 		t.Errorf("another choice: the harness acted %d times, want 2", hooks)
 	}
 }
+
+// TestLeadSay (Q78): LeadService.Say puts a block of kind "reply" (or "decided" with --decided) from the lead on the
+// wish, refuses empty text or more than 600 runes, and refuses a worker.
+func TestLeadSay(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	c := serve(t)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Lamp bubble"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+
+	// Reply block from the lead.
+	replyRes, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   "  Two tasks run on the lamp (`W12`, `W14`).  ",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := replyRes.Msg.GetBlock(); b.GetKind() != "reply" || b.GetTaskId() != "" || b.GetWishId() != wishID ||
+		b.GetContent() != "Two tasks run on the lamp (`W12`, `W14`)." {
+		t.Errorf("reply block = %v", b)
+	}
+
+	// Decided block with --decided.
+	decidedRes, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId:  wishID,
+		Text:    "Kept the 22px pill radius so expanding the editor never shifts the eye socket.",
+		Decided: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := decidedRes.Msg.GetBlock(); b.GetKind() != "decided" || b.GetTaskId() != "" || b.GetWishId() != wishID {
+		t.Errorf("decided block = %v", b)
+	}
+
+	// Both blocks are listed on the wish in order.
+	listed, err := c.blocks.List(ctx, connect.NewRequest(&planv1.BlockServiceListRequest{WishId: wishID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := listed.Msg.GetBlocks(); len(got) != 2 || got[0].GetKind() != "reply" || got[1].GetKind() != "decided" {
+		t.Errorf("listed blocks = %v", got)
+	}
+
+	// Empty text refused.
+	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   "   ",
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("empty text err = %v, want InvalidArgument", err)
+	}
+
+	// Exactly 600 multi-byte runes passes; 601 runes is refused with guidance to write a report block.
+	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   strings.Repeat("★", MaxLeadSayRunes),
+	})); err != nil {
+		t.Errorf("600 runes err = %v", err)
+	}
+	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   strings.Repeat("★", MaxLeadSayRunes+1),
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "--kind report") {
+		t.Errorf("601 runes err = %v, want InvalidArgument naming --kind report", err)
+	}
+
+	// Unknown wish refused.
+	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: uuid.NewString(),
+		Text:   "Hello",
+	})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("unknown wish err = %v, want NotFound", err)
+	}
+
+	// Worker caller refused on LeadService.Say.
+	workerCtx := WithCaller(ctx, &WorkerCaller{TaskID: uuid.NewString(), WishID: wishID})
+	srv := &LeadService{Wishes: &Wishes{Store: c.store}}
+	if _, err := srv.Say(workerCtx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   "I am a worker",
+	})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("worker Say err = %v, want PermissionDenied", err)
+	}
+}

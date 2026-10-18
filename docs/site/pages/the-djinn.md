@@ -33,17 +33,18 @@ joins the task that has them or comes after it.
 
 ## Talking with the Djinn
 
-The Djinn talks to you only in the window, and only by [questions](#question-and-move). A report, a doubt, a choice, a
-"done as you asked" all come as a question in the wish they concern, often a yes or no with "OK, nothing to do" as an
-option. You never need to read its terminal: it writes one short line there at most, never a question, and a line you
-type there is answered in the window.
+The Djinn talks to you only in the window: by [questions](#question-and-move) when a choice or a move is yours, and in the
+bubble held to **Write to the Djinn** when it answers your words or tells a decision it took alone. You never need to read
+its terminal: it writes one short line there at most, never a question, and a line you type there is answered in the
+window.
 
 You have three ways to reach it:
 
 - **Answer its questions.** This is the usual way: an answer goes to the Djinn, which turns it into tasks.
 - **Write to the Djinn**, the pill at the bottom of a wish, or of the flying carpet. Ctrl+I (Cmd+I on macOS) opens it,
   Enter sends, Shift+Enter breaks the line, Escape folds it and keeps your draft. From a wish, your words reach the
-  Djinn with the wish named; they wait while you type in its terminal or a choice is on screen there, then go.
+  Djinn with the wish named; they wait while you type in its terminal or a choice is on screen there, then go, and the
+  Djinn's eye answers in the bubble held to the pill.
 - **Talk to the Djinn**, at the top of a wish, opens its terminal in the window, focused on that wish. At the top of
   the flying carpet it opens it on no wish. There you talk to it as to any agent.
 
@@ -85,8 +86,8 @@ driven setting on, in the settings file of Djinn's data folder, read when Djinn 
   the next one reads what the last ones did.
 - **The lead's journal.** Each batch is kept: who led it (agent, model, session), the events it took, the commands it
   ran, the line that ended its turn, and what it cost. The command line prints it, for every wish or for one.
-- **Write to the Djinn** sends your words to the next batch, whole. Nothing reaches a terminal: what the Djinn has to
-  tell you is a question.
+- **Write to the Djinn** sends your words to the next batch, whole. Nothing reaches a terminal: the Djinn answers in the
+  bubble held to the pill, or asks a question when a choice is yours.
 - **A failed batch** gets one new session. Failed again, it shows beside **Lead** in the window and its events wait:
   the next event, or a click on **Lead**, starts a session for them.
 

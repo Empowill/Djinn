@@ -393,3 +393,116 @@ test(
     }
   },
 );
+
+test("when the Djinn speaks, the eye comes to its socket and the bubble queues replies and decisions", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  pauseOthers();
+  const title = `Eye speaks ${randomUUID().slice(0, 8)}`;
+  const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
+    .id as string;
+  setLead(session, leadFolder("eye-"));
+  const qId = JSON.parse(
+    djinn(
+      "question",
+      "ask",
+      "Which lamp rests on the table?",
+      wishId,
+      "--options",
+      "Brass",
+      "--options",
+      "Glass",
+      "--json",
+    ),
+  ).question.id as string;
+  try {
+    await page.goto(process.env.DJINN_URL!);
+    await page.evaluate(
+      ([id]) => {
+        localStorage.setItem(
+          "djinn-lead-last-sent",
+          JSON.stringify({ [id]: "What happened to the brass lamp?" }),
+        );
+      },
+      [wishId],
+    );
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+    await expect(page.locator(`#question-${qId}`)).toBeFocused();
+    await expect(perchOf(page, qId)).toBeVisible({ timeout: 10_000 });
+
+    // WorkspaceAction keeps a fixed 22px radius folded and expanded.
+    const pill = page.locator(".workspace-action-lead");
+    await expect(pill).toHaveCSS("border-radius", "22px");
+
+    // Two messages from the lead: a reply and a lone decision.
+    const firstReply =
+      "The brass lamp waits in the third drawer beneath the chart table, polished and ready for the night watch before the next tide turns.";
+    const secondDecided =
+      "Trimmed the spare wick alone while the gale held the harbour.";
+    djinn("lead", "say", wishId, firstReply);
+    djinn("lead", "say", wishId, secondDecided, "--decided");
+
+    // The eye comes to its socket on the pill even while a question is open, and Bubble B shows 1 / 2.
+    const bubble = page.locator(".lead-bubble");
+    await expect(bubble).toBeVisible({ timeout: 10_000 });
+    await expect(pillEye(page)).toBeVisible({ timeout: 10_000 });
+    await expect(bubble).toHaveClass(/is-side/);
+    await expect(bubble.locator(".lead-bubble-kind")).toHaveText("Djinn");
+    await expect(bubble.locator(".lead-bubble-count")).toHaveText("1 / 2");
+    await expect(bubble.locator(".lead-bubble-text")).toHaveText(firstReply);
+
+    await page.waitForTimeout(900);
+    await page.screenshot({
+      path: "test-results/e2e/djinn-eye-bubble-dark.png",
+    });
+
+    // Hover opens the full message past the two-line preview and shows the last-sent quote.
+    await bubble.hover();
+    await expect(bubble).toHaveClass(/is-open/, { timeout: 2_000 });
+    await expect(bubble.locator(".lead-bubble-quote")).toBeVisible();
+    await expect(bubble.locator(".lead-bubble-quote")).toContainText(
+      "In reply to: “What happened to the brass lamp?”",
+    );
+
+    // Light theme screenshot of the open bubble.
+    await page.evaluate(() => {
+      localStorage.setItem("djinn.theme", "light");
+      document.documentElement.dataset.theme = "light";
+    });
+    await page.waitForTimeout(250);
+    await page.screenshot({
+      path: "test-results/e2e/djinn-eye-bubble-light.png",
+    });
+    await page.evaluate(() => {
+      localStorage.removeItem("djinn.theme");
+      delete document.documentElement.dataset.theme;
+    });
+
+    // A click marks the first message seen and shows the second (--decided).
+    await bubble.click();
+    await expect(bubble.locator(".lead-bubble-kind")).toHaveText("Decided");
+    await expect(bubble.locator(".lead-bubble-count")).toHaveCount(0);
+    await expect(bubble.locator(".lead-bubble-quote")).toHaveCount(0);
+    await expect(bubble.locator(".lead-bubble-text")).toHaveText(secondDecided);
+
+    // Reloading keeps the first message seen and brings back the unseen second message from the last 24 h.
+    await page.reload();
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+    await expect(bubble).toBeVisible({ timeout: 10_000 });
+    await expect(bubble.locator(".lead-bubble-kind")).toHaveText("Decided");
+    await expect(bubble.locator(".lead-bubble-text")).toHaveText(secondDecided);
+    await expect(pillEye(page)).toBeVisible({ timeout: 10_000 });
+
+    // Clicking the last message closes the bubble and returns the eye to the question perch.
+    await bubble.click();
+    await expect(bubble).toHaveCount(0);
+    await expect(perchOf(page, qId)).toBeVisible({ timeout: 10_000 });
+    expect(errors).toEqual([]);
+  } finally {
+    await page.evaluate(() => localStorage.removeItem("djinn.theme"));
+    djinn("wish", "pause", wishId);
+  }
+});

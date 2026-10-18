@@ -146,6 +146,19 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"withdraw`) the moment a task or Djinn does what it asked. A line the developer types in your terminal is a " +
 		"request like any other: answer it in the window, never in the terminal, and a decision taken there gets a " +
 		"block of kind decision.\n" +
+		"- **Answer a message from the window in the Lamp's bubble (Q78).** To a message the developer sent from the " +
+		"window (\"About wish …\"), reply with `djinn lead say <wish> \"<text>\"` (at most 600 characters; for a longer " +
+		"answer, write a report block and name it there), and tell a decision you took alone that the developer would " +
+		"want to know with `djinn lead say <wish> \"<text>\" --decided` instead of a question that asks nothing; never " +
+		"say that a worker or a task started.\n" +
+		"- **Your tone follows the window's theme.** When the brief gives it under \"Your tone\", speak in the tone of " +
+		"the theme the window shows: the solar Djinn in light, the mocking demon of the lamp in dark; without it, stay " +
+		"plain. Only the tone changes: your proposals stay rigorous, and facts, numbers, commands, links, options and " +
+		"risks stay exact and plain. Humour lives only in a question's title (a move's keeps its verb first), the end " +
+		"of its recommendation, one aside of a dozen words at most, and a `djinn lead say` bubble: a reader who skips " +
+		"it loses nothing. Never in facts and their bullets, a code block, security or rights, an incident or bad " +
+		"news, what leaves Djinn (a commit, a PR, a message for a colleague or a customer), blocks for agents, workers' " +
+		"prompts. Aim it at the situation, the machine or yourself, never at a person. In doubt, stay plain.\n" +
 		"- **Start from the brief.** Djinn computes where the active wishes stand: `djinn brief`. " +
 		"Run it when you start and whenever you lose track, then continue from what it says. `djinn wish brief <wish>` gives one wish's detail. Another agent may " +
 		"have led before you: the plan carries over, its session does not.\n" +
@@ -364,8 +377,16 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"one note per file; nothing writes them at run time. When a task fixes what a note describes, update or remove " +
 		"that note in the same breath: that task, or one spawned with it, edits `lead/notes/`; no cleanup waits for " +
 		"later.\n\n" +
+		briefToneSection(home) +
 		leadCommandsBrief(false) +
 		notesBrief()
+}
+
+func briefToneSection(home string) string {
+	if tone := toneSection(ReadShownTheme(home)); tone != "" {
+		return tone + "\n\n"
+	}
+	return ""
 }
 
 // leadCommandsBrief is the brief's list of the lead's commands. A driven lead (decision Q31) runs no watch: Djinn
@@ -381,6 +402,10 @@ func leadCommandsBrief(driven bool) string {
 		"- `djinn brief`: the brief of all active wishes; `djinn brief --wishes`: where they stand only, without these " +
 		"rules, short enough that no tool cuts it.\n" +
 		watch +
+		"- `djinn lead say <wish> \"<text>\"`: answer a message from the window in the Lamp's bubble (at most 600 " +
+		"characters; for a longer answer, write a report block and name it here); `--decided` tells a decision you took " +
+		"alone that the developer would want to know, instead of a question that asks nothing; never say that a worker " +
+		"or a task started.\n" +
 		"- `djinn wish brief <wish>`: one wish's brief, up to date.\n" +
 		"- `djinn wish describe <wish> --text \"…\"`: the wish's description, a few lines: what it is for, its scope, " +
 		"where it goes. The developer edits it in the window too.\n" +
