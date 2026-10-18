@@ -283,6 +283,7 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
   const title = `Mind the strip ${randomUUID().slice(0, 8)}`;
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
     .id as string;
+  djinn("open", `djinn://wish/${wishId}`);
   try {
     await page.addInitScript(() => {
       const userAgent = navigator.userAgent;
@@ -297,6 +298,12 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
     });
     await page.setViewportSize({ width: 760, height: 720 });
     await page.goto(djinnURL());
+    await page.locator(".sidebar").getByRole("button", { name: title }).click();
+    await expect(
+      page.locator(".main-shell .topbar").getByRole("button", {
+        name: "Delete this wish",
+      }),
+    ).toBeVisible();
 
     await expect(page.locator("html")).toHaveClass(/native-mac/);
     await expect(page.locator(".sidebar")).toHaveCSS("padding-top", "28px");
@@ -315,6 +322,19 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
       .locator("svg")
       .evaluate((svg) => svg.outerHTML);
     expect(await page.locator(".app-toolbar > button").count()).toBe(1);
+    const controls = page.locator(".main-shell .topbar button:visible");
+    for (const [name, top] of await controls.evaluateAll((els) =>
+      els.map((el) => [
+        el.getAttribute("aria-label") ?? el.textContent,
+        el.getBoundingClientRect().top,
+      ]),
+    ))
+      expect(top, `${name}`).toBeGreaterThanOrEqual(6);
+    // The sidebar is a rail here: the topbar starts after the toggle.
+    const first = await page
+      .locator(".main-shell .topbar > :first-child")
+      .boundingBox();
+    expect(first!.x).toBeGreaterThanOrEqual(toggleBox!.x + toggleBox!.width);
     // The creation page adds Back after the toggle, which stays where it is.
     await page.locator(".sidebar .new-mission").click();
     const back = page.locator(".app-toolbar-back");
@@ -355,26 +375,6 @@ test("native mac titlebar reserves only its chrome space", async ({ page }) => {
         );
       }
     }
-
-    await page.locator(".sidebar").getByRole("button", { name: title }).click();
-    await expect(
-      page.locator(".main-shell .topbar").getByRole("button", {
-        name: "Delete this wish",
-      }),
-    ).toBeVisible();
-    const controls = page.locator(".main-shell .topbar button:visible");
-    for (const [name, top] of await controls.evaluateAll((els) =>
-      els.map((el) => [
-        el.getAttribute("aria-label") ?? el.textContent,
-        el.getBoundingClientRect().top,
-      ]),
-    ))
-      expect(top, `${name}`).toBeGreaterThanOrEqual(6);
-    // The sidebar is a rail here: the topbar starts after the toggle.
-    const first = await page
-      .locator(".main-shell .topbar > :first-child")
-      .boundingBox();
-    expect(first!.x).toBeGreaterThanOrEqual(toggleBox!.x + toggleBox!.width);
     await toggle.click();
     await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
     expect(await toggle.boundingBox()).toEqual(toggleBox);
