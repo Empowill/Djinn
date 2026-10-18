@@ -28,15 +28,15 @@ func TestWindowTold(t *testing.T) {
 		event          window.Event
 		want           []string
 	}{
-		{"silent, loaded again, en", "en", window.Event{After: window.Silence, Did: window.Reloaded}, []string{
-			"djinn: Djinn's window stayed black. Its page made no call to Djinn within 10 s. Djinn loaded its page again.\n",
+		{"crashed, loaded again, en", "en", window.Event{Ended: "crashed", Did: window.Reloaded}, []string{
+			"djinn: Djinn's window lost its page. The process that draws its page ended: it crashed. Djinn loaded its page again.\n",
 		}},
-		{"silent, new view after a GPU hang, en", "en", window.Event{After: window.Silence, Hangs: hang, Did: window.Recreated, Software: true}, []string{
+		{"crashed, new view after a GPU hang, en", "en", window.Event{Ended: "crashed", Hangs: hang, Did: window.Recreated, Software: true}, []string{
 			"The kernel logged a GPU hang or reset at 21:26:55.",
 			"Djinn opened the window again in software rendering, slower, until Djinn restarts.\n",
 		}},
-		{"silent, new view, fr", "fr", window.Event{After: window.Silence, Did: window.Recreated}, []string{
-			"djinn: " + locales.T("fr", "window.silent_title", nil) + ". " + locales.T("fr", "window.silent_body", map[string]string{"seconds": "10"}),
+		{"crashed, new view, fr", "fr", window.Event{Ended: "crashed", Did: window.Recreated}, []string{
+			"djinn: " + locales.T("fr", "window.ended_title", nil) + ". " + locales.T("fr", "window.ended_body", map[string]string{"reason": locales.T("fr", "window.reason_crashed", nil)}),
 			locales.T("fr", "window.recreated", nil) + "\n",
 		}},
 		{"ended, nothing left", "en", window.Event{Ended: "crashed"}, []string{
@@ -46,7 +46,7 @@ func TestWindowTold(t *testing.T) {
 		{"terminated, loaded again", "en", window.Event{Ended: "terminated", Did: window.Reloaded}, []string{
 			"The process that draws its page ended: WebKit ended it. Djinn loaded its page again.",
 		}},
-		{"the rescue failed", "en", window.Event{After: window.Silence, Err: errors.New("no display")}, []string{
+		{"the rescue failed", "en", window.Event{Ended: "crashed", Err: errors.New("no display")}, []string{
 			"Djinn could not rescue it (no display): quit Djinn and start it again.",
 		}},
 		{"memory", "en", window.Event{Ended: "memory"}, []string{"it went past its memory limit."}},

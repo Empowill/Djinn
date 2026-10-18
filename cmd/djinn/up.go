@@ -634,26 +634,11 @@ func runUp(args []string) (restart bool, err error) {
 		cfg := windowConfig{raise: raise, notices: notices, shortcuts: shortcuts, links: openLinks, quit: stop}
 		if transport == server.Wails {
 			cfg.assets = ui.FromWindow(server.WholeWrites(h))
-			// The window's page may never start, or die (W353, W366, W373): on Linux, a page silent past
-			// window.Silence, or whose web process ended, is logged with WebKit's state and the kernel's GPU hangs,
-			// told here and by a notification, loaded again, then given a new view (software rendering after a GPU
-			// hang only).
+			// When the web process of the window's page ends (W353, W366), on Linux, it is logged with WebKit's state
+			// and the kernel's GPU hangs, told here and by a notification, loaded again, then given a new view
+			// (software rendering after a GPU hang only).
 			if runtime.GOOS == "linux" {
 				cfg.watch = &window.Watch{Started: started, Tell: windowTold(os.Stderr, notices, render.SystemLanguage())}
-				// A test build takes another threshold and another kernel log, to see each rescue (e2e/native
-				// relaunch_test.go).
-				if ui.StampedTestBuild() {
-					if after, err := time.ParseDuration(os.Getenv("DJINN_WINDOW_SILENCE")); err == nil {
-						cfg.watch.After = after
-					}
-					if log := os.Getenv("DJINN_WINDOW_KERNEL_LOG"); log != "" {
-						cfg.watch.Hangs = func(context.Context, time.Time) ([]window.Hang, error) {
-							b, err := os.ReadFile(log)
-							return window.Hangs(b), err
-						}
-					}
-				}
-				cfg.assets = cfg.watch.Handler(cfg.assets)
 			}
 		} else {
 			cfg.url = url

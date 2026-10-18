@@ -547,8 +547,8 @@ func (n *Notices) notifyLeadPrompt(p *planv1.LeadPrompt) error {
 	})
 }
 
-// Window notifies what djinn up found about the window's page, which the page cannot say: silent, or dead, and what
-// Djinn did about it (window.Event). It shows whatever the window shows; a click brings the window forward.
+// Window notifies what djinn up found about the window's page, which the page cannot say: that its web process ended,
+// and what Djinn did about it (window.Event). It shows whatever the window shows; a click brings the window forward.
 func (n *Notices) Window(title, body string) error {
 	return n.show("", Notification{ID: "djinn-window", Title: title, Body: body, Always: true})
 }

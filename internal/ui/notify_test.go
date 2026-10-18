@@ -557,11 +557,11 @@ func TestNoticesWindow(t *testing.T) {
 	n.View("w")
 	n.Focus(true)
 	for range 2 {
-		if err := n.Window("Djinn's window stayed black", "Djinn opened it again."); err != nil {
+		if err := n.Window("Djinn's window lost its page", "Djinn loaded its page again."); err != nil {
 			t.Fatal(err)
 		}
-		if got := notes.next(t); got.ID != "djinn-window" || got.Title != "Djinn's window stayed black" ||
-			got.Body != "Djinn opened it again." || got.WishID != "" {
+		if got := notes.next(t); got.ID != "djinn-window" || got.Title != "Djinn's window lost its page" ||
+			got.Body != "Djinn loaded its page again." || got.WishID != "" {
 			t.Errorf("notification = %+v", got)
 		}
 	}

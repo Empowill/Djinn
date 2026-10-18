@@ -59,59 +59,13 @@ func shows(t *testing.T, d *djinn) {
 	})
 }
 
-// TestNativeRelaunch: a page silent past the watch's threshold, here 1 ms (DJINN_WINDOW_SILENCE, test builds only),
-// loads again, then the window opens again with a new view, in the same process; on the GPU, or in software rendering
-// after a GPU hang the kernel logged (DJINN_WINDOW_KERNEL_LOG, test builds only). Each start logs the page's load
-// events and, at each rescue, the web processes; the stop names its source (decision Q84).
-func TestNativeRelaunch(t *testing.T) {
-	t.Run("without a GPU hang, a reload then a new view on the GPU", func(t *testing.T) {
-		d, log := watched(t, "DJINN_WINDOW_SILENCE=1ms")
-		logs(t, log, `msg="window: load" event=started`, `msg="window: load" event=committed`,
-			"web_processes=", "WebKitWebProces", `msg="window: the page loads again" page=2`,
-			`msg="window: opened again with a new view" page=3 software_rendering=false`,
-			`msg="window: the page calls the server" page=3`)
-		if !strings.Contains(d.out.String(), "djinn: Djinn's window stayed black.") {
-			t.Errorf("not said on the output:\n%s", d.out.String())
-		}
-		shows(t, d)
-		if web := webProcesses(t, d.cmd.Process.Pid); len(web) == 0 || len(gpuThreads(web[len(web)-1])) == 0 {
-			t.Errorf("web processes %v: the new view does not draw on the GPU", web)
-		}
-		d.stop(t)
-		if !strings.Contains(log(), `msg="shutdown begins" why="SIGINT (Ctrl+C in djinn up's terminal, or kill -INT)"`) {
-			t.Errorf("the stop does not name its source:\n%s", log())
-		}
-	})
-
-	t.Run("after a GPU hang, the new view in software rendering", func(t *testing.T) {
-		kernel := filepath.Join(t.TempDir(), "kernel.log")
-		line := time.Now().Format("2006-01-02T15:04:05-0700") + " host kernel: i915 0000:00:02.0: [drm] Xorg[8937] context reset due to GPU hang\n"
-		if err := os.WriteFile(kernel, []byte(line), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		d, log := watched(t, "DJINN_WINDOW_SILENCE=1ms", "DJINN_WINDOW_KERNEL_LOG="+kernel)
-		logs(t, log, "gpu_hangs=1", `msg="window: opened again with a new view" page=3 software_rendering=true`,
-			`msg="window: the page calls the server" page=3`)
-		if !strings.Contains(d.out.String(), "in software rendering, slower, until Djinn restarts") {
-			t.Errorf("not said on the output:\n%s", d.out.String())
-		}
-		shows(t, d)
-		web := webProcesses(t, d.cmd.Process.Pid)
-		if len(web) == 0 {
-			t.Fatal("no web process")
-		}
-		if gpu := gpuThreads(web[len(web)-1]); len(gpu) > 0 {
-			t.Errorf("web process %d has GPU threads %v (all: %v)", web[len(web)-1], gpu, web)
-		}
-	})
-}
-
 // TestNativeWebProcessEnds: the web process of a window that runs dies mid-session, with no GPU hang (W366): its end
 // is logged with its reason, the page loads again with a new web process, and the page's console reaches djinn up's
-// output.
+// output. Every stop names its source (decision Q84).
 func TestNativeWebProcessEnds(t *testing.T) {
 	d, log := watched(t)
-	logs(t, log, `msg="window: the page calls the server" page=1`)
+	logs(t, log, `msg="window: load" event=started`, `msg="window: load" event=committed`)
+	shows(t, d)
 	web := webProcesses(t, d.cmd.Process.Pid)
 	if len(web) != 1 {
 		t.Fatalf("web processes %v; want one", web)
@@ -125,7 +79,7 @@ func TestNativeWebProcessEnds(t *testing.T) {
 		t.Fatal(err)
 	}
 	logs(t, log, `msg="window: the web process of the page ended" reason=crashed`,
-		`msg="window: the page loads again" page=2`, `msg="window: the page calls the server" page=2`)
+		`msg="window: the page loads again" page=2`)
 	if !strings.Contains(d.out.String(), "djinn: Djinn's window lost its page.") {
 		t.Errorf("not said on the output:\n%s", d.out.String())
 	}
@@ -142,6 +96,10 @@ func TestNativeWebProcessEnds(t *testing.T) {
 	})
 	if after := webProcesses(t, d.cmd.Process.Pid); len(after) != 1 || after[0] == web[0] {
 		t.Errorf("web processes %v after the reload; want one new", after)
+	}
+	d.stop(t)
+	if !strings.Contains(log(), `msg="shutdown begins" why="SIGINT (Ctrl+C in djinn up's terminal, or kill -INT)"`) {
+		t.Errorf("the stop does not name its source:\n%s", log())
 	}
 }
 
@@ -169,21 +127,4 @@ func webProcesses(t *testing.T, pid int) []int {
 		}
 	}
 	return found // /proc lists by PID: the oldest first, short of a wrap.
-}
-
-// gpuThreads is the threads of pid that draw on the GPU: WebKit's compositor, Mesa's, Skia's (W353).
-func gpuThreads(pid int) []string {
-	tasks, _ := os.ReadDir(filepath.Join("/proc", strconv.Itoa(pid), "task"))
-	var gpu []string
-	for _, task := range tasks {
-		comm, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "task", task.Name(), "comm"))
-		if err != nil {
-			continue
-		}
-		name := strings.TrimSpace(string(comm))
-		if strings.Contains(name, "Compositor") || strings.Contains(name, "gdrv") || strings.Contains(name, "Skia") {
-			gpu = append(gpu, name)
-		}
-	}
-	return gpu
 }
