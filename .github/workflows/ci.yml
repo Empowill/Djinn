@@ -139,6 +139,8 @@ jobs:
       - run: go tool task test-go
       - if: ${{ !cancelled() }}
         run: go tool task test-ui
+      # Retries a failed test once on Windows (e2e/playwright.config.ts, temporary until Q108 is fixed) and lists the
+      # tests that passed on retry (Playwright flaky status) in $GITHUB_STEP_SUMMARY (e2e/reporter.ts).
       - if: ${{ !cancelled() }}
         run: go tool task e2e
       - name: Keep the traces and screenshots of the end-to-end tests that failed
