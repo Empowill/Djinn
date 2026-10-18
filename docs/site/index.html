@@ -403,6 +403,18 @@
                   (<code>djinn lead get-circle</code>, <code>djinn lead set-circle</code>).
                 </p>
               </article>
+              <article class="card word" id="word-usage">
+                <h3><a href="#usage-and-cost">Usage and cost</a></h3>
+                <p>
+                  Every task, wish and the flying carpet show input, output, thinking and cache tokens alongside an estimated
+                  cost from Djinn's embedded price table (Claude Fable 5.1, Opus 5.6, Sonnet 5.6, Haiku 5.5, OpenAI GPT-5,
+                  Google Gemini 4 Argon and 3.8 Flash); when an agent reports its own cost, both appear, and when the CLI
+                  reports $0 (Antigravity, Codex), Djinn fills in the estimate. Because a resumed session reports cumulative
+                  session totals at the end of each run, continuing or resuming on the same session updates its total without
+                  adding earlier turns twice, switching to a new session carries prior sessions forward, and forking a session
+                  subtracts the parent session's baseline.
+                </p>
+              </article>
             </div>
           </section>
 

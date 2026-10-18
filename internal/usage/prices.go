@@ -112,14 +112,22 @@ func (t *PriceTable) ResolveModel(model string, provider planv1.Provider) string
 
 	// Check common aliases
 	switch m {
+	case "fable", "claude-fable", "claude fable 5.1":
+		return "claude-fable-5-1"
 	case "sonnet", "claude-sonnet":
 		return "claude-sonnet-5-5"
 	case "opus", "claude-opus":
 		return "claude-opus-5-5"
 	case "haiku", "claude-haiku":
 		return "claude-haiku-5-5"
-	case "flash", "gemini-flash":
+	case "argon", "gemini-argon", "gemini-4-argon", "gemini 4 argon", "gemini 4 argon (high)":
+		return "gemini-4-argon-high"
+	case "gemini 4 argon (medium)":
+		return "gemini-4-argon-medium"
+	case "flash", "gemini-flash", "gemini-3.8-flash", "gemini 3.8 flash", "gemini 3.8 flash (high)":
 		return "gemini-3.8-flash-high"
+	case "gemini 3.8 flash (medium)":
+		return "gemini-3.8-flash-medium"
 	case "codex":
 		return "gpt-5.3-codex"
 	}

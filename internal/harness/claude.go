@@ -336,6 +336,10 @@ type claudeMessage struct {
 		OutputTokens             int64 `json:"output_tokens"`
 		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+		ThinkingTokens           int64 `json:"thinking_tokens"`
+		OutputTokensDetails      *struct {
+			ThinkingTokens int64 `json:"thinking_tokens"`
+		} `json:"output_tokens_details"`
 	} `json:"usage"`
 	// ModelUsage is the usage per model. Seen on a real run (claude 2.1.293): the root usage may be all zeros
 	// while the figures are here, so it is read first.
@@ -344,6 +348,7 @@ type claudeMessage struct {
 		OutputTokens             int64 `json:"outputTokens"`
 		CacheReadInputTokens     int64 `json:"cacheReadInputTokens"`
 		CacheCreationInputTokens int64 `json:"cacheCreationInputTokens"`
+		ThinkingTokens           int64 `json:"thinkingTokens"`
 	} `json:"modelUsage"`
 	// On a rate_limit_event.
 	RateLimitInfo *struct {
@@ -476,10 +481,17 @@ func readClaude(raw string) ([]Event, *turnEnd, string) {
 			usage.OutputTokens += u.OutputTokens
 			usage.CacheReadTokens += u.CacheReadInputTokens
 			usage.CacheWriteTokens += u.CacheCreationInputTokens
+			usage.ThinkingTokens += u.ThinkingTokens
 		}
 		if u := m.Usage; len(m.ModelUsage) == 0 && u != nil {
 			usage.InputTokens, usage.OutputTokens = u.InputTokens, u.OutputTokens
 			usage.CacheReadTokens, usage.CacheWriteTokens = u.CacheReadInputTokens, u.CacheCreationInputTokens
+		}
+		if u := m.Usage; usage.ThinkingTokens == 0 && u != nil {
+			usage.ThinkingTokens = u.ThinkingTokens
+			if usage.ThinkingTokens == 0 && u.OutputTokensDetails != nil {
+				usage.ThinkingTokens = u.OutputTokensDetails.ThinkingTokens
+			}
 		}
 		ev := add(planv1.TaskEventKind_TASK_EVENT_KIND_USAGE, fmt.Sprintf("%d turns, %d tokens in, %d out, $%.4f",
 			m.NumTurns, usage.GetInputTokens(), usage.GetOutputTokens(), usage.GetCostUsd()))

@@ -41,7 +41,7 @@ func TestContinue(t *testing.T) {
 	}
 	before := len(e.watch(t.Context(), t, first.GetId(), 0))
 
-	got, err := e.continueTask(t, first.GetId(), "text merged\nusage 200 20 0.01\n")
+	got, err := e.continueTask(t, first.GetId(), "text merged\nusage 1200 120 0.03\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestContinue(t *testing.T) {
 		t.Errorf("after its new turn: %v, want done in %s on %s", done, first.GetWorktree(), first.GetBranch())
 	}
 	if u := done.GetUsage(); u.GetInputTokens() != 1200 || u.GetOutputTokens() != 120 || u.GetCostUsd() < 0.0299 || u.GetCostUsd() > 0.0301 {
-		t.Errorf("usage %v, want both runs summed", u)
+		t.Errorf("usage %v, want cumulative session total without double-counting", u)
 	}
 	if n := len(e.list(t, wishID)); n != 1 {
 		t.Errorf("%d tasks, want the same one", n)
@@ -69,7 +69,7 @@ func TestContinue(t *testing.T) {
 		text string
 	}{
 		{planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued by the lead, was done: text merged"},
-		{planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, "text merged\nusage 200 20 0.01\n"},
+		{planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, "text merged\nusage 1200 120 0.03\n"},
 		{planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "continued: started fake in "},
 		{planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "fake session " + first.GetId() + ", resumed"},
 		{planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, "merged"},
@@ -93,6 +93,15 @@ func TestContinue(t *testing.T) {
 	})
 	if err != nil || len(cmds) != 1 {
 		t.Errorf("%d Continue commands journaled (%v), want 1", len(cmds), err)
+	}
+
+	// Resumed a third time on the same session: still reflects the latest cumulative total, not the sum of snapshots.
+	if _, err := e.continueTask(t, first.GetId(), "text third\nusage 1500 160 0.05\n"); err != nil {
+		t.Fatal(err)
+	}
+	if third := e.ended(t, first.GetId()); third.GetUsage().GetInputTokens() != 1500 || third.GetUsage().GetOutputTokens() != 160 ||
+		third.GetUsage().GetCostUsd() < 0.0499 || third.GetUsage().GetCostUsd() > 0.0501 {
+		t.Errorf("third run usage = %v, want 1500/160/$0.05", third.GetUsage())
 	}
 
 	// Failed, then continued: the same task ends done, its error gone.
@@ -302,5 +311,37 @@ func TestContinueAntigravity(t *testing.T) {
 	}
 	if b, err := os.ReadFile(args); err != nil || !strings.Contains(string(b), "--conversation\n9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f") {
 		t.Errorf("resumed worker arguments: %q, %v", b, err)
+	}
+	// Resumed a third time on the same conversation: usage stays at the cumulative conversation total, not 3x.
+	resume2, _, _ := fake{provider: "antigravity", fixture: "resume"}.env(t)
+	sw.play(resume2)
+	if _, err := e.continueTask(t, id, "Turn three"); err != nil {
+		t.Fatal(err)
+	}
+	done = e.ended(t, id)
+	if u := done.GetUsage(); u.GetInputTokens() != 30384 || u.GetOutputTokens() != 9 || u.GetCostUsd() < 0.02282 || u.GetCostUsd() > 0.02283 {
+		t.Errorf("agy usage after 3 runs on same conversation = %v, want 30384/9/~$0.02282", u)
+	}
+
+	// When a task starts a fresh session (e.g. after switching provider), prior session usage is carried over as r.base,
+	// and subsequent resumes on the new session add to that prior baseline without double-counting the new session.
+	switched := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, Code: "W9", Title: "Switched", Provider: planv1.Provider_PROVIDER_FAKE,
+		Status: planv1.TaskStatus_TASK_STATUS_RESUMING, Worktree: first.GetWorktree(), Branch: first.GetBranch(),
+		Scheduled: true, Usage: &planv1.Usage{InputTokens: 500, OutputTokens: 50, CostUsd: 0.01},
+		CreateTime: timestamppb.Now(), StartTime: timestamppb.Now(), EndTime: timestamppb.Now(),
+	}
+	putTask(t, e.db, switched, "text new-session\nusage 300 30 0.02\n")
+	e.h.Wake()
+	afterSwitch := e.ended(t, switched.GetId())
+	if u := afterSwitch.GetUsage(); u.GetInputTokens() != 800 || u.GetOutputTokens() != 80 || u.GetCostUsd() < 0.0299 || u.GetCostUsd() > 0.0301 {
+		t.Errorf("usage after switching to new session = %v, want 500+300=800 / 50+30=80 / $0.03", u)
+	}
+	if _, err := e.continueTask(t, switched.GetId(), "text resume-new\nusage 700 70 0.04\n"); err != nil {
+		t.Fatal(err)
+	}
+	afterResumeNew := e.ended(t, switched.GetId())
+	if u := afterResumeNew.GetUsage(); u.GetInputTokens() != 1200 || u.GetOutputTokens() != 120 || u.GetCostUsd() < 0.0499 || u.GetCostUsd() > 0.0501 {
+		t.Errorf("usage after resuming new session = %v, want 500+700=1200 / 50+70=120 / $0.05", u)
 	}
 }

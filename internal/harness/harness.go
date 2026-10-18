@@ -252,7 +252,8 @@ type run struct {
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task           *planv1.Task
-	base           *planv1.Usage // what the task had spent before this worker
+	base           *planv1.Usage // baseline added to a cumulative session result (prior sessions, minus any fork parent)
+	spentBase      float64       // what the task had spent before the current run's mid-turn estimate (Event.Spent)
 	turnsBefore    int           // the task's model turns before this worker
 	restart        bool          // the worker stops to start again, allowed to edit
 	unread         []string      // messages the worker took on its input and has said nothing after yet
@@ -1471,6 +1472,8 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		r.outAt = outAt
 		h.mu.Unlock()
 	}
+	r.base = h.usageBase(t, spec)
+	r.spentBase = t.GetUsage().GetCostUsd()
 	r.turnsBefore = int(t.GetTurns().GetTotal())
 	h.setTurns(r, func(int) int { return 1 })
 	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].EndTime == nil {
@@ -1716,13 +1719,16 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Usage != nil {
 		r.task.Usage, changed = sum(r.base, ev.Usage), true
+		h.mu.Lock()
+		r.spent = r.task.Usage.GetCostUsd()
+		h.mu.Unlock()
 	}
 	if ev.Turns > 0 {
 		h.setTurns(r, func(n int) int { return max(n, ev.Turns) })
 	}
 	if ev.Spent > 0 {
 		h.mu.Lock()
-		r.spent = r.base.GetCostUsd() + ev.Spent
+		r.spent = r.spentBase + ev.Spent
 		h.mu.Unlock()
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE {
@@ -2479,16 +2485,136 @@ func clip(s string) string {
 	return s[:maxText] + fmt.Sprintf("… (%d bytes cut)", len(s)-maxText)
 }
 
-// sum adds what a run spent to what the task had spent before it.
+// sum adds what a run's session spent to the baseline before that session, clamping at zero when a forked session
+// reports less than its parent baseline.
 func sum(base, run *planv1.Usage) *planv1.Usage {
 	return &planv1.Usage{
-		InputTokens:      base.GetInputTokens() + run.GetInputTokens(),
-		OutputTokens:     base.GetOutputTokens() + run.GetOutputTokens(),
-		CacheReadTokens:  base.GetCacheReadTokens() + run.GetCacheReadTokens(),
-		CacheWriteTokens: base.GetCacheWriteTokens() + run.GetCacheWriteTokens(),
-		CostUsd:          base.GetCostUsd() + run.GetCostUsd(),
-		ThinkingTokens:   base.GetThinkingTokens() + run.GetThinkingTokens(),
+		InputTokens:      max(0, base.GetInputTokens()+run.GetInputTokens()),
+		OutputTokens:     max(0, base.GetOutputTokens()+run.GetOutputTokens()),
+		CacheReadTokens:  max(0, base.GetCacheReadTokens()+run.GetCacheReadTokens()),
+		CacheWriteTokens: max(0, base.GetCacheWriteTokens()+run.GetCacheWriteTokens()),
+		CostUsd:          max(0, base.GetCostUsd()+run.GetCostUsd()),
+		ThinkingTokens:   max(0, base.GetThinkingTokens()+run.GetThinkingTokens()),
 	}
+}
+
+func subUsage(a, b *planv1.Usage) *planv1.Usage {
+	if a == nil && b == nil {
+		return nil
+	}
+	return &planv1.Usage{
+		InputTokens:      a.GetInputTokens() - b.GetInputTokens(),
+		OutputTokens:     a.GetOutputTokens() - b.GetOutputTokens(),
+		CacheReadTokens:  a.GetCacheReadTokens() - b.GetCacheReadTokens(),
+		CacheWriteTokens: a.GetCacheWriteTokens() - b.GetCacheWriteTokens(),
+		CostUsd:          a.GetCostUsd() - b.GetCostUsd(),
+		ThinkingTokens:   a.GetThinkingTokens() - b.GetThinkingTokens(),
+	}
+}
+
+// usageBase returns the baseline to add to a worker's cumulative session result event.
+// Each result event from Claude, Antigravity, or Codex reports the cumulative total for the active session.
+// Therefore:
+//   - Starting a new session (spec.Resume == "") carries over t.GetUsage() from any prior session.
+//   - Forking a session (spec.Fork) subtracts the parent session's cumulative baseline.
+//   - Resuming the same session (spec.Resume != "" && !spec.Fork) does not add t.GetUsage() from the same session
+//     a second time; it only keeps prior sessions' usage (when the task switched sessions earlier) or the negative
+//     fork baseline (when the task is still on its forked session).
+func (h *Harness) usageBase(t *planv1.Task, spec Spec) *planv1.Usage {
+	if spec.Resume == "" {
+		return proto.CloneOf(t.GetUsage())
+	}
+	if spec.Fork {
+		return subUsage(t.GetUsage(), h.forkUsage(t, spec.Resume))
+	}
+	last, switched := h.sessionUsage(t.GetId(), spec.Resume)
+	if !switched {
+		if t.GetForkSession() != "" {
+			return subUsage(nil, h.forkUsage(t, t.GetForkSession()))
+		}
+		return nil
+	}
+	if last != nil {
+		return subUsage(t.GetUsage(), last)
+	}
+	return proto.CloneOf(t.GetUsage())
+}
+
+// forkUsage returns the cumulative session usage of the parent session that t forked from.
+func (h *Harness) forkUsage(t *planv1.Task, sessionID string) *planv1.Usage {
+	if h.store == nil {
+		return nil
+	}
+	if t.GetForkOf() == forkLead && sessionID != "" {
+		if batches, err := store.List[*planv1.LeadBatch](h.ctx, h.store, nil); err == nil {
+			var found *planv1.Usage
+			for _, b := range batches {
+				if b.GetSessionId() == sessionID && b.GetUsage() != nil {
+					found = proto.CloneOf(b.GetUsage())
+				}
+			}
+			if found != nil {
+				return found
+			}
+		}
+	}
+	var where store.Where
+	if t.GetWishId() != "" {
+		where = store.Where{"wish_id": t.GetWishId()}
+	}
+	tasks, err := store.List[*planv1.Task](h.ctx, h.store, where)
+	if err != nil {
+		return nil
+	}
+	for _, other := range tasks {
+		if other.GetId() == t.GetId() {
+			continue
+		}
+		if (t.GetForkOf() != "" && other.GetCode() == t.GetForkOf()) || (sessionID != "" && other.GetSessionId() == sessionID) {
+			if u, _ := h.sessionUsage(other.GetId(), sessionID); u != nil {
+				return u
+			}
+			if other.GetUsage() != nil {
+				return proto.CloneOf(other.GetUsage())
+			}
+		}
+	}
+	return nil
+}
+
+// sessionUsage returns the latest raw USAGE event emitted by taskID in its current session, and whether taskID
+// switched from an earlier session to the current one.
+func (h *Harness) sessionUsage(taskID, sessionID string) (last *planv1.Usage, switched bool) {
+	if h.store == nil || taskID == "" {
+		return nil, false
+	}
+	_ = store.Latest(h.ctx, h.store, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
+		switch e.GetKind() {
+		case planv1.TaskEventKind_TASK_EVENT_KIND_USAGE:
+			if last == nil && e.GetUsage() != nil {
+				last = proto.CloneOf(e.GetUsage())
+			}
+		case planv1.TaskEventKind_TASK_EVENT_KIND_STATUS:
+			text := e.GetText()
+			if strings.Contains(text, "from its first prompt") {
+				switched = true
+				return false
+			}
+			if sessionID != "" && strings.HasPrefix(text, "session ") {
+				sid := strings.TrimPrefix(text, "session ")
+				if i := strings.IndexByte(sid, ','); i >= 0 {
+					sid = sid[:i]
+				}
+				sid = strings.TrimSpace(sid)
+				if sid != "" && sid != sessionID {
+					switched = true
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return last, switched
 }
 
 // lastSeq is the position of the task's last event. A task's events are written in the order of their positions, each

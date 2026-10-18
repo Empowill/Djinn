@@ -382,7 +382,6 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return err
 		}
 		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: command, Restart: t.GetRestart()}
-		r.base = t.GetUsage()
 		text := fmt.Sprintf("resumed %s: started watch in %s%s%s", by, dir, watchText(t), how)
 		return h.start(r, provider, spec, text)
 	case t.GetWorktree() != "":
@@ -503,7 +502,6 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	if stale != nil {
 		spec.Prompt = rebaseText(stale) + "\n\n" + spec.Prompt
 	}
-	r.base = t.GetUsage()
 	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)
 	where := "in " + dir
 	if t.GetBranch() != "" {

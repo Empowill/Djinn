@@ -157,9 +157,16 @@ func TestResolveModel(t *testing.T) {
 		{"vendor prefix and case", "Anthropic/Claude-Opus-5-5", planv1.Provider_PROVIDER_CLAUDE, "claude-opus-5-5"},
 		{"sonnet", "sonnet", planv1.Provider_PROVIDER_CLAUDE, "claude-sonnet-5-5"},
 		{"claude-sonnet", "claude-sonnet", planv1.Provider_PROVIDER_CLAUDE, "claude-sonnet-5-5"},
+		{"fable", "fable", planv1.Provider_PROVIDER_CLAUDE, "claude-fable-5-1"},
+		{"claude-fable-5-1", "claude-fable-5-1", planv1.Provider_PROVIDER_CLAUDE, "claude-fable-5-1"},
 		{"opus", "opus", planv1.Provider_PROVIDER_CLAUDE, "claude-opus-5-5"},
 		{"haiku", "claude-haiku", planv1.Provider_PROVIDER_CLAUDE, "claude-haiku-5-5"},
+		{"argon", "argon", planv1.Provider_PROVIDER_ANTIGRAVITY, "gemini-4-argon-high"},
+		{"gemini-4-argon", "gemini-4-argon", planv1.Provider_PROVIDER_ANTIGRAVITY, "gemini-4-argon-high"},
+		{"gemini 4 argon label", "Gemini 4 Argon (High)", planv1.Provider_PROVIDER_ANTIGRAVITY, "gemini-4-argon-high"},
 		{"flash", "google/flash", planv1.Provider_PROVIDER_ANTIGRAVITY, "gemini-3.8-flash-high"},
+		{"gemini-3.8-flash", "gemini-3.8-flash", planv1.Provider_PROVIDER_ANTIGRAVITY, "gemini-3.8-flash-high"},
+		{"gemini 3.8 flash label", "Gemini 3.8 Flash (Medium)", planv1.Provider_PROVIDER_ANTIGRAVITY, "gemini-3.8-flash-medium"},
 		{"codex", "codex", planv1.Provider_PROVIDER_CODEX, "gpt-5.3-codex"},
 		{"dated", "claude-sonnet-4-5-20250929", planv1.Provider_PROVIDER_CLAUDE, "claude-sonnet-4-5"},
 		{"unknown", "Custom-Model", planv1.Provider_PROVIDER_FAKE, "custom-model"},
@@ -195,6 +202,12 @@ func TestEstimate(t *testing.T) {
 		// (1000*2 + (500-100)*10 + 100*10 + 2000*0.1 + 0*2.50) / 1e6 = 7200 / 1e6.
 		{"tokens", &planv1.Usage{InputTokens: 1000, OutputTokens: 500, ThinkingTokens: 100, CacheReadTokens: 2000},
 			"claude-sonnet-5-5", 0.0072, true},
+		// claude-fable-5-1: (1000*10 + 500*50 + 2000*0.25 + 1000*12.50) / 1e6 = 48000 / 1e6 = 0.048.
+		{"claude-fable-5-1", &planv1.Usage{InputTokens: 1000, OutputTokens: 500, CacheReadTokens: 2000, CacheWriteTokens: 1000},
+			"claude-fable-5-1", 0.048, true},
+		// gemini-4-argon-high: (1778032*2 + (282495-29581)*12 + 29581*12 + 15863821*0.20) / 1e6 = 10.1187682.
+		{"gemini-4-argon-high", &planv1.Usage{InputTokens: 1778032, OutputTokens: 282495, ThinkingTokens: 29581, CacheReadTokens: 15863821},
+			"Gemini 4 Argon (High)", 10.1187682, true},
 		// (10000*2 + 2000*10) / 1e6 = 40000 / 1e6; the reported 0.060 is checked below.
 		{"reported cost kept", &planv1.Usage{InputTokens: 10000, OutputTokens: 2000, CostUsd: 0.060},
 			"claude-sonnet-5-5", 0.040, true},
