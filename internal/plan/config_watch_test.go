@@ -297,10 +297,14 @@ func TestLookAtConfigManyCommits(t *testing.T) {
 	t.Parallel()
 	e := newWatchEnv(t, map[string]string{".agents/permissions.txtpb": "commands: \"c0\"\n"})
 	e.look()
+	// One git per commit, origin/main moved once: four per commit made it pass 20 s on Windows (W396).
 	n := configCommitsMax + 3
+	dir := e.project.GetDirectory()
 	for i := 1; i <= n; i++ {
-		e.commit(map[string]string{".agents/permissions.txtpb": fmt.Sprintf("commands: \"c%d\"\n", i)})
+		writeFileAt(t, filepath.Join(dir, ".agents", "permissions.txtpb"), fmt.Sprintf("commands: \"c%d\"\n", i))
+		gitIn(t, dir, "commit", "-q", "-a", "-m", "config")
 	}
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
 	e.look()
 	changes, err := ProjectChanges(t.Context(), e.c.store, e.project.GetId())
 	if err != nil {
