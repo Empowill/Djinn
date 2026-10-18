@@ -8,6 +8,10 @@ vars:
   # golangci-lint is pinned in a module of its own (tools/golangci/go.mod): its few hundred dependencies stay out of
   # Djinn's go.mod, and nothing needs installing.
   GOLANGCI: go tool -modfile=tools/golangci/go.mod golangci-lint
+  # ESLint and Prettier caches live outside node_modules in the OS temp folder, keyed by the repository's common git
+  # directory so every worktree of the project shares them and npm ci never wipes them.
+  LINT_CACHE:
+    sh: node -p 'const cp=require("child_process"),cr=require("crypto"),os=require("os"),p=require("path");let k=process.cwd();try{k=cp.execFileSync("git",["rev-parse","--path-format=absolute","--git-common-dir"],{encoding:"utf8",stdio:["ignore","pipe","ignore"]}).trim()}catch{}p.join(os.tmpdir(),"djinn-lint-"+cr.createHash("sha256").update(k).digest("hex").slice(0,12)).replaceAll("\\","/")'
   # The native window is in every build by default. Tests and CI build headless: no CGO, no webview.
   # Ubuntu 22.04 only ships WebKitGTK 4.1, which Wails v3 reaches through its gtk3 tag.
   WINDOW_TAGS:
@@ -28,6 +32,7 @@ tasks:
   npm:
     desc: Install npm dependencies when missing or package files changed
     internal: true
+    run: once
     sources:
       - package.json
       - package-lock.json
@@ -38,6 +43,7 @@ tasks:
 
   ui:
     desc: Build the interface into dist/, only when its sources changed (the djinn binary embeds it)
+    run: once
     deps: [npm]
     sources:
       - src/**/*
@@ -164,6 +170,10 @@ tasks:
 
   lint:
     desc: "Check everything: protos, Go (golangci-lint: gofmt, vet and the linters of .golangci.yml), TypeScript types, ESLint, formatting"
+    deps: [lint-go, lint-ui]
+
+  lint-go:
+    internal: true
     deps: [ui]
     cmds:
       - go tool buf lint
@@ -172,12 +182,18 @@ tasks:
       - "{{.GOLANGCI}} fmt --diff"
       - "{{.GOLANGCI}} run ./..."
       - "{{.GOLANGCI}} run --build-tags headless,mcp ./cmd/djinn"
+
+  lint-ui:
+    internal: true
+    deps: [ui]
+    cmds:
       # tsc keeps what it checked in node_modules/.cache/tsc (tsconfig.json): after the ui build's own check, or a
-      # lint before, it reads again only the files that changed. ESLint and Prettier keep theirs beside it, by the
-      # content of each file (the worktrees are fresh checkouts: their times say nothing). npm ci empties them all.
+      # lint before, it reads again only the files that changed. ESLint and Prettier keep theirs in LINT_CACHE outside
+      # node_modules, keyed by the project's git common dir and the content of each file so every worktree shares them
+      # and npm ci never empties them.
       - npx tsc -b --noEmit
-      - npx eslint --max-warnings 0 --cache --cache-strategy content --cache-location node_modules/.cache/eslint/ .
-      - npx prettier --check --log-level warn --cache --cache-strategy content {{.PRETTIER_FILES}}
+      - npx eslint --max-warnings 0 --cache --cache-strategy content --cache-location "{{.LINT_CACHE}}/eslint" .
+      - npx prettier --experimental-cli --no-config --no-editorconfig --no-ignore --check --log-level warn --cache --cache-location "{{.LINT_CACHE}}/prettier" {{.PRETTIER_FILES}}
 
   format:
     desc: Format the Go and TypeScript code in place, and apply the fixes golangci-lint and ESLint know
