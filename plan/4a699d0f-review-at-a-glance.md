@@ -164,10 +164,10 @@ be referenced by simple links that open it natively in the app from anywhere."
   or tilasm said on the command line and in the window, an https link refused); `UiService.OpenLink`
   (`TestOpenLink`), `internal/link` (`TestParse`: `djinn://tilasm/<id>`, `djinn://wish/<id>`, `talisman`, any case, a
   trailing slash, a query); the menu entry of `tools/icons desktop` runs `djinn open %u` with
-  `MimeType=x-scheme-handler/djinn;` (`TestDesktopPutsTheIconAndTheEntryInTheUsersFolder`, with
-  `desktop-file-validate`), made the handler by `xdg-mime default` (`TestDesktopEntryHandlesTheLinks`, in the test's
+  `MimeType=x-scheme-handler/djinn;` (`TestDesktop`, with
+  `desktop-file-validate`), made the handler by `xdg-mime default` (`TestHandleLinks`, in the test's
   own folders). **macOS and Windows: built and unit-tested here, to check by hand there.** macOS: `CFBundleURLTypes`
-  in Djinn.app's Info.plist (`TestBundleLayout`), the link handled through Wails' `ApplicationLaunchedWithUrl`; to
+  in Djinn.app's Info.plist (`TestInfoPlist`), the link handled through Wails' `ApplicationLaunchedWithUrl`; to
   check: a link starts Djinn.app and shows the tilasm, and reaches a running one; a Djinn started from a terminal is
   not the app macOS knows, and a link then starts Djinn.app, which finds it running and brings it forward without the
   link. Windows: `HKCU\Software\Classes\djinn` (`TestRegistryValues`), written by `go tool task install` (`tools/icons

@@ -147,10 +147,10 @@ read, install and contribute.
     `locales/fr.json` only: `TestFrench` and `TestWishState` in `internal/render`, e2e "in French › the interface
     follows the system's language". `plan/` quotes the French words it decides on, « souhait », « invoquer »)
   - [x] A test keeps it so. (`TestNoFrench` in `locales/french_test.go` reads every file of the repository, tracked
-    or new, and fails on a French letter or quote mark, or on two French words on one line; `TestFrenchSigns` checks
+    or new, and fails on a French letter or quote mark, or on two French words on one line; `TestFrench` checks
     the heuristic. Allowed: `locales/fr.json`, the accent folding of branch names in `internal/harness/worktree.go`
     and its test, the name Clément, and « souhait », « invoquer » in `plan/`. The last French test data,
-    `TestNoticesTranslateAndClip` in `internal/ui`, now reads its French from `locales/fr.json`)
+    `TestNoticesRun/translates_and_clips` in `internal/ui`, now reads its French from `locales/fr.json`)
   - [x] The two README screenshots, taken in French on the Electron app. (retaken in English, dark and light, on the
     browser build: `go tool task screenshots` runs `e2e/readme.shot.ts` on a demonstration wish imported into a djinn
     of its own, and writes `docs/screenshots/readme/{questions,tasks}-{dark,light}.png`; the README shows the one of
@@ -249,8 +249,8 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
 - [ ] Native notifications and a global shortcut.
   - [x] A question asked in an active wish shows a system notification (Wails' notification service): the wish
     and the question's code as title, its text and options as body. A question of a paused wish, an imported one
-    (older than a minute) or a decision shows none; each question shows once. (`TestNoticesShowTheQuestionsOfActiveWishes`,
-    `TestNoticesTranslateAndClip`, `TestNoticesWithoutNotifier`, with a fake notifier)
+    (older than a minute) or a decision shows none; each question shows once. (`TestNoticesRun`,
+    with a fake notifier)
   - [x] A click brings the window forward on the wish; a button answers: Yes, or A to D. Linux supports buttons
     (D-Bus actions; no reply field). An answer goes through the server, as the window's would; one refused shows
     the wish. (`TestNoticesRespond`; `TestAnswerFromANotification` on a real `djinn up`)
@@ -262,16 +262,15 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
     Djinn never asked for the permission; the error was only logged. The window now asks at start (macOS shows its
     dialog the first time only), and the settings show the state, with "Allow" and "Open the macOS settings"
     (`UiService.GetNotifications`, `RequestNotifications`, `OpenNotificationSettings`). (`TestNoticesAccess`,
-    `TestNotificationsService`)
+    `TestGetNotifications`)
   - [x] More than questions: the edit question of a task says which task asks to change which project, with Yes
     and No; a task that waits for that answer or fails; a wish that becomes ready to review. Each event shows once,
     none for the wish the window shows while it is in front (`UiService.View`, the window's focus); a click shows
     the wish at the question, the task or the grant (`UiServiceWatchShowResponse.target`, through the attention
-    bar's way to an element). (`TestNoticesAskPermission`, `TestNoticesShowAFailedTaskOnce`,
-    `TestNoticesShowAWishReadyToReview`, `TestNoticesQuietOnTheWishInView`)
+    bar's way to an element). (`TestNoticesRun`)
   - [x] Followed on a change of state only: a task written again in the same status (its events, its resources)
     is not, so readiness is checked when a task's status or a question's answer changes, not at every commit.
-    (`TestNoticesFollowStatusChangesOnly`)
+    (`TestNoticesCommitted`)
   - [ ] Seen on macOS from the app: the dialog at first start, a question, a click and a button (by hand).
     (needs: a person on a Mac)
   - [ ] macOS: needs the `.app` bundle and its identifier. T19 builds `Djinn.app`, identifier
@@ -282,11 +281,11 @@ Delegable, not needed to start testing. Given to Djinn itself once phase 2 is do
       that waits for you (not one being investigated), else on the flying carpet. Through Wails beta.28's
       `app.GlobalShortcut`, taken once the app runs (`events.Common.ApplicationStarted`), so that a refusal is
       known at once; off in headless builds and with `--browser`. (`internal/ui/shortcut.go`;
-      `TestShortcutShowsWhatWaits`, `TestShortcutsSet`, `TestShortcutsRefused` with a fake registrar)
+      `TestSummoned`, `TestShortcutsSet`, `TestShortcutsRefused` with a fake registrar)
     - [x] Configurable in the settings: one field, empty for off, saved on Enter (`UiService.SetShortcut`, kept in
       `settings.json` of the data directory as `ui.v1.Settings`). A chord needs Ctrl, Alt, Cmd or Super and one key
       (a letter, a digit, F1 to F12, Space), so it never takes a key from typing. One the system refuses is kept,
-      and the settings say why. (`TestNormalizeChord`, `TestShortcutsSettingsFile`, `TestSetShortcut`; screen test
+      and the settings say why. (`TestNormalizeChord`, `TestShortcutsSet`, `TestSetShortcut`; screen test
       "the global shortcut is a field of the settings")
     - [x] The default chord: `Ctrl+Alt+Space` on Linux and Windows, `Ctrl+Cmd+J` on macOS. Checked here, on
       Ubuntu 22.04 with GNOME 42 on X11, by reading every key binding of `gsettings`: `Ctrl+Alt+D`, `Ctrl+Alt+L`

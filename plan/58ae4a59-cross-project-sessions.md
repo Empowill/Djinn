@@ -106,7 +106,7 @@ projects it touches, and a project is not necessarily a Git repository.
 - [x] ~~Clément has reviewed the flying carpet of several wishes: it changes `src/`.~~ *Waived by the developer on 10/10/2026: the project is at its very beginning, no review now.*
 - [x] Adding a project in the native window, "Choose a folder…" opens the system's folder dialog and fills the field;
   in the browser the button is hidden and the path is typed. (`UiService.ChooseDirectory` on the Wails dialog:
-  `TestChooseDirectory`, `TestChooseDirectoryWithoutADialog`, `TestChooseDirectoryOneAtATime` in `internal/ui`; the
+  `TestChooseDirectory` and its subtests in `internal/ui`; the
   folder field test of `tests/screens.test.mjs`; `e2e/smoke.spec.ts` "adding a project in the browser types the
   folder". The native dialog itself is not opened by a test.)
 

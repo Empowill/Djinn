@@ -16,41 +16,190 @@ import (
 
 const root = "../.."
 
-// The icons in build/ are the drawing's: run `go run ./tools/icons gen` after changing build/icon.png.
-func TestBuildIconsFollowTheDrawing(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(tmp, "build"), 0o755); err != nil {
+// xdgEnv is the test's environment, with the user's folders in data and config, and no desktop session: xdg-mime
+// then writes the test's own mimeapps.list, never the user's.
+func xdgEnv(data, config string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "XDG_") && !strings.HasPrefix(kv, "KDE_") && !strings.HasPrefix(kv, "GNOME_") &&
+			!strings.HasPrefix(kv, "DESKTOP_SESSION=") {
+			env = append(env, kv)
+		}
+	}
+	return append(env, "XDG_DATA_HOME="+data, "XDG_CONFIG_HOME="+config, "XDG_DATA_DIRS="+data)
+}
+
+// drawing is a small drawing, half opaque: what the icons are made from, cheap to scale (the real one, 1024 px, takes
+// seconds under the race detector; TestGen scales it).
+func drawing() image.Image {
+	img := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 32; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{200, 100, 50, 255})
+		}
+	}
+	return img
+}
+
+// smallRoot is a module root whose build/icon.png is drawing.
+func smallRoot(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "build"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	drawing, err := os.ReadFile(filepath.Join(root, source))
+	var data bytes.Buffer
+	if err := png.Encode(&data, drawing()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, source), data.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestRun: the command line makes the icons or puts them in the user's folders, and says how it is used otherwise.
+func TestRun(t *testing.T) {
+	t.Parallel()
+	const usageLine = "usage: icons gen | icons desktop --exec <djinn binary>\n"
+	for _, c := range []struct {
+		name         string
+		root         string
+		args         []string
+		code         int
+		stdout, errs string
+	}{
+		{name: "no command", code: 2, errs: usageLine},
+		{name: "unknown command", args: []string{"draw"}, code: 2, errs: usageLine},
+		{name: "desktop without its binary", args: []string{"desktop"}, code: 2, errs: usageLine},
+		{name: "desktop with an unknown flag", args: []string{"desktop", "--icon"}, code: 2, errs: "flag provided but not defined: -icon"},
+		{name: "desktop help", args: []string{"desktop", "-h"}, errs: "-exec string"},
+		{name: "gen without the drawing", root: t.TempDir(), args: []string{"gen"}, code: 1, errs: "icons: "},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			var stdout, stderr strings.Builder
+			if code := run(c.root, c.args, nil, &stdout, &stderr); code != c.code {
+				t.Errorf("exit code %d, want %d; stderr: %s", code, c.code, stderr.String())
+			}
+			if stdout.String() != c.stdout || !strings.Contains(stderr.String(), c.errs) || (c.errs == "") != (stderr.Len() == 0) {
+				t.Errorf("stdout %q, stderr %q; want %q and %q", stdout.String(), stderr.String(), c.stdout, c.errs)
+			}
+		})
+	}
+	// On Linux, desktop puts the icon and the entry in $XDG_DATA_HOME, then makes the entry the handler of the links
+	// (TestHandleLinks); without xdg-mime it says the links will not open Djinn, and succeeds. Elsewhere desktop
+	// writes the user's registry (Windows) or does nothing (macOS): not here.
+	t.Run("desktop on Linux", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS != "linux" {
+			t.Skip("desktop writes the user's folders on Linux only")
+		}
+		data, config := t.TempDir(), t.TempDir()
+		var stdout, stderr strings.Builder
+		if code := run(smallRoot(t), []string{"desktop", "--exec", "/opt/djinn"}, xdgEnv(data, config), &stdout, &stderr); code != 0 {
+			t.Fatalf("exit code %d; stderr: %s", code, stderr.String())
+		}
+		if want := "Djinn's icon and menu entry are in " + data + ".\n"; stdout.String() != want {
+			t.Errorf("stdout %q, want %q", stdout.String(), want)
+		}
+		if _, err := exec.LookPath("xdg-mime"); (err != nil) != strings.Contains(stderr.String(), "djinn:// links will not open Djinn") {
+			t.Errorf("xdg-mime: %v, stderr: %q", err, stderr.String())
+		}
+		if _, err := os.Stat(filepath.Join(data, "applications", entryFile)); err != nil {
+			t.Error(err)
+		}
+	})
+	t.Run("desktop without the drawing", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS != "linux" {
+			t.Skip("desktop writes the user's folders on Linux only")
+		}
+		var stdout, stderr strings.Builder
+		env := xdgEnv(t.TempDir(), t.TempDir())
+		if code := run(t.TempDir(), []string{"desktop", "--exec", "/opt/djinn"}, env, &stdout, &stderr); code != 1 ||
+			!strings.HasPrefix(stderr.String(), "icons: ") {
+			t.Fatalf("exit code %d, stderr %q; want 1 and the error", code, stderr.String())
+		}
+	})
+}
+
+func TestDataHome(t *testing.T) {
+	t.Parallel()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tmp, source), drawing, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := gen(tmp); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"icon.ico", "icon.icns", "icon-256.png"} {
-		want, err := os.ReadFile(filepath.Join(tmp, "build", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := os.ReadFile(filepath.Join(root, "build", name))
-		if err != nil || !bytes.Equal(got, want) {
-			t.Errorf("build/%s is not made from build/icon.png: run go run ./tools/icons gen", name)
-		}
+	data := filepath.Join(t.TempDir(), "data")
+	for _, c := range []struct {
+		name    string
+		environ []string
+		want    string
+	}{
+		{name: "XDG_DATA_HOME", environ: []string{"HOME=/elsewhere", "XDG_DATA_HOME=" + data}, want: data},
+		// The XDG Base Directory Specification ignores a relative path.
+		{name: "relative XDG_DATA_HOME", environ: []string{"XDG_DATA_HOME=data"}, want: filepath.Join(home, ".local", "share")},
+		{name: "no XDG_DATA_HOME", want: filepath.Join(home, ".local", "share")},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got, err := dataHome(c.environ); err != nil || got != c.want {
+				t.Fatalf("dataHome = %q, %v; want %q", got, err, c.want)
+			}
+		})
 	}
 }
 
-func TestICOAndICNSHoldEverySize(t *testing.T) {
+func TestGen(t *testing.T) {
 	t.Parallel()
-	img, err := load(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The icons in build/ are the drawing's: run `go run ./tools/icons gen` after changing build/icon.png. It scales
+	// the real drawing, 1024 px, to 18 sizes: 0.5 s, and some 20 s under the race detector, which slows the pixel
+	// loops of scale forty times; the other tests scale a small drawing.
+	t.Run("build icons follow the drawing", func(t *testing.T) {
+		t.Parallel()
+		tmp := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(tmp, "build"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		drawing, err := os.ReadFile(filepath.Join(root, source))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tmp, source), drawing, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := gen(tmp); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"icon.ico", "icon.icns", "icon-256.png"} {
+			want, err := os.ReadFile(filepath.Join(tmp, "build", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(filepath.Join(root, "build", name))
+			if err != nil || !bytes.Equal(got, want) {
+				t.Errorf("build/%s is not made from build/icon.png: run go run ./tools/icons gen", name)
+			}
+		}
+	})
+	t.Run("a drawing that is no PNG", func(t *testing.T) {
+		t.Parallel()
+		tmp := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(tmp, "build"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tmp, source), []byte("<svg/>"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := gen(tmp); err == nil {
+			t.Fatal("gen took a drawing that is no PNG")
+		}
+	})
+}
+
+func TestMakeICO(t *testing.T) {
+	t.Parallel()
+	img := drawing()
 	ico, err := makeICO(img)
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +214,11 @@ func TestICOAndICNSHoldEverySize(t *testing.T) {
 			t.Errorf(".ico entry %d is %d px, want %d", i, got, size)
 		}
 	}
+}
+
+func TestMakeICNS(t *testing.T) {
+	t.Parallel()
+	img := drawing()
 	icns, err := makeICNS(img)
 	if err != nil {
 		t.Fatal(err)
@@ -87,64 +241,80 @@ func TestICOAndICNSHoldEverySize(t *testing.T) {
 	}
 }
 
-func TestDesktopPutsTheIconAndTheEntryInTheUsersFolder(t *testing.T) {
+func TestDesktop(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the desktop entry is for Linux (the command does nothing elsewhere), and its paths are POSIX ones")
 	}
-	dir := t.TempDir()
-	if err := desktop(root, dir, "/opt/my tools/djinn"); err != nil {
-		t.Fatal(err)
-	}
-	for _, size := range linuxSizes {
-		data, err := os.ReadFile(filepath.Join(dir, "icons", "hicolor", fmt.Sprintf("%dx%d", size, size), "apps", "djinn.png"))
+	t.Run("puts the icon and the entry in the user's folder", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := desktop(smallRoot(t), dir, "/opt/my tools/djinn"); err != nil {
+			t.Fatal(err)
+		}
+		for _, size := range linuxSizes {
+			data, err := os.ReadFile(filepath.Join(dir, "icons", "hicolor", fmt.Sprintf("%dx%d", size, size), "apps", "djinn.png"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := decodeSize(t, data); got != size {
+				t.Errorf("the %d px icon is %d px", size, got)
+			}
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "applications", "djinn.desktop"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := decodeSize(t, data); got != size {
-			t.Errorf("the %d px icon is %d px", size, got)
+		for _, line := range []string{
+			"Name=Djinn", `Exec="/opt/my tools/djinn" open %u`, "Icon=djinn", "StartupWMClass=djinn",
+			"MimeType=x-scheme-handler/djinn;",
+		} {
+			if !strings.Contains(string(data), "\n"+line+"\n") {
+				t.Errorf("the entry lacks %q:\n%s", line, data)
+			}
 		}
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "applications", "djinn.desktop"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range []string{
-		"Name=Djinn", `Exec="/opt/my tools/djinn" open %u`, "Icon=djinn", "StartupWMClass=djinn",
-		"MimeType=x-scheme-handler/djinn;",
-	} {
-		if !strings.Contains(string(data), "\n"+line+"\n") {
-			t.Errorf("the entry lacks %q:\n%s", line, data)
+		// The entry follows the Desktop Entry Specification, as desktop-file-validate reads it, where it is installed.
+		if validate, err := exec.LookPath("desktop-file-validate"); err == nil {
+			if out, err := exec.Command(validate, filepath.Join(dir, "applications", "djinn.desktop")).CombinedOutput(); err != nil || len(out) > 0 {
+				t.Errorf("desktop-file-validate: %v\n%s", err, out)
+			}
 		}
-	}
-	// The entry follows the Desktop Entry Specification, as desktop-file-validate reads it, where it is installed.
-	if validate, err := exec.LookPath("desktop-file-validate"); err == nil {
-		if out, err := exec.Command(validate, filepath.Join(dir, "applications", "djinn.desktop")).CombinedOutput(); err != nil || len(out) > 0 {
-			t.Errorf("desktop-file-validate: %v\n%s", err, out)
+	})
+	t.Run("without the drawing", func(t *testing.T) {
+		t.Parallel()
+		if err := desktop(t.TempDir(), t.TempDir(), "/opt/djinn"); err == nil {
+			t.Fatal("desktop without the drawing succeeded")
 		}
-	}
+	})
+	t.Run("a data folder that is a file", func(t *testing.T) {
+		t.Parallel()
+		dir := filepath.Join(t.TempDir(), "file")
+		if err := os.WriteFile(dir, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := desktop(smallRoot(t), dir, "/opt/djinn"); err == nil {
+			t.Fatal("desktop into a file succeeded")
+		}
+	})
 }
 
-// TestDesktopEntryHandlesTheLinks: xdg-mime makes the entry the handler of djinn:// links, in the mimeapps.list of
-// the user's folders, here the test's own.
-func TestDesktopEntryHandlesTheLinks(t *testing.T) {
+// TestHandleLinks: xdg-mime makes the entry the handler of djinn:// links, in the mimeapps.list of the user's
+// folders, here the test's own.
+func TestHandleLinks(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("xdg-mime"); runtime.GOOS != "linux" || err != nil {
 		t.Skip("xdg-mime is for Linux, and comes with xdg-utils")
 	}
 	data, config := t.TempDir(), t.TempDir()
-	if err := desktop(root, data, "/opt/djinn"); err != nil {
+	apps := filepath.Join(data, "applications")
+	if err := os.MkdirAll(apps, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	var env []string
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "XDG_") && !strings.HasPrefix(kv, "KDE_") && !strings.HasPrefix(kv, "GNOME_") &&
-			!strings.HasPrefix(kv, "DESKTOP_SESSION=") {
-			env = append(env, kv)
-		}
+	if err := os.WriteFile(filepath.Join(apps, entryFile), []byte(entry("/opt/djinn")), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	env = append(env, "XDG_DATA_HOME="+data, "XDG_CONFIG_HOME="+config, "XDG_DATA_DIRS="+data)
-	if err := handleLinks(filepath.Join(data, "applications"), env); err != nil {
+	env := xdgEnv(data, config)
+	if err := handleLinks(apps, env); err != nil {
 		t.Fatal(err)
 	}
 	list, err := os.ReadFile(filepath.Join(config, "mimeapps.list"))
@@ -158,21 +328,26 @@ func TestDesktopEntryHandlesTheLinks(t *testing.T) {
 	}
 }
 
-func TestExecArgQuotesAsTheSpecificationSays(t *testing.T) {
+// TestExecArg: the Exec key quotes a path as the Desktop Entry Specification says.
+func TestExecArg(t *testing.T) {
 	t.Parallel()
-	for path, want := range map[string]string{
-		"/home/ada/go/bin/djinn": "/home/ada/go/bin/djinn",
-		"/home/ada/my bin/djinn": `"/home/ada/my bin/djinn"`,
-		`/home/a"b/$x/djinn`:     `"/home/a\\"b/\\$x/djinn"`,
-		"/home/ada/100%/djinn":   "/home/ada/100%%/djinn",
+	for _, c := range []struct{ name, path, want string }{
+		{"plain", "/home/ada/go/bin/djinn", "/home/ada/go/bin/djinn"},
+		{"space", "/home/ada/my bin/djinn", `"/home/ada/my bin/djinn"`},
+		{"quote and dollar", `/home/a"b/$x/djinn`, `"/home/a\\"b/\\$x/djinn"`},
+		{"percent", "/home/ada/100%/djinn", "/home/ada/100%%/djinn"},
 	} {
-		if got := execArg(path); got != want {
-			t.Errorf("execArg(%q) = %s, want %s", path, got, want)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := execArg(c.path); got != c.want {
+				t.Errorf("execArg(%q) = %s, want %s", c.path, got, c.want)
+			}
+		})
 	}
 }
 
-func TestScaleKeepsColoursAndTransparency(t *testing.T) {
+// TestScale keeps the colours and the transparency.
+func TestScale(t *testing.T) {
 	t.Parallel()
 	img := image.NewNRGBA(image.Rect(0, 0, 100, 100))
 	for y := 0; y < 100; y++ {

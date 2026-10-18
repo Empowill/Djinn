@@ -27,6 +27,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,19 +57,31 @@ var icnsTypes = []struct {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
+	os.Exit(run(".", os.Args[1:], os.Environ(), os.Stdout, os.Stderr))
+}
+
+// run runs the command line args, the command's name left out, against the module at root, in the environment
+// environ, and returns the exit code: 2 for a wrong usage, 1 for a failure.
+func run(root string, args, environ []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		return usage(stderr)
 	}
 	var err error
-	switch os.Args[1] {
+	switch args[0] {
 	case "gen":
-		err = gen(".")
+		err = gen(root)
 	case "desktop":
-		flags := flag.NewFlagSet("desktop", flag.ExitOnError)
+		flags := flag.NewFlagSet("desktop", flag.ContinueOnError)
+		flags.SetOutput(stderr)
 		exe := flags.String("exec", "", "the djinn binary the menu entry starts")
-		_ = flags.Parse(os.Args[2:])
+		if err := flags.Parse(args[1:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return 0
+			}
+			return 2
+		}
 		if *exe == "" {
-			usage()
+			return usage(stderr)
 		}
 		switch runtime.GOOS {
 		case "windows":
@@ -78,39 +91,43 @@ func main() {
 				err = link.Register(abs)
 			}
 			if err == nil {
-				fmt.Printf("djinn:// links open %s.\n", abs)
+				fmt.Fprintf(stdout, "djinn:// links open %s.\n", abs)
 			}
 		case "linux":
 			var dir string
-			if dir, err = dataHome(); err == nil {
-				err = desktop(".", dir, *exe)
+			if dir, err = dataHome(environ); err == nil {
+				err = desktop(root, dir, *exe)
 			}
 			if err == nil {
-				fmt.Printf("Djinn's icon and menu entry are in %s.\n", dir)
-				if err := handleLinks(filepath.Join(dir, "applications"), os.Environ()); err != nil {
-					fmt.Fprintf(os.Stderr, "icons: djinn:// links will not open Djinn: %v\n", err)
+				fmt.Fprintf(stdout, "Djinn's icon and menu entry are in %s.\n", dir)
+				if err := handleLinks(filepath.Join(dir, "applications"), environ); err != nil {
+					fmt.Fprintf(stderr, "icons: djinn:// links will not open Djinn: %v\n", err)
 				}
 				err = nil
 			}
 		}
 	default:
-		usage()
+		return usage(stderr)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "icons:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "icons:", err)
+		return 1
 	}
+	return 0
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: icons gen | icons desktop --exec <djinn binary>")
-	os.Exit(2)
+// usage says how the command is used, and returns the exit code of a wrong usage.
+func usage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: icons gen | icons desktop --exec <djinn binary>")
+	return 2
 }
 
-// dataHome is $XDG_DATA_HOME, or ~/.local/share.
-func dataHome() (string, error) {
-	if dir := os.Getenv("XDG_DATA_HOME"); filepath.IsAbs(dir) {
-		return dir, nil
+// dataHome is $XDG_DATA_HOME in environ, or ~/.local/share.
+func dataHome(environ []string) (string, error) {
+	for _, kv := range environ {
+		if dir, ok := strings.CutPrefix(kv, "XDG_DATA_HOME="); ok && filepath.IsAbs(dir) {
+			return dir, nil
+		}
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {

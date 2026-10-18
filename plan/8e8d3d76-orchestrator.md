@@ -540,7 +540,7 @@ lead spends its tokens on mechanical work.
 - [x] The window, the page and the brief show where each task's work stands (done, integrating, integrated,
   conflict, red), and propose installing once a batch is integrated. (TestWorkStands, TestBriefWorkStands, TestRun
   "where a task's work stands", the screens tests "the Tasks tab says where each task's work stands" and "the update
-  banner proposes to install a build committed", TestABuildIsProposed, TestUpdateInstallsABuild)
+  banner proposes to install a build committed", TestABuildIsProposed, TestUpdate)
 
 - [x] Each project says what Djinn checks (W141): `setup`, the command that makes a fresh integration worktree ready,
   run once and again when its lock files change; `checks`, each with its gate and when it runs, before a commit (red,

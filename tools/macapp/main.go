@@ -57,39 +57,53 @@ const iconSource = "build/icon.icns"
 var notices = []string{"LICENSE", "NOTICE", "docs/THIRD_PARTY_NOTICES.md"}
 
 func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run runs the command line args, the command's name left out, and returns the exit code: 2 for a wrong usage, 1
+// for a failure.
+func run(args []string, stdout, stderr io.Writer) int {
 	var err error
 	switch {
-	case len(os.Args) > 1 && os.Args[1] == "bundle":
-		flags := flag.NewFlagSet("bundle", flag.ExitOnError)
+	case len(args) > 0 && args[0] == "bundle":
+		flags := flag.NewFlagSet("bundle", flag.ContinueOnError)
+		flags.SetOutput(stderr)
 		binary := flags.String("binary", "", "the djinn binary built for macOS")
 		version := flags.String("version", "", "the release's tag, such as v0.1.0")
 		root := flags.String("root", ".", "the root of the module, where build/ and the notices are")
-		_ = flags.Parse(os.Args[2:])
+		if err := flags.Parse(args[1:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return 0
+			}
+			return 2
+		}
 		if *binary == "" || *version == "" || flags.NArg() != 1 {
-			usage()
+			return usage(stderr)
 		}
 		var app string
 		app, err = bundle(*root, *binary, *version, flags.Arg(0))
 		if err == nil {
-			fmt.Println(app)
+			fmt.Fprintln(stdout, app)
 		}
-	case len(os.Args) == 4 && os.Args[1] == "zip":
-		err = zipApp(os.Args[2], os.Args[3])
+	case len(args) == 3 && args[0] == "zip":
+		err = zipApp(args[1], args[2])
 		if err == nil {
-			fmt.Println(os.Args[3])
+			fmt.Fprintln(stdout, args[2])
 		}
 	default:
-		usage()
+		return usage(stderr)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "macapp:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "macapp:", err)
+		return 1
 	}
+	return 0
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: macapp bundle --binary <djinn> --version <vX.Y.Z> <folder> | macapp zip <Djinn.app> <file.zip>")
-	os.Exit(2)
+// usage says how the command is used, and returns the exit code of a wrong usage.
+func usage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: macapp bundle --binary <djinn> --version <vX.Y.Z> <folder> | macapp zip <Djinn.app> <file.zip>")
+	return 2
 }
 
 // bundleVersion is the version macOS reads from a tag: three numbers, with no v and no pre-release.

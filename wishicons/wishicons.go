@@ -30,9 +30,10 @@ type Icon struct {
 	Gilding  string `json:"gilding"`
 }
 
-var bank = load()
+var bank = load(data)
 
-func load() []Icon {
+// load reads a bank file; one that does not parse panics, at start.
+func load(data []byte) []Icon {
 	var file struct {
 		Icons []Icon `json:"icons"`
 	}

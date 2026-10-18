@@ -36,13 +36,15 @@ func main() {
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, *home, *port, *poll); err != nil {
+	if err := run(ctx, *home, *port, *poll, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "devloop:", err)
 		os.Exit(1) //nolint:gocritic // stop only releases the signal, which goes with the process.
 	}
 }
 
-func run(ctx context.Context, home string, port int, poll time.Duration) error {
+// run serves the page on port with Vite, and keeps a djinn of home built from the sources of the current folder, every
+// poll, until ctx is done. Its own lines, Vite's and djinn's go to stdout and stderr.
+func run(ctx context.Context, home string, port int, poll time.Duration, stdout, stderr io.Writer) error {
 	home, err := devHome(home)
 	if err != nil {
 		return err
@@ -57,15 +59,18 @@ func run(ctx context.Context, home string, port int, poll time.Duration) error {
 	go func() { _ = http.Serve(ln, relay(home, origin)) }()
 	defer ln.Close()
 
+	// An error stops Vite too: run returns once it has ended.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	vite := exec.CommandContext(ctx, "node", filepath.Join("node_modules", "vite", "bin", "vite.js"),
 		"--host", "127.0.0.1", "--port", fmt.Sprint(port), "--strictPort", "--clearScreen", "false")
 	vite.Env = append(os.Environ(), "DJINN_DEV_API=http://"+ln.Addr().String())
-	vite.Stdout, vite.Stderr = os.Stdout, os.Stderr
+	vite.Stdout, vite.Stderr = stdout, stderr
 	vite.Cancel = func() error { return interrupt(vite.Process) }
 	if err := vite.Start(); err != nil {
 		return fmt.Errorf("start vite (npm ci first): %w", err)
 	}
-	defer func() { _ = vite.Wait() }()
+	defer func() { cancel(); _ = vite.Wait() }()
 
 	exe := filepath.Join("bin", "djinn-dev"+exeExt())
 	var djinn *exec.Cmd
@@ -74,16 +79,16 @@ func run(ctx context.Context, home string, port int, poll time.Duration) error {
 	for first := true; ; first = false {
 		if first || changed(&seen) {
 			if !first {
-				fmt.Println("devloop: Go changed, rebuilding djinn")
+				fmt.Fprintln(stdout, "devloop: Go changed, rebuilding djinn")
 			}
 			if err := build(ctx, exe); err != nil {
-				fmt.Fprintln(os.Stderr, "devloop: the build failed, djinn keeps its last version:", err)
+				fmt.Fprintln(stderr, "devloop: the build failed, djinn keeps its last version:", err)
 			} else {
 				halt(djinn)
-				if djinn, err = start(exe, home); err != nil {
+				if djinn, err = start(exe, home, stdout, stderr); err != nil {
 					return err
 				}
-				fmt.Printf("devloop: djinn runs (pid %d, data %s); open %s/\n", djinn.Process.Pid, home, origin)
+				fmt.Fprintf(stdout, "devloop: djinn runs (pid %d, data %s); open %s/\n", djinn.Process.Pid, home, origin)
 			}
 		}
 		select {
@@ -202,13 +207,13 @@ func build(ctx context.Context, exe string) error {
 }
 
 // start runs djinn up in browser mode on home, its output prefixed.
-func start(exe, home string) (*exec.Cmd, error) {
+func start(exe, home string, stdout, stderr io.Writer) (*exec.Cmd, error) {
 	cmd := exec.Command(exe, "up", "--browser")
 	cmd.Env = append(slices.DeleteFunc(os.Environ(), func(kv string) bool {
 		return strings.HasPrefix(kv, "DJINN_HOME=") || strings.HasPrefix(kv, "DJINN_ADDR=")
 	}), "DJINN_HOME="+home)
-	cmd.Stdout = prefixed{os.Stdout}
-	cmd.Stderr = prefixed{os.Stderr}
+	cmd.Stdout = prefixed{stdout}
+	cmd.Stderr = prefixed{stderr}
 	return cmd, cmd.Start()
 }
 

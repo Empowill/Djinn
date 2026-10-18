@@ -103,8 +103,8 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
 - [ ] macOS gets `Djinn.app`, a bundle with an identifier: Finder, Launchpad, the Dock's icon and the system
   notifications need it.
   - [x] `tools/macapp` lays out the bundle around the universal binary and zips it, portable, tested on Linux.
-    (`go tool task test-pkg -- ./tools/macapp/...`: `TestBundleLayout`, `TestBundleVersion`,
-    `TestBundleNamesDifferBeyondCase`, `TestBundleRefusesWhatIsMissing`, `TestZipApp`; `TestBundled`,
+    (`go tool task test-pkg -- ./tools/macapp/...`: `TestBundle`, `TestBundleVersion`,
+    `TestInfoPlist`, `TestZipApp`; `TestBundled`,
     `TestFromFinder`, `TestLoginShell`, `TestLoginPath` in `cmd/djinn`; `go tool task release-macos-app
     VERSION=v0.0.0-dryrun BINARY=<a GOOS=darwin build>` on Linux wrote `bin/release/djinn_darwin_universal_app.zip`,
     11 entries, `djinn` 0755)
@@ -198,7 +198,7 @@ native window. `go install` keeps working everywhere, without CGO, as the fallba
   Mac. A maintainer holds the Apple account and its secrets (open question below).
 - **A release built by hand installs from its folder.** `install.sh` takes `DJINN_RELEASES=file:///path` (with
   curl), the folder laid out as GitHub serves it (`latest/download/…`, `download/<tag>/…`): how W187 tried the Linux
-  archive before any release. Tested in `TestInstallFromAFolder`.
+  archive before any release. Tested in `TestInstall` (from a folder).
 - **Actions are pinned by commit**, with their version in a comment. `actionlint` (with `shellcheck`) checks the
   workflows: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`.
 - **Sizes**, built locally at `-s -w`: Linux amd64 gtk3 36.8 MB (archive 12.9 MB), Windows amd64 37.3 MB (13.1 MB),

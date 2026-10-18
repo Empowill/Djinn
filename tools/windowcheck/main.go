@@ -17,6 +17,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"net"
@@ -68,27 +69,38 @@ type benchResult struct {
 }
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Args[1:], os.Stdout, showWindow))
 }
 
-func run() int {
+// show opens the window on url, served by assets through wails:// when assets is not nil, until it is closed or ctx
+// is done: showWindow, or a page of the tests.
+type show func(ctx context.Context, url string, assets http.Handler) error
+
+// run checks the path args name in a window that show opens, prints to out, and returns the exit code.
+func run(args []string, out io.Writer, show show) int {
 	native := server.TransportFor(runtime.GOOS)
-	path := flag.String("path", string(native), "the path to check: wails (wails://, no port) or http (loopback HTTP with a token)")
-	count := flag.Int("count", 100, "number of values in the stream")
-	interval := flag.Duration("interval", 20*time.Millisecond, "time between two values")
-	timeout := flag.Duration("timeout", 30*time.Second, "give up after this long")
-	format := flag.String("format", "binary", "the Connect format of the stream: binary (Protobuf, as the interface) or json")
-	benchmark := flag.Bool("bench", false, "then time unary round trips and a burst of messages in both formats")
-	flag.Parse()
+	flags := flag.NewFlagSet("windowcheck", flag.ContinueOnError)
+	path := flags.String("path", string(native), "the path to check: wails (wails://, no port) or http (loopback HTTP with a token)")
+	count := flags.Int("count", 100, "number of values in the stream")
+	interval := flags.Duration("interval", 20*time.Millisecond, "time between two values")
+	timeout := flags.Duration("timeout", 30*time.Second, "give up after this long")
+	format := flags.String("format", "binary", "the Connect format of the stream: binary (Protobuf, as the interface) or json")
+	benchmark := flags.Bool("bench", false, "then time unary round trips and a burst of messages in both formats")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
 	transport := server.Transport(*path)
 	if transport != server.Wails && transport != server.HTTP || *count < 2 || *interval <= 0 ||
 		*format != "binary" && *format != "json" {
-		flag.Usage()
+		flags.Usage()
 		return 2
 	}
 
-	fmt.Println("Djinn window check")
-	fmt.Printf("  system:  %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Fprintln(out, "Djinn window check")
+	fmt.Fprintf(out, "  system:  %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	what := map[server.Transport]string{
 		server.Wails: "wails: the Wails internal asset server (wails://), no port",
 		server.HTTP:  "http: the loopback HTTP server, with a token",
@@ -98,9 +110,9 @@ func run() int {
 	} else {
 		what += fmt.Sprintf(", NOT the path of the window on this system (%s)", native)
 	}
-	fmt.Printf("  path:    %s\n", what)
-	fmt.Printf("  stream:  %d values, one every %s, over Connect in %s\n", *count, *interval, *format)
-	fmt.Println("Opening a native window for a few seconds...")
+	fmt.Fprintf(out, "  path:    %s\n", what)
+	fmt.Fprintf(out, "  stream:  %d values, one every %s, over Connect in %s\n", *count, *interval, *format)
+	fmt.Fprintln(out, "Opening a native window for a few seconds...")
 
 	c := &counter{interval: *interval, sent: map[int32]time.Time{}}
 	results := make(chan result, 1)
@@ -133,33 +145,33 @@ func run() int {
 	var err error
 	switch transport {
 	case server.Wails:
-		err = showWindow(ctx, "/?"+query, h)
+		err = show(ctx, "/?"+query, h)
 	case server.HTTP:
-		err = viaHTTP(ctx, query, h)
+		err = viaHTTP(ctx, query, h, show)
 	}
 
 	select {
 	case res := <-results:
-		code := report(res, c.sentTimes(), *count, *interval)
+		code := report(out, res, c.sentTimes(), *count, *interval)
 		if res.Bench != nil {
-			reportBench(*res.Bench, &acceptEncoding)
+			reportBench(out, *res.Bench, &acceptEncoding)
 		}
 		return code
 	default:
 	}
 	switch {
 	case err != nil:
-		fmt.Println("FAIL: the window did not run:", err)
+		fmt.Fprintln(out, "FAIL: the window did not run:", err)
 	case ctx.Err() != nil:
-		fmt.Printf("FAIL: no result after %s: the page did not finish reading the stream.\n", *timeout)
+		fmt.Fprintf(out, "FAIL: no result after %s: the page did not finish reading the stream.\n", *timeout)
 	default:
-		fmt.Println("FAIL: the window was closed before the end of the stream.")
+		fmt.Fprintln(out, "FAIL: the window was closed before the end of the stream.")
 	}
 	return 1
 }
 
 // viaHTTP serves h on the loopback behind the guard, as djinn up does on Windows, and opens the window on it.
-func viaHTTP(ctx context.Context, query string, h http.Handler) error {
+func viaHTTP(ctx context.Context, query string, h http.Handler, show show) error {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -169,7 +181,7 @@ func viaHTTP(ctx context.Context, query string, h http.Handler) error {
 	ctx, stop := context.WithCancel(ctx)
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(ctx, ln, server.Guard(h, token, origin)) }()
-	err = showWindow(ctx, origin+"/?token="+token+"&"+query, nil)
+	err = show(ctx, origin+"/?token="+token+"&"+query, nil)
 	stop()
 	return errors.Join(err, <-served)
 }
@@ -205,21 +217,21 @@ func recordAcceptEncoding(h http.Handler, seen *sync.Map) http.Handler {
 	})
 }
 
-// reportBench prints what the page timed: the mean of each run of unary round trips, and each burst.
-func reportBench(b benchResult, acceptEncoding *sync.Map) {
-	fmt.Println()
-	fmt.Println("Benchmark, timed by the page (one clock), the server answering in the clear:")
+// reportBench prints to out what the page timed: the mean of each run of unary round trips, and each burst.
+func reportBench(out io.Writer, b benchResult, acceptEncoding *sync.Map) {
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Benchmark, timed by the page (one clock), the server answering in the clear:")
 	acceptEncoding.Range(func(k, v any) bool {
-		fmt.Printf("  the webview sends Accept-Encoding %q with %s\n", v, k)
+		fmt.Fprintf(out, "  the webview sends Accept-Encoding %q with %s\n", v, k)
 		return true
 	})
-	fmt.Println("  unary echo of a saved workspace, mean round trip:")
+	fmt.Fprintln(out, "  unary echo of a saved workspace, mean round trip:")
 	for _, u := range b.Unary {
-		fmt.Printf("    %4d KiB  %-5s  %7.3f ms  (%d calls)\n", u.Size>>10, u.Format, u.MS/float64(u.Calls), u.Calls)
+		fmt.Fprintf(out, "    %4d KiB  %-5s  %7.3f ms  (%d calls)\n", u.Size>>10, u.Format, u.MS/float64(u.Calls), u.Calls)
 	}
-	fmt.Println("  server stream of 256-byte messages:")
+	fmt.Fprintln(out, "  server stream of 256-byte messages:")
 	for _, s := range b.Burst {
-		fmt.Printf("    %d messages  %-5s  %7.1f ms  %5.1f µs/message  %d reads\n",
+		fmt.Fprintf(out, "    %d messages  %-5s  %7.1f ms  %5.1f µs/message  %d reads\n",
 			s.Messages, s.Format, s.MS, s.MS*1000/float64(s.Messages), s.Reads)
 	}
 }
@@ -261,47 +273,47 @@ func (c *counter) sentTimes() map[int32]time.Time {
 	return c.sent
 }
 
-// report prints the arrivals and returns the exit code: 0 when the values arrived one by one.
-func report(res result, sent map[int32]time.Time, count int, interval time.Duration) int {
+// report prints the arrivals to out and returns the exit code: 0 when the values arrived one by one.
+func report(out io.Writer, res result, sent map[int32]time.Time, count int, interval time.Duration) int {
 	a := analyze(res, sent, count, interval)
-	fmt.Println()
+	fmt.Fprintln(out)
 	if res.Error != "" {
-		fmt.Println("Error in the page:", res.Error)
+		fmt.Fprintln(out, "Error in the page:", res.Error)
 	}
-	fmt.Printf("Received:   %d of %d values in %.2f s (about %.2f s if streamed, near 0 if buffered)\n",
+	fmt.Fprintf(out, "Received:   %d of %d values in %.2f s (about %.2f s if streamed, near 0 if buffered)\n",
 		a.received, count, a.span/1000, a.expected/1000)
 	if a.received > 1 {
-		fmt.Printf("Arrivals:   %d separate reads, median gap %.1f ms (one read per value and %s if streamed)\n",
+		fmt.Fprintf(out, "Arrivals:   %d separate reads, median gap %.1f ms (one read per value and %s if streamed)\n",
 			a.reads, a.medianGap, interval)
-		fmt.Printf("Body reads: %d for %d values\n", res.Reads, a.received)
+		fmt.Fprintf(out, "Body reads: %d for %d values\n", res.Reads, a.received)
 	}
 	if len(a.latencies) > 0 {
-		fmt.Printf("Latency:    median %.1f ms, p90 %.1f ms, max %.1f ms, from the Go send to the page read\n",
+		fmt.Fprintf(out, "Latency:    median %.1f ms, p90 %.1f ms, max %.1f ms, from the Go send to the page read\n",
 			a.latency(0.5), a.latency(0.9), a.latency(1))
-		fmt.Println("            (both clocks are this machine's: Go's wall clock, and the page's")
-		fmt.Println("            performance.timeOrigin + performance.now(); they may differ by about a")
-		fmt.Println("            millisecond, so a latency under 1 ms, even negative, reads as no delay)")
+		fmt.Fprintln(out, "            (both clocks are this machine's: Go's wall clock, and the page's")
+		fmt.Fprintln(out, "            performance.timeOrigin + performance.now(); they may differ by about a")
+		fmt.Fprintln(out, "            millisecond, so a latency under 1 ms, even negative, reads as no delay)")
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 	if a.pass {
-		fmt.Println("PASS: the values arrived one by one: a stream reaches the window on this path.")
+		fmt.Fprintln(out, "PASS: the values arrived one by one: a stream reaches the window on this path.")
 		return 0
 	}
 	if a.received > 1 && res.Error == "" {
-		fmt.Print("Gaps in ms: ")
+		fmt.Fprint(out, "Gaps in ms: ")
 		for _, g := range a.gaps {
-			fmt.Printf("%.1f ", g)
+			fmt.Fprintf(out, "%.1f ", g)
 		}
-		fmt.Println()
+		fmt.Fprintln(out)
 	}
 	switch {
 	case res.Error != "":
-		fmt.Println("FAIL: the page met an error (above).")
+		fmt.Fprintln(out, "FAIL: the page met an error (above).")
 	case a.received < count:
-		fmt.Printf("FAIL: %d of %d values arrived.\n", a.received, count)
+		fmt.Fprintf(out, "FAIL: %d of %d values arrived.\n", a.received, count)
 	default:
-		fmt.Println("FAIL: the values arrived in a burst: the window gets the response only once it is complete, so")
-		fmt.Println("a stream does not reach it on this path.")
+		fmt.Fprintln(out, "FAIL: the values arrived in a burst: the window gets the response only once it is complete, so")
+		fmt.Fprintln(out, "a stream does not reach it on this path.")
 	}
 	return 1
 }
