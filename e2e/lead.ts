@@ -83,9 +83,6 @@ export async function dropLead() {
 
 const goneSession = "00000000-0000-4000-8000-000000000000";
 
-// waitingLine is the line djinn types in the lead's terminal when events wait for it and no watch does.
-export const waitingLine = /Djinn: \d+ events? waiting, run djinn lead watch/;
-
 // leadWatch runs djinn lead watch as the lead's session, and returns its digest and the cursor it printed ("" for
 // none).
 export function leadWatch(
