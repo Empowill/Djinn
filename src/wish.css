@@ -1204,6 +1204,9 @@ html[data-motion="reduced"]
 .lead-message-anchor:has(.workspace-action-lead.is-expanded) {
   width: min(42.5rem, calc(100% - 2rem));
 }
+.lead-message-anchor > .workspace-action {
+  max-width: 100%;
+}
 .lead-message .workspace-action-lead.is-expanded {
   width: 100%;
 }

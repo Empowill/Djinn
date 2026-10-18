@@ -159,10 +159,16 @@
   opacity: 1;
 }
 .workspace-action-lead .workspace-action-control {
+  min-width: 0;
+  max-width: 100%;
   min-height: 2.75rem;
   padding: 0 1.25rem 0 3.0625rem;
   font-size: 0.8125rem;
   font-weight: 600;
+}
+.workspace-action-lead .workspace-action-control > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .workspace-action-lead .workspace-action-send {
   background: linear-gradient(var(--lamp-hi), var(--lamp-lo));
