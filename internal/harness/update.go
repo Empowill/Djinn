@@ -324,8 +324,8 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	if err := plan.FillTilasms(ctx, h.store, filled); err != nil {
 		return nil, plan.Status(err)
 	}
-	if p, err := lastPrompt(ctx, h.store, t.GetId()); err == nil {
-		filled[0].Prompt = p
+	if err := plan.FillPrompts(ctx, h.store, filled); err != nil {
+		return nil, plan.Status(err)
 	}
 	return filled[0], nil
 }

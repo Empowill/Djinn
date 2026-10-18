@@ -328,6 +328,7 @@ test.describe("wish render performance @render", () => {
     }
 
     const changeMeasures: number[] = [];
+    const askedQuestionIds: string[] = [];
     for (let i = 0; i < runs; i++) {
       const questionTitle = `Measure Question ${label} ${i + 1} ${randomUUID().slice(0, 8)}`;
       const startMark = `change-start-${i}-${label}`;
@@ -375,19 +376,26 @@ test.describe("wish render performance @render", () => {
         { startMark },
       );
 
-      djinn(
-        "question",
-        "ask",
-        questionTitle,
-        wishId,
-        "--options",
-        "A",
-        "--options",
-        "B",
-      );
+      const asked = JSON.parse(
+        djinn(
+          "question",
+          "ask",
+          "--json",
+          questionTitle,
+          wishId,
+          "--options",
+          "A",
+          "--options",
+          "B",
+        ),
+      ) as { question?: { id?: string } };
+      if (asked.question?.id) askedQuestionIds.push(asked.question.id);
 
       const duration = await waitPromise;
       changeMeasures.push(duration);
+    }
+    for (const id of askedQuestionIds) {
+      djinn("question", "withdraw", id, "--by", "developer");
     }
 
     const medianOpen = median(openMeasures);

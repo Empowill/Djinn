@@ -1599,3 +1599,103 @@ test("an enlighten task that ended while djinn was away shows ended after the wa
   assert.ok(reads.tasks > before);
   assert.equal(state.details[wishId].tasks.length, 3);
 });
+
+test("updating a planned task's prompt, title, provider, model and dependencies shows in the open wish at once without reload", async () => {
+  const data = sample();
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.loaded);
+
+  // Even when readPrompt cached the initial prompt, subsequent updates replace it at once.
+  assert.equal(await store.readPrompt(taskId), "Polish the brass with care");
+  assert.equal(store.getState().prompts[taskId], "Polish the brass with care");
+
+  // 1. Prompt-only update streamed in changed.tasks.
+  const promptOnly = {
+    ...data.tasks[0],
+    prompt: "Polish only the spout first",
+  };
+  data.tasks = [promptOnly];
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: { tasks: [promptOnly] },
+  });
+  let state = await until(
+    store,
+    (s) =>
+      s.details[wishId]?.tasks[0]?.prompt === "Polish only the spout first",
+  );
+  assert.equal(state.prompts[taskId], "Polish only the spout first");
+
+  // 2. Single-task update of all fields streamed directly in changed.tasks by WishService.Watch.
+  const streamed = {
+    ...promptOnly,
+    title: "Burnish the lamp",
+    prompt: "Burnish the brass until it shines",
+    provider: 4,
+    model: "gemini-3.8-flash-high",
+    dependsOn: ["t0"],
+  };
+  data.tasks = [streamed];
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: { tasks: [streamed] },
+  });
+  state = await until(
+    store,
+    (s) =>
+      s.details[wishId]?.tasks[0]?.prompt ===
+      "Burnish the brass until it shines",
+  );
+  assert.equal(state.details[wishId].tasks[0].title, "Burnish the lamp");
+  assert.equal(state.details[wishId].tasks[0].provider, 4);
+  assert.equal(state.details[wishId].tasks[0].model, "gemini-3.8-flash-high");
+  assert.deepEqual(state.details[wishId].tasks[0].dependsOn, ["t0"]);
+  assert.equal(state.prompts[taskId], "Burnish the brass until it shines");
+
+  // 3. Bulk update (> 20 tasks, like 26 prompts rewritten at once) where WishService.Watch sends Change.TASK
+  // without changed.tasks and the store re-lists the wish's tasks.
+  const relisted = {
+    ...streamed,
+    title: "Rewrite all twenty-six prompts",
+    prompt: "Twenty-six prompts rewritten at once",
+    provider: 1,
+    model: "claude-opus-4-7",
+    dependsOn: [],
+  };
+  data.tasks = [relisted];
+  watch.push({ wishId, changes: [Change.TASK] });
+  state = await until(
+    store,
+    (s) =>
+      s.details[wishId]?.tasks[0]?.prompt ===
+      "Twenty-six prompts rewritten at once",
+  );
+  assert.equal(
+    state.details[wishId].tasks[0].title,
+    "Rewrite all twenty-six prompts",
+  );
+  assert.equal(state.details[wishId].tasks[0].provider, 1);
+  assert.equal(state.details[wishId].tasks[0].model, "claude-opus-4-7");
+  assert.deepEqual(state.details[wishId].tasks[0].dependsOn, []);
+  assert.equal(state.prompts[taskId], "Twenty-six prompts rewritten at once");
+
+  // 4. Following the task's event stream (TaskService.Watch) also updates the cached prompt to the latest PROMPT event.
+  data.events = [
+    { seq: 1n, kind: 1, text: "Old event prompt" },
+    { seq: 2n, kind: 1, text: "Latest event prompt" },
+  ];
+  const release = store.follow(taskId);
+  state = await until(
+    store,
+    (s) => s.prompts[taskId] === "Latest event prompt",
+  );
+  assert.equal(state.prompts[taskId], "Latest event prompt");
+  release();
+  stop();
+});
