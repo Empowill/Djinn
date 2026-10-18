@@ -253,35 +253,6 @@ func (h *Harness) pushChecks(
 	return "", "", "", nil, false
 }
 
-// wishProviderAndModel returns the provider and model to use for a push correction worker: from the latest committed
-// task with a specified non-watch provider, else the wish lead's provider, else any task of the wish, else the project's
-// settings or Claude fallback.
-func (h *Harness) wishProviderAndModel(ctx context.Context, wish *planv1.Wish, settings plan.Settings, committed []*planv1.Task) (planv1.Provider, string) {
-	for i := len(committed) - 1; i >= 0; i-- {
-		p := committed[i].GetProvider()
-		if p != planv1.Provider_PROVIDER_UNSPECIFIED && p != planv1.Provider_PROVIDER_WATCH {
-			return p, committed[i].GetModel()
-		}
-	}
-	if lead, err := store.Get[*planv1.Lead](ctx, h.store, "lead"); err == nil && lead != nil && lead.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
-		return lead.GetProvider(), ""
-	}
-	if tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()}); err == nil {
-		for i := len(tasks) - 1; i >= 0; i-- {
-			p := tasks[i].GetProvider()
-			if p != planv1.Provider_PROVIDER_UNSPECIFIED && p != planv1.Provider_PROVIDER_WATCH {
-				return p, tasks[i].GetModel()
-			}
-		}
-	}
-	provider := cmp.Or(settings.Provider, planv1.Provider_PROVIDER_CLAUDE)
-	var model string
-	if provider == settings.Provider {
-		model = settings.Model
-	}
-	return provider, model
-}
-
 // pushCorrectionPrompt is the first prompt of the attempt-th correction worker of a failed push check on branch: what failed,
 // the command, its output tail, and the file of its whole output.
 func pushCorrectionPrompt(branch string, f *planv1.IntegrationFailure, settings plan.Settings, attempt int32) string {
@@ -303,17 +274,16 @@ func pushCorrectionPrompt(branch string, f *planv1.IntegrationFailure, settings 
 	return b.String()
 }
 
-// spawnPushCorrection starts the attempt-th correction worker for a failed push check on branch, at the failure's base sha.
+// spawnPushCorrection starts the attempt-th correction worker for a failed push check on branch, at the failure's base
+// sha, on the project's provider and model, whatever the tasks of the wish ran on (Q95).
 func (h *Harness) spawnPushCorrection(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch string,
-	f *planv1.IntegrationFailure, attempt int32, committed []*planv1.Task,
+	f *planv1.IntegrationFailure, attempt int32,
 ) (*planv1.Task, error) {
-	provider, model := h.wishProviderAndModel(ctx, wish, settings, committed)
 	req := &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(),
-		Title:    mergeLine("push checks", failedChecks(f)),
-		Prompt:   pushCorrectionPrompt(branch, f, settings, attempt),
-		Provider: provider, Model: model,
+		Title:  mergeLine("push checks", failedChecks(f)),
+		Prompt: pushCorrectionPrompt(branch, f, settings, attempt),
 	}
 	made := &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}}
 	return h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, req, made)
@@ -468,7 +438,7 @@ func (h *Harness) correctPush(
 	}
 	var unstarted error
 	if int(attempts) < settings.CorrectionAttempts {
-		c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, attempts+1, committed)
+		c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, attempts+1)
 		if err == nil {
 			err = h.store.Tx(ctx, func(tx *store.Tx) error {
 				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {

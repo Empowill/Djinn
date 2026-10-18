@@ -99,8 +99,9 @@ func TestReviewUncommittedWork(t *testing.T) {
 	if before != "Work of W1" || status != "M app/README.md\n?? app/scratch.txt\n?? app/src/b.txt" {
 		t.Errorf("the reviewer found the last commit %q and the changes\n%s", before, status)
 	}
-	// The review worker: work part of W1's azima, of its provider, Djinn's own, in W1's worktree and on its branch.
-	if w2.GetCode() != "W2" || w2.GetPartOf() != azima.GetId() || w2.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
+	// The review worker: work part of W1's azima, of the project's provider (claude by default), Djinn's own, in W1's
+	// worktree and on its branch.
+	if w2.GetCode() != "W2" || w2.GetPartOf() != azima.GetId() || w2.GetProvider() != planv1.Provider_PROVIDER_CLAUDE ||
 		!slices.Equal(w2.GetReview().GetTaskIds(), []string{w1.GetId()}) || w2.GetReview().GetAttempt() != 1 ||
 		w2.GetBranch() != w1.GetBranch() || w2.GetWorktree() != w1.GetWorktree() || w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Fatalf("the review worker %v", w2)
@@ -414,7 +415,7 @@ func TestAReviewThatCannotStart(t *testing.T) {
 	in.h.TellLeads(lead.tell)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 	in.leave(t, w1, map[string]string{"app/src/b.txt": "b\n"})
-	delete(in.h.providers, planv1.Provider_PROVIDER_FAKE) // W1's provider: its review worker cannot start.
+	delete(in.h.providers, planv1.Provider_PROVIDER_CLAUDE) // The project's provider: its review worker cannot start.
 
 	in.pass(t, 0)
 	got, texts := in.integration(t, w1)

@@ -169,8 +169,8 @@ func (h *Harness) review(
 }
 
 // spawnReview starts the attempt-th review worker of group's work, left not committed in the worktree of its first task:
-// a work task of that task's provider, part of its azima, in that worktree and on its branch, the files and their diff
-// in its first prompt.
+// a work task on the project's provider and model, not that task's (Q95), part of its azima, in that worktree and on
+// its branch, the files and their diff in its first prompt.
 func (h *Harness) spawnReview(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, group []*planv1.Task, branch string, attempt int32,
 ) (*planv1.Task, error) {
@@ -200,7 +200,7 @@ func (h *Harness) spawnReview(
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: mergeTitle(servedTasks(ctx, h.store, group), "work left not committed"),
 		Prompt: reviewPrompt(from, prompt, h.finalNote(ctx, from.GetId()), status, uncommittedDiff(ctx, from.GetWorktree(), status),
 			branch, settings, attempt, unsaid),
-		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: azima,
+		PartOf: azima,
 	}, &planv1.Task{Review: review, Branch: from.GetBranch(), Worktree: from.GetWorktree()})
 	if err == nil && note != "" {
 		h.Note(r.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: note})

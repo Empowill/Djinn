@@ -61,6 +61,14 @@ flags; none of it is the worker's to change.
 The task carries only some of it: its turns and their limit (`turns`), its spending cap, its access, its write
 scopes. The other parts are Djinn's, and the same for every task.
 
+### Djinn's own workers: the project's agent
+
+The workers Djinn starts by itself to repair the way in, a correction of a merge in conflict or of red commit checks,
+a review of work left not committed, a correction of red push checks, run on the project's agent and model (its
+`provider` and `model` settings, else claude and its default model), never on those of the task whose work they
+repair (Q95). A task on Antigravity whose merge conflicts gets its correction on the project's Claude model. The
+repaired task keeps its own agent, and its own continues run on it.
+
 ## What a worker may do
 
 **Cross-agent first: a project says once, in `.agents/permissions.txtpb`, what any agent may do in it, and Djinn
