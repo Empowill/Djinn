@@ -1,8 +1,8 @@
 // The buttons at the top of a wish, against the real djinn up --browser (see global-setup.ts): Share writes the wish's
-// export (binary protobuf), a file the command line imports again; Talk to the Djinn resumes the one lead, the Djinn,
-// in its terminal, focused on the wish, and on no wish from the flying carpet's header. The lead is a fake claude on
-// djinn's PATH that repeats what it reads. The chip beside the push strategy says where the wish's work lands, in a
-// real Git repository, and changes its branch. The trash has its own spec (wish-lifecycle.spec.ts).
+// export (binary protobuf), a file the command line imports again; Talk to the Djinn on the flying carpet's header
+// resumes the one lead, the Djinn, in its terminal, on no wish (on a wish, lead-switch.spec.ts checks it). The lead is
+// a fake claude on djinn's PATH that repeats what it reads. The chip beside the push strategy says where the wish's
+// work lands, in a real Git repository, and changes its branch. The trash has its own spec (wish-lifecycle.spec.ts).
 import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -78,36 +78,6 @@ test("Share writes the wish's export, which imports again", async ({
 test.describe("Lead", () => {
   test.skip(process.platform === "win32", "the fake claude is a shell script");
   test.afterEach(dropLead);
-
-  test("Lead resumes the one lead in its terminal, focused on the wish", async ({
-    page,
-  }) => {
-    const folder = leadFolder();
-    const title = `Lead from the button ${randomUUID().slice(0, 8)}`;
-    const wishId = await open(page, title);
-    setLead(session, folder);
-
-    const lead = page
-      .locator(".topbar-actions")
-      .getByRole("button", { name: "Talk to the Djinn" });
-    await expect(lead).toHaveAttribute(
-      "title",
-      "Opens the Djinn's terminal, focused on this wish",
-    );
-    await lead.click();
-    const terminal = page.getByRole("region", { name: "Terminal" });
-    await expect(
-      terminal.locator(".lead-terminal-command").first(),
-    ).toContainText(`claude --resume ${session}`);
-    await expect(
-      leadRows(page, `fake-claude --resume ${session} in ${folder}`),
-    ).toHaveCount(1);
-    // Typed in the lead, so echoed, then read after Enter: the fake lead says it again.
-    await expect(
-      leadRows(page, `Focus on the wish ${title} (${wishId})`),
-    ).toHaveCount(2);
-    djinn("wish", "delete", wishId);
-  });
 
   test("Talk to the Djinn on the flying carpet opens the Djinn's terminal, on no wish", async ({
     page,

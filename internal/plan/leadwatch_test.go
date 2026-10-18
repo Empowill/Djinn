@@ -602,3 +602,144 @@ func TestDigestCarriesTheNote(t *testing.T) {
 		t.Errorf("an unknown event = %v, want not_found", err)
 	}
 }
+
+func (s *syncLeads) opened() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.f.opened)
+}
+
+// TestAnswerWakesLeadWatchAcrossWishes: an answer while no watch waits queues the event and types one short waiting
+// line in the lead's terminal once settled, never the answer itself; the lead's watch prints the answer with a cursor;
+// a watch waiting with --after receives an answer from another wish at once without typing another line.
+func TestAnswerWakesLeadWatchAcrossWishes(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	leads := &syncLeads{}
+	c := serve(t, WithLeads(leads))
+	v, _ := leadWatches.Load(c.store)
+	lw := v.(*leadWatch)
+	lw.timing = watchTiming{
+		quiet:     80 * time.Millisecond,
+		settleMax: 400 * time.Millisecond,
+		grace:     5 * time.Second,
+		retype:    time.Hour,
+		remind:    20 * time.Millisecond,
+	}
+
+	project, err := c.projects.Add(ctx, connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectID := project.Msg.GetProject().GetId()
+	makeWish := func(title string) string {
+		t.Helper()
+		res, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+			Title: title, ProjectIds: []string{projectID},
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetWish().GetId()
+	}
+	askAndAnswer := func(wishID, first, second string) string {
+		t.Helper()
+		asked, err := c.questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
+			Text:    "Which lamp first, " + first + " or " + second + "?",
+			Options: []string{first, second}, WishId: wishID,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		q := asked.Msg.GetQuestion()
+		if _, err := c.questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+			Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: q.GetCode()}},
+			WishId:   wishID, Choice: planv1.Choice_CHOICE_B, Note: "lighter",
+		})); err != nil {
+			t.Fatal(err)
+		}
+		return q.GetCode()
+	}
+
+	wishID := makeWish("Tell the lead")
+	other := makeWish("Tell the same lead")
+	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
+		t.Fatal(err)
+	}
+	first := askAndAnswer(wishID, "Brass", "Glass")
+	if _, err := c.lead.Resume(ctx, connect.NewRequest(&planv1.LeadServiceResumeRequest{})); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(leads.said()) < 1 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	wantSaid := []string{LeadTerminal + ": " + WaitingLine(1)}
+	if got := leads.said(); !slices.Equal(got, wantSaid) {
+		t.Fatalf("said %q, want %q (never the answer itself)", got, wantSaid)
+	}
+
+	watched, err := c.lead.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{
+		Session: session, Timeout: durationpb.New(0),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := watched.Msg.GetText()
+	if want := "- " + first + ` [Tell the lead] answer: answered B — "Glass"`; !strings.Contains(digest, want) {
+		t.Errorf("first digest lacks %q:\n%s", want, digest)
+	}
+	cursor := cursorOf(t, digest)
+
+	done := make(chan string, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		res, err := c.lead.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{
+			Session: session, After: cursor, Timeout: durationpb.New(30 * time.Second),
+		}))
+		if err != nil {
+			errCh <- err
+			return
+		}
+		done <- res.Msg.GetText()
+	}()
+	for time.Now().Before(deadline) {
+		lw.mu.Lock()
+		watching := lw.watching
+		lw.mu.Unlock()
+		if watching == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	second := askAndAnswer(other, "Copper", "Tin")
+	var nextDigest string
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case nextDigest = <-done:
+	}
+	if want := "- " + second + ` [Tell the same lead] answer: answered B — "Tin"`; !strings.Contains(nextDigest, want) {
+		t.Errorf("second digest lacks %q:\n%s", want, nextDigest)
+	}
+	if strings.Contains(nextDigest, "Glass") {
+		t.Errorf("second digest still holds the acknowledged first answer:\n%s", nextDigest)
+	}
+	if got := leads.said(); !slices.Equal(got, wantSaid) {
+		t.Errorf("said %q after second answer, want nothing more typed", got)
+	}
+	if got := leads.opened(); len(got) != 1 {
+		t.Errorf("opened %q, want the lead started once", got)
+	}
+
+	if _, err := c.lead.Watch(ctx, connect.NewRequest(&planv1.LeadServiceWatchRequest{
+		Session: session, After: cursorOf(t, nextDigest), Timeout: durationpb.New(0),
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if events, err := waitingEvents(ctx, c.store); err != nil || len(events) != 0 {
+		t.Errorf("waiting events after acknowledging = %v, %v; want none", events, err)
+	}
+}
