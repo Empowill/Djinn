@@ -240,7 +240,7 @@ func TestConflictLeavesTheBatch(t *testing.T) {
 func TestPushWaitsForTheQueue(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	in := integrating(t)
+	in := integrating(t, WithSilenceLimit(2*time.Hour))
 	bare := in.remote(t)
 	letters := in.azima(t, in.wishID, "Letters")
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = letters.GetId() })
