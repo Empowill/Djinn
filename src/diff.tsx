@@ -837,7 +837,9 @@ export const TaskDiffView = memo(function TaskDiffView({
   }, [task.comments]);
 
   const handleCommentAdded = useCallback((newComment: TaskComment) => {
-    setLocalComments((prev) => [...prev, newComment]);
+    setLocalComments((prev) =>
+      prev.some((c) => c.id === newComment.id) ? prev : [...prev, newComment],
+    );
   }, []);
 
   useEffect(() => {

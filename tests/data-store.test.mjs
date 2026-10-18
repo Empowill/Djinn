@@ -2018,3 +2018,47 @@ test("readState transitions from reading to slow and ready, and failed to readin
   await until(store, () => store.readState(Change.QUESTION, wish2) === "ready");
   stop();
 });
+
+test("an in-flight task list read does not overwrite a newer watch update that arrived meanwhile", async () => {
+  const data = sample();
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId, [Change.TASK]);
+  await until(store, (s) => s.details[wishId]?.loadedKinds.has(Change.TASK));
+
+  const staleTasks = data.tasks.map((t) => ({ ...t }));
+  let releaseTasks;
+  data.listTasks = () =>
+    new Promise((r) => (releaseTasks = r)).then(() => ({
+      tasks: staleTasks,
+      total: staleTasks.length,
+      nextPageToken: "",
+    }));
+
+  const reading = store.changed(wishId, [Change.TASK]);
+  await new Promise((r) => setTimeout(r, 20));
+
+  const finished = { ...data.tasks[0], status: 4, lastLine: "Done" };
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [finished] }),
+  });
+  await until(
+    store,
+    (s) =>
+      s.details[wishId]?.tasks.find((t) => t.id === finished.id)?.status === 4,
+  );
+
+  releaseTasks();
+  await reading;
+  stop();
+  const after = store
+    .getState()
+    .details[wishId]?.tasks.find((t) => t.id === finished.id);
+  assert.equal(after?.status, 4);
+  assert.equal(after?.lastLine, "Done");
+});
