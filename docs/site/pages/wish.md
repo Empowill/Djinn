@@ -85,12 +85,6 @@ short, its workers start first, and its heavy commands take the [gates](#gates) 
 
 Every window shows the same order, and a restart keeps it.
 
-## The principal wish
-
-**Mark as principal**, with its star under an active wish's title, makes it the principal wish: the Djinn coordinates
-from it, and receives there the answers you give in the other wishes; the button then reads **Principal**. When none is
-marked, the first active wish by rank is principal.
-
 ## A wish's page
 
 A wish opens on its **Wish** tab: what waits for you (**Your move**), the questions being investigated, the journal

@@ -223,7 +223,7 @@ func TestAnswerInAnyWishToldToOneLead(t *testing.T) {
 
 	// Create wish 1 and wish 2.
 	made1, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
-		Title: "Principal Wish", ProjectIds: []string{projID},
+		Title: "First Wish", ProjectIds: []string{projID},
 	}))
 	if err != nil {
 		t.Fatal(err)

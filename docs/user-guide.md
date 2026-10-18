@@ -123,9 +123,7 @@ project show "from app".
 **New wish** (top of the side panel) opens **Make a wish**: what you wish, in a sentence, and the projects it works
 on. Or from a terminal, or from the Djinn: `djinn wish make "…"`. Under the wish's title, a click gives it the few
 lines it opens with: what it is for, its scope, where it goes (`djinn wish describe <wish-id> --text "…"`). Clicking
-the title allows you to rename it (`djinn wish rename <wish-id> --title "…"`). Beside the title, a star button marks
-it as the **Principal** wish (**Mark as principal**): the Djinn coordinates from it and receives there the answers of the other
-wishes (`djinn wish principal <wish-id> --principal`). When unset, the active wish with the lowest rank is principal.
+the title allows you to rename it (`djinn wish rename <wish-id> --title "…"`).
 
 **Three wishes are active at most.** That guards your attention; the machine decides how many workers run. You may
 have as many wishes as you like: with three active already, a new one is made paused (**Make it paused**). The side
@@ -148,7 +146,7 @@ At the top of a wish:
 
 From a terminal: `djinn wish pause <wish-id>`, `djinn wish activate <wish-id>`, `djinn wish move <wish-id> --to 1`,
 `djinn wish reorder <wish-id> --to 1` (a paused or granted wish, first in its list),
-`djinn wish rename <wish-id> --title "…"`, `djinn wish principal <wish-id> --principal`, `djinn wish delete <wish-id>`.
+`djinn wish rename <wish-id> --title "…"`, `djinn wish delete <wish-id>`.
 `djinn wish add-project <wish-id> --project-id <project>` adds a project, by its name or identifier, to a wish made
 without it: its tasks may spawn there, and its finished work goes to the project's reference branch, unless you choose
 another.

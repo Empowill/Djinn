@@ -605,9 +605,8 @@ message Wish {
   // Push strategy for the wish: wish (one integration branch per wish) or azima (one branch per azima).
   // Unset: takes the project's default.
   PushStrategy push_strategy = 20;
-  // Whether the developer explicitly marked this wish as the principal wish. When unset, the active wish with the
-  // lowest rank (rank 1) is the principal wish.
-  bool principal = 21;
+  reserved 21;
+  reserved "principal";
   // Place in the list of the paused wishes, or of the granted ones, from 1 for the first: you order each by hand
   // (djinn wish reorder). A wish paused or granted comes first in its list; one set aside before Djinn recorded places
   // has none, and comes after the others, the oldest first. 0 for an active wish.
@@ -3654,12 +3653,6 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Show or change whether a wish is the principal wish. When set, this wish's lead is the principal lead; when unset,
-  // the active wish with the lowest rank is principal.
-  rpc Principal(WishServicePrincipalRequest) returns (WishServicePrincipalResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
-    option (djinn.v1.writes) = WRITES_CHANGE;
-  }
   // Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
   // task finished, no question open), and you may grant it before.
   rpc Grant(WishServiceGrantRequest) returns (WishServiceGrantResponse) {
@@ -3923,27 +3916,6 @@ message WishServicePushStrategyResponse {
   PushStrategy strategy = 1;
   // Where the setting comes from: default, repository, developer, or wish.
   SettingSource source = 2;
-}
-
-message WishServicePrincipalRequest {
-  // The wish.
-  string wish_id = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.uuid = true
-  ];
-  // Whether this wish is the principal wish. Unset: show whether this wish is principal.
-  // Setting principal = true marks this wish as principal and clears the principal flag on any other wish.
-  // Setting principal = false unmarks this wish so that the principal defaults to rank 1.
-  optional bool principal = 2;
-}
-
-message WishServicePrincipalResponse {
-  // Whether this wish is currently the principal wish (either explicitly set or by rank 1).
-  bool principal = 1;
-  // Whether this wish was explicitly marked as principal by the developer.
-  bool explicit = 2;
-  // The ID of the current principal wish across all wishes.
-  string principal_wish_id = 3;
 }
 
 message WishServiceGrantRequest {

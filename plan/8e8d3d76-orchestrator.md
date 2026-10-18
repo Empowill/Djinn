@@ -362,7 +362,7 @@ Decide who does what, run each worker safely, and protect the machine.
 - **Question workers** (Q52, A; `internal/harness/question.go`, W86 on 09/10, ported onto azimas, integration and
   the memory rule by W133 on 10/10): answers are turned into tasks by the lead only; answer workers are removed
   (the DAG is the lead's responsibility; an answer worker would have to read every task again to set dependencies).
-  An answer (`QuestionService.Answer`, or an approval) goes directly to the lead (or principal lead, W329), unless it
+  An answer (`QuestionService.Answer`, or an approval) goes directly to the lead, unless it
   settles itself (an edit question, work that failed to integrate, a routed request, a grant);
   "Enlighten me" starts an investigator (INVESTIGATOR, "Q52: enlighten"). The prompt holds the question, its options,
   context and recommendation, what to dig into, the moving part of the brief, and one job.

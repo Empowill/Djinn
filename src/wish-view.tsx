@@ -80,7 +80,6 @@ import {
   fixerOf,
   MAX_ACTIVE,
   isActive,
-  isPrincipal,
   noLead,
   projectsOf,
   taskStatusText,
@@ -143,7 +142,6 @@ import {
   LastPushes,
   LeadButton,
   MainMerges,
-  PrincipalSelector,
   PushStrategySelector,
   WhereWorkLands,
   WishDescription,
@@ -1155,13 +1153,6 @@ export function WishView({
                   outIfrits.map((item) => (
                     <IfritBadge key={item.id} task={item} now={ifritNow} />
                   ))}
-                {isPrincipal(wish, allWishes) && (
-                  <StatusBadge
-                    tone="accent"
-                    label={t("wish.principal")}
-                    title={t("wish.principal_detail")}
-                  />
-                )}
                 {open.length > 0 && (
                   <CountPill
                     tone="waiting"
@@ -1264,23 +1255,6 @@ export function WishView({
                   <Clock3 size={13} />
                   {when(wish.createTime)}
                 </span>
-                {isActive(wish) && (
-                  <PrincipalSelector
-                    wish={wish}
-                    onChange={(principal) =>
-                      quiet(
-                        act(
-                          () =>
-                            clients.wishes.principal({
-                              wishId: wish.id,
-                              principal,
-                            }),
-                          [Change.WISH],
-                        ),
-                      )
-                    }
-                  />
-                )}
                 <PushStrategySelector
                   wish={wish}
                   projects={projects}
