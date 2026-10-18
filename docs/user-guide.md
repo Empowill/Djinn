@@ -111,10 +111,10 @@ template, a babysit, the command of a source you plugged in), is a thing to fix 
 (`djinn project acknowledge <project>`, or `djinn project acknowledge <project> <commit>` for one); a new source asks
 through its own line, until you plug it in or say no. A failed fetch is said there, as git said it. Then its checks, the inbox sources of this machine, its skills with the role each has for Djinn (a wish template, an
 inbox source, a babysit, or know-how for the workers alone), its push cadence, and every other setting with where it
-comes from: Djinn's default, the team's file or yours. At the top of its settings, and in the **Summoning Circle**
-(below the Grimoire in the side panel, one row per project), you choose the default agent and model of its new workers
-and the model of its question investigators, written in your own file (`djinn project set-defaults <project> --provider
-<provider> --model <model> [--question-model <model>]`; `--unset` takes your choice back). Skills summoned from another
+comes from: Djinn's default, the team's file or yours. In the **Summoning Circle** (below the Grimoire in the side
+panel), you choose one model per kind of worker across all projects (Djinn the lead, investigation, mockup, ifrit, work,
+merge correction, merge review, and question investigator), with **Same as lead** as the default for every row below the
+lead (`djinn lead get-circle`, `djinn lead set-circle`). Skills summoned from another
 project show "from app".
 `djinn skill summon app/babysit-mr --into infra` lets infra's workers use a skill of app without a copy.
 

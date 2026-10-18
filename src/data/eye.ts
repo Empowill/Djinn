@@ -8,22 +8,35 @@ export type Presence = "alive" | "discreet" | "none";
 
 export const presences: readonly Presence[] = ["alive", "discreet", "none"];
 
-// The eye's moods: asleep (the lead is stopped), restarting (Djinn's stream is cut), resting (home, awake), reading (a
-// question has the focus), watching (a tab has it), listening (Write to the Djinn).
+// The eye's moods: waking (closed in the seal before the stream answers for the first time), asleep (the lead is
+// stopped), restarting (Djinn's stream is cut), resting (home, awake), reading (the questions' reading line, or a
+// question that has the focus), watching (a tab has it), listening (Write to the Djinn).
 export type Mood =
-  "asleep" | "restarting" | "resting" | "watching" | "reading" | "listening";
+  | "waking"
+  | "asleep"
+  | "restarting"
+  | "resting"
+  | "watching"
+  | "reading"
+  | "listening";
 
 export interface EyeSignals {
   presence: Presence;
   // Djinn's stream answers.
   live: boolean;
+  // Djinn's stream has answered at least once (false before the first Watch message: the eye wakes).
+  everLive?: boolean;
+  // Wishes are still being read for the first time.
+  wishesReading?: boolean;
+  // What runs (tasks) is still being read.
+  runsReading?: boolean;
   // The page's lead is stopped, or could not start; undefined on a page without one.
   stopped?: boolean;
   // A question of the page holds up a worker.
   blocking: boolean;
   // Something else waits for the developer on the page: a worker waiting, a lit ifrit.
   needs: boolean;
-  // The places shown now: "home" (the seal), "pill" (Write to the Djinn), "q:<question id>", "tab:<view>".
+  // The places shown now: "home" (the seal), "reading" (the questions' reading line), "pill" (Write to the Djinn), "q:<question id>", "tab:<view>".
   perches: ReadonlySet<string>;
   // The place of the element that has the focus, if it has one: its question, Write to the Djinn, its tab.
   focus?: string;
@@ -40,33 +53,59 @@ export interface EyeTarget {
 export const questionPerch = (id: string) => `q:${id}`;
 export const tabPerch = (view: string) => `tab:${view}`;
 
-// eyeTarget is where the eye rests and how: home while the stream is cut or the lead stopped; else by the element that
-// has the focus, and only there (W259): its question, Write to the Djinn, its tab. With the focus on nothing that has a
-// place, it listens on Write to the Djinn, the Djinn's own place; with that not shown, home.
+// eyeTarget is where the eye rests and how: home while the stream wakes, is cut, the lead is stopped, or the wishes read;
+// else by the element that has the focus, and only there (W259): its question, Write to the Djinn, its tab. While
+// questions read for more than 150 ms without focus, it reads the questions' reading line ("reading"); with the focus on
+// nothing that has a place, it listens on Write to the Djinn, the Djinn's own place; with that not shown, home.
 export function eyeTarget(s: EyeSignals): EyeTarget {
   if (s.presence === "none")
     return { perch: "", mood: "resting", shine: false };
   const home = s.perches.has("home") ? "home" : "";
-  if (!s.live) return { perch: home, mood: "restarting", shine: false };
+  if (!s.live)
+    return {
+      perch: home,
+      mood: s.everLive === false ? "waking" : "restarting",
+      shine: false,
+    };
   if (s.stopped) return { perch: home, mood: "asleep", shine: false };
   const shine = s.needs || s.blocking;
+  if (s.wishesReading) return { perch: home, mood: "resting", shine };
   if (s.presence === "alive") {
     if (s.focus && s.perches.has(s.focus))
       return { perch: s.focus, mood: moodAt(s.focus), shine };
+    if (s.perches.has("reading"))
+      return { perch: "reading", mood: "reading", shine };
     if (s.perches.has("pill"))
       return { perch: "pill", mood: "listening", shine };
   }
-  return { perch: home, mood: "resting", shine };
+  return {
+    perch: home,
+    mood: s.perches.has("reading") ? "reading" : "resting",
+    shine,
+  };
 }
 
 const moodAt = (perch: string): Mood =>
-  perch.startsWith("q:")
+  perch === "reading" || perch.startsWith("q:")
     ? "reading"
     : perch.startsWith("tab:")
       ? "watching"
       : perch === "pill"
         ? "listening"
         : "resting";
+
+// eyeLook is where the iris turns while a region reads: down at the menu from the seal while wishes read, right towards
+// What runs from a question or the seal while tasks still read. Undefined when everything it glances at is read.
+export function eyeLook(s: EyeSignals, target: EyeTarget): Point | undefined {
+  if (!s.live || s.stopped || !target.perch || target.perch === "reading")
+    return undefined;
+  if (s.wishesReading && target.perch === "home") return { x: 1, y: 1.5 };
+  if (s.runsReading) {
+    if (target.perch.startsWith("q:")) return { x: 2.2, y: -0.4 };
+    if (target.perch === "home") return { x: 2, y: 0.5 };
+  }
+  return undefined;
+}
 
 export interface Point {
   x: number;

@@ -100,6 +100,8 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) (r
 			}
 			t = proto.CloneOf(t)
 			t.EnvReplays++
+			t.Resumes = 0
+			h.clearRateHits(t.GetId())
 			t.EnvBuild = h.version
 			t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", byEnvReplay, nil
 			ev := Event{
@@ -184,10 +186,19 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 		l.What = r.limit.What
 		if !r.limit.Until.IsZero() {
 			l.Until = r.limit.Until
+			l.PerMinute = false
 		}
 	} else if !ok {
 		return
 	}
+	if l.PerMinute {
+		hits := h.incRateHits(t.GetId()) - 1
+		after := now.Add(rateLimitBackoff(hits))
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_RESUMING, ""
+		t.WaitReason, t.ResumeAfter = limitText(l, after, now), timestamppb.New(after)
+		return
+	}
+	h.clearRateHits(t.GetId())
 	if t.GetResumes() >= maxResumes {
 		t.Error = exhausted(t.GetError())
 		return
@@ -225,11 +236,13 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	}
 	t = proto.CloneOf(t)
 	by := byRestart
+	fromRateLimit := false
 	switch {
 	case t.GetContinuing():
 		by = byContinue
 	case t.GetResumeAfter() != nil:
 		by = byLimit
+		fromRateLimit = h.hasRateHits(t.GetId())
 	case strings.HasPrefix(t.GetWaitReason(), whyWishPaused):
 		by = byWish
 	case strings.HasPrefix(t.GetWaitReason(), whyEditGranted):
@@ -249,7 +262,9 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	case byContinue:
 		t.Continuing = false // Cut short again, it resumes as any task does.
 	case byLimit:
-		t.Resumes++
+		if !fromRateLimit {
+			t.Resumes++
+		}
 	case byNetwork:
 		if end := t.GetEndTime(); end == nil || !h.netCut(end.AsTime()) {
 			t.Resumes++ // No outage confirmed when it was cut: a resume spent, as for a limit; an outage costs none.
@@ -496,7 +511,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	}
 	text := fmt.Sprintf("resumed %s: started %s %s%s, %s%s", by,
 		short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
-	if by == byLimit {
+	if by == byLimit && !h.hasRateHits(t.GetId()) {
 		text = fmt.Sprintf("resumed %s (%d of %d): started %s %s%s, %s%s", by, t.GetResumes(), maxResumes,
 			short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
 	}
@@ -539,6 +554,7 @@ func (h *Harness) replayEnvFailures(ctx context.Context, provider planv1.Provide
 	for _, w := range wishes {
 		wish[w.GetId()] = w
 	}
+	now := h.now()
 	for _, t := range tasks {
 		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED &&
 			t.GetEnvCause() != "" &&
@@ -548,8 +564,23 @@ func (h *Harness) replayEnvFailures(ctx context.Context, provider planv1.Provide
 			if !t.GetScheduled() || w == nil || w.GetState() == planv1.WishState_WISH_STATE_GRANTED || render.ForkedAs(t, tasks) != "" {
 				continue
 			}
+			if l, ok := limitIn(t.GetError(), endOf(t, now)); ok {
+				reset := l.Until
+				if reset.IsZero() {
+					if l.PerMinute {
+						reset = endOf(t, now).Add(rateLimitBackoff(0))
+					} else {
+						reset = endOf(t, now).Add(limitBackoff(0))
+					}
+				}
+				if now.Before(reset) {
+					continue
+				}
+			}
 			t = proto.CloneOf(t)
 			t.EnvReplays++
+			t.Resumes = 0
+			h.clearRateHits(t.GetId())
 			t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", byEnvReplay, nil
 			ev := Event{
 				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,

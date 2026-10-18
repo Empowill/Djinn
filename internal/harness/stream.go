@@ -55,6 +55,10 @@ type streamAgent struct {
 	parser streamParser
 	quiet  time.Duration // Quiet when 0
 	idle   time.Duration // StreamIdleTimeout when 0; negative disables
+	// holdTurn queues follow-up user messages in memory while a turn is under way instead of writing them on stdin
+	// immediately, so that a publish prompt queued while the turn finishes its deliverables can be dropped at result
+	// time instead of opening an extra turn (agy).
+	holdTurn bool
 	// encode writes a user message as the agent reads it on its input, without the newline.
 	encode func(text string) ([]byte, error)
 }
@@ -62,6 +66,12 @@ type streamAgent struct {
 // toolTracker reports whether a local tool is currently running.
 type toolTracker interface {
 	toolRunning() bool
+}
+
+// turnFinisher reports whether the turn that just ended already completed the task's deliverables, so any queued
+// askToPublish prompt should be dropped instead of starting an extra turn.
+type turnFinisher interface {
+	canFinishTurn() bool
 }
 
 // idleCapper is a parser whose agent says nothing while a tool runs, whatever the tool does (agy): the stream idle
@@ -116,12 +126,13 @@ type streamWorker struct {
 	held   chan struct{} // Pause or Resume changed paused
 
 	mu        sync.Mutex
-	pending   int  // messages sent without a result yet
-	closed    bool // input closed: no more messages
-	listen    bool // the input stays open once every message has its result (Spec.Listen), until CloseInput
-	listening bool // every message has its result, and the agent waits on its open input
-	ending    bool // CloseInput was called: no more messages
-	paused    bool // Djinn holds the agent still (Pause): its silence is no idle stream
+	pending   int      // messages sent without a result yet
+	queued    []string // follow-up messages held while a turn is under way (holdTurn)
+	closed    bool     // input closed: no more messages
+	listen    bool     // the input stays open once every message has its result (Spec.Listen), until CloseInput
+	listening bool     // every message has its result, and the agent waits on its open input
+	ending    bool     // CloseInput was called: no more messages
+	paused    bool     // Djinn holds the agent still (Pause): its silence is no idle stream
 	failure   string
 	stopped   atomic.Bool // asked to stop: a turn cut short is no failure of the agent
 }
@@ -197,6 +208,11 @@ func (w *streamWorker) Send(text string) error {
 	if w.closed || w.ending {
 		return ErrClosed
 	}
+	if w.a.holdTurn && w.pending > 0 && !w.listening {
+		w.queued = append(w.queued, text)
+		w.pending++
+		return nil
+	}
 	if _, err := w.p.stdin.Write(append(b, '\n')); err != nil {
 		return fmt.Errorf("write to %s: %w", w.a.name, err)
 	}
@@ -223,6 +239,7 @@ func (w *streamWorker) CloseInput() {
 // did not already. The caller holds mu.
 func (w *streamWorker) listened() []Event {
 	w.pending = 0
+	w.queued = nil
 	if w.listening {
 		return nil
 	}
@@ -382,6 +399,19 @@ lines:
 		} else {
 			w.pending--
 		}
+		if len(w.queued) > 0 {
+			if tf, ok := w.a.parser.(turnFinisher); ok && tf.canFinishTurn() {
+				kept := w.queued[:0]
+				for _, q := range w.queued {
+					if isPublishPrompt(q) {
+						w.pending--
+						continue
+					}
+					kept = append(kept, q)
+				}
+				w.queued = kept
+			}
+		}
 		if end.retry != "" && !w.closed {
 			if end.backoff > 0 {
 				w.mu.Unlock()
@@ -399,6 +429,16 @@ lines:
 						lastError = ""
 					}
 				}
+			}
+		} else if len(w.queued) > 0 && !w.closed && end.failure == "" {
+			next := w.queued[0]
+			w.queued = w.queued[1:]
+			if b, err := w.a.encode(next); err == nil {
+				if _, err := w.p.stdin.Write(append(b, '\n')); err != nil {
+					w.pending--
+				}
+			} else {
+				w.pending--
 			}
 		}
 		var listens []Event

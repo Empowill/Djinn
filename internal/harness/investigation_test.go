@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
@@ -283,4 +284,99 @@ func TestUrgentFeedbackBesideRepair(t *testing.T) {
 	e.release(t, mockup.GetId())
 	e.ended(t, repair.GetId())
 	e.ended(t, mockup.GetId())
+}
+
+// TestInvestigationDeliverableCompletionAndPublishGuard (W405): once a ChangesNoCode task has published its
+// deliverable, askToPublish and queued publish turns are dropped, a stale agy result error ("stream was interrupted")
+// completes the task as DONE instead of looping or failing, and resuming a task that was already asked to publish
+// restores publishAt on the new run so it is not asked a second time.
+func TestInvestigationDeliverableCompletionAndPublishGuard(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	clock := &fakeClock{at: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)}
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = Fake{}
+	e := upWith(t, t.TempDir(), providers, WithClock(clock.now), WithTick(time.Hour))
+	wishID, _ := e.wish(t, gitRepo(t))
+	asked := func(ev *planv1.TaskEvent) bool {
+		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_MESSAGE && isPublishPrompt(ev.GetText())
+	}
+
+	// 1. An investigation on agy that publishes its question and then hits a stale result error ("stream was
+	// interrupted") at the time limit is not asked to publish and ends DONE with "closing call failed: ...".
+	agyStudy := e.mustSpawn(t, wishID, "Audit Argon", "text auditing\nwait\nfail stream was interrupted",
+		&planv1.TaskServiceSpawnRequest{
+			Kind:     planv1.TaskKind_TASK_KIND_INVESTIGATION,
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+			Minutes:  10,
+		})
+	followAgy := e.follow(t, agyStudy.GetId())
+	followAgy("it audits", said("auditing"))
+	e.askAbout(t, agyStudy, false)
+	// Even after the time limit passes, askToPublish is skipped because changesNoCodeDone is true.
+	clock.set(clock.now().Add(12 * time.Minute))
+	e.h.Wake()
+	e.release(t, agyStudy.GetId())
+	doneAgy := e.ended(t, agyStudy.GetId())
+	if doneAgy.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("agyStudy ended %v (%q); want DONE after deliverable published", doneAgy.GetStatus(), doneAgy.GetError())
+	}
+	hasClosingNote := false
+	for _, ev := range e.storedEvents(t, agyStudy.GetId()) {
+		if asked(ev) {
+			t.Errorf("agyStudy was asked to publish after deliverable already existed: %v", ev)
+		}
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "closing call failed:") {
+			hasClosingNote = true
+		}
+	}
+	if !hasClosingNote {
+		t.Errorf("agyStudy events missing closing call failed note")
+	}
+
+	// 2. Direct agyParser check: when isWorkDone reflects changesNoCodeDone and the agent has answered, a stale
+	// "stream was interrupted" result error returns a clean turnEnd with "closing call failed: ..." instead of looping
+	// retryOrEnd.
+	p := &agyParser{isWorkDone: func() bool { return changesNoCodeDone(t.Context(), e.db, doneAgy) }}
+	p.stdout(`{"event":"step_update","step_update":{"step_index":1,"step_type":"agent_response","state":"DONE","text_delta":"All published."}}`)
+	evs, end := p.stdout(`{"event":"result","result":{"status":"error","error":"stream was interrupted"}}`)
+	if end == nil || end.failure != "" || end.retry != "" {
+		t.Fatalf("agyParser result on completed investigation = %+v; want clean end", end)
+	}
+	if len(evs) == 0 || !strings.Contains(evs[0].Text, "closing call failed:") {
+		t.Errorf("agyParser events = %+v; want closing call failed status", evs)
+	}
+
+	// 3. Continuing an investigation that was already asked to publish restores publishAt on the new run so it is not
+	// asked a second time.
+	resumed := e.mustSpawn(t, wishID, "Resumed study", "text part1\nwait\ntext done1",
+		&planv1.TaskServiceSpawnRequest{Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION, Minutes: 10})
+	followResumed := e.follow(t, resumed.GetId())
+	followResumed("part1", said("part1"))
+	clock.set(clock.now().Add(11 * time.Minute))
+	e.h.Wake()
+	followResumed("asked once on run 1", asked)
+	e.ended(t, resumed.GetId())
+	if _, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{
+		TaskId: resumed.GetId(), Prompt: proto.String("text part2\nwait\ntext done2"),
+	})); err != nil {
+		t.Fatal(err)
+	}
+	followResumed = e.follow(t, resumed.GetId())
+	followResumed("part2 on run 2", said("part2"))
+	clock.set(clock.now().Add(2 * time.Minute))
+	e.h.Wake() // Within grace on run 2: r.publishAt was restored from t.GetInvestigation().GetPublishTime(), so not asked again.
+	e.release(t, resumed.GetId())
+	if got := e.ended(t, resumed.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Fatalf("resumed ended %v (%q); want DONE", got.GetStatus(), got.GetError())
+	}
+	askedCount := 0
+	for _, ev := range e.storedEvents(t, resumed.GetId()) {
+		if asked(ev) {
+			askedCount++
+		}
+	}
+	if askedCount != 1 {
+		t.Errorf("resumed asked to publish %d times across runs; want 1", askedCount)
+	}
 }

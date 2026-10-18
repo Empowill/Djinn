@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -13,6 +14,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // An investigation (TASK_KIND_INVESTIGATION) is a short study or audit the lead launches to align with the developer
@@ -141,6 +143,67 @@ func publishText(t *planv1.Task, why string) string {
 		fmt.Sprintf("you in %d minutes.", int(investigationGrace.Minutes()))
 }
 
+// isPublishPrompt reports whether text is Djinn's askToPublish message.
+func isPublishPrompt(text string) bool {
+	return strings.HasPrefix(text, "Djinn: you reached ") && strings.Contains(text, ". Publish what you have now:")
+}
+
+// changesNoCodeDone reports whether a ChangesNoCode task (an investigation, a mockup, or a question worker) has
+// already published its deliverables in the store: a tilasm (by author or citation), a question (asked or revised in
+// a round by the task), or a plan block authored by the task.
+func changesNoCodeDone(ctx context.Context, r store.Reader, t *planv1.Task) bool {
+	if r == nil || t == nil || t.GetWishId() == "" {
+		return false
+	}
+	matchAuthor := func(author string) bool {
+		if author == "" {
+			return false
+		}
+		if t.GetId() != "" && author == t.GetId() {
+			return true
+		}
+		return t.GetCode() != "" && strings.EqualFold(author, t.GetCode())
+	}
+	where := store.Where{"wish_id": t.GetWishId()}
+	if tilasms, err := store.List[*planv1.Tilasm](ctx, r, where); err == nil {
+		for _, tl := range tilasms {
+			if matchAuthor(tl.GetAuthor()) {
+				return true
+			}
+			for _, v := range tl.GetVersions() {
+				if matchAuthor(v.GetAuthor()) {
+					return true
+				}
+			}
+			for _, c := range tl.GetCites() {
+				if matchAuthor(c) {
+					return true
+				}
+			}
+		}
+	}
+	if questions, err := store.List[*planv1.Question](ctx, r, where); err == nil {
+		for _, q := range questions {
+			if matchAuthor(q.GetTaskId()) {
+				return true
+			}
+			for _, rd := range q.GetRounds() {
+				if matchAuthor(rd.GetTaskId()) {
+					return true
+				}
+			}
+		}
+	}
+	if blocks, err := store.List[*planv1.Block](ctx, r, where); err == nil {
+		for _, b := range blocks {
+			if matchAuthor(b.GetTaskId()) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // investigationDue says what the Lamplighter does now with the investigation t, whose run is r: ask it to publish,
 // for why it reached (ask), or stop it, past the grace since it was asked (stop); both empty while it is within its
 // limits. It marks r asked. The caller holds h.mu.
@@ -167,8 +230,12 @@ func (h *Harness) investigationDue(t *planv1.Task, r *run, now time.Time) (ask, 
 }
 
 // askToPublish sends the investigation or the mockup of r the message that asks it to publish, reached why, its text
-// written for t (publishText); the pump records when on its task (deliver). A worker that ended first is not asked.
+// written for t (publishText); the pump records when on its task (deliver). A worker that ended first or already
+// published its deliverables is not asked.
 func (h *Harness) askToPublish(r *run, t *planv1.Task, why string) {
+	if changesNoCodeDone(h.ctx, h.store, t) {
+		return
+	}
 	code := t.GetCode()
 	defer logx.Crash("ask to publish", "task", code)
 	ctx, cancel := context.WithTimeout(h.ctx, time.Minute)

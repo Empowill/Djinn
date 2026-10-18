@@ -14,9 +14,11 @@ import {
 
 import { Change } from "../gen/ts/plan/v1/plan_pb";
 import { tabPerch } from "./data/eye";
+import type { ReadState } from "./data/store";
 import { EyePerch } from "./djinn-eye";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
+import { ReadingLine } from "./reading-line";
 import { DraftDot } from "./tilasm-comments";
 
 export type View =
@@ -67,21 +69,21 @@ export function ViewTabs({
   view: View;
   // The name of the rest: the wish, the flying carpet.
   main: string;
-  // How many tasks the Tasks tab holds.
-  tasks: number;
+  // How many tasks the Tasks tab holds; null while unread.
+  tasks: number | null;
   // How many tasks the Review tab holds still to review; without it, a view with no such tab (the flying carpet).
-  review?: number;
-  // How many decisions the Decisions tab holds.
-  decisions: number;
+  review?: number | null;
+  // How many decisions the Decisions tab holds; null while unread.
+  decisions: number | null;
   // How many tilasms the Tilasms tab holds; without it, a view with no such tab (the flying carpet).
-  tilasms?: number;
+  tilasms?: number | null;
   // How many draft comments the developer wrote on them, not sent yet.
   drafts?: number;
   // How many blocks the For agents tab holds; without it, a view with no such tab (the flying carpet).
-  agents?: number;
+  agents?: number | null;
   onView: (view: View) => void;
 }) {
-  const tabs: { id: View; label: string; count: number }[] = [
+  const tabs: { id: View; label: string; count: number | null }[] = [
     { id: "main", label: main, count: -1 },
     { id: "tasks", label: t("wish.tasks"), count: tasks },
   ];
@@ -107,7 +109,11 @@ export function ViewTabs({
           {/* Under the tab, the Djinn's eye rests while it has the focus. */}
           <EyePerch name={tabPerch(id)} />
           {label}
-          {count >= 0 && <span className="count">{count}</span>}
+          {count === null ? (
+            <span className="count unread">·</span>
+          ) : (
+            count >= 0 && <span className="count">{count}</span>
+          )}
           {id === "tilasms" && drafts > 0 && <DraftDot count={drafts} />}
         </button>
       ))}
@@ -258,6 +264,10 @@ export function TaskSections<T, A = never, D = never>({
   showDone = false,
   showDrafts = false,
   aside,
+  readState = "ready",
+  readingKind = "tasks",
+  readingCount,
+  onRetry,
 }: {
   moving: readonly T[];
   render: (item: T) => ReactNode;
@@ -284,6 +294,10 @@ export function TaskSections<T, A = never, D = never>({
   showDrafts?: boolean;
   // Beside the first title: what the tasks spent.
   aside?: ReactNode;
+  readState?: ReadState;
+  readingKind?: "tasks" | "carpet_tasks";
+  readingCount?: number;
+  onRetry?: () => void;
 }) {
   return (
     <div role="tabpanel" aria-labelledby="view-tab-tasks">
@@ -294,13 +308,28 @@ export function TaskSections<T, A = never, D = never>({
         <div className="section-title">
           <h2>
             {t("tasks.live")}
-            <span className="count">{moving.length}</span>
+            {readState !== "ready" && moving.length === 0 ? (
+              <span className="count unread">·</span>
+            ) : (
+              <span className="count">{moving.length}</span>
+            )}
           </h2>
           {aside}
         </div>
-        {moving.length === 0 && (
-          <EmptyState art="still">{t("tasks.none_live")}</EmptyState>
-        )}
+        {moving.length === 0 &&
+          (readState !== "ready" ? (
+            <ReadingLine
+              kind={readingKind}
+              state={readState}
+              size="card-r"
+              params={
+                readingCount !== undefined ? { count: readingCount } : undefined
+              }
+              onRetry={onRetry}
+            />
+          ) : (
+            <EmptyState art="still">{t("tasks.none_live")}</EmptyState>
+          ))}
         {moving.length > 0 && (
           <div className="card-grid task-grid">{moving.map(render)}</div>
         )}

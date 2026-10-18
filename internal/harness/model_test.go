@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
@@ -423,45 +423,212 @@ func TestTaskModelAliasResolution(t *testing.T) {
 	}
 }
 
-// TestArgonModelRoundTrip (W383): "Gemini 4 Argon (High)" and "gemini-4-argon-high" are written to the project's
-// developer settings file, read back without error, and passed to agy as "Gemini 4 Argon (High)".
+// TestSummoningCircleWorkerKinds (W400): each kind of worker in the Summoning Circle takes its row's canonical model ID;
+// rows set to "Same as lead" follow the lead when it changes; per-task --provider/--model flags still win.
+func TestSummoningCircleWorkerKinds(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	home := t.TempDir()
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_CODEX] = Fake{}
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = Fake{}
+	e := upWith(t, home, providers)
+	repo := gitRepo(t)
+	wishID, _ := e.wish(t, repo)
+
+	lead := &plan.LeadService{Wishes: &plan.Wishes{Store: e.db, Home: home}}
+	setRow := func(kind planv1.WorkerKind, model string) {
+		t.Helper()
+		if _, err := lead.SetCircle(t.Context(), connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+			Kind:  kind,
+			Model: model,
+		})); err != nil {
+			t.Fatalf("SetCircle(%v, %q): %v", kind, model, err)
+		}
+	}
+
+	setRow(planv1.WorkerKind_WORKER_KIND_LEAD, "claude-opus-5-8")
+	setRow(planv1.WorkerKind_WORKER_KIND_INVESTIGATION, "claude-haiku-5-5")
+	setRow(planv1.WorkerKind_WORKER_KIND_MOCKUP, "gemini-4-argon-high")
+	setRow(planv1.WorkerKind_WORKER_KIND_IFRIT, "gemini-3.8-flash-high")
+	setRow(planv1.WorkerKind_WORKER_KIND_WORK, "claude-sonnet-5-5")
+	setRow(planv1.WorkerKind_WORKER_KIND_CORRECTION, "gpt-5.5")
+	setRow(planv1.WorkerKind_WORKER_KIND_REVIEW, "gemini-3.8-pro-high")
+	setRow(planv1.WorkerKind_WORKER_KIND_QUESTION, "gpt-5.5-mini")
+
+	if _, err := lead.SetCircle(t.Context(), connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind:  planv1.WorkerKind_WORKER_KIND_MOCKUP,
+		Model: "Gemini 4 Argon (High)",
+	})); err == nil {
+		t.Fatal("SetCircle with label containing spaces succeeded; want error")
+	}
+
+	if seat := plan.ReadLeadSeat(home); seat.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || seat.GetModel() != "claude-opus-5-8" {
+		t.Fatalf("ReadLeadSeat = (%v, %q), want (CLAUDE, claude-opus-5-8)", seat.GetProvider(), seat.GetModel())
+	}
+
+	// 1. Investigation
+	invRes, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Investigate", Prompt: "text ok", Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION,
+	}))
+	if err != nil {
+		t.Fatalf("spawn investigation: %v", err)
+	}
+	invTask := e.ended(t, invRes.Msg.GetTask().GetId())
+	if invTask.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || invTask.GetModel() != "claude-haiku-5-5" {
+		t.Errorf("investigation = (%v, %q), want (CLAUDE, claude-haiku-5-5)", invTask.GetProvider(), invTask.GetModel())
+	}
+
+	// 2. Question investigator
+	q := e.asker(wishID).ask(t, "We need a store.")
+	qTask, err := e.h.startQuestionWorker(t.Context(), q, planv1.TaskRole_TASK_ROLE_INVESTIGATOR, "text ok", nil)
+	if err != nil {
+		t.Fatalf("start question worker: %v", err)
+	}
+	qTask = e.ended(t, qTask.GetId())
+	if qTask.GetProvider() != planv1.Provider_PROVIDER_CODEX || qTask.GetModel() != "gpt-5.5-mini" {
+		t.Errorf("question worker = (%v, %q), want (CODEX, gpt-5.5-mini)", qTask.GetProvider(), qTask.GetModel())
+	}
+
+	// 3. Mockup
+	mockRes, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Mockup options", Prompt: "text ok", Kind: planv1.TaskKind_TASK_KIND_MOCKUP, Question: q.GetCode(),
+	}))
+	if err != nil {
+		t.Fatalf("spawn mockup: %v", err)
+	}
+	mockTask := e.ended(t, mockRes.Msg.GetTask().GetId())
+	if mockTask.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || mockTask.GetModel() != "gemini-4-argon-high" {
+		t.Errorf("mockup = (%v, %q), want (ANTIGRAVITY, gemini-4-argon-high)", mockTask.GetProvider(), mockTask.GetModel())
+	}
+
+	// 4. Ifrit
+	ifritRes, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Try layout", Prompt: "text ok", Kind: planv1.TaskKind_TASK_KIND_IFRIT,
+	}))
+	if err != nil {
+		t.Fatalf("spawn ifrit: %v", err)
+	}
+	ifritTask := ifritRes.Msg.GetTask()
+	if ifritTask.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || ifritTask.GetModel() != "gemini-3.8-flash-high" {
+		t.Errorf("ifrit = (%v, %q), want (ANTIGRAVITY, gemini-3.8-flash-high)", ifritTask.GetProvider(), ifritTask.GetModel())
+	}
+	_, _ = e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: ifritTask.GetId()}))
+	e.ended(t, ifritTask.GetId())
+
+	// 5. Work
+	workRes, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Implement feature", Prompt: "text ok",
+	}))
+	if err != nil {
+		t.Fatalf("spawn work: %v", err)
+	}
+	workTask := e.ended(t, workRes.Msg.GetTask().GetId())
+	if workTask.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || workTask.GetModel() != "claude-sonnet-5-5" {
+		t.Errorf("work = (%v, %q), want (CLAUDE, claude-sonnet-5-5)", workTask.GetProvider(), workTask.GetModel())
+	}
+
+	// 6. Correction
+	corrTask, err := e.h.spawn(t.Context(), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Correct merge", Prompt: "text ok",
+	}, &planv1.Task{Correction: &planv1.TaskCorrection{Attempt: 1}})
+	if err != nil {
+		t.Fatalf("spawn correction: %v", err)
+	}
+	corrTask = e.ended(t, corrTask.GetId())
+	if corrTask.GetProvider() != planv1.Provider_PROVIDER_CODEX || corrTask.GetModel() != "gpt-5.5" {
+		t.Errorf("correction = (%v, %q), want (CODEX, gpt-5.5)", corrTask.GetProvider(), corrTask.GetModel())
+	}
+
+	// 7. Review
+	revTask, err := e.h.spawn(t.Context(), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Review merge", Prompt: "text ok",
+	}, &planv1.Task{Review: &planv1.TaskReview{TaskIds: []string{workTask.GetId()}, Attempt: 1}, Branch: workTask.GetBranch(), Worktree: workTask.GetWorktree()})
+	if err != nil {
+		t.Fatalf("spawn review: %v", err)
+	}
+	revTask = e.ended(t, revTask.GetId())
+	if revTask.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || revTask.GetModel() != "gemini-3.8-pro-high" {
+		t.Errorf("review = (%v, %q), want (ANTIGRAVITY, gemini-3.8-pro-high)", revTask.GetProvider(), revTask.GetModel())
+	}
+
+	// "Same as lead" follows a lead change.
+	setRow(planv1.WorkerKind_WORKER_KIND_WORK, "")
+	setRow(planv1.WorkerKind_WORKER_KIND_INVESTIGATION, "")
+
+	same1Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Work following lead 1", Prompt: "text ok",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	same1 := e.ended(t, same1Res.Msg.GetTask().GetId())
+	if same1.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || same1.GetModel() != "claude-opus-5-8" {
+		t.Errorf("same as lead (before move) = (%v, %q), want (CLAUDE, claude-opus-5-8)", same1.GetProvider(), same1.GetModel())
+	}
+
+	// Change the lead row to gpt-5.5-codex: "Same as lead" rows follow at once.
+	setRow(planv1.WorkerKind_WORKER_KIND_LEAD, "gpt-5.5-codex")
+	same2Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Work following lead 2", Prompt: "text ok",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	same2 := e.ended(t, same2Res.Msg.GetTask().GetId())
+	if same2.GetProvider() != planv1.Provider_PROVIDER_CODEX || same2.GetModel() != "gpt-5.5-codex" {
+		t.Errorf("same as lead (after move) = (%v, %q), want (CODEX, gpt-5.5-codex)", same2.GetProvider(), same2.GetModel())
+	}
+
+	// Per-task --provider/--model flags remain the lead's escape hatch.
+	escapeRes, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Escape hatch", Prompt: "text ok",
+		Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "claude-haiku-5-5",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	escape := e.ended(t, escapeRes.Msg.GetTask().GetId())
+	if escape.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || escape.GetModel() != "claude-haiku-5-5" {
+		t.Errorf("escape hatch = (%v, %q), want (CLAUDE, claude-haiku-5-5)", escape.GetProvider(), escape.GetModel())
+	}
+}
+
+// TestArgonModelRoundTrip (W383, W400): an old per-project setting with "Gemini 4 Argon (High)" migrates once to
+// the Summoning Circle as canonical model ID "gemini-4-argon-high", is removed from the project settings file, and
+// Antigravity.args passes --model gemini-4-argon-high to agy.
 func TestArgonModelRoundTrip(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
 	home := t.TempDir()
-	project := &planv1.Project{Id: "01946059-e68b-7cb8-8c1d-6b586e3f4ea2", Name: "djinn", Directory: t.TempDir(), Git: true}
-	agy := planv1.Provider_PROVIDER_ANTIGRAVITY
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = Fake{}
+	e := upWith(t, home, providers)
+	wishID, projectID := e.wish(t, gitRepo(t))
+
+	writeFile(t, home, "projects/"+projectID+"/settings.txtpb", "provider: PROVIDER_ANTIGRAVITY\nmodel: \"Gemini 4 Argon (High)\"\n")
+
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, Title: "Migrated Argon task", Prompt: "text ok",
+	}))
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	task := e.ended(t, res.Msg.GetTask().GetId())
+	if task.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || task.GetModel() != "gemini-4-argon-high" {
+		t.Fatalf("migrated task = (%v, %q), want (ANTIGRAVITY, gemini-4-argon-high)", task.GetProvider(), task.GetModel())
+	}
 
 	for _, input := range []string{"Gemini 4 Argon (High)", "gemini-4-argon-high", "argon"} {
-		err := plan.SaveDeveloperDefaults(home, project, &planv1.ProjectServiceSetDefaultsRequest{
-			Project:  project.GetName(),
-			Provider: &agy,
-			Model:    proto.String(input),
-		})
-		if err != nil {
-			t.Fatalf("SaveDeveloperDefaults(%q): %v", input, err)
-		}
-		s, err := plan.LoadSettings(home, project)
-		if err != nil {
-			t.Fatalf("LoadSettings(%q): %v", input, err)
-		}
-		if s.Provider != agy || s.Model != input {
-			t.Fatalf("LoadSettings(%q) = (%v, %q), want (%v, %q)", input, s.Provider, s.Model, agy, input)
-		}
-		if foreignModel(agy, s.Model) {
-			t.Errorf("foreignModel(antigravity, %q) = true, want false", s.Model)
-		}
-		if !foreignModel(planv1.Provider_PROVIDER_CLAUDE, s.Model) {
-			t.Errorf("foreignModel(claude, %q) = false, want true", s.Model)
-		}
-		args, err := (Antigravity{}).args(Spec{Dir: project.GetDirectory(), Model: s.Model})
+		args, err := (Antigravity{}).args(Spec{Dir: t.TempDir(), Model: input})
 		if err != nil {
 			t.Fatalf("Antigravity.args(%q): %v", input, err)
 		}
 		idx := slices.Index(args, "--model")
-		if idx < 0 || idx+1 >= len(args) || args[idx+1] != "Gemini 4 Argon (High)" {
-			t.Errorf("Antigravity.args(%q) = %v, want --model \"Gemini 4 Argon (High)\"", input, args)
+		if idx < 0 || idx+1 >= len(args) || args[idx+1] != "gemini-4-argon-high" {
+			t.Errorf("Antigravity.args(%q) = %v, want --model gemini-4-argon-high", input, args)
 		}
 	}
 }

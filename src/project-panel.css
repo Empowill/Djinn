@@ -201,20 +201,11 @@
   color: var(--n-d1);
 }
 .summoning-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
   margin-top: 0.5rem;
+  padding: 0.375rem 0.9375rem;
 }
-.summoning-project-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.25rem;
-}
-.summoning-project-head h3 {
-  margin: 0;
+.config-box .summoning-row {
+  padding: 0.4375rem 0;
 }
 .summoning-row + .summoning-row {
   border-top: 1px solid var(--n-33);

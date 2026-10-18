@@ -105,12 +105,12 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 	return args, nil
 }
 
-// agyModel maps model identifiers for Antigravity's Argon model ("gemini-4-argon-high", "gemini-4-argon", "argon")
-// and case variants of "Gemini 4 Argon (High)" to the exact name agy expects on --model: "Gemini 4 Argon (High)".
+// agyModel maps short aliases or legacy labels for Antigravity's Argon model ("gemini-4-argon", "argon",
+// "Gemini 4 Argon (High)") to the canonical model ID agy expects on --model: "gemini-4-argon-high".
 func agyModel(model string) string {
 	switch strings.ToLower(strings.TrimSpace(model)) {
 	case "gemini 4 argon (high)", "gemini-4-argon-high", "gemini-4-argon", "argon":
-		return "Gemini 4 Argon (High)"
+		return "gemini-4-argon-high"
 	default:
 		return model
 	}
@@ -141,7 +141,7 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 	}
 	idle, toolIdle := cmp.Or(a.IdleTimeout, AgyIdleTimeout), cmp.Or(a.ToolIdleTimeout, AgyToolIdleTimeout)
 	parser := &agyParser{isWorkDone: isWorkDone, toolIdle: toolIdle}
-	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: parser, idle: idle, encode: agyMessageLine})
+	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: parser, idle: idle, holdTurn: true, encode: agyMessageLine})
 }
 
 // agyMessageLine is a user message as agy reads it in stream-json.
@@ -859,6 +859,10 @@ func (p *agyParser) systemMessage(text string) {
 
 func (p *agyParser) canFinishNow() bool {
 	return p.answered && len(p.toolsIn) == 0 && p.isWorkDone != nil && p.isWorkDone()
+}
+
+func (p *agyParser) canFinishTurn() bool {
+	return p != nil && (p.closingFailed || p.canFinishNow())
 }
 
 func (p *agyParser) finishClosingError(events *lineEvents, why string) *turnEnd {
