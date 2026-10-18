@@ -49,7 +49,7 @@ type integration struct {
 func integrating(t *testing.T, opts ...Option) *integration {
 	t.Helper()
 	in := &integration{repo: gitRepoWith(t, map[string]string{"app/gen/index.txt": "\n", "app/src/.keep": ""}), now: time.Now()}
-	in.env = up(t, t.TempDir(), append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate)}, opts...)...)
+	in.env = up(t, t.TempDir(), append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate), WithTick(20 * time.Millisecond)}, opts...)...)
 	in.wishID, in.projectID = in.wish(t, filepath.Join(in.repo, "app"))
 	// The clock starts once the wish is made: the wish's time is the real one, and a task merged at the start
 	// time is pushed only when merged after the wish was made (lastPush). Made over a second after the start, under
@@ -89,7 +89,7 @@ func (in *integration) passApart(t *testing.T, d time.Duration) {
 func (in *integration) restart(t *testing.T, opts ...Option) {
 	t.Helper()
 	in.down()
-	in.env = up(t, in.home, append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate)}, opts...)...)
+	in.env = up(t, in.home, append([]Option{WithClock(in.clock), WithCommands(in.run), WithGates(in.gate), WithTick(20 * time.Millisecond)}, opts...)...)
 }
 
 // run is the fake of the project's commands: gen lists the files of src in gen/index.txt, test says testOut and
@@ -370,9 +370,9 @@ func TestCommitABatch(t *testing.T) {
 	}
 }
 
-// TestRemoveTheWorktreeOnceCommitted: once a task's work is committed, its worktree is removed, as djinn task clean
+// TestDropWorktree: once a task's work is committed, its worktree is removed, as djinn task clean
 // does, its branch kept; a worktree that holds changes not committed stays, said.
-func TestRemoveTheWorktreeOnceCommitted(t *testing.T) {
+func TestDropWorktree(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	in := integrating(t)
@@ -403,36 +403,6 @@ func TestRemoveTheWorktreeOnceCommitted(t *testing.T) {
 	}
 }
 
-func TestIntegrateGeneratedConflict(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	old := in.tip(t)
-	// Each worker made the generated index again on its own: the two branches change it differently.
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n", "app/gen/index.txt": "a.txt\n"})
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n", "app/gen/index.txt": "b.txt\n"})
-
-	in.pass(t, 0)
-	got, texts := in.integration(t, w2)
-	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetSha() != in.tip(t) {
-		t.Fatalf("W2's integration %v; events %q", got, texts)
-	}
-	if want := "merged " + w2.GetBranch() + "; its conflict, only in generated files (app/gen/index.txt), settled by gen"; !slices.Contains(texts, want) {
-		t.Errorf("W2's events %q; want %q", texts, want)
-	}
-	if out := in.git(t, in.repo, "show", in.tip(t)+":app/gen/index.txt"); out != "a.txt\nb.txt" {
-		t.Errorf("gen/index.txt = %q, made again from the sources", out)
-	}
-	wt := filepath.Join(integrationDir(in.home, in.projectID, in.wishID), "app")
-	// One batch: W2's merge settled by gen, the tests run once for both.
-	if !slices.Equal(in.runs, []string{"gen in " + wt, "test in " + wt}) || !slices.Equal(in.gates, []string{"gen W2", "test W1"}) {
-		t.Errorf("runs %v, gates %v", in.runs, in.gates)
-	}
-	if in.tip(t) == old || in.states(t, w1) != "W1 COMMITTED" {
-		t.Errorf("the branch did not move, or W1 is not in: %s", in.states(t, w1))
-	}
-}
-
 // noCorrection makes the project start no correction worker: Djinn asks at once (correct_test.go).
 func (in *integration) noCorrection(t *testing.T) {
 	t.Helper()
@@ -440,296 +410,363 @@ func (in *integration) noCorrection(t *testing.T) {
 		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\ncorrection_attempts: 0\n")
 }
 
-func TestIntegrateCodeConflict(t *testing.T) {
+func TestMergeAndTest(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	in := integrating(t)
-	in.noCorrection(t)
-	w1 := in.finished(t, "W1", map[string]string{"app/README.md": "# One\n"})
-	w2 := in.finished(t, "W2", map[string]string{"app/README.md": "# Two\n", "app/gen/index.txt": "two\n"})
-	w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
 
-	in.pass(t, 0)
-	// W1, W2 and W3 go as one batch; W2 conflicts with W1 and leaves it (W126): W1 and W3 go in together, checked
-	// once; W2 merges alone after them, conflicts again, and gets its own correction, here none: left to the lead.
-	if got := in.states(t, w1, w2, w3); got != "W1 COMMITTED, W2 CONFLICT, W3 COMMITTED" {
-		t.Fatalf("a conflict in code: %s", got)
-	}
-	got, texts := in.integration(t, w2)
-	if want := "W2 conflicts with " + in.branch + " in app/README.md"; got.GetReason() != want {
-		t.Errorf("W2's reason %q; want %q", got.GetReason(), want)
-	}
-	if want := "left its batch: W2 conflicts with " + in.branch + " in app/README.md; it merges alone after the batch, " +
-		"with a correction of its own if it still conflicts"; !slices.Contains(texts, want) {
-		t.Errorf("W2's events %q; want %q", texts, want)
-	}
-	if c := in.commits(t); len(c) != 1 || !slices.Equal(c[0].GetTaskIds(), []string{w1.GetId(), w3.GetId()}) {
-		t.Errorf("commits %v; want one, W1 and W3", c)
-	}
-	if got.GetQuestionId() != "" {
-		t.Errorf("W2 question ID %q; want empty", got.GetQuestionId())
-	}
-	if last := texts[len(texts)-1]; last != "conflict: "+got.GetReason()+"; "+in.branch+" stays as it was; left to the lead" {
-		t.Errorf("W2's last event %q", last)
-	}
-	questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
-	if err != nil || len(questions) != 0 {
-		t.Errorf("questions in store: %d, want 0", len(questions))
-	}
-	if commits := in.commits(t); len(commits) != 1 || len(in.runs) != 1 {
-		t.Errorf("commits %v; runs %v", commits, in.runs)
-	}
-	if b, _ := os.ReadFile(filepath.Join(in.repo, "app", "README.md")); string(b) != "# One\n" {
-		t.Errorf("the checkout's README: %q", b)
-	}
-	// W2's worktree stays, its work not committed into the branch.
-	if _, err := os.Stat(w2.GetWorktree()); err != nil {
-		t.Errorf("W2's worktree: %v", err)
-	}
-	// The integration worktree is left without a merge under way: the next task starts clean from the branch.
-	if out := in.git(t, integrationDir(in.home, in.projectID, in.wishID), "status", "--porcelain"); out != "" {
-		t.Errorf("the integration worktree holds %q", out)
-	}
-	// Failed work waits for its correction, or the person: it is not tried again.
-	in.pass(t, time.Hour)
-	if got := in.states(t, w2); got != "W2 CONFLICT" || len(in.runs) != 1 {
-		t.Errorf("tried again: %s, runs %v", got, in.runs)
-	}
-}
+	t.Run("generated conflict", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		old := in.tip(t)
+		// Each worker made the generated index again on its own: the two branches change it differently.
+		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n", "app/gen/index.txt": "a.txt\n"})
+		w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n", "app/gen/index.txt": "b.txt\n"})
 
-// TestIntegrateWithoutAGitIdentity replays W5 of PR #2's CI: on a machine with no git user.name nor user.email, the
-// merge of a task's work failed and the window said a conflict with no file. It is no conflict: the work waits, its
-// reason names the git config to run, and once the person sets an identity the next pass commits it. Djinn signs with
-// no identity of its own.
-func TestIntegrateWithoutAGitIdentity(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	old := in.tip(t)
-	// testx.Guard hides the machine's identity; the repository's goes too, and git may not guess one (macOS does).
-	in.git(t, in.repo, "config", "--unset", "user.name")
-	in.git(t, in.repo, "config", "--unset", "user.email")
-	in.git(t, in.repo, "config", "user.useConfigOnly", "true")
-
-	in.pass(t, 0)
-	got, texts := in.integration(t, w1)
-	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || got.GetReason() != noIdentity {
-		t.Fatalf("W1's integration %v; want PENDING, %q", got, noIdentity)
-	}
-	for _, want := range []string{`git config --global user.name "Your Name"`, "git config --global user.email you@example.com"} {
-		if !strings.Contains(got.GetReason(), want) {
-			t.Errorf("the reason %q does not name %s", got.GetReason(), want)
+		in.pass(t, 0)
+		got, texts := in.integration(t, w2)
+		if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetSha() != in.tip(t) {
+			t.Fatalf("W2's integration %v; events %q", got, texts)
 		}
-	}
-	if in.tip(t) != old || len(in.runs) != 0 || len(in.commits(t)) != 0 {
-		t.Errorf("the branch moved to %s from %s; runs %v", in.tip(t), old, in.runs)
-	}
-	// A pass while the identity is missing says nothing new.
-	in.pass(t, time.Minute)
-	if _, again := in.integration(t, w1); len(again) != len(texts) {
-		t.Errorf("events %q after %q", again, texts)
-	}
-
-	// The merge itself, refused by git for want of an identity, waits the same: no conflict.
-	wish, err1 := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
-	project, err2 := store.Get[*planv1.Project](t.Context(), in.db, in.projectID)
-	settings, err3 := plan.LoadSettings(in.home, project)
-	if err := errors.Join(err1, err2, err3); err != nil {
-		t.Fatal(err)
-	}
-	_, merged, _, _ := in.h.mergeAndTest(t.Context(), wish, project, settings, in.branch, old, []*planv1.Task{w1})
-	if merged.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || merged.GetReason() != noIdentity {
-		t.Errorf("the merge without identity: %v", merged)
-	}
-	// A commit says it too: the one message wherever Djinn commits.
-	if _, err := git(t.Context(), in.repo, "commit", "--allow-empty", "--quiet", "-m", "x"); !errors.Is(err, errNoIdentity) {
-		t.Errorf("a commit without identity: %v", err)
-	}
-
-	in.git(t, in.repo, "config", "user.name", "Test")
-	in.git(t, in.repo, "config", "user.email", "test@example.com")
-	in.pass(t, time.Minute)
-	if got := in.states(t, w1); got != "W1 COMMITTED" {
-		t.Errorf("once git has an identity: %s", got)
-	}
-}
-
-func TestIntegrateRedTests(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	in.noCorrection(t)
-	old := in.tip(t)
-	in.testCode, in.testOut = 1, "--- FAIL: TestLogin\nFAIL"
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-
-	in.pass(t, 0)
-	if got := in.states(t, w1); got != "W1 RED" {
-		t.Fatalf("red tests: %s", got)
-	}
-	if got, _ := in.integration(t, w1); got.GetReason() != "test exited 1:\n--- FAIL: TestLogin\nFAIL" {
-		t.Errorf("W1's reason %q", got.GetReason())
-	}
-	if in.tip(t) != old || len(in.commits(t)) != 0 {
-		t.Errorf("the branch moved to %s from %s", in.tip(t), old)
-	}
-	if _, err := os.Stat(filepath.Join(in.repo, "app", "src", "a.txt")); !os.IsNotExist(err) {
-		t.Errorf("the checkout got the red work: %v", err)
-	}
-}
-
-// TestIntegrationSaysItsCheck: while a batch's commit check runs, its tasks say which, since when: the window's
-// glance shows it beside the workers (W137). Once committed, no check is left said.
-func TestIntegrationSaysItsCheck(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
-	wait := make(chan struct{})
-	in.mu.Lock()
-	in.testWait = wait
-	in.mu.Unlock()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		in.h.integratePass(t.Context())
-	}()
-	var got *planv1.TaskIntegration
-	eventually(t, func() bool {
-		got, _ = in.integration(t, w2)
-		return got.GetCheck() != ""
-	}, func() string { return got.String() })
-	for _, task := range []*planv1.Task{w1, w2} {
-		ti, _ := in.integration(t, task)
-		if ti.GetState() != planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING || ti.GetCheck() != "test" ||
-			ti.GetUpdateTime() == nil {
-			t.Errorf("%s while its check runs: %v; want integrating, the test check, since a time", task.GetCode(), ti)
+		if want := "merged " + w2.GetBranch() + "; its conflict, only in generated files (app/gen/index.txt), settled by gen"; !slices.Contains(texts, want) {
+			t.Errorf("W2's events %q; want %q", texts, want)
 		}
-	}
-	close(wait)
-	<-done
-	if got := in.states(t, w1, w2); got != "W1 COMMITTED, W2 COMMITTED" {
-		t.Fatalf("after the check: %s", got)
-	}
-	if got, _ := in.integration(t, w1); got.GetCheck() != "" {
-		t.Errorf("committed, W1 still says the check %q", got.GetCheck())
-	}
+		if out := in.git(t, in.repo, "show", in.tip(t)+":app/gen/index.txt"); out != "a.txt\nb.txt" {
+			t.Errorf("gen/index.txt = %q, made again from the sources", out)
+		}
+		wt := filepath.Join(integrationDir(in.home, in.projectID, in.wishID), "app")
+		// One batch: W2's merge settled by gen, the tests run once for both.
+		if !slices.Equal(in.runs, []string{"gen in " + wt, "test in " + wt}) || !slices.Equal(in.gates, []string{"gen W2", "test W1"}) {
+			t.Errorf("runs %v, gates %v", in.runs, in.gates)
+		}
+		if in.tip(t) == old || in.states(t, w1) != "W1 COMMITTED" {
+			t.Errorf("the branch did not move, or W1 is not in: %s", in.states(t, w1))
+		}
+	})
+
+	t.Run("code conflict", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		in.noCorrection(t)
+		w1 := in.finished(t, "W1", map[string]string{"app/README.md": "# One\n"})
+		w2 := in.finished(t, "W2", map[string]string{"app/README.md": "# Two\n", "app/gen/index.txt": "two\n"})
+		w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+
+		in.pass(t, 0)
+		// W1, W2 and W3 go as one batch; W2 conflicts with W1 and leaves it (W126): W1 and W3 go in together, checked
+		// once; W2 merges alone after them, conflicts again, and gets its own correction, here none: left to the lead.
+		if got := in.states(t, w1, w2, w3); got != "W1 COMMITTED, W2 CONFLICT, W3 COMMITTED" {
+			t.Fatalf("a conflict in code: %s", got)
+		}
+		got, texts := in.integration(t, w2)
+		if want := "W2 conflicts with " + in.branch + " in app/README.md"; got.GetReason() != want {
+			t.Errorf("W2's reason %q; want %q", got.GetReason(), want)
+		}
+		if want := "left its batch: W2 conflicts with " + in.branch + " in app/README.md; it merges alone after the batch, " +
+			"with a correction of its own if it still conflicts"; !slices.Contains(texts, want) {
+			t.Errorf("W2's events %q; want %q", texts, want)
+		}
+		if c := in.commits(t); len(c) != 1 || !slices.Equal(c[0].GetTaskIds(), []string{w1.GetId(), w3.GetId()}) {
+			t.Errorf("commits %v; want one, W1 and W3", c)
+		}
+		if got.GetQuestionId() != "" {
+			t.Errorf("W2 question ID %q; want empty", got.GetQuestionId())
+		}
+		if last := texts[len(texts)-1]; last != "conflict: "+got.GetReason()+"; "+in.branch+" stays as it was; left to the lead" {
+			t.Errorf("W2's last event %q", last)
+		}
+		questions, err := store.List[*planv1.Question](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+		if err != nil || len(questions) != 0 {
+			t.Errorf("questions in store: %d, want 0", len(questions))
+		}
+		if commits := in.commits(t); len(commits) != 1 || len(in.runs) != 1 {
+			t.Errorf("commits %v; runs %v", commits, in.runs)
+		}
+		if b, _ := os.ReadFile(filepath.Join(in.repo, "app", "README.md")); string(b) != "# One\n" {
+			t.Errorf("the checkout's README: %q", b)
+		}
+		// W2's worktree stays, its work not committed into the branch.
+		if _, err := os.Stat(w2.GetWorktree()); err != nil {
+			t.Errorf("W2's worktree: %v", err)
+		}
+		// The integration worktree is left without a merge under way: the next task starts clean from the branch.
+		if out := in.git(t, integrationDir(in.home, in.projectID, in.wishID), "status", "--porcelain"); out != "" {
+			t.Errorf("the integration worktree holds %q", out)
+		}
+		// Failed work waits for its correction, or the person: it is not tried again.
+		in.pass(t, time.Hour)
+		if got := in.states(t, w2); got != "W2 CONFLICT" || len(in.runs) != 1 {
+			t.Errorf("tried again: %s, runs %v", got, in.runs)
+		}
+	})
+
+	// Replays W5 of PR #2's CI: on a machine with no git user.name nor user.email, the merge of a task's work failed
+	// and the window said a conflict with no file. It is no conflict: the work waits, its reason names the git config
+	// to run, and once the person sets an identity the next pass commits it. Djinn signs with no identity of its own.
+	t.Run("without a git identity", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+		old := in.tip(t)
+		// testx.Guard hides the machine's identity; the repository's goes too, and git may not guess one (macOS does).
+		in.git(t, in.repo, "config", "--unset", "user.name")
+		in.git(t, in.repo, "config", "--unset", "user.email")
+		in.git(t, in.repo, "config", "user.useConfigOnly", "true")
+
+		in.pass(t, 0)
+		got, texts := in.integration(t, w1)
+		if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || got.GetReason() != noIdentity {
+			t.Fatalf("W1's integration %v; want PENDING, %q", got, noIdentity)
+		}
+		for _, want := range []string{`git config --global user.name "Your Name"`, "git config --global user.email you@example.com"} {
+			if !strings.Contains(got.GetReason(), want) {
+				t.Errorf("the reason %q does not name %s", got.GetReason(), want)
+			}
+		}
+		if in.tip(t) != old || len(in.runs) != 0 || len(in.commits(t)) != 0 {
+			t.Errorf("the branch moved to %s from %s; runs %v", in.tip(t), old, in.runs)
+		}
+		// A pass while the identity is missing says nothing new.
+		in.pass(t, time.Minute)
+		if _, again := in.integration(t, w1); len(again) != len(texts) {
+			t.Errorf("events %q after %q", again, texts)
+		}
+
+		// The merge itself, refused by git for want of an identity, waits the same: no conflict.
+		wish, err1 := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+		project, err2 := store.Get[*planv1.Project](t.Context(), in.db, in.projectID)
+		settings, err3 := plan.LoadSettings(in.home, project)
+		if err := errors.Join(err1, err2, err3); err != nil {
+			t.Fatal(err)
+		}
+		_, merged, _, _ := in.h.mergeAndTest(t.Context(), wish, project, settings, in.branch, old, []*planv1.Task{w1})
+		if merged.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || merged.GetReason() != noIdentity {
+			t.Errorf("the merge without identity: %v", merged)
+		}
+		// A commit says it too: the one message wherever Djinn commits.
+		if _, err := git(t.Context(), in.repo, "commit", "--allow-empty", "--quiet", "-m", "x"); !errors.Is(err, errNoIdentity) {
+			t.Errorf("a commit without identity: %v", err)
+		}
+
+		in.git(t, in.repo, "config", "user.name", "Test")
+		in.git(t, in.repo, "config", "user.email", "test@example.com")
+		in.pass(t, time.Minute)
+		if got := in.states(t, w1); got != "W1 COMMITTED" {
+			t.Errorf("once git has an identity: %s", got)
+		}
+	})
+
+	t.Run("red tests", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		in.noCorrection(t)
+		old := in.tip(t)
+		in.testCode, in.testOut = 1, "--- FAIL: TestLogin\nFAIL"
+		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+		in.pass(t, 0)
+		if got := in.states(t, w1); got != "W1 RED" {
+			t.Fatalf("red tests: %s", got)
+		}
+		if got, _ := in.integration(t, w1); got.GetReason() != "test exited 1:\n--- FAIL: TestLogin\nFAIL" {
+			t.Errorf("W1's reason %q", got.GetReason())
+		}
+		if in.tip(t) != old || len(in.commits(t)) != 0 {
+			t.Errorf("the branch moved to %s from %s", in.tip(t), old)
+		}
+		if _, err := os.Stat(filepath.Join(in.repo, "app", "src", "a.txt")); !os.IsNotExist(err) {
+			t.Errorf("the checkout got the red work: %v", err)
+		}
+	})
+
+	// While a batch's commit check runs, its tasks say which, since when: the window's glance shows it beside the
+	// workers (W137). Once committed, no check is left said.
+	t.Run("says its check", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+		w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+		wait := make(chan struct{})
+		in.mu.Lock()
+		in.testWait = wait
+		in.mu.Unlock()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			in.h.integratePass(t.Context())
+		}()
+		var got *planv1.TaskIntegration
+		eventually(t, func() bool {
+			got, _ = in.integration(t, w2)
+			return got.GetCheck() != ""
+		}, func() string { return got.String() })
+		for _, task := range []*planv1.Task{w1, w2} {
+			ti, _ := in.integration(t, task)
+			if ti.GetState() != planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING || ti.GetCheck() != "test" ||
+				ti.GetUpdateTime() == nil {
+				t.Errorf("%s while its check runs: %v; want integrating, the test check, since a time", task.GetCode(), ti)
+			}
+		}
+		close(wait)
+		<-done
+		if got := in.states(t, w1, w2); got != "W1 COMMITTED, W2 COMMITTED" {
+			t.Fatalf("after the check: %s", got)
+		}
+		if got, _ := in.integration(t, w1); got.GetCheck() != "" {
+			t.Errorf("committed, W1 still says the check %q", got.GetCheck())
+		}
+	})
 }
 
-func TestIntegrateLeavesADirtyCheckout(t *testing.T) {
+func TestMoveBranch(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	in := integrating(t)
-	old := in.tip(t)
-	writeFile(t, in.repo, "app/README.md", "# Mine, not committed\n")
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
 
-	in.pass(t, 0)
-	got, texts := in.integration(t, w1)
-	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || !strings.Contains(got.GetReason(), "your checkout of it, "+in.repo+
-		", has changes not committed and is left as it is") || !strings.HasPrefix(texts[len(texts)-1], "waiting: tested green as ") {
-		t.Fatalf("W1's integration %v; events %q", got, texts)
-	}
-	if b, _ := os.ReadFile(filepath.Join(in.repo, "app", "README.md")); in.tip(t) != old || string(b) != "# Mine, not committed\n" {
-		t.Errorf("the branch moved to %s from %s, or the checkout changed: %q", in.tip(t), old, b)
-	}
-	// A pass while it stays dirty says nothing new and tests nothing again.
-	in.pass(t, time.Minute)
-	if _, again := in.integration(t, w1); len(again) != len(texts) || len(in.runs) != 1 {
-		t.Errorf("events %q after %q; runs %v", again, texts, in.runs)
-	}
-	// Once the person's changes are committed, the work tested green goes in on top of them, tested again.
-	in.git(t, in.repo, "commit", "--quiet", "-am", "Mine")
-	in.pass(t, time.Minute)
-	if got, texts := in.integration(t, w1); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || len(in.runs) != 2 {
-		t.Errorf("W1's integration %v, events %q; runs %v", got, texts, in.runs)
-	}
-	if b, _ := os.ReadFile(filepath.Join(in.repo, "app", "src", "a.txt")); string(b) != "a\n" {
-		t.Errorf("the checkout did not follow: %q", b)
-	}
+	t.Run("dirty checkout cleaned without retesting", func(t *testing.T) {
+		old := in.tip(t)
+		writeFile(t, in.repo, "app/README.md", "# Mine, not committed\n")
+		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+
+		in.pass(t, 0)
+		got, texts := in.integration(t, w1)
+		if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING || !strings.Contains(got.GetReason(), "your checkout of it, "+in.repo+
+			", has changes not committed and is left as it is") || !strings.HasPrefix(texts[len(texts)-1], "waiting: tested green as ") {
+			t.Fatalf("W1's integration %v; events %q", got, texts)
+		}
+		if b, _ := os.ReadFile(filepath.Join(in.repo, "app", "README.md")); in.tip(t) != old || string(b) != "# Mine, not committed\n" {
+			t.Errorf("the branch moved to %s from %s, or the checkout changed: %q", in.tip(t), old, b)
+		}
+		// A pass while it stays dirty says nothing new and tests nothing again.
+		in.pass(t, time.Minute)
+		if _, again := in.integration(t, w1); len(again) != len(texts) || len(in.runs) != 1 {
+			t.Errorf("events %q after %q; runs %v", again, texts, in.runs)
+		}
+		// The person puts their changes away: the work tested green moves the branch, without running the tests again.
+		in.git(t, in.repo, "checkout", "--", ".")
+		in.pass(t, time.Minute)
+		if got := in.states(t, w1); got != "W1 COMMITTED" || len(in.runs) != 1 {
+			t.Errorf("%s; runs %v", got, in.runs)
+		}
+	})
+
+	t.Run("dirty checkout committed retests on top", func(t *testing.T) {
+		writeFile(t, in.repo, "app/README.md", "# Mine, not committed\n")
+		w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+		in.pass(t, time.Minute)
+		if got := in.states(t, w2); got != "W2 PENDING" || len(in.runs) != 2 {
+			t.Fatalf("%s; runs %v", got, in.runs)
+		}
+		// Once the person's changes are committed, the work tested green goes in on top of them, tested again.
+		in.git(t, in.repo, "commit", "--quiet", "-am", "Mine")
+		in.pass(t, time.Minute)
+		if got, texts := in.integration(t, w2); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || len(in.runs) != 3 {
+			t.Errorf("W2's integration %v, events %q; runs %v", got, texts, in.runs)
+		}
+		if b, _ := os.ReadFile(filepath.Join(in.repo, "app", "src", "b.txt")); string(b) != "b\n" {
+			t.Errorf("the checkout did not follow: %q", b)
+		}
+	})
+
+	t.Run("branch no checkout holds", func(t *testing.T) {
+		in.git(t, in.repo, "branch", "feat/x")
+		if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+			WishId: in.wishID, Branch: "feat/x",
+		})); err != nil {
+			t.Fatal(err)
+		}
+		head := in.git(t, in.repo, "rev-parse", "HEAD")
+		w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+		in.pass(t, time.Minute)
+		got, texts := in.integration(t, w3)
+		tip := in.git(t, in.repo, "rev-parse", "refs/heads/feat/x")
+		if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetSha() != tip || got.GetBranch() != "feat/x" {
+			t.Fatalf("W3's integration %v", got)
+		}
+		if want := "committed into feat/x as " + tip[:8] + ", with W3"; texts[len(texts)-1] != want {
+			t.Errorf("last event %q; want %q", texts[len(texts)-1], want)
+		}
+		// The person's checkout is on another branch: it stays where it was.
+		if now := in.git(t, in.repo, "rev-parse", "HEAD"); now != head {
+			t.Errorf("the checkout moved to %s from %s", now, head)
+		}
+	})
 }
 
-func TestIntegrateFollowsACleanedCheckout(t *testing.T) {
+func TestPendIntegration(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	in := integrating(t)
-	writeFile(t, in.repo, "app/README.md", "# Mine, not committed\n")
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	in.pass(t, 0)
-	if got := in.states(t, w1); got != "W1 PENDING" || len(in.runs) != 1 {
-		t.Fatalf("%s; runs %v", got, in.runs)
-	}
-	// The person puts their changes away: the work tested green moves the branch, without running the tests again.
-	in.git(t, in.repo, "checkout", "--", ".")
-	in.pass(t, time.Minute)
-	if got := in.states(t, w1); got != "W1 COMMITTED" || len(in.runs) != 1 {
-		t.Errorf("%s; runs %v", got, in.runs)
-	}
+
+	t.Run("done worker", func(t *testing.T) {
+		task := in.spawn(t, in.wishID, "write src/a.txt a")
+		in.watch(t.Context(), t, task.GetId(), 0)
+		commitAll(t, in.get(t, task.GetId()).GetWorktree(), "Write a") // Its worker committed its work.
+		got, texts := in.integration(t, task)
+		if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING ||
+			!slices.Equal(texts, []string{"pending, to be merged into the integration branch"}) {
+			t.Fatalf("a worker done: %v, %q", got, texts)
+		}
+		in.pass(t, time.Second)
+		if got, texts := in.integration(t, task); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+			t.Fatalf("a task done: %v, %q", got, texts)
+		}
+		if out := in.git(t, in.repo, "show", in.tip(t)+":app/src/a.txt"); out != "a" {
+			t.Errorf("a.txt in the branch: %q", out)
+		}
+	})
+
+	t.Run("needs a test command", func(t *testing.T) {
+		writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "generate: \"gen\"\n")
+		task := in.spawn(t, in.wishID, "write src/b.txt b")
+		in.watch(t.Context(), t, task.GetId(), 0)
+		if got := in.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetIntegration() != nil {
+			t.Errorf("without a test command: %v", got)
+		}
+	})
+
+	t.Run("unreadable settings gets merged once fixed", func(t *testing.T) {
+		writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "provider: [broken\n")
+
+		w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) {
+			in.h.pendIntegration(task)
+		})
+
+		task2 := proto.CloneOf(w3)
+		task2.Id = store.NewID()
+		task2.Integration = nil
+		if integrate, _ := in.h.pendIntegration(task2); !integrate {
+			t.Fatal("pendIntegration should return true even when settings are unreadable")
+		}
+		if task2.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+			t.Fatalf("task2 integration state: got %v, want PENDING", task2.GetIntegration().GetState())
+		}
+		if !strings.HasPrefix(task2.GetIntegration().GetReason(), "settings unreadable:") {
+			t.Fatalf("task2 integration reason: got %q, want 'settings unreadable:'", task2.GetIntegration().GetReason())
+		}
+
+		in.pass(t, 0)
+		gotW3, err := store.Get[*planv1.Task](t.Context(), in.db, w3.GetId())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gotW3.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
+			t.Fatalf("W3 integration state: got %v, want PENDING", gotW3.GetIntegration().GetState())
+		}
+		if !strings.HasPrefix(gotW3.GetIntegration().GetReason(), "settings unreadable:") {
+			t.Fatalf("W3 integration reason: got %q, want 'settings unreadable:'", gotW3.GetIntegration().GetReason())
+		}
+
+		writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
+			"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\n")
+
+		in.pass(t, 0)
+		if got := in.states(t, w3); got != "W3 COMMITTED" {
+			t.Fatalf("after fixing settings, W3 state: got %q, want 'W3 COMMITTED'", got)
+		}
+	})
 }
 
-func TestIntegrateABranchNoCheckoutHolds(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	in.git(t, in.repo, "branch", "feat/x")
-	if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
-		WishId: in.wishID, Branch: "feat/x",
-	})); err != nil {
-		t.Fatal(err)
-	}
-	head := in.git(t, in.repo, "rev-parse", "HEAD")
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	in.pass(t, 0)
-	got, texts := in.integration(t, w1)
-	tip := in.git(t, in.repo, "rev-parse", "refs/heads/feat/x")
-	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetSha() != tip || got.GetBranch() != "feat/x" {
-		t.Fatalf("W1's integration %v", got)
-	}
-	if want := "committed into feat/x as " + tip[:8] + ", with W1"; texts[len(texts)-1] != want {
-		t.Errorf("last event %q; want %q", texts[len(texts)-1], want)
-	}
-	// The person's checkout is on another branch: it stays where it was.
-	if now := in.git(t, in.repo, "rev-parse", "HEAD"); now != head {
-		t.Errorf("the checkout moved to %s from %s", now, head)
-	}
-}
-
-func TestIntegrateADoneWorker(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	task := in.spawn(t, in.wishID, "write src/a.txt a")
-	in.watch(t.Context(), t, task.GetId(), 0)
-	commitAll(t, in.get(t, task.GetId()).GetWorktree(), "Write a") // Its worker committed its work.
-	got, texts := in.integration(t, task)
-	if got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING ||
-		!slices.Equal(texts, []string{"pending, to be merged into the integration branch"}) {
-		t.Fatalf("a worker done: %v, %q", got, texts)
-	}
-	in.pass(t, time.Second)
-	if got, texts := in.integration(t, task); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
-		t.Fatalf("a task done: %v, %q", got, texts)
-	}
-	if out := in.git(t, in.repo, "show", in.tip(t)+":app/src/a.txt"); out != "a" {
-		t.Errorf("a.txt in the branch: %q", out)
-	}
-}
-
-func TestIntegrateNeedsATestCommand(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "generate: \"gen\"\n")
-	task := in.spawn(t, in.wishID, "write src/a.txt a")
-	in.watch(t.Context(), t, task.GetId(), 0)
-	if got := in.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetIntegration() != nil {
-		t.Errorf("without a test command: %v", got)
-	}
-}
-
-func TestRecoverAnIntegration(t *testing.T) {
+func TestRecoverIntegrations(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	in := integrating(t)
@@ -768,10 +805,10 @@ func TestMatchGlob(t *testing.T) {
 	}
 }
 
-// TestADependentStartsFromTheCommit: a task that waits for another whose work Djinn integrates waits for that work to
+// TestWorkerStartBranch: a task that waits for another whose work Djinn integrates waits for that work to
 // be committed, not only done; the work is committed at once, alone, and the task then starts from the integration
 // branch, its worktree holding the dependency's change, even when the person's checkout is on another branch.
-func TestADependentStartsFromTheCommit(t *testing.T) {
+func TestWorkerStartBranch(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	in := integrating(t, WithTick(time.Hour)) // Only the commit wakes the scheduler.
@@ -812,83 +849,7 @@ func TestADependentStartsFromTheCommit(t *testing.T) {
 	}
 }
 
-func TestTaskEndsWithUnreadableSettingsGetsMergedOnceFixed(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	// Corrupt settings file
-	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"), "provider: [broken\n")
-
-	// Task W1 finished while settings were unreadable:
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
-		in.h.pendIntegration(task)
-	})
-
-	// Also verify pendIntegration directly on a done task when settings are unreadable
-	task2 := proto.CloneOf(w1)
-	task2.Id = store.NewID()
-	task2.Integration = nil
-	if integrate, _ := in.h.pendIntegration(task2); !integrate {
-		t.Fatal("pendIntegration should return true even when settings are unreadable")
-	}
-	if task2.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
-		t.Fatalf("task2 integration state: got %v, want PENDING", task2.GetIntegration().GetState())
-	}
-	if !strings.HasPrefix(task2.GetIntegration().GetReason(), "settings unreadable:") {
-		t.Fatalf("task2 integration reason: got %q, want 'settings unreadable:'", task2.GetIntegration().GetReason())
-	}
-
-	// Make an integrate pass while settings are broken
-	in.pass(t, 0)
-	gotW1, err := store.Get[*planv1.Task](t.Context(), in.db, w1.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	// W1 should now be queued as pending with wait reason
-	if gotW1.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_PENDING {
-		t.Fatalf("W1 integration state: got %v, want PENDING", gotW1.GetIntegration().GetState())
-	}
-	if !strings.HasPrefix(gotW1.GetIntegration().GetReason(), "settings unreadable:") {
-		t.Fatalf("W1 integration reason: got %q, want 'settings unreadable:'", gotW1.GetIntegration().GetReason())
-	}
-
-	// Now fix the settings file
-	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
-		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\n")
-
-	// Next integration pass should merge W1
-	in.pass(t, 0)
-	if got := in.states(t, w1); got != "W1 COMMITTED" {
-		t.Fatalf("after fixing settings, W1 state: got %q, want 'W1 COMMITTED'", got)
-	}
-}
-
-// TestOldTaskWithoutIntegrationRecordIsNotQueued: a task with no integration record is never
-// queued afterwards: nil means Djinn did not integrate it, by design.
-func TestOldTaskWithoutIntegrationRecordIsNotQueued(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
-		task.Integration = nil
-	})
-
-	in.pass(t, 0)
-
-	gotW1, err := store.Get[*planv1.Task](t.Context(), in.db, w1.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotW1.GetIntegration() != nil {
-		t.Fatalf("old task should not have an integration record after pass, got %v", gotW1.GetIntegration())
-	}
-}
-
-// TestNoOpBatchTellsTheEndOnly verifies that work queued with no commit of its own tells no merge line (Decision
-// Q173), but its task's end once: no other line would (incident W1 of wish Dew, 12/10/2026). It is not merged: no
-// record left, as for a task that ends so (W196).
-func TestNoOpBatchTellsTheEndOnly(t *testing.T) {
+func TestIntegratePass(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	in := integrating(t)
@@ -899,142 +860,116 @@ func TestNoOpBatchTellsTheEndOnly(t *testing.T) {
 		return nil
 	})
 
-	// W1 finishes and is committed
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	in.pass(t, 0)
-	if got := in.states(t, w1); got != "W1 COMMITTED" {
-		t.Fatalf("W1 state: %s", got)
-	}
-
-	told = nil
-	tip := in.tip(t)
-	// W2 finishes with no new files (worktree already matches branch HEAD)
-	w2 := in.finished(t, "W2", nil)
-	in.pass(t, 0)
-	if got, texts := in.integration(t, w2); got != nil || !slices.Equal(texts, []string{"none: " + nothingToMerge}) {
-		t.Fatalf("W2 integration %v, events %q; want none", got, texts)
-	}
-
-	want := []string{"Djinn: W2 done, " + nothingToMerge + ". It left no final note."}
-	if !slices.Equal(told, want) {
-		t.Errorf("told lines %q; want only %q for a no-op batch", told, want)
-	}
-	if now := in.tip(t); now != tip {
-		t.Errorf("the branch moved to %s from %s", now, tip)
-	}
-	diffRes, err := in.tasks.Diff(t.Context(), connect.NewRequest(&planv1.TaskServiceDiffRequest{
-		Task:   &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: "W2"}},
-		WishId: in.wishID,
-	}))
-	if err != nil {
-		t.Fatalf("W2 diff failed: %v", err)
-	}
-	if len(diffRes.Msg.GetFiles()) != 0 {
-		t.Errorf("W2 with no commits should have 0 diff files, got %v", diffRes.Msg.GetFiles())
-	}
-}
-
-// TestRealMergeTellsOneLine verifies that a real merge that moves the branch
-// tells the lead exactly one line (Decision Q173).
-func TestRealMergeTellsOneLine(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-
-	var told []string
-	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
-		told = append(told, line)
-		return nil
+	// A real merge that moves the branch tells the lead one line (Decision Q173).
+	t.Run("real merge tells one line", func(t *testing.T) {
+		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+		in.pass(t, 0)
+		if got := in.states(t, w1); got != "W1 COMMITTED" {
+			t.Fatalf("W1 state: %s", got)
+		}
+		if len(told) != 1 {
+			t.Fatalf("expected 1 told line, got %d: %v", len(told), told)
+		}
+		wantPrefix := fmt.Sprintf("Djinn: W1 merged into %s as ", in.branch)
+		if !strings.HasPrefix(told[0], wantPrefix) {
+			t.Errorf("told line %q; want prefix %q", told[0], wantPrefix)
+		}
 	})
 
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	in.pass(t, 0)
-	if got := in.states(t, w1); got != "W1 COMMITTED" {
-		t.Fatalf("W1 state: %s", got)
-	}
-
-	if len(told) != 1 {
-		t.Fatalf("expected exactly 1 told line, got %d: %v", len(told), told)
-	}
-	wantPrefix := fmt.Sprintf("Djinn: W1 merged into %s as ", in.branch)
-	if !strings.HasPrefix(told[0], wantPrefix) {
-		t.Errorf("told line %q; want prefix %q", told[0], wantPrefix)
-	}
-}
-
-// TestThreeMergesInPassTellOneLine verifies that three tasks merged in one pass
-// coalesce into a single line for the lead (Decision Q173).
-func TestThreeMergesInPassTellOneLine(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-
-	var told []string
-	in.h.TellLeads(func(ctx context.Context, wishID, line string) error {
-		told = append(told, line)
-		return nil
+	// Work queued with no commit of its own tells no merge line (Decision Q173), but its task's end once (W196).
+	t.Run("no-op batch tells the end only", func(t *testing.T) {
+		told = nil
+		tip := in.tip(t)
+		w2 := in.finished(t, "W2", nil)
+		in.pass(t, 0)
+		if got, texts := in.integration(t, w2); got != nil || !slices.Equal(texts, []string{"none: " + nothingToMerge}) {
+			t.Fatalf("W2 integration %v, events %q; want none", got, texts)
+		}
+		want := []string{"Djinn: W2 done, " + nothingToMerge + ". It left no final note."}
+		if !slices.Equal(told, want) {
+			t.Errorf("told lines %q; want only %q for a no-op batch", told, want)
+		}
+		if now := in.tip(t); now != tip {
+			t.Errorf("the branch moved to %s from %s", now, tip)
+		}
+		diffRes, err := in.tasks.Diff(t.Context(), connect.NewRequest(&planv1.TaskServiceDiffRequest{
+			Task:   &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: "W2"}},
+			WishId: in.wishID,
+		}))
+		if err != nil {
+			t.Fatalf("W2 diff failed: %v", err)
+		}
+		if len(diffRes.Msg.GetFiles()) != 0 {
+			t.Errorf("W2 with no commits should have 0 diff files, got %v", diffRes.Msg.GetFiles())
+		}
 	})
 
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
-	w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+	// Three tasks merged in one pass coalesce into a single line for the lead (Decision Q173).
+	t.Run("three merges in pass tell one line", func(t *testing.T) {
+		told = nil
+		w3 := in.finished(t, "W3", map[string]string{"app/src/b.txt": "b\n"})
+		w4 := in.finished(t, "W4", map[string]string{"app/src/c.txt": "c\n"})
+		w5 := in.finished(t, "W5", map[string]string{"app/src/d.txt": "d\n"})
 
-	in.pass(t, 0)
+		in.pass(t, 0)
+		if got := in.states(t, w3, w4, w5); got != "W3 COMMITTED, W4 COMMITTED, W5 COMMITTED" {
+			t.Fatalf("states: %s", got)
+		}
+		if len(told) != 1 {
+			t.Fatalf("expected 1 told line for 3 merges in a pass, got %d: %v", len(told), told)
+		}
+		wantPrefix := fmt.Sprintf("Djinn: W3, W4, W5 merged into %s as ", in.branch)
+		if !strings.HasPrefix(told[0], wantPrefix) {
+			t.Errorf("told line %q; want prefix %q", told[0], wantPrefix)
+		}
+	})
 
-	if got := in.states(t, w1); got != "W1 COMMITTED" {
-		t.Fatalf("W1 state: %s", got)
-	}
-	if got := in.states(t, w2); got != "W2 COMMITTED" {
-		t.Fatalf("W2 state: %s", got)
-	}
-	if got := in.states(t, w3); got != "W3 COMMITTED" {
-		t.Fatalf("W3 state: %s", got)
-	}
+	// A task with no integration record is never queued afterwards: nil means Djinn did not integrate it, by design.
+	t.Run("old task without integration record is not queued", func(t *testing.T) {
+		w6 := in.finished(t, "W6", map[string]string{"app/src/e.txt": "e\n"}, func(task *planv1.Task) {
+			task.Integration = nil
+		})
+		in.pass(t, 0)
+		gotW6, err := store.Get[*planv1.Task](t.Context(), in.db, w6.GetId())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gotW6.GetIntegration() != nil {
+			t.Fatalf("old task should not have an integration record after pass, got %v", gotW6.GetIntegration())
+		}
+	})
 
-	if len(told) != 1 {
-		t.Fatalf("expected exactly 1 told line for 3 merges in a pass, got %d: %v", len(told), told)
-	}
-	wantPrefix := fmt.Sprintf("Djinn: W1, W2, W3 merged into %s as ", in.branch)
-	if !strings.HasPrefix(told[0], wantPrefix) {
-		t.Errorf("told line %q; want prefix %q", told[0], wantPrefix)
-	}
-}
+	// djinn up stopping during a pass, after W7 is committed and while W8's checks run, still queues W7's merged line
+	// for the lead, though W9 waits and the pass's context is cancelled (W52).
+	t.Run("stop after a merge still tells it", func(t *testing.T) {
+		var mu sync.Mutex
+		told = nil
+		in.h.NotifyLead(func(ctx context.Context, e *planv1.LeadEvent) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			told = append(told, e.GetText())
+			return nil
+		})
+		alone := func(task *planv1.Task) { task.Integration.Alone = true }
+		w7 := in.finished(t, "W7", map[string]string{"app/src/f.txt": "f\n"})
+		in.finished(t, "W8", map[string]string{"app/src/g.txt": "g\n"}, alone)
+		in.finished(t, "W9", map[string]string{"app/src/h.txt": "h\n"}, alone)
+		ctx, stop := context.WithCancel(t.Context())
+		defer stop()
+		in.afterTest = func() { in.afterTest = stop } // W7's checks pass; W8's stop djinn up.
+		in.h.integratePass(ctx)
 
-// TestStopAfterAMergeStillTellsIt: djinn up stopping during a pass, after W1 is committed and while W2's checks run,
-// still queues W1's merged line for the lead, though W3 waits and the pass's context is cancelled (W52: the restarts
-// of 16/10 lost the lines of W44, W51 and W76). The queue fails on a cancelled context, as the store does.
-func TestStopAfterAMergeStillTellsIt(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	in := integrating(t)
-	var mu sync.Mutex
-	var told []string
-	in.h.NotifyLead(func(ctx context.Context, e *planv1.LeadEvent) error {
-		if err := ctx.Err(); err != nil {
-			return err
+		if got := in.states(t, w7); got != "W7 COMMITTED" {
+			t.Fatalf("W7 state: %s", got)
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		told = append(told, e.GetText())
-		return nil
+		want := fmt.Sprintf("Djinn: W7 merged into %s as ", in.branch)
+		if len(told) != 1 || !strings.HasPrefix(told[0], want) {
+			t.Errorf("queued %q; want one line starting %q", told, want)
+		}
 	})
-	// W2 and W3 merge alone, after W1 (TaskIntegration.alone): W1's batch is committed before W2's checks run.
-	alone := func(task *planv1.Task) { task.Integration.Alone = true }
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, alone)
-	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"}, alone)
-	ctx, stop := context.WithCancel(t.Context())
-	defer stop()
-	in.afterTest = func() { in.afterTest = stop } // W1's checks pass; W2's stop djinn up.
-	in.h.integratePass(ctx)
-
-	if got := in.states(t, w1); got != "W1 COMMITTED" {
-		t.Fatalf("W1 state: %s", got)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	want := fmt.Sprintf("Djinn: W1 merged into %s as ", in.branch)
-	if len(told) != 1 || !strings.HasPrefix(told[0], want) {
-		t.Errorf("queued %q; want one line starting %q", told, want)
-	}
 }

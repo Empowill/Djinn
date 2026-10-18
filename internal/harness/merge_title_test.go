@@ -10,9 +10,9 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// TestMergeTitleThroughCorrections: a correction of a correction (W422 of W419 of W401) is titled from W401, the work
+// TestMergeTitle: a correction of a correction (W422 of W419 of W401) is titled from W401, the work
 // it brings in the end, in words, its code after them, then what failed; one line.
-func TestMergeTitleThroughCorrections(t *testing.T) {
+func TestMergeTitle(t *testing.T) {
 	t.Parallel()
 	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), store.File), plan.Entities()...)
 	if err != nil {
