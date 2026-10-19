@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -428,29 +429,123 @@ func TestLeadDriver(t *testing.T) {
 		waitFor(t, "the report cleared", func() bool { return b.drive.Failure() == "" && len(b.waiting(t)) == 0 })
 	})
 
-	// After a reported limit, which no second session tries, Lead (LeadService.Resume) sends the waiting events to a
-	// new session at once, on the same seat, and opens no terminal.
+	// After a batch that failed twice or hit a reported limit, Relancer (LeadService.Resume) clears the reported
+	// failure, sends the waiting events to a new session at once on the same seat, and opens no terminal.
 	t.Run("retried_by_lead", func(t *testing.T) {
 		t.Parallel()
+		var lead *plan.LeadService
+		var resumeOnFail atomic.Bool
+		var callbackNote atomic.Value
 		b := driveLead(t, newLeadAgent(func(n int) ([]Event, error) {
-			if n < 1 {
+			switch n {
+			case 0, 1:
+				return nil, errors.New("API Error: 529 overloaded")
+			case 2:
+				return nil, errors.New("API Error: 500 transient")
+			case 4, 5:
+				return nil, errors.New("API Error: 502 bad gateway")
+			case 6:
 				return nil, errors.New("You've hit your session limit")
+			default:
+				return leadTurn("djinn brief", ""), nil
 			}
-			return leadTurn("djinn brief", ""), nil
-		}))
+		}), func(d *LeadDriver) {
+			d.RetryAfter = 40 * time.Millisecond
+			d.Changed = func() {
+				if resumeOnFail.Load() && d.Wishes.Drive().Failure() != "" && resumeOnFail.CompareAndSwap(true, false) {
+					res, err := lead.Resume(t.Context(), connect.NewRequest(&planv1.LeadServiceResumeRequest{}))
+					if err == nil {
+						callbackNote.Store(res.Msg.GetNote())
+					}
+				}
+			}
+		})
+		lead = &plan.LeadService{Wishes: b.wishes}
+
+		// 1. Twice-failed batch: attempt 1 fails with empty StartError, attempt 2 fails and sets StartError,
+		// then LeadService.Resume clears StartError and starts a new batch (whose own attempt 1 failure keeps
+		// StartError empty while waiting for its automatic second attempt).
 		b.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W2", "W2 ended")
 		b.started(t, 0)
-		waitFor(t, "the failure reported", func() bool { return b.drive.Failure() != "" })
-		res, err := (&plan.LeadService{Wishes: b.wishes}).Resume(t.Context(),
-			connect.NewRequest(&planv1.LeadServiceResumeRequest{}))
+		waitFor(t, "attempt 1 failed", func() bool {
+			return b.drive.Batch().GetAttempt() == 1 && b.drive.Batch().GetState() == planv1.LeadBatchState_LEAD_BATCH_STATE_FAILED
+		})
+		if errText := b.drive.Failure(); errText != "" {
+			t.Fatalf("Failure() after first attempt = %q, want empty until second failure", errText)
+		}
+		b.started(t, 1)
+		waitFor(t, "twice-failed batch reported", func() bool { return b.drive.Failure() != "" })
+		got, err := lead.Get(t.Context(), connect.NewRequest(&planv1.LeadServiceGetRequest{}))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Msg.GetTerminal() != "" || !strings.Contains(res.Msg.GetNote(), "Djinn drives the lead") {
-			t.Errorf("Resume = %v", res.Msg)
+		if got.Msg.GetBatch().GetAttempt() != 2 || got.Msg.GetBatch().GetState() != planv1.LeadBatchState_LEAD_BATCH_STATE_FAILED ||
+			!strings.Contains(got.Msg.GetStartError(), "failed twice: API Error: 529 overloaded") {
+			t.Fatalf("Get after 2nd failure = %v", got.Msg)
 		}
-		if again := b.started(t, 1); !strings.Contains(again.Prompt, "### W2 ended") {
-			t.Errorf("the retried batch:\n%s", again.Prompt)
+		res, err := lead.Resume(t.Context(), connect.NewRequest(&planv1.LeadServiceResumeRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantRetryNote := "Djinn drives the lead: the events that wait go to a new session now. The side journal in " +
+			"the window shows what each batch did."
+		if res.Msg.GetTerminal() != "" || res.Msg.GetNote() != wantRetryNote {
+			t.Errorf("Resume after 2nd failure = %v, want note %q", res.Msg, wantRetryNote)
+		}
+		if errText := b.drive.Failure(); errText != "" {
+			t.Errorf("Failure() right after Resume = %q, want cleared", errText)
+		}
+		// Session 2 (attempt 1 of the resumed batch) fails once; StartError must stay empty while waiting for session 3.
+		b.started(t, 2)
+		waitFor(t, "resumed batch attempt 1 failed", func() bool {
+			return b.drive.Batch().GetAttempt() == 1 && b.drive.Batch().GetState() == planv1.LeadBatchState_LEAD_BATCH_STATE_FAILED
+		})
+		if errText := b.drive.Failure(); errText != "" {
+			t.Errorf("Failure() after resumed batch attempt 1 = %q, want empty before attempt 2", errText)
+		}
+		if again := b.started(t, 3); !strings.Contains(again.Prompt, "### W2 ended") {
+			t.Errorf("resumed batch attempt 2:\n%s", again.Prompt)
+		}
+		waitFor(t, "W2 acknowledged", func() bool { return len(b.waiting(t)) == 0 })
+
+		// 2. Resume called synchronously as soon as drive.Fail notifies Changed must not be lost.
+		resumeOnFail.Store(true)
+		b.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W3", "W3 ended")
+		b.started(t, 4)
+		b.started(t, 5)
+		if again := b.started(t, 6); !strings.Contains(again.Prompt, "### W3 ended") {
+			t.Errorf("batch resumed from Changed callback:\n%s", again.Prompt)
+		}
+		if gotNote, _ := callbackNote.Load().(string); gotNote != wantRetryNote {
+			t.Errorf("callback Resume note = %q, want %q", gotNote, wantRetryNote)
+		}
+
+		// 3. Session 6 hits a usage limit on attempt 1: Resume clears the limit and runs session 7 at once.
+		waitFor(t, "the limit reported", func() bool { return b.drive.LeadLimit() != nil && b.drive.Failure() != "" })
+		res, err = lead.Resume(t.Context(), connect.NewRequest(&planv1.LeadServiceResumeRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Msg.GetTerminal() != "" || res.Msg.GetNote() != wantRetryNote {
+			t.Errorf("Resume after limit = %v, want note %q", res.Msg, wantRetryNote)
+		}
+		if b.drive.Failure() != "" || b.drive.LeadLimit() != nil {
+			t.Errorf("Failure=%q Limit=%v after Resume, want cleared", b.drive.Failure(), b.drive.LeadLimit())
+		}
+		if again := b.started(t, 7); !strings.Contains(again.Prompt, "### W3 ended") {
+			t.Errorf("the retried batch after limit:\n%s", again.Prompt)
+		}
+		waitFor(t, "W3 acknowledged", func() bool { return len(b.waiting(t)) == 0 })
+
+		// 4. Resume while idle (no failure or limit) returns the side-journal note without starting a session.
+		res, err = lead.Resume(t.Context(), connect.NewRequest(&planv1.LeadServiceResumeRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantIdleNote := "Djinn drives the lead: each batch of its events, and what you write to the Djinn, goes to a " +
+			"fresh session that ends with its turn. The side journal in the window shows what each batch did."
+		if res.Msg.GetNote() != wantIdleNote {
+			t.Errorf("idle Resume note = %q, want %q", res.Msg.GetNote(), wantIdleNote)
 		}
 	})
 
