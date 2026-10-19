@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   Change,
   Provider,
+  type TaskServiceUpdateModelsResponse,
   WorkerKind,
   type WorkerSeat,
 } from "../gen/ts/plan/v1/plan_pb";
@@ -422,6 +423,162 @@ export function SummoningCircle({
           );
         })}
       </section>
+      <section className="config-box summoning-bulk">
+        <UpdateModelsSection
+          models={models}
+          onApplied={(res) => {
+            if (res.circle.length > 0) {
+              setRows((prev) =>
+                prev.map((r) => res.circle.find((c) => c.kind === r.kind) ?? r),
+              );
+            }
+          }}
+        />
+      </section>
     </ModalFrame>
+  );
+}
+
+export function UpdateModelsSection({
+  wishId,
+  projectId,
+  models: givenModels,
+  onApplied,
+}: {
+  wishId?: string;
+  projectId?: string;
+  models?: readonly CircleModel[];
+  onApplied?: (res: TaskServiceUpdateModelsResponse) => void;
+}) {
+  const djinn = useDjinn();
+  const models = givenModels ?? catalogFromPriceTable();
+  const [selectedId, setSelectedId] = useState("");
+  const [now, setNow] = useState(false);
+  const [preview, setPreview] =
+    useState<TaskServiceUpdateModelsResponse | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [appliedSummary, setAppliedSummary] = useState("");
+
+  useEffect(() => {
+    if (!djinn || !selectedId) {
+      setPreview(null);
+      return;
+    }
+    const entry = models.find((m) => m.id === selectedId);
+    if (!entry) return;
+    let live = true;
+    setError("");
+    djinn.clients.tasks
+      .updateModels({
+        wishId: wishId ?? "",
+        projectId: projectId ?? "",
+        provider: entry.provider,
+        model: entry.id,
+        now,
+        yes: false,
+      })
+      .then((res) => {
+        if (!live) return;
+        setPreview(res);
+      })
+      .catch((err) => {
+        if (!live) return;
+        setError(message(err));
+      });
+    return () => {
+      live = false;
+    };
+  }, [djinn, models, now, projectId, selectedId, wishId]);
+
+  const handleApply = () => {
+    if (!djinn || !selectedId || busy) return;
+    const entry = models.find((m) => m.id === selectedId);
+    if (!entry) return;
+    setBusy(true);
+    setError("");
+    djinn.clients.tasks
+      .updateModels({
+        wishId: wishId ?? "",
+        projectId: projectId ?? "",
+        provider: entry.provider,
+        model: entry.id,
+        now,
+        yes: true,
+      })
+      .then((res) => {
+        setPreview(res);
+        setAppliedSummary(res.text);
+        void djinn.store.changed(wishId ?? "", [Change.TASK, Change.PROJECT]);
+        onApplied?.(res);
+      })
+      .catch((err) => setError(message(err)))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="update-models-section">
+      <h3>{t("summoning.bulk_title")}</h3>
+      <p className="muted-text">{t("summoning.bulk_detail")}</p>
+      <div className="branch-choice-row">
+        <select
+          className="summoning-select"
+          aria-label={t("summoning.bulk_model_label")}
+          value={selectedId}
+          disabled={busy}
+          onChange={(e) => {
+            setAppliedSummary("");
+            setSelectedId(e.target.value);
+          }}
+        >
+          <option value="">{t("summoning.bulk_choose")}</option>
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+        <label className="summoning-bulk-now">
+          <input
+            type="checkbox"
+            checked={now}
+            disabled={busy}
+            onChange={(e) => {
+              setAppliedSummary("");
+              setNow(e.target.checked);
+            }}
+          />
+          <span>{t("summoning.bulk_now_label")}</span>
+        </label>
+        <button
+          type="button"
+          className="button primary"
+          disabled={!selectedId || busy || !preview}
+          onClick={handleApply}
+        >
+          {t("summoning.bulk_apply")}
+        </button>
+      </div>
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+      {preview && (
+        <div className="update-models-preview" role="status">
+          <p className="notice-detail">{appliedSummary || preview.text}</p>
+          {preview.tasks.length > 0 && (
+            <ul className="change-lines">
+              {preview.tasks.map((task) => (
+                <li key={task.id}>
+                  <code>{task.code}</code> {task.title} →{" "}
+                  {providerName(task.provider)} ({task.model})
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

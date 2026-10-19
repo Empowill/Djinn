@@ -31,6 +31,7 @@ import {
 import type { Provider as Agent } from "../gen/ts/ui/v1/ui_pb";
 import { effectivePushStrategy, gitReason, when } from "./data/format";
 import { t } from "./i18n";
+import { UpdateModelsSection } from "./summoning-circle";
 
 // The agents a lead runs, in the order the menu lists them, by their identifier in UiService.GetEnvironment.
 const agents: [string, Provider][] = [
@@ -899,5 +900,35 @@ export function BranchPicker({
         </button>
       )}
     </div>
+  );
+}
+
+// WishModels lets the developer preview and change provider and model for open tasks in a wish.
+export function WishModels({ wishId }: { wishId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="wish-lands-chip">
+      <button
+        type="button"
+        className="wish-lands"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={t("wish.models_button_detail")}
+        onClick={() => setOpen(!open)}
+      >
+        <Settings2 size={13} aria-hidden="true" />
+        <span>{t("wish.models_button")}</span>
+        <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div
+          className="branch-picker wish-models-picker"
+          role="dialog"
+          aria-label={t("summoning.bulk_title")}
+        >
+          <UpdateModelsSection wishId={wishId} />
+        </div>
+      )}
+    </span>
   );
 }

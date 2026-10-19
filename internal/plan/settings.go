@@ -822,6 +822,32 @@ func ValidateProviderModel(p planv1.Provider, model string) error {
 	return nil
 }
 
+// ValidateTaskModel normalizes a task's model (expanding human labels and short aliases such as "Gemini 4 Argon" or
+// "argon") and checks that it is valid for provider p.
+func ValidateTaskModel(p planv1.Provider, model string) (string, error) {
+	if model == "" || p == planv1.Provider_PROVIDER_WATCH {
+		return "", nil
+	}
+	if strings.TrimSpace(model) == "" {
+		return "", fmt.Errorf("model %q is blank", model)
+	}
+	norm := strings.TrimSpace(model)
+	if p == planv1.Provider_PROVIDER_FAKE {
+		if err := protovalidate.Validate(&planv1.ProjectSettings{Model: &norm}); err != nil {
+			return "", fmt.Errorf("model %q: %w", model, err)
+		}
+		return norm, nil
+	}
+	norm = NormalizeCircleModel(norm)
+	if err := ValidateProviderModel(p, norm); err != nil {
+		return "", err
+	}
+	if err := validateSharedModel(norm); err != nil {
+		return "", err
+	}
+	return norm, nil
+}
+
 // ValidateQuestionModel checks that model is empty or a valid model for the project's question workers.
 func ValidateQuestionModel(workerProvider, questionProvider planv1.Provider, model string) error {
 	if model == "" {

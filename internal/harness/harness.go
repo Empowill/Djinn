@@ -252,31 +252,33 @@ type run struct {
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task           *planv1.Task
-	base           *planv1.Usage // baseline added to a cumulative session result (prior sessions, minus any fork parent)
-	spentBase      float64       // what the task had spent before the current run's mid-turn estimate (Event.Spent)
-	turnsBefore    int           // the task's model turns before this worker
-	restart        bool          // the worker stops to start again, allowed to edit
-	unread         []string      // messages the worker took on its input and has said nothing after yet
-	unreadWaitTurn bool          // messages in unread were delivered while an agy turn was under way: acknowledged once the next turn speaks
-	tools          int           // tool calls of the current worker without a result yet: it is mid-turn (take)
-	held           *message      // a message for the end of the worker's turn, written once tools is 0 (turnOver)
-	branch         string        // the branch template of the project's settings, for launch; empty: the default
-	from           string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
-	checks         string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
-	pushChecks     []string      // commands of the project's push checks, to note when a worker runs them
-	testOne        string        // project's targeted test command template or prefix
-	notedPush      bool          // already noted that worker ran push checks
-	fallback       string        // why the worker fell back to another provider, for its start event
-	failure        string        // the last error the current worker said: it never ends done
-	limit          *Limit        // the usage limit the current worker said it hit: it wins over failure
-	refused        string        // the last call its permissions refused, as the worker said it (question.go)
-	refusals       *denials      // the calls its permissions refused in this run (refusals.go)
-	envReplayed    bool          // a tool call/result already triggered replay of env failures
-	startHead      string        // HEAD commit when the worker started
-	answered       bool          // worker gave its final answer (text after tool calls)
-	closingFailed  bool          // closing call failed after final answer and committed work
-	requestedModel string        // model as requested before stream events
-	rebase         *behind       // the rebase its worker was asked on resuming, until its branch took it (uptodate.go)
+	base           *planv1.Usage   // baseline added to a cumulative session result (prior sessions, minus any fork parent)
+	spentBase      float64         // what the task had spent before the current run's mid-turn estimate (Event.Spent)
+	turnsBefore    int             // the task's model turns before this worker
+	restart        bool            // the worker stops to start again, allowed to edit
+	unread         []string        // messages the worker took on its input and has said nothing after yet
+	unreadWaitTurn bool            // messages in unread were delivered while an agy turn was under way: acknowledged once the next turn speaks
+	tools          int             // tool calls of the current worker without a result yet: it is mid-turn (take)
+	held           *message        // a message for the end of the worker's turn, written once tools is 0 (turnOver)
+	branch         string          // the branch template of the project's settings, for launch; empty: the default
+	from           string          // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
+	checks         string          // what the project's settings say of the checks Djinn runs, for the worker's first prompt
+	pushChecks     []string        // commands of the project's push checks, to note when a worker runs them
+	testOne        string          // project's targeted test command template or prefix
+	notedPush      bool            // already noted that worker ran push checks
+	fallback       string          // why the worker fell back to another provider, for its start event
+	failure        string          // the last error the current worker said: it never ends done
+	limit          *Limit          // the usage limit the current worker said it hit: it wins over failure
+	refused        string          // the last call its permissions refused, as the worker said it (question.go)
+	refusals       *denials        // the calls its permissions refused in this run (refusals.go)
+	envReplayed    bool            // a tool call/result already triggered replay of env failures
+	startHead      string          // HEAD commit when the worker started
+	answered       bool            // worker gave its final answer (text after tool calls)
+	closingFailed  bool            // closing call failed after final answer and committed work
+	requestedModel string          // model as requested before stream events
+	nextProvider   planv1.Provider // provider queued by UpdateModels to take effect when this run ends
+	nextModel      string          // model queued by UpdateModels to take effect when this run ends
+	rebase         *behind         // the rebase its worker was asked on resuming, until its branch took it (uptodate.go)
 }
 
 // newRun is the run of task, registered so that a watcher never misses its first events.
@@ -896,6 +898,13 @@ func (h *Harness) spawn(
 		}
 		if task.MaxBudgetUsd == 0 {
 			task.MaxBudgetUsd = settings.MaxBudgetUSD
+		}
+		if task.Model != "" {
+			norm, err := plan.ValidateTaskModel(kind, task.Model)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			task.Model = norm
 		}
 	}
 	if len(req.GetTilasm()) > 0 {
@@ -2037,6 +2046,7 @@ func (h *Harness) end(r *run, res Result) {
 	silentWhy, silentNote := r.silentWhy, r.silentNote
 	relaunched := r.relaunched
 	out := r.out
+	nextProvider, nextModel := r.nextProvider, r.nextModel
 	h.mu.Unlock()
 	var streamIdleReason string
 	if isStreamIdle(res.Err) {
@@ -2098,6 +2108,8 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	h.useMu.Unlock()
 	switch {
+	case preemptedWhy != "" && t.GetStartTime() == nil:
+		t.Status, t.Error, t.EndTime, t.ExitCode, t.WaitReason = planv1.TaskStatus_TASK_STATUS_PENDING, "", nil, 0, preemptedWhy
 	case preemptedWhy != "":
 		t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy, nil
 	case stopping:
@@ -2241,6 +2253,18 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	if silentWhy != "" && t.GetContinuing() {
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: finishPrompt})
+	}
+	if nextProvider != planv1.Provider_PROVIDER_UNSPECIFIED {
+		currentProvider := t.GetProvider()
+		if currentProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+			currentProvider = planv1.Provider_PROVIDER_CLAUDE
+		}
+		if nextProvider != currentProvider {
+			t.PriorProvider = currentProvider
+			t.SessionId = ""
+		}
+		t.Provider = nextProvider
+		t.Model = nextModel
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	if integrate {
@@ -2387,15 +2411,33 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 	if req == nil {
 		req = te
 	}
+	h.mu.Lock()
+	nextProvider, nextModel := r.nextProvider, r.nextModel
+	h.mu.Unlock()
 	err := h.store.Tx(context.Background(), func(tx *store.Tx) error {
 		if err := tx.Journal(actor, method, req); err != nil {
 			return err
 		}
 		if task != nil {
+			putTask := task
 			if pt, ok := task.(*planv1.Task); ok {
 				carry(tx, pt)
+				if method != methodEnd && nextProvider != planv1.Provider_PROVIDER_UNSPECIFIED {
+					cp := proto.CloneOf(pt)
+					currentProvider := pt.GetProvider()
+					if currentProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+						currentProvider = planv1.Provider_PROVIDER_CLAUDE
+					}
+					if nextProvider != currentProvider {
+						cp.PriorProvider = currentProvider
+						cp.SessionId = ""
+					}
+					cp.Provider = nextProvider
+					cp.Model = nextModel
+					putTask = cp
+				}
 			}
-			if err := tx.Put(task); err != nil {
+			if err := tx.Put(putTask); err != nil {
 				return err
 			}
 		}

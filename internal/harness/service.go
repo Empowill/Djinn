@@ -387,6 +387,24 @@ func (s *Tasks) Update(
 	return connect.NewResponse(&planv1.TaskServiceUpdateResponse{Task: task}), nil
 }
 
+func (s *Tasks) UpdateModels(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceUpdateModelsRequest],
+) (*connect.Response[planv1.TaskServiceUpdateModelsResponse], error) {
+	resp, err := s.h.UpdateModels(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	resp.Tasks, err = s.fillTasks(ctx, resp.Tasks)
+	if err != nil {
+		return nil, err
+	}
+	resp.Skipped, err = s.fillTasks(ctx, resp.Skipped)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
 func (s *Tasks) Describe(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceDescribeRequest],
 ) (*connect.Response[planv1.TaskServiceDescribeResponse], error) {

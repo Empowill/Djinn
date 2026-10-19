@@ -111,10 +111,14 @@ var circleModelAliases = map[string]string{
 	"gpt-5.5-mini":              "gpt-5.5",
 	"gemini 4 argon (high)":     "gemini-4-argon-high",
 	"gemini 4 argon":            "gemini-4-argon-high",
+	"gemini-4-argon":            "gemini-4-argon-high",
+	"gemini-argon":              "gemini-4-argon-high",
 	"argon":                     "gemini-4-argon-high",
 	"gemini 4 argon (medium)":   "gemini-4-argon-medium",
 	"gemini 3.8 flash (high)":   "gemini-3.8-flash-high",
 	"gemini 3.8 flash":          "gemini-3.8-flash-high",
+	"gemini-3.8-flash":          "gemini-3.8-flash-high",
+	"gemini-flash":              "gemini-3.8-flash-high",
 	"flash":                     "gemini-3.8-flash-high",
 	"gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
 	"gemini 3.8 pro (high)":     "gemini-4-argon-high",
@@ -181,6 +185,53 @@ func setCircleRowSlice(circle []*planv1.WorkerSeat, seat *planv1.WorkerSeat) []*
 		out = append(out, proto.CloneOf(seat))
 	}
 	return out
+}
+
+// WorkerCircleKinds are the worker seats updated by a bulk model change: work, investigations, corrections, reviews
+// and enlighten workers (questions).
+var WorkerCircleKinds = []planv1.WorkerKind{
+	planv1.WorkerKind_WORKER_KIND_WORK,
+	planv1.WorkerKind_WORKER_KIND_INVESTIGATION,
+	planv1.WorkerKind_WORKER_KIND_CORRECTION,
+	planv1.WorkerKind_WORKER_KIND_REVIEW,
+	planv1.WorkerKind_WORKER_KIND_QUESTION,
+}
+
+// PreviewWorkerDefaults returns the Summoning Circle seats that UpdateWorkerDefaults sets for future spawns.
+func PreviewWorkerDefaults(p planv1.Provider, model string) []*planv1.WorkerSeat {
+	m := NormalizeCircleModel(model)
+	if m == "" {
+		m = DefaultCircleModel(p)
+	}
+	out := make([]*planv1.WorkerSeat, 0, len(WorkerCircleKinds))
+	for _, kind := range WorkerCircleKinds {
+		out = append(out, &planv1.WorkerSeat{
+			Kind:     kind,
+			Provider: p,
+			Model:    m,
+		})
+	}
+	return out
+}
+
+// UpdateWorkerDefaults writes the default provider and model for future spawns of work, investigations, corrections,
+// reviews and enlighten workers to settings.json in home.
+func UpdateWorkerDefaults(home string, p planv1.Provider, model string) ([]*planv1.WorkerSeat, error) {
+	seats := PreviewWorkerDefaults(p, model)
+	if home == "" {
+		return seats, nil
+	}
+	MigrateCircle(home)
+	err := changeSettings(home, func(settings *uiv1.Settings) error {
+		for _, seat := range seats {
+			settings.Circle = setCircleRowSlice(settings.Circle, seat)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return seats, nil
 }
 
 // MigrateCircle reads any legacy per-project provider/model settings from projects/*/settings.txtpb in home once,

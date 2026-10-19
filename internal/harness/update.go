@@ -150,7 +150,16 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		}
 	}
 	if req.Model != nil {
-		t.Model = *req.Model
+		if req.Provider == nil && *req.Model != "" {
+			if inferred := plan.ProviderForCircleModel(*req.Model); inferred != planv1.Provider_PROVIDER_UNSPECIFIED && inferred != t.GetProvider() {
+				return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("model %q belongs to %s, not %s", *req.Model, short(inferred), short(t.GetProvider())))
+			}
+		}
+		norm, err := plan.ValidateTaskModel(t.GetProvider(), *req.Model)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		t.Model = norm
 	} else if providerChanged || foreignModel(t.GetProvider(), t.GetModel()) {
 		t.Model = DefaultModel(t.GetProvider())
 	}
@@ -405,4 +414,250 @@ func (h *Harness) renameAzima(ctx context.Context, procedure string, req *planv1
 	}
 	h.notify()
 	return h.withAzima(ctx, t)
+}
+
+// UpdateModels changes the provider and model of every open task that calls a model (work, investigations,
+// corrections, reviews, enlighten workers) and the defaults for future spawns, skipping watchers and finished
+// tasks. Dry run by default; applied when req.GetYes() is true. Running tasks change at their next start, or
+// now when req.GetNow() is true.
+func (h *Harness) UpdateModels(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateModelsRequest) (*planv1.TaskServiceUpdateModelsResponse, error) {
+	if req.GetWishId() != "" && req.GetProjectId() != "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("give at most one of --wish-id or --project-id"))
+	}
+	if req.GetWishId() != "" {
+		if _, err := store.Get[*planv1.Wish](ctx, h.store, req.GetWishId()); err != nil {
+			return nil, plan.Status(err)
+		}
+	}
+	if req.GetProjectId() != "" {
+		if _, err := store.Get[*planv1.Project](ctx, h.store, req.GetProjectId()); err != nil {
+			return nil, plan.Status(err)
+		}
+	}
+
+	p := req.GetProvider()
+	rawModel := strings.TrimSpace(req.GetModel())
+	if p == planv1.Provider_PROVIDER_UNSPECIFIED && rawModel != "" {
+		p = plan.ProviderForCircleModel(rawModel)
+	}
+	if p == planv1.Provider_PROVIDER_UNSPECIFIED || p == planv1.Provider_PROVIDER_WATCH {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("give --provider (claude, codex or antigravity) or a known --model"))
+	}
+	if _, ok := h.providers[p]; !ok && !plan.ValidWorkerProvider(p) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", short(p)))
+	}
+
+	var model string
+	if rawModel != "" {
+		if inferred := plan.ProviderForCircleModel(rawModel); inferred != planv1.Provider_PROVIDER_UNSPECIFIED && inferred != p {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("model %q belongs to %s, not %s", rawModel, short(inferred), short(p)))
+		}
+		norm, err := plan.ValidateTaskModel(p, rawModel)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		model = norm
+	}
+	if model == "" {
+		model = DefaultModel(p)
+	}
+
+	where := store.Where{}
+	if id := req.GetWishId(); id != "" {
+		where["wish_id"] = id
+	}
+	tasks, err := store.List[*planv1.Task](ctx, h.store, where)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if projectID := req.GetProjectId(); projectID != "" {
+		wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
+		if err != nil {
+			return nil, plan.Status(err)
+		}
+		wishInProject := make(map[string]bool)
+		for _, w := range wishes {
+			if slices.Contains(w.GetProjectIds(), projectID) {
+				wishInProject[w.GetId()] = true
+			}
+		}
+		tasks = slices.DeleteFunc(tasks, func(t *planv1.Task) bool {
+			return t.GetProjectId() != projectID && !wishInProject[t.GetWishId()]
+		})
+	}
+
+	var (
+		updated      []*planv1.Task
+		skipped      []*planv1.Task
+		changedIDs   []string
+		runningCount int
+	)
+
+	for _, task := range tasks {
+		if plan.IsAzima(task) || !openTask(task) {
+			continue
+		}
+		if watching(task) || dispatch.Ifrit(task) {
+			skipped = append(skipped, shortModelTask(task))
+			continue
+		}
+
+		h.mu.Lock()
+		r := h.runs[task.GetId()]
+		h.mu.Unlock()
+		isRunning := r != nil || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED
+		if isRunning {
+			runningCount++
+		}
+
+		cp := proto.CloneOf(task)
+		currentProvider := task.GetProvider()
+		if currentProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+			currentProvider = planv1.Provider_PROVIDER_CLAUDE
+		}
+		hasRun := isRunning || task.GetStartTime() != nil || task.GetSessionId() != "" || task.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING
+		providerChanged := p != currentProvider || task.GetProvider() != p
+		cp.Provider = p
+		cp.Model = model
+		if providerChanged {
+			changedIDs = append(changedIDs, cp.GetId())
+			if hasRun {
+				cp.PriorProvider = currentProvider
+				cp.SessionId = ""
+			}
+			if !isRunning && cp.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && cp.GetResumeAfter() != nil {
+				cp.ResumeAfter = nil
+				cp.WaitReason = ""
+			}
+		}
+		updated = append(updated, cp)
+	}
+
+	shortUpdated := make([]*planv1.Task, len(updated))
+	for i, cp := range updated {
+		shortUpdated[i] = shortModelTask(cp)
+	}
+
+	var defaults []*planv1.WorkerSeat
+	if !req.GetYes() {
+		defaults = plan.PreviewWorkerDefaults(p, model)
+		runDetail := fmt.Sprintf("%d running", runningCount)
+		if runningCount > 0 {
+			if req.GetNow() {
+				runDetail = fmt.Sprintf("%d running: would restart now", runningCount)
+			} else {
+				runDetail = fmt.Sprintf("%d running: at next start", runningCount)
+			}
+		}
+		note := fmt.Sprintf("dry run: %d open task(s) would change to %s (%s) (%s, %d skipped) and defaults for future spawns; pass --yes to apply",
+			len(updated), short(p), model, runDetail, len(skipped))
+		return &planv1.TaskServiceUpdateModelsResponse{
+			Text:     note,
+			DryRun:   true,
+			Provider: p,
+			Model:    model,
+			Tasks:    shortUpdated,
+			Skipped:  skipped,
+			Circle:   defaults,
+		}, nil
+	}
+
+	defaults, err = plan.UpdateWorkerDefaults(h.home, p, model)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	h.mu.Lock()
+	for _, cp := range updated {
+		if r := h.runs[cp.GetId()]; r != nil {
+			r.nextProvider = p
+			r.nextModel = model
+		}
+	}
+	h.mu.Unlock()
+
+	err = h.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(plan.CallerActor(ctx), procedure, req); err != nil {
+			return err
+		}
+		for _, cp := range updated {
+			if err := tx.Put(cp); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+
+	for _, id := range changedIDs {
+		h.clearRateHits(id)
+	}
+
+	if req.GetNow() {
+		why := fmt.Sprintf("switched to %s (%s)", short(p), model)
+		var dones []chan struct{}
+		h.mu.Lock()
+		for _, cp := range updated {
+			if r := h.runs[cp.GetId()]; r != nil {
+				r.preemptedWhy = why
+				r.stopping = true
+				if pauser, ok := r.worker.(Pauser); ok && r.paused {
+					_ = pauser.Resume()
+				}
+				if r.worker != nil {
+					r.worker.Stop()
+				}
+				dones = append(dones, r.done)
+			}
+		}
+		h.mu.Unlock()
+		for _, done := range dones {
+			select {
+			case <-done:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+
+	h.notify()
+	h.wake()
+
+	runDetail := fmt.Sprintf("%d running", runningCount)
+	if runningCount > 0 {
+		if req.GetNow() {
+			runDetail = fmt.Sprintf("%d running: restarted now", runningCount)
+		} else {
+			runDetail = fmt.Sprintf("%d running: at next start", runningCount)
+		}
+	}
+	note := fmt.Sprintf("updated %d open task(s) to %s (%s) (%s, %d skipped) and defaults for future spawns",
+		len(updated), short(p), model, runDetail, len(skipped))
+	return &planv1.TaskServiceUpdateModelsResponse{
+		Text:     note,
+		DryRun:   false,
+		Provider: p,
+		Model:    model,
+		Tasks:    shortUpdated,
+		Skipped:  skipped,
+		Circle:   defaults,
+	}, nil
+}
+
+func shortModelTask(t *planv1.Task) *planv1.Task {
+	return &planv1.Task{
+		Id:            t.GetId(),
+		Code:          t.GetCode(),
+		WishId:        t.GetWishId(),
+		ProjectId:     t.GetProjectId(),
+		Title:         t.GetTitle(),
+		Status:        t.GetStatus(),
+		Kind:          t.GetKind(),
+		Role:          t.GetRole(),
+		Provider:      t.GetProvider(),
+		Model:         t.GetModel(),
+		PriorProvider: t.GetPriorProvider(),
+	}
 }
