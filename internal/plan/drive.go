@@ -1,10 +1,14 @@
 package plan
 
 import (
+	"bufio"
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -534,4 +538,352 @@ func (s *LeadService) Journal(
 		b.WriteString(JournalEntry(batch))
 	}
 	return connect.NewResponse(&planv1.LeadServiceJournalResponse{Text: b.String(), Batches: batches}), nil
+}
+
+const (
+	// transcriptResultMax caps how many runes of each tool result djinn lead show prints.
+	transcriptResultMax = 300
+	// transcriptNotSupported is reported for providers whose transcripts Djinn does not read yet (Codex).
+	transcriptNotSupported = "not supported"
+)
+
+// Sessions lists the batches of the lead Djinn drives with their local time, state, cost, session, error count and
+// transcript path.
+func (s *LeadService) Sessions(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceSessionsRequest],
+) (*connect.Response[planv1.LeadServiceSessionsResponse], error) {
+	var wishes []string
+	if id := req.Msg.GetWishId(); id != "" {
+		wishes = []string{id}
+	}
+	n := int(req.Msg.GetLimit())
+	if n == 0 {
+		n = 20
+	}
+	batches, err := LeadJournal(ctx, s.Wishes.Store, wishes, n)
+	if err != nil {
+		return nil, Status(err)
+	}
+	var b strings.Builder
+	if len(batches) == 0 {
+		b.WriteString("The lead's journal is empty: Djinn writes a batch there each time it drives the lead.\n")
+	}
+	sessions := make([]*planv1.LeadSession, 0, len(batches))
+	for _, batch := range batches {
+		path, errCount, _ := s.inspectBatchTranscript(batch)
+		sessions = append(sessions, &planv1.LeadSession{
+			Batch:          batch,
+			TranscriptPath: path,
+			ErrorCount:     int32(errCount),
+		})
+		fmt.Fprintf(&b, "%s\n", formatSessionLine(batch, path, errCount))
+	}
+	return connect.NewResponse(&planv1.LeadServiceSessionsResponse{
+		Text:     b.String(),
+		Sessions: sessions,
+	}), nil
+}
+
+// Show prints the readable conversation of one batch of the lead Djinn drives from its transcript, and with --resume
+// the command to fork the session in plan mode.
+func (s *LeadService) Show(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceShowRequest],
+) (*connect.Response[planv1.LeadServiceShowResponse], error) {
+	batch, err := findLeadBatch(ctx, s.Wishes.Store, strings.TrimSpace(req.Msg.GetId()))
+	if err != nil {
+		return nil, err
+	}
+	path, errCount, conv := s.inspectBatchTranscript(batch)
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n", formatSessionLine(batch, path, errCount))
+	if batch.GetProvider() == planv1.Provider_PROVIDER_CODEX {
+		b.WriteString("\nCodex transcripts are not supported.\n")
+		return connect.NewResponse(&planv1.LeadServiceShowResponse{
+			Text:           b.String(),
+			Batch:          batch,
+			TranscriptPath: transcriptNotSupported,
+		}), nil
+	}
+	if conv != "" {
+		b.WriteString("\n")
+		b.WriteString(conv)
+	} else {
+		fmt.Fprintf(&b, "\nTranscript not found at %s.\n", path)
+	}
+	var resumeCmd string
+	if req.Msg.GetResume() {
+		resumeCmd = s.leadResumeCommand(batch)
+		fmt.Fprintf(&b, "\nResume (fork in plan mode):\n%s\n", resumeCmd)
+	}
+	return connect.NewResponse(&planv1.LeadServiceShowResponse{
+		Text:           b.String(),
+		Batch:          batch,
+		TranscriptPath: path,
+		ErrorCount:     int32(errCount),
+		ResumeCommand:  resumeCmd,
+	}), nil
+}
+
+// findLeadBatch finds the batch matching id by exact batch or session ID, or by unique prefix of either.
+func findLeadBatch(ctx context.Context, r store.Reader, id string) (*planv1.LeadBatch, error) {
+	all, err := store.List[*planv1.LeadBatch](ctx, r, nil)
+	if err != nil {
+		return nil, Status(err)
+	}
+	slices.SortFunc(all, func(a, b *planv1.LeadBatch) int { return cmp.Compare(a.GetId(), b.GetId()) })
+	for _, b := range all {
+		if b.GetId() == id || (b.GetSessionId() != "" && b.GetSessionId() == id) {
+			return b, nil
+		}
+	}
+	var matches []*planv1.LeadBatch
+	for _, b := range all {
+		if strings.HasPrefix(b.GetId(), id) || (b.GetSessionId() != "" && strings.HasPrefix(b.GetSessionId(), id)) {
+			matches = append(matches, b)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no lead batch or session matching %q", id))
+	case 1:
+		return matches[0], nil
+	default:
+		ids := make([]string, len(matches))
+		for i, m := range matches {
+			ids[i] = m.GetId()
+		}
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"prefix %q matches %d lead batches (%s): pass a longer prefix", id, len(matches), strings.Join(ids, ", "),
+		))
+	}
+}
+
+// formatSessionLine formats the one-line summary of a batch for Sessions and Show.
+func formatSessionLine(b *planv1.LeadBatch, transcriptPath string, errCount int) string {
+	localTime := b.GetStartTime().AsTime().In(time.Local).Format("2006-01-02 15:04")
+	state := strings.ToLower(strings.TrimPrefix(b.GetState().String(), "LEAD_BATCH_STATE_"))
+	if state == "" || state == "unspecified" {
+		state = "running"
+	}
+	cost := fmt.Sprintf("$%.2f", b.GetUsage().GetCostUsd())
+	errLabel := fmt.Sprintf("%d errors", errCount)
+	if errCount == 1 {
+		errLabel = "1 error"
+	}
+	sess := b.GetSessionId()
+	if sess == "" {
+		sess = "-"
+	}
+	return fmt.Sprintf("%s · %s · %s · %s · session %s · batch %s · %s",
+		localTime, state, cost, errLabel, sess, b.GetId(), transcriptPath)
+}
+
+// inspectBatchTranscript resolves the transcript path of batch, parses its conversation if present, and counts failed
+// tool calls.
+func (s *LeadService) inspectBatchTranscript(b *planv1.LeadBatch) (string, int, string) {
+	if b.GetProvider() == planv1.Provider_PROVIDER_CODEX {
+		return transcriptNotSupported, 0, ""
+	}
+	path := s.claudeTranscriptPath(b)
+	if path == "" {
+		return "", countFailedJournalCommands(b), ""
+	}
+	conv, errCount, err := parseClaudeTranscript(path)
+	if err != nil {
+		return path, countFailedJournalCommands(b), ""
+	}
+	return path, errCount, conv
+}
+
+func countFailedJournalCommands(b *planv1.LeadBatch) int {
+	n := 0
+	for _, c := range b.GetCommands() {
+		if strings.HasPrefix(c, "failed: ") {
+			n++
+		}
+	}
+	return n
+}
+
+// claudeConfigDir returns the Claude Code configuration folder for batch b, honoring its account or CLAUDE_CONFIG_DIR.
+func (s *LeadService) claudeConfigDir(b *planv1.LeadBatch) string {
+	home := s.Wishes.home()
+	userHome := s.UserHome
+	if userHome == "" {
+		userHome, _ = os.UserHomeDir()
+	}
+	if acc := b.GetAccount(); acc != "" {
+		if a := FindAccount(ReadAccounts(home), acc); a != nil && a.GetConfigDirectory() != "" {
+			return a.GetConfigDirectory()
+		}
+		return filepath.Join(userHome, ".claude-"+acc)
+	}
+	if s.UserHome == "" {
+		if env := os.Getenv("CLAUDE_CONFIG_DIR"); env != "" {
+			return env
+		}
+	}
+	return filepath.Join(userHome, ".claude")
+}
+
+// claudeTranscriptPath returns the path to the Claude Code .jsonl transcript for batch b.
+func (s *LeadService) claudeTranscriptPath(b *planv1.LeadBatch) string {
+	sessionID := b.GetSessionId()
+	if sessionID == "" {
+		return ""
+	}
+	configDir := s.claudeConfigDir(b)
+	leadDir := LeadFolder(s.Wishes.home())
+	expected := filepath.Join(configDir, "projects", claudeProjectSlug(leadDir), sessionID+".jsonl")
+	if _, err := os.Stat(expected); err == nil {
+		return expected
+	}
+	if matches, err := filepath.Glob(filepath.Join(configDir, "projects", "*", sessionID+".jsonl")); err == nil && len(matches) > 0 {
+		return matches[0]
+	}
+	return expected
+}
+
+// claudeProjectSlug turns a working directory path into Claude Code's project folder name under projects/.
+func claudeProjectSlug(dir string) string {
+	var b strings.Builder
+	for _, r := range filepath.Clean(dir) {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}
+
+// leadResumeCommand builds the command that forks batch b's session in the lead's folder in plan mode.
+func (s *LeadService) leadResumeCommand(b *planv1.LeadBatch) string {
+	leadDir := shellQuote(LeadFolder(s.Wishes.home()))
+	var envPrefix string
+	if b.GetAccount() != "" {
+		envPrefix = "CLAUDE_CONFIG_DIR=" + shellQuote(s.claudeConfigDir(b)) + " "
+	}
+	return fmt.Sprintf("cd %s && %sclaude --resume %s --fork-session --permission-mode plan",
+		leadDir, envPrefix, shellQuote(b.GetSessionId()))
+}
+
+type claudeTranscriptLine struct {
+	Type    string `json:"type"`
+	Message struct {
+		Content json.RawMessage `json:"content"`
+	} `json:"message"`
+}
+
+type claudeTranscriptBlock struct {
+	Type    string          `json:"type"`
+	Name    string          `json:"name"`
+	Input   json.RawMessage `json:"input"`
+	Text    string          `json:"text"`
+	IsError bool            `json:"is_error"`
+	Content json.RawMessage `json:"content"`
+}
+
+// parseClaudeTranscript reads a Claude Code .jsonl transcript file and returns the formatted conversation and the
+// number of tool_result blocks marked is_error.
+func parseClaudeTranscript(path string) (string, int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+
+	var out strings.Builder
+	errCount := 0
+	for scanner.Scan() {
+		raw := bytes.TrimSpace(scanner.Bytes())
+		if len(raw) == 0 {
+			continue
+		}
+		var line claudeTranscriptLine
+		if err := json.Unmarshal(raw, &line); err != nil {
+			continue
+		}
+		if line.Type != "assistant" && line.Type != "user" {
+			continue
+		}
+		var blocks []claudeTranscriptBlock
+		if err := json.Unmarshal(line.Message.Content, &blocks); err != nil {
+			continue
+		}
+		for _, blk := range blocks {
+			switch line.Type {
+			case "assistant":
+				switch blk.Type {
+				case "tool_use":
+					fmt.Fprintf(&out, "> %s\n", formatClaudeToolUse(blk.Name, blk.Input))
+				case "text":
+					if txt := strings.TrimSpace(blk.Text); txt != "" {
+						fmt.Fprintf(&out, "# %s\n", txt)
+					}
+				}
+			case "user":
+				if blk.Type != "tool_result" {
+					continue
+				}
+				res := clipRunes(oneLine(claudeToolResultText(blk.Content)), transcriptResultMax)
+				switch {
+				case blk.IsError:
+					errCount++
+					fmt.Fprintf(&out, "  ERROR: %s\n", res)
+				case res != "":
+					fmt.Fprintf(&out, "  ok: %s\n", res)
+				default:
+					out.WriteString("  ok\n")
+				}
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", 0, err
+	}
+	return out.String(), errCount, nil
+}
+
+func formatClaudeToolUse(name string, rawInput json.RawMessage) string {
+	var in struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(rawInput, &in); err == nil && strings.TrimSpace(in.Command) != "" {
+		return strings.TrimSpace(in.Command)
+	}
+	var compact bytes.Buffer
+	if len(rawInput) > 0 && json.Compact(&compact, rawInput) == nil {
+		if name != "" {
+			return name + " " + compact.String()
+		}
+		return compact.String()
+	}
+	return name
+}
+
+func claudeToolResultText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var parts []struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		var texts []string
+		for _, p := range parts {
+			if strings.TrimSpace(p.Text) != "" {
+				texts = append(texts, p.Text)
+			}
+		}
+		return strings.Join(texts, "\n")
+	}
+	return string(raw)
 }

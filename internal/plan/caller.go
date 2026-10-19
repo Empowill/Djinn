@@ -202,7 +202,7 @@ func isReadOnlyProcedure(procedure string) bool {
 	}
 	method := procedure[idx+1:]
 	for _, prefix := range []string{
-		"List", "Get", "Watch", "Diff", "Brief", "Snapshot", "Files", "History", "Show", "Sources", "Check", "Render",
+		"List", "Get", "Watch", "Diff", "Brief", "Snapshot", "Files", "History", "Show", "Sessions", "Sources", "Check", "Render",
 	} {
 		if strings.HasPrefix(method, prefix) {
 			return true

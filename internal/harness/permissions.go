@@ -50,8 +50,8 @@ var gitRead = []string{
 // and Git's to read the history across branches. No gate, no build, no task stopped or continued.
 var djinnCommands = append([]string{
 	"djinn wish brief", "djinn task list", "djinn task get", "djinn question list", "djinn block list",
-	"djinn mark list", "djinn tilasm list", "djinn tilasm get", "djinn task spawn", "djinn question ask",
-	"djinn question revise", "djinn block put",
+	"djinn mark list", "djinn tilasm list", "djinn tilasm get", "djinn lead sessions", "djinn lead show",
+	"djinn task spawn", "djinn question ask", "djinn question revise", "djinn block put",
 }, gitRead...)
 
 // permissionDenied starts the status event of a call the worker's permissions refused, whatever its agent: the call
