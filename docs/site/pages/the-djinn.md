@@ -61,10 +61,11 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   anything: each batch ends with one line for the next batches (capped at 200 characters), and the next one reads what
   the last ones did.
 - **The running batch and the lead's journal.** Each batch is kept: who led it (agent, model, session), the events it
-  took, the commands it ran, the one-line note that ended its turn, and what it cost. In the window, beside **Talk to
-  the Djinn**, the running batch shows since when it runs, how many events it took and its cost so far; the count beside
-  it opens the journal of past batches. A wish's **History** tab shows the batches that touched that wish, and the
-  command line prints the journal for every wish or for one.
+  took, the commands it ran (with any command whose tool call failed or was refused marked as failed), the one-line note
+  that ended its turn, and what it cost. In the window, beside **Talk to the Djinn**, the running batch shows since when
+  it runs, how many events it took and its cost so far; the count beside it opens the journal of past batches. A wish's
+  **History** tab shows the batches that touched that wish, and the command line prints the journal for every wish or for
+  one.
 - **Write to the Djinn** sends your words to the next batch, whole. Nothing reaches a terminal: the Djinn answers in the
   bubble held to the pill, or asks a question when a choice is yours.
 - **A failed batch** gets one new session, shown beside **Talk to the Djinn** while it retries. Failed again, it stays

@@ -296,15 +296,22 @@ func (h *Harness) resolveTask(ctx context.Context, ref *planv1.TaskRef, wishID s
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("task reference is required"))
 	}
 	if id := ref.GetId(); id != "" {
-		t, err := store.Get[*planv1.Task](ctx, h.store, id)
-		if err != nil {
-			return nil, plan.Status(err)
-		}
-		return t, nil
+		return h.resolveTaskID(ctx, id, wishID)
 	}
 	code := ref.GetCode()
 	if code == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("task code or id is required"))
+	}
+	return h.resolveTaskID(ctx, code, wishID)
+}
+
+func (h *Harness) resolveTaskID(ctx context.Context, ref, wishID string) (*planv1.Task, error) {
+	if len(ref) == 36 {
+		t, err := store.Get[*planv1.Task](ctx, h.store, ref)
+		if err != nil {
+			return nil, plan.Status(err)
+		}
+		return t, nil
 	}
 	where := store.Where{}
 	if wishID != "" {
@@ -316,17 +323,17 @@ func (h *Harness) resolveTask(ctx context.Context, ref *planv1.TaskRef, wishID s
 	}
 	var matches []*planv1.Task
 	for _, t := range tasks {
-		if strings.EqualFold(t.GetCode(), code) {
+		if strings.EqualFold(t.GetCode(), ref) {
 			matches = append(matches, t)
 		}
 	}
 	switch len(matches) {
 	case 0:
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("task %s not found", code))
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("task %s not found", ref))
 	case 1:
 		return matches[0], nil
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("multiple tasks match code %s: specify --wish-id", code))
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("multiple tasks match code %s: specify --wish-id", ref))
 	}
 }
 

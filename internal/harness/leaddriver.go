@@ -325,8 +325,13 @@ func (d *LeadDriver) attempt(
 	if err != nil {
 		return seat, nil, d.end(ctx, drive, b, err)
 	}
+	type pendingCall struct {
+		index   int
+		command string
+	}
 	var last, failure string
 	var limit *Limit
+	var pending []pendingCall
 	for ev := range w.Events() {
 		if ev.Limit != nil {
 			limit = ev.Limit
@@ -334,9 +339,22 @@ func (d *LeadDriver) attempt(
 		changed := false
 		switch ev.Kind {
 		case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL:
-			if c := leadCommand(ev.Text); c != "" && len(b.Commands) < plan.JournalCommandsMax {
+			idx := -1
+			c := leadCommand(ev.Text)
+			if c != "" && len(b.Commands) < plan.JournalCommandsMax {
+				idx = len(b.Commands)
 				b.Commands = append(b.Commands, plan.JournalCommand(c))
 				changed = true
+			}
+			pending = append(pending, pendingCall{index: idx, command: c})
+		case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT:
+			if len(pending) > 0 {
+				call := pending[0]
+				pending = pending[1:]
+				if call.index >= 0 && toolResultFailed(ev) {
+					b.Commands[call.index] = plan.JournalFailedCommand(call.command)
+					changed = true
+				}
 			}
 		case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT:
 			last = ev.Text
@@ -453,6 +471,16 @@ func leadCommand(call string) string {
 		return name + " " + filepath.Base(in.FilePath)
 	}
 	return ""
+}
+
+// toolResultFailed tells whether a tool result event is an error or refusal.
+func toolResultFailed(ev Event) bool {
+	if ev.ToolError {
+		return true
+	}
+	t := strings.TrimSpace(ev.Text)
+	return strings.HasPrefix(t, "error:") || strings.HasPrefix(t, "declined:") || t == "error" || t == "declined" ||
+		strings.HasPrefix(t, "exit ")
 }
 
 // wait waits for d or ctx's end, and tells whether d passed.

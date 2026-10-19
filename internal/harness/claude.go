@@ -468,6 +468,7 @@ func readClaude(raw string) ([]Event, *turnEnd, string) {
 					text = "error: " + text
 				}
 				add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
+				events[len(events)-1].ToolError = b.IsError
 			}
 		}
 	case "result":

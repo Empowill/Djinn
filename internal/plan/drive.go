@@ -30,7 +30,7 @@ const methodLeadBatch = "lead/batch"
 
 const (
 	// DrivenRulesVersion names the text of DrivenRules: every batch's session reads the version it got.
-	DrivenRulesVersion = "5"
+	DrivenRulesVersion = "6"
 	// batchEventsMax is the most events one batch takes; the others go to the next batch, at once.
 	batchEventsMax = 40
 	// JournalMax is how many of the latest batches of its wishes a batch's prompt carries at most.
@@ -326,6 +326,11 @@ func JournalEntry(b *planv1.LeadBatch) string {
 
 // JournalCommand is a command of the lead as the journal keeps it: one line, cut.
 func JournalCommand(command string) string { return clipRunes(oneLine(command), journalLineMax) }
+
+// JournalFailedCommand marks a command of the lead whose tool result failed, as the journal keeps it.
+func JournalFailedCommand(command string) string {
+	return JournalCommand("failed: " + strings.TrimPrefix(oneLine(command), "failed: "))
+}
 
 // JournalNote is the one line that ended a batch's turn, as the journal keeps it for the next leads.
 func JournalNote(text string) string { return clipRunes(oneLine(text), journalLineMax) }

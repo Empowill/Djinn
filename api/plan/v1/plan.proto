@@ -5341,6 +5341,9 @@ message TaskServiceSpawnRequest {
   // For a mockup (--kind mockup): the open question of the wish it iterates on, by code (Q61): it puts the next
   // version of the tilasm the question links, then revises it, and the lead hears what it did when it ends.
   string question = 28 [(buf.validate.field).string.max_len = 64];
+  // File holding what to ask the worker, in Markdown, read in place of --prompt; a relative path starts from the
+  // current directory.
+  string prompt_file = 29 [(buf.validate.field).string.max_len = 4096];
 }
 
 message TaskServiceSpawnResponse {
@@ -5655,15 +5658,20 @@ message TaskServiceStopResponse {
 }
 
 message TaskServiceSendRequest {
-  // The task, running.
+  // The task, running: its code (W1) or its identifier.
   string task_id = 1 [
     (buf.validate.field).required = true,
-    (buf.validate.field).string.uuid = true
+    (buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
   ];
   // The message, as the worker reads it.
   string text = 2 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 20000
+  ];
+  // Wish the task belongs to, when given by code and the code is in several wishes.
+  string wish_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
   ];
 }
 
@@ -5712,10 +5720,10 @@ message TaskServiceStartResponse {
 }
 
 message TaskServiceWatchRequest {
-  // The task.
+  // The task: its code (W1) or its identifier.
   string task_id = 1 [
     (buf.validate.field).required = true,
-    (buf.validate.field).string.uuid = true
+    (buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
   ];
   // Only the events after this position, to resume where a reader left off.
   int64 after_seq = 2 [(buf.validate.field).int64.gte = 0];
@@ -5730,6 +5738,11 @@ message TaskServiceWatchRequest {
   }];
   // With --last, follow the task after its last events, until it ends, as a watch without --last does.
   bool follow = 5;
+  // Wish the task belongs to, when given by code and the code is in several wishes.
+  string wish_id = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
 }
 
 message TaskServiceWatchResponse {

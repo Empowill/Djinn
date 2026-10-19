@@ -4,7 +4,7 @@ description: A worker's prompt is five to twenty lines of Markdown - Gain, Scope
 type: feedback
 ---
 
-A worker's prompt is short, simple and laid out: five to twenty lines of Markdown, a bullet or a short headed part
+A worker's prompt is short, simple and laid out: five to twenty lines of Markdown, a bullet or a short bold part
 for each of four:
 
 - **Gain**: the outcome, in one sentence.
@@ -21,6 +21,9 @@ source, which a revision updates for every worker at once.
 
 **How to apply:**
 - Write the four parts and stop. The how is the worker's: it reads the code, the pitfalls and the links itself.
+- Never put a `#` heading line (`#`, `##`) inside `--prompt`: Claude Code's shell guard refuses a multi-line command
+  containing a `#` line as a comment that could hide arguments. Use bold (`**Gain**`, `**Scope**`, `**Validation**`,
+  `**References**`), or write the prompt to a file in your folder and pass `--prompt-file <path>`.
 - A detail worth keeping that has no home yet goes in a tilasm, a question or a block first; the prompt links it.
 - Never ask for the whole test suite: the push checks are Djinn's, and Djinn gives every worker the project's checks.
 - The scope comes from `djinn task overlaps <wish>` ([[conflict-free-dag]]); the same paths go in `--write-scopes`.

@@ -814,6 +814,23 @@ func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskS
 func (h *Harness) spawn(
 	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, made *planv1.Task,
 ) (*planv1.Task, error) {
+	if path := req.GetPromptFile(); path != "" {
+		if req.GetPrompt() != "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				errors.New("give prompt or prompt_file, not both"))
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read prompt_file: %w", err))
+		}
+		text := strings.TrimRight(string(data), "\r\n")
+		if len(text) > 200000 {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("prompt_file exceeds 200000 bytes (%d)", len(text)))
+		}
+		req = proto.CloneOf(req)
+		req.Prompt, req.PromptFile = text, ""
+	}
 	if req.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		return h.spawnAzima(ctx, procedure, req)
 	}
