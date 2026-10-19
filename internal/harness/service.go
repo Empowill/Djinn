@@ -70,8 +70,18 @@ func (s *Tasks) Spawn(
 	if err != nil {
 		return nil, err
 	}
-	note := strings.TrimSpace(s.h.spawnRepairNote(ctx, task) + " " + s.h.spawnNote(ctx, task))
+	note := joinNotes(s.h.spawnRepairNote(ctx, task), s.h.spawnNote(ctx, task), s.h.spawnOverlapNote(ctx, task))
 	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: task, Note: note}), nil
+}
+
+func joinNotes(notes ...string) string {
+	var out []string
+	for _, n := range notes {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 func (s *Tasks) List(

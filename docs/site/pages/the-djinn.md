@@ -29,7 +29,8 @@ Every new session of the Djinn starts from its brief, which Djinn writes from it
 When it turns to one wish, the Djinn reads that wish's own brief: its finished work, its latest decisions, what you
 marked read, its latest blocks and its tilasms, and the open tasks that touch the same files
 ([overlaps](#dependencies-overlaps-what-runs-on-the-same-files)): before it sends a worker, new work on those files
-joins the task that has them or comes after it.
+joins the task that has them or comes after it, and every spawn warns it when the new task may collide with an open one
+from its branch changes, write scopes, or the paths, packages and specs named in both prompts.
 
 ## Talking with the Djinn
 

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
@@ -191,5 +192,155 @@ func TestOverlapsNone(t *testing.T) {
 	}
 	if section := e.h.OverlapsBrief(ctx, wishID); section != "" {
 		t.Errorf("brief section = %q, want none", section)
+	}
+}
+
+// TestSpawnOverlaps checks that spawning a task (or launching a plan from an answer) warns when its scope overlaps an
+// open task's branch diff or prompt (paths, packages, specs), records the warning as a status event, omits tasks
+// already ordered via --after or touching disjoint scopes, and never blocks a repair spawn.
+func TestSpawnOverlaps(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	ctx := t.Context()
+	repo := gitRepoWith(t, map[string]string{
+		"pkg/a/x.go":              "package a\n",
+		"pkg/b/y.go":              "package b\n",
+		"pkg/c/z.go":              "package c\n",
+		"e2e/wish-render.spec.ts": "export {}\n",
+	})
+	main := plan.CheckedOutBranch(ctx, repo)
+	wtDiff := filepath.Join(t.TempDir(), "w-diff")
+	if _, err := git(ctx, repo, "worktree", "add", "--quiet", "-b", "w-diff", wtDiff, main); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, wtDiff, "pkg/a/x.go", "package a // diff on branch\n")
+
+	e := up(t, t.TempDir())
+	wishID, projectID := e.wish(t, repo)
+	err := e.db.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
+			return err
+		}
+		// W1 touches pkg/a/x.go only in its worktree diff (not in its prompt).
+		return tx.Put(&planv1.Task{
+			Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W1", Title: "Open diff task",
+			Status: planv1.TaskStatus_TASK_STATUS_RUNNING, Branch: "w-diff", Worktree: wtDiff,
+			StartTime: timestamppb.Now(), CreateTime: timestamppb.Now(),
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	spawn := func(req *planv1.TaskServiceSpawnRequest) *planv1.TaskServiceSpawnResponse {
+		t.Helper()
+		req.WishId = wishID
+		req.Provider = planv1.Provider_PROVIDER_FAKE
+		req.Later = true
+		res, err := e.tasks.Spawn(ctx, connect.NewRequest(req))
+		if err != nil {
+			t.Fatalf("spawn %q: %v", req.GetTitle(), err)
+		}
+		return res.Msg
+	}
+
+	// 1. Overlap from a diff: new task names pkg/a/x.go in its prompt, which W1 modified in its worktree diff.
+	resDiff := spawn(&planv1.TaskServiceSpawnRequest{
+		Title: "Touch a", Prompt: "wait\ntext Update pkg/a/x.go to handle edge case",
+	})
+	noteDiff := resDiff.GetNote()
+	if !strings.Contains(noteDiff, "may overlap with W1 (running; diff: pkg/a/x.go)") || !strings.Contains(noteDiff, "--after W1") {
+		t.Errorf("diff overlap note = %q, want W1 (running; diff: pkg/a/x.go) and --after W1", noteDiff)
+	}
+	events, err := store.List[*planv1.TaskEvent](ctx, e.db, store.Where{"task_id": resDiff.GetTask().GetId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(events, func(ev *planv1.TaskEvent) bool {
+		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.Contains(ev.GetText(), "may overlap with W1")
+	}) {
+		t.Errorf("expected overlap warning status event on spawned task, got %v", events)
+	}
+
+	// 2. Overlap from prompts (package and spec): W3 names pkg/b and wish-render.spec.ts; W4 names pkg/b/y.go and wish-render.spec.ts.
+	resPromptA := spawn(&planv1.TaskServiceSpawnRequest{
+		Title: "Prompt A", Prompt: "wait\ntext Refactor package pkg/b and check wish-render.spec.ts",
+	})
+	if strings.Contains(resPromptA.GetNote(), "may overlap with") {
+		t.Errorf("Prompt A should not warn against W1/W2, got note = %q", resPromptA.GetNote())
+	}
+	codePromptA := resPromptA.GetTask().GetCode()
+
+	resPromptB := spawn(&planv1.TaskServiceSpawnRequest{
+		Title: "Prompt B", Prompt: "wait\ntext Adjust pkg/b/y.go and e2e/wish-render.spec.ts",
+	})
+	notePromptB := resPromptB.GetNote()
+	if !strings.Contains(notePromptB, codePromptA) || !strings.Contains(notePromptB, "pkg/b/y.go") || !strings.Contains(notePromptB, "e2e/wish-render.spec.ts") {
+		t.Errorf("prompt overlap note = %q, want %s, pkg/b/y.go and e2e/wish-render.spec.ts", notePromptB, codePromptA)
+	}
+
+	// 3. None: disjoint scope (pkg/c/z.go) produces no warning; an ordered task (--after W1, W2) produces no warning.
+	resNone := spawn(&planv1.TaskServiceSpawnRequest{
+		Title: "Disjoint", Prompt: "wait\ntext Clean up pkg/c/z.go",
+	})
+	if strings.Contains(resNone.GetNote(), "may overlap with") {
+		t.Errorf("disjoint spawn note = %q, want no overlap warning", resNone.GetNote())
+	}
+
+	resOrdered := spawn(&planv1.TaskServiceSpawnRequest{
+		Title:       "Ordered after W1 and W2",
+		Prompt:      "wait\ntext Follow-up in pkg/a/x.go",
+		After:       []string{"W1", resDiff.GetTask().GetCode()},
+		WriteScopes: []string{"pkg/a/x.go"},
+	})
+	if strings.Contains(resOrdered.GetNote(), "may overlap with") {
+		t.Errorf("ordered spawn note = %q, want no overlap warning when ordered via --after", resOrdered.GetNote())
+	}
+
+	// 4. A repair is never blocked even when it collides with open work on pkg/a/x.go.
+	resRepair := spawn(&planv1.TaskServiceSpawnRequest{
+		Title: "Repair lint in pkg/a/x.go", Prompt: "wait\ntext Fix broken build in pkg/a/x.go",
+	})
+	if resRepair.GetTask().GetId() == "" {
+		t.Fatal("repair spawn returned empty task")
+	}
+	if !strings.Contains(resRepair.GetNote(), "may overlap with W1") {
+		t.Errorf("repair spawn note = %q, want overlap warning while permitting spawn", resRepair.GetNote())
+	}
+
+	// 5. Question / plan launch: answering a question whose planned task overlaps open work on pkg/c/z.go records the warning.
+	questions := planv1connect.NewQuestionServiceClient(e.srv.Client(), e.srv.URL)
+	planQ, err := questions.Ask(ctx, connect.NewRequest(&planv1.QuestionServiceAskRequest{
+		WishId:  wishID,
+		Text:    "Launch another task on pkg/c/z.go?",
+		Options: []string{"Yes", "No"},
+		Plan:    []string{"option: A\ntitle: Plan on pkg/c\nprovider: fake\n\nwait\ntext Update pkg/c/z.go again"},
+	}))
+	if err != nil {
+		t.Fatalf("ask plan question: %v", err)
+	}
+	ansRes, err := questions.Answer(ctx, connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
+		Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: planQ.Msg.GetQuestion().GetCode()}},
+		Choice:   planv1.Choice_CHOICE_A,
+		WishId:   wishID,
+		By:       planv1.Closer_CLOSER_DEVELOPER,
+	}))
+	if err != nil {
+		t.Fatalf("answer plan question: %v", err)
+	}
+	launchedID := ansRes.Msg.GetQuestion().GetPlans()[0].GetTaskId()
+	if launchedID == "" {
+		t.Fatal("expected planned task to launch on answer")
+	}
+	launchedEvents, err := store.List[*planv1.TaskEvent](ctx, e.db, store.Where{"task_id": launchedID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(launchedEvents, func(ev *planv1.TaskEvent) bool {
+		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS &&
+			strings.Contains(ev.GetText(), "may overlap with "+resNone.GetTask().GetCode()) &&
+			strings.Contains(ev.GetText(), "pkg/c/z.go")
+	}) {
+		t.Errorf("launched plan task events = %v, want overlap warning on pkg/c/z.go", launchedEvents)
 	}
 }

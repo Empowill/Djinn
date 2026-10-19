@@ -319,12 +319,17 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
     deleted (`djinn task delete`) only once its parts are regrouped, and a task only once no task waits for it (rewire
     them first, in one `--also`): Djinn names them; its code is never given again. `--depends-on` is the former
     name of `--after`, still read.
-- **The Djinn owns the wish's DAG (W230).** Before each spawn it reads what runs and what comes
+- **The Djinn owns the wish's DAG (W230, W340).** Before each spawn it reads what runs and what comes
   (`djinn task list --wish-id <wish> --open --short`; `--status running --status pending` for precise states) and the
   files that work touches (`djinn task overlaps <wish>`: a running, waiting or done-not-merged task's diff against its
   merge-base with the branch it merges into, untracked files included; a planned task's write scopes, or "paths
   unknown"; the pairs of tasks that touch the same files, generated files aside). `djinn wish brief` carries the same
-  overlaps in a short Overlaps section. Work on files an open task touches goes to that task (`djinn task update
+  overlaps in a short Overlaps section. At `djinn task spawn`, `djinn question launch` and `djinn plan launch`, Djinn
+  also checks the wish's open tasks not already ordered with the new task in the DAG (from their branch diffs,
+  `--write-scopes`, and the repository paths, packages and specs named in both prompts): when any may collide, the
+  answer names them with the reason (`diff: …`, `write-scopes: …`, `prompt: …`) and suggests
+  `djinn task depend <task> --after …`, and Djinn records the warning as a `status` event on the task; the spawn is
+  never refused so a repair can pass. Work on files an open task touches goes to that task (`djinn task update
   <task> --prompt` while planned, `djinn task send` while it runs) or `--after` it, never beside it; the Djinn gives
   `--write-scopes` when it knows the paths; big work is a chain of small steps, each merged and green before the next,
   never a fan on the same packages, while work on other files runs side by side (never a naive line `W1 -> W2 -> W3`

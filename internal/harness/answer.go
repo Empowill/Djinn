@@ -182,6 +182,9 @@ func (h *Harness) answerPlan(ctx context.Context, q *planv1.Question) (string, b
 	if former := h.formerPlans(ctx, q); former != "" {
 		did += "; " + former
 	}
+	if warn := h.spawnOverlapNote(ctx, task); warn != "" {
+		did += "; " + warn
+	}
 	return did, true
 }
 

@@ -96,6 +96,11 @@ Djinn owns each wish's graph, so it checks before it sends a worker:
   paths its write scopes name; a planned task without write scopes shows its paths as unknown. Then it pairs the tasks
   that touch the same files. Generated files are left out: Djinn makes them again on a conflict. The wish's brief
   carries the same overlaps, short.
+- **What a new spawn may collide with.** When a task is spawned, or launched from a question or a plan, Djinn compares
+  it with the wish's open tasks that are not already ordered with it in the graph — from their branch changes, write
+  scopes, and the paths, packages and specs named in both prompts. Its answer names each task that may overlap, with
+  the reason and the command to place the new task after it, and keeps the warning in the task's events; the spawn is
+  never refused, so a repair can always pass.
 
 New work on files an open task touches joins that task (its prompt while it is planned, an instruction while it
 runs), or comes after it; it never runs beside it. Big work goes as a chain of small steps, each merged before the

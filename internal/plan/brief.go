@@ -290,6 +290,11 @@ func briefRules(projects []*planv1.Project, home string) string {
 		"  - Example, 17/10: W160 (the Djinn's eye) and W174 (a click brings back a wish's first tab) ran side by " +
 		"side on `src/question-column.tsx`, which W154 also changed; both merges conflicted there, and W237 and W238 " +
 		"repaired them. W174 `--after W160`, W160 after W154, would have merged clean.\n" +
+		"  - When `djinn task spawn`, `djinn question launch` or `djinn plan launch` answers `W7 may overlap with: …`, " +
+		"read each reason (its branch diff, `--write-scopes`, or the paths, packages and specs named in both prompts) " +
+		"and place or fold the task at once (`djinn task depend <task> --after <other>` to put it after, or fold it " +
+		"into `<other>` and drop the duplicate; 17/10: W339 and W305 both edited `internal/plan/brief.go` and " +
+		"`docs/agent-protocol.md` side by side and collided at merge). The spawn is never refused so a repair can pass.\n" +
 		"  - A task starts from the integrated branch: never spawn while the wish's integration points at another " +
 		"branch (a quarantine; W399 brought the replay sink's node_modules link into feat/wails-go on 11/10). A " +
 		"conflict or a red merge is a signal to re-sequence, not only to correct. While a correction repairs the " +
