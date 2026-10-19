@@ -2,8 +2,10 @@ package harness
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +19,17 @@ import (
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
+
+type onDoneCtx struct {
+	context.Context
+	once sync.Once
+	fn   func()
+}
+
+func (c *onDoneCtx) Done() <-chan struct{} {
+	c.once.Do(c.fn)
+	return c.Context.Done()
+}
 
 // TestDone: a task no worker runs is marked done by hand, whatever it was, and records who closed it, when and why.
 // A running task, and a task done already, are refused.
@@ -51,6 +64,21 @@ func TestDone(t *testing.T) {
 			return tx.Put(task)
 		}); err != nil {
 			t.Fatal(err)
+		}
+		if c.status == planv1.TaskStatus_TASK_STATUS_FAILED {
+			r := &run{id: task.GetId(), final: true, done: make(chan struct{})}
+			e.h.mu.Lock()
+			e.h.runs[task.GetId()] = r
+			e.h.mu.Unlock()
+			ctx := &onDoneCtx{Context: t.Context(), fn: func() {
+				e.h.mu.Lock()
+				delete(e.h.runs, r.id)
+				e.h.mu.Unlock()
+				close(r.done)
+			}}
+			if _, running, err := e.h.taskAndRun(ctx, task.GetId()); err != nil || running {
+				t.Fatalf("taskAndRun while run is ending: running=%v, err=%v", running, err)
+			}
 		}
 		res, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: task.GetId(), Note: c.note, By: c.by}))
 		if err != nil {

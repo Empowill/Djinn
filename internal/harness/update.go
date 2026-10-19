@@ -30,9 +30,9 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 
-	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	task, running, err := h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
 	if req.Rank != nil {
 		if !plan.IsAzima(task) {
@@ -95,9 +95,6 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		}
 	}
 
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
 	s := task.GetStatus()
 	if running && s != planv1.TaskStatus_TASK_STATUS_PAUSED {
 		s = planv1.TaskStatus_TASK_STATUS_RUNNING

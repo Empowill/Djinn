@@ -39,13 +39,10 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	defer h.answering.Unlock()
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
-	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	task, running, err := h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
 	if err := h.continuable(ctx, task, running); err != nil {
 		return nil, err
 	}
