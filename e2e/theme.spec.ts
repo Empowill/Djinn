@@ -60,8 +60,8 @@ test("the window follows the system's theme by default, and tells Djinn the one 
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
+  await page.addInitScript(() => localStorage.removeItem("djinn.theme"));
   await page.goto(process.env.DJINN_URL!);
-  await choose(page, "");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   // The page tells Djinn the theme it shows, the system's resolved: the Djinn's tone follows it (W156).
   await expect.poll(shownTheme).toBe("SHOWN_THEME_LIGHT");
