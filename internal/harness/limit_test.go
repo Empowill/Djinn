@@ -38,6 +38,11 @@ func TestLimitIn(t *testing.T) {
 		{"usageLimitExceeded: You've hit your usage limit. Try again later.", Limit{What: "the account's usage limit"}, true},
 		{"RESOURCE_EXHAUSTED: quota exceeded for aiplatform.googleapis.com/generate_content_requests_per_minute",
 			Limit{What: "the provider's quota", PerMinute: true}, true},
+		// Real, agy 1.3.0 (W424): the docs URL ends with /models/standard-paygo, not a model.
+		{"API error (attempt 1): RESOURCE_EXHAUSTED (code 429): TPM quota exhausted. No spare capacity is currently available to serve over-limit requests. Please try again later, reduce your request rate or contact the sales team to discuss limit increase options. Details: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/standard-paygo.",
+			Limit{What: "the provider's quota", PerMinute: true}, true},
+		{"RESOURCE_EXHAUSTED (code 429): TPM quota exhausted for model gemini-4-argon-high",
+			Limit{What: "the provider's quota", Model: "gemini-4-argon-high", PerMinute: true}, true},
 		{"RESOURCE_EXHAUSTED: quota exceeded for model claude-opus-4-6",
 			Limit{What: "the provider's quota", Model: "claude-opus-4-6", PerMinute: true}, true},
 		{"API Error: 500 Internal server error", Limit{}, false},
@@ -47,6 +52,9 @@ func TestLimitIn(t *testing.T) {
 		got, ok := limitIn(c.reason, now)
 		if ok != c.ok || got.What != c.want.What || got.Model != c.want.Model || !got.Until.Equal(c.want.Until) || got.PerMinute != c.want.PerMinute {
 			t.Errorf("limitIn(%q) = %+v, %v; want %+v, %v", c.reason, got, ok, c.want, c.ok)
+		}
+		if gotModel := LimitModel(c.reason); gotModel != c.want.Model {
+			t.Errorf("LimitModel(%q) = %q, want %q", c.reason, gotModel, c.want.Model)
 		}
 	}
 }

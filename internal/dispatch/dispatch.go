@@ -17,6 +17,7 @@ import (
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/render"
+	"github.com/empowill/djinn/internal/usage"
 )
 
 // Machine is what the machine allows now.
@@ -832,21 +833,114 @@ func (s *Situation) forkedAs(d *planv1.Task) *planv1.Task {
 	return d
 }
 
-// limitModelRe extracts the model name a provider limit message proves exhausted ("quota exceeded for model
-// claude-opus-4-6", "rate limit on model 'gemini-2.5-pro'", "models/gemini-2.5-pro"). A limit message that names no
-// model proves only that the task's own run hit a limit, never every task of the provider (W409).
-var limitModelRe = regexp.MustCompile(`(?i)(?:\b(?:for|on)\s+model\s+['"]?([a-z0-9][a-z0-9._-]*)['"]?|\bmodel(?:\s*[:=]|\s+['"])\s*([a-z0-9][a-z0-9._-]*)['"]?|\bmodels/([a-z0-9][a-z0-9._-]*)\b)`)
+var (
+	// limitURLRe matches HTTP(S) URLs so a documentation link (such as .../models/standard-paygo) is never read as a model.
+	limitURLRe = regexp.MustCompile(`(?i)\bhttps?://\S+`)
+	// limitModelRe extracts a model candidate introduced as a model in a limit message or wait reason.
+	limitModelRe = regexp.MustCompile(`(?i)(?:\b(?:for|on)\s+model\s+(?:'([^']+)'|"([^"]+)"|([a-z0-9][a-z0-9._/-]*))|\bmodel(?:\s*[:=]|\s+)(?:'([^']+)'|"([^"]+)"|([a-z0-9][a-z0-9._/-]*))|(?:^|[\s'"=(])models/([a-z0-9][a-z0-9._-]*)\b)`)
+	// limitTokenRe scans individual tokens in a limit message when a known model identifier appears directly.
+	limitTokenRe = regexp.MustCompile(`[A-Za-z0-9][A-Za-z0-9._/-]*`)
+	// canonicalModelRe matches canonical model identifiers of Claude, Gemini/Antigravity, and OpenAI/Codex.
+	canonicalModelRe = regexp.MustCompile(`^(?:claude-(?:opus|sonnet|haiku|fable)-[a-z0-9._-]+|claude-[0-9][a-z0-9._-]*|gemini-[0-9][a-z0-9._-]*|gpt-[0-9][a-z0-9._-]*|o[134](?:-[a-z0-9._-]+)?|codex-[a-z0-9._-]+)$`)
+)
 
-// LimitModel returns the model name a limit message or wait reason proves exhausted, or "" when the message names no
-// model.
-func LimitModel(text string) string {
-	m := limitModelRe.FindStringSubmatch(text)
-	if len(m) == 0 {
+// knownAgentModels maps lowercase model identifiers and display labels (including `agy models`) to their canonical model ID.
+var knownAgentModels = map[string]string{
+	"gemini-4-argon-high":       "gemini-4-argon-high",
+	"gemini 4 argon (high)":     "gemini-4-argon-high",
+	"gemini-4-argon":            "gemini-4-argon-high",
+	"gemini 4 argon":            "gemini-4-argon-high",
+	"gemini-4-argon-medium":     "gemini-4-argon-medium",
+	"gemini 4 argon (medium)":   "gemini-4-argon-medium",
+	"gemini-4-argon-low":        "gemini-4-argon-low",
+	"gemini 4 argon (low)":      "gemini-4-argon-low",
+	"gemini-3.8-flash-high":     "gemini-3.8-flash-high",
+	"gemini 3.8 flash (high)":   "gemini-3.8-flash-high",
+	"gemini-3.8-flash-medium":   "gemini-3.8-flash-medium",
+	"gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
+	"gemini-3.8-flash-low":      "gemini-3.8-flash-low",
+	"gemini 3.8 flash (low)":    "gemini-3.8-flash-low",
+	"gemini-3.7-flash-high":     "gemini-3.7-flash-high",
+	"gemini 3.7 flash (high)":   "gemini-3.7-flash-high",
+	"gemini-3.7-flash-medium":   "gemini-3.7-flash-medium",
+	"gemini 3.7 flash (medium)": "gemini-3.7-flash-medium",
+	"gemini-3.7-flash-low":      "gemini-3.7-flash-low",
+	"gemini 3.7 flash (low)":    "gemini-3.7-flash-low",
+	"gemini-3.6-flash-high":     "gemini-3.6-flash-high",
+	"gemini 3.6 flash (high)":   "gemini-3.6-flash-high",
+	"gemini-3.6-flash-medium":   "gemini-3.6-flash-medium",
+	"gemini 3.6 flash (medium)": "gemini-3.6-flash-medium",
+	"gemini-3.6-flash-low":      "gemini-3.6-flash-low",
+	"gemini 3.6 flash (low)":    "gemini-3.6-flash-low",
+	"gemini-3.1-pro-high":       "gemini-3.1-pro-high",
+	"gemini 3.1 pro (high)":     "gemini-3.1-pro-high",
+	"gemini-3.1-pro-low":        "gemini-3.1-pro-low",
+	"gemini 3.1 pro (low)":      "gemini-3.1-pro-low",
+}
+
+// CanonicalModel returns the canonical model identifier when raw names a recognized agent model (from `agy models`, the
+// pricing table, or a provider's model family), and "" when raw is empty, a URL, or not a model name (such as
+// "standard-paygo").
+func CanonicalModel(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = strings.Trim(s, "'\".,;:")
+	if s == "" || strings.Contains(s, "://") || strings.HasPrefix(strings.ToLower(s), "www.") {
 		return ""
 	}
-	for _, g := range m[1:] {
-		if g != "" {
-			return strings.TrimRight(g, ".,;:")
+	lower := strings.ToLower(s)
+	if m, ok := knownAgentModels[lower]; ok {
+		return m
+	}
+	if table, err := usage.DefaultTable(); err == nil {
+		for id, m := range table.Models {
+			if strings.EqualFold(s, id) || (m.Label != "" && strings.EqualFold(s, m.Label)) {
+				return strings.ToLower(id)
+			}
+		}
+	}
+	s = strings.Trim(s, "()[]{}<>")
+	lower = strings.ToLower(s)
+	for _, prefix := range []string{"models/", "google/", "anthropic/", "openai/"} {
+		if strings.HasPrefix(lower, prefix) {
+			lower = strings.TrimPrefix(lower, prefix)
+			break
+		}
+	}
+	if lower == "" || strings.Contains(lower, "/") {
+		return ""
+	}
+	if m, ok := knownAgentModels[lower]; ok {
+		return m
+	}
+	if table, err := usage.DefaultTable(); err == nil {
+		for id := range table.Models {
+			if lower == strings.ToLower(id) {
+				return lower
+			}
+		}
+	}
+	if canonicalModelRe.MatchString(lower) {
+		return lower
+	}
+	return ""
+}
+
+// LimitModel returns the model name a limit message or wait reason proves exhausted, or "" when the message names no
+// model. It never reads a model from a URL.
+func LimitModel(text string) string {
+	clean := limitURLRe.ReplaceAllString(text, " ")
+	for _, m := range limitModelRe.FindAllStringSubmatch(clean, -1) {
+		for _, g := range m[1:] {
+			if g != "" {
+				if model := CanonicalModel(g); model != "" {
+					return model
+				}
+			}
+		}
+	}
+	for _, tok := range limitTokenRe.FindAllString(clean, -1) {
+		if model := CanonicalModel(tok); model != "" {
+			return model
 		}
 	}
 	return ""
@@ -874,6 +968,7 @@ func (s *Situation) limited(t *planv1.Task) string {
 	if tm == "" {
 		return ""
 	}
+	tm = cmp.Or(CanonicalModel(tm), tm)
 	var holder *planv1.Task
 	for _, o := range s.tasks {
 		if o.GetId() == t.GetId() || !Resuming(o) || o.GetResumeAfter() == nil || !o.GetResumeAfter().AsTime().After(s.now) ||
