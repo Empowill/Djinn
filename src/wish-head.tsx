@@ -1091,10 +1091,10 @@ export function BranchPicker({
 export function WishModels({ wishId }: { wishId: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <span className="wish-lands-chip">
+    <span className="wish-lands-chip wish-models-chip">
       <button
         type="button"
-        className="wish-lands"
+        className="wish-models"
         aria-haspopup="dialog"
         aria-expanded={open}
         title={t("wish.models_button_detail")}

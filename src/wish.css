@@ -1893,7 +1893,8 @@ html[data-theme="light"] .wish-composer-caret {
 .wish-lands-chip {
   position: relative;
 }
-.wish-lands {
+.wish-lands,
+.wish-models {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
@@ -1905,7 +1906,9 @@ html[data-theme="light"] .wish-composer-caret {
   font-size: var(--font-size-body);
 }
 button.wish-lands:hover,
-button.wish-lands[aria-expanded="true"] {
+button.wish-lands[aria-expanded="true"],
+button.wish-models:hover,
+button.wish-models[aria-expanded="true"] {
   border-color: var(--n-5e);
   color: var(--n-e7);
 }
