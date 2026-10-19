@@ -34,6 +34,15 @@ func TestLiveTask(t *testing.T) {
 		{"left not committed", done(planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED), true},
 		{"merged", done(planv1.IntegrationState_INTEGRATION_STATE_COMMITTED), false},
 		{"done, nothing to merge", &planv1.Task{Status: planv1.TaskStatus_TASK_STATUS_DONE}, false},
+		{"done with refused calls", &planv1.Task{
+			Status:  planv1.TaskStatus_TASK_STATUS_DONE,
+			Refused: &planv1.TaskRefusals{Count: 2, Names: []string{"Bash"}},
+		}, true},
+		{"done with refused calls, closed", &planv1.Task{
+			Status:  planv1.TaskStatus_TASK_STATUS_DONE,
+			Refused: &planv1.TaskRefusals{Count: 2, Names: []string{"Bash"}},
+			Closed:  &planv1.Closure{Actor: planv1.Closer_CLOSER_DEVELOPER, Note: "acknowledged"},
+		}, false},
 		{"cancelled", &planv1.Task{Status: planv1.TaskStatus_TASK_STATUS_CANCELLED}, false},
 	} {
 		if got := liveTask(c.task); got != c.want {

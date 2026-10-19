@@ -554,7 +554,7 @@ func (h *Harness) questionEnded(t *planv1.Task) {
 	}
 	h.unpausePreempted(t)
 	if !refusedFailure(t) {
-		h.closeOutrun(t.GetWishId(), t.GetQuestion())
+		h.CloseOutrun(t.GetWishId(), t.GetQuestion())
 		h.tellEnd(t, "")
 		return
 	}
@@ -667,12 +667,13 @@ func (h *Harness) retryRefused(t *planv1.Task) string {
 	return again.GetCode()
 }
 
-// outrun tells whether t is a failed investigator whose question moved on without it, among the questions of its
-// wish: answered, withdrawn, or revised after t started by another task or by the lead. Nothing is left of it to take
-// up: it waits neither for the lead nor for the developer (W96: W19 failed on a refused command, W20 did its work
-// and Q17 was answered, and W19 still waited).
+// outrun tells whether t is a failed investigator, or one done with refused calls, whose question moved on without it,
+// among the questions of its wish: answered, withdrawn, or revised after t started by another task or by the lead.
+// Nothing is left of it to take up: it waits neither for the lead nor for the developer, nor holds back the wish's
+// grant (W96, L49).
 func outrun(t *planv1.Task, questions []*planv1.Question) bool {
-	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || t.GetRole() != planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+	if t.GetRole() != planv1.TaskRole_TASK_ROLE_INVESTIGATOR ||
+		(t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED && !plan.DoneWithProblems(t)) {
 		return false
 	}
 	i := slices.IndexFunc(questions, func(q *planv1.Question) bool {
@@ -691,8 +692,8 @@ func outrun(t *planv1.Task, questions []*planv1.Question) bool {
 	})
 }
 
-// closeOutrun closes the failed investigators of the question code of the wish that it outran (outrun).
-func (h *Harness) closeOutrun(wishID, code string) {
+// CloseOutrun closes the failed or held investigators of the question code of the wish that it outran (outrun).
+func (h *Harness) CloseOutrun(wishID, code string) {
 	if code == "" {
 		return
 	}
@@ -700,7 +701,7 @@ func (h *Harness) closeOutrun(wishID, code string) {
 	defer cancel()
 	tasks, questions, err := h.wishWork(ctx, wishID)
 	if err != nil {
-		logx.L().Error("read a question's failed workers", "loop", "question", "question", code, "err", err)
+		logx.L().Error("read a question's workers", "loop", "question", "question", code, "err", err)
 		return
 	}
 	for _, t := range tasks {
@@ -710,19 +711,46 @@ func (h *Harness) closeOutrun(wishID, code string) {
 	}
 }
 
-// closeQuestionWorker closes the failed question worker id: done, closed by Djinn for the lead (Q273: a worker's
-// failure is the lead's), with note, continued in the task coded in when another one took over. One that is no longer
-// failed, read again in the transaction, stays as it is.
+// recoverOutrun closes any investigator among tasks whose question already moved on before djinn up restarted.
+func (h *Harness) recoverOutrun(ctx context.Context, tasks []*planv1.Task) {
+	var candidates []*planv1.Task
+	for _, t := range tasks {
+		if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR &&
+			(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED || plan.DoneWithProblems(t)) {
+			candidates = append(candidates, t)
+		}
+	}
+	if len(candidates) == 0 {
+		return
+	}
+	questions, err := store.List[*planv1.Question](ctx, h.store, nil)
+	if err != nil {
+		logx.L().Error("read questions for outrun investigators", "loop", "question", "err", err)
+		return
+	}
+	for _, t := range candidates {
+		if outrun(t, questions) {
+			h.closeQuestionWorker(ctx, t.GetId(), t.GetQuestion()+" moved on without it: nothing left to take up", "")
+		}
+	}
+}
+
+// closeQuestionWorker closes the failed or held question worker id: done, closed by Djinn for the lead (Q273: a
+// worker's failure is the lead's; L49: a finished investigator's refused calls too once its question moved on), with
+// note, continued in the task coded in when another one took over. One that is neither failed nor done with unclosed
+// refused calls, read again in the transaction, stays as it is.
 func (h *Harness) closeQuestionWorker(ctx context.Context, id, note, in string) {
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		t, err := store.Get[*planv1.Task](ctx, tx, id)
-		if err != nil || t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+		if err != nil || (t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED && !plan.DoneWithProblems(t)) {
 			return err
 		}
 		now := timestamppb.New(h.now())
 		text := fmt.Sprintf("closed by Djinn, was %s", short(t.GetStatus()))
 		if e := t.GetError(); e != "" {
 			text += " (" + e + ")"
+		} else if n := t.GetRefused().GetCount(); n > 0 {
+			text += fmt.Sprintf(" (%d refused)", n)
 		}
 		text += ": " + note
 		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_DONE, "", ""
@@ -739,7 +767,7 @@ func (h *Harness) closeQuestionWorker(ctx context.Context, id, note, in string) 
 		return putEvents(ctx, tx, newEventAt(id, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}, h.now()))
 	})
 	if err != nil {
-		logx.L().Error("close a failed question worker", "loop", "question", "task", id, "err", err)
+		logx.L().Error("close a question worker", "loop", "question", "task", id, "err", err)
 		return
 	}
 	h.notify()

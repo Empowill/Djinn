@@ -31,7 +31,8 @@ export {
   questionGroups,
   stepTo,
 } from "@/src/question-column.tsx";
-export { WaitingTasks, WishView } from "@/src/wish-view.tsx";
+export { GrantCard, WaitingTasks, WishBilanCard, WishView } from "@/src/wish-view.tsx";
+export { setTheme } from "@/src/theme.ts";
 export { EmptyState, QuestionsEmpty, sessionPick } from "@/src/empty-art.tsx";
 export { Machine } from "@/src/visuals.tsx";
 export {

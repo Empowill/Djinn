@@ -463,6 +463,7 @@ func (h *Harness) correctPush(
 // withdrawPushQuestion withdraws id, the question the push of the wish wishID in the project projectID waits on, with
 // note, and lets go of it.
 func (h *Harness) withdrawPushQuestion(ctx context.Context, wishID, projectID, id, note string) {
+	var code string
 	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
 		q, err := store.Get[*planv1.Question](ctx, tx, id)
 		switch {
@@ -470,6 +471,7 @@ func (h *Harness) withdrawPushQuestion(ctx context.Context, wishID, projectID, i
 		case err != nil:
 			return err
 		case q.GetAnswer() == nil && q.GetWithdrawal() == nil:
+			code = q.GetCode()
 			q.Withdrawal = &planv1.Withdrawal{Note: note, CreateTime: timestamppb.New(h.now())}
 			if err := tx.Journal(actorHarness, methodIntegrate, q); err != nil {
 				return err
@@ -486,6 +488,10 @@ func (h *Harness) withdrawPushQuestion(ctx context.Context, wishID, projectID, i
 	})
 	if err != nil {
 		logx.L().Error("withdraw the push question", "loop", "push", "wish", wishID, "project", projectID, "question", id, "err", err)
+		return
+	}
+	if code != "" {
+		h.CloseOutrun(wishID, code)
 	}
 }
 

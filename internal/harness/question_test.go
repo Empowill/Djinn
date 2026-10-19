@@ -717,16 +717,84 @@ func TestEnlighten(t *testing.T) {
 			t.Errorf("the failed retry's closure: %v", c)
 		}
 	})
+
+	// An investigator that finishes done with refused calls (W14, W15 in Rocket Time, L49) is closed once its
+	// question is answered or withdrawn, so its refused calls no longer hold back the wish's grant.
+	t.Run("refused_done_closed_on_answer_and_withdraw", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithEnlightenWorkers())
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		q := e.asker(wishID)
+
+		q1 := q.ask(t, "wait")
+		q.enlighten(t, q1.GetCode(), "check grep")
+		invs := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+		if len(invs) != 1 {
+			t.Fatalf("%d investigators, want 1", len(invs))
+		}
+		w1 := invs[0]
+		e.release(t, w1.GetId())
+		e.ended(t, w1.GetId())
+
+		q2 := q.ask(t, "wait")
+		q.enlighten(t, q2.GetCode(), "check grep again")
+		invs = e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)
+		if len(invs) != 2 {
+			t.Fatalf("%d investigators, want 2", len(invs))
+		}
+		w2 := invs[1]
+		e.release(t, w2.GetId())
+		e.ended(t, w2.GetId())
+
+		for _, id := range []string{w1.GetId(), w2.GetId()} {
+			if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+				task, err := store.Get[*planv1.Task](t.Context(), tx, id)
+				if err != nil {
+					return err
+				}
+				task.Refused = &planv1.TaskRefusals{Count: 1, Names: []string{"Bash"}}
+				if err := tx.Journal(actorHarness, "test", task); err != nil {
+					return err
+				}
+				return tx.Put(task)
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		q.answer(t, q1.GetCode(), planv1.Choice_CHOICE_A, "")
+		waitFor(t, "answered question closes its held investigator", func() bool {
+			return e.get(t, w1.GetId()).GetClosed() != nil
+		})
+		if e.get(t, w2.GetId()).GetClosed() != nil {
+			t.Fatal("open question's investigator should stay unclosed until its question moves on")
+		}
+
+		if _, err := q.Withdraw(t.Context(), connect.NewRequest(&planv1.QuestionServiceWithdrawRequest{
+			Question: &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: q2.GetCode()}},
+			WishId:   wishID,
+			Note:     "settled",
+		})); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, "withdrawn question closes its held investigator", func() bool {
+			return e.get(t, w2.GetId()).GetClosed() != nil
+		})
+	})
 }
 
-// TestOutrun: a failed investigator is outrun once its question is answered, withdrawn, or revised after it started by
-// another than itself; a revision of its own, an earlier one, another question or another role leave it to the lead.
+// TestOutrun: a failed investigator, or one done with refused calls, is outrun once its question is answered,
+// withdrawn, or revised after it started by another than itself; a revision of its own, an earlier one, another
+// question or another role leave it to the lead.
 func TestOutrun(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 10, 16, 13, 9, 0, 0, time.UTC)
 	before, after := timestamppb.New(at.Add(-time.Minute)), timestamppb.New(at.Add(time.Minute))
 	inv := &planv1.Task{Id: "w19", Code: "W19", WishId: "w", Question: "Q17", Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR,
 		Status: planv1.TaskStatus_TASK_STATUS_FAILED, CreateTime: timestamppb.New(at)}
+	held := &planv1.Task{Id: "w14", Code: "W14", WishId: "w", Question: "Q45", Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR,
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: timestamppb.New(at),
+		Refused: &planv1.TaskRefusals{Count: 1, Names: []string{"Bash"}}}
 	revise := func(task string, when *timestamppb.Timestamp) *planv1.Round {
 		return &planv1.Round{Kind: planv1.RoundKind_ROUND_KIND_REVISE, TaskId: task, CreateTime: when}
 	}
@@ -744,6 +812,12 @@ func TestOutrun(t *testing.T) {
 		"revised before":  {inv, &planv1.Question{Code: "Q17", WishId: "w", Rounds: []*planv1.Round{revise("w18", before)}}, false},
 		"other question":  {inv, &planv1.Question{Code: "Q18", WishId: "w", Answer: &planv1.Answer{}}, false},
 		"other wish":      {inv, &planv1.Question{Code: "Q17", WishId: "v", Answer: &planv1.Answer{}}, false},
+		"held open":       {held, &planv1.Question{Code: "Q45", WishId: "w", Rounds: []*planv1.Round{revise("w14", after)}}, false},
+		"held answered":   {held, &planv1.Question{Code: "Q45", WishId: "w", Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_A}}, true},
+		"held withdrawn":  {held, &planv1.Question{Code: "Q45", WishId: "w", Withdrawal: &planv1.Withdrawal{}}, true},
+		"clean done": {&planv1.Task{Id: "w15", Code: "W15", WishId: "w", Question: "Q45", Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR,
+			Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: timestamppb.New(at)},
+			&planv1.Question{Code: "Q45", WishId: "w", Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_A}}, false},
 		"a worker": {&planv1.Task{Code: "W3", WishId: "w", Question: "Q17", Status: planv1.TaskStatus_TASK_STATUS_FAILED},
 			&planv1.Question{Code: "Q17", WishId: "w", Answer: &planv1.Answer{}}, false},
 	} {

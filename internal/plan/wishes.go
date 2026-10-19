@@ -35,6 +35,7 @@ type WishWorkers interface {
 	// StopWish stops the wish's workers for good, and waits until they have ended.
 	StopWish(ctx context.Context, wishID string) error
 	HasRun(taskID string) bool
+	CloseOutrun(wishID, code string)
 }
 
 // shelve stops the workers of the wishes paused, and wakes the scheduler for the active ones; without workers,

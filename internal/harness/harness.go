@@ -500,6 +500,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
+	h.recoverOutrun(ctx, tasks)
 	return h.recoverAzimas(ctx, tasks)
 }
 

@@ -28,6 +28,7 @@ import {
 
 import {
   Allowance,
+  type Block,
   Change,
   type Choice,
   Closer,
@@ -37,11 +38,13 @@ import {
   type Provider,
   type Question,
   type Task,
+  TaskStatus,
   type Wish,
   type WishExport,
   WishState,
   PushStrategy,
 } from "../gen/ts/plan/v1/plan_pb";
+import { type Tilasm } from "../gen/ts/plan/v1/tilasm_pb";
 import { message } from "./data/client";
 import { decisionOf, decisionsOf, isDecisionBlock } from "./data/decisions";
 import {
@@ -55,10 +58,14 @@ import {
   useWishDetail,
 } from "./data/djinn";
 import {
+  type GrantHold,
   type OpenQuestion,
   azimaGroups,
+  canCloseWish,
   codeMapOf,
+  compareCodes,
   forkedAs,
+  grantHolds,
   asleepQuestions,
   investigatingQuestions,
   isAzima,
@@ -78,13 +85,17 @@ import {
 import {
   allowanceOf,
   deletedText,
+  firstLine,
   fixerOf,
   MAX_ACTIVE,
   isActive,
   noLead,
   projectsOf,
+  span,
+  taskRunDurations,
   taskStatusText,
   taskTone,
+  usd,
   when,
   wishStateText,
   runningOf,
@@ -96,6 +107,7 @@ import {
 import { ifritOut, litIfrits } from "./data/ifrit";
 import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
+import { useShownTheme } from "./theme";
 import { EmptyState } from "./empty-art";
 import { ReadingLine } from "./reading-line";
 import { AgentBlocks, agentBlocks } from "./agent-blocks";
@@ -295,6 +307,18 @@ export function WishView({
     [detail.tasks],
   );
   const ifritNow = useNow(ifrits.length > 0, 15_000);
+  const canClose = useMemo(
+    () => canCloseWish(wish, detail.tasks),
+    [wish, detail.tasks],
+  );
+  const holds = useMemo(
+    () =>
+      canClose && !wish.ready ? grantHolds(detail.tasks, detail.questions) : [],
+    [canClose, wish.ready, detail.tasks, detail.questions],
+  );
+  const granted = wish.state === WishState.GRANTED;
+  const [grantingId, setGrantingId] = useState("");
+  const folding = grantingId === wish.id;
   // Nothing waits for you and nothing runs in the wish: its questions column shows the Djinn asleep (empty-art.tsx).
   const calm =
     detail.loaded &&
@@ -313,14 +337,15 @@ export function WishView({
       merging +
       fixing ===
       0 &&
-    !wish.ready;
+    !canClose &&
+    !granted &&
+    !folding;
   // A worker waiting or an ifrit lit: the Djinn's eye lets its flame shine.
   useEyeNeeds(waiting.length > 0 || ifrits.length > 0);
   const done = workDoneCount(detail.tasks);
   // The azimas' progress, then the work's: the azimas are not counted as tasks.
   const azimaProgress = azimasDone(detail.tasks);
   const work = workCount(detail.tasks);
-  const granted = wish.state === WishState.GRANTED;
   const [view, setView] = useState<View>(opening ? "tilasms" : "main");
   const [historyCount, setHistoryCount] = useState<{
     wishId: string;
@@ -896,16 +921,66 @@ export function WishView({
       void store.loadMore(wish.id, Change.BLOCK);
     }
   }, [store, wish.id]);
-  const handleGrant = useCallback(
-    () =>
+  const handleGrant = useCallback(() => {
+    setGrantingId(wish.id);
+    quiet(
+      act(
+        () => clients.wishes.grant({ wishId: wish.id }),
+        [Change.WISH],
+        t("wish.granted_toast"),
+      ),
+    );
+  }, [quiet, act, clients.wishes, wish.id]);
+  const handleReopen = useCallback(() => {
+    setGrantingId("");
+    quiet(
+      act(() => clients.wishes.activate({ wishId: wish.id }), [Change.WISH]),
+    );
+  }, [quiet, act, clients.wishes, wish.id]);
+  const handleClearHold = useCallback(
+    (hold: GrantHold) => {
+      if (hold.kind === "question") {
+        quiet(withdraw(hold.question.wishId, hold.question.id, ""));
+        return;
+      }
       quiet(
         act(
-          () => clients.wishes.grant({ wishId: wish.id }),
-          [Change.WISH],
-          t("wish.granted_toast"),
+          () =>
+            clients.tasks.done({
+              taskId: hold.task.id,
+              note: "",
+              by: Closer.DEVELOPER,
+            }),
+          [Change.TASK, Change.WISH],
         ),
-      ),
-    [quiet, act, clients.wishes, wish.id],
+      );
+    },
+    [quiet, withdraw, act, clients.tasks],
+  );
+  const handleClearAllHolds = useCallback(
+    (items: GrantHold[]) => {
+      quiet(
+        act(async () => {
+          for (const hold of items) {
+            if (hold.kind === "question") {
+              await clients.questions.withdraw({
+                question: { ref: { case: "id", value: hold.question.id } },
+                note: "",
+                wishId: hold.question.wishId,
+                by: Closer.DEVELOPER,
+              });
+            } else {
+              await clients.tasks.done({
+                taskId: hold.task.id,
+                note: "",
+                by: Closer.DEVELOPER,
+              });
+            }
+          }
+        }, [Change.TASK, Change.QUESTION, Change.WISH]),
+      );
+    },
+    [quiet, act, clients.questions, clients.tasks],
   );
 
   // lead resumes the lead, focusing on this wish, or starts one of another agent; what Djinn says of it shows as a toast: a terminal
@@ -953,7 +1028,7 @@ export function WishView({
     ...open.map(({ item }) => `question-${item.id}`),
     ...decisions.map((d) => `decision-${d.id}`),
     ...waiting.map(({ item }) => `waiting-${item.id}`),
-    ...(wish.ready ? [`grant-${wish.id}`] : []),
+    ...(canClose ? [`grant-${wish.id}`] : []),
     ...ifrits.map(({ item }) => `task-${item.id}`),
   ]);
   const { reach, to } = useReach(show, shown, wish.id);
@@ -978,17 +1053,7 @@ export function WishView({
         actions={
           <>
             {granted ? (
-              <button
-                className="button secondary small"
-                onClick={() =>
-                  quiet(
-                    act(
-                      () => clients.wishes.activate({ wishId: wish.id }),
-                      [Change.WISH],
-                    ),
-                  )
-                }
-              >
+              <button className="button secondary small" onClick={handleReopen}>
                 <Play size={14} />
                 <span>{t("wish.reopen")}</span>
               </button>
@@ -1485,80 +1550,101 @@ export function WishView({
               />
             ))}
           {view === "main" && (
-            <div className="main-columns">
-              <div className="main-moves">
-                <QuestionColumn
-                  groups={questionGroup}
-                  land={land}
-                  noLead={noLead(leadRecord, leadDrive)}
-                  readState={questionsState}
-                  wishCode={wish.title}
-                  eyePerch
-                  onRetry={retryQuestions}
-                  onAnswer={handleQuestionAnswer}
-                  onEnlighten={handleQuestionEnlighten}
-                  onMove={setMovingQuestion}
-                  onWithdraw={setWithdrawingQuestion}
-                  onLater={handleQuestionLater}
-                  onSleep={setSleepingQuestion}
-                  asleep={sleeping}
-                  onWake={wakeQuestion}
-                  calm={calm}
+            <>
+              {(granted || folding) && (
+                <WishBilanCard
+                  wish={wish}
+                  projects={projects}
+                  tasks={detail.tasks}
+                  questions={detail.questions}
+                  blocks={detail.blocks}
+                  tilasms={detail.tilasms}
+                  folding={folding}
+                  onReopen={handleReopen}
                 />
-                {(waiting.length > 0 || wish.ready) && (
-                  <section
-                    className="your-move"
-                    id="action-center"
-                    aria-label={t("panels.your_move")}
-                  >
-                    {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
-                    {wish.ready && (
-                      <GrantCard wish={wish} onGrant={handleGrant} />
-                    )}
-                  </section>
-                )}
-                {digging.length > 0 && (
-                  <InvestigatingSection
-                    questions={digging}
+              )}
+              <div className="main-columns">
+                <div className="main-moves">
+                  <QuestionColumn
+                    groups={questionGroup}
+                    land={land}
+                    noLead={noLead(leadRecord, leadDrive)}
+                    readState={questionsState}
+                    wishCode={wish.title}
+                    eyePerch
+                    onRetry={retryQuestions}
                     onAnswer={handleQuestionAnswer}
+                    onEnlighten={handleQuestionEnlighten}
                     onMove={setMovingQuestion}
                     onWithdraw={setWithdrawingQuestion}
+                    onLater={handleQuestionLater}
+                    onSleep={setSleepingQuestion}
+                    asleep={sleeping}
+                    onWake={wakeQuestion}
+                    calm={calm}
                   />
-                )}
-              </div>
+                  {(waiting.length > 0 ||
+                    (canClose && !granted && !folding)) && (
+                    <section
+                      className="your-move"
+                      id="action-center"
+                      aria-label={t("panels.your_move")}
+                    >
+                      {waiting.length > 0 && <WaitingTasks waiting={waiting} />}
+                      {canClose && !granted && !folding && (
+                        <GrantCard
+                          wish={wish}
+                          holds={holds}
+                          onClearHold={handleClearHold}
+                          onClearAllHolds={handleClearAllHolds}
+                          onGrant={handleGrant}
+                        />
+                      )}
+                    </section>
+                  )}
+                  {digging.length > 0 && (
+                    <InvestigatingSection
+                      questions={digging}
+                      onAnswer={handleQuestionAnswer}
+                      onMove={setMovingQuestion}
+                      onWithdraw={setWithdrawingQuestion}
+                    />
+                  )}
+                </div>
 
-              <Glance
-                wishes={glanceWish}
-                tasksOf={allDetails}
-                all={allWishes}
-                readState={tasksState}
-                onRetry={retryTasks}
-                onRetryLead={() => lead()}
-                onOpenTask={(task) => to(`task-${task.id}`)}
-              />
+                <Glance
+                  wishes={glanceWish}
+                  tasksOf={allDetails}
+                  all={allWishes}
+                  readState={tasksState}
+                  onRetry={retryTasks}
+                  onRetryLead={() => lead()}
+                  onOpenTask={(task) => to(`task-${task.id}`)}
+                />
 
-              <div className="main-after">
-                {projects.length > 0 && (
-                  <Rights
-                    wish={wish}
-                    projects={projects}
-                    onAllow={(projectId, mode) =>
-                      quiet(
-                        act(
-                          () =>
-                            clients.wishes.allow({
-                              wishId: wish.id,
-                              projectId,
-                              mode,
-                            }),
-                          [Change.WISH],
-                        ),
-                      )
-                    }
-                  />
-                )}
+                <div className="main-after">
+                  {projects.length > 0 && (
+                    <Rights
+                      wish={wish}
+                      projects={projects}
+                      onAllow={(projectId, mode) =>
+                        quiet(
+                          act(
+                            () =>
+                              clients.wishes.allow({
+                                wishId: wish.id,
+                                projectId,
+                                mode,
+                              }),
+                            [Change.WISH],
+                          ),
+                        )
+                      }
+                    />
+                  )}
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
@@ -1573,34 +1659,445 @@ export function WishView({
   );
 }
 
-// GrantCard proposes to grant a wish: Djinn proposes, only you grant.
+// GrantCard proposes to grant a wish once its work is done: Djinn proposes, only you grant. When unacknowledged
+// refused calls, a watcher, an azima awaiting validation, or an open question still hold back wish.ready, each obstacle
+// is named and clearable in one click alongside the grant button (L49).
 export const GrantCard = memo(function GrantCard({
   wish,
   origin,
+  holds = [],
+  onClearHold,
+  onClearAllHolds,
   onGrant,
 }: {
   wish: Wish;
   origin?: ReactNode;
+  holds?: GrantHold[];
+  onClearHold?: (hold: GrantHold) => void;
+  onClearAllHolds?: (holds: GrantHold[]) => void;
   onGrant: (wish?: Wish) => void;
 }) {
+  const held = holds.length > 0;
   return (
-    <article className="step-result-action wish-grant" id={`grant-${wish.id}`}>
-      <div>
-        <span className="step-result-kicker">
-          <StatusBadge tone="done" label={t("wish.ready")} />
-          {origin}
-        </span>
-        <h3>{t("wish.ready_title")}</h3>
+    <article
+      className={`step-result-action wish-grant${held ? " state-held" : ""}`}
+      id={`grant-${wish.id}`}
+    >
+      <div className="wish-grant-top">
+        <div>
+          <span className="step-result-kicker">
+            <StatusBadge
+              tone={held ? "waiting" : "done"}
+              label={
+                held
+                  ? t("wish.held_kicker", { count: holds.length })
+                  : t("wish.ready")
+              }
+            />
+            {origin}
+          </span>
+          <h3>
+            {held
+              ? t("wish.held_title", { count: holds.length })
+              : t("wish.ready_title")}
+          </h3>
+          <p className="wish-grant-sub">
+            {held ? t("wish.held_subtitle") : t("wish.ready_subtitle")}
+          </p>
+        </div>
+        <div className="wish-grant-actions">
+          {held && holds.length > 1 && onClearAllHolds && (
+            <button
+              type="button"
+              className="button secondary small"
+              onClick={() => onClearAllHolds(holds)}
+            >
+              {t("wish.clear_all_holds", { count: holds.length })}
+            </button>
+          )}
+          <button
+            type="button"
+            className="button accent"
+            onClick={() => onGrant(wish)}
+          >
+            <Sparkles size={14} />
+            {t("wish.grant")}
+          </button>
+        </div>
       </div>
-      <button
-        type="button"
-        className="button accent"
-        onClick={() => onGrant(wish)}
-      >
-        <Sparkles size={14} />
-        {t("wish.grant")}
-      </button>
+      {held && (
+        <div className="wish-hold-list">
+          {holds.map((hold) => {
+            if (hold.kind === "question") {
+              return (
+                <div className="wish-hold-row" key={hold.id}>
+                  <div className="wish-hold-main">
+                    <div className="wish-hold-title">
+                      <span className="wish-task-code">
+                        {hold.question.code}
+                      </span>
+                      <span>{firstLine(hold.question.text)}</span>
+                      <StatusBadge
+                        tone="waiting"
+                        label={t("wish.hold_question_badge")}
+                      />
+                    </div>
+                    <p className="wish-hold-why">
+                      {t("wish.hold_question_why")}
+                    </p>
+                  </div>
+                  {onClearHold && (
+                    <button
+                      type="button"
+                      className="button secondary small"
+                      onClick={() => onClearHold(hold)}
+                    >
+                      {t("wish.hold_withdraw_question")}
+                    </button>
+                  )}
+                </div>
+              );
+            }
+            const count = hold.task.refused?.count ?? 0;
+            const names = (hold.task.refused?.names ?? []).join(", ");
+            const badge =
+              hold.kind === "refused" ? (
+                <StatusBadge
+                  tone="waiting"
+                  label={t("wish.hold_refused_badge", { count })}
+                />
+              ) : hold.kind === "watcher" ? (
+                <StatusBadge
+                  tone="watching"
+                  label={t("wish.hold_watcher_badge")}
+                />
+              ) : (
+                <StatusBadge
+                  tone="waiting"
+                  label={t("wish.hold_azima_badge")}
+                />
+              );
+            const why =
+              hold.kind === "refused"
+                ? t("wish.hold_refused_why", { count, names })
+                : hold.kind === "watcher"
+                  ? t("wish.hold_watcher_why")
+                  : t("wish.hold_azima_why");
+            const actionLabel =
+              hold.kind === "refused"
+                ? t("wish.hold_acknowledge")
+                : hold.kind === "watcher"
+                  ? t("wish.hold_close_watcher")
+                  : t("wish.hold_validate_azima");
+            return (
+              <div className="wish-hold-row" key={hold.id}>
+                <div className="wish-hold-main">
+                  <div className="wish-hold-title">
+                    <span className="wish-task-code">{hold.task.code}</span>
+                    <span>{hold.task.title}</span>
+                    {badge}
+                  </div>
+                  <p className="wish-hold-why">{why}</p>
+                </div>
+                {onClearHold && (
+                  <button
+                    type="button"
+                    className="button secondary small"
+                    onClick={() => onClearHold(hold)}
+                  >
+                    {actionLabel}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </article>
+  );
+});
+
+// WishBilanCard is the summary of a granted wish (L49): the Djinn folds back into the lamp (transform/opacity), the
+// Khatam seal rises over the spout, and the wish's tasks, tilasms, decisions, duration, cost, and theme-aware voice
+// stay at the top of the archive.
+export const WishBilanCard = memo(function WishBilanCard({
+  wish,
+  projects,
+  tasks,
+  questions,
+  blocks,
+  tilasms,
+  folding = false,
+  onReopen,
+}: {
+  wish: Wish;
+  projects: Project[];
+  tasks: readonly Task[];
+  questions: readonly Question[];
+  blocks: readonly Block[];
+  tilasms: readonly Tilasm[];
+  folding?: boolean;
+  onReopen: () => void;
+}) {
+  const shownTheme = useShownTheme();
+  const [sealed, setSealed] = useState(() => !folding);
+  useEffect(() => {
+    if (sealed) return;
+    if (typeof requestAnimationFrame !== "function") {
+      setSealed(true);
+      return;
+    }
+    let frame2 = 0;
+    const frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => setSealed(true));
+    });
+    return () => {
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
+    };
+  }, [sealed]);
+
+  const workTasks = useMemo(
+    () => tasks.filter((item) => !isAzima(item)),
+    [tasks],
+  );
+  const doneCount = useMemo(
+    () => workTasks.filter((item) => item.status === TaskStatus.DONE).length,
+    [workTasks],
+  );
+  const cancelledCount = useMemo(
+    () =>
+      workTasks.filter((item) => item.status === TaskStatus.CANCELLED).length,
+    [workTasks],
+  );
+  const openCount = Math.max(0, workTasks.length - doneCount - cancelledCount);
+
+  const sortedTilasms = useMemo(
+    () => [...tilasms].sort((a, b) => compareCodes(a.code, b.code)),
+    [tilasms],
+  );
+  const tilasmsSub =
+    sortedTilasms.length === 0
+      ? t("wish.bilan_tilasms_none")
+      : sortedTilasms.length === 1
+        ? sortedTilasms[0].code
+        : t("wish.bilan_tilasms_range", {
+            first: sortedTilasms[0].code,
+            last: sortedTilasms[sortedTilasms.length - 1].code,
+          });
+
+  const decisionsList = useMemo(
+    () => decisionsOf(questions, [...blocks], tasks),
+    [questions, blocks, tasks],
+  );
+  const withdrawnCount = useMemo(
+    () => questions.filter(isWithdrawn).length,
+    [questions],
+  );
+  const answeredCount = decisionsList.length;
+  const totalDecisions = answeredCount + withdrawnCount;
+  const decisionCodes = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...questions.map((q) => q.code),
+          ...decisionsList.map((d) => d.ref),
+        ]),
+      )
+        .filter(Boolean)
+        .sort(compareCodes),
+    [questions, decisionsList],
+  );
+  const decisionsSub =
+    totalDecisions === 0
+      ? t("wish.bilan_decisions_none")
+      : decisionCodes.length > 1
+        ? t("wish.bilan_decisions_range", {
+            first: decisionCodes[0],
+            last: decisionCodes[decisionCodes.length - 1],
+            answered: answeredCount,
+            withdrawn: withdrawnCount,
+          })
+        : t("wish.bilan_decisions_sub", {
+            answered: answeredCount,
+            withdrawn: withdrawnCount,
+          });
+
+  const { wallText, runText, stampedAt } = useMemo(() => {
+    const msOf = (ts?: { seconds: bigint; nanos: number }) =>
+      ts ? Number(ts.seconds) * 1000 + Math.floor(ts.nanos / 1_000_000) : 0;
+    const createdMs = msOf(wish.createTime);
+    const grantedMs = msOf(wish.grantTime);
+    let firstMs = createdMs;
+    let lastMs = grantedMs;
+    let runMs = 0;
+    for (const task of workTasks) {
+      const startMs = msOf(task.firstStartTime) || msOf(task.startTime);
+      const endMs = msOf(task.endTime);
+      for (const d of taskRunDurations(task, endMs || grantedMs || createdMs)) {
+        runMs += d;
+      }
+      if (startMs > 0 && (firstMs === 0 || startMs < firstMs)) {
+        firstMs = startMs;
+      }
+      if (endMs > lastMs) {
+        lastMs = endMs;
+      }
+    }
+    const wallMs = firstMs > 0 && lastMs > firstMs ? lastMs - firstMs : 0;
+    return {
+      wallText: wallMs > 0 ? span(wallMs) : "0s",
+      runText: runMs > 0 ? span(runMs) : "0s",
+      stampedAt: when(wish.grantTime ?? wish.createTime),
+    };
+  }, [wish.createTime, wish.grantTime, workTasks]);
+
+  const spentSummary = useMemo(() => spent(tasks), [tasks]);
+  const totalUsd = spentSummary.costUsd + spentSummary.estimatedCostUsd;
+  const runsCount = useMemo(
+    () =>
+      workTasks.reduce(
+        (n, task) => n + Math.max(task.runs.length, task.usage ? 1 : 0),
+        0,
+      ),
+    [workTasks],
+  );
+
+  const projectNames =
+    projects.map((p) => p.name).join(" · ") || t("wish.no_project");
+  const summaryLine = firstLine(wish.description) || projectNames;
+  const quote =
+    shownTheme === "light"
+      ? t("wish.bilan_quote_light")
+      : t("wish.bilan_quote_dark");
+
+  return (
+    <section
+      className={`wish-bilan${sealed ? " is-granted" : ""}`}
+      aria-label={t("wish.bilan_kicker", { title: wish.title })}
+    >
+      <div className="wish-bilan-art" aria-hidden="true">
+        <svg className="wish-bilan-svg" viewBox="0 0 220 155" fill="none">
+          <g className="wish-bilan-djinn">
+            <path
+              d="M135 72 C133 56, 118 44, 108 32 C100 22, 110 12, 122 16 C132 20, 136 32, 130 44"
+              stroke="var(--accent)"
+              strokeDasharray="3 3"
+            />
+            <path
+              d="M96 26 C104 16, 120 16, 128 26 C122 34, 102 34, 96 26 Z"
+              fill="var(--surface)"
+              stroke="var(--accent)"
+            />
+            <circle cx="112" cy="26" r="3.2" fill="var(--sand)" stroke="none" />
+          </g>
+          <g className="wish-bilan-khatam">
+            <polygon
+              points="135,32 145,50 125,50"
+              stroke="var(--sand)"
+              fill="none"
+            />
+            <polygon
+              points="135,56 145,38 125,38"
+              stroke="var(--sand)"
+              fill="none"
+            />
+            <circle
+              cx="135"
+              cy="44"
+              r="2.5"
+              fill="var(--st-done)"
+              stroke="none"
+            />
+          </g>
+          <g stroke="var(--sand)">
+            <ellipse cx="92" cy="120" rx="22" ry="4" />
+            <path d="M84 116 L88 106 L96 106 L100 116" />
+            <path
+              d="M58 94 C58 80, 74 74, 92 74 C112 74, 124 82, 138 74 L148 68 C144 84, 130 104, 106 106 L78 106 C64 106, 58 100, 58 94 Z"
+              fill="var(--surface)"
+            />
+            <path d="M58 90 C44 86, 42 102, 56 102" />
+            <path d="M82 74 C86 66, 98 66, 102 74" />
+            <circle cx="92" cy="65" r="2.5" fill="var(--sand)" />
+          </g>
+        </svg>
+        <div className="wish-bilan-eye-badge">
+          <svg className="wish-bilan-eye-svg" viewBox="0 0 28 18" fill="none">
+            <path
+              d="M2 9 C7 2.5, 21 2.5, 26 9 C21 15.5, 7 15.5, 2 9 Z"
+              fill="var(--surface)"
+              stroke="var(--sand)"
+              strokeWidth="1.4"
+            />
+            <circle cx="14" cy="9" r="4" fill="var(--sand)" />
+            <ellipse cx="14" cy="9" rx="1.2" ry="3.2" fill="var(--bg)" />
+          </svg>
+          <span>{t("wish.bilan_sealed")}</span>
+        </div>
+      </div>
+      <div className="wish-bilan-body">
+        <div className="wish-bilan-head">
+          <span className="wish-bilan-kicker">
+            ✦ {t("wish.bilan_kicker", { title: wish.title })}
+          </span>
+          {stampedAt && <span className="muted-text">{stampedAt}</span>}
+        </div>
+        <h3 className="wish-bilan-title">{wish.title}</h3>
+        <p className="wish-bilan-desc">{summaryLine}</p>
+        <div className="wish-bilan-grid">
+          <div className="wish-bilan-stat">
+            <span className="wish-bilan-stat-val">
+              {t("wish.bilan_tasks", { count: workTasks.length })}
+            </span>
+            <span className="wish-bilan-stat-sub">
+              {t("wish.bilan_tasks_sub", {
+                done: doneCount,
+                cancelled: cancelledCount,
+                open: openCount,
+              })}
+            </span>
+          </div>
+          <div className="wish-bilan-stat">
+            <span className="wish-bilan-stat-val">
+              {t("wish.bilan_tilasms", { count: sortedTilasms.length })}
+            </span>
+            <span className="wish-bilan-stat-sub">{tilasmsSub}</span>
+          </div>
+          <div className="wish-bilan-stat">
+            <span className="wish-bilan-stat-val">
+              {t("wish.bilan_decisions", { count: totalDecisions })}
+            </span>
+            <span className="wish-bilan-stat-sub">{decisionsSub}</span>
+          </div>
+          <div className="wish-bilan-stat">
+            <span className="wish-bilan-stat-val">{wallText}</span>
+            <span className="wish-bilan-stat-sub">
+              {t("wish.bilan_duration_sub", { run: runText })}
+            </span>
+          </div>
+          <div className="wish-bilan-stat">
+            <span className="wish-bilan-stat-val">
+              {usd(totalUsd) || "$0.00"}
+            </span>
+            <span className="wish-bilan-stat-sub">
+              {t("wish.bilan_cost_sub", { count: runsCount })}
+            </span>
+          </div>
+        </div>
+        <div className="wish-bilan-quote">
+          <span>{quote}</span>
+          <button
+            type="button"
+            className="button secondary small"
+            onClick={onReopen}
+          >
+            <Play size={14} />
+            <span>{t("wish.reopen")}</span>
+          </button>
+        </div>
+      </div>
+    </section>
   );
 });
 

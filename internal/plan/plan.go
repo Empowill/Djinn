@@ -1825,6 +1825,9 @@ func (q *Questions) Withdraw(
 	if err != nil {
 		return nil, err
 	}
+	if q.Workers != nil {
+		q.Workers.CloseOutrun(question.GetWishId(), question.GetCode())
+	}
 	return connect.NewResponse(&planv1.QuestionServiceWithdrawResponse{Question: question}), nil
 }
 
