@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 
@@ -264,28 +263,21 @@ func TestShow(t *testing.T) {
 		if wish, terminal := s.LastShow(); wish != "w4" || terminal != "" {
 			t.Errorf("LastShow() = %q, %q; want the tilasm's wish", wish, terminal)
 		}
-		// An old request is not replayed.
+		// An old request is not replayed: the next one is the first this window gets.
 		s.shows.Lock()
 		s.lastAt = s.lastAt.Add(-2 * replay)
 		s.shows.Unlock()
+		if wish, _ := s.LastShow(); wish != "w4" {
+			t.Errorf("LastShow() = %q; want the last show however old", wish)
+		}
 		late, err := client.WatchShow(ctx, connect.NewRequest(&uiv1.UiServiceWatchShowRequest{}))
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { late.Close() })
-		got := make(chan string, 1)
-		go func() {
-			if late.Receive() {
-				got <- late.Msg().GetWishId()
-			}
-		}()
-		select {
-		case id := <-got:
-			t.Fatalf("an old request was replayed: %s", id)
-		case <-time.After(200 * time.Millisecond):
-		}
-		if wish, _ := s.LastShow(); wish != "w4" {
-			t.Errorf("LastShow() = %q; want the last show however old", wish)
+		s.Present("w5", "lead-w5")
+		if !late.Receive() || late.Msg().GetWishId() != "w5" {
+			t.Fatalf("an old request was replayed before the next: %v, %v", late.Msg(), late.Err())
 		}
 	})
 	// W501: a spec opened a wish, then deleted it; a reload within the minute got that show again, and the window left
@@ -298,42 +290,45 @@ func TestShow(t *testing.T) {
 		client := serve(t, s)
 		ctx := t.Context()
 
-		// replayed is the show a window that starts watching now gets first, from Watch and from WatchShow.
-		replayed := func() (fromWatch, fromWatchShow string) {
-			t.Helper()
-			watch, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer watch.Close()
-			if !watch.Receive() {
-				t.Fatalf("Watch ended: %v", watch.Err())
-			}
-			fromWatch = watch.Msg().GetShow().GetWishId()
-			show, err := client.WatchShow(ctx, connect.NewRequest(&uiv1.UiServiceWatchShowRequest{}))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer show.Close()
-			got := make(chan string, 1)
-			go func() {
-				if show.Receive() {
-					got <- show.Msg().GetWishId()
-				}
-			}()
-			select {
-			case fromWatchShow = <-got:
-			case <-time.After(200 * time.Millisecond):
-			}
-			return fromWatch, fromWatchShow
-		}
-
 		s.Present("gone", "")
-		if w, ws := replayed(); w != "" || ws != "" {
-			t.Fatalf("a deleted wish's show was replayed: Watch %q, WatchShow %q", w, ws)
+		watchGone, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+		if err != nil {
+			t.Fatal(err)
 		}
+		defer watchGone.Close()
+		if !watchGone.Receive() {
+			t.Fatalf("Watch ended: %v", watchGone.Err())
+		}
+		if got := watchGone.Msg().GetShow().GetWishId(); got != "" {
+			t.Fatalf("a deleted wish's show was replayed by Watch: %q", got)
+		}
+		showGone, err := client.WatchShow(ctx, connect.NewRequest(&uiv1.UiServiceWatchShowRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer showGone.Close()
+
 		s.Present("here", "lead")
-		if w, ws := replayed(); w != "here" || ws != "here" {
+		if !showGone.Receive() || showGone.Msg().GetWishId() != "here" {
+			t.Fatalf("a deleted wish's show was replayed by WatchShow: %v, %v", showGone.Msg(), showGone.Err())
+		}
+		watchHere, err := client.Watch(ctx, connect.NewRequest(&uiv1.UiServiceWatchRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer watchHere.Close()
+		if !watchHere.Receive() {
+			t.Fatalf("Watch ended: %v", watchHere.Err())
+		}
+		showHere, err := client.WatchShow(ctx, connect.NewRequest(&uiv1.UiServiceWatchShowRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer showHere.Close()
+		if !showHere.Receive() {
+			t.Fatalf("WatchShow ended: %v", showHere.Err())
+		}
+		if w, ws := watchHere.Msg().GetShow().GetWishId(), showHere.Msg().GetWishId(); w != "here" || ws != "here" {
 			t.Fatalf("replayed Watch %q, WatchShow %q, want the wish still here", w, ws)
 		}
 		// A show of no wish (a terminal alone) is replayed whatever Known says.
