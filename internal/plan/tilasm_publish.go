@@ -56,7 +56,7 @@ func (t *Tilasms) Publish(
 	defer removeIf(dir)
 	b, err := tilasm.Build(versionDir(t.Home, found.GetId(), n), dir)
 	if err != nil {
-		var large *tilasm.TooLarge
+		var large *tilasm.TooLargeError
 		if errors.As(err, &large) {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s cannot go on claude.ai: %w", found.GetCode(), err))
 		}
@@ -68,7 +68,7 @@ func (t *Tilasms) Publish(
 	}
 	pub, err := t.Publisher.Publish(ctx, taskID, found.GetCode(), b, art.GetUrl())
 	if err != nil {
-		var blocked *PublishBlocked
+		var blocked *PublishBlockedError
 		if errors.As(err, &blocked) {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
@@ -93,7 +93,7 @@ func (t *Tilasms) Publish(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TilasmServicePublishResponse{
-		Tilasm: published, Url: pub.URL, Files: int32(len(b.Files)), LeftOut: b.Left, Size: b.Size, CostUsd: pub.CostUSD, //nolint:gosec // G115: MaxFiles at most.
+		Tilasm: published, Url: pub.URL, Files: int32(len(b.Files)), LeftOut: b.Left, Size: b.Size, CostUsd: pub.CostUSD,
 	}), nil
 }
 

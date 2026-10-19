@@ -12,7 +12,7 @@
 // (tilasm-passages.tsx); Aim mode comments an element, and numbered dots in a margin beside the frame stand at the
 // height of each anchor (tilasm-margin.tsx). A new version places the anchors again: the window writes where each
 // stands, found, changed or lost, and a toast counts them. A version a task linked to comments put says so on its
-// head: v4 by W62, for C1, C3.
+// head: v4 by W62, for C1, C3. A row publishes its tilasm on claude.ai, and links it once published (tilasm-publish.tsx).
 import {
   Crosshair,
   Download,
@@ -71,6 +71,13 @@ import {
 } from "./tilasm-comments";
 import { AimBox, Margin, useAim, usePlaced } from "./tilasm-margin";
 import { CommentPick, usePassages } from "./tilasm-passages";
+import {
+  ArtifactState,
+  PublishButton,
+  PublishConfirm,
+  needsConfirm,
+  useCanPublish,
+} from "./tilasm-publish";
 import { memory } from "./usage";
 
 import "./tilasms.css";
@@ -138,6 +145,10 @@ export function TilasmsTab({
   }, [opening]);
   const [history, setHistory] = useState("");
   const [busy, setBusy] = useState(false);
+  const canPublish = useCanPublish();
+  // The tilasm whose first publish waits for the developer's go-ahead, and the one being published.
+  const [confirming, setConfirming] = useState("");
+  const [publishing, setPublishing] = useState("");
   useEffect(() => {
     if (!search.trim()) return setFound(null);
     let live = true;
@@ -170,6 +181,22 @@ export function TilasmsTab({
     ref: { case: "id" as const, value: tilasm.id },
   });
   const comments = useCommentWrites(wishId, onToast);
+  const publish = (tilasm: Tilasm, confirmed: boolean) => {
+    setConfirming("");
+    setPublishing(tilasm.id);
+    void run(async () => {
+      if (confirmed)
+        await clients.tilasms.confirmPublish({ tilasmId: tilasm.id });
+      const res = await clients.tilasms.publish({ tilasm: ref(tilasm) });
+      return res.leftOut.length > 0
+        ? t("tilasms.published_left", {
+            code: tilasm.code,
+            count: res.leftOut.length,
+            files: res.leftOut.join(", "),
+          })
+        : t("tilasms.published", { code: tilasm.code });
+    }).finally(() => setPublishing(""));
+  };
   return (
     <TilasmList
       tilasms={found ?? tilasms}
@@ -207,6 +234,16 @@ export function TilasmsTab({
           return t("tilasms.exported", { file: res.file });
         })
       }
+      canPublish={canPublish}
+      confirming={confirming}
+      publishing={publishing}
+      onPublish={(tilasm) =>
+        needsConfirm(tilasm)
+          ? setConfirming(confirming === tilasm.id ? "" : tilasm.id)
+          : publish(tilasm, false)
+      }
+      onConfirm={(tilasm) => publish(tilasm, true)}
+      onCancelPublish={() => setConfirming("")}
       busy={busy}
       onDrop={(entries) => {
         setBusy(true);
@@ -325,6 +362,12 @@ export function TilasmList({
   onHistory,
   onRestore,
   onExport,
+  canPublish = false,
+  confirming = "",
+  publishing = "",
+  onPublish = () => {},
+  onConfirm = () => {},
+  onCancelPublish = () => {},
   busy = false,
   onDrop,
 }: {
@@ -362,6 +405,15 @@ export function TilasmList({
   onHistory: (id: string) => void;
   onRestore: (tilasm: Tilasm, version: number) => void;
   onExport: (tilasm: Tilasm) => void;
+  // This machine publishes tilasms on claude.ai.
+  canPublish?: boolean;
+  // The tilasm whose first publish asks the developer, and the one being published.
+  confirming?: string;
+  publishing?: string;
+  // Publishes a tilasm, or asks first; the developer confirms, or cancels.
+  onPublish?: (tilasm: Tilasm) => void;
+  onConfirm?: (tilasm: Tilasm) => void;
+  onCancelPublish?: () => void;
   // A drop is being put.
   busy?: boolean;
   onDrop: (entries: DropEntry[]) => void;
@@ -494,10 +546,20 @@ export function TilasmList({
                     ))}
                   </span>
                 )}
+                <ArtifactState
+                  tilasm={tilasm}
+                  publishing={publishing === tilasm.id}
+                />
                 <span className="tilasm-actions">
                   {(counts.get(tilasm.id) ?? 0) > 0 && (
                     <DraftDot count={counts.get(tilasm.id) ?? 0} />
                   )}
+                  <PublishButton
+                    tilasm={tilasm}
+                    canPublish={canPublish}
+                    publishing={publishing === tilasm.id}
+                    onPublish={onPublish}
+                  />
                   <button
                     type="button"
                     className="icon-button"
@@ -519,6 +581,13 @@ export function TilasmList({
                   </button>
                 </span>
               </div>
+              {confirming === tilasm.id && (
+                <PublishConfirm
+                  tilasm={tilasm}
+                  onConfirm={() => onConfirm(tilasm)}
+                  onCancel={onCancelPublish}
+                />
+              )}
               {history === tilasm.id && (
                 <ol className="tilasm-history" reversed>
                   {[...tilasm.versions].reverse().map((v) => (

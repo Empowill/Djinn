@@ -72,14 +72,14 @@ type Bundle struct {
 	Size int64
 }
 
-// TooLarge is why a tilasm cannot be published: it does not fit an artifact's limits.
-type TooLarge struct{ Why string }
+// TooLargeError is why a tilasm cannot be published: it does not fit an artifact's limits.
+type TooLargeError struct{ Why string }
 
-func (e *TooLarge) Error() string { return e.Why }
+func (e *TooLargeError) Error() string { return e.Why }
 
 // Build makes the tilasm's version folder src ready to publish, in dst, a folder that exists and is empty: its page,
 // its large data: addresses moved out into files, and every file of a type claude.ai serves, at its path. A tilasm
-// over an artifact's limits is refused with a TooLarge error.
+// over an artifact's limits is refused with a TooLargeError error.
 func Build(src, dst string) (*Bundle, error) {
 	page, err := os.ReadFile(filepath.Join(src, Index))
 	if err != nil {
@@ -91,7 +91,7 @@ func Build(src, dst string) (*Bundle, error) {
 		return nil, err
 	}
 	if len(page) > PageLimit {
-		return nil, &TooLarge{Why: fmt.Sprintf("its page weighs %s, over the %s of a page on claude.ai", mib(int64(len(page))), mib(PageLimit))}
+		return nil, &TooLargeError{Why: fmt.Sprintf("its page weighs %s, over the %s of a page on claude.ai", mib(int64(len(page))), mib(PageLimit))}
 	}
 	if err := os.WriteFile(filepath.Join(dst, Index), page, 0o600); err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func Build(src, dst string) (*Bundle, error) {
 			return err
 		}
 		if limit, kind := fileLimit(name); info.Size() > limit {
-			return &TooLarge{Why: fmt.Sprintf("%s weighs %s, over the %s of a %s on claude.ai", name, mib(info.Size()), mib(limit), kind)}
+			return &TooLargeError{Why: fmt.Sprintf("%s weighs %s, over the %s of a %s on claude.ai", name, mib(info.Size()), mib(limit), kind)}
 		}
 		b.Size += info.Size()
 		b.Files = append(b.Files, name)
@@ -134,9 +134,9 @@ func Build(src, dst string) (*Bundle, error) {
 	sort.Strings(b.Left)
 	switch {
 	case len(b.Files) > MaxFiles:
-		return nil, &TooLarge{Why: fmt.Sprintf("it holds %d files beside its page, over the %d of an artifact", len(b.Files), MaxFiles)}
+		return nil, &TooLargeError{Why: fmt.Sprintf("it holds %d files beside its page, over the %d of an artifact", len(b.Files), MaxFiles)}
 	case b.Size > SendLimit:
-		return nil, &TooLarge{Why: fmt.Sprintf("its files weigh %s, over the %s of a publish on claude.ai", mib(b.Size), mib(SendLimit))}
+		return nil, &TooLargeError{Why: fmt.Sprintf("its files weigh %s, over the %s of a publish on claude.ai", mib(b.Size), mib(SendLimit))}
 	}
 	for _, rel := range copies {
 		if err := copyFile(filepath.Join(src, rel), filepath.Join(dst, rel)); err != nil {
@@ -159,12 +159,12 @@ func copyFile(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
-	in, err := os.Open(src) //nolint:gosec // G304: a file of the tilasm's own folder.
+	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // G304: in the bundle's folder.
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -303,9 +303,9 @@ func (o *outsider) data(ref string) (string, error) {
 	if ext == "" {
 		return ref, nil
 	}
-	b, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(m[2]), ""))
-	if err != nil {
-		return ref, nil
+	b, bad := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(m[2]), ""))
+	if bad != nil {
+		return ref, nil //nolint:nilerr // A payload badly encoded stays in the page, as written.
 	}
 	sum := sha256.Sum256(b)
 	name := Outside + "/" + hex.EncodeToString(sum[:8]) + ext

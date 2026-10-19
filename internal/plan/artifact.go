@@ -151,7 +151,7 @@ func (p *Publisher) initTools(ctx context.Context, command string, env []string)
 
 func (p *Publisher) command(ctx context.Context, command string, env []string, dir string, args []string) *exec.Cmd {
 	userHome, path := p.paths()
-	cmd := exec.CommandContext(ctx, command, args...) //nolint:gosec // G204: claude, found on the PATH, with Djinn's own arguments.
+	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "PATH="+path, "NO_COLOR=1")
 	if userHome != "" {
@@ -342,7 +342,7 @@ func short(s string) string {
 func (p *Publisher) Publish(ctx context.Context, taskID, code string, b *tilasm.Bundle, url string) (*Published, error) {
 	block, detail, env := p.Check(ctx)
 	if block != planv1.PublishBlock_PUBLISH_BLOCK_UNSPECIFIED {
-		return nil, &PublishBlocked{Block: block, Detail: detail}
+		return nil, &PublishBlockedError{Block: block, Detail: detail}
 	}
 	_, path := p.paths()
 	command, err := lookProgram(providerPrograms[planv1.Provider_PROVIDER_CLAUDE], path)
@@ -392,13 +392,13 @@ func (p *Publisher) Publish(ctx context.Context, taskID, code string, b *tilasm.
 	return &pub, nil
 }
 
-// PublishBlocked is why a publish cannot start on this machine.
-type PublishBlocked struct {
+// PublishBlockedError is why a publish cannot start on this machine.
+type PublishBlockedError struct {
 	Block  planv1.PublishBlock
 	Detail string
 }
 
-func (e *PublishBlocked) Error() string {
+func (e *PublishBlockedError) Error() string {
 	why := map[planv1.PublishBlock]string{
 		planv1.PublishBlock_PUBLISH_BLOCK_NO_CLAUDE:        "Claude Code is not installed: no claude on the PATH",
 		planv1.PublishBlock_PUBLISH_BLOCK_SIGNED_OUT:       "Claude Code is not signed in: run claude auth login",
@@ -410,4 +410,3 @@ func (e *PublishBlocked) Error() string {
 	}
 	return "cannot publish on claude.ai: " + why
 }
-

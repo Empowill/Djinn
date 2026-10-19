@@ -149,7 +149,7 @@ func TestBuild(t *testing.T) {
 			dst := t.TempDir()
 			b, err := Build(src, dst)
 			if c.tooLarge != "" {
-				var large *TooLarge
+				var large *TooLargeError
 				if !errors.As(err, &large) || !strings.Contains(err.Error(), c.tooLarge) {
 					t.Fatalf("Build = %v, %v; want a refusal saying %q", b, err, c.tooLarge)
 				}

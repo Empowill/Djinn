@@ -282,7 +282,10 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   (`tilasms/<id>/v<n>/`), never in a project; `--code L01` puts a new version of it. `djinn tilasm get L01` gives an
   agent its text and the folder of its files; `history`, `restore <version>`, `export` (a `.zip` with `tilasm.json`)
   and `import <zip> --wish <wish-id>` follow, and `djinn wish export` carries them. A tilasm holds 50 MiB at most.
-  `djinn talisman …` is the same command ([T25](plan/4a699d0f-review-at-a-glance.md)). Djinn serves each one's latest version at
+  `djinn talisman …` is the same command ([T25](plan/4a699d0f-review-at-a-glance.md)). `djinn tilasm publish L01`
+  puts its latest version on claude.ai, a private artifact of the developer's Claude account, by one short Claude call
+  under the `paid` gate, at the address of its last publish; its first publish is the developer's, from its row in the
+  window, once they checked it holds no personal data of a client. Djinn serves each one's latest version at
   `/tilasm/<id>/`, with a content security policy of its own: its scripts and files run, the network and Djinn stay
   out of reach. The wish's *Tilasms* tab lists them, opens one in a sandboxed frame, searches their titles and text,
   restores a version and exports one; a folder or a `.zip` dropped on it becomes a tilasm. The brief lists the wish's

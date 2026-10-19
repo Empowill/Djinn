@@ -32,7 +32,7 @@ func fakeClaude(t *testing.T, auth int, stream string, exit int) (path, log stri
 		script += "cat '" + stream + "'\n"
 	}
 	script += "exit " + strconv.Itoa(exit) + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil { //nolint:gosec // G306: a program.
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return dir + string(os.PathListSeparator) + os.Getenv("PATH"), log
