@@ -92,7 +92,7 @@ func TestOrphansStoppedAtStart(t *testing.T) {
 	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = envProvider{Claude{Command: os.Args[0]}, env}
 	crashed := upWith(t, t.TempDir(), providers, withCrashedChildren(run, endedPID(t)))
-	wishID, _ := crashed.wish(t, gitRepo(t))
+	wishID, _ := crashed.wish(t, nativeFolder(t))
 	res, err := crashed.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "Work", Prompt: "x", Provider: planv1.Provider_PROVIDER_CLAUDE,
 	}))

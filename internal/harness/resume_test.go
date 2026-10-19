@@ -124,7 +124,7 @@ func TestSessionLimitWaitsThenResumes(t *testing.T) {
 	providers, sw := claudePlaying(limit)
 	clock := &fakeClock{at: time.Date(2026, 10, 8, 4, 28, 30, 0, time.UTC)}
 	e := upWith(t, t.TempDir(), providers, WithClock(clock.now))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "Reopen the leads", Prompt: "x", Provider: planv1.Provider_PROVIDER_CLAUDE,
 	}))
@@ -155,14 +155,16 @@ func TestSessionLimitWaitsThenResumes(t *testing.T) {
 	if o := e.ended(t, other.Msg.GetTask().GetId()); o.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Errorf("another claude task ended: %v", o)
 	}
-	if f := e.spawn(t, wishID, "text free"); f.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+	f := e.spawn(t, wishID, "text free")
+	if f.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Errorf("a fake task while claude's limit holds: %v", f)
 	}
+	e.ended(t, f.GetId())
 
 	// Before the reset the limited task waits; after it, the scheduler resumes it on its session and it finishes.
 	clock.set(resetAt.Add(30 * time.Second))
 	e.h.wake()
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	if got := e.get(t, id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING {
 		t.Fatalf("resumed before the limit reset: %v", got)
 	}
@@ -345,126 +347,122 @@ func (e *env) untilText(t *testing.T, id, text string) {
 	}
 }
 
-// TestThreeRestartsThenFinishes: a task interrupted three times by djinn up stopping or restarting resumes each
-// time without counting against maxResumes, and finishes.
-func TestThreeRestartsThenFinishes(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home := t.TempDir()
-	p := &scriptStepProvider{steps: []string{
-		"text r0\nsleep 1h",
-		"text r1\nsleep 1h",
-		"text r2\nsleep 1h",
-		"text done",
-	}}
-	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
-	e := upWith(t, home, providers)
-	wishID, _ := e.wish(t, gitRepo(t))
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Three restarts", Prompt: "start", Provider: planv1.Provider_PROVIDER_FAKE,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := res.Msg.GetTask().GetId()
-
-	for i := range 3 {
-		e.untilText(t, id, fmt.Sprintf("r%d", i))
-		e.down()
-		e = upWith(t, home, providers)
-	}
-
-	got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
-	if got.GetResumes() != 0 {
-		t.Errorf("task finished with %d resumes, want 0", got.GetResumes())
-	}
-	all := strings.Join(eventTexts(e.watch(t.Context(), t, id, 0)), "\n")
-	if n := strings.Count(all, whyRestarted); n != 3 {
-		t.Errorf("got %d %q in events, want 3:\n%s", n, whyRestarted, all)
-	}
-	if n := strings.Count(all, "resumed after djinn restarted"); n != 3 {
-		t.Errorf("got %d 'resumed after djinn restarted' in events, want 3:\n%s", n, all)
-	}
-	if strings.Contains(all, "(1 of 3)") {
-		t.Errorf("events contain '(1 of 3)' for restart resume:\n%s", all)
-	}
-}
-
-// TestResumeMixCountsOnlyLimits: a mix of restarts and usage limits counts only the usage limits against maxResumes.
+// TestResumeMixCountsOnlyLimits: restarts do not count against maxResumes, while usage limits do.
 func TestResumeMixCountsOnlyLimits(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	home := t.TempDir()
-	p := &scriptStepProvider{steps: []string{
-		"text mix0\nsleep 1h",       // Run 0: interrupted by Restart 1
-		"fail usage limit exceeded", // Run 1: hits limit 1 (resumes with Resumes == 1)
-		"text mix1\nsleep 1h",       // Run 2: interrupted by Restart 2
-		"fail usage limit exceeded", // Run 3: hits limit 2 (resumes with Resumes == 2)
-		"text mix2\nsleep 1h",       // Run 4: interrupted by Restart 3
-		"fail usage limit exceeded", // Run 5: hits limit 3 (resumes with Resumes == 3)
-		"fail usage limit exceeded", // Run 6: hits limit 4 -> exhausted!
-	}}
-	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
-	clock := &fakeClock{at: time.Date(2026, 10, 8, 4, 28, 30, 0, time.UTC)}
-	e := upWith(t, home, providers, WithClock(clock.now))
-	wishID, _ := e.wish(t, gitRepo(t))
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Mix restarts and limits", Prompt: "start", Provider: planv1.Provider_PROVIDER_FAKE,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := res.Msg.GetTask().GetId()
 
-	for i := range int32(maxResumes) {
-		// Worker runs and sleeps.
-		e.untilText(t, id, fmt.Sprintf("mix%d", i))
-		if got := e.get(t, id); got.GetResumes() != i {
-			t.Fatalf("cycle %d running: resumes = %d, want %d", i+1, got.GetResumes(), i)
+	t.Run("three_restarts_then_finishes", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		p := &scriptStepProvider{steps: []string{
+			"text r0\nsleep 1h",
+			"text r1\nsleep 1h",
+			"text r2\nsleep 1h",
+			"text done",
+		}}
+		providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
+		e := upWith(t, home, providers)
+		wishID, _ := e.wish(t, nativeFolder(t))
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, Title: "Three restarts", Prompt: "start", Provider: planv1.Provider_PROVIDER_FAKE,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.Msg.GetTask().GetId()
+
+		for i := range 3 {
+			e.untilText(t, id, fmt.Sprintf("r%d", i))
+			e.down()
+			e = upWith(t, home, providers)
 		}
 
-		// Interrupted by Djinn restart: should NOT increment resumes.
-		e.down()
-		e = upWith(t, home, providers, WithClock(clock.now))
+		got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+		if got.GetResumes() != 0 {
+			t.Errorf("task finished with %d resumes, want 0", got.GetResumes())
+		}
+		all := strings.Join(eventTexts(e.watch(t.Context(), t, id, 0)), "\n")
+		if n := strings.Count(all, whyRestarted); n != 3 {
+			t.Errorf("got %d %q in events, want 3:\n%s", n, whyRestarted, all)
+		}
+		if n := strings.Count(all, "resumed after djinn restarted"); n != 3 {
+			t.Errorf("got %d 'resumed after djinn restarted' in events, want 3:\n%s", n, all)
+		}
+		if strings.Contains(all, "(1 of 3)") {
+			t.Errorf("events contain '(1 of 3)' for restart resume:\n%s", all)
+		}
+	})
 
-		// Worker fails on usage limit: limited sets RESUMING with ResumeAfter.
-		got := e.until(t, id, func(tk *planv1.Task) bool {
-			return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && tk.GetResumeAfter() != nil
-		})
-		if got.GetResumes() != i {
-			t.Fatalf("cycle %d limit wait: resumes = %d, want %d", i+1, got.GetResumes(), i)
+	t.Run("mix_restarts_and_limits", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		p := &scriptStepProvider{steps: []string{
+			"text mix0\nsleep 1h",       // Run 0: interrupted by Restart 1
+			"fail usage limit exceeded", // Run 1: hits limit 1 (resumes with Resumes == 1)
+			"text mix1\nsleep 1h",       // Run 2: interrupted by Restart 2
+			"fail usage limit exceeded", // Run 3: hits limit 2 (resumes with Resumes == 2)
+			"text mix2\nsleep 1h",       // Run 4: interrupted by Restart 3
+			"fail usage limit exceeded", // Run 5: hits limit 3 (resumes with Resumes == 3)
+			"fail usage limit exceeded", // Run 6: hits limit 4 -> exhausted!
+		}}
+		providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
+		clock := &fakeClock{at: time.Date(2026, 10, 8, 4, 28, 30, 0, time.UTC)}
+		e := upWith(t, home, providers, WithClock(clock.now))
+		wishID, _ := e.wish(t, nativeFolder(t))
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, Title: "Mix restarts and limits", Prompt: "start", Provider: planv1.Provider_PROVIDER_FAKE,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := res.Msg.GetTask().GetId()
+
+		for i := range int32(maxResumes) {
+			e.untilText(t, id, fmt.Sprintf("mix%d", i))
+			if got := e.get(t, id); got.GetResumes() != i {
+				t.Fatalf("cycle %d running: resumes = %d, want %d", i+1, got.GetResumes(), i)
+			}
+
+			e.down()
+			e = upWith(t, home, providers, WithClock(clock.now))
+
+			got := e.until(t, id, func(tk *planv1.Task) bool {
+				return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && tk.GetResumeAfter() != nil
+			})
+			if got.GetResumes() != i {
+				t.Fatalf("cycle %d limit wait: resumes = %d, want %d", i+1, got.GetResumes(), i)
+			}
+
+			clock.set(got.GetResumeAfter().AsTime().Add(time.Second))
+			e.h.wake()
 		}
 
-		// Advance clock past the limit reset and wake the harness.
-		clock.set(got.GetResumeAfter().AsTime().Add(time.Second))
-		e.h.wake()
-	}
-
-	// 4th usage limit fails the task because maxResumes (3) has been reached.
-	got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_FAILED))
-	if got.GetResumes() != maxResumes {
-		t.Errorf("failed task resumes = %d, want %d", got.GetResumes(), maxResumes)
-	}
-	if !strings.HasPrefix(got.GetError(), "resumed 3 times without finishing") {
-		t.Errorf("failed task error = %q, want 'resumed 3 times without finishing...'", got.GetError())
-	}
-
-	all := strings.Join(eventTexts(e.watch(t.Context(), t, id, 0)), "\n")
-	if n := strings.Count(all, "resumed after djinn restarted"); n != 3 {
-		t.Errorf("got %d restarts in events, want 3:\n%s", n, all)
-	}
-	if n := strings.Count(all, "resumed after its usage limit reset"); n != 3 {
-		t.Errorf("got %d usage limit resumes in events, want 3:\n%s", n, all)
-	}
-	for i := 1; i <= int(maxResumes); i++ {
-		wantLimit := fmt.Sprintf("resumed after its usage limit reset (%d of 3)", i)
-		if !strings.Contains(all, wantLimit) {
-			t.Errorf("events missing %q:\n%s", wantLimit, all)
+		got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_FAILED))
+		if got.GetResumes() != maxResumes {
+			t.Errorf("failed task resumes = %d, want %d", got.GetResumes(), maxResumes)
 		}
-	}
-	if strings.Contains(all, "resumed after djinn restarted (") {
-		t.Errorf("restart events should not contain counter:\n%s", all)
-	}
+		if !strings.HasPrefix(got.GetError(), "resumed 3 times without finishing") {
+			t.Errorf("failed task error = %q, want 'resumed 3 times without finishing...'", got.GetError())
+		}
+
+		all := strings.Join(eventTexts(e.watch(t.Context(), t, id, 0)), "\n")
+		if n := strings.Count(all, "resumed after djinn restarted"); n != 3 {
+			t.Errorf("got %d restarts in events, want 3:\n%s", n, all)
+		}
+		if n := strings.Count(all, "resumed after its usage limit reset"); n != 3 {
+			t.Errorf("got %d usage limit resumes in events, want 3:\n%s", n, all)
+		}
+		for i := 1; i <= int(maxResumes); i++ {
+			wantLimit := fmt.Sprintf("resumed after its usage limit reset (%d of 3)", i)
+			if !strings.Contains(all, wantLimit) {
+				t.Errorf("events missing %q:\n%s", wantLimit, all)
+			}
+		}
+		if strings.Contains(all, "resumed after djinn restarted (") {
+			t.Errorf("restart events should not contain counter:\n%s", all)
+		}
+	})
 }
 
 // TestPerMinuteRateLimitBackoff checks that per-minute TPM/RPM quotas use a 60s -> 90s -> 120s backoff without
@@ -507,7 +505,7 @@ func TestPerMinuteRateLimitBackoff(t *testing.T) {
 	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
 	clock := &fakeClock{at: now}
 	e := upWith(t, home, providers, WithClock(clock.now))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "TPM quota task", Prompt: "start", Provider: planv1.Provider_PROVIDER_FAKE,
 	}))
@@ -575,9 +573,9 @@ func TestReplayEnvFailuresResetsResumesAndHonorsCooldown(t *testing.T) {
 	providers := map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: p}
 	clock := &fakeClock{at: now}
 	e := upWith(t, home, providers, WithClock(clock.now))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	resA, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Task A", Prompt: "start A", Provider: planv1.Provider_PROVIDER_FAKE,
+		WishId: wishID, Title: "Task A", Prompt: "start A", Provider: planv1.Provider_PROVIDER_FAKE, WriteScopes: []string{"a"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -599,7 +597,7 @@ func TestReplayEnvFailuresResetsResumesAndHonorsCooldown(t *testing.T) {
 	// Only 10 seconds after Task A failed (well within the 15m usage limit cooldown), Task B finishes.
 	clock.set(clock.now().Add(10 * time.Second))
 	resB, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Task B", Prompt: "start B", Provider: planv1.Provider_PROVIDER_FAKE,
+		WishId: wishID, Title: "Task B", Prompt: "start B", Provider: planv1.Provider_PROVIDER_FAKE, WriteScopes: []string{"b"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -612,7 +610,7 @@ func TestReplayEnvFailuresResetsResumesAndHonorsCooldown(t *testing.T) {
 	// Advance past the 15m cooldown and run Task C -> Task A is replayed with Resumes reset to 0.
 	clock.set(clock.now().Add(16 * time.Minute))
 	resC, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Task C", Prompt: "start C", Provider: planv1.Provider_PROVIDER_FAKE,
+		WishId: wishID, Title: "Task C", Prompt: "start C", Provider: planv1.Provider_PROVIDER_FAKE, WriteScopes: []string{"c"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -640,12 +638,12 @@ func TestQuotaHoldsOnlyProvenModelAndStartPasses(t *testing.T) {
 	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
 	home := t.TempDir()
 	e := upWith(t, home, map[planv1.Provider]Provider{planv1.Provider_PROVIDER_FAKE: Fake{}}, WithClock(func() time.Time { return now }))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	// 1. Unscoped quota on W1 holds W1 alone, never W2.
 	w1Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "W1 unscoped quota", Prompt: "fail RESOURCE_EXHAUSTED: quota exceeded",
-		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6", WriteScopes: []string{"w1"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -657,7 +655,7 @@ func TestQuotaHoldsOnlyProvenModelAndStartPasses(t *testing.T) {
 
 	w2Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "W2 same model", Prompt: "text w2 done",
-		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6", WriteScopes: []string{"w2"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -669,7 +667,7 @@ func TestQuotaHoldsOnlyProvenModelAndStartPasses(t *testing.T) {
 	// 2. Model-scoped quota on W3 holds W4 (same model), does not hold W5 (another model), and Start passes it for W4.
 	w3Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "W3 model quota", Prompt: "fail RESOURCE_EXHAUSTED: quota exceeded for model claude-opus-4-6",
-		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6", WriteScopes: []string{"w3"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -681,7 +679,7 @@ func TestQuotaHoldsOnlyProvenModelAndStartPasses(t *testing.T) {
 
 	w4Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "W4 held by model quota", Prompt: "text w4 done",
-		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-opus-4-6", WriteScopes: []string{"w4"},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -693,7 +691,7 @@ func TestQuotaHoldsOnlyProvenModelAndStartPasses(t *testing.T) {
 
 	w5Res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "W5 other model", Prompt: "text w5 done",
-		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-sonnet-4-6",
+		Provider: planv1.Provider_PROVIDER_FAKE, Model: "claude-sonnet-4-6", WriteScopes: []string{"w5"},
 	}))
 	if err != nil {
 		t.Fatal(err)

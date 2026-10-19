@@ -17,7 +17,7 @@ func TestWishPauseStopsItsWorkers(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(20*time.Millisecond))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	long := e.mustSpawn(t, wishID, "Long", ticks(), nil)
 	id := long.GetId()
 	waitFor(t, "the first ticks", func() bool { return e.tickCount(t, id) >= 2 })
@@ -30,7 +30,7 @@ func TestWishPauseStopsItsWorkers(t *testing.T) {
 		t.Fatalf("held = %v", held)
 	}
 	// The scheduler leaves it while its wish is paused.
-	time.Sleep(150 * time.Millisecond)
+	e.h.schedule(t.Context())
 	if got := e.get(t, id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING {
 		t.Fatalf("started while its wish is paused: %v", got)
 	}

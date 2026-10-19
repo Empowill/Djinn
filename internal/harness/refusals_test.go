@@ -25,13 +25,13 @@ func endedEvents(q *leadQueue, code string) []string {
 	return lines
 }
 
-// twoProjects makes a wish of two Git projects, as the lead makes one for a study in another project, and returns it
-// with the second project.
+// twoProjects makes a wish of two projects (one native folder, one Git repository), as the lead makes one for a study
+// in another project, and returns it with the second project.
 func twoProjects(t *testing.T, e *env) (wishID, projectID string) {
 	t.Helper()
 	var ids []string
-	for range 2 {
-		p, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: gitRepo(t)}))
+	for _, dir := range []string{nativeFolder(t), gitRepo(t)} {
+		p, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,18 +44,26 @@ func twoProjects(t *testing.T, e *env) (wishID, projectID string) {
 	return w.Msg.GetWish().GetId(), ids[1]
 }
 
-// TestDoneWithoutCommitTellsTheLeadOnce replays W1 of wish Dew (12/10/2026): a worker of a new wish, in its second
-// project, with its agent's own configuration, that commits nothing and ends done. Its project names no check, so no
-// merge ever told its end: the lead heard nothing for an hour. Now it hears it once, with the worker's final note, and
-// that its work brought nothing to merge (W196).
-func TestDoneWithoutCommitTellsTheLeadOnce(t *testing.T) {
+// TestDoneWithoutCommitAndRefusalsTellTheLead replays W1 of wish Dew (12/10/2026) and the lead's done notifications:
+//   - a worker in a Git project that commits nothing and ends done tells the lead once that its work brought nothing to
+//     merge (W196);
+//   - a worker whose calls were refused, djinn's own included, tells the lead how many and which, and the command that
+//     grants them, whole in the digest;
+//   - the lead's event carries the worker's final note whole, apart from its line, which keeps the first line (16/10/2026).
+func TestDoneWithoutCommitAndRefusalsTellTheLead(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir())
 	queue := &leadQueue{}
 	e.h.NotifyLead(queue.notify)
-	wishID, projectID := twoProjects(t, e)
+	wishID, gitID := twoProjects(t, e)
+	wish, err := store.Get[*planv1.Wish](t.Context(), e.db, wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeID := wish.GetProjectIds()[0]
+
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, ProjectId: projectID, Title: "Silae for bardahl: feasibility study",
+		WishId: wishID, ProjectId: gitID, Title: "Silae for bardahl: feasibility study",
 		Prompt:   "text reading the scraper\ntext Feasible without the salary data: two questions for the developer.\nThe rest of the report.",
 		Provider: planv1.Provider_PROVIDER_FAKE,
 	}))
@@ -78,17 +86,7 @@ func TestDoneWithoutCommitTellsTheLeadOnce(t *testing.T) {
 	if got.GetRefused() != nil {
 		t.Errorf("refused %v, want none", got.GetRefused())
 	}
-}
 
-// TestRefusedCallsToldAndCarried replays W1's calls (12/10/2026): every one that left its worktree was refused, djinn's
-// own included, and it ended done with half its work. The lead's event and the task carry how many and which, and
-// the command that grants them, whole in the digest.
-func TestRefusedCallsToldAndCarried(t *testing.T) {
-	t.Parallel()
-	e := up(t, t.TempDir())
-	queue := &leadQueue{}
-	e.h.NotifyLead(queue.notify)
-	wishID, projectID := twoProjects(t, e)
 	prompt := strings.Join([]string{
 		"refuse Bash cd cmd/integreat/scrap/silae && ls -la && wc -l *.go",
 		"refuse Bash R=/home/x/worktrees/w1; git -C $R log --oneline -15",
@@ -98,35 +96,47 @@ func TestRefusedCallsToldAndCarried(t *testing.T) {
 		"refuse Bash djinn block put --help",
 		"text Half of the study: djinn was refused, the questions are below.",
 	}, "\n")
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, ProjectId: projectID, Title: "Silae study", Prompt: prompt, Provider: planv1.Provider_PROVIDER_FAKE,
+	res2, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: wishID, ProjectId: nativeID, Title: "Silae study", Prompt: prompt, Provider: planv1.Provider_PROVIDER_FAKE,
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := res.Msg.GetTask()
-	e.watch(t.Context(), t, task.GetId(), 0)
-	got, err := store.Get[*planv1.Task](t.Context(), e.db, task.GetId())
+	task2 := res2.Msg.GetTask()
+	e.watch(t.Context(), t, task2.GetId(), 0)
+	got2, err := store.Get[*planv1.Task](t.Context(), e.db, task2.GetId())
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := got.GetRefused()
+	r := got2.GetRefused()
 	if wantNames := []string{"djinn", "ls", "git", "task", "gcloud"}; r.GetCount() != 6 || !slices.Equal(r.GetNames(), wantNames) {
 		t.Errorf("refused %v, want 6 calls of %v", r, wantNames)
 	}
-	lines := endedEvents(queue, task.GetCode())
+	lines := endedEvents(queue, task2.GetCode())
 	if len(lines) != 1 {
 		t.Fatalf("ended events %q, want one", lines)
 	}
-	command := "djinn wish allow " + wishID + " --mode auto --project-id " + projectID
-	want := "Djinn: " + task.GetCode() + " done, 6 commands refused (permission); " + command +
+	command := "djinn wish allow " + wishID + " --mode auto --project-id " + nativeID
+	wantLine := "Djinn: " + task2.GetCode() + " done, 6 commands refused (permission); " + command +
 		" would let the agent judge them, a right only the developer grants. Its final note: Half of the study: djinn was refused, the questions are below."
-	if lines[0] != want {
-		t.Errorf("ended event\n got %s\nwant %s", lines[0], want)
+	if lines[0] != wantLine {
+		t.Errorf("ended event\n got %s\nwant %s", lines[0], wantLine)
 	}
-	digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: task.GetCode(), Text: lines[0]}, "")
+	digest := plan.DigestLine(&planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, Code: task2.GetCode(), Text: lines[0]}, "")
 	if !strings.Contains(digest, command) {
 		t.Errorf("the digest cuts the command: %s", digest)
+	}
+
+	note := "Added djinn question get.\n\nLeft to verify:\n- the Windows build"
+	e.h.Note(task2.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: note + "\n"})
+	e.h.tellDone(t.Context(), task2, "", "")
+	events := queue.all()
+	last := events[len(events)-1]
+	if last.GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED || last.GetNote() != note {
+		t.Errorf("event %v, want its note whole: %q", last, note)
+	}
+	if want := "Djinn: " + task2.GetCode() + " done: Added djinn question get."; last.GetText() != want {
+		t.Errorf("line %q, want %q", last.GetText(), want)
 	}
 }
 
@@ -197,7 +207,11 @@ func TestSpawnNoteSaysDjinnIsRefused(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	e := up(t, t.TempDir())
-	wishID, projectID := e.wish(t, gitRepo(t))
+	dir := nativeFolder(t)
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	wishID, projectID := e.wish(t, dir)
 	project, err := store.Get[*planv1.Project](t.Context(), e.db, projectID)
 	if err != nil {
 		t.Fatal(err)
@@ -209,9 +223,6 @@ func TestSpawnNoteSaysDjinnIsRefused(t *testing.T) {
 		t.Errorf("note %q", note)
 	}
 	settings := filepath.Join(project.GetDirectory(), ".claude", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settings), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(settings, []byte(`{"permissions":{"allow":["Bash(git:*)","Bash(djinn:*)"]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -251,31 +262,5 @@ func TestClaudeAllowsDjinn(t *testing.T) {
 		if got := claudeAllowsDjinn(t.TempDir(), dir); got != want {
 			t.Errorf("claudeAllowsDjinn(home %s) = %v, want %v", settings, got, want)
 		}
-	}
-}
-
-// TestDoneCarriesTheWholeNote: the lead's event of a task done carries the worker's final note whole, apart from its
-// line, which keeps the first line: the digest cut it at 160 characters, and the lead read the rest with task watch
-// (16/10/2026).
-func TestDoneCarriesTheWholeNote(t *testing.T) {
-	t.Parallel()
-	e := up(t, t.TempDir())
-	queue := &leadQueue{}
-	e.h.NotifyLead(queue.notify)
-	wishID, _ := e.wish(t, fakeProject(t, ""))
-	task := e.ended(t, e.spawn(t, wishID, "text working").GetId())
-	note := "Added djinn question get.\n\nLeft to verify:\n- the Windows build"
-	e.h.Note(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: note + "\n"})
-	e.h.tellDone(t.Context(), task, "", "")
-	events := queue.all()
-	if len(events) == 0 {
-		t.Fatal("no event for the lead")
-	}
-	last := events[len(events)-1]
-	if last.GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED || last.GetNote() != note {
-		t.Errorf("event %v, want its note whole: %q", last, note)
-	}
-	if want := "Djinn: " + task.GetCode() + " done: Added djinn question get."; last.GetText() != want {
-		t.Errorf("line %q, want %q", last.GetText(), want)
 	}
 }

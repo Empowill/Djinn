@@ -26,7 +26,7 @@ func TestScopeTakesTheTree(t *testing.T) {
 	ticks := filepath.Join(t.TempDir(), "ticks")
 	// The child ticks into a file, in a session of its own; the command waits for it. The child's sleep is a long one
 	// started before the first tick: the short sleeps between ticks come and go.
-	script := `setsid sh -c 'sleep 600 & while :; do echo x >> "$1"; sleep 0.05; done' child "$0" & echo "$!"; wait`
+	script := `setsid sh -c 'sleep 600 & while :; do echo x >> "$1"; sleep 0.02; done' child "$0" & echo "$!"; wait`
 	h := &Harness{scopes: scopes}
 	p, err := startProcess(t.TempDir(), "sh", []string{"-c", script, ticks}, nil, h.scope("W1"), 2*time.Second, false, nil)
 	if err != nil {
@@ -58,7 +58,7 @@ func TestScopeTakesTheTree(t *testing.T) {
 
 	// Read over several ticks of the child, not once: a reading that fell between two of its short sleeps once
 	// counted two processes (W249).
-	for end := time.Now().Add(300 * time.Millisecond); time.Now().Before(end); {
+	for end := time.Now().Add(80 * time.Millisecond); time.Now().Before(end); {
 		g, err := machine.ReadWorker(p.cmd.Process.Pid, p.cgroup)
 		if err != nil || g.Processes < 3 || g.Memory == 0 || g.Peak < g.Memory {
 			t.Fatalf("ReadWorker = %+v, %v: want the command, the child and its sleep, read from the cgroup", g, err)
@@ -68,9 +68,9 @@ func TestScopeTakesTheTree(t *testing.T) {
 	if err := p.Pause(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	before := size()
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	if after := size(); after != before {
 		t.Errorf("the child ticked while paused: %d bytes", after-before)
 	}

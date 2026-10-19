@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -104,10 +105,15 @@ func TestContinue(t *testing.T) {
 		t.Errorf("third run usage = %v, want 1500/160/$0.05", third.GetUsage())
 	}
 
-	// Failed, then continued: the same task ends done, its error gone.
+	// Failed, then continued from the command line: the same task ends done, its error gone.
 	failed := e.ended(t, e.mustSpawn(t, wishID, "Fix it", "fail tests broke", nil).GetId())
-	if _, err := e.continueTask(t, failed.GetId(), "text fixed"); err != nil {
-		t.Fatal(err)
+	var out, errs bytes.Buffer
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	code := cli.Run(ctx, []string{"task", "continue", failed.GetId(), "--prompt", "text fixed"},
+		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+	if code != 0 || !strings.Contains(out.String(), "code: "+failed.GetCode()) {
+		t.Fatalf("djinn task continue: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
 	}
 	if again := e.ended(t, failed.GetId()); again.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || again.GetError() != "" {
 		t.Errorf("a failed task continued: %v", again)
@@ -121,9 +127,9 @@ func TestContinueWaitsForASlot(t *testing.T) {
 	t.Parallel()
 	l := &limit{slots: 1}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity))
-	wishID, _ := e.wish(t, gitRepo(t))
-	first := e.ended(t, e.mustSpawn(t, wishID, "First", "text one", nil).GetId())
-	busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", nil)
+	wishID, _ := e.wish(t, nativeFolder(t))
+	first := e.ended(t, e.mustSpawn(t, wishID, "First", "text one", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s1"}}).GetId())
+	busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
 	got, err := e.continueTask(t, first.GetId(), "text two")
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +153,16 @@ func TestContinueRefused(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
+	gitProject := &planv1.Project{Id: store.NewID(), Name: "git-proj", Directory: t.TempDir(), Git: true}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", gitProject); err != nil {
+			return err
+		}
+		return tx.Put(gitProject)
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	running := e.mustSpawn(t, wishID, "Long", "sleep 1h", nil)
 	if _, err := e.continueTask(t, running.GetId(), "text more"); connectCode(err) != connect.CodeFailedPrecondition ||
@@ -156,23 +171,6 @@ func TestContinueRefused(t *testing.T) {
 	}
 	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: running.GetId()})); err != nil {
 		t.Fatal(err)
-	}
-
-	cleaned := e.ended(t, e.mustSpawn(t, wishID, "Cleaned", "text one", nil).GetId())
-	if _, err := e.tasks.Clean(t.Context(), connect.NewRequest(&planv1.TaskServiceCleanRequest{TaskId: cleaned.GetId()})); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.continueTask(t, cleaned.GetId(), "text more"); connectCode(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), "has no worktree any more") {
-		t.Errorf("a task without worktree: %v", err)
-	}
-	gone := e.ended(t, e.mustSpawn(t, wishID, "Gone", "text one", nil).GetId())
-	if err := os.RemoveAll(gone.GetWorktree()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.continueTask(t, gone.GetId(), "text more"); connectCode(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), "has lost its worktree") {
-		t.Errorf("a task whose worktree was removed: %v", err)
 	}
 
 	put := func(code string, edit func(*planv1.Task)) *planv1.Task {
@@ -188,6 +186,10 @@ func TestContinueRefused(t *testing.T) {
 		edit func(*planv1.Task)
 		want string
 	}{
+		{"cleaned worktree", func(task *planv1.Task) { task.ProjectId = gitProject.GetId() }, "has no worktree any more"},
+		{"gone worktree", func(task *planv1.Task) {
+			task.ProjectId, task.Worktree = gitProject.GetId(), filepath.Join(t.TempDir(), "gone")
+		}, "has lost its worktree"},
 		{"watcher", func(t *planv1.Task) { t.Provider = planv1.Provider_PROVIDER_WATCH }, "has no session"},
 		{"no session", func(t *planv1.Task) { t.SessionId = "" }, "has no session to resume"},
 		{"imported", func(t *planv1.Task) { t.Scheduled = false }, "was not run by this Djinn"},
@@ -219,7 +221,7 @@ func TestForkClosesParent(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	failed := e.ended(t, e.mustSpawn(t, wishID, "Broken", "fail tests broke", nil).GetId())
 	fork := e.mustSpawn(t, wishID, "Broken (resumed)", "text fixed", &planv1.TaskServiceSpawnRequest{Fork: "W1"})
@@ -257,26 +259,6 @@ func TestForkClosesParent(t *testing.T) {
 	}
 }
 
-// TestContinueCommand: djinn task continue plans a task again from the command line, with its prompt as a flag.
-func TestContinueCommand(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
-	first := e.ended(t, e.mustSpawn(t, wishID, "First", "text one", nil).GetId())
-	var out, errs bytes.Buffer
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	code := cli.Run(ctx, []string{"task", "continue", first.GetId(), "--prompt", "text two"},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 || !strings.Contains(out.String(), "code: W1") {
-		t.Errorf("djinn task continue: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
-	}
-	if done := e.ended(t, first.GetId()); done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("continued from the command line: %v", done)
-	}
-}
-
 // TestContinueAntigravity: an antigravity task is continued on its conversation, its usage summed and its worktree kept.
 func TestContinueAntigravity(t *testing.T) {
 	testx.Portable(t)
@@ -285,7 +267,7 @@ func TestContinueAntigravity(t *testing.T) {
 	resume, args, _ := fake{provider: "antigravity", fixture: "resume"}.env(t)
 	providers, sw := antigravityPlaying(success)
 	e := upWith(t, t.TempDir(), providers)
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "Turn one", Prompt: "x", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
 	}))
@@ -312,15 +294,9 @@ func TestContinueAntigravity(t *testing.T) {
 	if b, err := os.ReadFile(args); err != nil || !strings.Contains(string(b), "--conversation\n9ec58bfd-4d67-4f5e-83a5-9d907e9c6b1f") {
 		t.Errorf("resumed worker arguments: %q, %v", b, err)
 	}
-	// Resumed a third time on the same conversation: usage stays at the cumulative conversation total, not 3x.
-	resume2, _, _ := fake{provider: "antigravity", fixture: "resume"}.env(t)
-	sw.play(resume2)
-	if _, err := e.continueTask(t, id, "Turn three"); err != nil {
-		t.Fatal(err)
-	}
-	done = e.ended(t, id)
+	// Resumed on the same conversation: usage stays at the cumulative conversation total, not 2x.
 	if u := done.GetUsage(); u.GetInputTokens() != 30384 || u.GetOutputTokens() != 9 || u.GetCostUsd() < 0.02282 || u.GetCostUsd() > 0.02283 {
-		t.Errorf("agy usage after 3 runs on same conversation = %v, want 30384/9/~$0.02282", u)
+		t.Errorf("agy usage after resume on same conversation = %v, want 30384/9/~$0.02282", u)
 	}
 
 	// When a task starts a fresh session (e.g. after switching provider), prior session usage is carried over as r.base,

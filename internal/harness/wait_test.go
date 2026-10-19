@@ -119,9 +119,9 @@ func TestBlockingQuestionAcrossARestart(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home, WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	ask := func(title string) (*planv1.Task, *planv1.Question) {
-		task := e.mustSpawn(t, wishID, title, "text working\nwait", nil)
+		task := e.mustSpawn(t, wishID, title, "text working\nwait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{title}})
 		q := e.askAbout(t, e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING)), true)
 		e.release(t, task.GetId())
 		e.until(t, task.GetId(), waitsOn(q))
@@ -168,7 +168,7 @@ func TestDecisionWhileRunning(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	for _, wait := range []bool{false, true} {
 		task := e.mustSpawn(t, wishID, "Pick a cache", "text working\nwait\ntext went on", nil)
 		q := e.askAbout(t, e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING)), wait)

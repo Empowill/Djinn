@@ -98,28 +98,47 @@ func TestDone(t *testing.T) {
 	if len(done) != len(cases)+1 {
 		t.Errorf("%d Done commands journaled, want %d", len(done), len(cases)+1)
 	}
-}
 
-// TestDoneWithProblems (W507): a task its worker ended done while its permissions refused calls holds its wish's
-// grant back; marked done, it is closed as seen, its status and its refusals kept, and Djinn proposes the grant. A
-// second time, it is done already.
-func TestDoneWithProblems(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
+	// djinn task done closes a task from the command line, with a note; a second time says it is done already, and exits 1.
+	cliTask := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W9", Title: "imported work",
+		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, CreateTime: timestamppb.Now()}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", cliTask); err != nil {
+			return err
+		}
+		return tx.Put(cliTask)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runCLI := func(args ...string) (int, string, string) {
+		var out, errs bytes.Buffer
+		code := cli.Run(t.Context(), args, cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+		return code, out.String(), errs.String()
+	}
+	code, out, errs := runCLI("task", "done", cliTask.GetId(), "--note", "merged in Git")
+	if code != 0 || !strings.Contains(out, "status: done") || !strings.Contains(out, "actor: lead") || !strings.Contains(out, "note: merged in Git") {
+		t.Errorf("djinn task done: code %d\nstdout:\n%s\nstderr:\n%s", code, out, errs)
+	}
+	code, _, errs = runCLI("task", "done", cliTask.GetId())
+	if code != 1 || !strings.Contains(errs, "task W9 is done already") {
+		t.Errorf("djinn task done twice: code %d, stderr %q", code, errs)
+	}
+
+	// W507: a task its worker ended done while its permissions refused calls holds its wish's grant back; marked done,
+	// it is closed as seen, its status and its refusals kept, and Djinn proposes the grant.
 	w, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Install Wispr Flow on Linux"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	wishID := w.Msg.GetWish().GetId()
-	task := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W1", Title: "Find a way", CreateTime: timestamppb.Now(),
+	probWishID := w.Msg.GetWish().GetId()
+	probTask := &planv1.Task{Id: store.NewID(), WishId: probWishID, Code: "W1", Title: "Find a way", CreateTime: timestamppb.Now(),
 		Status: planv1.TaskStatus_TASK_STATUS_DONE, EndTime: timestamppb.Now(),
 		Refused: &planv1.TaskRefusals{Count: 6, Names: []string{"Read", "Glob"}}}
 	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "put", task); err != nil {
+		if err := tx.Journal("test", "put", probTask); err != nil {
 			return err
 		}
-		return tx.Put(task)
+		return tx.Put(probTask)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -130,35 +149,59 @@ func TestDoneWithProblems(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, w := range res.Msg.GetWishes() {
-			if w.GetId() == wishID {
+			if w.GetId() == probWishID {
 				return w.GetReady()
 			}
 		}
-		t.Fatalf("wish %s not listed", wishID)
+		t.Fatalf("wish %s not listed", probWishID)
 		return false
 	}
 	if ready() {
 		t.Error("a wish whose only task is done with refused calls is proposed for the grant")
 	}
 	if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
-		TaskId: task.GetId(), Note: "read it, nothing was needed", By: planv1.Closer_CLOSER_DEVELOPER})); err != nil {
+		TaskId: probTask.GetId(), Note: "read it, nothing was needed", By: planv1.Closer_CLOSER_DEVELOPER})); err != nil {
 		t.Fatal(err)
 	}
-	got := e.get(t, task.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetRefused().GetCount() != 6 ||
-		got.GetClosed().GetActor() != planv1.Closer_CLOSER_DEVELOPER || got.GetClosed().GetNote() != "read it, nothing was needed" {
-		t.Errorf("marked done: %v", got)
+	gotProb := e.get(t, probTask.GetId())
+	if gotProb.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || gotProb.GetRefused().GetCount() != 6 ||
+		gotProb.GetClosed().GetActor() != planv1.Closer_CLOSER_DEVELOPER || gotProb.GetClosed().GetNote() != "read it, nothing was needed" {
+		t.Errorf("marked done: %v", gotProb)
 	}
-	events, _ := store.List[*planv1.TaskEvent](t.Context(), e.db, store.Where{"task_id": task.GetId()})
-	if want := "marked done by the developer, was done with 6 refused calls: read it, nothing was needed"; len(events) != 1 || events[0].GetText() != want {
-		t.Errorf("events %v, want %q", events, want)
+	probEvents, _ := store.List[*planv1.TaskEvent](t.Context(), e.db, store.Where{"task_id": probTask.GetId()})
+	if want := "marked done by the developer, was done with 6 refused calls: read it, nothing was needed"; len(probEvents) != 1 || probEvents[0].GetText() != want {
+		t.Errorf("events %v, want %q", probEvents, want)
 	}
 	if !ready() {
 		t.Error("its task seen, the wish is not proposed for the grant")
 	}
-	_, err = e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: task.GetId()}))
+	_, err = e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: probTask.GetId()}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "done already") {
 		t.Errorf("done twice: %v", err)
+	}
+
+	// A task waiting for its edit question, marked done by hand, stays done when the question is answered yes afterwards:
+	// its worker does not start again.
+	dir := folder(t)
+	waitWishID, _ := e.wish(t, dir)
+	waitTask := e.spawn(t, waitWishID, "text reading\nwrite notes.md hello")
+	e.watch(t.Context(), t, waitTask.GetId(), 0)
+	if got := e.get(t, waitTask.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
+		t.Fatalf("task = %v, want waiting", got)
+	}
+	if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: waitTask.GetId()})); err != nil {
+		t.Fatal(err)
+	}
+	e.answer(t, e.editQuestionOf(t, waitTask), planv1.Choice_CHOICE_A)
+	waitEvents := e.watch(t.Context(), t, waitTask.GetId(), 0)
+	if hasText(waitEvents, "started fake again") || !hasText(waitEvents, "edit granted (Q01): the task was marked done by hand") {
+		t.Errorf("events = %q", eventTexts(waitEvents))
+	}
+	if got := e.get(t, waitTask.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetClosed() == nil {
+		t.Errorf("after yes: %v", got)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("written after the task was closed: %v", entries)
 	}
 }
 
@@ -175,7 +218,7 @@ func TestDoneStartsDependent(t *testing.T) {
 	t.Parallel()
 	l := &limit{slots: 0}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(20*time.Millisecond))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	first := e.mustSpawn(t, wishID, "First", "text one", nil)
 	second := e.mustSpawn(t, wishID, "Second", "text two", &planv1.TaskServiceSpawnRequest{DependsOn: []string{"W1"}})
 	if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: first.GetId(), Note: "done elsewhere"})); err != nil {
@@ -187,67 +230,6 @@ func TestDoneStartsDependent(t *testing.T) {
 	l.set(1, "")
 	if got := e.ended(t, second.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetClosed() != nil {
 		t.Errorf("dependent = %v, want done by its worker", got)
-	}
-}
-
-// TestDoneWaitingThenYes: a task waiting for its edit question, marked done by hand, stays done when the question
-// is answered yes afterwards: its worker does not start again.
-func TestDoneWaitingThenYes(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	dir := folder(t)
-	wishID, _ := e.wish(t, dir)
-	task := e.spawn(t, wishID, "text reading\nwrite notes.md hello")
-	e.watch(t.Context(), t, task.GetId(), 0)
-	if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
-		t.Fatalf("task = %v, want waiting", got)
-	}
-	if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: task.GetId()})); err != nil {
-		t.Fatal(err)
-	}
-	e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
-	events := e.watch(t.Context(), t, task.GetId(), 0)
-	if hasText(events, "started fake again") || !hasText(events, "edit granted (Q01): the task was marked done by hand") {
-		t.Errorf("events = %q", eventTexts(events))
-	}
-	if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetClosed() == nil {
-		t.Errorf("after yes: %v", got)
-	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-		t.Errorf("written after the task was closed: %v", entries)
-	}
-}
-
-// TestDoneCommand: djinn task done closes a task from the command line, with a note; a second time says it is done
-// already, and exits 1.
-func TestDoneCommand(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, t.TempDir())
-	task := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W1", Title: "imported work",
-		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, CreateTime: timestamppb.Now()}
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "put", task); err != nil {
-			return err
-		}
-		return tx.Put(task)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	run := func(args ...string) (int, string, string) {
-		var out, errs bytes.Buffer
-		code := cli.Run(t.Context(), args, cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-		return code, out.String(), errs.String()
-	}
-	code, out, errs := run("task", "done", task.GetId(), "--note", "merged in Git")
-	if code != 0 || !strings.Contains(out, "status: done") || !strings.Contains(out, "actor: lead") || !strings.Contains(out, "note: merged in Git") {
-		t.Errorf("djinn task done: code %d\nstdout:\n%s\nstderr:\n%s", code, out, errs)
-	}
-	code, _, errs = run("task", "done", task.GetId())
-	if code != 1 || !strings.Contains(errs, "task W1 is done already") {
-		t.Errorf("djinn task done twice: code %d, stderr %q", code, errs)
 	}
 }
 
@@ -306,27 +288,10 @@ func TestDoneUnmergedCommits(t *testing.T) {
 		t.Errorf("missing pending event: %v", eventTexts(events))
 	}
 
-	// 2. Create another unmerged branch
-	b2 := "branch-unmerged-2"
-	if _, err := git(t.Context(), repo, "checkout", "-b", b2); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(repo+"/app/file2.txt", []byte("unmerged 2\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git(t.Context(), repo, "add", "."); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "unmerged commit 2"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git(t.Context(), repo, "checkout", mainBranch); err != nil {
-		t.Fatal(err)
-	}
-
+	// 2. Another task on the unmerged branch dropped with --drop
 	t2 := &planv1.Task{
 		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W2", Title: "dropped work",
-		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Branch: b2, CreateTime: timestamppb.Now(),
+		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Branch: b1, CreateTime: timestamppb.Now(),
 	}
 	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
 		_ = tx.Journal("test", "put", t2)
@@ -359,7 +324,7 @@ func TestDoneUnmergedCommits(t *testing.T) {
 	// 3. A DONE task whose integration failed (e.g. CONFLICT) can have its work dropped with --drop and a note.
 	t3 := &planv1.Task{
 		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W3", Title: "failed integration work",
-		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b2, CreateTime: timestamppb.Now(),
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b1, CreateTime: timestamppb.Now(),
 		Integration: &planv1.TaskIntegration{
 			State:  planv1.IntegrationState_INTEGRATION_STATE_CONFLICT,
 			Branch: mainBranch,

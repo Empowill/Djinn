@@ -59,7 +59,7 @@ func integrating(t *testing.T, opts ...Option) *integration {
 	in.mu.Unlock()
 	in.branch = plan.CheckedOutBranch(t.Context(), in.repo)
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
-		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\n")
+		"generated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\nmerge_main: MERGE_MAIN_OFF\n")
 	return in
 }
 
@@ -210,12 +210,23 @@ func (in *integration) finished(t *testing.T, code string, files map[string]stri
 	for _, o := range opts {
 		o(task)
 	}
-	if _, err := addWorktreeFrom(t.Context(), in.repo, task.GetWorktree(), task.GetBranch(), "HEAD"); err != nil {
-		t.Fatal(err)
-	}
-	if len(files) > 0 {
-		in.leave(t, task, files)
-		commitAll(t, task.GetWorktree(), task.GetTitle())
+	if task.GetWorktree() == "" {
+		in.git(t, in.repo, "checkout", "--quiet", "-b", task.GetBranch())
+		for name, content := range files {
+			writeFile(t, in.repo, name, content)
+		}
+		if len(files) > 0 {
+			commitAll(t, in.repo, task.GetTitle())
+		}
+		in.git(t, in.repo, "checkout", "--quiet", in.branch)
+	} else {
+		if _, err := addWorktreeFrom(t.Context(), in.repo, task.GetWorktree(), task.GetBranch(), "HEAD"); err != nil {
+			t.Fatal(err)
+		}
+		if len(files) > 0 {
+			in.leave(t, task, files)
+			commitAll(t, task.GetWorktree(), task.GetTitle())
+		}
 	}
 	putTask(t, in.db, task, "work")
 	return task
@@ -304,8 +315,7 @@ func TestCommitABatch(t *testing.T) {
 	in := integrating(t)
 	old := in.tip(t)
 	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
-	w3 := in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"})
+	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(t *planv1.Task) { t.Worktree = "" })
 
 	// The wish recorded, when it was made, the project's reference branch: the one this copy is on.
 	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
@@ -314,33 +324,32 @@ func TestCommitABatch(t *testing.T) {
 	}
 
 	in.pass(t, 0) // No wait: neither an hour nor a count.
-	if got := in.states(t, w1, w2, w3); got != "W1 COMMITTED, W2 COMMITTED, W3 COMMITTED" {
+	if got := in.states(t, w1, w2); got != "W1 COMMITTED, W2 COMMITTED" {
 		t.Fatalf("at once: %s", got)
 	}
 	tip := in.tip(t)
 	commits := in.commits(t)
 	if len(commits) != 1 || commits[0].GetOldSha() != old || commits[0].GetNewSha() != tip ||
-		!slices.Equal(commits[0].GetTaskIds(), []string{w1.GetId(), w2.GetId(), w3.GetId()}) {
+		!slices.Equal(commits[0].GetTaskIds(), []string{w1.GetId(), w2.GetId()}) {
 		t.Fatalf("journal: %v", commits)
 	}
-	for _, task := range []*planv1.Task{w1, w2, w3} {
+	for _, task := range []*planv1.Task{w1, w2} {
 		if got, _ := in.integration(t, task); got.GetSha() != tip || got.GetBranch() != in.branch {
 			t.Errorf("%s's integration %v; the batch's commit %s", task.GetCode(), got, tip)
 		}
 	}
 	got, texts := in.integration(t, w1)
 	want := []string{
-		"integrating into " + in.branch + ", with W1, W2, W3",
+		"integrating into " + in.branch + ", with W1, W2",
 		"merged " + w1.GetBranch(),
-		"checking W1, W2, W3: test (test)",
-		"committed into " + in.branch + " as " + got.GetSha()[:8] + ", with W1, W2, W3; your checkout of it, " + in.repo + ", follows",
+		"checking W1, W2: test (test)",
+		"committed into " + in.branch + " as " + got.GetSha()[:8] + ", with W1, W2; your checkout of it, " + in.repo + ", follows",
 	}
 	if !slices.Equal(texts, want) {
 		t.Errorf("W1's events:\n%s\nwant\n%s", strings.Join(texts, "\n"), strings.Join(want, "\n"))
 	}
 	// Each task's work, committed on its branch, then merged without fast-forward, in the order they ended.
 	if out := in.git(t, in.repo, "log", "--format=%s", "--first-parent", old+".."+tip); out != strings.Join([]string{
-		"Merge branch '" + w3.GetBranch() + "' into " + in.branch,
 		"Merge branch '" + w2.GetBranch() + "' into " + in.branch,
 		"Merge branch '" + w1.GetBranch() + "' into " + in.branch,
 	}, "\n") {
@@ -356,7 +365,7 @@ func TestCommitABatch(t *testing.T) {
 		t.Errorf("runs %v, gates %v, not first %v", in.runs, in.gates, in.behind)
 	}
 	// The person's checkout was clean and on the branch: it follows, clean.
-	if b, err := os.ReadFile(filepath.Join(in.repo, "app", "src", "c.txt")); err != nil || string(b) != "c\n" {
+	if b, err := os.ReadFile(filepath.Join(in.repo, "app", "src", "b.txt")); err != nil || string(b) != "b\n" {
 		t.Errorf("the checkout did not follow: %q, %v", b, err)
 	}
 	if out := in.git(t, in.repo, "status", "--porcelain"); out != "" {
@@ -364,7 +373,7 @@ func TestCommitABatch(t *testing.T) {
 	}
 
 	// Nothing waits any more: the next pass does nothing.
-	in.pass(t, time.Hour)
+	in.pass(t, 0)
 	if len(in.runs) != 1 || len(in.commits(t)) != 1 {
 		t.Errorf("a pass with nothing waiting ran %v", in.runs)
 	}

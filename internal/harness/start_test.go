@@ -106,8 +106,10 @@ func startsFrom(t *testing.T, in *integration, task *planv1.Task, want, shown st
 func TestWorkersNeverStartFromTheCopy(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
+	in := integrating(t)
+	ahead, before := developersCopy(t, in)
 	// A wish made while the copy is on mine: it lands in the reference branch, never in mine.
-	wishOn := func(t *testing.T, in *integration, strategy planv1.PushStrategy) string {
+	wishOn := func(t *testing.T, strategy planv1.PushStrategy) string {
 		t.Helper()
 		made, err := in.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
 			Title: "Made on mine", ProjectIds: []string{in.projectID}, PushStrategy: strategy.Enum(),
@@ -121,32 +123,22 @@ func TestWorkersNeverStartFromTheCopy(t *testing.T) {
 		return made.Msg.GetWish().GetId()
 	}
 	t.Run("per wish", func(t *testing.T) {
-		t.Parallel()
-		in := integrating(t)
-		ahead, before := developersCopy(t, in)
-		wishID := wishOn(t, in, planv1.PushStrategy_PUSH_STRATEGY_WISH)
+		wishID := wishOn(t, planv1.PushStrategy_PUSH_STRATEGY_WISH)
 		task := in.mustSpawn(t, wishID, "Per wish", "wait\ndone", &planv1.TaskServiceSpawnRequest{})
 		startsFrom(t, in, task, ahead, "origin/"+in.branch, before)
 	})
+	azimaWishID := wishOn(t, planv1.PushStrategy_PUSH_STRATEGY_AZIMA)
 	t.Run("an azima's part", func(t *testing.T) {
-		t.Parallel()
-		in := integrating(t)
-		ahead, before := developersCopy(t, in)
-		wishID := wishOn(t, in, planv1.PushStrategy_PUSH_STRATEGY_AZIMA)
-		azima := in.azima(t, wishID, "Alpha")
+		azima := in.azima(t, azimaWishID, "Alpha")
 		branch := "djinn/" + azima.GetCode() + "-alpha"
 		if got := in.git(t, in.repo, "rev-parse", "refs/heads/"+branch); got != ahead {
 			t.Fatalf("%s cut at %s, want origin's main at %s", branch, got, ahead)
 		}
-		task := in.mustSpawn(t, wishID, "Part", "wait\ndone", &planv1.TaskServiceSpawnRequest{PartOf: azima.GetId()})
+		task := in.mustSpawn(t, azimaWishID, "Part", "wait\ndone", &planv1.TaskServiceSpawnRequest{PartOf: azima.GetId()})
 		startsFrom(t, in, task, ahead, branch, before)
 	})
 	t.Run("work of no azima", func(t *testing.T) {
-		t.Parallel()
-		in := integrating(t)
-		ahead, before := developersCopy(t, in)
-		wishID := wishOn(t, in, planv1.PushStrategy_PUSH_STRATEGY_AZIMA)
-		task := in.mustSpawn(t, wishID, "Loose", "wait\ndone", &planv1.TaskServiceSpawnRequest{})
+		task := in.mustSpawn(t, azimaWishID, "Loose", "wait\ndone", &planv1.TaskServiceSpawnRequest{})
 		startsFrom(t, in, task, ahead, "origin/"+in.branch, before)
 	})
 }

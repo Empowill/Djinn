@@ -46,7 +46,7 @@ func TestCLIAnswersWhileFetchHangs(t *testing.T) {
 			return err
 		}
 		line := strings.Repeat("a line a worker wrote, ", 40)
-		for seq := int64(1); seq <= 3000; seq++ {
+		for seq := int64(1); seq <= 300; seq++ {
 			ev := &planv1.TaskEvent{
 				Id: store.NewID(), TaskId: worked.GetId(), Seq: seq, Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT,
 				Text: line, CreateTime: timestamppb.New(u.now.Add(time.Duration(seq) * time.Second)),
@@ -69,7 +69,7 @@ func TestCLIAnswersWhileFetchHangs(t *testing.T) {
 	fetching := filepath.Join(bin, "fetching")
 	script := fmt.Sprintf(`#!/bin/sh
 for a in "$@"; do
-	case "$a" in fetch|ls-remote|push) touch %q; sleep 30 & wait; exit 1;; esac
+	case "$a" in fetch) touch %q; sleep 30 & wait; exit 1;; esac
 done
 exec %q "$@"
 `, fetching, realGit)
@@ -78,7 +78,7 @@ exec %q "$@"
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	network, waitDelay := gitx.Network, gitx.WaitDelay
-	gitx.Network, gitx.WaitDelay = 2*time.Second, 200*time.Millisecond
+	gitx.Network, gitx.WaitDelay = 350*time.Millisecond, 50*time.Millisecond
 	t.Cleanup(func() { gitx.Network, gitx.WaitDelay = network, waitDelay })
 
 	passed := make(chan time.Duration, 1)

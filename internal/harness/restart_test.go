@@ -32,7 +32,7 @@ type counting struct {
 }
 
 func (c *counting) Start(ctx context.Context, spec Spec) (Worker, error) {
-	spec.Prompt = "sleep 50ms\n" + spec.Prompt
+	spec.Prompt = "sleep 10ms\n" + spec.Prompt
 	w, err := Fake{}.Start(ctx, spec)
 	if err != nil {
 		return nil, err
@@ -170,9 +170,17 @@ func TestRestartResumesInOrder(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	e := up(t, home)
-	second, secondProject := e.wish(t, gitRepo(t))
-	first, firstProject := e.wish(t, gitRepo(t))
-	shelved, shelvedProject := e.wish(t, gitRepo(t))
+	second, projectID := e.wish(t, gitRepo(t))
+	makeWish := func() string {
+		w, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{
+			Title: "Run Djinn on itself", ProjectIds: []string{projectID},
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return w.Msg.GetWish().GetId()
+	}
+	first, shelved := makeWish(), makeWish()
 	for id, rank := range map[string]int32{first: 1, second: 2, shelved: 0} {
 		w, err := store.Get[*planv1.Wish](t.Context(), e.db, id)
 		if err != nil {
@@ -195,27 +203,27 @@ func TestRestartResumesInOrder(t *testing.T) {
 	var resumed []*planv1.Task
 	// The second wish's tasks are the oldest: the rank comes first.
 	for i, c := range []string{"S1", "S2", "S3", "F1", "F2", "F3"} {
-		wish, project := second, secondProject
+		wish := second
 		if c[0] == 'F' {
-			wish, project = first, firstProject
+			wish = first
 		}
-		tk := leftRunning(t, db, wish, project, c, t.TempDir(), at.Add(time.Duration(i)*time.Minute))
+		tk := leftRunning(t, db, wish, projectID, c, t.TempDir(), at.Add(time.Duration(i)*time.Minute))
 		code[tk.GetId()] = c
 		resumed = append(resumed, tk)
 	}
 	// Planned before any of them, in the first wish: it starts after the ones Djinn resumes.
 	planned := &planv1.Task{
-		Id: store.NewID(), WishId: first, ProjectId: firstProject, Code: "F0", Title: "F0", Scheduled: true,
+		Id: store.NewID(), WishId: first, ProjectId: projectID, Code: "F0", Title: "F0", Scheduled: true,
 		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Provider: planv1.Provider_PROVIDER_FAKE,
 		CreateTime: timestamppb.New(at.Add(-time.Hour)), WaitReason: "2 workers run, the most this machine holds (set by the test)",
 	}
 	putTask(t, db, planned, "text F0")
 	code[planned.GetId()] = "F0"
 	// The paused wish's: one its pause stopped, one that ran when Djinn stopped.
-	stopped := leftRunning(t, db, shelved, shelvedProject, "P1", t.TempDir(), at, func(tk *planv1.Task) {
+	stopped := leftRunning(t, db, shelved, projectID, "P1", t.TempDir(), at, func(tk *planv1.Task) {
 		tk.Status, tk.WaitReason, tk.EndTime = planv1.TaskStatus_TASK_STATUS_RESUMING, whyWishPaused, timestamppb.Now()
 	})
-	cut := leftRunning(t, db, shelved, shelvedProject, "P2", t.TempDir(), at.Add(time.Minute))
+	cut := leftRunning(t, db, shelved, projectID, "P2", t.TempDir(), at.Add(time.Minute))
 	code[stopped.GetId()], code[cut.GetId()] = "P1", "P2"
 	db.Close()
 
