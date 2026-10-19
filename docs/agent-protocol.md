@@ -140,8 +140,9 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   integration branch waits for the developer's agreement, asked first (`djinn question ask`).
 - **Investigations.** "Enlighten me" in the window (`djinn question enlighten <question> --note …`) asks to find out
   more before deciding: the question waits for a revision, and the brief lists it under "To investigate". Its
-  question worker (below), or else the Djinn, answers with `djinn question revise <question> --context …
-  --recommendation …`; the question keeps each round, dated, with who revised it, and waits for the developer again.
+  question worker (below), or else the Djinn, answers with `djinn question revise <question> --context-file …
+  --recommendation …`, the context in a file it wrote (Claude Code refuses an inline argument where a line starts with
+  `#`, and the shape puts a `# …` comment above each command); the question keeps each round, dated, with who revised it, and waits for the developer again.
   A decision may take several rounds.
 - **Marks.** The open questions the developer marked read, from the window: `djinn mark list <wish>`, and the
   brief's "Marked by the developer". Approving an open question (`djinn mark put Q03 approved`) answers it with

@@ -14,9 +14,9 @@ paragraph with the commands to run lost inside: "you often send me unreadable qu
 you expect from me getting lost: that will not do at all!" (W575).
 
 **How to apply:**
-- Fence the block with `~~~` lines: they need no backtick, so a context written between double quotes (an
-  investigator's `--context "…"`) keeps it. Elsewhere, write the context through a quoted heredoc
-  ([[question-context-heredoc]]).
+- Fence the block with `~~~` lines: they need no backtick. A context of several lines goes in a file written with
+  the Write tool, passed with `--context-file`, never inline: Claude Code refuses a quoted argument where a line
+  starts with `#`, so every `# …` comment of the shape gets the call refused ([[question-context-heredoc]]).
 - `djinn question ask` and `djinn question revise` print a `warning:` line for each break of the shape (a command or a
   flag in the text, a path or a hash in a sentence, commands in two blocks or after text, a paragraph over 400
   characters, 800 characters with no list): revise the context at once, and check what an investigator revised.
