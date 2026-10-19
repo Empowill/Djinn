@@ -346,3 +346,66 @@ func TestDiskFilledDuringPushChecks(t *testing.T) {
 		t.Errorf("origin at %s, the branch at %s; want it pushed once space came back", got, in.tip(t))
 	}
 }
+
+// TestDiskFolders (W435): the Disk tab's folder list measures Djinn's data folder, each project's worktrees and
+// node_modules, the Go build cache and logs, biggest first, and caches the measurement across calls.
+func TestDiskFolders(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC)
+	clock := &fakeClock{at: start}
+	cache, projDir := t.TempDir(), t.TempDir()
+	e := up(t, t.TempDir(), WithClock(clock.now), withDiskTest(cache, 0))
+	_, projectID := e.wish(t, projDir)
+
+	worktrees := filepath.Join(e.h.home, "projects", projectID, "worktrees")
+	logs := filepath.Join(e.h.home, "logs")
+	nodeModules := filepath.Join(projDir, "node_modules")
+
+	writeFile(t, cache, "ab/entry", strings.Repeat("c", 500_000))
+	writeFile(t, nodeModules, "pkg/index.js", strings.Repeat("n", 300_000))
+	writeFile(t, worktrees, "w1/file.go", strings.Repeat("w", 80_000))
+	writeFile(t, logs, "djinn.log", strings.Repeat("l", 10_000))
+
+	got := e.h.DiskFolders()
+	if len(got) < 5 {
+		t.Fatalf("DiskFolders() = %v; want at least 5 folders (cache, node_modules, home, worktrees, logs)", got)
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i].GetSizeBytes() > got[i-1].GetSizeBytes() {
+			t.Errorf("DiskFolders() not sorted biggest first at %d: %v > %v", i, got[i], got[i-1])
+		}
+	}
+	sizes := map[string]uint64{}
+	for _, f := range got {
+		sizes[f.GetPath()] = f.GetSizeBytes()
+	}
+	if sizes[cache] != 500_000 || sizes[nodeModules] != 300_000 || sizes[worktrees] != 80_000 || sizes[logs] != 10_000 {
+		t.Errorf("sizes = %v; want cache=500000, node_modules=300000, worktrees=80000, logs=10000", sizes)
+	}
+	if sizes[e.h.home] <= sizes[worktrees]+sizes[logs] {
+		t.Errorf("home size = %d; want > worktrees+logs (%d)", sizes[e.h.home], sizes[worktrees]+sizes[logs])
+	}
+
+	// Within diskFoldersEvery, the cached measurement is returned without re-walking.
+	writeFile(t, logs, "more.log", strings.Repeat("m", 20_000))
+	clock.set(start.Add(time.Minute))
+	cached := e.h.DiskFolders()
+	for _, f := range cached {
+		if f.GetPath() == logs && f.GetSizeBytes() != 10_000 {
+			t.Errorf("within diskFoldersEvery, logs size = %d; want cached 10000", f.GetSizeBytes())
+		}
+	}
+
+	// Past diskFoldersEvery, a new measurement runs.
+	clock.set(start.Add(diskFoldersEvery + time.Second))
+	fresh := e.h.DiskFolders()
+	var freshLogs uint64
+	for _, f := range fresh {
+		if f.GetPath() == logs {
+			freshLogs = f.GetSizeBytes()
+		}
+	}
+	if freshLogs != 30_000 {
+		t.Errorf("after diskFoldersEvery, logs size = %d; want 30000", freshLogs)
+	}
+}

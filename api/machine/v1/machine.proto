@@ -115,6 +115,16 @@ message Disk {
   uint64 total_bytes = 2;
   // Space available to Djinn, in bytes.
   uint64 available_bytes = 3;
+  // The main folders that use the disk, biggest first, with their size.
+  repeated DiskFolder folders = 4;
+}
+
+// DiskFolder is a folder measured on disk, with its size in bytes.
+message DiskFolder {
+  // Path of the folder.
+  string path = 1;
+  // Size of its files on disk, in bytes.
+  uint64 size_bytes = 2;
 }
 
 // Gpu is a graphics processor of the machine.
@@ -157,6 +167,8 @@ message MachineServiceSeriesResponse {
   repeated GateInterval gates = 3;
   // Where workers are not measured on this machine, the reason or OS (e.g. "windows").
   string worker_measure = 4;
+  // Disk space and the main folders that use it, biggest first.
+  Disk disk = 5;
 }
 
 message MachineSeries {

@@ -16,11 +16,12 @@ for a core less than 40 % of the last 10 seconds on Minimal, 65 % on Medium, 80 
 Overclock; memory has limits of its own. On a machine of many cores, a test run's bursts reach 30 to 57 % while half
 the machine is idle: from Medium up, they hold no worker.
 
-**The disk.** The Go builds Djinn runs, in its workers and its checks, share one Go build cache across worktrees: an
-unchanged package is compiled once, not once per worktree. Before a worker starts and before push checks, Djinn reads
-the free space of its data folder's disk and of the Go build cache's, when Go is installed. Under 30 GB free, it
-deletes the cache entries unused for a day. Under 10 GB, the Djinn tells you the disk is almost full and names the
-biggest folders it knows, and the push checks wait until space comes back, instead of failing. Both thresholds are
+**The disk.** The **Disk** tab of the Hourglass lists the main folders that use the disk, biggest first, with their
+size, measured by the server. The Go builds Djinn runs, in its workers and its checks, share one Go build cache across
+worktrees: an unchanged package is compiled once, not once per worktree. Before a worker starts and before push checks,
+Djinn reads the free space of its data folder's disk and of the Go build cache's, when Go is installed. Under 30 GB
+free, it deletes the cache entries unused for a day. Under 10 GB, the Djinn tells you the disk is almost full and names
+the biggest folders it knows, and the push checks wait until space comes back, instead of failing. Both thresholds are
 flags of djinn up.
 
 > **This page is a sketch.** Its full guide, how to use it from the window and from the Djinn, what to expect and

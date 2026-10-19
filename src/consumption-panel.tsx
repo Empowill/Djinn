@@ -1,9 +1,10 @@
-// The resources panel, the Hourglass's machine (hourglass.tsx): the machine's CPU and memory over time with Djinn's
-// share and the load limit, then each running worker (its title line, the facts of its job, its CPU and memory over
-// time, a link to its task in its wish; a link reaches its row by worker-<task id>), then where the time of the
-// commands goes, by project and gate. The series are kept in the store (internal/machine/history.go): the panel reads
-// the range once, then every 5 s only what came since.
+// The resources panel, the Hourglass's machine (hourglass.tsx): the machine total at the very top, then three tabs —
+// Resources (a worker heatmap on top, then the running workers grouped by wish with watchers last), Gates (the whole
+// machine's CPU and memory stacked, the gates timeline and the commands grouped under their gates), and Disk (the main
+// folders using the disk, biggest first). The series are kept in the store (internal/machine/history.go): the panel
+// reads the range once, then every 5 s only what came since.
 import {
+  type CSSProperties,
   Fragment,
   type ReactNode,
   memo,
@@ -15,15 +16,22 @@ import {
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { ChevronDown, ChevronRight, Eye, LockKeyhole } from "lucide-react";
 
-import { type Project, Provider, type Task } from "../gen/ts/plan/v1/plan_pb";
+import {
+  type Project,
+  Provider,
+  type Task,
+  type Wish,
+} from "../gen/ts/plan/v1/plan_pb";
 import type {
   CommandCost,
+  Disk,
   GateInterval,
   MachinePoint,
   MachineSeries,
   MachineServiceSeriesResponse,
   WorkerSeries,
 } from "../gen/ts/machine/v1/machine_pb";
+import { jump } from "./attention";
 import {
   type CommandLine,
   type GateLine,
@@ -709,19 +717,164 @@ export const CommandGroups = memo(function CommandGroups({
   );
 });
 
+export type ConsumptionTab = "resources" | "gates" | "disk";
+export type HeatMetric = "cpu" | "memory";
+
+// A heatmap on top of the Resources tab to spot at a glance the workers that consume: one cell per running worker,
+// CPU or memory as colour, its code on hover.
+const WorkerHeatmap = memo(function WorkerHeatmap({
+  workers,
+  cpuTop,
+  memoryTop,
+  metric,
+  onMetric,
+}: {
+  workers: readonly WorkerSeries[];
+  cpuTop: number;
+  memoryTop: number;
+  metric: HeatMetric;
+  onMetric: (m: HeatMetric) => void;
+}) {
+  if (workers.length === 0) return null;
+  return (
+    <div className="resource-heatmap">
+      <div
+        className="consumption-range-selector resource-heatmap-switch"
+        role="group"
+        aria-label={t("consumption.workers_title")}
+      >
+        {(
+          [
+            ["cpu", t("consumption.cpu")],
+            ["memory", t("consumption.memory")],
+          ] as const
+        ).map(([m, label]) => (
+          <button
+            key={m}
+            type="button"
+            className={`range-pill ${metric === m ? "active" : ""}`}
+            aria-pressed={metric === m}
+            onClick={() => onMetric(m)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="resource-heatmap-cells" role="list">
+        {workers.map((w) => {
+          const last = w.points.at(-1);
+          const cpuVal = last?.cpuPercent ?? 0;
+          const memVal = Number(last?.memoryBytes ?? 0n);
+          const ratio =
+            metric === "cpu"
+              ? cpuVal / Math.max(100, cpuTop)
+              : memVal / Math.max(1, memoryTop);
+          const pct = Math.max(
+            12,
+            Math.min(100, Math.round(Math.max(0, ratio) * 100)),
+          );
+          const valueText =
+            metric === "cpu"
+              ? formatValue("cpu", cpuVal)
+              : formatValue("memory", memVal);
+          const label = `${w.code}: ${valueText}`;
+          return (
+            <div key={w.taskId || w.code} role="listitem">
+              <TooltipButton
+                className={`resource-heatmap-cell ${metric} ${w.paused ? "is-paused" : ""}`}
+                label={label}
+                data-code={w.code}
+                style={{ "--heat": `${pct}%` } as CSSProperties}
+                onClick={() => {
+                  if (w.taskId) jump(`worker-${w.taskId}`);
+                }}
+              >
+                <span className="resource-heatmap-code">{w.code}</span>
+              </TooltipButton>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+// The main folders that use the disk, biggest first, with their size; measured by the server.
+export const DiskSection = memo(function DiskSection({
+  disk,
+}: {
+  disk?: Disk;
+}) {
+  const folders = useMemo(
+    () =>
+      [...(disk?.folders ?? [])].sort((a, b) =>
+        b.sizeBytes > a.sizeBytes
+          ? 1
+          : b.sizeBytes < a.sizeBytes
+            ? -1
+            : a.path.localeCompare(b.path),
+      ),
+    [disk?.folders],
+  );
+  const total = Number(disk?.totalBytes ?? 0n);
+  const free = Number(disk?.availableBytes ?? 0n);
+  const top = Math.max(1, Number(folders[0]?.sizeBytes ?? 0n));
+  return (
+    <section className="resource-disk" aria-label={t("consumption.disk_title")}>
+      <h4 className="resource-section-title">
+        {t("consumption.disk_title")}
+        {total > 0 && (
+          <span className="resource-section-detail">
+            {t("consumption.disk_free", {
+              available: formatValue("memory", free),
+              total: formatValue("memory", total),
+            })}
+          </span>
+        )}
+      </h4>
+      {folders.length === 0 ? (
+        <p className="muted-text">{t("consumption.no_disk")}</p>
+      ) : (
+        <div className="resource-disk-list" role="list">
+          {folders.map((f) => {
+            const size = Number(f.sizeBytes);
+            const share = Math.round((size / top) * 100);
+            return (
+              <div key={f.path} className="resource-disk-row" role="listitem">
+                <code className="resource-disk-path">{f.path}</code>
+                <span className="resource-share" aria-hidden="true">
+                  <span style={{ width: `${share}%` }} />
+                </span>
+                <span className="resource-disk-size">
+                  {formatValue("memory", size)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+});
+
 export function ConsumptionPanel({
   initialMinutes = 30,
   initialFolded = false,
+  initialTab = "resources",
   initialData = null,
   initialCommands = [],
+  wishes,
   tasks,
   projects = [],
   projectIds,
 }: {
   initialMinutes?: number;
   initialFolded?: boolean;
+  initialTab?: ConsumptionTab;
   initialData?: MachineServiceSeriesResponse | null;
   initialCommands?: CommandCost[];
+  // The active wishes, in order: running workers are grouped by wish.
+  wishes?: readonly Wish[];
   // The tasks of the active wishes, by id: a worker's row shows the facts of its job.
   tasks?: ReadonlyMap<string, Task>;
   projects?: readonly Project[];
@@ -731,6 +884,8 @@ export function ConsumptionPanel({
   const djinn = useDjinn();
   const [minutes, setMinutes] = useState<number>(initialMinutes);
   const [folded, setFolded] = useState<boolean>(initialFolded);
+  const [tab, setTab] = useState<ConsumptionTab>(initialTab);
+  const [heatMetric, setHeatMetric] = useState<HeatMetric>("cpu");
   const [data, setData] = useState<MachineServiceSeriesResponse | null>(
     initialData,
   );
@@ -810,6 +965,41 @@ export function ConsumptionPanel({
     );
   }, [data, projectIds, projectById]);
   const workers = useMemo(() => data?.workers ?? [], [data]);
+  // Workers grouped by wish, watchers last in each group (they consume little).
+  const wishGroups = useMemo(() => {
+    const byWish = new Map<string, WorkerSeries[]>();
+    for (const w of wishes ?? []) byWish.set(w.id, []);
+    for (const w of workers) {
+      const key = w.wishId || "";
+      const list = byWish.get(key);
+      if (list) list.push(w);
+      else byWish.set(key, [w]);
+    }
+    const wishTitles = new Map((wishes ?? []).map((w) => [w.id, w.title]));
+    const out: {
+      wishId: string;
+      title?: string;
+      workers: WorkerSeries[];
+    }[] = [];
+    for (const [wishId, list] of byWish) {
+      if (list.length === 0) continue;
+      const sorted = [...list].sort(
+        (a, b) =>
+          Number(a.provider === Provider.WATCH) -
+          Number(b.provider === Provider.WATCH),
+      );
+      out.push({
+        wishId,
+        title: wishTitles.get(wishId),
+        workers: sorted,
+      });
+    }
+    return out;
+  }, [workers, wishes]);
+  const orderedWorkers = useMemo(
+    () => wishGroups.flatMap((g) => g.workers),
+    [wishGroups],
+  );
   // One scale for every worker: the highest peak among them.
   const workerTops = useMemo(
     () => ({
@@ -826,21 +1016,55 @@ export function ConsumptionPanel({
     [workers],
   );
   const memoryTotal = Number(data?.machine?.memoryTotalBytes ?? 0n);
+  const machinePoints = data?.machine?.points ?? [];
+  const lastMachinePoint = machinePoints.at(-1);
+  const lastMachineCpu = lastMachinePoint?.cpuPercent ?? 0;
+  const peakMachineCpu = Math.max(0, ...machinePoints.map((p) => p.cpuPercent));
+  const lastMachineMemory = Number(lastMachinePoint?.memoryBytes ?? 0n);
 
   return (
     <section className="consumption-panel" aria-label={t("consumption.title")}>
       <header className="consumption-header">
-        <button
-          type="button"
-          className="consumption-fold-btn"
-          onClick={() => setFolded((f) => !f)}
-          aria-expanded={!folded}
-        >
-          {folded ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-          <span className="consumption-panel-heading">
-            {t("consumption.title")}
-          </span>
-        </button>
+        <div className="consumption-header-lead">
+          <button
+            type="button"
+            className="consumption-fold-btn"
+            onClick={() => setFolded((f) => !f)}
+            aria-expanded={!folded}
+          >
+            {folded ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+            <span className="consumption-panel-heading">
+              {t("consumption.title")}
+            </span>
+          </button>
+          {!folded && data?.machine && (
+            <div
+              className="resource-machine-total"
+              aria-label={t("consumption.machine_title")}
+            >
+              <span className="resource-machine-total-item">
+                {t("consumption.cores", { count: data.machine.cores })}
+                {memoryTotal > 0 && ` · ${formatValue("memory", memoryTotal)}`}
+              </span>
+              <span className="resource-machine-total-item">
+                <strong>{t("consumption.cpu")}</strong>{" "}
+                {t("consumption.now_peak", {
+                  now: formatValue("cpu", lastMachineCpu),
+                  peak: formatValue("cpu", peakMachineCpu),
+                })}
+              </span>
+              {memoryTotal > 0 && (
+                <span className="resource-machine-total-item">
+                  <strong>{t("consumption.memory")}</strong>{" "}
+                  {t("consumption.used_of", {
+                    used: formatValue("memory", lastMachineMemory),
+                    total: formatValue("memory", memoryTotal),
+                  })}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         {!folded && (
           <div
             className="consumption-range-selector"
@@ -863,63 +1087,127 @@ export function ConsumptionPanel({
       </header>
 
       {!folded && (
-        <div className="consumption-body">
-          {data?.workerMeasure && (
-            <p className="consumption-notice muted-text">
-              {t("resources.not_measured")}
-              {data.workerMeasure !== "windows"
-                ? ` (${data.workerMeasure})`
-                : ""}
-            </p>
-          )}
-          {data?.machine && (
-            <MachineBand
-              series={data.machine}
-              gates={gates}
-              tMin={tMin}
-              tMax={tMax}
-            />
-          )}
-          <section
-            className="resource-workers"
-            aria-label={t("consumption.workers_title")}
+        <>
+          <div className="view-tabs consumption-tabs" role="tablist">
+            {(
+              [
+                ["resources", t("consumption.tab_resources")],
+                ["gates", t("consumption.tab_gates")],
+                ["disk", t("consumption.tab_disk")],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`consumption-tab-${id}`}
+                aria-selected={tab === id}
+                className={tab === id ? "active" : ""}
+                onClick={() => setTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="consumption-body"
+            role="tabpanel"
+            aria-labelledby={`consumption-tab-${tab}`}
           >
-            <h4 className="resource-section-title">
-              {t("consumption.workers_title")}
-            </h4>
-            {workers.length > 1 && (
-              <p className="resource-workers-scale">
-                {t("consumption.workers_scale")}
-              </p>
-            )}
-            {workers.length === 0 ? (
-              <p className="muted-text">{t("consumption.no_workers")}</p>
-            ) : (
-              workers.map((w) => {
-                const task = tasks?.get(w.taskId);
-                return (
-                  <WorkerRow
-                    key={w.taskId || w.code}
-                    worker={w}
-                    task={task}
-                    project={task ? projectById.get(task.projectId) : undefined}
-                    memoryTotal={memoryTotal}
+            {tab === "resources" && (
+              <>
+                {data?.workerMeasure && (
+                  <p className="consumption-notice muted-text">
+                    {t("resources.not_measured")}
+                    {data.workerMeasure !== "windows"
+                      ? ` (${data.workerMeasure})`
+                      : ""}
+                  </p>
+                )}
+                <section
+                  className="resource-workers"
+                  aria-label={t("consumption.workers_title")}
+                >
+                  <div className="resource-workers-head">
+                    <h4 className="resource-section-title">
+                      {t("consumption.workers_title")}
+                    </h4>
+                    {workers.length > 1 && (
+                      <p className="resource-workers-scale">
+                        {t("consumption.workers_scale")}
+                      </p>
+                    )}
+                  </div>
+                  <WorkerHeatmap
+                    workers={orderedWorkers}
                     cpuTop={workerTops.cpu}
                     memoryTop={workerTops.memory}
+                    metric={heatMetric}
+                    onMetric={setHeatMetric}
+                  />
+                  {workers.length === 0 ? (
+                    <p className="muted-text">{t("consumption.no_workers")}</p>
+                  ) : (
+                    wishGroups.map((group) => (
+                      <div
+                        key={group.wishId || "other"}
+                        className="resource-wish-group"
+                      >
+                        {(group.title || wishGroups.length > 1) && (
+                          <h5 className="resource-wish-title">
+                            {group.title || group.wishId}
+                          </h5>
+                        )}
+                        {group.workers.map((w) => {
+                          const task = tasks?.get(w.taskId);
+                          return (
+                            <WorkerRow
+                              key={w.taskId || w.code}
+                              worker={w}
+                              task={task}
+                              project={
+                                task
+                                  ? projectById.get(task.projectId)
+                                  : undefined
+                              }
+                              memoryTotal={memoryTotal}
+                              cpuTop={workerTops.cpu}
+                              memoryTop={workerTops.memory}
+                              tMin={tMin}
+                              tMax={tMax}
+                              onOpen={open}
+                            />
+                          );
+                        })}
+                      </div>
+                    ))
+                  )}
+                </section>
+              </>
+            )}
+
+            {tab === "gates" && (
+              <>
+                {data?.machine && (
+                  <MachineBand
+                    series={data.machine}
+                    gates={gates}
                     tMin={tMin}
                     tMax={tMax}
-                    onOpen={open}
                   />
-                );
-              })
+                )}
+                <CommandGroups
+                  costs={commands}
+                  projectIds={projectIds}
+                  projectNames={projectNames}
+                />
+              </>
             )}
-          </section>
-          <CommandGroups
-            costs={commands}
-            projectIds={projectIds}
-            projectNames={projectNames}
-          />
-        </div>
+
+            {tab === "disk" && <DiskSection disk={data?.disk} />}
+          </div>
+        </>
       )}
     </section>
   );

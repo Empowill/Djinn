@@ -47,6 +47,7 @@ function MachineSection({ wishes }: { wishes: readonly Wish[] }) {
   );
   return (
     <ConsumptionPanel
+      wishes={wishes}
       tasks={taskById}
       projects={projects}
       projectIds={projectIds}
