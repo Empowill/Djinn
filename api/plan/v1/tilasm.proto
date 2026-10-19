@@ -33,6 +33,27 @@ message Tilasm {
   google.protobuf.Timestamp update_time = 9;
   // Most a version may hold, in bytes, its files summed: a put beyond it is refused, saying so.
   int64 max_bytes = 10;
+  // Where it is published on claude.ai, and the developer's go-ahead to publish it: kept on this machine, an export
+  // leaves it out. Unset until the developer confirms, in the window, the first publish.
+  TilasmArtifact artifact = 11;
+}
+
+// TilasmArtifact is a tilasm published on claude.ai as a private artifact, as Djinn read it from the Artifact tool's
+// result: never what a model says.
+message TilasmArtifact {
+  // Its address, https://claude.ai/artifact/<id>; empty until the first publish. A publish again reuses it.
+  string url = 1;
+  // The tilasm's version published last; 0 before the first publish. Below the latest, a version waits.
+  int32 version = 2;
+  // Its own version on claude.ai, 1 at the first publish.
+  int32 artifact_version = 3;
+  // When it was published last.
+  google.protobuf.Timestamp publish_time = 4;
+  // When the developer confirmed, in the window, that the tilasm holds no personal data of a client and may leave for
+  // claude.ai. No first publish without it; a publish again on its address asks no more.
+  google.protobuf.Timestamp confirm_time = 5;
+  // What the last publish cost, in US dollars, as Claude reported it.
+  double cost_usd = 6;
 }
 
 // TilasmVersion is one put of a tilasm: its files stay in tilasms/<id>/v<number>/.
@@ -362,6 +383,91 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Publish a tilasm's latest version on claude.ai, as a private artifact of the developer's Claude account: its page
+  // with its files beside it, at their paths, those of a type claude.ai serves (a spreadsheet or a document is left
+  // out). Djinn builds what is sent; one short Claude call, under the paid gate, sends it, at the address of its last
+  // publish when it has one. Refused until
+  // the developer confirms, in the window, that the tilasm holds no personal data of a client: its first publish
+  // comes from them. Only the owner of the account opens the artifact until they share it on claude.ai.
+  rpc Publish(TilasmServicePublishRequest) returns (TilasmServicePublishResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Record the developer's go-ahead to publish a tilasm on claude.ai, from the window: they checked that it holds no
+  // personal data of a client, its images included. The first publish waits for it.
+  rpc ConfirmPublish(TilasmServiceConfirmPublishRequest) returns (TilasmServiceConfirmPublishResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Whether tilasms can be published on claude.ai from this machine, for the window: Claude Code signed in, and its
+  // Artifact tool offered, which a first call reads once per start of Djinn.
+  rpc CheckPublish(TilasmServiceCheckPublishRequest) returns (TilasmServiceCheckPublishResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message TilasmServicePublishRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServicePublishResponse {
+  // The tilasm, its artifact in it.
+  Tilasm tilasm = 1;
+  // The artifact's address, https://claude.ai/artifact/<id>.
+  string url = 2;
+  // How many files went beside the page.
+  int32 files = 3;
+  // The tilasm's files left out, of a type claude.ai does not serve: their links lead nowhere there.
+  repeated string left_out = 4;
+  // What was sent, in bytes.
+  int64 size = 5;
+  // What the publish cost, in US dollars.
+  double cost_usd = 6;
+}
+
+message TilasmServiceConfirmPublishRequest {
+  // The tilasm the developer checked.
+  string tilasm_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceConfirmPublishResponse {
+  // The tilasm, its go-ahead in its artifact.
+  Tilasm tilasm = 1;
+}
+
+message TilasmServiceCheckPublishRequest {}
+
+message TilasmServiceCheckPublishResponse {
+  // Tilasms can be published from this machine.
+  bool available = 1;
+  // Why not; unspecified when they can.
+  PublishBlock block = 2;
+  // What the check met, as the command said it, when it failed: not translated.
+  string detail = 3;
+}
+
+// PublishBlock says why tilasms cannot be published on claude.ai from this machine.
+enum PublishBlock {
+  // Not set: nothing blocks.
+  PUBLISH_BLOCK_UNSPECIFIED = 0;
+  // Claude Code is not installed: no claude on the PATH.
+  PUBLISH_BLOCK_NO_CLAUDE = 1;
+  // Claude Code is not signed in, on the user's folder nor on any account.
+  PUBLISH_BLOCK_SIGNED_OUT = 2;
+  // Claude Code offers no Artifact tool: its version, the account's plan or its organization's policy.
+  PUBLISH_BLOCK_NO_ARTIFACT_TOOL = 3;
+  // The call that looks for the Artifact tool failed.
+  PUBLISH_BLOCK_CHECK_FAILED = 4;
 }
 
 message TilasmServiceReplyRequest {

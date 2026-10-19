@@ -156,6 +156,12 @@ export {
 } from "@/src/usage.tsx";
 export { TilasmFrame, TilasmList, newestTilasm } from "@/src/tilasms.tsx";
 export {
+  ArtifactState,
+  PublishButton,
+  PublishConfirm,
+  needsConfirm,
+} from "@/src/tilasm-publish.tsx";
+export {
   TilasmOver,
   TilasmOverContext,
   giveBack,

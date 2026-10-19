@@ -1023,3 +1023,165 @@ test("the comments column gives the open creation form its own class and disable
       if (handle?.constructor?.name === "MessagePort") handle.unref();
   }
 });
+
+test("a row publishes its tilasm on claude.ai when the machine can, asks first the first time, and links it once published", () => {
+  const two = [
+    {
+      number: 1,
+      author: "lead",
+      files: 1,
+      size: 512n,
+      restoredFrom: 0,
+      createTime: stamp("2026-10-09T10:00:00Z"),
+    },
+    {
+      number: 2,
+      author: "lead",
+      files: 1,
+      size: 512n,
+      restoredFrom: 0,
+      createTime: stamp("2026-10-09T11:00:00Z"),
+    },
+  ];
+  const fresh = tilasm(
+    "01a1223a-ae45-728f-8c37-c005eee91ee1",
+    "L01",
+    "Never published",
+  );
+  const current = tilasm(
+    "01a1223a-ae45-728f-8c37-c005eee91ee2",
+    "L02",
+    "Up to date",
+    {
+      versions: two,
+      artifact: {
+        url: "https://claude.ai/artifact/D1gnn",
+        version: 2,
+        artifactVersion: 3,
+      },
+    },
+  );
+  const behind = tilasm(
+    "01a1223a-ae45-728f-8c37-c005eee91ee3",
+    "L03",
+    "A version behind",
+    {
+      versions: two,
+      artifact: {
+        url: "https://claude.ai/artifact/EG3S4",
+        version: 1,
+        artifactVersion: 1,
+      },
+    },
+  );
+  const props = {
+    tilasms: [fresh, current, behind],
+    count: 3,
+    codes: new Map(),
+    search: "",
+    onSearch() {},
+    onOpen() {},
+    history: "",
+    onHistory() {},
+    onRestore() {},
+    onExport() {},
+    onDrop() {},
+  };
+  const rows = (html) =>
+    Object.fromEntries(
+      [...html.matchAll(/<li id="tilasm-([^"]+)"[^>]*>(.*?)<\/li>/g)].map(
+        (m) => [m[1], m[2]],
+      ),
+    );
+
+  // The machine cannot publish: no button, but a published tilasm keeps its link and its state.
+  let html = rows(s.renderToStaticMarkup(h(s.TilasmList, props)));
+  assert.doesNotMatch(html[fresh.id], /Publish on claude\.ai/);
+  assert.match(
+    html[current.id],
+    /href="https:\/\/claude\.ai\/artifact\/D1gnn"[^>]*>.*On claude\.ai/,
+  );
+  assert.match(html[current.id], /class="tilasm-artifact-state ">Up to date</);
+  assert.match(
+    html[behind.id],
+    /class="tilasm-artifact-state waiting">v1 published, v2 waiting</,
+  );
+  assert.doesNotMatch(
+    html[behind.id],
+    /aria-label="Publish the latest version/,
+  );
+
+  // It can: the tilasm never published offers to publish, the one behind to publish again, the one up to date nothing.
+  html = rows(
+    s.renderToStaticMarkup(h(s.TilasmList, { ...props, canPublish: true })),
+  );
+  assert.match(html[fresh.id], /aria-label="Publish on claude\.ai"/);
+  assert.doesNotMatch(html[current.id], /aria-label="Publish/);
+  assert.match(
+    html[behind.id],
+    /aria-label="Publish the latest version on claude\.ai, at the same address"/,
+  );
+
+  const published = [];
+  live(s.PublishButton, {
+    tilasm: fresh,
+    canPublish: true,
+    publishing: false,
+    onPublish: (t) => published.push(t.code),
+  })
+    .one("button")
+    .onClick();
+  assert.deepEqual(published, ["L01"]);
+  // Asked once per tilasm: one with an address or the go-ahead publishes at once.
+  assert.equal(s.needsConfirm(fresh), true);
+  assert.equal(s.needsConfirm(behind), false);
+  assert.equal(
+    s.needsConfirm({
+      ...fresh,
+      artifact: { url: "", confirmTime: stamp("2026-10-19T20:00:00Z") },
+    }),
+    false,
+  );
+
+  // Its first publish asks: the page leaves for claude.ai, the developer checks it for a client's personal data.
+  const confirmed = [];
+  let cancelled = 0;
+  html = rows(
+    s.renderToStaticMarkup(
+      h(s.TilasmList, { ...props, canPublish: true, confirming: fresh.id }),
+    ),
+  );
+  assert.match(
+    html[fresh.id],
+    /role="group" aria-label="Publish L01 on claude\.ai"/,
+  );
+  assert.match(
+    html[fresh.id],
+    /leaves this machine for claude\.ai, as a private artifact of your Claude account/,
+  );
+  assert.match(
+    html[fresh.id],
+    /<strong>Check that it holds no personal data of a client, its screenshots included\.<\/strong>/,
+  );
+  assert.doesNotMatch(html[behind.id], /personal data/);
+  const asking = live(s.PublishConfirm, {
+    tilasm: fresh,
+    onConfirm: () => confirmed.push(fresh.code),
+    onCancel: () => cancelled++,
+  });
+  const button = (text) =>
+    asking.all("button").find((b) => [b.props.children].flat().includes(text));
+  button("Checked: publish").props.onClick();
+  button("Cancel").props.onClick();
+  assert.deepEqual(confirmed, ["L01"]);
+  assert.equal(cancelled, 1);
+
+  // While it goes: no button, the row says so.
+  html = rows(
+    s.renderToStaticMarkup(
+      h(s.TilasmList, { ...props, canPublish: true, publishing: behind.id }),
+    ),
+  );
+  assert.match(html[behind.id], /role="status">.*Publishing…/);
+  assert.doesNotMatch(html[behind.id], /aria-label="Publish/);
+});

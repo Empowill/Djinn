@@ -626,19 +626,26 @@ func runProviderCmd(ctx context.Context, command string, args []string, userHome
 }
 
 func isProviderSignedIn(ctx context.Context, p planv1.Provider, djinnHome, userHome, path string) bool {
+	_, ok := signedInEnv(ctx, p, djinnHome, userHome, path)
+	return ok
+}
+
+// signedInEnv is what a session of provider p adds to its environment to run signed in: nil for the user's own
+// folder, an account's variables (AccountEnv) for the first account signed in; ok is false when none is.
+func signedInEnv(ctx context.Context, p planv1.Provider, djinnHome, userHome, path string) (env []string, ok bool) {
 	program := providerPrograms[p]
 	if program == "" {
-		return false
+		return nil, false
 	}
 	command, err := lookProgram(program, path)
 	if err != nil {
-		return false
+		return nil, false
 	}
 	if statusArgs := AccountStatus(p); statusArgs != nil {
 		if userHome != "" {
 			if info, err := os.Stat(filepath.Join(userHome, accountDefaults[p])); err == nil && info.IsDir() {
 				if runProviderCmd(ctx, command, statusArgs, userHome, path, nil, nil) == nil {
-					return true
+					return nil, true
 				}
 			}
 		}
@@ -648,27 +655,27 @@ func isProviderSignedIn(ctx context.Context, p planv1.Provider, djinnHome, userH
 			}
 			if info, err := os.Stat(acc.GetConfigDirectory()); err == nil && info.IsDir() {
 				if runProviderCmd(ctx, command, statusArgs, userHome, path, AccountEnv(acc), nil) == nil {
-					return true
+					return AccountEnv(acc), true
 				}
 			}
 		}
-		return false
+		return nil, false
 	}
 	if p == planv1.Provider_PROVIDER_ANTIGRAVITY && userHome != "" {
 		agHome := filepath.Join(userHome, accountDefaults[p])
 		info, err := os.Stat(agHome)
 		if err != nil || !info.IsDir() {
-			return false
+			return nil, false
 		}
 		if _, err := os.Stat(filepath.Join(agHome, "antigravity-oauth-token")); err == nil {
-			return true
+			return nil, true
 		}
 		// A test fixture that creates ~/.gemini/antigravity-cli without running an unauthenticated agy binary has no installation_id.
 		if _, err := os.Stat(filepath.Join(agHome, "installation_id")); errors.Is(err, os.ErrNotExist) {
-			return true
+			return nil, true
 		}
 	}
-	return false
+	return nil, false
 }
 
 // CircleProviders returns the sign-in status, sign-in command, and lead capability for each provider on this machine.

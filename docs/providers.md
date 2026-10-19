@@ -686,6 +686,25 @@ error subtype (`error_max_turns`, `error_during_execution`…) fails the turn ev
 | Comments sent on a tilasm                     | `claude/lead-comments.jsonl`     | **real**, claude 2.1.302, Opus 5.5          | the driven lead reads the send in one command, acts in the same batch and replies to each comment once (`TestLeadRepliesToEachCommentOnRecordedStream`); $0.62 |
 | Session limit reached                         | `claude/session-limit.jsonl`     | **real**, claude 2.1.293                    | `rate_limit_event` `rejected` gives the limit and its `resetsAt`; error "You've hit your session limit · resets 7:20am (Europe/Paris)"; the task waits for the reset, then resumes |
 
+**A tilasm published on claude.ai** (`internal/plan/artifact.go`, W493). Not a worker: one `claude -p` call, under the
+`paid` gate, in a folder Djinn built (`internal/tilasm`), with `--model claude-haiku-5-5 --tools Artifact,Read`,
+`CLAUDE_CODE_ARTIFACT=1` through `--settings`, `--permission-mode acceptEdits --permission-prompts none`, no MCP server,
+no session kept. Its address is read from the Artifact tool's result line (`Published <file> at
+https://claude.ai/artifact/<id> (Version N, …`), never from the model's words. Whether the tool is offered is read from
+the `init` event of a call cut there, before any model call (verified: with the network cut, `init` comes, then
+`api_retry`), once per start.
+**Verified** on real publishes of L52 on its address (claude 2.1.303, Haiku 5.5, 19/10/2026): the Artifact tool publishes
+no page its session has not read whole, whatever the prompt says: with the Artifact tool alone, or a page of 7.7 MB its
+images inlined (Read takes 256 KB), the model refuses; the page as it is, its files beside it (`files`), passes with no
+approval, 24 to 27 s, $0.017 to $0.040; a file of a type claude.ai does not serve (`.xlsx`, `.docx`) fails the whole
+publish, so Djinn leaves those out; a publish on an address is refused once until its live version is read, then passes.
+
+| Case                          | Fixture                                 | Source                         | What Djinn records                                                         |
+| ----------------------------- | --------------------------------------- | ------------------------------ | -------------------------------------------------------------------------- |
+| Published again on an address | `artifact/publish.jsonl`                | **real**, claude 2.1.303, Haiku | the address and claude.ai's version from the tool's result, $0.017         |
+| The page not read             | `artifact/publish-unread.jsonl`         | **real**, Artifact tool alone   | no publish: the model's answer is why                                      |
+| A file type not served        | `artifact/publish-type-refused.jsonl`   | **real**, a `.docx` beside      | no publish: the Artifact tool's refusal is why                             |
+
 ## Codex
 
 **Command.** `codex app-server --listen stdio://`: JSON-RPC 2.0, one message per line on stdio. Djinn sends

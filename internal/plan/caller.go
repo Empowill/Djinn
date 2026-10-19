@@ -45,7 +45,7 @@ func CallerActor(ctx context.Context) string {
 // WorkerGuard intercepts Connect RPC calls to enforce permissions for workers.
 // A worker cannot make a wish, or execute mutating commands on wishes, tasks, or plans
 // other than those permitted for workers (question ask, question revise, block put,
-// task update of own task, tilasm put).
+// task update of own task, tilasm put, tilasm publish in its wish).
 var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		caller := CallerFromContext(ctx)
@@ -151,6 +151,19 @@ var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) conn
 				}
 				if r.Author == "" {
 					r.Author = caller.TaskID
+				}
+			}
+			return next(ctx, req)
+
+		case planv1connect.TilasmServicePublishProcedure:
+			// A tilasm of its wish only; the first publish of each stays the developer's (Tilasms.Publish).
+			if r, ok := req.Any().(*planv1.TilasmServicePublishRequest); ok {
+				if r.Wish == "" {
+					r.Wish = caller.WishID
+				} else if r.Wish != caller.WishID {
+					return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf(
+						"a worker cannot publish a tilasm of wish %s (its task is in wish %s)", r.Wish, caller.WishID,
+					))
 				}
 			}
 			return next(ctx, req)

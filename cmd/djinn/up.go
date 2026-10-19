@@ -482,6 +482,14 @@ func runUp(args []string) (restart bool, err error) {
 		plan.WithLoad(func() djinnv1.LoadNotch { return monitor.Policy().Notch }),
 		plan.WithLoadBroadcaster(&broadcastLoad), plan.WithLeadBroadcaster(&changeLead), plan.WithLeadFailed(leadFailed),
 		plan.WithIfritWaits(gates.IfritWaits), plan.WithOverlaps(workers.OverlapsBrief),
+		// A tilasm goes on claude.ai by one short Claude call, a paid model run: under the paid gate, as a worker's.
+		plan.WithPublisher(&plan.Publisher{Home: home, Gate: func(ctx context.Context, taskID, what string) (func(), error) {
+			held, err := gates.Take(ctx, gate.Request{Name: "paid", TaskID: taskID, What: what, Timeout: plan.ArtifactTimeout + time.Minute}, nil)
+			if err != nil {
+				return nil, err
+			}
+			return held.Give, nil
+		}}),
 	)
 	loadPrefix, loadHandler := machine.LoadHandler(home, monitor, workers.SetPolicy, func(n djinnv1.LoadNotch) {
 		if broadcastLoad != nil {
