@@ -278,398 +278,412 @@ func (e *env) spawnWatch(t *testing.T, wishID, command string, restart bool) (*p
 	return res.Msg.GetTask(), nil
 }
 
-// TestWatcher: a watcher starts on a full machine under pressure, takes no slot, runs its command again after each
-// exit, tells the wish's lead each paragraph in one line, keeps the last one on its task, pauses, and stops.
+// TestWatcher covers watcher lifecycle, pause/resume, termination, restart recovery, permissions, template done lines,
+// and state line timestamps.
 func TestWatcher(t *testing.T) {
 	t.Parallel()
-	l := &limit{slots: 1, pressure: "simulated"}
-	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
-	lead := &told{}
-	e.h.TellLeads(lead.tell)
-	repo := gitRepo(t)
-	wishID, _ := e.wish(t, repo)
-	counter := filepath.Join(t.TempDir(), "runs")
-	cmd := watchCommand("count:"+counter, "exit:0")
 
-	task, err := e.spawnWatch(t, wishID, cmd, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || task.GetWorktree() != "" || task.GetBranch() != "" || !task.GetRestart() {
-		t.Fatalf("watcher = %v", task)
-	}
-	// A run's line lasts until the next run, 50 ms later: a poll can miss it, slowed by the store's writes (Windows).
-	// The fourth's comes once the lead was told the third's.
-	task = e.until(t, task.GetId(), func(t *planv1.Task) bool {
-		n, _ := strconv.Atoi(strings.TrimPrefix(t.GetLastLine(), "run "))
-		return n >= 4
-	})
-	if n := e.h.Running(); n != 0 {
-		t.Errorf("Running() = %d with a watcher", n)
-	}
-	if task.GetUsage().GetCostUsd() != 0 || task.GetSessionId() != "" {
-		t.Errorf("a watcher spent or has a session: %v", task)
-	}
-	lines := lead.all()
-	if len(lines) < 3 {
-		t.Fatalf("the lead was told %q", lines)
-	}
-	// The command is clipped in the line: the test binary's path is long on macOS and Windows.
-	want := wishID + ": Djinn: W1's watcher says: run 1. " + clipRunes(cmd, watchCommandMax) + " is still watching."
-	if lines[0] != want {
-		t.Errorf("the lead was told %q\nwant %q", lines[0], want)
-	}
+	// A watcher starts on a full machine under pressure, takes no slot, runs its command again after each
+	// exit, tells the wish's lead each paragraph in one line, keeps the last one on its task, pauses, and stops.
+	t.Run("runs_and_pauses", func(t *testing.T) {
+		t.Parallel()
+		l := &limit{slots: 1, pressure: "simulated"}
+		e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
+		lead := &told{}
+		e.h.TellLeads(lead.tell)
+		repo := gitRepo(t)
+		wishID, _ := e.wish(t, repo)
+		counter := filepath.Join(t.TempDir(), "runs")
+		cmd := watchCommand("count:"+counter, "exit:0")
 
-	// The slot is free: once the pressure falls, an agent starts next to it.
-	l.set(1, "")
-	agent := e.mustSpawn(t, wishID, "Work", "text ok", nil)
-	if agent.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
-		t.Errorf("the agent waits: %v", agent)
-	}
-
-	// Paused, it holds still; resumed, it goes on. Windows cannot pause a worker yet (pause_test.go).
-	if runtime.GOOS != "windows" {
-		if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: task.GetId()})); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(200 * time.Millisecond) // Runs start 50 ms apart (fastWatch): none while paused.
-		paused := e.get(t, task.GetId())
-		time.Sleep(200 * time.Millisecond)
-		if again := e.get(t, task.GetId()); paused.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED || again.GetLastLine() != paused.GetLastLine() {
-			t.Errorf("paused, it went on: %q then %q", paused.GetLastLine(), again.GetLastLine())
-		}
-		if _, err := e.tasks.Resume(t.Context(), connect.NewRequest(&planv1.TaskServiceResumeRequest{TaskId: task.GetId()})); err != nil {
-			t.Fatal(err)
-		}
-		e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() != paused.GetLastLine() })
-	}
-
-	// A message is refused: no model reads it.
-	if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: task.GetId(), Text: "hi"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Errorf("a message to a watcher: %v", err)
-	}
-
-	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
-		t.Errorf("stopped watcher = %v", got)
-	}
-	e.ended(t, agent.GetId())
-}
-
-// TestWatcherPausedAsARunEnds: a pause or a resume that comes as a run's command ends, gone but not yet cleared,
-// holds or frees the next run as between two runs, instead of failing with "os: process already finished" (TestWatcher
-// on macOS, W159). Windows cannot pause a worker yet (pause_test.go).
-func TestWatcherPausedAsARunEnds(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows cannot pause a worker")
-	}
-	t.Parallel()
-	p, err := startCommand(t.TempDir(), "true", nil, nil, nil, Grace, false, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range p.lines {
-	}
-	<-p.done
-	w := &watchWorker{}
-	w.running(p)
-	if err := w.Pause(); err != nil {
-		t.Fatalf("paused as its run ended: %v", err)
-	}
-	if w.held == nil {
-		t.Errorf("paused as its run ended, the next run is not held")
-	}
-	if err := w.Resume(); err != nil {
-		t.Fatalf("resumed as its run ended: %v", err)
-	}
-	if w.held != nil {
-		t.Errorf("resumed as its run ended, the next run is still held")
-	}
-}
-
-// TestWatcherEnds: without --restart, the watcher ends with its command, done, and the lead learns it has ended; a
-// command that dies at each start fails the task. --restart is for a watcher only, and a watcher needs a project.
-func TestWatcherEnds(t *testing.T) {
-	t.Parallel()
-	e := up(t, t.TempDir(), WithTick(time.Hour))
-	lead := &told{}
-	e.h.TellLeads(lead.tell)
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	task, err := e.spawnWatch(t, wishID, watchCommand("say:merged"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := e.ended(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetLastLine() != "merged" {
-		t.Errorf("watcher = %v", got)
-	}
-	// "merged" came with its exit, or before it on a slow machine: either way the lead learns the end.
-	if lines := lead.all(); len(lines) == 0 || !strings.Contains(lines[0], " says: merged. ") ||
-		!strings.HasSuffix(lines[len(lines)-1], " has ended.") {
-		t.Errorf("the lead was told %q", lines)
-	}
-
-	// A command that dies starts again: dead at each start, it fails the task (TestWatcherGivesUp).
-	task, err = e.spawnWatch(t, wishID, watchCommand("err:no token", "exit:3"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := e.ended(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
-		got.GetError() != "its command died 5 times in a row; the last time: exit code 3; its error output: no token" {
-		t.Errorf("failing watcher = %v", got)
-	}
-
-	if _, err := e.spawnReq(t, wishID, "Agent", "text hi", &planv1.TaskServiceSpawnRequest{Restart: true}); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("--restart on an agent: %v", err)
-	}
-	bare, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Nowhere"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.spawnWatch(t, bare.Msg.GetWish().GetId(), watchCommand("say:x"), false); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("a watcher outside any project: %v", err)
-	}
-}
-
-// TestWatcherResumes: a watcher djinn up cut short is resumed on its command at the next start, however many times,
-// in its project's folder, on a full machine under pressure.
-func TestWatcherResumes(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home := t.TempDir()
-	l := &limit{slots: 0, pressure: "simulated"}
-	e := up(t, home, WithTick(20*time.Millisecond), WithCapacity(l.capacity))
-	wishID, _ := e.wish(t, gitRepo(t))
-	counter := filepath.Join(t.TempDir(), "runs")
-	task, err := e.spawnWatch(t, wishID, watchCommand("count:"+counter, "wait"), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 1" })
-	for i := 2; i <= maxResumes+2; i++ {
-		e.down()
-		e = up(t, home, WithTick(20*time.Millisecond), WithCapacity(l.capacity))
-		got := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == fmt.Sprintf("run %d", i) })
-		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || got.GetWorktree() != "" {
-			t.Fatalf("after restart %d: %v", i-1, got)
-		}
-	}
-	// Babysit PR #2, 12/10/2026: the restart line said no worker was running while W9, a watcher, came back. It counts
-	// the watchers apart.
-	events, err := store.List[*planv1.LeadEvent](t.Context(), e.db, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var restarts []string
-	for _, ev := range events {
-		if ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART {
-			restarts = append(restarts, ev.GetText())
-		}
-	}
-	if want := "Djinn: restarted on version unknown: 1 watcher resumed: W1."; len(restarts) < 2 || restarts[len(restarts)-1] != want {
-		t.Errorf("restart events %q, want the last %q", restarts, want)
-	}
-	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// TestWatcherResumedSaysItOnce: PR #2, 12/10/2026. A watcher Djinn starts again tells its lead nothing when its first
-// paragraph says again what its task said last: the babysit-pr watcher says its checks again on its first look, as
-// what it printed while a Djinn hung reached no lead. What follows wakes the lead as before.
-func TestWatcherResumedSaysItOnce(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home := t.TempDir()
-	e := up(t, home, WithTick(20*time.Millisecond))
-	lead := &told{}
-	e.h.TellLeads(lead.tell)
-	wishID, _ := e.wish(t, gitRepo(t))
-	// Each run waits a little before it speaks: the test gives the lead to the Djinn started again before that. Its
-	// two paragraphs are 300 ms apart, six times fastWatch's Quiet: 100 ms let a busy macOS runner read both lines in
-	// one paragraph, "CI red" first, which says again what the task said last (W270).
-	cmd := watchCommand("keep:runs", "sleep:100ms", "say:CI red", "sleep:300ms", "from:2", "say:CI green", "wait")
-	task, err := e.spawnWatch(t, wishID, cmd, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "CI red" })
-	e.down()
-	e = up(t, home, WithTick(20*time.Millisecond))
-	again := &told{}
-	e.h.TellLeads(again.tell)
-	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "CI green" })
-	// The lead is told a paragraph after its task records it, and the paragraphs of a watcher in order.
-	deadline := time.Now().Add(5 * time.Second)
-	for len(again.all()) == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if got := lead.all(); len(got) != 1 || !strings.Contains(got[0], "says: CI red.") {
-		t.Errorf("before the restart, the lead was told %q", got)
-	}
-	if got := again.all(); len(got) != 1 || !strings.Contains(got[0], "says: CI green.") {
-		t.Errorf("after the restart, the lead was told %q", got)
-	}
-	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// TestWatcherPermissions: where the project lists its commands, a watcher runs only one of them.
-func TestWatcherPermissions(t *testing.T) {
-	t.Parallel()
-	e := up(t, t.TempDir(), WithTick(time.Hour))
-	repo := gitRepo(t)
-	if err := os.MkdirAll(filepath.Join(repo, ".agents"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repo, PermissionsFile), []byte(`commands: "mrwatch"`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	wishID, _ := e.wish(t, repo)
-	if _, err := e.spawnWatch(t, wishID, watchCommand("say:x"), false); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), "no reviewer") {
-		t.Errorf("an unlisted command: %v", err)
-	}
-}
-
-// TestWatcherDoneLine: the watcher of a wish made from a template starts at once in the skill's project; each new
-// paragraph reaches plan.Wishes.Watched, and its done line asks the developer whether to grant the wish. Djinn
-// grants nothing itself.
-func TestWatcherDoneLine(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir(), WithTick(time.Hour))
-	wishes := &plan.Wishes{Store: e.db, Language: "en"}
-	var mu sync.Mutex
-	var paragraphs []string
-	e.h.OnWatched(func(ctx context.Context, task *planv1.Task, text string) (bool, error) {
-		mu.Lock()
-		paragraphs = append(paragraphs, task.GetCode()+": "+text)
-		mu.Unlock()
-		return wishes.Watched(ctx, task, text)
-	})
-	wishID, projectID := e.wish(t, gitRepo(t))
-	err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		wish, err := store.Get[*planv1.Wish](t.Context(), tx, wishID)
+		task, err := e.spawnWatch(t, wishID, cmd, true)
 		if err != nil {
-			return err
+			t.Fatal(err)
 		}
-		wish.Template = &planv1.WishTemplate{Skill: "babysit", ProjectId: projectID, DoneWhen: "MERGED"}
-		if err := tx.Journal("test", "test/template", wish); err != nil {
-			return err
+		if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || task.GetWorktree() != "" || task.GetBranch() != "" || !task.GetRestart() {
+			t.Fatalf("watcher = %v", task)
 		}
-		return tx.Put(wish)
+		// A run's line lasts until the next run, 50 ms later: a poll can miss it, slowed by the store's writes (Windows).
+		// The fourth's comes once the lead was told the third's.
+		task = e.until(t, task.GetId(), func(t *planv1.Task) bool {
+			n, _ := strconv.Atoi(strings.TrimPrefix(t.GetLastLine(), "run "))
+			return n >= 4
+		})
+		if n := e.h.Running(); n != 0 {
+			t.Errorf("Running() = %d with a watcher", n)
+		}
+		if task.GetUsage().GetCostUsd() != 0 || task.GetSessionId() != "" {
+			t.Errorf("a watcher spent or has a session: %v", task)
+		}
+		lines := lead.all()
+		if len(lines) < 3 {
+			t.Fatalf("the lead was told %q", lines)
+		}
+		// The command is clipped in the line: the test binary's path is long on macOS and Windows.
+		want := wishID + ": Djinn: W1's watcher says: run 1. " + clipRunes(cmd, watchCommandMax) + " is still watching."
+		if lines[0] != want {
+			t.Errorf("the lead was told %q\nwant %q", lines[0], want)
+		}
+
+		// The slot is free: once the pressure falls, an agent starts next to it.
+		l.set(1, "")
+		agent := e.mustSpawn(t, wishID, "Work", "text ok", nil)
+		if agent.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+			t.Errorf("the agent waits: %v", agent)
+		}
+
+		// Paused, it holds still; resumed, it goes on. Windows cannot pause a worker yet (pause_test.go).
+		if runtime.GOOS != "windows" {
+			if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: task.GetId()})); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(100 * time.Millisecond) // Runs start 50 ms apart (fastWatch): none while paused.
+			paused := e.get(t, task.GetId())
+			time.Sleep(100 * time.Millisecond)
+			if again := e.get(t, task.GetId()); paused.GetStatus() != planv1.TaskStatus_TASK_STATUS_PAUSED || again.GetLastLine() != paused.GetLastLine() {
+				t.Errorf("paused, it went on: %q then %q", paused.GetLastLine(), again.GetLastLine())
+			}
+			if _, err := e.tasks.Resume(t.Context(), connect.NewRequest(&planv1.TaskServiceResumeRequest{TaskId: task.GetId()})); err != nil {
+				t.Fatal(err)
+			}
+			e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() != paused.GetLastLine() })
+		}
+
+		// A message is refused: no model reads it.
+		if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: task.GetId(), Text: "hi"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Errorf("a message to a watcher: %v", err)
+		}
+
+		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+		if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
+			t.Errorf("stopped watcher = %v", got)
+		}
+		e.ended(t, agent.GetId())
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	code, err := e.h.SpawnWatcher(t.Context(), wishID, projectID, "Watch, for the skill babysit",
-		watchCommand("say:checks pending", "sleep:300ms", "say:MERGED: PR #12 is merged."), false)
-	if err != nil || code != "W1" {
-		t.Fatalf("SpawnWatcher = %q, %v", code, err)
-	}
-	tasks, err := store.List[*planv1.Task](t.Context(), e.db, store.Where{"wish_id": wishID})
-	if err != nil || len(tasks) != 1 || tasks[0].GetProvider() != planv1.Provider_PROVIDER_WATCH || tasks[0].GetProjectId() != projectID {
-		t.Fatalf("tasks = %v, %v", tasks, err)
-	}
-	e.ended(t, tasks[0].GetId())
-	mu.Lock()
-	got := slices.Clone(paragraphs)
-	mu.Unlock()
-	if want := []string{"W1: checks pending", "W1: MERGED: PR #12 is merged."}; !slices.Equal(got, want) {
-		t.Errorf("paragraphs %q, want %q", got, want)
-	}
-	qs, err := store.List[*planv1.Question](t.Context(), e.db, store.Where{"wish_id": wishID})
-	if err != nil || len(qs) != 1 || !qs[0].GetGrant() || qs[0].GetAnswer() != nil {
-		t.Fatalf("questions = %v, %v", qs, err)
-	}
-	if wish, _ := store.Get[*planv1.Wish](t.Context(), e.db, wishID); wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
-		t.Errorf("Djinn granted the wish by itself")
-	}
-}
-
-// TestWatcherFinishes: a watcher that restarts its command ends, done, on its template's done line; one stopped on
-// request still ends stopped.
-func TestWatcherFinishes(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir(), WithTick(time.Hour))
-	e.h.OnWatched(func(_ context.Context, _ *planv1.Task, text string) (bool, error) {
-		return strings.Contains(text, "MERGED"), nil
+	// A pause or a resume that comes as a run's command ends, gone but not yet cleared,
+	// holds or frees the next run as between two runs, instead of failing with "os: process already finished" (TestWatcher
+	// on macOS, W159). Windows cannot pause a worker yet (pause_test.go).
+	t.Run("paused_as_run_ends", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows cannot pause a worker")
+		}
+		t.Parallel()
+		p, err := startCommand(t.TempDir(), "true", nil, nil, nil, Grace, false, false, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range p.lines {
+		}
+		<-p.done
+		w := &watchWorker{}
+		w.running(p)
+		if err := w.Pause(); err != nil {
+			t.Fatalf("paused as its run ended: %v", err)
+		}
+		if w.held == nil {
+			t.Errorf("paused as its run ended, the next run is not held")
+		}
+		if err := w.Resume(); err != nil {
+			t.Fatalf("resumed as its run ended: %v", err)
+		}
+		if w.held != nil {
+			t.Errorf("resumed as its run ended, the next run is still held")
+		}
 	})
-	wishID, projectID := e.wish(t, gitRepo(t))
-	counter := filepath.Join(t.TempDir(), "runs")
-	if _, err := e.h.SpawnWatcher(t.Context(), wishID, projectID, "Watch", watchCommand("count:"+counter, "say:MERGED", "exit:0"), true); err != nil {
-		t.Fatal(err)
-	}
-	tasks, err := store.List[*planv1.Task](t.Context(), e.db, store.Where{"wish_id": wishID})
-	if err != nil || len(tasks) != 1 || !tasks[0].GetRestart() {
-		t.Fatalf("tasks = %v, %v", tasks, err)
-	}
-	if got := e.ended(t, tasks[0].GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetError() != "" {
-		t.Errorf("finished watcher = %v", got)
-	}
 
-	task, err := e.spawnWatch(t, wishID, watchCommand("say:checks pending", "wait"), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "checks pending" })
-	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
-		t.Errorf("stopped watcher = %v", got)
-	}
-}
+	// Without --restart, the watcher ends with its command, done, and the lead learns it has ended; a
+	// command that dies at each start fails the task. --restart is for a watcher only, and a watcher needs a project.
+	t.Run("ends", func(t *testing.T) {
+		t.Parallel()
+		providers := testProviders()
+		providers[planv1.Provider_PROVIDER_WATCH] = Watch{Quiet: 20 * time.Millisecond, Backoff: 5 * time.Millisecond, Gap: 5 * time.Millisecond}
+		e := upWith(t, t.TempDir(), providers, WithTick(time.Hour))
+		lead := &told{}
+		e.h.TellLeads(lead.tell)
+		wishID, _ := e.wish(t, gitRepo(t))
 
-// TestWatcherLineTime: a watcher's task says since when its state line holds (Task.last_line_time, the window's "GREEN
-// · 12m"): the same line said again at each run keeps its time, another line takes the time it came.
-func TestWatcherLineTime(t *testing.T) {
-	t.Parallel()
-	clock := &fakeClock{at: time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)}
-	e := up(t, t.TempDir(), WithClock(clock.now), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
-	dir := t.TempDir()
+		task, err := e.spawnWatch(t, wishID, watchCommand("say:merged"), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := e.ended(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetLastLine() != "merged" {
+			t.Errorf("watcher = %v", got)
+		}
+		// "merged" came with its exit, or before it on a slow machine: either way the lead learns the end.
+		if lines := lead.all(); len(lines) == 0 || !strings.Contains(lines[0], " says: merged. ") ||
+			!strings.HasSuffix(lines[len(lines)-1], " has ended.") {
+			t.Errorf("the lead was told %q", lines)
+		}
 
-	// Its runs counted silently: a paragraph of one line, that a slow machine cannot split in two at a pause.
-	task, err := e.spawnWatch(t, wishID, watchCommand("keep:runs", "say:GREEN", "exit:0"), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	same := filepath.Join(e.home, "watchers", task.GetId(), "runs")
-	first := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "GREEN" }).GetLastLineTime()
-	if !first.AsTime().Equal(clock.now()) {
-		t.Fatalf("GREEN since %v, want %v", first.AsTime(), clock.now())
-	}
-	clock.set(clock.now().Add(time.Hour))
-	// Run 4 started: the paragraph of run 3, GREEN again, reached the task an hour later on the clock.
-	e.until(t, task.GetId(), func(*planv1.Task) bool {
-		b, _ := os.ReadFile(same)
-		n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
-		return n >= 4
+		// A command that dies starts again: dead at each start, it fails the task.
+		task, err = e.spawnWatch(t, wishID, watchCommand("err:no token", "exit:3"), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := e.ended(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED ||
+			got.GetError() != "its command died 5 times in a row; the last time: exit code 3; its error output: no token" {
+			t.Errorf("failing watcher = %v", got)
+		}
+
+		if _, err := e.spawnReq(t, wishID, "Agent", "text hi", &planv1.TaskServiceSpawnRequest{Restart: true}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("--restart on an agent: %v", err)
+		}
+		bare, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Nowhere"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.spawnWatch(t, bare.Msg.GetWish().GetId(), watchCommand("say:x"), false); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("a watcher outside any project: %v", err)
+		}
 	})
-	if got := e.get(t, task.GetId()).GetLastLineTime(); !got.AsTime().Equal(first.AsTime()) {
-		t.Errorf("GREEN said again moved its time: %v, want %v", got.AsTime(), first.AsTime())
-	}
 
-	changing := filepath.Join(dir, "changing")
-	other, err := e.spawnWatch(t, wishID, watchCommand("count:"+changing, "exit:0"), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	run := func(t *planv1.Task) int {
-		n, _ := strconv.Atoi(strings.TrimPrefix(t.GetLastLine(), "run "))
-		return n
-	}
-	seen := run(e.until(t, other.GetId(), func(t *planv1.Task) bool { return run(t) >= 1 }))
-	clock.set(clock.now().Add(time.Hour))
-	got := e.until(t, other.GetId(), func(t *planv1.Task) bool { return run(t) >= seen+2 }).GetLastLineTime()
-	if !got.AsTime().Equal(clock.now()) {
-		t.Errorf("a new line since %v, want %v", got.AsTime(), clock.now())
-	}
+	// A watcher djinn up cut short is resumed on its command at the next start, however many times,
+	// in its project's folder, on a full machine under pressure.
+	t.Run("resumes", func(t *testing.T) {
+		testx.Portable(t)
+		t.Parallel()
+		home := t.TempDir()
+		l := &limit{slots: 0, pressure: "simulated"}
+		e := up(t, home, WithTick(20*time.Millisecond), WithCapacity(l.capacity))
+		wishID, _ := e.wish(t, gitRepo(t))
+		counter := filepath.Join(t.TempDir(), "runs")
+		task, err := e.spawnWatch(t, wishID, watchCommand("count:"+counter, "wait"), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "run 1" })
+		for i := 2; i <= maxResumes+2; i++ {
+			e.down()
+			e = up(t, home, WithTick(20*time.Millisecond), WithCapacity(l.capacity))
+			got := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == fmt.Sprintf("run %d", i) })
+			if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || got.GetWorktree() != "" {
+				t.Fatalf("after restart %d: %v", i-1, got)
+			}
+		}
+		// Babysit PR #2, 12/10/2026: the restart line said no worker was running while W9, a watcher, came back. It counts
+		// the watchers apart.
+		events, err := store.List[*planv1.LeadEvent](t.Context(), e.db, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var restarts []string
+		for _, ev := range events {
+			if ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART {
+				restarts = append(restarts, ev.GetText())
+			}
+		}
+		if want := "Djinn: restarted on version unknown: 1 watcher resumed: W1."; len(restarts) < 2 || restarts[len(restarts)-1] != want {
+			t.Errorf("restart events %q, want the last %q", restarts, want)
+		}
+		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// PR #2, 12/10/2026. A watcher Djinn starts again tells its lead nothing when its first
+	// paragraph says again what its task said last: the babysit-pr watcher says its checks again on its first look, as
+	// what it printed while a Djinn hung reached no lead. What follows wakes the lead as before.
+	t.Run("resumed_says_it_once", func(t *testing.T) {
+		testx.Portable(t)
+		t.Parallel()
+		home := t.TempDir()
+		e := up(t, home, WithTick(20*time.Millisecond))
+		lead := &told{}
+		e.h.TellLeads(lead.tell)
+		wishID, _ := e.wish(t, gitRepo(t))
+		// Each run waits a little before it speaks: the test gives the lead to the Djinn started again before that. Its
+		// two paragraphs are 300 ms apart, six times fastWatch's Quiet: 100 ms let a busy macOS runner read both lines in
+		// one paragraph, "CI red" first, which says again what the task said last (W270).
+		cmd := watchCommand("keep:runs", "sleep:100ms", "say:CI red", "sleep:300ms", "from:2", "say:CI green", "wait")
+		task, err := e.spawnWatch(t, wishID, cmd, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "CI red" })
+		e.down()
+		e = up(t, home, WithTick(20*time.Millisecond))
+		again := &told{}
+		e.h.TellLeads(again.tell)
+		e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "CI green" })
+		// The lead is told a paragraph after its task records it, and the paragraphs of a watcher in order.
+		deadline := time.Now().Add(5 * time.Second)
+		for len(again.all()) == 0 && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if got := lead.all(); len(got) != 1 || !strings.Contains(got[0], "says: CI red.") {
+			t.Errorf("before the restart, the lead was told %q", got)
+		}
+		if got := again.all(); len(got) != 1 || !strings.Contains(got[0], "says: CI green.") {
+			t.Errorf("after the restart, the lead was told %q", got)
+		}
+		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// Where the project lists its commands, a watcher runs only one of them.
+	t.Run("permissions", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir(), WithTick(time.Hour))
+		repo := gitRepo(t)
+		if err := os.MkdirAll(filepath.Join(repo, ".agents"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, PermissionsFile), []byte(`commands: "mrwatch"`+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		wishID, _ := e.wish(t, repo)
+		if _, err := e.spawnWatch(t, wishID, watchCommand("say:x"), false); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+			!strings.Contains(err.Error(), "no reviewer") {
+			t.Errorf("an unlisted command: %v", err)
+		}
+	})
+
+	// The watcher of a wish made from a template starts at once in the skill's project; each new
+	// paragraph reaches plan.Wishes.Watched, and its done line asks the developer whether to grant the wish. Djinn
+	// grants nothing itself.
+	t.Run("done_line", func(t *testing.T) {
+		testx.Portable(t)
+		t.Parallel()
+		e := up(t, t.TempDir(), WithTick(time.Hour))
+		wishes := &plan.Wishes{Store: e.db, Language: "en"}
+		var mu sync.Mutex
+		var paragraphs []string
+		e.h.OnWatched(func(ctx context.Context, task *planv1.Task, text string) (bool, error) {
+			mu.Lock()
+			paragraphs = append(paragraphs, task.GetCode()+": "+text)
+			mu.Unlock()
+			return wishes.Watched(ctx, task, text)
+		})
+		wishID, projectID := e.wish(t, gitRepo(t))
+		err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+			wish, err := store.Get[*planv1.Wish](t.Context(), tx, wishID)
+			if err != nil {
+				return err
+			}
+			wish.Template = &planv1.WishTemplate{Skill: "babysit", ProjectId: projectID, DoneWhen: "MERGED"}
+			if err := tx.Journal("test", "test/template", wish); err != nil {
+				return err
+			}
+			return tx.Put(wish)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		code, err := e.h.SpawnWatcher(t.Context(), wishID, projectID, "Watch, for the skill babysit",
+			watchCommand("say:checks pending", "sleep:300ms", "say:MERGED: PR #12 is merged."), false)
+		if err != nil || code != "W1" {
+			t.Fatalf("SpawnWatcher = %q, %v", code, err)
+		}
+		tasks, err := store.List[*planv1.Task](t.Context(), e.db, store.Where{"wish_id": wishID})
+		if err != nil || len(tasks) != 1 || tasks[0].GetProvider() != planv1.Provider_PROVIDER_WATCH || tasks[0].GetProjectId() != projectID {
+			t.Fatalf("tasks = %v, %v", tasks, err)
+		}
+		e.ended(t, tasks[0].GetId())
+		mu.Lock()
+		got := slices.Clone(paragraphs)
+		mu.Unlock()
+		if want := []string{"W1: checks pending", "W1: MERGED: PR #12 is merged."}; !slices.Equal(got, want) {
+			t.Errorf("paragraphs %q, want %q", got, want)
+		}
+		qs, err := store.List[*planv1.Question](t.Context(), e.db, store.Where{"wish_id": wishID})
+		if err != nil || len(qs) != 1 || !qs[0].GetGrant() || qs[0].GetAnswer() != nil {
+			t.Fatalf("questions = %v, %v", qs, err)
+		}
+		if wish, _ := store.Get[*planv1.Wish](t.Context(), e.db, wishID); wish.GetState() == planv1.WishState_WISH_STATE_GRANTED {
+			t.Errorf("Djinn granted the wish by itself")
+		}
+	})
+
+	// A watcher that restarts its command ends, done, on its template's done line; one stopped on
+	// request still ends stopped.
+	t.Run("finishes", func(t *testing.T) {
+		testx.Portable(t)
+		t.Parallel()
+		e := up(t, t.TempDir(), WithTick(time.Hour))
+		e.h.OnWatched(func(_ context.Context, _ *planv1.Task, text string) (bool, error) {
+			return strings.Contains(text, "MERGED"), nil
+		})
+		wishID, projectID := e.wish(t, gitRepo(t))
+		counter := filepath.Join(t.TempDir(), "runs")
+		if _, err := e.h.SpawnWatcher(t.Context(), wishID, projectID, "Watch", watchCommand("count:"+counter, "say:MERGED", "exit:0"), true); err != nil {
+			t.Fatal(err)
+		}
+		tasks, err := store.List[*planv1.Task](t.Context(), e.db, store.Where{"wish_id": wishID})
+		if err != nil || len(tasks) != 1 || !tasks[0].GetRestart() {
+			t.Fatalf("tasks = %v, %v", tasks, err)
+		}
+		if got := e.ended(t, tasks[0].GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetError() != "" {
+			t.Errorf("finished watcher = %v", got)
+		}
+
+		task, err := e.spawnWatch(t, wishID, watchCommand("say:checks pending", "wait"), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "checks pending" })
+		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+		if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
+			t.Errorf("stopped watcher = %v", got)
+		}
+	})
+
+	// A watcher's task says since when its state line holds (Task.last_line_time, the window's "GREEN
+	// · 12m"): the same line said again at each run keeps its time, another line takes the time it came.
+	t.Run("line_time", func(t *testing.T) {
+		t.Parallel()
+		clock := &fakeClock{at: time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)}
+		e := up(t, t.TempDir(), WithClock(clock.now), WithTick(time.Hour))
+		wishID, _ := e.wish(t, gitRepo(t))
+		dir := t.TempDir()
+
+		// Its runs counted silently: a paragraph of one line, that a slow machine cannot split in two at a pause.
+		task, err := e.spawnWatch(t, wishID, watchCommand("keep:runs", "say:GREEN", "exit:0"), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		same := filepath.Join(e.home, "watchers", task.GetId(), "runs")
+		first := e.until(t, task.GetId(), func(t *planv1.Task) bool { return t.GetLastLine() == "GREEN" }).GetLastLineTime()
+		if !first.AsTime().Equal(clock.now()) {
+			t.Fatalf("GREEN since %v, want %v", first.AsTime(), clock.now())
+		}
+		clock.set(clock.now().Add(time.Hour))
+		// Run 4 started: the paragraph of run 3, GREEN again, reached the task an hour later on the clock.
+		e.until(t, task.GetId(), func(*planv1.Task) bool {
+			b, _ := os.ReadFile(same)
+			n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+			return n >= 4
+		})
+		if got := e.get(t, task.GetId()).GetLastLineTime(); !got.AsTime().Equal(first.AsTime()) {
+			t.Errorf("GREEN said again moved its time: %v, want %v", got.AsTime(), first.AsTime())
+		}
+		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+
+		changing := filepath.Join(dir, "changing")
+		other, err := e.spawnWatch(t, wishID, watchCommand("count:"+changing, "exit:0"), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		run := func(t *planv1.Task) int {
+			n, _ := strconv.Atoi(strings.TrimPrefix(t.GetLastLine(), "run "))
+			return n
+		}
+		seen := run(e.until(t, other.GetId(), func(t *planv1.Task) bool { return run(t) >= 1 }))
+		clock.set(clock.now().Add(time.Hour))
+		got := e.until(t, other.GetId(), func(t *planv1.Task) bool { return run(t) >= seen+2 }).GetLastLineTime()
+		if !got.AsTime().Equal(clock.now()) {
+			t.Errorf("a new line since %v, want %v", got.AsTime(), clock.now())
+		}
+		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: other.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+	})
 }

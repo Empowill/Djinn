@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// TestListenersOfAProcess (L06 section 5): the ports a process listens on are read from its sockets and the LISTEN lines of
+// TestListeners (L06 section 5): the ports a process listens on are read from its sockets and the LISTEN lines of
 // /proc/net/tcp and tcp6: the test binary's, on 127.0.0.1 and ::1, and none of an excluded process's (the agent's
 // own).
-func TestListenersOfAProcess(t *testing.T) {
+func TestListeners(t *testing.T) {
 	t.Parallel()
 	v4, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -71,156 +71,159 @@ func runIn(dir string, env []string, name string, args ...string) (string, error
 	return out.String(), err
 }
 
-func TestGitGuardEnv(t *testing.T) {
+func TestGitGuard(t *testing.T) {
 	t.Parallel()
-	home := t.TempDir()
-	if env, err := gitGuard(home, t.TempDir()); err != nil || env != nil {
-		t.Errorf("outside Git: env %v, err %v; want none", env, err)
-	}
 	g := newGuardRepo(t)
-	n, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))
-	for _, dir := range []string{g.dir, g.worker, filepath.Join(g.worker, "sub")} {
-		env, err := gitGuard(home, dir)
+
+	t.Run("env", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		if env, err := gitGuard(home, t.TempDir()); err != nil || env != nil {
+			t.Errorf("outside Git: env %v, err %v; want none", env, err)
+		}
+		n, _ := strconv.Atoi(os.Getenv("GIT_CONFIG_COUNT"))
+		for _, dir := range []string{g.dir, g.worker, filepath.Join(g.worker, "sub")} {
+			env, err := gitGuard(home, dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			common, _ := filepath.EvalSymlinks(filepath.Join(g.dir, ".git"))
+			file := gitGuardFile(home)
+			want := []string{
+				"GIT_CONFIG_COUNT=" + strconv.Itoa(n+2),
+				"GIT_CONFIG_KEY_" + strconv.Itoa(n) + "=includeIf.gitdir:" + filepath.ToSlash(common) + ".path",
+				"GIT_CONFIG_VALUE_" + strconv.Itoa(n) + "=" + file,
+				"GIT_CONFIG_KEY_" + strconv.Itoa(n+1) + "=includeIf.gitdir:" + filepath.ToSlash(common) + "/.path",
+				"GIT_CONFIG_VALUE_" + strconv.Itoa(n+1) + "=" + file,
+			}
+			if !slices.Equal(env, want) {
+				t.Errorf("in %s: env\n%v\nwant\n%v", dir, env, want)
+			}
+		}
+		if b, err := os.ReadFile(gitGuardFile(home)); err != nil || string(b) != noPushConfig {
+			t.Errorf("guard file: %q, %v", b, err)
+		}
+		if got := globEscape(`/a/b*[c]?\d`); got != `/a/b\*\[c]\?\\d` {
+			t.Errorf("globEscape = %q", got)
+		}
+	})
+
+	// Whatever the command, a worker's push fails and the remote does not move, while its other Git commands work,
+	// and the orchestrator, without the guard, pushes.
+	t.Run("keeps_workers_from_pushing", func(t *testing.T) {
+		t.Parallel()
+		guard, err := gitGuard(t.TempDir(), g.worker)
 		if err != nil {
 			t.Fatal(err)
 		}
-		common, _ := filepath.EvalSymlinks(filepath.Join(g.dir, ".git"))
-		file := gitGuardFile(home)
-		want := []string{
-			"GIT_CONFIG_COUNT=" + strconv.Itoa(n+2),
-			"GIT_CONFIG_KEY_" + strconv.Itoa(n) + "=includeIf.gitdir:" + filepath.ToSlash(common) + ".path",
-			"GIT_CONFIG_VALUE_" + strconv.Itoa(n) + "=" + file,
-			"GIT_CONFIG_KEY_" + strconv.Itoa(n+1) + "=includeIf.gitdir:" + filepath.ToSlash(common) + "/.path",
-			"GIT_CONFIG_VALUE_" + strconv.Itoa(n+1) + "=" + file,
-		}
-		if !slices.Equal(env, want) {
-			t.Errorf("in %s: env\n%v\nwant\n%v", dir, env, want)
-		}
-	}
-	if b, err := os.ReadFile(gitGuardFile(home)); err != nil || string(b) != noPushConfig {
-		t.Errorf("guard file: %q, %v", b, err)
-	}
-	if got := globEscape(`/a/b*[c]?\d`); got != `/a/b\*\[c]\?\\d` {
-		t.Errorf("globEscape = %q", got)
-	}
-}
-
-// TestGitGuardKeepsWorkersFromPushing is the guard at work: whatever the command, a worker's push fails and the
-// remote does not move, while its other Git commands work, and the orchestrator, without the guard, pushes.
-func TestGitGuardKeepsWorkersFromPushing(t *testing.T) {
-	t.Parallel()
-	g := newGuardRepo(t)
-	guard, err := gitGuard(t.TempDir(), g.worker)
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := func() string {
-		out, err := runIn(g.remote, nil, "git", "for-each-ref")
-		if err != nil {
-			t.Fatalf("remote refs: %v\n%s", err, out)
-		}
-		return out
-	}
-	before := refs()
-	// Paths reach sh as arguments, with slashes: pasted into the script, a Windows path loses its backslashes.
-	if out, err := runIn(g.worker, guard, "sh", "-c",
-		`echo w1 > w1.txt && git add w1.txt && git commit --quiet -m w1 && git remote add mine "$1"`, "sh",
-		filepath.ToSlash(g.remote)); err != nil {
-		t.Fatalf("worker's commit: %v\n%s", err, out)
-	}
-	for _, args := range [][]string{
-		{"git", "push", "origin", "w1"},
-		{"sh", "-c", "git push origin w1:main"},
-		{"git", "-C", ".", "push", "origin", "w1"},
-		{"git", "push", "--no-verify", "origin", "w1"},
-		{"git", "push", g.remote, "w1"},
-		{"git", "push", "file://" + g.remote, "w1"},
-		{"git", "push", "mine", "w1"},
-		{"git", "-C", g.integration, "push", "origin", "integration"},
-	} {
-		out, err := runIn(g.worker, guard, args[0], args[1:]...)
-		if err == nil || !strings.Contains(out, noPushScheme) {
-			t.Errorf("%v: err %v, output %q; want a refusal naming %s", args, err, out, noPushScheme)
-		}
-	}
-	if after := refs(); after != before {
-		t.Fatalf("the remote moved:\n%s\nthen\n%s", before, after)
-	}
-
-	// The worker's other commands work.
-	for _, args := range [][]string{
-		{"fetch", "--quiet", "origin"},
-		{"status", "--porcelain"},
-		{"diff", "--quiet", "main", "--", "missing"},
-		{"rebase", "--quiet", "origin/main"},
-		{"worktree", "add", "--quiet", "-b", "w2", filepath.Join(filepath.Dir(g.worker), "w2"), "main"},
-		{"merge", "--quiet", "--no-edit", "main"},
-	} {
-		if out, err := runIn(g.worker, guard, "git", args...); err != nil {
-			t.Errorf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	if out, err := runIn(g.worker, guard, "sh", "-c",
-		"echo more >> w1.txt && git stash --quiet && git stash pop --quiet && git commit --quiet -am more"); err != nil {
-		t.Errorf("stash and commit: %v\n%s", err, out)
-	}
-
-	// Another repository pushes as before, the guard on: a test's, run by a worker.
-	// A backslash in each path, as on Windows: the push must reach the repository at that very path.
-	other, bare := filepath.Join(t.TempDir(), `other\repo`), filepath.Join(t.TempDir(), `other\repo.git`)
-	if out, err := runIn(t.TempDir(), guard, "sh", "-c", `git init --quiet --bare "$1" && git init --quiet "$2"`+
-		` && cd "$2" && git -c user.name=T -c user.email=t@example.com commit --quiet --allow-empty -m x`+
-		` && git push --quiet "$1" HEAD:refs/heads/main`, "sh", filepath.ToSlash(bare), filepath.ToSlash(other)); err != nil {
-		t.Errorf("push from another repository: %v\n%s", err, out)
-	} else if out, err := runIn(bare, nil, "git", "rev-parse", "--verify", "--quiet", "main"); err != nil {
-		t.Errorf("push from another repository: no main in %s: %v\n%s", bare, err, out)
-	}
-
-	// The orchestrator pushes the integration branch with its own environment.
-	if out, err := runIn(g.integration, nil, "git", "merge", "--quiet", "w1"); err != nil {
-		t.Fatalf("merge w1: %v\n%s", err, out)
-	}
-	if _, out, err := gitPush(t.Context(), g.integration, "origin", "refs/heads/integration", "main"); err != nil {
-		t.Fatalf("orchestrator's push: %v\n%s", err, out)
-	}
-	if after := refs(); after == before {
-		t.Errorf("the orchestrator's push left the remote at\n%s", after)
-	}
-}
-
-// TestStartGivesTheGuard: a worker the harness starts in a project's worktree gets the guard in its environment,
-// next to its task, whatever its provider (here the fake).
-func TestStartGivesTheGuard(t *testing.T) {
-	t.Parallel()
-	home := t.TempDir()
-	e := up(t, home)
-	rec := recorder{specs: make(chan Spec, 1)}
-	e.h.providers[planv1.Provider_PROVIDER_FAKE] = rec
-	wishID, _ := e.wish(t, gitRepo(t))
-	task := e.spawn(t, wishID, "say hello")
-	spec := <-rec.specs
-	e.watch(t.Context(), t, task.GetId(), 0)
-	guard, err := gitGuard(home, spec.Dir)
-	if err != nil || len(guard) == 0 {
-		t.Fatalf("guard of %s: %v, %v", spec.Dir, guard, err)
-	}
-	var hasToken bool
-	var filteredEnv []string
-	for _, env := range spec.Env {
-		if strings.HasPrefix(env, "DJINN_WORKER_TOKEN=") {
-			hasToken = true
-			if len(strings.TrimPrefix(env, "DJINN_WORKER_TOKEN=")) == 0 {
-				t.Errorf("worker's environment has empty DJINN_WORKER_TOKEN")
+		refs := func() string {
+			out, err := runIn(g.remote, nil, "git", "for-each-ref")
+			if err != nil {
+				t.Fatalf("remote refs: %v\n%s", err, out)
 			}
-		} else {
-			filteredEnv = append(filteredEnv, env)
+			return out
 		}
-	}
-	if !hasToken {
-		t.Errorf("worker's environment missing DJINN_WORKER_TOKEN")
-	}
-	want := append([]string{"DJINN_TASK_ID=" + task.GetId(), "DJINN_WISH_ID=" + wishID}, guard...)
-	if !slices.Equal(filteredEnv, want) {
-		t.Errorf("worker's environment\n%v\nwant\n%v", filteredEnv, want)
-	}
+		before := refs()
+		// Paths reach sh as arguments, with slashes: pasted into the script, a Windows path loses its backslashes.
+		if out, err := runIn(g.worker, guard, "sh", "-c",
+			`echo w1 > w1.txt && git add w1.txt && git commit --quiet -m w1 && git remote add mine "$1"`, "sh",
+			filepath.ToSlash(g.remote)); err != nil {
+			t.Fatalf("worker's commit: %v\n%s", err, out)
+		}
+		for _, args := range [][]string{
+			{"git", "push", "origin", "w1"},
+			{"sh", "-c", "git push origin w1:main"},
+			{"git", "-C", ".", "push", "origin", "w1"},
+			{"git", "push", "--no-verify", "origin", "w1"},
+			{"git", "push", g.remote, "w1"},
+			{"git", "push", "file://" + g.remote, "w1"},
+			{"git", "push", "mine", "w1"},
+			{"git", "-C", g.integration, "push", "origin", "integration"},
+		} {
+			out, err := runIn(g.worker, guard, args[0], args[1:]...)
+			if err == nil || !strings.Contains(out, noPushScheme) {
+				t.Errorf("%v: err %v, output %q; want a refusal naming %s", args, err, out, noPushScheme)
+			}
+		}
+		if after := refs(); after != before {
+			t.Fatalf("the remote moved:\n%s\nthen\n%s", before, after)
+		}
+
+		// The worker's other commands work.
+		for _, args := range [][]string{
+			{"fetch", "--quiet", "origin"},
+			{"status", "--porcelain"},
+			{"diff", "--quiet", "main", "--", "missing"},
+			{"rebase", "--quiet", "origin/main"},
+			{"worktree", "add", "--quiet", "-b", "w2", filepath.Join(filepath.Dir(g.worker), "w2"), "main"},
+			{"merge", "--quiet", "--no-edit", "main"},
+		} {
+			if out, err := runIn(g.worker, guard, "git", args...); err != nil {
+				t.Errorf("git %v: %v\n%s", args, err, out)
+			}
+		}
+		if out, err := runIn(g.worker, guard, "sh", "-c",
+			"echo more >> w1.txt && git stash --quiet && git stash pop --quiet && git commit --quiet -am more"); err != nil {
+			t.Errorf("stash and commit: %v\n%s", err, out)
+		}
+
+		// Another repository pushes as before, the guard on: a test's, run by a worker.
+		// A backslash in each path, as on Windows: the push must reach the repository at that very path.
+		other, bare := filepath.Join(t.TempDir(), `other\repo`), filepath.Join(t.TempDir(), `other\repo.git`)
+		if out, err := runIn(t.TempDir(), guard, "sh", "-c", `git init --quiet --bare "$1" && git init --quiet "$2"`+
+			` && cd "$2" && git -c user.name=T -c user.email=t@example.com commit --quiet --allow-empty -m x`+
+			` && git push --quiet "$1" HEAD:refs/heads/main`, "sh", filepath.ToSlash(bare), filepath.ToSlash(other)); err != nil {
+			t.Errorf("push from another repository: %v\n%s", err, out)
+		} else if out, err := runIn(bare, nil, "git", "rev-parse", "--verify", "--quiet", "main"); err != nil {
+			t.Errorf("push from another repository: no main in %s: %v\n%s", bare, err, out)
+		}
+
+		// The orchestrator pushes the integration branch with its own environment.
+		if out, err := runIn(g.integration, nil, "git", "merge", "--quiet", "w1"); err != nil {
+			t.Fatalf("merge w1: %v\n%s", err, out)
+		}
+		if _, out, err := gitPush(t.Context(), g.integration, "origin", "refs/heads/integration", "main"); err != nil {
+			t.Fatalf("orchestrator's push: %v\n%s", err, out)
+		}
+		if after := refs(); after == before {
+			t.Errorf("the orchestrator's push left the remote at\n%s", after)
+		}
+	})
+
+	// A worker the harness starts in a project's worktree gets the guard in its environment, next to its task,
+	// whatever its provider (here the fake).
+	t.Run("spawn", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		e := up(t, home)
+		rec := recorder{specs: make(chan Spec, 1)}
+		e.h.providers[planv1.Provider_PROVIDER_FAKE] = rec
+		wishID, _ := e.wish(t, gitRepo(t))
+		task := e.spawn(t, wishID, "say hello")
+		spec := <-rec.specs
+		e.watch(t.Context(), t, task.GetId(), 0)
+		guard, err := gitGuard(home, spec.Dir)
+		if err != nil || len(guard) == 0 {
+			t.Fatalf("guard of %s: %v, %v", spec.Dir, guard, err)
+		}
+		var hasToken bool
+		var filteredEnv []string
+		for _, env := range spec.Env {
+			if strings.HasPrefix(env, "DJINN_WORKER_TOKEN=") {
+				hasToken = true
+				if len(strings.TrimPrefix(env, "DJINN_WORKER_TOKEN=")) == 0 {
+					t.Errorf("worker's environment has empty DJINN_WORKER_TOKEN")
+				}
+			} else {
+				filteredEnv = append(filteredEnv, env)
+			}
+		}
+		if !hasToken {
+			t.Errorf("worker's environment missing DJINN_WORKER_TOKEN")
+		}
+		want := append([]string{"DJINN_TASK_ID=" + task.GetId(), "DJINN_WISH_ID=" + wishID}, guard...)
+		if !slices.Equal(filteredEnv, want) {
+			t.Errorf("worker's environment\n%v\nwant\n%v", filteredEnv, want)
+		}
+	})
 }

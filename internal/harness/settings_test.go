@@ -12,138 +12,139 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-func TestSpawnTakesTheProjectSettings(t *testing.T) {
+func TestProjectSettings(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	home, dir := t.TempDir(), t.TempDir()
-	writeFile(t, dir, ".agents/settings.txtpb", "provider: PROVIDER_FAKE\nmodel: \"team-model\"\nmax_budget_usd: 2\n")
-	e := up(t, home)
-	wishID, projectID := e.wish(t, dir)
-	devFile := plan.DeveloperSettingsFile(home, projectID)
-	devFileName := "projects/" + projectID + "/settings.txtpb"
-	spawn := func(req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
-		t.Helper()
-		req.WishId, req.Title, req.Prompt = wishID, "Try the settings", "result ok"
-		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(req))
+
+	t.Run("spawn", func(t *testing.T) {
+		t.Parallel()
+		home, dir := t.TempDir(), t.TempDir()
+		writeFile(t, dir, ".agents/settings.txtpb", "provider: PROVIDER_FAKE\nmodel: \"team-model\"\nmax_budget_usd: 2\n")
+		e := up(t, home)
+		wishID, projectID := e.wish(t, dir)
+		devFile := plan.DeveloperSettingsFile(home, projectID)
+		devFileName := "projects/" + projectID + "/settings.txtpb"
+		spawn := func(req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
+			t.Helper()
+			req.WishId, req.Title, req.Prompt = wishID, "Try the settings", "result ok"
+			res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(req))
+			if err != nil {
+				return nil, err
+			}
+			e.watch(t.Context(), t, res.Msg.GetTask().GetId(), 0) // Outside Git, the next task waits for this one.
+			return res.Msg.GetTask(), nil
+		}
+		check := func(name string, req *planv1.TaskServiceSpawnRequest, provider planv1.Provider, model string, budget float64) {
+			t.Helper()
+			task, err := spawn(req)
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			if task.GetProvider() != provider || task.GetModel() != model || task.GetMaxBudgetUsd() != budget {
+				t.Errorf("%s: %s, %q, $%v; want %s, %q, $%v", name, task.GetProvider(), task.GetModel(), task.GetMaxBudgetUsd(),
+					provider, model, budget)
+			}
+		}
+		fake := planv1.Provider_PROVIDER_FAKE
+
+		check("the repository's", &planv1.TaskServiceSpawnRequest{}, fake, "team-model", 2)
+		writeFile(t, home, devFileName, "model: \"my-model\"\n")
+		check("the developer's win", &planv1.TaskServiceSpawnRequest{}, fake, "my-model", 2)
+		check("a task's flags win over both", &planv1.TaskServiceSpawnRequest{Model: "flag", MaxBudgetUsd: 5}, fake, "flag", 5)
+		writeFile(t, home, devFileName, "provider: PROVIDER_CODEX\nmodel: \"gpt-5.1-codex\"\nmax_budget_usd: 0\n")
+		check("a model goes to its own provider only", &planv1.TaskServiceSpawnRequest{Provider: fake}, fake, "", 0)
+
+		// A malformed file keeps the project's tasks waiting, with why; Djinn still starts.
+		writeFile(t, home, devFileName, "max_budget_usd: lots\n")
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{WishId: wishID, Title: "Try malformed", Provider: fake}))
 		if err != nil {
-			return nil, err
+			t.Fatalf("a malformed file: %v; want pending task", err)
 		}
-		e.watch(t.Context(), t, res.Msg.GetTask().GetId(), 0) // Outside Git, the next task waits for this one.
-		return res.Msg.GetTask(), nil
-	}
-	check := func(name string, req *planv1.TaskServiceSpawnRequest, provider planv1.Provider, model string, budget float64) {
-		t.Helper()
-		task, err := spawn(req)
+		if res.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(res.Msg.GetTask().GetWaitReason(), devFile) {
+			t.Errorf("a malformed file: %v; want pending task naming %s", res.Msg.GetTask(), devFile)
+		}
+		writeFile(t, dir, ".agents/settings.txtpb", "api_key: \"abc\"\n")
+		res, err = e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{WishId: wishID, Title: "Try secret", Provider: fake}))
 		if err != nil {
-			t.Fatalf("%s: %v", name, err)
+			t.Fatalf("a secret in the repository's file: %v; want pending task", err)
 		}
-		if task.GetProvider() != provider || task.GetModel() != model || task.GetMaxBudgetUsd() != budget {
-			t.Errorf("%s: %s, %q, $%v; want %s, %q, $%v", name, task.GetProvider(), task.GetModel(), task.GetMaxBudgetUsd(),
-				provider, model, budget)
+		if res.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(res.Msg.GetTask().GetWaitReason(), "holds no secret") {
+			t.Errorf("a secret in the repository's file: %v; want pending task naming holds no secret", res.Msg.GetTask())
 		}
-	}
-	fake := planv1.Provider_PROVIDER_FAKE
-
-	check("the repository's", &planv1.TaskServiceSpawnRequest{}, fake, "team-model", 2)
-	writeFile(t, home, devFileName, "model: \"my-model\"\n")
-	check("the developer's win", &planv1.TaskServiceSpawnRequest{}, fake, "my-model", 2)
-	check("a task's flags win over both", &planv1.TaskServiceSpawnRequest{Model: "flag", MaxBudgetUsd: 5}, fake, "flag", 5)
-	writeFile(t, home, devFileName, "provider: PROVIDER_CODEX\nmodel: \"gpt-5.1-codex\"\nmax_budget_usd: 0\n")
-	check("a model goes to its own provider only", &planv1.TaskServiceSpawnRequest{Provider: fake}, fake, "", 0)
-
-	// A malformed file keeps the project's tasks waiting, with why; Djinn still starts.
-	writeFile(t, home, devFileName, "max_budget_usd: lots\n")
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{WishId: wishID, Title: "Try malformed", Provider: fake}))
-	if err != nil {
-		t.Fatalf("a malformed file: %v; want pending task", err)
-	}
-	if res.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(res.Msg.GetTask().GetWaitReason(), devFile) {
-		t.Errorf("a malformed file: %v; want pending task naming %s", res.Msg.GetTask(), devFile)
-	}
-	writeFile(t, dir, ".agents/settings.txtpb", "api_key: \"abc\"\n")
-	res, err = e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{WishId: wishID, Title: "Try secret", Provider: fake}))
-	if err != nil {
-		t.Fatalf("a secret in the repository's file: %v; want pending task", err)
-	}
-	if res.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(res.Msg.GetTask().GetWaitReason(), "holds no secret") {
-		t.Errorf("a secret in the repository's file: %v; want pending task naming holds no secret", res.Msg.GetTask())
-	}
-	e.down()
-	e = up(t, home)
-	if _, err := e.project.List(t.Context(), connect.NewRequest(&planv1.ProjectServiceListRequest{})); err != nil {
-		t.Errorf("djinn up with a malformed settings file: %v", err)
-	}
-}
-
-// TestBranchFromSettings: a worker's branch follows the project's template, the developer's over the team's; a
-// planned task takes it when it starts.
-func TestBranchFromSettings(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home, repo := t.TempDir(), gitRepo(t)
-	writeFile(t, repo, ".agents/settings.txtpb", "branch: \"djinn/{code}-{uuid8}\"\n")
-	e := up(t, home, WithTick(20*time.Millisecond))
-	wishID, projectID := e.wish(t, repo)
-	check := func(name string, task *planv1.Task, want string) {
-		t.Helper()
-		want += task.GetId()[len(task.GetId())-8:]
-		if got := e.ended(t, task.GetId()); got.GetBranch() != want || got.GetWorktree() == "" {
-			t.Errorf("%s: branch %q in %q; want %q", name, got.GetBranch(), got.GetWorktree(), want)
+		e.down()
+		e = up(t, home)
+		if _, err := e.project.List(t.Context(), connect.NewRequest(&planv1.ProjectServiceListRequest{})); err != nil {
+			t.Errorf("djinn up with a malformed settings file: %v", err)
 		}
-		if out, _ := git(t.Context(), repo, "branch", "--list", want); out == "" {
-			t.Errorf("%s: no branch %s in the repository", name, want)
+	})
+
+	// A worker's branch follows the project's template, the developer's over the team's; a planned task takes it when
+	// it starts.
+	t.Run("branch_from", func(t *testing.T) {
+		t.Parallel()
+		home, repo := t.TempDir(), gitRepo(t)
+		writeFile(t, repo, ".agents/settings.txtpb", "branch: \"djinn/{code}-{uuid8}\"\n")
+		e := up(t, home, WithTick(5*time.Millisecond))
+		wishID, projectID := e.wish(t, repo)
+		check := func(name string, task *planv1.Task, want string) {
+			t.Helper()
+			want += task.GetId()[len(task.GetId())-8:]
+			if got := e.ended(t, task.GetId()); got.GetBranch() != want || got.GetWorktree() == "" {
+				t.Errorf("%s: branch %q in %q; want %q", name, got.GetBranch(), got.GetWorktree(), want)
+			}
+			if out, _ := git(t.Context(), repo, "branch", "--list", want); out == "" {
+				t.Errorf("%s: no branch %s in the repository", name, want)
+			}
 		}
-	}
 
-	check("the repository's", e.mustSpawn(t, wishID, "Fix the login page", "text ok", nil), "djinn/w1-")
-	writeFile(t, home, "projects/"+projectID+"/settings.txtpb", "branch: \"{slug}/{code}/{uuid8}\"\n")
-	later := e.mustSpawn(t, wishID, "Ship it", "text ok", &planv1.TaskServiceSpawnRequest{Later: true})
-	if later.GetBranch() != "" {
-		t.Errorf("a planned task has a branch already: %s", later.GetBranch())
-	}
-	check("the developer's, for a planned task", later, "ship-it/w2/")
-}
+		check("the repository's", e.mustSpawn(t, wishID, "Fix the login page", "text ok", nil), "djinn/w1-")
+		writeFile(t, home, "projects/"+projectID+"/settings.txtpb", "branch: \"{slug}/{code}/{uuid8}\"\n")
+		later := e.mustSpawn(t, wishID, "Ship it", "text ok", &planv1.TaskServiceSpawnRequest{Later: true})
+		if later.GetBranch() != "" {
+			t.Errorf("a planned task has a branch already: %s", later.GetBranch())
+		}
+		check("the developer's, for a planned task", later, "ship-it/w2/")
+	})
 
-// TestWorkerRunsPushChecksNoted: when a worker runs a push-check command anyway, Djinn notes it in the task's
-// events once, so the lead sees it.
-func TestWorkerRunsPushChecksNoted(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home, dir := t.TempDir(), t.TempDir()
-	writeFile(t, dir, ".agents/settings.txtpb", `provider: PROVIDER_FAKE
+	// When a worker runs a push-check command anyway, Djinn notes it in the task's events once, so the lead sees it.
+	t.Run("push_checks_noted", func(t *testing.T) {
+		t.Parallel()
+		home, dir := t.TempDir(), t.TempDir()
+		writeFile(t, dir, ".agents/settings.txtpb", `provider: PROVIDER_FAKE
 checks { name: "lint" command: "make lint" when: CHECK_WHEN_COMMIT }
 checks { name: "test" command: "make test" when: CHECK_WHEN_PUSH }
 test_one: "make test-pkg {pkg}"
 `)
-	e := up(t, home)
-	wishID, _ := e.wish(t, dir)
-	prompt := strings.Join([]string{
-		"tool Bash make lint",
-		"result ok",
-		"tool Bash make test-pkg ./internal/plan/...",
-		"result ok",
-		"tool Bash make test",
-		"result ok",
-		"tool Bash make test",
-		"result ok",
-		"text done",
-	}, "\n")
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Worker run", Prompt: prompt, Provider: planv1.Provider_PROVIDER_FAKE,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	events := e.watch(t.Context(), t, res.Msg.GetTask().GetId(), 0)
-
-	var notes int
-	for _, ev := range events {
-		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS &&
-			ev.GetText() == "ran the push checks: Djinn runs them before the push" {
-			notes++
+		e := up(t, home)
+		wishID, _ := e.wish(t, dir)
+		prompt := strings.Join([]string{
+			"tool Bash make lint",
+			"result ok",
+			"tool Bash make test-pkg ./internal/plan/...",
+			"result ok",
+			"tool Bash make test",
+			"result ok",
+			"tool Bash make test",
+			"result ok",
+			"text done",
+		}, "\n")
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, Title: "Worker run", Prompt: prompt, Provider: planv1.Provider_PROVIDER_FAKE,
+		}))
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if notes != 1 {
-		t.Errorf("got %d push check status events; want 1", notes)
-	}
+		events := e.watch(t.Context(), t, res.Msg.GetTask().GetId(), 0)
+
+		var notes int
+		for _, ev := range events {
+			if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS &&
+				ev.GetText() == "ran the push checks: Djinn runs them before the push" {
+				notes++
+			}
+		}
+		if notes != 1 {
+			t.Errorf("got %d push check status events; want 1", notes)
+		}
+	})
 }

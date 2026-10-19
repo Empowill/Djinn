@@ -74,197 +74,197 @@ func hasText(events []*planv1.TaskEvent, prefix string) bool {
 func TestAskToEdit(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	const script = "text reading\nwrite notes.md hello"
-	e := up(t, t.TempDir())
 
-	// Without an answer.
-	dir := folder(t)
-	wishID, _ := e.wish(t, dir)
-	task := e.spawn(t, wishID, script)
-	if task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_ASKING || task.GetEditQuestionId() == "" {
-		t.Fatalf("spawned %v", task)
-	}
-	q := e.editQuestionOf(t, task)
-	if q.GetCode() != "Q01" || len(q.GetOptions()) != 2 || !strings.Contains(q.GetText(), "task W1") ||
-		!strings.HasPrefix(q.GetOptions()[0], "Yes") || !strings.HasPrefix(q.GetOptions()[1], "No") {
-		t.Errorf("question = %v", q)
-	}
-	events := e.watch(t.Context(), t, task.GetId(), 0)
-	if !strings.Contains(events[1].GetText(), "read-only until Q01 is answered") || !hasText(events, "permission denied: Write notes.md") {
-		t.Errorf("events = %q", eventTexts(events))
-	}
-	got := e.get(t, task.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_ASKING {
-		t.Errorf("unanswered task = %v", got)
-	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-		t.Errorf("written without an answer: %v", entries)
-	}
+	t.Run("outside_git", func(t *testing.T) {
+		t.Parallel()
+		const script = "text reading\nwrite notes.md hello"
+		e := up(t, t.TempDir())
 
-	// No: the lead hears what Djinn did, not to act on it.
-	e.answer(t, q, planv1.Choice_CHOICE_B)
-	if did := e.lastDid(); did != "Djinn keeps W1 reading only" {
-		t.Errorf("what Djinn did: %q", did)
-	}
-	got = e.get(t, task.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_REFUSED {
-		t.Errorf("after no: %v", got)
-	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-		t.Errorf("written after no: %v", entries)
-	}
-	// Answering again changes nothing: only the first answer counts.
-	e.answer(t, q, planv1.Choice_CHOICE_A)
-	if again := e.get(t, task.GetId()); again.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_REFUSED ||
-		e.lastDid() != "W1 took an answer before: this one changes nothing" {
-		t.Errorf("a second answer counted: %v; Djinn says %q", again, e.lastDid())
-	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-		t.Errorf("written after a second answer: %v", entries)
-	}
-
-	// Yes.
-	dir = folder(t)
-	wishID, _ = e.wish(t, dir)
-	task = e.spawn(t, wishID, script)
-	before := e.watch(t.Context(), t, task.GetId(), 0)
-	e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
-	if did := e.lastDid(); did != "Djinn allows W1 to edit the project's files" {
-		t.Errorf("what Djinn did: %q", did)
-	}
-	after := e.watch(t.Context(), t, task.GetId(), int64(len(before)))
-	checkSeqs(t, append(before, after...), 1)
-	if !hasText(after, "edit granted (Q01)") || !hasText(after, "started fake again") || !hasText(after, "Write notes.md") {
-		t.Errorf("events after yes = %q", eventTexts(after))
-	}
-	got = e.get(t, task.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED {
-		t.Errorf("after yes: %v", got)
-	}
-	if b, err := os.ReadFile(filepath.Join(dir, "notes.md")); err != nil || string(b) != "hello\n" {
-		t.Errorf("notes.md = %q, %v", b, err)
-	}
-}
-
-// TestAskToEditWhileRunning: a yes while the read-only worker runs stops it, and starts it again allowed to edit;
-// the task's watchers follow both workers in one stream.
-func TestAskToEditWhileRunning(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	dir := folder(t)
-	wishID, _ := e.wish(t, dir)
-	task := e.spawn(t, wishID, "write notes.md hello\nsleep 1h")
-
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	s, err := e.tasks.Watch(ctx, connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: task.GetId()}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	waitFor := func(prefix string) {
-		t.Helper()
-		for s.Receive() {
-			if strings.HasPrefix(s.Msg().GetEvent().GetText(), prefix) {
-				return
-			}
+		// Without an answer.
+		dir := folder(t)
+		wishID, _ := e.wish(t, dir)
+		task := e.spawn(t, wishID, script)
+		if task.GetAccess() != planv1.TaskAccess_TASK_ACCESS_ASKING || task.GetEditQuestionId() == "" {
+			t.Fatalf("spawned %v", task)
 		}
-		t.Fatalf("no event %q: %v", prefix, s.Err())
-	}
-	waitFor("permission denied: Write notes.md")
-	e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
-	waitFor("edit granted (Q01)")
-	waitFor("Write notes.md")
-	if b, err := os.ReadFile(filepath.Join(dir, "notes.md")); err != nil || string(b) != "hello\n" {
-		t.Errorf("notes.md = %q, %v", b, err)
-	}
-	res, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := res.Msg.GetTask(); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED {
-		t.Errorf("stopped = %v", got)
-	}
-}
+		q := e.editQuestionOf(t, task)
+		if q.GetCode() != "Q01" || len(q.GetOptions()) != 2 || !strings.Contains(q.GetText(), "task W1") ||
+			!strings.HasPrefix(q.GetOptions()[0], "Yes") || !strings.HasPrefix(q.GetOptions()[1], "No") {
+			t.Errorf("question = %v", q)
+		}
+		events := e.watch(t.Context(), t, task.GetId(), 0)
+		if !strings.Contains(events[1].GetText(), "read-only until Q01 is answered") || !hasText(events, "permission denied: Write notes.md") {
+			t.Errorf("events = %q", eventTexts(events))
+		}
+		got := e.get(t, task.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_ASKING {
+			t.Errorf("unanswered task = %v", got)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Errorf("written without an answer: %v", entries)
+		}
 
-// TestAskToEditUnableToRead: an agent that cannot be kept from writing does not start before the answer; a yes
-// starts it, allowed to edit.
-func TestAskToEditUnableToRead(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	e.h.providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = Antigravity{Command: "djinn-no-such-agy"}
-	wishID, _ := e.wish(t, folder(t))
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Edit with agy", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	task := res.Msg.GetTask()
-	if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
-		t.Errorf("spawned %v", task)
-	}
-	e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
-	events := e.watch(t.Context(), t, task.GetId(), 0)
-	got := e.get(t, task.GetId())
-	// agy is not installed here: it was started, allowed to edit, and failed for that.
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || !strings.Contains(got.GetError(), "djinn-no-such-agy not found") ||
-		!hasText(events, "edit granted (Q01)") {
-		t.Errorf("task = %v\nevents = %q", got, eventTexts(events))
-	}
-}
+		// No: the lead hears what Djinn did, not to act on it.
+		e.answer(t, q, planv1.Choice_CHOICE_B)
+		if did := e.lastDid(); did != "Djinn keeps W1 reading only" {
+			t.Errorf("what Djinn did: %q", did)
+		}
+		got = e.get(t, task.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_REFUSED {
+			t.Errorf("after no: %v", got)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Errorf("written after no: %v", entries)
+		}
+		// Answering again changes nothing: only the first answer counts.
+		e.answer(t, q, planv1.Choice_CHOICE_A)
+		if again := e.get(t, task.GetId()); again.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_REFUSED ||
+			e.lastDid() != "W1 took an answer before: this one changes nothing" {
+			t.Errorf("a second answer counted: %v; Djinn says %q", again, e.lastDid())
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Errorf("written after a second answer: %v", entries)
+		}
 
-// TestAskToEditWaitsForASlot: a yes to the edit question of a task no worker runs goes through the scheduler: on a
-// full machine the task waits, resuming, and says why; it starts once a slot frees, allowed to edit.
-func TestAskToEditWaitsForASlot(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	l := &limit{slots: 1}
-	e := up(t, t.TempDir(), WithCapacity(l.capacity))
-	dir := folder(t)
-	wishID, _ := e.wish(t, dir)
-	task := e.mustSpawn(t, wishID, "Edit", "text reading\nwrite notes.md hello",
-		&planv1.TaskServiceSpawnRequest{WriteScopes: []string{"notes.md"}})
-	e.watch(t.Context(), t, task.GetId(), 0)
-	if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
-		t.Fatalf("before the answer: %v", got)
-	}
-	// It reads, and takes the one slot.
-	busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"other"}})
+		// Yes.
+		dir = folder(t)
+		wishID, _ = e.wish(t, dir)
+		task = e.spawn(t, wishID, script)
+		before := e.watch(t.Context(), t, task.GetId(), 0)
+		e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
+		if did := e.lastDid(); did != "Djinn allows W1 to edit the project's files" {
+			t.Errorf("what Djinn did: %q", did)
+		}
+		after := e.watch(t.Context(), t, task.GetId(), int64(len(before)))
+		checkSeqs(t, append(before, after...), 1)
+		if !hasText(after, "edit granted (Q01)") || !hasText(after, "started fake again") || !hasText(after, "Write notes.md") {
+			t.Errorf("events after yes = %q", eventTexts(after))
+		}
+		got = e.get(t, task.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED {
+			t.Errorf("after yes: %v", got)
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, "notes.md")); err != nil || string(b) != "hello\n" {
+			t.Errorf("notes.md = %q, %v", b, err)
+		}
+	})
 
-	e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
-	got := e.get(t, task.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED ||
-		!strings.HasPrefix(got.GetWaitReason(), "edit granted; ") || !strings.Contains(got.GetWaitReason(), "the most this machine holds") {
-		t.Fatalf("after yes on a full machine: %v", got)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "notes.md")); err == nil {
-		t.Fatal("written before a slot freed")
-	}
-	if n := e.h.Running(); n != 1 {
-		t.Errorf("%d workers run, want the busy one alone", n)
-	}
+	// A yes while the read-only worker runs stops it, and starts it again allowed to edit; the task's watchers follow
+	// both workers in one stream.
+	t.Run("while_running", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		dir := folder(t)
+		wishID, _ := e.wish(t, dir)
+		task := e.spawn(t, wishID, "write notes.md hello\nsleep 1h")
 
-	if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: busy.GetId()})); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	defer cancel()
-	events := e.watch(ctx, t, task.GetId(), 0)
-	checkSeqs(t, events, 1)
-	got = e.get(t, task.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED ||
-		got.GetResumes() != 0 || got.GetWaitReason() != "" {
-		t.Errorf("after the slot freed: %v", got)
-	}
-	if !hasText(events, "edit granted (Q01)") || !hasText(events, "waiting: edit granted; ") || !hasText(events, "started fake again") {
-		t.Errorf("events = %q", eventTexts(events))
-	}
-	if b, err := os.ReadFile(filepath.Join(dir, "notes.md")); err != nil || string(b) != "hello\n" {
-		t.Errorf("notes.md = %q, %v", b, err)
-	}
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+		s, err := e.tasks.Watch(ctx, connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: task.GetId()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		waitFor := func(prefix string) {
+			t.Helper()
+			for s.Receive() {
+				if strings.HasPrefix(s.Msg().GetEvent().GetText(), prefix) {
+					return
+				}
+			}
+			t.Fatalf("no event %q: %v", prefix, s.Err())
+		}
+		waitFor("permission denied: Write notes.md")
+		e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
+		waitFor("edit granted (Q01)")
+		waitFor("Write notes.md")
+		if b, err := os.ReadFile(filepath.Join(dir, "notes.md")); err != nil || string(b) != "hello\n" {
+			t.Errorf("notes.md = %q, %v", b, err)
+		}
+		res, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := res.Msg.GetTask(); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED {
+			t.Errorf("stopped = %v", got)
+		}
+	})
+
+	// An agent that cannot be kept from writing does not start before the answer; a yes starts it, allowed to edit.
+	t.Run("unable_to_read", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		e.h.providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = Antigravity{Command: "djinn-no-such-agy"}
+		wishID, _ := e.wish(t, folder(t))
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, Title: "Edit with agy", Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		task := res.Msg.GetTask()
+		if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
+			t.Errorf("spawned %v", task)
+		}
+		e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
+		events := e.watch(t.Context(), t, task.GetId(), 0)
+		got := e.get(t, task.GetId())
+		// agy is not installed here: it was started, allowed to edit, and failed for that.
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || !strings.Contains(got.GetError(), "djinn-no-such-agy not found") ||
+			!hasText(events, "edit granted (Q01)") {
+			t.Errorf("task = %v\nevents = %q", got, eventTexts(events))
+		}
+	})
+
+	// A yes to the edit question of a task no worker runs goes through the scheduler: on a full machine the task waits,
+	// resuming, and says why; it starts once a slot frees, allowed to edit.
+	t.Run("waits_for_slot", func(t *testing.T) {
+		t.Parallel()
+		l := &limit{slots: 1}
+		e := up(t, t.TempDir(), WithCapacity(l.capacity))
+		dir := folder(t)
+		wishID, _ := e.wish(t, dir)
+		task := e.mustSpawn(t, wishID, "Edit", "text reading\nwrite notes.md hello",
+			&planv1.TaskServiceSpawnRequest{WriteScopes: []string{"notes.md"}})
+		e.watch(t.Context(), t, task.GetId(), 0)
+		if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_WAITING {
+			t.Fatalf("before the answer: %v", got)
+		}
+		// It reads, and takes the one slot.
+		busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"other"}})
+
+		e.answer(t, e.editQuestionOf(t, task), planv1.Choice_CHOICE_A)
+		got := e.get(t, task.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED ||
+			!strings.HasPrefix(got.GetWaitReason(), "edit granted; ") || !strings.Contains(got.GetWaitReason(), "the most this machine holds") {
+			t.Fatalf("after yes on a full machine: %v", got)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "notes.md")); err == nil {
+			t.Fatal("written before a slot freed")
+		}
+		if n := e.h.Running(); n != 1 {
+			t.Errorf("%d workers run, want the busy one alone", n)
+		}
+
+		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: busy.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+		defer cancel()
+		events := e.watch(ctx, t, task.GetId(), 0)
+		checkSeqs(t, events, 1)
+		got = e.get(t, task.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetAccess() != planv1.TaskAccess_TASK_ACCESS_EDIT_GRANTED ||
+			got.GetResumes() != 0 || got.GetWaitReason() != "" {
+			t.Errorf("after the slot freed: %v", got)
+		}
+		if !hasText(events, "edit granted (Q01)") || !hasText(events, "waiting: edit granted; ") || !hasText(events, "started fake again") {
+			t.Errorf("events = %q", eventTexts(events))
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, "notes.md")); err != nil || string(b) != "hello\n" {
+			t.Errorf("notes.md = %q, %v", b, err)
+		}
+	})
 }
 
 // TestSpawnAccess: what the worker is started with, by where it runs.

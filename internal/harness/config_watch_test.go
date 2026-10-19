@@ -9,11 +9,13 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/testx"
 )
 
 // TestWatchConfig (W151): the watch looks at once at each project's reference branch, fetches it alone from the
 // remote, and, woken (as a push of Djinn wakes it), tells the change a teammate pushed there in the journal of changes.
 func TestWatchConfig(t *testing.T) {
+	testx.Portable(t)
 	t.Parallel()
 	ctx := t.Context()
 	remote := t.TempDir()
@@ -58,7 +60,7 @@ func TestWatchConfig(t *testing.T) {
 	}
 	until := func(what string, ok func() bool) {
 		t.Helper()
-		for deadline := time.Now().Add(20 * time.Second); !ok(); time.Sleep(20 * time.Millisecond) {
+		for deadline := time.Now().Add(20 * time.Second); !ok(); time.Sleep(5 * time.Millisecond) {
 			if time.Now().After(deadline) {
 				t.Fatalf("waited for %s", what)
 			}
