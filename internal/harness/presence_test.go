@@ -68,296 +68,286 @@ func goesOutAt(ev *planv1.TaskEvent) bool { return strings.HasPrefix(ev.GetText(
 // goingOut is the event where it goes out, its input closing.
 func goingOut(ev *planv1.TaskEvent) bool { return strings.HasPrefix(ev.GetText(), "going out: ") }
 
-// TestIfritWarnsThenGoesOut: left alone, an ifrit is warned of 25 minutes after it was lit, once, then goes out at
-// 30: stopped, out and why, its slot given back, its worktree, branch and session kept; the lead hears of it.
-func TestIfritWarnsThenGoesOut(t *testing.T) {
+// TestPresence verifies that an ifrit warns and goes out when left alone, stays lit on developer activity,
+// ignores lead/worker activity, lets an active turn finish before going out, relights on send, and comes back
+// out after a Djinn restart.
+func TestPresence(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	l := lightIfrit(t, t.TempDir(), "text lit")
-	l.next("it listens", listens)
-	l.outAt(t, 30*time.Minute)
 
-	l.at(t, 24*time.Minute)
-	l.at(t, 25*time.Minute)
-	l.next("the warning", goesOutAt)
-	warned := <-l.warned
-	if !warned.GetIfrit().GetWarnTime().AsTime().Equal(l.start.Add(25*time.Minute)) ||
-		!warned.GetIfrit().GetOutTime().AsTime().Equal(l.start.Add(30*time.Minute)) {
-		t.Errorf("warned with %v, want warned at 10:25, out at 10:30", warned.GetIfrit())
-	}
-	if got := l.e.get(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || ifritState(got) != planv1.IfritState_IFRIT_STATE_LISTENING {
-		t.Errorf("warned: %v %v, want it still lit", got.GetStatus(), ifritState(got))
-	}
-	l.at(t, 27*time.Minute) // Warned already: no second warning.
+	t.Run("warns_then_goes_out", func(t *testing.T) {
+		t.Parallel()
+		l := lightIfrit(t, t.TempDir(), "text lit")
+		l.next("it listens", listens)
+		l.outAt(t, 30*time.Minute)
 
-	l.at(t, 30*time.Minute)
-	l.next("it goes out", goingOut)
-	out := l.e.ended(t, l.id)
-	why := "out: you left Djinn alone at " + ClockText(l.start, l.clock.now())
-	if out.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT || out.GetError() != why {
-		t.Errorf("out: %v %v (%s), want stopped, out (%s)", out.GetStatus(), ifritState(out), out.GetError(), why)
-	}
-	if out.GetIfrit().GetOutTime() != nil || out.GetIfrit().GetWarnTime() != nil {
-		t.Errorf("out, its timers stay: %v", out.GetIfrit())
-	}
-	if _, err := os.Stat(out.GetWorktree()); err != nil || out.GetBranch() == "" || out.GetSessionId() == "" {
-		t.Errorf("out: worktree %q (%v), branch %q, session %q: want all kept", out.GetWorktree(), err, out.GetBranch(), out.GetSessionId())
-	}
-	if l.e.h.Works(l.id) || l.e.h.Running() != 0 {
-		t.Errorf("out, it still takes a slot: %d running", l.e.h.Running())
-	}
-	if n := len(l.warned); n != 0 {
-		t.Errorf("%d warnings more, want one in all", n)
-	}
-	var told []string
-	for _, ev := range l.lead.all() {
-		if ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_OUT && ev.GetCode() == out.GetCode() && ev.GetWishId() == l.wishID {
-			told = append(told, ev.GetText())
+		l.at(t, 24*time.Minute)
+		l.at(t, 25*time.Minute)
+		l.next("the warning", goesOutAt)
+		warned := <-l.warned
+		if !warned.GetIfrit().GetWarnTime().AsTime().Equal(l.start.Add(25*time.Minute)) ||
+			!warned.GetIfrit().GetOutTime().AsTime().Equal(l.start.Add(30*time.Minute)) {
+			t.Errorf("warned with %v, want warned at 10:25, out at 10:30", warned.GetIfrit())
 		}
-	}
-	if want := out.GetCode() + " (ifrit) is " + why + "; a message lights it again (djinn task send " + out.GetCode() + ")"; len(told) != 1 || told[0] != want {
-		t.Errorf("the lead was told %q, want %q", told, want)
-	}
-}
+		if got := l.e.get(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || ifritState(got) != planv1.IfritState_IFRIT_STATE_LISTENING {
+			t.Errorf("warned: %v %v, want it still lit", got.GetStatus(), ifritState(got))
+		}
+		l.at(t, 27*time.Minute) // Warned already: no second warning.
 
-// TestYourActivityKeepsItLit: each action of the developer pushes the ifrit's out time back, and one after the
-// warning clears it, as Keep lit does.
-func TestYourActivityKeepsItLit(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	l := lightIfrit(t, t.TempDir(), "text lit")
-	l.next("it listens", listens)
-	touching := httptest.NewServer(Touching(l.e.srv.Config.Handler, l.e.h.Presence()))
-	t.Cleanup(touching.Close)
+		l.at(t, 30*time.Minute)
+		l.next("it goes out", goingOut)
+		out := l.e.ended(t, l.id)
+		why := "out: you left Djinn alone at " + ClockText(l.start, l.clock.now())
+		if out.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT || out.GetError() != why {
+			t.Errorf("out: %v %v (%s), want stopped, out (%s)", out.GetStatus(), ifritState(out), out.GetError(), why)
+		}
+		if out.GetIfrit().GetOutTime() != nil || out.GetIfrit().GetWarnTime() != nil {
+			t.Errorf("out, its timers stay: %v", out.GetIfrit())
+		}
+		if _, err := os.Stat(out.GetWorktree()); err != nil || out.GetBranch() == "" || out.GetSessionId() == "" {
+			t.Errorf("out: worktree %q (%v), branch %q, session %q: want all kept", out.GetWorktree(), err, out.GetBranch(), out.GetSessionId())
+		}
+		if l.e.h.Works(l.id) || l.e.h.Running() != 0 {
+			t.Errorf("out, it still takes a slot: %d running", l.e.h.Running())
+		}
+		if n := len(l.warned); n != 0 {
+			t.Errorf("%d warnings more, want one in all", n)
+		}
+		var told []string
+		for _, ev := range l.lead.all() {
+			if ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_OUT && ev.GetCode() == out.GetCode() && ev.GetWishId() == l.wishID {
+				told = append(told, ev.GetText())
+			}
+		}
+		if want := out.GetCode() + " (ifrit) is " + why + "; a message lights it again (djinn task send " + out.GetCode() + ")"; len(told) != 1 || told[0] != want {
+			t.Errorf("the lead was told %q, want %q", told, want)
+		}
+	})
 
-	// A djinn command typed in a shell, at 10:20: it goes out at 10:50 now.
-	l.at(t, 20*time.Minute)
-	if _, err := tasksAs(touching, CallerYou).List(t.Context(), connect.NewRequest(&planv1.TaskServiceListRequest{WishId: l.wishID})); err != nil {
-		t.Fatal(err)
-	}
-	if !l.e.h.Presence().Last().Equal(l.start.Add(20 * time.Minute)) {
-		t.Fatalf("your command at 10:20: presence %v", l.e.h.Presence().Last())
-	}
-	l.outAt(t, 50*time.Minute)
-	l.at(t, 44*time.Minute)
-	l.at(t, 45*time.Minute)
-	warning := l.next("the warning", goesOutAt)
-	if ev := <-l.warned; !ev.GetIfrit().GetOutTime().AsTime().Equal(l.start.Add(50 * time.Minute)) {
-		t.Errorf("warned it goes out at %v, want 10:50", ev.GetIfrit().GetOutTime().AsTime())
-	}
-	if !warning.GetIfrit().GetWarnTime().AsTime().Equal(l.start.Add(45 * time.Minute)) {
-		t.Errorf("warned at %v, want 10:45", warning.GetIfrit().GetWarnTime())
-	}
+	t.Run("your_activity_keeps_lit", func(t *testing.T) {
+		t.Parallel()
+		l := lightIfrit(t, t.TempDir(), "text lit")
+		l.next("it listens", listens)
+		touching := httptest.NewServer(Touching(l.e.srv.Config.Handler, l.e.h.Presence()))
+		t.Cleanup(touching.Close)
 
-	// Keep lit, at 10:46: the warning goes, it goes out at 11:16.
-	l.clock.set(l.start.Add(46 * time.Minute))
-	l.e.h.Presence().Touch()
-	kept := l.next("kept lit", func(ev *planv1.TaskEvent) bool { return strings.HasPrefix(ev.GetText(), "kept lit: you came back") })
-	if kept.GetIfrit().GetWarnTime() != nil || !kept.GetIfrit().GetOutTime().AsTime().Equal(l.start.Add(76*time.Minute)) {
-		t.Errorf("kept lit: %v, want no warning, out at 11:16", kept.GetIfrit())
-	}
+		// A djinn command typed in a shell, at 10:20: it goes out at 10:50 now.
+		l.at(t, 20*time.Minute)
+		if _, err := tasksAs(touching, CallerYou).List(t.Context(), connect.NewRequest(&planv1.TaskServiceListRequest{WishId: l.wishID})); err != nil {
+			t.Fatal(err)
+		}
+		if !l.e.h.Presence().Last().Equal(l.start.Add(20 * time.Minute)) {
+			t.Fatalf("your command at 10:20: presence %v", l.e.h.Presence().Last())
+		}
+		l.outAt(t, 50*time.Minute)
+		l.at(t, 44*time.Minute)
+		l.at(t, 45*time.Minute)
+		warning := l.next("the warning", goesOutAt)
+		if ev := <-l.warned; !ev.GetIfrit().GetOutTime().AsTime().Equal(l.start.Add(50 * time.Minute)) {
+			t.Errorf("warned it goes out at %v, want 10:50", ev.GetIfrit().GetOutTime().AsTime())
+		}
+		if !warning.GetIfrit().GetWarnTime().AsTime().Equal(l.start.Add(45 * time.Minute)) {
+			t.Errorf("warned at %v, want 10:45", warning.GetIfrit().GetWarnTime())
+		}
 
-	// A key in a terminal of the window, at 11:10: it goes out at 11:40.
-	l.clock.set(l.start.Add(70 * time.Minute))
-	key, err := http.NewRequestWithContext(t.Context(), http.MethodPost, touching.URL+terminalv1connect.TerminalServiceWriteProcedure, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	res, err := touching.Client().Do(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	res.Body.Close()
-	l.outAt(t, 100*time.Minute)
-	l.at(t, 90*time.Minute)
-	if got := l.e.get(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || ifritState(got) != planv1.IfritState_IFRIT_STATE_LISTENING {
-		t.Errorf("at 11:30, 20 min after your last key: %v %v, want it lit", got.GetStatus(), ifritState(got))
-	}
-	l.e.done(t, l.id, "")
-	if got := l.e.ended(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("ended %v (%s), want done", got.GetStatus(), got.GetError())
-	}
-	if n := len(l.warned); n != 0 {
-		t.Errorf("%d warnings more, want one in all", n)
-	}
-}
+		// Keep lit, at 10:46: the warning goes, it goes out at 11:16.
+		l.clock.set(l.start.Add(46 * time.Minute))
+		l.e.h.Presence().Touch()
+		kept := l.next("kept lit", func(ev *planv1.TaskEvent) bool { return strings.HasPrefix(ev.GetText(), "kept lit: you came back") })
+		if kept.GetIfrit().GetWarnTime() != nil || !kept.GetIfrit().GetOutTime().AsTime().Equal(l.start.Add(76*time.Minute)) {
+			t.Errorf("kept lit: %v, want no warning, out at 11:16", kept.GetIfrit())
+		}
 
-// TestLeadAndWorkersAreNoActivity: what the lead, the workers, Djinn's own commands and the window that only reads
-// do is no presence: the ifrit the lead talks to, a worker working beside it, goes out on time all the same.
-func TestLeadAndWorkersAreNoActivity(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	l := lightIfrit(t, t.TempDir(), "text lit")
-	l.next("it listens", listens)
-	presence := l.e.h.Presence()
-	none := []*http.Request{
-		httptest.NewRequest(http.MethodPost, planv1connect.TaskServiceSendProcedure, nil),          // the lead, below
-		httptest.NewRequest(http.MethodPost, planv1connect.QuestionServiceAnswerProcedure, nil),    // Djinn's own command
-		httptest.NewRequest(http.MethodPost, planv1connect.MarkServicePutProcedure, nil),           // a worker
-		httptest.NewRequest(http.MethodPost, planv1connect.TaskServiceListProcedure, nil),          // the window reads
-		httptest.NewRequest(http.MethodPost, planv1connect.LeadServiceWatchProcedure, nil),         // the window follows
-		httptest.NewRequest(http.MethodPost, terminalv1connect.TerminalServiceWriteProcedure, nil), // a worker's token
-	}
-	none[0].Header.Set(CallerHeader, CallerLead)
-	none[1].Header.Set(CallerHeader, CallerDjinn)
-	none[2] = none[2].WithContext(plan.WithCaller(none[2].Context(), &plan.WorkerCaller{TaskID: store.NewID()}))
-	none[5] = none[5].WithContext(plan.WithCaller(none[5].Context(), &plan.WorkerCaller{TaskID: store.NewID()}))
-	handler := Touching(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), presence)
-	for _, r := range none {
-		handler.ServeHTTP(httptest.NewRecorder(), r)
+		// A key in a terminal of the window, at 11:10: it goes out at 11:40.
+		l.clock.set(l.start.Add(70 * time.Minute))
+		key, err := http.NewRequestWithContext(t.Context(), http.MethodPost, touching.URL+terminalv1connect.TerminalServiceWriteProcedure, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := touching.Client().Do(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		l.outAt(t, 100*time.Minute)
+		l.at(t, 90*time.Minute)
+		if got := l.e.get(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || ifritState(got) != planv1.IfritState_IFRIT_STATE_LISTENING {
+			t.Errorf("at 11:30, 20 min after your last key: %v %v, want it lit", got.GetStatus(), ifritState(got))
+		}
+		l.e.done(t, l.id, "")
+		if got := l.e.ended(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Errorf("ended %v (%s), want done", got.GetStatus(), got.GetError())
+		}
+		if n := len(l.warned); n != 0 {
+			t.Errorf("%d warnings more, want one in all", n)
+		}
+	})
+
+	t.Run("lead_and_workers_are_no_activity", func(t *testing.T) {
+		t.Parallel()
+		l := lightIfrit(t, t.TempDir(), "text lit")
+		l.next("it listens", listens)
+		presence := l.e.h.Presence()
+		none := []*http.Request{
+			httptest.NewRequest(http.MethodPost, planv1connect.TaskServiceSendProcedure, nil),          // the lead, below
+			httptest.NewRequest(http.MethodPost, planv1connect.QuestionServiceAnswerProcedure, nil),    // Djinn's own command
+			httptest.NewRequest(http.MethodPost, planv1connect.MarkServicePutProcedure, nil),           // a worker
+			httptest.NewRequest(http.MethodPost, planv1connect.TaskServiceListProcedure, nil),          // the window reads
+			httptest.NewRequest(http.MethodPost, planv1connect.LeadServiceWatchProcedure, nil),         // the window follows
+			httptest.NewRequest(http.MethodPost, terminalv1connect.TerminalServiceWriteProcedure, nil), // a worker's token
+		}
+		none[0].Header.Set(CallerHeader, CallerLead)
+		none[1].Header.Set(CallerHeader, CallerDjinn)
+		none[2] = none[2].WithContext(plan.WithCaller(none[2].Context(), &plan.WorkerCaller{TaskID: store.NewID()}))
+		none[5] = none[5].WithContext(plan.WithCaller(none[5].Context(), &plan.WorkerCaller{TaskID: store.NewID()}))
+		handler := Touching(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), presence)
+		for _, r := range none {
+			handler.ServeHTTP(httptest.NewRecorder(), r)
+			if !presence.Last().IsZero() {
+				t.Fatalf("%s (%s) is taken for you", r.URL.Path, r.Header.Get(CallerHeader))
+			}
+		}
+
+		// The lead relays a message at 10:10, a worker works beside the ifrit: neither keeps it lit.
+		touching := httptest.NewServer(Touching(l.e.srv.Config.Handler, presence))
+		t.Cleanup(touching.Close)
+		l.clock.set(l.start.Add(10 * time.Minute))
+		if _, err := tasksAs(touching, CallerLead).Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{
+			TaskId: l.id, Text: "and the margin",
+		})); err != nil {
+			t.Fatal(err)
+		}
+		l.next("it answers the lead", said("received: and the margin"))
+		l.next("it listens again", listens)
+		worker := l.e.mustSpawn(t, l.wishID, "Beside it", "text busy\nwait", nil)
+		l.e.follow(t, worker.GetId())("the worker works", said("busy"))
 		if !presence.Last().IsZero() {
-			t.Fatalf("%s (%s) is taken for you", r.URL.Path, r.Header.Get(CallerHeader))
+			t.Fatalf("the lead's message or a worker is taken for you: %v", presence.Last())
 		}
-	}
-
-	// The lead relays a message at 10:10, a worker works beside the ifrit: neither keeps it lit.
-	touching := httptest.NewServer(Touching(l.e.srv.Config.Handler, presence))
-	t.Cleanup(touching.Close)
-	l.clock.set(l.start.Add(10 * time.Minute))
-	if _, err := tasksAs(touching, CallerLead).Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{
-		TaskId: l.id, Text: "and the margin",
-	})); err != nil {
-		t.Fatal(err)
-	}
-	l.next("it answers the lead", said("received: and the margin"))
-	l.next("it listens again", listens)
-	worker := l.e.mustSpawn(t, l.wishID, "Beside it", "text busy\nwait", nil)
-	l.e.follow(t, worker.GetId())("the worker works", said("busy"))
-	if !presence.Last().IsZero() {
-		t.Fatalf("the lead's message or a worker is taken for you: %v", presence.Last())
-	}
-	l.outAt(t, 30*time.Minute)
-	l.at(t, 25*time.Minute)
-	l.next("the warning", goesOutAt)
-	l.at(t, 30*time.Minute)
-	if out := l.e.ended(t, l.id); ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT {
-		t.Errorf("the lead and a worker at work beside it: %v %v (%s), want out at 10:30", out.GetStatus(), ifritState(out), out.GetError())
-	}
-	l.e.release(t, worker.GetId())
-	l.e.ended(t, worker.GetId())
-
-	// A window's answer, or a djinn command of yours, is you.
-	for _, who := range []string{"", CallerYou} {
-		r := httptest.NewRequest(http.MethodPost, planv1connect.QuestionServiceAnswerProcedure, nil)
-		if who != "" {
-			r = httptest.NewRequest(http.MethodPost, planv1connect.TaskServiceListProcedure, nil)
-			r.Header.Set(CallerHeader, who)
+		l.outAt(t, 30*time.Minute)
+		l.at(t, 25*time.Minute)
+		l.next("the warning", goesOutAt)
+		l.at(t, 30*time.Minute)
+		if out := l.e.ended(t, l.id); ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT {
+			t.Errorf("the lead and a worker at work beside it: %v %v (%s), want out at 10:30", out.GetStatus(), ifritState(out), out.GetError())
 		}
-		l.clock.set(l.clock.now().Add(time.Minute))
-		handler.ServeHTTP(httptest.NewRecorder(), r)
-		if !presence.Last().Equal(l.clock.now()) {
-			t.Errorf("%s (%q) is not taken for you", r.URL.Path, who)
+		l.e.release(t, worker.GetId())
+		l.e.ended(t, worker.GetId())
+
+		// A window's answer, or a djinn command of yours, is you.
+		for _, who := range []string{"", CallerYou} {
+			r := httptest.NewRequest(http.MethodPost, planv1connect.QuestionServiceAnswerProcedure, nil)
+			if who != "" {
+				r = httptest.NewRequest(http.MethodPost, planv1connect.TaskServiceListProcedure, nil)
+				r.Header.Set(CallerHeader, who)
+			}
+			l.clock.set(l.clock.now().Add(time.Minute))
+			handler.ServeHTTP(httptest.NewRecorder(), r)
+			if !presence.Last().Equal(l.clock.now()) {
+				t.Errorf("%s (%q) is not taken for you", r.URL.Path, who)
+			}
 		}
-	}
-}
+	})
 
-// TestIfritOutLetsTheTurnEnd: past its out time in the middle of a turn, an ifrit is warned, and works on; it goes out
-// once its turn ended.
-func TestIfritOutLetsTheTurnEnd(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	l := lightIfrit(t, t.TempDir(), "text working\nwait")
-	l.next("it works", said("working"))
+	t.Run("lets_turn_end", func(t *testing.T) {
+		t.Parallel()
+		l := lightIfrit(t, t.TempDir(), "text working\nwait")
+		l.next("it works", said("working"))
 
-	l.at(t, 31*time.Minute)
-	l.next("the warning", goesOutAt)
-	<-l.warned
-	if got := l.e.get(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || ifritState(got) != planv1.IfritState_IFRIT_STATE_WORKING {
-		t.Fatalf("past its out time at work: %v %v, want it working on", got.GetStatus(), ifritState(got))
-	}
-	l.at(t, 32*time.Minute)
-
-	l.e.send(t, l.id, "the end of it")
-	l.next("its turn ends", said("received: the end of it"))
-	l.next("it listens", listens)
-	l.next("it goes out", goingOut)
-	if out := l.e.ended(t, l.id); out.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT {
-		t.Errorf("after its turn: %v %v (%s), want stopped, out", out.GetStatus(), ifritState(out), out.GetError())
-	}
-}
-
-// TestSendRelightsAnIfrit: djinn task send to an out ifrit lights it again: its worker resumes its session in its
-// worktree at once, on the message, told how long it was out, and listens again.
-func TestSendRelightsAnIfrit(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	l := lightIfrit(t, t.TempDir(), "text lit")
-	l.next("it listens", listens)
-	l.at(t, 25*time.Minute)
-	l.next("the warning", goesOutAt)
-	l.at(t, 30*time.Minute)
-	out := l.e.ended(t, l.id)
-	if ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT {
-		t.Fatalf("not out: %v %v (%s)", out.GetStatus(), ifritState(out), out.GetError())
-	}
-
-	l.clock.set(l.start.Add(70 * time.Minute))
-	res, err := l.e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: l.id, Text: "text relit"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ev := res.Msg.GetEvent(); ev.GetKind() != planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT ||
-		ev.GetText() != "You were out for 40 min; Djinn lit you again for this message.\n\ntext relit" {
-		t.Errorf("sent: %v, want the message as its prompt, told it was out 40 min", ev)
-	}
-	next := l.e.follow(t, l.id)
-	why := "lit again by a message, was " + out.GetError() + ": You were out for 40 min; Djinn lit you again for this message."
-	next("it is lit again", func(ev *planv1.TaskEvent) bool { return ev.GetText() == why })
-	next("it resumes its session", func(ev *planv1.TaskEvent) bool { return ev.GetText() == "fake session "+l.id+", resumed" })
-	next("it says the message", said("relit"))
-	again := next("it listens again", listens)
-	if again.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || ifritState(again) != planv1.IfritState_IFRIT_STATE_LISTENING ||
-		again.GetWorktree() != out.GetWorktree() || again.GetSessionId() != out.GetSessionId() || len(again.GetRuns()) != 2 {
-		t.Errorf("lit again: %v %v, worktree %q, session %q, %d runs; want it listening, in its worktree and session, 2 runs",
-			again.GetStatus(), ifritState(again), again.GetWorktree(), again.GetSessionId(), len(again.GetRuns()))
-	}
-	l.e.done(t, l.id, "")
-	if got := l.e.ended(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("ended %v (%s), want done", got.GetStatus(), got.GetError())
-	}
-}
-
-// TestIfritOutAfterARestart: Djinn stops while an ifrit is lit; it comes back out, not resumed, and the restart
-// line says so. A message lights it again.
-func TestIfritOutAfterARestart(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home := t.TempDir()
-	l := lightIfrit(t, home, "text lit")
-	l.next("it listens", listens)
-	l.e.down()
-
-	e := up(t, home, WithClock(l.clock.now), WithTick(time.Hour), WithSilenceLimit(4*time.Hour), WithVersion("v9.9.9"))
-	out := e.get(t, l.id)
-	if out.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT ||
-		out.GetError() != whyRestartOut || e.h.Works(l.id) {
-		t.Fatalf("after the restart: %v %v (%s), works %v; want stopped, out, not resumed",
-			out.GetStatus(), ifritState(out), out.GetError(), e.h.Works(l.id))
-	}
-	events, err := store.List[*planv1.LeadEvent](t.Context(), e.db, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var line string
-	for _, ev := range events {
-		if ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART && strings.Contains(ev.GetText(), "v9.9.9") {
-			line = ev.GetText()
+		l.at(t, 31*time.Minute)
+		l.next("the warning", goesOutAt)
+		<-l.warned
+		if got := l.e.get(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || ifritState(got) != planv1.IfritState_IFRIT_STATE_WORKING {
+			t.Fatalf("past its out time at work: %v %v, want it working on", got.GetStatus(), ifritState(got))
 		}
-	}
-	if want := "Djinn: restarted on version v9.9.9: " + out.GetCode() + " (ifrit) is out: a message lights it again."; line != want {
-		t.Errorf("restart line %q, want %q", line, want)
-	}
-	e.h.schedule(t.Context())
-	if got := e.get(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
-		t.Errorf("after a pass: %v, want it out still: no turn paid for nothing", got.GetStatus())
-	}
+		l.at(t, 32*time.Minute)
 
-	e.send(t, l.id, "text back")
-	next := e.follow(t, l.id)
-	next("it says the message", said("back"))
-	next("it listens", listens)
-	e.done(t, l.id, "")
-	e.ended(t, l.id)
+		l.e.send(t, l.id, "the end of it")
+		l.next("its turn ends", said("received: the end of it"))
+		l.next("it listens", listens)
+		l.next("it goes out", goingOut)
+		if out := l.e.ended(t, l.id); out.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT {
+			t.Errorf("after its turn: %v %v (%s), want stopped, out", out.GetStatus(), ifritState(out), out.GetError())
+		}
+	})
+
+	t.Run("send_relights", func(t *testing.T) {
+		t.Parallel()
+		l := lightIfrit(t, t.TempDir(), "text lit")
+		l.next("it listens", listens)
+		l.at(t, 25*time.Minute)
+		l.next("the warning", goesOutAt)
+		l.at(t, 30*time.Minute)
+		out := l.e.ended(t, l.id)
+		if ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT {
+			t.Fatalf("not out: %v %v (%s)", out.GetStatus(), ifritState(out), out.GetError())
+		}
+
+		l.clock.set(l.start.Add(70 * time.Minute))
+		res, err := l.e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: l.id, Text: "text relit"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ev := res.Msg.GetEvent(); ev.GetKind() != planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT ||
+			ev.GetText() != "You were out for 40 min; Djinn lit you again for this message.\n\ntext relit" {
+			t.Errorf("sent: %v, want the message as its prompt, told it was out 40 min", ev)
+		}
+		next := l.e.follow(t, l.id)
+		why := "lit again by a message, was " + out.GetError() + ": You were out for 40 min; Djinn lit you again for this message."
+		next("it is lit again", func(ev *planv1.TaskEvent) bool { return ev.GetText() == why })
+		next("it resumes its session", func(ev *planv1.TaskEvent) bool { return ev.GetText() == "fake session "+l.id+", resumed" })
+		next("it says the message", said("relit"))
+		again := next("it listens again", listens)
+		if again.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING || ifritState(again) != planv1.IfritState_IFRIT_STATE_LISTENING ||
+			again.GetWorktree() != out.GetWorktree() || again.GetSessionId() != out.GetSessionId() || len(again.GetRuns()) != 2 {
+			t.Errorf("lit again: %v %v, worktree %q, session %q, %d runs; want it listening, in its worktree and session, 2 runs",
+				again.GetStatus(), ifritState(again), again.GetWorktree(), again.GetSessionId(), len(again.GetRuns()))
+		}
+		l.e.done(t, l.id, "")
+		if got := l.e.ended(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Errorf("ended %v (%s), want done", got.GetStatus(), got.GetError())
+		}
+	})
+
+	t.Run("out_after_restart", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		l := lightIfrit(t, home, "text lit")
+		l.next("it listens", listens)
+		l.e.down()
+
+		e := up(t, home, WithClock(l.clock.now), WithTick(time.Hour), WithSilenceLimit(4*time.Hour), WithVersion("v9.9.9"))
+		out := e.get(t, l.id)
+		if out.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED || ifritState(out) != planv1.IfritState_IFRIT_STATE_OUT ||
+			out.GetError() != whyRestartOut || e.h.Works(l.id) {
+			t.Fatalf("after the restart: %v %v (%s), works %v; want stopped, out, not resumed",
+				out.GetStatus(), ifritState(out), out.GetError(), e.h.Works(l.id))
+		}
+		events, err := store.List[*planv1.LeadEvent](t.Context(), e.db, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var line string
+		for _, ev := range events {
+			if ev.GetKind() == planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART && strings.Contains(ev.GetText(), "v9.9.9") {
+				line = ev.GetText()
+			}
+		}
+		if want := "Djinn: restarted on version v9.9.9: " + out.GetCode() + " (ifrit) is out: a message lights it again."; line != want {
+			t.Errorf("restart line %q, want %q", line, want)
+		}
+		e.h.schedule(t.Context())
+		if got := e.get(t, l.id); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED {
+			t.Errorf("after a pass: %v, want it out still: no turn paid for nothing", got.GetStatus())
+		}
+
+		e.send(t, l.id, "text back")
+		next := e.follow(t, l.id)
+		next("it says the message", said("back"))
+		next("it listens", listens)
+		e.done(t, l.id, "")
+		e.ended(t, l.id)
+	})
 }
 
 // tasksAs is a task client of srv whose requests say who makes them, as djinn's command line does.
@@ -391,59 +381,59 @@ func (l *lit) ifritFor(t *testing.T, what string, ok func(lit bool, out time.Tim
 	}
 }
 
-// TestIfritKeepsItsGate: the gates hold a lit ifrit's gate until its out time, its turn under way or not, the
-// developer's actions pushing it back (Q11). A task that is no ifrit holds its gates as any.
-func TestIfritKeepsItsGate(t *testing.T) {
+// TestIfritGate verifies that the gates hold a lit ifrit's gate until its out time and take it back once it goes out.
+func TestIfritGate(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	l := lightIfrit(t, t.TempDir(), "text working\nwait")
-	l.next("it works", said("working"))
-	at := func(d time.Duration) func(bool, time.Time, string) bool {
-		return func(lit bool, out time.Time, why string) bool { return lit && out.Equal(l.start.Add(d)) && why == "" }
-	}
-	l.ifritFor(t, "at work, lit at 10:00", at(30*time.Minute))
 
-	l.e.send(t, l.id, "the end of it")
-	l.next("it listens", listens)
-	l.at(t, 20*time.Minute)
-	l.e.h.Presence().Touch()
-	l.ifritFor(t, "listening, you came back at 10:20", at(50*time.Minute))
-	l.at(t, 40*time.Minute)
-	l.ifritFor(t, "at 10:40, left alone since 10:20", at(50*time.Minute))
+	t.Run("keeps_gate", func(t *testing.T) {
+		t.Parallel()
+		l := lightIfrit(t, t.TempDir(), "text working\nwait")
+		l.next("it works", said("working"))
+		at := func(d time.Duration) func(bool, time.Time, string) bool {
+			return func(lit bool, out time.Time, why string) bool { return lit && out.Equal(l.start.Add(d)) && why == "" }
+		}
+		l.ifritFor(t, "at work, lit at 10:00", at(30*time.Minute))
 
-	if lit, out, why := l.e.h.Ifrit(t.Context(), "01a144ba-0000-7000-8000-000000000000"); lit || !out.IsZero() || why != "" {
-		t.Errorf("a task that is no ifrit: lit %v, out at %v, why %q", lit, out, why)
-	}
-	l.e.done(t, l.id, "")
-	l.e.ended(t, l.id)
-}
+		l.e.send(t, l.id, "the end of it")
+		l.next("it listens", listens)
+		l.at(t, 20*time.Minute)
+		l.e.h.Presence().Touch()
+		l.ifritFor(t, "listening, you came back at 10:20", at(50*time.Minute))
+		l.at(t, 40*time.Minute)
+		l.ifritFor(t, "at 10:40, left alone since 10:20", at(50*time.Minute))
 
-// TestIfritGateGoesBackWhenItGoesOut: the gates take a lit ifrit's gate back once it goes out, and say why, whether its
-// run is over or not; lit again, its gates are held again until it ends.
-func TestIfritGateGoesBackWhenItGoesOut(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	l := lightIfrit(t, t.TempDir(), "text lit")
-	l.next("it listens", listens)
-	l.at(t, 25*time.Minute)
-	l.next("the warning", goesOutAt)
-	l.ifritFor(t, "warned", func(lit bool, out time.Time, _ string) bool { return lit && out.Equal(l.start.Add(30*time.Minute)) })
+		if lit, out, why := l.e.h.Ifrit(t.Context(), "01a144ba-0000-7000-8000-000000000000"); lit || !out.IsZero() || why != "" {
+			t.Errorf("a task that is no ifrit: lit %v, out at %v, why %q", lit, out, why)
+		}
+		l.e.done(t, l.id, "")
+		l.e.ended(t, l.id)
+	})
 
-	l.at(t, 30*time.Minute)
-	why := "went out: you left Djinn alone at " + ClockText(l.start, l.clock.now())
-	l.ifritFor(t, "going out", func(lit bool, _ time.Time, got string) bool { return !lit && got == why })
-	l.e.ended(t, l.id)
-	if lit, _, got := l.e.h.Ifrit(t.Context(), l.id); lit || got != why {
-		t.Errorf("out, its run over: lit %v, why %q, want %q", lit, got, why)
-	}
+	t.Run("goes_back_when_out", func(t *testing.T) {
+		t.Parallel()
+		l := lightIfrit(t, t.TempDir(), "text lit")
+		l.next("it listens", listens)
+		l.at(t, 25*time.Minute)
+		l.next("the warning", goesOutAt)
+		l.ifritFor(t, "warned", func(lit bool, out time.Time, _ string) bool { return lit && out.Equal(l.start.Add(30*time.Minute)) })
 
-	l.clock.set(l.start.Add(40 * time.Minute))
-	l.e.send(t, l.id, "text relit")
-	l.e.follow(t, l.id)("it listens again", listens)
-	l.ifritFor(t, "lit again at 10:40", func(lit bool, out time.Time, _ string) bool { return lit && out.Equal(l.start.Add(70*time.Minute)) })
-	l.e.done(t, l.id, "")
-	l.e.ended(t, l.id)
-	if lit, _, got := l.e.h.Ifrit(t.Context(), l.id); lit || got != "ended" {
-		t.Errorf("done: lit %v, why %q, want ended", lit, got)
-	}
+		l.at(t, 30*time.Minute)
+		why := "went out: you left Djinn alone at " + ClockText(l.start, l.clock.now())
+		l.ifritFor(t, "going out", func(lit bool, _ time.Time, got string) bool { return !lit && got == why })
+		l.e.ended(t, l.id)
+		if lit, _, got := l.e.h.Ifrit(t.Context(), l.id); lit || got != why {
+			t.Errorf("out, its run over: lit %v, why %q, want %q", lit, got, why)
+		}
+
+		l.clock.set(l.start.Add(40 * time.Minute))
+		l.e.send(t, l.id, "text relit")
+		l.e.follow(t, l.id)("it listens again", listens)
+		l.ifritFor(t, "lit again at 10:40", func(lit bool, out time.Time, _ string) bool { return lit && out.Equal(l.start.Add(70*time.Minute)) })
+		l.e.done(t, l.id, "")
+		l.e.ended(t, l.id)
+		if lit, _, got := l.e.h.Ifrit(t.Context(), l.id); lit || got != "ended" {
+			t.Errorf("done: lit %v, why %q, want ended", lit, got)
+		}
+	})
 }

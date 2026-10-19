@@ -16,238 +16,231 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// TestCommentStorage verifies that diff comments are stored on the task with file, line range, commit,
-// excerpt, and create_time, and journaled as the TaskService.Comment procedure.
-func TestCommentStorage(t *testing.T) {
+// TestComment verifies diff comment storage, live worker delivery, turning comments on ended tasks
+// into continuations or correction tasks, and resolving comments across commits and merges.
+func TestComment(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	ctx := t.Context()
 
-	repo := gitRepo(t)
-	codeGo := filepath.Join(repo, "code.go")
-	lines := "package main\n\nfunc Hello() string {\n\treturn \"hello\"\n}\n"
-	if err := os.WriteFile(codeGo, []byte(lines), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Add code.go"}} {
-		if _, err := git(ctx, repo, args...); err != nil {
+	t.Run("storage", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+
+		repo := gitRepo(t)
+		codeGo := filepath.Join(repo, "code.go")
+		lines := "package main\n\nfunc Hello() string {\n\treturn \"hello\"\n}\n"
+		if err := os.WriteFile(codeGo, []byte(lines), 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}
-	sha, err := git(ctx, repo, "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	e := up(t, t.TempDir())
-	wishID, projectID := e.wish(t, repo)
-
-	taskID := store.NewID()
-	err = e.db.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
-			return err
+		for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Add code.go"}} {
+			if _, err := git(ctx, repo, args...); err != nil {
+				t.Fatal(err)
+			}
 		}
-		return tx.Put(&planv1.Task{
-			Id:         taskID,
-			WishId:     wishID,
-			ProjectId:  projectID,
-			Code:       "W1",
-			Title:      "Reviewable task",
-			Branch:     plan.CheckedOutBranch(ctx, repo),
-			Status:     planv1.TaskStatus_TASK_STATUS_DONE,
-			CreateTime: timestamppb.Now(),
+		sha, err := git(ctx, repo, "rev-parse", "HEAD")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		e := up(t, t.TempDir())
+		wishID, projectID := e.wish(t, repo)
+
+		taskID := store.NewID()
+		err = e.db.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
+				return err
+			}
+			return tx.Put(&planv1.Task{
+				Id:         taskID,
+				WishId:     wishID,
+				ProjectId:  projectID,
+				Code:       "W1",
+				Title:      "Reviewable task",
+				Branch:     plan.CheckedOutBranch(ctx, repo),
+				Status:     planv1.TaskStatus_TASK_STATUS_DONE,
+				CreateTime: timestamppb.Now(),
+			})
 		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// 1. Store a comment without explicit commit and excerpt (they should be auto-populated).
+		commentReq := &planv1.TaskServiceCommentRequest{
+			TaskId:  taskID,
+			File:    "code.go",
+			Line:    3,
+			EndLine: 5,
+			Text:    "Consider returning a formatted greeting",
+		}
+		res, err := e.tasks.Comment(ctx, connect.NewRequest(commentReq))
+		if err != nil {
+			t.Fatalf("TaskService.Comment failed: %v", err)
+		}
+		c := res.Msg.GetComment()
+		if c.GetId() == "" {
+			t.Errorf("comment ID is empty")
+		}
+		if c.GetFile() != "code.go" {
+			t.Errorf("comment File = %q, want code.go", c.GetFile())
+		}
+		if c.GetLine() != 3 || c.GetEndLine() != 5 {
+			t.Errorf("comment range = %d-%d, want 3-5", c.GetLine(), c.GetEndLine())
+		}
+		if c.GetCommit() != sha {
+			t.Errorf("comment Commit = %q, want %q", c.GetCommit(), sha)
+		}
+		wantExcerpt := "func Hello() string {\n\treturn \"hello\"\n}"
+		if c.GetExcerpt() != wantExcerpt {
+			t.Errorf("comment Excerpt = %q, want %q", c.GetExcerpt(), wantExcerpt)
+		}
+		if c.GetText() != "Consider returning a formatted greeting" {
+			t.Errorf("comment Text = %q", c.GetText())
+		}
+		if c.GetResolved() {
+			t.Errorf("comment should not be resolved initially")
+		}
+		if c.GetCreateTime() == nil {
+			t.Errorf("comment CreateTime is nil")
+		}
+		if c.GetSentTo() != "" {
+			t.Errorf("comment on an ended task went to %q, want to no worker", c.GetSentTo())
+		}
+
+		// A commit given as a branch name is kept as the commit it is now: a later commit on the branch resolves it.
+		byBranch, err := e.tasks.Comment(ctx, connect.NewRequest(&planv1.TaskServiceCommentRequest{
+			TaskId: taskID, File: "code.go", Line: 1, Commit: plan.CheckedOutBranch(ctx, repo), Text: "Name the package",
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := byBranch.Msg.GetComment().GetCommit(); got != sha {
+			t.Errorf("comment on a branch: Commit = %q, want %q", got, sha)
+		}
+
+		// Verify task in store has the comment.
+		task, err := store.Get[*planv1.Task](ctx, e.db, taskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(task.GetComments()) != 2 {
+			t.Fatalf("task comments count = %d, want 2", len(task.GetComments()))
+		}
+		if task.GetComments()[0].GetId() != c.GetId() {
+			t.Errorf("stored comment ID = %q, want %q", task.GetComments()[0].GetId(), c.GetId())
+		}
+
+		// Verify journal entry.
+		commands, err := store.Commands(ctx, e.db, func(cmd store.Command) bool {
+			return cmd.Method == planv1connect.TaskServiceCommentProcedure
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(commands) != 2 || commands[0].Actor != actorLocal {
+			t.Fatalf("journaled commands = %+v, want 2 by %s", commands, actorLocal)
+		}
+
+		// 2. Validate empty text rejection.
+		_, err = e.tasks.Comment(ctx, connect.NewRequest(&planv1.TaskServiceCommentRequest{
+			TaskId: taskID,
+			File:   "code.go",
+			Line:   1,
+			Text:   "   ",
+		}))
+		if connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("expected CodeInvalidArgument for empty text, got %v", err)
+		}
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	// 1. Store a comment without explicit commit and excerpt (they should be auto-populated).
-	commentReq := &planv1.TaskServiceCommentRequest{
-		TaskId:  taskID,
-		File:    "code.go",
-		Line:    3,
-		EndLine: 5,
-		Text:    "Consider returning a formatted greeting",
-	}
-	res, err := e.tasks.Comment(ctx, connect.NewRequest(commentReq))
-	if err != nil {
-		t.Fatalf("TaskService.Comment failed: %v", err)
-	}
-	c := res.Msg.GetComment()
-	if c.GetId() == "" {
-		t.Errorf("comment ID is empty")
-	}
-	if c.GetFile() != "code.go" {
-		t.Errorf("comment File = %q, want code.go", c.GetFile())
-	}
-	if c.GetLine() != 3 || c.GetEndLine() != 5 {
-		t.Errorf("comment range = %d-%d, want 3-5", c.GetLine(), c.GetEndLine())
-	}
-	if c.GetCommit() != sha {
-		t.Errorf("comment Commit = %q, want %q", c.GetCommit(), sha)
-	}
-	wantExcerpt := "func Hello() string {\n\treturn \"hello\"\n}"
-	if c.GetExcerpt() != wantExcerpt {
-		t.Errorf("comment Excerpt = %q, want %q", c.GetExcerpt(), wantExcerpt)
-	}
-	if c.GetText() != "Consider returning a formatted greeting" {
-		t.Errorf("comment Text = %q", c.GetText())
-	}
-	if c.GetResolved() {
-		t.Errorf("comment should not be resolved initially")
-	}
-	if c.GetCreateTime() == nil {
-		t.Errorf("comment CreateTime is nil")
-	}
-	if c.GetSentTo() != "" {
-		t.Errorf("comment on an ended task went to %q, want to no worker", c.GetSentTo())
-	}
+	t.Run("send", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
 
-	// A commit given as a branch name is kept as the commit it is now: a later commit on the branch resolves it.
-	byBranch, err := e.tasks.Comment(ctx, connect.NewRequest(&planv1.TaskServiceCommentRequest{
-		TaskId: taskID, File: "code.go", Line: 1, Commit: plan.CheckedOutBranch(ctx, repo), Text: "Name the package",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := byBranch.Msg.GetComment().GetCommit(); got != sha {
-		t.Errorf("comment on a branch: Commit = %q, want %q", got, sha)
-	}
+		e := up(t, t.TempDir())
+		wishID, _ := e.wish(t, t.TempDir())
+		task := e.spawn(t, wishID, "text working\nwait\ntext done")
 
-	// Verify task in store has the comment.
-	task, err := store.Get[*planv1.Task](ctx, e.db, taskID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(task.GetComments()) != 2 {
-		t.Fatalf("task comments count = %d, want 2", len(task.GetComments()))
-	}
-	if task.GetComments()[0].GetId() != c.GetId() {
-		t.Errorf("stored comment ID = %q, want %q", task.GetComments()[0].GetId(), c.GetId())
-	}
+		s, err := e.tasks.Watch(ctx, connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: task.GetId()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
 
-	// Verify journal entry.
-	commands, err := store.Commands(ctx, e.db, func(cmd store.Command) bool {
-		return cmd.Method == planv1connect.TaskServiceCommentProcedure
+		for s.Receive() {
+			if s.Msg().GetEvent().GetText() == "working" {
+				break
+			}
+		}
+
+		commentReq := &planv1.TaskServiceCommentRequest{
+			TaskId:  task.GetId(),
+			File:    "src/calc.go",
+			Line:    15,
+			EndLine: 18,
+			Text:    "Check boundary conditions",
+			Excerpt: "for i := 0; i <= n; i++ {\n\tprocess(i)\n}",
+		}
+		res, err := e.tasks.Comment(ctx, connect.NewRequest(commentReq))
+		if err != nil {
+			t.Fatalf("Comment failed on running task: %v", err)
+		}
+		if res.Msg.GetComment().GetId() == "" {
+			t.Fatalf("comment was not created")
+		}
+		if got := res.Msg.GetComment().GetSentTo(); got != task.GetId() {
+			t.Errorf("comment went to %q, want the running task %s", got, task.GetId())
+		}
+
+		// Worker should receive the instruction, unblock from wait, and complete.
+		var events []*planv1.TaskEvent
+		for s.Receive() {
+			events = append(events, s.Msg().GetEvent())
+		}
+
+		var msgEvent *planv1.TaskEvent
+		for _, ev := range events {
+			if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_MESSAGE {
+				msgEvent = ev
+				break
+			}
+		}
+		if msgEvent == nil {
+			t.Fatalf("no MESSAGE event received, events: %v", eventKinds(events))
+		}
+
+		text := msgEvent.GetText()
+		if !strings.Contains(text, "Review comment on src/calc.go, lines 15-18:") {
+			t.Errorf("message lacks file and line range header: %q", text)
+		}
+		if !strings.Contains(text, "> for i := 0; i <= n; i++ {") {
+			t.Errorf("message lacks quoted excerpt: %q", text)
+		}
+		if !strings.Contains(text, "Check boundary conditions") {
+			t.Errorf("message lacks comment text: %q", text)
+		}
+
+		// Verify the fake worker acknowledges the message.
+		var received bool
+		for _, ev := range events {
+			if strings.HasPrefix(ev.GetText(), "received: Review comment on src/calc.go") {
+				received = true
+				break
+			}
+		}
+		if !received {
+			t.Errorf("worker did not process message: %v", eventTexts(events))
+		}
+
+		// The worker's end writes its copy of the task, older than the comment: the comment stays.
+		if got := e.ended(t, task.GetId()).GetComments(); len(got) != 1 || got[0].GetSentTo() != task.GetId() {
+			t.Errorf("comments after the worker ended = %v, want the one sent to it", got)
+		}
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(commands) != 2 || commands[0].Actor != actorLocal {
-		t.Fatalf("journaled commands = %+v, want 2 by %s", commands, actorLocal)
-	}
 
-	// 2. Validate empty text rejection.
-	_, err = e.tasks.Comment(ctx, connect.NewRequest(&planv1.TaskServiceCommentRequest{
-		TaskId: taskID,
-		File:   "code.go",
-		Line:   1,
-		Text:   "   ",
-	}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("expected CodeInvalidArgument for empty text, got %v", err)
-	}
-}
-
-// TestCommentSend verifies that when a task's worker runs, a comment is sent to it as an instruction
-// quoting the file and line range (djinn task send).
-func TestCommentSend(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, t.TempDir())
-	task := e.spawn(t, wishID, "text working\nwait\ntext done")
-
-	s, err := e.tasks.Watch(ctx, connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: task.GetId()}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-
-	for s.Receive() {
-		if s.Msg().GetEvent().GetText() == "working" {
-			break
-		}
-	}
-
-	commentReq := &planv1.TaskServiceCommentRequest{
-		TaskId:  task.GetId(),
-		File:    "src/calc.go",
-		Line:    15,
-		EndLine: 18,
-		Text:    "Check boundary conditions",
-		Excerpt: "for i := 0; i <= n; i++ {\n\tprocess(i)\n}",
-	}
-	res, err := e.tasks.Comment(ctx, connect.NewRequest(commentReq))
-	if err != nil {
-		t.Fatalf("Comment failed on running task: %v", err)
-	}
-	if res.Msg.GetComment().GetId() == "" {
-		t.Fatalf("comment was not created")
-	}
-	if got := res.Msg.GetComment().GetSentTo(); got != task.GetId() {
-		t.Errorf("comment went to %q, want the running task %s", got, task.GetId())
-	}
-
-	// Worker should receive the instruction, unblock from wait, and complete.
-	var events []*planv1.TaskEvent
-	for s.Receive() {
-		events = append(events, s.Msg().GetEvent())
-	}
-
-	var msgEvent *planv1.TaskEvent
-	for _, ev := range events {
-		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_MESSAGE {
-			msgEvent = ev
-			break
-		}
-	}
-	if msgEvent == nil {
-		t.Fatalf("no MESSAGE event received, events: %v", eventKinds(events))
-	}
-
-	text := msgEvent.GetText()
-	if !strings.Contains(text, "Review comment on src/calc.go, lines 15-18:") {
-		t.Errorf("message lacks file and line range header: %q", text)
-	}
-	if !strings.Contains(text, "> for i := 0; i <= n; i++ {") {
-		t.Errorf("message lacks quoted excerpt: %q", text)
-	}
-	if !strings.Contains(text, "Check boundary conditions") {
-		t.Errorf("message lacks comment text: %q", text)
-	}
-
-	// Verify the fake worker acknowledges the message.
-	var received bool
-	for _, ev := range events {
-		if strings.HasPrefix(ev.GetText(), "received: Review comment on src/calc.go") {
-			received = true
-			break
-		}
-	}
-	if !received {
-		t.Errorf("worker did not process message: %v", eventTexts(events))
-	}
-
-	// The worker's end writes its copy of the task, older than the comment: the comment stays.
-	if got := e.ended(t, task.GetId()).GetComments(); len(got) != 1 || got[0].GetSentTo() != task.GetId() {
-		t.Errorf("comments after the worker ended = %v, want the one sent to it", got)
-	}
-}
-
-// TestCommentTurnEnded verifies that when a task has ended, TurnComments continues the task
-// if its provider can resume, or spawns a correction task in the same azima whose prompt quotes
-// each comment with its code excerpt.
-func TestCommentTurnEnded(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-
-	// Case 1: Continuable task (fake provider with session and worktree).
-	{
+	t.Run("turn_ended_continuable", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
 		e := up(t, t.TempDir())
 		wishID, _ := e.wish(t, gitRepo(t))
 		first := e.ended(t, e.mustSpawn(t, wishID, "Initial implementation", "text first\nusage 100 10 0.01", nil).GetId())
@@ -296,10 +289,11 @@ func TestCommentTurnEnded(t *testing.T) {
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("second TurnComments = %v, want FailedPrecondition", err)
 		}
-	}
+	})
 
-	// Case 2: Non-continuable task (spawns correction task in the same azima).
-	{
+	t.Run("turn_ended_spawns_correction", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
 		repo := gitRepo(t)
 		e := up(t, t.TempDir())
 		wishID, projectID := e.wish(t, repo)
@@ -411,11 +405,11 @@ func TestCommentTurnEnded(t *testing.T) {
 		if !strings.Contains(p, "File lib/math.go, line 20:") || !strings.Contains(p, "Use higher precision for Pi") {
 			t.Errorf("prompt lacks second comment: %s", p)
 		}
-	}
+	})
 
-	// Preconditions:
-	// Running task cannot turn comments.
-	{
+	t.Run("turn_ended_running_refused", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
 		e := up(t, t.TempDir())
 		wishID, _ := e.wish(t, t.TempDir())
 		task := e.spawn(t, wishID, "wait")
@@ -424,19 +418,15 @@ func TestCommentTurnEnded(t *testing.T) {
 			t.Errorf("expected FailedPrecondition on running task, got %v", err)
 		}
 		_, _ = e.h.Stop(ctx, "test", &planv1.TaskServiceStopRequest{TaskId: task.GetId()})
-	}
-}
+	})
 
-// TestCommentResolution verifies that comments survive the task's merge and show as resolved
-// once a later commit changes those lines.
-func TestCommentResolution(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
+	t.Run("resolution", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
 
-	repo := gitRepo(t)
-	calcGo := filepath.Join(repo, "calc.go")
-	initialContent := `package calc
+		repo := gitRepo(t)
+		calcGo := filepath.Join(repo, "calc.go")
+		initialContent := `package calc
 
 func Add(a, b int) int {
 	return a + b
@@ -446,63 +436,63 @@ func Sub(a, b int) int {
 	return a - b
 }
 `
-	if err := os.WriteFile(calcGo, []byte(initialContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Initial calc.go"}} {
-		if _, err := git(ctx, repo, args...); err != nil {
+		if err := os.WriteFile(calcGo, []byte(initialContent), 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}
-	c1, err := git(ctx, repo, "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	e := up(t, t.TempDir())
-	wishID, projectID := e.wish(t, repo)
-
-	taskBranch := "djinn/w1-calc"
-	if _, err := git(ctx, repo, "checkout", "-b", taskBranch); err != nil {
-		t.Fatal(err)
-	}
-
-	taskID := store.NewID()
-	err = e.db.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
-			return err
+		for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Initial calc.go"}} {
+			if _, err := git(ctx, repo, args...); err != nil {
+				t.Fatal(err)
+			}
 		}
-		return tx.Put(&planv1.Task{
-			Id:         taskID,
-			WishId:     wishID,
-			ProjectId:  projectID,
-			Code:       "W1",
-			Title:      "Calc implementation",
-			Branch:     taskBranch,
-			Status:     planv1.TaskStatus_TASK_STATUS_DONE,
-			CreateTime: timestamppb.Now(),
+		c1, err := git(ctx, repo, "rev-parse", "HEAD")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		e := up(t, t.TempDir())
+		wishID, projectID := e.wish(t, repo)
+
+		taskBranch := "djinn/w1-calc"
+		if _, err := git(ctx, repo, "checkout", "-b", taskBranch); err != nil {
+			t.Fatal(err)
+		}
+
+		taskID := store.NewID()
+		err = e.db.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
+				return err
+			}
+			return tx.Put(&planv1.Task{
+				Id:         taskID,
+				WishId:     wishID,
+				ProjectId:  projectID,
+				Code:       "W1",
+				Title:      "Calc implementation",
+				Branch:     taskBranch,
+				Status:     planv1.TaskStatus_TASK_STATUS_DONE,
+				CreateTime: timestamppb.Now(),
+			})
 		})
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	// Add comment on lines 3-5 (func Add) referring to commit c1.
-	res, err := e.tasks.Comment(ctx, connect.NewRequest(&planv1.TaskServiceCommentRequest{
-		TaskId:  taskID,
-		File:    "calc.go",
-		Line:    3,
-		EndLine: 5,
-		Commit:  c1,
-		Text:    "Add overflow check here",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	commentID := res.Msg.GetComment().GetId()
+		// Add comment on lines 3-5 (func Add) referring to commit c1.
+		res, err := e.tasks.Comment(ctx, connect.NewRequest(&planv1.TaskServiceCommentRequest{
+			TaskId:  taskID,
+			File:    "calc.go",
+			Line:    3,
+			EndLine: 5,
+			Commit:  c1,
+			Text:    "Add overflow check here",
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		commentID := res.Msg.GetComment().GetId()
 
-	// 1. Commit C2 on task branch that changes Sub (lines 7-9), NOT lines 3-5.
-	subModified := `package calc
+		// 1. Commit C2 on task branch that changes Sub (lines 7-9), NOT lines 3-5.
+		subModified := `package calc
 
 func Add(a, b int) int {
 	return a + b
@@ -513,30 +503,30 @@ func Sub(a, b int) int {
 	return a - b
 }
 `
-	if err := os.WriteFile(calcGo, []byte(subModified), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Modify Sub"}} {
-		if _, err := git(ctx, repo, args...); err != nil {
+		if err := os.WriteFile(calcGo, []byte(subModified), 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}
+		for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Modify Sub"}} {
+			if _, err := git(ctx, repo, args...); err != nil {
+				t.Fatal(err)
+			}
+		}
 
-	// Trigger resolution check via Tasks.Get.
-	getRes, err := e.tasks.Get(ctx, connect.NewRequest(&planv1.TaskServiceGetRequest{TaskId: taskID}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tComments := getRes.Msg.GetTask().GetComments()
-	if len(tComments) != 1 {
-		t.Fatalf("comments count = %d, want 1", len(tComments))
-	}
-	if tComments[0].GetResolved() {
-		t.Errorf("comment resolved prematurely after editing different lines")
-	}
+		// Trigger resolution check via Tasks.Get.
+		getRes, err := e.tasks.Get(ctx, connect.NewRequest(&planv1.TaskServiceGetRequest{TaskId: taskID}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tComments := getRes.Msg.GetTask().GetComments()
+		if len(tComments) != 1 {
+			t.Fatalf("comments count = %d, want 1", len(tComments))
+		}
+		if tComments[0].GetResolved() {
+			t.Errorf("comment resolved prematurely after editing different lines")
+		}
 
-	// 2. Commit C3 on task branch that modifies Add (line 4).
-	addModified := `package calc
+		// 2. Commit C3 on task branch that modifies Add (line 4).
+		addModified := `package calc
 
 func Add(a, b int) int {
 	// modified Add
@@ -548,84 +538,84 @@ func Sub(a, b int) int {
 	return a - b
 }
 `
-	if err := os.WriteFile(calcGo, []byte(addModified), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Modify Add"}} {
-		if _, err := git(ctx, repo, args...); err != nil {
+		if err := os.WriteFile(calcGo, []byte(addModified), 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}
-	c3, err := git(ctx, repo, "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Trigger resolution check via Tasks.Get.
-	getRes, err = e.tasks.Get(ctx, connect.NewRequest(&planv1.TaskServiceGetRequest{TaskId: taskID}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tComments = getRes.Msg.GetTask().GetComments()
-	if !tComments[0].GetResolved() {
-		t.Errorf("comment was not marked resolved after modifying its lines")
-	}
-	if tComments[0].GetResolvedCommit() != c3 {
-		t.Errorf("ResolvedCommit = %q, want %q", tComments[0].GetResolvedCommit(), c3)
-	}
-	if tComments[0].GetResolveTime() == nil {
-		t.Errorf("ResolveTime is nil")
-	}
-	// The resolution is stored, journaled as Djinn's, not only answered.
-	stored, err := store.Get[*planv1.Task](ctx, e.db, taskID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !stored.GetComments()[0].GetResolved() {
-		t.Errorf("stored comment is not resolved")
-	}
-	resolves, err := store.Commands(ctx, e.db, func(cmd store.Command) bool { return cmd.Method == methodResolve })
-	if err != nil || len(resolves) != 1 || resolves[0].Actor != actorHarness {
-		t.Errorf("journaled resolutions = %+v, %v; want 1 by %s", resolves, err, actorHarness)
-	}
-
-	// 3. Verify comments survive merge into target branch.
-	// Mark task as integrated at C3.
-	err = e.db.Tx(ctx, func(tx *store.Tx) error {
-		if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
-			return err
+		for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Modify Add"}} {
+			if _, err := git(ctx, repo, args...); err != nil {
+				t.Fatal(err)
+			}
 		}
-		t, err := store.Get[*planv1.Task](ctx, tx, taskID)
+		c3, err := git(ctx, repo, "rev-parse", "HEAD")
 		if err != nil {
-			return err
+			t.Fatal(err)
 		}
-		// Reset resolved state to verify post-merge resolution on target branch.
-		t.Comments[0].Resolved = false
-		t.Comments[0].ResolvedCommit = ""
-		t.Comments[0].ResolveTime = nil
-		t.Integration = &planv1.TaskIntegration{
-			State:      planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
-			Sha:        c3,
-			UpdateTime: timestamppb.Now(),
-		}
-		return tx.Put(t)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	// Checkout base branch and fast-forward or merge C3.
-	if plan.CheckedOutBranch(ctx, repo) == taskBranch {
-		if _, err := git(ctx, repo, "checkout", "master"); err != nil {
-			_, _ = git(ctx, repo, "checkout", "main")
+		// Trigger resolution check via Tasks.Get.
+		getRes, err = e.tasks.Get(ctx, connect.NewRequest(&planv1.TaskServiceGetRequest{TaskId: taskID}))
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if _, err := git(ctx, repo, "merge", "--quiet", c3); err != nil {
-		t.Fatal(err)
-	}
+		tComments = getRes.Msg.GetTask().GetComments()
+		if !tComments[0].GetResolved() {
+			t.Errorf("comment was not marked resolved after modifying its lines")
+		}
+		if tComments[0].GetResolvedCommit() != c3 {
+			t.Errorf("ResolvedCommit = %q, want %q", tComments[0].GetResolvedCommit(), c3)
+		}
+		if tComments[0].GetResolveTime() == nil {
+			t.Errorf("ResolveTime is nil")
+		}
+		// The resolution is stored, journaled as Djinn's, not only answered.
+		stored, err := store.Get[*planv1.Task](ctx, e.db, taskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stored.GetComments()[0].GetResolved() {
+			t.Errorf("stored comment is not resolved")
+		}
+		resolves, err := store.Commands(ctx, e.db, func(cmd store.Command) bool { return cmd.Method == methodResolve })
+		if err != nil || len(resolves) != 1 || resolves[0].Actor != actorHarness {
+			t.Errorf("journaled resolutions = %+v, %v; want 1 by %s", resolves, err, actorHarness)
+		}
 
-	// Commit C4 on base branch modifying Add further.
-	postMergeContent := `package calc
+		// 3. Verify comments survive merge into target branch.
+		// Mark task as integrated at C3.
+		err = e.db.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
+				return err
+			}
+			t, err := store.Get[*planv1.Task](ctx, tx, taskID)
+			if err != nil {
+				return err
+			}
+			// Reset resolved state to verify post-merge resolution on target branch.
+			t.Comments[0].Resolved = false
+			t.Comments[0].ResolvedCommit = ""
+			t.Comments[0].ResolveTime = nil
+			t.Integration = &planv1.TaskIntegration{
+				State:      planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+				Sha:        c3,
+				UpdateTime: timestamppb.Now(),
+			}
+			return tx.Put(t)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Checkout base branch and fast-forward or merge C3.
+		if plan.CheckedOutBranch(ctx, repo) == taskBranch {
+			if _, err := git(ctx, repo, "checkout", "master"); err != nil {
+				_, _ = git(ctx, repo, "checkout", "main")
+			}
+		}
+		if _, err := git(ctx, repo, "merge", "--quiet", c3); err != nil {
+			t.Fatal(err)
+		}
+
+		// Commit C4 on base branch modifying Add further.
+		postMergeContent := `package calc
 
 func Add(a, b int) int {
 	// further modified Add in main branch
@@ -636,34 +626,35 @@ func Sub(a, b int) int {
 	return a - b
 }
 `
-	if err := os.WriteFile(calcGo, []byte(postMergeContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Post-merge changes on main"}} {
-		if _, err := git(ctx, repo, args...); err != nil {
+		if err := os.WriteFile(calcGo, []byte(postMergeContent), 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}
-	c4, err := git(ctx, repo, "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
+		for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Post-merge changes on main"}} {
+			if _, err := git(ctx, repo, args...); err != nil {
+				t.Fatal(err)
+			}
+		}
+		c4, err := git(ctx, repo, "rev-parse", "HEAD")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	// Trigger resolution check via Tasks.Get on merged task.
-	getRes, err = e.tasks.Get(ctx, connect.NewRequest(&planv1.TaskServiceGetRequest{TaskId: taskID}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tComments = getRes.Msg.GetTask().GetComments()
-	if len(tComments) != 1 || tComments[0].GetId() != commentID {
-		t.Fatalf("comment did not survive merge: %v", tComments)
-	}
-	if !tComments[0].GetResolved() {
-		t.Errorf("comment on merged task was not resolved after target branch changes")
-	}
-	if tComments[0].GetResolvedCommit() != c4 {
-		t.Errorf("ResolvedCommit = %q, want %q", tComments[0].GetResolvedCommit(), c4)
-	}
+		// Trigger resolution check via Tasks.Get on merged task.
+		getRes, err = e.tasks.Get(ctx, connect.NewRequest(&planv1.TaskServiceGetRequest{TaskId: taskID}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tComments = getRes.Msg.GetTask().GetComments()
+		if len(tComments) != 1 || tComments[0].GetId() != commentID {
+			t.Fatalf("comment did not survive merge: %v", tComments)
+		}
+		if !tComments[0].GetResolved() {
+			t.Errorf("comment on merged task was not resolved after target branch changes")
+		}
+		if tComments[0].GetResolvedCommit() != c4 {
+			t.Errorf("ResolvedCommit = %q, want %q", tComments[0].GetResolvedCommit(), c4)
+		}
+	})
 }
 
 // TestCommentFile: the command line makes a comment's file absolute from the folder it runs in; a path inside the

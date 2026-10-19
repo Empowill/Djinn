@@ -89,163 +89,154 @@ func questionRef(q *planv1.Question) *planv1.QuestionRef {
 	return &planv1.QuestionRef{Ref: &planv1.QuestionRef_Code{Code: q.GetCode()}}
 }
 
-// TestPlainAnswerLaunchesThePlan: an answer without a note on an option whose plan names no task launches it at once,
-// its decision the question; the lead reads "W1 launched as planned", and the plan keeps its task.
-func TestPlainAnswerLaunchesThePlan(t *testing.T) {
+// TestLaunchPlan tests QuestionService.Answer and QuestionService.Launch for questions carrying planned tasks (Q25).
+func TestLaunchPlan(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	p := newPlanEnv(t)
-	q := p.ask(t, "option: A\ntitle: Light the olive lamp\nprovider: fake\n\ntext lit")
-	if len(q.GetPlans()) != 1 || q.GetPlans()[0].GetOption() != planv1.Choice_CHOICE_A || q.GetPlans()[0].GetPrompt() != "text lit" {
-		t.Fatalf("plans = %v", q.GetPlans())
-	}
-	answered := p.answer(t, q, "")
-	tasks := p.tasks(t)
-	if len(tasks) != 1 || tasks[0].GetTitle() != "Light the olive lamp" || tasks[0].GetDecision() != q.GetCode() ||
-		tasks[0].GetProvider() != planv1.Provider_PROVIDER_FAKE {
-		t.Fatalf("tasks = %v", tasks)
-	}
-	if got, want := p.lastDid(), tasks[0].GetCode()+" launched as planned"; got != want {
-		t.Errorf("did %q, want %q", got, want)
-	}
-	if got := answered.GetPlans()[0].GetTaskId(); got != tasks[0].GetId() {
-		t.Errorf("the answer's plan holds task %q, want %s", got, tasks[0].GetId())
-	}
-	if _, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)}); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), "launched already: "+tasks[0].GetCode()) {
-		t.Errorf("a second launch: %v", err)
-	}
-}
 
-// TestNoteLeavesThePlanToTheLead: a note on the answer launches nothing; the lead launches the plan in one command,
-// edited by spawn's flags, and only once.
-func TestNoteLeavesThePlanToTheLead(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	p := newPlanEnv(t)
-	q := p.ask(t, "title: Light the olive lamp\noption: a\nprovider: fake\n\ntext lit")
-	p.answer(t, q, "but use the blue wick")
-	if tasks := p.tasks(t); len(tasks) != 0 {
-		t.Fatalf("a note launched %v", tasks)
-	}
-	if got, want := p.lastDid(), "Its plan waits for you, as the answer has a note: djinn question launch "+q.GetCode()+
-		" launches it"; got != want {
-		t.Errorf("did %q, want %q", got, want)
-	}
-	res, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q), Title: "Light it, blue wick"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.GetTask().GetTitle() != "Light it, blue wick" || res.GetTask().GetDecision() != q.GetCode() {
-		t.Errorf("launched %v", res.GetTask())
-	}
-	if plan := res.GetQuestion().GetPlans()[0]; plan.GetTaskId() != res.GetTask().GetId() || plan.GetTitle() != "Light it, blue wick" {
-		t.Errorf("the plan after launch: %v", plan)
-	}
-	if _, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Errorf("a second launch: %v", err)
-	}
-	if n := len(p.tasks(t)); n != 1 {
-		t.Errorf("%d tasks, want the one launched", n)
-	}
-}
+	t.Run("plain", func(t *testing.T) {
+		t.Parallel()
+		p := newPlanEnv(t)
+		q := p.ask(t, "option: A\ntitle: Light the olive lamp\nprovider: fake\n\ntext lit")
+		if len(q.GetPlans()) != 1 || q.GetPlans()[0].GetOption() != planv1.Choice_CHOICE_A || q.GetPlans()[0].GetPrompt() != "text lit" {
+			t.Fatalf("plans = %v", q.GetPlans())
+		}
+		answered := p.answer(t, q, "")
+		tasks := p.tasks(t)
+		if len(tasks) != 1 || tasks[0].GetTitle() != "Light the olive lamp" || tasks[0].GetDecision() != q.GetCode() ||
+			tasks[0].GetProvider() != planv1.Provider_PROVIDER_FAKE {
+			t.Fatalf("tasks = %v", tasks)
+		}
+		if got, want := p.lastDid(), tasks[0].GetCode()+" launched as planned"; got != want {
+			t.Errorf("did %q, want %q", got, want)
+		}
+		if got := answered.GetPlans()[0].GetTaskId(); got != tasks[0].GetId() {
+			t.Errorf("the answer's plan holds task %q, want %s", got, tasks[0].GetId())
+		}
+		if _, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)}); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+			!strings.Contains(err.Error(), "launched already: "+tasks[0].GetCode()) {
+			t.Errorf("a second launch: %v", err)
+		}
+	})
 
-// TestDependencyLeavesThePlanToTheLead: a plan that comes after a task, or blocks one, waits for the lead even without
-// a note; the lead launches it, and the task comes after what the plan said.
-func TestDependencyLeavesThePlanToTheLead(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	p := newPlanEnv(t)
-	before := p.spawn(t, "Buy oil", "sleep 1m", planv1.TaskKind_TASK_KIND_UNSPECIFIED)
-	blocked := p.spawn(t, "Trim the wick", "text trimmed", planv1.TaskKind_TASK_KIND_UNSPECIFIED, before.GetCode())
-	q := p.ask(t, "option: A\ntitle: Light the olive lamp\nprovider: fake\nafter: "+before.GetCode()+"\nblocks: "+
-		blocked.GetCode()+"\n\ntext lit")
-	plan := q.GetPlans()[0]
-	if plan.GetAfter()[0] != before.GetId() || plan.GetBlocks()[0] != blocked.GetId() || len(plan.GetDependencies()) != 2 ||
-		plan.GetDependencies()[1].GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
-		t.Fatalf("plan = %v", plan)
-	}
-	p.answer(t, q, "")
-	if n := len(p.tasks(t)); n != 2 {
-		t.Fatalf("%d tasks: a plan with dependencies launched by itself", n)
-	}
-	if got := p.lastDid(); !strings.HasPrefix(got, "Its plan waits for you, as it comes after tasks and blocks others:") {
-		t.Errorf("did %q", got)
-	}
-	res, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if deps := res.GetTask().GetDependsOn(); len(deps) != 1 || deps[0] != before.GetId() {
-		t.Errorf("the task comes after %v, want %s", deps, before.GetId())
-	}
-	if deps := p.get(t, blocked.GetId()).GetDependsOn(); !slices.Equal(deps, []string{before.GetId(), res.GetTask().GetId()}) {
-		t.Errorf("%s waits for %v, want the launched task", blocked.GetCode(), deps)
-	}
-}
+	t.Run("note", func(t *testing.T) {
+		t.Parallel()
+		p := newPlanEnv(t)
+		q := p.ask(t, "title: Light the olive lamp\noption: a\nprovider: fake\n\ntext lit")
+		p.answer(t, q, "but use the blue wick")
+		if tasks := p.tasks(t); len(tasks) != 0 {
+			t.Fatalf("a note launched %v", tasks)
+		}
+		if got, want := p.lastDid(), "Its plan waits for you, as the answer has a note: djinn question launch "+q.GetCode()+
+			" launches it"; got != want {
+			t.Errorf("did %q, want %q", got, want)
+		}
+		res, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q), Title: "Light it, blue wick"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.GetTask().GetTitle() != "Light it, blue wick" || res.GetTask().GetDecision() != q.GetCode() {
+			t.Errorf("launched %v", res.GetTask())
+		}
+		if plan := res.GetQuestion().GetPlans()[0]; plan.GetTaskId() != res.GetTask().GetId() || plan.GetTitle() != "Light it, blue wick" {
+			t.Errorf("the plan after launch: %v", plan)
+		}
+		if _, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Errorf("a second launch: %v", err)
+		}
+		if n := len(p.tasks(t)); n != 1 {
+			t.Errorf("%d tasks, want the one launched", n)
+		}
+	})
 
-// TestStalePlanIsRefused: a plan whose azima was closed, or whose dependency was cancelled, never launches; the lead is
-// told why, a launch as it is is refused, and flags that change what fails launch it.
-func TestStalePlanIsRefused(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	p := newPlanEnv(t)
-	azima := p.spawn(t, "Lamps", "", planv1.TaskKind_TASK_KIND_AZIMA)
-	q := p.ask(t, "option: A\ntitle: Light the olive lamp\nprovider: fake\npart-of: "+azima.GetCode()+"\n\ntext lit")
-	if _, err := p.env.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: azima.GetId(), Note: "lit"})); err != nil {
-		t.Fatal(err)
-	}
-	p.answer(t, q, "")
-	if n := len(p.tasks(t)); n != 1 {
-		t.Fatalf("%d tasks: a stale plan launched", n)
-	}
-	if got := p.lastDid(); !strings.HasPrefix(got, "Its plan no longer holds (azima "+azima.GetCode()+" is done), not launched") {
-		t.Errorf("did %q", got)
-	}
-	if got := p.get(t, azima.GetId()).GetStatus(); got != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("the azima is %v: the plan reopened it", got)
-	}
-	_, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)})
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer holds: azima "+azima.GetCode()+" is done") {
-		t.Errorf("launch as it is: %v", err)
-	}
-	none := ""
-	res, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q), PartOf: &none})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.GetTask().GetPartOf() != "" {
-		t.Errorf("launched part of %q, want none", res.GetTask().GetPartOf())
-	}
+	t.Run("dependency", func(t *testing.T) {
+		t.Parallel()
+		p := newPlanEnv(t)
+		before := p.spawn(t, "Buy oil", "sleep 1m", planv1.TaskKind_TASK_KIND_UNSPECIFIED)
+		blocked := p.spawn(t, "Trim the wick", "text trimmed", planv1.TaskKind_TASK_KIND_UNSPECIFIED, before.GetCode())
+		q := p.ask(t, "option: A\ntitle: Light the olive lamp\nprovider: fake\nafter: "+before.GetCode()+"\nblocks: "+
+			blocked.GetCode()+"\n\ntext lit")
+		plan := q.GetPlans()[0]
+		if plan.GetAfter()[0] != before.GetId() || plan.GetBlocks()[0] != blocked.GetId() || len(plan.GetDependencies()) != 2 ||
+			plan.GetDependencies()[1].GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
+			t.Fatalf("plan = %v", plan)
+		}
+		p.answer(t, q, "")
+		if n := len(p.tasks(t)); n != 2 {
+			t.Fatalf("%d tasks: a plan with dependencies launched by itself", n)
+		}
+		if got := p.lastDid(); !strings.HasPrefix(got, "Its plan waits for you, as it comes after tasks and blocks others:") {
+			t.Errorf("did %q", got)
+		}
+		res, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if deps := res.GetTask().GetDependsOn(); len(deps) != 1 || deps[0] != before.GetId() {
+			t.Errorf("the task comes after %v, want %s", deps, before.GetId())
+		}
+		if deps := p.get(t, blocked.GetId()).GetDependsOn(); !slices.Equal(deps, []string{before.GetId(), res.GetTask().GetId()}) {
+			t.Errorf("%s waits for %v, want the launched task", blocked.GetCode(), deps)
+		}
+	})
 
-	// A dependency cancelled since the question: the plan no longer holds either.
-	before := p.spawn(t, "Buy oil", "sleep 1m", planv1.TaskKind_TASK_KIND_UNSPECIFIED)
-	q2 := p.ask(t, "option: A\ntitle: Light the olive lamp again\nprovider: fake\nafter: "+before.GetCode())
-	if _, err := p.env.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{TaskId: before.GetId(), Note: "no oil"})); err != nil {
-		t.Fatal(err)
-	}
-	p.answer(t, q2, "")
-	if got := p.lastDid(); !strings.HasPrefix(got, "Its plan no longer holds ("+before.GetCode()+", which it comes after, was cancelled)") {
-		t.Errorf("did %q", got)
-	}
-}
+	t.Run("stale", func(t *testing.T) {
+		t.Parallel()
+		p := newPlanEnv(t)
+		azima := p.spawn(t, "Lamps", "", planv1.TaskKind_TASK_KIND_AZIMA)
+		q := p.ask(t, "option: A\ntitle: Light the olive lamp\nprovider: fake\npart-of: "+azima.GetCode()+"\n\ntext lit")
+		if _, err := p.env.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: azima.GetId(), Note: "lit"})); err != nil {
+			t.Fatal(err)
+		}
+		p.answer(t, q, "")
+		if n := len(p.tasks(t)); n != 1 {
+			t.Fatalf("%d tasks: a stale plan launched", n)
+		}
+		if got := p.lastDid(); !strings.HasPrefix(got, "Its plan no longer holds (azima "+azima.GetCode()+" is done), not launched") {
+			t.Errorf("did %q", got)
+		}
+		if got := p.get(t, azima.GetId()).GetStatus(); got != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Errorf("the azima is %v: the plan reopened it", got)
+		}
+		_, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)})
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer holds: azima "+azima.GetCode()+" is done") {
+			t.Errorf("launch as it is: %v", err)
+		}
+		none := ""
+		res, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q), PartOf: &none})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.GetTask().GetPartOf() != "" {
+			t.Errorf("launched part of %q, want none", res.GetTask().GetPartOf())
+		}
 
-// TestOptionWithoutPlanIsUnchanged: an option without a plan launches nothing and says nothing: the lead turns it into
-// tasks as before. Launch says so too.
-func TestOptionWithoutPlanIsUnchanged(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	p := newPlanEnv(t)
-	q := p.ask(t, "option: B\ntitle: Light the paraffin lamp\nprovider: fake")
-	p.answer(t, q, "")
-	if n := len(p.tasks(t)); n != 0 {
-		t.Errorf("%d tasks: an option without a plan launched one", n)
-	}
-	if got := p.lastDid(); got != "" {
-		t.Errorf("did %q, want nothing", got)
-	}
-	if _, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)}); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), "planned no task") {
-		t.Errorf("launch: %v", err)
-	}
+		// A dependency cancelled since the question: the plan no longer holds either.
+		before := p.spawn(t, "Buy oil", "sleep 1m", planv1.TaskKind_TASK_KIND_UNSPECIFIED)
+		q2 := p.ask(t, "option: A\ntitle: Light the olive lamp again\nprovider: fake\nafter: "+before.GetCode())
+		if _, err := p.env.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{TaskId: before.GetId(), Note: "no oil"})); err != nil {
+			t.Fatal(err)
+		}
+		p.answer(t, q2, "")
+		if got := p.lastDid(); !strings.HasPrefix(got, "Its plan no longer holds ("+before.GetCode()+", which it comes after, was cancelled)") {
+			t.Errorf("did %q", got)
+		}
+	})
+
+	t.Run("no_plan", func(t *testing.T) {
+		t.Parallel()
+		p := newPlanEnv(t)
+		q := p.ask(t, "option: B\ntitle: Light the paraffin lamp\nprovider: fake")
+		p.answer(t, q, "")
+		if n := len(p.tasks(t)); n != 0 {
+			t.Errorf("%d tasks: an option without a plan launched one", n)
+		}
+		if got := p.lastDid(); got != "" {
+			t.Errorf("did %q, want nothing", got)
+		}
+		if _, err := p.launch(t, &planv1.QuestionServiceLaunchRequest{Question: questionRef(q)}); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+			!strings.Contains(err.Error(), "planned no task") {
+			t.Errorf("launch: %v", err)
+		}
+	})
 }
