@@ -209,7 +209,11 @@ func (d *LeadDriver) reportLimit(ctx context.Context, drive *plan.LeadDrive, sea
 }
 
 // leadAgents are the agents that may lead, in the order the moves offer them.
-var leadAgents = []planv1.Provider{planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX}
+var leadAgents = []planv1.Provider{
+	planv1.Provider_PROVIDER_CLAUDE,
+	planv1.Provider_PROVIDER_CODEX,
+	planv1.Provider_PROVIDER_ANTIGRAVITY,
+}
 
 // moves are the seats the lead may move to from seat: the other accounts of its agent first, its model kept, then
 // the other agents, on their own sign-in then on each account; only those Djinn can start and whose sign-in is not
@@ -457,8 +461,10 @@ func (d *LeadDriver) end(ctx context.Context, drive *plan.LeadDrive, b *planv1.L
 func leadCommand(call string) string {
 	name, input, _ := strings.Cut(call, " ")
 	var in struct {
-		Command  string `json:"command"`
-		FilePath string `json:"file_path"`
+		Command     string `json:"command"`
+		CommandLine string `json:"CommandLine"`
+		FilePath    string `json:"file_path"`
+		TargetFile  string `json:"TargetFile"`
 	}
 	if json.Unmarshal([]byte(input), &in) != nil {
 		in.Command = input // The fake agent's: the command line as it is.
@@ -466,11 +472,14 @@ func leadCommand(call string) string {
 	switch name {
 	case "Bash", "PowerShell":
 		return strings.TrimSpace(in.Command)
-	case "Write", "Edit", "NotebookEdit":
-		if in.FilePath == "" {
+	case "run_command":
+		return strings.TrimSpace(cmp.Or(in.CommandLine, in.Command))
+	case "Write", "Edit", "NotebookEdit", "write_to_file", "replace_file_content", "multi_replace_file_content":
+		p := cmp.Or(in.FilePath, in.TargetFile)
+		if p == "" {
 			return name + " " + strings.TrimSpace(input)
 		}
-		return name + " " + filepath.Base(in.FilePath)
+		return name + " " + filepath.Base(p)
 	}
 	return ""
 }

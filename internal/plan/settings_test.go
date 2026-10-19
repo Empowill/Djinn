@@ -1210,7 +1210,7 @@ func TestLeadCircleProvidersAndModels(t *testing.T) {
 		t.Errorf("gemini-4-argon-medium was offered even though `agy models` did not list it")
 	}
 
-	// When DriveLead is enabled on the store (driven lead), Antigravity is marked lead_supported=false with reason, and SetCircle rejects it on WORKER_KIND_LEAD.
+	// When DriveLead is enabled on the store (driven lead), Antigravity stays lead_supported=true, and SetCircle accepts it on WORKER_KIND_LEAD.
 	DriveLead(st, nil)
 	drivenRes, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
 	if err != nil {
@@ -1218,8 +1218,8 @@ func TestLeadCircleProvidersAndModels(t *testing.T) {
 	}
 	for _, p := range drivenRes.Msg.GetProviders() {
 		if p.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY {
-			if p.GetLeadSupported() || p.GetLeadUnavailableReason() == "" {
-				t.Errorf("drivenLead Antigravity provider = %v, want lead_supported=false with reason", p)
+			if !p.GetLeadSupported() || p.GetLeadUnavailableReason() != "" {
+				t.Errorf("drivenLead Antigravity provider = %v, want lead_supported=true without reason", p)
 			}
 		}
 	}
@@ -1227,7 +1227,7 @@ func TestLeadCircleProvidersAndModels(t *testing.T) {
 		Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
 		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
 		Model:    "gemini-4-argon-high",
-	})); err == nil {
-		t.Errorf("driven lead.SetCircle(LEAD, ANTIGRAVITY) succeeded, want error")
+	})); err != nil {
+		t.Errorf("driven lead.SetCircle(LEAD, ANTIGRAVITY) failed: %v", err)
 	}
 }

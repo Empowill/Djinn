@@ -75,7 +75,7 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   summary, the command line (permitted to workers too, in read-only mode) lists the batches' sessions with their local
   time, state, cost, session, count of failed tool calls and transcript path, and shows any batch or session (by
   identifier or prefix) as a readable conversation from its Claude Code transcript (in the account's configuration
-  folder when the batch ran on an account; Codex says not supported): every tool call, its truncated result with errors
+  folder when the batch ran on an account; Codex and Antigravity say not supported): every tool call, its truncated result with errors
   marked, and the assistant's text, plus on request the command to fork a copy of that session in the lead's folder in
   plan mode without touching the batch.
 - **Write to the Djinn** sends your words to the next batch, whole. Nothing reaches a terminal: the Djinn answers in the
@@ -83,11 +83,11 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
 - **A failed batch** gets one new session, shown beside the chip of the Djinn's seat while it retries. Failed again,
   it stays there and its events wait: the next event, or **Retry** at the end of its red line in the **Lead** journal,
   starts a session for them.
-- **Where it runs.** The Djinn runs on a seat you choose: an agent (Claude Code or Codex), a model, an account. The
+- **Where it runs.** The Djinn runs on a seat you choose: an agent (Claude Code, Codex or Antigravity), a model, an account. The
   chip at the top of a wish or of the flying carpet names it ("Claude Code · opus 5.5"); its menu lists each agent on
   its own sign-in, then on each of its accounts, and the model:
   one click moves the Djinn there, and the command line does the same. The next batch starts there with the lead's
-  journal, and the Djinn stays there until you move it again. Antigravity cannot lead yet.
+  journal, and the Djinn stays there until you move it again.
 - **A limit is your call.** When the Djinn hits its subscription's limit, Djinn does not move it by itself: the
   limit shows first in the attention bar, with a button for each agent or account signed in on this machine. One
   click sends the waiting events there. Without a click, they wait for the limit to reset.

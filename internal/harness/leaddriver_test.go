@@ -735,6 +735,10 @@ func TestLeadDriver(t *testing.T) {
 					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, Text: "error: Permission to use Bash has been denied", ToolError: true},
 					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, Text: `Bash {"command":"djinn task spawn w1 --prompt \"**Gain**\""}`},
 					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, Text: "W1 spawned"},
+					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, Text: `run_command {"CommandLine":"djinn wish list --short"}`},
+					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, Text: "W1"},
+					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, Text: `write_to_file {"TargetFile":"/home/d/lead/plan.md"}`},
+					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, Text: "ok"},
 					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "Spawned W1 after retry."},
 				}, nil
 			}
@@ -747,6 +751,8 @@ func TestLeadDriver(t *testing.T) {
 		want := []string{
 			`failed: djinn task spawn w1 --prompt "# Gain"`,
 			`djinn task spawn w1 --prompt "**Gain**"`,
+			`djinn wish list --short`,
+			`write_to_file plan.md`,
 		}
 		if !slices.Equal(first.GetCommands(), want) {
 			t.Fatalf("first batch commands = %q, want %q", first.GetCommands(), want)

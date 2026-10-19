@@ -206,7 +206,7 @@ func TestLeadSeat(t *testing.T) {
 		s := driveSeats(t, func(int) ([]Event, error) { return nil, nil }, nil, nil)
 		work := s.addAccount(t, "work", planv1.Provider_PROVIDER_CLAUDE)
 		for _, req := range []*planv1.LeadServiceMoveRequest{
-			{Provider: planv1.Provider_PROVIDER_ANTIGRAVITY},
+			{Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Account: "work"},
 			{Provider: planv1.Provider_PROVIDER_CODEX, Account: "work"},
 			{Account: "nobody"},
 		} {
@@ -225,6 +225,10 @@ func TestLeadSeat(t *testing.T) {
 			})); err == nil {
 				t.Errorf("an account in %s was named", dir)
 			}
+		}
+		movedAgy := s.move(t, planv1.Provider_PROVIDER_ANTIGRAVITY, "gemini-4-argon-high", "")
+		if !strings.Contains(movedAgy.GetNote(), "The next batch of the lead runs on Antigravity, model gemini-4-argon-high") {
+			t.Errorf("agy move note = %q", movedAgy.GetNote())
 		}
 		s.move(t, planv1.Provider_PROVIDER_CLAUDE, "", "work")
 		if _, err := s.lead.RemoveAccount(t.Context(), connect.NewRequest(&planv1.LeadServiceRemoveAccountRequest{Name: "work"})); err == nil {

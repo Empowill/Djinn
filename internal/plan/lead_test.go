@@ -795,19 +795,27 @@ func TestLeadSessionsAndShow(t *testing.T) {
 			StartTime: timestamppb.New(t1.Add(10 * time.Minute)),
 			Usage:     &planv1.Usage{CostUsd: 0.12},
 		},
+		{
+			Id:        "01a153ea-0000-7000-8000-000000000001",
+			SessionId: "01a153ea-0000-7000-8000-000000000002",
+			Provider:  planv1.Provider_PROVIDER_ANTIGRAVITY,
+			State:     planv1.LeadBatchState_LEAD_BATCH_STATE_DONE,
+			StartTime: timestamppb.New(t1.Add(12 * time.Minute)),
+			Usage:     &planv1.Usage{CostUsd: 0.08},
+		},
 	} {
 		if err := EndLeadBatch(ctx, st, b, t1.Add(15*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	// 1. Sessions lists all three batches with local time, state, cost, error count, session, batch and transcript path.
+	// 1. Sessions lists all four batches with local time, state, cost, error count, session, batch and transcript path.
 	sessRes, err := svc.Sessions(ctx, connect.NewRequest(&planv1.LeadServiceSessionsRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := len(sessRes.Msg.GetSessions()); got != 3 {
-		t.Fatalf("len(sessions) = %d, want 3", got)
+	if got := len(sessRes.Msg.GetSessions()); got != 4 {
+		t.Fatalf("len(sessions) = %d, want 4", got)
 	}
 	s0 := sessRes.Msg.GetSessions()[0]
 	if s0.GetTranscriptPath() != path1 || s0.GetErrorCount() != 1 {
@@ -821,11 +829,16 @@ func TestLeadSessionsAndShow(t *testing.T) {
 	if s2.GetTranscriptPath() != "not supported" || s2.GetErrorCount() != 0 {
 		t.Errorf("session[2] path=%q errCount=%d, want not supported and 0", s2.GetTranscriptPath(), s2.GetErrorCount())
 	}
+	s3 := sessRes.Msg.GetSessions()[3]
+	if s3.GetTranscriptPath() != "not supported" || s3.GetErrorCount() != 0 {
+		t.Errorf("session[3] path=%q errCount=%d, want not supported and 0", s3.GetTranscriptPath(), s3.GetErrorCount())
+	}
 	wantLocal := t1.In(time.Local).Format("2006-01-02 15:04")
 	for _, want := range []string{
 		wantLocal, "done", "$0.37", "1 error", sess1, batch1ID, path1,
 		"$0.19", sess2, path2,
 		"$0.12", sess3, "not supported",
+		"$0.08", "01a153ea-0000-7000-8000-000000000002",
 	} {
 		if !strings.Contains(sessRes.Msg.GetText(), want) {
 			t.Errorf("Sessions text missing %q:\n%s", want, sessRes.Msg.GetText())
@@ -877,13 +890,15 @@ func TestLeadSessionsAndShow(t *testing.T) {
 		t.Errorf("work resume = %q, want %q", showWork.Msg.GetResumeCommand(), wantWorkResume)
 	}
 
-	// 4. Show on Codex reports "not supported".
-	showCodex, err := svc.Show(ctx, connect.NewRequest(&planv1.LeadServiceShowRequest{Id: "01a153e9"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if showCodex.Msg.GetTranscriptPath() != "not supported" || !strings.Contains(showCodex.Msg.GetText(), "not supported") {
-		t.Errorf("codex show = %q (%q), want not supported", showCodex.Msg.GetTranscriptPath(), showCodex.Msg.GetText())
+	// 4. Show on Codex and Antigravity reports "not supported".
+	for _, id := range []string{"01a153e9", "01a153ea"} {
+		showNS, err := svc.Show(ctx, connect.NewRequest(&planv1.LeadServiceShowRequest{Id: id}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if showNS.Msg.GetTranscriptPath() != "not supported" || !strings.Contains(showNS.Msg.GetText(), "not supported") {
+			t.Errorf("%s show = %q (%q), want not supported", id, showNS.Msg.GetTranscriptPath(), showNS.Msg.GetText())
+		}
 	}
 
 	// 5. Ambiguous and unknown prefixes.

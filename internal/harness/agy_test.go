@@ -235,6 +235,33 @@ func TestAgyProject(t *testing.T) {
 		if !slices.Contains(gOutside.Deny, "read_file("+djinnHome+")") {
 			t.Errorf("outside worktree missing denial for %s; got %+v", djinnHome, gOutside.Deny)
 		}
+
+		// The driven lead runs in <djinnHome>/lead with WriteDirs=[leadDir] and ReadDirs=[djinnHome] (without Edit):
+		// it may write in leadDir and read all of djinnHome without djinn.db or tilasms being denied.
+		leadDir := filepath.Join(djinnHome, "lead")
+		if err := os.MkdirAll(leadDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		gLead := agyProject(Spec{
+			Dir:         leadDir,
+			Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}},
+			WriteDirs:   []string{leadDir},
+			ReadDirs:    []string{djinnHome},
+		}).PermissionGrants.PermissionGrants
+		for _, want := range []string{"write_file(" + leadDir + ")", "read_file(" + djinnHome + ")", "command(djinn)"} {
+			if !slices.Contains(gLead.Allow, want) {
+				t.Errorf("lead project missing %s grant in %+v", want, gLead.Allow)
+			}
+		}
+		for _, notDenied := range []string{
+			"read_file(" + djinnHome + ")",
+			"read_file(" + filepath.Join(djinnHome, "djinn.db") + ")",
+			"read_file(" + filepath.Join(djinnHome, "tilasms") + ")",
+		} {
+			if slices.Contains(gLead.Deny, notDenied) {
+				t.Errorf("lead project denied %s in %+v", notDenied, gLead.Deny)
+			}
+		}
 	})
 }
 

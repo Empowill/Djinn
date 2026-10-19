@@ -325,7 +325,7 @@ func catalog() []catalogCase {
 		// A worker with permissions commits in a linked worktree, its repository outside agy's workspace: Djinn's agy
 		// project grants the folders and the commands (real run, agy 1.3.3).
 		{provider: "antigravity", fixture: "commit",
-			spec: Spec{Permissions: &djinnv1.Permissions{Edit: true, Commands: []string{"git add", "git commit"}, DeniedCommands: []string{"git push"}}},
+			spec: Spec{SystemPrompt: "# Leading in Djinn", Permissions: &djinnv1.Permissions{Edit: true, Commands: []string{"git add", "git commit"}, DeniedCommands: []string{"git push"}}},
 			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT",
 				"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
 			check: func(t *testing.T, events []Event, args, _ string) {
@@ -347,6 +347,10 @@ func catalog() []catalogCase {
 					t.Fatalf("project %s: %v", b, err)
 				}
 				g := f.PermissionGrants.PermissionGrants
+				workDir := strings.TrimSuffix(strings.TrimPrefix(g.Allow[0], "write_file("), ")")
+				if rules, err := os.ReadFile(filepath.Join(workDir, agyRulesFile)); err != nil || string(rules) != "# Leading in Djinn" {
+					t.Errorf("GEMINI.md in %s = %q, %v", workDir, rules, err)
+				}
 				home, _ := os.UserHomeDir()
 				if !slices.Contains(g.Allow, "command(git commit)") ||
 					!slices.ContainsFunc(g.Allow, func(s string) bool { return strings.HasPrefix(s, "write_file(") }) ||
@@ -765,6 +769,8 @@ func TestProviderArgs(t *testing.T) {
 				"--project", agyProjectID("/w")}, false},
 		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Network: true}},
 			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--project", agyProjectID("/w")}, false},
+		{Spec{Dir: "/d/lead", WriteDirs: []string{"/d/lead"}, Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}}},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--project", agyProjectID("/d/lead")}, false},
 		{Spec{Permissions: &djinnv1.Permissions{Commands: []string{"git status"}}}, nil, true},
 	}
 	for _, tt := range agy {

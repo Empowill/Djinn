@@ -559,18 +559,16 @@ func SameSeat(a, b *planv1.LeadSeat) bool {
 	return pa == pb && a.GetAccount() == b.GetAccount()
 }
 
-// LeadAgent says why the driven lead cannot run on provider; nil when it can. Claude and Codex take its rules as
-// their own instructions and a folder to write in; Antigravity takes neither, and refuses a session that may not edit
-// everything (docs/providers.md). The fake agent plays a script, for tests and trials.
+// LeadAgent says why the driven lead cannot run on provider; nil when it can. Claude, Codex and Antigravity take its
+// rules as their own instructions and a folder to write in (docs/providers.md). The fake agent plays a script, for
+// tests and trials.
 func LeadAgent(provider planv1.Provider) error {
 	switch provider {
-	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_FAKE:
+	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX,
+		planv1.Provider_PROVIDER_ANTIGRAVITY, planv1.Provider_PROVIDER_FAKE:
 		return nil
-	case planv1.Provider_PROVIDER_ANTIGRAVITY:
-		return errors.New("antigravity cannot lead yet: agy takes no instructions of Djinn's own beside the prompt, " +
-			"and refuses a session that may not edit every file of its folder; move the lead to claude or codex")
 	}
-	return fmt.Errorf("%s is not an agent that can lead: move the lead to claude or codex", provider)
+	return fmt.Errorf("%s is not an agent that can lead: move the lead to claude, codex or antigravity", provider)
 }
 
 var circleStatusTimeout = 3 * time.Second

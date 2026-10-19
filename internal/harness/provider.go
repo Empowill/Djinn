@@ -82,7 +82,7 @@ type Spec struct {
 	Listen bool
 	// SystemPrompt, when set, is added to the agent's own system prompt, the same text for every session that gets
 	// it: the rules of the lead Djinn drives (decision Q31). Claude's appended system prompt, Codex's developer
-	// instructions; Antigravity ignores it, and cannot lead (plan.LeadAgent).
+	// instructions, Antigravity's GEMINI.md rule in the session's folder.
 	SystemPrompt string
 	// MaxTurns caps the model turns of the run, when the provider can enforce it; 0 for no cap.
 	MaxTurns int

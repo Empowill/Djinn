@@ -58,6 +58,10 @@ const AgyIdleTimeout = 8 * time.Minute
 // minutes each (workerWaitRule), and a gate wait seldom lasts longer.
 const AgyToolIdleTimeout = 30 * time.Minute
 
+// agyRulesFile is the rule file Start writes in Spec.Dir when Spec.SystemPrompt is set: agy loads GEMINI.md from its
+// working folder as a workspace rule, while Claude and Codex ignore it if the lead moves between agents.
+const agyRulesFile = "GEMINI.md"
+
 // args are the arguments of agy for spec. The prompt goes on the input, not on the command line: -p takes the
 // prompt as its value, and stream-json input replaces it.
 //
@@ -66,19 +70,20 @@ const AgyToolIdleTimeout = 30 * time.Minute
 //
 // A read-only task is refused: agy's plan mode asks before writing but is not read-only, and what --sandbox blocks is
 // not documented. agy runs outside a project once a real capture proves that nothing is written or run. For the
-// same reason, permissions without edit are refused.
+// same reason, permissions without edit and without WriteDirs are refused; the driven lead runs in its own folder
+// (Spec.WriteDirs) where accept-edits is bounded by agyProject's write grants.
 //
-// With permissions, edit becomes --mode accept-edits, and network off --sandbox, which only restricts more. The rest
-// goes in an agy project of Djinn's own, given with --project (agyProject): agy takes no list of commands nor of
-// writable folders at launch. agy 1.3.3 has no auto mode on its command line (--mode takes accept-edits or plan):
-// AUTO runs as accept-edits, its project allowing every command but the denied ones.
+// With permissions, edit (or WriteDirs) becomes --mode accept-edits. The rest goes in an agy project of Djinn's own,
+// given with --project (agyProject): agy takes no list of commands nor of writable folders at launch. agy 1.3.3 has
+// no auto mode on its command line (--mode takes accept-edits or plan): AUTO runs as accept-edits, its project
+// allowing every command but the denied ones.
 func (a Antigravity) args(spec Spec) ([]string, error) {
 	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 	if spec.ReadOnly {
 		return nil, fmt.Errorf("agy cannot run a read-only task yet: %w; use claude or codex", ErrReadOnly)
 	}
 	if p := spec.Permissions; p != nil {
-		if !p.GetEdit() {
+		if !p.GetEdit() && len(spec.WriteDirs) == 0 {
 			return nil, fmt.Errorf("agy cannot run without editing yet (the project's %s says edit: false): %w; use claude or codex",
 				filepath.ToSlash(PermissionsFile), ErrReadOnly)
 		}
@@ -134,6 +139,11 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 	args, err := a.args(spec)
 	if err != nil {
 		return nil, err
+	}
+	if spec.SystemPrompt != "" {
+		if err := fsx.WriteAtomic(filepath.Join(spec.Dir, agyRulesFile), []byte(spec.SystemPrompt), 0o600); err != nil {
+			return nil, fmt.Errorf("write agy's system prompt: %w", err)
+		}
 	}
 	if spec.Permissions != nil {
 		if err := writeAgyProject(spec); err != nil {
@@ -445,23 +455,25 @@ func agyProject(spec Spec) agyProjectFile {
 		}
 	}
 
-	// Denials for Djinn's own data folder except the task's worktree.
+	// Denials for Djinn's own data folder except the task's worktree (or the whole folder when Spec.ReadDirs grants it).
 	if djinnDir, err := djinnDataDir(); err == nil && djinnDir != "" {
 		cleanDjinn := filepath.Clean(djinnDir)
-		anyInside := false
-		for _, k := range keepPaths {
-			rel, err := filepath.Rel(cleanDjinn, k)
-			if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
-				anyInside = true
-				break
+		if !slices.Contains(keepPaths, cleanDjinn) {
+			anyInside := false
+			for _, k := range keepPaths {
+				rel, err := filepath.Rel(cleanDjinn, k)
+				if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+					anyInside = true
+					break
+				}
 			}
-		}
-		if anyInside {
-			for _, d := range djinnDenials(cleanDjinn, keepPaths) {
-				g.Deny = appendUnique(g.Deny, d)
+			if anyInside {
+				for _, d := range djinnDenials(cleanDjinn, keepPaths) {
+					g.Deny = appendUnique(g.Deny, d)
+				}
+			} else {
+				g.Deny = appendUnique(g.Deny, "read_file("+cleanDjinn+")")
 			}
-		} else {
-			g.Deny = appendUnique(g.Deny, "read_file("+cleanDjinn+")")
 		}
 	}
 
@@ -1158,7 +1170,7 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 			} else if strings.Contains(failure, agyDenyRule) {
 				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+agyCall(name, params))
 			} else {
-				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, strings.TrimSpace(failure))
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, strings.TrimSpace(failure)).ToolError = true
 			}
 			delete(p.toolsIn, s.StepIndex)
 		}

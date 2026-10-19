@@ -182,7 +182,7 @@ name, shared by the team, your own file winning: [team settings](team-settings.m
 
 | Field             | Claude (`--settings` inline, `--permission-mode`)                    | Codex (`thread/start`, `turn/start`, approvals)                                                   | Antigravity (command line, Djinn's agy project)     |
 | ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `edit`            | allow, or deny, `Edit`, `Write`, `NotebookEdit`                      | `sandbox: workspace-write` and turn `sandboxPolicy: workspaceWrite`, else `read-only`; file-change approvals accepted only with `edit`, inside the workspace | `--mode accept-edits`, and `write_file` grants of the worker's folder and Git's folders; without `edit`, refused |
+| `edit`            | allow, or deny, `Edit`, `Write`, `NotebookEdit`                      | `sandbox: workspace-write` and turn `sandboxPolicy: workspaceWrite`, else `read-only`; file-change approvals accepted only with `edit`, inside the workspace | `--mode accept-edits`, and `write_file` grants of the worker's folder and Git's folders (or of `WriteDirs` for the driven lead); without `edit` nor `WriteDirs`, refused |
 | `commands`        | allow `Bash(<p> *)` and `PowerShell(<p> *)`                          | LISTED: `approvalPolicy: untrusted`, and Djinn accepts a command approval when the command is listed | LISTED: `command(<p>)` grants; AUTO: `command(*)`, every command |
 | `denied_commands` | deny `Bash(<p> *)` and `PowerShell(<p> *)`                           | LISTED: Djinn declines them. AUTO: **lost**, codex's reviewer decides                              | deny `command(<p>)` grants; AUTO adds `git push`   |
 | `network`         | allow, or deny, `WebFetch` and `WebSearch`                           | `networkAccess` of the sandbox policy; a command approval asking for the network is declined without it | not cut: no `--sandbox`, which would cut Djinn's own socket (`djinn gate`); the developer's choice, Q66 (agy 1.3.3, 2026-10-10) |
@@ -987,12 +987,13 @@ is the agent's default, an empty account its own sign-in; without `--provider`, 
 in the window (the chip of the lead's seat, at the top of a wish or of the flying carpet), which lists each agent on its own sign-in then on each account,
 and the model.
 
-**Which agents may lead.** Claude: its rules in `--append-system-prompt` (W131). Codex: its rules as the thread's
+**Which agents may lead.** Claude: its rules in `--append-system-prompt-file` (W131). Codex: its rules as the thread's
 `developerInstructions`, and the lead's folder, without `edit`, as its `workspace-write` sandbox (the other folders it
 may write in as `writableRoots`, a file change inside them accepted); Djinn answers its command approvals by the lead's
-commands, as for a worker. **Built, not tried on a real run:** a Codex batch; `--max-turns` has no Codex equivalent,
-the 30-minute timeout guards it. Antigravity cannot lead: agy takes no instructions beside the prompt and refuses a
-session that may not edit every file of its folder; `djinn lead move --provider antigravity` is refused.
+commands, as for a worker. Antigravity: its rules written to `GEMINI.md` in the lead's folder, `--mode accept-edits`,
+and an agy project granting writes in `WriteDirs`, reads in `ReadDirs`, and the lead's commands (`djinn`). **Built, not
+tried on a real run:** a Codex or Antigravity batch; `--max-turns` has no Codex nor Antigravity equivalent, the
+30-minute timeout guards it.
 
 **A usage limit is the developer's move.** A batch that hits a limit (Claude's `rate_limit_event` `rejected`, or a
 limit in its error, as for a worker) is not tried again on the same seat: Djinn moves the lead nowhere by itself. It

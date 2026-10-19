@@ -597,8 +597,16 @@ func (s *LeadService) Show(
 	path, errCount, conv := s.inspectBatchTranscript(batch)
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", formatSessionLine(batch, path, errCount))
-	if batch.GetProvider() == planv1.Provider_PROVIDER_CODEX {
+	switch batch.GetProvider() {
+	case planv1.Provider_PROVIDER_CODEX:
 		b.WriteString("\nCodex transcripts are not supported.\n")
+		return connect.NewResponse(&planv1.LeadServiceShowResponse{
+			Text:           b.String(),
+			Batch:          batch,
+			TranscriptPath: transcriptNotSupported,
+		}), nil
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		b.WriteString("\nAntigravity transcripts are not supported.\n")
 		return connect.NewResponse(&planv1.LeadServiceShowResponse{
 			Text:           b.String(),
 			Batch:          batch,
@@ -682,7 +690,8 @@ func formatSessionLine(b *planv1.LeadBatch, transcriptPath string, errCount int)
 // inspectBatchTranscript resolves the transcript path of batch, parses its conversation if present, and counts failed
 // tool calls.
 func (s *LeadService) inspectBatchTranscript(b *planv1.LeadBatch) (string, int, string) {
-	if b.GetProvider() == planv1.Provider_PROVIDER_CODEX {
+	switch b.GetProvider() {
+	case planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_ANTIGRAVITY:
 		return transcriptNotSupported, 0, ""
 	}
 	path := s.claudeTranscriptPath(b)
