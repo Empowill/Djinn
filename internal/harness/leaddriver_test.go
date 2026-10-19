@@ -558,8 +558,18 @@ func TestLeadDriver(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, system, _ := strings.Cut(string(got), "--append-system-prompt\n")
-			system, _, _ = strings.Cut(system, "\n--exclude-dynamic-system-prompt-sections")
+			// Windows caps a process's whole command line at 32,767 UTF-16 code units (CreateProcessW): the rules go in
+			// a file, never on the command line (W436).
+			if len(got) > 4096 {
+				t.Errorf("the command line is %d bytes: the rules belong in a file", len(got))
+			}
+			_, file, _ := strings.Cut(string(got), "--append-system-prompt-file\n")
+			file, _, _ = strings.Cut(file, "\n--exclude-dynamic-system-prompt-sections")
+			systemBytes, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			system := string(systemBytes)
 			if !strings.Contains(system, "Your tone follows the window's theme") || strings.Contains(system, step.want) {
 				t.Errorf("%v: the rules lack the tone's limits, or carry a tone:\n%s", step.theme, system)
 			}

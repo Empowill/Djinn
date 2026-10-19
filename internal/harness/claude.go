@@ -13,6 +13,7 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/usage"
 )
 
@@ -31,6 +32,10 @@ type Claude struct {
 
 // claudeReadTools are the only tools of a read-only worker: reading files, finding them, searching them.
 const claudeReadTools = "Read,Glob,Grep"
+
+// claudeRulesFile holds spec.SystemPrompt in spec.Dir, for --append-system-prompt-file: the driven lead's rules
+// exceed Windows's 32,767-character command line (CreateProcessW).
+const claudeRulesFile = "rules.md"
 
 // claudeAgentsMd has Claude read the project's AGENTS.md as well as its CLAUDE.md, the import of one by the other
 // read once. The built-in plugin that reads AGENTS.md takes this option from a --settings file, not from the
@@ -111,8 +116,10 @@ func (c Claude) args(spec Spec) []string {
 	}
 	if spec.SystemPrompt != "" {
 		// The same text for every session: with the machine's sections moved to the first message, the system
-		// prompt is the same from one session to the next, and its cache serves them all (cli-reference).
-		args = append(args, "--append-system-prompt", spec.SystemPrompt, "--exclude-dynamic-system-prompt-sections")
+		// prompt is the same from one session to the next, and its cache serves them all (cli-reference). A file
+		// carries it: the driven lead's rules exceed Windows's 32,767-character command line (CreateProcessW).
+		args = append(args, "--append-system-prompt-file", filepath.Join(spec.Dir, claudeRulesFile),
+			"--exclude-dynamic-system-prompt-sections")
 	}
 	return append(args, c.Extra...)
 }
@@ -189,6 +196,11 @@ func (c Claude) Start(ctx context.Context, spec Spec) (Worker, error) {
 	}
 	if grace == 0 {
 		grace = Grace
+	}
+	if spec.SystemPrompt != "" {
+		if err := fsx.WriteAtomic(filepath.Join(spec.Dir, claudeRulesFile), []byte(spec.SystemPrompt), 0o600); err != nil {
+			return nil, fmt.Errorf("write claude's system prompt: %w", err)
+		}
 	}
 	// First, so that a caller's Env may set it otherwise; after Djinn's own environment, which it overrides.
 	spec.Env = append([]string{claudeBackgroundWait}, spec.Env...)
