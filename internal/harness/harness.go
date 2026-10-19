@@ -278,7 +278,6 @@ type run struct {
 	requestedModel string          // model as requested before stream events
 	nextProvider   planv1.Provider // provider queued by UpdateModels to take effect when this run ends
 	nextModel      string          // model queued by UpdateModels to take effect when this run ends
-	rebase         *behind         // the rebase its worker was asked on resuming, until its branch took it (uptodate.go)
 }
 
 // newRun is the run of task, registered so that a watcher never misses its first events.
@@ -1716,7 +1715,6 @@ func (h *Harness) drain(r *run) Result {
 			h.measure(r, m)
 		case ev, ok := <-events:
 			if !ok {
-				h.rebased(r)
 				r.unread, r.unreadWaitTurn, r.held, r.tools = nil, false, nil, 0 // A worker started again never had them.
 				h.mu.Lock()
 				r.inTool = false
@@ -1724,9 +1722,6 @@ func (h *Harness) drain(r *run) Result {
 				return r.worker.Wait()
 			}
 			h.record(r, ev)
-			if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT {
-				h.rebased(r)
-			}
 		case ev := <-r.notes:
 			h.note(r, ev)
 		case m := <-r.sends:
@@ -2939,10 +2934,6 @@ func (h *Harness) writeHold(r *run) {
 	case !paused && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED:
 		t.Status = planv1.TaskStatus_TASK_STATUS_RUNNING
 		nowPb := timestamppb.New(h.now())
-		var pausedFor time.Duration
-		if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].GetEndTime() != nil {
-			pausedFor = h.now().Sub(t.Runs[len(t.Runs)-1].GetEndTime().AsTime())
-		}
 		t.StartTime = nowPb
 		if t.FirstStartTime == nil {
 			t.FirstStartTime = nowPb
@@ -2961,7 +2952,6 @@ func (h *Harness) writeHold(r *run) {
 			text = "resumed: " + holdWhy
 		}
 		h.write(r, actorHarness, methodHold, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
-		h.rebaseAfterPause(r, pausedFor)
 	}
 }
 

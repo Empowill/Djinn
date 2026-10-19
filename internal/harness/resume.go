@@ -536,11 +536,6 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		spec.Prompt += "\n\n" + unreceivedText(unread)
 		r.unread = unread
 	}
-	// Its branch first brought up to date with the branch its work merges into, when that one moved (uptodate.go).
-	stale := h.behindTarget(h.ctx, r, t, project)
-	if stale != nil {
-		spec.Prompt = rebaseText(stale) + "\n\n" + spec.Prompt
-	}
 	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)
 	where := "in " + dir
 	if t.GetBranch() != "" {
@@ -568,13 +563,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		text = fmt.Sprintf("resumed %s (%d of 2): started %s %s%s, %s%s", by, t.GetEnvReplays(),
 			short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
 	}
-	if err := h.start(r, provider, spec, text); err != nil {
-		return err
-	}
-	if stale != nil {
-		h.rebasePending(r, stale)
-	}
-	return nil
+	return h.start(r, provider, spec, text)
 }
 
 // replayEnvFailures restarts tasks of the given provider that failed for an environment cause.

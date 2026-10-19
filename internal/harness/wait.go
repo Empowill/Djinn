@@ -3,9 +3,9 @@ package harness
 // A worker's question comes back to it (W260, decision Q50): one asked with --wait puts its task WAITING once the
 // worker's turn ends (end, waitOn), its slot free, its worktree, branch, session and write scopes kept; the answer, the
 // developer's or the lead's, continues it with the decision (Continue), through the scheduler: it starts once a slot
-// is free, like any task Djinn resumes, and its worker first brings its branch up to date (W250). A question answered
-// while its worker runs, blocking or not, is sent to the worker between two turns (task send); one that does not block,
-// answered after its worker ended, goes to the lead as any answer.
+// is free, like any task Djinn resumes. A question answered while its worker runs, blocking or not, is sent to the
+// worker between two turns (task send); one that does not block, answered after its worker ended, goes to the lead as
+// any answer.
 
 import (
 	"context"
