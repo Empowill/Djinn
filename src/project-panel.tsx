@@ -50,7 +50,6 @@ import { ModalFrame } from "./frame";
 import { t } from "./i18n";
 import { InboxSources } from "./inbox";
 import { SyncLines } from "./project-sync";
-import { UpdateModelsSection } from "./summoning-circle";
 import "./project-panel.css";
 
 // The settings other parts of the panel show, with their own words: not repeated in its settings.
@@ -467,9 +466,6 @@ export function ProjectPanel({
       {shown && shown.settings.length > 0 && (
         <ProjectSettings settings={shown.settings} shown={shown} />
       )}
-      <section className="config-box">
-        <UpdateModelsSection projectId={project.id} />
-      </section>
       <section className="config-box">
         <h3>{t("project.watch_commands")}</h3>
         <WatchCommands
