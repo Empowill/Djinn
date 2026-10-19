@@ -417,6 +417,19 @@ test("the wish's head says where its work lands, and a click changes the branch"
   picker.one("input").onKeyDown({ key: "Enter", preventDefault() {} });
   await picker.settle();
   assert.deepEqual(picked.at(-1), ["release/v1", false]);
+
+  // WishModels in the wish header opens the bulk model switcher scoped to this wish.
+  const modelsChip = live(s.WishModels, { wishId: "w1" });
+  assert.equal(modelsChip.all("wish-models-picker").length, 0);
+  assert.equal(modelsChip.one("wish-models")["aria-expanded"], false);
+  modelsChip.one("wish-models").onClick();
+  assert.equal(modelsChip.one("wish-models")["aria-expanded"], true);
+  assert.equal(modelsChip.all("wish-models-picker").length, 1);
+  assert.equal(modelsChip.one(s.UpdateModelsSection).wishId, "w1");
+  assert.match(
+    modelsChip.html(),
+    /<div class="branch-picker wish-models-picker" role="dialog" aria-label="Change open tasks in one gesture"><div class="update-models-section">/,
+  );
 });
 
 test("while Djinn drives the lead, its menu moves it to another agent, account or model in one click", () => {

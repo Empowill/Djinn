@@ -114,6 +114,7 @@ export {
   CIRCLE_ROWS,
   DEFAULT_CIRCLE_PROVIDERS,
   SummoningCircle,
+  UpdateModelsSection,
   canonicalModelId,
 } from "@/src/summoning-circle.tsx";
 export {
@@ -127,6 +128,7 @@ export {
   WhereWorkLands,
   BranchPicker,
   WishDescription,
+  WishModels,
   WishTitle,
   batchCost,
   leadTrouble,

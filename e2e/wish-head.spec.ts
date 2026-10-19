@@ -285,6 +285,26 @@ test("the head says where the wish's work lands, and a click changes the branch"
     await picker.getByRole("button", { name: "release" }).click();
     await expect(chip).toHaveText("Lands in release");
     expect(landsIn()).toBe("release");
+
+    // The Models dropdown in the wish header also opens above the content below and closes on Escape.
+    const modelsButton = page.locator(".hero-meta button.wish-models");
+    await modelsButton.click();
+    const modelsDialog = page.getByRole("dialog", {
+      name: "Change open tasks in one gesture",
+    });
+    await expect(modelsDialog).toBeVisible();
+    const modelsAboveContent = await page.evaluate(() => {
+      const menu = document.querySelector(".hero-meta .wish-models-picker");
+      const content = document.querySelector(".overview-content");
+      if (!menu || !content) return false;
+      const m = menu.getBoundingClientRect();
+      const c = content.getBoundingClientRect();
+      const hit = document.elementFromPoint(m.left + m.width / 2, m.bottom - 6);
+      return m.bottom > c.top && hit !== null && menu.contains(hit);
+    });
+    expect(modelsAboveContent).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(modelsDialog).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
     await page.evaluate(() => localStorage.removeItem("djinn.theme"));

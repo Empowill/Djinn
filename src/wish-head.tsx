@@ -1129,8 +1129,24 @@ export function BranchPicker({
 // WishModels lets the developer preview and change provider and model for open tasks in a wish.
 export function WishModels({ wishId }: { wishId: string }) {
   const [open, setOpen] = useState(false);
+  const root = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
   return (
-    <span className="wish-lands-chip wish-models-chip">
+    <span className="wish-lands-chip wish-models-chip" ref={root}>
       <button
         type="button"
         className="wish-models"
