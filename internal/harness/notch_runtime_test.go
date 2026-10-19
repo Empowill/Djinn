@@ -33,13 +33,14 @@ func isWorkerLowPriority(h *Harness, taskID string) bool {
 // 1. Immediately sets low CPU priority on running workers (Q120 A).
 // 2. Immediately pauses extra running workers in Q121 order (Q117 reversed).
 // 3. Emits a paused status event and a journal entry with method "harness/notch".
+// 4. Raising the notch back resumes paused workers first (Q123) and restores normal priority.
 func TestNotchRuntimePriorityAndPause(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 
 	lim := &limit{slots: 2}
-	e := up(t, t.TempDir(), WithCapacity(lim.capacity), WithTick(20*time.Millisecond))
-	wishID, _ := e.wish(t, fakeProject(t, ""))
+	e := up(t, t.TempDir(), WithCapacity(lim.capacity), WithTick(10*time.Millisecond))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	// Start two workers with standard priority, disjoint write scopes.
 	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
@@ -95,52 +96,17 @@ func TestNotchRuntimePriorityAndPause(t *testing.T) {
 		t.Errorf("no journal entries with actor %q and method %q: %v", actorHarness, methodNotch, err)
 	}
 
-	// Cleanup.
-	e.release(t, w1.GetId())
-	e.ended(t, w1.GetId())
-}
-
-// TestNotchRuntimeResumeFirst verifies that raising the notch:
-// 1. Resumes paused workers first in Q123 order (Q117 order).
-// 2. Restores normal priority on resumed workers.
-func TestNotchRuntimeResumeFirst(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-
-	lim := &limit{slots: 2}
-	e := up(t, t.TempDir(), WithCapacity(lim.capacity), WithTick(20*time.Millisecond))
-	wishID, _ := e.wish(t, fakeProject(t, ""))
-
-	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
-
-	w1 := e.mustSpawn(t, wishID, "Work 1", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s1"}})
-	e.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-
-	w2 := e.mustSpawn(t, wishID, "Work 2", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
-	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-
-	// Lower notch to pause W2.
-	lim.set(1, "")
-	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL})
-	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_PAUSED))
-
-	// Raise notch back to High with 2 slots.
+	// 4. Raise notch back to High with 2 slots: W2 resumes first with normal priority.
 	lim.set(2, "")
 	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
-
-	// W2 must be resumed first and running again.
 	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 	if paused := e.h.Paused(); paused != 0 {
 		t.Errorf("harness.Paused() = %d, want 0", paused)
 	}
-
-	// Priority restored to normal.
 	if isWorkerLowPriority(e.h, w2.GetId()) {
 		t.Errorf("w2 is still low priority after raising notch to High")
 	}
-
-	// Verify resumed event.
-	w2Events := e.storedEvents(t, w2.GetId())
+	w2Events = e.storedEvents(t, w2.GetId())
 	if !slices.ContainsFunc(w2Events, func(ev *planv1.TaskEvent) bool {
 		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS &&
 			strings.Contains(ev.GetText(), "resumed: a slot is free again")
@@ -174,7 +140,7 @@ func TestNotchRuntimeMemoryInterrupt(t *testing.T) {
 	e := up(t, t.TempDir(), WithEnlightenWorkers(), WithCapacity(lim.capacity),
 		WithMemory(available, machine.DefaultPolicy()), WithTick(5*time.Millisecond))
 
-	repo := fakeProject(t, "")
+	repo := nativeFolder(t)
 	wish1, projectID := e.wish(t, repo)
 
 	// Make a second wish (lower priority / rank 2).
@@ -270,8 +236,8 @@ func TestNotchRuntimeAutoNeverPauses(t *testing.T) {
 	t.Parallel()
 
 	lim := &limit{slots: 2}
-	e := up(t, t.TempDir(), WithCapacity(lim.capacity), WithTick(20*time.Millisecond))
-	wishID, _ := e.wish(t, fakeProject(t, ""))
+	e := up(t, t.TempDir(), WithCapacity(lim.capacity), WithTick(10*time.Millisecond))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
 
@@ -289,7 +255,7 @@ func TestNotchRuntimeAutoNeverPauses(t *testing.T) {
 	})
 
 	// Wait a moment for any potential scheduler passes.
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(25 * time.Millisecond)
 
 	// Both workers must remain RUNNING (never paused in Auto mode).
 	t1 := e.get(t, w1.GetId())

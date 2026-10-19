@@ -49,7 +49,7 @@ func TestTurnsAcrossRuns(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTaskMaxTurns(40))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	first := e.ended(t, e.mustSpawn(t, wishID, "Count turns", "turns 7\ntext first", nil).GetId())
 	if got := first.GetTurns(); got.GetRun() != 7 || got.GetLimit() != 40 || got.GetTotal() != 7 {
 		t.Fatalf("first run: turns %v, want 7 of 40, 7 in all", got)
@@ -76,8 +76,8 @@ func TestTurnsWrittenWithResources(t *testing.T) {
 		// A process more or less at each reading: each one is worth writing.
 		return machine.Group{Processes: 1 + int(readings.Add(1)%2), Memory: 100 << 20}, nil
 	}
-	e := upWith(t, t.TempDir(), providers, WithMeasure(20*time.Millisecond, read), WithTaskMaxTurns(40))
-	wishID, _ := e.wish(t, gitRepo(t))
+	e := upWith(t, t.TempDir(), providers, WithMeasure(10*time.Millisecond, read), WithTaskMaxTurns(40))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "Count turns", Prompt: "x", Provider: planv1.Provider_PROVIDER_CLAUDE,
 	}))

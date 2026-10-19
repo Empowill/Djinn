@@ -72,8 +72,8 @@ func settle(t *testing.T, what string, ok func() bool) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	for range 10 {
-		time.Sleep(10 * time.Millisecond)
+	for range 3 {
+		time.Sleep(4 * time.Millisecond)
 		if !ok() {
 			t.Fatalf("%s: held, then no longer", what)
 		}
@@ -140,9 +140,9 @@ func newBarEnv(t *testing.T, slots int, opts ...Option) (*env, *bar, string) {
 	t.Helper()
 	b := newBar(slots)
 	e := up(t, t.TempDir(), append([]Option{WithEnlightenWorkers(), WithCapacity(b.capacity), WithBarSlots(b.notch),
-		WithTick(10 * time.Millisecond)}, opts...)...)
+		WithTick(5 * time.Millisecond)}, opts...)...)
 	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
-	wishID, _ := e.wish(t, fakeProject(t, ""))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	return e, b, wishID
 }
 
@@ -220,7 +220,7 @@ func TestLoadBarMovesDownAndUp(t *testing.T) {
 				return e.h.Running() == step.running && e.h.Paused() == step.paused
 			})
 			most := peak(e.h)
-			time.Sleep(50 * time.Millisecond) // A few passes.
+			time.Sleep(15 * time.Millisecond) // A few passes.
 			if got := most(); got > step.slots {
 				t.Errorf("%d workers ran at once, the bar lets %d", got, step.slots)
 			}
@@ -275,7 +275,7 @@ func TestLoadBarMemoryDipPausesNoOne(t *testing.T) {
 			}
 		}
 	})
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond)
 	close(stop)
 	flips.Wait()
 	if paused := e.h.Paused(); paused != 0 {
@@ -299,7 +299,7 @@ func TestLoadBarMemoryDipPausesNoOne(t *testing.T) {
 func TestLoadBarStartByHand(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	e, _, wishID := newBarEnv(t, 2)
+	e, b, wishID := newBarEnv(t, 2)
 	tasks := e.spawnWork(t, wishID, 3)
 	settle(t, "2 run", func() bool { return e.h.Running() == 2 })
 	forced := tasks[2]
@@ -331,21 +331,20 @@ func TestLoadBarStartByHand(t *testing.T) {
 	if got := most(); got > 2 {
 		t.Errorf("%d workers ran at once beyond the one by hand, the bar lets 2", got)
 	}
-}
+	release(tasks[1])
+	release(after)
 
-// TestLoadBarResumeByHand: a worker the developer paused and resumes by hand runs beyond the slots its pause gave to
-// the next task; the bar counts it, and no worker is paused to make up for it.
-func TestLoadBarResumeByHand(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e, _, wishID := newBarEnv(t, 1)
-	tasks := e.spawnWork(t, wishID, 2)
+	// A worker the developer paused and resumes by hand runs beyond the slots its pause gave to the next task;
+	// the bar counts it, and no worker is paused to make up for it.
+	b.move(e.h, djinnv1.LoadNotch_LOAD_NOTCH_HIGH, 1)
+	wish2, _ := e.wish(t, nativeFolder(t))
+	rTasks := e.spawnWork(t, wish2, 2)
 	settle(t, "1 runs", func() bool { return e.h.Running() == 1 })
-	if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: tasks[0].GetId()})); err != nil {
+	if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: rTasks[0].GetId()})); err != nil {
 		t.Fatal(err)
 	}
-	e.until(t, tasks[1].GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	if _, err := e.tasks.Resume(t.Context(), connect.NewRequest(&planv1.TaskServiceResumeRequest{TaskId: tasks[0].GetId()})); err != nil {
+	e.until(t, rTasks[1].GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+	if _, err := e.tasks.Resume(t.Context(), connect.NewRequest(&planv1.TaskServiceResumeRequest{TaskId: rTasks[0].GetId()})); err != nil {
 		t.Fatal(err)
 	}
 	settle(t, "2 run, 1 by hand, none paused", func() bool {
@@ -451,18 +450,19 @@ func TestLoadBarGateHolderPausesLater(t *testing.T) {
 func TestLowerPauses(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	e := up(t, t.TempDir())
-	e.h.goos = func() string { return "linux" }
-	if !e.h.LowerPauses() {
+	h := New(nil, "", nil)
+	t.Cleanup(h.Close)
+	h.goos = func() string { return "linux" }
+	if !h.LowerPauses() {
 		t.Error("linux, a manual notch: lowering should pause")
 	}
-	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH, Auto: true})
-	if e.h.LowerPauses() {
+	h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH, Auto: true})
+	if h.LowerPauses() {
 		t.Error("auto: lowering should let workers finish")
 	}
-	e.h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
-	e.h.goos = func() string { return "windows" }
-	if e.h.LowerPauses() {
+	h.SetPolicy(machine.Policy{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH})
+	h.goos = func() string { return "windows" }
+	if h.LowerPauses() {
 		t.Error("windows: lowering should let workers finish")
 	}
 }

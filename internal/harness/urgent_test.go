@@ -18,15 +18,15 @@ import (
 func TestUrgentTask(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
-	busy := e.mustSpawn(t, wishID, "Busy", "wait\ntext busy", nil)
+	wishID, _ := e.wish(t, nativeFolder(t))
+	busy := e.mustSpawn(t, wishID, "Busy", "wait\ntext busy", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s1"}})
 	e.until(t, busy.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	old := e.mustSpawn(t, wishID, "Old", "text old", nil)
+	old := e.mustSpawn(t, wishID, "Old", "text old", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
 	if old.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(old.GetWaitReason(), "the most this machine holds") {
 		t.Fatalf("old = %v; want it waiting for a slot", old)
 	}
 
-	urgent := e.mustSpawn(t, wishID, "Repair the branch", "wait\ntext repaired", &planv1.TaskServiceSpawnRequest{Urgent: true})
+	urgent := e.mustSpawn(t, wishID, "Repair the branch", "wait\ntext repaired", &planv1.TaskServiceSpawnRequest{Urgent: true, WriteScopes: []string{"s3"}})
 	if !urgent.GetUrgent() || urgent.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Fatalf("urgent = %v; want it running on the full machine", urgent)
 	}
@@ -38,7 +38,7 @@ func TestUrgentTask(t *testing.T) {
 	}
 
 	// A second one, spawned or updated, is refused with the first's name.
-	if _, err := e.spawnReq(t, wishID, "Another", "text x", &planv1.TaskServiceSpawnRequest{Urgent: true}); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+	if _, err := e.spawnReq(t, wishID, "Another", "text x", &planv1.TaskServiceSpawnRequest{Urgent: true, WriteScopes: []string{"s4"}}); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
 		!strings.Contains(err.Error(), "W3 (Repair the branch) is urgent already") {
 		t.Errorf("second urgent spawn: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestUrgentMarkAfterSpawn(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	mark := func(id string, urgent, feedback *bool) (*planv1.Task, error) {
 		res, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{TaskId: id, Urgent: urgent, Feedback: feedback}))
 		if err != nil {
@@ -93,13 +93,13 @@ func TestUrgentMarkAfterSpawn(t *testing.T) {
 	}
 
 	// W1 waits on its blocking question, its slot free; W2 runs; W3, planned, waits for W2.
-	asker := e.mustSpawn(t, wishID, "Pick a cache", "text working\nwait\ntext waiting for the answer", nil)
+	asker := e.mustSpawn(t, wishID, "Pick a cache", "text working\nwait\ntext waiting for the answer", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s1"}})
 	q := e.askAbout(t, e.until(t, asker.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING)), true)
 	e.release(t, asker.GetId())
 	e.until(t, asker.GetId(), waitsOn(q))
-	busy := e.mustSpawn(t, wishID, "Busy", "wait\ntext busy", nil)
+	busy := e.mustSpawn(t, wishID, "Busy", "wait\ntext busy", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
 	e.until(t, busy.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	planned := e.mustSpawn(t, wishID, "Use the cache", "text using it", &planv1.TaskServiceSpawnRequest{DependsOn: []string{"w2"}})
+	planned := e.mustSpawn(t, wishID, "Use the cache", "text using it", &planv1.TaskServiceSpawnRequest{DependsOn: []string{"w2"}, WriteScopes: []string{"s3"}})
 
 	for _, task := range []*planv1.Task{asker, busy, planned} {
 		status := e.get(t, task.GetId()).GetStatus()
@@ -169,7 +169,7 @@ func TestUrgentMarkAfterSpawn(t *testing.T) {
 			t.Fatal("the resumed worker never ended")
 		}
 		_, _ = e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: busy.GetId(), Text: "go on"}))
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	if got := e.get(t, busy.GetId()); got.GetUrgent() != true || got.GetFeedback() != true || got.GetTitle() != "Busy, renamed" {
 		t.Errorf("ended = %v; want its mark and its new title kept", got)
