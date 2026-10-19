@@ -726,4 +726,5 @@ func (w *codexWorker) itemCompleted(events *lineEvents, it *codexItem) {
 		text = it.Status
 	}
 	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
+	(*events)[len(*events)-1].ToolError = failed
 }

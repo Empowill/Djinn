@@ -850,6 +850,14 @@ func TestBriefRules(t *testing.T) {
 		name: "investigations",
 		want: []string{"--kind investigation", "--feedback", "a mockup", "is a repair, always first"},
 	}, {
+		// W453: worker prompts forbid # heading lines in --prompt and name --prompt-file; task watch and task send accept W codes.
+		name: "worker prompts and task codes",
+		want: []string{
+			"Never put a `#` heading line in `--prompt`",
+			"`--prompt-file <path>`",
+			"`<task>` is a code `W1` or its identifier, `--wish-id <wish>` when the code is in several wishes",
+		},
+	}, {
 		// The rule on installs reads each project's install_questions.
 		name: "install always", install: planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS,
 		want: []string{"grant a right, install and restart (djinn: always)"},
@@ -941,6 +949,12 @@ func TestJournalTokenCap(t *testing.T) {
 	long := JournalNote(strings.Repeat("a", 500))
 	if got := strings.TrimSuffix(long, "…"); len([]rune(got)) != journalLineMax {
 		t.Errorf("JournalNote clipped length = %d, want %d", len([]rune(got)), journalLineMax)
+	}
+	if got := JournalFailedCommand("  djinn task watch W73\n"); got != "failed: djinn task watch W73" {
+		t.Errorf("JournalFailedCommand = %q, want %q", got, "failed: djinn task watch W73")
+	}
+	if got := JournalFailedCommand("failed: djinn task watch W73"); got != "failed: djinn task watch W73" {
+		t.Errorf("JournalFailedCommand idempotent = %q, want %q", got, "failed: djinn task watch W73")
 	}
 
 	var batches []*planv1.LeadBatch

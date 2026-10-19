@@ -42,9 +42,13 @@ type sent struct {
 // event. A worker that ends first never acknowledges it. An ifrit out, or going out, is lit again for the message
 // (relight).
 func (h *Harness) Send(ctx context.Context, procedure string, req *planv1.TaskServiceSendRequest) (*planv1.TaskEvent, error) {
-	task, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
+	task, err := h.resolveTaskID(ctx, req.GetTaskId(), req.GetWishId())
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
+	}
+	if req.GetTaskId() != task.GetId() || req.GetWishId() != "" {
+		req = proto.CloneOf(req)
+		req.TaskId, req.WishId = task.GetId(), ""
 	}
 	h.mu.Lock()
 	r := h.runs[task.GetId()]

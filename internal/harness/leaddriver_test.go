@@ -615,5 +615,53 @@ func TestLeadDriver(t *testing.T) {
 				t.Errorf("%s replied at %v, want once after the read: %q", code, at, commands)
 			}
 		}
+		// W453: the first djinn question revise call in the recorded stream failed (--wish is not a valid flag) and is
+		// marked "failed: " in the batch's journal; the second succeeded and is not.
+		if !slices.ContainsFunc(commands, func(c string) bool {
+			return strings.HasPrefix(c, "failed: djinn question revise Q01 --wish ")
+		}) {
+			t.Errorf("failed tool call not marked in commands: %q", commands)
+		}
+		if !slices.ContainsFunc(commands, func(c string) bool {
+			return strings.HasPrefix(c, "djinn question revise 01a1481f-")
+		}) {
+			t.Errorf("succeeded tool call missing from commands: %q", commands)
+		}
+	})
+
+	// A command whose tool result fails (ToolError or an error/declined/exit prefix) is marked "failed: …" in the
+	// batch's journal and in the next batch's prompt (W453).
+	t.Run("failed_tool_call_marked_in_journal", func(t *testing.T) {
+		t.Parallel()
+		agent := newLeadAgent(func(n int) ([]Event, error) {
+			if n == 0 {
+				return []Event{
+					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, Text: `Bash {"command":"djinn task spawn w1 --prompt \"# Gain\""}`},
+					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, Text: "error: Permission to use Bash has been denied", ToolError: true},
+					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, Text: `Bash {"command":"djinn task spawn w1 --prompt \"**Gain**\""}`},
+					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, Text: "W1 spawned"},
+					{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, Text: "Spawned W1 after retry."},
+				}, nil
+			}
+			return leadTurn("djinn task list --short", "Checked W1."), nil
+		})
+		b := driveLead(t, agent)
+		b.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W1", "Done.")
+		waitFor(t, "first batch done", func() bool { return len(b.batches(t)) == 1 && len(b.waiting(t)) == 0 })
+		first := b.batches(t)[0]
+		want := []string{
+			`failed: djinn task spawn w1 --prompt "# Gain"`,
+			`djinn task spawn w1 --prompt "**Gain**"`,
+		}
+		if !slices.Equal(first.GetCommands(), want) {
+			t.Fatalf("first batch commands = %q, want %q", first.GetCommands(), want)
+		}
+		b.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W1", "Done again.")
+		waitFor(t, "second batch done", func() bool { return len(b.batches(t)) == 2 && len(b.waiting(t)) == 0 })
+		secondPrompt := agent.all()[1].Prompt
+		if !strings.Contains(secondPrompt, "- `failed: djinn task spawn w1 --prompt \"# Gain\"`") ||
+			!strings.Contains(secondPrompt, "- `djinn task spawn w1 --prompt \"**Gain**\"`") {
+			t.Errorf("second batch prompt lacks failed/succeeded commands in journal:\n%s", secondPrompt)
+		}
 	})
 }

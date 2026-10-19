@@ -196,6 +196,8 @@ type Event struct {
 	// agent says as it goes, for an agent that says its cost at a result only (claude): an investigation is asked to
 	// publish at its budget before its provider cuts it (investigationDue).
 	Spent float64
+	// ToolError is set on a tool result whose call failed or was refused by its provider.
+	ToolError bool
 }
 
 // Result is how a worker ended.

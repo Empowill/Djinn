@@ -21672,7 +21672,10 @@ type TaskServiceSpawnRequest struct {
 	Repair bool `protobuf:"varint,27,opt,name=repair,proto3" json:"repair,omitempty"`
 	// For a mockup (--kind mockup): the open question of the wish it iterates on, by code (Q61): it puts the next
 	// version of the tilasm the question links, then revises it, and the lead hears what it did when it ends.
-	Question      string `protobuf:"bytes,28,opt,name=question,proto3" json:"question,omitempty"`
+	Question string `protobuf:"bytes,28,opt,name=question,proto3" json:"question,omitempty"`
+	// File holding what to ask the worker, in Markdown, read in place of --prompt; a relative path starts from the
+	// current directory.
+	PromptFile    string `protobuf:"bytes,29,opt,name=prompt_file,json=promptFile,proto3" json:"prompt_file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -21899,6 +21902,13 @@ func (x *TaskServiceSpawnRequest) GetRepair() bool {
 func (x *TaskServiceSpawnRequest) GetQuestion() string {
 	if x != nil {
 		return x.Question
+	}
+	return ""
+}
+
+func (x *TaskServiceSpawnRequest) GetPromptFile() string {
+	if x != nil {
+		return x.PromptFile
 	}
 	return ""
 }
@@ -23391,10 +23401,12 @@ func (x *TaskServiceStopResponse) GetTask() *Task {
 
 type TaskServiceSendRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The task, running.
+	// The task, running: its code (W1) or its identifier.
 	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// The message, as the worker reads it.
-	Text          string `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	Text string `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	// Wish the task belongs to, when given by code and the code is in several wishes.
+	WishId        string `protobuf:"bytes,3,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -23439,6 +23451,13 @@ func (x *TaskServiceSendRequest) GetTaskId() string {
 func (x *TaskServiceSendRequest) GetText() string {
 	if x != nil {
 		return x.Text
+	}
+	return ""
+}
+
+func (x *TaskServiceSendRequest) GetWishId() string {
+	if x != nil {
+		return x.WishId
 	}
 	return ""
 }
@@ -23760,7 +23779,7 @@ func (x *TaskServiceStartResponse) GetTask() *Task {
 
 type TaskServiceWatchRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The task.
+	// The task: its code (W1) or its identifier.
 	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// Only the events after this position, to resume where a reader left off.
 	AfterSeq int64 `protobuf:"varint,2,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
@@ -23771,7 +23790,9 @@ type TaskServiceWatchRequest struct {
 	// task until it ends.
 	Last int32 `protobuf:"varint,4,opt,name=last,proto3" json:"last,omitempty"`
 	// With --last, follow the task after its last events, until it ends, as a watch without --last does.
-	Follow        bool `protobuf:"varint,5,opt,name=follow,proto3" json:"follow,omitempty"`
+	Follow bool `protobuf:"varint,5,opt,name=follow,proto3" json:"follow,omitempty"`
+	// Wish the task belongs to, when given by code and the code is in several wishes.
+	WishId        string `protobuf:"bytes,6,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -23839,6 +23860,13 @@ func (x *TaskServiceWatchRequest) GetFollow() bool {
 		return x.Follow
 	}
 	return false
+}
+
+func (x *TaskServiceWatchRequest) GetWishId() string {
+	if x != nil {
+		return x.WishId
+	}
+	return ""
 }
 
 type TaskServiceWatchResponse struct {
@@ -27925,7 +27953,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16MarkServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"@\n" +
 	"\x17MarkServiceListResponse\x12%\n" +
-	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xb0\t\n" +
+	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xdb\t\n" +
 	"\x17TaskServiceSpawnRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12 \n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -27960,7 +27988,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\xd8\x01\x01*\x05\x18\xf0\x01(\x05R\aminutes\x12\x1a\n" +
 	"\bfeedback\x18\x1a \x01(\bR\bfeedback\x12\x16\n" +
 	"\x06repair\x18\x1b \x01(\bR\x06repair\x12#\n" +
-	"\bquestion\x18\x1c \x01(\tB\a\xbaH\x04r\x02\x18@R\bquestion\"Q\n" +
+	"\bquestion\x18\x1c \x01(\tB\a\xbaH\x04r\x02\x18@R\bquestion\x12)\n" +
+	"\vprompt_file\x18\x1d \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\n" +
+	"promptFile\"Q\n" +
 	"\x18TaskServiceSpawnResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\x12\x12\n" +
 	"\x04note\x18\x02 \x01(\tR\x04note\"\xd2\x02\n" +
@@ -28075,10 +28105,11 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16TaskServiceStopRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\"<\n" +
 	"\x17TaskServiceStopResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"`\n" +
-	"\x16TaskServiceSendRequest\x12$\n" +
-	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12 \n" +
-	"\x04text\x18\x02 \x01(\tB\f\xbaH\t\xc8\x01\x01r\x04\x18\xa0\x9c\x01R\x04text\"C\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xe4\x01\n" +
+	"\x16TaskServiceSendRequest\x12\x81\x01\n" +
+	"\atask_id\x18\x01 \x01(\tBh\xbaHe\xc8\x01\x01r`2^^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$R\x06taskId\x12 \n" +
+	"\x04text\x18\x02 \x01(\tB\f\xbaH\t\xc8\x01\x01r\x04\x18\xa0\x9c\x01R\x04text\x12$\n" +
+	"\awish_id\x18\x03 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"C\n" +
 	"\x17TaskServiceSendResponse\x12(\n" +
 	"\x05event\x18\x01 \x01(\v2\x12.plan.v1.TaskEventR\x05event\"?\n" +
 	"\x17TaskServicePauseRequest\x12$\n" +
@@ -28092,14 +28123,15 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x17TaskServiceStartRequest\x12$\n" +
 	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\"=\n" +
 	"\x18TaskServiceStartResponse\x12!\n" +
-	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xaf\x01\n" +
-	"\x17TaskServiceWatchRequest\x12$\n" +
-	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\x12$\n" +
+	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\"\xb3\x02\n" +
+	"\x17TaskServiceWatchRequest\x12\x81\x01\n" +
+	"\atask_id\x18\x01 \x01(\tBh\xbaHe\xc8\x01\x01r`2^^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$R\x06taskId\x12$\n" +
 	"\tafter_seq\x18\x02 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\bafterSeq\x12\x10\n" +
 	"\x03raw\x18\x03 \x01(\bR\x03raw\x12\x1e\n" +
 	"\x04last\x18\x04 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\x04last\x12\x16\n" +
-	"\x06follow\x18\x05 \x01(\bR\x06follow\"D\n" +
+	"\x06follow\x18\x05 \x01(\bR\x06follow\x12$\n" +
+	"\awish_id\x18\x06 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"D\n" +
 	"\x18TaskServiceWatchResponse\x12(\n" +
 	"\x05event\x18\x01 \x01(\v2\x12.plan.v1.TaskEventR\x05event\"U\n" +
 	"\x17TaskServiceCleanRequest\x12$\n" +

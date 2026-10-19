@@ -2,7 +2,10 @@ package harness
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -205,4 +208,127 @@ func TestTaskWatchLast(t *testing.T) {
 			t.Error("--last 2 --follow returned before the task ended")
 		}
 	})
+}
+
+// TestTaskWatchAndSendByCode (W453): djinn task watch and djinn task send accept a task code (W1, w1) in addition to
+// a UUID, and disambiguate with --wish-id when the code exists in several wishes.
+func TestTaskWatchAndSendByCode(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	e := up(t, t.TempDir())
+	wish1, _ := e.wish(t, fakeProject(t, ""))
+	t1 := e.spawn(t, wish1, "text working\nwait")
+	e.untilText(t, t1.GetId(), "working")
+
+	// Send by code W1 (case-insensitive) to the running worker.
+	if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{
+		TaskId: "w1",
+		Text:   "stop waiting",
+	})); err != nil {
+		t.Fatalf("send by code w1: %v", err)
+	}
+	e.untilText(t, t1.GetId(), "stop waiting")
+	e.ended(t, t1.GetId())
+
+	// Watch by code W1 with --last 1.
+	stream, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{
+		TaskId: t1.GetCode(),
+		Last:   1,
+	}))
+	if err != nil {
+		t.Fatalf("watch by code %s: %v", t1.GetCode(), err)
+	}
+	var got []*planv1.TaskEvent
+	for stream.Receive() {
+		got = append(got, stream.Msg().GetEvent())
+	}
+	stream.Close()
+	if err := stream.Err(); err != nil || len(got) != 1 {
+		t.Fatalf("watch by code events = %v, err = %v", got, err)
+	}
+
+	// Second wish also has W1: without --wish-id, both Watch and Send fail with InvalidArgument; with --wish-id they succeed.
+	wish2, _ := e.wish(t, fakeProject(t, ""))
+	t2 := e.ended(t, e.spawn(t, wish2, "text wish2 final note").GetId())
+	if t2.GetCode() != "W1" {
+		t.Fatalf("second wish task code = %s, want W1", t2.GetCode())
+	}
+
+	ambigStream, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{
+		TaskId: "W1",
+		Last:   1,
+	}))
+	if err == nil {
+		for ambigStream.Receive() {
+		}
+		err = ambigStream.Err()
+		ambigStream.Close()
+	}
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "--wish-id") {
+		t.Errorf("ambiguous watch W1 err = %v, want InvalidArgument naming --wish-id", err)
+	}
+
+	if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{
+		TaskId: "W1",
+		Text:   "another instruction",
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "--wish-id") {
+		t.Errorf("ambiguous send W1 err = %v, want InvalidArgument naming --wish-id", err)
+	}
+
+	disambigStream, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{
+		TaskId: "W1",
+		WishId: wish2,
+		Last:   1,
+	}))
+	if err != nil {
+		t.Fatalf("watch W1 --wish-id: %v", err)
+	}
+	var got2 []*planv1.TaskEvent
+	for disambigStream.Receive() {
+		got2 = append(got2, disambigStream.Msg().GetEvent())
+	}
+	disambigStream.Close()
+	if err := disambigStream.Err(); err != nil || len(got2) != 1 {
+		t.Fatalf("watch W1 --wish-id events = %v, err = %v", got2, err)
+	}
+}
+
+// TestTaskSpawnPromptFile (W453): djinn task spawn --prompt-file reads the prompt from a file and rejects when both
+// --prompt and --prompt-file are given.
+func TestTaskSpawnPromptFile(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	e := up(t, t.TempDir())
+	wishID, projectID := e.wish(t, fakeProject(t, ""))
+	promptPath := filepath.Join(t.TempDir(), "prompt.md")
+	const body = "text from prompt file\n"
+	if err := os.WriteFile(promptPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId:     wishID,
+		ProjectId:  projectID,
+		Title:      "Both flags",
+		Prompt:     "inline",
+		PromptFile: promptPath,
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("spawn with both prompt and prompt_file: %v, want InvalidArgument", err)
+	}
+
+	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId:     wishID,
+		ProjectId:  projectID,
+		Title:      "From file",
+		PromptFile: promptPath,
+		Later:      true,
+	}))
+	if err != nil {
+		t.Fatalf("spawn with prompt_file: %v", err)
+	}
+	if got, want := res.Msg.GetTask().GetPrompt(), strings.TrimSpace(body); got != want {
+		t.Errorf("task prompt = %q, want %q", got, want)
+	}
 }

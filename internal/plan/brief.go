@@ -250,10 +250,11 @@ func leadRules(projects []*planv1.Project, home string, driven bool) string {
 		"in the lead session to inspect code before spawning a task): even finding out where a feature lives or how a flag " +
 		"works goes immediately to a Djinn task. You only run `djinn` commands to plan, spawn or continue tasks, and talk " +
 		"with the developer, plus check what comes back.\n" +
-		"- **Workers start from a short prompt**, five to twenty lines of Markdown, a bullet or a short headed part " +
+		"- **Workers start from a short prompt**, five to twenty lines of Markdown, a bullet or a short bold part " +
 		"each: **Gain**, the outcome in one sentence; **Scope**, the files or packages it may change and those of " +
 		"open tasks it must not touch; **Validation**, the targeted tests and the commit checks, with the number to " +
 		"reach; **References**, a tilasm, question or decision linked, never copied. " +
+		"Never put a `#` heading line in `--prompt` (Claude Code's shell guard refuses a multi-line command with `#` as a comment that hides arguments): use bold (`**Gain**`) or write the prompt to a file in your folder and pass `--prompt-file <path>`. " +
 		"When writing a worker's prompt, ask for the commit checks and the targeted tests, never \"run the whole test suite\"; the push checks are Djinn's. " +
 		"`--fork <task>` or `--from-lead` start a worker from a copy of a conversation instead: it reads that context " +
 		"again at every turn, so use them only when the whole context is needed.\n" +
@@ -465,7 +466,7 @@ func leadCommandsBrief(driven bool) string {
 		"`--wish-id` needed only when its code is in several wishes. `--plan-file a.md` " +
 		"plans an option's task (repeat it per option; `djinn question revise --plan-file` replaces one); " +
 		"`djinn question launch <question> [--title …] [--after …]` launches the chosen option's plan.\n" +
-		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--project-id`, " +
+		"- `djinn task spawn <wish> --title \"…\" --prompt \"…\" --part-of T07 --after W1,W2 --blocks W5` (`--prompt-file <path>`, `--project-id`, " +
 		"`--later`, `--fork W1`, `--from-lead`, `--provider watch`, `--restart`, `--decision Q03`, `--tilasm L01`, " +
 		"`--urgent`, `--feedback`, `--kind ifrit` with `--idle-minutes`, `--kind investigation` with `--minutes`); " +
 		"`djinn task spawn <wish> --kind azima --title \"…\" --after T02` makes an azima (`--draft`, `--description \"…\"`); " +
@@ -482,8 +483,8 @@ func leadCommandsBrief(driven bool) string {
 		"`--status running --status pending` for those states, `--failed`, `--page-size`); `djinn task overlaps <wish>` " +
 		"(the files each open task touches, and the tasks that touch the same ones); `djinn task watch " +
 		"<task>` follows a task until it ends; `--last 5` for its last events only, its final note among them, at " +
-		"once, whether the task runs, waits or ended (`--follow` to go on following it); " +
-		"`djinn task send <task> \"…\"`, an instruction for a running worker: \"received\" shows once it took it in; " +
+		"once, whether the task runs, waits or ended (`--follow` to go on following it; `<task>` is a code `W1` or its identifier, `--wish-id <wish>` when the code is in several wishes); " +
+		"`djinn task send <task> \"…\"`, an instruction for a running worker (`<task>` is a code `W1` or its identifier, `--wish-id <wish>` when in several wishes): \"received\" shows once it took it in; " +
 		"to an ifrit out, it lights it again; " +
 		"`djinn task stop <task>`; `djinn task continue <task> --prompt \"…\"`; `djinn task update <task>` edits what is given in place (not started: everything; running or paused: title only; finished: title, prompt, agent, azima, integration (none clears it, --force if unmerged); never its dependencies once it ran; alias `set-agent`); `djinn task update-models --provider <p> --model <m>` switches every open model-calling task and the defaults for future spawns (`--wish-id`, `--project-id`, or all; dry run by default, `--yes` to apply, `--now` to restart running tasks: always run the dry run first and ask the developer before applying to many tasks); `djinn task done <task> [--drop] --note " +
 		"\"…\"` closes a task no worker runs (planned, cut short, failed, stopped, imported; unmerged commits queue for merging unless --drop) once its work is done " +
