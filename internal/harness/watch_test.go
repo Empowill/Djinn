@@ -51,10 +51,12 @@ func fakeWatch(steps []string) int {
 		case "keep":
 			dir := filepath.Join(os.Getenv("DJINN_HOME"), "watchers", os.Getenv("DJINN_TASK_ID"))
 			_ = os.MkdirAll(dir, 0o700)
-			b, _ := os.ReadFile(filepath.Join(dir, arg))
+			file := filepath.Join(dir, arg)
+			b, _ := os.ReadFile(file)
 			kept, _ = strconv.Atoi(strings.TrimSpace(string(b)))
 			kept++
-			_ = os.WriteFile(filepath.Join(dir, arg), []byte(strconv.Itoa(kept)), 0o600)
+			_ = os.WriteFile(file+".tmp", []byte(strconv.Itoa(kept)), 0o600)
+			_ = os.Rename(file+".tmp", file)
 		case "remember":
 			if err := os.WriteFile(arg, []byte("reported\n"), 0o600); err != nil {
 				fmt.Fprintf(os.Stderr, "mrwatch: cannot remember what was reported: %v\n", err)
@@ -81,7 +83,8 @@ func fakeWatch(steps []string) int {
 			b, _ := os.ReadFile(arg)
 			n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
 			n++
-			_ = os.WriteFile(arg, []byte(strconv.Itoa(n)), 0o600)
+			_ = os.WriteFile(arg+".tmp", []byte(strconv.Itoa(n)), 0o600)
+			_ = os.Rename(arg+".tmp", arg)
 			fmt.Printf("run %d\n", n)
 		case "input":
 			b, _ := io.ReadAll(os.Stdin)
@@ -654,12 +657,14 @@ func TestWatcher(t *testing.T) {
 			t.Fatalf("GREEN since %v, want %v", first.AsTime(), clock.now())
 		}
 		clock.set(clock.now().Add(time.Hour))
-		// Run 4 started: the paragraph of run 3, GREEN again, reached the task an hour later on the clock.
-		e.until(t, task.GetId(), func(*planv1.Task) bool {
+		count := func() int {
 			b, _ := os.ReadFile(same)
 			n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
-			return n >= 4
-		})
+			return n
+		}
+		after := count()
+		// Run after+3 started: the paragraph of run after+1, GREEN again, reached the task an hour later on the clock.
+		e.until(t, task.GetId(), func(*planv1.Task) bool { return count() >= after+3 })
 		if got := e.get(t, task.GetId()).GetLastLineTime(); !got.AsTime().Equal(first.AsTime()) {
 			t.Errorf("GREEN said again moved its time: %v, want %v", got.AsTime(), first.AsTime())
 		}
@@ -676,8 +681,9 @@ func TestWatcher(t *testing.T) {
 			n, _ := strconv.Atoi(strings.TrimPrefix(t.GetLastLine(), "run "))
 			return n
 		}
-		seen := run(e.until(t, other.GetId(), func(t *planv1.Task) bool { return run(t) >= 1 }))
+		e.until(t, other.GetId(), func(t *planv1.Task) bool { return run(t) >= 1 })
 		clock.set(clock.now().Add(time.Hour))
+		seen := run(e.get(t, other.GetId()))
 		got := e.until(t, other.GetId(), func(t *planv1.Task) bool { return run(t) >= seen+2 }).GetLastLineTime()
 		if !got.AsTime().Equal(clock.now()) {
 			t.Errorf("a new line since %v, want %v", got.AsTime(), clock.now())

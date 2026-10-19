@@ -353,7 +353,7 @@ func TestDiskFolders(t *testing.T) {
 	t.Parallel()
 	start := time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC)
 	clock := &fakeClock{at: start}
-	cache, projDir := t.TempDir(), t.TempDir()
+	cache, projDir := t.TempDir(), folder(t)
 	e := up(t, t.TempDir(), WithClock(clock.now), withDiskTest(cache, 0))
 	_, projectID := e.wish(t, projDir)
 

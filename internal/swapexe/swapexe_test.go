@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -40,6 +41,37 @@ func copyFile(t *testing.T, from, to string) {
 	if err := os.WriteFile(to, b, 0o755); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// startEcho starts path with SWAPEXE_TEST_ECHO=1, retrying on Linux's transient ETXTBSY when a parallel subtest forks
+// before close completes on the freshly written executable (golang/go#22315).
+func startEcho(t *testing.T, path string) (*exec.Cmd, io.WriteCloser, io.ReadCloser) {
+	t.Helper()
+	var err error
+	for range 20 {
+		cmd := exec.Command(path)
+		cmd.Env = append(os.Environ(), "SWAPEXE_TEST_ECHO=1")
+		in, inErr := cmd.StdinPipe()
+		if inErr != nil {
+			t.Fatal(inErr)
+		}
+		out, outErr := cmd.StdoutPipe()
+		if outErr != nil {
+			t.Fatal(outErr)
+		}
+		err = cmd.Start()
+		if err == nil {
+			return cmd, in, out
+		}
+		_ = in.Close()
+		_ = out.Close()
+		if !strings.Contains(err.Error(), "text file busy") {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal(err)
+	return nil, nil, nil
 }
 
 // TestSwap: the new build takes the installed one's path, in one rename or moving the old one aside first, and a
@@ -102,19 +134,7 @@ func swapWhileRunning(t *testing.T, aside bool) {
 	dir := t.TempDir()
 	installed := filepath.Join(dir, "prog"+exe)
 	copyFile(t, os.Args[0], installed)
-	cmd := exec.Command(installed)
-	cmd.Env = append(os.Environ(), "SWAPEXE_TEST_ECHO=1")
-	in, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
+	cmd, in, out := startEcho(t, installed)
 	t.Cleanup(func() { in.Close(); _ = cmd.Wait() })
 	lines := bufio.NewReader(out)
 	ask := func(word string) {
