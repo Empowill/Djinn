@@ -134,6 +134,9 @@ func TestClaudeArgs(t *testing.T) {
 			append(slices.Clone(base), "--permission-mode", "dontAsk", "--settings", `{"permissions":{`+
 				`"allow":[],"defaultMode":"dontAsk","deny":["Edit","Write","NotebookEdit","WebFetch","WebSearch"]},`+agentsMd+`}`,
 				"--session-id", "t1")},
+		{"system prompt file", Spec{TaskID: "t1", Dir: "/d/lead", SystemPrompt: "# Leading in Djinn"},
+			append(slices.Clone(base), "--settings", native, "--session-id", "t1",
+				"--append-system-prompt-file", filepath.Join("/d/lead", claudeRulesFile), "--exclude-dynamic-system-prompt-sections")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

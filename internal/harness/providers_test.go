@@ -125,9 +125,13 @@ func catalog() []catalogCase {
 				Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}, Mode: djinnv1.Mode_MODE_LISTED}},
 			want: []string{"STATUS", "TOOL_CALL", "STATUS", "TOOL_RESULT", "TEXT", "USAGE"},
 			check: func(t *testing.T, events []Event, args, _ string) {
-				// The driven lead's session: its rules in the system prompt, its turns capped, its folder writable.
-				for _, want := range []string{"--append-system-prompt\n# Leading in Djinn\n--exclude-dynamic-system-prompt-sections",
-					"--max-turns\n60", `"Write(//d/lead/**)"`, `"Read(//d/**)"`, `"Bash(djinn *)"`} {
+				// The driven lead's session: its rules in the system prompt file, its turns capped, its folder writable.
+				_, file, _ := strings.Cut(args, "--append-system-prompt-file\n")
+				file, _, _ = strings.Cut(file, "\n--exclude-dynamic-system-prompt-sections")
+				if b, err := os.ReadFile(file); err != nil || string(b) != "# Leading in Djinn" {
+					t.Errorf("system prompt file %q = %q, %v", file, b, err)
+				}
+				for _, want := range []string{"--max-turns\n60", `"Write(//d/lead/**)"`, `"Read(//d/**)"`, `"Bash(djinn *)"`} {
 					if !strings.Contains(args, want) {
 						t.Errorf("args lack %q: %q", want, args)
 					}
