@@ -197,6 +197,10 @@ const (
 	LeadServiceSayProcedure = "/plan.v1.LeadService/Say"
 	// LeadServiceJournalProcedure is the fully-qualified name of the LeadService's Journal RPC.
 	LeadServiceJournalProcedure = "/plan.v1.LeadService/Journal"
+	// LeadServiceSessionsProcedure is the fully-qualified name of the LeadService's Sessions RPC.
+	LeadServiceSessionsProcedure = "/plan.v1.LeadService/Sessions"
+	// LeadServiceShowProcedure is the fully-qualified name of the LeadService's Show RPC.
+	LeadServiceShowProcedure = "/plan.v1.LeadService/Show"
 	// LeadServiceMoveProcedure is the fully-qualified name of the LeadService's Move RPC.
 	LeadServiceMoveProcedure = "/plan.v1.LeadService/Move"
 	// LeadServiceAccountsProcedure is the fully-qualified name of the LeadService's Accounts RPC.
@@ -2310,6 +2314,14 @@ type LeadServiceClient interface {
 	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
 	// prompt carries the latest entries of its wishes; this prints them for the developer.
 	Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error)
+	// The sessions of the lead Djinn drives: a line per batch, the latest last, with its local time, state, cost,
+	// session, transcript path and count of failed tool calls. Permitted to workers, read only.
+	Sessions(context.Context, *connect.Request[v1.LeadServiceSessionsRequest]) (*connect.Response[v1.LeadServiceSessionsResponse], error)
+	// The conversation of one batch of the lead Djinn drives, read from its transcript: each tool call, its truncated
+	// result with errors marked, and the assistant's text; with --resume, the command to fork the session in plan mode
+	// without touching the batch. Takes a batch or session identifier, or a prefix of one. Permitted to workers, read
+	// only.
+	Show(context.Context, *connect.Request[v1.LeadServiceShowRequest]) (*connect.Response[v1.LeadServiceShowResponse], error)
 	// Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
 	// journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
 	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
@@ -2411,6 +2423,20 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		sessions: connect.NewClient[v1.LeadServiceSessionsRequest, v1.LeadServiceSessionsResponse](
+			httpClient,
+			baseURL+LeadServiceSessionsProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Sessions")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		show: connect.NewClient[v1.LeadServiceShowRequest, v1.LeadServiceShowResponse](
+			httpClient,
+			baseURL+LeadServiceShowProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("Show")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		move: connect.NewClient[v1.LeadServiceMoveRequest, v1.LeadServiceMoveResponse](
 			httpClient,
 			baseURL+LeadServiceMoveProcedure,
@@ -2470,6 +2496,8 @@ type leadServiceClient struct {
 	tell          *connect.Client[v1.LeadServiceTellRequest, v1.LeadServiceTellResponse]
 	say           *connect.Client[v1.LeadServiceSayRequest, v1.LeadServiceSayResponse]
 	journal       *connect.Client[v1.LeadServiceJournalRequest, v1.LeadServiceJournalResponse]
+	sessions      *connect.Client[v1.LeadServiceSessionsRequest, v1.LeadServiceSessionsResponse]
+	show          *connect.Client[v1.LeadServiceShowRequest, v1.LeadServiceShowResponse]
 	move          *connect.Client[v1.LeadServiceMoveRequest, v1.LeadServiceMoveResponse]
 	accounts      *connect.Client[v1.LeadServiceAccountsRequest, v1.LeadServiceAccountsResponse]
 	addAccount    *connect.Client[v1.LeadServiceAddAccountRequest, v1.LeadServiceAddAccountResponse]
@@ -2527,6 +2555,16 @@ func (c *leadServiceClient) Say(ctx context.Context, req *connect.Request[v1.Lea
 // Journal calls plan.v1.LeadService.Journal.
 func (c *leadServiceClient) Journal(ctx context.Context, req *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error) {
 	return c.journal.CallUnary(ctx, req)
+}
+
+// Sessions calls plan.v1.LeadService.Sessions.
+func (c *leadServiceClient) Sessions(ctx context.Context, req *connect.Request[v1.LeadServiceSessionsRequest]) (*connect.Response[v1.LeadServiceSessionsResponse], error) {
+	return c.sessions.CallUnary(ctx, req)
+}
+
+// Show calls plan.v1.LeadService.Show.
+func (c *leadServiceClient) Show(ctx context.Context, req *connect.Request[v1.LeadServiceShowRequest]) (*connect.Response[v1.LeadServiceShowResponse], error) {
+	return c.show.CallUnary(ctx, req)
 }
 
 // Move calls plan.v1.LeadService.Move.
@@ -2622,6 +2660,14 @@ type LeadServiceHandler interface {
 	// session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
 	// prompt carries the latest entries of its wishes; this prints them for the developer.
 	Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error)
+	// The sessions of the lead Djinn drives: a line per batch, the latest last, with its local time, state, cost,
+	// session, transcript path and count of failed tool calls. Permitted to workers, read only.
+	Sessions(context.Context, *connect.Request[v1.LeadServiceSessionsRequest]) (*connect.Response[v1.LeadServiceSessionsResponse], error)
+	// The conversation of one batch of the lead Djinn drives, read from its transcript: each tool call, its truncated
+	// result with errors marked, and the assistant's text; with --resume, the command to fork the session in plan mode
+	// without touching the batch. Takes a batch or session identifier, or a prefix of one. Permitted to workers, read
+	// only.
+	Show(context.Context, *connect.Request[v1.LeadServiceShowRequest]) (*connect.Response[v1.LeadServiceShowResponse], error)
 	// Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
 	// journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
 	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
@@ -2719,6 +2765,20 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServiceSessionsHandler := connect.NewUnaryHandler(
+		LeadServiceSessionsProcedure,
+		svc.Sessions,
+		connect.WithSchema(leadServiceMethods.ByName("Sessions")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceShowHandler := connect.NewUnaryHandler(
+		LeadServiceShowProcedure,
+		svc.Show,
+		connect.WithSchema(leadServiceMethods.ByName("Show")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceMoveHandler := connect.NewUnaryHandler(
 		LeadServiceMoveProcedure,
 		svc.Move,
@@ -2785,6 +2845,10 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceSayHandler.ServeHTTP(w, r)
 		case LeadServiceJournalProcedure:
 			leadServiceJournalHandler.ServeHTTP(w, r)
+		case LeadServiceSessionsProcedure:
+			leadServiceSessionsHandler.ServeHTTP(w, r)
+		case LeadServiceShowProcedure:
+			leadServiceShowHandler.ServeHTTP(w, r)
 		case LeadServiceMoveProcedure:
 			leadServiceMoveHandler.ServeHTTP(w, r)
 		case LeadServiceAccountsProcedure:
@@ -2846,6 +2910,14 @@ func (UnimplementedLeadServiceHandler) Say(context.Context, *connect.Request[v1.
 
 func (UnimplementedLeadServiceHandler) Journal(context.Context, *connect.Request[v1.LeadServiceJournalRequest]) (*connect.Response[v1.LeadServiceJournalResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Journal is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Sessions(context.Context, *connect.Request[v1.LeadServiceSessionsRequest]) (*connect.Response[v1.LeadServiceSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Sessions is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) Show(context.Context, *connect.Request[v1.LeadServiceShowRequest]) (*connect.Response[v1.LeadServiceShowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.Show is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error) {

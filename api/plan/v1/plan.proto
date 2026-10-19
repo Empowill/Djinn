@@ -4409,6 +4409,20 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // The sessions of the lead Djinn drives: a line per batch, the latest last, with its local time, state, cost,
+  // session, transcript path and count of failed tool calls. Permitted to workers, read only.
+  rpc Sessions(LeadServiceSessionsRequest) returns (LeadServiceSessionsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // The conversation of one batch of the lead Djinn drives, read from its transcript: each tool call, its truncated
+  // result with errors marked, and the assistant's text; with --resume, the command to fork the session in plan mode
+  // without touching the batch. Takes a batch or session identifier, or a prefix of one. Permitted to workers, read
+  // only.
+  rpc Show(LeadServiceShowRequest) returns (LeadServiceShowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
   // journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
   // default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
@@ -4643,6 +4657,61 @@ message LeadServiceJournalResponse {
   string text = 1;
   // The batches of the journal, oldest first.
   repeated LeadBatch batches = 2;
+}
+
+// LeadSession is one batch's session of the lead Djinn drives, with its transcript on disk.
+message LeadSession {
+  // The batch.
+  LeadBatch batch = 1;
+  // Path of the agent's transcript file on disk, or "not supported" for an agent whose transcripts Djinn does not read.
+  string transcript_path = 2;
+  // How many tool calls failed in the transcript.
+  int32 error_count = 3;
+}
+
+message LeadServiceSessionsRequest {
+  // Only the batches about this wish.
+  string wish_id = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // How many batches, the latest; 20 by default.
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+}
+
+message LeadServiceSessionsResponse {
+  // The sessions, a line per batch, the latest last: local time, state, cost, session, error count and transcript path.
+  string text = 1;
+  // The sessions, oldest first, with --json.
+  repeated LeadSession sessions = 2 [(djinn.v1.json_only) = true];
+}
+
+message LeadServiceShowRequest {
+  // Batch or session identifier, or a prefix of one.
+  string id = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+  ];
+  // Print the command that resumes a copy of the session in the lead's folder in plan mode (--fork-session
+  // --permission-mode plan).
+  bool resume = 2;
+}
+
+message LeadServiceShowResponse {
+  // The readable conversation, and with --resume the safe command to fork it in plan mode.
+  string text = 1;
+  // The batch, with --json.
+  LeadBatch batch = 2 [(djinn.v1.json_only) = true];
+  // Path of the transcript file on disk, with --json.
+  string transcript_path = 3 [(djinn.v1.json_only) = true];
+  // How many tool calls failed in the transcript, with --json.
+  int32 error_count = 4 [(djinn.v1.json_only) = true];
+  // The safe command to fork the session in plan mode, when --resume is set, with --json.
+  string resume_command = 5 [(djinn.v1.json_only) = true];
 }
 
 message LeadServiceMoveRequest {

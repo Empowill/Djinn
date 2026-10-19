@@ -9,8 +9,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -697,5 +699,198 @@ func TestLeadAgyProject(t *testing.T) {
 		if !slices.Contains(allow, want) {
 			t.Errorf("djinn-lead.json lacks %q:\n%s", want, b)
 		}
+	}
+}
+
+// TestLeadSessionsAndShow checks djinn lead sessions and djinn lead show on a recorded Claude Code transcript, an
+// account's CLAUDE_CONFIG_DIR, prefix lookup on batch or session ID, --resume safe fork command, and Codex.
+func TestLeadSessionsAndShow(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	home := t.TempDir()
+	userHome := t.TempDir()
+	st, err := store.Open(ctx, "", Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	wishes := &Wishes{Store: st, Home: home}
+	svc := &LeadService{Wishes: wishes, UserHome: userHome}
+
+	// Empty journal first.
+	emptyRes, err := svc.Sessions(ctx, connect.NewRequest(&planv1.LeadServiceSessionsRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(emptyRes.Msg.GetText(), "The lead's journal is empty") {
+		t.Fatalf("empty sessions text = %q", emptyRes.Msg.GetText())
+	}
+
+	// Register a Claude account "work" with its own config directory.
+	workConfigDir := filepath.Join(userHome, ".claude-work")
+	if _, err := svc.AddAccount(ctx, connect.NewRequest(&planv1.LeadServiceAddAccountRequest{
+		Name:            "work",
+		Provider:        planv1.Provider_PROVIDER_CLAUDE,
+		ConfigDirectory: workConfigDir,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture, err := os.ReadFile(filepath.Join("testdata", "lead-session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	slug := claudeProjectSlug(LeadFolder(home))
+
+	// Write transcript for batch 1 (default Claude config dir) and batch 2 (account "work").
+	sess1 := "01a153e0-4a20-7e9a-b323-9e4890f738d1"
+	batch1ID := "01a153e0-4a20-7e89-8000-000000000001"
+	path1 := filepath.Join(userHome, ".claude", "projects", slug, sess1+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path1), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path1, fixture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sess2 := "01a153e5-1111-7000-8000-000000000002"
+	batch2ID := "01a153e5-0000-7000-8000-000000000002"
+	path2 := filepath.Join(workConfigDir, "projects", slug, sess2+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path2), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path2, fixture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sess3 := "01a153e9-2222-7000-8000-000000000003"
+	batch3ID := "01a153e9-0000-7000-8000-000000000003"
+
+	t1 := time.Date(2026, 10, 19, 11, 16, 0, 0, time.UTC)
+	for _, b := range []*planv1.LeadBatch{
+		{
+			Id:        batch1ID,
+			SessionId: sess1,
+			Provider:  planv1.Provider_PROVIDER_CLAUDE,
+			Model:     "claude-opus-4-7",
+			State:     planv1.LeadBatchState_LEAD_BATCH_STATE_DONE,
+			StartTime: timestamppb.New(t1),
+			Usage:     &planv1.Usage{CostUsd: 0.37},
+		},
+		{
+			Id:        batch2ID,
+			SessionId: sess2,
+			Provider:  planv1.Provider_PROVIDER_CLAUDE,
+			Account:   "work",
+			State:     planv1.LeadBatchState_LEAD_BATCH_STATE_DONE,
+			StartTime: timestamppb.New(t1.Add(5 * time.Minute)),
+			Usage:     &planv1.Usage{CostUsd: 0.19},
+		},
+		{
+			Id:        batch3ID,
+			SessionId: sess3,
+			Provider:  planv1.Provider_PROVIDER_CODEX,
+			State:     planv1.LeadBatchState_LEAD_BATCH_STATE_DONE,
+			StartTime: timestamppb.New(t1.Add(10 * time.Minute)),
+			Usage:     &planv1.Usage{CostUsd: 0.12},
+		},
+	} {
+		if err := EndLeadBatch(ctx, st, b, t1.Add(15*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 1. Sessions lists all three batches with local time, state, cost, error count, session, batch and transcript path.
+	sessRes, err := svc.Sessions(ctx, connect.NewRequest(&planv1.LeadServiceSessionsRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(sessRes.Msg.GetSessions()); got != 3 {
+		t.Fatalf("len(sessions) = %d, want 3", got)
+	}
+	s0 := sessRes.Msg.GetSessions()[0]
+	if s0.GetTranscriptPath() != path1 || s0.GetErrorCount() != 1 {
+		t.Errorf("session[0] path=%q errCount=%d, want %q and 1", s0.GetTranscriptPath(), s0.GetErrorCount(), path1)
+	}
+	s1 := sessRes.Msg.GetSessions()[1]
+	if s1.GetTranscriptPath() != path2 || s1.GetErrorCount() != 1 {
+		t.Errorf("session[1] path=%q errCount=%d, want %q and 1", s1.GetTranscriptPath(), s1.GetErrorCount(), path2)
+	}
+	s2 := sessRes.Msg.GetSessions()[2]
+	if s2.GetTranscriptPath() != "not supported" || s2.GetErrorCount() != 0 {
+		t.Errorf("session[2] path=%q errCount=%d, want not supported and 0", s2.GetTranscriptPath(), s2.GetErrorCount())
+	}
+	wantLocal := t1.In(time.Local).Format("2006-01-02 15:04")
+	for _, want := range []string{
+		wantLocal, "done", "$0.37", "1 error", sess1, batch1ID, path1,
+		"$0.19", sess2, path2,
+		"$0.12", sess3, "not supported",
+	} {
+		if !strings.Contains(sessRes.Msg.GetText(), want) {
+			t.Errorf("Sessions text missing %q:\n%s", want, sessRes.Msg.GetText())
+		}
+	}
+
+	// 2. Show accepts a prefix of the batch ID or session ID (even when batch1ID and sess1 share prefix "01a153e0").
+	showRes, err := svc.Show(ctx, connect.NewRequest(&planv1.LeadServiceShowRequest{
+		Id:     "01a153e0",
+		Resume: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	txt := showRes.Msg.GetText()
+	for _, want := range []string{
+		`> djinn task spawn --title "Work" --prompt "## Gain`,
+		`  ERROR: Error: Bash command permission check failed for pattern "## Gain": This command requires approval`,
+		`> djinn task spawn --title "Work" --prompt "Gain: Do it"`,
+		`  ok: task: id: 01a153e1-0000-7000-8000-000000000001 code: T01 title: Work prompt: AAAA`,
+		`# T01 spawned for W444 after retrying without Markdown heading.`,
+		"cd " + shellQuote(LeadFolder(home)) + " && claude --resume " + sess1 + " --fork-session --permission-mode plan",
+	} {
+		if !strings.Contains(txt, want) {
+			t.Errorf("Show text missing %q:\n%s", want, txt)
+		}
+	}
+	for _, unwanted := range []string{
+		"SYSTEM PROMPT THAT MUST NEVER APPEAR IN SHOW OUTPUT",
+		"END_TRUNCATED",
+		"### message · wish W444",
+	} {
+		if strings.Contains(txt, unwanted) {
+			t.Errorf("Show text should not contain %q:\n%s", unwanted, txt)
+		}
+	}
+
+	// 3. Show on account "work" includes CLAUDE_CONFIG_DIR in the --resume command.
+	showWork, err := svc.Show(ctx, connect.NewRequest(&planv1.LeadServiceShowRequest{
+		Id:     "01a153e5-1111",
+		Resume: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWorkResume := "cd " + shellQuote(LeadFolder(home)) + " && CLAUDE_CONFIG_DIR=" + shellQuote(workConfigDir) +
+		" claude --resume " + sess2 + " --fork-session --permission-mode plan"
+	if showWork.Msg.GetResumeCommand() != wantWorkResume {
+		t.Errorf("work resume = %q, want %q", showWork.Msg.GetResumeCommand(), wantWorkResume)
+	}
+
+	// 4. Show on Codex reports "not supported".
+	showCodex, err := svc.Show(ctx, connect.NewRequest(&planv1.LeadServiceShowRequest{Id: "01a153e9"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if showCodex.Msg.GetTranscriptPath() != "not supported" || !strings.Contains(showCodex.Msg.GetText(), "not supported") {
+		t.Errorf("codex show = %q (%q), want not supported", showCodex.Msg.GetTranscriptPath(), showCodex.Msg.GetText())
+	}
+
+	// 5. Ambiguous and unknown prefixes.
+	if _, err := svc.Show(ctx, connect.NewRequest(&planv1.LeadServiceShowRequest{Id: "01a153e"})); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("ambiguous prefix err = %v, want invalid argument", err)
+	}
+	if _, err := svc.Show(ctx, connect.NewRequest(&planv1.LeadServiceShowRequest{Id: "deadbeef"})); code(err) != connect.CodeNotFound {
+		t.Errorf("unknown prefix err = %v, want not found", err)
 	}
 }

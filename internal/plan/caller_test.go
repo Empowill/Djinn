@@ -155,6 +155,20 @@ func TestWorkerGuard(t *testing.T) {
 			want: &planv1.WishServiceListRequest{},
 		},
 		{
+			name: "lead sessions allowed",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.LeadServiceSessionsResponse](planv1connect.LeadServiceSessionsProcedure, c, &planv1.LeadServiceSessionsRequest{})
+			},
+			want: &planv1.LeadServiceSessionsRequest{},
+		},
+		{
+			name: "lead show allowed",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.LeadServiceShowResponse](planv1connect.LeadServiceShowProcedure, c, &planv1.LeadServiceShowRequest{Id: "01a153e0"})
+			},
+			want: &planv1.LeadServiceShowRequest{Id: "01a153e0"},
+		},
+		{
 			name: "other mutating procedure refused",
 			call: func(c *plan.WorkerCaller) (proto.Message, error) {
 				return guarded[planv1.WishServicePauseResponse](planv1connect.WishServicePauseProcedure, c, &planv1.WishServicePauseRequest{WishId: "wish-1"})

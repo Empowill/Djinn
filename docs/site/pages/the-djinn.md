@@ -60,12 +60,18 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   1,200 tokens (at four characters a token, keeping the newest batches in chronological order). No session remembers
   anything: each batch ends with one line for the next batches (capped at 200 characters), and the next one reads what
   the last ones did.
-- **The running batch and the lead's journal.** Each batch is kept: who led it (agent, model, session), the events it
-  took, the commands it ran (with any command whose tool call failed or was refused marked as failed), the one-line note
-  that ended its turn, and what it cost. In the window, beside **Talk to the Djinn**, the running batch shows since when
-  it runs, how many events it took and its cost so far; the count beside it opens the journal of past batches. A wish's
-  **History** tab shows the batches that touched that wish, and the command line prints the journal for every wish or for
-  one.
+- **The running batch, the lead's journal, and its transcripts.** Each batch is kept: who led it (agent, model,
+  session), the events it took, the commands it ran (with any command whose tool call failed or was refused marked as
+  failed), the one-line note that ended its turn, and what it cost. In the window, beside **Talk to the Djinn**, the
+  running batch shows since when it runs, how many events it took and its cost so far; the count beside it opens the
+  journal of past batches. A wish's **History** tab shows the batches that touched that wish, and the command line
+  prints the journal for every wish or for one. To read what a batch's session saw and did beyond the journal's
+  summary, the command line (permitted to workers too, in read-only mode) lists the batches' sessions with their local
+  time, state, cost, session, count of failed tool calls and transcript path, and shows any batch or session (by
+  identifier or prefix) as a readable conversation from its Claude Code transcript (in the account's configuration
+  folder when the batch ran on an account; Codex says not supported): every tool call, its truncated result with errors
+  marked, and the assistant's text, plus on request the command to fork a copy of that session in the lead's folder in
+  plan mode without touching the batch.
 - **Write to the Djinn** sends your words to the next batch, whole. Nothing reaches a terminal: the Djinn answers in the
   bubble held to the pill, or asks a question when a choice is yours.
 - **A failed batch** gets one new session, shown beside **Talk to the Djinn** while it retries. Failed again, it stays
