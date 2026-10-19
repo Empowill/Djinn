@@ -56,7 +56,13 @@ export {
   NOTE_MAX,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
-export { glanceOf, forgeMark, failingTests } from "@/src/glance.tsx";
+export {
+  Glance,
+  LeadSideLog,
+  glanceOf,
+  forgeMark,
+  failingTests,
+} from "@/src/glance.tsx";
 export {
   attentionOf,
   AttentionBar,

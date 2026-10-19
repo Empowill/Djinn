@@ -62,10 +62,14 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   the last ones did.
 - **The running batch, the lead's journal, and its transcripts.** Each batch is kept: who led it (agent, model,
   session), the events it took, the commands it ran (with any command whose tool call failed or was refused marked as
-  failed), the one-line note that ended its turn, and what it cost. In the window, beside **Talk to the Djinn**, the
-  running batch shows since when it runs, how many events it took and its cost so far; the count beside it opens the
-  journal of past batches. A wish's **History** tab shows the batches that touched that wish, and the command line
-  prints the journal for every wish or for one. To read what a batch's session saw and did beyond the journal's
+  failed), the one-line note that ended its turn, and what it cost. In [the window](#the-window),
+  [the Djinn's eye](#the-window-the-djinn-s-eye) follows the batch by its colour and its gaze (emerald while listening,
+  blue with a wandering gaze while thinking, two blinks and a flare of its golden flame when done, red under a lowered
+  lid when it fails), and the **Lead** journal in [What runs](#the-window-the-workers-glance) writes one line per
+  command as the batch goes, then its duration and cost when done, or the cause when it fails. Beside **Talk to the
+  Djinn**, the running batch shows since when it runs, how many events it took and its cost so far; the count beside it
+  opens the journal of past batches. A wish's **History** tab shows the batches that touched that wish, and the command
+  line prints the journal for every wish or for one. To read what a batch's session saw and did beyond the journal's
   summary, the command line (permitted to workers too, in read-only mode) lists the batches' sessions with their local
   time, state, cost, session, count of failed tool calls and transcript path, and shows any batch or session (by
   identifier or prefix) as a readable conversation from its Claude Code transcript (in the account's configuration

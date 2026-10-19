@@ -1562,6 +1562,10 @@ html[data-still] .wish-composer-caret,
 html[data-still] .project-flame-glyph,
 html[data-still] .djinn-eye-shine,
 html[data-still] .djinn-eye-iris,
+html[data-still] .djinn-eye-ball,
+html[data-still] .djinn-eye-flame,
+html[data-still] .djinn-eye-lid,
+html[data-still] .lead-side-log-line,
 html[data-still] .motes i,
 html[data-still] #djinn-splash * {
   animation-play-state: paused !important;

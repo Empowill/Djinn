@@ -11,12 +11,21 @@
 // layer of its own; at rest it covers nothing and scrolls with its perch. A calm gate holds it while you type, press,
 // scroll, read a dialog, or the window rests; while you type, it goes nowhere but to the field you type in. It never takes the focus nor a click. It moves by transform and opacity
 // only, composed by the engine, and nothing of it loops: at rest, the window draws nothing for it.
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 
+import { LeadBatchState } from "../gen/ts/plan/v1/plan_pb";
+import { useOptionalData } from "./data/djinn";
 import {
   AFTER_KEY,
   AFTER_SCROLL,
+  type BatchMood,
   calmWait,
   clampTo,
   eyeLook,
@@ -77,6 +86,7 @@ const signals: {
   stopped?: boolean;
   needs: boolean;
   speaking: boolean;
+  batch?: BatchMood;
   live: boolean;
   everLive: boolean;
   wishesReading: boolean;
@@ -124,6 +134,12 @@ export function useEyeNeeds(needs: boolean) {
 export function useEyeSpeaking(speaking: boolean) {
   useEffect(() => signal("speaking", speaking), [speaking]);
   useEffect(() => () => signal("speaking", false), []);
+}
+
+// useEyeBatch tells the eye the state of the driven lead's batch: thinking, done, or failed.
+export function useEyeBatch(batch?: BatchMood) {
+  useEffect(() => signal("batch", batch), [batch]);
+  useEffect(() => () => signal("batch", undefined), []);
 }
 
 // The perches shown, by name: "home", "pill", "q:<question id>", "tab:<view>".
@@ -351,6 +367,7 @@ class Eye {
       blocking: signals.blocking,
       needs: signals.needs,
       speaking: signals.speaking,
+      batch: signals.batch,
       perches: names,
       focus,
     };
@@ -416,6 +433,8 @@ class Eye {
 
   private show(target: EyeTarget, s?: EyeSignals) {
     this.el.dataset.mood = target.mood;
+    if (target.end) this.el.dataset.end = target.end;
+    else delete this.el.dataset.end;
     this.el.toggleAttribute("data-shine", this.shines(target));
     const wasSpeaking = this.speaking;
     this.speaking = Boolean(s?.speaking);
@@ -576,7 +595,10 @@ class Eye {
       !this.el.isConnected ||
       mood === "waking" ||
       mood === "asleep" ||
-      mood === "restarting"
+      mood === "restarting" ||
+      mood === "thinking" ||
+      mood === "failed" ||
+      this.el.hasAttribute("data-end")
     )
       return;
     this.el.toggleAttribute("data-blink", true);
@@ -584,17 +606,22 @@ class Eye {
   }
 }
 
+// How long the double blink and gold flame burst play when a batch finishes (L44 v3).
+const BATCH_DONE_MS = 2_650;
+
 // DjinnEye shows the eye in the window: mounted once, beside the pages; live is Djinn's stream.
 export function DjinnEye({
   live,
   everLive = true,
   wishesReading = false,
   runsReading = false,
+  batch: batchProp,
 }: {
   live: boolean;
   everLive?: boolean;
   wishesReading?: boolean;
   runsReading?: boolean;
+  batch?: BatchMood;
 }) {
   const [eye] = useState(() => {
     const element = document.createElement("span");
@@ -602,10 +629,48 @@ export function DjinnEye({
     element.setAttribute("aria-hidden", "true");
     return element;
   });
+  const storeBatch = useOptionalData((s) => s.leadDrive?.batch, undefined);
+  const loaded = useOptionalData((s) => s.loaded, false);
+  const prevBatch = useRef<{ id: string; state: LeadBatchState } | undefined>(
+    undefined,
+  );
+  const seenLoaded = useRef(false);
   useEffect(() => signal("live", live), [live]);
   useEffect(() => signal("everLive", everLive), [everLive]);
   useEffect(() => signal("wishesReading", wishesReading), [wishesReading]);
   useEffect(() => signal("runsReading", runsReading), [runsReading]);
+  useEffect(() => {
+    if (batchProp !== undefined) {
+      signal("batch", batchProp);
+      return;
+    }
+    const id = storeBatch?.id ?? "";
+    const state = storeBatch?.state ?? LeadBatchState.UNSPECIFIED;
+    const prev = prevBatch.current;
+    prevBatch.current = id ? { id, state } : undefined;
+    const wasLoaded = seenLoaded.current;
+    if (loaded) seenLoaded.current = true;
+    if (state === LeadBatchState.RUNNING) {
+      signal("batch", "thinking");
+      return;
+    }
+    if (state === LeadBatchState.FAILED) {
+      signal("batch", "failed");
+      return;
+    }
+    if (
+      state === LeadBatchState.DONE &&
+      (prev?.state === LeadBatchState.RUNNING ||
+        (wasLoaded && id !== "" && prev?.id !== id))
+    ) {
+      signal("batch", "done");
+      const timer = setTimeout(() => {
+        if (signals.batch === "done") signal("batch", undefined);
+      }, BATCH_DONE_MS);
+      return () => clearTimeout(timer);
+    }
+    signal("batch", undefined);
+  }, [batchProp, storeBatch?.id, storeBatch?.state, loaded]);
   useEffect(() => {
     const layer = document.createElement("div");
     layer.className = "djinn-eye-flight";

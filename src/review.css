@@ -969,6 +969,63 @@ button.glance-line:hover .name {
   font: 400 0.75rem var(--mono);
 }
 
+/* The lead's journal on the side (Decision Q112, L44 v3): one line per command, appended below; nothing else is text. */
+.lead-side-log {
+  margin-top: 1rem;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  padding: 0.5625rem 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  overflow: hidden;
+}
+.lead-side-log-head {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+.lead-side-log-line {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: lead-side-log-in 0.2s ease-out;
+}
+.lead-side-log-line.now {
+  color: var(--text);
+}
+.lead-side-log-line.done {
+  color: var(--eye-flame);
+  font-weight: 600;
+}
+html[data-theme="light"] .lead-side-log-line.done {
+  color: var(--eye-flame-edge);
+}
+.lead-side-log-line.failed {
+  color: var(--st-failed);
+  white-space: normal;
+  font-weight: 600;
+}
+@keyframes lead-side-log-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lead-side-log-line {
+    animation: none;
+  }
+}
+
 /* The questions column: on the page's ground, no card around it; only the open question is framed. */
 .review .question-column.decisions-section {
   padding: 0;
