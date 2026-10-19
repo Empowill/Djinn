@@ -17,7 +17,11 @@
 # said again on its first look: a paragraph printed as a Djinn hung or was killed reached no lead, though it is kept
 # as said (PR #2, 12/10/2026); Djinn tells the lead nothing when it is the task's last line.
 #
-# Usage: watch.sh <pr> [seconds between two looks, 60 by default] [looks before it exits, endless by default].
+# It speaks only of the pull requests it is given, never of another open one: an azima's (a djinn/ branch) has its
+# own watcher, and a watcher that read them all spoke of a pull request it was not given (W8: watch.sh 6 told PR #7).
+#
+# Usage: watch.sh <pr>[,<pr>...] [seconds between two looks, 60 by default] [looks before it exits, endless by
+# default]. With several, it exits once all are merged or closed.
 # Needs gh, logged in. POSIX sh, for Linux and macOS.
 set -u
 pr=${1:?usage: watch.sh <pr> [seconds] [looks]}
@@ -203,28 +207,11 @@ EOF
 	return 0
 }
 
-finished_prs=""
 n=0
 while :; do
-	if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-		if [ -n "$(git for-each-ref --format='%(refname:short)' refs/heads/djinn/ refs/remotes/*/djinn/ 2>/dev/null)" ]; then
-			azima_prs=$(gh pr list --state open --json number,headRefName --jq '.[] | select(.headRefName | startswith("djinn/")) | .number' 2>/dev/null || :)
-			for p in $azima_prs; do
-				case " $prs $finished_prs " in
-				*" $p "*) ;;
-				*) prs="${prs:+$prs }$p" ;;
-				esac
-			done
-		fi
-	fi
-
 	active_prs=""
 	for p in $prs; do
-		if look "$p"; then
-			active_prs="${active_prs:+$active_prs }$p"
-		else
-			finished_prs="${finished_prs:+$finished_prs }$p"
-		fi
+		look "$p" && active_prs="${active_prs:+$active_prs }$p"
 	done
 	prs=$active_prs
 
