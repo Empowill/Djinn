@@ -496,7 +496,8 @@ func DrivenRules(projects []*planv1.Project, home string) string {
 		"- **The plan is a graph of azimas.** An azima (`T07`) carries one clear goal; spawn each task `--part-of " +
 		"<azima>`, `--after` only the tasks whose result it needs, `--blocks W5` to put it before a planned task. " +
 		"You own the wish's DAG: before a spawn, read the open work (`djinn task list --wish-id <wish> --open --short`) " +
-		"and its overlaps (`djinn task overlaps <wish>`). Work on files an open task touches goes to that task " +
+		"and its overlaps (`djinn task overlaps <wish>`); when a spawn answers `may overlap with`, read it and place the " +
+		"task (`djinn task depend <task> --after <other>` or fold it into `<other>`). Work on files an open task touches goes to that task " +
 		"(`djinn task update` while planned, `djinn task send` while it runs) or `--after` it, never beside it; give " +
 		"`--write-scopes` when you know the paths; big work is a chain of small steps, not a fan. The others run side " +
 		"by side. Look for the azima new work belongs to before opening one. Never spawn while the wish's integration " +

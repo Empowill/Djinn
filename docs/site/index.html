@@ -260,7 +260,8 @@
                   The Djinn owns each wish's graph. Before it sends a worker, it reads what runs and what comes,
                   <code>djinn task list --wish-id &lt;wish&gt; --open --short</code>, and which open tasks touch the same
                   files, <code>djinn task overlaps &lt;wish&gt;</code>: a running task's changes, a planned one's write scopes.
-                  New work on those files joins the task that has them, or comes after it; never beside it.
+                  Every spawn also warns when the new task may overlap with an open one — from its branch diff, write scopes, or
+                  the paths, packages and specs in both prompts — and suggests <code>--after</code>.
                 </p>
               </article>
               <article class="card word" id="word-workers">

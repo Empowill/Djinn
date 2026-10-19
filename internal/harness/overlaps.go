@@ -1,13 +1,17 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/plan"
@@ -314,4 +318,452 @@ func overlapsText(files []*planv1.TaskFiles, overlaps []*planv1.TaskOverlap) str
 		b.WriteString(overlapLine(o))
 	}
 	return strings.TrimSuffix(b.String(), "\n")
+}
+
+// spawnOverlap is an open task of the wish and project whose files, write scopes or prompt overlap with a task being
+// spawned.
+type spawnOverlap struct {
+	code    string
+	status  string
+	diff    []string
+	scopes  []string
+	prompts []string
+}
+
+const spawnOverlapPrefix = "may overlap with "
+
+// spawnOverlaps lists the open tasks of wish in project whose branch diff, write scopes, or paths, packages and specs
+// named in their prompt overlap with task's write scopes or prompt. Tasks already ordered before or after task in the
+// DAG are excluded.
+func (h *Harness) spawnOverlaps(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, task, parent *planv1.Task, prompt string,
+	tasks []*planv1.Task,
+) []spawnOverlap {
+	if !project.GetGit() || !touchesFiles(task) || task.GetKind() == planv1.TaskKind_TASK_KIND_MOCKUP ||
+		questionWorker(task) || task.GetReview() != nil {
+		return nil
+	}
+	var wishTasks, candidates []*planv1.Task
+	for _, o := range tasks {
+		if o.GetWishId() != wish.GetId() {
+			continue
+		}
+		wishTasks = append(wishTasks, o)
+	}
+	wishTasks = append(wishTasks, task)
+	for _, o := range wishTasks {
+		if o.GetId() == task.GetId() || o.GetProjectId() != project.GetId() {
+			continue
+		}
+		if parent != nil && o.GetId() == parent.GetId() {
+			continue
+		}
+		if !touchesFiles(o) || o.GetKind() == planv1.TaskKind_TASK_KIND_MOCKUP ||
+			questionWorker(o) || o.GetReview() != nil {
+			continue
+		}
+		if orderedInDAG(task, o, wishTasks) {
+			continue
+		}
+		candidates = append(candidates, o)
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, overlapsTimeout)
+	defer cancel()
+	_ = plan.FillPrompts(ctx, h.store, candidates)
+
+	repo := h.loadRepoIndex(ctx, project)
+	candFiles := make([]*planv1.TaskFiles, len(candidates))
+	for i, o := range candidates {
+		f := h.taskFiles(ctx, wish, project, o)
+		candFiles[i] = f
+		for _, p := range f.GetPaths() {
+			repo.add(p)
+		}
+	}
+	for _, p := range rawSlashPaths(task.GetTitle(), prompt, repo) {
+		repo.add(p)
+	}
+	for _, o := range candidates {
+		for _, p := range rawSlashPaths(o.GetTitle(), o.GetPrompt(), repo) {
+			repo.add(p)
+		}
+	}
+
+	tPrompts := promptPaths(task.GetTitle(), prompt, repo)
+	tAllPaths := mergePaths(task.GetWriteScopes(), tPrompts)
+	if len(tAllPaths) == 0 {
+		return nil
+	}
+	tAll := &planv1.TaskFiles{
+		Source: planv1.TaskFilesSource_TASK_FILES_SOURCE_WRITE_SCOPES,
+		Paths:  tAllPaths,
+	}
+
+	var out []spawnOverlap
+	for i, o := range candidates {
+		f := candFiles[i]
+		var diffShared, scopeShared []string
+		switch f.GetSource() {
+		case planv1.TaskFilesSource_TASK_FILES_SOURCE_DIFF:
+			diffShared = sharedPaths(tAll, f)
+		case planv1.TaskFilesSource_TASK_FILES_SOURCE_WRITE_SCOPES:
+			scopeShared = sharedPaths(tAll, f)
+		}
+		if len(o.GetWriteScopes()) > 0 && f.GetSource() != planv1.TaskFilesSource_TASK_FILES_SOURCE_WRITE_SCOPES {
+			oScopes := &planv1.TaskFiles{
+				Source: planv1.TaskFilesSource_TASK_FILES_SOURCE_WRITE_SCOPES,
+				Paths:  o.GetWriteScopes(),
+			}
+			for _, p := range sharedPaths(tAll, oScopes) {
+				if !slices.Contains(diffShared, p) {
+					scopeShared = append(scopeShared, p)
+				}
+			}
+		}
+		oPrompts := &planv1.TaskFiles{
+			Source: planv1.TaskFilesSource_TASK_FILES_SOURCE_WRITE_SCOPES,
+			Paths:  promptPaths(o.GetTitle(), o.GetPrompt(), repo),
+		}
+		var promptShared []string
+		for _, p := range sharedPaths(tAll, oPrompts) {
+			if !slices.Contains(diffShared, p) && !slices.Contains(scopeShared, p) {
+				promptShared = append(promptShared, p)
+			}
+		}
+		if len(diffShared) == 0 && len(scopeShared) == 0 && len(promptShared) == 0 {
+			continue
+		}
+		out = append(out, spawnOverlap{
+			code:    o.GetCode(),
+			status:  filesStatus(f),
+			diff:    diffShared,
+			scopes:  scopeShared,
+			prompts: promptShared,
+		})
+	}
+	slices.SortFunc(out, func(a, b spawnOverlap) int { return compareTaskCodes(a.code, b.code) })
+	return out
+}
+
+func compareTaskCodes(a, b string) int {
+	if len(a) > 1 && len(b) > 1 && a[0] == b[0] {
+		na, erra := strconv.Atoi(a[1:])
+		nb, errb := strconv.Atoi(b[1:])
+		if erra == nil && errb == nil {
+			return cmp.Compare(na, nb)
+		}
+	}
+	return strings.Compare(a, b)
+}
+
+// formatSpawnOverlaps writes the warning for a newly spawned task that may overlap with open tasks, naming each task
+// with its reason and suggesting --after.
+func formatSpawnOverlaps(code string, overlaps []spawnOverlap) string {
+	if len(overlaps) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(overlaps))
+	codes := make([]string, 0, len(overlaps))
+	for _, o := range overlaps {
+		codes = append(codes, o.code)
+		var reasons []string
+		if len(o.diff) > 0 {
+			reasons = append(reasons, "diff: "+pathsText(o.diff))
+		}
+		if len(o.scopes) > 0 {
+			reasons = append(reasons, "write scopes: "+pathsText(o.scopes))
+		}
+		if len(o.prompts) > 0 {
+			reasons = append(reasons, "prompts: "+pathsText(o.prompts))
+		}
+		parts = append(parts, fmt.Sprintf("%s (%s; %s)", o.code, o.status, strings.Join(reasons, "; ")))
+	}
+	return fmt.Sprintf("%s %s%s: place it with --after (djinn task depend %s --after %s, or --blocks), or bundle the work.",
+		code, spawnOverlapPrefix, strings.Join(parts, ", "), code, strings.Join(codes, ","))
+}
+
+// spawnOverlapNote returns the overlap warning recorded on t when it was spawned; "" when none was recorded.
+func (h *Harness) spawnOverlapNote(ctx context.Context, t *planv1.Task) string {
+	events, err := store.List[*planv1.TaskEvent](ctx, h.store, store.Where{"task_id": t.GetId()})
+	if err != nil {
+		return ""
+	}
+	for _, ev := range events {
+		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS &&
+			strings.HasPrefix(ev.GetText(), t.GetCode()+" "+spawnOverlapPrefix) {
+			return ev.GetText()
+		}
+	}
+	return ""
+}
+
+// orderedInDAG reports whether a and b already have a dependency path between them in either direction.
+func orderedInDAG(a, b *planv1.Task, tasks []*planv1.Task) bool {
+	byID := make(map[string]*planv1.Task, len(tasks))
+	for _, t := range tasks {
+		byID[t.GetId()] = t
+	}
+	var reaches func(from, target string, seen map[string]bool) bool
+	reaches = func(from, target string, seen map[string]bool) bool {
+		if from == target {
+			return true
+		}
+		if seen[from] {
+			return false
+		}
+		seen[from] = true
+		t := byID[from]
+		if t == nil {
+			return false
+		}
+		for _, dep := range t.GetDependsOn() {
+			if reaches(dep, target, seen) {
+				return true
+			}
+		}
+		return false
+	}
+	return reaches(a.GetId(), b.GetId(), map[string]bool{}) || reaches(b.GetId(), a.GetId(), map[string]bool{})
+}
+
+type repoIndex struct {
+	dir    string
+	module string
+	globs  []string
+	files  map[string]bool
+	dirs   map[string]bool
+	byBase map[string][]string
+}
+
+func (h *Harness) loadRepoIndex(ctx context.Context, project *planv1.Project) repoIndex {
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil {
+		settings = plan.ResolveSettings(nil, nil)
+	}
+	idx := repoIndex{
+		dir:    project.GetDirectory(),
+		module: readGoModule(project.GetDirectory()),
+		globs:  append([]string{"gen/**"}, settings.Generated...),
+		files:  map[string]bool{},
+		dirs:   map[string]bool{},
+		byBase: map[string][]string{},
+	}
+	if out, err := gitRaw(ctx, project.GetDirectory(), "ls-files", "-z"); err == nil {
+		for p := range strings.SplitSeq(out, "\x00") {
+			idx.add(p)
+		}
+	}
+	return idx
+}
+
+func cleanRepoPath(p string) (string, bool) {
+	cleaned, err := cleanScopes([]string{p})
+	if err != nil || len(cleaned) != 1 || cleaned[0] == "" {
+		return "", false
+	}
+	return cleaned[0], true
+}
+
+func (r *repoIndex) add(p string) {
+	clean, ok := cleanRepoPath(p)
+	if !ok || isGenerated(clean, r.globs) {
+		return
+	}
+	if !r.files[clean] {
+		r.files[clean] = true
+		base := strings.ToLower(filepath.Base(clean))
+		if !slices.Contains(r.byBase[base], clean) {
+			r.byBase[base] = append(r.byBase[base], clean)
+		}
+	}
+	for dir := filepath.ToSlash(filepath.Dir(clean)); dir != "." && dir != "" && dir != "/"; dir = filepath.ToSlash(filepath.Dir(dir)) {
+		r.dirs[dir] = true
+	}
+}
+
+func readGoModule(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "module "); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+func mergePaths(a, b []string) []string {
+	var out []string
+	for _, list := range [][]string{a, b} {
+		for _, p := range list {
+			if p != "" && !slices.Contains(out, p) {
+				out = append(out, p)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// rawSlashPaths returns the slash-containing paths named in title and prompt before basename resolution, so repoIndex
+// can index files that open tasks plan to create.
+func rawSlashPaths(title, prompt string, repo repoIndex) []string {
+	prompt, _, _ = strings.Cut(prompt, "\n# Tilasms given as context\n")
+	var out []string
+	for _, tok := range promptTokens(title + "\n" + prompt) {
+		clean, ok := classifyPromptToken(tok, repo, false)
+		if ok && strings.Contains(clean, "/") && !slices.Contains(out, clean) {
+			out = append(out, clean)
+		}
+	}
+	return out
+}
+
+// promptPaths extracts the repository file paths, packages and specs named in title and prompt.
+func promptPaths(title, prompt string, repo repoIndex) []string {
+	prompt, _, _ = strings.Cut(prompt, "\n# Tilasms given as context\n")
+	var out []string
+	for _, tok := range promptTokens(title + "\n" + prompt) {
+		clean, ok := classifyPromptToken(tok, repo, true)
+		if ok && !slices.Contains(out, clean) {
+			out = append(out, clean)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+func promptTokens(text string) []string {
+	return strings.FieldsFunc(text, func(r rune) bool {
+		if unicode.IsSpace(r) {
+			return true
+		}
+		switch r {
+		case '`', '"', '\'', '(', ')', '[', ']', '{', '}', '<', '>', ',', ';', '*', '!', '?':
+			return true
+		}
+		return false
+	})
+}
+
+func classifyPromptToken(raw string, repo repoIndex, resolveBase bool) (string, bool) {
+	s := strings.TrimSpace(raw)
+	s = strings.TrimRight(s, ".:")
+	if s == "" {
+		return "", false
+	}
+	if rest, ok := strings.CutPrefix(s, "file://"); ok {
+		s = rest
+		if repo.dir != "" {
+			prefix := strings.TrimSuffix(filepath.ToSlash(repo.dir), "/") + "/"
+			if after, ok := strings.CutPrefix(s, prefix); ok {
+				s = after
+			}
+		}
+		if strings.HasPrefix(s, "/") {
+			return "", false
+		}
+	}
+	if strings.Contains(s, "://") {
+		return "", false
+	}
+	s, _, _ = strings.Cut(s, "#")
+	s, _, _ = strings.Cut(s, ":")
+	s = strings.TrimSuffix(s, "/...")
+	s = strings.TrimRight(s, ".")
+	if repo.module != "" && strings.HasPrefix(s, repo.module+"/") {
+		s = strings.TrimPrefix(s, repo.module+"/")
+	}
+	hadDotSlash := strings.HasPrefix(s, "./")
+	clean, ok := cleanRepoPath(s)
+	if !ok || strings.Contains(clean, "..") || isGenerated(clean, repo.globs) {
+		return "", false
+	}
+	if strings.HasPrefix(clean, ".") && !repo.files[clean] && !repo.dirs[clean] {
+		return "", false
+	}
+	if strings.Contains(clean, "/") {
+		if repo.files[clean] || repo.dirs[clean] {
+			return clean, true
+		}
+		if !validPathSegments(clean) {
+			return "", false
+		}
+		top, _, _ := strings.Cut(clean, "/")
+		if hadDotSlash || isPromptFileExt(filepath.Ext(clean)) || repo.dirs[top] || isRepoRootDir(top) {
+			return clean, true
+		}
+		return "", false
+	}
+	if hadDotSlash && (repo.files[clean] || repo.dirs[clean] || isRepoRootDir(clean)) {
+		return clean, true
+	}
+	ext := strings.ToLower(filepath.Ext(clean))
+	if !isPromptFileExt(ext) || isProseDotWord(clean) || !validPathSegments(clean) {
+		return "", false
+	}
+	if resolveBase {
+		if matches := repo.byBase[strings.ToLower(clean)]; len(matches) == 1 {
+			return matches[0], true
+		}
+	}
+	return clean, true
+}
+
+func validPathSegments(p string) bool {
+	for seg := range strings.SplitSeq(p, "/") {
+		if seg == "" {
+			return false
+		}
+		hasLetter := false
+		for _, r := range seg {
+			switch {
+			case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+				hasLetter = true
+			case (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.':
+			default:
+				return false
+			}
+		}
+		if !hasLetter {
+			return false
+		}
+	}
+	return true
+}
+
+func isRepoRootDir(top string) bool {
+	switch top {
+	case "internal", "pkg", "cmd", "tools", "src", "lib", "app", "apps", "packages", "services",
+		"api", "proto", "docs", "e2e", "test", "tests", "web", "ui", "scripts", "config",
+		"locales", "lead", "plan", "wishicons":
+		return true
+	}
+	return false
+}
+
+func isPromptFileExt(ext string) bool {
+	switch strings.ToLower(ext) {
+	case ".go", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".scss", ".html", ".md",
+		".proto", ".sql", ".sh", ".yml", ".yaml", ".json", ".txt", ".txtpb", ".toml", ".py", ".rs":
+		return true
+	}
+	return false
+}
+
+func isProseDotWord(word string) bool {
+	switch strings.ToLower(word) {
+	case "node.js", "next.js", "react.js", "vue.js", "three.js", "chart.js", "mermaid.js":
+		return true
+	}
+	return false
 }

@@ -1048,9 +1048,18 @@ func (h *Harness) spawn(
 	case req.GetLater() && why == "":
 		why = "planned: it starts at the scheduler's next pass"
 	}
+	var overlaps []spawnOverlap
+	if made == nil {
+		for _, b := range blocked {
+			if i := slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == b.GetId() }); i >= 0 {
+				tasks[i] = b
+			}
+		}
+		overlaps = h.spawnOverlaps(ctx, wish, project, task, parent, cmp.Or(req.GetPrompt(), req.GetTitle()), tasks)
+	}
 	if why != "" {
 		task.MachineWait, task.RoomWait, task.Hold = machine, room, hold
-		return h.plan(ctx, procedure, req, task, parent, prompt, why)
+		return h.plan(ctx, procedure, req, task, parent, prompt, why, overlaps)
 	}
 
 	actor := spawner(task) // before a babysit spawned by hand knows its request
@@ -1074,7 +1083,7 @@ func (h *Harness) spawn(
 	}
 	var prep prepared
 	prompted := h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
-	var preEv *planv1.TaskEvent
+	var preEv, overlapEv *planv1.TaskEvent
 	if preemptedCode != "" {
 		preEv = h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
 	}
@@ -1084,6 +1093,12 @@ func (h *Harness) spawn(
 		}
 		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
 			return err
+		}
+		if len(overlaps) > 0 {
+			overlapEv = h.newEvent(task.GetId(), Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: formatSpawnOverlaps(task.GetCode(), overlaps),
+			})
 		}
 		if task.PartOf != "" {
 			if err := reopenAzima(ctx, tx, task.PartOf, task, "spawned"); err != nil {
@@ -1108,7 +1123,12 @@ func (h *Harness) spawn(
 			return err
 		}
 		if preEv != nil {
-			return putEvents(ctx, tx, preEv)
+			if err := putEvents(ctx, tx, preEv); err != nil {
+				return err
+			}
+		}
+		if overlapEv != nil {
+			return putEvents(ctx, tx, overlapEv)
 		}
 		return nil
 	})
@@ -1119,6 +1139,9 @@ func (h *Harness) spawn(
 	h.publish(r, prompted)
 	if preEv != nil {
 		h.publish(r, preEv)
+	}
+	if overlapEv != nil {
+		h.publish(r, overlapEv)
 	}
 	if len(blocked) > 0 {
 		h.wake() // The tasks it blocks say what they wait for now.
@@ -1144,6 +1167,7 @@ func after(req *planv1.TaskServiceSpawnRequest) []string {
 // the tasks it blocks (--blocks) wait for it; the scheduler starts it.
 func (h *Harness) plan(
 	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, task, parent *planv1.Task, prompt, why string,
+	overlaps []spawnOverlap,
 ) (*planv1.Task, error) {
 	task.WaitReason = why
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -1173,7 +1197,16 @@ func (h *Harness) plan(
 		if err := putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})); err != nil {
 			return err
 		}
-		return putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why}))
+		if err := putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})); err != nil {
+			return err
+		}
+		if len(overlaps) > 0 {
+			return putEvents(ctx, tx, h.newEvent(task.GetId(), Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: formatSpawnOverlaps(task.GetCode(), overlaps),
+			}))
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, plan.Status(err)

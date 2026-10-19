@@ -1,6 +1,6 @@
 ---
 name: conflict-free-dag
-description: The lead owns the wish's DAG; before each spawn read the open work (task list --open) and its overlaps (task overlaps), send work on the same files to the task that has them or order it --after, never side by side; write scopes when known; big work a chain, not a fan; never spawn from a redirected integration branch
+description: The lead owns the wish's DAG; before each spawn read the open work (task list --open) and its overlaps (task overlaps), and when a spawn's note warns of an overlap (W340), read it and place the task (task depend --after / --blocks) or bundle the work; write scopes when known; big work a chain, not a fan; never spawn from a redirected integration branch
 type: feedback
 ---
 
@@ -9,9 +9,13 @@ runs and what comes (`djinn task list --wish-id <wish> --open --short`) and the 
 (`djinn task overlaps <wish>`, or the Overlaps section of `djinn wish brief`). Work on files an open task touches
 never runs beside it: send it to that task (`djinn task update <task> --prompt` while planned, `djinn task send
 <task>` while it runs), or spawn it `--after` that task. Give `--write-scopes` when you know the paths, so that a
-planned task's overlaps show before it starts. Big work is a chain of small steps, each merged and green before the
-next, never a fan of tasks on the same packages; work on other files still runs side by side, never in a naive
-sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe. A conflict or a red merge means re-sequence, not only
+planned task's overlaps show before it starts. When `djinn task spawn` (or a launched plan) warns in its `note` that
+the new task may overlap with an open one (`W12 may overlap with W9 (running; diff: …): place it with --after (djinn
+task depend W12 --after W9, or --blocks), or bundle the work.`, W340), read it and place the task at once (`djinn task
+depend` with `--after` or `--blocks`, or bundle the work into the open task and cancel the duplicate): Djinn never
+refuses the spawn so a repair can pass, so the placement is yours. Big work is a chain of small steps, each merged and
+green before the next, never a fan of tasks on the same packages; work on other files still runs side by side, never in
+a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe. A conflict or a red merge means re-sequence, not only
 correct.
 
 **Why:** the developer, 11/10/2026: "your role is to keep the DAG of tasks and azimas free of conflicts, to ease the
@@ -20,7 +24,10 @@ then W363, W378 then W383) followed each other, and W399, spawned while the inte
 carried the sink's junk into the integration branch. On 14/10/2026 they added that avoiding conflicts must never turn
 the DAG into a sequential line. On 17/10/2026 merges still conflicted (W211 merging W148: 8 files; W194, W197 for
 W132 and W130) because parallel tasks ran on the same files; they asked for the lead to own the DAG explicitly, and
-for Djinn to show the overlaps (W230).
+for Djinn to show the overlaps (W230). Later on 17/10/2026, W339 and W305 still collided because neither had write
+scopes when spawned, even though their prompts named the same files and specs; W340 makes every spawn (and question or
+plan launch) check open tasks' branch diffs, write scopes, and the paths, packages and specs named in both prompts,
+and warn in the response `note` and a task status event.
 
 W230 measured it on the wish's last 50 merges (W182 to W234, 17/10/2026): 10 conflicts, and for all 10 a task that
 touched a conflicting file was already open when the conflicting task started, so the overlaps would have shown each
@@ -36,10 +43,12 @@ Example: W160 (the Djinn's eye) and W174 (a click brings back a wish's first tab
 `src/question-column.tsx`, which W154 also changed; both merges conflicted there, and W237 and W238 repaired them.
 W174 `--after W160`, or sent to W160, would have merged clean.
 
-**How to apply:** before each spawn, run the two commands above; an overlap on a screen, a proto or a package's core
-file means bundle or order; one only on the shared lists (locales, the screens test) is weaker, since nearly every
-task touches them. Never chain tasks in a naive line just to be safe, and never spawn while the wish's integration
-branch is redirected (a quarantine). The brief's rule "You own the wish's DAG" says the same; this note is why.
+**How to apply:** before each spawn, run the two commands above, and after each spawn or plan launch, read the `note`
+for any overlap warning and place the task (`djinn task depend <task> --after <open>` or `--blocks`) or bundle the
+work; an overlap on a screen, a proto or a package's core file means bundle or order; one only on the shared lists
+(locales, the screens test) is weaker, since nearly every task touches them. Never chain tasks in a naive line just to
+be safe, and never spawn while the wish's integration branch is redirected (a quarantine). The brief's rule "You own
+the wish's DAG" says the same; this note is why.
 
 Djinn enforces the repair side itself (W233, Q44 A, 17/10/2026): while a correction repairs the wish's integration
 branch in a project (a merge in conflict or red, main's merge; planned, running, or its work waiting to go in), no new
