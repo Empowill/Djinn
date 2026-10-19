@@ -205,6 +205,29 @@ func TestAgyProject(t *testing.T) {
 			}
 		}
 
+		// The scratch folder of the task (Spec.WriteDirs) is granted for reading and writing, and sibling scratch folders stay denied.
+		s1 := filepath.Join(djinnHome, "scratch", "p1", "w1")
+		s2 := filepath.Join(djinnHome, "scratch", "p1", "w2")
+		for _, d := range []string{s1, s2} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		gScratch := agyProject(Spec{Dir: w1, Permissions: &djinnv1.Permissions{Edit: true}, WriteDirs: []string{s1}}).PermissionGrants.PermissionGrants
+		for _, want := range []string{"read_file(" + s1 + ")", "write_file(" + s1 + ")"} {
+			if !slices.Contains(gScratch.Allow, want) {
+				t.Errorf("missing %s grant in %+v", want, gScratch.Allow)
+			}
+		}
+		for _, d := range []string{filepath.Join(djinnHome, "scratch"), filepath.Dir(s1), s1} {
+			if slices.Contains(gScratch.Deny, "read_file("+d+")") {
+				t.Errorf("%s is denied: %+v", d, gScratch.Deny)
+			}
+		}
+		if !slices.Contains(gScratch.Deny, "read_file("+s2+")") {
+			t.Errorf("missing denial of sibling scratch %s in %+v", s2, gScratch.Deny)
+		}
+
 		// When worktree is outside DJINN_HOME, the entire DJINN_HOME is denied.
 		outside := t.TempDir()
 		fOutside := agyProject(Spec{Dir: outside, Permissions: &djinnv1.Permissions{Edit: true}})

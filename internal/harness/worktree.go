@@ -24,6 +24,12 @@ func worktreeDir(home, projectID, taskID string) string {
 	return filepath.Join(home, "projects", projectID, "worktrees", taskID)
 }
 
+// workScratchDir is the scratch folder of a work task: in Djinn's data folder, named after its project and task,
+// exported to its worker as DJINN_SCRATCH and cleaned with its worktree.
+func workScratchDir(home, projectID, taskID string) string {
+	return filepath.Join(home, "scratch", projectID, taskID)
+}
+
 // scratchDir is the folder of a task outside any project, under Djinn's data folder.
 func scratchDir(home, taskID string) string {
 	return filepath.Join(home, "tasks", taskID)

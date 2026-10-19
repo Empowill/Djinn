@@ -275,7 +275,7 @@ func gbText(bytes uint64) string {
 }
 
 // knownFolders are the folders that fill a disk Djinn works on: the Go build cache, each project's worktrees, Djinn's
-// logs and tilasms, the npm and Playwright caches, the temporary folder.
+// scratch folders, logs and tilasms, the npm and Playwright caches, the temporary folder.
 func (h *Harness) knownFolders(cache string) []string {
 	var dirs []string
 	if cache != "" {
@@ -285,7 +285,7 @@ func (h *Harness) knownFolders(cache string) []string {
 		if projects, err := filepath.Glob(filepath.Join(h.home, "projects", "*", "worktrees")); err == nil {
 			dirs = append(dirs, projects...)
 		}
-		dirs = append(dirs, filepath.Join(h.home, "logs"), filepath.Join(h.home, "tilasms"))
+		dirs = append(dirs, filepath.Join(h.home, "scratch"), filepath.Join(h.home, "logs"), filepath.Join(h.home, "tilasms"))
 	}
 	if user, err := os.UserHomeDir(); err == nil {
 		dirs = append(dirs, filepath.Join(user, ".npm"), filepath.Join(user, ".cache", "ms-playwright"))

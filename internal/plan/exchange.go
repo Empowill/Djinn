@@ -372,8 +372,8 @@ func names(m protoreflect.Message, ids map[string]bool) bool {
 func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 	exp = proto.Clone(exp).(*planv1.WishExport)
 	for _, t := range exp.GetTasks() {
-		// The worktree is a folder here, and the agent session lives in this machine's provider.
-		t.Worktree, t.SessionId, t.ForkSession = "", "", ""
+		// The worktree and scratch folder are folders here, and the agent session lives in this machine's provider.
+		t.Worktree, t.Scratch, t.SessionId, t.ForkSession = "", "", "", ""
 		for _, serve := range t.GetIfrit().GetServes() {
 			// An ifrit's serves run here, in a folder of this machine.
 			serve.Pid, serve.Directory = 0, ""
@@ -655,7 +655,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 		}
 		for _, t := range exp.GetTasks() {
 			t.ProjectId = local[t.GetProjectId()]
-			t.Worktree, t.SessionId, t.ForkSession = "", "", ""
+			t.Worktree, t.Scratch, t.SessionId, t.ForkSession = "", "", "", ""
 			// Planned on the other machine: this one's scheduler never starts it by itself.
 			t.Scheduled, t.Continuing = false, false
 			if s := t.GetStatus(); s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED ||

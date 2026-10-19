@@ -453,6 +453,14 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return errors.New("its worktree is gone: it cannot be resumed")
 		}
 	}
+	if project != nil && !r.watcher && !r.light && h.home != "" {
+		if t.GetScratch() == "" {
+			t.Scratch = workScratchDir(h.home, project.GetId(), t.GetId())
+		}
+		if err := os.MkdirAll(t.GetScratch(), 0o700); err != nil {
+			return fmt.Errorf("create the scratch folder: %w", err)
+		}
+	}
 	budget := providerBudget(t)
 	if budget > 0 {
 		if budget -= t.GetUsage().GetCostUsd(); budget <= 0 {
