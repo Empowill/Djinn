@@ -255,6 +255,17 @@ test("the head says where the wish's work lands, and a click changes the branch"
       "true",
     );
     await expect(picker.getByRole("button", { name: "release" })).toBeVisible();
+    // The open menu extends below the wish header and sits above the content beneath it, neither clipped by .hero nor covered by .overview-content.
+    const aboveContent = await page.evaluate(() => {
+      const menu = document.querySelector(".hero-meta .branch-picker");
+      const content = document.querySelector(".overview-content");
+      if (!menu || !content) return false;
+      const m = menu.getBoundingClientRect();
+      const c = content.getBoundingClientRect();
+      const hit = document.elementFromPoint(m.left + m.width / 2, m.bottom - 6);
+      return m.bottom > c.top && hit !== null && menu.contains(hit);
+    });
+    expect(aboveContent).toBe(true);
     await picker.getByRole("textbox", { name: "Branch" }).fill("feat/lamp");
     await picker
       .getByRole("button", { name: "New branch feat/lamp from main" })

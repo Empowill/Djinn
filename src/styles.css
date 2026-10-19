@@ -694,7 +694,7 @@ html[data-theme="light"] .wordmark-period {
   border-bottom: 1px solid var(--line);
   min-height: 17.8125rem;
   position: relative;
-  overflow: hidden;
+  z-index: 3;
   align-items: center;
 }
 .hero-copy {
