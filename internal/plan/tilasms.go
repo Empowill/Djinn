@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"connectrpc.com/connect"
@@ -70,6 +71,10 @@ type Tilasms struct {
 	// Questions, when set, iterates on the question whose mockup option iterates on a tilasm its comments are sent
 	// on to iterate (Questions.iterated).
 	Questions *Questions
+	// Publisher publishes tilasms on claude.ai; nil: Publish is unavailable.
+	Publisher *Publisher
+
+	publishing sync.Map // The tilasms being published, by id: one publish at a time each.
 }
 
 // TilasmDir is the folder of a tilasm in the data folder home: version n is in its folder v<n>.
@@ -91,7 +96,7 @@ func tempDir(home, prefix string) (string, error) {
 
 // stagingPrefixes are the folders of tempDir that hold only new files, on their way in: the store knows none of them
 // until they are renamed in place.
-var stagingPrefixes = []string{"drop", "put", "restore", "import"}
+var stagingPrefixes = []string{"drop", "put", "restore", "import", "publish"}
 
 // SweepTilasmTemp tidies the tilasms' folder of home after a djinn up that a kill cut, before anything writes there:
 // it removes the staging folders of tempDir, and returns the paths it removed. A folder of an import that went aside
@@ -818,7 +823,7 @@ func (t *Tilasms) Export(
 		return nil, Status(err)
 	}
 	manifest, err := protojson.MarshalOptions{Multiline: true, Indent: "  ", UseProtoNames: true}.Marshal(
-		&planv1.TilasmExport{Tilasm: tilasm, CiteCodes: codes})
+		&planv1.TilasmExport{Tilasm: exported(tilasm), CiteCodes: codes})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -1247,9 +1252,20 @@ func tilasmsOf(ctx context.Context, r store.Reader, wishID string) ([]*planv1.Ti
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, &planv1.TilasmExport{Tilasm: t, CiteCodes: codes})
+		out = append(out, &planv1.TilasmExport{Tilasm: exported(t), CiteCodes: codes})
 	}
 	return out, nil
+}
+
+// exported is a tilasm as an export carries it: without its artifact, the developer's own on claude.ai and their
+// go-ahead to publish it, which stay on this machine.
+func exported(t *planv1.Tilasm) *planv1.Tilasm {
+	if t.GetArtifact() == nil {
+		return t
+	}
+	t = proto.CloneOf(t)
+	t.Artifact = nil
+	return t
 }
 
 // checkTilasms refuses tilasms of an export that do not hold together: of another wish, a code given twice, a cite

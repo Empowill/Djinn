@@ -81,7 +81,11 @@ type options struct {
 	clock           func() time.Time
 	ifritWaits      IfritWaits
 	overlaps        Overlaps
+	publisher       *Publisher
 }
+
+// WithPublisher gives TilasmService.Publish what publishes a tilasm on claude.ai.
+func WithPublisher(p *Publisher) Option { return func(o *options) { o.publisher = p } }
 
 // WithLeadFailed gives LeadService.Get why the lead could not start before the services ran, as djinn up resumes it:
 // the window shows it beside Lead until Lead starts it.
@@ -216,7 +220,8 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes}, opt)
 	out[p] = h
-	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Marks: marks, Wake: wishes.Queued, Questions: questions}
+	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Marks: marks, Wake: wishes.Queued, Questions: questions,
+		Publisher: o.publisher}
 	p, h = planv1connect.NewTilasmServiceHandler(tilasms, opt)
 	out[p] = h
 	out[server.TilasmPrefix] = tilasms.Files()

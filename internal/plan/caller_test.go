@@ -148,6 +148,31 @@ func TestWorkerGuard(t *testing.T) {
 			refused: "a worker cannot put a tilasm in wish",
 		},
 		{
+			name: "tilasm publish own wish defaults",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.TilasmServicePublishResponse](planv1connect.TilasmServicePublishProcedure, c,
+					&planv1.TilasmServicePublishRequest{Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Code{Code: "L52"}}})
+			},
+			want: &planv1.TilasmServicePublishRequest{Tilasm: &planv1.TilasmRef{Ref: &planv1.TilasmRef_Code{Code: "L52"}}, Wish: "wish-1"},
+		},
+		{
+			name: "tilasm publish other wish denied",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.TilasmServicePublishResponse](planv1connect.TilasmServicePublishProcedure, c,
+					&planv1.TilasmServicePublishRequest{Wish: "wish-other"})
+			},
+			refused: "a worker cannot publish a tilasm of wish",
+		},
+		{
+			// The go-ahead to publish is the developer's, from the window.
+			name: "tilasm confirm publish refused",
+			call: func(c *plan.WorkerCaller) (proto.Message, error) {
+				return guarded[planv1.TilasmServiceConfirmPublishResponse](planv1connect.TilasmServiceConfirmPublishProcedure, c,
+					&planv1.TilasmServiceConfirmPublishRequest{TilasmId: "01a15578-00ee-7526-b8f0-6983ee20a3a3"})
+			},
+			refused: "a worker cannot call",
+		},
+		{
 			name: "read-only procedure allowed",
 			call: func(c *plan.WorkerCaller) (proto.Message, error) {
 				return guarded[planv1.WishServiceListResponse](planv1connect.WishServiceListProcedure, c, &planv1.WishServiceListRequest{})
