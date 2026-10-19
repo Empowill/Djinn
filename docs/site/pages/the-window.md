@@ -91,10 +91,10 @@ models from the agent itself and Claude and Codex models from Djinn's shared pri
 label (such as **Gemini 4 Argon (High)**) while storing and sending the canonical model identifier. The lead row offers
 Antigravity when the lead runs in a terminal, and shows it greyed out with a tooltip when a driven lead cannot run it.
 Every row except the lead offers **Same as lead** by default, following the lead's choice when it changes. Below the rows,
-the bulk model switcher (also in each project's configuration and each wish's header, and on the command line as
-`djinn task update-models`) previews and switches every open work, investigation, correction, review, and question worker
-task—plus defaults for future spawns—in one gesture, skipping watchers and finished tasks, and changing running tasks at
-their next start or restarting them immediately.
+the bulk model switcher (also in each wish's header, and on the command line with the task command update-models)
+previews and switches every open work, investigation, correction, review, and question worker task—plus defaults for
+future spawns—in one gesture, skipping watchers and finished tasks, and changing running tasks at their next start or
+restarting them immediately.
 
 ### The personal space
 

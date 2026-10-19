@@ -1094,7 +1094,7 @@ export function WishModels({ wishId }: { wishId: string }) {
     <span className="wish-lands-chip">
       <button
         type="button"
-        className="wish-lands"
+        className="wish-models"
         aria-haspopup="dialog"
         aria-expanded={open}
         title={t("wish.models_button_detail")}

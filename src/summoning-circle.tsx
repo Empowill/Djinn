@@ -425,7 +425,11 @@ export function SummoningCircle({
       </section>
       <section className="config-box summoning-bulk">
         <UpdateModelsSection
-          models={models}
+          models={models.filter(
+            (m) =>
+              providers.find((p) => p.provider === m.provider)?.signedIn ??
+              true,
+          )}
           onApplied={(res) => {
             if (res.circle.length > 0) {
               setRows((prev) =>
