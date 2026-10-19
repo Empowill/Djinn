@@ -160,6 +160,11 @@ dark. The eye opens and rests by what has the focus, the element your keys act o
 | On **Write to the Djinn**, in the round porthole on its left | An unseen reply or decision from the Djinn waits in its bubble, the pill or its field has the focus, or nothing that has a place does |
 | Home, in the seal | A page with none of those; closed while the lead is stopped; pale while Djinn's stream is cut |
 
+When the driven Djinn runs a batch, the eye follows the batch by its colour and its gaze: emerald while listening; blue
+while thinking (its contour, the porthole on **Write to the Djinn** and its iris turn blue, and its gaze wanders in a
+slow loop, jumping to the side, holding, moving on, and returning to the centre); two blinks and a flare of its golden
+flame when the batch finishes; red under a lowered lid when a batch failed.
+
 When the Djinn answers a message you sent from **Write to the Djinn** or tells a decision it took alone, the eye comes to
 the porthole on **Write to the Djinn**, blinks once, and holds a speech bubble to the left of the pill (or above the box
 when open or in a narrow window). At rest, the bubble shows two lines and a count when several messages wait; hovering
@@ -214,6 +219,11 @@ task of the wish from the start: a task waiting far down a long wish shows witho
 | Grey pause | Paused: stopped by you or the lead, put out, or cut short by a restart or a usage limit until Djinn resumes it; why shows on hover. Its work is kept; continued, it goes back among the running |
 | Hollow blue circle | Waiting on a task, under that task when it waits too, else naming it |
 | Dotted grey circle | Planned |
+
+Below the workers, while a batch of the driven Djinn runs or after it ends, its **Lead** journal writes one line per
+command as the batch goes, in chronological order (the running command marked by a blue dot, a command on another wish
+prefixed by that wish's code in brackets), then a gold line with the duration and cost when the batch finishes, or a red
+line with the cause when it fails.
 
 On the flying carpet each wish has its title and counts, "1 running, 2 to come, 1 merging, push held, 1 repair"; a
 legend names only the marks shown. It stays in view while a long question scrolls. In a narrow page it shrinks to a

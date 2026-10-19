@@ -652,3 +652,107 @@ test("the glance shows the merges in progress, the queue, a held push and the re
     /<span class="name">Djinn QoL<\/span><span class="glance-line-marks"><span class="glance-dot run"[^>]*><\/span>(<span class="glance-mark (run|wait)" role="img" aria-label="repair worker" title="[^"]+"><svg[^>]*lucide-wrench[\s\S]*?<\/svg><\/span>){4}<span class="glance-mark run" role="img" aria-label="merging" title="2 merging · 2 to merge · push held">[\s\S]*?<span class="glance-mark held" role="img" aria-label="push held">/,
   );
 });
+
+// W456 (Decision Q112, L44 v3): the lead's side journal in the glance shows one line per command as the batch runs
+// (whether on this wish or on other wishes, capped to 8), then the end of the batch or the cause of its failure.
+test("the glance shows the driven lead's side journal: running on this wish, on other wishes, done, and failed", () => {
+  const at = (seconds) => ({ seconds: BigInt(seconds), nanos: 0 });
+  const qol = wish(
+    "01a1440a-0000-7000-8000-000000000002",
+    "Djinn QoL",
+    s.WishState.ACTIVE,
+    2,
+  );
+  const lamp = wish(
+    "01a1440a-0000-7000-8000-000000000001",
+    "Ship the lamp",
+    s.WishState.ACTIVE,
+    1,
+  );
+
+  // Batch running on this wish: strips leading "djinn ", marks the latest command .now, keeps at most 8 commands.
+  const onThisWish = s.renderToStaticMarkup(
+    h(s.Glance, {
+      wishes: [qol],
+      tasksOf: { [qol.id]: { tasks: [] } },
+      all: [qol, lamp],
+      batch: {
+        id: "b-1",
+        state: s.LeadBatchState.RUNNING,
+        wishIds: [qol.id],
+        commands: [
+          "djinn c1",
+          "djinn c2",
+          "djinn c3",
+          "djinn c4",
+          "djinn c5",
+          "djinn c6",
+          "djinn c7",
+          "djinn wish show W-qol",
+          "djinn question answer Q81 A",
+        ],
+      },
+    }),
+  );
+  assert.doesNotMatch(onThisWish, /› c1/);
+  assert.match(
+    onThisWish,
+    /<div class="lead-side-log" role="log" aria-live="off"><div class="lead-side-log-head">Lead<\/div><div class="lead-side-log-line">› c2<\/div>[\s\S]*?<div class="lead-side-log-line">› wish show W-qol<\/div><div class="lead-side-log-line now">› question answer Q81 A<\/div><\/div>/,
+  );
+
+  // Batch running on other wishes while viewing this wish: shows the lead's commands in the side journal alike.
+  const onOtherWishes = s.renderToStaticMarkup(
+    h(s.Glance, {
+      wishes: [qol],
+      tasksOf: { [qol.id]: { tasks: [] } },
+      all: [qol, lamp],
+      batch: {
+        id: "b-2",
+        state: s.LeadBatchState.RUNNING,
+        wishIds: [lamp.id],
+        commands: ["djinn wish show W-lamp", 'djinn lead say "on its way"'],
+      },
+    }),
+  );
+  assert.match(
+    onOtherWishes,
+    /<div class="lead-side-log-line">› wish show W-lamp<\/div><div class="lead-side-log-line now">› lead say &quot;on its way&quot;<\/div>/,
+  );
+
+  // Finished batch (DONE): commands are no longer .now, followed by "✓ done · <duration> · <cost>".
+  const doneBatch = s.renderToStaticMarkup(
+    h(s.LeadSideLog, {
+      batch: {
+        id: "b-3",
+        state: s.LeadBatchState.DONE,
+        wishIds: [qol.id],
+        startTime: at(1000),
+        endTime: at(1120),
+        commands: ["djinn wish show W-qol", "djinn task spawn W456"],
+        usage: { costUsd: 0.21 },
+      },
+    }),
+  );
+  assert.doesNotMatch(doneBatch, /lead-side-log-line now/);
+  assert.match(
+    doneBatch,
+    /<div class="lead-side-log-line">› wish show W-qol<\/div><div class="lead-side-log-line">› task spawn W456<\/div><div class="lead-side-log-line done">✓ done · 2m · \$0\.21<\/div>/,
+  );
+
+  // Failed batch (FAILED): followed by "✕ <error>" with the batch's error field as-is.
+  const failedBatch = s.renderToStaticMarkup(
+    h(s.LeadSideLog, {
+      batch: {
+        id: "b-4",
+        state: s.LeadBatchState.FAILED,
+        wishIds: [qol.id],
+        commands: ["djinn wish show W-qol", "djinn task get W440"],
+        error: "failed twice: the lead's account work is no longer Claude's",
+      },
+    }),
+  );
+  assert.match(
+    failedBatch,
+    /<div class="lead-side-log-line">› wish show W-qol<\/div><div class="lead-side-log-line">› task get W440<\/div><div class="lead-side-log-line failed">✕ failed twice: the lead&#x27;s account work is no longer Claude&#x27;s<\/div>/,
+  );
+});

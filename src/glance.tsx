@@ -29,6 +29,8 @@ import type { Gate } from "../gen/ts/machine/v1/machine_pb";
 import {
   AzimaState,
   IntegrationState,
+  type LeadBatch,
+  LeadBatchState,
   Provider,
   PushStage,
   type Task,
@@ -54,6 +56,7 @@ import {
   span,
   takenOver,
   taskStatusText,
+  usd,
   useNow,
   workerPhase,
 } from "./data/format";
@@ -1206,12 +1209,63 @@ function GlanceLine({
 
 type Present = GlanceState | "watch" | "merging" | "queued" | "held" | "repair";
 
+// LeadSideLog is the driven lead's journal on the side (Decision Q112, L44 v3): one line per command as the batch runs,
+// then the end of the batch (duration and cost) or the cause of its failure (the batch's error field as it is).
+export function LeadSideLog({ batch: given }: { batch?: LeadBatch }) {
+  const fromStore = useOptionalData((s) => s.leadDrive?.batch, undefined);
+  const batch = given ?? fromStore;
+  if (!batch) return null;
+  const running = batch.state === LeadBatchState.RUNNING;
+  const done = batch.state === LeadBatchState.DONE;
+  const failed = batch.state === LeadBatchState.FAILED;
+  if (!running && !done && !failed) return null;
+  const cmds = (batch.commands ?? [])
+    .slice(-8)
+    .map((c) => c.replace(/^djinn\s+/, ""));
+  let doneLine = "";
+  if (done) {
+    const start = date(batch.startTime)?.getTime();
+    const end = date(batch.endTime)?.getTime();
+    const dur =
+      start !== undefined && end !== undefined && end >= start
+        ? span(end - start)
+        : "";
+    const cost =
+      (batch.usage?.costUsd ?? 0) > 0 ? usd(batch.usage!.costUsd) : "";
+    doneLine = [t("glance.lead_done"), dur, cost].filter(Boolean).join(" · ");
+  }
+  return (
+    <div className="lead-side-log" role="log" aria-live="off">
+      <div className="lead-side-log-head">{t("glance.lead")}</div>
+      {cmds.map((cmd, i) => (
+        <div
+          key={`${i}-${cmd}`}
+          className={
+            running && i === cmds.length - 1
+              ? "lead-side-log-line now"
+              : "lead-side-log-line"
+          }
+        >
+          {`› ${cmd}`}
+        </div>
+      ))}
+      {done && <div className="lead-side-log-line done">{`✓ ${doneLine}`}</div>}
+      {failed && (
+        <div className="lead-side-log-line failed">
+          {`✕ ${batch.error || t("wish.lead_batch_failed")}`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Glance shows the wishes given, by rank: on the flying carpet each under its title, which opens it (onOpenWish), with
 // its counts; on a wish's page, the wish alone, without its title. onOpenTask opens a line's task, in the page's tasks.
 export function Glance({
   wishes: shown,
   tasksOf,
   all,
+  batch,
   readState,
   onRetry,
   onOpenWish,
@@ -1222,6 +1276,7 @@ export function Glance({
   tasksOf: Readonly<Record<string, { tasks: readonly Task[] } | undefined>>;
   // Every wish, for the title of a wish another waits on.
   all: readonly Wish[];
+  batch?: LeadBatch;
   readState?: ReadState;
   onRetry?: () => void;
   onOpenWish?: (wishId: string) => void;
@@ -1378,6 +1433,7 @@ export function Glance({
           />
         ))}
       </div>
+      <LeadSideLog batch={batch} />
       {held && (
         <HeldDialog
           wish={held.wish}

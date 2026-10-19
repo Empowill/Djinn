@@ -97,6 +97,115 @@
 .djinn-eye[data-mood="listening"] .djinn-eye-iris {
   transform: translateY(-0.0625rem);
 }
+/* A batch of the driven lead runs (Decision Q112 B, tilasm L44 v3): blue line, wide open, its gaze wanders across a
+   3.2 s loop (jumps 6 px, holds, moves on). */
+.djinn-eye[data-mood="thinking"] {
+  --eye-line: var(--think-line);
+  --eye-ray: var(--think-line);
+  --eye-white: var(--think-white);
+  --eye-star: var(--think-star);
+  --eye-iris: var(--think-iris);
+  --eye-lid-down: 0;
+}
+.djinn-eye[data-mood="thinking"] .djinn-eye-iris {
+  animation: wander 3.2s cubic-bezier(0.5, 0, 0.2, 1) infinite;
+}
+@keyframes wander {
+  0%,
+  20% {
+    transform: translate(-0.375rem, -0.1625rem);
+  }
+  30%,
+  48% {
+    transform: translate(0.375rem, -0.1875rem);
+  }
+  58%,
+  74% {
+    transform: translate(0.03125rem, -0.2875rem);
+  }
+  84%,
+  100% {
+    transform: translate(-0.375rem, -0.1625rem);
+  }
+}
+/* The batch finishes: double blink, then the gold flame bursts and the shine flares once. */
+.djinn-eye[data-end="done"] .djinn-eye-ball {
+  animation: blink2 0.62s ease-in-out 1;
+}
+.djinn-eye[data-end="done"] .djinn-eye-flame {
+  transform-origin: 50% 100%;
+  animation: flame-burst 1.9s cubic-bezier(0.2, 0.7, 0.3, 1) 0.55s 1;
+}
+.djinn-eye[data-end="done"] .djinn-eye-shine {
+  animation: flare 2.1s ease-out 0.55s 1;
+}
+.djinn-eye[data-end="done"] .djinn-eye-lid {
+  animation: lid-lift 1.9s ease-in-out 0.55s 1;
+}
+@keyframes blink2 {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  20% {
+    transform: scaleY(0.08);
+  }
+  44% {
+    transform: scaleY(1);
+  }
+  68% {
+    transform: scaleY(0.08);
+  }
+}
+@keyframes flame-burst {
+  0%,
+  100% {
+    transform: scaleX(var(--eye-slit)) scaleY(1);
+  }
+  24%,
+  55% {
+    transform: scaleX(1.38) scaleY(1.48);
+  }
+}
+@keyframes flare {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  25%,
+  58% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+}
+@keyframes lid-lift {
+  0%,
+  100% {
+    opacity: var(--eye-lid-down);
+  }
+  20%,
+  65% {
+    opacity: 0;
+  }
+}
+/* The batch failed: red line, lowered lid, narrowed flame. */
+.djinn-eye[data-mood="failed"] {
+  --eye-line: var(--st-failed);
+  --eye-ray: var(--st-failed);
+  --eye-white: var(--fail-white);
+  --eye-lid: var(--eye-lid-failed);
+}
+.djinn-eye[data-mood="failed"] .djinn-eye-lid {
+  opacity: 1;
+  transform: translateY(0.0875rem);
+}
+.djinn-eye[data-mood="failed"] .djinn-eye-iris {
+  transform: translateY(0.0875rem);
+}
+.djinn-eye[data-mood="failed"] .djinn-eye-flame {
+  transform: scaleX(calc(var(--eye-slit) * 0.7)) scaleY(0.8);
+}
 .djinn-eye[data-flying] .djinn-eye-iris,
 .djinn-eye[data-looking] .djinn-eye-iris {
   transform: translate(var(--djinn-eye-look-x, 0), var(--djinn-eye-look-y, 0));
@@ -171,16 +280,36 @@
   .djinn-eye[data-shine] .djinn-eye-shine,
   .djinn-eye-perch[data-perch="reading"]
     > .djinn-eye[data-mood="reading"]
-    .djinn-eye-iris {
+    .djinn-eye-iris,
+  .djinn-eye[data-end="done"] .djinn-eye-ball,
+  .djinn-eye[data-end="done"] .djinn-eye-flame,
+  .djinn-eye[data-end="done"] .djinn-eye-lid {
     animation: none;
+  }
+  .djinn-eye[data-mood="thinking"] .djinn-eye-iris {
+    animation: none;
+    transform: translate(-0.25rem, -0.1875rem);
+  }
+  .djinn-eye[data-end="done"] .djinn-eye-shine {
+    animation: flare 1s linear 1;
   }
 }
 html[data-motion="reduced"] .djinn-eye[data-shine] .djinn-eye-shine,
 html[data-motion="reduced"]
   .djinn-eye-perch[data-perch="reading"]
   > .djinn-eye[data-mood="reading"]
-  .djinn-eye-iris {
+  .djinn-eye-iris,
+html[data-motion="reduced"] .djinn-eye[data-end="done"] .djinn-eye-ball,
+html[data-motion="reduced"] .djinn-eye[data-end="done"] .djinn-eye-flame,
+html[data-motion="reduced"] .djinn-eye[data-end="done"] .djinn-eye-lid {
   animation: none;
+}
+html[data-motion="reduced"] .djinn-eye[data-mood="thinking"] .djinn-eye-iris {
+  animation: none;
+  transform: translate(-0.25rem, -0.1875rem);
+}
+html[data-motion="reduced"] .djinn-eye[data-end="done"] .djinn-eye-shine {
+  animation: flare 1s linear 1;
 }
 
 /* The layer it flies in, above the page, below the dialogs: it holds nothing else and takes no pointer. */
@@ -317,6 +446,12 @@ html[data-motion="reduced"]
 }
 .lead-socket:has(.djinn-eye) > .lead-socket-ring {
   opacity: 1;
+}
+.lead-socket:has(.djinn-eye[data-mood="thinking"]) > .lead-socket-ring {
+  border-color: var(--think-line);
+}
+.lead-socket:has(.djinn-eye[data-mood="failed"]) > .lead-socket-ring {
+  border-color: var(--st-failed);
 }
 @media (prefers-reduced-motion: reduce) {
   .lead-socket > :is(.lead-socket-upper, .lead-socket-lower),
