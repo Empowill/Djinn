@@ -1098,3 +1098,24 @@ test("the eye's batch states and the lead's side journal keep their tokens and c
     /color:\s*var\(--st-failed\);/,
   );
 });
+
+test("the wish header lets its dropdowns open above the content below", () => {
+  const stylesCss = fs
+    .readFileSync(path.join(root, "styles.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const wishCss = fs
+    .readFileSync(path.join(root, "wish.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const block = (css, selector) => {
+    const start = css.indexOf(selector + " {");
+    assert.ok(start >= 0, `${selector} exists`);
+    return css.slice(start, css.indexOf("}", start));
+  };
+  const hero = block(stylesCss, ".hero");
+  assert.doesNotMatch(hero, /overflow\s*:\s*(?:hidden|clip|scroll|auto)/);
+  assert.match(hero, /position:\s*relative;/);
+  assert.match(hero, /z-index:\s*3;/);
+  const picker = block(wishCss, ".branch-picker");
+  assert.match(picker, /position:\s*absolute;/);
+  assert.match(picker, /z-index:\s*60;/);
+});
