@@ -60,14 +60,14 @@ func TestTaskEndStopsWhatItsWorkerStarted(t *testing.T) {
 				env, _, _ := f.env(t)
 				env = append(env, "DJINN_FAKE_BIN="+os.Args[0], "DJINN_LEFT="+leftovers)
 				providers := testProviders()
-				providers[planv1.Provider_PROVIDER_CLAUDE] = envProvider{Claude{Command: script, Grace: time.Second}, env}
+				providers[planv1.Provider_PROVIDER_CLAUDE] = envProvider{Claude{Command: script, Grace: 100 * time.Millisecond}, env}
 				var opts []Option
 				if mode == "scope" {
 					opts = append(opts, WithScopes(scopes))
 				}
 				home := t.TempDir()
 				e := upWith(t, home, providers, opts...)
-				wishID, _ := e.wish(t, gitRepo(t))
+				wishID, _ := e.wish(t, nativeFolder(t))
 				task := e.mustSpawn(t, wishID, "Start a dev server", "x",
 					&planv1.TaskServiceSpawnRequest{Provider: planv1.Provider_PROVIDER_CLAUDE})
 				job, daemon := leftoverPID(t, leftovers, "job"), leftoverPID(t, leftovers, "daemon")

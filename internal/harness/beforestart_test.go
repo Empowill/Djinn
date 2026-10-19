@@ -20,16 +20,15 @@ func (p pathProvider) Start(ctx context.Context, spec Spec) (Worker, error) {
 // djinn up brings its PATH up to date before each worker starts (machine.ExtendPath): a worker started after an
 // agent was installed from the window finds it, without a restart.
 func TestBeforeStartRunsBeforeTheWorker(t *testing.T) {
-	repo := gitRepo(t)
 	installed := t.TempDir()
 	path := &atomic.Value{}
 	t.Setenv("PATH", os.Getenv("PATH"))
-	providers := Providers()
+	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_FAKE] = pathProvider{path: path}
 	e := upWith(t, t.TempDir(), providers, WithBeforeStart(func() {
 		_ = os.Setenv("PATH", os.Getenv("PATH")+string(os.PathListSeparator)+installed)
 	}))
-	wishID, _ := e.wish(t, repo)
+	wishID, _ := e.wish(t, nativeFolder(t))
 	task := e.spawn(t, wishID, "text hello")
 	e.watch(t.Context(), t, task.GetId(), 0)
 	if got, _ := path.Load().(string); got == "" || got[len(got)-len(installed):] != installed {

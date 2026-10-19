@@ -39,9 +39,9 @@ func TestPauseProcess(t *testing.T) {
 	if err := p.Pause(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond) // What was written before the stop is still read.
+	time.Sleep(40 * time.Millisecond) // What was written before the stop is still read.
 	before := ticks.Load()
-	time.Sleep(200 * time.Millisecond) // Ten ticks, were it not paused.
+	time.Sleep(100 * time.Millisecond) // Five ticks, were it not paused.
 	if after := ticks.Load(); after != before {
 		t.Errorf("%d ticks while paused", after-before)
 	}
@@ -70,11 +70,11 @@ func TestPauseProcess(t *testing.T) {
 
 // pausedStream starts claude's fake on a turn that waits for a message mid-turn (stream-idle), with an idle timeout,
 // and pauses it once it said its first words: the timers of a stream Djinn holds still. The idle timeout must outlast
-// the fake's start, slow under -race on a loaded machine: from 2 s, doubled while the start alone outlasts it. It
+// the fake's start, slow under -race on a loaded machine: from 200 ms, doubled while the start alone outlasts it. It
 // gives the idle timeout it took.
 func pausedStream(t *testing.T) (w Worker, events <-chan Event, input string, idle time.Duration) {
 	t.Helper()
-	for idle = 2 * time.Second; ; idle *= 2 {
+	for idle = 200 * time.Millisecond; ; idle *= 2 {
 		w, events, input, ok := startPaused(t, idle)
 		if ok {
 			return w, events, input, idle
@@ -126,64 +126,66 @@ func startPaused(t *testing.T, idle time.Duration) (w Worker, events <-chan Even
 	return w, all, input, true
 }
 
-// TestStreamPausedIsNotIdle (W226): a worker Djinn holds paused cannot stream; held longer than its idle timeout, it
-// is not cut for an idle stream, and the message sent to it while paused is what it reads once resumed.
-func TestStreamPausedIsNotIdle(t *testing.T) {
+// TestStreamWorker_Pause (W226): a worker Djinn holds paused cannot stream; held longer than its idle timeout, it is
+// not cut for an idle stream, the message sent to it while paused is read once resumed, and the idle timer starts
+// again from zero when it resumes.
+func TestStreamWorker_Pause(t *testing.T) {
 	t.Parallel()
-	w, events, input, idle := pausedStream(t)
-	if err := w.Send("Also check the docs."); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(3 * idle / 2)
-	if err := w.(Pauser).Resume(); err != nil {
-		t.Fatal(err)
-	}
-	hung := time.AfterFunc(10*time.Second, func() {
-		t.Errorf("the worker still runs after 10s")
-		w.Stop()
+	t.Run("not_idle_while_paused", func(t *testing.T) {
+		t.Parallel()
+		w, events, input, idle := pausedStream(t)
+		if err := w.Send("Also check the docs."); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(3 * idle / 2)
+		if err := w.(Pauser).Resume(); err != nil {
+			t.Fatal(err)
+		}
+		hung := time.AfterFunc(10*time.Second, func() {
+			t.Errorf("the worker still runs after 10s")
+			w.Stop()
+		})
+		var got []Event
+		for ev := range events {
+			got = append(got, ev)
+		}
+		hung.Stop()
+		if res := w.Wait(); res.Err != nil || res.ExitCode != 0 {
+			t.Errorf("result = %+v, want a turn that ends well: paused is not idle", res)
+		}
+		if errs := texts(got, "ERROR"); len(errs) > 0 {
+			t.Errorf("errors = %q", errs)
+		}
+		b, err := os.ReadFile(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), "Also check the docs.") {
+			t.Errorf("the worker never read the message sent while it was paused; its input:\n%s", b)
+		}
 	})
-	var got []Event
-	for ev := range events {
-		got = append(got, ev)
-	}
-	hung.Stop()
-	if res := w.Wait(); res.Err != nil || res.ExitCode != 0 {
-		t.Errorf("result = %+v, want a turn that ends well: paused is not idle", res)
-	}
-	if errs := texts(got, "ERROR"); len(errs) > 0 {
-		t.Errorf("errors = %q", errs)
-	}
-	b, err := os.ReadFile(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(b), "Also check the docs.") {
-		t.Errorf("the worker never read the message sent while it was paused; its input:\n%s", b)
-	}
-}
 
-// TestStreamIdleAfterResume (W226): the idle timer starts again from zero when a paused worker resumes, and a stream
-// silent that long once it runs is still cut.
-func TestStreamIdleAfterResume(t *testing.T) {
-	t.Parallel()
-	w, events, _, idle := pausedStream(t)
-	time.Sleep(3 * idle / 2)
-	resumed := time.Now()
-	if err := w.(Pauser).Resume(); err != nil {
-		t.Fatal(err)
-	}
-	hung := time.AfterFunc(10*time.Second, func() {
-		t.Errorf("the worker still runs after 10s")
-		w.Stop()
+	t.Run("idle_restarts_after_resume", func(t *testing.T) {
+		t.Parallel()
+		w, events, _, idle := pausedStream(t)
+		time.Sleep(3 * idle / 2)
+		resumed := time.Now()
+		if err := w.(Pauser).Resume(); err != nil {
+			t.Fatal(err)
+		}
+		hung := time.AfterFunc(10*time.Second, func() {
+			t.Errorf("the worker still runs after 10s")
+			w.Stop()
+		})
+		for range events {
+		}
+		hung.Stop()
+		silent := time.Since(resumed)
+		if res := w.Wait(); !isStreamIdle(res.Err) {
+			t.Errorf("result = %+v, want a stream idle error: silent once it runs", res)
+		}
+		if silent < idle {
+			t.Errorf("cut %v after it resumed, before its idle timeout of %v: the time paused counted", silent, idle)
+		}
 	})
-	for range events {
-	}
-	hung.Stop()
-	silent := time.Since(resumed)
-	if res := w.Wait(); !isStreamIdle(res.Err) {
-		t.Errorf("result = %+v, want a stream idle error: silent once it runs", res)
-	}
-	if silent < idle {
-		t.Errorf("cut %v after it resumed, before its idle timeout of %v: the time paused counted", silent, idle)
-	}
 }

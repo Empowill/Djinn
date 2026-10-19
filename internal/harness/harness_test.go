@@ -336,6 +336,15 @@ func TestSpawnRefused(t *testing.T) {
 			t.Errorf("%s: %v, want %v", tt.name, err, tt.code)
 		}
 	}
+	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: store.NewID()}))
+	if err == nil {
+		for s.Receive() {
+		}
+		err = s.Err()
+	}
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("watch an unknown task: %v", err)
+	}
 }
 
 func TestStopLongWorker(t *testing.T) {
@@ -370,7 +379,8 @@ func TestStopLongWorker(t *testing.T) {
 
 // TestNothingLostOnShutdown: djinn up stops while a worker runs; its task is interrupted, keeps what resuming it
 // needs, and its events survive the restart. The next start resumes it, in the same task, worktree and session, and
-// it finishes. A task a crash left running is resumed the same way.
+// it finishes. A task a crash left running is resumed the same way; a planned task that no worker ever started stays
+// pending across a restart.
 func TestNothingLostOnShutdown(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -379,6 +389,16 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	e := up(t, home)
 	wishID, _ := e.wish(t, repo)
 	task := e.spawn(t, wishID, "text halfway\nusage 10 2 0.01\nsleep 1h")
+	planned := &planv1.Task{Id: "01a118d0-0000-7000-8000-000000000001", WishId: "01a118d0-0000-7000-8000-0000000000aa",
+		Code: "T01", Title: "planned", Status: planv1.TaskStatus_TASK_STATUS_PENDING}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", planned); err != nil {
+			return err
+		}
+		return tx.Put(planned)
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Wait until the worker has said what it had to say before its long sleep.
 	ctx, cancel := context.WithCancel(t.Context())
@@ -399,6 +419,9 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	worktree := before.GetWorktree()
 
 	e = up(t, home)
+	if gotPlan, err := store.Get[*planv1.Task](t.Context(), e.db, planned.GetId()); err != nil || gotPlan.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
+		t.Errorf("planned task after a restart: %v, %v", gotPlan.GetStatus(), err)
+	}
 	events := e.watch(t.Context(), t, task.GetId(), 0)
 	got := e.get(t, task.GetId())
 	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetWorktree() != worktree || got.GetSessionId() != task.GetId() ||
@@ -486,50 +509,6 @@ func putTask(t *testing.T, db *store.Store, task *planv1.Task, prompt string) {
 	}
 }
 
-func TestWatchUnknown(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: store.NewID()}))
-	if err == nil {
-		for s.Receive() {
-		}
-		err = s.Err()
-	}
-	if connect.CodeOf(err) != connect.CodeNotFound {
-		t.Errorf("watch an unknown task: %v", err)
-	}
-}
-
-// TestRecoverLeavesPlannedTasks: a task that no worker ever started, such as the plan of an imported wish, stays
-// pending across a restart; only a started one is interrupted.
-func TestRecoverLeavesPlannedTasks(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home := t.TempDir()
-	e := up(t, home)
-	planned := &planv1.Task{Id: "01a118d0-0000-7000-8000-000000000001", WishId: "01a118d0-0000-7000-8000-0000000000aa",
-		Code: "T01", Title: "planned", Status: planv1.TaskStatus_TASK_STATUS_PENDING}
-	err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "put", planned); err != nil {
-			return err
-		}
-		return tx.Put(planned)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.down()
-	e = up(t, home)
-	got, err := store.Get[*planv1.Task](t.Context(), e.db, planned.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
-		t.Errorf("planned task after a restart: %s, want pending", got.GetStatus())
-	}
-}
-
 // waitFor polls cond until it holds, or fails after a few seconds.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
@@ -538,7 +517,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		if time.Now().After(deadline) {
 			t.Fatalf("waited in vain for %s", what)
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

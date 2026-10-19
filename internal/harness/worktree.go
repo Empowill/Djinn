@@ -267,11 +267,13 @@ func branchHasNoCommits(ctx context.Context, dir, branch string) bool {
 	if branch == "" {
 		return false
 	}
-	head, err := git(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
-	if err != nil || head == "" {
+	reflog, err := git(ctx, dir, "log", "-g", "--format=%H", "refs/heads/"+branch)
+	if err != nil || reflog == "" {
 		return false
 	}
-	start := branchStartCommit(ctx, dir, branch)
+	lines := strings.Split(strings.TrimSpace(reflog), "\n")
+	head := strings.TrimSpace(lines[0])
+	start := strings.TrimSpace(lines[len(lines)-1])
 	return start != "" && start == head
 }
 

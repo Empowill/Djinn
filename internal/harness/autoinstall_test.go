@@ -23,64 +23,74 @@ import (
 func TestABuildOfTheRunningLineInstallsItself(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	in := integrating(t)
+	repo := gitRepo(t)
+	e := up(t, t.TempDir())
+	wishID, projectID := e.wish(t, repo)
 	ctx := t.Context()
-	project, err := store.Get[*planv1.Project](ctx, in.db, in.projectID)
+	project, err := store.Get[*planv1.Project](ctx, e.db, projectID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	in.git(t, in.repo, "branch", "feat/robustness")
-	in.git(t, in.repo, "branch", "feat/side")
-	side, err := in.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Side", ProjectIds: []string{in.projectID}}))
+	g := func(args ...string) string {
+		t.Helper()
+		out, err := git(ctx, repo, args...)
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return out
+	}
+	g("branch", "feat/robustness")
+	g("branch", "feat/side")
+	side, err := e.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Side", ProjectIds: []string{projectID}}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for wish, branch := range map[string]string{in.wishID: "feat/robustness", side.Msg.GetWish().GetId(): "feat/side"} {
-		if _, err := in.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
-			WishId: wish, ProjectId: in.projectID, Branch: branch,
+	for wish, branch := range map[string]string{wishID: "feat/robustness", side.Msg.GetWish().GetId(): "feat/side"} {
+		if _, err := e.wishes.SetIntegration(ctx, connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+			WishId: wish, ProjectId: projectID, Branch: branch,
 		})); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// merge commits a task's work and merges it into into, as the integration does, and returns the merge.
-	merge := func(wishID, code, into string) string {
+	merge := func(wID, code, into string) string {
 		branch := code + "-work-0000000" + code[1:]
-		in.git(t, in.repo, "switch", "--quiet", "-c", branch, into)
-		writeFile(t, in.repo, "app/src/"+code+".txt", code+"\n")
-		commitAll(t, in.repo, "Work of "+code)
-		in.git(t, in.repo, "switch", "--quiet", into)
-		in.git(t, in.repo, "merge", "--no-ff", "--quiet", "-m", "Merge branch '"+branch+"' into "+into, branch)
-		if err := in.db.Tx(ctx, func(tx *store.Tx) error {
+		g("switch", "--quiet", "-c", branch, into)
+		writeFile(t, repo, "app/src/"+code+".txt", code+"\n")
+		commitAll(t, repo, "Work of "+code)
+		g("switch", "--quiet", into)
+		g("merge", "--no-ff", "--quiet", "-m", "Merge branch '"+branch+"' into "+into, branch)
+		if err := e.db.Tx(ctx, func(tx *store.Tx) error {
 			if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
 				return err
 			}
 			return tx.Put(&planv1.Task{
-				Id: store.NewID(), WishId: wishID, ProjectId: in.projectID, Code: code, Title: "Title of " + code,
+				Id: store.NewID(), WishId: wID, ProjectId: projectID, Code: code, Title: "Title of " + code,
 				Branch: branch, Status: planv1.TaskStatus_TASK_STATUS_DONE, CreateTime: timestamppb.Now(),
 			})
 		}); err != nil {
 			t.Fatal(err)
 		}
-		return in.git(t, in.repo, "rev-parse", "HEAD")
+		return strings.TrimSpace(g("rev-parse", "HEAD"))
 	}
-	running := merge(in.wishID, "W1", "feat/robustness")
-	ahead := merge(in.wishID, "W2", "feat/robustness")
+	running := merge(wishID, "W1", "feat/robustness")
+	ahead := merge(wishID, "W2", "feat/robustness")
 	parallel := merge(side.Msg.GetWish().GetId(), "W3", "feat/side")
-	in.git(t, in.repo, "switch", "--quiet", "feat/robustness")
-	in.h.version = "local-" + running[:7]
+	g("switch", "--quiet", "feat/robustness")
+	e.h.version = "local-" + running[:7]
 
-	settingsFile := filepath.Join("projects", in.projectID, "settings.txtpb")
+	settingsFile := filepath.Join("projects", projectID, "settings.txtpb")
 	const checked = "install: \"install\"\nchecks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n"
 	auto := func(text, branch, sha string) bool {
 		t.Helper()
-		writeFile(t, in.home, settingsFile, text)
-		settings, err := plan.LoadSettings(in.home, project)
+		writeFile(t, e.home, settingsFile, text)
+		settings, err := plan.LoadSettings(e.home, project)
 		if err != nil {
 			t.Fatal(err)
 		}
 		b := Built{Branch: branch, Sha: sha}
-		in.h.compare(ctx, project, &b)
-		return in.h.installsItself(ctx, project, settings, b)
+		e.h.compare(ctx, project, &b)
+		return e.h.installsItself(ctx, project, settings, b)
 	}
 	if !auto(checked, "feat/robustness", ahead) {
 		t.Error("the running line's build, push checked: offered only")
@@ -95,20 +105,20 @@ func TestABuildOfTheRunningLineInstallsItself(t *testing.T) {
 		t.Error("no push check passed, and the build installs by itself")
 	}
 	// Installed already: not again. A newer build of the line holds it: installs.
-	in.h.mu.Lock()
-	in.h.installed[in.projectID] = ahead
-	in.h.mu.Unlock()
+	e.h.mu.Lock()
+	e.h.installed[projectID] = ahead
+	e.h.mu.Unlock()
 	if auto(checked, "feat/robustness", ahead) {
 		t.Error("the build installed already installs again")
 	}
-	newer := merge(in.wishID, "W4", "feat/robustness")
+	newer := merge(wishID, "W4", "feat/robustness")
 	if !auto(checked, "feat/robustness", newer) {
 		t.Error("the line's newer build, holding the one installed: offered only")
 	}
 	// The other branch's build installed by hand, newer than the running Djinn: the line's build does not overwrite it.
-	in.h.mu.Lock()
-	in.h.installed[in.projectID] = parallel
-	in.h.mu.Unlock()
+	e.h.mu.Lock()
+	e.h.installed[projectID] = parallel
+	e.h.mu.Unlock()
 	if auto(checked, "feat/robustness", newer) {
 		t.Error("the line's build overwrites another branch's install")
 	}
