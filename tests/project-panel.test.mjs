@@ -720,7 +720,8 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
     "Merge review",
     "Question investigator",
   ];
-  const rowChunks = html
+  const [rowsHtml] = html.split('<section class="config-box summoning-bulk">');
+  const rowChunks = rowsHtml
     .split('<div class="setting-row summoning-row">')
     .slice(1)
     .map((chunk) => chunk.split("</select>")[0] + "</select>");
@@ -853,7 +854,10 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
     restrictedHtml,
     /<option disabled="" title="sign in with codex login">Codex — sign in with codex login<\/option>/,
   );
-  const restrictedRows = restrictedHtml
+  const [restrictedRowsHtml] = restrictedHtml.split(
+    '<section class="config-box summoning-bulk">',
+  );
+  const restrictedRows = restrictedRowsHtml
     .split('<div class="setting-row summoning-row">')
     .slice(1);
   // Lead row shows Antigravity greyed with the tooltip instead of offering its models or hiding it.

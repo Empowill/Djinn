@@ -1912,7 +1912,8 @@ button.wish-models[aria-expanded="true"] {
   border-color: var(--n-5e);
   color: var(--n-e7);
 }
-.wish-lands b {
+.wish-lands b,
+.wish-models b {
   font-weight: 600;
 }
 .wish-lands code,
