@@ -338,11 +338,11 @@ export function WishApp() {
   const importFile = async (file: File) => {
     try {
       const res = await importWish(clients, file);
-      await data.changed(res.wishId, [Change.WISH, Change.PROJECT]);
       setSelected(res.wishId);
       setToast(
         res.already ? t("import.already") : res.note || t("import.done"),
       );
+      void data.changed(res.wishId, [Change.WISH, Change.PROJECT]);
     } catch (err) {
       setToast(message(err));
     }
