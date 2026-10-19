@@ -1,14 +1,13 @@
 // The For agents tab of a wish: the blocks its lead and workers wrote for one another (a hand-off, a reference, a
-// report), every kind but the decisions, which have their own tab, and the logs, which the journal shows. Nothing in
-// it waits for the developer: whatever does is a question. Each block is folded under its title; opened, Markdown is
-// rendered, another media type shown as it is. No mark: a block is not read nor approved.
+// report), every kind but the decisions, which have their own tab. Nothing in it waits for the developer: whatever does
+// is a question. Each block is folded under its title; opened, Markdown is rendered, another media type shown as it is.
+// No mark: a block is not read nor approved.
 import { ChevronRight } from "lucide-react";
 import { memo, useState } from "react";
 
 import { type Block } from "../gen/ts/plan/v1/plan_pb";
 import { isDecisionBlock } from "./data/decisions";
 import { when } from "./data/format";
-import { isLog } from "./data/journal";
 import type { ReadState } from "./data/store";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
@@ -16,9 +15,9 @@ import { MarkdownBody } from "./markdown-body";
 import { ReadingLine } from "./reading-line";
 import { SafeSvg } from "./safe-svg";
 
-// agentBlocks are the blocks of the For agents tab: neither a decision nor a log.
+// agentBlocks are the blocks of the For agents tab: every block that is not a decision.
 export function agentBlocks(blocks: readonly Block[]): Block[] {
-  return blocks.filter((b) => !isLog(b) && !isDecisionBlock(b));
+  return blocks.filter((b) => !isDecisionBlock(b));
 }
 
 export function AgentBlocks({

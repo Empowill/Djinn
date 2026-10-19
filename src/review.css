@@ -2467,3 +2467,74 @@ html[data-theme="light"] .review .question-meta .wish-origin {
   font-size: var(--font-size-body, 0.75rem);
   color: var(--muted);
 }
+
+/* The driven lead's running or failed batch beside Lead, and its journal of past batches. */
+.lead-batch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.25rem 0.5625rem;
+  border: 1px solid var(--line);
+  border-radius: 0.375rem;
+  background: var(--surface);
+  font-size: var(--font-size-body, 0.75rem);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lead-batch.running {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.lead-batch.failed {
+  border-color: var(--st-failed);
+  color: var(--st-failed);
+}
+.lead-batch-cost {
+  font-variant-numeric: tabular-nums;
+}
+.lead-batch-retry,
+.lead-batch-failed {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--line);
+  font-size: var(--font-size-body, 0.75rem);
+}
+.lead-batch-failed {
+  border-color: var(--st-failed);
+  color: var(--st-failed);
+}
+.lead-journal-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.lead-journal-popover {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  right: 0;
+  z-index: 60;
+  min-width: 34rem;
+  max-width: min(52rem, 90vw);
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  box-shadow: 0 0.625rem 1.875rem color-mix(in srgb, black 35%, transparent);
+}
+.lead-journal-list {
+  width: 100%;
+}
+.lead-batch-launches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.lead-batch-sentence {
+  max-width: 24rem;
+}
+.lead-batch-error {
+  color: var(--st-failed);
+}

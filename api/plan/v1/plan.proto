@@ -954,7 +954,7 @@ message LeadBatch {
   string error = 12;
   // The commands the lead ran, in order, a line each.
   repeated string commands = 13;
-  // The text that ended its turn: no one reads it but the next leads, in their journal.
+  // The line that ended its turn, for the journal and the next leads.
   string note = 14;
   // What it spent.
   Usage usage = 15;
@@ -4285,6 +4285,8 @@ message WishExport {
   repeated Command commands = 9;
   // The tilasms of the wish. An export to a file carries the files of every version; a snapshot, only the manifests.
   repeated TilasmExport tilasms = 10;
+  // The batches of the driven lead about this wish, oldest first.
+  repeated LeadBatch lead_batches = 11;
 }
 
 // ProjectRef names a project without its folder, so that another machine finds its own copy.
@@ -4532,6 +4534,8 @@ message LeadServiceGetResponse {
   LeadLimit limit = 9;
   // The global Summoning Circle: one row per kind of model-calling worker across all projects.
   repeated WorkerSeat circle = 10;
+  // The latest batches of the driven lead's journal, oldest first.
+  repeated LeadBatch journal = 11;
 }
 
 // LeadExit is how the program of the lead's terminal ended.
@@ -4634,6 +4638,8 @@ message LeadServiceJournalRequest {
 message LeadServiceJournalResponse {
   // The journal, in Markdown: a paragraph per batch, the latest last.
   string text = 1;
+  // The batches of the journal, oldest first.
+  repeated LeadBatch batches = 2;
 }
 
 message LeadServiceMoveRequest {

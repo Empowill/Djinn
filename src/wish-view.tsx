@@ -1,8 +1,8 @@
 // The screen of one wish, read from the services: on the left, what waits for you first (its open questions in the
 // questions column, question-column.tsx, the blocking ones first; its workers that wait, and "My wish is granted" once
 // Djinn proposes it; the questions you asked to investigate), on the right its workers running now and to come
-// (glance.tsx), then below both its journal and the rights its workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
-// (decision-log.tsx), its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the last
+// (glance.tsx), then below both the rights its workers have. Its tasks have a tab of their own (task-tabs.tsx), with what they spent, its decisions another
+// (decision-log.tsx), its history (commands and lead batches) another, its tilasms another (tilasms.tsx), and the blocks its agents wrote for one another the last
 // (agent-blocks.tsx): what is for you is a question.
 // Djinn proposes; only the user grants.
 import {
@@ -12,7 +12,6 @@ import {
   GitMerge,
   Pause,
   Play,
-  ScrollText,
   Sparkles,
   Trash2,
   Wrench,
@@ -29,7 +28,6 @@ import {
 
 import {
   Allowance,
-  type Block,
   Change,
   type Choice,
   Closer,
@@ -96,7 +94,7 @@ import {
   isWithdrawn,
 } from "./data/format";
 import { ifritOut, litIfrits } from "./data/ifrit";
-import { type Entry, isLog, journal } from "./data/journal";
+import { type Entry, journal } from "./data/journal";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
 import { ReadingLine } from "./reading-line";
@@ -105,7 +103,6 @@ import { AttentionBar, attentionOf, useReach } from "./attention";
 import { ModalFrame } from "./frame";
 import { IfritBadge } from "./ifrit";
 import { useWrites } from "./marks";
-import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
 import { placeTaken, useKeepPlace } from "./scroll-anchor";
 import { DecisionLog } from "./decision-log";
@@ -145,6 +142,7 @@ import { WishTask } from "./wish-task";
 import {
   LastPushes,
   LeadButton,
+  LeadJournal,
   MainMerges,
   PushStrategySelector,
   WhereWorkLands,
@@ -324,6 +322,10 @@ export function WishView({
   const work = workCount(detail.tasks);
   const granted = wish.state === WishState.GRANTED;
   const [view, setView] = useState<View>(opening ? "tilasms" : "main");
+  const [historyCount, setHistoryCount] = useState<{
+    wishId: string;
+    count: number;
+  }>();
   const [deleting, setDeleting] = useState(false);
   const [movingAzima, setMovingAzima] = useState<Task | null>(null);
   const [movingQuestion, setMovingQuestion] = useState<Question | null>(null);
@@ -1331,6 +1333,7 @@ export function WishView({
                 ? (decisionsTotal ?? decisions.length)
                 : null
             }
+            history={historyCount?.wishId === wish.id ? historyCount.count : -1}
             tilasms={
               tilasmsState === "ready" || detail.tilasms.length > 0
                 ? detail.tilasms.length
@@ -1393,6 +1396,13 @@ export function WishView({
               }}
               onTask={handleTaskFocus}
               onMore={handleDecisionsMore}
+            />
+          )}
+          {view === "history" && (
+            <Journal
+              key={wish.id}
+              wish={wish}
+              onCount={(count) => setHistoryCount({ wishId: wish.id, count })}
             />
           )}
           {view === "tasks" &&
@@ -1514,16 +1524,6 @@ export function WishView({
               />
 
               <div className="main-after">
-                <Journal
-                  wish={wish}
-                  blocks={detail.blocks}
-                  blocksState={blocksState}
-                  onRetryBlocks={retryBlocks}
-                  onMore={() => {
-                    if (store) void store.loadMore(wish.id, Change.BLOCK);
-                  }}
-                />
-
                 {projects.length > 0 && (
                   <Rights
                     wish={wish}
@@ -1693,33 +1693,23 @@ export function WaitingTasks({
   );
 }
 
-// Journal is the story of the wish: its log blocks at once, and the commands that changed it once asked for (or at
-// once when it has no log block). The latest entries show, the older ones fold behind a line (older.tsx).
-// WishService.Snapshot reads the whole wish, events included: it is read on a click, then again as the wish changes.
+// Journal is the History tab of the wish: the lead journal for that wish (past lead batches that touched it) and the
+// commands that changed it. The latest command entries show, the older ones fold behind a line (older.tsx).
+// WishService.Snapshot reads the whole wish, events and lead batches included: it is read when the tab opens, then
+// again as the wish changes.
 function Journal({
   wish,
-  blocks,
-  blocksState = "ready",
-  onRetryBlocks,
-  onMore,
+  onCount,
 }: {
   wish: Wish;
-  blocks: Block[];
-  blocksState?: ReadState;
-  onRetryBlocks?: () => void;
-  onMore?: () => void;
+  onCount?: (count: number) => void;
 }) {
   const clients = useClients();
-  const [shown, setShown] = useState(false);
-  const [commands, setCommands] = useState(false);
   const [exp, setExp] = useState<WishExport>();
   const [error, setError] = useState("");
-  const hasLogs = useMemo(() => blocks.some(isLog), [blocks]);
-  const showCommands = commands || !hasLogs;
   // What the store read of the wish: a new one means the wish changed.
   const detail = useData((s) => s.details[wish.id]);
   useEffect(() => {
-    if (!showCommands || !shown) return;
     let current = true;
     clients.wishes
       .snapshot({ wishId: wish.id })
@@ -1727,6 +1717,9 @@ function Journal({
         if (!current) return;
         setExp(res.export);
         setError("");
+        const cmds = journal(res.export).length;
+        const batches = res.export?.leadBatches?.length ?? 0;
+        onCount?.(cmds + batches);
       })
       .catch((err) => {
         if (current) setError(message(err));
@@ -1734,54 +1727,28 @@ function Journal({
     return () => {
       current = false;
     };
-  }, [clients, wish, showCommands, shown, detail]);
-  const entries = useMemo(
-    () => journal(showCommands ? exp : undefined, blocks),
-    [showCommands, exp, blocks],
-  );
-  const totalCount = entries.length;
-  const { shown: recent, more } = useRecent(totalCount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- onCount is a stable callback from WishView
+  }, [clients, wish, detail]);
+  const entries = useMemo(() => journal(exp), [exp]);
+  const batches = useMemo(() => exp?.leadBatches ?? [], [exp]);
+  const totalCount = entries.length + batches.length;
+  const { shown: recent, more } = useRecent(entries.length);
   return (
     <section
+      role="tabpanel"
+      aria-labelledby="view-tab-history"
       className="wish-section wish-journal"
       aria-label={t("page.journal")}
     >
-      <div className="section-heading">
-        <button
-          className="fold-heading"
-          onClick={() => setShown(!shown)}
-          aria-expanded={shown}
-        >
-          <ChevronRight size={14} className={shown ? "rotated-90" : ""} />
-          <h3>
-            {t("page.journal")}
-            {totalCount > 0 && <span className="count">{totalCount}</span>}
-          </h3>
-        </button>
-        {shown && hasLogs && (
-          <button
-            className="text-button"
-            onClick={() => setCommands(!commands)}
-            aria-pressed={commands}
-          >
-            <ScrollText size={13} />
-            {commands ? t("wish.journal_hide") : t("wish.journal_show")}
-          </button>
-        )}
-      </div>
-      {shown && error && <p className="muted-text">{error}</p>}
-      {shown && showCommands && blocksState === "ready" && !exp && !error && (
+      {error && <p className="muted-text">{error}</p>}
+      {!exp && !error && (
         <ReadingLine kind="commands" state="reading" size="card-r" />
       )}
-      {shown && entries.length === 0 && blocksState !== "ready" && (
-        <ReadingLine
-          kind="agents"
-          state={blocksState}
-          size="card-r"
-          onRetry={onRetryBlocks}
-        />
+      {exp && totalCount === 0 && (
+        <EmptyState art="decisions">{t("wish.no_history")}</EmptyState>
       )}
-      {shown && entries.length > 0 && (
+      {batches.length > 0 && <LeadJournal batches={batches} />}
+      {entries.length > 0 && (
         <table className="compact-table journal-list">
           <tbody>
             {entries.slice(0, recent).map((entry) => (
@@ -1790,20 +1757,15 @@ function Journal({
           </tbody>
         </table>
       )}
-      {shown && (
-        <OlderLine
-          hidden={totalCount - recent}
-          label={(count, hidden) =>
-            count < hidden
-              ? t("wish.journal_older_some", { count, hidden })
-              : t("wish.journal_older", { count })
-          }
-          onShow={() => {
-            more();
-            onMore?.();
-          }}
-        />
-      )}
+      <OlderLine
+        hidden={entries.length - recent}
+        label={(count, hidden) =>
+          count < hidden
+            ? t("wish.journal_older_some", { count, hidden })
+            : t("wish.journal_older", { count })
+        }
+        onShow={more}
+      />
     </section>
   );
 }
@@ -1814,15 +1776,12 @@ export const JournalEntry = memo(function JournalEntry({
   entry: Entry;
 }) {
   return (
-    <tr className={entry.command ? "command" : "log"}>
+    <tr className="command">
       <td>
         <time>{when(entry.at)}</time>
       </td>
       <td>{entry.command && <code>{entry.command}</code>}</td>
-      <td>
-        {entry.summary && <span>{entry.summary}</span>}
-        {entry.note && <MarkdownBody text={entry.note} />}
-      </td>
+      <td>{entry.summary && <span>{entry.summary}</span>}</td>
     </tr>
   );
 });

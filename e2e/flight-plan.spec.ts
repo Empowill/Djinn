@@ -104,14 +104,18 @@ const lampOf = (wishId: string, title: string) => {
         content: "The wick was **too short**: trimmed to 4 mm.",
         create_time: at,
       },
+    ],
+    lead_batches: [
       {
         id: randomUUID(),
-        wish_id: wishId,
-        kind: "log",
-        title: "Kick-off",
-        position: "2000",
-        content: "Two workers: the wick, then the map.",
-        create_time: at,
+        state: "LEAD_BATCH_STATE_DONE",
+        start_time: at,
+        end_time: at,
+        provider: "PROVIDER_CLAUDE",
+        model: "claude-opus-4-7",
+        wish_ids: [wishId],
+        commands: ["djinn task spawn W1"],
+        note: "Two workers: the wick, then the map.",
       },
     ],
   };
@@ -290,10 +294,10 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
     ).questions;
     expect(open.answer).toBeUndefined();
 
-    // The history of the other wish: with no log blocks, unfolding shows the commands that changed it at once.
+    // The history of the other wish: the History tab shows the commands that changed it.
     await page.locator(".wish-nav").filter({ hasText: oilTitle }).click();
     await expect(page.locator(".hero h1")).toHaveText(oilTitle);
-    await page.getByRole("button", { name: /^History/ }).click();
+    await page.getByRole("tab", { name: /^History/ }).click();
     const journal = page.locator(".journal-list");
     await expect(journal).toContainText("wish make");
     await expect(journal).toContainText("question answer");
@@ -384,9 +388,11 @@ test("a wish's page keeps its header chrome, its tasks' tokens and price across 
     await expect(page.locator(".wish-block")).toContainText("About W1");
     await page.getByRole("tab", { name: /^Wish/ }).click();
     await expect(page.locator("#reports")).toHaveCount(0);
-    // The history is folded: a click opens it.
-    await page.getByRole("button", { name: /^History/ }).click();
-    await expect(page.locator(".journal-list")).toContainText("Kick-off");
+    // The History tab shows the lead journal for the wish.
+    await page.getByRole("tab", { name: /^History/ }).click();
+    await expect(page.locator(".lead-journal-list")).toContainText(
+      "Two workers: the wick, then the map.",
+    );
     await page.getByRole("tab", { name: /^Tasks/ }).click();
     // Its Tasks tab says what it spent: one price, then its tokens; the price's hover tells what was reported and what
     // has no price (its grey in both themes: tests/styles.test.cjs).

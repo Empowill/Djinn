@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -523,8 +524,8 @@ func TestLeadDriver(t *testing.T) {
 		if err != nil || !ok {
 			t.Fatalf("estimate: %v, %v", ok, err)
 		}
-		if hour := estimate + float64(u.GetCacheWriteTokens())*3/1e6; hour < 0.159 || hour > 0.161 {
-			t.Errorf("estimated $%.4f, $%.4f with the hour's writes; claude counted $%.4f", estimate, hour, u.GetCostUsd())
+		if math.Abs(estimate-u.GetCostUsd()) > 1e-6 {
+			t.Errorf("estimated $%.7f; claude counted $%.7f", estimate, u.GetCostUsd())
 		}
 		t.Logf("a batch: $%.4f as claude counts it, $%.4f estimated by the price table; %d tokens read from the cache, %d written",
 			u.GetCostUsd(), estimate, u.GetCacheReadTokens(), u.GetCacheWriteTokens())

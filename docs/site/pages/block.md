@@ -21,7 +21,7 @@ Every new session of the Djinn reads the wish's latest blocks in its brief, and 
 
 | Part | What it is |
 | --- | --- |
-| Kind | What the block is, in a word: decision, section, report, log, diagram, or any word the writer chooses |
+| Kind | What the block is, in a word: decision, section, report, diagram, or any word the writer chooses |
 | Title | One line |
 | Content | Markdown, as a rule; another kind of content may be given, an SVG picture for instance |
 | About | The task whose worker wrote it, if a worker did |
@@ -33,15 +33,14 @@ Some kinds go elsewhere than the other blocks:
 | Kind | Where it shows |
 | --- | --- |
 | Decision | The **Decisions** tab, as a decision by the Djinn or by a task |
-| Log | The wish's **History** |
 | Report | **For agents**, and on the card of a question that names it |
 | Original request | **For agents**: the request the wish was made from, as you wrote it |
 | Request | **For agents**: a request handed over from another wish |
 
 ## Reading blocks in the window
 
-Blocks wait in the wish's last tab, **For agents**, discreet, with their count: every block but the decisions and the
-log. Each one is folded under its title, with its kind, the task it is about, and when it last changed. A click opens
+Blocks wait in the wish's last tab, **For agents**, discreet, with their count: every block but the decisions. Each
+one is folded under its title, with its kind, the task it is about, and when it last changed. A click opens
 it:
 
 - Markdown is shown as written, its tables and lists laid out;
@@ -93,7 +92,7 @@ When a block concerns you, the Djinn asks you a question that names it: that is 
 - **The wish's brief**, which every session of the Djinn starts from, holds its original request whole and its latest
   blocks, cut short when long.
 - **Sharing a wish** carries its blocks to the other machine. See [Sharing a wish](#sharing).
-- **The wish's page**, rendered to one file, shows them as notes, decisions under Decisions and the log under History.
+- **The wish's page**, rendered to one file, shows them as notes, and decisions under Decisions.
 
 ## Good to know
 

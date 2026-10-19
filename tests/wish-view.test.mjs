@@ -202,7 +202,6 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
             title: "Olive oil only",
             content: "It smells good.",
           },
-          { id: "b3", wishId, kind: "log", title: "", content: "W1 started." },
         ],
       }),
     });
@@ -225,7 +224,7 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
     /role="tab" id="view-tab-tasks" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:tasks" aria-hidden="true"><\/span>Tasks<span class="count">2<\/span>/,
   );
   assert.doesNotMatch(html, /Trim the wick|Light the wick/);
-  // No notes: the blocks for agents have the last tab, discreet, with their count: neither the decision nor the log.
+  // No notes: the blocks for agents have the last tab, discreet, with their count: not the decision.
   assert.doesNotMatch(
     html,
     /Lexicon|wick<\/strong> carries|id="block-b1"|>Notes</,
@@ -259,9 +258,12 @@ test("a wish's screen puts its questions first, proposes to grant it when ready,
   // Folded to one line, what you asked with it.
   assert.match(html, /question-card investigating {2}folded/);
   assert.match(html, /You asked: Burn time\?/);
-  // No mark on what the wish shows, nor on the folded question; the journal is folded.
+  // No mark on what the wish shows, nor on the folded question; the History tab sits beside Decisions.
   assert.doesNotMatch(html, /Approve as it is|Mark read/);
-  assert.match(html, /class="fold-heading" aria-expanded="false"/);
+  assert.match(
+    html,
+    /role="tab" id="view-tab-history" aria-selected="false" class=""><span class="djinn-eye-perch" data-perch="tab:history" aria-hidden="true"><\/span>History<\/button>/,
+  );
 });
 
 test("work that merges stays in sight, shows as merging apart from the workers everywhere, then folds once committed", async () => {
@@ -883,14 +885,13 @@ test("a new question renders after the older ones, a revision keeps the order an
     if (handle?.constructor?.name === "MessagePort") handle.unref();
 });
 
-// History (L27, Q81): its label is "History", its count matches only what its list shows (never BlockService's total
-// across decisions, reports and agent blocks), and when there are no log blocks, unfolding it shows the commands
-// without an extra click on "Show the commands".
-test("History counts only the entries it shows and shows commands without an extra click when there are no log blocks", async () => {
+// History tab (L27, Q81, W261): sits beside Tasks and Decisions, shows the wish commands and the lead journal
+// for that wish, and its count matches only what its tab shows (never BlockService's total across blocks).
+test("History tab shows the wish commands and lead journal for that wish and counts only its entries", async () => {
   const container = setupMockDom();
   const wishId = "01a14ba9-36fd-7e8a-92b9-3ffb1b873300";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
-  let blocks = [
+  const blocks = [
     { id: "b1", wishId, kind: "decision", title: "Pick brass", content: "Yes" },
     { id: "b2", wishId, kind: "report", title: "Audit", content: "Clean" },
     { id: "b3", wishId, kind: "section", title: "Plan", content: "Steps" },
@@ -907,11 +908,31 @@ test("History counts only the entries it shows and shows commands without an ext
       method: "/plan.v1.QuestionService/Answer",
     },
   ];
+  const leadBatches = [
+    {
+      id: "lb1",
+      startTime: at(1200),
+      endTime: at(1800),
+      agent: "claude",
+      model: "claude-opus-4-6",
+      sessionId: "sess-abc123456789",
+      wishIds: [wishId],
+      events: ["wish Created: Ship the lamp"],
+      commands: ["task spawn", "question ask"],
+      note: "Spawned W1 and asked Q1; waiting on Q1 before W2.",
+      usage: {
+        inputTokens: 1000n,
+        outputTokens: 200n,
+        costUsd: 0.042,
+        costSource: "reported",
+      },
+    },
+  ];
   const transport = s.createRouterTransport(({ service }) => {
     service(s.WishService, {
       list: () => ({ wishes: [lamp] }),
       describe: () => ({ wish: lamp }),
-      snapshot: () => ({ export: { wish: lamp, commands } }),
+      snapshot: () => ({ export: { wish: lamp, commands, leadBatches } }),
       watch: async function* () {},
     });
     service(s.TaskService, { list: () => ({ tasks: [] }) });
@@ -951,62 +972,45 @@ test("History counts only the entries it shows and shows commands without an ext
       for (let i = 0; i < 4; i++)
         await s.act(() => new Promise((r) => setTimeout(r, 0)));
     };
+    const historyTab = () =>
+      nodes(container).find((n) => n.attributes?.id === "view-tab-history");
+    const countNode = () =>
+      nodes(historyTab()).find((n) =>
+        /\bcount\b/.test(n.attributes?.class ?? ""),
+      );
     const section = () =>
       nodes(container).find((n) =>
         /\bwish-journal\b/.test(n.attributes?.class ?? ""),
       );
-    const foldBtn = () =>
-      nodes(section()).find((n) =>
-        /\bfold-heading\b/.test(n.attributes?.class ?? ""),
+    const rows = () =>
+      nodes(section()).filter(
+        (n) =>
+          n.tagName === "TR" &&
+          !/\blead-journal-note-row\b/.test(n.attributes?.class ?? ""),
       );
-    const countNode = () =>
-      nodes(foldBtn()).find((n) => /\bcount\b/.test(n.attributes?.class ?? ""));
-    const rows = () => nodes(section()).filter((n) => n.tagName === "TR");
-    const showCommandsBtn = () =>
-      nodes(section()).find((n) => n.tagName === "BUTTON" && n !== foldBtn());
 
-    // Folded with 0 log blocks and 40 total blocks: heading says "History" with no lying count.
-    assert.equal(textOf(foldBtn()), "History");
+    // Before opening History (with 40 total blocks): tab says "History" with no lying count.
+    assert.ok(historyTab(), "History tab sits beside Tasks and Decisions");
+    assert.equal(textOf(historyTab()), "History");
     assert.equal(countNode(), undefined);
+    assert.equal(section(), undefined);
 
-    // Unfolding when there are no log blocks fetches and shows commands immediately without an extra click.
-    s.act(() => props(foldBtn()).onClick());
+    // Selecting History fetches the snapshot and shows both the lead journal and the wish commands.
+    s.act(() => props(historyTab()).onClick());
     await settle();
-    assert.equal(showCommandsBtn(), undefined);
-    assert.equal(rows().length, 2);
-    assert.equal(textOf(countNode()), String(rows().length));
+    assert.ok(section(), "History tab renders .wish-journal");
+    assert.equal(rows().length, 3);
+    assert.equal(textOf(countNode()), "3");
+    assert.match(textOf(section()), /claude-opus-4-6/);
+    assert.match(textOf(section()), /sess-abc/);
+    assert.match(textOf(section()), /task spawnquestion ask/);
+    assert.match(
+      textOf(section()),
+      /Spawned W1 and asked Q1; waiting on Q1 before W2\./,
+    );
+    assert.match(textOf(section()), /\$0\.042/);
     assert.match(textOf(section()), /question answer/);
     assert.match(textOf(section()), /wish make/);
-
-    // Fold back and add a log block alongside the non-log blocks (total still 40): count matches the 1 log block.
-    s.act(() => props(foldBtn()).onClick());
-    blocks = [
-      ...blocks,
-      {
-        id: "b4",
-        wishId,
-        kind: "log",
-        title: "Kick-off",
-        content: "Started.",
-        createTime: at(1500),
-      },
-    ];
-    await s.act(async () => {
-      await djinn.store.changed(wishId, [s.Change.BLOCK]);
-    });
-    assert.equal(textOf(countNode()), "1");
-
-    // Unfolding shows the 1 log block; clicking "Show the commands" adds the 2 commands, count matching all 3 rows.
-    s.act(() => props(foldBtn()).onClick());
-    await settle();
-    assert.equal(rows().length, 1);
-    assert.equal(textOf(countNode()), String(rows().length));
-    assert.equal(textOf(showCommandsBtn()), "Show the commands");
-    s.act(() => props(showCommandsBtn()).onClick());
-    await settle();
-    assert.equal(rows().length, 3);
-    assert.equal(textOf(countNode()), String(rows().length));
-    assert.equal(textOf(showCommandsBtn()), "Hide the commands");
   } finally {
     s.act(() => root.unmount());
     close();

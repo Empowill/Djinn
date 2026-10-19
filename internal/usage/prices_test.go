@@ -200,7 +200,7 @@ func TestEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// claude-sonnet-5-5: input 2.0, output 10.0, cache_read 0.10, cache_write 2.50, thinking 10.0.
+	// claude-sonnet-5-5: input 2.0, output 10.0, cache_read 0.10, cache_write 4.0, thinking 10.0.
 	cases := []struct {
 		name      string
 		usage     *planv1.Usage
@@ -208,21 +208,24 @@ func TestEstimate(t *testing.T) {
 		wantCost  float64
 		wantPrice bool
 	}{
-		// (1000*2 + (500-100)*10 + 100*10 + 2000*0.1 + 0*2.50) / 1e6 = 7200 / 1e6.
+		// (1000*2 + (500-100)*10 + 100*10 + 2000*0.1 + 0*4.0) / 1e6 = 7200 / 1e6.
 		{"tokens", &planv1.Usage{InputTokens: 1000, OutputTokens: 500, ThinkingTokens: 100, CacheReadTokens: 2000},
 			"claude-sonnet-5-5", 0.0072, true},
-		// claude-fable-5-1: (1000*10 + 500*50 + 2000*0.25 + 1000*12.50) / 1e6 = 48000 / 1e6 = 0.048.
+		// claude-fable-5-1: (1000*10 + 500*50 + 2000*0.25 + 1000*20.0) / 1e6 = 55500 / 1e6 = 0.0555.
 		{"claude-fable-5-1", &planv1.Usage{InputTokens: 1000, OutputTokens: 500, CacheReadTokens: 2000, CacheWriteTokens: 1000},
-			"claude-fable-5-1", 0.048, true},
+			"claude-fable-5-1", 0.0555, true},
+		// claude-opus-5-5 (1-hour cache write of claude -p): (3*4 + 286*20 + 47074*0.20 + 18102*8.0) / 1e6 = 0.1599628.
+		{"claude-opus-5-5 1h cache write", &planv1.Usage{InputTokens: 3, OutputTokens: 286, CacheReadTokens: 47074, CacheWriteTokens: 18102},
+			"claude-opus-5-5", 0.1599628, true},
 		// gemini-4-argon-high: (1778032*2 + (282495-29581)*12 + 29581*12 + 15863821*0.20) / 1e6 = 10.1187682.
 		{"gemini-4-argon-high", &planv1.Usage{InputTokens: 1778032, OutputTokens: 282495, ThinkingTokens: 29581, CacheReadTokens: 15863821},
 			"Gemini 4 Argon (High)", 10.1187682, true},
 		// (10000*2 + 2000*10) / 1e6 = 40000 / 1e6; the reported 0.060 is checked below.
 		{"reported cost kept", &planv1.Usage{InputTokens: 10000, OutputTokens: 2000, CostUsd: 0.060},
 			"claude-sonnet-5-5", 0.040, true},
-		// Thinking above the output is not taken out of it: (100*10 + 200*10 + 1000*2.5) / 1e6 = 5500 / 1e6.
+		// Thinking above the output is not taken out of it: (100*10 + 200*10 + 1000*4.0) / 1e6 = 7000 / 1e6.
 		{"thinking above output", &planv1.Usage{OutputTokens: 100, ThinkingTokens: 200, CacheWriteTokens: 1000},
-			"claude-sonnet-5-5", 0.0055, true},
+			"claude-sonnet-5-5", 0.007, true},
 		{"no usage", nil, "claude-sonnet-5-5", 0, false},
 		{"unknown model", &planv1.Usage{InputTokens: 1000, OutputTokens: 500}, "custom-unknown-model-xyz", 0, false},
 	}

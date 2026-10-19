@@ -10,6 +10,7 @@ import {
   GitBranchPlus,
   GitMerge,
   GitPullRequestArrow,
+  ScrollText,
   Settings2,
   Terminal,
 } from "lucide-react";
@@ -19,6 +20,8 @@ import {
   type Account,
   type IntegrationBranch,
   type Lead,
+  type LeadBatch,
+  LeadBatchState,
   type LeadExit,
   type LeadSeat,
   ProjectPush,
@@ -29,7 +32,14 @@ import {
   type WishPush,
 } from "../gen/ts/plan/v1/plan_pb";
 import type { Provider as Agent } from "../gen/ts/ui/v1/ui_pb";
-import { effectivePushStrategy, gitReason, when } from "./data/format";
+import {
+  defaultModel,
+  effectivePushStrategy,
+  gitReason,
+  usd,
+  when,
+} from "./data/format";
+import { estimateCost } from "./data/prices";
 import { t } from "./i18n";
 import { UpdateModelsSection } from "./summoning-circle";
 
@@ -40,10 +50,13 @@ const agents: [string, Provider][] = [
   ["antigravity", Provider.ANTIGRAVITY],
 ];
 
-// The lead Djinn drives, for the lead's menu: where it runs, and the accounts of this machine it may move to.
+// The lead Djinn drives, for the lead's menu: where it runs, the accounts of this machine it may move to, its
+// running or failed batch, and its journal of past batches.
 export interface LeadDrive {
   seat?: LeadSeat;
   accounts: Account[];
+  batch?: LeadBatch;
+  journal?: LeadBatch[];
 }
 
 // A seat the lead may move to: its agent, model and account; an empty model is the agent's default, an empty account
@@ -209,10 +222,127 @@ export function WishDescription({
   );
 }
 
+// batchCost formats a batch's cost: exact when reported, else estimated from its token usage.
+export function batchCost(batch: LeadBatch): string {
+  if ((batch.usage?.costUsd ?? 0) > 0) return usd(batch.usage!.costUsd);
+  const est = estimateCost(batch.usage, batch.model, batch.provider);
+  if (est.costUsd > 0) return `≈ ${usd(est.costUsd)}`;
+  return usd(0);
+}
+
+// LeadBatchStatus shows the running or failed batch beside Lead: since when, events, retry when any, and cost.
+export function LeadBatchStatus({ batch }: { batch: LeadBatch }) {
+  const failed = batch.state === LeadBatchState.FAILED;
+  const since = when(
+    failed ? (batch.endTime ?? batch.startTime) : batch.startTime,
+  );
+  const title = [failed && batch.error ? batch.error : "", ...batch.events]
+    .filter(Boolean)
+    .join("\n");
+  return (
+    <span
+      className={failed ? "lead-batch failed" : "lead-batch running"}
+      title={title || undefined}
+    >
+      {since && (
+        <time className="lead-batch-when">
+          {t("inbox.failing_since", { when: since })}
+        </time>
+      )}
+      <span className="lead-batch-events">
+        {t("wish.lead_batch_events", { count: batch.events.length })}
+      </span>
+      {(batch.attempt > 1 || failed) && (
+        <span className="lead-batch-retry">
+          {failed
+            ? batch.attempt > 1
+              ? t("wish.lead_batch_retry_failed", { attempt: batch.attempt })
+              : t("wish.lead_batch_failed")
+            : t("wish.lead_batch_retry", { attempt: batch.attempt })}
+        </span>
+      )}
+      <span className="lead-batch-cost">{batchCost(batch)}</span>
+    </span>
+  );
+}
+
+// LeadJournal lists past batches: when, model and session (plus retry or failed badge), launches, last sentence, cost.
+export function LeadJournal({ batches }: { batches: readonly LeadBatch[] }) {
+  if (batches.length === 0) return null;
+  return (
+    <table className="compact-table lead-journal-list">
+      <tbody>
+        {batches.map((b) => {
+          const failed = b.state === LeadBatchState.FAILED;
+          const model =
+            b.model ||
+            defaultModel(b.provider) ||
+            agentNamed[b.provider] ||
+            "claude";
+          return (
+            <tr
+              key={b.id}
+              className={failed ? "lead-batch-row failed" : "lead-batch-row"}
+            >
+              <td>
+                <time>{when(b.endTime ?? b.startTime)}</time>
+              </td>
+              <td>
+                <span className="lead-batch-model">{model}</span>
+                {b.sessionId && (
+                  <>
+                    {" "}
+                    <code className="lead-batch-session" title={b.sessionId}>
+                      {b.sessionId.slice(0, 8)}
+                    </code>
+                  </>
+                )}
+                {b.attempt > 1 && (
+                  <>
+                    {" "}
+                    <span className="lead-batch-retry">
+                      {t("wish.lead_batch_retry", { attempt: b.attempt })}
+                    </span>
+                  </>
+                )}
+                {failed && (
+                  <>
+                    {" "}
+                    <span className="lead-batch-failed">
+                      {t("wish.lead_batch_failed_badge")}
+                    </span>
+                  </>
+                )}
+              </td>
+              <td className="lead-batch-launches">
+                {b.commands.length > 0 ? (
+                  b.commands.map((c, i) => <code key={i}>{c}</code>)
+                ) : (
+                  <span className="muted-text">—</span>
+                )}
+              </td>
+              <td className="lead-batch-sentence">
+                {b.note}
+                {b.error && (
+                  <span className="lead-batch-error">
+                    {b.note ? ` (${b.error})` : b.error}
+                  </span>
+                )}
+              </td>
+              <td className="lead-batch-cost">{batchCost(b)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 export function LeadButton({
   recorded,
   agents: given,
   open: startOpen = false,
+  journalOpen: startJournalOpen = false,
   focused = true,
   trouble,
   loadAgents,
@@ -225,6 +355,7 @@ export function LeadButton({
   recorded?: Provider;
   agents?: Agent[];
   open?: boolean;
+  journalOpen?: boolean;
   // On a wish, the lead resumes focused on it; on the flying carpet, on no wish: the tooltips say which.
   focused?: boolean;
   // The lead could not start, or ended: a dot on Lead, its tooltip saying why (leadTrouble).
@@ -239,8 +370,10 @@ export function LeadButton({
   onMove?: (seat: SeatChoice) => void;
 }) {
   const [open, setOpen] = useState(startOpen);
+  const [journalShown, setJournalShown] = useState(startJournalOpen);
   const [found, setFound] = useState<Agent[] | undefined>(given);
   const root = useRef<HTMLDivElement>(null);
+  const journalRoot = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     let live = true;
@@ -264,64 +397,115 @@ export function LeadButton({
     // Opening the menu loads the agents once; a new loadAgents, at each render of the head, does not.
     // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- loadAgents left out, see above
   }, [open]);
+  useEffect(() => {
+    if (!journalShown) return;
+    const away = (event: MouseEvent) => {
+      if (!journalRoot.current?.contains(event.target as Node))
+        setJournalShown(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setJournalShown(false);
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [journalShown]);
+  const activeBatch =
+    drive?.batch &&
+    (drive.batch.state === LeadBatchState.RUNNING ||
+      drive.batch.state === LeadBatchState.FAILED)
+      ? drive.batch
+      : undefined;
+  const pastBatches = (drive?.journal ?? []).filter(
+    (b) => b.state !== LeadBatchState.RUNNING,
+  );
   return (
-    <div className="split-button" ref={root}>
-      <button
-        className="button secondary small"
-        title={
-          trouble?.text ??
-          (focused ? t("wish.resume_detail") : t("plan.talk_detail"))
-        }
-        onClick={onLead}
-      >
-        <Terminal size={14} />
-        <span>{t("wish.resume")}</span>
-        {trouble && (
-          <span
-            className={trouble.failed ? "lead-dot failed" : "lead-dot"}
-            aria-hidden="true"
+    <>
+      <div className="split-button" ref={root}>
+        <button
+          className="button secondary small"
+          title={
+            trouble?.text ??
+            (focused ? t("wish.resume_detail") : t("plan.talk_detail"))
+          }
+          onClick={onLead}
+        >
+          <Terminal size={14} />
+          <span>{t("wish.resume")}</span>
+          {trouble && (
+            <span
+              className={trouble.failed ? "lead-dot failed" : "lead-dot"}
+              aria-hidden="true"
+            />
+          )}
+        </button>
+        <button
+          className="button secondary small split-arrow"
+          aria-label={t("wish.lead_agents")}
+          title={
+            drive ? t("wish.lead_seats_detail") : t("wish.lead_agents_detail")
+          }
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <ChevronDown size={14} />
+        </button>
+        {open && (
+          <LeadMenu
+            agents={found}
+            recorded={recorded}
+            focused={focused}
+            onPick={(provider) => {
+              setOpen(false);
+              onPick(provider);
+            }}
+            onSetup={
+              onSetup &&
+              (() => {
+                setOpen(false);
+                onSetup();
+              })
+            }
+            drive={drive}
+            onMove={
+              onMove &&
+              ((seat) => {
+                setOpen(false);
+                onMove(seat);
+              })
+            }
           />
         )}
-      </button>
-      <button
-        className="button secondary small split-arrow"
-        aria-label={t("wish.lead_agents")}
-        title={
-          drive ? t("wish.lead_seats_detail") : t("wish.lead_agents_detail")
-        }
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <ChevronDown size={14} />
-      </button>
-      {open && (
-        <LeadMenu
-          agents={found}
-          recorded={recorded}
-          focused={focused}
-          onPick={(provider) => {
-            setOpen(false);
-            onPick(provider);
-          }}
-          onSetup={
-            onSetup &&
-            (() => {
-              setOpen(false);
-              onSetup();
-            })
-          }
-          drive={drive}
-          onMove={
-            onMove &&
-            ((seat) => {
-              setOpen(false);
-              onMove(seat);
-            })
-          }
-        />
+      </div>
+      {activeBatch && <LeadBatchStatus batch={activeBatch} />}
+      {pastBatches.length > 0 && (
+        <div className="lead-journal-wrap" ref={journalRoot}>
+          <button
+            className="button secondary small lead-journal-button"
+            aria-label={t("wish.lead_journal")}
+            title={t("wish.lead_journal_detail")}
+            aria-expanded={journalShown}
+            onClick={() => setJournalShown(!journalShown)}
+          >
+            <ScrollText size={14} />
+            <span>{pastBatches.length}</span>
+          </button>
+          {journalShown && (
+            <div
+              className="lead-journal-popover"
+              role="dialog"
+              aria-label={t("wish.lead_journal")}
+            >
+              <LeadJournal batches={pastBatches} />
+            </div>
+          )}
+        </div>
       )}
-    </div>
+    </>
   );
 }
 

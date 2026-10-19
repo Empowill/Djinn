@@ -82,14 +82,15 @@ test("the older decisions and journal entries unfold below what you read", async
     create_time: minute(i),
     answer: { choice: "CHOICE_YES", create_time: minute(i) },
   }));
-  const blocks = Array.from({ length: 40 }, (_, i) => ({
+  const commands = Array.from({ length: 40 }, (_, i) => ({
     id: randomUUID(),
-    wish_id: wishId,
-    kind: "log",
-    title: `Entry number ${i + 1}`,
-    content: "",
-    position: i + 1,
-    create_time: minute(100 + i),
+    method: "/plan.v1.WishService/Describe",
+    at: minute(100 + i),
+    request: {
+      "@type": "type.googleapis.com/plan.v1.WishServiceDescribeRequest",
+      wish_id: wishId,
+      text: `Entry number ${i + 1}`,
+    },
   }));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-older-"));
   const file = path.join(dir, "older.json");
@@ -100,7 +101,7 @@ test("the older decisions and journal entries unfold below what you read", async
       create_time: minute(0),
       wish: { id: wishId, title, create_time: minute(0) },
       questions,
-      blocks,
+      commands,
     }),
   );
 
@@ -117,7 +118,7 @@ test("the older decisions and journal entries unfold below what you read", async
   await expect(scroller).toHaveCSS("overflow-anchor", "none");
 
   // The journal: the 30 latest entries, then the line for the 10 others.
-  await page.getByRole("button", { name: /^History/ }).click();
+  await page.getByRole("tab", { name: /^History/ }).click();
   const entries = page.locator(".journal-list tr");
   await expect(entries).toHaveCount(30);
   await expect(entries.first()).toContainText("Entry number 40");
