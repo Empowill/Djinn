@@ -35,11 +35,11 @@ func TestSilentAfterResultEndsDone(t *testing.T) {
 	e := up(t, t.TempDir(), WithClock(clock.now), WithSilenceLimit(2*time.Hour))
 	queue := &leadQueue{}
 	e.h.NotifyLead(queue.notify)
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	script := "text Fixed and committed: lint and the e2e are green.\nrefuse Bash git merge --ff-only 56bc4246\nusage 48 9152 0.77\nwait"
-	idle := e.spawn(t, wishID, script)
-	busy := e.spawn(t, wishID, script)
-	paused := e.spawn(t, wishID, script)
+	idle := e.spawnScoped(t, wishID, "idle", script)
+	busy := e.spawnScoped(t, wishID, "busy", script)
+	paused := e.spawnScoped(t, wishID, "paused", script)
 	for _, task := range []*planv1.Task{idle, busy, paused} {
 		e.follow(t, task.GetId())("its turn's result", saidUsage)
 	}
@@ -106,7 +106,7 @@ func TestSilentAfterResultWithoutNote(t *testing.T) {
 	e := up(t, t.TempDir(), WithClock(clock.now), WithSilenceLimit(2*time.Hour))
 	queue := &leadQueue{}
 	e.h.NotifyLead(queue.notify)
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	task := e.spawn(t, wishID, "text Running the checks.\ntool Bash go tool task lint\nusage 100 20 0.01\nwait")
 	e.follow(t, task.GetId())("its turn's result", saidUsage)
 	start := clock.now()

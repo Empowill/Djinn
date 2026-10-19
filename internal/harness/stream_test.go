@@ -25,7 +25,7 @@ func TestStreamQuietAfterResult(t *testing.T) {
 	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "mid-turn-message"}.env(t)
 	spec := Spec{TaskID: "t1", Dir: t.TempDir(), Prompt: "x", Env: env}
-	a := streamAgent{name: "claude", parser: &unsaidQueue{}, encode: claudeMessageLine, quiet: 200 * time.Millisecond}
+	a := streamAgent{name: "claude", parser: &unsaidQueue{}, encode: claudeMessageLine, quiet: 60 * time.Millisecond}
 	w, err := startStream(t.Context(), spec, os.Args[0], Claude{}.args(spec), Grace, a)
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestStreamQuietAfterResult(t *testing.T) {
 		t.Errorf("result = %+v", res)
 	}
 	statuses := texts(events, "STATUS")
-	if len(statuses) != 2 || !strings.HasPrefix(statuses[1], "claude said nothing for 200ms after its result") {
+	if len(statuses) != 2 || !strings.HasPrefix(statuses[1], "claude said nothing for 60ms after its result") {
 		t.Errorf("statuses = %q", statuses)
 	}
 	if err := w.Send("late"); err == nil {
@@ -61,7 +61,7 @@ func TestStreamIdleTimeout(t *testing.T) {
 		name:   "claude",
 		parser: &claudeParser{},
 		encode: claudeMessageLine,
-		idle:   200 * time.Millisecond,
+		idle:   60 * time.Millisecond,
 	}
 	w, err := startStream(t.Context(), spec, os.Args[0], Claude{}.args(spec), Grace, a)
 	if err != nil {
@@ -109,7 +109,7 @@ func TestAgyStreamIdle(t *testing.T) {
 
 	env, _, _ := fake{provider: "antigravity", fixture: "task-in-branch", end: "wait"}.env(t)
 	spec := Spec{TaskID: "t-idle", Dir: t.TempDir(), Prompt: "x", Env: env}
-	w, err := Antigravity{Command: os.Args[0], IdleTimeout: 200 * time.Millisecond}.Start(t.Context(), spec)
+	w, err := Antigravity{Command: os.Args[0], IdleTimeout: 60 * time.Millisecond}.Start(t.Context(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}

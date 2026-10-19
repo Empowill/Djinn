@@ -16,14 +16,14 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// measuredClaude runs a fake claude that waits until it is stopped, measured every 20 ms with read.
+// measuredClaude runs a fake claude that waits until it is stopped, measured every 10 ms with read.
 func measuredClaude(t *testing.T, read MeasureFunc) (*env, *planv1.Task) {
 	t.Helper()
 	env, _, _ := fake{provider: "claude", fixture: "success", end: "wait"}.env(t)
 	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = envProvider{Claude{Command: os.Args[0]}, env}
-	e := upWith(t, t.TempDir(), providers, WithMeasure(20*time.Millisecond, read))
-	wishID, _ := e.wish(t, gitRepo(t))
+	e := upWith(t, t.TempDir(), providers, WithMeasure(10*time.Millisecond, read))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "Measure a worker", Prompt: "x", Provider: planv1.Provider_PROVIDER_CLAUDE,
 	}))
@@ -123,8 +123,8 @@ func TestNotMeasured(t *testing.T) {
 		return machine.Group{}, nil
 	}
 	e := up(t, t.TempDir(), WithMeasure(time.Millisecond, read))
-	wishID, _ := e.wish(t, t.TempDir())
-	task := e.spawn(t, wishID, "sleep 50ms\ntext done")
+	wishID, _ := e.wish(t, nativeFolder(t))
+	task := e.spawn(t, wishID, "sleep 15ms\ntext done")
 	e.watch(t.Context(), t, task.GetId(), 0)
 	if got := e.get(t, task.GetId()); got.GetResources() != nil {
 		t.Errorf("resources of the fake agent: %v", got.GetResources())
@@ -192,7 +192,7 @@ func TestP95(t *testing.T) {
 	}
 }
 
-func TestWorkerRingP95(t *testing.T) {
+func TestWorkerRing(t *testing.T) {
 	t.Parallel()
 	ring := newWorkerRing(5)
 	if got := ring.P95Memory(); got != 0 {
@@ -213,22 +213,19 @@ func TestWorkerRingP95(t *testing.T) {
 	if got := ring.P95Memory(); got != 580 {
 		t.Errorf("wrapped ring P95: got %d, want 580", got)
 	}
-}
 
-// TestWorkerRingPercentiles: the percentiles the notches engage a worker at, from one series.
-func TestWorkerRingPercentiles(t *testing.T) {
-	t.Parallel()
-	ring := newWorkerRing(20)
-	if got := ring.MemoryPercentiles(); got != (memoryPercentiles{}) {
+	// Percentiles the notches engage a worker at, from one series.
+	ring20 := newWorkerRing(20)
+	if got := ring20.MemoryPercentiles(); got != (memoryPercentiles{}) {
 		t.Errorf("empty ring: %+v", got)
 	}
 	// 11 readings, 100 to 1100, and one read as 0, left out.
-	ring.Add(&machinev1.WorkerPoint{})
+	ring20.Add(&machinev1.WorkerPoint{})
 	for i := 11; i >= 1; i-- {
-		ring.Add(&machinev1.WorkerPoint{MemoryBytes: uint64(i * 100)})
+		ring20.Add(&machinev1.WorkerPoint{MemoryBytes: uint64(i * 100)})
 	}
 	want := memoryPercentiles{p50: 600, p60: 700, p70: 800, p80: 900, p95: 1050}
-	if got := ring.MemoryPercentiles(); got != want {
+	if got := ring20.MemoryPercentiles(); got != want {
 		t.Errorf("percentiles = %+v, want %+v", got, want)
 	}
 	res := &planv1.Resources{}

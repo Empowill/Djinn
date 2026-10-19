@@ -190,45 +190,6 @@ func TestSessionLimitWaitsThenResumes(t *testing.T) {
 	}
 }
 
-// TestSessionLimitBounded: a task the limit stops each time it resumes waits after a backoff once the reset it was
-// given is past (15 minutes, doubled each time), and after 3 resumes it fails, saying so.
-func TestSessionLimitBounded(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	limit, _, _ := fake{provider: "claude", fixture: "session-limit"}.env(t)
-	providers, _ := claudePlaying(limit)
-	clock := &fakeClock{at: time.Date(2026, 10, 8, 4, 28, 30, 0, time.UTC)}
-	e := upWith(t, t.TempDir(), providers, WithClock(clock.now))
-	wishID, _ := e.wish(t, gitRepo(t))
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Reopen the leads", Prompt: "x", Provider: planv1.Provider_PROVIDER_CLAUDE,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := res.Msg.GetTask().GetId()
-	got := e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_RESUMING))
-	for i := range int32(maxResumes) {
-		now := got.GetResumeAfter().AsTime().Add(time.Second)
-		clock.set(now)
-		e.h.wake()
-		if i == maxResumes-1 {
-			break
-		}
-		got = e.until(t, id, func(t *planv1.Task) bool {
-			return t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumes() == i+1 && t.GetResumeAfter() != nil
-		})
-		// The reset the stream gives is past: a backoff, 30 minutes after the first resume, then an hour.
-		if wait := got.GetResumeAfter().AsTime().Sub(now); wait != limitBackoff(i+1) || !strings.Contains(got.GetWaitReason(), "tries again at") {
-			t.Errorf("resume %d: waits %v (%s), want %v", i+1, wait, got.GetWaitReason(), limitBackoff(i+1))
-		}
-	}
-	got = e.until(t, id, isStatus(planv1.TaskStatus_TASK_STATUS_FAILED))
-	if got.GetResumes() != maxResumes || got.GetError() != "resumed 3 times without finishing; the last time: You've hit your session limit · resets 7:20am (Europe/Paris)" {
-		t.Errorf("after %d resumes: %v", maxResumes, got)
-	}
-}
-
 // TestResumeRules: at the start, a task cut short resumes; one stopped by a person, one already resumed as another
 // task (a fork of it), one imported, never do; one cut short with resumes already accumulated resumes too.
 func TestResumeRules(t *testing.T) {

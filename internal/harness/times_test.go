@@ -22,7 +22,7 @@ func TestTaskTimesTwoRunsAndPause(t *testing.T) {
 	t0 := time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)
 	clock := &fakeClock{at: t0}
 	e := up(t, t.TempDir(), WithClock(clock.now))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	// Fake worker prompt: start, wait for Send, then done
 	task := e.mustSpawn(t, wishID, "Two Runs", "text start\nwait\ntext done", nil)
@@ -120,7 +120,7 @@ func TestRebuildTaskRunsFromJournal(t *testing.T) {
 	t3 := t2.Add(8 * time.Minute)
 
 	e := up(t, t.TempDir())
-	wishID, projectID := e.wish(t, gitRepo(t))
+	wishID, projectID := e.wish(t, nativeFolder(t))
 
 	taskID := store.NewID()
 	oldTask := &planv1.Task{
@@ -203,7 +203,7 @@ func TestGateWaitAcrossRestart(t *testing.T) {
 	t0 := time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC)
 	clock := &fakeClock{at: t0}
 	e := up(t, home, WithClock(clock.now))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	task := e.mustSpawn(t, wishID, "Gated", "wait\ntext done", nil)
 	e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 	note := func(at time.Duration, text string) {

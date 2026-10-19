@@ -53,8 +53,15 @@ func hasHealth(s planv1.HealthState) func(*planv1.Task) bool {
 func (e *env) passes(n int) {
 	for range n {
 		e.h.Wake()
-		time.Sleep(30 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+func (e *env) spawnScoped(t *testing.T, wishID, scope, prompt string) *planv1.Task {
+	t.Helper()
+	return e.mustSpawn(t, wishID, "Try the harness", prompt, &planv1.TaskServiceSpawnRequest{
+		WriteScopes: []string{scope},
+	})
 }
 
 // TestHealthStalled: a running worker silent for StallSilence whose CPU stays idle is flagged stalled once, its lead
@@ -67,9 +74,9 @@ func TestHealthStalled(t *testing.T) {
 	e := up(t, t.TempDir(), WithClock(clock.now))
 	queue := &leadQueue{}
 	e.h.NotifyLead(queue.notify)
-	wishID, _ := e.wish(t, gitRepo(t))
-	idle := e.spawn(t, wishID, "text start\nwait")
-	busy := e.spawn(t, wishID, "text building\nwait")
+	wishID, _ := e.wish(t, nativeFolder(t))
+	idle := e.spawnScoped(t, wishID, "idle", "text start\nwait")
+	busy := e.spawnScoped(t, wishID, "busy", "text building\nwait")
 	e.follow(t, idle.GetId())("its worker said start", said("start"))
 	e.follow(t, busy.GetId())("its worker said building", said("building"))
 
@@ -137,9 +144,9 @@ func TestHealthAfterTurn(t *testing.T) {
 		}
 		return nil
 	}, nil)
-	wishID, _ := e.wish(t, gitRepo(t))
-	turn := e.spawn(t, wishID, "text start\nerror API Error: 529 overloaded\nusage 100 20 0.01\nwait")
-	gate := e.spawn(t, wishID, "text gated\nwait")
+	wishID, _ := e.wish(t, nativeFolder(t))
+	turn := e.spawnScoped(t, wishID, "turn", "text start\nerror API Error: 529 overloaded\nusage 100 20 0.01\nwait")
+	gate := e.spawnScoped(t, wishID, "gate", "text gated\nwait")
 	gated.Store(gate.GetId(), true)
 	e.follow(t, turn.GetId())("its worker said its usage", func(ev *planv1.TaskEvent) bool {
 		return ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE
@@ -185,10 +192,12 @@ func TestHealthLimitReset(t *testing.T) {
 	e := up(t, t.TempDir(), WithClock(clock.now))
 	queue := &leadQueue{}
 	e.h.NotifyLead(queue.notify)
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	// Both run when the limit stops the first: no worker of their agent starts while it holds.
-	first := e.spawn(t, wishID, "sleep 300ms\n"+sessionLimit)
-	second := e.spawn(t, wishID, sessionLimit)
+	first := e.spawnScoped(t, wishID, "first", "wait\n"+sessionLimit)
+	second := e.spawnScoped(t, wishID, "second", sessionLimit)
+	e.until(t, second.GetId(), hasHealth(planv1.HealthState_HEALTH_STATE_LIMITED))
+	e.release(t, first.GetId())
 	for _, task := range []*planv1.Task{first, second} {
 		got := e.until(t, task.GetId(), hasHealth(planv1.HealthState_HEALTH_STATE_LIMITED))
 		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RESUMING || got.GetResumeAfter() == nil {
@@ -197,6 +206,7 @@ func TestHealthLimitReset(t *testing.T) {
 	}
 	reset := e.get(t, first.GetId()).GetResumeAfter().AsTime()
 	clock.set(reset.Add(time.Second))
+	e.h.Wake()
 	for _, task := range []*planv1.Task{first, second} {
 		e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	}
@@ -243,7 +253,7 @@ func TestHealthAccountChanged(t *testing.T) {
 	e := up(t, t.TempDir(), WithClock(clock.now), WithAccount(account.of))
 	queue := &leadQueue{}
 	e.h.NotifyLead(queue.notify)
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	task := e.spawn(t, wishID, sessionLimit)
 	got := e.until(t, task.GetId(), hasHealth(planv1.HealthState_HEALTH_STATE_LIMITED))
 	if got.GetHealth().GetAccount() != "a1" {
@@ -289,9 +299,9 @@ func TestHealthRetriable(t *testing.T) {
 	e := up(t, t.TempDir())
 	queue := &leadQueue{}
 	e.h.NotifyLead(queue.notify)
-	wishID, _ := e.wish(t, gitRepo(t))
-	crash := e.spawn(t, wishID, "text working\nfail claude ended before the end of its turn")
-	final := e.spawn(t, wishID, "fail syntax error on line 42")
+	wishID, _ := e.wish(t, nativeFolder(t))
+	crash := e.spawnScoped(t, wishID, "crash", "text working\nfail claude ended before the end of its turn")
+	final := e.spawnScoped(t, wishID, "final", "fail syntax error on line 42")
 	got := e.until(t, crash.GetId(), hasHealth(planv1.HealthState_HEALTH_STATE_RETRIABLE))
 	if r := got.GetHealth().GetReason(); r != "a crash: claude ended before the end of its turn" {
 		t.Errorf("reason %q", r)

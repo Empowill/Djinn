@@ -22,8 +22,8 @@ func TestPreemptForSlot(t *testing.T) {
 	t.Parallel()
 
 	lim := &limit{slots: 1}
-	e := up(t, t.TempDir(), WithEnlightenWorkers(), WithCapacity(lim.capacity), WithTick(20*time.Millisecond))
-	wishID, _ := e.wish(t, fakeProject(t, ""))
+	e := up(t, t.TempDir(), WithEnlightenWorkers(), WithCapacity(lim.capacity), WithTick(10*time.Millisecond))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	// Work task takes the one slot.
 	w1 := e.mustSpawn(t, wishID, "Work 1", "wait", nil)
@@ -98,8 +98,8 @@ func TestPreemptForMemory(t *testing.T) {
 	}
 
 	e := up(t, t.TempDir(), WithEnlightenWorkers(), WithCapacity((&limit{slots: 4}).capacity),
-		WithMemory(available, machine.DefaultPolicy()), WithTick(20*time.Millisecond))
-	wishID, _ := e.wish(t, fakeProject(t, ""))
+		WithMemory(available, machine.DefaultPolicy()), WithTick(10*time.Millisecond))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	// Work task starts and takes 1 GiB peak forecast + 512 MiB margin = 1.5 GiB.
 	w1 := e.mustSpawn(t, wishID, "Work 1", "wait", nil)
@@ -177,7 +177,7 @@ func TestPreemptExclusions(t *testing.T) {
 	t.Parallel()
 
 	e := up(t, t.TempDir(), WithEnlightenWorkers())
-	wishID, _ := e.wish(t, fakeProject(t, ""))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	task := e.mustSpawn(t, wishID, "Work", "wait", nil)
 	// Its session written, its worker waits and writes its task no more: what the test sets is not replaced.
@@ -265,7 +265,7 @@ func TestPreemptWindowsNeverPauses(t *testing.T) {
 	t.Parallel()
 
 	e := up(t, t.TempDir(), WithEnlightenWorkers())
-	wishID, _ := e.wish(t, fakeProject(t, ""))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	w1 := e.mustSpawn(t, wishID, "Work 1", "wait", nil)
 	e.until(t, w1.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
@@ -296,7 +296,7 @@ func TestLowestWorkTaskWhileItsPumpWrites(t *testing.T) {
 	t.Parallel()
 
 	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, fakeProject(t, ""))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	var prompt strings.Builder
 	prompt.WriteString("wait\n")
 	for i := range 20 {
