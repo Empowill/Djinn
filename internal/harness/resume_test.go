@@ -523,6 +523,9 @@ func TestPerMinuteRateLimitBackoff(t *testing.T) {
 		if got.GetResumes() != 0 {
 			t.Fatalf("TPM hit %d: Resumes = %d, want 0", i+1, got.GetResumes())
 		}
+		if strings.Contains(got.GetWaitReason(), "standard-paygo") || strings.Contains(got.GetWaitReason(), "for model") {
+			t.Fatalf("TPM hit %d: WaitReason = %q, want no model from URL", i+1, got.GetWaitReason())
+		}
 		gotWait := got.GetResumeAfter().AsTime().Sub(stepAt)
 		if gotWait != wantWait {
 			t.Fatalf("TPM hit %d: backoff = %v, want %v", i+1, gotWait, wantWait)

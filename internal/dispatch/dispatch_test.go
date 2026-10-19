@@ -214,6 +214,9 @@ func TestPass(t *testing.T) {
 		if got["limited"] == "" || got["new-claude-opus"] != "" || got["new-claude-sonnet"] != "" {
 			t.Errorf("unscoped limit message: %v, want only limited held", got)
 		}
+		if m := LimitModel("TPM quota exhausted. Details: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/standard-paygo."); m != "" {
+			t.Errorf("LimitModel(standard-paygo URL) = %q, want empty", m)
+		}
 		// Once the limit has reset, it starts, and claude's tasks with it.
 		got = map[string]string{}
 		for _, d := range New(tasks, []*planv1.Wish{wish}, nil, nil).At(now.Add(time.Hour)).Pass() {
