@@ -96,12 +96,24 @@ const configSettle = 2 * time.Second
 // gits each.
 var configMemos = struct {
 	sync.Mutex
-	m map[string]configMemo
-}{m: map[string]configMemo{}}
+	m     map[string]configMemo
+	calls map[string]*configCall
+}{
+	m:     map[string]configMemo{},
+	calls: map[string]*configCall{},
+}
 
 type configMemo struct {
-	stamp  string
-	config Config
+	stamp   string
+	content string
+	config  Config
+}
+
+type configCall struct {
+	done    chan struct{}
+	stamp   string
+	content string
+	config  Config
 }
 
 // configDigests keeps the digest of the configuration folders' trees by commit and folder: a commit's trees never
@@ -128,63 +140,158 @@ func ProjectConfig(home string, project *planv1.Project) Config {
 		return c
 	}
 	devFile := DeveloperSettingsFile(home, project.GetId())
-	stamp, settled := configStamp(common, devFile)
 	key := home + "\x00" + folder
-	configMemos.Lock()
-	memo, found := configMemos.m[key]
-	configMemos.Unlock()
-	if found && stamp != "" && memo.stamp == stamp {
-		if !memo.config.FromReference() {
-			return memo.config
+	for {
+		stamp, content, settled := configStamp(common, devFile)
+		configMemos.Lock()
+		memo, found := configMemos.m[key]
+		if found && stamp != "" && memo.stamp == stamp && (settled || (content != "" && memo.content == content)) {
+			configMemos.Unlock()
+			if !memo.config.FromReference() {
+				return memo.config
+			}
+			if _, err := os.Stat(memo.config.Dir); err == nil {
+				return memo.config // unless its folder of the cache was removed since
+			}
+			configMemos.Lock()
 		}
-		if _, err := os.Stat(memo.config.Dir); err == nil {
-			return memo.config // unless its folder of the cache was removed since
+		if call, inflight := configMemos.calls[key]; inflight {
+			same := stamp != "" && call.stamp == stamp && (settled || (content != "" && call.content == content))
+			configMemos.Unlock()
+			<-call.done
+			if same {
+				return call.config
+			}
+			continue
 		}
+		call := &configCall{done: make(chan struct{}), stamp: stamp, content: content}
+		configMemos.calls[key] = call
+		configMemos.Unlock()
+
+		if read, err := readConfig(context.Background(), home, folder, common, devFile); err != nil {
+			warnOnce(folder, "read the configuration in the project's folder", err)
+		} else {
+			c = read
+		}
+		configMemos.Lock()
+		call.config = c
+		if stamp != "" && (settled || content != "") {
+			configMemos.m[key] = configMemo{stamp: stamp, content: content, config: c}
+		} else {
+			delete(configMemos.m, key)
+		}
+		delete(configMemos.calls, key)
+		close(call.done)
+		configMemos.Unlock()
+		return c
 	}
-	if read, err := readConfig(context.Background(), home, folder, common, devFile); err != nil {
-		warnOnce(folder, "read the configuration in the project's folder", err)
-	} else {
-		c = read
-	}
-	configMemos.Lock()
-	if settled && stamp != "" {
-		configMemos.m[key] = configMemo{stamp: stamp, config: c}
-	} else {
-		delete(configMemos.m, key)
-	}
-	configMemos.Unlock()
-	return c
 }
 
 // gitCommonDir is the folder of the repository that holds folder, shared by its worktrees: what holds its
 // configuration and its refs. False when folder is in none.
 func gitCommonDir(folder string) (string, bool) {
+	_, common, ok := gitDirs(folder)
+	return common, ok
+}
+
+// gitDirs are the git folder of the checkout holding folder (what holds its HEAD) and the common folder of its
+// repository (what holds its configuration and its refs). False when folder is in none.
+func gitDirs(folder string) (gitDir, commonDir string, ok bool) {
 	for dir := folder; ; {
 		dotGit := filepath.Join(dir, ".git")
 		info, err := os.Stat(dotGit)
 		switch {
 		case err == nil && info.IsDir():
-			return commonOf(dotGit), true
+			return dotGit, commonOf(dotGit), true
 		case err == nil:
 			b, err := os.ReadFile(dotGit)
 			if err != nil {
-				return "", false
+				return "", "", false
 			}
-			gitDir, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
-			if !ok {
-				return "", false
+			gd, hasPrefix := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
+			if !hasPrefix {
+				return "", "", false
 			}
-			if gitDir = strings.TrimSpace(gitDir); !filepath.IsAbs(gitDir) {
-				gitDir = filepath.Join(dir, gitDir)
+			if gd = strings.TrimSpace(gd); !filepath.IsAbs(gd) {
+				gd = filepath.Join(dir, gd)
 			}
-			return commonOf(gitDir), true
+			gd = filepath.Clean(gd)
+			return gd, commonOf(gd), true
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", false
+			return "", "", false
 		}
 		dir = parent
 	}
+}
+
+// checkedOutHead is the branch the checkout holding folder is on, read from its HEAD file without running git; ok is
+// false when folder is not in Git, uses reftable, or points HEAD at a symbolic ref outside refs/heads/.
+func checkedOutHead(folder string) (branch string, ok bool) {
+	if folder == "" {
+		return "", false
+	}
+	gitDir, common, ok := gitDirs(folder)
+	if !ok {
+		return "", false
+	}
+	if _, err := os.Stat(filepath.Join(common, "reftable")); err == nil {
+		return "", false
+	}
+	b, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+	if err != nil {
+		return "", false
+	}
+	s := strings.TrimSpace(string(b))
+	if ref, isRef := strings.CutPrefix(s, "ref:"); isRef {
+		if branch, ok := strings.CutPrefix(strings.TrimSpace(ref), "refs/heads/"); ok && branch != "" {
+			return branch, true
+		}
+		return "", false
+	}
+	return "", true // detached HEAD
+}
+
+// RefsStamp stamps the configuration and the refs (heads and remotes) of the repository holding folder; empty outside
+// Git, with reftable, or when config includes another file.
+func RefsStamp(folder string) string {
+	if folder == "" {
+		return ""
+	}
+	common, ok := gitCommonDir(folder)
+	if !ok {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(common, "reftable")); err == nil {
+		return ""
+	}
+	cfg, err := os.ReadFile(filepath.Join(common, "config"))
+	if err != nil || bytes.Contains(cfg, []byte("[include")) {
+		return ""
+	}
+	h := sha256.New()
+	writeEntry := func(path string, data []byte) {
+		fmt.Fprintf(h, "%s:%d:", path, len(data))
+		h.Write(data)
+		h.Write([]byte{'\n'})
+	}
+	writeEntry("config", cfg)
+	if packed, err := os.ReadFile(filepath.Join(common, "packed-refs")); err == nil {
+		writeEntry("packed-refs", packed)
+	}
+	fsys := os.DirFS(common)
+	for _, sub := range []string{"refs/remotes", "refs/heads"} {
+		_ = fs.WalkDir(fsys, sub, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr == nil && !d.IsDir() && !strings.HasSuffix(d.Name(), ".lock") {
+				if data, err := fs.ReadFile(fsys, path); err == nil {
+					writeEntry(path, data)
+				}
+			}
+			return nil
+		})
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // commonOf is the common folder of the git folder gitDir: the one its commondir file names, else itself.
@@ -203,10 +310,11 @@ func commonOf(gitDir string) string {
 // configStamp is what the files that would change a project's Config look like now, in the repository whose common
 // folder is common, devFile the developer's settings file: their times and sizes. A ref is written to a file
 // renamed into its folder, which changes the folder's time. settled tells whether they are old enough for a later
-// change to show; an empty stamp, when Djinn cannot read the refs as files (reftable), stamps nothing.
-func configStamp(common, devFile string) (stamp string, settled bool) {
+// change to show by time alone; while not settled, content digests the files themselves so a second change in the
+// same clock tick still shows; an empty stamp, when Djinn cannot read the refs as files (reftable), stamps nothing.
+func configStamp(common, devFile string) (stamp, content string, settled bool) {
 	if _, err := os.Stat(filepath.Join(common, "reftable")); err == nil {
-		return "", false
+		return "", "", false
 	}
 	var b strings.Builder
 	settled = true
@@ -238,7 +346,33 @@ func configStamp(common, devFile string) (stamp string, settled bool) {
 			return nil // a folder that cannot be read is left out of the stamp
 		})
 	}
-	return b.String(), settled
+	if !settled {
+		cfg, err := os.ReadFile(filepath.Join(common, "config"))
+		if err == nil && bytes.Contains(cfg, []byte("[include")) {
+			return b.String(), "", false
+		}
+		h := sha256.New()
+		for _, path := range []string{filepath.Join(common, "config"), filepath.Join(common, "packed-refs"), devFile} {
+			if data, err := os.ReadFile(path); err == nil {
+				fmt.Fprintf(h, "%s:%d:", path, len(data))
+				h.Write(data)
+				h.Write([]byte{'\n'})
+			}
+		}
+		fsys := os.DirFS(common)
+		_ = fs.WalkDir(fsys, "refs/remotes", func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr == nil && !d.IsDir() && !strings.HasSuffix(d.Name(), ".lock") {
+				if data, err := fs.ReadFile(fsys, path); err == nil {
+					fmt.Fprintf(h, "%s:%d:", path, len(data))
+					h.Write(data)
+					h.Write([]byte{'\n'})
+				}
+			}
+			return nil
+		})
+		content = fmt.Sprintf("%x", h.Sum(nil))
+	}
+	return b.String(), content, settled
 }
 
 // readConfig reads, from git, where Djinn reads the configuration of the project in folder, its repository's common

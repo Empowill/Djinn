@@ -382,3 +382,38 @@ func TestExtractConfig(t *testing.T) {
 		t.Errorf("after clearing configDigests: (%q, %v), want (%q, nil)", again, err, first)
 	}
 }
+
+// TestProjectConfigMemoUnsettled: right after a ref is written (within configSettle), ProjectConfig still keeps its
+// memo by content digest without running git again, while a second ref write in the same clock tick invalidates it.
+func TestProjectConfigMemoUnsettled(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	p := configProject(t, map[string]string{".agents/settings.txtpb": "setup: \"echo one\"\n"})
+	dir := p.GetDirectory()
+	kept := ProjectConfig(home, p)
+	key := home + "\x00" + dir
+	configMemos.Lock()
+	_, found := configMemos.m[key]
+	configMemos.Unlock()
+	if !found {
+		t.Fatal("ProjectConfig did not keep its memo while files are fresh")
+	}
+	writeFileAt(t, filepath.Join(dir, SettingsFile), "setup: \"echo two\"\n")
+	commitAs(t, dir, "refs/remotes/origin/main")
+	if got := ProjectConfig(home, p); got.Commit == kept.Commit {
+		t.Errorf("after ref update in same settle window: Commit=%q unchanged", got.Commit)
+	}
+}
+
+func TestCheckedOutHead(t *testing.T) {
+	t.Parallel()
+	p := configProject(t, map[string]string{"README": "hi\n"})
+	dir := p.GetDirectory()
+	if got, ok := checkedOutHead(dir); !ok || got != "main" {
+		t.Errorf("checkedOutHead(main) = (%q, %v), want (\"main\", true)", got, ok)
+	}
+	gitIn(t, dir, "checkout", "--detach", "HEAD")
+	if got, ok := checkedOutHead(dir); !ok || got != "" {
+		t.Errorf("checkedOutHead(detached) = (%q, %v), want (\"\", true)", got, ok)
+	}
+}

@@ -148,13 +148,22 @@ func permissionNotices(config Config) []*planv1.ProjectNotice {
 func (p *Projects) branchNoticesAndRef(
 	ctx context.Context, project *planv1.Project, config Config, name string, from planv1.SettingSource, file string, wantRef bool,
 ) ([]*planv1.ProjectNotice, *planv1.ProjectReference) {
+	dir := project.GetDirectory()
 	branch, ref, err := p.Pusher.Reference(ctx, project, name)
-	head, headErr := gitOut(ctx, project.GetDirectory(), "symbolic-ref", "--quiet", "--short", "HEAD")
+	head, ok := checkedOutHead(dir)
+	var headErr error
+	if !ok {
+		head, headErr = gitOut(ctx, dir, "symbolic-ref", "--quiet", "--short", "HEAD")
+	}
 	var projRef *planv1.ProjectReference
 	if wantRef && branch != "" {
 		projRef = &planv1.ProjectReference{Branch: branch, Ref: shortRef(ref), Source: from, CheckedOut: head}
 		if err == nil {
-			projRef.Commit, _ = gitOut(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+			if config.FromReference() && shortRef(ref) == config.Ref && config.Commit != "" {
+				projRef.Commit = config.Commit
+			} else {
+				projRef.Commit, _ = RefCommit(ctx, dir, ref)
+			}
 		}
 	}
 	if err != nil {
@@ -192,7 +201,7 @@ func (p *Projects) projectReference(
 	if p.Pusher == nil || !project.GetGit() || project.GetDirectory() == "" {
 		return nil
 	}
-	_, ref := p.branchNoticesAndRef(ctx, project, Config{}, name, from, "", true)
+	_, ref := p.branchNoticesAndRef(ctx, project, ProjectConfig(p.Home, project), name, from, "", true)
 	return ref
 }
 

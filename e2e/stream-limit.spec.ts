@@ -2,9 +2,12 @@
 // (e.g. UiService/Watch, WishService/Watch, LoadService/Watch, TaskService/Watch), leaving free HTTP connections
 // for unary calls in Chromium and WebKitGTK (which limit origins to 6 concurrent HTTP/1.1 connections).
 import { expect, test } from "./test";
+import { portable } from "./portable";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+
+portable();
 
 const binary = path.resolve(
   __dirname,

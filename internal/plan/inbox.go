@@ -334,11 +334,38 @@ func findSource(srcs []*Source, name string) (*Source, error) {
 
 // sourcesIn are the sources the projects' skills declare, read in r.
 func sourcesIn(ctx context.Context, r store.Reader, home string) ([]*Source, error) {
+	return sourcesInWithUsed(ctx, r, home, nil)
+}
+
+func sourcesInWithUsed(
+	ctx context.Context, r store.Reader, home string, knownUsed map[string][]heldSkill,
+) ([]*Source, error) {
 	projects, err := store.List[*planv1.Project](ctx, r, nil)
 	if err != nil {
 		return nil, err
 	}
-	return declaredSources(ctx, r, home, projects)
+	return declaredSourcesWithUsed(ctx, r, home, projects, knownUsed)
+}
+
+// usedByProject resolves the skills each project in r uses before a write transaction starts, so git never runs
+// while the database lock is held.
+func usedByProject(ctx context.Context, r store.Reader, home string) (map[string][]heldSkill, error) {
+	projects, err := store.List[*planv1.Project](ctx, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	known := make(map[string][]heldSkill, len(projects))
+	for _, p := range projects {
+		if p.GetDirectory() == "" {
+			continue
+		}
+		used, err := usedSkills(ctx, r, home, p)
+		if err != nil {
+			return nil, err
+		}
+		known[p.GetId()] = used
+	}
+	return known, nil
 }
 
 // itemKey is what makes an item the same when a source prints it again: its first link, else its first line.
@@ -526,9 +553,13 @@ func (in *Inbox) Sources(
 func (in *Inbox) Plug(
 	ctx context.Context, req *connect.Request[planv1.InboxServicePlugRequest],
 ) (*connect.Response[planv1.InboxServicePlugResponse], error) {
+	known, err := usedByProject(ctx, in.Wishes.Store, in.Wishes.home())
+	if err != nil {
+		return nil, Status(err)
+	}
 	var out *planv1.InboxSource
-	err := write(ctx, in.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-		srcs, err := sourcesIn(ctx, tx, in.Wishes.home())
+	err = write(ctx, in.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		srcs, err := sourcesInWithUsed(ctx, tx, in.Wishes.home(), known)
 		if err != nil {
 			return err
 		}
@@ -565,9 +596,13 @@ func (in *Inbox) Plug(
 func (in *Inbox) Unplug(
 	ctx context.Context, req *connect.Request[planv1.InboxServiceUnplugRequest],
 ) (*connect.Response[planv1.InboxServiceUnplugResponse], error) {
+	known, err := usedByProject(ctx, in.Wishes.Store, in.Wishes.home())
+	if err != nil {
+		return nil, Status(err)
+	}
 	var out *planv1.InboxSource
-	err := write(ctx, in.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-		srcs, err := sourcesIn(ctx, tx, in.Wishes.home())
+	err = write(ctx, in.Wishes.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+		srcs, err := sourcesInWithUsed(ctx, tx, in.Wishes.home(), known)
 		if err != nil {
 			return err
 		}

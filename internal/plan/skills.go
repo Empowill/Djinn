@@ -268,25 +268,29 @@ func (k *Skills) Summon(
 	ctx context.Context, req *connect.Request[planv1.SkillServiceSummonRequest],
 ) (*connect.Response[planv1.SkillServiceSummonResponse], error) {
 	srcName, name, _ := strings.Cut(req.Msg.GetSkill(), "/")
+	into, err := ProjectNamed(ctx, k.Store, req.Msg.GetInto())
+	if err != nil {
+		return nil, Status(err)
+	}
+	src, err := ProjectNamed(ctx, k.Store, srcName)
+	if err != nil {
+		return nil, Status(err)
+	}
+	if src.GetId() == into.GetId() {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s holds the skill %s already: nothing to summon", into.GetName(), name))
+	}
+	found, err := FindProjectSkill(k.Home, src, name)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("project %s: %w", src.GetName(), err))
+	}
+	if _, err := FindProjectSkill(k.Home, into, found.Name); err == nil {
+		return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("%s has a skill %s of its own", into.GetName(), found.Name))
+	}
 	var skill *planv1.Skill
-	err := write(ctx, k.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
+	err = write(ctx, k.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
 		into, err := ProjectNamed(ctx, tx, req.Msg.GetInto())
 		if err != nil {
 			return err
-		}
-		src, err := ProjectNamed(ctx, tx, srcName)
-		if err != nil {
-			return err
-		}
-		if src.GetId() == into.GetId() {
-			return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s holds the skill %s already: nothing to summon", into.GetName(), name))
-		}
-		found, err := FindProjectSkill(k.Home, src, name)
-		if err != nil {
-			return connect.NewError(connect.CodeNotFound, fmt.Errorf("project %s: %w", src.GetName(), err))
-		}
-		if _, err := FindProjectSkill(k.Home, into, found.Name); err == nil {
-			return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("%s has a skill %s of its own", into.GetName(), found.Name))
 		}
 		for _, s := range into.GetSummons() {
 			if !strings.EqualFold(s.GetSkill(), found.Name) {

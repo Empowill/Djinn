@@ -608,7 +608,7 @@ func (h *Harness) Reference(ctx context.Context, project *planv1.Project, name s
 	if branch, ref, err = findMain(ctx, repo, name); err != nil {
 		return "", "", err
 	}
-	if _, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", ref+"^{commit}"); err != nil {
+	if _, err := plan.RefCommit(ctx, repo, ref); err != nil {
 		short := strings.TrimPrefix(strings.TrimPrefix(ref, "refs/remotes/"), "refs/heads/")
 		return branch, ref, fmt.Errorf("the repository holds no %s: fetch it, or name another branch", short)
 	}
