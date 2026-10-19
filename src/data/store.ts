@@ -117,9 +117,13 @@ export interface State {
   leadExit?: LeadExit;
   // Why the last start of the lead failed, until one succeeds; empty when none did.
   leadStartError?: string;
-  // While Djinn drives the lead: where it runs (seat), the accounts of this machine, and the usage limit it hit, if
-  // any (limit); unset when the lead runs in its terminal.
-  leadDrive?: Pick<LeadServiceGetResponse, "seat" | "accounts" | "limit">;
+  // While Djinn drives the lead: where it runs (seat), the accounts of this machine, the usage limit it hit, if any
+  // (limit), the running or failed batch (batch), and the journal of past batches (journal); unset when the lead runs
+  // in its terminal.
+  leadDrive?: Pick<
+    LeadServiceGetResponse,
+    "seat" | "accounts" | "limit" | "batch" | "journal"
+  >;
   // As WishService.List gives them: the active ones by rank, then the paused ones, then the granted ones.
   wishes: Wish[];
   details: Readonly<Record<string, WishDetail>>;
@@ -1102,6 +1106,8 @@ export function createStore(
               seat,
               accounts,
               limit,
+              batch,
+              journal,
             } = leadRes;
             const sameLead =
               (!state.lead && !lead) ||
@@ -1123,7 +1129,13 @@ export function createStore(
             if ((state.leadStartError ?? "") !== startError)
               patch.leadStartError = startError;
             const drive = driven
-              ? create(LeadServiceGetResponseSchema, { seat, accounts, limit })
+              ? create(LeadServiceGetResponseSchema, {
+                  seat,
+                  accounts,
+                  limit,
+                  batch,
+                  journal,
+                })
               : undefined;
             const sameDrive =
               (!state.leadDrive && !drive) ||
@@ -1139,6 +1151,8 @@ export function createStore(
                 seat: drive.seat,
                 accounts: drive.accounts,
                 limit: drive.limit,
+                batch: drive.batch,
+                journal: drive.journal,
               };
           }
           if (loadedKeys.has("projects") && !state.loaded) patch.loaded = true;

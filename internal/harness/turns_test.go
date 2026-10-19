@@ -143,8 +143,8 @@ func TestClaudeSpent(t *testing.T) {
 		evs, _ := p.stdout(l)
 		got = append(got, evs[0].Spent)
 	}
-	// $3 in, $15 out, $0.30 cache read, $3.75 cache write per million tokens.
-	want := []float64{0.003012, 0.003462, 0.003462 + 0.007962}
+	// $3 in, $15 out, $0.30 cache read, $6.0 cache write per million tokens.
+	want := []float64{0.003012, 0.003462, 0.003462 + 0.010212}
 	for i := range want {
 		if math.Abs(got[i]-want[i]) > 1e-9 {
 			t.Errorf("spent %v, want %v", got, want)

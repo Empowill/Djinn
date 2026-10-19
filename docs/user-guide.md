@@ -229,8 +229,8 @@ it, once the window knows your layout: at once in a Chromium browser, elsewhere 
 
 ## A wish's view
 
-The **Wish** tab: what waits for you (**Your move**), the questions being investigated, its **History**, and the
-**Rights** of its workers in each project. Beside it, the **Tasks**, **Review**, **Decisions**
+The **Wish** tab: what waits for you (**Your move**), the questions being investigated, and the
+**Rights** of its workers in each project. Beside it, the **Tasks**, **Review**, **Decisions**, **History**
 and **Tilasms** tabs, and last, discreet, **For agents**.
 
 **Rights** says what the wish's workers may do in a project, for every task to come: **The project decides** (its
@@ -434,7 +434,9 @@ terminal while its watch runs, so nothing lands in your prompt box; without a wa
 "Djinn: N events waiting, run djinn lead watch". If the Djinn does not run, the question is marked **Waiting for the Djinn** until
 the Djinn acknowledges it; the next `djinn up` queues it for the Djinn. While Djinn drives the lead
 (`"leadDriven": true` in `settings.json`), there is no terminal and no watch: the answer goes to the next batch's
-session, whole, and `djinn lead journal` shows what each batch did. The lead runs on the agent, model and account
+session, whole; beside **Talk to the Djinn**, the window shows the running batch (since when, events, cost) and the
+journal of past batches (with retries when a batch fails), the wish's **History** tab shows the batches that touched
+that wish alongside its commands, and `djinn lead journal` prints them in the terminal. The lead runs on the agent, model and account
 you choose, from the arrow beside **Talk to the Djinn** or with `djinn lead move`, until you move it; when it hits its
 subscription's limit, the attention bar offers each other agent or account in one click, and Djinn moves it nowhere by
 itself. An account is a folder of the agent's own where it keeps its login (`djinn lead add-account`, then its
@@ -476,7 +478,7 @@ and asks a new one only on a real doubt.
 What the Djinn and the workers write down for one another is a block: a hand-off, a reference, a report. Blocks are
 not for you: they wait in the last tab of the wish, **For agents**, with their count, each folded under its title. A
 click opens one: Markdown, shown as written, where a `mermaid` code block is drawn as a diagram, which **Expand**
-enlarges. A block of kind `decision` shows in the **Decisions** tab instead, the log blocks under **History**.
+enlarges. A block of kind `decision` shows in the **Decisions** tab instead.
 
 A report (a block of kind `report`) is one of these notes: nothing counts it nor asks you to read it. When one
 concerns you, it comes as a question that names it, by its title or its id: the card then shows **Report: …** with the

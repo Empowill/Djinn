@@ -116,8 +116,8 @@ The flying carpet shows every active wish at a glance. Its head holds the load g
 When nothing waits and nothing runs, the questions column says so, beside the Djinn asleep above its lamp: **Nothing
 waits for you, and nothing runs.**
 
-A wish's own page has the same layout for that wish alone, under its tabs: Wish, Tasks, Review, Decisions, Tilasms and
-For agents. See [Wish](#wish).
+A wish's own page has the same layout for that wish alone, under its tabs: Wish, Tasks, Review, Decisions, History,
+Tilasms and For agents. See [Wish](#wish).
 
 ## The questions column
 

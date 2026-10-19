@@ -204,6 +204,9 @@ func collect(ctx context.Context, r store.Reader, wishID string, events eventsOf
 	if exp.Commands, err = commands(ctx, r, exp); err != nil {
 		return nil, nil, err
 	}
+	if exp.LeadBatches, err = LeadJournal(ctx, r, []string{wishID}, 200); err != nil {
+		return nil, nil, err
+	}
 	return exp, projects, nil
 }
 
@@ -401,6 +404,9 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 		if packed, err := anypb.New(req); err == nil {
 			c.Request = packed
 		}
+	}
+	for _, b := range exp.GetLeadBatches() {
+		b.SessionId, b.Account = "", ""
 	}
 	scrub.message(exp.ProtoReflect())
 	// The rank is this machine's order of its wishes; the readiness is computed where the wish is read.
@@ -699,6 +705,11 @@ func entities(exp *planv1.WishExport) []proto.Message {
 	}
 	for _, t := range exp.GetTilasms() {
 		out = append(out, t.GetTilasm())
+	}
+	for _, b := range exp.GetLeadBatches() {
+		if b.GetId() != "" {
+			out = append(out, b)
+		}
 	}
 	return out
 }

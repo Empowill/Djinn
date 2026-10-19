@@ -19,7 +19,7 @@ and it ends when you say it is granted.
 | Merged work | Each task's work once merged, to review. | The Review tab |
 | Tilasms | The material that explains the wish: pages, diagrams, demonstrations. | The Tilasms tab |
 | Blocks | What the Djinn and the workers write down for one another. | The For agents tab |
-| History | The commands run for the wish, and its log. | The Wish tab, under History |
+| History | The commands run for the wish, and the batches of the driven Djinn that touched it. | The History tab |
 
 Djinn keeps all of it, and the Djinn reads where the wish stands each time it turns to it: a wish is its own memory,
 and what was decided a week ago is still there, with why.
@@ -87,7 +87,7 @@ Every window shows the same order, and a restart keeps it.
 
 ## A wish's page
 
-A wish opens on its **Wish** tab: what waits for you (**Your move**), the questions being investigated, its **History**,
+A wish opens on its **Wish** tab: what waits for you (**Your move**), the questions being investigated,
 and the **Rights** of its workers in each project. A click on the wish in the side panel
 always brings this tab back, from any other tab or a tilasm open full size, its first question open with the focus.
 Beside it:
@@ -95,6 +95,7 @@ Beside it:
 - **Tasks**: what moves or waits first, then the azimas with the work part of each.
 - **Review**: the merged work, a line per task, to mark reviewed.
 - **Decisions**: every decision, the latest first.
+- **History**: the commands that changed the wish, and the batches of the driven Djinn that touched it.
 - **Tilasms**: the material that explains the wish.
 - **For agents**, last and discreet: the notes the Djinn and the workers left for one another.
 

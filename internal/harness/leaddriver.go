@@ -315,7 +315,7 @@ func (d *LeadDriver) attempt(
 		// environment may name a worker (a djinn up started from a worker's shell): its commands would be that
 		// worker's, refused in another Djinn (W131's own try), so the lead's are cleared.
 		// An account's folder comes last: the session signs in there.
-		Env: slices.Concat([]string{"DJINN_LEAD=1", "DJINN_TASK_ID=", "DJINN_WISH_ID=", "DJINN_WORKER_TOKEN=",
+		Env: slices.Concat([]string{"DJINN_LEAD=1", "DJINN_HOME=" + d.Home, "DJINN_TASK_ID=", "DJINN_WISH_ID=", "DJINN_WORKER_TOKEN=",
 			"DJINN_CALLER="}, d.Env, env),
 		Track: d.Track,
 	}
@@ -331,25 +331,33 @@ func (d *LeadDriver) attempt(
 		if ev.Limit != nil {
 			limit = ev.Limit
 		}
+		changed := false
 		switch ev.Kind {
 		case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL:
 			if c := leadCommand(ev.Text); c != "" && len(b.Commands) < plan.JournalCommandsMax {
 				b.Commands = append(b.Commands, plan.JournalCommand(c))
+				changed = true
 			}
 		case planv1.TaskEventKind_TASK_EVENT_KIND_TEXT:
 			last = ev.Text
 		case planv1.TaskEventKind_TASK_EVENT_KIND_USAGE:
 			if ev.Usage != nil {
 				b.Usage = ev.Usage // What the session spent so far.
+				changed = true
 			}
 		case planv1.TaskEventKind_TASK_EVENT_KIND_ERROR:
 			failure = ev.Text
 		}
-		if ev.Model != "" {
+		if ev.Model != "" && b.Model != ev.Model {
 			b.Model = ev.Model
+			changed = true
 		}
-		if ev.SessionID != "" {
+		if ev.SessionID != "" && b.SessionId != ev.SessionID {
 			b.SessionId = ev.SessionID
+			changed = true
+		}
+		if changed {
+			drive.SetBatch(b)
 		}
 	}
 	res := w.Wait()

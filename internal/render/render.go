@@ -84,9 +84,6 @@ const blockRun, shownRun = 3, 8
 // longNote is the size, in characters, from which the note of a decision is folded.
 const longNote = 240
 
-// logKind is the kind of the blocks that tell the story of the wish: they go to the journal, not to the notes.
-const logKind = "log"
-
 // maxLastWord is the most of a worker's last event a page shows, in characters; maxEvent, of an event in the table.
 const maxLastWord, maxEvent = 600, 280
 
@@ -255,11 +252,10 @@ type notes struct {
 	Run, More   []block // the blocks of a run in sight, and the others, folded
 }
 
-// entry is a line of the journal: a command, or a log block.
+// entry is a line of the journal: a command.
 type entry struct {
 	at                   time.Time
 	At, Command, Summary string
-	Note                 template.HTML
 }
 
 // event is a line of the workers' events: what a worker said, a change of its status, an error.
@@ -666,18 +662,6 @@ func build(in Input) (*view, error) {
 	var journal []entry
 	var kinds []string // the kind of each block shown, to find the runs
 	for _, b := range exp.GetBlocks() {
-		if strings.EqualFold(b.GetKind(), logKind) {
-			e := entry{at: b.GetCreateTime().AsTime(), At: at(b.GetCreateTime()), Summary: b.GetTitle()}
-			if content := strings.TrimSpace(b.GetContent()); content != "" && isMarkdown(b.GetMediaType()) {
-				e.Summary, e.Note = "", md(content)
-			} else if content != "" {
-				e.Summary = cut(content, 600)
-			}
-			if e.Summary != "" || e.Note != "" {
-				journal = append(journal, e)
-			}
-			continue
-		}
 		if IsDecision(b) {
 			// In the decisions, with who took it.
 			continue
@@ -725,7 +709,7 @@ func build(in Input) (*view, error) {
 		start = end
 	}
 
-	// The journal: the commands and the log blocks, the latest first.
+	// The journal: the commands, the latest first.
 	for _, c := range exp.GetCommands() {
 		journal = append(journal, entry{
 			at: c.GetAt().AsTime(), At: at(c.GetAt()), Command: command(c.GetMethod()),

@@ -3,11 +3,18 @@
 // resumes the one lead, the Djinn, in its terminal, on no wish (on a wish, lead-switch.spec.ts checks it). The lead is
 // a fake claude on djinn's PATH that repeats what it reads. The chip beside the push strategy says where the wish's
 // work lands, in a real Git repository, and changes its branch. The trash has its own spec (wish-lifecycle.spec.ts).
+import { create, toBinary } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import {
+  LeadBatchState,
+  LeadServiceGetResponseSchema,
+  Provider,
+} from "../gen/ts/plan/v1/plan_pb";
 import { dropLead, leadFolder, leadRows, setLead } from "./lead";
 
 const binary = path.resolve(
@@ -257,6 +264,158 @@ test("the head says where the wish's work lands, and a click changes the branch"
     expect(errors).toEqual([]);
   } finally {
     await page.evaluate(() => localStorage.removeItem("djinn.theme"));
+    djinn("wish", "delete", wishId);
+  }
+});
+
+test("the History tab shows the wish commands and the lead journal for that wish", async ({
+  page,
+}) => {
+  const suffix = randomUUID().slice(0, 8);
+  const title = `History of the lamp ${suffix}`;
+  const wishId = JSON.parse(djinn("wish", "make", title, "--paused", "--json"))
+    .wish.id as string;
+  const exportFile = path.join(
+    process.env.DJINN_E2E_HOME!,
+    `history-${suffix}.json`,
+  );
+  try {
+    djinn("wish", "describe", wishId, "--text", "Keep the wick trimmed.");
+    djinn("wish", "export", wishId, "--file", exportFile);
+    const exp = JSON.parse(fs.readFileSync(exportFile, "utf8"));
+    const now = new Date().toISOString();
+    exp.lead_batches = [
+      {
+        id: `batch-${suffix}`,
+        state: "LEAD_BATCH_STATE_DONE",
+        start_time: now,
+        end_time: now,
+        provider: "PROVIDER_CLAUDE",
+        model: "claude-opus-4-7",
+        wish_ids: [wishId],
+        events: ["W1 merged"],
+        commands: ["djinn task spawn W2"],
+        note: "Spawned W2 to trim the wick.",
+        usage: { cost_usd: 0.08 },
+      },
+    ];
+    fs.writeFileSync(exportFile, JSON.stringify(exp));
+    djinn("wish", "import", exportFile, "--replace");
+
+    djinn("open", `djinn://wish/${wishId}`);
+    await page.goto(process.env.DJINN_URL!);
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+
+    const historyTab = page.locator("#view-tab-history");
+    await expect(historyTab).toContainText("History");
+    await historyTab.click();
+
+    const panel = page.getByRole("tabpanel", { name: "History" });
+    await expect(panel.locator(".lead-batch-row")).toHaveCount(1);
+    await expect(panel.locator(".lead-batch-row")).toContainText(
+      "claude-opus-4-7",
+    );
+    await expect(panel.locator(".lead-batch-row")).toContainText(
+      "djinn task spawn W2",
+    );
+    await expect(panel.locator(".lead-batch-row")).toContainText(
+      "Spawned W2 to trim the wick.",
+    );
+    await expect(panel.locator(".lead-batch-row")).toContainText("$0.08");
+    await expect(panel.locator(".journal-list tr.command")).toHaveCount(2);
+    await expect(panel.locator(".journal-list")).toContainText("wish describe");
+    await expect(panel.locator(".journal-list")).toContainText(
+      "Keep the wick trimmed.",
+    );
+  } finally {
+    fs.rmSync(exportFile, { force: true });
+    djinn("wish", "delete", wishId);
+  }
+});
+
+test("next to Lead, the driven lead shows the running batch, the journal and a failed batch's retry", async ({
+  page,
+}) => {
+  const suffix = randomUUID().slice(0, 8);
+  const title = `Driven lead ${suffix}`;
+  const start = timestampFromDate(new Date(Date.now() - 30_000));
+  await page.route("**/plan.v1.LeadService/Get", (route) =>
+    route.fulfill({
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          LeadServiceGetResponseSchema,
+          create(LeadServiceGetResponseSchema, {
+            driven: true,
+            seat: { provider: Provider.CLAUDE, model: "claude-opus-4-7" },
+            batch: {
+              id: "b-run",
+              state: LeadBatchState.RUNNING,
+              startTime: start,
+              provider: Provider.CLAUDE,
+              model: "claude-opus-4-7",
+              events: ["W1 merged", "Q01 answered"],
+              attempt: 2,
+              usage: { costUsd: 0.04 },
+            },
+            journal: [
+              {
+                id: "b-done",
+                state: LeadBatchState.DONE,
+                startTime: start,
+                endTime: start,
+                provider: Provider.CLAUDE,
+                model: "claude-opus-4-7",
+                sessionId: "a1b2c3d4-e5f6-4789-8012-34567890abcd",
+                events: ["wish created"],
+                commands: ["djinn task spawn W1"],
+                note: "Spawned W1 for the lamp.",
+                usage: { costUsd: 0.12 },
+              },
+              {
+                id: "b-fail",
+                state: LeadBatchState.FAILED,
+                startTime: start,
+                endTime: start,
+                provider: Provider.CLAUDE,
+                model: "claude-opus-4-7",
+                attempt: 3,
+                error: "exit status 1",
+                usage: { costUsd: 0.02 },
+              },
+            ],
+          }),
+        ),
+      ),
+    }),
+  );
+  const wishId = await open(page, title);
+  try {
+    const actions = page.locator(".topbar-actions");
+    const status = actions.locator(".lead-batch.running");
+    await expect(status).toBeVisible();
+    await expect(status.locator(".lead-batch-events")).toHaveText("2 events");
+    await expect(status.locator(".lead-batch-retry")).toHaveText("try 2");
+    await expect(status.locator(".lead-batch-cost")).toHaveText("$0.04");
+
+    const journalBtn = actions.locator(".lead-journal-button");
+    await expect(journalBtn).toHaveText("2");
+    await journalBtn.click();
+
+    const dialog = actions.getByRole("dialog", { name: "Lead journal" });
+    await expect(dialog).toBeVisible();
+    const rows = dialog.locator(".lead-batch-row");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText("claude-opus-4-7");
+    await expect(rows.nth(0)).toContainText("a1b2c3d4");
+    await expect(rows.nth(0)).toContainText("djinn task spawn W1");
+    await expect(rows.nth(0)).toContainText("Spawned W1 for the lamp.");
+    await expect(rows.nth(0)).toContainText("$0.12");
+    await expect(rows.nth(1)).toHaveClass(/failed/);
+    await expect(rows.nth(1)).toContainText("try 3");
+    await expect(rows.nth(1)).toContainText("failed");
+    await expect(rows.nth(1)).toContainText("exit status 1");
+  } finally {
     djinn("wish", "delete", wishId);
   }
 });

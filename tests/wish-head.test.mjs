@@ -492,3 +492,142 @@ test("while Djinn drives the lead, its menu moves it to another agent, account o
     "Claude Code",
   );
 });
+
+test("next to Lead, Djinn shows the running batch (since when, events, cost) and a failed batch's retry", () => {
+  const nowSec = BigInt(Math.floor(Date.now() / 1000) - 12);
+  const running = {
+    id: "b-run",
+    state: s.LeadBatchState.RUNNING,
+    startTime: { seconds: nowSec, nanos: 0 },
+    provider: s.Provider.CLAUDE,
+    model: "claude-opus-4-6",
+    events: ["task W1 DONE", "question Q2 ANSWERED"],
+    attempt: 1,
+    usage: {
+      inputTokens: 1200n,
+      outputTokens: 300n,
+      costUsd: 0.05,
+    },
+  };
+  const runMarkup = s.renderToStaticMarkup(
+    h(s.LeadBatchStatus, { batch: running }),
+  );
+  assert.match(runMarkup, /class="lead-batch running"/);
+  assert.match(runMarkup, /since /);
+  assert.match(runMarkup, /2 events/);
+  assert.match(runMarkup, /\$0\.05/);
+  assert.match(runMarkup, /task W1 DONE\nquestion Q2 ANSWERED/);
+
+  const failed = {
+    id: "b-fail",
+    state: s.LeadBatchState.FAILED,
+    startTime: { seconds: nowSec - 30n, nanos: 0 },
+    endTime: { seconds: nowSec - 5n, nanos: 0 },
+    provider: s.Provider.CLAUDE,
+    model: "claude-sonnet-5-5",
+    events: ["wish Created: Lamp"],
+    error: "rate limit exceeded",
+    attempt: 2,
+    usage: {
+      inputTokens: 100000n,
+      outputTokens: 10000n,
+      costUsd: 0,
+    },
+  };
+  const failMarkup = s.renderToStaticMarkup(
+    h(s.LeadBatchStatus, { batch: failed }),
+  );
+  assert.match(failMarkup, /class="lead-batch failed"/);
+  assert.match(failMarkup, /try 2 failed · Talk to the Djinn retries/);
+  assert.match(failMarkup, /≈ \$0\.30/);
+  assert.match(failMarkup, /rate limit exceeded/);
+});
+
+test("next to Lead, the journal lists past batches (model, session, launches, last sentence, cost, retry)", () => {
+  const nowSec = BigInt(Math.floor(Date.now() / 1000) - 60);
+  const batches = [
+    {
+      id: "b2",
+      state: s.LeadBatchState.DONE,
+      startTime: { seconds: nowSec, nanos: 0 },
+      endTime: { seconds: nowSec + 10n, nanos: 0 },
+      provider: s.Provider.CLAUDE,
+      model: "claude-opus-4-6",
+      sessionId: "abcdef1234567890",
+      events: ["task W1 DONE"],
+      commands: ["task spawn", "wish update"],
+      note: "Merged W1 and spawned W2 for the window.",
+      attempt: 1,
+      usage: {
+        inputTokens: 2000n,
+        outputTokens: 400n,
+        costUsd: 0.08,
+      },
+    },
+    {
+      id: "b1",
+      state: s.LeadBatchState.FAILED,
+      startTime: { seconds: nowSec - 120n, nanos: 0 },
+      endTime: { seconds: nowSec - 100n, nanos: 0 },
+      provider: s.Provider.CODEX,
+      model: "gpt-5.5",
+      sessionId: "9876543210fedcba",
+      events: ["wish Created"],
+      commands: [],
+      error: "connection reset",
+      attempt: 3,
+      usage: {
+        inputTokens: 100000n,
+        outputTokens: 0n,
+        costUsd: 0,
+      },
+    },
+  ];
+
+  const journalMarkup = s.renderToStaticMarkup(h(s.LeadJournal, { batches }));
+  assert.match(journalMarkup, /claude-opus-4-6/);
+  assert.match(journalMarkup, /abcdef12/);
+  assert.match(
+    journalMarkup,
+    /<code>task spawn<\/code><code>wish update<\/code>/,
+  );
+  assert.match(journalMarkup, /Merged W1 and spawned W2 for the window\./);
+  assert.match(journalMarkup, /\$0\.08/);
+  assert.match(journalMarkup, /gpt-5\.5/);
+  assert.match(journalMarkup, /98765432/);
+  assert.match(journalMarkup, /try 3/);
+  assert.match(journalMarkup, /failed/);
+  assert.match(journalMarkup, /connection reset/);
+  assert.match(journalMarkup, /≈ \$0\.50/);
+
+  // Inside LeadButton: shows the running/failed batch chip and the Journal button next to Lead.
+  const buttonMarkup = s.renderToStaticMarkup(
+    h(s.LeadButton, {
+      agents: [
+        { id: "claude", name: "Claude", available: true, command: "claude" },
+      ],
+      loadAgents: async () => [],
+      journalOpen: true,
+      drive: {
+        seat: {
+          provider: s.Provider.CLAUDE,
+          model: "claude-opus-4-6",
+          account: "",
+        },
+        accounts: [],
+        batch: { ...batches[0], state: s.LeadBatchState.RUNNING },
+        journal: batches,
+      },
+      onLead() {},
+      onPick() {},
+    }),
+  );
+  assert.match(buttonMarkup, /class="lead-batch running"/);
+  assert.match(
+    buttonMarkup,
+    /class="button secondary small lead-journal-button"/,
+  );
+  assert.match(buttonMarkup, /aria-label="Lead journal"/);
+  assert.match(buttonMarkup, /<span>2<\/span>/);
+  assert.match(buttonMarkup, /class="lead-journal-popover"/);
+});

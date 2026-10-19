@@ -629,13 +629,14 @@ real run). Not `--bare`: it would not use the subscription's sign-in. **Verified
 from `claude --help`, is taken; a fresh session reads 18,626 tokens (system prompt, tools, rules) from the cache the
 previous batch's session wrote, and writes its own message and turn to the cache for an hour. Measured per batch: a
 cold start $0.21 (26,522 tokens written), a one-command batch $0.16, a question with two plan files $0.22, as
-claude counts them; L10 estimated $0.12 to $0.21. The price table's estimate of the $0.16 batch is $0.11: it prices
-a cache write at 5 minutes (5 $ a million tokens), `claude -p` writes them for an hour (8 $).
+claude counts them; L10 estimated $0.12 to $0.21. The price table's estimate of the $0.16 batch matches it ($0.1602):
+it prices a cache write at the 1-hour rate of `claude -p` (8 $ a million tokens on Opus 5.5).
 
 **The Djinn's tone (decision Q36, W156).** The page sends the theme it shows with `UiService.View` (`ShownTheme`,
 `system` resolved by the page), Djinn keeps the last one in `settings.json` (`shownTheme`), and `plan.LeadPacket`
 reads it as the batch starts: a `## Your tone` section with the one tone of that theme, from `lead/tones/light.md` or
-`lead/tones/dark.md`, one line each. The limits of every tone are a rule of `plan.DrivenRules` (version 2), the same
+`lead/tones/dark.md`, one line each. The limits of every tone are a rule of `plan.DrivenRules` (shared with the brief,
+version 5), the same
 text whatever the theme, so the system prompt's cache still serves every session. **Measured** on real calls (claude
 -p, Opus 5.5, 17/10/2026, the difference in input tokens with and without the text): the rule 283 tokens, the light
 section 127, the dark one 145. Per batch: the section written once to the hour cache (127 to 145 × 8 $ a million,

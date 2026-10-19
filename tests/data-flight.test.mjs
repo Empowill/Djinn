@@ -678,7 +678,7 @@ test("what tasks spent: tokens always, the cost only where the agent gives one",
   assert.equal(f.tokensOf(usage(1, 2, 3, 4, 0)), 10n);
 });
 
-test("the journal reads its commands from their requests, with the log blocks, the latest first", () => {
+test("the journal reads its commands from their requests, the latest first", () => {
   const command = (id, seconds, method, schema, init) => ({
     id,
     at: at(seconds),
@@ -724,37 +724,16 @@ test("the journal reads its commands from their requests, with the log blocks, t
       ),
     ],
   };
-  const blocks = [
-    {
-      id: "b1",
-      kind: "Log",
-      title: "Kick-off",
-      content: "Started **W1**.",
-      createTime: at(2),
-    },
-    {
-      id: "b2",
-      kind: "section",
-      title: "Lexicon",
-      content: "",
-      createTime: at(6),
-    },
-  ];
   assert.deepEqual(
-    f.journal(exp, blocks).map((e) => [e.id, e.command, e.summary, e.note]),
+    f.journal(exp).map((e) => [e.id, e.command, e.summary]),
     [
-      ["c4", "wish allow", "edit lamp", ""],
-      ["c3", "task stop", "W1", ""],
-      ["c2", "question answer", "Q01 b Glass.", ""],
-      ["b1", "", "Kick-off", "Started **W1**."],
-      ["c1", "wish make", "Ship the lamp", ""],
+      ["c4", "wish allow", "edit lamp"],
+      ["c3", "task stop", "W1"],
+      ["c2", "question answer", "Q01 b Glass."],
+      ["c1", "wish make", "Ship the lamp"],
     ],
   );
-  // Without the commands, the log blocks alone.
-  assert.deepEqual(
-    f.journal(undefined, blocks).map((e) => e.id),
-    ["b1"],
-  );
+  assert.deepEqual(f.journal(undefined), []);
   assert.equal(
     f.commandName("/plan.v1.SkillService/Unsummon"),
     "skill unsummon",

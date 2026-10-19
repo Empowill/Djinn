@@ -97,8 +97,8 @@ test.describe("wish render performance @render", () => {
             const isReady = () => {
               const h1 = document.querySelector(".hero h1");
               const tabs = document.querySelector(".view-tabs");
-              const journal = document.querySelector(".wish-journal");
-              return h1 && tabs && journal;
+              const main = document.querySelector(".main-columns");
+              return h1 && tabs && main;
             };
 
             if (isReady()) {
@@ -160,7 +160,7 @@ test.describe("wish render performance @render", () => {
       },
       {
         id: "journal",
-        buttonId: "view-tab-main",
+        buttonId: "view-tab-history",
         readySelector: ".wish-journal",
       },
       {
@@ -320,11 +320,11 @@ test.describe("wish render performance @render", () => {
     }
 
     // 4. Measure change arrival (one change arriving over watch stream)
-    // Make sure we are on the main/journal tab where questions are shown in the action center
+    // Make sure we are on the main tab where questions are shown in the action center
     const mainTab = page.locator("#view-tab-main");
     if ((await mainTab.getAttribute("aria-selected")) !== "true") {
       await mainTab.click();
-      await expect(page.locator(".wish-journal")).toBeVisible();
+      await expect(page.locator(".main-columns")).toBeVisible();
     }
 
     const changeMeasures: number[] = [];

@@ -389,9 +389,9 @@ func TestPage(t *testing.T) {
 			exp.Blocks = append(exp.Blocks, &planv1.Block{Id: fmt.Sprintf("r%d", i), Kind: "finding", Title: fmt.Sprintf("Run %d", i), Content: "Short."})
 		}
 		for i := range 40 {
-			exp.Blocks = append(exp.Blocks, &planv1.Block{
-				Id: fmt.Sprintf("l%02d", i), Kind: "log", Title: "title of the log", Content: fmt.Sprintf("Log **%02d**", i), CreateTime: ts(i),
-			})
+			exp.Commands = append(exp.Commands, journalEntry(t, "/plan.v1.BlockService/Put", &planv1.BlockServicePutRequest{
+				Title: fmt.Sprintf("Command %02d", i),
+			}, i))
 		}
 		html := page(t, Input{Export: exp, Language: "en"})
 
@@ -476,11 +476,8 @@ func TestPage(t *testing.T) {
 			t.Error("a long note is folded")
 		}
 
-		// Notes: in their order, a long one folded under its first line; no log block.
+		// Notes: in their order, a long one folded under its first line.
 		notes := between(html, `<section id="notes">`, "</section>")
-		if strings.Contains(notes, "Log ") || strings.Contains(notes, "title of the log") {
-			t.Error("log blocks go to the journal")
-		}
 		if !strings.Contains(notes, `<details class="long">`) || !strings.Contains(notes, "<h3>Long report</h3>") {
 			t.Error("a long block is folded under its first line")
 		}
@@ -504,8 +501,8 @@ func TestPage(t *testing.T) {
 		if n := strings.Count(earlier, `<tr><td class="at">`); n != 40-shownJournal {
 			t.Errorf("%d journal entries folded, want %d", n, 40-shownJournal)
 		}
-		if !strings.Contains(inSight, "Log <strong>39</strong>") || strings.Index(inSight, "39") > strings.Index(inSight, "38") {
-			t.Error("the journal shows the latest log first, in Markdown")
+		if !strings.Contains(inSight, "Command 39") || strings.Index(inSight, "Command 39") > strings.Index(inSight, "Command 38") {
+			t.Error("the journal shows the latest command first")
 		}
 	})
 

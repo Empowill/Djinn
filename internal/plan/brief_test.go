@@ -868,7 +868,8 @@ func TestBriefRules(t *testing.T) {
 				writeSettings(t, filepath.Join(repo, SettingsFile), "install_questions: "+InstallQuestionsWord(tc.install)+"\n")
 				projects = []*planv1.Project{{Name: "djinn", Directory: repo}}
 			}
-			rules := briefRules(projects, t.TempDir())
+			home := t.TempDir()
+			rules := briefRules(projects, home)
 			if bullets := strings.Split(rules, "\n- "); tc.bullet > 0 && (len(bullets) <= tc.bullet || !strings.HasPrefix(bullets[tc.bullet], tc.first)) {
 				t.Errorf("rule %d does not open with %q:\n%s", tc.bullet, tc.first, rules)
 			}
@@ -882,18 +883,39 @@ func TestBriefRules(t *testing.T) {
 					t.Errorf("briefRules still holds %q:\n%s", gone, rules)
 				}
 			}
+			// W261: DrivenRules reads from the same leadRules source for every rule shared between terminal and driven leads.
+			if tc.name != "unread terminal" && tc.name != "direct commands" {
+				driven := DrivenRules(projects, home)
+				for _, want := range tc.want {
+					if !strings.Contains(driven, want) {
+						t.Errorf("DrivenRules lacks %q:\n%s", want, driven)
+					}
+				}
+				for _, gone := range tc.gone {
+					if strings.Contains(driven, gone) {
+						t.Errorf("DrivenRules still holds %q:\n%s", gone, driven)
+					}
+				}
+			}
 		})
 	}
 }
 
-// TestDrivenRules (W234): the driven lead's first rule says the developer reads none of its text: every question, doubt
-// or choice goes into a question, its last text one short line for the journal.
+// TestDrivenRules (W234, W261): the driven lead's rules open with "You are the Djinn.", then the rule on its text
+// (every question, doubt or choice goes into a question, its last text one short line for the journal), then the rule
+// on one batch at a time.
 func TestDrivenRules(t *testing.T) {
 	t.Parallel()
 	rules := DrivenRules(nil, "")
 	bullets := strings.Split(rules, "\n- ")
-	if len(bullets) < 2 || !strings.HasPrefix(bullets[1], "**The developer reads none of your text.**") {
-		t.Fatalf("the driven lead's first rule is not the one on its text:\n%s", rules)
+	if len(bullets) < 4 || !strings.HasPrefix(bullets[1], "**You are the Djinn.**") {
+		t.Fatalf("the driven lead's first rule is not You are the Djinn:\n%s", rules)
+	}
+	if !strings.HasPrefix(bullets[2], "**The developer reads none of your text.**") {
+		t.Fatalf("the driven lead's second rule is not the one on its text:\n%s", rules)
+	}
+	if !strings.HasPrefix(bullets[3], "**Djinn drives you, one batch at a time.**") {
+		t.Fatalf("the driven lead's third rule is not the one on batches:\n%s", rules)
 	}
 	for _, want := range []string{
 		"No terminal shows this session",
@@ -901,9 +923,52 @@ func TestDrivenRules(t *testing.T) {
 			"never only into your text; a fact or a decision for the next leads and workers goes into a block.",
 		"End your turn with one short line for the journal",
 	} {
-		if !strings.Contains(bullets[1], want) {
-			t.Errorf("the driven lead's first rule lacks %q:\n%s", want, bullets[1])
+		if !strings.Contains(bullets[2], want) {
+			t.Errorf("the driven lead's rule on text lacks %q:\n%s", want, bullets[2])
 		}
+	}
+}
+
+// TestJournalTokenCap (W261): JournalNote keeps one line capped at journalLineMax, and LeadPacket caps the journal
+// section at JournalMaxTokens (1200 tokens at 4 runes/token), keeping the newest batches that fit in chronological
+// order (oldest first).
+func TestJournalTokenCap(t *testing.T) {
+	t.Parallel()
+	note := JournalNote("  First line\nSecond line\nThird line  ")
+	if strings.Contains(note, "\n") || note != "First line Second line Third line" {
+		t.Errorf("JournalNote multi-line = %q", note)
+	}
+	long := JournalNote(strings.Repeat("a", 500))
+	if got := strings.TrimSuffix(long, "…"); len([]rune(got)) != journalLineMax {
+		t.Errorf("JournalNote clipped length = %d, want %d", len([]rune(got)), journalLineMax)
+	}
+
+	var batches []*planv1.LeadBatch
+	base := time.Date(2026, 10, 19, 6, 0, 0, 0, time.UTC)
+	for i := range 6 {
+		var cmds []string
+		for j := range JournalCommandsMax {
+			cmds = append(cmds, fmt.Sprintf("djinn task spawn W%d-%d --wish-id wish-1 --title %q", i+1, j+1, strings.Repeat("x", 90)))
+		}
+		batches = append(batches, &planv1.LeadBatch{
+			Id:        fmt.Sprintf("batch-%d", i+1),
+			StartTime: timestamppb.New(base.Add(time.Duration(i) * time.Minute)),
+			EndTime:   timestamppb.New(base.Add(time.Duration(i)*time.Minute + 20*time.Second)),
+			State:     planv1.LeadBatchState_LEAD_BATCH_STATE_DONE,
+			Events:    []string{fmt.Sprintf("W%d ended", i+1)},
+			Commands:  cmds,
+			Note:      fmt.Sprintf("Batch %d hand-off line for the next leads.", i+1),
+		})
+	}
+	sec := journalSection(batches)
+	if got := JournalTokens(sec); got > JournalMaxTokens {
+		t.Errorf("journalSection tokens = %d, want <= %d", got, JournalMaxTokens)
+	}
+	if strings.Contains(sec, "Batch 1 hand-off line") {
+		t.Errorf("oldest batch should have been dropped to stay under token cap:\n%s", sec)
+	}
+	if !strings.Contains(sec, "Batch 6 hand-off line") {
+		t.Errorf("newest batch should be kept:\n%s", sec)
 	}
 }
 

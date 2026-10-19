@@ -22,7 +22,7 @@ import { ReadingLine } from "./reading-line";
 import { DraftDot } from "./tilasm-comments";
 
 export type View =
-  "main" | "tasks" | "review" | "decisions" | "tilasms" | "agents";
+  "main" | "tasks" | "review" | "decisions" | "history" | "tilasms" | "agents";
 
 const KINDS_MAIN: readonly Change[] = [
   Change.TASK,
@@ -48,6 +48,8 @@ export function kindsForView(view: View): readonly Change[] {
       return KINDS_TASKS;
     case "decisions":
       return KINDS_DECISIONS;
+    case "history":
+      return [];
     case "tilasms":
       return KINDS_TILASMS;
     case "agents":
@@ -61,6 +63,7 @@ export function ViewTabs({
   tasks,
   review,
   decisions,
+  history,
   tilasms,
   drafts = 0,
   agents,
@@ -75,6 +78,8 @@ export function ViewTabs({
   review?: number | null;
   // How many decisions the Decisions tab holds; null while unread.
   decisions: number | null;
+  // How many entries the History tab holds (commands and lead batches); without it, a view with no such tab (the flying carpet).
+  history?: number | null;
   // How many tilasms the Tilasms tab holds; without it, a view with no such tab (the flying carpet).
   tilasms?: number | null;
   // How many draft comments the developer wrote on them, not sent yet.
@@ -90,6 +95,8 @@ export function ViewTabs({
   if (review !== undefined)
     tabs.push({ id: "review", label: t("tabs.review"), count: review });
   tabs.push({ id: "decisions", label: t("tabs.decisions"), count: decisions });
+  if (history !== undefined)
+    tabs.push({ id: "history", label: t("page.journal"), count: history });
   if (tilasms !== undefined)
     tabs.push({ id: "tilasms", label: t("tabs.tilasms"), count: tilasms });
   if (agents !== undefined)

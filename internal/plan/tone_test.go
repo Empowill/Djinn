@@ -50,7 +50,7 @@ func TestShownThemeKept(t *testing.T) {
 		!strings.Contains(stable, "never say that a worker or a task started") {
 		t.Errorf("StableBrief with light theme:\n%s", stable)
 	}
-	if driven := DrivenRules(nil, home); !strings.Contains(driven, "rules 4") ||
+	if driven := DrivenRules(nil, home); !strings.Contains(driven, "rules "+DrivenRulesVersion) ||
 		!strings.Contains(driven, "`djinn lead say <wish> \"<text>\"`") ||
 		!strings.Contains(driven, "--decided") ||
 		!strings.Contains(driven, "never say that a worker or a task started") {
