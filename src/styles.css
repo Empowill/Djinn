@@ -190,24 +190,6 @@ button {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-/* The window: the update banner's row when it shows (update-banner.css), then the app in the rest of the height. */
-.window {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  background: var(--bg);
-}
-.window-app {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.window-app > .lead-frame,
-.window-app > .app {
-  flex: 1 1 0;
-  height: auto;
-}
 .app {
   --sidebar-width: 13.875rem;
   display: flex;
@@ -228,14 +210,13 @@ button {
   padding: 0 var(--sidebar-pad);
 }
 .sidebar-brand {
+  position: relative;
+  z-index: 8;
   height: 4.9375rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 0.4375rem;
-}
-.sidebar-brand > button {
-  padding: 0;
 }
 .sidebar-brand-main {
   display: flex;
@@ -247,9 +228,11 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 1.875rem;
   height: 1.875rem;
   padding: 0.375rem;
+  margin-left: auto;
   border-radius: var(--radius-control, 0.4375rem);
   color: var(--muted);
 }
@@ -474,7 +457,14 @@ html[data-theme="light"] .wordmark-period {
   --sidebar-pad: 0.625rem;
 }
 .sidebar-collapsed .sidebar-brand {
-  padding: 0 0.625rem;
+  justify-content: center;
+  padding: 0;
+}
+.sidebar-collapsed .sidebar-brand-main {
+  display: none;
+}
+.sidebar-collapsed .sidebar-toggle {
+  margin-left: 0;
 }
 .sidebar-collapsed .new-mission {
   justify-content: center;
@@ -1759,10 +1749,14 @@ html[data-still] .operating-load * {
     display: none;
   }
   .sidebar-brand {
-    padding: 0 0.25rem;
+    justify-content: center;
+    padding: 0;
   }
   .sidebar-brand-main {
-    gap: 0;
+    display: none;
+  }
+  .sidebar-toggle {
+    margin-left: 0;
   }
   .sidebar .new-mission,
   .sidebar .nav-item,
@@ -1916,9 +1910,6 @@ html[data-motion="reduced"] *::after {
 
 .version-tag {
   display: none;
-}
-.sidebar-brand {
-  justify-content: flex-start;
 }
 
 @media (max-width: 1080px) {
@@ -2298,15 +2289,14 @@ html.native-mac [role="button"] {
   --wails-draggable: no-drag;
 }
 
-/* The sidebar's toggle stays in a fixed toolbar, in the same place folded or not: over the top of the sidebar, beside
-   the traffic lights in the macOS window. */
+/* The creation page's Back stays in a fixed toolbar over the top of the main view, beside the sidebar. */
 .app {
   position: relative;
 }
 .app-toolbar {
   position: fixed;
   top: 1rem;
-  left: 1rem;
+  left: calc(var(--sidebar-width) + 1.625rem);
   z-index: 50;
   display: inline-flex;
   align-items: center;
@@ -2318,8 +2308,7 @@ html.native-mac [role="button"] {
 .app-toolbar > button {
   pointer-events: auto;
 }
-.app-toolbar-back,
-.app-toolbar-toggle {
+.app-toolbar-back {
   flex: 0 0 2rem;
   width: 2rem;
   min-width: 2rem;
@@ -2328,15 +2317,14 @@ html.native-mac [role="button"] {
 }
 html.native-mac .app-toolbar {
   top: 0.375rem;
-  left: 5.75rem;
+  left: max(calc(var(--sidebar-width) + 1.625rem), 5.75rem);
   height: 1.25rem;
   --wails-draggable: no-drag;
 }
 .app-toolbar-back:disabled {
   cursor: default;
 }
-html.native-mac .app-toolbar-back,
-html.native-mac .app-toolbar-toggle {
+html.native-mac .app-toolbar-back {
   flex: 0 0 1.25rem;
   width: 1.25rem;
   min-width: 1.25rem;
@@ -2370,10 +2358,6 @@ html.native-mac .page-header .topbar-actions .button.small {
 }
 html.native-mac .app .page-header {
   padding-left: max(calc(var(--sidebar-width) + 1.625rem), 10.375rem);
-}
-/* Room for the toolbar above the sidebar's brand. */
-html:not(.native-mac) .sidebar {
-  padding-top: 1.75rem;
 }
 /* Its width only: a padding gliding too would move the wishes' icons, which keep their place (wish.css). */
 .sidebar {

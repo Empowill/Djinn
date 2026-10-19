@@ -2,11 +2,15 @@
    warm glow on the dark ground turned brown, L17), the djinn's mark at its head. The primary action is brass as the
    lamp, on the tokens of review.css's lamp-rub, Dismiss is smoke violet, the release notes, Details and × quiet. Both
    themes take the tokens of review.css; their contrast is checked in tests/styles.test.cjs.
-   It takes its own row above the app (styles.css's .window), which gives it the room it needs: laid over the app, it
-   covered the toolbar's controls, the load slider first. Centred, it shrinks to its text up to the whole width the
-   window gives it, and to half its height, the rest scrolling. */
+   A floating panel at the top of the app, over the content and out of the layout flow, so nothing below moves when it
+   shows or goes. Centred, it shrinks to its text up to the width the window gives it, and to half its height, the rest
+   scrolling. */
 .update-banner {
-  flex: none;
+  position: fixed;
+  top: var(--space-2);
+  left: 0;
+  right: 0;
+  z-index: 110;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -14,7 +18,7 @@
   max-width: min(42.5rem, calc(100vw - 2rem));
   max-height: 50vh;
   overflow-y: auto;
-  margin: var(--space-2) auto;
+  margin: 0 auto;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--lamp-edge);
   border-radius: var(--radius-panel);
