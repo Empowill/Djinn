@@ -176,8 +176,12 @@ test("a ready wish is granted by the user, from the interface", async ({
   for (const w of wishes().filter((w) => w.state === "WISH_STATE_ACTIVE"))
     djinn("wish", "pause", w.id);
   // As on a loaded machine, djinn answers late: the import button waits for the wishes to be read.
+  let releaseWishes!: () => void;
+  const wishesHeld = new Promise<void>((resolve) => {
+    releaseWishes = resolve;
+  });
   await page.route("**/plan.v1.WishService/List", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await wishesHeld;
     await route.continue();
   });
 
@@ -186,6 +190,7 @@ test("a ready wish is granted by the user, from the interface", async ({
     .locator(".sidebar")
     .getByRole("button", { name: "Import a wish" });
   await expect(button).toBeDisabled();
+  releaseWishes();
   await expect(button).toBeEnabled();
   await importFile(page, file);
 
