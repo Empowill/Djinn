@@ -15,6 +15,7 @@ import {
   TaskKind,
   TaskStatus,
   type Wish,
+  WishState,
 } from "../../gen/ts/plan/v1/plan_pb";
 import { type Decision, decisionsOf, later } from "./decisions";
 import {
@@ -907,4 +908,107 @@ export function codeMapOf(
     codeMaps.set(tasks, m);
   }
   return m;
+}
+
+// doneWithProblems tells a task whose worker ended done while its permissions refused some of its calls, with nobody
+// having acknowledged it yet (internal/plan.DoneWithProblems).
+export function doneWithProblems(task: Task): boolean {
+  return (
+    task.status === TaskStatus.DONE &&
+    (task.refused?.count ?? 0) > 0 &&
+    !task.closed
+  );
+}
+
+// GrantHold is one obstacle that keeps a wish's automatic ready state false once all active worker tasks have finished:
+// a done task with unacknowledged refused tool calls, a watcher still running, an azima awaiting validation, or an open
+// question.
+export type GrantHold =
+  | { id: string; kind: "refused"; task: Task }
+  | { id: string; kind: "watcher"; task: Task }
+  | { id: string; kind: "azima"; task: Task }
+  | { id: string; kind: "question"; question: Question };
+
+// grantHolds lists the obstacles holding back a wish's ready state, ordered by kind and code.
+export function grantHolds(
+  tasks: readonly Task[],
+  questions: readonly Question[],
+): GrantHold[] {
+  const out: GrantHold[] = [];
+  const sortedTasks = [...tasks].sort((a, b) => compareCodes(a.code, b.code));
+  for (const task of sortedTasks) {
+    if (!isAzima(task) && doneWithProblems(task)) {
+      out.push({ id: `refused-${task.id}`, kind: "refused", task });
+    }
+  }
+  for (const task of sortedTasks) {
+    if (
+      !isAzima(task) &&
+      task.provider === Provider.WATCH &&
+      !finishedTask(task)
+    ) {
+      out.push({ id: `watcher-${task.id}`, kind: "watcher", task });
+    }
+  }
+  for (const task of sortedTasks) {
+    if (
+      isAzima(task) &&
+      !isDraftAzima(task) &&
+      task.status !== TaskStatus.DONE &&
+      (task.azima?.state === AzimaState.AWAITING_PROOF ||
+        task.azima?.state === AzimaState.WATCHING)
+    ) {
+      out.push({ id: `azima-${task.id}`, kind: "azima", task });
+    }
+  }
+  const sortedQuestions = [...questions]
+    .filter(isOpen)
+    .sort((a, b) => compareCodes(a.code, b.code));
+  for (const question of sortedQuestions) {
+    out.push({ id: `question-${question.id}`, kind: "question", question });
+  }
+  return out;
+}
+
+// canCloseWish tells whether the wish's closure card should show: either the wish is ready, or all its active worker
+// tasks have settled (done or cancelled, none still merging) and at least one task hold (refused calls, running
+// watcher, or azima awaiting validation) remains.
+export function canCloseWish(wish: Wish, tasks: readonly Task[]): boolean {
+  if (wish.state === WishState.GRANTED) return false;
+  if (wish.ready) return true;
+  const nonDraft = tasks.filter((t) => !isDraftAzima(t));
+  if (nonDraft.length === 0) return false;
+  let hasHold = false;
+  for (const t of nonDraft) {
+    if (isAzima(t)) {
+      const s = t.azima?.state;
+      if (
+        t.status !== TaskStatus.DONE &&
+        s !== AzimaState.DONE &&
+        s !== AzimaState.AWAITING_PROOF &&
+        s !== AzimaState.WATCHING
+      ) {
+        return false;
+      }
+      if (
+        t.status !== TaskStatus.DONE &&
+        (s === AzimaState.AWAITING_PROOF || s === AzimaState.WATCHING)
+      ) {
+        hasHold = true;
+      }
+      continue;
+    }
+    if (t.provider === Provider.WATCH) {
+      if (!finishedTask(t)) hasHold = true;
+      continue;
+    }
+    if (
+      (t.status !== TaskStatus.DONE && t.status !== TaskStatus.CANCELLED) ||
+      workOnItsWay(t)
+    ) {
+      return false;
+    }
+    if (doneWithProblems(t)) hasHold = true;
+  }
+  return hasHold;
 }

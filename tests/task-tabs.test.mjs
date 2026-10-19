@@ -371,12 +371,19 @@ test("regression W507: a wish without a project shows its task, its rank as a ra
   // (b) The rank reads as a rank, and nothing counts questions: there are none.
   assert.match(html, /<span>Active · rank 3<\/span>/);
   assert.doesNotMatch(html, /questions? wait|to decide/);
-  // (c) No grant until the lead decides about the refused calls, and nothing waits for you: they are the lead's
-  // (Q273), never a warning in the window.
-  assert.doesNotMatch(html, /My wish is granted|id="grant-/);
+  // (c) Once all active tasks have settled, the closure card names the refused hold in one click and offers to grant
+  // the wish directly (L49), while the task itself stays a clean Done on the Tasks tab.
+  assert.match(
+    html,
+    /class="step-result-action wish-grant state-held" id="grant-01a1317d-4d8c-7de3-b351-e54f2a70840f"/,
+  );
+  assert.match(html, /Work finished · 1 hold to clear/);
+  assert.match(html, /done · 6 refused calls/);
+  assert.match(html, /Acknowledge/);
+  assert.match(html, /My wish is granted/);
   assert.doesNotMatch(
     html,
-    /(?<!othing )waits? for you|with problems|refused|id="waiting-|tone-interrupted/,
+    /(?<!othing )waits? for you|with problems|id="waiting-|tone-interrupted/,
   );
   // (a) The Tasks tab counts it.
   assert.match(

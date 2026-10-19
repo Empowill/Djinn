@@ -1126,3 +1126,141 @@ test("History tab shows the wish commands and lead journal for that wish and cou
       if (handle?.constructor?.name === "MessagePort") handle.unref();
   }
 });
+
+test("GrantCard names holds in one click and WishBilanCard renders the wish summary in dark and light themes (L49)", () => {
+  const rocket = {
+    ...wish("rocket", "Rocket Time", s.WishState.ACTIVE, 1),
+    description:
+      "Audit, n8n remediation, SSH/fail2ban hardening and MCP guardrails",
+    createTime: at(1000),
+    updateTime: at(21760),
+    ready: false,
+  };
+  const holds = [
+    {
+      id: "refused-w1",
+      kind: "refused",
+      task: {
+        id: "w1",
+        code: "W1",
+        title: "Read-only security audit",
+        status: s.TaskStatus.DONE,
+        refused: { count: 6, names: ["mcp__claude_ai_n8n__search"] },
+      },
+    },
+    {
+      id: "watcher-w9",
+      kind: "watcher",
+      task: {
+        id: "w9",
+        code: "W9",
+        title: "Watch MR !42",
+        status: s.TaskStatus.RUNNING,
+        provider: s.Provider.WATCH,
+      },
+    },
+  ];
+  const heldHtml = s.renderToStaticMarkup(
+    h(s.GrantCard, {
+      wish: rocket,
+      holds,
+      onClearHold() {},
+      onClearAllHolds() {},
+      onGrant() {},
+    }),
+  );
+  assert.match(heldHtml, /class="step-result-action wish-grant state-held"/);
+  assert.match(heldHtml, /Work finished · 2 holds to clear/);
+  assert.match(heldHtml, /Clear all \(2\)/);
+  assert.match(heldHtml, /Acknowledge/);
+  assert.match(heldHtml, /Close watcher/);
+  assert.match(heldHtml, /My wish is granted/);
+
+  const tasks = [
+    {
+      id: "t1",
+      code: "W1",
+      title: "Audit",
+      status: s.TaskStatus.DONE,
+      firstStartTime: at(1000),
+      endTime: at(4600),
+      runs: [{ startTime: at(1000), endTime: at(4600) }],
+      usage: { costUsd: 12.5, inputTokens: 100n, outputTokens: 50n },
+    },
+    {
+      id: "t2",
+      code: "W2",
+      title: "Old draft",
+      status: s.TaskStatus.CANCELLED,
+      runs: [],
+    },
+  ];
+  const questions = [
+    {
+      id: "q1",
+      code: "Q32",
+      text: "Switch to auto?",
+      createTime: at(1100),
+      answer: { choice: s.Choice.A, answerTime: at(1200) },
+    },
+    {
+      id: "q2",
+      code: "Q37",
+      text: "Withdrawn question",
+      createTime: at(1300),
+      withdrawal: { createTime: at(1400) },
+    },
+  ];
+  const tilasms = [
+    { id: "l1", code: "L01", title: "Checklist", versions: [] },
+    { id: "l2", code: "L16", title: "Final report", versions: [] },
+  ];
+
+  const prevDoc = globalThis.document;
+  try {
+    globalThis.document = { documentElement: { dataset: { theme: "dark" } } };
+    const darkHtml = s.renderToStaticMarkup(
+      h(s.WishBilanCard, {
+        wish: { ...rocket, state: s.WishState.GRANTED },
+        projects: [{ id: "p1", name: "test" }],
+        tasks,
+        questions,
+        blocks: [],
+        tilasms,
+        onReopen() {},
+      }),
+    );
+    assert.match(darkHtml, /class="wish-bilan is-granted"/);
+    assert.match(darkHtml, /Wish granted · Summary of Rocket Time/);
+    assert.match(darkHtml, /2 tasks/);
+    assert.match(darkHtml, /1 done · 1 cancelled · 0 open/);
+    assert.match(darkHtml, /2 tilasms/);
+    assert.match(darkHtml, /L01 → L16/);
+    assert.match(darkHtml, /2 decisions/);
+    assert.match(darkHtml, /Q32 → Q37 \(1 answered, 1 withdrawn\)/);
+    assert.match(darkHtml, /\$12\.50/);
+    assert.match(
+      darkHtml,
+      /I return to the brass; try not to rub the lamp for a comma\./,
+    );
+
+    globalThis.document = { documentElement: { dataset: { theme: "light" } } };
+    const lightHtml = s.renderToStaticMarkup(
+      h(s.WishBilanCard, {
+        wish: { ...rocket, state: s.WishState.GRANTED },
+        projects: [{ id: "p1", name: "test" }],
+        tasks,
+        questions,
+        blocks: [],
+        tilasms,
+        onReopen() {},
+      }),
+    );
+    assert.match(
+      lightHtml,
+      /The lamp rests on watch, ready for your next call\./,
+    );
+  } finally {
+    globalThis.document = prevDoc;
+  }
+});

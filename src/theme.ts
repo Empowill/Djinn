@@ -65,7 +65,7 @@ export function onTheme(callback: () => void): () => void {
 
 // useShownTheme renders again when the theme changes.
 export const useShownTheme = () =>
-  useSyncExternalStore(onTheme, shownTheme, () => "dark" as const);
+  useSyncExternalStore(onTheme, shownTheme, shownTheme);
 
 // token reads a colour of theme.css as the page has it now; empty outside a page.
 export function token(name: string): string {

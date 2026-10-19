@@ -148,7 +148,8 @@ func (s *Tasks) List(
 }
 
 // liveTask tells a task the lists of what runs read (TaskServiceListRequest.live): one not done nor cancelled, an
-// azima, or done work still on its way into its branch.
+// azima, done work still on its way into its branch, or a done task whose unclosed refused calls hold back the wish's
+// grant (L49).
 func liveTask(t *planv1.Task) bool {
 	if t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		return true
@@ -157,7 +158,7 @@ func liveTask(t *planv1.Task) bool {
 	case planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return false
 	case planv1.TaskStatus_TASK_STATUS_DONE:
-		return doneNotMerged(t)
+		return doneNotMerged(t) || plan.DoneWithProblems(t)
 	}
 	return true
 }

@@ -2295,6 +2295,10 @@ html[data-motion="reduced"] .question-wisp {
   border-radius: 0.625rem;
   padding: 0.875rem 1.125rem;
 }
+.review .wish-grant.state-held {
+  border-color: color-mix(in srgb, var(--sand) 42%, var(--line));
+  background: color-mix(in srgb, var(--sand) 6%, var(--surface));
+}
 .review .wish-grant h3 {
   font-size: 0.9375rem;
   color: var(--text);

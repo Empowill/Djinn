@@ -110,10 +110,16 @@ run.
 
 When every task is finished, every azima validated, none waits on a call its permissions refused that the Djinn has
 not decided about yet, and no question is open, Djinn proposes to grant the wish: **My wish is granted**, in the Wish
-tab. Only you grant a wish. To grant it earlier, tell the Djinn so; **Reopen** brings it back if something was left.
-A wish with no task at all is never proposed.
+tab. When all active work tasks have finished but a hold remains — a finished task whose refused tool calls were not
+acknowledged, a running watcher, an azima awaiting validation, or an open question — the closure card stays in the Wish
+tab and lists each obstacle so you can clear it in one click (**Acknowledge**, **Close watcher**, **Validate azima**,
+**Withdraw question**), **Clear all** at once, or click **My wish is granted** directly. A wish with no task at all is
+never proposed.
 
-Djinn never grants a wish by itself, not even one made from a template whose watcher says the work is done: it asks you.
+Only you grant a wish; Djinn never grants a wish by itself, not even one made from a template whose watcher says the
+work is done. When you click **My wish is granted**, the Djinn folds back into the spout of the lamp under the Khatam
+seal and leaves the wish's summary card at the top of the archive — its tasks, tilasms, decisions, duration, cumulative
+worker cost, and the Djinn's closing word — with **Reopen** to bring it back if something was left.
 
 ## Deleting a wish
 

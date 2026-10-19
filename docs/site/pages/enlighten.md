@@ -77,7 +77,9 @@ An investigator is an agent, and it runs on your agent's account:
 
 An investigator stopped by a refused command is tried once more by a new one. Any other failure is the Djinn's: the
 question stays **Being investigated**, and the Djinn is told that it still waits for a revision. A failed investigator
-never waits for you, nor notifies you. One whose question was answered, withdrawn or revised meanwhile closes by itself.
+never waits for you, nor notifies you. One whose question was answered, withdrawn or revised meanwhile closes by itself,
+and an investigator that finished with refused tool calls is acknowledged when its question is answered or withdrawn so
+it never holds back granting the wish.
 
 ## Common mistakes
 

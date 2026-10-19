@@ -41,7 +41,7 @@ func (h *Harness) Answered(ctx context.Context, q *planv1.Question) string {
 	if q.GetAnswer() == nil {
 		return ""
 	}
-	h.closeOutrun(q.GetWishId(), q.GetCode()) // A failed investigator of it has nothing left to find (W96).
+	h.CloseOutrun(q.GetWishId(), q.GetCode()) // A failed or held investigator of it has nothing left to find (W96, L49).
 	var did []string
 	if d, ok := h.answerIntegration(ctx, q); ok {
 		did = append(did, d)

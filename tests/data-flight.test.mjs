@@ -1780,3 +1780,73 @@ test("flightPlan includes waitingLead questions", () => {
   assert.equal(plan.waitingLead.length, 1);
   assert.equal(plan.waitingLead[0].item.id, "q-wait");
 });
+
+test("canCloseWish and grantHolds list the obstacles holding back a finished wish (L49)", () => {
+  const active = {
+    id: "w1",
+    title: "Rocket Time",
+    state: f.WishState.ACTIVE,
+    ready: false,
+  };
+  const ready = { ...active, ready: true };
+  const granted = { ...active, state: f.WishState.GRANTED };
+
+  const cleanDone = {
+    id: "t2",
+    code: "W6",
+    title: "Audit clean",
+    status: f.TaskStatus.DONE,
+  };
+  const refusedDone = {
+    id: "t1",
+    code: "W1",
+    title: "Read-only security audit",
+    status: f.TaskStatus.DONE,
+    refused: { count: 6, names: ["mcp__n8n__search"] },
+  };
+  const runningTask = {
+    id: "t3",
+    code: "W7",
+    title: "Deploy",
+    status: f.TaskStatus.RUNNING,
+  };
+  const watcher = {
+    id: "t4",
+    code: "W9",
+    title: "Watch MR !42",
+    status: f.TaskStatus.RUNNING,
+    provider: f.Provider.WATCH,
+  };
+  const azima = {
+    id: "a1",
+    code: "T12",
+    title: "Harden SSH",
+    kind: f.TaskKind.AZIMA,
+    status: f.TaskStatus.PENDING,
+    azima: { state: f.AzimaState.AWAITING_PROOF, parts: 2, partsDone: 2 },
+  };
+  const qOpen = { id: "q1", code: "Q51", text: "Keep debug webhook?" };
+
+  assert.equal(f.canCloseWish(granted, [refusedDone]), false);
+  assert.equal(f.canCloseWish(ready, [cleanDone]), true);
+  assert.equal(f.canCloseWish(active, []), false);
+  // Plain done task with no task hold does not force the closure card while the wish is still mid-flight.
+  assert.equal(f.canCloseWish(active, [cleanDone]), false);
+  // Active running task prevents closure card.
+  assert.equal(f.canCloseWish(active, [refusedDone, runningTask]), false);
+  // Settled tasks with a refused-call hold, a watcher, or an azima awaiting proof show the closure card.
+  assert.equal(f.canCloseWish(active, [refusedDone, cleanDone]), true);
+  assert.equal(f.canCloseWish(active, [cleanDone, watcher]), true);
+  assert.equal(f.canCloseWish(active, [cleanDone, azima]), true);
+
+  const holds = f.grantHolds([cleanDone, watcher, azima, refusedDone], [qOpen]);
+  assert.deepEqual(
+    holds.map((h) => [h.kind, h.id]),
+    [
+      ["refused", "refused-t1"],
+      ["watcher", "watcher-t4"],
+      ["azima", "azima-a1"],
+      ["question", "question-q1"],
+    ],
+  );
+});
