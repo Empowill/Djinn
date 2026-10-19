@@ -843,11 +843,13 @@ func (h *Harness) installedSha(ctx context.Context, projectID string) string {
 		}
 	}
 	wt := installDir(h.home, projectID)
-	if s := commitOf(ctx, wt, "HEAD"); s != "" {
-		h.mu.Lock()
-		h.installed[projectID] = s
-		h.mu.Unlock()
-		return s
+	if _, err := os.Stat(wt); err == nil {
+		if s := commitOf(ctx, wt, "HEAD"); s != "" {
+			h.mu.Lock()
+			h.installed[projectID] = s
+			h.mu.Unlock()
+			return s
+		}
 	}
 	return ""
 }
@@ -1252,7 +1254,7 @@ func (h *Harness) mergeAndTest(
 	defer done()
 	var merged []*planv1.Task
 	empty := false // A merge that changed nothing was undone.
-	head := ""     // The worktree's HEAD, as the last merge left it; "" to read it again.
+	head := old    // The worktree's HEAD, as integrationWorktree or the last merge left it; "" to read it again.
 	for _, t := range batch {
 		if head == "" {
 			if head, err = git(ctx, wt, "rev-parse", "HEAD"); err != nil {
@@ -1567,15 +1569,17 @@ func integrationWorktree(ctx context.Context, repo, wt, old string) (string, str
 	ctx, done := gitx.Uncut(ctx)
 	defer done()
 	dir := filepath.Join(wt, filepath.FromSlash(prefix))
-	if top, err := git(ctx, wt, "rev-parse", "--show-toplevel"); err == nil && samePath(top, wt) {
-		unlockWorktree(wt)
-		_, _ = git(ctx, wt, "merge", "--abort")
-		_, _ = git(ctx, wt, "rebase", "--abort")
-		if _, err := git(ctx, wt, "reset", "--quiet", "--hard", old); err != nil {
-			return "", "", err
+	if _, err := os.Stat(wt); err == nil {
+		if top, err := git(ctx, wt, "rev-parse", "--show-toplevel"); err == nil && samePath(top, wt) {
+			unlockWorktree(wt)
+			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(ctx, wt, "rebase", "--abort")
+			if _, err := git(ctx, wt, "reset", "--quiet", "--hard", old); err != nil {
+				return "", "", err
+			}
+			_, err = git(ctx, wt, "clean", "-fdq")
+			return dir, prefix, err
 		}
-		_, err = git(ctx, wt, "clean", "-fdq")
-		return dir, prefix, err
 	}
 	// Not a worktree any more, if it ever was: it is Djinn's own folder, made again, and set up again.
 	if err := os.RemoveAll(wt); err != nil {
@@ -2064,42 +2068,44 @@ func (h *Harness) handleMergeMoves(
 	}
 
 	// 3. needs: box added
-	var diffOut string
-	if oldSha != "" && oldSha != sha {
-		diffOut, _ = git(ctx, repo, "diff", "-U0", oldSha, sha, "--", plan.PlanDir+"/*.md")
-	} else {
-		diffOut, _ = git(ctx, repo, "show", "-U0", "--format=", sha, "--", plan.PlanDir+"/*.md")
-	}
-	prefix, _ := git(ctx, repo, "rev-parse", "--show-prefix")
-	prefix = strings.TrimSpace(prefix)
-	curFile := ""
-	for _, line := range strings.Split(diffOut, "\n") {
-		if strings.HasPrefix(line, "+++ ") {
-			curFile = strings.TrimPrefix(line, "+++ ")
-			curFile = strings.TrimPrefix(curFile, "b/")
-			if prefix != "" {
-				curFile = strings.TrimPrefix(curFile, prefix)
+	if slices.ContainsFunc(files, isPlanFile) {
+		var diffOut string
+		if oldSha != "" && oldSha != sha {
+			diffOut, _ = git(ctx, repo, "diff", "-U0", oldSha, sha, "--", plan.PlanDir+"/*.md")
+		} else {
+			diffOut, _ = git(ctx, repo, "show", "-U0", "--format=", sha, "--", plan.PlanDir+"/*.md")
+		}
+		prefix, _ := git(ctx, repo, "rev-parse", "--show-prefix")
+		prefix = strings.TrimSpace(prefix)
+		curFile := ""
+		for _, line := range strings.Split(diffOut, "\n") {
+			if strings.HasPrefix(line, "+++ ") {
+				curFile = strings.TrimPrefix(line, "+++ ")
+				curFile = strings.TrimPrefix(curFile, "b/")
+				if prefix != "" {
+					curFile = strings.TrimPrefix(curFile, prefix)
+				}
+				continue
 			}
-			continue
-		}
-		if !isPlanFile(curFile) {
-			continue
-		}
-		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-			added := strings.TrimPrefix(line, "+")
-			box, machine, ok := plan.ReadTaskItemNeeds(added)
-			if ok {
-				moveName := needsMoveName(box, machine)
-				if !slices.Contains(moves, moveName) {
-					asked := hasQuestion(func(q *planv1.Question) bool {
-						tl := strings.ToLower(q.GetText())
-						return strings.Contains(tl, strings.ToLower(machine)) && (box == "" || strings.Contains(tl, strings.ToLower(box)))
-					})
-					if !asked {
-						q := needsMoveQuestion(wish.GetId(), box, machine)
-						if err := h.askMove(ctx, q); err == nil {
-							existing = append(existing, q)
-							moves = append(moves, moveName)
+			if !isPlanFile(curFile) {
+				continue
+			}
+			if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				added := strings.TrimPrefix(line, "+")
+				box, machine, ok := plan.ReadTaskItemNeeds(added)
+				if ok {
+					moveName := needsMoveName(box, machine)
+					if !slices.Contains(moves, moveName) {
+						asked := hasQuestion(func(q *planv1.Question) bool {
+							tl := strings.ToLower(q.GetText())
+							return strings.Contains(tl, strings.ToLower(machine)) && (box == "" || strings.Contains(tl, strings.ToLower(box)))
+						})
+						if !asked {
+							q := needsMoveQuestion(wish.GetId(), box, machine)
+							if err := h.askMove(ctx, q); err == nil {
+								existing = append(existing, q)
+								moves = append(moves, moveName)
+							}
 						}
 					}
 				}

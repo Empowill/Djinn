@@ -20,7 +20,7 @@ import (
 func TestRankAzima(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	t1, t2 := e.azima(t, wishID, "Lay the ground"), e.azima(t, wishID, "Build on it")
 	busy := e.mustSpawn(t, wishID, "Busy", "wait\ntext busy", nil)
 	e.until(t, busy.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
