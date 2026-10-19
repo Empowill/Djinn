@@ -5,20 +5,23 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// fakeAgents writes a fake claude and a fake agy (Antigravity) in bin. On Windows they are batch files that print and
-// end: the specs that read what a lead does are skipped there.
+// fakeAgents writes a fake claude and a fake agy (Antigravity) in bin. When claude runs a driven batch (-p), it
+// reads one message and writes one stream-json turn so no model is called; in a terminal, the fakes say how they
+// were called and keep the terminal open.
 export function fakeAgents(bin: string) {
   fs.mkdirSync(bin, { recursive: true });
   for (const agent of ["claude", "agy"])
     if (process.platform === "win32")
       fs.writeFileSync(
         path.join(bin, `${agent}.cmd`),
-        `@echo fake-${agent} %* in %CD%\r\n`,
+        agent === "claude"
+          ? `@if "%~1"=="-p" (\r\n  @echo {"type":"assistant","session_id":"019d0000-0000-7000-8000-000000000099","message":{"model":"claude-opus-4-7","content":[{"type":"text","text":"Handled the batch."}]}}\r\n  @echo {"type":"result","subtype":"success","session_id":"019d0000-0000-7000-8000-000000000099","total_cost_usd":0.01}\r\n  @exit /b 0\r\n)\r\n@echo fake-${agent} %* in %CD%\r\n`
+          : `@echo fake-${agent} %* in %CD%\r\n`,
       );
     else
       fs.writeFileSync(
         path.join(bin, agent),
-        `#!/bin/sh\nargs=""\nwhile [ $# -gt 0 ]; do\n  case "$1" in\n    --allowedTools|--project) shift 2 ;;\n    *) args="\${args:+$args }$1"; shift ;;\n  esac\ndone\necho "fake-${agent} $args in $(pwd)"\nexec cat\n`,
+        `#!/bin/sh\nargs=""\nheadless=0\nwhile [ $# -gt 0 ]; do\n  case "$1" in\n    --allowedTools|--project) shift 2 ;;\n    -p) headless=1; shift ;;\n    *) args="\${args:+$args }$1"; shift ;;\n  esac\ndone\nif [ "$headless" = "1" ]; then\n  read -r _ || true\n  echo '{"type":"assistant","session_id":"019d0000-0000-7000-8000-000000000099","message":{"model":"claude-opus-4-7","content":[{"type":"text","text":"Handled the batch."}]}}'\n  echo '{"type":"result","subtype":"success","session_id":"019d0000-0000-7000-8000-000000000099","total_cost_usd":0.01}'\n  exit 0\nfi\necho "fake-${agent} $args in $(pwd)"\nexec cat\n`,
         { mode: 0o755 },
       );
 }

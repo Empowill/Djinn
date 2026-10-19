@@ -6,7 +6,14 @@ import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
-import { dropLead, leadFolder, leadRows as rows, setLead } from "./lead";
+import {
+  dropLead,
+  leadFolder,
+  leadJournal,
+  leadRows as rows,
+  setLead,
+  useTerminalLead,
+} from "./lead";
 
 const binary = path.resolve(
   __dirname,
@@ -33,6 +40,7 @@ test.afterEach(dropLead);
 test("a word written in the pill reaches the lead's terminal", async ({
   page,
 }) => {
+  useTerminalLead();
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   // Three wishes at a time: the earlier specs' wishes make way.
@@ -197,6 +205,13 @@ test("the box folds when the focus leaves it, and the shortcut opens it focused"
     await page.keyboard.press(shortcut);
     await expect(box).toBeFocused();
     await expect(box).toHaveValue("Half a thought");
+    await box.press("Enter");
+    await expect(panel.getByRole("status")).toContainText("Sent");
+    await expect
+      .poll(() => leadJournal(wishId).flatMap((b) => b.events ?? []), {
+        timeout: 15_000,
+      })
+      .toContain(`[${title}] message: Half a thought`);
     expect(errors).toEqual([]);
   } finally {
     djinn("wish", "delete", wishId);

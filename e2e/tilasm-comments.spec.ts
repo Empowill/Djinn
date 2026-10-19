@@ -11,8 +11,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { drainLead, dropLead, leadFolder, setLead } from "./lead";
-
 const shots = path.join(__dirname, "../test-results/e2e");
 const binary = path.resolve(
   __dirname,
@@ -327,7 +325,8 @@ test("the comments leave in one send, Iterate or Launch, and a launched tilasm g
   );
   await expect(reply).toContainText(`Tasks: ${azima}`);
   await expect(cards.nth(0)).toContainText("Replied");
-  await expect(cards.nth(1)).toContainText("Sent · send 1");
+  await expect(cards.nth(1)).toContainText(/Sent · send 1|Read by the Djinn/);
+  await expect(cards.nth(1)).not.toContainText("Replied");
   await expect(cards.nth(1).getByRole("note")).toHaveCount(0);
   expect(djinn("tilasm", "comments", "L01", "--wish", wishId)).toContain(
     "1 without a reply.",
@@ -1145,17 +1144,11 @@ test("a sent comment is read by the Djinn, replied with its tasks' state, and th
   await expect(card("C1")).toContainText("Sent · send 1");
   await expect(card("C4")).toContainText("Sent · send 1");
 
-  // The lead's watch reads the send: every card of it says so, with when.
-  const session = randomUUID();
-  const folder = leadFolder();
-  try {
-    setLead(session, folder);
-    drainLead(session);
-  } finally {
-    await dropLead();
-  }
+  // The driven lead's batch reads the send once it settles: every card of it says so, with when.
   for (const code of ["C1", "C2", "C3", "C4"])
-    await expect(card(code)).toContainText(/Read by the Djinn · \S/);
+    await expect(card(code)).toContainText(/Read by the Djinn · \S/, {
+      timeout: 15_000,
+    });
   await expect(column).not.toContainText("waits for the Djinn");
 
   // The Djinn replies, naming the tasks it made: each shows in its state, and follows it.

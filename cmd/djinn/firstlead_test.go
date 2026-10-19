@@ -23,6 +23,7 @@ import (
 	terminalv1 "github.com/empowill/djinn/gen/go/terminal/v1"
 	"github.com/empowill/djinn/gen/go/terminal/v1/terminalv1connect"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/cli"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -131,6 +132,7 @@ func TestCarryLead(t *testing.T) {
 func carryLeadsPerWish(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
+	terminalLead(t, home)
 	bin, count := fakeClaude(t)
 	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
 	folder, err := filepath.EvalSymlinks(t.TempDir())
@@ -189,6 +191,7 @@ func carryLeadsPerWish(t *testing.T) {
 func carryLeadOtherSession(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
+	terminalLead(t, home)
 	bin, count := fakeClaude(t)
 	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
 	folder, err := filepath.EvalSymlinks(t.TempDir())
@@ -225,11 +228,12 @@ func carryLeadOtherSession(t *testing.T) {
 	}
 }
 
-// TestResumeLead: a start with a project and no lead session at all starts a new claude lead from the brief
-// in the lead's terminal, and records its session: never a shell in the lead's terminal.
+// TestResumeLead: with leadDriven: false, a start with a project and no lead session at all starts a new claude lead
+// from the brief in the lead's terminal, and records its session: never a shell in the lead's terminal.
 func TestResumeLead(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
+	terminalLead(t, home)
 	bin, count := fakeClaude(t)
 	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
 	folder, err := filepath.EvalSymlinks(t.TempDir())
@@ -254,5 +258,93 @@ func TestResumeLead(t *testing.T) {
 	}
 	if errs := r.errs.String(); strings.Contains(errs, "no lead session") || !strings.Contains(errs, "A new lead started") {
 		t.Fatalf("djinn up says:\n%s", errs)
+	}
+}
+
+// TestUpgradeFromTerminalLead (W262): an upgrade from a running terminal lead switches cleanly to the default driven
+// lead: the "lead" terminal is dropped, the wish stays shown, no waiting event is lost, and the journal starts.
+func TestUpgradeFromTerminalLead(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	home := t.TempDir()
+	bin, count := fakeClaude(t)
+	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const session = "0b7e2a8c-5f1d-4c1e-9a3e-1f2d3c4b5a69"
+	wish := seedWish(t, home, folder, session)
+	db, err := store.Open(ctx, filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.Tx(ctx, func(tx *store.Tx) error {
+		return errors.Join(
+			tx.Journal("test", planv1connect.QuestionServiceAnswerProcedure, &planv1.QuestionServiceAnswerRequest{}),
+			tx.Put(&planv1.LeadEvent{
+				Id: store.NewID(), Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_ANSWER,
+				WishId: wish.GetId(), Code: "Q1",
+				Text: "Q1 answered (A): Ship it", CreateTime: timestamppb.Now(),
+			}),
+		)
+	})
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, home, restartNote{
+		Version: "v0.1.1",
+		Terminals: []restartTerminal{{
+			Name: plan.LeadTerminal, Command: []string{"/bin/sh", "-c", "claude --resume " + session}, Directory: folder,
+		}},
+		ShowWish: wish.GetId(), ShowTerminal: plan.LeadTerminal,
+	})
+
+	r, addr := startUp(t, home, env)
+	ui, terminals := clients(t, addr)
+	if running := runningTerminals(t, terminals); running[plan.LeadTerminal] != nil {
+		t.Fatalf("the terminal lead ran again: %v", running)
+	}
+	if n := starts(t, count); n != 0 {
+		t.Fatalf("interactive claude started %d times, want 0", n)
+	}
+	if errs := r.errs.String(); !strings.Contains(errs, "lead does not run again: Djinn drives the lead") {
+		t.Fatalf("djinn up says:\n%s", errs)
+	}
+	shows, err := ui.WatchShow(ctx, connect.NewRequest(&uiv1.UiServiceWatchShowRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shows.Receive() || shows.Msg().GetWishId() != wish.GetId() || shows.Msg().GetTerminal() != "" {
+		t.Fatalf("shown after upgrade: %v, %v", shows.Msg(), shows.Err())
+	}
+	shows.Close()
+
+	httpClient, base, err := cli.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leads := planv1connect.NewLeadServiceClient(httpClient, base)
+	var batch *planv1.LeadBatch
+	waitUntil(t, "the driven lead's first batch", func() bool {
+		res, err := leads.Get(ctx, connect.NewRequest(&planv1.LeadServiceGetRequest{}))
+		if err != nil || !res.Msg.GetDriven() || len(res.Msg.GetJournal()) == 0 {
+			return false
+		}
+		b := res.Msg.GetJournal()[0]
+		if b.GetState() == planv1.LeadBatchState_LEAD_BATCH_STATE_FAILED {
+			t.Fatalf("batch failed: %v\nerrs:\n%s", b, r.errs.String())
+		}
+		if b.GetState() != planv1.LeadBatchState_LEAD_BATCH_STATE_DONE {
+			return false
+		}
+		batch = b
+		return true
+	})
+	if len(batch.GetEvents()) != 2 || !strings.Contains(batch.GetEvents()[0], "answered (A): Ship it") ||
+		!strings.Contains(batch.GetEvents()[1], "restarted on version") ||
+		batch.GetNote() != "Handled the batch." {
+		t.Fatalf("first batch after upgrade: %v", batch)
 	}
 }

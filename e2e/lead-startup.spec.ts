@@ -5,7 +5,12 @@ import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { dropLead, leadFolder, leadRows as rows } from "./lead";
+import {
+  dropLead,
+  dropTerminalLead,
+  leadFolder,
+  leadRows as rows,
+} from "./lead";
 
 const binary = path.resolve(__dirname, "../bin/djinn-e2e");
 // Not the session of another spec: one session runs in one terminal.
@@ -37,11 +42,11 @@ exec cat
   ),
 );
 // Before too: the events earlier specs of this djinn left waiting for the lead make Djinn type a reminder in its
-// terminal, which reopens the lead recorded below (W426: red with the workers' order). dropLead hangs the lead up
-// and acknowledges them.
+// terminal, which reopens the lead recorded below (W426: red with the workers' order). dropTerminalLead sets
+// leadDriven: false, hangs the lead up and acknowledges them.
 test.beforeEach(async () => {
   fs.rmSync(failing(), { force: true });
-  await dropLead();
+  await dropTerminalLead();
 });
 test.afterEach(async () => {
   fs.rmSync(failing(), { force: true });

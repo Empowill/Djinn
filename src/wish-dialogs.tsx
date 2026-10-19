@@ -103,6 +103,7 @@ export function MakeWish({
   const clients = djinn?.clients;
   const store = djinn?.store;
   const storeLead = useOptionalData((s) => s.lead, undefined);
+  const storeLeadDrive = useOptionalData((s) => s.leadDrive, undefined);
   const storeLeadExit = useOptionalData((s) => s.leadExit, undefined);
   const storeLeadStartError = useOptionalData((s) => s.leadStartError, "");
   const storeLoaded = useOptionalData((s) => s.loaded, true);
@@ -134,7 +135,10 @@ export function MakeWish({
   const effectiveLeadStartError = leadStartErrorProp ?? storeLeadStartError;
   const trouble = leadTrouble(effectiveLeadExit, effectiveLeadStartError);
   const leadStopped =
-    !leadStarted && storeLoaded && (noLead(effectiveLead) || !!trouble);
+    !leadStarted &&
+    !storeLeadDrive &&
+    storeLoaded &&
+    (noLead(effectiveLead) || !!trouble);
   useEffect(() => {
     setLeadStarted(false);
   }, [effectiveLead, effectiveLeadExit, effectiveLeadStartError]);

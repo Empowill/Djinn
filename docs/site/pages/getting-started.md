@@ -40,22 +40,22 @@ your home folder would ask you to trust all of it.
 
 ## 4. Meet the Djinn
 
-The app is Djinn; its lead is **the Djinn**. It is one agent session, Claude Code by default, that leads every active
-wish: it talks with you, splits each wish into tasks, starts workers on them, asks the questions and keeps the plans
-true. It lives in the terminal of the window, in a tab named **The Djinn**.
+The app is Djinn; its lead is **the Djinn**. It leads every active wish: it talks with you, splits each wish into tasks,
+starts workers on them, asks the questions and keeps the plans true. By default, Djinn drives it without a terminal:
+each batch of events starts a fresh Claude Code or Codex session, and its journal records every batch.
 
-- **Talk to the Djinn**, at the top of a wish or of the flying carpet, opens it. The first time, it starts the Djinn in
-  your first project; afterwards, it resumes the same session, wherever it was.
-- The arrow beside it, **Choose the agent**, starts the Djinn on another agent found on this machine.
+- Beside **Talk to the Djinn**, at the top of a wish or of the flying carpet, the window shows the running batch (since
+  when, how many events, its cost) and the count of past batches in the journal.
+- The arrow beside it, **Choose the agent**, moves the Djinn to another agent, account or model for the next batch.
 - **Write to the Djinn**, the pill at the bottom of a wish, sends it a word about that wish without leaving the page
-  (Ctrl+I, or Cmd+I on macOS).
+  (Ctrl+I, or Cmd+I on macOS), and its answer appears in the bubble held to the pill.
 
-At every start of Djinn, the Djinn comes back on its session. When its agent asks for your approval in the terminal (a
-command to run, a folder to trust), the bar of what waits for you shows the choice first, with its options as buttons.
+With the lead driven setting set to false in the settings file of Djinn's data folder, the Djinn runs in a terminal tab
+named **The Djinn** instead, and comes back on its session at every start.
 
-> **The Djinn talks to you in the window, not in its terminal.** Everything it has to tell you, a report, a doubt, a
-> choice or a "done as you asked" included, comes as a question in the wish it concerns. A line you type in its terminal is answered in the
-> window.
+> **The Djinn talks to you in the window, not in a terminal.** Everything it has to tell you, a report, a doubt, a
+> choice or a "done as you asked" included, comes as a question in the wish it concerns, or in the bubble held to
+> **Write to the Djinn**.
 
 ## 5. Make your first wish
 

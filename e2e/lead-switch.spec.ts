@@ -6,7 +6,13 @@
 import { expect, test, type Page } from "./test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { dropLead, leadFolder, leadRows as rows, setLead } from "./lead";
+import {
+  dropLead,
+  dropTerminalLead,
+  leadFolder,
+  leadRows as rows,
+  setLead,
+} from "./lead";
 
 const binary = path.resolve(
   __dirname,
@@ -41,6 +47,7 @@ async function lead(page: Page) {
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
 const made: string[] = [];
+test.beforeEach(dropTerminalLead);
 // The next specs find room for their wishes, and no lead running: after each test, before the fixture of e2e/test.ts
 // reads the place.
 test.afterEach(async () => {

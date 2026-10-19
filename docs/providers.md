@@ -612,22 +612,16 @@ application ships. The login shell is asked once, as `djinn up` starts from a la
 each lead starts, so an agent installed in a folder created meanwhile is found without a restart
 (`TestExtendPath`, its case after an install). Gates inherit it from the worker that runs them.
 
-**The lead.** A lead runs `claude` interactive in the window's terminal, not `-p`. Claude Code skips its workspace
-trust dialog only with `-p` (`claude --help`), so a lead started in a folder Claude Code has not trusted yet (the
-lead starts in the first project's folder) first asks to trust it, there, in the window.
-Djinn never answers it: trusting a folder is the user's decision. A first run of interactive Claude Code on a
-machine also shows its onboarding (theme, sign-in) once.
-
-**The driven lead (decision Q31, W131).** With `"leadDriven": true` in `settings.json`, Djinn runs no lead in a
-terminal: `harness.LeadDriver` starts a worker-like `claude -p` for each batch of the lead's events, in Djinn's own
-`lead` folder (no project's `CLAUDE.md` nor memory), with `--session-id` new each time, `--max-turns 60`,
-`--max-budget-usd 5`, the rules of the driven lead in `--append-system-prompt` and
-`--exclude-dynamic-system-prompt-sections` (the per-machine sections move to the first message, so the system prompt
-is the same from one session to the next and its cache serves them all). Its permissions are the lead's: `djinn`
-and the read-only Git commands, writing in its folder (plan files, tilasms), reading Djinn's data folder; it gets
-`DJINN_LEAD=1` and an empty `DJINN_TASK_ID`, `DJINN_WISH_ID`, `DJINN_WORKER_TOKEN`: a `djinn up` started from a
-worker's shell gave its session the worker's identity, and every write of the lead was refused (found on the first
-real run). Not `--bare`: it would not use the subscription's sign-in. **Verified** in Claude Code's docs
+**The driven lead (decisions Q31, Q51; W131, W262).** By default (`"leadDriven"` unset or `true` in `settings.json`),
+Djinn runs no lead in a terminal: `harness.LeadDriver` starts a worker-like `claude -p` (or `codex` app-server) for
+each batch of the lead's events, in Djinn's own `lead` folder (no project's `CLAUDE.md` nor memory), with
+`--session-id` new each time, `--max-turns 60`, `--max-budget-usd 5`, the rules of the driven lead in
+`--append-system-prompt` and `--exclude-dynamic-system-prompt-sections` (the per-machine sections move to the first
+message, so the system prompt is the same from one session to the next and its cache serves them all). Its permissions
+are the lead's: `djinn` and the read-only Git commands, writing in its folder (plan files, tilasms), reading Djinn's
+data folder; it gets `DJINN_LEAD=1` and an empty `DJINN_TASK_ID`, `DJINN_WISH_ID`, `DJINN_WORKER_TOKEN`: a `djinn up`
+started from a worker's shell gave its session the worker's identity, and every write of the lead was refused (found on
+the first real run). Not `--bare`: it would not use the subscription's sign-in. **Verified** in Claude Code's docs
 (`headless.md`, `cli-reference.md`, 16/10/2026): `--max-turns` is print mode only and ends with `error_max_turns`;
 `--bare` needs an API key. **Verified** on real runs (claude 2.1.301, Opus 5.5, 16/10/2026): `--max-turns`, hidden
 from `claude --help`, is taken; a fresh session reads 18,626 tokens (system prompt, tools, rules) from the cache the
@@ -635,6 +629,14 @@ previous batch's session wrote, and writes its own message and turn to the cache
 cold start $0.21 (26,522 tokens written), a one-command batch $0.16, a question with two plan files $0.22, as
 claude counts them; L10 estimated $0.12 to $0.21. The price table's estimate of the $0.16 batch matches it ($0.1602):
 it prices a cache write at the 1-hour rate of `claude -p` (8 $ a million tokens on Opus 5.5).
+
+**The terminal lead.** With `"leadDriven": false` in `settings.json`, the lead runs `claude` interactive in the
+window's terminal, not `-p`. Claude Code skips its workspace trust dialog only with `-p` (`claude --help`), so a
+terminal lead started in a folder Claude Code has not trusted yet (the lead starts in the first project's folder)
+first asks to trust it, there, in the window. Djinn never answers it: trusting a folder is the user's decision. A
+first run of interactive Claude Code on a machine also shows its onboarding (theme, sign-in) once. Upgrading from a
+running terminal lead to the default driven lead drops the `"lead"` terminal cleanly, preserves the wish shown in the
+window, loses no waiting event, and starts the journal with the next batch.
 
 **The Djinn's tone (decision Q36, W156).** The page sends the theme it shows with `UiService.View` (`ShownTheme`,
 `system` resolved by the page), Djinn keeps the last one in `settings.json` (`shownTheme`), and `plan.LeadPacket`

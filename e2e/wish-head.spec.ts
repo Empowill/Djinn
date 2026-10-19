@@ -15,7 +15,13 @@ import {
   LeadServiceGetResponseSchema,
   Provider,
 } from "../gen/ts/plan/v1/plan_pb";
-import { dropLead, leadFolder, leadRows, setLead } from "./lead";
+import {
+  dropLead,
+  dropTerminalLead,
+  leadFolder,
+  leadRows,
+  setLead,
+} from "./lead";
 
 const binary = path.resolve(
   __dirname,
@@ -84,6 +90,7 @@ test("Share writes the wish's export, which imports again", async ({
 
 test.describe("Lead", () => {
   test.skip(process.platform === "win32", "the fake claude is a shell script");
+  test.beforeEach(dropTerminalLead);
   test.afterEach(dropLead);
 
   test("Talk to the Djinn on the flying carpet opens the Djinn's terminal, on no wish", async ({
@@ -204,7 +211,7 @@ test("the head says where the wish's work lands, and a click changes the branch"
     djinn("open", `djinn://wish/${wishId}`);
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    const chip = page.locator(".hero-meta button.wish-lands");
+    const chip = page.locator(".hero-meta button.wish-lands").first();
     await expect(chip).toHaveText("Lands in main");
 
     // Read in both themes, switched as the settings do, once the colours have changed: a reload within a minute of the
@@ -311,17 +318,14 @@ test("the History tab shows the wish commands and the lead journal for that wish
     await historyTab.click();
 
     const panel = page.getByRole("tabpanel", { name: "History" });
-    await expect(panel.locator(".lead-batch-row")).toHaveCount(1);
-    await expect(panel.locator(".lead-batch-row")).toContainText(
-      "claude-opus-4-7",
-    );
-    await expect(panel.locator(".lead-batch-row")).toContainText(
-      "djinn task spawn W2",
-    );
-    await expect(panel.locator(".lead-batch-row")).toContainText(
-      "Spawned W2 to trim the wick.",
-    );
-    await expect(panel.locator(".lead-batch-row")).toContainText("$0.08");
+    const row = panel
+      .locator(".lead-batch-row")
+      .filter({ hasText: "Spawned W2 to trim the wick." });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("claude-opus-4-7");
+    await expect(row).toContainText("djinn task spawn W2");
+    await expect(row).toContainText("Spawned W2 to trim the wick.");
+    await expect(row).toContainText("$0.08");
     await expect(panel.locator(".journal-list tr.command")).toHaveCount(2);
     await expect(panel.locator(".journal-list")).toContainText("wish describe");
     await expect(panel.locator(".journal-list")).toContainText(

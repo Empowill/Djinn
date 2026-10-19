@@ -35,53 +35,26 @@ from its branch changes, write scopes, or the paths, packages and specs named in
 ## Talking with the Djinn
 
 The Djinn talks to you only in the window: by [questions](#question-and-move) when a choice or a move is yours, and in the
-bubble held to **Write to the Djinn** when it answers your words or tells a decision it took alone. You never need to read
-its terminal: it writes one short line there at most, never a question, and a line you type there is answered in the
-window.
+bubble held to **Write to the Djinn** when it answers your words or tells a decision it took alone. No terminal needs
+to run it: Djinn drives it by default, one batch of events at a time.
 
 You have three ways to reach it:
 
 - **Answer its questions.** This is the usual way: an answer goes to the Djinn, which turns it into tasks.
 - **Write to the Djinn**, the pill at the bottom of a wish, or of the flying carpet. Ctrl+I (Cmd+I on macOS) opens it,
   Enter sends, Shift+Enter breaks the line, Escape folds it and keeps your draft. From a wish, your words reach the
-  Djinn with the wish named; they wait while you type in its terminal or a choice is on screen there, then go, and the
-  Djinn's eye answers in the bubble held to the pill.
-- **Talk to the Djinn**, at the top of a wish, opens its terminal in the window, focused on that wish. At the top of
-  the flying carpet it opens it on no wish. There you talk to it as to any agent.
-
-### Starting it, and its agent
-
-At every start, Djinn brings the Djinn back on its session, in its terminal. **Talk to the Djinn** does the same if it
-does not run, or shows it if it does.
-
-- **No session yet.** A new Djinn starts on Claude Code, from its brief, in the first of your projects with a folder on
-  this machine. Never in your home folder: with no project at all, nothing starts, and Djinn asks you to create one.
-- **Choose the agent**, the arrow beside **Talk to the Djinn**, lists the agents found on this machine. One that is not
-  installed is greyed, saying so; the current one is checked, and picking it resumes it. Picking another starts the
-  Djinn anew on that agent, from the brief. **Set up the agents**, at the bottom, opens their setup.
-- **While the Djinn runs**, another agent starts nothing: Djinn says to quit it in its terminal first.
-
-A small dot on **Talk to the Djinn** says the Djinn could not start, or that its program ended: its tooltip gives the
-error or the exit code, and its tab keeps its last output. **Talk to the Djinn** tries again.
-
-### When its agent asks for approval
-
-The Djinn's agent may stop to ask for your approval in its terminal: a command to run, a folder to trust. Djinn
-reads that choice from the screen and puts it first in **What waits for you**, on the flying carpet and in every
-wish, as **Approval for the Djinn**, with the agent's options as buttons; a notification says so too. A button
-answers in the terminal as its keys would, and only while that very choice is still on screen. It comes first because
-it holds the Djinn up, and so every wish.
+  Djinn with the wish named, whole, in the next batch, and the Djinn's eye answers in the bubble held to the pill.
+- **Talk to the Djinn**, at the top of a wish or of the flying carpet, starts a session for the waiting events when a
+  batch failed; when the Djinn runs in its terminal instead, it opens that terminal in the window, focused on that wish.
 
 ## Djinn drives the lead
 
-By default the Djinn lives in a terminal: one long session that waits for what it must act on. With the lead
-driven setting on, in the settings file of Djinn's data folder, read when Djinn starts, Djinn drives it instead
-(decision Q31), and no terminal runs it:
+By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal runs it:
 
 - **A batch, a fresh session.** When events wait for the lead (a task ended or failed, a merge, your answer, a move,
-  a restart), Djinn lets them settle two seconds, then starts a new headless Claude Code session for that batch. It
-  acts with Djinn's commands, ends its turn, and Djinn lets it go. One batch runs at a time; what comes meanwhile
-  goes to the next one.
+  a restart), Djinn lets them settle two seconds, then starts a new headless Claude Code or Codex session for that
+  batch. It acts with Djinn's commands, ends its turn, and Djinn lets it go. One batch runs at a time; what comes
+  meanwhile goes to the next one.
 - **Everything in its prompt.** The short rules of the lead, shared with the brief and versioned, in its system prompt;
   then the events whole, the brief of each wish they are about, the active wishes, and the lead's journal, capped at
   1,200 tokens (at four characters a token, keeping the newest batches in chronological order). No session remembers
@@ -96,7 +69,6 @@ driven setting on, in the settings file of Djinn's data folder, read when Djinn 
   bubble held to the pill, or asks a question when a choice is yours.
 - **A failed batch** gets one new session, shown beside **Talk to the Djinn** while it retries. Failed again, it stays
   there and its events wait: the next event, or a click on **Talk to the Djinn**, starts a session for them.
-
 - **Where it runs.** The Djinn runs on a seat you choose: an agent (Claude Code or Codex), a model, an account. The
   arrow beside **Talk to the Djinn** lists each agent on its own sign-in, then on each of its accounts, and the model:
   one click moves the Djinn there, and the command line does the same. The next batch starts there with the lead's
@@ -112,6 +84,24 @@ driven setting on, in the settings file of Djinn's data folder, read when Djinn 
 A batch costs about $0.16 to $0.22 on Opus 5.5, as Claude Code counts it, measured on 16/10/2026: about 18,600 tokens
 of rules, tools and system prompt read from the cache the last session wrote, and the batch's own message written to
 it.
+
+### Running the Djinn in a terminal instead
+
+With the lead driven setting set to false in the settings file of Djinn's data folder, the Djinn lives in a terminal
+instead: one long session that waits for what it must act on. Upgrading from a running terminal lead to the driven lead
+switches cleanly: the lead terminal is dropped, no waiting event is lost, and the journal starts with the next batch.
+
+- **At every start**, Djinn brings the terminal Djinn back on its session, in its terminal. **Talk to the Djinn** does
+  the same if it does not run, or shows it if it does. A new Djinn starts on Claude Code, from its brief, in the first
+  of your projects with a folder on this machine, never in your home folder.
+- **Choose the agent**, the arrow beside **Talk to the Djinn**, lists the agents found on this machine. While the
+  terminal Djinn runs, picking another agent starts nothing: Djinn says to quit it in its terminal first. A small dot
+  on **Talk to the Djinn** says the Djinn could not start, or that its program ended: its tooltip gives the error or the
+  exit code, and its tab keeps its last output.
+- **When its agent asks for approval** in its terminal (a command to run, a folder to trust), Djinn reads that choice
+  from the screen and puts it first in **What waits for you**, on the flying carpet and in every wish, as **Approval for
+  the Djinn**, with the agent's options as buttons. A button answers in the terminal as its keys would, and only while
+  that very choice is still on screen.
 
 ### Its tone follows the theme
 
