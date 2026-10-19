@@ -3149,7 +3149,7 @@ type TaskServiceClient interface {
 	// Follow a task's events as they come, from the first one or after a position; ends with the task. With --last, its
 	// last events only, at once: it returns without following a task that runs or waits, unless --follow.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest]) (*connect.ServerStreamForClient[v1.TaskServiceWatchResponse], error)
-	// Remove the worktree of a finished task. Its branch stays.
+	// Remove the worktree and scratch folder of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
 	// Set what a task waits for: the tasks of its wish that must be done first (--after), in place of those it had; with
 	// --also, several tasks at once, all or none. The tasks of a wish form a graph without cycle: a dependency that
@@ -3587,7 +3587,7 @@ type TaskServiceHandler interface {
 	// Follow a task's events as they come, from the first one or after a position; ends with the task. With --last, its
 	// last events only, at once: it returns without following a task that runs or waits, unless --follow.
 	Watch(context.Context, *connect.Request[v1.TaskServiceWatchRequest], *connect.ServerStream[v1.TaskServiceWatchResponse]) error
-	// Remove the worktree of a finished task. Its branch stays.
+	// Remove the worktree and scratch folder of a finished task. Its branch stays.
 	Clean(context.Context, *connect.Request[v1.TaskServiceCleanRequest]) (*connect.Response[v1.TaskServiceCleanResponse], error)
 	// Set what a task waits for: the tasks of its wish that must be done first (--after), in place of those it had; with
 	// --also, several tasks at once, all or none. The tasks of a wish form a graph without cycle: a dependency that

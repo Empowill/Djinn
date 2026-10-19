@@ -76,6 +76,11 @@ code and title. The worktree starts from the tip of the wish's integration branc
 committed before it. Outside Git there is no worktree: the worker works in the project's folder, and two tasks whose
 folders overlap never run together.
 
+Each work task in a project also gets a scratch folder of its own in Djinn's data folder, named in its prompt, where it
+puts its temporary files, screenshots, build output or test data folders instead of your home folder. The scratch folder
+stays while the task can be continued, and is removed with the worktree when the task's work is merged, cleaned or
+cancelled.
+
 A task of a wish without a project runs outside any project: read only, in an empty folder of its own. That suits
 research.
 
@@ -103,7 +108,8 @@ the same worktree, which commits what belongs to the task, leaves the rest where
 and why.
 
 **What it is told.** Besides its prompt, a worker that edits is told the project's checks, to run them before it ends,
-to commit its work before it ends, in the repository's style, leaving nothing not committed, never to make a wish, a
+to commit its work before it ends, in the repository's style, leaving nothing not committed, to put its scratch files in
+its scratch folder, never in your home folder, never to make a wish, a
 question or a task in your Djinn to try something, and to ask you only for a decision or a move only a person can
 make.
 

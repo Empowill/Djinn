@@ -6450,7 +6450,10 @@ type Task struct {
 	// slot, its load or memory, a write scope), its integration branch's push checks, a dependency, a usage limit, the
 	// network, or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
 	// reason's text. Unspecified while the scheduler has not judged it yet, and once it starts.
-	Hold          TaskHold `protobuf:"varint,78,opt,name=hold,proto3,enum=plan.v1.TaskHold" json:"hold,omitempty"`
+	Hold TaskHold `protobuf:"varint,78,opt,name=hold,proto3,enum=plan.v1.TaskHold" json:"hold,omitempty"`
+	// The path of the task's scratch folder on disk (<data>/scratch/<project>/<task>), exported to its worker as
+	// DJINN_SCRATCH and cleaned with its worktree; empty when it has none or once cleaned.
+	Scratch       string `protobuf:"bytes,79,opt,name=scratch,proto3" json:"scratch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7029,6 +7032,13 @@ func (x *Task) GetHold() TaskHold {
 		return x.Hold
 	}
 	return TaskHold_TASK_HOLD_UNSPECIFIED
+}
+
+func (x *Task) GetScratch() string {
+	if x != nil {
+		return x.Scratch
+	}
+	return ""
 }
 
 // TaskHealth is how the scheduler judges a work task's worker (W188). It changes only when its state does: each change
@@ -26731,7 +26741,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
 	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\x12'\n" +
-	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xa6\x18\n" +
+	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xc0\x18\n" +
 	"\x04Task\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
 	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
@@ -26823,7 +26833,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\rinvestigation\x18J \x01(\v2\x1a.plan.v1.TaskInvestigationR\rinvestigation\x12\x1a\n" +
 	"\bfeedback\x18K \x01(\bR\bfeedback\x12(\n" +
 	"\x10wait_question_id\x18M \x01(\tR\x0ewaitQuestionId\x12%\n" +
-	"\x04hold\x18N \x01(\x0e2\x11.plan.v1.TaskHoldR\x04hold:\x13\xd2\xf3\x18\x0f\n" +
+	"\x04hold\x18N \x01(\x0e2\x11.plan.v1.TaskHoldR\x04hold\x12\x18\n" +
+	"\ascratch\x18O \x01(\tR\ascratch:\x13\xd2\xf3\x18\x0f\n" +
 	"\awish_id\n" +
 	"\x04code\"\xaf\x01\n" +
 	"\n" +

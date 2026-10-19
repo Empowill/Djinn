@@ -641,6 +641,9 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 		}
 	}
 	kept := strings.HasPrefix(text, "worktree kept")
+	if !kept && cur.GetScratch() != "" {
+		_ = os.RemoveAll(cur.GetScratch())
+	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		task, err := store.Get[*planv1.Task](ctx, tx, t.GetId())
 		if err != nil {
@@ -648,6 +651,7 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 		}
 		if !kept {
 			task.Worktree = ""
+			task.Scratch = ""
 		}
 		if err := tx.Journal(actorHarness, methodIntegrate, task); err != nil {
 			return err

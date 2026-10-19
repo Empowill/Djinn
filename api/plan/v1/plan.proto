@@ -1396,6 +1396,9 @@ message Task {
   // network, or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
   // reason's text. Unspecified while the scheduler has not judged it yet, and once it starts.
   TaskHold hold = 78;
+  // The path of the task's scratch folder on disk (<data>/scratch/<project>/<task>), exported to its worker as
+  // DJINN_SCRATCH and cleaned with its worktree; empty when it has none or once cleaned.
+  string scratch = 79;
 }
 
 // TaskHold is what holds a planned task that waits (Task.hold).
@@ -5089,7 +5092,7 @@ service TaskService {
   rpc Watch(TaskServiceWatchRequest) returns (stream TaskServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
-  // Remove the worktree of a finished task. Its branch stays.
+  // Remove the worktree and scratch folder of a finished task. Its branch stays.
   rpc Clean(TaskServiceCleanRequest) returns (TaskServiceCleanResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_DELETE;

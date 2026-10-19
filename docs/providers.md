@@ -77,6 +77,10 @@ translates it for the agent it starts. A task outside any project only reads.**
 **A worker that may edit commits its own work** (W360): its first prompt tells it to commit before it ends, in the
 repository's style, leaving nothing not committed, and Djinn adds `git status`, `git diff`, `git log`, `git add`,
 `git commit`, `git restore` and `git rm` to the commands it lists (`commitCommands`); the denied commands still win.
+Each work task in a project also gets a scratch folder of its own in Djinn's data folder (`<data>/scratch/<project>/<task>`,
+`Task.scratch`), created when the worker starts (and when an older task resumes), passed in `DJINN_SCRATCH`, named in
+its first prompt (`workerHandRule`), allowed for writing like the worktree (`Spec.WriteDirs`), kept while the task can
+be continued, and removed with the worktree when the task's work is merged, cleaned or cancelled.
 
 ### The order of decision
 
@@ -820,7 +824,7 @@ log -1, then stop."), the mount table read from inside the sandbox (`grep … /p
 **So Djinn writes an agy project per worktree** (`agyProject`, `internal/harness/agy.go`), for a worker with
 permissions: id `djinn-<16 hex digits of the folder's SHA-256>`, the same for every worker of the folder, as agy
 resumes a conversation in the project it began in; rewritten at each start, removed with the worktree. Its grants:
-`write_file` of the worker's folder and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
+`write_file` of the worker's folder, of its `Spec.WriteDirs` (its scratch folder), and of Git's folders for it (the `.git` folder, or a linked worktree's folder in
 the repository and the repository's common `.git`, read from the `.git` and `commondir` files, without running
 git), `command(<p>)` for each listed command in LISTED, `command(*)` and `read_url(*)` in AUTO (Decision Q143, A,
 11/10/2026), and deny `command(<p>)` for each denied one, with `git push` always denied in AUTO, since pushing is the
@@ -834,7 +838,7 @@ workspace, so reading Go's sources (`/usr/local/go/src/…`), caches, or externa
 allow grant (prefix matching). Djinn adds deny `read_file(<dir>)` for secrets (`~/.ssh`, `~/.gnupg`, `~/.config/gh`,
 `~/.config/gcloud`, `~/.aws`, `~/.netrc`, `~/.git-credentials`) and Djinn's own data folder (`~/.config/djinn` or
 `$DJINN_HOME`), recursively denying sibling projects, sibling worktrees, and database files while keeping only the
-task's own worktree accessible, and the version folders of the tilasms the task is given (below).
+task's own worktree, its scratch folder, and the version folders of the tilasms the task is given (below).
 
 **Silences, timeouts and background tasks (W360, agy 1.4.1, 2026-10-18).** agy is 1.4.1 now. Its stream-json
 carries neither the model's thinking nor its planner steps: a long model call is silence on Djinn's side. What W308's

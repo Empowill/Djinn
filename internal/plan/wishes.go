@@ -425,6 +425,9 @@ func cleanWorktrees(ctx context.Context, r store.Reader, tasks []*planv1.Task) (
 	var removed int32
 	for _, t := range tasks {
 		if t.GetWorktree() == "" {
+			if t.GetScratch() != "" {
+				_ = os.RemoveAll(t.GetScratch())
+			}
 			continue
 		}
 		project, err := store.Get[*planv1.Project](ctx, r, t.GetProjectId())
@@ -439,6 +442,8 @@ func cleanWorktrees(ctx context.Context, r store.Reader, tasks []*planv1.Task) (
 		}
 		if k != nil {
 			kept = append(kept, k)
+		} else if t.GetScratch() != "" {
+			_ = os.RemoveAll(t.GetScratch())
 		}
 	}
 	return kept, removed

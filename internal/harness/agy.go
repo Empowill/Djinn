@@ -342,6 +342,9 @@ func agyProject(spec Spec) agyProjectFile {
 	if spec.SkillsDir != "" {
 		addKeep(spec.SkillsDir)
 	}
+	for _, d := range spec.WriteDirs {
+		addKeep(d)
+	}
 	for _, d := range spec.ReadDirs {
 		addKeep(d)
 	}
@@ -350,6 +353,9 @@ func agyProject(spec Spec) agyProjectFile {
 		for _, d := range append([]string{cleanDir}, gitDirs...) {
 			g.Allow = appendUnique(g.Allow, "write_file("+d+")")
 		}
+	}
+	for _, d := range spec.WriteDirs {
+		g.Allow = appendUnique(g.Allow, "write_file("+filepath.Clean(d)+")")
 	}
 
 	// Reads: repository (main checkout and .git), Go root, module and build caches, npm cache, /usr, /etc, and user's home.
@@ -362,6 +368,9 @@ func agyProject(spec Spec) agyProjectFile {
 	}
 	if spec.SkillsDir != "" {
 		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(spec.SkillsDir)+")")
+	}
+	for _, d := range spec.WriteDirs {
+		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(d)+")")
 	}
 	for _, d := range spec.ReadDirs {
 		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(d)+")")

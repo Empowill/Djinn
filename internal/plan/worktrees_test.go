@@ -48,12 +48,17 @@ func TestDeleteWishWorktrees(t *testing.T) {
 	}
 	project := &planv1.Project{Id: store.NewID(), Name: "app", Directory: repo}
 	worktrees := resolvedTempDir(t)
+	scratches := resolvedTempDir(t)
 	tasks := map[string]*planv1.Task{}
 	for _, code := range []string{"W1", "W2", "W3", "W4"} {
 		task := &planv1.Task{Id: store.NewID(), WishId: wish.GetId(), ProjectId: project.GetId(), Code: code,
 			Title: "work", Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: strings.ToLower(code) + "-work",
-			Worktree: filepath.Join(worktrees, code)}
+			Worktree: filepath.Join(worktrees, code), Scratch: filepath.Join(scratches, code)}
 		git(repo, "worktree", "add", "-q", "-b", task.GetBranch(), task.GetWorktree(), "HEAD")
+		if err := os.MkdirAll(task.GetScratch(), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		write(filepath.Join(task.GetScratch(), "shot.png"), "png")
 		tasks[code] = task
 		c.put(t, task)
 	}
@@ -78,6 +83,9 @@ func TestDeleteWishWorktrees(t *testing.T) {
 	if _, err := os.Stat(tasks["W1"].GetWorktree()); !os.IsNotExist(err) {
 		t.Errorf("W1's clean worktree is still there: %v", err)
 	}
+	if _, err := os.Stat(tasks["W1"].GetScratch()); !os.IsNotExist(err) {
+		t.Errorf("W1's scratch folder is still there: %v", err)
+	}
 	if list := git(repo, "worktree", "list", "--porcelain"); strings.Contains(list, tasks["W1"].GetWorktree()) {
 		t.Errorf("git still lists W1's worktree:\n%s", list)
 	}
@@ -90,6 +98,9 @@ func TestDeleteWishWorktrees(t *testing.T) {
 		}
 		if _, err := os.Stat(k.GetWorktree()); err != nil {
 			t.Errorf("%s's worktree is gone: %v", k.GetTaskCode(), err)
+		}
+		if _, err := os.Stat(tasks[k.GetTaskCode()].GetScratch()); err != nil {
+			t.Errorf("%s's scratch folder is gone: %v", k.GetTaskCode(), err)
 		}
 	}
 	for code, want := range map[string]struct {

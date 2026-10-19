@@ -88,8 +88,9 @@ type Spec struct {
 	MaxTurns int
 	// WriteDirs are folders the agent may write in even without Permissions.Edit, and ReadDirs folders it may read
 	// outside its own: the driven lead's folder, where it writes plan files and tilasms, and Djinn's data folder; a
-	// worker's, the version folders of the tilasms it is given (plan.TilasmDirs). Claude's folder rules; Codex's
-	// workspace-write sandbox on them (it reads everywhere already); read_file grants of agy's project (ReadDirs only).
+	// worker's scratch folder (workScratchDir) and the version folders of the tilasms it is given (plan.TilasmDirs).
+	// Claude's folder rules; Codex's workspace-write sandbox on them (it reads everywhere already); write_file and
+	// read_file grants of agy's project.
 	WriteDirs, ReadDirs []string
 	// Track, when set, is told of each process the worker starts, its PID, the cgroup of its scope and its mark
 	// (markVar), as it starts; what it returns is called once the process, and what it left running, ended. Djinn

@@ -1263,7 +1263,7 @@ func prepare(
 	return p, nil
 }
 
-const workerHandRule = "To try a command by hand, start a Djinn of your own with its own data folder; never create a wish, a question or a task in the person's Djinn to test."
+const workerHandRule = "Write any scratch file, temporary data, screenshot, build output or test Djinn data folder in your scratch folder (`$DJINN_SCRATCH`), never in the home folder or `/tmp`. To try a command by hand, start a Djinn of your own with its own data folder in `$DJINN_SCRATCH`; never create a wish, a question or a task in the person's Djinn to test."
 
 // workerCheckRule (Q246): what an agent can check, it checks; the developer runs no command to verify a worker's work.
 const workerCheckRule = "Never ask the developer for a check, a measure, a log to read, a CI result to look at or a command to run: do it yourself when you can; otherwise say in your final note what remains to verify, and the lead spawns a task for it or lets a watcher report it (a CI result comes from the PR's babysit watcher)."
@@ -1333,11 +1333,17 @@ func briefed(r *run, prompt string, readOnly bool) string {
 	}
 	edits := r.task.GetBranch() != "" && !readOnly
 	if r.ifrit && !edits && r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
+		if s := r.task.GetScratch(); s != "" {
+			rules = "Your scratch folder is `" + s + "` (`$DJINN_SCRATCH`). " + rules
+		}
 		return prompt + "\n\n" + rules
 	}
 	if edits && !r.ifrit && !dispatch.Investigation(r.task) && !dispatch.Mockup(r.task) && r.task.GetReview() == nil &&
 		r.task.GetCorrection() == nil {
 		rules = workerCommitRule + " " + rules
+	}
+	if s := r.task.GetScratch(); s != "" {
+		rules = "Your scratch folder is `" + s + "` (`$DJINN_SCRATCH`). " + rules
 	}
 	if edits {
 		if r.checks != "" {
@@ -1406,6 +1412,13 @@ func (h *Harness) launch(
 			task.Branch, task.Worktree = "", ""
 			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("create the worktree: %w", err)})
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: create the worktree: %w", task.GetCode(), err))
+		}
+	}
+	if project != nil && !r.watcher && !r.light && h.home != "" {
+		task.Scratch = workScratchDir(h.home, project.GetId(), task.GetId())
+		if err := os.MkdirAll(task.GetScratch(), 0o700); err != nil {
+			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("create the scratch folder: %w", err)})
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: create its scratch folder: %w", task.GetCode(), err))
 		}
 	}
 	where := "in " + dir
@@ -1568,6 +1581,12 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		"DJINN_WISH_ID=" + t.GetWishId(),
 		"DJINN_WORKER_TOKEN=" + r.token,
 	}, guard...)
+	if t.GetScratch() != "" {
+		spec.Env = append(spec.Env, "DJINN_SCRATCH="+t.GetScratch())
+		if !spec.ReadOnly && (spec.Permissions == nil || spec.Permissions.GetEdit()) && !slices.Contains(spec.WriteDirs, t.GetScratch()) {
+			spec.WriteDirs = append(spec.WriteDirs, t.GetScratch())
+		}
+	}
 	if r.watcher {
 		// Its state folder, DJINN_HOME/watchers/<task>, outlives each run of its command (watcherLife); made before
 		// it starts, as a lead's command expects when it names a file there (W7 of wish Dew).
@@ -3124,7 +3143,7 @@ func (h *Harness) publish(r *run, ev *planv1.TaskEvent) {
 	}
 }
 
-// Clean removes the worktree of a task that has ended. Its branch stays.
+// Clean removes the worktree and scratch folder of a task that has ended. Its branch stays.
 func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskServiceCleanRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	task, err := store.Get[*planv1.Task](ctx, h.store, id)
@@ -3146,6 +3165,10 @@ func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskS
 	}
 	if err := removeWorktree(ctx, project.GetDirectory(), task.GetWorktree(), req.GetForce()); err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
+	}
+	if task.GetScratch() != "" {
+		_ = os.RemoveAll(task.GetScratch())
+		task.Scratch = ""
 	}
 	text := "worktree removed"
 	if task.GetBranch() != "" {

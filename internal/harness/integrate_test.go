@@ -201,6 +201,7 @@ func (in *integration) finished(t *testing.T, code string, files map[string]stri
 		Id: id, WishId: in.wishID, ProjectId: in.projectID, Code: code, Title: "Work of " + code, Kind: planv1.TaskKind_TASK_KIND_WORK,
 		Status: planv1.TaskStatus_TASK_STATUS_DONE, Provider: planv1.Provider_PROVIDER_FAKE, Scheduled: true,
 		Branch: strings.ToLower(code) + "-" + id[len(id)-8:], Worktree: worktreeDir(in.home, in.projectID, id),
+		Scratch:    workScratchDir(in.home, in.projectID, id),
 		CreateTime: timestamppb.New(in.clock()), StartTime: timestamppb.New(in.clock()), EndTime: timestamppb.New(in.clock()),
 		Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING},
 	}
@@ -209,6 +210,9 @@ func (in *integration) finished(t *testing.T, code string, files map[string]stri
 	in.mu.Unlock()
 	for _, o := range opts {
 		o(task)
+	}
+	if task.GetScratch() != "" {
+		writeFile(t, task.GetScratch(), "shot.png", "png")
 	}
 	if task.GetWorktree() == "" {
 		in.git(t, in.repo, "checkout", "--quiet", "-b", task.GetBranch())
@@ -391,6 +395,9 @@ func TestDropWorktree(t *testing.T) {
 	if _, err := os.Stat(w1.GetWorktree()); !os.IsNotExist(err) || got.GetWorktree() != "" {
 		t.Errorf("W1's worktree %q is still there: %v", got.GetWorktree(), err)
 	}
+	if _, err := os.Stat(w1.GetScratch()); !os.IsNotExist(err) || got.GetScratch() != "" {
+		t.Errorf("W1's scratch %q is still there: %v", got.GetScratch(), err)
+	}
 	if b := in.git(t, in.repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+w1.GetBranch()); b == "" {
 		t.Error("W1's branch is gone")
 	}
@@ -398,14 +405,17 @@ func TestDropWorktree(t *testing.T) {
 		t.Errorf("W1's events %q", texts)
 	}
 
-	// A file written in the worktree after Djinn committed it, and before it removes it: the worktree stays.
+	// A file written in the worktree after Djinn committed it, and before it removes it: the worktree and scratch stay.
 	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
 	in.mu.Lock()
 	in.afterTest = func() { writeFile(t, w2.GetWorktree(), "app/late.txt", "late\n") }
 	in.mu.Unlock()
 	in.pass(t, 0)
-	if got := in.get(t, w2.GetId()); got.GetWorktree() != w2.GetWorktree() || in.states(t, w2) != "W2 COMMITTED" {
-		t.Errorf("W2: worktree %q, %s", got.GetWorktree(), in.states(t, w2))
+	if got := in.get(t, w2.GetId()); got.GetWorktree() != w2.GetWorktree() || got.GetScratch() != w2.GetScratch() || in.states(t, w2) != "W2 COMMITTED" {
+		t.Errorf("W2: worktree %q, scratch %q, %s", got.GetWorktree(), got.GetScratch(), in.states(t, w2))
+	}
+	if _, err := os.Stat(filepath.Join(w2.GetScratch(), "shot.png")); err != nil {
+		t.Errorf("W2's scratch file gone: %v", err)
 	}
 	if texts := eventTexts(in.events(t, w2)); texts[len(texts)-1] != "worktree kept: it holds changes not committed, "+w2.GetWorktree() {
 		t.Errorf("W2's events %q", texts)
