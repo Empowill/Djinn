@@ -48,9 +48,9 @@ func (h *Harness) Cancel(ctx context.Context, procedure string, req *planv1.Task
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 
-	task, err = store.Get[*planv1.Task](ctx, h.store, id)
+	task, _, err = h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
 	switch task.GetStatus() {
 	case planv1.TaskStatus_TASK_STATUS_DONE:

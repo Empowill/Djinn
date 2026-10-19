@@ -26,13 +26,10 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 	defer h.answering.Unlock()
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
-	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	task, running, err := h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
 	switch s := task.GetStatus(); {
 	case plan.DoneWithProblems(task) && !req.GetDrop():
 		return h.doneSeen(ctx, procedure, req, task)
@@ -165,4 +162,36 @@ func (h *Harness) doneSeen(ctx context.Context, procedure string, req *planv1.Ta
 	}
 	h.notify()
 	return task, nil
+}
+
+// taskAndRun returns the task id as stored and whether a worker runs for it now. When its run is getting its final
+// status (r.final), taskAndRun waits until the run has written the task and left h.runs before reading the store.
+func (h *Harness) taskAndRun(ctx context.Context, id string) (*planv1.Task, bool, error) {
+	for {
+		h.mu.Lock()
+		r := h.runs[id]
+		ending := r != nil && r.final
+		h.mu.Unlock()
+		if ending {
+			select {
+			case <-r.done:
+			case <-ctx.Done():
+				return nil, false, ctx.Err()
+			}
+			continue
+		}
+		task, err := store.Get[*planv1.Task](ctx, h.store, id)
+		if err != nil {
+			return nil, false, plan.Status(err)
+		}
+		if r == nil {
+			return task, false, nil
+		}
+		h.mu.Lock()
+		still := h.runs[id] == r && !r.final
+		h.mu.Unlock()
+		if still {
+			return task, true, nil
+		}
+	}
 }

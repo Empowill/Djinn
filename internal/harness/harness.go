@@ -896,11 +896,9 @@ func (h *Harness) spawn(
 	// transaction. A fork of a task that runs or is done leaves it as it is.
 	var parent *planv1.Task
 	if src.task != nil && forkCloses(src.task) {
-		h.mu.Lock()
-		if h.runs[src.task.GetId()] == nil {
+		if _, running, err := h.taskAndRun(ctx, src.task.GetId()); err == nil && !running {
 			parent = src.task
 		}
-		h.mu.Unlock()
 	}
 	task.Provider = kind
 	provider, ok := h.providers[kind]
@@ -3163,13 +3161,10 @@ func (h *Harness) publish(r *run, ev *planv1.TaskEvent) {
 // Clean removes the worktree and scratch folder of a task that has ended. Its branch stays.
 func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskServiceCleanRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
-	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	task, running, err := h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
 	switch {
 	case running:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is running: stop it first", task.GetCode()))
