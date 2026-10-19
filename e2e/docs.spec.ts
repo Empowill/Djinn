@@ -74,8 +74,22 @@ test("the Grimoire opens on its splash, then its book and its concepts", async (
       ),
     );
   // The navigation is there from the first view, its title current: no button to open the book.
+  // Each concept link in the menu and each card in #words carries its inline SVG icon, and worker chips carry their kind tone.
   const nav = page.getByRole("navigation", { name: "Grimoire" });
   await expect(nav.getByRole("link", { name: "Introduction" })).toBeVisible();
+  await expect(nav.locator("a .nav-icon svg")).toHaveCount(35);
+  await expect(page.locator("#words .card.word .word-icon svg")).toHaveCount(
+    20,
+  );
+  await expect(
+    page.locator("#word-questions .chip.kind-work").first(),
+  ).toBeVisible();
+  await expect(
+    page.locator("#word-questions .chip.kind-mock").first(),
+  ).toBeVisible();
+  await expect(
+    page.locator("#word-questions .chip.kind-inv").first(),
+  ).toBeVisible();
   await expect(nav.locator(".nav-title")).toHaveAttribute(
     "aria-current",
     "page",
@@ -141,6 +155,7 @@ test("the Grimoire opens on its splash, then its book and its concepts", async (
   await expect(
     wish.getByRole("heading", { level: 1, name: "Wish" }),
   ).toBeVisible();
+  await expect(wish.locator("h1 .page-h1-icon svg")).toBeVisible();
   await expect(page.locator("#introduction")).toBeHidden();
   await wish
     .getByRole("navigation", { name: "On this page" })
