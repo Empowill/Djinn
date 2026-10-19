@@ -290,7 +290,8 @@ test("a task done with refused calls, in a wish with no project, shows a plain d
 
     // The lead decided: the hold clears and Djinn proposes the ready grant.
     await page.getByRole("tab", { name: /^Wish/ }).click();
-    await expect(page.locator(".wish-grant.state-ready")).toBeVisible();
+    await expect(page.locator(".wish-grant.state-held")).toHaveCount(0);
+    await expect(page.locator(".wish-grant")).toContainText("READY");
     await expect(
       page.getByRole("button", { name: "My wish is granted" }),
     ).toBeVisible();

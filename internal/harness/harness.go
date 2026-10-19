@@ -3056,8 +3056,17 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 		return send(ev)
 	}
 	for {
-		// Subscribe, then read what is stored: an event written in between comes both ways, and only once out.
+		// Read the task and subscribe before listing its stored events: an event written while the worker runs comes
+		// on ch and from the store, emitted once; a task seen ended here had already written its last event before
+		// its run was forgotten.
 		changed := h.generation()
+		task, err := store.Get[*planv1.Task](ctx, h.store, taskID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil //nolint:nilerr // Watching ends with its context: not an error.
+			}
+			return plan.Status(err)
+		}
 		ch := h.subscribe(taskID)
 		// Those past after only: a watcher let go, or following a task that starts, reads again what it lacks, not
 		// the thousands of events of a long task (W504).
@@ -3074,9 +3083,8 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 			}
 		}
 		if ch == nil {
-			task, err := store.Get[*planv1.Task](ctx, h.store, taskID)
-			if s := task.GetStatus(); err == nil && (s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED) {
-				// Its worker started since it was subscribed to: its run is there, follow it.
+			if s := task.GetStatus(); s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED {
+				// Its worker ended since the task was read, or is starting: read the store again.
 				select {
 				case <-changed:
 				case <-time.After(10 * time.Millisecond):
@@ -3085,11 +3093,8 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 				}
 				continue
 			}
-			if err != nil || !planned(task) {
-				if ctx.Err() != nil {
-					return nil //nolint:nilerr // Watching ends with its context: not an error.
-				}
-				return plan.Status(err) // The task has ended: the store holds all its events.
+			if !planned(task) {
+				return nil // The task had ended before its events were listed: the store held them all.
 			}
 			// A planned task: follow it until its worker starts, or it ends without one.
 			select {
