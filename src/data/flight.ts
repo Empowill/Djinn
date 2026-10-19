@@ -206,6 +206,12 @@ export function isInvestigation(task: Task): boolean {
   return task.kind === TaskKind.INVESTIGATION;
 }
 
+// isMockup tells a mockup task the lead or a question launched so the developer can review a design in a tilasm and
+// iterate on it, whose commits are never merged (internal/dispatch.Mockup): it is served first.
+export function isMockup(task: Task): boolean {
+  return task.kind === TaskKind.MOCKUP;
+}
+
 // isUrgent tells a task the lead or the developer marked urgent, to unblock its wish or for the developer's quick
 // feedback (task.feedback), while it is to run or runs: it passes the queue and takes a slot on a full machine
 // (internal/dispatch.Urgent). A watcher or an azima never is.

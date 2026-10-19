@@ -896,6 +896,7 @@ test("running workers stay blue, apart from the investigators' violet, in both t
     css,
     /\.tone-investigating\s*\{\s*--tone:\s*var\(--st-investigating\);/,
   );
+  assert.match(css, /\.tone-mockup\s*\{\s*--tone:\s*var\(--k-mock\);/);
   const block = (selector) => {
     const start = css.indexOf(selector + " {");
     return Object.fromEntries(
@@ -925,6 +926,7 @@ test("running workers stay blue, apart from the investigators' violet, in both t
   })) {
     const running = hue(theme["st-running"]);
     const investigating = hue(theme["st-investigating"]);
+    const mockup = hue(theme["k-mock"]);
     assert.ok(
       running >= 200 && running <= 235,
       `${name}: running (${theme["st-running"]}) is blue, its hue ${running.toFixed(0)}°`,
@@ -932,6 +934,10 @@ test("running workers stay blue, apart from the investigators' violet, in both t
     assert.ok(
       investigating >= 245 && investigating <= 290,
       `${name}: investigating (${theme["st-investigating"]}) is violet, its hue ${investigating.toFixed(0)}°`,
+    );
+    assert.ok(
+      mockup >= 300 && mockup <= 340,
+      `${name}: mockup (${theme["k-mock"]}) is pink, its hue ${mockup.toFixed(0)}°`,
     );
   }
 });

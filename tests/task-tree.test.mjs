@@ -141,6 +141,24 @@ test("a task opened shows its card beside the tree, with a way to close it", () 
     html,
     /<aside class="task-tree-card">.*aria-label="Close".*the-card/,
   );
+  const mockupTree = s.renderToStaticMarkup(
+    h(s.TaskTree, {
+      tasks: [
+        task("W444", {
+          status: s.TaskStatus.RUNNING,
+          kind: s.TaskKind.MOCKUP,
+          startTime: at(30),
+        }),
+      ],
+      projects: new Map(),
+      codes: new Map(),
+      focus: "",
+      onOpen: () => {},
+      onClose: () => {},
+    }),
+  );
+  assert.match(mockupTree, /class="tree-row tone-mockup"[^>]*data-task="W444"/);
+  assert.match(mockupTree, /data-task="W444"[^>]*>.*?class="mockup-label"/);
 });
 
 // iso is a moment as a Date, and as a task's Timestamp.

@@ -85,6 +85,8 @@ export interface WishCounts {
   running: number;
   // Investigators at work on a question after Enlighten me (runningOf), apart from the running ones: shown violet.
   investigating?: number;
+  // Mockup workers at work on a tilasm (runningOf), apart from the running ones: shown pink (--k-mock).
+  mockup?: number;
   watching: number;
   merging: number;
   // Failed merges a correction task fixes (runningOf): Djinn's move, shown orange.
@@ -258,6 +260,7 @@ export function WishSidebar({
       count.merging > 0 && t("plan.merging_detail", { count: count.merging }),
       !!count.investigating &&
         t("plan.investigating_detail", { count: count.investigating }),
+      !!count.mockup && t("plan.mockup_detail", { count: count.mockup }),
     ]
       .filter(Boolean)
       .join(" · ");
@@ -330,19 +333,21 @@ export function WishSidebar({
               <b>{count.questions}</b>
             </span>
           )}
-          {!!rank && (working > 0 || !!count.investigating) && (
-            <span
-              className="wish-acts"
-              title={actsLabel}
-              aria-label={actsLabel}
-              role="img"
-            >
-              {working > 0 && <span className="wish-act tone-running" />}
-              {!!count.investigating && (
-                <span className="wish-act tone-investigating" />
-              )}
-            </span>
-          )}
+          {!!rank &&
+            (working > 0 || !!count.investigating || !!count.mockup) && (
+              <span
+                className="wish-acts"
+                title={actsLabel}
+                aria-label={actsLabel}
+                role="img"
+              >
+                {working > 0 && <span className="wish-act tone-running" />}
+                {!!count.investigating && (
+                  <span className="wish-act tone-investigating" />
+                )}
+                {!!count.mockup && <span className="wish-act tone-mockup" />}
+              </span>
+            )}
           {!!rank && !!waiting && (
             <span
               className="wish-place-corner"
@@ -404,6 +409,15 @@ export function WishSidebar({
                     count={count.investigating}
                     label={t("plan.investigating_detail", {
                       count: count.investigating,
+                    })}
+                  />
+                )}
+                {!!count.mockup && (
+                  <Sign
+                    tone="mockup"
+                    count={count.mockup}
+                    label={t("plan.mockup_detail", {
+                      count: count.mockup,
                     })}
                   />
                 )}
