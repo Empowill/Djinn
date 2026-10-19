@@ -222,6 +222,9 @@ func TestGitGuard(t *testing.T) {
 			t.Errorf("worker's environment missing DJINN_WORKER_TOKEN")
 		}
 		want := append([]string{"DJINN_TASK_ID=" + task.GetId(), "DJINN_WISH_ID=" + wishID}, guard...)
+		if s := task.GetScratch(); s != "" {
+			want = append(want, "DJINN_SCRATCH="+s)
+		}
 		if !slices.Equal(filteredEnv, want) {
 			t.Errorf("worker's environment\n%v\nwant\n%v", filteredEnv, want)
 		}
