@@ -247,12 +247,13 @@ func TestNotchRuntimeAutoNeverPauses(t *testing.T) {
 	w2 := e.mustSpawn(t, wishID, "Work 2", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
 	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 
-	// Switch to Auto mode with Minimal notch and reduce capacity slots to 1.
-	lim.set(1, "")
+	// Switch to Auto mode with Minimal notch, then reduce capacity slots to 1: the other way round, a scheduler
+	// pass between the two pauses W2 under High notch before Auto mode is set.
 	e.h.SetPolicy(machine.Policy{
 		Auto:  true,
 		Notch: djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
 	})
+	lim.set(1, "")
 
 	// Wait a moment for any potential scheduler passes.
 	time.Sleep(25 * time.Millisecond)
