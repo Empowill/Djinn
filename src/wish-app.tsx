@@ -383,21 +383,7 @@ export function WishApp() {
           makeBackAction.current?.();
         }}
       >
-        <TooltipButton
-          type="button"
-          className="sidebar-toggle app-toolbar-toggle"
-          onClick={toggleSidebar}
-          disabled={making}
-          label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-          tooltip={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-          shortcut={sidebarShortcut.label}
-          aria-keyshortcuts={sidebarShortcut.aria}
-          aria-expanded={!collapsed}
-          aria-controls="djinn-sidebar"
-        >
-          <PanelLeft size={16} aria-hidden="true" />
-        </TooltipButton>
-        {/* Back shows on the page that needs it, after the toggle, which never moves. */}
+        {/* Back shows on the page that needs it. */}
         {modal === "make" && (
           <TooltipButton
             type="button"
@@ -424,6 +410,20 @@ export function WishApp() {
             <Brand small={collapsed} eye />
             {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
           </div>
+          <TooltipButton
+            type="button"
+            className="sidebar-toggle"
+            onClick={toggleSidebar}
+            disabled={making}
+            label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+            tooltip={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+            shortcut={sidebarShortcut.label}
+            aria-keyshortcuts={sidebarShortcut.aria}
+            aria-expanded={!collapsed}
+            aria-controls="djinn-sidebar"
+          >
+            <PanelLeft size={16} aria-hidden="true" />
+          </TooltipButton>
         </div>
         {/* Folded, the sidebar is a rail of icons that keeps each wish's counts (Q03). */}
         <div className="sidebar-content">

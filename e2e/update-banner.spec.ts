@@ -108,16 +108,14 @@ test("the update banner names each build, unfolds what it holds, and its × dism
       .boundingBox();
     expect(head!.height).toBeLessThan(40);
   }
-  // The banner takes its own row above the app: no control of the toolbar lies under it, the load slider's notches
-  // first (laid over the app, it took their clicks).
-  const box = await banner.boundingBox();
-  const load = await page.locator(".operating-load").boundingBox();
-  expect(load!.y).toBeGreaterThanOrEqual(box!.y + box!.height);
-  for (const notch of ["minimal", "overclock", "auto"])
-    await page
-      .locator(`.operating-load-notch[data-notch="${notch}"]`)
-      .click({ trial: true, timeout: 2_000 });
-  if (process.env.UPDATE_SHOTS)
+  // The banner floats at the top of the app, over the content and out of the layout flow: nothing below moves when it
+  // shows or goes.
+  await expect(banner).toHaveCSS("position", "fixed");
+  const sidebarBefore = await page.locator(".sidebar").boundingBox();
+  const mainBefore = await page.locator(".main-shell").boundingBox();
+  expect(sidebarBefore!.y).toBe(0);
+  expect(mainBefore!.y).toBe(0);
+  if (process.env.UPDATE_SHOTS) {
     for (const theme of ["dark", "light"]) {
       await page.evaluate((v) => localStorage.setItem("djinn.theme", v), theme);
       await page.reload();
@@ -125,7 +123,20 @@ test("the update banner names each build, unfolds what it holds, and its × dism
       await banner.screenshot({
         path: path.join(shots, `update-banner-${theme}.png`),
       });
+      await page.screenshot({
+        path: path.join(shots, `update-banner-open-${theme}.png`),
+      });
+      await page.locator(".sidebar-toggle").click();
+      await expect(page.locator(".wish-app")).toHaveClass(/sidebar-collapsed/);
+      await page.screenshot({
+        path: path.join(shots, `update-banner-folded-${theme}.png`),
+      });
+      await page.locator(".sidebar-toggle").click();
+      await expect(page.locator(".wish-app")).not.toHaveClass(
+        /sidebar-collapsed/,
+      );
     }
+  }
 
   // The details of the ready Djinn: the tasks it adds, then the commits it lacks of the running one, folded.
   await parts.nth(0).getByRole("button", { name: "Details" }).click();
@@ -149,11 +160,13 @@ test("the update banner names each build, unfolds what it holds, and its × dism
     other.getByRole("button", { name: "Install and restart" }),
   ).toBeVisible();
 
-  // Dismissed, the ready Djinn and the side branch's build go, and stay gone after a reload.
+  // Dismissed, the ready Djinn and the side branch's build go, and stay gone after a reload; nothing below moved.
   await parts.nth(0).getByRole("button", { name: "Dismiss" }).click();
   await expect(parts).toHaveCount(2);
   await other.getByRole("button", { name: "Dismiss" }).click();
   await expect(parts).toHaveCount(1);
+  expect(await page.locator(".sidebar").boundingBox()).toEqual(sidebarBefore);
+  expect(await page.locator(".main-shell").boundingBox()).toEqual(mainBefore);
   await page.reload();
   await expect(parts).toHaveCount(1);
   await expect(parts.first().locator(".update-banner-text")).toContainText(

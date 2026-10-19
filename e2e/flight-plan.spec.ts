@@ -123,7 +123,7 @@ const lampOf = (wishId: string, title: string) => {
 
 // The page header's row is the window's toolbar's, its breadcrumbs where the page's content starts, past the
 // sidebar or its rail, past the traffic lights in the macOS window, where the row is the lights' and the gauge
-// hangs from it. The toolbar holds only the sidebar's toggle until the creation page brings Back (P23).
+// hangs from it. The sidebar's toggle sits in .sidebar-brand; the toolbar holds only Back on the creation page (P23).
 // fits is false where the header is narrower than its content: the operating-load gauge does not narrow (as on
 // feat/wails-go's topbar), and pushes the actions past the window's edge.
 async function assertHeaderChrome(
@@ -133,7 +133,7 @@ async function assertHeaderChrome(
   fits = true,
 ) {
   const pageHeader = page.locator(".page-header");
-  const appToolbar = page.locator(".app-toolbar");
+  const sidebarBrand = page.locator(".sidebar-brand");
   // The sidebar's width glides for 180 ms when it folds: the breadcrumbs reach their place at its end.
   const breadcrumbs = pageHeader.locator(".breadcrumbs");
   await expect
@@ -141,19 +141,19 @@ async function assertHeaderChrome(
     .toBeCloseTo(left, 0);
   const headerBox = await pageHeader.boundingBox();
   const breadcrumbsBox = await breadcrumbs.boundingBox();
-  const toggleBox = await appToolbar
-    .locator(".app-toolbar-toggle")
-    .boundingBox();
+  const brandBox = await sidebarBrand.boundingBox();
+  const toggleBox = await sidebarBrand.locator(".sidebar-toggle").boundingBox();
   expect(headerBox).not.toBeNull();
   expect(breadcrumbsBox).not.toBeNull();
+  expect(brandBox).not.toBeNull();
   expect(toggleBox).not.toBeNull();
   expect(breadcrumbsBox!.x).toBeCloseTo(left, 0);
   await expect(pageHeader).toHaveCSS("height", "64px");
-  expect(toggleBox).toMatchObject({ width: size, height: size });
-  const rowCenter = toggleBox!.y + toggleBox!.height / 2;
-  expect(
-    Math.abs(rowCenter - (breadcrumbsBox!.y + breadcrumbsBox!.height / 2)),
-  ).toBeLessThan(1);
+  expect(toggleBox!.y).toBeGreaterThanOrEqual(brandBox!.y);
+  expect(toggleBox!.y + toggleBox!.height).toBeLessThanOrEqual(
+    brandBox!.y + brandBox!.height,
+  );
+  const rowCenter = breadcrumbsBox!.y + breadcrumbsBox!.height / 2;
   const actions = pageHeader.locator(".topbar-actions");
   if (await actions.count()) {
     const actionsBox = await actions.boundingBox();

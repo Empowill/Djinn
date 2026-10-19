@@ -50,14 +50,10 @@ const djinn = createDjinn(djinnTransport(window.location.origin));
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <DjinnProvider djinn={djinn}>
-      <div className="window">
-        <UpdateBanner />
-        <div className="window-app">
-          <LeadTerminalFrame>
-            <WishApp />
-          </LeadTerminalFrame>
-        </div>
-      </div>
+      <UpdateBanner />
+      <LeadTerminalFrame>
+        <WishApp />
+      </LeadTerminalFrame>
     </DjinnProvider>
   </React.StrictMode>,
 );
