@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -976,7 +977,7 @@ func TestLeadCircleAndMigration(t *testing.T) {
 
 	home := t.TempDir()
 	wishes := &Wishes{Store: st, Home: home}
-	lead := &LeadService{Wishes: wishes}
+	lead := &LeadService{Wishes: wishes, UserHome: t.TempDir(), Path: t.TempDir()}
 
 	// 1. Fresh circle: lead defaults to claude-sonnet-5-5; every other row is "Same as lead" (empty).
 	initRes, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
@@ -1121,16 +1122,25 @@ func TestLeadCircleProvidersAndModels(t *testing.T) {
 	userHome := t.TempDir()
 	binDir := t.TempDir()
 
-	writeExecutable := func(name, script string) {
+	writeExecutable := func(name, shScript, cmdScript string) {
 		t.Helper()
 		p := filepath.Join(binDir, name)
-		if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+		content := shScript
+		if runtime.GOOS == "windows" {
+			p += ".cmd"
+			content = cmdScript
+		}
+		if err := os.WriteFile(p, []byte(content), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	writeExecutable("claude", "#!/bin/sh\nexit 0\n")
-	writeExecutable("codex", "#!/bin/sh\nexit 0\n")
-	writeExecutable("agy", "#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf 'Available models:\\n\\n  gemini-4-argon-high\\n  gemini-3.8-flash-high (default)\\n  unpriced-experimental-model\\n'\n  exit 0\nfi\nexit 0\n")
+	writeExecutable("claude", "#!/bin/sh\nexit 0\n", "@exit /b 0\r\n")
+	writeExecutable("codex", "#!/bin/sh\nexit 0\n", "@exit /b 0\r\n")
+	writeExecutable(
+		"agy",
+		"#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf 'Available models:\\r\\n\\r\\n  \\r  gemini-4-argon-high\\r\\n  gemini-3.8-flash-high (default)\\r\\n  unpriced-experimental-model\\r\\n'\n  exit 0\nfi\nexit 0\n",
+		"@echo off\r\nif not \"%~1\"==\"models\" exit /b 0\r\necho Available models:\r\necho.\r\necho   gemini-4-argon-high\r\necho   gemini-3.8-flash-high (default)\r\necho   unpriced-experimental-model\r\nexit /b 0\r\n",
+	)
 
 	// Sign in Claude and Antigravity, leave Codex unsigned.
 	if err := os.MkdirAll(filepath.Join(userHome, ".claude"), 0o755); err != nil {
