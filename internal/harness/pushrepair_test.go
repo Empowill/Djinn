@@ -108,7 +108,11 @@ func TestSpawn_PushRepair(t *testing.T) {
 		if got, _ := in.integration(t, in.get(t, repair.GetId())); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 			t.Errorf("the repair's integration %v; want committed", got)
 		}
-		// The running work is told to take the repaired branch (tellRepaired): it goes on, and ends.
+		// The running work is not told to merge or rebase: it goes on once released, and ends.
+		if got := in.told(t, busy); len(got) != 0 {
+			t.Errorf("busy told %q after the repair merged; want nothing", got)
+		}
+		in.release(t, busy.GetId())
 		in.ended(t, busy.GetId())
 	})
 	// While Djinn's own correction repairs the red push checks, the lead's repair of them is refused, naming it; a repair

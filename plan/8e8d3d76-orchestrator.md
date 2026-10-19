@@ -489,23 +489,6 @@ lead spends its tokens on mechanical work.
   branch, and a push refused")
 - [x] A code conflict or red tests start a correction worker, part of the same azima; after N attempts, a question.
   (TestCorrect, TestAnswerIntegration)
-- [x] Running workers take the repaired branch (W184, decision Q41 B, 17/10/2026): once a repair's work is in, checked,
-  and no correction repairs the branch any more, each running work worker of the wish whose branch lacks commits of
-  the integration branch gets one message (journaled `harness/repaired`): merge it now, its commits' subjects listed
-  (20 at most, newest first), settle any conflict with your own changes in mind, run the tests you touched, go on.
-  Djinn never merges in a worker's worktree; the message waits while a tool call of the worker has no result (the pump
-  holds it, `message.betweenTurns`), and goes once the call returns. A merge with no repair before it tells nobody.
-  (TestTellRepaired)
-- [x] A restarted worker first rebases its branch onto its target (W250, 17/10/2026): whenever Djinn starts a worker
-  again on its session (a continue, a resume after a usage limit, a restart or a wish's pause, a wake of the
-  Lamplighter or after an idle stream), and its branch lacks commits of the branch its work merges into (`laneOf`), the
-  first line of its prompt asks it to rebase onto that branch, W184's list of what came in below: commit or
-  `git rebase --autostash`, settle conflicts with its changes in mind, run the tests it touched. A worker resumed after
-  a pause of `PauseRebaseAfter` (15 min) or more gets it as a message between two turns (journaled `harness/rebase`).
-  Merges alone bring nothing to take: no line. The events say "asked to rebase … onto …", then, after a tool's result
-  or at the worker's end, "rebased <branch> onto <target> (at …): <from> → <to>" (or "merged" when it merged). Djinn
-  never rebases itself; read-only, watcher, question, ifrit, correction and review workers are not asked.
-  (TestContinue_RebasesFirst, TestResume_RebasesPastThreshold, TestRebaseText)
 - [x] Work not committed is never merged nor committed blindly: before a task's merge, a correction worker's
   included, Djinn reads its worktree (`git status --porcelain`, untracked files included, `.gitignore` applying);
   with changes, a review worker starts in that worktree, part of the same azima, of the task's provider, the task's

@@ -165,12 +165,10 @@ type lane struct {
 
 // integrateLane merges the work of l: while a correction worker repairs the branch, only its own work, the rest waiting
 // for it; otherwise the work waiting as one batch, then the work that merges alone, one at a time, until a correction
-// starts. Each committed batch checks whether the push is due. A repair's work in, and none after it, the running
-// workers are told to merge the branch (tellRepaired). It returns the batches that moved the branch.
+// starts. Each committed batch checks whether the push is due. It returns the batches that moved the branch.
 func (h *Harness) integrateLane(ctx context.Context, l *lane) []*mergedBatch {
 	var merged []*mergedBatch
-	var repairs []string // the repairs whose work moved the branch in this pass (repaired.go)
-	commit := func(batch []*planv1.Task) bool {
+	commit := func(batch []*planv1.Task) {
 		committed, mb := h.integrateBatch(ctx, l.wish, l.project, batch)
 		if committed {
 			h.pushIfDue(ctx, l.wish.GetId(), l.project)
@@ -178,7 +176,6 @@ func (h *Harness) integrateLane(ctx context.Context, l *lane) []*mergedBatch {
 				merged = append(merged, mb)
 			}
 		}
-		return mb != nil
 	}
 	if l.branch == "" {
 		for _, t := range l.tasks {
@@ -212,9 +209,7 @@ func (h *Harness) integrateLane(ctx context.Context, l *lane) []*mergedBatch {
 			own := slices.IndexFunc(queue, func(t *planv1.Task) bool { return repairWork(t, tasks) && tried[t.GetId()] < 2 })
 			if own >= 0 {
 				tried[queue[own].GetId()] = 2
-				if commit(queue[own : own+1]) {
-					repairs = append(repairs, queue[own].GetCode())
-				}
+				commit(queue[own : own+1])
 				continue
 			}
 			h.waitForRepair(ctx, queue, l.branch, repair)
@@ -239,10 +234,6 @@ func (h *Harness) integrateLane(ctx context.Context, l *lane) []*mergedBatch {
 		}
 		tried[queue[i].GetId()] = 2
 		commit(queue[i : i+1])
-	}
-	// Green again: the repair's work is in, with the work that waited for it, and no other repair began.
-	if len(repairs) > 0 && ctx.Err() == nil && h.repairOn(ctx, l.wish, l.project, l.branch) == nil {
-		h.tellRepaired(ctx, l.wish, l.project, l.branch, repairs)
 	}
 	return merged
 }

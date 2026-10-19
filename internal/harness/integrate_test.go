@@ -624,6 +624,36 @@ func TestMergeAndTest(t *testing.T) {
 			t.Errorf("committed, W1 still says the check %q", got.GetCheck())
 		}
 	})
+
+	// A merge into the integration branch sends no message to a running worker (W431).
+	t.Run("sends no message to a running worker", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		running := in.mustSpawn(t, in.wishID, "Running", "wait\ntext running", nil)
+		in.until(t, running.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
+		w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"})
+		in.pass(t, 0)
+		if got := in.states(t, w2); got != "W2 COMMITTED" {
+			t.Fatalf("merge: %s", got)
+		}
+		if got := in.told(t, running); len(got) != 0 {
+			t.Errorf("told %q after a merge into %s; want nothing", got, in.branch)
+		}
+		in.release(t, running.GetId())
+		in.ended(t, running.GetId())
+	})
+}
+
+// told are the messages the task's worker was given, in their order.
+func (in *integration) told(t *testing.T, task *planv1.Task) []string {
+	t.Helper()
+	var texts []string
+	for _, e := range in.events(t, task) {
+		if e.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_MESSAGE {
+			texts = append(texts, e.GetText())
+		}
+	}
+	return texts
 }
 
 func TestMoveBranch(t *testing.T) {
