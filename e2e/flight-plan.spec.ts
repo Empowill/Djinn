@@ -29,8 +29,8 @@ const wishes = (): Wish[] =>
 
 // A wish whose workers finished, as an export carries it: a Claude task with its cost, a Codex one with tokens only,
 // a note about the first task, a line of journal, and a question still open.
-const at = "2026-10-08T09:10:00Z";
 const lampOf = (wishId: string, title: string) => {
+  const at = new Date().toISOString();
   const w1 = randomUUID();
   const azimaId = randomUUID();
   return {
