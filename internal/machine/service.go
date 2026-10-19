@@ -48,6 +48,11 @@ func WithDiskFolders(fn func() []*machinev1.DiskFolder) HandlerOption {
 	return func(s *service) { s.diskFolders = fn }
 }
 
+// WithDiskItems sets the function returning the known caches and stores on the machine, biggest first.
+func WithDiskItems(fn func() []*machinev1.DiskItem) HandlerOption {
+	return func(s *service) { s.diskItems = fn }
+}
+
 // Handler returns the Connect handler of MachineService on m, and its path prefix. running counts the workers that
 // run now, uses lists what each one uses; nil counts and lists none.
 func Handler(m *Monitor, running func() int, uses func() []*machinev1.WorkerUse, opts ...HandlerOption) (string, http.Handler) {
@@ -69,17 +74,30 @@ type service struct {
 	intervals   func(cutoff time.Time) []*machinev1.GateInterval
 	network     func() *timestamppb.Timestamp
 	diskFolders func() []*machinev1.DiskFolder
+	diskItems   func() []*machinev1.DiskItem
 }
 
 func (s *service) disk(snap Snapshot) *machinev1.Disk {
 	var folders []*machinev1.DiskFolder
-	if s.diskFolders != nil {
+	var items []*machinev1.DiskItem
+	switch {
+	case s.diskFolders != nil && s.diskItems != nil:
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			items = s.diskItems()
+		}()
 		folders = s.diskFolders()
+		<-done
+	case s.diskFolders != nil:
+		folders = s.diskFolders()
+	case s.diskItems != nil:
+		items = s.diskItems()
 	}
-	if snap.Disk == nil && len(folders) == 0 {
+	if snap.Disk == nil && len(folders) == 0 && len(items) == 0 {
 		return nil
 	}
-	out := &machinev1.Disk{Folders: folders}
+	out := &machinev1.Disk{Folders: folders, Items: items}
 	if d := snap.Disk; d != nil {
 		out.Path = d.Path
 		out.TotalBytes = d.Total

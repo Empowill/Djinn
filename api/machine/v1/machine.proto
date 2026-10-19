@@ -117,6 +117,9 @@ message Disk {
   uint64 available_bytes = 3;
   // The main folders that use the disk, biggest first, with their size.
   repeated DiskFolder folders = 4;
+  // Known caches and stores on the machine, biggest first, with the command that cleans each, what it frees and its
+  // risk. Djinn never runs a cleanup command: it only displays it.
+  repeated DiskItem items = 5;
 }
 
 // DiskFolder is a folder measured on disk, with its size in bytes.
@@ -125,6 +128,44 @@ message DiskFolder {
   string path = 1;
   // Size of its files on disk, in bytes.
   uint64 size_bytes = 2;
+}
+
+// DiskRisk is what happens when a DiskItem's cleanup command runs.
+enum DiskRisk {
+  // Not set.
+  DISK_RISK_UNSPECIFIED = 0;
+  // Nothing is lost and nothing needs to be redone (dangling Docker images, unreferenced pnpm packages, unused uv
+  // cache entries).
+  DISK_RISK_SAFE = 1;
+  // Nothing is lost, but the next build or install takes time or network again (Go build and module caches, Docker
+  // build cache and unused images, npm, pip).
+  DISK_RISK_REBUILD = 2;
+  // What is removed does not come back (anonymous Docker volumes, JetBrains local history).
+  DISK_RISK_LOSS = 3;
+}
+
+// DiskItem is a known cache or store on the machine, with the command to copy to clean it, what it frees and its risk.
+message DiskItem {
+  // Identifier of the item (go-build, go-isolated, go-mod, docker-builder, docker-images, docker-volumes,
+  // docker-dangling, jetbrains, pnpm, pip, uv, npm).
+  string kind = 1;
+  // Path or source read on the machine (e.g. ~/.cache/go-build, docker builder).
+  string path = 2;
+  // Size on disk, in bytes.
+  uint64 size_bytes = 3;
+  // Space that the cleanup command frees, in bytes; 0 when unknown (reclaimable_unknown is true).
+  uint64 reclaimable_bytes = 4;
+  // Whether the space freed cannot be known without running the command (pnpm store prune, uv cache prune).
+  bool reclaimable_unknown = 5;
+  // What happens when the cleanup command runs.
+  DiskRisk risk = 6;
+  // Command to copy to clean the item; Djinn never runs it.
+  string command = 7;
+  // Count of sub-items when relevant (e.g. number of isolated *-go-build caches).
+  int32 count = 8;
+  // True when created by Djinn or its workers (e.g. isolated *-go-build caches), so the window shows it on the Djinn
+  // side rather than under Machine.
+  bool djinn = 9;
 }
 
 // Gpu is a graphics processor of the machine.

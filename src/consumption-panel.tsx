@@ -22,16 +22,19 @@ import {
   type Task,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
-import type {
-  CommandCost,
-  Disk,
-  GateInterval,
-  MachinePoint,
-  MachineSeries,
-  MachineServiceSeriesResponse,
-  WorkerSeries,
+import {
+  type CommandCost,
+  type Disk,
+  type DiskItem,
+  DiskRisk,
+  type GateInterval,
+  type MachinePoint,
+  type MachineSeries,
+  type MachineServiceSeriesResponse,
+  type WorkerSeries,
 } from "../gen/ts/machine/v1/machine_pb";
 import { jump } from "./attention";
+import { CopyButton } from "./copy-command";
 import {
   type CommandLine,
   type GateLine,
@@ -799,13 +802,218 @@ const WorkerHeatmap = memo(function WorkerHeatmap({
   );
 });
 
-// The main folders that use the disk, biggest first, with their size; measured by the server.
+const GIB_BYTES = 1024 ** 3;
+const DISK_TRIM_BYTES = 30 * GIB_BYTES;
+const DISK_FULL_BYTES = 10 * GIB_BYTES;
+
+function diskItemTitle(item: DiskItem): string {
+  switch (item.kind) {
+    case "go-build":
+      return t("consumption.disk_item_go_build");
+    case "go-isolated":
+      return t("consumption.disk_item_go_isolated", {
+        count: item.count || 1,
+      });
+    case "go-mod":
+      return t("consumption.disk_item_go_mod");
+    case "docker-builder":
+      return t("consumption.disk_item_docker_builder");
+    case "docker-images":
+      return t("consumption.disk_item_docker_images");
+    case "docker-volumes":
+      return t("consumption.disk_item_docker_volumes");
+    case "jetbrains":
+      return t("consumption.disk_item_jetbrains");
+    case "pnpm":
+      return t("consumption.disk_item_pnpm");
+    case "pip":
+      return t("consumption.disk_item_pip");
+    case "uv":
+      return t("consumption.disk_item_uv");
+    case "npm":
+      return t("consumption.disk_item_npm");
+    default:
+      return item.kind;
+  }
+}
+
+function diskItemNote(item: DiskItem): string {
+  switch (item.kind) {
+    case "go-build":
+      return t("consumption.disk_item_go_build_note");
+    case "go-isolated":
+      return t("consumption.disk_item_go_isolated_note");
+    case "go-mod":
+      return t("consumption.disk_item_go_mod_note");
+    case "docker-builder":
+      return t("consumption.disk_item_docker_builder_note");
+    case "docker-images":
+      return t("consumption.disk_item_docker_images_note");
+    case "docker-volumes":
+      return t("consumption.disk_item_docker_volumes_note");
+    case "jetbrains":
+      return t("consumption.disk_item_jetbrains_note");
+    case "pnpm":
+      return t("consumption.disk_item_pnpm_note");
+    case "pip":
+      return t("consumption.disk_item_pip_note");
+    case "uv":
+      return t("consumption.disk_item_uv_note");
+    case "npm":
+      return t("consumption.disk_item_npm_note");
+    default:
+      return "";
+  }
+}
+
+function DiskRiskBadge({ risk }: { risk: DiskRisk }) {
+  if (risk === DiskRisk.SAFE) {
+    return (
+      <span
+        className="resource-disk-risk risk-safe"
+        title={t("consumption.disk_risk_safe_sub")}
+      >
+        <svg
+          className="resource-disk-icon"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+        >
+          <path d="M8 1.5 13.5 4v4c0 3-2.4 5.4-5.5 6.5C4.9 13.4 2.5 11 2.5 8V4z" />
+          <path d="m5.5 8 1.8 1.8L10.8 6.3" />
+        </svg>
+        {t("consumption.disk_risk_safe")}
+      </span>
+    );
+  }
+  if (risk === DiskRisk.LOSS) {
+    return (
+      <span
+        className="resource-disk-risk risk-loss"
+        title={t("consumption.disk_risk_loss_sub")}
+      >
+        <svg
+          className="resource-disk-icon"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+        >
+          <path d="M8 2 14.5 13.5h-13z" />
+          <path d="M8 6.5v3.2M8 11.6v.1" />
+        </svg>
+        {t("consumption.disk_risk_loss")}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="resource-disk-risk risk-rebuild"
+      title={t("consumption.disk_risk_rebuild_sub")}
+    >
+      <svg
+        className="resource-disk-icon"
+        viewBox="0 0 16 16"
+        aria-hidden="true"
+      >
+        <path d="M13 8a5 5 0 1 1-1.5-3.6" />
+        <path d="M13 2.5v2.5h-2.5" />
+      </svg>
+      {t("consumption.disk_risk_rebuild")}
+    </span>
+  );
+}
+
+function formatReclaimable(bytes: number, unknown: boolean): string {
+  if (unknown && bytes > 0) {
+    return t("consumption.disk_frees_plus_unknown", {
+      size: formatValue("memory", bytes),
+    });
+  }
+  if (unknown) {
+    return t("consumption.disk_frees_unknown");
+  }
+  return t("consumption.disk_frees", {
+    size: formatValue("memory", bytes),
+  });
+}
+
+function DiskItemRow({
+  item,
+  showRisk = false,
+}: {
+  item: DiskItem;
+  showRisk?: boolean;
+}) {
+  const title = diskItemTitle(item);
+  const note = diskItemNote(item);
+  const size = Number(item.sizeBytes);
+  const reclaim = Number(item.reclaimableBytes);
+  const freedText = item.reclaimableUnknown
+    ? "?"
+    : formatValue("memory", reclaim);
+  return (
+    <div className="resource-disk-item-row" role="listitem" title={note}>
+      <div className="resource-disk-item-main">
+        <span className="resource-disk-item-name">{title}</span>
+        <code className="resource-disk-item-path">{item.path}</code>
+      </div>
+      <span className="resource-disk-size">{formatValue("memory", size)}</span>
+      <span className="resource-disk-freed">{freedText}</span>
+      {showRisk && <DiskRiskBadge risk={item.risk} />}
+      {item.command && (
+        <div className="resource-disk-cmd">
+          <code>{item.command}</code>
+          <CopyButton text={item.command} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function isMachineFolderPath(path: string): boolean {
+  return (
+    path.endsWith("/.cache/go-build") ||
+    path.endsWith("/.npm") ||
+    path.endsWith("/go/pkg/mod")
+  );
+}
+
+function sumIndependentFolders(
+  folders: { path: string; sizeBytes: bigint }[],
+): number {
+  const paths = folders.map((f) => f.path.replace(/\/+$/, ""));
+  let sum = 0;
+  for (let i = 0; i < folders.length; i++) {
+    const p = paths[i];
+    // Skip parent aggregate folder (e.g. ~/.config/djinn) if any of its child folders is also listed.
+    const hasChild = paths.some(
+      (other, j) => j !== i && other.startsWith(`${p}/`),
+    );
+    if (!hasChild) {
+      sum += Number(folders[i].sizeBytes);
+    }
+  }
+  return sum;
+}
+
+// The whole disk bar, Djinn's folders and isolated Go caches, and the machine's caches grouped by cleanup risk (L48).
 export const DiskSection = memo(function DiskSection({
   disk,
+  initialView,
 }: {
   disk?: Disk;
+  initialView?: "djinn" | "machine";
 }) {
-  const folders = useMemo(
+  const items = useMemo(
+    () =>
+      [...(disk?.items ?? [])].sort((a, b) =>
+        b.sizeBytes > a.sizeBytes
+          ? 1
+          : b.sizeBytes < a.sizeBytes
+            ? -1
+            : a.kind.localeCompare(b.kind),
+      ),
+    [disk?.items],
+  );
+  const allFolders = useMemo(
     () =>
       [...(disk?.folders ?? [])].sort((a, b) =>
         b.sizeBytes > a.sizeBytes
@@ -816,9 +1024,168 @@ export const DiskSection = memo(function DiskSection({
       ),
     [disk?.folders],
   );
+  const djinnItems = useMemo(() => items.filter((i) => i.djinn), [items]);
+  const machineItems = useMemo(() => items.filter((i) => !i.djinn), [items]);
+  const folders = useMemo(
+    () =>
+      machineItems.length > 0
+        ? allFolders.filter((f) => !isMachineFolderPath(f.path))
+        : allFolders,
+    [allFolders, machineItems.length],
+  );
+
+  const [view, setView] = useState<"djinn" | "machine">(
+    initialView ?? (machineItems.length > 0 ? "machine" : "djinn"),
+  );
+  const activeView =
+    initialView ?? (machineItems.length === 0 ? "djinn" : view);
+
   const total = Number(disk?.totalBytes ?? 0n);
   const free = Number(disk?.availableBytes ?? 0n);
+  const used = Math.max(0, total - free);
+
+  const djinnFolderBytes = useMemo(
+    () => sumIndependentFolders(folders),
+    [folders],
+  );
+  const djinnItemBytes = useMemo(
+    () => djinnItems.reduce((acc, i) => acc + Number(i.sizeBytes), 0),
+    [djinnItems],
+  );
+  const djinnTotal = djinnFolderBytes + djinnItemBytes;
+  const machineTotal = useMemo(
+    () => machineItems.reduce((acc, i) => acc + Number(i.sizeBytes), 0),
+    [machineItems],
+  );
+
+  const segments = useMemo(() => {
+    if (total <= 0) return [];
+    let goBytes = items
+      .filter(
+        (i) =>
+          i.kind === "go-build" ||
+          i.kind === "go-isolated" ||
+          i.kind === "go-mod",
+      )
+      .reduce((acc, i) => acc + Number(i.sizeBytes), 0);
+    if (goBytes === 0) {
+      goBytes = allFolders
+        .filter((f) => f.path.endsWith("/.cache/go-build"))
+        .reduce((acc, f) => acc + Number(f.sizeBytes), 0);
+    }
+    const dockerBytes = items
+      .filter((i) => i.kind.startsWith("docker-"))
+      .reduce((acc, i) => acc + Number(i.sizeBytes), 0);
+    const playwrightBytes = folders
+      .filter((f) => f.path.includes("ms-playwright"))
+      .reduce((acc, f) => acc + Number(f.sizeBytes), 0);
+    const otherItemBytes = items
+      .filter((i) => ["jetbrains", "pnpm", "pip", "uv", "npm"].includes(i.kind))
+      .reduce((acc, i) => acc + Number(i.sizeBytes), 0);
+    const otherBytes = otherItemBytes + playwrightBytes;
+    const djinnOnlyBytes = Math.max(0, djinnFolderBytes - playwrightBytes);
+    const measured = goBytes + dockerBytes + djinnOnlyBytes + otherBytes;
+    const unmeasured = Math.max(0, used - measured);
+    return [
+      {
+        id: "go",
+        cls: "seg-go",
+        bytes: goBytes,
+        label: t("consumption.disk_seg_go", {
+          size: formatValue("memory", goBytes),
+        }),
+      },
+      {
+        id: "docker",
+        cls: "seg-docker",
+        bytes: dockerBytes,
+        label: t("consumption.disk_seg_docker", {
+          size: formatValue("memory", dockerBytes),
+        }),
+      },
+      {
+        id: "djinn",
+        cls: "seg-djinn",
+        bytes: djinnOnlyBytes,
+        label: t("consumption.disk_seg_djinn", {
+          size: formatValue("memory", djinnOnlyBytes),
+        }),
+      },
+      {
+        id: "other",
+        cls: "seg-other",
+        bytes: otherBytes,
+        label: t("consumption.disk_seg_other", {
+          size: formatValue("memory", otherBytes),
+        }),
+      },
+      {
+        id: "unmeasured",
+        cls: "seg-unmeasured",
+        bytes: unmeasured,
+        label: t("consumption.disk_seg_unmeasured", {
+          size: formatValue("memory", unmeasured),
+        }),
+      },
+      {
+        id: "free",
+        cls: "seg-free",
+        bytes: free,
+        label: t("consumption.disk_seg_free", {
+          size: formatValue("memory", free),
+        }),
+      },
+    ].filter((s) => s.bytes > 0);
+  }, [allFolders, djinnFolderBytes, folders, free, items, total, used]);
+
+  const riskGroups = useMemo(() => {
+    const specs = [
+      {
+        risk: DiskRisk.SAFE,
+        slug: "safe",
+        label: t("consumption.disk_risk_safe"),
+        sub: t("consumption.disk_risk_safe_sub"),
+      },
+      {
+        risk: DiskRisk.REBUILD,
+        slug: "rebuild",
+        label: t("consumption.disk_risk_rebuild"),
+        sub: t("consumption.disk_risk_rebuild_sub"),
+      },
+      {
+        risk: DiskRisk.LOSS,
+        slug: "loss",
+        label: t("consumption.disk_risk_loss"),
+        sub: t("consumption.disk_risk_loss_sub"),
+      },
+    ];
+    return specs
+      .map((spec) => {
+        const groupItems = machineItems.filter((i) => i.risk === spec.risk);
+        const reclaimBytes = groupItems.reduce(
+          (acc, i) => acc + Number(i.reclaimableBytes),
+          0,
+        );
+        const hasUnknown = groupItems.some((i) => i.reclaimableUnknown);
+        return {
+          ...spec,
+          items: groupItems,
+          totalLabel: formatReclaimable(reclaimBytes, hasUnknown),
+        };
+      })
+      .filter((g) => g.items.length > 0);
+  }, [machineItems]);
+
+  const safeAllCommand = useMemo(() => {
+    const cmds = machineItems
+      .filter((i) => i.risk === DiskRisk.SAFE && i.command)
+      .map((i) => i.command);
+    return cmds.join(" && ");
+  }, [machineItems]);
+
   const top = Math.max(1, Number(folders[0]?.sizeBytes ?? 0n));
+  const empty = allFolders.length === 0 && items.length === 0;
+
   return (
     <section className="resource-disk" aria-label={t("consumption.disk_title")}>
       <h4 className="resource-section-title">
@@ -832,26 +1199,148 @@ export const DiskSection = memo(function DiskSection({
           </span>
         )}
       </h4>
-      {folders.length === 0 ? (
+      {total > 0 && (
+        <>
+          <div
+            className="resource-disk-bar"
+            role="img"
+            aria-label={t("consumption.disk_used", {
+              used: formatValue("memory", used),
+              total: formatValue("memory", total),
+            })}
+          >
+            {segments.map((seg) => (
+              <span
+                key={seg.id}
+                className={`resource-disk-seg ${seg.cls}`}
+                style={{ width: `${(seg.bytes / total) * 100}%` }}
+                title={seg.label}
+              />
+            ))}
+            {total > DISK_TRIM_BYTES && (
+              <span
+                className="resource-disk-mark mark-trim"
+                style={{
+                  left: `${((total - DISK_TRIM_BYTES) / total) * 100}%`,
+                }}
+                title={t("consumption.disk_trim_mark")}
+              />
+            )}
+            {total > DISK_FULL_BYTES && (
+              <span
+                className="resource-disk-mark mark-full"
+                style={{
+                  left: `${((total - DISK_FULL_BYTES) / total) * 100}%`,
+                }}
+                title={t("consumption.disk_full_mark")}
+              />
+            )}
+          </div>
+          <div className="resource-disk-legend">
+            {segments.map((seg) => (
+              <span key={seg.id} className="resource-disk-legend-item">
+                <i
+                  className={`resource-disk-swatch ${seg.cls}`}
+                  aria-hidden="true"
+                />
+                {seg.label}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+      {empty ? (
         <p className="muted-text">{t("consumption.no_disk")}</p>
       ) : (
-        <div className="resource-disk-list" role="list">
-          {folders.map((f) => {
-            const size = Number(f.sizeBytes);
-            const share = Math.round((size / top) * 100);
-            return (
-              <div key={f.path} className="resource-disk-row" role="listitem">
-                <code className="resource-disk-path">{f.path}</code>
-                <span className="resource-share" aria-hidden="true">
-                  <span style={{ width: `${share}%` }} />
-                </span>
-                <span className="resource-disk-size">
-                  {formatValue("memory", size)}
-                </span>
+        <>
+          {machineItems.length > 0 && (
+            <div className="resource-disk-subtabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                className={`resource-disk-subtab${activeView === "djinn" ? " active" : ""}`}
+                aria-selected={activeView === "djinn"}
+                onClick={() => setView("djinn")}
+              >
+                {t("consumption.disk_tab_djinn")}{" "}
+                <b>{formatValue("memory", djinnTotal)}</b>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`resource-disk-subtab${activeView === "machine" ? " active" : ""}`}
+                aria-selected={activeView === "machine"}
+                onClick={() => setView("machine")}
+              >
+                {t("consumption.disk_tab_machine")}{" "}
+                <b>{formatValue("memory", machineTotal)}</b>
+              </button>
+            </div>
+          )}
+          {activeView === "djinn" ? (
+            <div className="resource-disk-djinn">
+              <div className="resource-disk-list" role="list">
+                {folders.map((f) => {
+                  const size = Number(f.sizeBytes);
+                  const share = Math.round((size / top) * 100);
+                  return (
+                    <div
+                      key={f.path}
+                      className="resource-disk-row"
+                      role="listitem"
+                    >
+                      <code className="resource-disk-path">{f.path}</code>
+                      <span className="resource-share" aria-hidden="true">
+                        <span style={{ width: `${share}%` }} />
+                      </span>
+                      <span className="resource-disk-size">
+                        {formatValue("memory", size)}
+                      </span>
+                    </div>
+                  );
+                })}
+                {djinnItems.map((item) => (
+                  <DiskItemRow key={item.kind} item={item} showRisk />
+                ))}
               </div>
-            );
-          })}
-        </div>
+              <p className="resource-disk-hint muted-text">
+                {t("consumption.disk_djinn_note")}
+              </p>
+            </div>
+          ) : (
+            <div className="resource-disk-machine">
+              {riskGroups.map((group) => (
+                <section
+                  key={group.slug}
+                  className={`resource-disk-group risk-${group.slug}`}
+                  aria-label={group.label}
+                >
+                  <h5 className="resource-disk-group-head">
+                    <DiskRiskBadge risk={group.risk} />
+                    <span className="resource-disk-group-sub">{group.sub}</span>
+                    <span className="resource-disk-group-total">
+                      {group.totalLabel}
+                    </span>
+                  </h5>
+                  <div className="resource-disk-group-list" role="list">
+                    {group.items.map((item) => (
+                      <DiskItemRow key={item.kind} item={item} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {safeAllCommand && (
+                <div className="resource-disk-cmd resource-disk-safe-all">
+                  <span className="resource-disk-safe-label">
+                    {t("consumption.disk_safe_all")}
+                  </span>
+                  <code>{safeAllCommand}</code>
+                  <CopyButton text={safeAllCommand} />
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </section>
   );

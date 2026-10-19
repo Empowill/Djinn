@@ -177,12 +177,17 @@ export {
   TilasmHoldReason,
   TilasmService,
 } from "@/gen/ts/plan/v1/tilasm_pb.ts";
-export { ConsumptionPanel, WorkerRow } from "@/src/consumption-panel.tsx";
+export {
+  ConsumptionPanel,
+  DiskSection,
+  WorkerRow,
+} from "@/src/consumption-panel.tsx";
 export { ResourceChart } from "@/src/resource-chart.tsx";
 export {
-  MachineService,
   CommandService,
+  DiskRisk,
   GateService,
+  MachineService,
 } from "@/gen/ts/machine/v1/machine_pb.ts";
 export {
   HOURGLASS,

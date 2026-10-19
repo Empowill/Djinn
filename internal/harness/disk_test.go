@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -407,5 +408,118 @@ func TestDiskFolders(t *testing.T) {
 	}
 	if freshLogs != 30_000 {
 		t.Errorf("after diskFoldersEvery, logs size = %d; want 30000", freshLogs)
+	}
+}
+
+// TestDiskItems (T65): DiskItems measures known machine and Djinn caches (go-build with 6h reclaimable cutoff,
+// isolated *-go-build caches marked djinn=true, go/pkg/mod, Docker via `docker system df`, JetBrains, pnpm, pip, uv,
+// npm), biggest first, and omits Docker rows when docker is absent.
+func TestDiskItems(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a fake docker is a shell script")
+	}
+	start := time.Date(2026, 10, 19, 15, 35, 0, 0, time.UTC)
+	clock := &fakeClock{at: start}
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	goBuild := filepath.Join(fakeHome, ".cache", "go-build")
+	writeFile(t, goBuild, "01/old-entry", strings.Repeat("o", 600_000))
+	writeFile(t, goBuild, "02/fresh-entry", strings.Repeat("f", 200_000))
+	oldTime := start.Add(-7 * time.Hour)
+	freshTime := start.Add(-1 * time.Hour)
+	if err := os.Chtimes(filepath.Join(goBuild, "01", "old-entry"), oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(goBuild, "02", "fresh-entry"), freshTime, freshTime); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, filepath.Join(fakeHome, ".cache", "w12-go-build"), "aa/entry", strings.Repeat("a", 300_000))
+	writeFile(t, filepath.Join(fakeHome, ".cache", "et4224-go-build"), "bb/entry", strings.Repeat("b", 200_000))
+	writeFile(t, filepath.Join(fakeHome, "go", "pkg", "mod"), "cache/download/mod.zip", strings.Repeat("m", 400_000))
+	writeFile(t, filepath.Join(fakeHome, ".cache", "JetBrains"), "GoLand/index.dat", strings.Repeat("j", 90_000))
+	writeFile(t, filepath.Join(fakeHome, ".local", "share", "pnpm"), "store/v3/pkg", strings.Repeat("p", 50_000))
+	writeFile(t, filepath.Join(fakeHome, ".cache", "pnpm"), "dlx/pkg", strings.Repeat("q", 30_000))
+	writeFile(t, filepath.Join(fakeHome, ".cache", "pip"), "http/wheel", strings.Repeat("w", 40_000))
+	writeFile(t, filepath.Join(fakeHome, ".cache", "uv"), "archive/whl", strings.Repeat("u", 30_000))
+	writeFile(t, filepath.Join(fakeHome, ".npm"), "_cacache/tar", strings.Repeat("n", 20_000))
+
+	bin := t.TempDir()
+	dockerOut := strings.Join([]string{
+		"TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE",
+		"Images          13        6         15.6GB    6.8GB (43%)",
+		"Containers      14        0         1.1GB     1.1GB (100%)",
+		"Local Volumes   20        11        3.2GB     1.1GB (34%)",
+		"Build Cache     175       0         19GB      12.9GB",
+	}, "\n")
+	writeFile(t, bin, "docker", "#!/bin/sh\n[ \"$1 $2\" = 'system df' ] && printf '%s\\n' '"+dockerOut+"'\n")
+	if err := os.Chmod(filepath.Join(bin, "docker"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	e := up(t, t.TempDir(), WithClock(clock.now))
+	got := e.h.DiskItems()
+	if len(got) != 11 {
+		t.Fatalf("DiskItems() count = %d (%v); want 11", len(got), got)
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i].GetSizeBytes() > got[i-1].GetSizeBytes() {
+			t.Errorf("DiskItems() not sorted biggest first at %d: %v > %v", i, got[i], got[i-1])
+		}
+	}
+
+	byKind := map[string]*machinev1.DiskItem{}
+	for _, item := range got {
+		byKind[item.GetKind()] = item
+	}
+
+	type wantItem struct {
+		size        uint64
+		reclaimable uint64
+		unknown     bool
+		risk        machinev1.DiskRisk
+		command     string
+		count       int32
+		djinn       bool
+	}
+	wants := map[string]wantItem{
+		"docker-builder": {19_000_000_000, 12_900_000_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "docker builder prune -f", 0, false},
+		"docker-images":  {15_600_000_000, 6_800_000_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "docker image prune -a -f", 0, false},
+		"docker-volumes": {3_200_000_000, 1_100_000_000, false, machinev1.DiskRisk_DISK_RISK_LOSS, "docker volume prune -f", 0, false},
+		"go-build":       {800_000, 600_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "find ~/.cache/go-build -type f -mmin +360 -delete", 0, false},
+		"go-isolated":    {500_000, 500_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "rm -rf ~/.cache/*-go-build", 2, true},
+		"go-mod":         {400_000, 400_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "go clean -modcache", 0, false},
+		"jetbrains":      {90_000, 90_000, false, machinev1.DiskRisk_DISK_RISK_LOSS, "rm -rf ~/.cache/JetBrains", 0, false},
+		"pnpm":           {80_000, 0, true, machinev1.DiskRisk_DISK_RISK_SAFE, "pnpm store prune", 0, false},
+		"pip":            {40_000, 40_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "pip cache purge", 0, false},
+		"uv":             {30_000, 0, true, machinev1.DiskRisk_DISK_RISK_SAFE, "uv cache prune", 0, false},
+		"npm":            {20_000, 20_000, false, machinev1.DiskRisk_DISK_RISK_REBUILD, "npm cache clean --force", 0, false},
+	}
+	for kind, w := range wants {
+		it := byKind[kind]
+		if it == nil {
+			t.Errorf("missing DiskItem kind %q", kind)
+			continue
+		}
+		if it.GetSizeBytes() != w.size || it.GetReclaimableBytes() != w.reclaimable ||
+			it.GetReclaimableUnknown() != w.unknown || it.GetRisk() != w.risk ||
+			it.GetCommand() != w.command || it.GetCount() != w.count || it.GetDjinn() != w.djinn {
+			t.Errorf("DiskItem[%q] = %+v; want %+v", kind, it, w)
+		}
+	}
+
+	// Without docker on PATH, no docker-* item is reported.
+	t.Setenv("PATH", t.TempDir())
+	clock.set(start.Add(diskFoldersEvery + time.Second))
+	noDocker := e.h.DiskItems()
+	for _, it := range noDocker {
+		if strings.HasPrefix(it.GetKind(), "docker-") {
+			t.Errorf("unexpected docker item when docker is absent: %+v", it)
+		}
+	}
+	if len(noDocker) != 8 {
+		t.Errorf("DiskItems() without docker = %d items; want 8", len(noDocker))
 	}
 }
