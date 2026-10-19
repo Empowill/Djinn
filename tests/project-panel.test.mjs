@@ -722,7 +722,8 @@ test("the Summoning Circle lists one global row per kind of worker, shows each m
   ];
   const rowChunks = html
     .split('<div class="setting-row summoning-row">')
-    .slice(1);
+    .slice(1)
+    .map((chunk) => chunk.split("</select>")[0] + "</select>");
   assert.equal(rowChunks.length, expectedLabels.length);
   expectedLabels.forEach((label, idx) => {
     assert.match(

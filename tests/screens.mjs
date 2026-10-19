@@ -410,9 +410,24 @@ export function setupMockDom() {
       this.parentNode = null;
       this.attributes = {};
       this.value = "";
+      this.selected = false;
+      this.disabled = false;
+      this.multiple = false;
+      this.selectedIndex = -1;
       this.style = { setProperty() {} };
       this.ownerDocument = globalThis.document;
       this.namespaceURI = "http://www.w3.org/1999/xhtml";
+    }
+    get options() {
+      const opts = [];
+      const collect = (el) => {
+        for (const child of el.childNodes) {
+          if (child.nodeName === "OPTION") opts.push(child);
+          else if (child.childNodes) collect(child);
+        }
+      };
+      collect(this);
+      return opts;
     }
     get children() {
       return this.childNodes.filter((c) => c.nodeType === 1);

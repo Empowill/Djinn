@@ -1,7 +1,7 @@
 // The Summoning Circle (W383, W400, W417): one row per kind of worker, global to Djinn (every project).
 // Models come from the server (live agent discovery + shared internal/usage/prices.yaml table), never a hand-written UI list.
 // Providers not signed in on this machine show greyed with their sign-in command and are never offered as choices.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   Change,
@@ -227,6 +227,14 @@ export function SummoningCircle({
   const [providers, setProviders] = useState<readonly CircleProvider[]>(
     () => initialProviders ?? DEFAULT_CIRCLE_PROVIDERS,
   );
+  const selectableModels = useMemo(
+    () =>
+      models.filter(
+        (m) =>
+          providers.find((p) => p.provider === m.provider)?.signedIn !== false,
+      ),
+    [models, providers],
+  );
   const [loaded, setLoaded] = useState(Boolean(initialRows));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -425,7 +433,7 @@ export function SummoningCircle({
       </section>
       <section className="config-box summoning-bulk">
         <UpdateModelsSection
-          models={models}
+          models={selectableModels}
           onApplied={(res) => {
             if (res.circle.length > 0) {
               setRows((prev) =>
