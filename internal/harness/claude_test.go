@@ -148,114 +148,114 @@ func TestClaudeArgs(t *testing.T) {
 	}
 }
 
-// TestScopePrefix: a worker runs under its scope's prefix (systemd-run, played by the fake), its own program found
-// first, and keeps the scope's cgroup.
-func TestScopePrefix(t *testing.T) {
-	t.Parallel()
-	env, args, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
-	record := filepath.Join(t.TempDir(), "prefix")
-	env = append(env, "DJINN_FAKE_PREFIX="+record)
-	scope := func() machine.Scope {
-		return machine.Scope{Prefix: []string{os.Args[0], "--scope", "--"}, Cgroup: "/sys/fs/cgroup/djinn-W1-0a1b2c3d.scope"}
-	}
-	w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env, Scope: scope})
-	if err != nil {
-		t.Fatal(err)
-	}
-	events := collect(w)
-	if res := w.Wait(); res.ExitCode != 0 || res.Err != nil || !slices.Contains(kinds(events), "TEXT") {
-		t.Errorf("under the prefix: %+v, %v", res, kinds(events))
-	}
-	got, err := os.ReadFile(record)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claudeArgs, err := os.ReadFile(args)
-	if err != nil {
-		t.Fatal("the agent did not run:", err)
-	}
-	if want := "--scope\n--\n" + os.Args[0] + "\n" + string(claudeArgs); string(got) != want {
-		t.Errorf("the prefix ran %q, want %q", got, want)
-	}
-	if p, ok := w.(Process); !ok || p.Cgroup() != scope().Cgroup {
-		t.Errorf("the worker's cgroup is not its scope's")
-	}
-	if _, err := (Claude{Command: "djinn-no-such-agent"}).Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Scope: scope}); err == nil ||
-		!strings.Contains(err.Error(), "djinn-no-such-agent not found in PATH") {
-		t.Errorf("a missing agent under a prefix: %v", err)
-	}
-}
-
-// TestClaudeWaitsForItsBackgroundWork (W80): claude -p stops a worker's background work still running 10 minutes
-// after its last turn unless CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS is 0; in W31 of wish Will retour beta it stopped
-// a paid run the worker watched with a monitor, and the task ended done. Every Claude worker gets it, over the value
-// of the environment Djinn runs in (not parallel: it sets that environment).
-func TestClaudeWaitsForItsBackgroundWork(t *testing.T) {
-	t.Setenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "600000")
-	env, _, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
-	environ := filepath.Join(t.TempDir(), "environ")
-	env = append(env, "DJINN_FAKE_ENVIRON="+environ)
-	w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env})
-	if err != nil {
-		t.Fatal(err)
-	}
-	collect(w)
-	if res := w.Wait(); res.ExitCode != 0 || res.Err != nil {
-		t.Fatalf("the worker ended with %+v", res)
-	}
-	b, err := os.ReadFile(environ)
-	if err != nil {
-		t.Fatal("the agent did not run:", err)
-	}
-	var got []string
-	for l := range strings.Lines(string(b)) {
-		if v, ok := strings.CutPrefix(strings.TrimRight(l, "\r\n"), "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="); ok {
-			got = append(got, v)
+// TestClaudeStart tests Claude.Start running under a systemd-run scope prefix and setting CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 (W80).
+func TestClaudeStart(t *testing.T) {
+	t.Run("scope_prefix", func(t *testing.T) {
+		env, args, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
+		record := filepath.Join(t.TempDir(), "prefix")
+		env = append(env, "DJINN_FAKE_PREFIX="+record)
+		scope := func() machine.Scope {
+			return machine.Scope{Prefix: []string{os.Args[0], "--scope", "--"}, Cgroup: "/sys/fs/cgroup/djinn-W1-0a1b2c3d.scope"}
 		}
-	}
-	if !slices.Equal(got, []string{"0"}) {
-		t.Errorf("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS in the worker's environment = %q, want [\"0\"]: claude -p stops "+
-			"the background work still running 10 minutes after the worker's last turn", got)
-	}
+		w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env, Scope: scope})
+		if err != nil {
+			t.Fatal(err)
+		}
+		events := collect(w)
+		if res := w.Wait(); res.ExitCode != 0 || res.Err != nil || !slices.Contains(kinds(events), "TEXT") {
+			t.Errorf("under the prefix: %+v, %v", res, kinds(events))
+		}
+		got, err := os.ReadFile(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claudeArgs, err := os.ReadFile(args)
+		if err != nil {
+			t.Fatal("the agent did not run:", err)
+		}
+		if want := "--scope\n--\n" + os.Args[0] + "\n" + string(claudeArgs); string(got) != want {
+			t.Errorf("the prefix ran %q, want %q", got, want)
+		}
+		if p, ok := w.(Process); !ok || p.Cgroup() != scope().Cgroup {
+			t.Errorf("the worker's cgroup is not its scope's")
+		}
+		if _, err := (Claude{Command: "djinn-no-such-agent"}).Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Scope: scope}); err == nil ||
+			!strings.Contains(err.Error(), "djinn-no-such-agent not found in PATH") {
+			t.Errorf("a missing agent under a prefix: %v", err)
+		}
+	})
+
+	t.Run("waits_for_background_work", func(t *testing.T) {
+		t.Setenv("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "600000")
+		env, _, _ := fake{provider: "claude", fixture: "success", end: "eof"}.env(t)
+		environ := filepath.Join(t.TempDir(), "environ")
+		env = append(env, "DJINN_FAKE_ENVIRON="+environ)
+		w, err := Claude{Command: os.Args[0]}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env})
+		if err != nil {
+			t.Fatal(err)
+		}
+		collect(w)
+		if res := w.Wait(); res.ExitCode != 0 || res.Err != nil {
+			t.Fatalf("the worker ended with %+v", res)
+		}
+		b, err := os.ReadFile(environ)
+		if err != nil {
+			t.Fatal("the agent did not run:", err)
+		}
+		var got []string
+		for l := range strings.Lines(string(b)) {
+			if v, ok := strings.CutPrefix(strings.TrimRight(l, "\r\n"), "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="); ok {
+				got = append(got, v)
+			}
+		}
+		if !slices.Equal(got, []string{"0"}) {
+			t.Errorf("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS in the worker's environment = %q, want [\"0\"]: claude -p stops "+
+				"the background work still running 10 minutes after the worker's last turn", got)
+		}
+	})
 }
 
-func TestClaudeWorkerStops(t *testing.T) {
+func TestClaudeStop(t *testing.T) {
 	t.Parallel()
-	env, _, _ := fake{provider: "claude", fixture: "process-dies", end: "wait"}.env(t)
-	w, err := Claude{Command: os.Args[0], Grace: 5 * time.Second}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env})
-	if err != nil {
-		t.Fatal(err)
-	}
-	<-w.Events() // started
-	start := time.Now()
-	w.Stop()
-	events := collect(w)
-	res := w.Wait()
-	if res.ExitCode == 0 || time.Since(start) > 3*time.Second {
-		t.Errorf("stopped in %v with %+v; want a prompt end on SIGTERM", time.Since(start), res)
-	}
-	if slices.Contains(kinds(events), "ERROR") || res.Err != nil {
-		t.Errorf("a stopped worker reports an error: %v, %v", kinds(events), res.Err)
-	}
-}
 
-func TestClaudeWorkerKilledAfterGrace(t *testing.T) {
-	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows kills at once: no grace to test")
-	}
-	grace := 300 * time.Millisecond
-	env, _, _ := fake{provider: "claude", fixture: "process-dies", end: "hang"}.env(t)
-	w, err := Claude{Command: os.Args[0], Grace: grace}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env})
-	if err != nil {
-		t.Fatal(err)
-	}
-	<-w.Events()
-	start := time.Now()
-	w.Stop()
-	collect(w)
-	res := w.Wait()
-	if elapsed := time.Since(start); res.ExitCode != -1 || elapsed < grace || elapsed > 5*time.Second {
-		t.Errorf("ended after %v with %+v; want killed after %v", elapsed, res, grace)
-	}
+	t.Run("stops_on_sigterm", func(t *testing.T) {
+		t.Parallel()
+		env, _, _ := fake{provider: "claude", fixture: "process-dies", end: "wait"}.env(t)
+		w, err := Claude{Command: os.Args[0], Grace: 5 * time.Second}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env})
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-w.Events() // started
+		start := time.Now()
+		w.Stop()
+		events := collect(w)
+		res := w.Wait()
+		if res.ExitCode == 0 || time.Since(start) > 3*time.Second {
+			t.Errorf("stopped in %v with %+v; want a prompt end on SIGTERM", time.Since(start), res)
+		}
+		if slices.Contains(kinds(events), "ERROR") || res.Err != nil {
+			t.Errorf("a stopped worker reports an error: %v, %v", kinds(events), res.Err)
+		}
+	})
+
+	t.Run("killed_after_grace", func(t *testing.T) {
+		t.Parallel()
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows kills at once: no grace to test")
+		}
+		grace := 300 * time.Millisecond
+		env, _, _ := fake{provider: "claude", fixture: "process-dies", end: "hang"}.env(t)
+		w, err := Claude{Command: os.Args[0], Grace: grace}.Start(t.Context(), Spec{Dir: t.TempDir(), Prompt: "x", Env: env})
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-w.Events()
+		start := time.Now()
+		w.Stop()
+		collect(w)
+		res := w.Wait()
+		if elapsed := time.Since(start); res.ExitCode != -1 || elapsed < grace || elapsed > 5*time.Second {
+			t.Errorf("ended after %v with %+v; want killed after %v", elapsed, res, grace)
+		}
+	})
 }
