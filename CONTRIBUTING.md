@@ -369,6 +369,21 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   "Djinn e2e"). Opens a window a few seconds, so it is not in `test` ([T05](plan/b6a680bf-testing.md)).
 - Tests and CI build with `-tags headless`: no window, no CGO.
 
+## Writing tests
+
+- **Behaviour, data logic and real incidents only.** Write no new test for a small visual fix (padding, spacing, an
+  icon over a letter): check it by hand with dark and light shots, the lint and the existing tests.
+- **One test per function, beside its source.** Put `<file>_test.go` beside `<file>.go` (`tests/<component>.test.mjs`
+  in the interface), one `TestFunction` with its cases in a `t.Run` table (in `internal/harness`, scenarios under the
+  method they drive), `testx.Main(m)` and shared helpers in `testmain_test.go`, and package coverage at 80 % or more.
+- **Parallel, no sleep, under 2 s.** Use `t.Parallel()` (or comment why a test is serial), a fake clock, a short tick,
+  a wake or an event wait instead of sleeping, and a plain folder or in-process replay when Git or a subprocess is not
+  under test (`go test -race -count=3`; `tools/slowtests` fails `test-go` at 10 s on Linux, 2x beside `e2e` or on CI).
+- **Unit tests for data; clean e2e specs.** Check store, pagination and ordering in Go or `tests/data-*.test.mjs`. E2e
+  specs import `e2e/test.ts`, clean their place in `afterEach`, run one theme and scroll mode unless tested, gate
+  screenshot loops behind `*_SHOTS`, keep cadence checks in `@budget`, and never call a paid model
+  ([`docs/providers.md`](docs/providers.md)).
+
 ## How we work
 
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
