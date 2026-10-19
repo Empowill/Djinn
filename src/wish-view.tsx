@@ -1533,6 +1533,7 @@ export function WishView({
                 all={allWishes}
                 readState={tasksState}
                 onRetry={retryTasks}
+                onRetryLead={() => lead()}
                 onOpenTask={(task) => to(`task-${task.id}`)}
               />
 

@@ -158,7 +158,7 @@ async function assertHeaderChrome(
   if (await actions.count()) {
     const actionsBox = await actions.boundingBox();
     expect(actionsBox).not.toBeNull();
-    // The icon actions of a wish (the flying carpet has only Talk to the Djinn and its arrow).
+    // The icon actions of a wish (the flying carpet has only Lead: the seat's chip, driven, or Talk to the Djinn).
     const iconAction = actions.locator(".page-header-action").first();
     if (await iconAction.count()) {
       const iconActionBox = await iconAction.boundingBox();
@@ -167,7 +167,7 @@ async function assertHeaderChrome(
         Math.abs(rowCenter - (iconActionBox!.y + iconActionBox!.height / 2)),
       ).toBeLessThan(1);
     }
-    // The labelled actions too: Pause, Talk to the Djinn and its arrow.
+    // The labelled actions too: Pause, and Lead (the seat's chip, or Talk to the Djinn and its arrow).
     for (const box of await actions
       .locator("button:visible")
       .evaluateAll((els) => els.map((el) => el.getBoundingClientRect())))
@@ -337,7 +337,7 @@ test("a wish's page keeps its header chrome, its tasks' tokens and price across 
       .click();
     await expect(page.locator(".hero h1")).toHaveText(lampTitle);
     const pageHeader = page.locator(".page-header");
-    // Share and Delete are icons; Pause and Talk to the Djinn keep their words. The operating-load gauge sits between.
+    // Share and Delete are icons; Pause and Lead keep their words. The operating-load gauge sits between.
     await expect(pageHeader.locator(".page-header-action")).toHaveCount(2);
     await expect(
       pageHeader.getByRole("button", { name: "Pause", exact: true }),

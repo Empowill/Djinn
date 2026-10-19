@@ -984,7 +984,7 @@ The lead Djinn drives runs on a **seat**: an agent, a model and an account, chos
 takes effect at the next batch, which carries the lead's journal like any other; the batch records its agent, model and
 account. The moves: `djinn lead move --provider codex --model <model> --account <name>` (the whole seat: an empty model
 is the agent's default, an empty account its own sign-in; without `--provider`, the current agent), or the lead's menu
-in the window (the arrow beside **Talk to the Djinn**), which lists each agent on its own sign-in then on each account,
+in the window (the chip of the lead's seat, at the top of a wish or of the flying carpet), which lists each agent on its own sign-in then on each account,
 and the model.
 
 **Which agents may lead.** Claude: its rules in `--append-system-prompt` (W131). Codex: its rules as the thread's
@@ -996,11 +996,12 @@ session that may not edit every file of its folder; `djinn lead move --provider 
 
 **A usage limit is the developer's move.** A batch that hits a limit (Claude's `rate_limit_event` `rejected`, or a
 limit in its error, as for a worker) is not tried again on the same seat: Djinn moves the lead nowhere by itself. It
-shows the limit beside **Talk to the Djinn** and first in the attention bar, with a button per seat it may move to: the
+shows the limit beside the chip of the lead's seat and first in the attention bar, with a button per seat it may move to: the
 other accounts of the same agent first (its model kept), then the other agents on their own sign-in and on each account,
 only those installed whose status command does not say signed out. A click is `LeadService.Move`: the waiting events
 go to the new seat at once. Without a move, the events, newer ones too, wait for the reset the agent gave (15 minutes
-when it gave none), then go to the same seat; **Talk to the Djinn** tries the same seat at once.
+when it gave none), then go to the same seat; **Retry**, on the batch's red line in the **Lead** journal under What runs, tries the
+same seat at once.
 
 ### Several subscriptions at once
 

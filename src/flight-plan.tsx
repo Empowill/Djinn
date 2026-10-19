@@ -6,8 +6,8 @@
 // each wish's workers running now and to come (glance.tsx), which opens the wish. The tasks of every wish have a tab
 // of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
-// The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal, the pill at the
-// bottom writes to it.
+// The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal (driven by Djinn,
+// the chip of its seat moves it instead), the pill at the bottom writes to it.
 import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 
 import {
@@ -876,6 +876,7 @@ export function FlightPlan({
                       wishesState !== "ready" ? wishesState : tasksState
                     }
                     onRetry={retryTasks}
+                    onRetryLead={() => quiet(resumeLead())}
                     onOpenWish={onOpen}
                     onOpenTask={openTask}
                   />

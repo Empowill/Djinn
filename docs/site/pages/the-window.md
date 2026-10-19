@@ -104,7 +104,9 @@ once; Large grows it. The documentation opens in the window's theme and text siz
 
 ## The flying carpet
 
-The flying carpet shows every active wish at a glance. Its head holds the load gauge and **Talk to the Djinn**. Below:
+The flying carpet shows every active wish at a glance. Its head holds the load gauge and the Djinn's own control: the
+chip of its seat ("Claude Code · opus 5.5", its menu moving it) while Djinn drives it, **Talk to the Djinn** when it runs
+in its terminal. Below:
 
 - **What waits for you**, the bar at the top, while something does: what keeps a wish from moving forward, the most
   blocking first. A click takes you to it. See [Question and move](#question-and-move).
@@ -223,7 +225,8 @@ task of the wish from the start: a task waiting far down a long wish shows witho
 Below the workers, while a batch of the driven Djinn runs or after it ends, its **Lead** journal writes one line per
 command as the batch goes, in chronological order (the running command marked by a blue dot, a command on another wish
 prefixed by that wish's code in brackets), then a gold line with the duration and cost when the batch finishes, or a red
-line with the cause when it fails.
+line with the cause when it fails. When a batch failed twice, its events wait, and its red line ends with **Retry**: a
+click sends them to a new session.
 
 On the flying carpet each wish has its title and counts, "1 running, 2 to come, 1 merging, push held, 1 repair"; a
 legend names only the marks shown. It stays in view while a long question scrolls. In a narrow page it shrinks to a

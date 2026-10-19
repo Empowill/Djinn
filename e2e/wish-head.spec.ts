@@ -1,9 +1,11 @@
 // The buttons at the top of a wish, against the real djinn up --browser (see global-setup.ts): Share writes the wish's
 // export (binary protobuf), a file the command line imports again; Talk to the Djinn on the flying carpet's header
-// resumes the one lead, the Djinn, in its terminal, on no wish (on a wish, lead-switch.spec.ts checks it). The lead is
+// resumes the one lead, the Djinn, in its terminal, on no wish (on a wish, lead-switch.spec.ts checks it); driven by
+// Djinn, a chip of the lead's seat replaces it, and a batch that failed twice is retried from its line in the side
+// journal (Decision Q115 B). The lead is
 // a fake claude on djinn's PATH that repeats what it reads. The chip beside the push strategy says where the wish's
 // work lands, in a real Git repository, and changes its branch. The trash has its own spec (wish-lifecycle.spec.ts).
-import { create, toBinary } from "@bufbuild/protobuf";
+import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
@@ -13,6 +15,8 @@ import { randomUUID } from "node:crypto";
 import {
   LeadBatchState,
   LeadServiceGetResponseSchema,
+  LeadServiceResumeRequestSchema,
+  LeadServiceResumeResponseSchema,
   Provider,
 } from "../gen/ts/plan/v1/plan_pb";
 import {
@@ -28,6 +32,8 @@ const binary = path.resolve(
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
 const session = "6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
+// UPDATE_SHOTS=1 writes the driven head and its side journal, dark and light, to test-results/e2e/driven-lead-*.png.
+const shots = path.join(__dirname, "../test-results/e2e");
 
 function djinn(...args: string[]): string {
   return execFileSync(binary, args, {
@@ -419,6 +425,125 @@ test("next to Lead, the driven lead shows the running batch, the journal and a f
     await expect(rows.nth(1)).toContainText("try 3");
     await expect(rows.nth(1)).toContainText("failed");
     await expect(rows.nth(1)).toContainText("exit status 1");
+  } finally {
+    djinn("wish", "delete", wishId);
+  }
+});
+
+test("driven, no Talk to the Djinn: the seat's chip opens the seats, and Retry on the failed line resumes the lead", async ({
+  page,
+}) => {
+  const title = `Driven retry ${randomUUID().slice(0, 8)}`;
+  const start = timestampFromDate(new Date(Date.now() - 40_000));
+  const end = timestampFromDate(new Date(Date.now() - 10_000));
+  await page.route("**/plan.v1.LeadService/Get", (route) =>
+    route.fulfill({
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          LeadServiceGetResponseSchema,
+          create(LeadServiceGetResponseSchema, {
+            driven: true,
+            seat: { provider: Provider.CLAUDE, model: "claude-opus-4-7" },
+            // The batch failed twice: its events wait for a retry.
+            startError:
+              "The Djinn's batch of 1 event(s) failed twice: exit status 1.",
+            batch: {
+              id: "b-twice",
+              state: LeadBatchState.FAILED,
+              startTime: start,
+              endTime: end,
+              provider: Provider.CLAUDE,
+              model: "claude-opus-4-7",
+              events: ["W1 merged"],
+              commands: ["djinn task get W1"],
+              attempt: 2,
+              error: "exit status 1",
+              usage: { costUsd: 0.03 },
+            },
+          }),
+        ),
+      ),
+    }),
+  );
+  const resumed: string[] = [];
+  await page.route("**/plan.v1.LeadService/Resume", (route) => {
+    const req = fromBinary(
+      LeadServiceResumeRequestSchema,
+      route.request().postDataBuffer() ?? Buffer.alloc(0),
+    );
+    resumed.push(req.wishId);
+    return route.fulfill({
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          LeadServiceResumeResponseSchema,
+          create(LeadServiceResumeResponseSchema, {
+            note: "Djinn drives the lead: the events that wait go to a new session now.",
+          }),
+        ),
+      ),
+    });
+  });
+  const wishId = await open(page, title);
+  try {
+    const actions = page.locator(".topbar-actions");
+    await expect(actions.locator(".lead-batch.failed")).toBeVisible();
+    await expect(
+      actions.getByRole("button", { name: "Talk to the Djinn", exact: true }),
+    ).toHaveCount(0);
+    await expect(actions.locator(".lead-dot")).toHaveCount(0);
+    await expect(actions.locator(".lead-batch.failed")).toContainText(
+      "try 2 failed",
+    );
+    await expect(actions).not.toContainText("Talk to the Djinn");
+
+    // The seat, in a chip; its menu moves the lead.
+    const seat = actions.getByRole("button", {
+      name: "The Djinn runs on Claude Code · opus 4.7: move it",
+    });
+    await expect(seat).toHaveText("Claude Code · opus 4.7");
+    await seat.click();
+    const menu = actions.getByRole("menu", { name: "Choose the agent" });
+    await expect(menu).toBeVisible();
+    await expect(
+      menu.getByRole("menuitem", { name: /Claude.*The Djinn runs here/ }),
+    ).toHaveAttribute("aria-current", "true");
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+
+    // Retry is on the failed line of the side journal, once.
+    const failed = page.locator(".glance .lead-side-log-line.failed");
+    await expect(failed).toHaveText("✕ exit status 1 · Retry");
+    await expect(
+      page.getByRole("button", { name: "Retry", exact: true }),
+    ).toHaveCount(1);
+    if (process.env.UPDATE_SHOTS)
+      for (const theme of ["dark", "light"]) {
+        await page.evaluate((v) => {
+          localStorage.setItem("djinn.theme", v);
+          document.documentElement.dataset.theme = v;
+        }, theme);
+        await expect(page.locator(`html[data-theme="${theme}"]`)).toHaveCount(
+          1,
+        );
+        await page.locator(".page-header").screenshot({
+          path: path.join(shots, `driven-lead-head-${theme}.png`),
+        });
+        await page.locator(".glance .lead-side-log").screenshot({
+          path: path.join(shots, `driven-lead-retry-${theme}.png`),
+        });
+        await seat.click();
+        await page.screenshot({
+          path: path.join(shots, `driven-lead-seats-${theme}.png`),
+        });
+        await page.keyboard.press("Escape");
+      }
+    await failed.getByRole("button", { name: "Retry" }).click();
+    await expect.poll(() => resumed).toEqual([wishId]);
+    await expect(page.locator(".toast")).toContainText(
+      "the events that wait go to a new session now",
+    );
   } finally {
     djinn("wish", "delete", wishId);
   }

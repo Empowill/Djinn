@@ -245,6 +245,8 @@ function LeadTerminal({
   }, [api]);
   // A lead that ended keeps its tab, after a reload too, once LeadService.Get says so; closed, it stays closed.
   const leadEnded = useData((s) => !!s.leadExit);
+  // Driven by Djinn, the lead has no terminal: the empty panel says how to talk to it instead.
+  const driven = useData((s) => !!s.leadDrive);
   useEffect(() => {
     if (!leadEnded) return;
     add({ name: LEAD });
@@ -479,7 +481,7 @@ function LeadTerminal({
               </button>
             }
           >
-            {t("terminal.none")}
+            {driven ? t("terminal.none_driven") : t("terminal.none")}
           </EmptyState>
         </div>
       )}

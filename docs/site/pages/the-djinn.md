@@ -44,8 +44,10 @@ You have three ways to reach it:
 - **Write to the Djinn**, the pill at the bottom of a wish, or of the flying carpet. Ctrl+I (Cmd+I on macOS) opens it,
   Enter sends, Shift+Enter breaks the line, Escape folds it and keeps your draft. From a wish, your words reach the
   Djinn with the wish named, whole, in the next batch, and the Djinn's eye answers in the bubble held to the pill.
-- **Talk to the Djinn**, at the top of a wish or of the flying carpet, starts a session for the waiting events when a
-  batch failed; when the Djinn runs in its terminal instead, it opens that terminal in the window, focused on that wish.
+- **Talk to the Djinn**, at the top of a wish or of the flying carpet, is there only when the Djinn runs in its
+  terminal: it opens that terminal in the window, focused on that wish. Driven by Djinn, the Djinn has no terminal to
+  open: at the top, a chip names where it runs, and a batch that failed twice is retried from its line in the **Lead**
+  journal.
 
 ## Djinn drives the lead
 
@@ -66,9 +68,9 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   [the Djinn's eye](#the-window-the-djinn-s-eye) follows the batch by its colour and its gaze (emerald while listening,
   blue with a wandering gaze while thinking, two blinks and a flare of its golden flame when done, red under a lowered
   lid when it fails), and the **Lead** journal in [What runs](#the-window-the-workers-glance) writes one line per
-  command as the batch goes, then its duration and cost when done, or the cause when it fails. Beside **Talk to the
-  Djinn**, the running batch shows since when it runs, how many events it took and its cost so far; the count beside it
-  opens the journal of past batches. A wish's **History** tab shows the batches that touched that wish, and the command
+  command as the batch goes, then its duration and cost when done, or the cause when it fails. Beside the chip of the
+  Djinn's seat, at the top, the running batch shows since when it runs, how many events it took and its cost so far; the
+  count beside it opens the journal of past batches. A wish's **History** tab shows the batches that touched that wish, and the command
   line prints the journal for every wish or for one. To read what a batch's session saw and did beyond the journal's
   summary, the command line (permitted to workers too, in read-only mode) lists the batches' sessions with their local
   time, state, cost, session, count of failed tool calls and transcript path, and shows any batch or session (by
@@ -78,10 +80,12 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   plan mode without touching the batch.
 - **Write to the Djinn** sends your words to the next batch, whole. Nothing reaches a terminal: the Djinn answers in the
   bubble held to the pill, or asks a question when a choice is yours.
-- **A failed batch** gets one new session, shown beside **Talk to the Djinn** while it retries. Failed again, it stays
-  there and its events wait: the next event, or a click on **Talk to the Djinn**, starts a session for them.
+- **A failed batch** gets one new session, shown beside the chip of the Djinn's seat while it retries. Failed again,
+  it stays there and its events wait: the next event, or **Retry** at the end of its red line in the **Lead** journal,
+  starts a session for them.
 - **Where it runs.** The Djinn runs on a seat you choose: an agent (Claude Code or Codex), a model, an account. The
-  arrow beside **Talk to the Djinn** lists each agent on its own sign-in, then on each of its accounts, and the model:
+  chip at the top of a wish or of the flying carpet names it ("Claude Code · opus 5.5"); its menu lists each agent on
+  its own sign-in, then on each of its accounts, and the model:
   one click moves the Djinn there, and the command line does the same. The next batch starts there with the lead's
   journal, and the Djinn stays there until you move it again. Antigravity cannot lead yet.
 - **A limit is your call.** When the Djinn hits its subscription's limit, Djinn does not move it by itself: the
