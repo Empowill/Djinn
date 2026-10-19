@@ -416,7 +416,13 @@ func extractConfig(ctx context.Context, home, folder, sha string) (string, error
 	if err := extractConfigs(ctx, home, folder, sha); err != nil {
 		return "", err
 	}
-	digest, _ := cachedDigest(folder, sha)
+	if digest, ok := cachedDigest(folder, sha); ok {
+		return filepath.Join(ConfigCache(home), digest), nil
+	}
+	digest, _, err := listConfigTree(ctx, folder, sha)
+	if err != nil {
+		return "", err
+	}
 	return filepath.Join(ConfigCache(home), digest), nil
 }
 

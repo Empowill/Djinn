@@ -358,3 +358,27 @@ func TestProjectConfigNotices(t *testing.T) {
 		t.Errorf("listed %v", listed)
 	}
 }
+
+// TestExtractConfig (W448): an empty SHA fails rather than returning the cache root; a read after the digest memo was
+// cleared still returns the commit's extracted folder.
+func TestExtractConfig(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	home := t.TempDir()
+	p := configProject(t, map[string]string{".agents/settings.txtpb": "setup: \"echo team\"\n"})
+	dir := p.GetDirectory()
+	if got, err := extractConfig(ctx, home, dir, ""); err == nil || got != "" {
+		t.Errorf("empty sha: got (%q, %v), want an error", got, err)
+	}
+	sha := gitIn(t, dir, "rev-parse", "refs/remotes/origin/main")
+	first, err := extractConfig(ctx, home, dir, sha)
+	if err != nil || first == ConfigCache(home) || !strings.HasPrefix(first, ConfigCache(home)) {
+		t.Fatalf("first extract: (%q, %v), want a folder inside %s", first, err, ConfigCache(home))
+	}
+	configDigests.Lock()
+	delete(configDigests.m, sha+"\x00"+dir)
+	configDigests.Unlock()
+	if again, err := extractConfig(ctx, home, dir, sha); err != nil || again != first {
+		t.Errorf("after clearing configDigests: (%q, %v), want (%q, nil)", again, err, first)
+	}
+}
