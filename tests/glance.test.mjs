@@ -755,4 +755,27 @@ test("the glance shows the driven lead's side journal: running on this wish, on 
     failedBatch,
     /<div class="lead-side-log-line">› wish show W-qol<\/div><div class="lead-side-log-line">› task get W440<\/div><div class="lead-side-log-line failed">✕ failed twice: the lead&#x27;s account work is no longer Claude&#x27;s<\/div>/,
   );
+  // A first failure retries alone: no Retry on its line.
+  assert.doesNotMatch(failedBatch, /lead-side-log-retry/);
+
+  // Failed twice, its events wait (Decision Q115 B): Retry on the failed line, nowhere else.
+  const waiting = {
+    id: "b-5",
+    state: s.LeadBatchState.FAILED,
+    commands: ["djinn task get W440"],
+    error: "exit status 1",
+  };
+  const retry = s.renderToStaticMarkup(
+    h(s.LeadSideLog, { batch: waiting, waiting: true, onRetry() {} }),
+  );
+  assert.match(
+    retry,
+    /<div class="lead-side-log-line failed">✕ exit status 1 · <button type="button" class="lead-side-log-retry" title="Sends the events this batch took, and those after them, to a new session of the Djinn">Retry<\/button><\/div><\/div>$/,
+  );
+  assert.equal(retry.match(/Retry</g).length, 1);
+  // Without a way to retry, the line says the failure only.
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(h(s.LeadSideLog, { batch: waiting, waiting: true })),
+    /lead-side-log-retry/,
+  );
 });

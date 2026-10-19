@@ -131,6 +131,7 @@ export {
   batchCost,
   leadTrouble,
   recordedAgent,
+  seatLabel,
   seatName,
 } from "@/src/wish-head.tsx";
 export { UpdateBannerView, readyKey } from "@/src/update-banner.tsx";

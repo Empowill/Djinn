@@ -1,7 +1,7 @@
 // The wish's head, around its title: its description, a few lines the person edits in place (a click, saved when the
 // field is left), the Lead button, split: Lead resumes the one lead, focused on the wish, the arrow beside it lists the
-// agents found on this machine, to start a lead of another one from the brief, and opens their setup; where its work
-// lands; and where Djinn last pushed its integration branches.
+// agents found on this machine, to start a lead of another one from the brief, and opens their setup (driven by Djinn,
+// a chip of the lead's seat instead, its menu moving it); where its work lands; and where Djinn last pushed its integration branches.
 import {
   Check,
   ChevronDown,
@@ -36,6 +36,7 @@ import {
   defaultModel,
   effectivePushStrategy,
   gitReason,
+  shortModel,
   usd,
   when,
 } from "./data/format";
@@ -86,6 +87,22 @@ export function seatName(
   return seat.account
     ? `${agent} · ${accountLabel(seat.account, accounts)}`
     : agent;
+}
+
+// seatLabel names where the lead Djinn drives runs, for its chip: the agent, its account, then the model it was set
+// to, else the one its last batch ran on that agent; no model when it runs the agent's default.
+export function seatLabel(drive: LeadDrive): string {
+  const provider = drive.seat?.provider || Provider.CLAUDE;
+  const last = drive.batch;
+  const model =
+    drive.seat?.model ||
+    ((last?.provider || Provider.CLAUDE) === provider ? last?.model : "") ||
+    "";
+  const seat = seatName(
+    { provider, account: drive.seat?.account ?? "" },
+    drive.accounts,
+  );
+  return model ? `${seat} · ${shortModel(model)}` : seat;
 }
 
 // recordedAgent is the agent of the wish's recorded lead; none without a session, except Antigravity. A lead stored without one ran Claude.
@@ -309,7 +326,7 @@ export function LeadJournal({ batches }: { batches: readonly LeadBatch[] }) {
                   <>
                     {" "}
                     <span className="lead-batch-failed">
-                      {t("wish.lead_batch_failed_badge")}
+                      {t("wish.lead_batch_failed")}
                     </span>
                   </>
                 )}
@@ -338,6 +355,9 @@ export function LeadJournal({ batches }: { batches: readonly LeadBatch[] }) {
   );
 }
 
+// LeadButton is Lead at the top of a wish or of the flying carpet. Lead in its terminal: Talk to the Djinn resumes it,
+// the arrow beside lists the agents. Driven by Djinn, there is no terminal to open (Decision Q115 B): a chip names the
+// seat and its menu moves the lead; a failed batch is retried from the lead's journal on the side (LeadSideLog).
 export function LeadButton({
   recorded,
   agents: given,
@@ -358,14 +378,16 @@ export function LeadButton({
   journalOpen?: boolean;
   // On a wish, the lead resumes focused on it; on the flying carpet, on no wish: the tooltips say which.
   focused?: boolean;
-  // The lead could not start, or ended: a dot on Lead, its tooltip saying why (leadTrouble).
+  // The lead could not start, or ended: a dot on Lead, its tooltip saying why (leadTrouble). Not shown driven: a
+  // failed batch says why on the side.
   trouble?: { text: string; failed: boolean };
   loadAgents: () => Promise<Agent[]>;
   onLead: () => void;
   onPick: (provider: Provider) => void;
   // Opens the setup of the agents: install one, sign it in.
   onSetup?: () => void;
-  // While Djinn drives the lead, the menu moves it to another agent, model or account instead (onMove).
+  // While Djinn drives the lead, the seat's chip replaces Lead, and its menu moves it to another agent, model or
+  // account (onMove).
   drive?: LeadDrive;
   onMove?: (seat: SeatChoice) => void;
 }) {
@@ -422,65 +444,82 @@ export function LeadButton({
   const pastBatches = (drive?.journal ?? []).filter(
     (b) => b.state !== LeadBatchState.RUNNING,
   );
+  const menu = open && (
+    <LeadMenu
+      agents={found}
+      recorded={recorded}
+      focused={focused}
+      onPick={(provider) => {
+        setOpen(false);
+        onPick(provider);
+      }}
+      onSetup={
+        onSetup &&
+        (() => {
+          setOpen(false);
+          onSetup();
+        })
+      }
+      drive={drive}
+      onMove={
+        onMove &&
+        ((seat) => {
+          setOpen(false);
+          onMove(seat);
+        })
+      }
+    />
+  );
   return (
     <>
-      <div className="split-button" ref={root}>
-        <button
-          className="button secondary small"
-          title={
-            trouble?.text ??
-            (focused ? t("wish.resume_detail") : t("plan.talk_detail"))
-          }
-          onClick={onLead}
-        >
-          <Terminal size={14} />
-          <span>{t("wish.resume")}</span>
-          {trouble && (
-            <span
-              className={trouble.failed ? "lead-dot failed" : "lead-dot"}
-              aria-hidden="true"
-            />
-          )}
-        </button>
-        <button
-          className="button secondary small split-arrow"
-          aria-label={t("wish.lead_agents")}
-          title={
-            drive ? t("wish.lead_seats_detail") : t("wish.lead_agents_detail")
-          }
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          <ChevronDown size={14} />
-        </button>
-        {open && (
-          <LeadMenu
-            agents={found}
-            recorded={recorded}
-            focused={focused}
-            onPick={(provider) => {
-              setOpen(false);
-              onPick(provider);
-            }}
-            onSetup={
-              onSetup &&
-              (() => {
-                setOpen(false);
-                onSetup();
-              })
+      {drive ? (
+        // Driven, no terminal to open (Decision Q115 B): the seat alone, its menu moves the lead.
+        <div className="lead-seat-wrap" ref={root}>
+          <button
+            className="button secondary small lead-seat"
+            aria-label={t("wish.lead_seat", { seat: seatLabel(drive) })}
+            title={t("wish.lead_seats_detail")}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            <span>{seatLabel(drive)}</span>
+            <ChevronDown size={14} />
+          </button>
+          {menu}
+        </div>
+      ) : (
+        <div className="split-button" ref={root}>
+          <button
+            className="button secondary small"
+            title={
+              trouble?.text ??
+              (focused ? t("wish.resume_detail") : t("plan.talk_detail"))
             }
-            drive={drive}
-            onMove={
-              onMove &&
-              ((seat) => {
-                setOpen(false);
-                onMove(seat);
-              })
-            }
-          />
-        )}
-      </div>
+            onClick={onLead}
+          >
+            <Terminal size={14} />
+            <span>{t("wish.resume")}</span>
+            {trouble && (
+              <span
+                className={trouble.failed ? "lead-dot failed" : "lead-dot"}
+                aria-hidden="true"
+              />
+            )}
+          </button>
+          <button
+            className="button secondary small split-arrow"
+            aria-label={t("wish.lead_agents")}
+            title={t("wish.lead_agents_detail")}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            <ChevronDown size={14} />
+          </button>
+          {menu}
+        </div>
+      )}
       {activeBatch && <LeadBatchStatus batch={activeBatch} />}
       {pastBatches.length > 0 && (
         <div className="lead-journal-wrap" ref={journalRoot}>

@@ -493,6 +493,61 @@ test("while Djinn drives the lead, its menu moves it to another agent, account o
   );
 });
 
+test("driven, Lead has no Talk to the Djinn: a chip names the seat, its menu moves the lead (Decision Q115 B)", () => {
+  const accounts = [
+    {
+      name: "work",
+      provider: s.Provider.CLAUDE,
+      label: "Work",
+      configDirectory: "/home/d/.claude-work",
+    },
+  ];
+  const drive = {
+    seat: {
+      provider: s.Provider.CLAUDE,
+      model: "claude-opus-5-5",
+      account: "",
+    },
+    accounts,
+  };
+  const markup = s.renderToStaticMarkup(
+    h(s.LeadButton, {
+      agents: [],
+      loadAgents: async () => [],
+      trouble: { text: "The Djinn could not start: boom", failed: true },
+      drive,
+      onLead() {},
+      onPick() {},
+      onMove() {},
+    }),
+  );
+  assert.doesNotMatch(markup, /Talk to the Djinn/);
+  assert.doesNotMatch(markup, /split-button|lead-dot/);
+  assert.match(
+    markup,
+    /<div class="lead-seat-wrap"><button class="button secondary small lead-seat" aria-label="The Djinn runs on Claude Code · opus 5\.5: move it" title="Move the Djinn to another agent, model or account: [^"]*" aria-haspopup="menu" aria-expanded="false"><span>Claude Code · opus 5\.5<\/span><svg/,
+  );
+
+  // The seat's model, else the one its last batch ran on that agent, else none: the agent's default.
+  assert.equal(
+    s.seatLabel({
+      seat: { provider: s.Provider.CLAUDE, model: "", account: "work" },
+      accounts,
+      batch: { provider: s.Provider.CLAUDE, model: "claude-sonnet-5-5" },
+    }),
+    "Claude Code · Work · sonnet 5.5",
+  );
+  assert.equal(
+    s.seatLabel({
+      seat: { provider: s.Provider.CODEX, model: "", account: "" },
+      accounts,
+      batch: { provider: s.Provider.CLAUDE, model: "claude-sonnet-5-5" },
+    }),
+    "Codex",
+  );
+  assert.equal(s.seatLabel({ accounts: [] }), "Claude Code");
+});
+
 test("next to Lead, Djinn shows the running batch (since when, events, cost) and a failed batch's retry", () => {
   const nowSec = BigInt(Math.floor(Date.now() / 1000) - 12);
   const running = {
@@ -538,7 +593,9 @@ test("next to Lead, Djinn shows the running batch (since when, events, cost) and
     h(s.LeadBatchStatus, { batch: failed }),
   );
   assert.match(failMarkup, /class="lead-batch failed"/);
-  assert.match(failMarkup, /try 2 failed · Talk to the Djinn retries/);
+  // The failure says what it is; Retry is on its line in the lead's journal on the side (Decision Q115 B).
+  assert.match(failMarkup, /try 2 failed<\/span>/);
+  assert.doesNotMatch(failMarkup, /Talk to the Djinn/);
   assert.match(failMarkup, /≈ \$0\.30/);
   assert.match(failMarkup, /rate limit exceeded/);
 });

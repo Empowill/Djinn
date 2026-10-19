@@ -1210,10 +1210,23 @@ function GlanceLine({
 type Present = GlanceState | "watch" | "merging" | "queued" | "held" | "repair";
 
 // LeadSideLog is the driven lead's journal on the side (Decision Q112, L44 v3): one line per command as the batch runs,
-// then the end of the batch (duration and cost) or the cause of its failure (the batch's error field as it is).
-export function LeadSideLog({ batch: given }: { batch?: LeadBatch }) {
+// then the end of the batch (duration and cost) or the cause of its failure (the batch's error field as it is). Once a
+// batch failed twice, its events wait (the drive's failure, LeadService.Get's start_error): the failed line carries
+// Retry (Decision Q115 B), which sends them to a new session (onRetry, LeadService.Resume).
+export function LeadSideLog({
+  batch: given,
+  waiting: givenWaiting,
+  onRetry,
+}: {
+  batch?: LeadBatch;
+  // The failed batch's events wait for a retry; read from the store when not given.
+  waiting?: boolean;
+  onRetry?: () => void;
+}) {
   const fromStore = useOptionalData((s) => s.leadDrive?.batch, undefined);
+  const failure = useOptionalData((s) => s.leadStartError ?? "", "");
   const batch = given ?? fromStore;
+  const waiting = givenWaiting ?? failure !== "";
   if (!batch) return null;
   const running = batch.state === LeadBatchState.RUNNING;
   const done = batch.state === LeadBatchState.DONE;
@@ -1253,6 +1266,19 @@ export function LeadSideLog({ batch: given }: { batch?: LeadBatch }) {
       {failed && (
         <div className="lead-side-log-line failed">
           {`✕ ${batch.error || t("wish.lead_batch_failed")}`}
+          {waiting && onRetry && (
+            <>
+              {" · "}
+              <button
+                type="button"
+                className="lead-side-log-retry"
+                title={t("glance.lead_retry_detail")}
+                onClick={onRetry}
+              >
+                {t("glance.lead_retry")}
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1268,6 +1294,7 @@ export function Glance({
   batch,
   readState,
   onRetry,
+  onRetryLead,
   onOpenWish,
   onOpenTask,
 }: {
@@ -1279,6 +1306,8 @@ export function Glance({
   batch?: LeadBatch;
   readState?: ReadState;
   onRetry?: () => void;
+  // Retries the driven lead's batch that failed twice, from its line in the lead's journal.
+  onRetryLead?: () => void;
   onOpenWish?: (wishId: string) => void;
   onOpenTask?: (task: Task) => void;
 }) {
@@ -1433,7 +1462,7 @@ export function Glance({
           />
         ))}
       </div>
-      <LeadSideLog batch={batch} />
+      <LeadSideLog batch={batch} onRetry={onRetryLead} />
       {held && (
         <HeldDialog
           wish={held.wish}

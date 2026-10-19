@@ -87,8 +87,9 @@ next release, [v0.1.2](docs/releases/v0.1.2.md); the rest ships in v0.1.1.
   own worktree. Azimas can be renamed, wait as drafts, and move between wishes. [Guide](docs/user-guide.md#a-wish)
 - **One Djinn for every wish.** A single agent session sees every active wish, so it spots duplicate or conflicting
   work. It starts from `djinn brief`, a summary Djinn writes without a model, with its safe read, Git and `djinn`
-  commands pre-authorized and its notes built into the binary (`djinn lead notes`). **Talk to the Djinn** opens it in
-  the window's terminal, and the pill **Write to the Djinn** (Cmd/Ctrl+I) sends it a word _(next: v0.1.1 calls them
+  commands pre-authorized and its notes built into the binary (`djinn lead notes`). Djinn drives it in a fresh session
+  per batch of events, with no terminal (a chip at the top names where it runs, and the side journal retries a failed
+  batch); the pill **Write to the Djinn** (Cmd/Ctrl+I) sends it a word _(next: v0.1.1 calls them
   **Lead** and **Write to the lead**)_.
   [Guide](docs/user-guide.md#the-djinn)
 - **Questions with a clear call to action.** The Djinn says nothing for you in its terminal: a report, a doubt, a

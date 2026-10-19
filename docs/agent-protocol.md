@@ -59,7 +59,7 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
 - **The Djinn starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
   and antigravity: run `djinn brief`, then continue from what it says (`StartLine` in
   `internal/plan/newlead.go`). Nothing in it is about one agent or a wish's state: the Djinn on another agent than the
-  last one takes over from the brief, without the old session. In the window, the arrow beside **Talk to the Djinn** lists
+  last one takes over from the brief, without the old session. In the window, the arrow beside **Talk to the Djinn** (the Djinn in its terminal) lists
   the agents found on this machine (`UiService.GetEnvironment`: `claude`, `codex`, `agy`), those missing shown
   disabled; picking the agent the Djinn last ran on resumes it (claude by session id, antigravity with `agy --continue` in the
   Djinn's folder as the folder's most recent conversation), another starts the Djinn anew on that agent in its

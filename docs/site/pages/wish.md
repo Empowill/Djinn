@@ -99,7 +99,8 @@ Beside it:
 - **Tilasms**: the material that explains the wish.
 - **For agents**, last and discreet: the notes the Djinn and the workers left for one another.
 
-At the top: **Talk to the Djinn**, focused on this wish; **Pause** or **Resume**; **Share**; the wish's
+At the top: the chip of the Djinn's seat, while Djinn drives it (**Talk to the Djinn**, focused on this wish, when it
+runs in its terminal); **Pause** or **Resume**; **Share**; the wish's
 [push strategy](#push-strategy) and the branch its work lands in; and the bin, to delete it.
 
 A wish has a link of its own, which opens Djinn on it from a browser, a chat or a note, and starts Djinn if it does not

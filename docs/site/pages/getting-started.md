@@ -44,9 +44,10 @@ The app is Djinn; its lead is **the Djinn**. It leads every active wish: it talk
 starts workers on them, asks the questions and keeps the plans true. By default, Djinn drives it without a terminal:
 each batch of events starts a fresh Claude Code or Codex session, and its journal records every batch.
 
-- Beside **Talk to the Djinn**, at the top of a wish or of the flying carpet, the window shows the running batch (since
-  when, how many events, its cost) and the count of past batches in the journal.
-- The arrow beside it, **Choose the agent**, moves the Djinn to another agent, account or model for the next batch.
+- At the top of a wish or of the flying carpet, a chip names where the Djinn runs ("Claude Code · opus 5.5"); its menu
+  moves the Djinn to another agent, account or model for the next batch.
+- Beside it, the window shows the running batch (since when, how many events, its cost) and the count of past batches
+  in the journal. A batch that failed twice is retried from its red line in the **Lead** journal, under What runs.
 - **Write to the Djinn**, the pill at the bottom of a wish, sends it a word about that wish without leaving the page
   (Ctrl+I, or Cmd+I on macOS), and its answer appears in the bubble held to the pill.
 

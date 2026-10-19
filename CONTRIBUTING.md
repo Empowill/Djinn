@@ -324,7 +324,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 - One lead, the Djinn, leads every wish, in the window's terminal tab "The Djinn". `djinn lead set <session-id> [--provider <agent>]
   [--directory <folder>]` records its session; `djinn lead get` shows it; `djinn lead resume` resumes it, starting
   Djinn if needed, and `--wish-id <wish-id>` shows the wish and focuses the lead on it (the wish's Talk to the Djinn button does the
-  same). A second `djinn up` brings the window to the front. `djinn lead tell "…" [--wish-id <wish-id>]` writes to the
+  same, the lead in its terminal; driven, Retry on a failed batch's line in the side journal). A second `djinn up` brings the window to the front. `djinn lead tell "…" [--wish-id <wish-id>]` writes to the
   lead in its terminal as if you typed it there, line breaks kept: it waits while you type there or a choice is on
   screen; about a wish, it starts with "About wish <title> (<id>):". It never starts the lead, nor types into a shell.
 - `djinn wish route "<request>" --wish-id <wish-id> --ask`: a request that is not about the wish becomes a card, without a
