@@ -316,71 +316,86 @@ func (in *integration) states(t *testing.T, tasks ...*planv1.Task) string {
 // portable: the integration's smoke on Windows (CONTRIBUTING.md).
 func TestCommitABatch(t *testing.T) {
 	t.Parallel()
-	in := integrating(t)
-	old := in.tip(t)
-	w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
-	w2 := in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(t *planv1.Task) { t.Worktree = "" })
-
-	// The wish recorded, when it was made, the project's reference branch: the one this copy is on.
-	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
-	if err != nil || plan.IntegrationBranchOf(wish, in.projectID) != in.branch || in.branch == "" {
-		t.Fatalf("the wish's integration branches: %v, %v; want %s", wish.GetIntegrationBranches(), err, in.branch)
+	// Two tasks finished, W2 without a worktree of its own, then one pass. Each subtest makes its own: go test counts
+	// no parallel subtest in its parent's time, and each stays under slowtests' bar on a slow Windows runner (W492).
+	batch := func(t *testing.T) (in *integration, old string, w1, w2 *planv1.Task) {
+		t.Helper()
+		in = integrating(t)
+		old = in.tip(t)
+		w1 = in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"})
+		w2 = in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(t *planv1.Task) { t.Worktree = "" })
+		in.pass(t, 0) // No wait: neither an hour nor a count.
+		return in, old, w1, w2
 	}
 
-	in.pass(t, 0) // No wait: neither an hour nor a count.
-	if got := in.states(t, w1, w2); got != "W1 COMMITTED, W2 COMMITTED" {
-		t.Fatalf("at once: %s", got)
-	}
-	tip := in.tip(t)
-	commits := in.commits(t)
-	if len(commits) != 1 || commits[0].GetOldSha() != old || commits[0].GetNewSha() != tip ||
-		!slices.Equal(commits[0].GetTaskIds(), []string{w1.GetId(), w2.GetId()}) {
-		t.Fatalf("journal: %v", commits)
-	}
-	for _, task := range []*planv1.Task{w1, w2} {
-		if got, _ := in.integration(t, task); got.GetSha() != tip || got.GetBranch() != in.branch {
-			t.Errorf("%s's integration %v; the batch's commit %s", task.GetCode(), got, tip)
+	t.Run("commits the batch at once", func(t *testing.T) {
+		t.Parallel()
+		in, old, w1, w2 := batch(t)
+		// The wish recorded, when it was made, the project's reference branch: the one this copy is on.
+		wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+		if err != nil || plan.IntegrationBranchOf(wish, in.projectID) != in.branch || in.branch == "" {
+			t.Fatalf("the wish's integration branches: %v, %v; want %s", wish.GetIntegrationBranches(), err, in.branch)
 		}
-	}
-	got, texts := in.integration(t, w1)
-	want := []string{
-		"integrating into " + in.branch + ", with W1, W2",
-		"merged " + w1.GetBranch(),
-		"checking W1, W2: test (test)",
-		"committed into " + in.branch + " as " + got.GetSha()[:8] + ", with W1, W2; your checkout of it, " + in.repo + ", follows",
-	}
-	if !slices.Equal(texts, want) {
-		t.Errorf("W1's events:\n%s\nwant\n%s", strings.Join(texts, "\n"), strings.Join(want, "\n"))
-	}
-	// Each task's work, committed on its branch, then merged without fast-forward, in the order they ended.
-	if out := in.git(t, in.repo, "log", "--format=%s", "--first-parent", old+".."+tip); out != strings.Join([]string{
-		"Merge branch '" + w2.GetBranch() + "' into " + in.branch,
-		"Merge branch '" + w1.GetBranch() + "' into " + in.branch,
-	}, "\n") {
-		t.Errorf("the branch's history:\n%s", out)
-	}
-	if out := in.git(t, in.repo, "log", "--format=%s", "-1", w2.GetBranch()); out != "Work of W2" {
-		t.Errorf("W2's branch ends with %q", out)
-	}
-	// The tests ran once for the batch, in the integration worktree, never in the person's checkout, under the test
-	// gate, taken before the workers' requests (Q26).
-	wt := filepath.Join(integrationDir(in.home, in.projectID, in.wishID), "app")
-	if !slices.Equal(in.runs, []string{"test in " + wt}) || !slices.Equal(in.gates, []string{"test W1"}) || in.behind != nil {
-		t.Errorf("runs %v, gates %v, not first %v", in.runs, in.gates, in.behind)
-	}
-	// The person's checkout was clean and on the branch: it follows, clean.
-	if b, err := os.ReadFile(filepath.Join(in.repo, "app", "src", "b.txt")); err != nil || string(b) != "b\n" {
-		t.Errorf("the checkout did not follow: %q, %v", b, err)
-	}
-	if out := in.git(t, in.repo, "status", "--porcelain"); out != "" {
-		t.Errorf("the checkout is not clean: %q", out)
-	}
+		if got := in.states(t, w1, w2); got != "W1 COMMITTED, W2 COMMITTED" {
+			t.Fatalf("at once: %s", got)
+		}
+		tip := in.tip(t)
+		commits := in.commits(t)
+		if len(commits) != 1 || commits[0].GetOldSha() != old || commits[0].GetNewSha() != tip ||
+			!slices.Equal(commits[0].GetTaskIds(), []string{w1.GetId(), w2.GetId()}) {
+			t.Fatalf("journal: %v", commits)
+		}
+		for _, task := range []*planv1.Task{w1, w2} {
+			if got, _ := in.integration(t, task); got.GetSha() != tip || got.GetBranch() != in.branch {
+				t.Errorf("%s's integration %v; the batch's commit %s", task.GetCode(), got, tip)
+			}
+		}
+		got, texts := in.integration(t, w1)
+		want := []string{
+			"integrating into " + in.branch + ", with W1, W2",
+			"merged " + w1.GetBranch(),
+			"checking W1, W2: test (test)",
+			"committed into " + in.branch + " as " + got.GetSha()[:8] + ", with W1, W2; your checkout of it, " + in.repo + ", follows",
+		}
+		if !slices.Equal(texts, want) {
+			t.Errorf("W1's events:\n%s\nwant\n%s", strings.Join(texts, "\n"), strings.Join(want, "\n"))
+		}
+		// The tests ran once for the batch, in the integration worktree, never in the person's checkout, under the
+		// test gate, taken before the workers' requests (Q26).
+		wt := filepath.Join(integrationDir(in.home, in.projectID, in.wishID), "app")
+		if !slices.Equal(in.runs, []string{"test in " + wt}) || !slices.Equal(in.gates, []string{"test W1"}) || in.behind != nil {
+			t.Errorf("runs %v, gates %v, not first %v", in.runs, in.gates, in.behind)
+		}
 
-	// Nothing waits any more: the next pass does nothing.
-	in.pass(t, 0)
-	if len(in.runs) != 1 || len(in.commits(t)) != 1 {
-		t.Errorf("a pass with nothing waiting ran %v", in.runs)
-	}
+		// Nothing waits any more: the next pass does nothing.
+		in.pass(t, 0)
+		if len(in.runs) != 1 || len(in.commits(t)) != 1 {
+			t.Errorf("a pass with nothing waiting ran %v", in.runs)
+		}
+	})
+
+	t.Run("merges each branch and the checkout follows", func(t *testing.T) {
+		t.Parallel()
+		in, old, w1, w2 := batch(t)
+		tip := in.tip(t)
+		// Each task's work, committed on its branch, then merged without fast-forward, in the order they ended.
+		if out := in.git(t, in.repo, "log", "--format=%s", "--first-parent", old+".."+tip); out != strings.Join([]string{
+			"Merge branch '" + w2.GetBranch() + "' into " + in.branch,
+			"Merge branch '" + w1.GetBranch() + "' into " + in.branch,
+		}, "\n") {
+			t.Errorf("the branch's history:\n%s", out)
+		}
+		if out := in.git(t, in.repo, "log", "--format=%s", "-1", w2.GetBranch()); out != "Work of W2" {
+			t.Errorf("W2's branch ends with %q", out)
+		}
+		// The person's checkout was clean and on the branch: it follows, clean.
+		if b, err := os.ReadFile(filepath.Join(in.repo, "app", "src", "b.txt")); err != nil || string(b) != "b\n" {
+			t.Errorf("the checkout did not follow: %q, %v", b, err)
+		}
+		if out := in.git(t, in.repo, "status", "--porcelain"); out != "" {
+			t.Errorf("the checkout is not clean: %q", out)
+		}
+	})
 }
 
 // TestDropWorktree: once a task's work is committed, its worktree is removed, as djinn task clean
