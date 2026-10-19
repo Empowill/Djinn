@@ -36,6 +36,13 @@ exec cat
     { mode: 0o755 },
   ),
 );
+// Before too: the events earlier specs of this djinn left waiting for the lead make Djinn type a reminder in its
+// terminal, which reopens the lead recorded below (W426: red with the workers' order). dropLead hangs the lead up
+// and acknowledges them.
+test.beforeEach(async () => {
+  fs.rmSync(failing(), { force: true });
+  await dropLead();
+});
 test.afterEach(async () => {
   fs.rmSync(failing(), { force: true });
   await dropLead();
