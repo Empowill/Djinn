@@ -117,23 +117,36 @@ func ReferenceName(ctx context.Context, home string, project *planv1.Project) (b
 // Never the branch the copy has checked out (W227).
 func DefaultReference(ctx context.Context, dir string) (branch, ref string, err error) {
 	remote := pushRemote(ctx, dir)
+	args := []string{"for-each-ref", "--format=%(refname)%00%(symref:short)"}
 	if remote != "" {
-		if head, err := gitOut(ctx, dir, "symbolic-ref", "--quiet", "--short", "refs/remotes/"+remote+"/HEAD"); err == nil {
-			name := strings.TrimPrefix(head, remote+"/")
-			return name, "refs/remotes/" + remote + "/" + name, nil
-		}
+		args = append(args, "refs/remotes/"+remote+"/HEAD", "refs/remotes/"+remote+"/main", "refs/remotes/"+remote+"/master")
 	}
-	for _, name := range []string{"main", "master"} {
-		if remote != "" {
-			if _, err := gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/remotes/"+remote+"/"+name); err == nil {
-				return name, "refs/remotes/" + remote + "/" + name, nil
+	args = append(args, "refs/heads/main", "refs/heads/master")
+	if out, err := gitOut(ctx, dir, args...); err == nil {
+		refs := map[string]string{}
+		for _, line := range strings.Split(out, "\n") {
+			if refName, sym, ok := strings.Cut(line, "\x00"); ok && refName != "" {
+				refs[refName] = sym
 			}
 		}
-	}
-	// A repository without a remote, or whose remote holds neither yet (never fetched, or empty): the local one.
-	for _, name := range []string{"main", "master"} {
-		if _, err := gitOut(ctx, dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+name); err == nil {
-			return name, "refs/heads/" + name, nil
+		if remote != "" {
+			if sym := refs["refs/remotes/"+remote+"/HEAD"]; sym != "" {
+				name := strings.TrimPrefix(sym, remote+"/")
+				return name, "refs/remotes/" + remote + "/" + name, nil
+			}
+			for _, name := range []string{"main", "master"} {
+				r := "refs/remotes/" + remote + "/" + name
+				if _, ok := refs[r]; ok {
+					return name, r, nil
+				}
+			}
+		}
+		// A repository without a remote, or whose remote holds neither yet (never fetched, or empty): the local one.
+		for _, name := range []string{"main", "master"} {
+			r := "refs/heads/" + name
+			if _, ok := refs[r]; ok {
+				return name, r, nil
+			}
 		}
 	}
 	return "", "", errors.New("the project has no main branch: name it with djinn project set-branch, or main_branch in its settings")

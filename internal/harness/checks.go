@@ -80,12 +80,15 @@ func (h *Harness) check(ctx context.Context, projectID string, run *planv1.Check
 func (h *Harness) passedOnTree(
 	ctx context.Context, projectID string, checks []*planv1.ProjectCheck, batch []*planv1.Task, wt, sha string,
 ) []*planv1.ProjectCheck {
-	tree, err := git(ctx, wt, "rev-parse", sha+"^{tree}")
-	if err != nil || tree == "" {
+	if len(checks) == 0 {
 		return checks
 	}
 	costs, err := store.List[*machinev1.CommandCost](ctx, h.store, store.Where{"project_id": projectID})
 	if err != nil || len(costs) == 0 {
+		return checks
+	}
+	tree, err := git(ctx, wt, "rev-parse", sha+"^{tree}")
+	if err != nil || tree == "" {
 		return checks
 	}
 	return slices.DeleteFunc(slices.Clone(checks), func(c *planv1.ProjectCheck) bool {

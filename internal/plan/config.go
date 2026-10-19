@@ -438,20 +438,49 @@ func extractConfigs(ctx context.Context, home, folder string, shas ...string) er
 			_ = os.RemoveAll(p.tmp)
 		}
 	}
+	var toList []string
+	seenSha := map[string]bool{}
 	seen := map[string]bool{}
-	var files []treeFile
 	for _, sha := range shas {
-		if sha == "" {
+		if sha == "" || seenSha[sha] {
 			continue
 		}
+		seenSha[sha] = true
 		if digest, ok := cachedDigest(folder, sha); ok && (seen[digest] || exists(filepath.Join(ConfigCache(home), digest))) {
+			seen[digest] = true
 			continue
 		}
-		digest, tree, err := listConfigTree(ctx, folder, sha)
-		if err != nil {
-			clean()
-			return err
+		toList = append(toList, sha)
+	}
+	type listedTree struct {
+		digest string
+		tree   []treeFile
+		err    error
+	}
+	listed := make([]listedTree, len(toList))
+	if len(toList) == 1 {
+		listed[0].digest, listed[0].tree, listed[0].err = listConfigTree(ctx, folder, toList[0])
+	} else if len(toList) > 1 {
+		sem := make(chan struct{}, 4)
+		var wg sync.WaitGroup
+		for i, sha := range toList {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				listed[i].digest, listed[i].tree, listed[i].err = listConfigTree(ctx, folder, sha)
+			}()
 		}
+		wg.Wait()
+	}
+	var files []treeFile
+	for _, res := range listed {
+		if res.err != nil {
+			clean()
+			return res.err
+		}
+		digest, tree := res.digest, res.tree
 		dir := filepath.Join(ConfigCache(home), digest)
 		if seen[digest] || exists(dir) {
 			continue

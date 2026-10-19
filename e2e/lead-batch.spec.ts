@@ -51,7 +51,8 @@ test("a driven batch turns the eye blue with a wandering gaze, streams each comm
   const cmd1File = path.join(home, "lead-cmd1-ms.txt");
   const step2File = path.join(home, "lead-step2.gate");
   const step3File = path.join(home, "lead-step3.gate");
-  for (const f of [cmd1File, step2File, step3File])
+  const scriptFile = path.join(agentsBin(), "claude-batch.mjs");
+  for (const f of [cmd1File, step2File, step3File, scriptFile])
     fs.rmSync(f, { force: true });
 
   const suffix = randomUUID().slice(0, 8);
@@ -64,8 +65,55 @@ test("a driven batch turns the eye blue with a wandering gaze, streams each comm
   try {
     // Install a gated fake claude before unpausing/sending so we control the batch steps and measure command latency.
     fs.writeFileSync(
-      path.join(agentsBin(), "claude"),
-      `#!/bin/sh
+      scriptFile,
+      `import fs from "node:fs";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+process.stdin.resume();
+fs.writeFileSync(${JSON.stringify(cmd1File)}, String(Date.now()));
+process.stdout.write(JSON.stringify({
+  type: "assistant",
+  session_id: "019d0000-0000-7000-8000-000000000099",
+  message: {
+    model: "claude-opus-4-7",
+    content: [{ type: "tool_use", id: "toolu_1", name: "Bash", input: { command: ${JSON.stringify(`djinn wish get ${wishCode}`)} } }],
+  },
+}) + "\\n");
+while (!fs.existsSync(${JSON.stringify(step2File)})) await sleep(20);
+process.stdout.write(JSON.stringify({
+  type: "assistant",
+  session_id: "019d0000-0000-7000-8000-000000000099",
+  message: {
+    model: "claude-opus-4-7",
+    content: [{ type: "tool_use", id: "toolu_2", name: "Bash", input: { command: "djinn task list --wish W99" } }],
+  },
+}) + "\\n");
+while (!fs.existsSync(${JSON.stringify(step3File)})) await sleep(20);
+process.stdout.write(JSON.stringify({
+  type: "assistant",
+  session_id: "019d0000-0000-7000-8000-000000000099",
+  message: {
+    model: "claude-opus-4-7",
+    content: [{ type: "text", text: "Batch completed." }],
+  },
+}) + "\\n");
+process.stdout.write(JSON.stringify({
+  type: "result",
+  subtype: "success",
+  session_id: "019d0000-0000-7000-8000-000000000099",
+  total_cost_usd: 0.18,
+}) + "\\n");
+process.exit(0);
+`,
+    );
+    if (process.platform === "win32")
+      fs.writeFileSync(
+        path.join(agentsBin(), "claude.cmd"),
+        `@if "%~1"=="-p" if "%DJINN_LEAD%"=="1" (\r\n  @"${process.execPath}" "${scriptFile}"\r\n  @exit /b %ERRORLEVEL%\r\n)\r\n@echo fake-claude %* in %CD%\r\n`,
+      );
+    else
+      fs.writeFileSync(
+        path.join(agentsBin(), "claude"),
+        `#!/bin/sh
 args=""
 headless=0
 while [ $# -gt 0 ]; do
@@ -76,21 +124,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 if [ "$headless" = "1" ] && [ "$DJINN_LEAD" = "1" ]; then
-  read -r _ || true
-  date +%s%3N > "${cmd1File}"
-  echo '{"type":"assistant","session_id":"019d0000-0000-7000-8000-000000000099","message":{"model":"claude-opus-4-7","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"djinn wish get ${wishCode}"}}]}}'
-  while [ ! -f "${step2File}" ]; do sleep 0.02; done
-  echo '{"type":"assistant","session_id":"019d0000-0000-7000-8000-000000000099","message":{"model":"claude-opus-4-7","content":[{"type":"tool_use","id":"toolu_2","name":"Bash","input":{"command":"djinn task list --wish W99"}}]}}'
-  while [ ! -f "${step3File}" ]; do sleep 0.02; done
-  echo '{"type":"assistant","session_id":"019d0000-0000-7000-8000-000000000099","message":{"model":"claude-opus-4-7","content":[{"type":"text","text":"Batch completed."}]}}'
-  echo '{"type":"result","subtype":"success","session_id":"019d0000-0000-7000-8000-000000000099","total_cost_usd":0.18}'
-  exit 0
+  exec "${process.execPath}" "${scriptFile}"
 fi
 echo "fake-claude $args in $(pwd)"
 exec cat
 `,
-      { mode: 0o755 },
-    );
+        { mode: 0o755 },
+      );
 
     djinn("wish", "activate", wishId);
     await page.goto(process.env.DJINN_URL!);
@@ -146,7 +186,7 @@ exec cat
     await expect(pillEye(page)).toHaveAttribute("data-mood", "listening");
   } finally {
     fakeAgents(agentsBin());
-    for (const f of [cmd1File, step2File, step3File])
+    for (const f of [cmd1File, step2File, step3File, scriptFile])
       fs.rmSync(f, { force: true });
     djinn("wish", "pause", wishId);
   }
