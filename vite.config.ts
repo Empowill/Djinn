@@ -13,6 +13,15 @@ export default defineConfig({
   plugins: [
     react(),
     {
+      name: "djinn-splash",
+      transformIndexHtml(html) {
+        return html.replace(
+          "<!-- djinn:splash -->",
+          readFileSync("internal/docsite/splash.html", "utf8"),
+        );
+      },
+    },
+    {
       name: "renderer-csp",
       transformIndexHtml(_html, context) {
         const port = context.server?.config.server.port || 4317;

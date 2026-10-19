@@ -75,6 +75,7 @@ func (s *grimoireFS) page() ([]byte, error) {
 		if b, s.err = fs.ReadFile(s.site, index); s.err != nil {
 			return
 		}
+		b = bytes.Replace(b, []byte(SplashMarker), splashHTML, 1)
 		b = bytes.Replace(b, []byte(PagesMarker), Shells(), 1)
 		b = bytes.Replace(b, []byte(NavMarker), NavHTML(), 1)
 		s.index = bytes.Replace(b, []byte(LabelsMarker), Labels(), 1)

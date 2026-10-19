@@ -7,8 +7,16 @@ import { bundle } from "./bundle.mjs";
 const { SPLASH_ID, SPLASH_STYLE_ID, SPLASH_TEXT_ID, hideSplash, syncSplash } =
   await bundle("splash", `export * from "@/src/splash.ts";`);
 
-test("index.html inlines the waking splash with composite-only motion, system themes, and stillness rules", () => {
-  const html = fs.readFileSync("index.html", "utf8");
+test("index.html and docs/site/index.html share the waking splash with composite-only motion, system themes, and stillness rules", () => {
+  assert.ok(
+    fs.readFileSync("index.html", "utf8").includes("<!-- djinn:splash -->"),
+  );
+  assert.ok(
+    fs
+      .readFileSync("docs/site/index.html", "utf8")
+      .includes("<!-- djinn:splash -->"),
+  );
+  const html = fs.readFileSync("internal/docsite/splash.html", "utf8");
   assert.ok(html.includes(`id="${SPLASH_STYLE_ID}"`));
   assert.ok(html.includes(`id="${SPLASH_ID}"`));
   assert.ok(

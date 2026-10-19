@@ -29,6 +29,8 @@ import (
 // time, and put in the page only when it is opened. A script, not a fetch: the site opens from a file too, where a
 // fetch is refused and a script loads.
 const (
+	// SplashMarker is where index.html takes the waking splash (splash.html), shared with the window's index.html.
+	SplashMarker = "<!-- djinn:splash -->"
 	// NavMarker is where index.html takes the navigation.
 	NavMarker = "<!-- djinn:nav -->"
 	// PagesMarker is where index.html takes the pages' shells, before the Command line's.
@@ -42,6 +44,9 @@ const (
 	// commandsSlug is the Command line's page: the reference of the commands, built by Commands, not a Markdown file.
 	commandsSlug = "commands"
 )
+
+//go:embed splash.html
+var splashHTML []byte
 
 // Group is a part of the navigation: its title's key, and its pages in reading order.
 type Group struct {
@@ -110,7 +115,7 @@ var Nav = []Group{
 
 // chrome are the keys of the site's own words, outside the navigation's groups and pages: index.html marks each element
 // that shows one with data-text (its text) or data-title (its tooltip).
-var chrome = []string{"docs.title", "docs.subtitle", "docs.on_this_page", "docs.previous", "docs.next"}
+var chrome = []string{"docs.title", "docs.subtitle", "docs.on_this_page", "docs.previous", "docs.next", "app.waking"}
 
 //go:embed grimoire.html
 var grimoireTemplate string
