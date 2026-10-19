@@ -287,8 +287,10 @@ func TestWatch_BabysitPR(t *testing.T) {
 		}
 	})
 
-	// babysit-pr watcher watches every azima PR, speaking only when something needs the lead, and exits once all are merged.
-	t.Run("watches every azima pr", func(t *testing.T) {
+	// The watcher speaks of the pull requests it is given, a comma-separated list, and exits once all are merged; never
+	// of another open one, though its branch is an azima's (djinn/...): that one has its own watcher (W8: watch.sh 6
+	// spoke of PR #7).
+	t.Run("watches only the pull requests it is given", func(t *testing.T) {
 		t.Parallel()
 		const multiPRGh = `#!/bin/sh
 set -e
@@ -322,7 +324,9 @@ exec jq -r "$expr" "$file"
 		}
 
 		for name, body := range map[string]string{
-			"list.json":       `[{"number":101,"headRefName":"djinn/T1-one"},{"number":102,"headRefName":"djinn/T2-two"}]`,
+			"list.json":       `[{"number":101,"headRefName":"djinn/T1-one"},{"number":102,"headRefName":"djinn/T2-two"},{"number":103,"headRefName":"djinn/T3-three"}]`,
+			"view-103.json":   `{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":"","headRefOid":"c3","comments":[],"reviews":[]}`,
+			"checks-103.json": `[{"name":"lint","bucket":"pass"}]`,
 			"view-101.json":   `{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":"","headRefOid":"a1","comments":[],"reviews":[]}`,
 			"view-102.json":   `{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":"","headRefOid":"b2","comments":[],"reviews":[]}`,
 			"checks-101.json": `[{"name":"lint","bucket":"fail"},{"name":"test","bucket":"pass"}]`,
@@ -351,6 +355,9 @@ exec jq -r "$expr" "$file"
 		}
 		if !strings.Contains(outStr, "PR #102 · all checks pass at b2 (2)") {
 			t.Errorf("output missing PR 102 pass: %s", outStr)
+		}
+		if strings.Contains(outStr, "PR #103") {
+			t.Errorf("output speaks of PR 103, not given: %s", outStr)
 		}
 
 		// Next look: both PRs are merged.
