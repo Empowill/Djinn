@@ -209,6 +209,12 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
     const sections = page.locator(".hourglass-section");
     await expect(sections).toHaveCount(1);
     await expect(sections.first()).toHaveAttribute("id", "hourglass-machine");
+    await expect(
+      sections.first().locator(".resource-machine .resource-chart"),
+    ).toHaveCount(2);
+    await expect(
+      sections.first().locator(".resource-heatmap-group"),
+    ).toHaveCount(2);
     await expect(page.locator(`#worker-${taskId}`)).toContainText(
       "Count the grains",
     );

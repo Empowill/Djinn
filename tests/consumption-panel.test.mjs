@@ -35,11 +35,11 @@ test("the resources panel: the machine's charts, each worker's title line in ful
     ],
     projectIds: new Set(["p1"]),
   };
-  const html =
-    s.renderToStaticMarkup(h(s.ConsumptionPanel, props)) +
-    s.renderToStaticMarkup(
-      h(s.ConsumptionPanel, { ...props, initialTab: "gates" }),
-    );
+  const resourcesHtml = s.renderToStaticMarkup(h(s.ConsumptionPanel, props));
+  const gatesHtml = s.renderToStaticMarkup(
+    h(s.ConsumptionPanel, { ...props, initialTab: "gates" }),
+  );
+  const html = resourcesHtml + gatesHtml;
 
   // The header: the ranges, up to a week, the one shown pressed.
   assert.match(html, /class="consumption-panel-heading">Resource consumption</);
@@ -47,25 +47,41 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   for (const range of ["10 min", "2 h", "24 h", "7 days"])
     assert.match(html, new RegExp(`aria-pressed="false">${range}</button>`));
 
-  // The machine: CPU out of 100% and memory against the machine's, both labelled, the load limit too.
-  assert.match(html, /8 cores · 16 GB/);
-  assert.match(html, /now 62% · peak 62%/);
-  assert.match(html, /5 GB of 16 GB/);
-  assert.match(html, /class="resource-chart-ref-label"[^>]*>max 16 GB</);
-  assert.match(html, /class="resource-chart-ref-label"[^>]*>load limit 80%</);
-  assert.match(html, /class="resource-chart-ref-label"[^>]*>load limit 12 GB</);
-  assert.match(html, /class="resource-chart-tick"[^>]*>100%</);
+  // The machine: shown in the workers view (Resources) as well as Gates — CPU out of 100% and memory against the
+  // machine's, both labelled, the load limit too.
+  for (const tabHtml of [resourcesHtml, gatesHtml]) {
+    assert.match(
+      tabHtml,
+      /<section class="resource-machine" aria-label="Machine">/,
+    );
+    assert.match(tabHtml, /8 cores · 16 GB/);
+    assert.match(tabHtml, /now 62% · peak 62%/);
+    assert.match(tabHtml, /5 GB of 16 GB/);
+    assert.match(tabHtml, /class="resource-chart-ref-label"[^>]*>max 16 GB</);
+    assert.match(
+      tabHtml,
+      /class="resource-chart-ref-label"[^>]*>load limit 80%</,
+    );
+    assert.match(
+      tabHtml,
+      /class="resource-chart-ref-label"[^>]*>load limit 12 GB</,
+    );
+    assert.match(tabHtml, /class="resource-chart-tick"[^>]*>100%</);
+  }
   // Djinn apart: with everything it started, dashed, and its own process alone, dotted, both named.
   assert.match(
-    html,
+    resourcesHtml,
     /Dashed: Djinn with everything it started \(window, the Djinn&#x27;s agent, workers, gates\)/,
   );
-  assert.match(html, /Dotted: Djinn&#x27;s own process alone \(djinn up\)/);
-  assert.match(html, /<path class="resource-chart-extra dash" d="M/);
-  assert.match(html, /<path class="resource-chart-extra dot" d="M/);
+  assert.match(
+    resourcesHtml,
+    /Dotted: Djinn&#x27;s own process alone \(djinn up\)/,
+  );
+  assert.match(resourcesHtml, /<path class="resource-chart-extra dash" d="M/);
+  assert.match(resourcesHtml, /<path class="resource-chart-extra dot" d="M/);
   // Times under each chart: a few ticks of the clock.
   const ticks = [
-    ...html.matchAll(
+    ...resourcesHtml.matchAll(
       /class="resource-chart-tick"[^>]*>(\d\d?:\d\d( [AP]M)?)</g,
     ),
   ];
@@ -75,10 +91,29 @@ test("the resources panel: the machine's charts, each worker's title line in ful
   );
   // The gates held, the project of no active wish left out.
   assert.match(
-    html,
+    resourcesHtml,
     /aria-label="Gate lint \(djinn\): go tool task lint\. Waited 6m40s, held 13m20s\."/,
   );
   assert.doesNotMatch(html, /Gate test \(old\)/);
+
+  // Worker heatmaps: CPU and memory side by side, no switch.
+  assert.doesNotMatch(resourcesHtml, /resource-heatmap-switch/);
+  assert.match(
+    resourcesHtml,
+    /<div class="resource-heatmap-group cpu" role="group" aria-label="CPU"><span class="resource-heatmap-label">CPU<\/span>/,
+  );
+  assert.match(
+    resourcesHtml,
+    /<div class="resource-heatmap-group memory" role="group" aria-label="Memory"><span class="resource-heatmap-label">Memory<\/span>/,
+  );
+  assert.match(
+    resourcesHtml,
+    /class="resource-heatmap-cell cpu "[^>]*aria-label="W1: 75\.4%"/,
+  );
+  assert.match(
+    resourcesHtml,
+    /class="resource-heatmap-cell memory "[^>]*aria-label="W1: 60 MB"/,
+  );
 
   // A worker: the title line holds its code, its agent and the whole title, never cut.
   const w1 = html.slice(

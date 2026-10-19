@@ -1,6 +1,7 @@
-/* The resources panel: the machine total at the very top, then three tabs — Resources (heatmap + workers grouped by
-   wish), Gates (whole-machine CPU and RAM stacked + gates and commands), and Disk (main folders using the disk). Its
-   charts (resource-chart.tsx) draw with the series colours below, validated against both themes' surfaces. */
+/* The resources panel: the machine total at the very top, then three tabs — Resources (whole-machine CPU and RAM
+   stacked, CPU and memory worker heatmaps side by side, and workers grouped by wish), Gates (whole-machine CPU and RAM
+   stacked + gates and commands), and Disk (main folders using the disk). Its charts (resource-chart.tsx) draw with the
+   series colours below, validated against both themes' surfaces. */
 
 .consumption-panel {
   /* CPU and memory: one hue each, the same in every chart; the reference lines and Djinn's share are neutral ink. The
@@ -147,7 +148,7 @@ html[data-theme="light"] .range-pill.active {
   font-weight: 400;
 }
 
-/* The machine (Gates tab: CPU and RAM stacked one under the other) */
+/* The machine (Resources and Gates tabs: CPU and RAM stacked one under the other) */
 .resource-machine {
   background: var(--n-19);
   border: 1px solid var(--n-25);
@@ -264,12 +265,27 @@ html[data-theme="light"] .range-pill.active {
   font-size: 0.75rem;
 }
 
-/* Worker heatmap: one cell per running worker, CPU or memory as colour, its code on hover. */
+/* Worker heatmaps: CPU and memory side by side (stacked under a narrow width), one cell per running worker, its code on
+   hover. */
 .resource-heatmap {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.resource-heatmap-group {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
+  min-width: 0;
+}
+
+.resource-heatmap-label {
+  color: var(--n-a9);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .resource-heatmap-cells {
@@ -802,6 +818,7 @@ html[data-theme="light"] .resource-chart-readout {
 }
 
 @media (max-width: 900px) {
+  .resource-heatmap,
   .resource-worker-body {
     grid-template-columns: minmax(0, 1fr);
   }

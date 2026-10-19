@@ -237,9 +237,10 @@ window reads them about once a minute, and catches up as it shows.
 **Hourglass**, Ctrl+2, is where the live metrics are, as time goes by: the machine total stays at the top, with the
 time range from 10 minutes to 7 days, above three tabs.
 
-- **Resources.** A heatmap on top (one cell per running worker, coloured by CPU or memory, its code on hover), then
-  the running workers grouped by wish, watchers last in each group: each worker's project, model, time, turns, cost,
-  gate, and its own CPU and memory graphs. Its eye opens the task in its wish.
+- **Resources.** The CPU and memory of the whole machine (as in **Gates**), then CPU and memory heatmaps side by side
+  (one cell per running worker, its code on hover, stacked in a narrow page) and the running workers grouped by wish,
+  watchers last in each group: each worker's project, model, time, turns, cost, gate, and its own CPU and memory
+  graphs. Its eye opens the task in its wish.
 - **Gates.** The CPU and memory of the whole machine (one under the other: the whole machine, Djinn with everything it
   started, and Djinn alone, with the load limit), then the gates held over time and the commands grouped by project and
   by gate.
