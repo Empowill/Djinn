@@ -42,6 +42,13 @@
   // translate puts the reader's words in what root holds: the page at start, a page when it is filled.
   function translate(root) {
     if (language === "en" || !texts) return;
+    if (root === document) {
+      var waking = document.getElementById("djinn-splash-text");
+      if (waking && texts["app.waking"]) {
+        waking.textContent = texts["app.waking"];
+        waking.lang = language;
+      }
+    }
     Array.prototype.forEach.call(root.querySelectorAll("[data-text]"), function (e) {
       var text = texts[e.dataset.text];
       if (!text) return;
@@ -54,6 +61,14 @@
     Array.prototype.forEach.call(root.querySelectorAll("[data-label]"), function (e) {
       if (texts[e.dataset.label]) e.setAttribute("aria-label", texts[e.dataset.label]);
     });
+  }
+
+  // hideSplash removes the waking splash and its style sheet once the initial page's content is ready.
+  function hideSplash() {
+    var splash = document.getElementById("djinn-splash");
+    if (splash) splash.remove();
+    var style = document.getElementById("djinn-splash-style");
+    if (style) style.remove();
   }
 
   function paint() {
@@ -86,6 +101,7 @@
     script.onerror = function () {
       delete asked[slug];
       script.remove();
+      if (shown && shown.id === slug) hideSplash();
       if (done) done();
     };
     document.head.appendChild(script);
@@ -153,6 +169,7 @@
     // splash on a narrow screen, the page stays where it is.
     var current = nav.querySelector('a[aria-current="page"]');
     if (current && nav.scrollHeight > nav.clientHeight) current.scrollIntoView({ block: "nearest" });
+    if (filled) hideSplash();
   }
 
   // Once the first view has loaded, the other pages' scripts load in idle time, one after the other: a page opened

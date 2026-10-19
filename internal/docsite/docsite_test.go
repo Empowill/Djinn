@@ -38,14 +38,14 @@ func TestFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The site's page takes the Grimoire's navigation, shells and words, each once.
+	// The site's page takes the Grimoire's waking splash, navigation, shells and words, each once.
 	t.Run("site has the markers", func(t *testing.T) {
 		t.Parallel()
 		b, err := os.ReadFile(filepath.Join("..", "..", "docs", "site", "index.html"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, m := range []string{NavMarker, PagesMarker, LabelsMarker} {
+		for _, m := range []string{SplashMarker, NavMarker, PagesMarker, LabelsMarker} {
 			if n := strings.Count(string(b), m); n != 1 {
 				t.Errorf("docs/site/index.html has %s %d times, want 1", m, n)
 			}
@@ -53,10 +53,13 @@ func TestFS(t *testing.T) {
 	})
 	t.Run("index made", func(t *testing.T) {
 		t.Parallel()
-		for _, m := range []string{NavMarker, PagesMarker, LabelsMarker} {
+		for _, m := range []string{SplashMarker, NavMarker, PagesMarker, LabelsMarker} {
 			if bytes.Contains(b, []byte(m)) {
 				t.Errorf("%s is left in index.html", m)
 			}
+		}
+		if !bytes.Contains(b, []byte(`id="djinn-splash"`)) {
+			t.Error("index.html has no waking splash")
 		}
 		if bytes.Contains(b, []byte(`id="cmd-wish-make"`)) || bytes.Contains(b, []byte(`id="wish-granting-a-wish"`)) {
 			t.Error("index.html holds the pages: they are read when opened")

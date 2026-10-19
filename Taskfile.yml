@@ -50,6 +50,7 @@ tasks:
       - locales/*.json
       - gen/ts/**/*
       - index.html
+      - internal/docsite/splash.html
       - vite.config.ts
       - package.json
     generates:
