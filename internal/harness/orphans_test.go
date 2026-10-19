@@ -68,6 +68,9 @@ func records(t *testing.T, dir string) []child {
 	entries, _ := os.ReadDir(dir)
 	var cs []child
 	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
 		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
 			continue
@@ -88,6 +91,8 @@ func TestOrphansStoppedAtStart(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	run := filepath.Join(home, runDir)
+	// A temporary file of WriteAtomicNoSync, not yet renamed to <pid>.json, is no record.
+	writeFile(t, run, ".99.json.djinn-1.tmp", `{"pid":99,"start":"1","djinn":1,"djinn_start":"ended","task":"W9","kind":"watcher"}`)
 	env, _, _ := fake{provider: "claude", fixture: "success", end: "wait"}.env(t)
 	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = envProvider{Claude{Command: os.Args[0]}, env}
