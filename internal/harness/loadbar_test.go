@@ -158,7 +158,19 @@ func TestLoadBarLevels(t *testing.T) {
 			e, _, wishID := newBarEnv(t, slots)
 			most := peak(e.h)
 			tasks := e.spawnWork(t, wishID, 6)
-			settle(t, "the level's workers run", func() bool { return e.h.Running() == slots })
+			settle(t, "the level's workers run", func() bool {
+				st := e.statuses(t, tasks)
+				if e.h.Running() != slots || st[planv1.TaskStatus_TASK_STATUS_RUNNING] != slots ||
+					st[planv1.TaskStatus_TASK_STATUS_PENDING] != 6-slots {
+					return false
+				}
+				for _, tk := range tasks {
+					if got := e.get(t, tk.GetId()); got.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING && !got.GetMachineWait() {
+						return false
+					}
+				}
+				return true
+			})
 			for _, tk := range tasks {
 				got := e.get(t, tk.GetId())
 				if got.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING &&
@@ -193,7 +205,9 @@ func TestLoadBarMovesDownAndUp(t *testing.T) {
 	t.Parallel()
 	e, b, wishID := newBarEnv(t, 4)
 	tasks := e.spawnWork(t, wishID, 5)
-	settle(t, "4 run", func() bool { return e.h.Running() == 4 })
+	settle(t, "4 run", func() bool {
+		return e.h.Running() == 4 && e.statuses(t, tasks)[planv1.TaskStatus_TASK_STATUS_RUNNING] == 4
+	})
 	waiting, waitingRan := tasks[4], false
 
 	for _, step := range []struct {
@@ -217,7 +231,10 @@ func TestLoadBarMovesDownAndUp(t *testing.T) {
 		t.Run(machine.NotchName(step.notch), func(t *testing.T) {
 			b.move(e.h, step.notch, step.slots)
 			settle(t, fmt.Sprintf("%d run, %d paused", step.running, step.paused), func() bool {
-				return e.h.Running() == step.running && e.h.Paused() == step.paused
+				st := e.statuses(t, tasks)
+				return e.h.Running() == step.running && e.h.Paused() == step.paused &&
+					st[planv1.TaskStatus_TASK_STATUS_RUNNING] == step.running &&
+					st[planv1.TaskStatus_TASK_STATUS_PAUSED] == step.paused
 			})
 			most := peak(e.h)
 			time.Sleep(15 * time.Millisecond) // A few passes.
@@ -246,7 +263,12 @@ func TestLoadBarMovesDownAndUp(t *testing.T) {
 	}
 	// The newest paused first: at Minimal, the oldest runs.
 	b.move(e.h, djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, 1)
-	settle(t, "1 runs", func() bool { return e.h.Running() == 1 })
+	settle(t, "1 runs", func() bool {
+		st := e.statuses(t, tasks)
+		return e.h.Running() == 1 && e.h.Paused() == 4 &&
+			st[planv1.TaskStatus_TASK_STATUS_RUNNING] == 1 &&
+			st[planv1.TaskStatus_TASK_STATUS_PAUSED] == 4
+	})
 	if got := e.get(t, tasks[0].GetId()).GetStatus(); got != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Errorf("the oldest is %v at Minimal, want running", got)
 	}
@@ -260,7 +282,9 @@ func TestLoadBarMemoryDipPausesNoOne(t *testing.T) {
 	t.Parallel()
 	e, b, wishID := newBarEnv(t, 3)
 	tasks := e.spawnWork(t, wishID, 4)
-	settle(t, "3 run", func() bool { return e.h.Running() == 3 })
+	settle(t, "3 run", func() bool {
+		return e.h.Running() == 3 && e.statuses(t, tasks)[planv1.TaskStatus_TASK_STATUS_RUNNING] == 3
+	})
 	stop := make(chan struct{})
 	var flips sync.WaitGroup
 	flips.Go(func() {
@@ -301,8 +325,11 @@ func TestLoadBarStartByHand(t *testing.T) {
 	t.Parallel()
 	e, b, wishID := newBarEnv(t, 2)
 	tasks := e.spawnWork(t, wishID, 3)
-	settle(t, "2 run", func() bool { return e.h.Running() == 2 })
 	forced := tasks[2]
+	settle(t, "2 run", func() bool {
+		return e.h.Running() == 2 && e.statuses(t, tasks)[planv1.TaskStatus_TASK_STATUS_RUNNING] == 2 &&
+			e.get(t, forced.GetId()).GetMachineWait()
+	})
 	if got := e.get(t, forced.GetId()); !got.GetMachineWait() {
 		t.Fatalf("the third does not wait for the machine: %q", got.GetWaitReason())
 	}
@@ -312,7 +339,8 @@ func TestLoadBarStartByHand(t *testing.T) {
 	}
 	settle(t, "3 run, 1 by hand, none paused", func() bool {
 		running, byHand := counts(e.h)
-		return running == 3 && byHand == 1 && e.h.Forced() == 1 && e.h.Paused() == 0
+		return running == 3 && byHand == 1 && e.h.Forced() == 1 && e.h.Paused() == 0 &&
+			e.statuses(t, tasks)[planv1.TaskStatus_TASK_STATUS_RUNNING] == 3
 	})
 	after := e.spawnWork(t, wishID, 1)[0]
 	release := func(tk *planv1.Task) {
@@ -339,7 +367,9 @@ func TestLoadBarStartByHand(t *testing.T) {
 	b.move(e.h, djinnv1.LoadNotch_LOAD_NOTCH_HIGH, 1)
 	wish2, _ := e.wish(t, nativeFolder(t))
 	rTasks := e.spawnWork(t, wish2, 2)
-	settle(t, "1 runs", func() bool { return e.h.Running() == 1 })
+	settle(t, "1 runs", func() bool {
+		return e.h.Running() == 1 && e.get(t, rTasks[0].GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+	})
 	if _, err := e.tasks.Pause(t.Context(), connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: rTasks[0].GetId()})); err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +379,8 @@ func TestLoadBarStartByHand(t *testing.T) {
 	}
 	settle(t, "2 run, 1 by hand, none paused", func() bool {
 		running, byHand := counts(e.h)
-		return running == 2 && byHand == 1 && e.h.Paused() == 0
+		return running == 2 && byHand == 1 && e.h.Paused() == 0 &&
+			e.statuses(t, rTasks)[planv1.TaskStatus_TASK_STATUS_RUNNING] == 2
 	})
 }
 
@@ -361,7 +392,9 @@ func TestLoadBarInvestigator(t *testing.T) {
 	t.Parallel()
 	e, _, wishID := newBarEnv(t, 1)
 	tasks := e.spawnWork(t, wishID, 2)
-	settle(t, "1 runs", func() bool { return e.h.Running() == 1 })
+	settle(t, "1 runs", func() bool {
+		return e.h.Running() == 1 && e.get(t, tasks[0].GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+	})
 	most := peak(e.h)
 	q := e.asker(wishID)
 	asked := q.ask(t, "wait")
@@ -393,7 +426,9 @@ func TestLoadBarInvestigatorWaits(t *testing.T) {
 	t.Parallel()
 	e, _, wishID := newBarEnv(t, 1)
 	work := e.spawnWork(t, wishID, 1)[0]
-	settle(t, "1 runs", func() bool { return e.h.Running() == 1 })
+	settle(t, "1 runs", func() bool {
+		return e.h.Running() == 1 && e.get(t, work.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+	})
 	var holding atomic.Bool
 	holding.Store(true)
 	e.h.HeldGates(func(id string) []string {
@@ -427,7 +462,9 @@ func TestLoadBarGateHolderPausesLater(t *testing.T) {
 	t.Parallel()
 	e, b, wishID := newBarEnv(t, 2)
 	tasks := e.spawnWork(t, wishID, 2)
-	settle(t, "2 run", func() bool { return e.h.Running() == 2 })
+	settle(t, "2 run", func() bool {
+		return e.h.Running() == 2 && e.statuses(t, tasks)[planv1.TaskStatus_TASK_STATUS_RUNNING] == 2
+	})
 	var holding atomic.Bool
 	holding.Store(true)
 	e.h.HeldGates(func(string) []string {
@@ -437,9 +474,17 @@ func TestLoadBarGateHolderPausesLater(t *testing.T) {
 		return nil
 	}, nil)
 	b.move(e.h, djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL, 1)
-	settle(t, "both finish their gate", func() bool { return e.h.Running() == 2 && e.h.Paused() == 0 })
+	settle(t, "both finish their gate", func() bool {
+		return e.h.Running() == 2 && e.h.Paused() == 0 &&
+			e.statuses(t, tasks)[planv1.TaskStatus_TASK_STATUS_RUNNING] == 2
+	})
 	holding.Store(false)
-	settle(t, "the newest paused", func() bool { return e.h.Running() == 1 && e.h.Paused() == 1 })
+	settle(t, "the newest paused", func() bool {
+		st := e.statuses(t, tasks)
+		return e.h.Running() == 1 && e.h.Paused() == 1 &&
+			st[planv1.TaskStatus_TASK_STATUS_RUNNING] == 1 &&
+			st[planv1.TaskStatus_TASK_STATUS_PAUSED] == 1
+	})
 	if got := e.get(t, tasks[1].GetId()).GetStatus(); got != planv1.TaskStatus_TASK_STATUS_PAUSED {
 		t.Errorf("the newest is %v, want paused", got)
 	}
