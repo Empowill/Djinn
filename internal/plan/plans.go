@@ -231,6 +231,17 @@ func fillPlan(ctx context.Context, r store.Reader, q *planv1.Question, p *planv1
 	case IsMockupPlan(p) && p.GetRounds() > maxMockupRounds:
 		return invalid("the plan for %s gives %d rounds: at most %d", letter, p.GetRounds(), maxMockupRounds)
 	}
+	if p.GetModel() != "" {
+		prov := p.GetProvider()
+		if prov == planv1.Provider_PROVIDER_UNSPECIFIED {
+			prov = cmp.Or(ProviderForCircleModel(p.GetModel()), planv1.Provider_PROVIDER_CLAUDE)
+		}
+		norm, err := ValidateTaskModel(prov, p.GetModel())
+		if err != nil {
+			return invalid("the plan for %s: %v", letter, err)
+		}
+		p.Model = norm
+	}
 	wish, err := store.Get[*planv1.Wish](ctx, r, q.GetWishId())
 	if err != nil {
 		return err

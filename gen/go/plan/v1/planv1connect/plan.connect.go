@@ -273,6 +273,9 @@ const (
 	// TaskServiceTurnCommentsProcedure is the fully-qualified name of the TaskService's TurnComments
 	// RPC.
 	TaskServiceTurnCommentsProcedure = "/plan.v1.TaskService/TurnComments"
+	// TaskServiceUpdateModelsProcedure is the fully-qualified name of the TaskService's UpdateModels
+	// RPC.
+	TaskServiceUpdateModelsProcedure = "/plan.v1.TaskService/UpdateModels"
 	// ServeServiceRunProcedure is the fully-qualified name of the ServeService's Run RPC.
 	ServeServiceRunProcedure = "/plan.v1.ServeService/Run"
 	// ServeServiceListProcedure is the fully-qualified name of the ServeService's List RPC.
@@ -3206,6 +3209,11 @@ type TaskServiceClient interface {
 	// it can be continued (djinn task continue), or spawns a correction task in its azima whose prompt quotes each
 	// comment with its code excerpt. Each comment then records the task it went to.
 	TurnComments(context.Context, *connect.Request[v1.TaskServiceTurnCommentsRequest]) (*connect.Response[v1.TaskServiceTurnCommentsResponse], error)
+	// Change provider and model for every open task that calls a model (work, investigations, mockups, ifrits,
+	// corrections, reviews, enlighten workers) and for the Summoning Circle defaults of future spawns, scoped to a wish
+	// (--wish-id), a project (--project-id), or all. Watchers and finished tasks are skipped. Dry run by default; pass
+	// --yes to apply. Running tasks change at their next start, or right away with --now.
+	UpdateModels(context.Context, *connect.Request[v1.TaskServiceUpdateModelsRequest]) (*connect.Response[v1.TaskServiceUpdateModelsResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the plan.v1.TaskService service. By default, it uses
@@ -3373,6 +3381,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceMethods.ByName("TurnComments")),
 			connect.WithClientOptions(opts...),
 		),
+		updateModels: connect.NewClient[v1.TaskServiceUpdateModelsRequest, v1.TaskServiceUpdateModelsResponse](
+			httpClient,
+			baseURL+TaskServiceUpdateModelsProcedure,
+			connect.WithSchema(taskServiceMethods.ByName("UpdateModels")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -3403,6 +3417,7 @@ type taskServiceClient struct {
 	rank         *connect.Client[v1.TaskServiceRankRequest, v1.TaskServiceRankResponse]
 	comment      *connect.Client[v1.TaskServiceCommentRequest, v1.TaskServiceCommentResponse]
 	turnComments *connect.Client[v1.TaskServiceTurnCommentsRequest, v1.TaskServiceTurnCommentsResponse]
+	updateModels *connect.Client[v1.TaskServiceUpdateModelsRequest, v1.TaskServiceUpdateModelsResponse]
 }
 
 // Spawn calls plan.v1.TaskService.Spawn.
@@ -3530,6 +3545,11 @@ func (c *taskServiceClient) TurnComments(ctx context.Context, req *connect.Reque
 	return c.turnComments.CallUnary(ctx, req)
 }
 
+// UpdateModels calls plan.v1.TaskService.UpdateModels.
+func (c *taskServiceClient) UpdateModels(ctx context.Context, req *connect.Request[v1.TaskServiceUpdateModelsRequest]) (*connect.Response[v1.TaskServiceUpdateModelsResponse], error) {
+	return c.updateModels.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the plan.v1.TaskService service.
 type TaskServiceHandler interface {
 	// Start a worker on a new task: in a Git project, in a new worktree on its own branch. A task that cannot start
@@ -3627,6 +3647,11 @@ type TaskServiceHandler interface {
 	// it can be continued (djinn task continue), or spawns a correction task in its azima whose prompt quotes each
 	// comment with its code excerpt. Each comment then records the task it went to.
 	TurnComments(context.Context, *connect.Request[v1.TaskServiceTurnCommentsRequest]) (*connect.Response[v1.TaskServiceTurnCommentsResponse], error)
+	// Change provider and model for every open task that calls a model (work, investigations, mockups, ifrits,
+	// corrections, reviews, enlighten workers) and for the Summoning Circle defaults of future spawns, scoped to a wish
+	// (--wish-id), a project (--project-id), or all. Watchers and finished tasks are skipped. Dry run by default; pass
+	// --yes to apply. Running tasks change at their next start, or right away with --now.
+	UpdateModels(context.Context, *connect.Request[v1.TaskServiceUpdateModelsRequest]) (*connect.Response[v1.TaskServiceUpdateModelsResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -3790,6 +3815,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceMethods.ByName("TurnComments")),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceUpdateModelsHandler := connect.NewUnaryHandler(
+		TaskServiceUpdateModelsProcedure,
+		svc.UpdateModels,
+		connect.WithSchema(taskServiceMethods.ByName("UpdateModels")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceSpawnProcedure:
@@ -3842,6 +3873,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceCommentHandler.ServeHTTP(w, r)
 		case TaskServiceTurnCommentsProcedure:
 			taskServiceTurnCommentsHandler.ServeHTTP(w, r)
+		case TaskServiceUpdateModelsProcedure:
+			taskServiceUpdateModelsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -3949,6 +3982,10 @@ func (UnimplementedTaskServiceHandler) Comment(context.Context, *connect.Request
 
 func (UnimplementedTaskServiceHandler) TurnComments(context.Context, *connect.Request[v1.TaskServiceTurnCommentsRequest]) (*connect.Response[v1.TaskServiceTurnCommentsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.TurnComments is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) UpdateModels(context.Context, *connect.Request[v1.TaskServiceUpdateModelsRequest]) (*connect.Response[v1.TaskServiceUpdateModelsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TaskService.UpdateModels is not implemented"))
 }
 
 // ServeServiceClient is a client for the plan.v1.ServeService service.

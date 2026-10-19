@@ -355,6 +355,9 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 			}
 		}
 		if t.GetPriorProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
+			if providerChanged && !r.watcher {
+				t.SessionId = store.NewID()
+			}
 			t.PriorProvider = planv1.Provider_PROVIDER_UNSPECIFIED
 		}
 		if foreignModel(t.GetProvider(), t.GetModel()) && !r.watcher {
@@ -500,6 +503,9 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	providerChanged := priorProvider != planv1.Provider_PROVIDER_UNSPECIFIED && priorProvider != t.GetProvider()
 	switch {
 	case providerChanged:
+		if t.GetSessionId() != "" {
+			spec.TaskID = t.GetSessionId()
+		}
 		spec.Resume = ""
 		spec.Prompt = briefed(r, prompt, readOnly)
 		how = fmt.Sprintf(", provider changed: %s → %s, starts from its first prompt", short(priorProvider), short(t.GetProvider()))

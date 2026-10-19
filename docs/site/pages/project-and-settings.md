@@ -152,9 +152,10 @@ into the wish's branch, checked, and pushes it once its push checks pass. With n
 
 ### Changing a setting
 
-- **From the window**: the push cadence switch, the reference branch (**Change**, then **Choose**), and the watcher
-  commands you allow, in the project's configuration. Each writes your own file. The **Summoning Circle** (below the
-  Grimoire in the side panel) sets the model of each kind of worker across all projects, stored in your own settings.
+- **From the window**: the push cadence switch, the reference branch (**Change**, then **Choose**), the bulk model
+  switcher for open tasks, and the watcher commands you allow, in the project's configuration. Each writes your own file.
+  The **Summoning Circle** (below the Grimoire in the side panel) sets the model of each kind of worker across all
+  projects, stored in your own settings, and previews or switches all open tasks in one gesture.
 - **For the team**: edit the repository's file and commit it, like any change of the project, or ask the Djinn for a
   task that does.
 - **For yourself**: your own file, the window, or Djinn's command line, whose project details and project

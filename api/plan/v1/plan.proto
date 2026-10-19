@@ -5189,6 +5189,14 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Change provider and model for every open task that calls a model (work, investigations, mockups, ifrits,
+  // corrections, reviews, enlighten workers) and for the Summoning Circle defaults of future spawns, scoped to a wish
+  // (--wish-id), a project (--project-id), or all. Watchers and finished tasks are skipped. Dry run by default; pass
+  // --yes to apply. Running tasks change at their next start, or right away with --now.
+  rpc UpdateModels(TaskServiceUpdateModelsRequest) returns (TaskServiceUpdateModelsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
 }
 
 message TaskServiceSpawnRequest {
@@ -5215,7 +5223,7 @@ message TaskServiceSpawnRequest {
   // Model of the agent; by default the provider's.
   string model = 6 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
   ];
   // Most the worker may spend, in US dollars, when the provider can enforce it.
   double max_budget_usd = 7 [(buf.validate.field).double.gte = 0];
@@ -5885,7 +5893,7 @@ message TaskServiceUpdateRequest {
   // Model of the agent; empty for the provider's default.
   optional string model = 5 [
     (buf.validate.field).string.max_len = 200,
-    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
   ];
   // The azima the task belongs to: its code (T07) or its identifier. Empty: the task is part of no azima.
   optional string part_of = 6 [(buf.validate.field).string.max_len = 64];
@@ -6069,6 +6077,50 @@ message TaskServiceTurnCommentsResponse {
   Task task = 1;
   // Whether the task was continued in place (true) or a correction task was spawned (false).
   bool continued = 2;
+}
+
+message TaskServiceUpdateModelsRequest {
+  // Kind of agent; when omitted, inferred from --model.
+  Provider provider = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [5]
+  }];
+  // Model of the agent; when omitted or empty, the provider's default model.
+  optional string model = 2 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+  ];
+  // Only the open tasks of this wish.
+  string wish_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Only the open tasks of this project (and of wishes in this project).
+  string project_id = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Apply the change; by default false (dry run that previews what would change).
+  bool yes = 5;
+  // Restart running tasks right away on the new provider and model instead of waiting for their next start.
+  bool now = 6;
+}
+
+message TaskServiceUpdateModelsResponse {
+  // Human-readable summary of the dry run or applied change.
+  string text = 1;
+  // True when yes was not passed and nothing was modified.
+  bool dry_run = 2;
+  // Target provider resolved from the request.
+  Provider provider = 3;
+  // Target model resolved from the request.
+  string model = 4;
+  // Open model-calling tasks changed (or that would change in a dry run).
+  repeated Task tasks = 5;
+  // Open tasks in scope that were skipped (such as watchers).
+  repeated Task skipped = 6;
+  // Worker seats of the Summoning Circle updated (or that would be updated) for future spawns.
+  repeated WorkerSeat circle = 7;
 }
 
 // The processes an ifrit runs through Djinn, rather than in the background of its shell: a dev server, a stack. Djinn

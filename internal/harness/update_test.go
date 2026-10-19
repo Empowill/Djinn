@@ -43,6 +43,12 @@ func (s *spyProvider) lastSpec() Spec {
 	return s.specs[len(s.specs)-1]
 }
 
+func (s *spyProvider) allSpecs() []Spec {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.specs)
+}
+
 func TestUpdate(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -225,12 +231,20 @@ func TestUpdate(t *testing.T) {
 					t.Errorf("after prompt update: %v", got)
 				}
 
-				customModel := "custom-model-v1"
+				invalidModel := "custom-model-v1"
+				if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Model:  &invalidModel,
+				})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+					t.Fatalf("Update invalid model error = %v, want InvalidArgument", err)
+				}
+
+				customModel := "Gemini 4 Argon"
 				res, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
 					TaskId: task.GetId(),
 					Model:  &customModel,
 				}))
-				if err != nil || res.Msg.GetTask().GetModel() != customModel {
+				if err != nil || res.Msg.GetTask().GetModel() != "gemini-4-argon-high" {
 					t.Fatalf("Update model: %v, got %q", err, res.Msg.GetTask().GetModel())
 				}
 
@@ -537,14 +551,17 @@ func TestUpdate(t *testing.T) {
 					t.Errorf("after provider reset: %v", res.Msg.GetTask())
 				}
 
-				explicitModel := "claude-3-5-haiku-20241022"
+				explicitModel := "claude-haiku-5-5"
 				res, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
 					TaskId:   streamed.GetId(),
 					Provider: &claude,
 					Model:    &explicitModel,
 				}))
-				if err != nil || res.Msg.GetTask().GetModel() != explicitModel || e.get(t, streamed.GetId()).GetModel() != explicitModel {
-					t.Errorf("explicit model: err=%v model=%q", err, res.Msg.GetTask().GetModel())
+				if err != nil {
+					t.Fatalf("explicit model Update: %v", err)
+				}
+				if res.Msg.GetTask().GetModel() != explicitModel || e.get(t, streamed.GetId()).GetModel() != explicitModel {
+					t.Errorf("explicit model: model=%q", res.Msg.GetTask().GetModel())
 				}
 			},
 		},
@@ -979,4 +996,344 @@ func TestUpdate(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, tc.run)
 	}
+}
+
+func TestUpdateModelsAndClaudeRoundTrip(t *testing.T) {
+	testx.Portable(t)
+	ctx := t.Context()
+
+	t.Run("model_validation_before_waiting", func(t *testing.T) {
+		l := &limit{slots: 0}
+		providers := map[planv1.Provider]Provider{
+			planv1.Provider_PROVIDER_FAKE:        &spyProvider{},
+			planv1.Provider_PROVIDER_CLAUDE:      &spyProvider{},
+			planv1.Provider_PROVIDER_CODEX:       &spyProvider{},
+			planv1.Provider_PROVIDER_ANTIGRAVITY: &spyProvider{},
+		}
+		e := upWith(t, t.TempDir(), providers, WithCapacity(l.capacity), WithTick(time.Hour))
+		wishID, _ := e.wish(t, nativeFolder(t))
+
+		for _, tc := range []struct {
+			provider planv1.Provider
+			model    string
+			want     string
+		}{
+			{planv1.Provider_PROVIDER_CLAUDE, "claude-opus-5-5", "claude-opus-5-5"},
+			{planv1.Provider_PROVIDER_CLAUDE, "claude-fable-5-1", "claude-fable-5-1"},
+			{planv1.Provider_PROVIDER_ANTIGRAVITY, "Gemini 4 Argon", "gemini-4-argon-high"},
+			{planv1.Provider_PROVIDER_ANTIGRAVITY, "argon", "gemini-4-argon-high"},
+		} {
+			task := e.mustSpawn(t, wishID, "Valid "+tc.model, "text ok", &planv1.TaskServiceSpawnRequest{
+				Provider: tc.provider,
+				Model:    tc.model,
+			})
+			if task.GetModel() != tc.want {
+				t.Errorf("Spawn(%v, %q) model = %q, want %q", tc.provider, tc.model, task.GetModel(), tc.want)
+			}
+		}
+
+		if _, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId:   wishID,
+			Title:    "Invalid model",
+			Prompt:   "text bad",
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-nonexistent-99",
+		})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("Spawn invalid model err = %v, want InvalidArgument", err)
+		}
+	})
+
+	t.Run("kinds_dry_run_and_apply", func(t *testing.T) {
+		l := &limit{slots: 0}
+		providers := map[planv1.Provider]Provider{
+			planv1.Provider_PROVIDER_FAKE:        &spyProvider{},
+			planv1.Provider_PROVIDER_CLAUDE:      &spyProvider{},
+			planv1.Provider_PROVIDER_CODEX:       &spyProvider{},
+			planv1.Provider_PROVIDER_ANTIGRAVITY: &spyProvider{},
+			planv1.Provider_PROVIDER_WATCH:       fastWatch,
+		}
+		e := upWith(t, t.TempDir(), providers, WithCapacity(l.capacity), WithTick(time.Hour))
+		wishID, _ := e.wish(t, gitRepo(t))
+
+		workTask := e.mustSpawn(t, wishID, "Work Task", "text work", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-sonnet-5-5",
+		})
+		invTask := e.mustSpawn(t, wishID, "Investigation Task", "text inv", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-sonnet-5-5",
+			Kind:     planv1.TaskKind_TASK_KIND_INVESTIGATION,
+		})
+		corrTask := &planv1.Task{
+			Id:         store.NewID(),
+			Code:       "W96",
+			WishId:     wishID,
+			Title:      "Correction Task",
+			Status:     planv1.TaskStatus_TASK_STATUS_PENDING,
+			Provider:   planv1.Provider_PROVIDER_CLAUDE,
+			Model:      "claude-sonnet-5-5",
+			Correction: &planv1.TaskCorrection{Attempt: 1},
+			CreateTime: timestamppb.Now(),
+		}
+		revTask := &planv1.Task{
+			Id:         store.NewID(),
+			Code:       "W97",
+			WishId:     wishID,
+			Title:      "Review Task",
+			Status:     planv1.TaskStatus_TASK_STATUS_PENDING,
+			Provider:   planv1.Provider_PROVIDER_CLAUDE,
+			Model:      "claude-sonnet-5-5",
+			Review:     &planv1.TaskReview{TaskIds: []string{workTask.GetId()}},
+			CreateTime: timestamppb.Now(),
+		}
+		enlightenTask := &planv1.Task{
+			Id:         store.NewID(),
+			Code:       "W99",
+			WishId:     wishID,
+			Title:      "Enlighten Q1",
+			Role:       planv1.TaskRole_TASK_ROLE_INVESTIGATOR,
+			Status:     planv1.TaskStatus_TASK_STATUS_PENDING,
+			Provider:   planv1.Provider_PROVIDER_CLAUDE,
+			Model:      "claude-sonnet-5-5",
+			CreateTime: timestamppb.Now(),
+		}
+		doneTask := &planv1.Task{
+			Id:         store.NewID(),
+			Code:       "W98",
+			WishId:     wishID,
+			Title:      "Finished Task",
+			Status:     planv1.TaskStatus_TASK_STATUS_DONE,
+			Provider:   planv1.Provider_PROVIDER_CLAUDE,
+			Model:      "claude-sonnet-5-5",
+			CreateTime: timestamppb.Now(),
+		}
+		if err := e.db.Tx(ctx, func(tx *store.Tx) error {
+			for _, tk := range []*planv1.Task{corrTask, revTask, enlightenTask, doneTask} {
+				if err := tx.Journal("test", "test/put", tk); err != nil {
+					return err
+				}
+				if err := tx.Put(tk); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		watchTask := e.mustSpawn(t, wishID, "Watcher Task", "echo ok", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_WATCH,
+		})
+
+		argon := "argon"
+		dryRes, err := e.tasks.UpdateModels(ctx, connect.NewRequest(&planv1.TaskServiceUpdateModelsRequest{
+			WishId:   wishID,
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+			Model:    &argon,
+		}))
+		if err != nil {
+			t.Fatalf("UpdateModels dry run: %v", err)
+		}
+		if !dryRes.Msg.GetDryRun() {
+			t.Fatalf("dry run DryRun = false, want true")
+		}
+		if len(dryRes.Msg.GetTasks()) != 5 {
+			t.Fatalf("dry run Tasks = %d, want 5", len(dryRes.Msg.GetTasks()))
+		}
+		if len(dryRes.Msg.GetSkipped()) != 1 || dryRes.Msg.GetSkipped()[0].GetId() != watchTask.GetId() {
+			t.Fatalf("dry run Skipped = %v, want [%s]", dryRes.Msg.GetSkipped(), watchTask.GetCode())
+		}
+		if len(dryRes.Msg.GetCircle()) != 5 {
+			t.Fatalf("dry run Circle = %d, want 5", len(dryRes.Msg.GetCircle()))
+		}
+		if got := e.get(t, workTask.GetId()); got.GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
+			t.Fatalf("dry run mutated store: provider = %v", got.GetProvider())
+		}
+
+		labelModel := "Gemini 4 Argon"
+		applyRes, err := e.tasks.UpdateModels(ctx, connect.NewRequest(&planv1.TaskServiceUpdateModelsRequest{
+			WishId:   wishID,
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+			Model:    &labelModel,
+			Yes:      true,
+		}))
+		if err != nil {
+			t.Fatalf("UpdateModels apply: %v", err)
+		}
+		if applyRes.Msg.GetDryRun() {
+			t.Fatalf("apply DryRun = true, want false")
+		}
+		for _, id := range []string{workTask.GetId(), invTask.GetId(), corrTask.GetId(), revTask.GetId(), enlightenTask.GetId()} {
+			got := e.get(t, id)
+			if got.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || got.GetModel() != "gemini-4-argon-high" {
+				t.Errorf("task %s after apply: provider=%v model=%q", got.GetCode(), got.GetProvider(), got.GetModel())
+			}
+		}
+		if got := e.get(t, watchTask.GetId()); got.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+			t.Errorf("watcher changed: %v", got.GetProvider())
+		}
+		if got := e.get(t, doneTask.GetId()); got.GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
+			t.Errorf("done task changed: %v", got.GetProvider())
+		}
+		for _, kind := range plan.WorkerCircleKinds {
+			p, m, ok := plan.ResolveWorkerSeat(e.h.home, kind)
+			if !ok || p != planv1.Provider_PROVIDER_ANTIGRAVITY || m != "gemini-4-argon-high" {
+				t.Errorf("ResolveWorkerSeat(%v) = (%v, %q, %v), want (ANTIGRAVITY, gemini-4-argon-high, true)", kind, p, m, ok)
+			}
+		}
+	})
+
+	t.Run("running_next_start_and_now", func(t *testing.T) {
+		l := &limit{slots: 2}
+		claudeSpy := &spyProvider{}
+		agySpy := &spyProvider{}
+		providers := map[planv1.Provider]Provider{
+			planv1.Provider_PROVIDER_FAKE:        &spyProvider{},
+			planv1.Provider_PROVIDER_CLAUDE:      claudeSpy,
+			planv1.Provider_PROVIDER_ANTIGRAVITY: agySpy,
+		}
+		e := upWith(t, t.TempDir(), providers, WithCapacity(l.capacity), WithTick(time.Hour))
+		wishID, _ := e.wish(t, nativeFolder(t))
+
+		// Next start: running task finishes its run on Claude, then has Antigravity for its next start.
+		nextTask := e.mustSpawn(t, wishID, "Next Start Task", "wait\ntext done first", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-sonnet-5-5",
+		})
+		settle(t, "nextTask running", func() bool {
+			return e.get(t, nextTask.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+		})
+
+		flashModel := "gemini-3.8-flash-high"
+		if _, err := e.tasks.UpdateModels(ctx, connect.NewRequest(&planv1.TaskServiceUpdateModelsRequest{
+			WishId:   wishID,
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+			Model:    &flashModel,
+			Yes:      true,
+			Now:      false,
+		})); err != nil {
+			t.Fatalf("UpdateModels next start: %v", err)
+		}
+		if got := e.get(t, nextTask.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+			t.Fatalf("status while running = %v, want RUNNING", got.GetStatus())
+		}
+		if _, err := e.tasks.Send(ctx, connect.NewRequest(&planv1.TaskServiceSendRequest{
+			TaskId: nextTask.GetId(),
+			Text:   "release",
+		})); err != nil {
+			t.Fatalf("Send release: %v", err)
+		}
+		doneNext := e.ended(t, nextTask.GetId())
+		if doneNext.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || doneNext.GetModel() != "gemini-3.8-flash-high" ||
+			doneNext.GetPriorProvider() != planv1.Provider_PROVIDER_CLAUDE {
+			t.Fatalf("after run ended: provider=%v model=%q prior=%v", doneNext.GetProvider(), doneNext.GetModel(), doneNext.GetPriorProvider())
+		}
+
+		// --now: running task is interrupted immediately and restarts on Claude.
+		nowTask := e.mustSpawn(t, wishID, "Now Task", "wait\ntext done now", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+			Model:    "gemini-3.8-flash-high",
+		})
+		settle(t, "nowTask running on antigravity", func() bool {
+			return e.get(t, nowTask.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+		})
+
+		opusModel := "claude-opus-5-5"
+		if _, err := e.tasks.UpdateModels(ctx, connect.NewRequest(&planv1.TaskServiceUpdateModelsRequest{
+			WishId:   wishID,
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    &opusModel,
+			Yes:      true,
+			Now:      true,
+		})); err != nil {
+			t.Fatalf("UpdateModels --now: %v", err)
+		}
+		settle(t, "nowTask restarted on claude", func() bool {
+			got := e.get(t, nowTask.GetId())
+			return got.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING &&
+				got.GetProvider() == planv1.Provider_PROVIDER_CLAUDE &&
+				got.GetModel() == "claude-opus-5-5" &&
+				len(claudeSpy.allSpecs()) >= 2
+		})
+		if _, err := e.tasks.Send(ctx, connect.NewRequest(&planv1.TaskServiceSendRequest{
+			TaskId: nowTask.GetId(),
+			Text:   "release",
+		})); err != nil {
+			t.Fatalf("Send release to nowTask: %v", err)
+		}
+		e.ended(t, nowTask.GetId())
+	})
+
+	t.Run("claude_antigravity_claude_round_trip", func(t *testing.T) {
+		l := &limit{slots: 2}
+		claudeSpy := &spyProvider{}
+		agySpy := &spyProvider{}
+		providers := map[planv1.Provider]Provider{
+			planv1.Provider_PROVIDER_FAKE:        &spyProvider{},
+			planv1.Provider_PROVIDER_CLAUDE:      claudeSpy,
+			planv1.Provider_PROVIDER_ANTIGRAVITY: agySpy,
+		}
+		e := upWith(t, t.TempDir(), providers, WithCapacity(l.capacity), WithTick(time.Hour))
+		wishID, _ := e.wish(t, nativeFolder(t))
+
+		// 1. Run on Claude (ends failed so Continue can resume it across providers).
+		task := e.mustSpawn(t, wishID, "Round Trip", "text step 1 on claude\nfail stop1", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-sonnet-5-5",
+		})
+		e.ended(t, task.GetId())
+		if specs := claudeSpy.allSpecs(); len(specs) != 1 || specs[0].TaskID != task.GetId() || specs[0].Resume != "" {
+			t.Fatalf("first claude spec = %+v", specs)
+		}
+
+		// 2. Switch to Antigravity and continue.
+		agy := planv1.Provider_PROVIDER_ANTIGRAVITY
+		step2 := "text step 2 on antigravity\nfail stop2"
+		if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+			TaskId:   task.GetId(),
+			Provider: &agy,
+			Prompt:   &step2,
+		})); err != nil {
+			t.Fatalf("Update to antigravity: %v", err)
+		}
+		if _, err := e.tasks.Continue(ctx, connect.NewRequest(&planv1.TaskServiceContinueRequest{
+			TaskId: task.GetId(),
+		})); err != nil {
+			t.Fatalf("Continue on antigravity: %v", err)
+		}
+		e.ended(t, task.GetId())
+		if specs := agySpy.allSpecs(); len(specs) != 1 || specs[0].Resume != "" || specs[0].TaskID == task.GetId() {
+			t.Fatalf("antigravity spec = %+v, want fresh session ID != task ID", specs)
+		}
+
+		// 3. Switch back to Claude and continue: must NOT reuse task.GetId() as Session ID with Resume="".
+		claude := planv1.Provider_PROVIDER_CLAUDE
+		step3 := "text step 3 back on claude"
+		if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+			TaskId:   task.GetId(),
+			Provider: &claude,
+			Prompt:   &step3,
+		})); err != nil {
+			t.Fatalf("Update back to claude: %v", err)
+		}
+		if _, err := e.tasks.Continue(ctx, connect.NewRequest(&planv1.TaskServiceContinueRequest{
+			TaskId: task.GetId(),
+		})); err != nil {
+			t.Fatalf("Continue back on claude: %v", err)
+		}
+		doneTask := e.ended(t, task.GetId())
+		specs := claudeSpy.allSpecs()
+		if len(specs) != 2 {
+			t.Fatalf("claude specs = %d, want 2", len(specs))
+		}
+		secondClaude := specs[1]
+		if secondClaude.Resume != "" {
+			t.Errorf("second claude spec Resume = %q, want empty (handoff from antigravity)", secondClaude.Resume)
+		}
+		if secondClaude.TaskID == "" || secondClaude.TaskID == task.GetId() {
+			t.Errorf("second claude spec TaskID = %q, must be a fresh session ID != task ID %q", secondClaude.TaskID, task.GetId())
+		}
+		if doneTask.GetSessionId() != secondClaude.TaskID {
+			t.Errorf("task SessionId = %q, want %q recorded on task", doneTask.GetSessionId(), secondClaude.TaskID)
+		}
+	})
 }

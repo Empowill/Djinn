@@ -149,6 +149,7 @@ import {
   PushStrategySelector,
   WhereWorkLands,
   WishDescription,
+  WishModels,
   WishTitle,
   leadTrouble,
   recordedAgent,
@@ -1295,6 +1296,7 @@ export function WishView({
                   loadBranches={loadBranches}
                   onChange={handleLands}
                 />
+                <WishModels wishId={wish.id} />
                 <LastPushes
                   pushes={wish.pushes}
                   projects={projects}
