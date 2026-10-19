@@ -3,6 +3,7 @@ package plan
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -161,20 +162,28 @@ func TestReadArtifactStream(t *testing.T) {
 	}
 }
 
+// TestArtifactPrompt: the page read by its path, published by the same path as a JSON string, whose backslashes
+// (the separator on Windows, a letter of a folder's name elsewhere) come doubled.
 func TestArtifactPrompt(t *testing.T) {
 	t.Parallel()
-	b := &tilasm.Bundle{Dir: "/data/tilasms/.publish-1", Files: []string{"img/one.png"}}
-	first := artifactPrompt(b, "")
-	for _, want := range []string{
-		`1. Read /data/tilasms/.publish-1/index.html.`,
-		`2. Call Artifact with {"action":"publish","file_path":"/data/tilasms/.publish-1/index.html","files":{"img/one.png":"img/one.png"},"icon":"document"}.`,
-	} {
-		if !strings.Contains(first, filepath.FromSlash(want)) && !strings.Contains(first, want) {
-			t.Errorf("first publish prompt lacks %q:\n%s", want, first)
+	for _, dir := range []string{filepath.FromSlash("/data/tilasms/.publish-1"), `/data/back\slash/.publish-1`} {
+		page := filepath.Join(dir, tilasm.Index)
+		quoted, err := json.Marshal(page)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if strings.Contains(first, `"read"`) {
-		t.Errorf("a first publish reads no live version:\n%s", first)
+		first := artifactPrompt(&tilasm.Bundle{Dir: dir, Files: []string{"img/one.png"}}, "")
+		for _, want := range []string{
+			"1. Read " + page + ".",
+			`2. Call Artifact with {"action":"publish","file_path":` + string(quoted) + `,"files":{"img/one.png":"img/one.png"},"icon":"document"}.`,
+		} {
+			if !strings.Contains(first, want) {
+				t.Errorf("first publish prompt lacks %q:\n%s", want, first)
+			}
+		}
+		if strings.Contains(first, `"read"`) {
+			t.Errorf("a first publish reads no live version:\n%s", first)
+		}
 	}
 	again := artifactPrompt(&tilasm.Bundle{Dir: "/data/tilasms/.publish-2"}, "https://claude.ai/artifact/D1gnn")
 	for _, want := range []string{
@@ -227,10 +236,14 @@ func TestPublisherPublish(t *testing.T) {
 			if c.stream == "" {
 				p.checked = &artifactCheck{} // Checked already: the stream has no init event to find.
 			}
-			// The bundle's folder through a link: claude runs in it as named, not with its links resolved.
+			// The bundle's folder through a link: claude runs in it as named, not with its links resolved. Windows
+			// may refuse a link to a user without the right; Djinn sets no PWD there, and the folder itself serves.
 			dir := filepath.Join(t.TempDir(), "bundle")
 			if err := os.Symlink(t.TempDir(), dir); err != nil {
-				t.Fatal(err)
+				if runtime.GOOS != "windows" {
+					t.Fatal(err)
+				}
+				dir = t.TempDir()
 			}
 			pub, err := p.Publish(t.Context(), "W7", "L52", &tilasm.Bundle{Dir: dir}, "https://claude.ai/artifact/D1gnnFxekF5SvDnhTFSFcj")
 			if c.err != "" {
