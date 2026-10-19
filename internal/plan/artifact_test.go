@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -17,26 +19,133 @@ import (
 )
 
 // fakeClaude is a claude that replays a recorded stream: its status command exits auth (0 signed in), its other
-// calls write their folder and arguments to the log, one per line, then print stream and exit with exit. It returns
-// the PATH it is on, and the log.
+// calls write their folder and arguments to the log, one per line, then print stream and exit with exit. It is a copy
+// of this test binary named claude, shared by every fake (FakeClaudeMain), so that it runs on Windows too; its part is
+// read from a folder of its own, put first on the PATH. It returns that PATH, and the log.
 func fakeClaude(t *testing.T, auth int, stream string, exit int) (path, log string) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("a fake claude is a shell script")
-	}
+	bin := fakeClaudeBin(t)
 	dir := t.TempDir()
 	log = filepath.Join(dir, "calls.log")
-	script := "#!/bin/sh\n" +
-		"if [ \"$1\" = auth ]; then exit " + strconv.Itoa(auth) + "; fi\n" +
-		"printf '%s\\n' \"$PWD\" \"$@\" '--' >> '" + log + "'\n"
-	if stream != "" {
-		script += "cat '" + stream + "'\n"
-	}
-	script += "exit " + strconv.Itoa(exit) + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil {
+	b, err := json.Marshal(fakeClaudePart{Auth: auth, Stream: stream, Exit: exit, Log: log})
+	if err != nil {
 		t.Fatal(err)
 	}
-	return dir + string(os.PathListSeparator) + os.Getenv("PATH"), log
+	if err := os.WriteFile(filepath.Join(dir, fakeClaudeFile), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join([]string{dir, bin, os.Getenv("PATH")}, string(os.PathListSeparator)), log
+}
+
+// fakeClaudeFile, in the first folder of a fake claude's PATH, holds its part.
+const fakeClaudeFile = "fake-claude.json"
+
+type fakeClaudePart struct {
+	Auth   int    `json:"auth"`
+	Stream string `json:"stream"`
+	Exit   int    `json:"exit"`
+	Log    string `json:"log"`
+}
+
+var fakeClaudeShared struct {
+	once sync.Once
+	dir  string
+	err  error
+}
+
+// fakeClaudeBin is the folder of the fakes' claude, made at the first fake.
+func fakeClaudeBin(t *testing.T) string {
+	t.Helper()
+	f := &fakeClaudeShared
+	f.once.Do(func() { f.dir, f.err = newFakeClaudeBin() })
+	if f.err != nil {
+		t.Fatal(f.err)
+	}
+	return f.dir
+}
+
+func newFakeClaudeBin() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	dir, err := os.MkdirTemp("", "fake-claude-")
+	if err != nil {
+		return "", err
+	}
+	bin := filepath.Join(dir, "claude")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	// A link costs no copy, but Windows refuses to remove a name of a running program: a copy there, or where the
+	// folders' disks differ.
+	if runtime.GOOS != "windows" && os.Link(exe, bin) == nil {
+		return dir, nil
+	}
+	b, err := os.ReadFile(exe)
+	if err != nil {
+		return "", err
+	}
+	return dir, os.WriteFile(bin, b, 0o755)
+}
+
+// FakeClaudeMain plays a fake claude when this test binary runs as one (fakeClaude), and exits; otherwise it returns
+// what removes the fakes' claude once the tests ended.
+func FakeClaudeMain() (cleanup func()) {
+	if strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe") != "claude" {
+		return func() {
+			if dir := fakeClaudeShared.dir; dir != "" {
+				_ = os.RemoveAll(dir)
+			}
+		}
+	}
+	first, _, _ := strings.Cut(os.Getenv("PATH"), string(os.PathListSeparator))
+	b, err := os.ReadFile(filepath.Join(first, fakeClaudeFile))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	var part fakeClaudePart
+	if err := json.Unmarshal(b, &part); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "auth" {
+		os.Exit(part.Auth)
+	}
+	if err := fakeClaudeCall(part); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	os.Exit(part.Exit)
+	return nil
+}
+
+// fakeClaudeCall logs a call, its folder (as a shell reads it, from PWD when it names the folder) then its
+// arguments, and prints the stream.
+func fakeClaudeCall(part fakeClaudePart) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(part.Log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprint(f, strings.Join(append(append([]string{dir}, os.Args[1:]...), "--"), "\n")+"\n")
+	if err := errors.Join(err, f.Close()); err != nil {
+		return err
+	}
+	if part.Stream == "" {
+		return nil
+	}
+	s, err := os.Open(part.Stream)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	_, err = io.Copy(os.Stdout, s)
+	return err
 }
 
 // signedIn is a user's home folder where Claude Code has its folder: its status command decides.
