@@ -261,3 +261,171 @@ test("a worker's eye opens its task in its wish, through the window's focus", ()
   // The window's focus takes it to the Tasks tab, where the task's card shows.
   assert.equal(s.tabOf("task-task-w1"), "tasks");
 });
+
+test("the disk tab: whole-machine bar with guard marks, Machine items grouped by risk with cleanup commands and all-safe row, and Djinn folders with worker isolated Go caches", () => {
+  const gib = 1024n ** 3n;
+  const disk = {
+    availableBytes: 394n * gib,
+    totalBytes: 993n * gib,
+    folders: [
+      { path: "/home/dev/.cache/go-build", sizeBytes: 80n * gib },
+      {
+        path: "/home/dev/.config/djinn/projects/p1/worktrees",
+        sizeBytes: 15n * gib,
+      },
+      { path: "/home/dev/.npm", sizeBytes: 2n * gib },
+      { path: "/home/dev/.cache/ms-playwright", sizeBytes: 1n * gib },
+      { path: "/home/dev/.config/djinn/logs", sizeBytes: 1n * gib },
+      { path: "/home/dev/.config/djinn", sizeBytes: 16n * gib },
+    ],
+    items: [
+      {
+        kind: "go-build",
+        path: "~/.cache/go-build",
+        sizeBytes: 80n * gib,
+        reclaimableBytes: 63n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "find ~/.cache/go-build -type f -mmin +360 -delete",
+      },
+      {
+        kind: "go-isolated",
+        path: "~/.cache/*-go-build",
+        sizeBytes: 33n * gib,
+        reclaimableBytes: 33n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "rm -rf ~/.cache/*-go-build",
+        count: 9,
+        djinn: true,
+      },
+      {
+        kind: "go-mod",
+        path: "~/go/pkg/mod",
+        sizeBytes: 31n * gib,
+        reclaimableBytes: 31n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "go clean -modcache",
+      },
+      {
+        kind: "docker-builder",
+        path: "docker builder",
+        sizeBytes: 19n * gib,
+        reclaimableBytes: 13n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "docker builder prune -f",
+      },
+      {
+        kind: "docker-images",
+        path: "docker images",
+        sizeBytes: 16n * gib,
+        reclaimableBytes: 7n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "docker image prune -a -f",
+      },
+      {
+        kind: "jetbrains",
+        path: "~/.cache/JetBrains",
+        sizeBytes: 6n * gib,
+        reclaimableBytes: 6n * gib,
+        risk: s.DiskRisk.LOSS,
+        command: "rm -rf ~/.cache/JetBrains",
+      },
+      {
+        kind: "pnpm",
+        path: "~/.local/share/pnpm + ~/.cache/pnpm",
+        sizeBytes: 3n * gib,
+        reclaimableUnknown: true,
+        risk: s.DiskRisk.SAFE,
+        command: "pnpm store prune",
+      },
+      {
+        kind: "docker-volumes",
+        path: "docker volume",
+        sizeBytes: 3n * gib,
+        reclaimableBytes: 1n * gib,
+        risk: s.DiskRisk.LOSS,
+        command: "docker volume prune -f",
+      },
+      {
+        kind: "pip",
+        path: "~/.cache/pip",
+        sizeBytes: 3n * gib,
+        reclaimableBytes: 3n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "pip cache purge",
+      },
+      {
+        kind: "uv",
+        path: "~/.cache/uv",
+        sizeBytes: 2n * gib,
+        reclaimableUnknown: true,
+        risk: s.DiskRisk.SAFE,
+        command: "uv cache prune",
+      },
+      {
+        kind: "npm",
+        path: "~/.npm",
+        sizeBytes: 2n * gib,
+        reclaimableBytes: 2n * gib,
+        risk: s.DiskRisk.REBUILD,
+        command: "npm cache clean --force",
+      },
+    ],
+  };
+
+  const sec = live(s.DiskSection, { disk });
+  let html = sec.html();
+
+  // Whole-disk bar, guard marks, and legend.
+  assert.match(html, /394 GB free of 993 GB/);
+  assert.match(html, /aria-label="599 GB used of 993 GB"/);
+  assert.match(html, /title="30 GB free: Go build cache trimmed"/);
+  assert.match(html, /title="10 GB free: push checks held"/);
+  assert.match(html, /Go 144 GB/);
+  assert.match(html, /Docker 38 GB/);
+  assert.match(html, /Djinn 16 GB/);
+  assert.match(html, /Other caches 17 GB/);
+  assert.match(html, /Unmeasured 384 GB/);
+  assert.match(html, /Free 394 GB/);
+
+  // Sub-tabs with their totals (Djinn 17 GB folders + 33 GB isolated Go caches = 50 GB; Machine = 165 GB).
+  assert.match(html, /Djinn and its workers\s*<b>50 GB<\/b>/);
+  assert.match(html, /Machine\s*<b>165 GB<\/b>/);
+
+  // Machine tab: three risk groups (Safe, Rebuilds, Data loss) with totals and cleanup commands, plus all-safe row.
+  assert.match(
+    html,
+    /Safe[\s\S]*?nothing is lost, nothing to redo[\s\S]*?frees \?/,
+  );
+  assert.match(
+    html,
+    /Rebuilds[\s\S]*?time or network on next use[\s\S]*?frees 119 GB/,
+  );
+  assert.match(
+    html,
+    /Data loss[\s\S]*?what is removed does not come back[\s\S]*?frees 7 GB/,
+  );
+  assert.match(
+    html,
+    /<code>find ~\/\.cache\/go-build -type f -mmin \+360 -delete<\/code>/,
+  );
+  assert.match(html, /<code>go clean -modcache<\/code>/);
+  assert.match(html, /<code>docker builder prune -f<\/code>/);
+  assert.match(html, /<code>docker volume prune -f<\/code>/);
+  assert.match(
+    html,
+    /All “safe” at once<\/span><code>pnpm store prune &amp;&amp; uv cache prune<\/code>/,
+  );
+
+  // Switch to the Djinn tab: Djinn folders + isolated Go caches (9 folders) on the Djinn side, without duplicating go-build or npm.
+  sec.all("resource-disk-subtab")[0].props.onClick();
+  html = sec.html();
+  assert.match(html, /\/home\/dev\/\.config\/djinn\/projects\/p1\/worktrees/);
+  assert.match(html, /Isolated Go caches \(9 folders\)/);
+  assert.match(html, /<code>rm -rf ~\/\.cache\/\*-go-build<\/code>/);
+  assert.doesNotMatch(html, /\/home\/dev\/\.cache\/go-build/);
+  assert.doesNotMatch(html, /\/home\/dev\/\.npm/);
+  assert.match(
+    html,
+    /Djinn removes a worktree when its task ends; isolated Go caches come from worker builds that set their own GOCACHE\./,
+  );
+});

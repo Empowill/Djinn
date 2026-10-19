@@ -207,7 +207,9 @@ Under them, one line says the machine's load, with a link to the [Hourglass](#th
 **Hourglass**, near the bottom of the side panel, after Import a wish, or Ctrl+2 (Cmd+2 on macOS), is where the live metrics are, as
 time goes by. First the machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share,
 the load limit and the gates held; each running worker, its facts and its own graphs (its eye opens the task in its
-wish); then where the time of the commands goes, by project and gate. The page reads them only while it shows: leave it,
+wish); where the time of the commands goes, by project and gate; and on the **Disk** tab, a bar of the whole disk above
+**Djinn and its workers** and **Machine** (caches and Docker storage grouped by risk—**Safe**, **Rebuilds**, **Data
+loss**—with each item's reclaimable space and cleanup command to copy). The page reads them only while it shows: leave it,
 and its reads stop. A running task's card links to its worker's row (**Live in the Hourglass**).
 
 Ctrl+1 and Ctrl+2 are the keys' places, not their characters: on a French AZERTY keyboard, Ctrl with the key of &

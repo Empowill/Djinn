@@ -12,6 +12,7 @@ import path from "node:path";
 
 import {
   CommandServiceListResponseSchema,
+  DiskRisk,
   MachineServiceSeriesResponseSchema,
 } from "../gen/ts/machine/v1/machine_pb";
 import { Provider } from "../gen/ts/plan/v1/plan_pb";
@@ -32,14 +33,15 @@ function djinn(...args: string[]): string {
 function series(taskId: string, wishId: string) {
   const end = Date.now();
   const times = Array.from({ length: 12 }, (_, i) => end - (11 - i) * 5_000);
+  const gib = 1024n ** 3n;
   return create(MachineServiceSeriesResponseSchema, {
     machine: {
       cores: 8,
-      memoryTotalBytes: 16n * 1024n ** 3n,
+      memoryTotalBytes: 16n * gib,
       points: times.map((t) => ({
         time: timestampFromMs(t),
         cpuPercent: 30,
-        memoryBytes: 6n * 1024n ** 3n,
+        memoryBytes: 6n * gib,
       })),
     },
     workers: [
@@ -58,6 +60,35 @@ function series(taskId: string, wishId: string) {
         })),
       },
     ],
+    disk: {
+      path: "/home/dev/.config/djinn",
+      totalBytes: 500n * gib,
+      availableBytes: 200n * gib,
+      folders: [
+        {
+          path: "/home/dev/.config/djinn/projects/app/worktrees",
+          sizeBytes: 12n * gib,
+        },
+      ],
+      items: [
+        {
+          kind: "go-build",
+          path: "/home/dev/.cache/go-build",
+          sizeBytes: 40n * gib,
+          reclaimableBytes: 30n * gib,
+          risk: DiskRisk.REBUILD,
+          command: "find ~/.cache/go-build -type f -mmin +360 -delete",
+        },
+        {
+          kind: "pnpm",
+          path: "/home/dev/.local/share/pnpm + /home/dev/.cache/pnpm",
+          sizeBytes: 3n * gib,
+          reclaimableUnknown: true,
+          risk: DiskRisk.SAFE,
+          command: "pnpm store prune",
+        },
+      ],
+    },
   });
 }
 
@@ -189,6 +220,10 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
       .poll(() => reads.series, { timeout: 12_000 })
       .toBeGreaterThan(1);
     expect(reads.commands).toBeGreaterThan(0);
+    await sections.first().getByRole("tab", { name: "Disk" }).click();
+    await expect(
+      sections.first().locator(".resource-disk .resource-disk-bar"),
+    ).toBeVisible();
 
     // Left: the flying carpet again; no measure is read any more, none stays open, the streams are those of before.
     await page.locator(".sidebar .plan-nav").click();

@@ -233,8 +233,12 @@ time range from 10 minutes to 7 days, above three tabs.
 - **Gates.** The CPU and memory of the whole machine (one under the other: the whole machine, Djinn with everything it
   started, and Djinn alone, with the load limit), then the gates held over time and the commands grouped by project and
   by gate.
-- **Disk.** The main folders that use the disk (Djinn's data, worktrees per project, the Go build cache, node_modules,
-  and caches), biggest first, with their size, measured by the server.
+- **Disk.** A bar of the whole disk (Go, Docker, Djinn worktrees, other caches, unmeasured and free space, with the
+  30 GB and 10 GB disk-guard marks), above two tabs: **Djinn and its workers** (worktrees per project, Playwright,
+  tilasms, scratch, logs, and any isolated Go build caches) and **Machine** (Go build cache and module cache, Docker
+  build cache, images and volumes when Docker is present, pnpm, uv, pip, npm, and JetBrains), grouped by risk (**Safe**,
+  **Rebuilds**, **Data loss**) with each item's size, reclaimable space, and cleanup command to copy—plus **All “safe”
+  at once** at the bottom. Djinn never runs those commands itself: it displays them to copy.
 
 A running task's card links to its row, **Live in the Hourglass**. The page reads its figures only while it shows:
 leave it, or fold its panel, and the reads stop. See [Machine and load](#machine-and-load).

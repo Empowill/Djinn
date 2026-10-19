@@ -14,12 +14,15 @@ import (
 	"cmp"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +47,11 @@ const (
 	// goCacheUnused is how long a Go build cache entry may stay unused before a trim deletes it. Go's own trim waits
 	// five days, once a day: far too long for many worktrees.
 	goCacheUnused = 24 * time.Hour
+	// goBuildReclaimableAge is the age above which a Go build cache file counts as reclaimable in the hourglass Disk
+	// tab (`find ~/.cache/go-build -type f -mmin +360 -delete`).
+	goBuildReclaimableAge = 6 * time.Hour
+	// dockerSystemDFTimeout bounds the `docker system df` command when measuring Docker disk usage.
+	dockerSystemDFTimeout = 10 * time.Second
 	// diskTrimEvery is how long Djinn waits after a trim before it trims again: what it left is younger than a day.
 	diskTrimEvery = 30 * time.Minute
 	// diskPollEvery is how often Djinn reads the free space while the disk is almost full, to see space come back.
@@ -83,15 +91,18 @@ type disk struct {
 	poll     time.Duration
 	folders  func(cache string) []string
 
-	mu         sync.Mutex
-	trimming   bool
-	trimmed    time.Time // when the last trim started; zero: none yet
-	full       bool      // under guard.Full: the push checks wait
-	since      time.Time // when it went under
-	measuring  bool
-	measuredAt time.Time
-	measured   []*machinev1.DiskFolder
-	wg         sync.WaitGroup
+	mu              sync.Mutex
+	trimming        bool
+	trimmed         time.Time // when the last trim started; zero: none yet
+	full            bool      // under guard.Full: the push checks wait
+	since           time.Time // when it went under
+	measuring       bool
+	measuredAt      time.Time
+	measured        []*machinev1.DiskFolder
+	itemsMeasuring  bool
+	itemsMeasuredAt time.Time
+	items           []*machinev1.DiskItem
+	wg              sync.WaitGroup
 }
 
 // diskSpace is the free space of the folders Djinn watches, read at once.
@@ -194,6 +205,7 @@ func (h *Harness) diskTrim(s diskSpace) {
 		d.trimming = false
 		if freed > 0 {
 			d.measuredAt = time.Time{}
+			d.itemsMeasuredAt = time.Time{}
 		}
 		d.mu.Unlock()
 		args := []any{"cache", s.cache, "free before", s.cacheFree, "entries", entries, "freed", freed,
@@ -352,6 +364,377 @@ func toDiskFolders(sizes []folderSize) []*machinev1.DiskFolder {
 		out[i] = &machinev1.DiskFolder{Path: s.dir, SizeBytes: s.bytes}
 	}
 	return out
+}
+
+// DiskItems returns the known caches and stores on the machine, biggest first, with their size, what their cleanup
+// command frees and its risk. It measures them at most once per diskFoldersEvery, without blocking the caller when a
+// large cache takes longer. Djinn never runs a cleanup command: it only reports it.
+func (h *Harness) DiskItems() []*machinev1.DiskItem {
+	d := &h.disk
+	now := h.now()
+	d.mu.Lock()
+	fresh := !d.itemsMeasuredAt.IsZero() && now.Sub(d.itemsMeasuredAt) < diskFoldersEvery
+	if fresh || d.itemsMeasuring || h.ctx.Err() != nil {
+		out := slices.Clone(d.items)
+		d.mu.Unlock()
+		return out
+	}
+	first := len(d.items) == 0
+	d.itemsMeasuring = true
+	done := make(chan struct{})
+	d.wg.Add(1)
+	d.mu.Unlock()
+
+	go func() {
+		defer logx.Crash("disk items")
+		defer d.wg.Done()
+		defer close(done)
+		ctx, cancel := context.WithTimeout(h.ctx, diskMeasureTimeout)
+		defer cancel()
+		now := h.now()
+		var cache string
+		if d.cacheDir != nil {
+			cache = d.cacheDir()
+		} else if d.guard.Free != nil {
+			cache = d.cache.find(ctx, now)
+		}
+		var onUpdate func([]*machinev1.DiskItem)
+		if first {
+			onUpdate = func(partial []*machinev1.DiskItem) {
+				d.mu.Lock()
+				d.items = partial
+				d.mu.Unlock()
+			}
+		}
+		items := h.measureDiskItems(ctx, now, cache, onUpdate)
+		d.mu.Lock()
+		d.items = items
+		d.itemsMeasuring = false
+		if h.ctx.Err() == nil {
+			d.itemsMeasuredAt = h.now()
+		}
+		d.mu.Unlock()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(diskFoldersWait):
+	case <-h.ctx.Done():
+	}
+	d.mu.Lock()
+	out := slices.Clone(d.items)
+	d.mu.Unlock()
+	return out
+}
+
+// measureDiskItems measures the known caches and stores on the machine (Go build cache, isolated *-go-build caches,
+// Go module cache, Docker via `docker system df`, JetBrains, pnpm, pip, uv, npm) and returns the non-empty ones sorted
+// biggest first. Fast items are measured before large Go caches so onUpdate populates them within diskFoldersWait.
+func (h *Harness) measureDiskItems(
+	ctx context.Context, now time.Time, cache string, onUpdate func([]*machinev1.DiskItem),
+) []*machinev1.DiskItem {
+	userHome, _ := os.UserHomeDir()
+	var items []*machinev1.DiskItem
+	add := func(item *machinev1.DiskItem) {
+		if item == nil || item.GetSizeBytes() == 0 {
+			return
+		}
+		items = append(items, item)
+		sorted := sortedDiskItems(items)
+		if onUpdate != nil {
+			onUpdate(sorted)
+		}
+	}
+
+	if userHome != "" {
+		if size := dirSize(ctx, filepath.Join(userHome, ".npm")); size > 0 {
+			add(&machinev1.DiskItem{
+				Kind:             "npm",
+				Path:             "~/.npm",
+				SizeBytes:        size,
+				ReclaimableBytes: size,
+				Risk:             machinev1.DiskRisk_DISK_RISK_REBUILD,
+				Command:          "npm cache clean --force",
+			})
+		}
+		if size := dirSize(ctx, filepath.Join(userHome, ".cache", "pip")); size > 0 {
+			add(&machinev1.DiskItem{
+				Kind:             "pip",
+				Path:             "~/.cache/pip",
+				SizeBytes:        size,
+				ReclaimableBytes: size,
+				Risk:             machinev1.DiskRisk_DISK_RISK_REBUILD,
+				Command:          "pip cache purge",
+			})
+		}
+		if size := dirSize(ctx, filepath.Join(userHome, ".cache", "uv")); size > 0 {
+			add(&machinev1.DiskItem{
+				Kind:               "uv",
+				Path:               "~/.cache/uv",
+				SizeBytes:          size,
+				ReclaimableUnknown: true,
+				Risk:               machinev1.DiskRisk_DISK_RISK_SAFE,
+				Command:            "uv cache prune",
+			})
+		}
+		pnpmSize := dirSize(ctx, filepath.Join(userHome, ".local", "share", "pnpm")) +
+			dirSize(ctx, filepath.Join(userHome, ".cache", "pnpm"))
+		if pnpmSize > 0 {
+			add(&machinev1.DiskItem{
+				Kind:               "pnpm",
+				Path:               "~/.local/share/pnpm + ~/.cache/pnpm",
+				SizeBytes:          pnpmSize,
+				ReclaimableUnknown: true,
+				Risk:               machinev1.DiskRisk_DISK_RISK_SAFE,
+				Command:            "pnpm store prune",
+			})
+		}
+		if size := dirSize(ctx, filepath.Join(userHome, ".cache", "JetBrains")); size > 0 {
+			add(&machinev1.DiskItem{
+				Kind:             "jetbrains",
+				Path:             "~/.cache/JetBrains",
+				SizeBytes:        size,
+				ReclaimableBytes: size,
+				Risk:             machinev1.DiskRisk_DISK_RISK_LOSS,
+				Command:          "rm -rf ~/.cache/JetBrains",
+			})
+		}
+	}
+
+	for _, item := range measureDockerItems(ctx) {
+		add(item)
+	}
+
+	if userHome != "" {
+		if matches, err := filepath.Glob(filepath.Join(userHome, ".cache", "*-go-build")); err == nil {
+			var isoSize uint64
+			var isoCount int32
+			for _, m := range matches {
+				if s := dirSize(ctx, m); s > 0 {
+					isoSize += s
+					isoCount++
+				}
+			}
+			if isoSize > 0 {
+				add(&machinev1.DiskItem{
+					Kind:             "go-isolated",
+					Path:             "~/.cache/*-go-build",
+					SizeBytes:        isoSize,
+					ReclaimableBytes: isoSize,
+					Risk:             machinev1.DiskRisk_DISK_RISK_REBUILD,
+					Command:          "rm -rf ~/.cache/*-go-build",
+					Count:            isoCount,
+					Djinn:            true,
+				})
+			}
+		}
+		if size := dirSize(ctx, filepath.Join(userHome, "go", "pkg", "mod")); size > 0 {
+			add(&machinev1.DiskItem{
+				Kind:             "go-mod",
+				Path:             "~/go/pkg/mod",
+				SizeBytes:        size,
+				ReclaimableBytes: size,
+				Risk:             machinev1.DiskRisk_DISK_RISK_REBUILD,
+				Command:          "go clean -modcache",
+			})
+		}
+	}
+
+	goBuildDir := cache
+	if h.disk.cacheDir == nil && userHome != "" {
+		def := filepath.Join(userHome, ".cache", "go-build")
+		if info, err := os.Stat(def); err == nil && info.IsDir() {
+			goBuildDir = def
+		}
+	}
+	if goBuildDir != "" {
+		if size, reclaim := measureGoBuildCache(ctx, goBuildDir, now.Add(-goBuildReclaimableAge)); size > 0 {
+			add(&machinev1.DiskItem{
+				Kind:             "go-build",
+				Path:             "~/.cache/go-build",
+				SizeBytes:        size,
+				ReclaimableBytes: reclaim,
+				Risk:             machinev1.DiskRisk_DISK_RISK_REBUILD,
+				Command:          "find ~/.cache/go-build -type f -mmin +360 -delete",
+			})
+		}
+	}
+
+	return sortedDiskItems(items)
+}
+
+func sortedDiskItems(items []*machinev1.DiskItem) []*machinev1.DiskItem {
+	out := slices.Clone(items)
+	slices.SortStableFunc(out, func(a, b *machinev1.DiskItem) int {
+		return cmp.Compare(b.GetSizeBytes(), a.GetSizeBytes())
+	})
+	return out
+}
+
+func dirSize(ctx context.Context, dir string) uint64 {
+	var total uint64
+	_ = filepath.WalkDir(dir, func(_ string, e fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil || e.IsDir() {
+			return nil //nolint:nilerr // A folder it cannot read is left out of its size.
+		}
+		if info, err := e.Info(); err == nil && info.Mode().IsRegular() {
+			total += uint64(info.Size())
+		}
+		return nil
+	})
+	return total
+}
+
+func measureGoBuildCache(ctx context.Context, dir string, cutoff time.Time) (total uint64, reclaimable uint64) {
+	_ = filepath.WalkDir(dir, func(_ string, e fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil || e.IsDir() {
+			return nil //nolint:nilerr // A folder it cannot read is left out of its size.
+		}
+		if info, err := e.Info(); err == nil && info.Mode().IsRegular() {
+			sz := uint64(info.Size())
+			total += sz
+			if info.ModTime().Before(cutoff) {
+				reclaimable += sz
+			}
+		}
+		return nil
+	})
+	return total, reclaimable
+}
+
+func measureDockerItems(ctx context.Context) []*machinev1.DiskItem {
+	path, err := exec.LookPath("docker")
+	if err != nil {
+		return nil
+	}
+	dctx, cancel := context.WithTimeout(ctx, dockerSystemDFTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(dctx, path, "system", "df").Output()
+	if err != nil {
+		return nil
+	}
+	return parseDockerSystemDF(string(out))
+}
+
+func parseDockerSystemDF(out string) []*machinev1.DiskItem {
+	type dfRow struct {
+		Type        string `json:"Type"`
+		Size        string `json:"Size"`
+		Reclaimable string `json:"Reclaimable"`
+	}
+	var items []*machinev1.DiskItem
+	for _, rawLine := range strings.Split(out, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "TYPE") {
+			continue
+		}
+		var typ, sizeStr, reclaimStr string
+		if strings.HasPrefix(line, "{") {
+			var r dfRow
+			if json.Unmarshal([]byte(line), &r) == nil {
+				typ = r.Type
+				sizeStr = r.Size
+				if fields := strings.Fields(r.Reclaimable); len(fields) > 0 {
+					reclaimStr = fields[0]
+				}
+			}
+		} else {
+			for _, prefix := range []string{"Build Cache", "Local Volumes", "Images"} {
+				if rest, ok := strings.CutPrefix(line, prefix); ok {
+					fields := strings.Fields(rest)
+					if len(fields) >= 4 {
+						typ = prefix
+						sizeStr = fields[2]
+						reclaimStr = fields[3]
+					}
+					break
+				}
+			}
+		}
+		sizeBytes := parseDockerBytes(sizeStr)
+		if sizeBytes == 0 {
+			continue
+		}
+		reclaimBytes := min(parseDockerBytes(reclaimStr), sizeBytes)
+		switch typ {
+		case "Build Cache":
+			items = append(items, &machinev1.DiskItem{
+				Kind:             "docker-builder",
+				Path:             "docker builder",
+				SizeBytes:        sizeBytes,
+				ReclaimableBytes: reclaimBytes,
+				Risk:             machinev1.DiskRisk_DISK_RISK_REBUILD,
+				Command:          "docker builder prune -f",
+			})
+		case "Images":
+			items = append(items, &machinev1.DiskItem{
+				Kind:             "docker-images",
+				Path:             "docker images",
+				SizeBytes:        sizeBytes,
+				ReclaimableBytes: reclaimBytes,
+				Risk:             machinev1.DiskRisk_DISK_RISK_REBUILD,
+				Command:          "docker image prune -a -f",
+			})
+		case "Local Volumes":
+			items = append(items, &machinev1.DiskItem{
+				Kind:             "docker-volumes",
+				Path:             "docker volume",
+				SizeBytes:        sizeBytes,
+				ReclaimableBytes: reclaimBytes,
+				Risk:             machinev1.DiskRisk_DISK_RISK_LOSS,
+				Command:          "docker volume prune -f",
+			})
+		}
+	}
+	return items
+}
+
+func parseDockerBytes(s string) uint64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	i := 0
+	for i < len(s) && ((s[i] >= '0' && s[i] <= '9') || s[i] == '.') {
+		i++
+	}
+	if i == 0 {
+		return 0
+	}
+	val, err := strconv.ParseFloat(s[:i], 64)
+	if err != nil || val <= 0 {
+		return 0
+	}
+	var mult float64
+	switch strings.ToLower(strings.TrimSpace(s[i:])) {
+	case "", "b":
+		mult = 1
+	case "kb":
+		mult = 1e3
+	case "kib":
+		mult = 1024
+	case "mb":
+		mult = 1e6
+	case "mib":
+		mult = 1024 * 1024
+	case "gb":
+		mult = 1e9
+	case "gib":
+		mult = 1024 * 1024 * 1024
+	case "tb":
+		mult = 1e12
+	case "tib":
+		mult = 1024 * 1024 * 1024 * 1024
+	default:
+		return 0
+	}
+	return uint64(val * mult)
 }
 
 // diskFolders are the main folders the hourglass Disk tab lists: Djinn's data folder, each project's worktrees and
