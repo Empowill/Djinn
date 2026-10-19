@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -917,6 +918,9 @@ func (h *Harness) Syncs(ctx context.Context, project *planv1.Project) ([]*planv1
 	if repo == "" || !project.GetGit() {
 		return nil, nil
 	}
+	if passMemoOf(ctx) == nil {
+		ctx = withPassMemo(ctx)
+	}
 	all, err := store.List[*planv1.Wish](ctx, h.store, nil)
 	if err != nil {
 		return nil, err
@@ -930,6 +934,9 @@ func (h *Harness) Syncs(ctx context.Context, project *planv1.Project) ([]*planv1
 		}
 	}
 	if len(wishes) == 0 {
+		return nil, nil
+	}
+	if c := readRemotes(ctx, repo); len(c.remotes) == 0 && len(c.remote) == 0 {
 		return nil, nil
 	}
 	out, err := git(ctx, repo, "for-each-ref", "--format=%(refname:short)", "refs/heads")
@@ -1347,6 +1354,16 @@ type remoteConfig struct {
 	remotes       []string
 }
 
+type remoteMemo struct {
+	stamp string
+	cfg   remoteConfig
+}
+
+var remoteMemos = struct {
+	sync.Mutex
+	m map[string]remoteMemo
+}{m: map[string]remoteMemo{}}
+
 // readRemotes reads the remoteConfig of repo in one git, or takes it from ctx's pass memo.
 func readRemotes(ctx context.Context, repo string) remoteConfig {
 	memo := passMemoOf(ctx)
@@ -1358,6 +1375,16 @@ func readRemotes(ctx context.Context, repo string) remoteConfig {
 		!bytes.Contains(b, []byte("[remote")) && !bytes.Contains(b, []byte("[branch")) && !bytes.Contains(b, []byte("[include")) {
 		memo.keepRemotes(repo, c)
 		return c
+	}
+	stamp := plan.RefsStamp(repo)
+	if stamp != "" {
+		remoteMemos.Lock()
+		rm, ok := remoteMemos.m[repo]
+		remoteMemos.Unlock()
+		if ok && rm.stamp == stamp {
+			memo.keepRemotes(repo, rm.cfg)
+			return rm.cfg
+		}
 	}
 	// git exits 1 when no key matches: a repository with no remote and no upstream.
 	out, _ := gitRaw(ctx, repo, "config", "--null", "--get-regexp", `^(branch|remote)\.`)
@@ -1377,6 +1404,14 @@ func readRemotes(ctx context.Context, repo string) remoteConfig {
 		case section == "branch" && variable == "remote":
 			c.remote[name] = value
 		}
+	}
+	if stamp != "" && ctx.Err() == nil {
+		remoteMemos.Lock()
+		if len(remoteMemos.m) >= 1024 {
+			clear(remoteMemos.m)
+		}
+		remoteMemos.m[repo] = remoteMemo{stamp: stamp, cfg: c}
+		remoteMemos.Unlock()
 	}
 	memo.keepRemotes(repo, c)
 	return c
