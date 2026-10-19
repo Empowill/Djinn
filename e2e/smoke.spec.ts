@@ -104,9 +104,13 @@ test("sidebar geometry stays stable while creation hides the terminal", async ({
 });
 
 async function sidebarStaysStable(page: Page, title: string) {
+  let releaseLists!: () => void;
+  const listsHeld = new Promise<void>((resolve) => {
+    releaseLists = resolve;
+  });
   for (const list of ["WishService/List", "ProjectService/List"])
     await page.route(`**/plan.v1.${list}`, async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await listsHeld;
       await route.continue();
     });
   await page.goto(djinnURL());
@@ -117,6 +121,7 @@ async function sidebarStaysStable(page: Page, title: string) {
     .locator(".sidebar")
     .getByRole("button", { name: "Import a wish" });
   await expect(importButton).toBeDisabled();
+  releaseLists();
   await expect(importButton).toBeEnabled();
   await expect(
     page.locator(".sidebar .wish-list").getByTitle(title),
