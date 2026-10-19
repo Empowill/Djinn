@@ -227,7 +227,11 @@ func TestPublisherPublish(t *testing.T) {
 			if c.stream == "" {
 				p.checked = &artifactCheck{} // Checked already: the stream has no init event to find.
 			}
-			dir := t.TempDir()
+			// The bundle's folder through a link: claude runs in it as named, not with its links resolved.
+			dir := filepath.Join(t.TempDir(), "bundle")
+			if err := os.Symlink(t.TempDir(), dir); err != nil {
+				t.Fatal(err)
+			}
 			pub, err := p.Publish(t.Context(), "W7", "L52", &tilasm.Bundle{Dir: dir}, "https://claude.ai/artifact/D1gnnFxekF5SvDnhTFSFcj")
 			if c.err != "" {
 				if err == nil || !strings.Contains(err.Error(), c.err) {

@@ -274,7 +274,7 @@ the code does not say by itself; remove one when a change makes it false.
   (`ProjectService.Add`), and a shell that finds `$PWD` wrong prints the resolved path from `pwd` (W159: a test
   compared a notice's file to the raw temporary folder; a serve's `pwd` printed `/private/var` until `startCommand`
   set `PWD`; W208: git names a worktree by its resolved path; an e2e spec's `realpathSync` keeps `RUNNER~1` where
-  Djinn stores `runneradmin`; W270: `project-config.spec.ts` made the same mistake after W208's fix). *Sign:* passes on Linux, fails on macOS and Windows with the same path written two
+  Djinn stores `runneradmin`; W270: `project-config.spec.ts` made the same mistake after W208's fix; W495: a command given its own `Env` keeps Djinn's `PWD`, exec sets it only when `Env` is nil: set `PWD` beside `Dir`). *Sign:* passes on Linux, fails on macOS and Windows with the same path written two
   ways. *Do:* compare to `project.GetDirectory()`, or the path Djinn gave; resolve a folder you make with
   `filepath.EvalSymlinks`; to reproduce on Linux, set `TMPDIR` to a symbolic link (only `/private/` gets the macOS
   treatment in `aliases`). In e2e, never put a path in a CSS attribute selector: a Windows path's backslashes are CSS

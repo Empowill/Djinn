@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -153,6 +154,11 @@ func (p *Publisher) command(ctx context.Context, command string, env []string, d
 	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "PATH="+path, "NO_COLOR=1")
+	if abs, err := filepath.Abs(dir); dir != "" && err == nil && runtime.GOOS != "windows" {
+		// exec sets PWD only when it builds the environment itself: Djinn's own would name Djinn's folder, and a
+		// shell that finds it wrong takes the folder with its links resolved (/private/var for /var on macOS).
+		cmd.Env = append(cmd.Env, "PWD="+abs)
+	}
 	if userHome != "" {
 		cmd.Env = append(cmd.Env, "HOME="+userHome, "USERPROFILE="+userHome)
 	}
