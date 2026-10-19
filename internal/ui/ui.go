@@ -707,14 +707,9 @@ func (s *Service) WatchShow(
 ) error {
 	ch, show, stop := s.watchShows(ctx)
 	defer stop()
-	// The headers go out at once: the window knows it is watching before anything is asked.
-	if err := stream.Send(nil); err != nil {
+	// The headers go out at once (with the replayed show if any): the window knows it is watching before anything is asked.
+	if err := stream.Send(show); err != nil {
 		return err
-	}
-	if show != nil {
-		if err := stream.Send(show); err != nil {
-			return err
-		}
 	}
 	for {
 		select {
