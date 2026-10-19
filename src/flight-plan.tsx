@@ -865,7 +865,9 @@ export function FlightPlan({
                     />
                   )}
                 </div>
-                {(wishes.length > 0 || wishesState !== "ready") && (
+                {(wishes.length > 0 ||
+                  wishesState !== "ready" ||
+                  !!leadDrive?.batch) && (
                   <Glance
                     wishes={wishes}
                     tasksOf={details}

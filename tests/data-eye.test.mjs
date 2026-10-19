@@ -280,3 +280,75 @@ test("unseen reply and decided blocks queue in order, click advances and persist
   assert.equal(bubblePlace(false, 280), "above");
   assert.equal(bubblePlace(true, 600), "above");
 });
+
+test("the eye follows a driven lead's batch: thinking, done, failed, while keeping the reader first", () => {
+  // Listening when no batch runs.
+  assert.deepEqual(eyeTarget(base), {
+    perch: "pill",
+    mood: "listening",
+    shine: false,
+  });
+
+  // Thinking: on Write to the Djinn, on the seal when the pill is absent, and in discreet mode.
+  const thinking = eyeTarget({ ...base, batch: "thinking" });
+  assert.deepEqual(thinking, {
+    perch: "pill",
+    mood: "thinking",
+    shine: false,
+  });
+  assert.equal(eyeLook({ ...base, wishesReading: true }, thinking), undefined);
+  assert.deepEqual(
+    eyeTarget({
+      ...base,
+      batch: "thinking",
+      perches: new Set(["home"]),
+    }),
+    { perch: "home", mood: "thinking", shine: false },
+  );
+  assert.deepEqual(
+    eyeTarget({
+      ...base,
+      batch: "thinking",
+      presence: "discreet",
+      needs: true,
+    }),
+    { perch: "home", mood: "thinking", shine: true },
+  );
+
+  // On a question the developer reads, the reader comes first: the eye keeps reading with them.
+  assert.deepEqual(eyeTarget({ ...base, focus: "q:a", batch: "thinking" }), {
+    perch: "q:a",
+    mood: "reading",
+    shine: false,
+  });
+
+  // Done: back to listening (or resting in discreet mode) with end: "done" so the flame burst plays once.
+  assert.deepEqual(eyeTarget({ ...base, batch: "done" }), {
+    perch: "pill",
+    mood: "listening",
+    shine: false,
+    end: "done",
+  });
+  assert.deepEqual(
+    eyeTarget({ ...base, batch: "done", presence: "discreet" }),
+    {
+      perch: "home",
+      mood: "resting",
+      shine: false,
+      end: "done",
+    },
+  );
+
+  // Failed: red mood on the porthole and the seal, gaze lowered by CSS (eyeLook undefined).
+  const failed = eyeTarget({ ...base, batch: "failed" });
+  assert.deepEqual(failed, {
+    perch: "pill",
+    mood: "failed",
+    shine: false,
+  });
+  assert.equal(eyeLook({ ...base, runsReading: true }, failed), undefined);
+  assert.deepEqual(
+    eyeTarget({ ...base, batch: "failed", presence: "discreet" }),
+    { perch: "home", mood: "failed", shine: false },
+  );
+});

@@ -84,10 +84,16 @@
   --eye-flame-in: #fce0a2;
   --eye-flame-edge: #f0b24a;
   --eye-lid: #0b1714;
+  --eye-lid-failed: #a3301f;
   --eye-shine: #ffb547;
   --eye-slit: 0.62;
   --eye-lid-down: 1;
   --eye-rays: 0;
+  --think-line: #93aaf2;
+  --think-white: #1c2547;
+  --think-star: #151c38;
+  --think-iris: #0f1530;
+  --fail-white: #3a1c17;
   /* The hover (styles.css, L17 proposal 1, Calm): a tint of the text's ink fades in, in the shape of the element; a tab
      lights its bar. */
   --hover-strength: 7%;
@@ -224,10 +230,16 @@ html[data-theme="light"] {
   --eye-flame-in: #f0b24a;
   --eye-flame-edge: #7a4b00;
   --eye-lid: #e5f2ed;
+  --eye-lid-failed: #df553e;
   --eye-shine: #e09a1a;
   --eye-slit: 1;
   --eye-lid-down: 0;
   --eye-rays: 1;
+  --think-line: #2f4c8a;
+  --think-white: #eef2fb;
+  --think-star: #dce4f6;
+  --think-iris: #c9d5ef;
+  --fail-white: #fbeeeb;
   --hover-strength: 5%;
   --press-strength: 5%;
   --pill-socket: #ffffff;

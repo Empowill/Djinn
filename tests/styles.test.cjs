@@ -991,3 +991,104 @@ test("the empty states' drawings never loop, and move by transform and opacity a
     for (const [, property] of body.matchAll(/([a-z-]+)\s*:/g))
       assert.ok(["opacity", "transform"].includes(property), property);
 });
+
+// W456 (Decision Q112, L44 v3): the eye's four batch states (listening, thinking, done, failed), their dark and light
+// tokens, the paused loop at rest, and the lead's side journal.
+test("the eye's batch states and the lead's side journal keep their tokens and calm rules in dark and light", () => {
+  const themeCss = fs.readFileSync(path.join(root, "theme.css"), "utf8");
+  const eyeCss = fs.readFileSync(path.join(root, "djinn-eye.css"), "utf8");
+  const reviewCss = fs.readFileSync(path.join(root, "review.css"), "utf8");
+  const stylesCss = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+
+  const block = (css, selector) => {
+    const start = css.indexOf(selector + " {");
+    assert.ok(start >= 0, `${selector} exists`);
+    return css.slice(start, css.indexOf("}", start));
+  };
+  const dark = block(themeCss, ":root");
+  const light = block(themeCss, 'html[data-theme="light"]');
+  for (const [name, b] of [
+    ["dark", dark],
+    ["light", light],
+  ]) {
+    for (const tok of [
+      "--eye-line",
+      "--eye-flame",
+      "--eye-flame-edge",
+      "--eye-lid-failed",
+      "--think-line",
+      "--think-white",
+      "--think-star",
+      "--think-iris",
+      "--fail-white",
+    ]) {
+      assert.match(b, new RegExp(`${tok}:\\s*#[0-9a-f]{6};`), `${name} ${tok}`);
+    }
+  }
+
+  // Thinking: blue tokens and 3.2s wander loop.
+  assert.match(
+    eyeCss,
+    /\.djinn-eye\[data-mood="thinking"\]\s*\{[^}]*--eye-line:\s*var\(--think-line\);[^}]*--eye-iris:\s*var\(--think-iris\);/,
+  );
+  assert.match(
+    eyeCss,
+    /\.djinn-eye\[data-mood="thinking"\]\s+\.djinn-eye-iris\s*\{\s*animation:\s*wander 3\.2s cubic-bezier\(0\.5,\s*0,\s*0\.2,\s*1\) infinite;/,
+  );
+  assert.match(
+    eyeCss,
+    /\.lead-socket:has\(\.djinn-eye\[data-mood="thinking"\]\)\s*>\s*\.lead-socket-ring\s*\{\s*border-color:\s*var\(--think-line\);/,
+  );
+
+  // Done: two blinks and the golden flame burst.
+  assert.match(
+    eyeCss,
+    /\.djinn-eye\[data-end="done"\]\s+\.djinn-eye-ball\s*\{\s*animation:\s*blink2 0\.62s ease-in-out 1;/,
+  );
+  assert.match(
+    eyeCss,
+    /\.djinn-eye\[data-end="done"\]\s+\.djinn-eye-flame\s*\{[^}]*animation:\s*flame-burst 1\.9s/,
+  );
+
+  // Failed: red line, red lowered lid, lowered iris, porthole ring in --st-failed.
+  assert.match(
+    eyeCss,
+    /\.djinn-eye\[data-mood="failed"\]\s*\{[^}]*--eye-line:\s*var\(--st-failed\);[^}]*--eye-white:\s*var\(--fail-white\);[^}]*--eye-lid:\s*var\(--eye-lid-failed\);/,
+  );
+  assert.match(
+    eyeCss,
+    /\.djinn-eye\[data-mood="failed"\]\s+\.djinn-eye-lid\s*\{\s*opacity:\s*1;\s*transform:\s*translateY\(0\.0875rem\);/,
+  );
+  assert.match(
+    eyeCss,
+    /\.lead-socket:has\(\.djinn-eye\[data-mood="failed"\]\)\s*>\s*\.lead-socket-ring\s*\{\s*border-color:\s*var\(--st-failed\);/,
+  );
+
+  // Window at rest pauses all eye animations and the side journal fade-in.
+  for (const sel of [
+    "html[data-still] .djinn-eye-iris",
+    "html[data-still] .djinn-eye-ball",
+    "html[data-still] .djinn-eye-flame",
+    "html[data-still] .djinn-eye-lid",
+    "html[data-still] .lead-side-log-line",
+  ]) {
+    assert.ok(stylesCss.includes(sel), `${sel} is paused at rest`);
+  }
+
+  // Side journal: square element with straight left border, done in gold (dark --eye-flame, light --eye-flame-edge), failed in --st-failed.
+  const logRule = block(reviewCss, ".lead-side-log");
+  assert.match(logRule, /border-left:\s*1px solid var\(--line\);/);
+  assert.doesNotMatch(logRule, /border-radius/);
+  assert.match(
+    block(reviewCss, ".lead-side-log-line.done"),
+    /color:\s*var\(--eye-flame\);/,
+  );
+  assert.match(
+    block(reviewCss, 'html[data-theme="light"] .lead-side-log-line.done'),
+    /color:\s*var\(--eye-flame-edge\);/,
+  );
+  assert.match(
+    block(reviewCss, ".lead-side-log-line.failed"),
+    /color:\s*var\(--st-failed\);/,
+  );
+});

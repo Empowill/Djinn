@@ -8,9 +8,14 @@ export type Presence = "alive" | "discreet" | "none";
 
 export const presences: readonly Presence[] = ["alive", "discreet", "none"];
 
+// The state of the driven lead's batch, as the eye shows it (Decision Q112 B, tilasm L44 v3): thinking (blue, wandering
+// gaze) while a batch runs, done (gold flame burst) when it finishes, failed (red, heavy lid) when it fails.
+export type BatchMood = "thinking" | "done" | "failed";
+
 // The eye's moods: waking (closed in the seal before the stream answers for the first time), asleep (the lead is
 // stopped), restarting (Djinn's stream is cut), resting (home, awake), reading (the questions' reading line, or a
-// question that has the focus), watching (a tab has it), listening (Write to the Djinn).
+// question that has the focus), watching (a tab has it), listening (Write to the Djinn), thinking (a batch of the
+// driven lead runs), failed (its batch failed).
 export type Mood =
   | "waking"
   | "asleep"
@@ -18,7 +23,9 @@ export type Mood =
   | "resting"
   | "watching"
   | "reading"
-  | "listening";
+  | "listening"
+  | "thinking"
+  | "failed";
 
 export interface EyeSignals {
   presence: Presence;
@@ -38,6 +45,8 @@ export interface EyeSignals {
   needs: boolean;
   // An unseen message from the lead waits in the bubble on Write to the Djinn: the eye comes to its socket.
   speaking?: boolean;
+  // The state of the driven lead's batch: thinking while it runs, done as it finishes, failed when it stops on error.
+  batch?: BatchMood;
   // The places shown now: "home" (the seal), "reading" (the questions' reading line), "pill" (Write to the Djinn), "q:<question id>", "tab:<view>".
   perches: ReadonlySet<string>;
   // The place of the element that has the focus, if it has one: its question, Write to the Djinn, its tab.
@@ -50,16 +59,19 @@ export interface EyeTarget {
   mood: Mood;
   // The flame shines: something waits for the developer.
   shine: boolean;
+  // Set for 2.65 s after a batch finishes: double blink and gold flame burst.
+  end?: "done";
 }
 
 export const questionPerch = (id: string) => `q:${id}`;
 export const tabPerch = (view: string) => `tab:${view}`;
 
 // eyeTarget is where the eye rests and how: home while the stream wakes, is cut, the lead is stopped, or the wishes read;
-// in the socket of Write to the Djinn while the lead speaks in its bubble; else by the element that has the focus, and
-// only there (W259): its question, Write to the Djinn, its tab. While questions read for more than 150 ms without focus,
-// it reads the questions' reading line ("reading"); with the focus on nothing that has a place, it listens on Write to
-// the Djinn, the Djinn's own place; with that not shown, home.
+// in the socket of Write to the Djinn while the lead speaks in its bubble or runs a batch; else by the element that has
+// the focus, and only there (W259): its question, Write to the Djinn, its tab. While questions read for more than 150 ms
+// without focus, it reads the questions' reading line ("reading"); with the focus on nothing that has a place, it
+// listens on Write to the Djinn, the Djinn's own place; with that not shown, home. When a batch runs or failed, its
+// color overrides the mood; when a batch just finished, end="done" plays the gold flame burst.
 export function eyeTarget(s: EyeSignals): EyeTarget {
   if (s.presence === "none")
     return { perch: "", mood: "resting", shine: false };
@@ -73,20 +85,30 @@ export function eyeTarget(s: EyeSignals): EyeTarget {
   if (s.stopped) return { perch: home, mood: "asleep", shine: false };
   const shine = s.needs || s.blocking;
   if (s.wishesReading) return { perch: home, mood: "resting", shine };
+  const batchMood =
+    s.batch === "thinking" || s.batch === "failed" ? s.batch : undefined;
+  const end = s.batch === "done" ? { end: "done" as const } : undefined;
   if (s.presence === "alive") {
     if (s.speaking && s.perches.has("pill"))
-      return { perch: "pill", mood: "listening", shine };
-    if (s.focus && s.perches.has(s.focus))
-      return { perch: s.focus, mood: moodAt(s.focus), shine };
+      return { perch: "pill", mood: batchMood ?? "listening", shine, ...end };
+    if (s.focus && s.perches.has(s.focus) && s.focus !== "pill")
+      return {
+        perch: s.focus,
+        mood: moodAt(s.focus),
+        shine,
+      };
+    if (s.batch && s.perches.has("pill"))
+      return { perch: "pill", mood: batchMood ?? "listening", shine, ...end };
     if (s.perches.has("reading"))
       return { perch: "reading", mood: "reading", shine };
     if (s.perches.has("pill"))
-      return { perch: "pill", mood: "listening", shine };
+      return { perch: "pill", mood: batchMood ?? "listening", shine, ...end };
   }
   return {
     perch: home,
-    mood: s.perches.has("reading") ? "reading" : "resting",
+    mood: batchMood ?? (s.perches.has("reading") ? "reading" : "resting"),
     shine,
+    ...end,
   };
 }
 
@@ -100,9 +122,17 @@ const moodAt = (perch: string): Mood =>
         : "resting";
 
 // eyeLook is where the iris turns while a region reads: down at the menu from the seal while wishes read, right towards
-// What runs from a question or the seal while tasks still read. Undefined when everything it glances at is read.
+// What runs from a question or the seal while tasks still read. Undefined when everything it glances at is read, or when
+// a batch drives the iris itself (thinking wanders, failed drops).
 export function eyeLook(s: EyeSignals, target: EyeTarget): Point | undefined {
-  if (!s.live || s.stopped || !target.perch || target.perch === "reading")
+  if (
+    !s.live ||
+    s.stopped ||
+    !target.perch ||
+    target.perch === "reading" ||
+    target.mood === "thinking" ||
+    target.mood === "failed"
+  )
     return undefined;
   if (s.wishesReading && target.perch === "home") return { x: 1, y: 1.5 };
   if (s.runsReading) {
