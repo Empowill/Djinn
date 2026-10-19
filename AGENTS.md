@@ -24,7 +24,8 @@ repeat them.
   command, a behaviour. Rewrite its chapter or card in the documentation site (`docs/site/index.html`); a new concept
   gets its card. The Command line tab reads the command tree: keep a proto comment or a `cli.Builtins` entry true.
 - **Read [`docs/pitfalls.md`](docs/pitfalls.md) before you chase a failure**: the code's known traps, how to spot them.
-- **Never call a paid model in a test.** Record a stream instead (`docs/providers.md`).
+- **Write tests by the rules in [`CONTRIBUTING.md`](CONTRIBUTING.md#writing-tests).** Never call a paid model in a
+  test: record a stream instead (`docs/providers.md`).
 - **A license check comes before any reuse** of third-party code: see the license section of
   `CONTRIBUTING.md`, and name every new dependency in your change description.
 - **What you add to a wish's plan is smoke** unless the code computes on it: write a block, do
