@@ -313,6 +313,12 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     "aria-pressed",
     "true",
   );
+  // The Resources tab shows the machine's CPU and memory charts as well as the two worker heatmaps side by side.
+  await expect(panel.locator(".resource-machine .resource-chart")).toHaveCount(
+    2,
+  );
+  await expect(panel.locator(".resource-heatmap-group")).toHaveCount(2);
+  await expect(panel.locator(".resource-heatmap-switch")).toHaveCount(0);
   const worker = panel.locator(".resource-worker", { hasText: "W1" });
   // The title in full on the worker's title line: it wraps, never cut.
   await expect(worker.locator(".resource-worker-name")).toHaveText(title);

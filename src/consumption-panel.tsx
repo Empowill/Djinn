@@ -1,8 +1,8 @@
 // The resources panel, the Hourglass's machine (hourglass.tsx): the machine total at the very top, then three tabs —
-// Resources (a worker heatmap on top, then the running workers grouped by wish with watchers last), Gates (the whole
-// machine's CPU and memory stacked, the gates timeline and the commands grouped under their gates), and Disk (the main
-// folders using the disk, biggest first). The series are kept in the store (internal/machine/history.go): the panel
-// reads the range once, then every 5 s only what came since.
+// Resources (the whole machine's CPU and memory, CPU and memory worker heatmaps side by side, then the running workers
+// grouped by wish with watchers last), Gates (the whole machine's CPU and memory stacked, the gates timeline and the
+// commands grouped under their gates), and Disk (the main folders using the disk, biggest first). The series are kept
+// in the store (internal/machine/history.go): the panel reads the range once, then every 5 s only what came since.
 import {
   type CSSProperties,
   Fragment,
@@ -721,83 +721,70 @@ export const CommandGroups = memo(function CommandGroups({
 });
 
 export type ConsumptionTab = "resources" | "gates" | "disk";
-export type HeatMetric = "cpu" | "memory";
 
-// A heatmap on top of the Resources tab to spot at a glance the workers that consume: one cell per running worker,
-// CPU or memory as colour, its code on hover.
+// CPU and memory heatmaps on top of the Resources tab to spot at a glance the workers that consume: one cell per
+// running worker, its code on hover, side by side and stacked under a narrow width.
 const WorkerHeatmap = memo(function WorkerHeatmap({
   workers,
   cpuTop,
   memoryTop,
-  metric,
-  onMetric,
 }: {
   workers: readonly WorkerSeries[];
   cpuTop: number;
   memoryTop: number;
-  metric: HeatMetric;
-  onMetric: (m: HeatMetric) => void;
 }) {
   if (workers.length === 0) return null;
+  const metrics = [
+    ["cpu", t("consumption.cpu")],
+    ["memory", t("consumption.memory")],
+  ] as const;
   return (
     <div className="resource-heatmap">
-      <div
-        className="consumption-range-selector resource-heatmap-switch"
-        role="group"
-        aria-label={t("consumption.workers_title")}
-      >
-        {(
-          [
-            ["cpu", t("consumption.cpu")],
-            ["memory", t("consumption.memory")],
-          ] as const
-        ).map(([m, label]) => (
-          <button
-            key={m}
-            type="button"
-            className={`range-pill ${metric === m ? "active" : ""}`}
-            aria-pressed={metric === m}
-            onClick={() => onMetric(m)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="resource-heatmap-cells" role="list">
-        {workers.map((w) => {
-          const last = w.points.at(-1);
-          const cpuVal = last?.cpuPercent ?? 0;
-          const memVal = Number(last?.memoryBytes ?? 0n);
-          const ratio =
-            metric === "cpu"
-              ? cpuVal / Math.max(100, cpuTop)
-              : memVal / Math.max(1, memoryTop);
-          const pct = Math.max(
-            12,
-            Math.min(100, Math.round(Math.max(0, ratio) * 100)),
-          );
-          const valueText =
-            metric === "cpu"
-              ? formatValue("cpu", cpuVal)
-              : formatValue("memory", memVal);
-          const label = `${w.code}: ${valueText}`;
-          return (
-            <div key={w.taskId || w.code} role="listitem">
-              <TooltipButton
-                className={`resource-heatmap-cell ${metric} ${w.paused ? "is-paused" : ""}`}
-                label={label}
-                data-code={w.code}
-                style={{ "--heat": `${pct}%` } as CSSProperties}
-                onClick={() => {
-                  if (w.taskId) jump(`worker-${w.taskId}`);
-                }}
-              >
-                <span className="resource-heatmap-code">{w.code}</span>
-              </TooltipButton>
-            </div>
-          );
-        })}
-      </div>
+      {metrics.map(([metric, metricLabel]) => (
+        <div
+          key={metric}
+          className={`resource-heatmap-group ${metric}`}
+          role="group"
+          aria-label={metricLabel}
+        >
+          <span className="resource-heatmap-label">{metricLabel}</span>
+          <div className="resource-heatmap-cells" role="list">
+            {workers.map((w) => {
+              const last = w.points.at(-1);
+              const cpuVal = last?.cpuPercent ?? 0;
+              const memVal = Number(last?.memoryBytes ?? 0n);
+              const ratio =
+                metric === "cpu"
+                  ? cpuVal / Math.max(100, cpuTop)
+                  : memVal / Math.max(1, memoryTop);
+              const pct = Math.max(
+                12,
+                Math.min(100, Math.round(Math.max(0, ratio) * 100)),
+              );
+              const valueText =
+                metric === "cpu"
+                  ? formatValue("cpu", cpuVal)
+                  : formatValue("memory", memVal);
+              const label = `${w.code}: ${valueText}`;
+              return (
+                <div key={w.taskId || w.code} role="listitem">
+                  <TooltipButton
+                    className={`resource-heatmap-cell ${metric} ${w.paused ? "is-paused" : ""}`}
+                    label={label}
+                    data-code={w.code}
+                    style={{ "--heat": `${pct}%` } as CSSProperties}
+                    onClick={() => {
+                      if (w.taskId) jump(`worker-${w.taskId}`);
+                    }}
+                  >
+                    <span className="resource-heatmap-code">{w.code}</span>
+                  </TooltipButton>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 });
@@ -1374,7 +1361,6 @@ export function ConsumptionPanel({
   const [minutes, setMinutes] = useState<number>(initialMinutes);
   const [folded, setFolded] = useState<boolean>(initialFolded);
   const [tab, setTab] = useState<ConsumptionTab>(initialTab);
-  const [heatMetric, setHeatMetric] = useState<HeatMetric>("cpu");
   const [data, setData] = useState<MachineServiceSeriesResponse | null>(
     initialData,
   );
@@ -1604,94 +1590,86 @@ export function ConsumptionPanel({
             role="tabpanel"
             aria-labelledby={`consumption-tab-${tab}`}
           >
+            {tab === "resources" && data?.workerMeasure && (
+              <p className="consumption-notice muted-text">
+                {t("resources.not_measured")}
+                {data.workerMeasure !== "windows"
+                  ? ` (${data.workerMeasure})`
+                  : ""}
+              </p>
+            )}
+            {(tab === "resources" || tab === "gates") && data?.machine && (
+              <MachineBand
+                series={data.machine}
+                gates={gates}
+                tMin={tMin}
+                tMax={tMax}
+              />
+            )}
             {tab === "resources" && (
-              <>
-                {data?.workerMeasure && (
-                  <p className="consumption-notice muted-text">
-                    {t("resources.not_measured")}
-                    {data.workerMeasure !== "windows"
-                      ? ` (${data.workerMeasure})`
-                      : ""}
-                  </p>
-                )}
-                <section
-                  className="resource-workers"
-                  aria-label={t("consumption.workers_title")}
-                >
-                  <div className="resource-workers-head">
-                    <h4 className="resource-section-title">
-                      {t("consumption.workers_title")}
-                    </h4>
-                    {workers.length > 1 && (
-                      <p className="resource-workers-scale">
-                        {t("consumption.workers_scale")}
-                      </p>
-                    )}
-                  </div>
-                  <WorkerHeatmap
-                    workers={orderedWorkers}
-                    cpuTop={workerTops.cpu}
-                    memoryTop={workerTops.memory}
-                    metric={heatMetric}
-                    onMetric={setHeatMetric}
-                  />
-                  {workers.length === 0 ? (
-                    <p className="muted-text">{t("consumption.no_workers")}</p>
-                  ) : (
-                    wishGroups.map((group) => (
-                      <div
-                        key={group.wishId || "other"}
-                        className="resource-wish-group"
-                      >
-                        {(group.title || wishGroups.length > 1) && (
-                          <h5 className="resource-wish-title">
-                            {group.title || group.wishId}
-                          </h5>
-                        )}
-                        {group.workers.map((w) => {
-                          const task = tasks?.get(w.taskId);
-                          return (
-                            <WorkerRow
-                              key={w.taskId || w.code}
-                              worker={w}
-                              task={task}
-                              project={
-                                task
-                                  ? projectById.get(task.projectId)
-                                  : undefined
-                              }
-                              memoryTotal={memoryTotal}
-                              cpuTop={workerTops.cpu}
-                              memoryTop={workerTops.memory}
-                              tMin={tMin}
-                              tMax={tMax}
-                              onOpen={open}
-                            />
-                          );
-                        })}
-                      </div>
-                    ))
+              <section
+                className="resource-workers"
+                aria-label={t("consumption.workers_title")}
+              >
+                <div className="resource-workers-head">
+                  <h4 className="resource-section-title">
+                    {t("consumption.workers_title")}
+                  </h4>
+                  {workers.length > 1 && (
+                    <p className="resource-workers-scale">
+                      {t("consumption.workers_scale")}
+                    </p>
                   )}
-                </section>
-              </>
+                </div>
+                <WorkerHeatmap
+                  workers={orderedWorkers}
+                  cpuTop={workerTops.cpu}
+                  memoryTop={workerTops.memory}
+                />
+                {workers.length === 0 ? (
+                  <p className="muted-text">{t("consumption.no_workers")}</p>
+                ) : (
+                  wishGroups.map((group) => (
+                    <div
+                      key={group.wishId || "other"}
+                      className="resource-wish-group"
+                    >
+                      {(group.title || wishGroups.length > 1) && (
+                        <h5 className="resource-wish-title">
+                          {group.title || group.wishId}
+                        </h5>
+                      )}
+                      {group.workers.map((w) => {
+                        const task = tasks?.get(w.taskId);
+                        return (
+                          <WorkerRow
+                            key={w.taskId || w.code}
+                            worker={w}
+                            task={task}
+                            project={
+                              task ? projectById.get(task.projectId) : undefined
+                            }
+                            memoryTotal={memoryTotal}
+                            cpuTop={workerTops.cpu}
+                            memoryTop={workerTops.memory}
+                            tMin={tMin}
+                            tMax={tMax}
+                            onOpen={open}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))
+                )}
+              </section>
             )}
 
             {tab === "gates" && (
-              <>
-                {data?.machine && (
-                  <MachineBand
-                    series={data.machine}
-                    gates={gates}
-                    tMin={tMin}
-                    tMax={tMax}
-                  />
-                )}
-                <CommandGroups
-                  costs={commands}
-                  projectIds={projectIds}
-                  projectNames={projectNames}
-                />
-              </>
+              <CommandGroups
+                costs={commands}
+                projectIds={projectIds}
+                projectNames={projectNames}
+              />
             )}
 
             {tab === "disk" && <DiskSection disk={data?.disk} />}
