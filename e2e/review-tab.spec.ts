@@ -184,6 +184,6 @@ test("the Review tab lists a merged task, opens its diff with its comment, and k
     }
     expect(errors).toEqual([]);
   } finally {
-    djinn("wish", "pause", wishId);
+    djinn("wish", "delete", wishId);
   }
 });

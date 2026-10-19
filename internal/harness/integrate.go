@@ -2166,6 +2166,9 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		if s := wish.GetState(); s == planv1.WishState_WISH_STATE_PAUSED || s == planv1.WishState_WISH_STATE_GRANTED {
+			continue
+		}
 
 		// 1. Azima awaiting proof
 		tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})

@@ -285,7 +285,7 @@ export function WishApp() {
   const projectsState = useReadState("projects");
   const retryWishes = useRetryRead("wishes");
   const retryProjects = useRetryRead("projects");
-  const settling = !loaded;
+  const settling = wishes.length === 0 && wishesState !== "ready";
   // The waking splash in index.html stays from the first frame until the first wishes read completes, or hands off to
   // the in-app reading lines when a read goes slow or fails.
   useEffect(() => {
