@@ -101,7 +101,7 @@ func (w *Wishes) drive() *LeadDrive {
 func (d *LeadDrive) SetBatch(b *planv1.LeadBatch) {
 	d.mu.Lock()
 	d.batch = proto.CloneOf(b)
-	if b.GetState() == planv1.LeadBatchState_LEAD_BATCH_STATE_DONE {
+	if s := b.GetState(); s == planv1.LeadBatchState_LEAD_BATCH_STATE_RUNNING || s == planv1.LeadBatchState_LEAD_BATCH_STATE_DONE {
 		d.failure, d.limit = "", nil
 	}
 	changed := d.changed
@@ -502,11 +502,12 @@ func (s *LeadService) resumeDriven(
 		return nil, Status(err)
 	}
 	note := "Djinn drives the lead: each batch of its events, and what you write to the Djinn, goes to a fresh " +
-		"session that ends with its turn. djinn lead journal shows what each batch did."
-	if d.Failure() != "" {
+		"session that ends with its turn. The side journal in the window shows what each batch did."
+	if d.Failure() != "" || d.LeadLimit() != nil {
+		d.SetLimit(nil, "")
 		d.askRetry()
-		note = "Djinn drives the lead: the events that wait go to a new session now. djinn lead journal shows what " +
-			"each batch did."
+		note = "Djinn drives the lead: the events that wait go to a new session now. The side journal in the window " +
+			"shows what each batch did."
 	}
 	if s.Wishes.Leads != nil {
 		s.Wishes.Leads.Show(req.Msg.GetWishId(), "")

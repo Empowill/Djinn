@@ -100,8 +100,9 @@ func (d *LeadDriver) Run(ctx context.Context) {
 	d.restore(ctx, drive)
 	// After a batch failed twice, the newest event it took: its events wait for a newer one, or for Lead.
 	held := ""
+	retried := drive.Retried()
 	for ctx.Err() == nil {
-		changed, retried := d.Wishes.LeadEventsChanged(), drive.Retried() // Before reading, so that none is missed.
+		changed := d.Wishes.LeadEventsChanged() // Before reading, so that none is missed.
 		events, err := d.Wishes.WaitLeadEvents(ctx)
 		if ctx.Err() != nil {
 			return
@@ -123,6 +124,7 @@ func (d *LeadDriver) Run(ctx context.Context) {
 		}
 		batch := plan.BatchEvents(events)
 		held = ""
+		retried = drive.Retried()
 		ended, limit := d.batch(ctx, drive, batch)
 		if !ended && ctx.Err() == nil {
 			held = batch[len(batch)-1].GetId()
