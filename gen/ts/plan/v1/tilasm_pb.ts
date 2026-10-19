@@ -2,8 +2,8 @@
 // @generated from file plan/v1/tilasm.proto (package plan.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
 import { file_djinn_v1_options } from "../../djinn/v1/options_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file plan/v1/tilasm.proto.
  */
 export const file_plan_v1_tilasm: GenFile = /*@__PURE__*/
-  fileDesc("ChRwbGFuL3YxL3RpbGFzbS5wcm90bxIHcGxhbi52MSLIAgoGVGlsYXNtEhQKAmlkGAEgASgJQgi6SAVyA7ABARIPCgd3aXNoX2lkGAIgASgJEiIKBGNvZGUYAyABKAlCFLpIEXIPMg1eTFswLTldezIsM30kEhcKBXRpdGxlGAQgASgJQgi6SAVyAxjoBxIXCgZhdXRob3IYBSABKAlCB7pIBHICGGQSKAoIdmVyc2lvbnMYBiADKAsyFi5wbGFuLnYxLlRpbGFzbVZlcnNpb24SDQoFY2l0ZXMYByADKAkSLwoLY3JlYXRlX3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC3VwZGF0ZV90aW1lGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCgltYXhfYnl0ZXMYCiABKAM6E9LzGA8KB3dpc2hfaWQKBGNvZGUinQEKDVRpbGFzbVZlcnNpb24SDgoGbnVtYmVyGAEgASgFEi8KC2NyZWF0ZV90aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIXCgZhdXRob3IYAyABKAlCB7pIBHICGGQSDAoEc2l6ZRgEIAEoAxINCgVmaWxlcxgFIAEoBRIVCg1yZXN0b3JlZF9mcm9tGAYgASgFIloKCVRpbGFzbVJlZhInCgRjb2RlGAEgASgJQhe6SBRyEjIQXltMbF1bMC05XXsyLDN9JEgAEhYKAmlkGAIgASgJQgi6SAVyA7ABAUgAQgwKA3JlZhIFukgCCAEiZwoMVGlsYXNtRXhwb3J0Eh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEhIKCmNpdGVfY29kZXMYAiADKAkSIgoFZmlsZXMYAyADKAsyEy5wbGFuLnYxLlRpbGFzbUZpbGUiPAoKVGlsYXNtRmlsZRIPCgd2ZXJzaW9uGAEgASgFEgwKBHBhdGgYAiABKAkSDwoHY29udGVudBgDIAEoDCLJAQoXVGlsYXNtU2VydmljZVB1dFJlcXVlc3QSGQoEcGF0aBgBIAEoCUILukgIyAEBcgMYgCASFgoEd2lzaBgCIAEoCUIIukgFcgOwAQESFwoFdGl0bGUYAyABKAlCCLpIBXIDGOgHEigKBGNvZGUYBCABKAlCGrpIF9gBAXISMhBeW0xsXVswLTldezIsM30kEh8KBWNpdGVzGAUgAygJQhC6SA2SAQoQZCIGcgQQARhAEhcKBmF1dGhvchgGIAEoCUIHukgEcgIYZCJOChhUaWxhc21TZXJ2aWNlUHV0UmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20SEQoJZGlyZWN0b3J5GAIgASgJIk8KGFRpbGFzbVNlcnZpY2VMaXN0UmVxdWVzdBIZCgR3aXNoGAEgASgJQgu6SAjYAQFyA7ABARIYCgZzZWFyY2gYAiABKAlCCLpIBXIDGOgHIj0KGVRpbGFzbVNlcnZpY2VMaXN0UmVzcG9uc2USIAoHdGlsYXNtcxgBIAMoCzIPLnBsYW4udjEuVGlsYXNtInoKF1RpbGFzbVNlcnZpY2VHZXRSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQESGAoHdmVyc2lvbhgDIAEoBUIHukgEGgIoACKXAQoYVGlsYXNtU2VydmljZUdldFJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEg8KB3ZlcnNpb24YAiABKAUSDAoEdGV4dBgDIAEoCRIRCglkaXJlY3RvcnkYBCABKAkSDQoFZmlsZXMYBSADKAkSDAoEbGluaxgGIAEoCRILCgN1cmwYByABKAkiYQoYVGlsYXNtU2VydmljZU9wZW5SZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQEiWgoZVGlsYXNtU2VydmljZU9wZW5SZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRIMCgRsaW5rGAIgASgJEg4KBndpbmRvdxgDIAEoCCJkChtUaWxhc21TZXJ2aWNlSGlzdG9yeVJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABASJbChxUaWxhc21TZXJ2aWNlSGlzdG9yeVJlc3BvbnNlEigKCHZlcnNpb25zGAEgAygLMhYucGxhbi52MS5UaWxhc21WZXJzaW9uEhEKCWRpcmVjdG9yeRgCIAEoCSKaAQobVGlsYXNtU2VydmljZVJlc3RvcmVSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGwoHdmVyc2lvbhgCIAEoBUIKukgHyAEBGgIoARIZCgR3aXNoGAMgASgJQgu6SAjYAQFyA7ABARIXCgZhdXRob3IYBCABKAlCB7pIBHICGGQiPwocVGlsYXNtU2VydmljZVJlc3RvcmVSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbSJ7ChpUaWxhc21TZXJ2aWNlRXhwb3J0UmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhkKBHdpc2gYAiABKAlCC7pICNgBAXIDsAEBEhYKBGZpbGUYAyABKAlCCLpIBXIDGIAgIjkKG1RpbGFzbVNlcnZpY2VFeHBvcnRSZXNwb25zZRIMCgRmaWxlGAEgASgJEgwKBHNpemUYAiABKAMiaAoaVGlsYXNtU2VydmljZUltcG9ydFJlcXVlc3QSGQoEZmlsZRgBIAEoCUILukgIyAEBcgMYgCASFgoEd2lzaBgCIAEoCUIIukgFcgOwAQESFwoGYXV0aG9yGAMgASgJQge6SARyAhhkIj4KG1RpbGFzbVNlcnZpY2VJbXBvcnRSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbSKaAQobVGlsYXNtU2VydmljZVB1dERhdGFSZXF1ZXN0EhkKBHdpc2gYASABKAlCC7pICMgBAXIDsAEBEhYKBG5hbWUYAiABKAlCCLpIBXIDGOgHEi8KBWZpbGVzGAMgAygLMhMucGxhbi52MS5UaWxhc21GaWxlQgu6SAiSAQUIARCQThIXCgZhdXRob3IYBCABKAlCB7pIBHICGGQiUQocVGlsYXNtU2VydmljZVB1dERhdGFSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRIQCghpbXBvcnRlZBgCIAEoCDLgBgoNVGlsYXNtU2VydmljZRJUCgNQdXQSIC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXRSZXF1ZXN0GiEucGxhbi52MS5UaWxhc21TZXJ2aWNlUHV0UmVzcG9uc2UiCMjzGAHg8xgBElYKBExpc3QSIS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VMaXN0UmVxdWVzdBoiLnBsYW4udjEuVGlsYXNtU2VydmljZUxpc3RSZXNwb25zZSIHkAIByPMYARJTCgNHZXQSIC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VHZXRSZXF1ZXN0GiEucGxhbi52MS5UaWxhc21TZXJ2aWNlR2V0UmVzcG9uc2UiB5ACAcjzGAESWwoET3BlbhIhLnBsYW4udjEuVGlsYXNtU2VydmljZU9wZW5SZXF1ZXN0GiIucGxhbi52MS5UaWxhc21TZXJ2aWNlT3BlblJlc3BvbnNlIgzI8xgB2PMYAeDzGAESXwoHSGlzdG9yeRIkLnBsYW4udjEuVGlsYXNtU2VydmljZUhpc3RvcnlSZXF1ZXN0GiUucGxhbi52MS5UaWxhc21TZXJ2aWNlSGlzdG9yeVJlc3BvbnNlIgeQAgHI8xgBEmAKB1Jlc3RvcmUSJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VSZXN0b3JlUmVxdWVzdBolLnBsYW4udjEuVGlsYXNtU2VydmljZVJlc3RvcmVSZXNwb25zZSIIyPMYAeDzGAESXQoGRXhwb3J0EiMucGxhbi52MS5UaWxhc21TZXJ2aWNlRXhwb3J0UmVxdWVzdBokLnBsYW4udjEuVGlsYXNtU2VydmljZUV4cG9ydFJlc3BvbnNlIgjI8xgB4PMYAhJdCgZJbXBvcnQSIy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VJbXBvcnRSZXF1ZXN0GiQucGxhbi52MS5UaWxhc21TZXJ2aWNlSW1wb3J0UmVzcG9uc2UiCMjzGAHg8xgBEmAKB1B1dERhdGESJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXREYXRhUmVxdWVzdBolLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dERhdGFSZXNwb25zZSIIyPMYAuDzGAEaDOrzGAh0YWxpc21hbkKIAQoLY29tLnBsYW4udjFCC1RpbGFzbVByb3RvUAFaL2dpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3BsYW4vdjE7cGxhbnYxogIDUFhYqgIHUGxhbi5WMcoCB1BsYW5cVjHiAhNQbGFuXFYxXEdQQk1ldGFkYXRh6gIIUGxhbjo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
+  fileDesc("ChRwbGFuL3YxL3RpbGFzbS5wcm90bxIHcGxhbi52MSLzAgoGVGlsYXNtEhQKAmlkGAEgASgJQgi6SAVyA7ABARIPCgd3aXNoX2lkGAIgASgJEiIKBGNvZGUYAyABKAlCFLpIEXIPMg1eTFswLTldezIsM30kEhcKBXRpdGxlGAQgASgJQgi6SAVyAxjoBxIXCgZhdXRob3IYBSABKAlCB7pIBHICGGQSKAoIdmVyc2lvbnMYBiADKAsyFi5wbGFuLnYxLlRpbGFzbVZlcnNpb24SDQoFY2l0ZXMYByADKAkSLwoLY3JlYXRlX3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC3VwZGF0ZV90aW1lGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCgltYXhfYnl0ZXMYCiABKAMSKQoIYXJ0aWZhY3QYCyABKAsyFy5wbGFuLnYxLlRpbGFzbUFydGlmYWN0OhPS8xgPCgd3aXNoX2lkCgRjb2RlIr4BCg5UaWxhc21BcnRpZmFjdBILCgN1cmwYASABKAkSDwoHdmVyc2lvbhgCIAEoBRIYChBhcnRpZmFjdF92ZXJzaW9uGAMgASgFEjAKDHB1Ymxpc2hfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMY29uZmlybV90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghjb3N0X3VzZBgGIAEoASKdAQoNVGlsYXNtVmVyc2lvbhIOCgZudW1iZXIYASABKAUSLwoLY3JlYXRlX3RpbWUYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhcKBmF1dGhvchgDIAEoCUIHukgEcgIYZBIMCgRzaXplGAQgASgDEg0KBWZpbGVzGAUgASgFEhUKDXJlc3RvcmVkX2Zyb20YBiABKAUiWgoJVGlsYXNtUmVmEicKBGNvZGUYASABKAlCF7pIFHISMhBeW0xsXVswLTldezIsM30kSAASFgoCaWQYAiABKAlCCLpIBXIDsAEBSABCDAoDcmVmEgW6SAIIASJnCgxUaWxhc21FeHBvcnQSHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20SEgoKY2l0ZV9jb2RlcxgCIAMoCRIiCgVmaWxlcxgDIAMoCzITLnBsYW4udjEuVGlsYXNtRmlsZSI8CgpUaWxhc21GaWxlEg8KB3ZlcnNpb24YASABKAUSDAoEcGF0aBgCIAEoCRIPCgdjb250ZW50GAMgASgMItkDCg1UaWxhc21Db21tZW50EhQKAmlkGAEgASgJQgi6SAVyA7ABARIRCgl0aWxhc21faWQYAiABKAkSDwoHd2lzaF9pZBgDIAEoCRIiCgRjb2RlGAQgASgJQhS6SBFyDzINXkNbMC05XXsxLDR9JBIWCgR0ZXh0GAUgASgJQgi6SAVyAxjAPhIlCgZhbmNob3IYBiABKAsyFS5wbGFuLnYxLlRpbGFzbUFuY2hvchIPCgd2ZXJzaW9uGAcgASgFEiQKBXN0YXRlGAggASgOMhUucGxhbi52MS5Db21tZW50U3RhdGUSDAoEc2VuZBgJIAEoBRIvCgtjcmVhdGVfdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLdXBkYXRlX3RpbWUYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi0KCXNlbmRfdGltZRgMIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJAoFcmVwbHkYDSABKAsyFS5wbGFuLnYxLkNvbW1lbnRSZXBseRIYCgdmb2xsb3dzGA4gASgJQge6SARyAhgKOhXS8xgRCgl0aWxhc21faWQKBGNvZGUivAIKDFRpbGFzbUFuY2hvchIWCgRwYWdlGAEgASgJQgi6SAVyAxiAIBIXCgVleGFjdBgCIAEoCUIIukgFcgMY0A8SGAoGcHJlZml4GAMgASgJQgi6SAVyAxjIARIYCgZzdWZmaXgYBCABKAlCCLpIBXIDGMgBEg0KBXN0YXJ0GAUgASgFEgsKA2VuZBgGIAEoBRIcCgplbGVtZW50X2lkGAcgASgJQgi6SAVyAxjoBxIWCgRwYXRoGAggASgJQgi6SAVyAxjQDxIdCgtmaW5nZXJwcmludBgJIAEoCUIIukgFcgMY0A8SFwoFbGFiZWwYCiABKAlCCLpIBXIDGOgHEiUKBnN0YXR1cxgLIAEoDjIVLnBsYW4udjEuQW5jaG9yU3RhdHVzEhYKDnN0YXR1c192ZXJzaW9uGAwgASgFIoIBCgxDb21tZW50UmVwbHkSFgoEdGV4dBgBIAEoCUIIukgFcgMYoB8SFwoGYXV0aG9yGAIgASgJQge6SARyAhhkEi8KC2NyZWF0ZV90aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCgh0YXNrX2lkcxgEIAMoCSLaAQoKVGlsYXNtU2VuZBIUCgJpZBgBIAEoCUIIukgFcgOwAQESEQoJdGlsYXNtX2lkGAIgASgJEg8KB3dpc2hfaWQYAyABKAkSDgoGbnVtYmVyGAQgASgFEiMKBmNob2ljZRgFIAEoDjITLnBsYW4udjEuU2VuZENob2ljZRITCgtxdWVzdGlvbl9pZBgGIAEoCRIvCgtjcmVhdGVfdGltZRgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXA6F9LzGBMKCXRpbGFzbV9pZAoGbnVtYmVyImAKDlRpbGFzbVNlbmRSZWFkEhEKCXRpbGFzbV9pZBgBIAEoCRIMCgRzZW5kGAIgASgFEi0KCXJlYWRfdGltZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiZgoKVGlsYXNtSG9sZBIRCgl0aWxhc21faWQYASABKAkSKQoGcmVhc29uGAIgASgOMhkucGxhbi52MS5UaWxhc21Ib2xkUmVhc29uEgwKBGNvZGUYAyABKAkSDAoEc2VuZBgEIAEoBSKrAQoLVGlsYXNtU2VuZHMSEQoJdGlsYXNtX2lkGAEgASgJEhAKCHF1ZXN0aW9uGAIgASgJEhYKDml0ZXJhdGVfb3B0aW9uGAMgASgJEg0KBXJvdW5kGAQgASgFEg4KBnJvdW5kcxgFIAEoBRIVCg1sYXVuY2hfb3B0aW9uGAYgASgJEhMKC2xhdW5jaF9raW5kGAcgASgJEhQKDGxhdW5jaF90aXRsZRgIIAEoCSJkChtUaWxhc21TZXJ2aWNlUHVibGlzaFJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABASKNAQocVGlsYXNtU2VydmljZVB1Ymxpc2hSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRILCgN1cmwYAiABKAkSDQoFZmlsZXMYAyABKAUSEAoIbGVmdF9vdXQYBCADKAkSDAoEc2l6ZRgFIAEoAxIQCghjb3N0X3VzZBgGIAEoASJECiJUaWxhc21TZXJ2aWNlQ29uZmlybVB1Ymxpc2hSZXF1ZXN0Eh4KCXRpbGFzbV9pZBgBIAEoCUILukgIyAEBcgOwAQEiRgojVGlsYXNtU2VydmljZUNvbmZpcm1QdWJsaXNoUmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20iIgogVGlsYXNtU2VydmljZUNoZWNrUHVibGlzaFJlcXVlc3QibAohVGlsYXNtU2VydmljZUNoZWNrUHVibGlzaFJlc3BvbnNlEhEKCWF2YWlsYWJsZRgBIAEoCBIkCgVibG9jaxgCIAEoDjIVLnBsYW4udjEuUHVibGlzaEJsb2NrEg4KBmRldGFpbBgDIAEoCSLgAQoZVGlsYXNtU2VydmljZVJlcGx5UmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEisKB2NvbW1lbnQYAiABKAlCGrpIF8gBAXISMhBeW0NjXVswLTldezEsNH0kEhYKBHRleHQYAyABKAlCCLpIBXIDGKAfEh4KBHRhc2sYBCADKAlCELpIDZIBChBkIgZyBBABGEASGQoEd2lzaBgFIAEoCUILukgI2AEBcgOwAQESFwoGYXV0aG9yGAYgASgJQge6SARyAhhkIlkKGlRpbGFzbVNlcnZpY2VSZXBseVJlc3BvbnNlEicKB2NvbW1lbnQYASABKAsyFi5wbGFuLnYxLlRpbGFzbUNvbW1lbnQSEgoKdW5hbnN3ZXJlZBgCIAEoBSKPAQohVGlsYXNtU2VydmljZVBsYWNlQ29tbWVudHNSZXF1ZXN0Eh4KCXRpbGFzbV9pZBgBIAEoCUILukgIyAEBcgOwAQESGAoHdmVyc2lvbhgCIAEoBUIHukgEGgIoARIwCgZwbGFjZXMYAyADKAsyFS5wbGFuLnYxLkNvbW1lbnRQbGFjZUIJukgGkgEDEJBOIlcKDENvbW1lbnRQbGFjZRIUCgJpZBgBIAEoCUIIukgFcgOwAQESMQoGc3RhdHVzGAIgASgOMhUucGxhbi52MS5BbmNob3JTdGF0dXNCCrpIB4IBBBABIAAiTgoiVGlsYXNtU2VydmljZVBsYWNlQ29tbWVudHNSZXNwb25zZRIoCghjb21tZW50cxgBIAMoCzIWLnBsYW4udjEuVGlsYXNtQ29tbWVudCKLAQogVGlsYXNtU2VydmljZVNlbmRDb21tZW50c1JlcXVlc3QSHgoJdGlsYXNtX2lkGAEgASgJQgu6SAjIAQFyA7ABARIvCgZjaG9pY2UYAiABKA4yEy5wbGFuLnYxLlNlbmRDaG9pY2VCCrpIB4IBBBABIAASFgoEdGV4dBgDIAEoCUIIukgFcgMYwD4ipQEKIVRpbGFzbVNlcnZpY2VTZW5kQ29tbWVudHNSZXNwb25zZRIhCgRzZW5kGAEgASgLMhMucGxhbi52MS5UaWxhc21TZW5kEigKCGNvbW1lbnRzGAIgAygLMhYucGxhbi52MS5UaWxhc21Db21tZW50EhAKCGFuc3dlcmVkGAMgASgJEhAKCGl0ZXJhdGVkGAQgASgJEg8KB2l0ZXJhdGUYBSABKAki2wEKHlRpbGFzbVNlcnZpY2VQdXRDb21tZW50UmVxdWVzdBIeCgl0aWxhc21faWQYASABKAlCC7pICMgBAXIDsAEBEhcKAmlkGAIgASgJQgu6SAjYAQFyA7ABARIWCgR0ZXh0GAMgASgJQgi6SAVyAxjAPhIlCgZhbmNob3IYBCABKAsyFS5wbGFuLnYxLlRpbGFzbUFuY2hvchIYCgdmb2xsb3dzGAUgASgJQge6SARyAhgKEicKB2RlbGV0ZWQYBiABKAsyFi5wbGFuLnYxLlRpbGFzbUNvbW1lbnQiSgofVGlsYXNtU2VydmljZVB1dENvbW1lbnRSZXNwb25zZRInCgdjb21tZW50GAEgASgLMhYucGxhbi52MS5UaWxhc21Db21tZW50IjwKIVRpbGFzbVNlcnZpY2VEZWxldGVDb21tZW50UmVxdWVzdBIXCgJpZBgBIAEoCUILukgIyAEBcgOwAQEiTQoiVGlsYXNtU2VydmljZURlbGV0ZUNvbW1lbnRSZXNwb25zZRInCgdjb21tZW50GAEgASgLMhYucGxhbi52MS5UaWxhc21Db21tZW50IjcKGlRpbGFzbVNlcnZpY2VEcmFmdHNSZXF1ZXN0EhkKBHdpc2gYASABKAlCC7pICMgBAXIDsAEBIt4BChtUaWxhc21TZXJ2aWNlRHJhZnRzUmVzcG9uc2USKAoIY29tbWVudHMYASADKAsyFi5wbGFuLnYxLlRpbGFzbUNvbW1lbnQSIgoFaG9sZHMYAiADKAsyEy5wbGFuLnYxLlRpbGFzbUhvbGQSJAoEc2VudBgDIAMoCzIWLnBsYW4udjEuVGlsYXNtQ29tbWVudBImCgVyZWFkcxgEIAMoCzIXLnBsYW4udjEuVGlsYXNtU2VuZFJlYWQSIwoFc2VuZHMYBSADKAsyFC5wbGFuLnYxLlRpbGFzbVNlbmRzInwKHFRpbGFzbVNlcnZpY2VDb21tZW50c1JlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABARIVCgRzZW5kGAMgASgFQge6SAQaAigAIl0KHVRpbGFzbVNlcnZpY2VDb21tZW50c1Jlc3BvbnNlEgwKBHRleHQYASABKAkSLgoIY29tbWVudHMYAiADKAsyFi5wbGFuLnYxLlRpbGFzbUNvbW1lbnRCBJD0GAEiyQEKF1RpbGFzbVNlcnZpY2VQdXRSZXF1ZXN0EhkKBHBhdGgYASABKAlCC7pICMgBAXIDGIAgEhYKBHdpc2gYAiABKAlCCLpIBXIDsAEBEhcKBXRpdGxlGAMgASgJQgi6SAVyAxjoBxIoCgRjb2RlGAQgASgJQhq6SBfYAQFyEjIQXltMbF1bMC05XXsyLDN9JBIfCgVjaXRlcxgFIAMoCUIQukgNkgEKEGQiBnIEEAEYQBIXCgZhdXRob3IYBiABKAlCB7pIBHICGGQiTgoYVGlsYXNtU2VydmljZVB1dFJlc3BvbnNlEh8KBnRpbGFzbRgBIAEoCzIPLnBsYW4udjEuVGlsYXNtEhEKCWRpcmVjdG9yeRgCIAEoCSJPChhUaWxhc21TZXJ2aWNlTGlzdFJlcXVlc3QSGQoEd2lzaBgBIAEoCUILukgI2AEBcgOwAQESGAoGc2VhcmNoGAIgASgJQgi6SAVyAxjoByI9ChlUaWxhc21TZXJ2aWNlTGlzdFJlc3BvbnNlEiAKB3RpbGFzbXMYASADKAsyDy5wbGFuLnYxLlRpbGFzbSJ6ChdUaWxhc21TZXJ2aWNlR2V0UmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhkKBHdpc2gYAiABKAlCC7pICNgBAXIDsAEBEhgKB3ZlcnNpb24YAyABKAVCB7pIBBoCKAAilwEKGFRpbGFzbVNlcnZpY2VHZXRSZXNwb25zZRIfCgZ0aWxhc20YASABKAsyDy5wbGFuLnYxLlRpbGFzbRIPCgd2ZXJzaW9uGAIgASgFEgwKBHRleHQYAyABKAkSEQoJZGlyZWN0b3J5GAQgASgJEg0KBWZpbGVzGAUgAygJEgwKBGxpbmsYBiABKAkSCwoDdXJsGAcgASgJImEKGFRpbGFzbVNlcnZpY2VPcGVuUmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhkKBHdpc2gYAiABKAlCC7pICNgBAXIDsAEBIloKGVRpbGFzbVNlcnZpY2VPcGVuUmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20SDAoEbGluaxgCIAEoCRIOCgZ3aW5kb3cYAyABKAgiZAobVGlsYXNtU2VydmljZUhpc3RvcnlSZXF1ZXN0EioKBnRpbGFzbRgBIAEoCzISLnBsYW4udjEuVGlsYXNtUmVmQga6SAPIAQESGQoEd2lzaBgCIAEoCUILukgI2AEBcgOwAQEiWwocVGlsYXNtU2VydmljZUhpc3RvcnlSZXNwb25zZRIoCgh2ZXJzaW9ucxgBIAMoCzIWLnBsYW4udjEuVGlsYXNtVmVyc2lvbhIRCglkaXJlY3RvcnkYAiABKAkimgEKG1RpbGFzbVNlcnZpY2VSZXN0b3JlUmVxdWVzdBIqCgZ0aWxhc20YASABKAsyEi5wbGFuLnYxLlRpbGFzbVJlZkIGukgDyAEBEhsKB3ZlcnNpb24YAiABKAVCCrpIB8gBARoCKAESGQoEd2lzaBgDIAEoCUILukgI2AEBcgOwAQESFwoGYXV0aG9yGAQgASgJQge6SARyAhhkIj8KHFRpbGFzbVNlcnZpY2VSZXN0b3JlUmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20iewoaVGlsYXNtU2VydmljZUV4cG9ydFJlcXVlc3QSKgoGdGlsYXNtGAEgASgLMhIucGxhbi52MS5UaWxhc21SZWZCBrpIA8gBARIZCgR3aXNoGAIgASgJQgu6SAjYAQFyA7ABARIWCgRmaWxlGAMgASgJQgi6SAVyAxiAICI5ChtUaWxhc21TZXJ2aWNlRXhwb3J0UmVzcG9uc2USDAoEZmlsZRgBIAEoCRIMCgRzaXplGAIgASgDImgKGlRpbGFzbVNlcnZpY2VJbXBvcnRSZXF1ZXN0EhkKBGZpbGUYASABKAlCC7pICMgBAXIDGIAgEhYKBHdpc2gYAiABKAlCCLpIBXIDsAEBEhcKBmF1dGhvchgDIAEoCUIHukgEcgIYZCI+ChtUaWxhc21TZXJ2aWNlSW1wb3J0UmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20imgEKG1RpbGFzbVNlcnZpY2VQdXREYXRhUmVxdWVzdBIZCgR3aXNoGAEgASgJQgu6SAjIAQFyA7ABARIWCgRuYW1lGAIgASgJQgi6SAVyAxjoBxIvCgVmaWxlcxgDIAMoCzITLnBsYW4udjEuVGlsYXNtRmlsZUILukgIkgEFCAEQkE4SFwoGYXV0aG9yGAQgASgJQge6SARyAhhkIlEKHFRpbGFzbVNlcnZpY2VQdXREYXRhUmVzcG9uc2USHwoGdGlsYXNtGAEgASgLMg8ucGxhbi52MS5UaWxhc20SEAoIaW1wb3J0ZWQYAiABKAgqXgoMQ29tbWVudFN0YXRlEh0KGUNPTU1FTlRfU1RBVEVfVU5TUEVDSUZJRUQQABIXChNDT01NRU5UX1NUQVRFX0RSQUZUEAESFgoSQ09NTUVOVF9TVEFURV9TRU5UEAIqWgoKU2VuZENob2ljZRIbChdTRU5EX0NIT0lDRV9VTlNQRUNJRklFRBAAEhYKElNFTkRfQ0hPSUNFX0xBVU5DSBABEhcKE1NFTkRfQ0hPSUNFX0lURVJBVEUQAiqwAQoQVGlsYXNtSG9sZFJlYXNvbhIiCh5USUxBU01fSE9MRF9SRUFTT05fVU5TUEVDSUZJRUQQABIdChlUSUxBU01fSE9MRF9SRUFTT05fUkVXT1JLEAESGwoXVElMQVNNX0hPTERfUkVBU09OX1dPUksQAhIfChtUSUxBU01fSE9MRF9SRUFTT05fTEFVTkNIRUQQAxIbChdUSUxBU01fSE9MRF9SRUFTT05fU0VOVBAEKnkKDEFuY2hvclN0YXR1cxIdChlBTkNIT1JfU1RBVFVTX1VOU1BFQ0lGSUVEEAASFwoTQU5DSE9SX1NUQVRVU19GT1VORBABEhkKFUFOQ0hPUl9TVEFUVVNfQ0hBTkdFRBACEhYKEkFOQ0hPUl9TVEFUVVNfTE9TVBADKqwBCgxQdWJsaXNoQmxvY2sSHQoZUFVCTElTSF9CTE9DS19VTlNQRUNJRklFRBAAEhsKF1BVQkxJU0hfQkxPQ0tfTk9fQ0xBVURFEAESHAoYUFVCTElTSF9CTE9DS19TSUdORURfT1VUEAISIgoeUFVCTElTSF9CTE9DS19OT19BUlRJRkFDVF9UT09MEAMSHgoaUFVCTElTSF9CTE9DS19DSEVDS19GQUlMRUQQBDKLDwoNVGlsYXNtU2VydmljZRJUCgNQdXQSIC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXRSZXF1ZXN0GiEucGxhbi52MS5UaWxhc21TZXJ2aWNlUHV0UmVzcG9uc2UiCMjzGAHg8xgBElYKBExpc3QSIS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VMaXN0UmVxdWVzdBoiLnBsYW4udjEuVGlsYXNtU2VydmljZUxpc3RSZXNwb25zZSIHkAIByPMYARJTCgNHZXQSIC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VHZXRSZXF1ZXN0GiEucGxhbi52MS5UaWxhc21TZXJ2aWNlR2V0UmVzcG9uc2UiB5ACAcjzGAESWwoET3BlbhIhLnBsYW4udjEuVGlsYXNtU2VydmljZU9wZW5SZXF1ZXN0GiIucGxhbi52MS5UaWxhc21TZXJ2aWNlT3BlblJlc3BvbnNlIgzI8xgB2PMYAeDzGAESXwoHSGlzdG9yeRIkLnBsYW4udjEuVGlsYXNtU2VydmljZUhpc3RvcnlSZXF1ZXN0GiUucGxhbi52MS5UaWxhc21TZXJ2aWNlSGlzdG9yeVJlc3BvbnNlIgeQAgHI8xgBEmAKB1Jlc3RvcmUSJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VSZXN0b3JlUmVxdWVzdBolLnBsYW4udjEuVGlsYXNtU2VydmljZVJlc3RvcmVSZXNwb25zZSIIyPMYAeDzGAESXQoGRXhwb3J0EiMucGxhbi52MS5UaWxhc21TZXJ2aWNlRXhwb3J0UmVxdWVzdBokLnBsYW4udjEuVGlsYXNtU2VydmljZUV4cG9ydFJlc3BvbnNlIgjI8xgB4PMYAhJdCgZJbXBvcnQSIy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VJbXBvcnRSZXF1ZXN0GiQucGxhbi52MS5UaWxhc21TZXJ2aWNlSW1wb3J0UmVzcG9uc2UiCMjzGAHg8xgBEmAKB1B1dERhdGESJC5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXREYXRhUmVxdWVzdBolLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dERhdGFSZXNwb25zZSIIyPMYAuDzGAESYgoIQ29tbWVudHMSJS5wbGFuLnYxLlRpbGFzbVNlcnZpY2VDb21tZW50c1JlcXVlc3QaJi5wbGFuLnYxLlRpbGFzbVNlcnZpY2VDb21tZW50c1Jlc3BvbnNlIgeQAgHI8xgBEmkKClB1dENvbW1lbnQSJy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQdXRDb21tZW50UmVxdWVzdBooLnBsYW4udjEuVGlsYXNtU2VydmljZVB1dENvbW1lbnRSZXNwb25zZSIIyPMYAuDzGAEScgoNRGVsZXRlQ29tbWVudBIqLnBsYW4udjEuVGlsYXNtU2VydmljZURlbGV0ZUNvbW1lbnRSZXF1ZXN0GisucGxhbi52MS5UaWxhc21TZXJ2aWNlRGVsZXRlQ29tbWVudFJlc3BvbnNlIgjI8xgC4PMYARJcCgZEcmFmdHMSIy5wbGFuLnYxLlRpbGFzbVNlcnZpY2VEcmFmdHNSZXF1ZXN0GiQucGxhbi52MS5UaWxhc21TZXJ2aWNlRHJhZnRzUmVzcG9uc2UiB5ACAcjzGAISbwoMU2VuZENvbW1lbnRzEikucGxhbi52MS5UaWxhc21TZXJ2aWNlU2VuZENvbW1lbnRzUmVxdWVzdBoqLnBsYW4udjEuVGlsYXNtU2VydmljZVNlbmRDb21tZW50c1Jlc3BvbnNlIgjI8xgC4PMYARJaCgVSZXBseRIiLnBsYW4udjEuVGlsYXNtU2VydmljZVJlcGx5UmVxdWVzdBojLnBsYW4udjEuVGlsYXNtU2VydmljZVJlcGx5UmVzcG9uc2UiCMjzGAHg8xgBEnIKDVBsYWNlQ29tbWVudHMSKi5wbGFuLnYxLlRpbGFzbVNlcnZpY2VQbGFjZUNvbW1lbnRzUmVxdWVzdBorLnBsYW4udjEuVGlsYXNtU2VydmljZVBsYWNlQ29tbWVudHNSZXNwb25zZSIIyPMYAuDzGAESYAoHUHVibGlzaBIkLnBsYW4udjEuVGlsYXNtU2VydmljZVB1Ymxpc2hSZXF1ZXN0GiUucGxhbi52MS5UaWxhc21TZXJ2aWNlUHVibGlzaFJlc3BvbnNlIgjI8xgB4PMYARJ1Cg5Db25maXJtUHVibGlzaBIrLnBsYW4udjEuVGlsYXNtU2VydmljZUNvbmZpcm1QdWJsaXNoUmVxdWVzdBosLnBsYW4udjEuVGlsYXNtU2VydmljZUNvbmZpcm1QdWJsaXNoUmVzcG9uc2UiCMjzGALg8xgBEm4KDENoZWNrUHVibGlzaBIpLnBsYW4udjEuVGlsYXNtU2VydmljZUNoZWNrUHVibGlzaFJlcXVlc3QaKi5wbGFuLnYxLlRpbGFzbVNlcnZpY2VDaGVja1B1Ymxpc2hSZXNwb25zZSIHkAIByPMYAhoM6vMYCHRhbGlzbWFuQogBCgtjb20ucGxhbi52MUILVGlsYXNtUHJvdG9QAVovZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vcGxhbi92MTtwbGFudjGiAgNQWFiqAgdQbGFuLlYxygIHUGxhblxWMeICE1BsYW5cVjFcR1BCTWV0YWRhdGHqAghQbGFuOjpWMWIGcHJvdG8z", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_timestamp]);
 
 /**
  * A tilasm is the material that explains a wish: a concept drawn, a data model walked through, a comparison laid out.
@@ -94,6 +94,14 @@ export type Tilasm = Message<"plan.v1.Tilasm"> & {
    * @generated from field: int64 max_bytes = 10;
    */
   maxBytes: bigint;
+
+  /**
+   * Where it is published on claude.ai, and the developer's go-ahead to publish it: kept on this machine, an export
+   * leaves it out. Unset until the developer confirms, in the window, the first publish.
+   *
+   * @generated from field: plan.v1.TilasmArtifact artifact = 11;
+   */
+  artifact?: TilasmArtifact | undefined;
 };
 
 /**
@@ -102,6 +110,64 @@ export type Tilasm = Message<"plan.v1.Tilasm"> & {
  */
 export const TilasmSchema: GenMessage<Tilasm> = /*@__PURE__*/
   messageDesc(file_plan_v1_tilasm, 0);
+
+/**
+ * TilasmArtifact is a tilasm published on claude.ai as a private artifact, as Djinn read it from the Artifact tool's
+ * result: never what a model says.
+ *
+ * @generated from message plan.v1.TilasmArtifact
+ */
+export type TilasmArtifact = Message<"plan.v1.TilasmArtifact"> & {
+  /**
+   * Its address, https://claude.ai/artifact/<id>; empty until the first publish. A publish again reuses it.
+   *
+   * @generated from field: string url = 1;
+   */
+  url: string;
+
+  /**
+   * The tilasm's version published last; 0 before the first publish. Below the latest, a version waits.
+   *
+   * @generated from field: int32 version = 2;
+   */
+  version: number;
+
+  /**
+   * Its own version on claude.ai, 1 at the first publish.
+   *
+   * @generated from field: int32 artifact_version = 3;
+   */
+  artifactVersion: number;
+
+  /**
+   * When it was published last.
+   *
+   * @generated from field: google.protobuf.Timestamp publish_time = 4;
+   */
+  publishTime?: Timestamp | undefined;
+
+  /**
+   * When the developer confirmed, in the window, that the tilasm holds no personal data of a client and may leave for
+   * claude.ai. No first publish without it; a publish again on its address asks no more.
+   *
+   * @generated from field: google.protobuf.Timestamp confirm_time = 5;
+   */
+  confirmTime?: Timestamp | undefined;
+
+  /**
+   * What the last publish cost, in US dollars, as Claude reported it.
+   *
+   * @generated from field: double cost_usd = 6;
+   */
+  costUsd: number;
+};
+
+/**
+ * Describes the message plan.v1.TilasmArtifact.
+ * Use `create(TilasmArtifactSchema)` to create a new message.
+ */
+export const TilasmArtifactSchema: GenMessage<TilasmArtifact> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 1);
 
 /**
  * TilasmVersion is one put of a tilasm: its files stay in tilasms/<id>/v<number>/.
@@ -157,7 +223,7 @@ export type TilasmVersion = Message<"plan.v1.TilasmVersion"> & {
  * Use `create(TilasmVersionSchema)` to create a new message.
  */
 export const TilasmVersionSchema: GenMessage<TilasmVersion> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 1);
+  messageDesc(file_plan_v1_tilasm, 2);
 
 /**
  * TilasmRef points to a tilasm by its code or by its identifier.
@@ -192,7 +258,7 @@ export type TilasmRef = Message<"plan.v1.TilasmRef"> & {
  * Use `create(TilasmRefSchema)` to create a new message.
  */
 export const TilasmRefSchema: GenMessage<TilasmRef> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 2);
+  messageDesc(file_plan_v1_tilasm, 3);
 
 /**
  * TilasmExport is a tilasm with the files of its versions, as an export carries it: alone in tilasm.json beside its
@@ -228,7 +294,7 @@ export type TilasmExport = Message<"plan.v1.TilasmExport"> & {
  * Use `create(TilasmExportSchema)` to create a new message.
  */
 export const TilasmExportSchema: GenMessage<TilasmExport> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 3);
+  messageDesc(file_plan_v1_tilasm, 4);
 
 /**
  * TilasmFile is a file of a tilasm's version.
@@ -263,14 +329,1111 @@ export type TilasmFile = Message<"plan.v1.TilasmFile"> & {
  * Use `create(TilasmFileSchema)` to create a new message.
  */
 export const TilasmFileSchema: GenMessage<TilasmFile> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 4);
+  messageDesc(file_plan_v1_tilasm, 5);
+
+/**
+ * TilasmComment is a remark of the developer on a tilasm: on a passage, on an element, or on the whole of it. A draft
+ * reaches no agent and costs nothing; SendComments sends every draft of the tilasm at once, as one lead event. Kept on
+ * this machine: a tilasm's export leaves its comments out.
+ *
+ * @generated from message plan.v1.TilasmComment
+ */
+export type TilasmComment = Message<"plan.v1.TilasmComment"> & {
+  /**
+   * Identifier, a UUIDv7.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * The tilasm it is on.
+   *
+   * @generated from field: string tilasm_id = 2;
+   */
+  tilasmId: string;
+
+  /**
+   * The wish of that tilasm.
+   *
+   * @generated from field: string wish_id = 3;
+   */
+  wishId: string;
+
+  /**
+   * Short code within the tilasm, like C3: L42 C3 names it.
+   *
+   * @generated from field: string code = 4;
+   */
+  code: string;
+
+  /**
+   * What the developer wrote.
+   *
+   * @generated from field: string text = 5;
+   */
+  text: string;
+
+  /**
+   * Where it is; unset: the whole tilasm.
+   *
+   * @generated from field: plan.v1.TilasmAnchor anchor = 6;
+   */
+  anchor?: TilasmAnchor | undefined;
+
+  /**
+   * The version it was written on.
+   *
+   * @generated from field: int32 version = 7;
+   */
+  version: number;
+
+  /**
+   * A draft, or sent.
+   *
+   * @generated from field: plan.v1.CommentState state = 8;
+   */
+  state: CommentState;
+
+  /**
+   * The send it left with, 1, 2… within the tilasm; 0 while a draft.
+   *
+   * @generated from field: int32 send = 9;
+   */
+  send: number;
+
+  /**
+   * When it was written.
+   *
+   * @generated from field: google.protobuf.Timestamp create_time = 10;
+   */
+  createTime?: Timestamp | undefined;
+
+  /**
+   * When its draft was last edited.
+   *
+   * @generated from field: google.protobuf.Timestamp update_time = 11;
+   */
+  updateTime?: Timestamp | undefined;
+
+  /**
+   * When it was sent.
+   *
+   * @generated from field: google.protobuf.Timestamp send_time = 12;
+   */
+  sendTime?: Timestamp | undefined;
+
+  /**
+   * The Djinn's reply, and the tasks it made of it.
+   *
+   * @generated from field: plan.v1.CommentReply reply = 13;
+   */
+  reply?: CommentReply | undefined;
+
+  /**
+   * The comment it follows up, by code (C2), when the developer answered a reply.
+   *
+   * @generated from field: string follows = 14;
+   */
+  follows: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmComment.
+ * Use `create(TilasmCommentSchema)` to create a new message.
+ */
+export const TilasmCommentSchema: GenMessage<TilasmComment> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 6);
+
+/**
+ * TilasmAnchor is what a comment is on, kept so that it is found again in another version.
+ *
+ * @generated from message plan.v1.TilasmAnchor
+ */
+export type TilasmAnchor = Message<"plan.v1.TilasmAnchor"> & {
+  /**
+   * The page of the tilasm: index.html, or another of its .html files.
+   *
+   * @generated from field: string page = 1;
+   */
+  page: string;
+
+  /**
+   * A passage: the text quoted, the 32 characters before and after it, and its place in the page's text.
+   *
+   * @generated from field: string exact = 2;
+   */
+  exact: string;
+
+  /**
+   * @generated from field: string prefix = 3;
+   */
+  prefix: string;
+
+  /**
+   * @generated from field: string suffix = 4;
+   */
+  suffix: string;
+
+  /**
+   * @generated from field: int32 start = 5;
+   */
+  start: number;
+
+  /**
+   * @generated from field: int32 end = 6;
+   */
+  end: number;
+
+  /**
+   * An element: its id, else its path from the body, with the start of its text.
+   *
+   * @generated from field: string element_id = 7;
+   */
+  elementId: string;
+
+  /**
+   * @generated from field: string path = 8;
+   */
+  path: string;
+
+  /**
+   * @generated from field: string fingerprint = 9;
+   */
+  fingerprint: string;
+
+  /**
+   * What the developer saw: the heading above it, "figure: The path of a notice".
+   *
+   * @generated from field: string label = 10;
+   */
+  label: string;
+
+  /**
+   * Where it stands in the latest version the window read: found, changed or lost, and which version.
+   *
+   * @generated from field: plan.v1.AnchorStatus status = 11;
+   */
+  status: AnchorStatus;
+
+  /**
+   * @generated from field: int32 status_version = 12;
+   */
+  statusVersion: number;
+};
+
+/**
+ * Describes the message plan.v1.TilasmAnchor.
+ * Use `create(TilasmAnchorSchema)` to create a new message.
+ */
+export const TilasmAnchorSchema: GenMessage<TilasmAnchor> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 7);
+
+/**
+ * CommentReply is the Djinn's answer to a sent comment: what it did, or why not.
+ *
+ * @generated from message plan.v1.CommentReply
+ */
+export type CommentReply = Message<"plan.v1.CommentReply"> & {
+  /**
+   * The reply.
+   *
+   * @generated from field: string text = 1;
+   */
+  text: string;
+
+  /**
+   * Who wrote it: the lead, or a task's code (W12).
+   *
+   * @generated from field: string author = 2;
+   */
+  author: string;
+
+  /**
+   * When it was written.
+   *
+   * @generated from field: google.protobuf.Timestamp create_time = 3;
+   */
+  createTime?: Timestamp | undefined;
+
+  /**
+   * The tasks made of the comment, by identifier.
+   *
+   * @generated from field: repeated string task_ids = 4;
+   */
+  taskIds: string[];
+};
+
+/**
+ * Describes the message plan.v1.CommentReply.
+ * Use `create(CommentReplySchema)` to create a new message.
+ */
+export const CommentReplySchema: GenMessage<CommentReply> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 8);
+
+/**
+ * TilasmSend is one send of a tilasm's comments to the Djinn, from the window: what the developer chose. Kept so that a
+ * launch is never given twice, and so that the lead reads the choice with the comments.
+ *
+ * @generated from message plan.v1.TilasmSend
+ */
+export type TilasmSend = Message<"plan.v1.TilasmSend"> & {
+  /**
+   * Identifier, a UUIDv7.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * The tilasm sent on.
+   *
+   * @generated from field: string tilasm_id = 2;
+   */
+  tilasmId: string;
+
+  /**
+   * The wish of that tilasm.
+   *
+   * @generated from field: string wish_id = 3;
+   */
+  wishId: string;
+
+  /**
+   * 1, 2… within the tilasm: the comments it carried have it as their send.
+   *
+   * @generated from field: int32 number = 4;
+   */
+  number: number;
+
+  /**
+   * What the developer chose: launch the work with the comments, or iterate on the tilasm.
+   *
+   * @generated from field: plan.v1.SendChoice choice = 5;
+   */
+  choice: SendChoice;
+
+  /**
+   * The open question that linked the tilasm when it was sent, by identifier; empty when none did. A launch without
+   * a comment answered it with its recommended option.
+   *
+   * @generated from field: string question_id = 6;
+   */
+  questionId: string;
+
+  /**
+   * When it was sent.
+   *
+   * @generated from field: google.protobuf.Timestamp create_time = 7;
+   */
+  createTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message plan.v1.TilasmSend.
+ * Use `create(TilasmSendSchema)` to create a new message.
+ */
+export const TilasmSendSchema: GenMessage<TilasmSend> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 9);
+
+/**
+ * TilasmSendRead is when the Djinn read a send of a tilasm's comments: its lead event acknowledged (LeadEvent.ack_time),
+ * computed on every read, never stored. The cards of the comments it carried say so.
+ *
+ * @generated from message plan.v1.TilasmSendRead
+ */
+export type TilasmSendRead = Message<"plan.v1.TilasmSendRead"> & {
+  /**
+   * The tilasm sent on.
+   *
+   * @generated from field: string tilasm_id = 1;
+   */
+  tilasmId: string;
+
+  /**
+   * The send, 1, 2… within the tilasm.
+   *
+   * @generated from field: int32 send = 2;
+   */
+  send: number;
+
+  /**
+   * When the lead acknowledged its event; unset once Djinn no longer keeps the event, a week after it was read.
+   *
+   * @generated from field: google.protobuf.Timestamp read_time = 3;
+   */
+  readTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message plan.v1.TilasmSendRead.
+ * Use `create(TilasmSendReadSchema)` to create a new message.
+ */
+export const TilasmSendReadSchema: GenMessage<TilasmSendRead> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 10);
+
+/**
+ * TilasmHold is why a tilasm takes no send for now, computed on every read from its tasks, questions and sends, never
+ * stored: the window greys its buttons, and its comments too unless a send waits.
+ *
+ * @generated from message plan.v1.TilasmHold
+ */
+export type TilasmHold = Message<"plan.v1.TilasmHold"> & {
+  /**
+   * The tilasm held.
+   *
+   * @generated from field: string tilasm_id = 1;
+   */
+  tilasmId: string;
+
+  /**
+   * Why.
+   *
+   * @generated from field: plan.v1.TilasmHoldReason reason = 2;
+   */
+  reason: TilasmHoldReason;
+
+  /**
+   * What holds it: the task's code (W12), the question's (Q29); empty for a launch that answered no question.
+   *
+   * @generated from field: string code = 3;
+   */
+  code: string;
+
+  /**
+   * The send that launched it, or that waits for the Djinn; 0 otherwise.
+   *
+   * @generated from field: int32 send = 4;
+   */
+  send: number;
+};
+
+/**
+ * Describes the message plan.v1.TilasmHold.
+ * Use `create(TilasmHoldSchema)` to create a new message.
+ */
+export const TilasmHoldSchema: GenMessage<TilasmHold> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 11);
+
+/**
+ * TilasmSends is what an iterate or a launch send on a tilasm does now, computed on every read from the open question
+ * that links it, never stored: the window labels and tints its buttons from it.
+ *
+ * @generated from message plan.v1.TilasmSends
+ */
+export type TilasmSends = Message<"plan.v1.TilasmSends"> & {
+  /**
+   * The tilasm.
+   *
+   * @generated from field: string tilasm_id = 1;
+   */
+  tilasmId: string;
+
+  /**
+   * The open question that links the tilasm, by code (Q01); empty when none does.
+   *
+   * @generated from field: string question = 2;
+   */
+  question: string;
+
+  /**
+   * The option an iterate send starts a mockup round on (A, B, C, D, yes); empty when an iterate send goes to the lead.
+   *
+   * @generated from field: string iterate_option = 3;
+   */
+  iterateOption: string;
+
+  /**
+   * The round of the mockup that option is on now (1 on v1), and how many rounds it allows; 0 when iterate_option is empty.
+   *
+   * @generated from field: int32 round = 4;
+   */
+  round: number;
+
+  /**
+   * @generated from field: int32 rounds = 5;
+   */
+  rounds: number;
+
+  /**
+   * The recommended option a launch send without a comment answers with (A, B, C, D, yes); empty when it answers none.
+   *
+   * @generated from field: string launch_option = 6;
+   */
+  launchOption: string;
+
+  /**
+   * What that recommended option's plan starts when it launches by itself (work, mockup, investigation); empty when it
+   * has no plan or waits for the lead.
+   *
+   * @generated from field: string launch_kind = 7;
+   */
+  launchKind: string;
+
+  /**
+   * The title of that recommended option's plan; empty when it has none.
+   *
+   * @generated from field: string launch_title = 8;
+   */
+  launchTitle: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmSends.
+ * Use `create(TilasmSendsSchema)` to create a new message.
+ */
+export const TilasmSendsSchema: GenMessage<TilasmSends> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 12);
+
+/**
+ * @generated from message plan.v1.TilasmServicePublishRequest
+ */
+export type TilasmServicePublishRequest = Message<"plan.v1.TilasmServicePublishRequest"> & {
+  /**
+   * The tilasm: its code (L01) or its identifier.
+   *
+   * @generated from field: plan.v1.TilasmRef tilasm = 1;
+   */
+  tilasm?: TilasmRef | undefined;
+
+  /**
+   * The wish, when a code is given and several wishes have it.
+   *
+   * @generated from field: string wish = 2;
+   */
+  wish: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServicePublishRequest.
+ * Use `create(TilasmServicePublishRequestSchema)` to create a new message.
+ */
+export const TilasmServicePublishRequestSchema: GenMessage<TilasmServicePublishRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 13);
+
+/**
+ * @generated from message plan.v1.TilasmServicePublishResponse
+ */
+export type TilasmServicePublishResponse = Message<"plan.v1.TilasmServicePublishResponse"> & {
+  /**
+   * The tilasm, its artifact in it.
+   *
+   * @generated from field: plan.v1.Tilasm tilasm = 1;
+   */
+  tilasm?: Tilasm | undefined;
+
+  /**
+   * The artifact's address, https://claude.ai/artifact/<id>.
+   *
+   * @generated from field: string url = 2;
+   */
+  url: string;
+
+  /**
+   * How many files went beside the page.
+   *
+   * @generated from field: int32 files = 3;
+   */
+  files: number;
+
+  /**
+   * The tilasm's files left out, of a type claude.ai does not serve: their links lead nowhere there.
+   *
+   * @generated from field: repeated string left_out = 4;
+   */
+  leftOut: string[];
+
+  /**
+   * What was sent, in bytes.
+   *
+   * @generated from field: int64 size = 5;
+   */
+  size: bigint;
+
+  /**
+   * What the publish cost, in US dollars.
+   *
+   * @generated from field: double cost_usd = 6;
+   */
+  costUsd: number;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServicePublishResponse.
+ * Use `create(TilasmServicePublishResponseSchema)` to create a new message.
+ */
+export const TilasmServicePublishResponseSchema: GenMessage<TilasmServicePublishResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 14);
+
+/**
+ * @generated from message plan.v1.TilasmServiceConfirmPublishRequest
+ */
+export type TilasmServiceConfirmPublishRequest = Message<"plan.v1.TilasmServiceConfirmPublishRequest"> & {
+  /**
+   * The tilasm the developer checked.
+   *
+   * @generated from field: string tilasm_id = 1;
+   */
+  tilasmId: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceConfirmPublishRequest.
+ * Use `create(TilasmServiceConfirmPublishRequestSchema)` to create a new message.
+ */
+export const TilasmServiceConfirmPublishRequestSchema: GenMessage<TilasmServiceConfirmPublishRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 15);
+
+/**
+ * @generated from message plan.v1.TilasmServiceConfirmPublishResponse
+ */
+export type TilasmServiceConfirmPublishResponse = Message<"plan.v1.TilasmServiceConfirmPublishResponse"> & {
+  /**
+   * The tilasm, its go-ahead in its artifact.
+   *
+   * @generated from field: plan.v1.Tilasm tilasm = 1;
+   */
+  tilasm?: Tilasm | undefined;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceConfirmPublishResponse.
+ * Use `create(TilasmServiceConfirmPublishResponseSchema)` to create a new message.
+ */
+export const TilasmServiceConfirmPublishResponseSchema: GenMessage<TilasmServiceConfirmPublishResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 16);
+
+/**
+ * @generated from message plan.v1.TilasmServiceCheckPublishRequest
+ */
+export type TilasmServiceCheckPublishRequest = Message<"plan.v1.TilasmServiceCheckPublishRequest"> & {
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceCheckPublishRequest.
+ * Use `create(TilasmServiceCheckPublishRequestSchema)` to create a new message.
+ */
+export const TilasmServiceCheckPublishRequestSchema: GenMessage<TilasmServiceCheckPublishRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 17);
+
+/**
+ * @generated from message plan.v1.TilasmServiceCheckPublishResponse
+ */
+export type TilasmServiceCheckPublishResponse = Message<"plan.v1.TilasmServiceCheckPublishResponse"> & {
+  /**
+   * Tilasms can be published from this machine.
+   *
+   * @generated from field: bool available = 1;
+   */
+  available: boolean;
+
+  /**
+   * Why not; unspecified when they can.
+   *
+   * @generated from field: plan.v1.PublishBlock block = 2;
+   */
+  block: PublishBlock;
+
+  /**
+   * What the check met, as the command said it, when it failed: not translated.
+   *
+   * @generated from field: string detail = 3;
+   */
+  detail: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceCheckPublishResponse.
+ * Use `create(TilasmServiceCheckPublishResponseSchema)` to create a new message.
+ */
+export const TilasmServiceCheckPublishResponseSchema: GenMessage<TilasmServiceCheckPublishResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 18);
+
+/**
+ * @generated from message plan.v1.TilasmServiceReplyRequest
+ */
+export type TilasmServiceReplyRequest = Message<"plan.v1.TilasmServiceReplyRequest"> & {
+  /**
+   * The tilasm: its code (L01) or its identifier.
+   *
+   * @generated from field: plan.v1.TilasmRef tilasm = 1;
+   */
+  tilasm?: TilasmRef | undefined;
+
+  /**
+   * The comment, by its code within the tilasm (C3).
+   *
+   * @generated from field: string comment = 2;
+   */
+  comment: string;
+
+  /**
+   * The reply: what you did with the comment, or why not; a question back when you did not understand it.
+   *
+   * @generated from field: string text = 3;
+   */
+  text: string;
+
+  /**
+   * A task made of the comment, by code (W60) or identifier; repeat it for each.
+   *
+   * @generated from field: repeated string task = 4;
+   */
+  task: string[];
+
+  /**
+   * The wish, when a code is given and several wishes have it.
+   *
+   * @generated from field: string wish = 5;
+   */
+  wish: string;
+
+  /**
+   * Who replies: your task's code (W12) for a worker; lead by default.
+   *
+   * @generated from field: string author = 6;
+   */
+  author: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceReplyRequest.
+ * Use `create(TilasmServiceReplyRequestSchema)` to create a new message.
+ */
+export const TilasmServiceReplyRequestSchema: GenMessage<TilasmServiceReplyRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 19);
+
+/**
+ * @generated from message plan.v1.TilasmServiceReplyResponse
+ */
+export type TilasmServiceReplyResponse = Message<"plan.v1.TilasmServiceReplyResponse"> & {
+  /**
+   * The comment, its reply in it.
+   *
+   * @generated from field: plan.v1.TilasmComment comment = 1;
+   */
+  comment?: TilasmComment | undefined;
+
+  /**
+   * How many comments of the tilasm sent still wait for a reply.
+   *
+   * @generated from field: int32 unanswered = 2;
+   */
+  unanswered: number;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceReplyResponse.
+ * Use `create(TilasmServiceReplyResponseSchema)` to create a new message.
+ */
+export const TilasmServiceReplyResponseSchema: GenMessage<TilasmServiceReplyResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 20);
+
+/**
+ * @generated from message plan.v1.TilasmServicePlaceCommentsRequest
+ */
+export type TilasmServicePlaceCommentsRequest = Message<"plan.v1.TilasmServicePlaceCommentsRequest"> & {
+  /**
+   * The tilasm whose comments were placed.
+   *
+   * @generated from field: string tilasm_id = 1;
+   */
+  tilasmId: string;
+
+  /**
+   * The version of the page they were looked for in.
+   *
+   * @generated from field: int32 version = 2;
+   */
+  version: number;
+
+  /**
+   * Each comment placed, with how its anchor stands there.
+   *
+   * @generated from field: repeated plan.v1.CommentPlace places = 3;
+   */
+  places: CommentPlace[];
+};
+
+/**
+ * Describes the message plan.v1.TilasmServicePlaceCommentsRequest.
+ * Use `create(TilasmServicePlaceCommentsRequestSchema)` to create a new message.
+ */
+export const TilasmServicePlaceCommentsRequestSchema: GenMessage<TilasmServicePlaceCommentsRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 21);
+
+/**
+ * CommentPlace is how a comment's anchor stands in a version of its tilasm.
+ *
+ * @generated from message plan.v1.CommentPlace
+ */
+export type CommentPlace = Message<"plan.v1.CommentPlace"> & {
+  /**
+   * The comment.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * Found, changed or lost.
+   *
+   * @generated from field: plan.v1.AnchorStatus status = 2;
+   */
+  status: AnchorStatus;
+};
+
+/**
+ * Describes the message plan.v1.CommentPlace.
+ * Use `create(CommentPlaceSchema)` to create a new message.
+ */
+export const CommentPlaceSchema: GenMessage<CommentPlace> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 22);
+
+/**
+ * @generated from message plan.v1.TilasmServicePlaceCommentsResponse
+ */
+export type TilasmServicePlaceCommentsResponse = Message<"plan.v1.TilasmServicePlaceCommentsResponse"> & {
+  /**
+   * The comments whose anchor took a new status, as stored.
+   *
+   * @generated from field: repeated plan.v1.TilasmComment comments = 1;
+   */
+  comments: TilasmComment[];
+};
+
+/**
+ * Describes the message plan.v1.TilasmServicePlaceCommentsResponse.
+ * Use `create(TilasmServicePlaceCommentsResponseSchema)` to create a new message.
+ */
+export const TilasmServicePlaceCommentsResponseSchema: GenMessage<TilasmServicePlaceCommentsResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 23);
+
+/**
+ * @generated from message plan.v1.TilasmServiceSendCommentsRequest
+ */
+export type TilasmServiceSendCommentsRequest = Message<"plan.v1.TilasmServiceSendCommentsRequest"> & {
+  /**
+   * The tilasm whose drafts to send.
+   *
+   * @generated from field: string tilasm_id = 1;
+   */
+  tilasmId: string;
+
+  /**
+   * Launch the work with the comments, or iterate on the tilasm.
+   *
+   * @generated from field: plan.v1.SendChoice choice = 2;
+   */
+  choice: SendChoice;
+
+  /**
+   * A comment on the whole tilasm, written above the buttons: it leaves with the drafts.
+   *
+   * @generated from field: string text = 3;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceSendCommentsRequest.
+ * Use `create(TilasmServiceSendCommentsRequestSchema)` to create a new message.
+ */
+export const TilasmServiceSendCommentsRequestSchema: GenMessage<TilasmServiceSendCommentsRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 24);
+
+/**
+ * @generated from message plan.v1.TilasmServiceSendCommentsResponse
+ */
+export type TilasmServiceSendCommentsResponse = Message<"plan.v1.TilasmServiceSendCommentsResponse"> & {
+  /**
+   * The send.
+   *
+   * @generated from field: plan.v1.TilasmSend send = 1;
+   */
+  send?: TilasmSend | undefined;
+
+  /**
+   * The comments it carried, by code.
+   *
+   * @generated from field: repeated plan.v1.TilasmComment comments = 2;
+   */
+  comments: TilasmComment[];
+
+  /**
+   * The question a launch without a comment answered, by code (Q29); empty when it answered none.
+   *
+   * @generated from field: string answered = 3;
+   */
+  answered: string;
+
+  /**
+   * The question an iterate send started an iteration round on, by code (Q61), when an option of that open question
+   * linking the tilasm plans a mockup within its rounds (ROUND_KIND_ITERATE): the mockup task reads the comments, no
+   * comments event goes to the lead. Empty otherwise.
+   *
+   * @generated from field: string iterated = 4;
+   */
+  iterated: string;
+
+  /**
+   * The mockup task the iteration started, by code (W301); empty when none started, the lead told instead.
+   *
+   * @generated from field: string iterate = 5;
+   */
+  iterate: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceSendCommentsResponse.
+ * Use `create(TilasmServiceSendCommentsResponseSchema)` to create a new message.
+ */
+export const TilasmServiceSendCommentsResponseSchema: GenMessage<TilasmServiceSendCommentsResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 25);
+
+/**
+ * @generated from message plan.v1.TilasmServicePutCommentRequest
+ */
+export type TilasmServicePutCommentRequest = Message<"plan.v1.TilasmServicePutCommentRequest"> & {
+  /**
+   * The tilasm it is on.
+   *
+   * @generated from field: string tilasm_id = 1;
+   */
+  tilasmId: string;
+
+  /**
+   * The draft to edit; a new draft without it, with the next code and the tilasm's latest version.
+   *
+   * @generated from field: string id = 2;
+   */
+  id: string;
+
+  /**
+   * What the developer wrote.
+   *
+   * @generated from field: string text = 3;
+   */
+  text: string;
+
+  /**
+   * Where it is; unset: the whole tilasm. An edit keeps its anchor unless one is given.
+   *
+   * @generated from field: plan.v1.TilasmAnchor anchor = 4;
+   */
+  anchor?: TilasmAnchor | undefined;
+
+  /**
+   * The comment it follows up, by code (C2).
+   *
+   * @generated from field: string follows = 5;
+   */
+  follows: string;
+
+  /**
+   * A draft DeleteComment returned, put back whole as the window's Undo asks: its place, its code unless another comment
+   * took it meanwhile, its version. The other fields are left out then.
+   *
+   * @generated from field: plan.v1.TilasmComment deleted = 6;
+   */
+  deleted?: TilasmComment | undefined;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServicePutCommentRequest.
+ * Use `create(TilasmServicePutCommentRequestSchema)` to create a new message.
+ */
+export const TilasmServicePutCommentRequestSchema: GenMessage<TilasmServicePutCommentRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 26);
+
+/**
+ * @generated from message plan.v1.TilasmServicePutCommentResponse
+ */
+export type TilasmServicePutCommentResponse = Message<"plan.v1.TilasmServicePutCommentResponse"> & {
+  /**
+   * The draft as stored.
+   *
+   * @generated from field: plan.v1.TilasmComment comment = 1;
+   */
+  comment?: TilasmComment | undefined;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServicePutCommentResponse.
+ * Use `create(TilasmServicePutCommentResponseSchema)` to create a new message.
+ */
+export const TilasmServicePutCommentResponseSchema: GenMessage<TilasmServicePutCommentResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 27);
+
+/**
+ * @generated from message plan.v1.TilasmServiceDeleteCommentRequest
+ */
+export type TilasmServiceDeleteCommentRequest = Message<"plan.v1.TilasmServiceDeleteCommentRequest"> & {
+  /**
+   * The draft to delete.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceDeleteCommentRequest.
+ * Use `create(TilasmServiceDeleteCommentRequestSchema)` to create a new message.
+ */
+export const TilasmServiceDeleteCommentRequestSchema: GenMessage<TilasmServiceDeleteCommentRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 28);
+
+/**
+ * @generated from message plan.v1.TilasmServiceDeleteCommentResponse
+ */
+export type TilasmServiceDeleteCommentResponse = Message<"plan.v1.TilasmServiceDeleteCommentResponse"> & {
+  /**
+   * The draft deleted, whole: PutComment puts it back.
+   *
+   * @generated from field: plan.v1.TilasmComment comment = 1;
+   */
+  comment?: TilasmComment | undefined;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceDeleteCommentResponse.
+ * Use `create(TilasmServiceDeleteCommentResponseSchema)` to create a new message.
+ */
+export const TilasmServiceDeleteCommentResponseSchema: GenMessage<TilasmServiceDeleteCommentResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 29);
+
+/**
+ * @generated from message plan.v1.TilasmServiceDraftsRequest
+ */
+export type TilasmServiceDraftsRequest = Message<"plan.v1.TilasmServiceDraftsRequest"> & {
+  /**
+   * The wish whose tilasms' drafts to read.
+   *
+   * @generated from field: string wish = 1;
+   */
+  wish: string;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceDraftsRequest.
+ * Use `create(TilasmServiceDraftsRequestSchema)` to create a new message.
+ */
+export const TilasmServiceDraftsRequestSchema: GenMessage<TilasmServiceDraftsRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 30);
+
+/**
+ * @generated from message plan.v1.TilasmServiceDraftsResponse
+ */
+export type TilasmServiceDraftsResponse = Message<"plan.v1.TilasmServiceDraftsResponse"> & {
+  /**
+   * The drafts, in the order they were written.
+   *
+   * @generated from field: repeated plan.v1.TilasmComment comments = 1;
+   */
+  comments: TilasmComment[];
+
+  /**
+   * The tilasms of the wish that take no send for now, and why.
+   *
+   * @generated from field: repeated plan.v1.TilasmHold holds = 2;
+   */
+  holds: TilasmHold[];
+
+  /**
+   * The comments sent on them, with the Djinn's replies, for their cards: by send, then code.
+   *
+   * @generated from field: repeated plan.v1.TilasmComment sent = 3;
+   */
+  sent: TilasmComment[];
+
+  /**
+   * The sends the Djinn read, by tilasm then send; one that waits for it is not in it.
+   *
+   * @generated from field: repeated plan.v1.TilasmSendRead reads = 4;
+   */
+  reads: TilasmSendRead[];
+
+  /**
+   * What a send on each tilasm of the wish does now, computed from the open question that links it.
+   *
+   * @generated from field: repeated plan.v1.TilasmSends sends = 5;
+   */
+  sends: TilasmSends[];
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceDraftsResponse.
+ * Use `create(TilasmServiceDraftsResponseSchema)` to create a new message.
+ */
+export const TilasmServiceDraftsResponseSchema: GenMessage<TilasmServiceDraftsResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 31);
+
+/**
+ * @generated from message plan.v1.TilasmServiceCommentsRequest
+ */
+export type TilasmServiceCommentsRequest = Message<"plan.v1.TilasmServiceCommentsRequest"> & {
+  /**
+   * The tilasm: its code (L01) or its identifier.
+   *
+   * @generated from field: plan.v1.TilasmRef tilasm = 1;
+   */
+  tilasm?: TilasmRef | undefined;
+
+  /**
+   * The wish, when a code is given and several wishes have it.
+   *
+   * @generated from field: string wish = 2;
+   */
+  wish: string;
+
+  /**
+   * Only the comments of this send, 1, 2…; by default every send.
+   *
+   * @generated from field: int32 send = 3;
+   */
+  send: number;
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceCommentsRequest.
+ * Use `create(TilasmServiceCommentsRequestSchema)` to create a new message.
+ */
+export const TilasmServiceCommentsRequestSchema: GenMessage<TilasmServiceCommentsRequest> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 32);
+
+/**
+ * @generated from message plan.v1.TilasmServiceCommentsResponse
+ */
+export type TilasmServiceCommentsResponse = Message<"plan.v1.TilasmServiceCommentsResponse"> & {
+  /**
+   * The comments to read: the tilasm, then each send, then each of its comments with what it is on.
+   *
+   * @generated from field: string text = 1;
+   */
+  text: string;
+
+  /**
+   * The same comments, by send then code.
+   *
+   * @generated from field: repeated plan.v1.TilasmComment comments = 2;
+   */
+  comments: TilasmComment[];
+};
+
+/**
+ * Describes the message plan.v1.TilasmServiceCommentsResponse.
+ * Use `create(TilasmServiceCommentsResponseSchema)` to create a new message.
+ */
+export const TilasmServiceCommentsResponseSchema: GenMessage<TilasmServiceCommentsResponse> = /*@__PURE__*/
+  messageDesc(file_plan_v1_tilasm, 33);
 
 /**
  * @generated from message plan.v1.TilasmServicePutRequest
  */
 export type TilasmServicePutRequest = Message<"plan.v1.TilasmServicePutRequest"> & {
   /**
-   * The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory.
+   * The folder that holds the index.html, an .html file, or a .zip of it; a relative path starts from the current directory.
    *
    * @generated from field: string path = 1;
    */
@@ -284,8 +1447,8 @@ export type TilasmServicePutRequest = Message<"plan.v1.TilasmServicePutRequest">
   wish: string;
 
   /**
-   * Title, in a line; by default the <title> of its index.html, or the folder's name. A new version keeps the title
-   * it had unless one is given.
+   * Title, in a line; by default the <title> of its index.html, or the folder's or file's name. A new version keeps the
+   * title it had unless one is given.
    *
    * @generated from field: string title = 3;
    */
@@ -319,7 +1482,7 @@ export type TilasmServicePutRequest = Message<"plan.v1.TilasmServicePutRequest">
  * Use `create(TilasmServicePutRequestSchema)` to create a new message.
  */
 export const TilasmServicePutRequestSchema: GenMessage<TilasmServicePutRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 5);
+  messageDesc(file_plan_v1_tilasm, 34);
 
 /**
  * @generated from message plan.v1.TilasmServicePutResponse
@@ -345,7 +1508,7 @@ export type TilasmServicePutResponse = Message<"plan.v1.TilasmServicePutResponse
  * Use `create(TilasmServicePutResponseSchema)` to create a new message.
  */
 export const TilasmServicePutResponseSchema: GenMessage<TilasmServicePutResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 6);
+  messageDesc(file_plan_v1_tilasm, 35);
 
 /**
  * @generated from message plan.v1.TilasmServiceListRequest
@@ -372,7 +1535,7 @@ export type TilasmServiceListRequest = Message<"plan.v1.TilasmServiceListRequest
  * Use `create(TilasmServiceListRequestSchema)` to create a new message.
  */
 export const TilasmServiceListRequestSchema: GenMessage<TilasmServiceListRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 7);
+  messageDesc(file_plan_v1_tilasm, 36);
 
 /**
  * @generated from message plan.v1.TilasmServiceListResponse
@@ -391,7 +1554,7 @@ export type TilasmServiceListResponse = Message<"plan.v1.TilasmServiceListRespon
  * Use `create(TilasmServiceListResponseSchema)` to create a new message.
  */
 export const TilasmServiceListResponseSchema: GenMessage<TilasmServiceListResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 8);
+  messageDesc(file_plan_v1_tilasm, 37);
 
 /**
  * @generated from message plan.v1.TilasmServiceGetRequest
@@ -424,7 +1587,7 @@ export type TilasmServiceGetRequest = Message<"plan.v1.TilasmServiceGetRequest">
  * Use `create(TilasmServiceGetRequestSchema)` to create a new message.
  */
 export const TilasmServiceGetRequestSchema: GenMessage<TilasmServiceGetRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 9);
+  messageDesc(file_plan_v1_tilasm, 38);
 
 /**
  * @generated from message plan.v1.TilasmServiceGetResponse
@@ -488,7 +1651,7 @@ export type TilasmServiceGetResponse = Message<"plan.v1.TilasmServiceGetResponse
  * Use `create(TilasmServiceGetResponseSchema)` to create a new message.
  */
 export const TilasmServiceGetResponseSchema: GenMessage<TilasmServiceGetResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 10);
+  messageDesc(file_plan_v1_tilasm, 39);
 
 /**
  * @generated from message plan.v1.TilasmServiceOpenRequest
@@ -514,7 +1677,7 @@ export type TilasmServiceOpenRequest = Message<"plan.v1.TilasmServiceOpenRequest
  * Use `create(TilasmServiceOpenRequestSchema)` to create a new message.
  */
 export const TilasmServiceOpenRequestSchema: GenMessage<TilasmServiceOpenRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 11);
+  messageDesc(file_plan_v1_tilasm, 40);
 
 /**
  * @generated from message plan.v1.TilasmServiceOpenResponse
@@ -547,7 +1710,7 @@ export type TilasmServiceOpenResponse = Message<"plan.v1.TilasmServiceOpenRespon
  * Use `create(TilasmServiceOpenResponseSchema)` to create a new message.
  */
 export const TilasmServiceOpenResponseSchema: GenMessage<TilasmServiceOpenResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 12);
+  messageDesc(file_plan_v1_tilasm, 41);
 
 /**
  * @generated from message plan.v1.TilasmServiceHistoryRequest
@@ -573,7 +1736,7 @@ export type TilasmServiceHistoryRequest = Message<"plan.v1.TilasmServiceHistoryR
  * Use `create(TilasmServiceHistoryRequestSchema)` to create a new message.
  */
 export const TilasmServiceHistoryRequestSchema: GenMessage<TilasmServiceHistoryRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 13);
+  messageDesc(file_plan_v1_tilasm, 42);
 
 /**
  * @generated from message plan.v1.TilasmServiceHistoryResponse
@@ -599,7 +1762,7 @@ export type TilasmServiceHistoryResponse = Message<"plan.v1.TilasmServiceHistory
  * Use `create(TilasmServiceHistoryResponseSchema)` to create a new message.
  */
 export const TilasmServiceHistoryResponseSchema: GenMessage<TilasmServiceHistoryResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 14);
+  messageDesc(file_plan_v1_tilasm, 43);
 
 /**
  * @generated from message plan.v1.TilasmServiceRestoreRequest
@@ -639,7 +1802,7 @@ export type TilasmServiceRestoreRequest = Message<"plan.v1.TilasmServiceRestoreR
  * Use `create(TilasmServiceRestoreRequestSchema)` to create a new message.
  */
 export const TilasmServiceRestoreRequestSchema: GenMessage<TilasmServiceRestoreRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 15);
+  messageDesc(file_plan_v1_tilasm, 44);
 
 /**
  * @generated from message plan.v1.TilasmServiceRestoreResponse
@@ -658,7 +1821,7 @@ export type TilasmServiceRestoreResponse = Message<"plan.v1.TilasmServiceRestore
  * Use `create(TilasmServiceRestoreResponseSchema)` to create a new message.
  */
 export const TilasmServiceRestoreResponseSchema: GenMessage<TilasmServiceRestoreResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 16);
+  messageDesc(file_plan_v1_tilasm, 45);
 
 /**
  * @generated from message plan.v1.TilasmServiceExportRequest
@@ -692,7 +1855,7 @@ export type TilasmServiceExportRequest = Message<"plan.v1.TilasmServiceExportReq
  * Use `create(TilasmServiceExportRequestSchema)` to create a new message.
  */
 export const TilasmServiceExportRequestSchema: GenMessage<TilasmServiceExportRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 17);
+  messageDesc(file_plan_v1_tilasm, 46);
 
 /**
  * @generated from message plan.v1.TilasmServiceExportResponse
@@ -718,7 +1881,7 @@ export type TilasmServiceExportResponse = Message<"plan.v1.TilasmServiceExportRe
  * Use `create(TilasmServiceExportResponseSchema)` to create a new message.
  */
 export const TilasmServiceExportResponseSchema: GenMessage<TilasmServiceExportResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 18);
+  messageDesc(file_plan_v1_tilasm, 47);
 
 /**
  * @generated from message plan.v1.TilasmServiceImportRequest
@@ -751,7 +1914,7 @@ export type TilasmServiceImportRequest = Message<"plan.v1.TilasmServiceImportReq
  * Use `create(TilasmServiceImportRequestSchema)` to create a new message.
  */
 export const TilasmServiceImportRequestSchema: GenMessage<TilasmServiceImportRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 19);
+  messageDesc(file_plan_v1_tilasm, 48);
 
 /**
  * @generated from message plan.v1.TilasmServiceImportResponse
@@ -770,7 +1933,7 @@ export type TilasmServiceImportResponse = Message<"plan.v1.TilasmServiceImportRe
  * Use `create(TilasmServiceImportResponseSchema)` to create a new message.
  */
 export const TilasmServiceImportResponseSchema: GenMessage<TilasmServiceImportResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 20);
+  messageDesc(file_plan_v1_tilasm, 49);
 
 /**
  * @generated from message plan.v1.TilasmServicePutDataRequest
@@ -810,7 +1973,7 @@ export type TilasmServicePutDataRequest = Message<"plan.v1.TilasmServicePutDataR
  * Use `create(TilasmServicePutDataRequestSchema)` to create a new message.
  */
 export const TilasmServicePutDataRequestSchema: GenMessage<TilasmServicePutDataRequest> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 21);
+  messageDesc(file_plan_v1_tilasm, 50);
 
 /**
  * @generated from message plan.v1.TilasmServicePutDataResponse
@@ -836,7 +1999,213 @@ export type TilasmServicePutDataResponse = Message<"plan.v1.TilasmServicePutData
  * Use `create(TilasmServicePutDataResponseSchema)` to create a new message.
  */
 export const TilasmServicePutDataResponseSchema: GenMessage<TilasmServicePutDataResponse> = /*@__PURE__*/
-  messageDesc(file_plan_v1_tilasm, 22);
+  messageDesc(file_plan_v1_tilasm, 51);
+
+/**
+ * CommentState is where a comment stands: written, or sent to the Djinn.
+ *
+ * @generated from enum plan.v1.CommentState
+ */
+export enum CommentState {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: COMMENT_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Written, not sent: no agent reads it.
+   *
+   * @generated from enum value: COMMENT_STATE_DRAFT = 1;
+   */
+  DRAFT = 1,
+
+  /**
+   * Sent to the Djinn: it no longer changes.
+   *
+   * @generated from enum value: COMMENT_STATE_SENT = 2;
+   */
+  SENT = 2,
+}
+
+/**
+ * Describes the enum plan.v1.CommentState.
+ */
+export const CommentStateSchema: GenEnum<CommentState> = /*@__PURE__*/
+  enumDesc(file_plan_v1_tilasm, 0);
+
+/**
+ * SendChoice is what the developer asks of the Djinn with a send of comments.
+ *
+ * @generated from enum plan.v1.SendChoice
+ */
+export enum SendChoice {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: SEND_CHOICE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Launch the work the tilasm explains, as the comments say. Without a comment, the open question that links the
+   * tilasm is answered with its recommended option.
+   *
+   * @generated from enum value: SEND_CHOICE_LAUNCH = 1;
+   */
+  LAUNCH = 1,
+
+  /**
+   * Iterate on the tilasm: its next version, as the comments say.
+   *
+   * @generated from enum value: SEND_CHOICE_ITERATE = 2;
+   */
+  ITERATE = 2,
+}
+
+/**
+ * Describes the enum plan.v1.SendChoice.
+ */
+export const SendChoiceSchema: GenEnum<SendChoice> = /*@__PURE__*/
+  enumDesc(file_plan_v1_tilasm, 1);
+
+/**
+ * TilasmHoldReason says why a tilasm takes no send.
+ *
+ * @generated from enum plan.v1.TilasmHoldReason
+ */
+export enum TilasmHoldReason {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A task that puts its next version (--code L01 in its prompt) runs or is planned.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_REWORK = 1;
+   */
+  REWORK = 1,
+
+  /**
+   * A task given it (--tilasm L01, its link in the prompt) runs or is planned.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_WORK = 2;
+   */
+  WORK = 2,
+
+  /**
+   * Its work was launched: a send chose to launch, or the question that links it was answered and none is open.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_LAUNCHED = 3;
+   */
+  LAUNCHED = 3,
+
+  /**
+   * A send waits for the Djinn to read it: only the send buttons wait.
+   *
+   * @generated from enum value: TILASM_HOLD_REASON_SENT = 4;
+   */
+  SENT = 4,
+}
+
+/**
+ * Describes the enum plan.v1.TilasmHoldReason.
+ */
+export const TilasmHoldReasonSchema: GenEnum<TilasmHoldReason> = /*@__PURE__*/
+  enumDesc(file_plan_v1_tilasm, 2);
+
+/**
+ * AnchorStatus is how a comment's anchor was found again in a later version.
+ *
+ * @generated from enum plan.v1.AnchorStatus
+ */
+export enum AnchorStatus {
+  /**
+   * Not looked for yet.
+   *
+   * @generated from enum value: ANCHOR_STATUS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Found as it was, perhaps moved.
+   *
+   * @generated from enum value: ANCHOR_STATUS_FOUND = 1;
+   */
+  FOUND = 1,
+
+  /**
+   * Found changed: a passage or an element that shares most of its words.
+   *
+   * @generated from enum value: ANCHOR_STATUS_CHANGED = 2;
+   */
+  CHANGED = 2,
+
+  /**
+   * Not found: the passage or the element is gone.
+   *
+   * @generated from enum value: ANCHOR_STATUS_LOST = 3;
+   */
+  LOST = 3,
+}
+
+/**
+ * Describes the enum plan.v1.AnchorStatus.
+ */
+export const AnchorStatusSchema: GenEnum<AnchorStatus> = /*@__PURE__*/
+  enumDesc(file_plan_v1_tilasm, 3);
+
+/**
+ * PublishBlock says why tilasms cannot be published on claude.ai from this machine.
+ *
+ * @generated from enum plan.v1.PublishBlock
+ */
+export enum PublishBlock {
+  /**
+   * Not set: nothing blocks.
+   *
+   * @generated from enum value: PUBLISH_BLOCK_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Claude Code is not installed: no claude on the PATH.
+   *
+   * @generated from enum value: PUBLISH_BLOCK_NO_CLAUDE = 1;
+   */
+  NO_CLAUDE = 1,
+
+  /**
+   * Claude Code is not signed in, on the user's folder nor on any account.
+   *
+   * @generated from enum value: PUBLISH_BLOCK_SIGNED_OUT = 2;
+   */
+  SIGNED_OUT = 2,
+
+  /**
+   * Claude Code offers no Artifact tool: its version, the account's plan or its organization's policy.
+   *
+   * @generated from enum value: PUBLISH_BLOCK_NO_ARTIFACT_TOOL = 3;
+   */
+  NO_ARTIFACT_TOOL = 3,
+
+  /**
+   * The call that looks for the Artifact tool failed.
+   *
+   * @generated from enum value: PUBLISH_BLOCK_CHECK_FAILED = 4;
+   */
+  CHECK_FAILED = 4,
+}
+
+/**
+ * Describes the enum plan.v1.PublishBlock.
+ */
+export const PublishBlockSchema: GenEnum<PublishBlock> = /*@__PURE__*/
+  enumDesc(file_plan_v1_tilasm, 4);
 
 /**
  * Tilasms, or talismans: the material that explains a wish, kept on this machine and linked from anywhere. A put
@@ -846,8 +2215,8 @@ export const TilasmServicePutDataResponseSchema: GenMessage<TilasmServicePutData
  */
 export const TilasmService: GenService<{
   /**
-   * Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
-   * version of that one, its links unchanged.
+   * Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
+   * with --code a new version of that one, its links unchanged.
    *
    * @generated from rpc plan.v1.TilasmService.Put
    */
@@ -928,8 +2297,8 @@ export const TilasmService: GenService<{
     output: typeof TilasmServiceImportResponseSchema;
   },
   /**
-   * Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-   * export wrote is imported, as Import; any other is put, as Put.
+   * Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
+   * djinn tilasm export wrote is imported, as Import; any other is put, as Put.
    *
    * @generated from rpc plan.v1.TilasmService.PutData
    */
@@ -937,6 +2306,120 @@ export const TilasmService: GenService<{
     methodKind: "unary";
     input: typeof TilasmServicePutDataRequestSchema;
     output: typeof TilasmServicePutDataResponseSchema;
+  },
+  /**
+   * Read the comments the developer sent on a tilasm, each with the passage or the element it is on: those of one send
+   * with --send, as its comments event names it, else every send. A draft never shows: it is the developer's alone.
+   *
+   * @generated from rpc plan.v1.TilasmService.Comments
+   */
+  comments: {
+    methodKind: "unary";
+    input: typeof TilasmServiceCommentsRequestSchema;
+    output: typeof TilasmServiceCommentsResponseSchema;
+  },
+  /**
+   * Write a draft comment on a tilasm, from the window: a new one, or an edit of one not sent yet; a sent one is refused.
+   *
+   * @generated from rpc plan.v1.TilasmService.PutComment
+   */
+  putComment: {
+    methodKind: "unary";
+    input: typeof TilasmServicePutCommentRequestSchema;
+    output: typeof TilasmServicePutCommentResponseSchema;
+  },
+  /**
+   * Delete a draft comment, from the window; a sent one stays. It returns the draft, for the window's Undo to put back.
+   *
+   * @generated from rpc plan.v1.TilasmService.DeleteComment
+   */
+  deleteComment: {
+    methodKind: "unary";
+    input: typeof TilasmServiceDeleteCommentRequestSchema;
+    output: typeof TilasmServiceDeleteCommentResponseSchema;
+  },
+  /**
+   * The draft comments on a wish's tilasms, for the window: no agent reads them. And those sent, with their replies.
+   *
+   * @generated from rpc plan.v1.TilasmService.Drafts
+   */
+  drafts: {
+    methodKind: "unary";
+    input: typeof TilasmServiceDraftsRequestSchema;
+    output: typeof TilasmServiceDraftsResponseSchema;
+  },
+  /**
+   * Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
+   * explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
+   * comment answers the open question that links the tilasm with its recommended option, as approving it does. A
+   * tilasm held (TilasmHold) takes no send: a launch is never given twice.
+   *
+   * @generated from rpc plan.v1.TilasmService.SendComments
+   */
+  sendComments: {
+    methodKind: "unary";
+    input: typeof TilasmServiceSendCommentsRequestSchema;
+    output: typeof TilasmServiceSendCommentsResponseSchema;
+  },
+  /**
+   * Reply to a comment the developer sent: what you did with it, or why not, and the tasks you made of it. Every sent
+   * comment gets one; its card shows it. A second reply replaces the first. A draft takes none: no agent reads it.
+   *
+   * @generated from rpc plan.v1.TilasmService.Reply
+   */
+  reply: {
+    methodKind: "unary";
+    input: typeof TilasmServiceReplyRequestSchema;
+    output: typeof TilasmServiceReplyResponseSchema;
+  },
+  /**
+   * Write where the window found the anchors of a tilasm's comments in its latest version, from the window: found,
+   * changed or lost, on drafts and sent comments alike, whose words do not change. A version that is no longer the
+   * latest places nothing: the window places the comments again in the next one.
+   *
+   * @generated from rpc plan.v1.TilasmService.PlaceComments
+   */
+  placeComments: {
+    methodKind: "unary";
+    input: typeof TilasmServicePlaceCommentsRequestSchema;
+    output: typeof TilasmServicePlaceCommentsResponseSchema;
+  },
+  /**
+   * Publish a tilasm's latest version on claude.ai, as a private artifact of the developer's Claude account: its page
+   * with its files beside it, at their paths, those of a type claude.ai serves (a spreadsheet or a document is left
+   * out). Djinn builds what is sent; one short Claude call, under the paid gate, sends it, at the address of its last
+   * publish when it has one. Refused until
+   * the developer confirms, in the window, that the tilasm holds no personal data of a client: its first publish
+   * comes from them. Only the owner of the account opens the artifact until they share it on claude.ai.
+   *
+   * @generated from rpc plan.v1.TilasmService.Publish
+   */
+  publish: {
+    methodKind: "unary";
+    input: typeof TilasmServicePublishRequestSchema;
+    output: typeof TilasmServicePublishResponseSchema;
+  },
+  /**
+   * Record the developer's go-ahead to publish a tilasm on claude.ai, from the window: they checked that it holds no
+   * personal data of a client, its images included. The first publish waits for it.
+   *
+   * @generated from rpc plan.v1.TilasmService.ConfirmPublish
+   */
+  confirmPublish: {
+    methodKind: "unary";
+    input: typeof TilasmServiceConfirmPublishRequestSchema;
+    output: typeof TilasmServiceConfirmPublishResponseSchema;
+  },
+  /**
+   * Whether tilasms can be published on claude.ai from this machine, for the window: Claude Code signed in, and its
+   * Artifact tool offered, which a first call reads once per start of Djinn.
+   *
+   * @generated from rpc plan.v1.TilasmService.CheckPublish
+   */
+  checkPublish: {
+    methodKind: "unary";
+    input: typeof TilasmServiceCheckPublishRequestSchema;
+    output: typeof TilasmServiceCheckPublishResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_plan_v1_tilasm, 0);

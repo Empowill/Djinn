@@ -2,11 +2,18 @@
 // lead's terminal (LeadService.Tell), about the wish, as the developer would. Refused while the lead does not run, the
 // pill keeps the text and offers to start the lead. The lead is the fake claude of global-setup.ts, which repeats what
 // it reads: no model is called.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
-import { dropLead, leadFolder, leadRows as rows, setLead } from "./lead";
+import {
+  dropLead,
+  leadFolder,
+  leadJournal,
+  leadRows as rows,
+  setLead,
+  useTerminalLead,
+} from "./lead";
 
 const binary = path.resolve(
   __dirname,
@@ -24,11 +31,16 @@ function djinn(...args: string[]): string {
 
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
+// Before too: the events earlier specs of this djinn left waiting for the lead make Djinn type a reminder in its
+// terminal, which reopens the lead recorded below, and the refusal expected first never comes (W246: red with the
+// workers' order). dropLead hangs the lead up and acknowledges them.
+test.beforeEach(dropLead);
 test.afterEach(dropLead);
 
 test("a word written in the pill reaches the lead's terminal", async ({
   page,
 }) => {
+  useTerminalLead();
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   // Three wishes at a time: the earlier specs' wishes make way.
@@ -193,6 +205,13 @@ test("the box folds when the focus leaves it, and the shortcut opens it focused"
     await page.keyboard.press(shortcut);
     await expect(box).toBeFocused();
     await expect(box).toHaveValue("Half a thought");
+    await box.press("Enter");
+    await expect(panel.getByRole("status")).toContainText("Sent");
+    await expect
+      .poll(() => leadJournal(wishId).flatMap((b) => b.events ?? []), {
+        timeout: 15_000,
+      })
+      .toContain(`[${title}] message: Half a thought`);
     expect(errors).toEqual([]);
   } finally {
     djinn("wish", "delete", wishId);

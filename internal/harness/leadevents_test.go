@@ -36,87 +36,84 @@ func (q *leadQueue) all() []*planv1.LeadEvent {
 	return slices.Clone(q.events)
 }
 
-// TestFailedWorkerQueuedForTheLead: with NotifyLead, a failed worker is an event of its own in the lead's queue, of
-// kind failed, with its code and its line, and nothing is typed.
-func TestFailedWorkerQueuedForTheLead(t *testing.T) {
-	t.Parallel()
-	e := up(t, t.TempDir())
-	typed, queue := &leadListener{}, &leadQueue{}
-	e.h.TellLeads(typed.tell)
-	e.h.NotifyLead(queue.notify)
-	wishID, _ := e.wish(t, gitRepo(t))
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID, Title: "Build parser", Prompt: "fail syntax error on line 42",
-		Provider: planv1.Provider_PROVIDER_FAKE,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	task := res.Msg.GetTask()
-	e.watch(t.Context(), t, task.GetId(), 0)
-	waitFor(t, "the failure queued", func() bool { return len(queue.all()) > 0 })
-	got := queue.all()[0]
-	if got.GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_FAILED || got.GetCode() != task.GetCode() ||
-		got.GetWishId() != wishID || !strings.Contains(got.GetText(), "syntax error on line 42") {
-		t.Errorf("queued %v", got)
-	}
-	if p := typed.all(); len(p) != 0 {
-		t.Errorf("typed %q with a queue", p)
-	}
-}
-
-// TestRestartQueuedForTheLead: djinn up queues the restart for the lead, with its version, the workers the last
-// djinn up left running, and those Djinn resumes by itself.
-func TestRestartQueuedForTheLead(t *testing.T) {
+// TestNotifyLead tests queuing failed worker and restart events for the lead.
+func TestNotifyLead(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	home := t.TempDir()
-	e := up(t, home)
-	e.down()
-	running := &planv1.Task{Id: store.NewID(), WishId: store.NewID(), Code: "W7", Title: "cut short",
-		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, StartTime: timestamppb.Now()}
-	putStored(t, home, running, "work")
-	e = up(t, home, WithVersion("v9.9.9"))
-	defer e.down()
-	want := "Djinn: restarted on version v9.9.9: 1 worker interrupted (W7); not resumed, the move is yours: W7."
-	if restarts := restartEvents(t, e); len(restarts) != 2 || restarts[1] != want {
-		t.Errorf("restart events %q, want the second %q", restarts, want)
-	}
-}
 
-// TestRestartNamesTheWorkerStopped: djinn up stops while a worker runs, and records its task interrupted; the next
-// restart names it, though no task was left running, and says the move is the lead's: its worktree is gone. The line
-// said no worker was running.
-func TestRestartNamesTheWorkerStopped(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home := t.TempDir()
-	e := up(t, home)
-	wishID, _ := e.wish(t, gitRepo(t))
-	task := e.spawn(t, wishID, "text working\nsleep 1h")
-	e.untilText(t, task.GetId(), "working")
-	e.down()
-	stopped := storedTask(t, home, task.GetId())
-	if stopped.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
-		t.Fatalf("after the stop: %v", stopped)
-	}
-	if err := os.RemoveAll(stopped.GetWorktree()); err != nil {
-		t.Fatal(err)
-	}
-	e = up(t, home, WithVersion("v9.9.9"))
-	defer e.down()
-	want := fmt.Sprintf("Djinn: restarted on version v9.9.9: 1 worker interrupted (%[1]s); not resumed, the move is yours: %[1]s.",
-		task.GetCode())
-	if restarts := restartEvents(t, e); len(restarts) != 2 || restarts[1] != want {
-		t.Errorf("restart events %q, want the second %q", restarts, want)
-	}
-	// Once told, it is not told again: the next restart finds it interrupted before it started.
-	e.down()
-	e = up(t, home, WithVersion("v9.9.9"))
-	want = "Djinn: restarted on version v9.9.9: no worker was running."
-	if restarts := restartEvents(t, e); len(restarts) != 3 || restarts[2] != want {
-		t.Errorf("restart events %q, want the third %q", restarts, want)
-	}
+	t.Run("failed_worker", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		typed, queue := &leadListener{}, &leadQueue{}
+		e.h.TellLeads(typed.tell)
+		e.h.NotifyLead(queue.notify)
+		wishID, _ := e.wish(t, fakeProject(t, ""))
+		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: wishID, Title: "Build parser", Prompt: "fail syntax error on line 42",
+			Provider: planv1.Provider_PROVIDER_FAKE,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		task := res.Msg.GetTask()
+		e.watch(t.Context(), t, task.GetId(), 0)
+		waitFor(t, "the failure queued", func() bool { return len(queue.all()) > 0 })
+		got := queue.all()[0]
+		if got.GetKind() != planv1.LeadEventKind_LEAD_EVENT_KIND_FAILED || got.GetCode() != task.GetCode() ||
+			got.GetWishId() != wishID || !strings.Contains(got.GetText(), "syntax error on line 42") {
+			t.Errorf("queued %v", got)
+		}
+		if p := typed.all(); len(p) != 0 {
+			t.Errorf("typed %q with a queue", p)
+		}
+	})
+
+	t.Run("restart_running", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		e := up(t, home)
+		e.down()
+		running := &planv1.Task{Id: store.NewID(), WishId: store.NewID(), Code: "W7", Title: "cut short",
+			Status: planv1.TaskStatus_TASK_STATUS_RUNNING, StartTime: timestamppb.Now()}
+		putStored(t, home, running, "work")
+		e = up(t, home, WithVersion("v9.9.9"))
+		defer e.down()
+		want := "Djinn: restarted on version v9.9.9: 1 worker interrupted (W7); not resumed, the move is yours: W7."
+		if restarts := restartEvents(t, e); len(restarts) != 2 || restarts[1] != want {
+			t.Errorf("restart events %q, want the second %q", restarts, want)
+		}
+	})
+
+	t.Run("restart_stopped_worker", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		e := up(t, home)
+		wishID, _ := e.wish(t, gitRepo(t))
+		task := e.spawn(t, wishID, "text working\nsleep 1h")
+		e.untilText(t, task.GetId(), "working")
+		e.down()
+		stopped := storedTask(t, home, task.GetId())
+		if stopped.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+			t.Fatalf("after the stop: %v", stopped)
+		}
+		if err := os.RemoveAll(stopped.GetWorktree()); err != nil {
+			t.Fatal(err)
+		}
+		e = up(t, home, WithVersion("v9.9.9"))
+		defer e.down()
+		want := fmt.Sprintf("Djinn: restarted on version v9.9.9: 1 worker interrupted (%[1]s); not resumed, the move is yours: %[1]s.",
+			task.GetCode())
+		if restarts := restartEvents(t, e); len(restarts) != 2 || restarts[1] != want {
+			t.Errorf("restart events %q, want the second %q", restarts, want)
+		}
+		// Once told, it is not told again: the next restart finds it interrupted before it started.
+		e.down()
+		e = up(t, home, WithVersion("v9.9.9"))
+		want = "Djinn: restarted on version v9.9.9: no worker was running."
+		if restarts := restartEvents(t, e); len(restarts) != 3 || restarts[2] != want {
+			t.Errorf("restart events %q, want the third %q", restarts, want)
+		}
+	})
 }
 
 // restartEvents are the texts of the restart events queued for the lead, oldest first.
@@ -139,6 +136,7 @@ func restartEvents(t *testing.T, e *env) []string {
 }
 
 func TestRestartLine(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		version                                 string
 		interrupted, resumed, watchers, orphans []string
@@ -160,7 +158,7 @@ func TestRestartLine(t *testing.T) {
 		{"v1.2.0", nil, nil, nil, []string{"W7's worker", "test check", "W7's gate"},
 			"Djinn: restarted on version v1.2.0: 3 orphans stopped: W7's gate, W7's worker, test check."},
 	} {
-		if got := restartLine(c.version, c.interrupted, c.resumed, c.watchers, c.orphans); got != c.want {
+		if got := restartLine(c.version, c.interrupted, c.resumed, c.watchers, nil, c.orphans); got != c.want {
 			t.Errorf("restartLine(%q, %v, %v, %v, %v)\n got %s\nwant %s", c.version, c.interrupted, c.resumed, c.watchers,
 				c.orphans, got, c.want)
 		}

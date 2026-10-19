@@ -45,7 +45,7 @@ func CallerActor(ctx context.Context) string {
 // WorkerGuard intercepts Connect RPC calls to enforce permissions for workers.
 // A worker cannot make a wish, or execute mutating commands on wishes, tasks, or plans
 // other than those permitted for workers (question ask, question revise, block put,
-// task update of own task, tilasm put).
+// task update of own task, tilasm put, tilasm publish in its wish).
 var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 		caller := CallerFromContext(ctx)
@@ -132,6 +132,14 @@ var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) conn
 			}
 			return next(ctx, req)
 
+		case planv1connect.ServeServiceRunProcedure, planv1connect.ServeServiceStopProcedure,
+			planv1connect.ServeServiceListProcedure, planv1connect.ServeServiceLogsProcedure:
+			// An ifrit runs its own serves; ServeService refuses a task that is no ifrit.
+			if err := ownServes(req.Any(), caller); err != nil {
+				return nil, err
+			}
+			return next(ctx, req)
+
 		case planv1connect.TilasmServicePutProcedure:
 			if r, ok := req.Any().(*planv1.TilasmServicePutRequest); ok {
 				if r.Wish == "" {
@@ -143,6 +151,19 @@ var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) conn
 				}
 				if r.Author == "" {
 					r.Author = caller.TaskID
+				}
+			}
+			return next(ctx, req)
+
+		case planv1connect.TilasmServicePublishProcedure:
+			// A tilasm of its wish only; the first publish of each stays the developer's (Tilasms.Publish).
+			if r, ok := req.Any().(*planv1.TilasmServicePublishRequest); ok {
+				if r.Wish == "" {
+					r.Wish = caller.WishID
+				} else if r.Wish != caller.WishID {
+					return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf(
+						"a worker cannot publish a tilasm of wish %s (its task is in wish %s)", r.Wish, caller.WishID,
+					))
 				}
 			}
 			return next(ctx, req)
@@ -160,6 +181,33 @@ var WorkerGuard = connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) conn
 	}
 })
 
+// ownServes points a worker's ServeService request at its own task, and refuses one at another task.
+func ownServes(msg any, caller *WorkerCaller) error {
+	var taskID *string
+	switch r := msg.(type) {
+	case *planv1.ServeServiceRunRequest:
+		taskID = &r.TaskId
+	case *planv1.ServeServiceStopRequest:
+		taskID = &r.TaskId
+	case *planv1.ServeServiceListRequest:
+		taskID = &r.TaskId
+	case *planv1.ServeServiceLogsRequest:
+		taskID = &r.TaskId
+	default:
+		return nil
+	}
+	switch *taskID {
+	case "":
+		*taskID = caller.TaskID
+	case caller.TaskID:
+	default:
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf(
+			"a worker can only reach its own serves (task %s)", caller.TaskID,
+		))
+	}
+	return nil
+}
+
 func isReadOnlyProcedure(procedure string) bool {
 	idx := strings.LastIndexByte(procedure, '/')
 	if idx < 0 {
@@ -167,7 +215,7 @@ func isReadOnlyProcedure(procedure string) bool {
 	}
 	method := procedure[idx+1:]
 	for _, prefix := range []string{
-		"List", "Get", "Watch", "Diff", "Brief", "Snapshot", "Files", "History", "Show", "Sources", "Check", "Render",
+		"List", "Get", "Watch", "Diff", "Brief", "Snapshot", "Files", "History", "Show", "Sessions", "Sources", "Check", "Render",
 	} {
 		if strings.HasPrefix(method, prefix) {
 			return true

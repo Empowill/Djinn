@@ -13,6 +13,7 @@ import (
 // TestBefore: a question says what its answer is needed before, or nothing and it can wait. A revision keeps the
 // words when it gives none, changes them, or clears them when it gives them empty.
 func TestBefore(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	wishID := c.wish(t)

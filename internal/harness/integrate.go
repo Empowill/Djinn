@@ -23,6 +23,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
@@ -52,9 +54,10 @@ const (
 )
 
 // TakeGate takes the gate name, for the task taskID, to run the command what in the folder dir, and returns how to
-// give it back. It calls waiting, when not nil, each time the reason it waits changes. djinn up takes the gates of
-// internal/gate, as djinn gate run does.
-type TakeGate func(ctx context.Context, name, taskID, what, dir string, waiting func(why string)) (give func(), err error)
+// give it back; first when Djinn takes it to merge a task's work into its branch, settle such a merge or check a push,
+// which goes before the workers' requests (Q26), not to install a build. It calls waiting, when not nil, each time the
+// reason it waits changes. djinn up takes the gates of internal/gate, as djinn gate run does.
+type TakeGate func(ctx context.Context, name, taskID, what, dir string, first bool, waiting func(why string)) (give func(), err error)
 
 // RunCommand runs args in dir, and returns the end of its output and its exit code; an error when it could not run.
 type RunCommand func(ctx context.Context, dir string, args []string) (out string, code int, err error)
@@ -134,12 +137,14 @@ func (h *Harness) Integrate() {
 	})
 }
 
-// kickIntegrate asks the integration for a pass: a task's work waits.
+// kickIntegrate asks the integration for a pass: a task's work waits. The pushes run apart look whether it is queued for
+// their branch (queueMoved).
 func (h *Harness) kickIntegrate() {
 	select {
 	case h.integrateKick <- struct{}{}:
 	default:
 	}
+	h.queueMoved()
 }
 
 // pendIntegration marks the work of t, a task its worker just finished, as waiting to be merged, when Djinn
@@ -150,10 +155,19 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || t.GetBranch() == "" || plan.IsAzima(t) {
 		return false, ""
 	}
+	if dispatch.ChangesNoCode(t) { // Said whether its branch holds commits or not: no integration, ever.
+		if dispatch.Mockup(t) {
+			return false, mockupLeft
+		}
+		return false, investigationLeft
+	}
 	ctx := context.Background()
 	project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
 	if err != nil || !project.GetGit() {
 		return false, ""
+	}
+	if why := nothingOfItsOwn(ctx, project.GetDirectory(), t); why != "" {
+		return false, why
 	}
 	settings, err := plan.LoadSettings(h.home, project)
 	if err != nil {
@@ -169,12 +183,16 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 		if err != nil {
 			return false, ""
 		}
-		if _, why := h.uncheckedBranch(ctx, wish, project, settings, t); why != "" {
-			into := cmp.Or(plan.IntegrationBranchOf(wish, project.GetId()), plan.CheckedOutBranch(ctx, project.GetDirectory()))
+		// Work held out of its azima's branch waits, as in a checked project (heldOutError).
+		if _, err := h.uncheckedBranch(ctx, wish, project, settings, t); err != nil && !errors.As(err, new(*heldOutError)) {
+			into := plan.IntegrationBranchOf(wish, project.GetId())
+			if into == "" {
+				into, _ = plan.ReferenceName(ctx, h.home, project)
+			}
 			if !branchHoldsUnmergedCommits(ctx, project.GetDirectory(), t.GetBranch(), into) {
 				return false, ""
 			}
-			return false, why
+			return false, err.Error()
 		}
 	}
 	t.Integration = &planv1.TaskIntegration{
@@ -185,41 +203,91 @@ func (h *Harness) pendIntegration(t *planv1.Task) (bool, string) {
 
 // uncheckedBranch is the branch Djinn merges the work of t, a task of wish, into in project, a project whose settings
 // name no check: the wish's own integration branch there, as djinn wish set-integration names it; per azima, the
-// branch the developer named for t's azima (djinn task update <azima> --branch), cut from main if it was deleted since;
-// merged as any work, no check run (W4 of wish Dew, 12/10/2026). Otherwise "" and why the work stays out: Djinn commits
-// nothing untested into the project's main branch, nor into an azima's branch Djinn named, which lands there.
-func (h *Harness) uncheckedBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) (string, string) {
+// branch the developer named for t's azima (djinn task update <azima> --branch); merged as any work, no check run (W4
+// of wish Dew, 12/10/2026). Otherwise "" and why the work stays out: Djinn commits nothing untested into the project's
+// main branch, nor into an azima's branch Djinn named, which lands there; a *heldOutError when the work waits, its azima
+// done or its branch deleted (the lead told).
+func (h *Harness) uncheckedBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) (string, error) {
 	if strat, _ := plan.ResolveWishPushStrategy(wish, settings); strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
 		if azima, err := h.taskAzima(ctx, t); err == nil && azima.GetAzima().GetNamed() {
-			branch, err := h.azimaBranch(ctx, project, settings, azima)
+			branch, err := h.azimaBranchFor(ctx, wish, project, settings, azima)
 			if err != nil {
-				return "", err.Error()
+				return "", err
 			}
-			return branch, ""
+			return branch, nil
 		}
-		return "", errNoChecks.Error() + ", and Djinn merges no untested work into a branch it named for an azima"
+		return "", errors.New(errNoChecks.Error() + ", and Djinn merges no untested work into a branch it named for an azima")
 	}
 	branch := plan.IntegrationBranchOf(wish, project.GetId())
 	if branch != "" {
 		if main, _, err := resolveMainSha(ctx, project.GetDirectory(), settings); err == nil && !strings.EqualFold(main, branch) {
-			return branch, ""
+			return branch, nil
 		}
 	}
-	return "", errNoChecks.Error() + ", and untested work goes only to a wish's own branch (djinn wish set-integration --create-branch)"
+	return "", errors.New(errNoChecks.Error() + ", and untested work goes only to a wish's own branch (djinn wish set-integration --create-branch)")
+}
+
+// nothingOfItsOwn says why the work of t, a done task, has nothing to merge: its branch holds no commit beyond the one
+// it started from, and its worktree nothing not committed; "" when it has work. Such a task is not merged, and no merge
+// commit is made for it (W196: task W103 of wish Dew 13 oct, 17/10/2026, deleted branches and committed nothing, yet
+// Djinn made its azima's deleted branch again, an empty merge in it, and pushed it). A review or a correction worker
+// merges the work it reviews or corrects: never left out here.
+func nothingOfItsOwn(ctx context.Context, repo string, t *planv1.Task) string {
+	if t.GetReview() != nil || t.GetCorrection() != nil || !branchHasNoCommits(ctx, repo, t.GetBranch()) {
+		return ""
+	}
+	if status, err := uncommitted(ctx, t); err != nil || len(status) > 0 {
+		return "" // Changes not committed: a review worker judges them (reviewUncommitted).
+	}
+	return nothingToMerge
+}
+
+// nothingToMerge is why a done task with no commit of its own is not merged, told as it is in its end's line.
+const nothingToMerge = "nothing to merge: no commit of its own"
+
+// leaveOut takes the work of t, waiting to be merged, out of the integration for why: no record left, as a task Djinn
+// does not integrate, said in an event, and its end told to the lead with why.
+func (h *Harness) leaveOut(ctx context.Context, t *planv1.Task, why string) {
+	ctx = context.WithoutCancel(ctx)
+	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+		cur, err := store.Get[*planv1.Task](ctx, tx, t.GetId())
+		if err != nil {
+			return err
+		}
+		cur.Integration = nil
+		if err := tx.Journal(actorHarness, methodIntegrate, cur); err != nil {
+			return err
+		}
+		if err := tx.Put(cur); err != nil {
+			return err
+		}
+		return putEvents(ctx, tx, newEvent(cur.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: none: " + why}))
+	})
+	if err != nil {
+		logx.L().Error("record the integration", "loop", "integrate", "task", t.GetCode(), "err", err)
+		return
+	}
+	h.notify()
+	if tellsDone(t) && !toldDoneAtEnd(t, true) {
+		h.tellDone(ctx, t, notIntegrated(why), "")
+	}
 }
 
 // notIntegrated is what the lead hears of a done task's work left out of its wish's branch, for the reason left; ""
-// when none.
+// when none. Work that brings nothing is not said left out: there is nothing to merge.
 func notIntegrated(left string) string {
-	if left == "" {
-		return ""
+	switch left {
+	case "", nothingToMerge:
+		return left
+	case investigationLeft, mockupLeft:
+		return "integration none: " + left
 	}
 	return "not integrated: " + left
 }
 
 // recoverIntegrations puts back to pending the work a previous djinn up was integrating when it stopped: its batch
-// is integrated again.
-func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task) {
+// is integrated again. It returns those tasks' codes.
+func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task) []string {
 	var cut []*planv1.Task
 	for _, t := range tasks {
 		if t.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING {
@@ -230,11 +298,17 @@ func (h *Harness) recoverIntegrations(ctx context.Context, tasks []*planv1.Task)
 		h.settleIntegration(ctx, cut, pending(cut[0].GetIntegration().GetBranch(), ""),
 			"integration: djinn up stopped during it; Djinn integrates the work again", nil)
 	}
+	codes := make([]string, len(cut))
+	for i, t := range cut {
+		codes[i] = t.GetCode()
+	}
+	return codes
 }
 
-// integratePass commits the finished work waiting, each task alone in the order they ended, pushes the integration
-// branches whose push is due after each commit, and the pushes the person approved; then it merges main into the
-// integration branches where it is due (main.go).
+// integratePass commits the finished work waiting, branch by branch, in batches (repair.go): the work queued as one
+// batch, a branch that conflicts after it alone, nothing but a correction's own work while it repairs the branch. It
+// pushes the integration branches whose push is due after each commit, and the pushes the person approved; then it
+// merges main into the integration branches where it is due (main.go).
 func (h *Harness) integratePass(ctx context.Context) {
 	ctx = withPassMemo(ctx)
 	start := time.Now()
@@ -259,11 +333,9 @@ func (h *Harness) integratePass(ctx context.Context) {
 	slices.SortStableFunc(waiting, func(a, b *planv1.Task) int {
 		return a.GetEndTime().AsTime().Compare(b.GetEndTime().AsTime())
 	})
-	var merged []*mergedBatch
+	// The work waiting goes by branch, each branch's in the order its first task ended (repair.go).
+	var lanes []*lane
 	for _, t := range waiting {
-		if ctx.Err() != nil {
-			return
-		}
 		wish, err1 := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
 		project, err2 := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId())
 		if err := errors.Join(err1, err2); err != nil {
@@ -271,22 +343,37 @@ func (h *Harness) integratePass(ctx context.Context) {
 				"project", t.GetProjectId(), "err", err)
 			continue
 		}
-		committed, mb := h.integrateBatch(ctx, wish, project, []*planv1.Task{t})
-		if committed {
-			h.pushIfDue(ctx, wish.GetId(), project)
-			if mb != nil {
-				merged = append(merged, mb)
-			}
+		// Work queued before Djinn left out a task with no commit of its own (pendIntegration) never takes a branch.
+		if why := nothingOfItsOwn(ctx, project.GetDirectory(), t); why != "" {
+			h.leaveOut(ctx, t, why)
+			continue
 		}
+		branch := h.laneOf(ctx, wish, project, t)
+		i := slices.IndexFunc(lanes, func(l *lane) bool {
+			return branch != "" && l.branch == branch && l.wish.GetId() == wish.GetId() && l.project.GetId() == project.GetId()
+		})
+		if i < 0 {
+			lanes = append(lanes, &lane{wish: wish, project: project, branch: branch})
+			i = len(lanes) - 1
+		}
+		lanes[i].tasks = append(lanes[i].tasks, t)
+	}
+	var merged []*mergedBatch
+	for _, l := range lanes {
+		if ctx.Err() != nil {
+			break // Stopping: what is merged already is still told.
+		}
+		merged = append(merged, h.integrateLane(ctx, l)...)
 	}
 	// Decision Q173: repeated lines of one kind within a pass go out as one line per (wishID, branch).
 	if len(merged) > 0 {
 		type mergeGroup struct {
-			wishID string
-			branch string
-			codes  []string
-			sha    string
-			moves  []string
+			wishID  string
+			branch  string
+			codes   []string
+			sha     string
+			moves   []string
+			reviews []string
 		}
 		var groups []*mergeGroup
 		groupIndex := make(map[string]int)
@@ -296,11 +383,12 @@ func (h *Harness) integratePass(ctx context.Context) {
 			if !ok {
 				groupIndex[key] = len(groups)
 				groups = append(groups, &mergeGroup{
-					wishID: m.wishID,
-					branch: m.branch,
-					codes:  slices.Clone(m.codes),
-					sha:    m.sha,
-					moves:  slices.Clone(m.moves),
+					wishID:  m.wishID,
+					branch:  m.branch,
+					codes:   slices.Clone(m.codes),
+					sha:     m.sha,
+					moves:   slices.Clone(m.moves),
+					reviews: slices.Clone(m.reviews),
 				})
 			} else {
 				g := groups[idx]
@@ -315,17 +403,22 @@ func (h *Harness) integratePass(ctx context.Context) {
 						g.moves = append(g.moves, mv)
 					}
 				}
+				g.reviews = append(g.reviews, m.reviews...)
 			}
 		}
 		for _, g := range groups {
 			leadLine := leadMergeLine(strings.Join(g.codes, ", "), g.branch, g.sha, g.moves)
-			h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, g.wishID, strings.Join(g.codes, ", "), leadLine)
+			h.tellLeadDetail(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, g.wishID, strings.Join(g.codes, ", "), leadLine,
+				strings.Join(g.reviews, "\n"))
 		}
 	}
 	for _, pass := range []struct {
 		name string
 		run  func(context.Context)
 	}{{"approved pushes", h.pushApproved}, {"push", h.pushPass}, {"main", h.mainPass}, {"moves", h.computedMovesPass}} {
+		if pass.name != "moves" && h.netHolds() {
+			continue // Pushes and fetches wait for the network (network.go).
+		}
 		start := time.Now()
 		pass.run(ctx)
 		logx.Took(slog.LevelDebug, "pass ended", start, "pass", pass.name)
@@ -351,13 +444,15 @@ type tested struct {
 	ids      []string
 }
 
-// mergedBatch is a batch committed to a branch in an integration pass.
+// mergedBatch is a batch committed to a branch in an integration pass, with what its review workers say of their
+// commit (reviewLine).
 type mergedBatch struct {
-	wishID string
-	branch string
-	codes  []string
-	sha    string
-	moves  []string
+	wishID  string
+	branch  string
+	codes   []string
+	sha     string
+	moves   []string
+	reviews []string
 }
 
 // taskBatchCodes returns the slice of codes for the tasks in batch.
@@ -383,8 +478,12 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	case err != nil:
 		why = fmt.Sprintf("settings unreadable: %v", err)
 	case !settings.Integrates():
-		if branch, why = h.uncheckedBranch(ctx, wish, project, settings, batch[0]); why != "" {
-			branch = plan.IntegrationBranchOf(wish, project.GetId())
+		var err error
+		if branch, err = h.uncheckedBranch(ctx, wish, project, settings, batch[0]); err != nil {
+			branch, why = plan.IntegrationBranchOf(wish, project.GetId()), err.Error()
+			if held := (*heldOutError)(nil); errors.As(err, &held) {
+				branch = held.branch
+			}
 		}
 	default:
 		branch, why, ok = h.targetBranch(ctx, wish, project, settings, batch)
@@ -393,10 +492,9 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		}
 	}
 	if why == "" {
-		// Merged into a branch whose remote holds commits it lacks, the work could not be pushed (remote_branch.go).
-		if why = apart(ctx, project.GetDirectory(), settings, branch); why != "" {
-			h.tellApart(ctx, wish, why)
-		}
+		// Merged into a branch whose remote holds commits it lacks, the work could not be pushed: the branch is brought
+		// up to the remote's first, or nothing merges (remote_branch.go).
+		why = h.catchUp(ctx, wish, project.GetDirectory(), branch, true)
 	}
 	if why != "" {
 		h.settleIntegration(ctx, batch, pending(branch, why), "integration: waiting: "+why, nil)
@@ -407,28 +505,21 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	}
 	var remaining []*planv1.Task
 	var alreadyIn []*planv1.Task
+	head := integrationHead(ctx, project.GetDirectory(), branch) // Once for the batch: nothing moves it before its merges.
 	for _, t := range batch {
-		if taskWorkInBranch(ctx, project.GetDirectory(), t, branch) {
+		if taskWorkIn(ctx, project.GetDirectory(), t, head) {
 			alreadyIn = append(alreadyIn, t)
 		} else {
 			remaining = append(remaining, t)
 		}
 	}
 	if len(alreadyIn) > 0 {
-		head, err := git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
-		if err != nil || head == "" {
-			head, _ = git(ctx, project.GetDirectory(), "rev-parse", "--verify", "--quiet", branch+"^{commit}")
-		}
-		if head == "" {
-			head, _ = git(ctx, project.GetDirectory(), "rev-parse", "HEAD")
-		}
 		committed := &planv1.TaskIntegration{
 			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
 			Branch: branch,
 			Sha:    head,
 		}
-		text := "integration: committed: " + branch + " holds the work already, at " + short8(head)
-		h.settleIntegration(ctx, alreadyIn, committed, text, nil)
+		h.settleIntegration(ctx, alreadyIn, committed, "integration: committed: "+branch+" holds the work already, at "+short8(head), nil)
 		settled := append(slices.Clone(alreadyIn), h.settleReviewed(ctx, alreadyIn, committed)...)
 		settled = append(settled, h.settleCorrected(ctx, settled, committed)...)
 		h.settleMain(ctx, wish, project, settled, committed)
@@ -442,8 +533,13 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 		}
 		batch = remaining
 	}
-	in, text, commit := h.commitBatch(ctx, wish, project, settings, branch, batch)
+	h.setDoing("the integration of " + codes(batch) + " into " + branch)
+	in, text, commit, batch := h.commitBatch(ctx, wish, project, settings, branch, batch)
+	if len(batch) == 0 {
+		return false, nil // Every branch of the batch conflicted: each merges alone (leaveBatch).
+	}
 	if ctx.Err() != nil && in.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+		h.cutPass()
 		in, text, commit = pending(branch, ""), "integration: djinn up stopped during it; Djinn integrates the work again", nil
 	}
 	in.Branch = branch
@@ -461,6 +557,12 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	for _, t := range settled {
 		h.dropWorktree(ctx, project, t)
 	}
+	var reviews []string
+	for _, t := range batch {
+		if t.GetReview() != nil {
+			reviews = append(reviews, h.reviewLine(ctx, t))
+		}
+	}
 	if commit == nil || commit.GetOldSha() == in.GetSha() {
 		// Decision Q173: no merge line for a batch that moves nothing; its tasks' ends are told once all the same.
 		h.tellNothingMerged(ctx, batch, branch)
@@ -471,22 +573,51 @@ func (h *Harness) integrateBatch(ctx context.Context, wish *planv1.Wish, project
 	moves := h.handleMergeMoves(ctx, wish, project, branch, oldSha, in.GetSha())
 	h.wake() // The tasks that waited for this work to be committed may start, from it.
 	return true, &mergedBatch{
-		wishID: wish.GetId(),
-		branch: branch,
-		codes:  taskBatchCodes(batch),
-		sha:    in.GetSha(),
-		moves:  moves,
+		wishID:  wish.GetId(),
+		branch:  branch,
+		codes:   taskBatchCodes(batch),
+		sha:     in.GetSha(),
+		moves:   moves,
+		reviews: reviews,
 	}
 }
 
 // tellNothingMerged tells the lead that the work workers of batch ended done, their work bringing nothing to branch:
-// no merge line tells it (incident W1 of wish Dew, 12/10/2026). One told when it ended is not told again.
+// no merge line tells it (incident W1 of wish Dew, 12/10/2026). One told when it ended is not told again. A review
+// worker's end comes with what it committed and left (reviewLine).
 func (h *Harness) tellNothingMerged(ctx context.Context, batch []*planv1.Task, branch string) {
 	for _, t := range batch {
-		if tellsDone(t) && !toldDoneAtEnd(t, true) {
-			h.tellDone(ctx, t, "nothing to merge into "+branch)
+		switch {
+		case t.GetReview() != nil:
+			h.tellLeadDetail(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, t.GetWishId(), t.GetCode(),
+				"Djinn: "+t.GetCode()+" done, nothing to merge into "+branch+".", h.reviewLine(ctx, t))
+		case tellsDone(t) && !toldDoneAtEnd(t, true):
+			h.tellDone(ctx, t, "nothing to merge into "+branch, "")
 		}
 	}
+}
+
+// reviewLine is what the lead reads of review worker r's end: the work it reviewed, the line of its final note that
+// says what it committed and what it left and why (reviewReport), or that it says nothing of it, and the worktree that
+// keeps what it left.
+func (h *Harness) reviewLine(ctx context.Context, r *planv1.Task) string {
+	line := r.GetCode() + " reviewed the work left not committed"
+	if served := taskCodes(ctx, h.store, r.GetReview().GetTaskIds()); served != "" {
+		line = r.GetCode() + " reviewed the work " + served + " left not committed"
+	}
+	note := h.finalNote(ctx, r.GetId())
+	switch report := reviewReport(note); {
+	case report != "":
+		line += ": " + report
+	case note != "":
+		line += "; its final note says nothing of what it committed and left, it begins: " + firstLine(note)
+	default:
+		line += "; it left no final note."
+	}
+	if left, err := uncommitted(ctx, r); err == nil && len(left) > 0 {
+		line += " Its worktree keeps what it left: " + r.GetWorktree()
+	}
+	return line
 }
 
 // dropWorktree removes the worktree of t, whose work is committed, as djinn task clean does: its branch stays. A
@@ -499,14 +630,20 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 	}
 	text := "worktree removed, branch " + cur.GetBranch() + " kept"
 	// A review worker works in the worktree of the task it reviews: the second of them finds it removed already.
+	// git worktree remove refuses a worktree holding changes, its own status read: the status is read again only to say
+	// why it stays.
 	if _, err := os.Stat(cur.GetWorktree()); !errors.Is(err, os.ErrNotExist) {
-		if changes, err := git(ctx, cur.GetWorktree(), "status", "--porcelain"); err == nil && changes != "" {
-			text = "worktree kept: it holds changes not committed, " + cur.GetWorktree()
-		} else if err := removeWorktree(ctx, project.GetDirectory(), cur.GetWorktree(), false); err != nil {
+		if err := removeWorktree(ctx, project.GetDirectory(), cur.GetWorktree(), false); err != nil {
 			text = "worktree kept: " + err.Error()
+			if changes, err := git(ctx, cur.GetWorktree(), "status", "--porcelain"); err == nil && changes != "" {
+				text = "worktree kept: it holds changes not committed, " + cur.GetWorktree()
+			}
 		}
 	}
 	kept := strings.HasPrefix(text, "worktree kept")
+	if !kept && cur.GetScratch() != "" {
+		_ = os.RemoveAll(cur.GetScratch())
+	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		task, err := store.Get[*planv1.Task](ctx, tx, t.GetId())
 		if err != nil {
@@ -514,6 +651,7 @@ func (h *Harness) dropWorktree(ctx context.Context, project *planv1.Project, t *
 		}
 		if !kept {
 			task.Worktree = ""
+			task.Scratch = ""
 		}
 		if err := tx.Journal(actorHarness, methodIntegrate, task); err != nil {
 			return err
@@ -595,6 +733,7 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 	if progress == nil {
 		progress = func(InstallStep, string) {}
 	}
+	ctx = context.WithValue(ctx, installingKey{}, true)
 	wish, err1 := store.Get[*planv1.Wish](ctx, h.store, wishID)
 	project, err2 := store.Get[*planv1.Project](ctx, h.store, projectID)
 	if err := errors.Join(err1, err2); err != nil {
@@ -651,7 +790,7 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 	if err != nil {
 		return "", fmt.Errorf("prepare the install worktree: %w", err)
 	}
-	if why, out, _ := h.setUp(ctx, project, settings, wishID, "", wt, dir); why != "" {
+	if why, out, _, _ := h.setUp(ctx, project, settings, wishID, "", wt, dir); why != "" {
 		return out, fmt.Errorf("%s: %s", setupName, why)
 	}
 	step = InstallBuilding
@@ -667,7 +806,7 @@ func (h *Harness) Install(ctx context.Context, wishID, projectID, sha string, pr
 	h.installed[projectID] = sha
 	h.mu.Unlock()
 	_ = os.MkdirAll(filepath.Dir(installedFile(h.home, projectID)), 0o755) // The write below fails too.
-	if err := os.WriteFile(installedFile(h.home, projectID), []byte(sha+"\n"), 0o600); err != nil {
+	if err := fsx.WriteAtomic(installedFile(h.home, projectID), []byte(sha+"\n"), 0o600); err != nil {
 		logx.L().Warn("record the installed build", "project", projectID, "sha", short8(sha), "err", err)
 	}
 	h.closeInstallQuestions(ctx, projectID, sha)
@@ -704,11 +843,13 @@ func (h *Harness) installedSha(ctx context.Context, projectID string) string {
 		}
 	}
 	wt := installDir(h.home, projectID)
-	if s := commitOf(ctx, wt, "HEAD"); s != "" {
-		h.mu.Lock()
-		h.installed[projectID] = s
-		h.mu.Unlock()
-		return s
+	if _, err := os.Stat(wt); err == nil {
+		if s := commitOf(ctx, wt, "HEAD"); s != "" {
+			h.mu.Lock()
+			h.installed[projectID] = s
+			h.mu.Unlock()
+			return s
+		}
 	}
 	return ""
 }
@@ -939,15 +1080,16 @@ func (h *Harness) closeMove(ctx context.Context, q *planv1.Question, choice plan
 	return nil
 }
 
-// integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish made before
-// Djinn recorded it takes the branch the project's checkout is on now, recorded on the wish.
+// integrationBranch is the branch wish integrates its work into in project, and why there is none. A wish that records
+// none takes the project's reference branch, recorded on the wish; never the branch the developer's copy has checked
+// out (W227).
 func (h *Harness) integrationBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project) (string, string) {
 	if b := plan.IntegrationBranchOf(wish, project.GetId()); b != "" {
 		return b, ""
 	}
-	b := plan.CheckedOutBranch(ctx, project.GetDirectory())
+	b, _ := plan.ReferenceName(ctx, h.home, project)
 	if b == "" {
-		return "", "the project's checkout is on no branch: name the integration branch with djinn wish set-integration"
+		return "", "the project has no reference branch: name the integration branch with djinn wish set-integration"
 	}
 	plan.SetIntegrationBranch(wish, project.GetId(), b)
 	ctx = context.WithoutCancel(ctx)
@@ -970,13 +1112,14 @@ func (h *Harness) integrationBranch(ctx context.Context, wish *planv1.Wish, proj
 
 // commitBatch merges the branches of batch, tasks whose worktree holds nothing not committed, into the integration
 // branch in the wish's integration worktree, checks the result, and moves the branch when the commit checks pass. It
-// returns where the batch's work stands, the event that says it, and the commit to journal when the branch moved.
+// returns where the batch's work stands, the event that says it, the commit to journal when the branch moved, and the
+// batch without the branches that conflicted and left it (leaveBatch): none left, nothing else is said.
 func (h *Harness) commitBatch(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch string, batch []*planv1.Task,
-) (*planv1.TaskIntegration, string, *planv1.IntegrationCommit) {
+) (*planv1.TaskIntegration, string, *planv1.IntegrationCommit, []*planv1.Task) {
 	repo := project.GetDirectory()
-	wait := func(why string) (*planv1.TaskIntegration, string, *planv1.IntegrationCommit) {
-		return pending(branch, why), "integration: waiting: " + why, nil
+	wait := func(why string) (*planv1.TaskIntegration, string, *planv1.IntegrationCommit, []*planv1.Task) {
+		return pending(branch, why), "integration: waiting: " + why, nil, batch
 	}
 	old, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
 	if err != nil {
@@ -994,8 +1137,20 @@ func (h *Harness) commitBatch(
 		}, "integration: integrating into "+branch+", with "+codes(batch), nil)
 		var in *planv1.TaskIntegration
 		var text string
-		if done.sha, in, text = h.mergeAndTest(ctx, wish, project, settings, branch, old, batch); in != nil {
-			return in, text, nil
+		var left []leftOut
+		done.sha, in, text, left = h.mergeAndTest(ctx, wish, project, settings, branch, old, batch)
+		if len(left) > 0 {
+			h.leaveBatch(ctx, left, branch)
+			batch = slices.DeleteFunc(slices.Clone(batch), func(t *planv1.Task) bool {
+				return slices.ContainsFunc(left, func(l leftOut) bool { return l.task.GetId() == t.GetId() })
+			})
+			if len(batch) == 0 {
+				return nil, "", nil, nil
+			}
+			taskIDs = ids(batch)
+		}
+		if in != nil {
+			return in, text, nil, batch
 		}
 		done.old, done.ids = old, taskIDs
 		h.tested[key] = done
@@ -1008,7 +1163,7 @@ func (h *Harness) commitBatch(
 	committed := &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED, Sha: sha}
 	if sha == old {
 		delete(h.tested, key)
-		return committed, "integration: committed: " + branch + " holds the work already, at " + short8(sha), nil
+		return committed, "integration: committed: " + branch + " holds the work already, at " + short8(sha), nil, batch
 	}
 	holder, why, moved := moveBranch(ctx, repo, branch, old, sha, "djinn: integrate "+codes(batch))
 	if why != "" {
@@ -1023,13 +1178,20 @@ func (h *Harness) commitBatch(
 	if holder != "" {
 		text += "; your checkout of it, " + holder + ", follows"
 	}
-	return committed, text, commit
+	return committed, text, commit, batch
 }
 
 // moveBranch moves branch from old to sha, tested green, in the repository holding repo, git checking it is still at
 // old; the person's checkout of it, if any, follows when clean. It returns that checkout ("" for none); or why the
-// branch stays at old, and whether it is because the branch moved meanwhile.
+// branch stays at old, and whether it is because the branch moved meanwhile. Once begun, the move ends whole though
+// djinn up stops: the branch moved, its checkout follows it, or the branch goes back (W52: the put back failed on the
+// cancel, and the checkout showed the work undone).
 func moveBranch(ctx context.Context, repo, branch, old, sha, message string) (holder, why string, moved bool) {
+	if ctx.Err() != nil {
+		return "", "djinn up stopped before " + branch + " moved", false
+	}
+	ctx, done := gitx.Uncut(ctx)
+	defer done()
 	// The person's checkout of the branch, if any, follows it when clean. One with changes is left alone, and the
 	// branch with it: moved under it, its next commit would undo the work.
 	holder, err := checkoutOf(ctx, repo, branch)
@@ -1059,14 +1221,15 @@ func moveBranch(ctx context.Context, repo, branch, old, sha, message string) (ho
 	return holder, "", false
 }
 
-// mergeAndTest merges batch's branches from old in the wish's integration worktree, makes it ready with the setup,
-// and runs the commit checks there. It returns the commit checked green; or where the batch stands when it is not,
-// and the event that says it. A conflict in code, or a red check, says what failed as a correction worker starts from
-// it (IntegrationFailure).
+// mergeAndTest merges batch's branches from old in the wish's integration worktree, one on top of the other, makes it
+// ready with the setup, and runs the commit checks there, once for the batch. It returns the commit checked green; or
+// where the batch stands when it is not, and the event that says it. A conflict in code, or a red check, says what
+// failed as a correction worker starts from it (IntegrationFailure). In a batch of several, a branch that conflicts
+// leaves it, its merge undone, the others merged without it: it is among left, with why.
 func (h *Harness) mergeAndTest(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, branch, old string, batch []*planv1.Task,
-) (string, *planv1.TaskIntegration, string) {
-	fail := func(state planv1.IntegrationState, why string, f *planv1.IntegrationFailure) (string, *planv1.TaskIntegration, string) {
+) (sha string, in *planv1.TaskIntegration, text string, left []leftOut) {
+	fail := func(state planv1.IntegrationState, why string, f *planv1.IntegrationFailure) (string, *planv1.TaskIntegration, string, []leftOut) {
 		what := "conflict"
 		if state == planv1.IntegrationState_INTEGRATION_STATE_RED {
 			what = "red"
@@ -1075,10 +1238,10 @@ func (h *Harness) mergeAndTest(
 			f.State, f.Reason = state, why
 		}
 		return "", &planv1.TaskIntegration{State: state, Reason: why, Failure: f},
-			"integration: " + what + ": " + why + "; " + branch + " stays as it was"
+			"integration: " + what + ": " + why + "; " + branch + " stays as it was", left
 	}
-	wait := func(why string) (string, *planv1.TaskIntegration, string) {
-		return "", pending(branch, why), "integration: waiting: " + why
+	wait := func(why string) (string, *planv1.TaskIntegration, string, []leftOut) {
+		return "", pending(branch, why), "integration: waiting: " + why, left
 	}
 	repo := project.GetDirectory()
 	wt := integrationDir(h.home, project.GetId(), wish.GetId())
@@ -1086,74 +1249,142 @@ func (h *Harness) mergeAndTest(
 	if err != nil {
 		return wait("prepare the integration worktree: " + err.Error())
 	}
-	for i, t := range batch {
-		base, err := git(ctx, wt, "rev-parse", "HEAD")
-		if err != nil {
-			return wait(err.Error())
+	// A merge begun ends, or is aborted, though djinn up stops: none is left half done in the worktree (W52).
+	keep, done := gitx.Uncut(ctx)
+	defer done()
+	var merged []*planv1.Task
+	empty := false // A merge that changed nothing was undone.
+	head := old    // The worktree's HEAD, as integrationWorktree or the last merge left it; "" to read it again.
+	for _, t := range batch {
+		if head == "" {
+			if head, err = git(ctx, wt, "rev-parse", "HEAD"); err != nil {
+				return wait(err.Error())
+			}
 		}
+		base := head
+		head = "" // A merge that did not end as foreseen leaves it to read.
 		// What a correction starts from, when this merge conflicts: the merges before it, and this one again.
 		conflict := func(files []string) *planv1.IntegrationFailure {
-			return &planv1.IntegrationFailure{Base: base, MergeBranch: t.GetBranch(), Files: files, TaskIds: ids(batch[:i+1])}
+			return &planv1.IntegrationFailure{Base: base, MergeBranch: t.GetBranch(), Files: files, TaskIds: append(ids(merged), t.GetId())}
 		}
+		// In a batch of several, a branch that conflicts leaves it, its merge undone (repair.go).
+		leave := len(batch) > 1
 		msg := fmt.Sprintf("Merge branch '%s' into %s", t.GetBranch(), branch)
-		_, err = git(ctx, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, t.GetBranch())
+		if ctx.Err() != nil {
+			return wait("djinn up stopped")
+		}
+		_, err = git(keep, wt, "merge", "--no-ff", "--no-edit", "--quiet", "-m", msg, t.GetBranch())
 		if err == nil {
+			var isEmpty bool
+			if isEmpty, head = emptyMerge(keep, wt, base); isEmpty {
+				h.integrationStep(ctx, t, "integration: "+t.GetBranch()+" changes nothing in "+branch+": no merge commit")
+				empty = true
+				continue
+			}
 			h.integrationStep(ctx, t, "integration: merged "+t.GetBranch())
+			merged = append(merged, t)
 			continue
 		}
-		conflicts := conflicted(ctx, wt)
+		conflicts := conflicted(keep, wt)
 		var why string
 		switch {
 		case errors.Is(err, errNoIdentity):
 			// Not a conflict: the person sets the identity, and the next pass merges.
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return wait(noIdentity)
 		case len(conflicts) == 0:
-			_, _ = git(ctx, wt, "merge", "--abort")
-			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, fmt.Sprintf("merge %s: %v", t.GetCode(), err), nil)
+			_, _ = git(keep, wt, "merge", "--abort")
+			why := fmt.Sprintf("merge %s: %v", t.GetCode(), err)
+			if leave {
+				left = append(left, leftOut{task: t, why: why})
+				continue
+			}
+			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, why, nil)
 		case !generatedOnly(conflicts, prefix, settings.Generated) || settings.Generate == "":
 			why = fmt.Sprintf("%s conflicts with %s in %s", t.GetCode(), branch, strings.Join(conflicts, ", "))
 		default:
 			why = h.settleGenerated(ctx, t.GetCode(), t.GetId(), wt, dir, settings.Generate, conflicts, func() string {
-				failed, _, _ := h.setUp(ctx, project, settings, wish.GetId(), t.GetId(), wt, dir)
+				failed, _, _, _ := h.setUp(ctx, project, settings, wish.GetId(), t.GetId(), wt, dir)
 				return failed
 			})
 		}
 		if why != "" {
-			_, _ = git(ctx, wt, "merge", "--abort")
+			if _, err := git(keep, wt, "merge", "--abort"); err != nil && leave {
+				// The merge settling generated files may have committed: the batch goes back to the merges before it.
+				_, _ = git(keep, wt, "reset", "--quiet", "--hard", base)
+			}
+			if leave {
+				left = append(left, leftOut{task: t, why: why})
+				continue
+			}
 			return fail(planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, why, conflict(conflicts))
+		}
+		var isEmpty bool
+		if isEmpty, head = emptyMerge(keep, wt, base); isEmpty {
+			h.integrationStep(ctx, t, "integration: "+t.GetBranch()+" changes nothing in "+branch+": no merge commit")
+			empty = true
+			continue
 		}
 		h.integrationStep(ctx, t, fmt.Sprintf("integration: merged %s; its conflict, only in generated files (%s), settled by %s",
 			t.GetBranch(), strings.Join(conflicts, ", "), settings.Generate))
+		merged = append(merged, t)
 	}
-	sha, err := git(ctx, wt, "rev-parse", "HEAD")
-	if err != nil {
-		return wait(err.Error())
+	if len(merged) == 0 {
+		if empty {
+			return old, nil, "", left // Nothing merged moves the branch: it holds the work already.
+		}
+		return "", nil, "", left
 	}
-	red := func(command, why, out string) (string, *planv1.TaskIntegration, string) {
-		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, why,
-			&planv1.IntegrationFailure{Base: sha, Command: command, Output: tail(out), TaskIds: ids(batch)})
+	if sha = head; sha == "" {
+		if sha, err = git(ctx, wt, "rev-parse", "HEAD"); err != nil {
+			return wait(err.Error())
+		}
 	}
-	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, batch, sha, wt, dir, func(c *planv1.ProjectCheck) {
-		h.integrationStep(ctx, batch[0], fmt.Sprintf("integration: checking %s: %s (%s)", codes(batch), c.GetName(), c.GetCommand()))
+	red := func(command, why, out string, run *planv1.CheckRun) (string, *planv1.TaskIntegration, string, []leftOut) {
+		f := keptOutput(&planv1.IntegrationFailure{Base: sha, Command: command, Output: tail(out), TaskIds: ids(merged)}, run)
+		if step := outputStep(f, run); step != "" {
+			for _, t := range merged {
+				h.integrationStep(ctx, t, step)
+			}
+		}
+		return fail(planv1.IntegrationState_INTEGRATION_STATE_RED, why, f)
+	}
+	if h.netWaits(commitKey(wish, project), codes(merged)+"@"+old) {
+		return wait("its commit checks failed on the network; Djinn runs them again once it is back")
+	}
+	command, why, out, run, stopped := h.commitChecks(ctx, wish, project, settings, merged, sha, wt, dir, func(c *planv1.ProjectCheck) {
+		// The window shows the check that runs, and since when (TaskIntegration.check).
+		h.settleIntegration(ctx, merged, &planv1.TaskIntegration{
+			State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING, Branch: branch, Check: c.GetName(),
+		}, fmt.Sprintf("integration: checking %s: %s (%s)", codes(merged), c.GetName(), c.GetCommand()), nil)
+		h.setDoing(fmt.Sprintf("the integration of %s into %s, checking %s", codes(merged), branch, c.GetName()))
 	})
 	switch {
 	case stopped != "":
 		return wait(stopped)
+	case why != "" && h.netCheckFailed(commitKey(wish, project), codes(merged)+"@"+old, why+"\n"+out):
+		// Not the code's failure: run again once the network is back, never red nor corrected (network.go).
+		return wait("its commit checks failed on the network (" + headline(why) + "); Djinn runs them again once it is back")
 	case why != "":
-		return red(command, why, out)
+		return red(command, why, out, run)
 	}
-	return sha, nil, ""
+	return sha, nil, "", left
+}
+
+// commitKey names the commit checks of wish's integration branch in project, for netCheckFailed.
+func commitKey(wish *planv1.Wish, project *planv1.Project) string {
+	return "commit/" + wish.GetId() + "/" + project.GetId()
 }
 
 // commitChecks makes the integration worktree wt ready with the setup, then runs the project's commit checks on sha
 // there, in dir, for the tasks of batch (none: for no task), each through its gate, saying each with step before it
 // runs. A check a task's worker passed on sha's tree is not run again, said in that task's events (passedOnTree). It
-// returns the command that failed, why, and the end of its output; or why it stopped, when djinn up stopped.
+// returns the command that failed, why, its output, and its run when it ran red; or why it stopped, when djinn up
+// stopped.
 func (h *Harness) commitChecks(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
 	sha, wt, dir string, step func(*planv1.ProjectCheck),
-) (command, why, out, stopped string) {
+) (command, why, out string, red *planv1.CheckRun, stopped string) {
 	checks := settings.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT)
 	taskID := ""
 	if len(batch) > 0 {
@@ -1161,12 +1392,12 @@ func (h *Harness) commitChecks(
 		checks = h.passedOnTree(ctx, project.GetId(), checks, batch, wt, sha)
 	}
 	if len(checks) == 0 {
-		return "", "", "", ""
+		return "", "", "", nil, ""
 	}
-	if why, out, halted := h.setUp(ctx, project, settings, wish.GetId(), taskID, wt, dir); halted {
-		return "", "", "", "djinn up stopped during the setup"
+	if why, out, red, halted := h.setUp(ctx, project, settings, wish.GetId(), taskID, wt, dir); halted {
+		return "", "", "", nil, "djinn up stopped during the setup"
 	} else if why != "" {
-		return settings.Setup, setupName + ": " + why, out, ""
+		return settings.Setup, setupName + ": " + why, out, red, ""
 	}
 	for _, c := range checks {
 		step(c)
@@ -1175,12 +1406,12 @@ func (h *Harness) commitChecks(
 			TaskId: taskID, Sha: sha,
 		}
 		if why, out, halted := h.check(ctx, project.GetId(), run, dir); halted {
-			return "", "", "", "djinn up stopped during the check " + c.GetName()
+			return "", "", "", nil, "djinn up stopped during the check " + c.GetName()
 		} else if why != "" {
-			return c.GetCommand(), why, out, ""
+			return c.GetCommand(), why, out, run, ""
 		}
 	}
-	return "", "", "", ""
+	return "", "", "", nil, ""
 }
 
 // settleGenerated settles a merge of what, a task's code or a branch, whose conflicts are all in generated files: it
@@ -1189,10 +1420,12 @@ func (h *Harness) commitChecks(
 func (h *Harness) settleGenerated(
 	ctx context.Context, what, taskID, wt, dir, generate string, conflicts []string, ready func() string,
 ) string {
-	if _, err := git(ctx, wt, append([]string{"checkout", "--theirs", "--"}, conflicts...)...); err != nil {
+	keep, done := gitx.Uncut(ctx) // A stop cuts the commands, not git's steps.
+	defer done()
+	if _, err := git(keep, wt, append([]string{"checkout", "--theirs", "--"}, conflicts...)...); err != nil {
 		return err.Error()
 	}
-	if _, err := git(ctx, wt, append([]string{"add", "--"}, conflicts...)...); err != nil {
+	if _, err := git(keep, wt, append([]string{"add", "--"}, conflicts...)...); err != nil {
 		return err.Error()
 	}
 	if why := ready(); why != "" {
@@ -1205,10 +1438,13 @@ func (h *Harness) settleGenerated(
 	case code != 0:
 		return fmt.Sprintf("%s conflicts in generated files (%s), and %s exited %d%s", what, strings.Join(conflicts, ", "), generate, code, tail(out))
 	}
-	if _, err := git(ctx, wt, "add", "--all"); err != nil {
+	if ctx.Err() != nil {
+		return "djinn up stopped"
+	}
+	if _, err := git(keep, wt, "add", "--all"); err != nil {
 		return err.Error()
 	}
-	if _, err := git(ctx, wt, "commit", "--no-edit", "--quiet"); err != nil {
+	if _, err := git(keep, wt, "commit", "--no-edit", "--quiet"); err != nil {
 		return err.Error()
 	}
 	return ""
@@ -1232,6 +1468,9 @@ func (h *Harness) settleIntegration(
 			if err := tx.Journal(actorHarness, methodCommit, commit); err != nil {
 				return err
 			}
+			if err := tx.Change(&planv1.ProjectSync{WishId: commit.GetWishId(), Branch: commit.GetBranch()}); err != nil {
+				return err
+			}
 		}
 		for _, b := range batch {
 			t, err := store.Get[*planv1.Task](ctx, tx, b.GetId())
@@ -1243,10 +1482,17 @@ func (h *Harness) settleIntegration(
 				continue
 			}
 			b.Integration = in
-			if sameIntegration(t.GetIntegration(), in) {
+			next := in
+			// Work that merges alone keeps merging alone while it waits or merges (repair.go).
+			if t.GetIntegration().GetAlone() && !in.GetAlone() && (in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_PENDING ||
+				in.GetState() == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING) {
+				next = proto.CloneOf(in)
+				next.Alone = true
+			}
+			if sameIntegration(t.GetIntegration(), next) {
 				continue
 			}
-			t.Integration = proto.CloneOf(in)
+			t.Integration = proto.CloneOf(next)
 			if err := tx.Journal(actorHarness, methodIntegrate, t); err != nil {
 				return err
 			}
@@ -1263,6 +1509,7 @@ func (h *Harness) settleIntegration(
 		logx.L().Error("record the integration", "loop", "integrate", "task", codes(batch), "err", err)
 	}
 	h.notify()
+	h.queueMoved()
 	for _, b := range batch {
 		if len(b.GetComments()) > 0 {
 			if _, err := h.checkCommentsResolution(ctx, b); err != nil {
@@ -1276,7 +1523,8 @@ func (h *Harness) settleIntegration(
 func sameIntegration(a, b *planv1.TaskIntegration) bool {
 	return a.GetState() == b.GetState() && a.GetBranch() == b.GetBranch() && a.GetSha() == b.GetSha() && a.GetReason() == b.GetReason() &&
 		a.GetCorrectedBy() == b.GetCorrectedBy() && a.GetReviewedBy() == b.GetReviewedBy() && a.GetAttempts() == b.GetAttempts() &&
-		a.GetQuestionId() == b.GetQuestionId() && proto.Equal(a.GetFailure(), b.GetFailure())
+		a.GetQuestionId() == b.GetQuestionId() && a.GetAlone() == b.GetAlone() && a.GetCheck() == b.GetCheck() &&
+		proto.Equal(a.GetFailure(), b.GetFailure())
 }
 
 // ids lists the tasks' identifiers.
@@ -1308,21 +1556,30 @@ func integrationDir(home, projectID, wishID string) string {
 
 // integrationWorktree makes wt, a worktree of the repository holding repo, ready to merge into: detached at old,
 // without changes. It returns the project's folder within it, and the project's folder in the repository ("app/"; ""
-// at its root).
+// at its root). Its caller holds the worktree alone (integrateMu, installMu): an index.lock there is a dead git's, taken
+// away (unlockWorktree), or every reset there would fail (W52). Once begun, it ends though djinn up stops.
 func integrationWorktree(ctx context.Context, repo, wt, old string) (string, string, error) {
 	prefix, err := git(ctx, repo, "rev-parse", "--show-prefix")
 	if err != nil {
 		return "", "", err
 	}
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
+	ctx, done := gitx.Uncut(ctx)
+	defer done()
 	dir := filepath.Join(wt, filepath.FromSlash(prefix))
-	if top, err := git(ctx, wt, "rev-parse", "--show-toplevel"); err == nil && samePath(top, wt) {
-		_, _ = git(ctx, wt, "merge", "--abort")
-		_, _ = git(ctx, wt, "rebase", "--abort")
-		if _, err := git(ctx, wt, "reset", "--quiet", "--hard", old); err != nil {
-			return "", "", err
+	if _, err := os.Stat(wt); err == nil {
+		if top, err := git(ctx, wt, "rev-parse", "--show-toplevel"); err == nil && samePath(top, wt) {
+			unlockWorktree(wt)
+			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(ctx, wt, "rebase", "--abort")
+			if _, err := git(ctx, wt, "reset", "--quiet", "--hard", old); err != nil {
+				return "", "", err
+			}
+			_, err = git(ctx, wt, "clean", "-fdq")
+			return dir, prefix, err
 		}
-		_, err = git(ctx, wt, "clean", "-fdq")
-		return dir, prefix, err
 	}
 	// Not a worktree any more, if it ever was: it is Djinn's own folder, made again, and set up again.
 	if err := os.RemoveAll(wt); err != nil {
@@ -1339,6 +1596,24 @@ func integrationWorktree(ctx context.Context, repo, wt, old string) (string, str
 	}
 	_, err = git(ctx, repo, "worktree", "add", "--quiet", "--detach", wt, old)
 	return dir, prefix, err
+}
+
+// emptyMerge tells whether the merge just committed in the worktree wt changes nothing from base, the commit it was
+// made on; it is then undone: no merge commit without a change is ever made (W196). head is the commit the worktree
+// is then at, read with the trees in one git: base once undone, "" when unknown.
+func emptyMerge(ctx context.Context, wt, base string) (empty bool, head string) {
+	out, err := git(ctx, wt, "rev-parse", "HEAD", "HEAD^{tree}", base+"^{tree}")
+	read := strings.Fields(out)
+	if err != nil || len(read) != 3 {
+		return false, ""
+	}
+	if read[1] != read[2] {
+		return false, read[0]
+	}
+	if _, err := git(ctx, wt, "reset", "--quiet", "--hard", base); err != nil {
+		return false, ""
+	}
+	return true, base
 }
 
 // samePath tells whether a and b are the same folder, symbolic links resolved.
@@ -1428,7 +1703,9 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 		if waits != nil {
 			waiting = func(why string) { waits("gate " + name + ": " + why) }
 		}
-		give, err := h.gates(ctx, name, taskID, line, dir, waiting)
+		// Every command Djinn runs under a gate merges, settles a merge or checks a push, but an install's.
+		_, installing := ctx.Value(installingKey{}).(bool)
+		give, err := h.gates(ctx, name, taskID, line, dir, !installing, waiting)
 		if err != nil {
 			return "", -1, fmt.Errorf("gate %s: %w", name, err)
 		}
@@ -1452,7 +1729,17 @@ func (h *Harness) command(ctx context.Context, name, taskID, line, dir string) (
 		prog, rest, started := lowCommand(args[0], args[1:])
 		args, low = append([]string{prog}, rest...), !started // Not started at its level: set once started.
 	}
-	return runTracked(ctx, dir, args, h.children.tracker("", name+" check"), run.output, low)
+	track := h.children.tracker("", name+" check")
+	if h.scopes != nil {
+		// In a systemd scope of its own, the Djinn line counts all the command uses, its test binaries that end
+		// first too (W347); its tracker stops the whole scope.
+		sc := h.scopes.Plain(name)
+		args = append(slices.Clone(sc.Prefix), args...)
+		if in := track; in != nil && sc.Cgroup != "" {
+			track = func(pid int, _, mark string) func() { return in(pid, sc.Cgroup, mark) }
+		}
+	}
+	return runTracked(ctx, dir, args, track, run.output, low)
 }
 
 // gateWaitKey is the context key of a function told why a command waits for its gate ("gate install: held by …"), and
@@ -1461,6 +1748,9 @@ type gateWaitKey struct{}
 
 // installRunKey is the context key of how Install's commands run (InstallWith).
 type installRunKey struct{}
+
+// installingKey is the context key that marks Install's commands: their gates do not go first.
+type installingKey struct{}
 
 type installRun struct {
 	output func(line string) // told each line a command writes; nil: none
@@ -1483,10 +1773,13 @@ func runCommand(ctx context.Context, dir string, args []string) (string, int, er
 // it ended; lines, when set, each line the command writes, as it writes it. low sets a low-priority worker's CPU
 // priority on the command once started.
 func runTracked(
-	ctx context.Context, dir string, args []string, track func(pid int, cgroup string) func(), lines func(string), low bool,
+	ctx context.Context, dir string, args []string, track func(pid int, cgroup, mark string) func(), lines func(string), low bool,
 ) (string, int, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
+	// A djinn command it runs (djinn gate run in a check) is Djinn's, not the developer's: it keeps no ifrit lit. Its
+	// Go builds are trimmed (goenv.go).
+	cmd.Env = append(trimmedGoFlags(os.Environ()), "DJINN_CALLER="+CallerDjinn)
 	// At ctx's end (Djinn stops), what the command started dies with it: a check's test runner, left alone, would
 	// hold the output open, and Djinn's shutdown with it, for as long as the tests run (W504).
 	ownGroup(cmd, false)
@@ -1510,7 +1803,7 @@ func runTracked(
 			applyPriority(cmd, true)
 		}
 		if track != nil {
-			defer track(cmd.Process.Pid, "")()
+			defer track(cmd.Process.Pid, "", "")()
 		}
 		err = cmd.Wait()
 	}
@@ -1581,10 +1874,17 @@ func tail(out string) string {
 }
 
 // tellLead hands the lead of wishID an event of kind about code, in line (toLead).
+// What it tells already happened: djinn up stopping does not cancel the telling, or the lead never learns it.
 func (h *Harness) tellLead(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line string) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	h.tellLeadDetail(ctx, kind, wishID, code, line, "")
+}
+
+// tellLeadDetail is tellLead with what the lead reads whole under the line (LeadEvent.detail).
+func (h *Harness) tellLeadDetail(ctx context.Context, kind planv1.LeadEventKind, wishID, code, line, detail string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	if err := h.toLead(ctx, kind, wishID, code, line); err != nil && !errors.Is(err, plan.ErrNoLead) {
+	e := &planv1.LeadEvent{Kind: kind, WishId: wishID, Code: code, Text: line, Detail: detail}
+	if err := h.toLeadEvent(ctx, e); err != nil && !errors.Is(err, plan.ErrNoLead) {
 		logx.L().Error("tell the lead", "wish", wishID, "task", code, "kind", kind.String(), "err", err)
 	}
 }
@@ -1768,42 +2068,44 @@ func (h *Harness) handleMergeMoves(
 	}
 
 	// 3. needs: box added
-	var diffOut string
-	if oldSha != "" && oldSha != sha {
-		diffOut, _ = git(ctx, repo, "diff", "-U0", oldSha, sha, "--", plan.PlanDir+"/*.md")
-	} else {
-		diffOut, _ = git(ctx, repo, "show", "-U0", "--format=", sha, "--", plan.PlanDir+"/*.md")
-	}
-	prefix, _ := git(ctx, repo, "rev-parse", "--show-prefix")
-	prefix = strings.TrimSpace(prefix)
-	curFile := ""
-	for _, line := range strings.Split(diffOut, "\n") {
-		if strings.HasPrefix(line, "+++ ") {
-			curFile = strings.TrimPrefix(line, "+++ ")
-			curFile = strings.TrimPrefix(curFile, "b/")
-			if prefix != "" {
-				curFile = strings.TrimPrefix(curFile, prefix)
+	if slices.ContainsFunc(files, isPlanFile) {
+		var diffOut string
+		if oldSha != "" && oldSha != sha {
+			diffOut, _ = git(ctx, repo, "diff", "-U0", oldSha, sha, "--", plan.PlanDir+"/*.md")
+		} else {
+			diffOut, _ = git(ctx, repo, "show", "-U0", "--format=", sha, "--", plan.PlanDir+"/*.md")
+		}
+		prefix, _ := git(ctx, repo, "rev-parse", "--show-prefix")
+		prefix = strings.TrimSpace(prefix)
+		curFile := ""
+		for _, line := range strings.Split(diffOut, "\n") {
+			if strings.HasPrefix(line, "+++ ") {
+				curFile = strings.TrimPrefix(line, "+++ ")
+				curFile = strings.TrimPrefix(curFile, "b/")
+				if prefix != "" {
+					curFile = strings.TrimPrefix(curFile, prefix)
+				}
+				continue
 			}
-			continue
-		}
-		if !isPlanFile(curFile) {
-			continue
-		}
-		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-			added := strings.TrimPrefix(line, "+")
-			box, machine, ok := plan.ReadTaskItemNeeds(added)
-			if ok {
-				moveName := needsMoveName(box, machine)
-				if !slices.Contains(moves, moveName) {
-					asked := hasQuestion(func(q *planv1.Question) bool {
-						tl := strings.ToLower(q.GetText())
-						return strings.Contains(tl, strings.ToLower(machine)) && (box == "" || strings.Contains(tl, strings.ToLower(box)))
-					})
-					if !asked {
-						q := needsMoveQuestion(wish.GetId(), box, machine)
-						if err := h.askMove(ctx, q); err == nil {
-							existing = append(existing, q)
-							moves = append(moves, moveName)
+			if !isPlanFile(curFile) {
+				continue
+			}
+			if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				added := strings.TrimPrefix(line, "+")
+				box, machine, ok := plan.ReadTaskItemNeeds(added)
+				if ok {
+					moveName := needsMoveName(box, machine)
+					if !slices.Contains(moves, moveName) {
+						asked := hasQuestion(func(q *planv1.Question) bool {
+							tl := strings.ToLower(q.GetText())
+							return strings.Contains(tl, strings.ToLower(machine)) && (box == "" || strings.Contains(tl, strings.ToLower(box)))
+						})
+						if !asked {
+							q := needsMoveQuestion(wish.GetId(), box, machine)
+							if err := h.askMove(ctx, q); err == nil {
+								existing = append(existing, q)
+								moves = append(moves, moveName)
+							}
 						}
 					}
 				}
@@ -1869,6 +2171,9 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 	for _, wish := range wishes {
 		if ctx.Err() != nil {
 			return
+		}
+		if s := wish.GetState(); s == planv1.WishState_WISH_STATE_PAUSED || s == planv1.WishState_WISH_STATE_GRANTED {
+			continue
 		}
 
 		// 1. Azima awaiting proof
@@ -1991,6 +2296,9 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 			}
 
 			// (b) PR to main: wish settled, pushed to remote, push checks green, ahead of remote default branch
+			if h.netHolds() {
+				continue // The forge cannot say whether one is open: none would look missing (network.go).
+			}
 			strat, _ := plan.ResolveWishPushStrategy(wish, settings)
 			if strat == planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
 				allQuestions = h.azimaPRPass(ctx, wish, project, settings, allQuestions)
@@ -2040,7 +2348,8 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 // targetBranch determines the branch to merge the batch into:
 // When the push strategy is azima, each azima gets its own integration branch (djinn/<azima code>-<slug of title>),
 // cut from main if it does not exist yet (azimaBranch). A task with no azima goes to the wish's own integration branch.
-// In per-wish mode, it returns the wish's integration branch as today.
+// In per-wish mode, it returns the wish's integration branch as today. Work held out of its azima's branch, the azima
+// done or its branch deleted, gets that branch and why it waits (azimaBranchFor).
 func (h *Harness) targetBranch(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
 ) (branch, why string, ok bool) {
@@ -2057,7 +2366,10 @@ func (h *Harness) targetBranch(
 		b, why := h.integrationBranch(ctx, wish, project)
 		return b, why, true
 	}
-	if branch, err = h.azimaBranch(ctx, project, settings, azima); err != nil {
+	if branch, err = h.azimaBranchFor(ctx, wish, project, settings, azima); err != nil {
+		if held := (*heldOutError)(nil); errors.As(err, &held) {
+			return held.branch, held.why, true
+		}
 		return "", err.Error(), false
 	}
 	return branch, "", true
@@ -2141,6 +2453,16 @@ func (h *Harness) wishAzimas(ctx context.Context, wish *planv1.Wish) []*planv1.T
 	return azimas
 }
 
+// filledAzimas are the azimas of wish, each with where it stands (plan.FillAzimas, read from all its tasks).
+func (h *Harness) filledAzimas(ctx context.Context, wish *planv1.Wish) []*planv1.Task {
+	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
+	if err != nil {
+		return nil
+	}
+	plan.FillAzimas(tasks)
+	return slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return !plan.IsAzima(t) })
+}
+
 // azimaBranchesOf lists all existing azima branches for wish in project's repo.
 func (h *Harness) azimaBranchesOf(ctx context.Context, wish *planv1.Wish, project *planv1.Project) []string {
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
@@ -2160,21 +2482,23 @@ func (h *Harness) azimaBranchesOf(ctx context.Context, wish *planv1.Wish, projec
 	return branches
 }
 
-// resolveMainSha finds the project's main branch name and sha.
+// resolveMainSha finds the project's reference branch, as mainRef names it from the main_branch setting, and its
+// commit: the remote's as this repository last fetched it, when it holds the branch; else the local branch, in a
+// repository without a remote or whose remote lacks it. A repository where mainRef finds none gives its local main or
+// master. Never the developer's HEAD, nor the branch their copy has checked out: without a reference branch, an error
+// says to name one (W227).
 func resolveMainSha(ctx context.Context, repo string, settings plan.Settings) (name, sha string, err error) {
-	mainName := settings.MainBranch
-	if mainName == "" {
-		if m, _, err := mainRef(ctx, repo, ""); err == nil {
-			mainName = m
-		} else {
-			mainName = "main"
-		}
-	}
-	localSha := commitOf(ctx, repo, "refs/heads/"+mainName)
-	if localSha == "" && mainName != "master" {
-		if mSha := commitOf(ctx, repo, "refs/heads/master"); mSha != "" {
-			localSha = mSha
-			mainName = "master"
+	mainName, _, err := mainRef(ctx, repo, settings.MainBranch)
+	localSha := ""
+	if err == nil {
+		localSha = commitOf(ctx, repo, "refs/heads/"+mainName)
+	} else {
+		// A remote that holds neither its HEAD, nor main, nor master: Djinn's default names, in the copy.
+		for _, name := range []string{"main", "master"} {
+			if localSha = commitOf(ctx, repo, "refs/heads/"+name); localSha != "" {
+				mainName = name
+				break
+			}
 		}
 	}
 	var remoteSha string
@@ -2182,25 +2506,53 @@ func resolveMainSha(ctx context.Context, repo string, settings plan.Settings) (n
 	if remote != "" && target != "" {
 		remoteSha = commitOf(ctx, repo, "refs/remotes/"+remote+"/"+target)
 	}
-	switch {
-	case localSha != "" && remoteSha != "":
-		if isAncestor(ctx, repo, localSha, remoteSha) {
-			return mainName, remoteSha, nil
-		}
-		return mainName, localSha, nil
-	case localSha != "":
-		return mainName, localSha, nil
-	case remoteSha != "":
-		return mainName, remoteSha, nil
+	if sha := cmp.Or(remoteSha, localSha); sha != "" {
+		return mainName, sha, nil
 	}
-	if headSha := commitOf(ctx, repo, "HEAD"); headSha != "" {
-		return "HEAD", headSha, nil
-	}
-	return "", "", errors.New("the project has no main branch: name it with main_branch in its settings")
+	return "", "", errors.New("the project has no main branch: name it with djinn project set-branch, or main_branch in its settings")
 }
 
-// workerStartBranch determines the branch or ref a worker starts from: under the per-azima push strategy, the branch
-// of the task's azima, cut from main when its first part starts if it was not when the azima was made.
+// referenceFetchEvery is how often Djinn fetches a project's reference branch before a worker starts from it, or an
+// azima's branch is cut from it: once a minute at most, the remote's branch as last fetched in between.
+const referenceFetchEvery = time.Minute
+
+// referenceFetchTimeout is how long that fetch may take: a remote that does not answer holds no worker longer, the
+// branch then read as this repository last fetched it.
+const referenceFetchTimeout = 15 * time.Second
+
+// fetchReference fetches the reference branch of the repository holding repo, as mainRef names it from settings, from
+// its remote, when it was not fetched within referenceFetchEvery: what a worker starts from, and an azima's branch is cut
+// from, is the remote's branch, never what the copy last pulled. A failure is logged: the branch is then read as last
+// fetched.
+func (h *Harness) fetchReference(ctx context.Context, repo string, settings plan.Settings) {
+	_, ref, err := mainRef(ctx, repo, settings.MainBranch)
+	remoteBranch, ok := strings.CutPrefix(ref, "refs/remotes/")
+	if err != nil || !ok {
+		return
+	}
+	now := time.Now() // A pace of the network, not of the plan: the real clock.
+	h.mu.Lock()
+	due := now.Sub(h.referenceFetched[repo]) >= referenceFetchEvery
+	if due {
+		h.referenceFetched[repo] = now
+	}
+	h.mu.Unlock()
+	if !due {
+		return
+	}
+	remote, target, _ := strings.Cut(remoteBranch, "/")
+	fetching, cancel := context.WithTimeout(ctx, referenceFetchTimeout)
+	defer cancel()
+	if _, err := gitx.FetchBranch(fetching, repo, remote, target); err != nil {
+		logx.L().Warn("fetch the reference branch", "repo", repo, "ref", remoteBranch, "err", err)
+	}
+}
+
+// workerStartBranch is the branch a worker starts from, the one its work lands in (startPoint reads it): per wish, the
+// wish's integration branch; per azima, the branch of the task's azima, cut from the reference branch when its first
+// part starts if it was not when the azima was made, and for work of no azima the wish's integration branch, the
+// reference branch unless the developer named another. "" for a wish that records none: the reference branch then.
+// Never the branch the developer's copy has checked out (W227).
 func (h *Harness) workerStartBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) string {
 	strat, _ := plan.ResolveWishPushStrategy(wish, settings)
 	if strat != planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
@@ -2310,15 +2662,16 @@ func (h *Harness) draftAzimaPR(ctx context.Context, azima *planv1.Task, parts []
 }
 
 // azimaPRBase is the branch an azima's pull request targets: main, the one recorded when its branch was cut, else the
-// project's main branch as Djinn names it. Never another azima's branch, and never changed once the PR is open.
+// project's reference branch as Djinn names it (resolveMainSha); "" when there is none. Never another azima's branch,
+// and never changed once the PR is open.
 func azimaPRBase(ctx context.Context, repo string, settings plan.Settings, azima *planv1.Task) string {
 	if base := azima.GetAzima().GetBaseBranch(); base != "" && azima.GetAzima().GetCutFrom() != "" {
 		return base
 	}
-	if main, _, err := resolveMainSha(ctx, repo, settings); err == nil && main != "HEAD" {
+	if main, _, err := resolveMainSha(ctx, repo, settings); err == nil {
 		return main
 	}
-	return cmp.Or(settings.MainBranch, "main")
+	return settings.MainBranch
 }
 
 // detectForge detects whether the project remote uses GitLab ("glab") or GitHub ("gh").
@@ -2354,7 +2707,15 @@ func (h *Harness) runCmd(ctx context.Context, dir string, args []string) (string
 	if run == nil {
 		run = runCommand
 	}
-	return run(ctx, dir, args)
+	out, code, err := run(ctx, dir, args)
+	if (err != nil || code != 0) && len(args) > 0 && (args[0] == "gh" || args[0] == "glab") {
+		text := out
+		if err != nil {
+			text += "\n" + err.Error()
+		}
+		h.netSign(planv1.Provider_PROVIDER_UNSPECIFIED, text, false) // "error connecting to api.github.com"
+	}
+	return out, code, err
 }
 
 // queryGhPR queries GitHub via gh for branch's pull request.
@@ -2504,7 +2865,7 @@ func (h *Harness) azimaPRPass(
 			proposed := hasQuestion(func(q *planv1.Question) bool {
 				return q.GetTaskId() == azima.GetId() && strings.Contains(strings.ToLower(q.GetText()), "pull request")
 			})
-			if !proposed {
+			if !proposed && base != "" { // no reference branch for it to aim at: a notice of the project says so
 				title, desc := h.draftAzimaPR(ctx, azima, parts)
 				q := &planv1.Question{
 					WishId:    wish.GetId(),
@@ -2550,6 +2911,12 @@ func (h *Harness) azimaPRPass(
 				}
 			}
 		case "MERGED":
+			// Found merged once its parts are done: its work is in main (merged.go), unless work was added since.
+			if azima.GetAzima().GetPr().GetState() != planv1.AzimaPrState_AZIMA_PR_STATE_MERGED {
+				h.markMerged(ctx, azima.GetId(), &planv1.AzimaMerged{
+					Time: timestamppb.New(h.now()), RequestUrl: pr.URL, MainBranch: base,
+				})
+			}
 			h.recordAzimaPR(ctx, azima, &planv1.AzimaPr{Url: pr.URL, State: planv1.AzimaPrState_AZIMA_PR_STATE_MERGED})
 			if azima.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 				_, err := h.Done(ctx, "/plan.v1.TaskService/Done", &planv1.TaskServiceDoneRequest{

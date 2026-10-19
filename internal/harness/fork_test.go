@@ -47,11 +47,11 @@ func TestSpawnFork(t *testing.T) {
 	e := up(t, t.TempDir())
 	wishID, _ := e.wish(t, nativeFolder(t))
 
-	first := e.ended(t, e.mustSpawn(t, wishID, "Map the code", "text mapped", nil).GetId())
+	first := e.ended(t, e.mustSpawn(t, wishID, "Map the code", "text mapped\nusage 1000 100 0.02", nil).GetId())
 	if first.GetForkSession() != "" || first.GetSessionId() != first.GetId() {
 		t.Fatalf("a plain task: %v", first)
 	}
-	forked := e.mustSpawn(t, wishID, "Go on from the map", "text on", &planv1.TaskServiceSpawnRequest{Fork: "w1"})
+	forked := e.mustSpawn(t, wishID, "Go on from the map", "text on\nusage 1400 150 0.05", &planv1.TaskServiceSpawnRequest{Fork: "w1"})
 	if forked.GetForkSession() != first.GetSessionId() || forked.GetForkOf() != "W1" {
 		t.Errorf("forked task = %v", forked)
 	}
@@ -64,12 +64,25 @@ func TestSpawnFork(t *testing.T) {
 	if !strings.Contains(all, "forked from W1's session") || !strings.Contains(all, "fake session "+forked.GetId()+", forked from "+first.GetId()) {
 		t.Errorf("events of the fork:\n%s", all)
 	}
-	if done := e.get(t, forked.GetId()); done.GetSessionId() != forked.GetId() {
+	done := e.get(t, forked.GetId())
+	if done.GetSessionId() != forked.GetId() {
 		t.Errorf("the fork's own session = %q, want %q", done.GetSessionId(), forked.GetId())
 	}
+	if u := done.GetUsage(); u.GetInputTokens() != 400 || u.GetOutputTokens() != 50 || u.GetCostUsd() < 0.0299 || u.GetCostUsd() > 0.0301 {
+		t.Errorf("fork usage = %v, want parent baseline (1000/100/$0.02) subtracted -> 400/50/$0.03", u)
+	}
+	// Continuing the forked task on its own session still subtracts W1's baseline without adding the fork's first turn again.
+	if _, err := e.continueTask(t, forked.GetId(), "text more\nusage 1900 220 0.08"); err != nil {
+		t.Fatal(err)
+	}
+	if cont := e.ended(t, forked.GetId()); cont.GetUsage().GetInputTokens() != 900 || cont.GetUsage().GetOutputTokens() != 120 ||
+		cont.GetUsage().GetCostUsd() < 0.0599 || cont.GetUsage().GetCostUsd() > 0.0601 {
+		t.Errorf("continued fork usage = %v, want 900/120/$0.06", cont.GetUsage())
+	}
 	// A planned fork keeps its source until it starts.
-	later := e.ended(t, e.mustSpawn(t, wishID, "Later", "text later", &planv1.TaskServiceSpawnRequest{Fork: "W1", Later: true}).GetId())
-	if later.GetForkSession() != first.GetSessionId() || later.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+	later := e.ended(t, e.mustSpawn(t, wishID, "Later", "text later\nusage 1250 130 0.04", &planv1.TaskServiceSpawnRequest{Fork: "W1", Later: true}).GetId())
+	if later.GetForkSession() != first.GetSessionId() || later.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE ||
+		later.GetUsage().GetInputTokens() != 250 || later.GetUsage().GetOutputTokens() != 30 {
 		t.Errorf("planned fork = %v", later)
 	}
 

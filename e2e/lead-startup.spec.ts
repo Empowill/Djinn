@@ -1,11 +1,16 @@
 // A lead that could not start, or ended at once, stays visible until Lead starts it again, against the real djinn up
 // --browser (see global-setup.ts): a dot on Lead, its tooltip saying why, and the lead's tab keeps its last output.
 // The lead is a fake codex, a POSIX script that fails while a marker file exists. No model runs.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { dropLead, leadFolder, leadRows as rows } from "./lead";
+import {
+  dropLead,
+  dropTerminalLead,
+  leadFolder,
+  leadRows as rows,
+} from "./lead";
 
 const binary = path.resolve(__dirname, "../bin/djinn-e2e");
 // Not the session of another spec: one session runs in one terminal.
@@ -36,6 +41,13 @@ exec cat
     { mode: 0o755 },
   ),
 );
+// Before too: the events earlier specs of this djinn left waiting for the lead make Djinn type a reminder in its
+// terminal, which reopens the lead recorded below (W426: red with the workers' order). dropTerminalLead sets
+// leadDriven: false, hangs the lead up and acknowledges them.
+test.beforeEach(async () => {
+  fs.rmSync(failing(), { force: true });
+  await dropTerminalLead();
+});
 test.afterEach(async () => {
   fs.rmSync(failing(), { force: true });
   await dropLead();

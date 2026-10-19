@@ -26,39 +26,41 @@ func (c clients) answer(t *testing.T, q *planv1.Question, choice planv1.Choice, 
 	}
 }
 
+// TestAnswerLine: the line that tells the lead of an answer, or of a request to know more, names the question, the
+// option and the note on one line, and what to do next.
 func TestAnswerLine(t *testing.T) {
-	q := &planv1.Question{Code: "Q43", WishId: "w1", Options: []string{"Olive", "Paraffin"}}
-	for choice, want := range map[planv1.Choice]string{
-		planv1.Choice_CHOICE_B:   `Djinn: Q43 answered B — "Paraffin". Note: "brighter, then cheaper". Turn it into tasks: you hold the plan's graph (djinn wish brief w1).`,
-		planv1.Choice_CHOICE_YES: `Djinn: Q43 answered yes. Note: "brighter, then cheaper". Turn it into tasks: you hold the plan's graph (djinn wish brief w1).`,
+	t.Parallel()
+	q := func(choice planv1.Choice, note string) *planv1.Question {
+		return &planv1.Question{Code: "Q43", WishId: "w1", Options: []string{"Olive", "Paraffin"},
+			Answer: &planv1.Answer{Choice: choice, Note: note}}
+	}
+	const next = " Turn it into tasks: you hold the plan's graph (djinn wish brief w1)."
+	for _, c := range []struct {
+		name, got, want string
+	}{
+		{"an option and its note", AnswerLine(q(planv1.Choice_CHOICE_B, "brighter,\nthen cheaper"), ""),
+			`Djinn: Q43 answered B — "Paraffin". Note: "brighter, then cheaper".` + next},
+		{"yes and its note", AnswerLine(q(planv1.Choice_CHOICE_YES, "brighter,\nthen cheaper"), ""),
+			`Djinn: Q43 answered yes. Note: "brighter, then cheaper".` + next},
+		{"without a note", AnswerLine(q(planv1.Choice_CHOICE_A, ""), ""), `Djinn: Q43 answered A — "Olive".` + next},
+		{"enlighten", EnlightenLine(q(planv1.Choice_CHOICE_A, ""), "what does each cost?", ""),
+			`Djinn: Q43, the developer wants to know more before answering. Note: "what does each cost?". ` +
+				`Investigate, then revise Q43: djinn wish brief w1 has the context.`},
+		// An answer Djinn settles itself: the line says what Djinn did, never to act on it.
+		{"settled by Djinn", AnswerLine(q(planv1.Choice_CHOICE_A, ""), "Djinn started W168: Settle the conflict of W156 with main."),
+			`Djinn: Q43 answered A — "Olive". Djinn started W168: Settle the conflict of W156 with main.`},
+		{"with an investigator", EnlightenLine(q(planv1.Choice_CHOICE_A, ""), "", "W13"),
+			`Djinn: Q43, the developer wants to know more before answering. W13 investigates, then revises it; you will ` +
+				`hear when it ends.`},
 	} {
-		q.Answer = &planv1.Answer{Choice: choice, Note: "brighter,\nthen cheaper"}
-		if got := AnswerLine(q, ""); got != want {
-			t.Errorf("%v:\n got %s\nwant %s", choice, got, want)
+		if c.got != c.want {
+			t.Errorf("%s:\n got %s\nwant %s", c.name, c.got, c.want)
 		}
-	}
-	q.Answer = &planv1.Answer{Choice: planv1.Choice_CHOICE_A}
-	if got, want := AnswerLine(q, ""), `Djinn: Q43 answered A — "Olive". Turn it into tasks: you hold the plan's graph (djinn wish brief w1).`; got != want {
-		t.Errorf("without a note:\n got %s\nwant %s", got, want)
-	}
-	if got, want := EnlightenLine(q, "what does each cost?", ""),
-		`Djinn: Q43, the developer wants to know more before answering. Note: "what does each cost?". `+
-			`Investigate, then revise Q43: djinn wish brief w1 has the context.`; got != want {
-		t.Errorf("enlighten:\n got %s\nwant %s", got, want)
-	}
-	// An answer Djinn settles itself: the line says what Djinn did, never to act on it.
-	if got, want := AnswerLine(q, "Djinn started W168: Settle the conflict of W156 with main."),
-		`Djinn: Q43 answered A — "Olive". Djinn started W168: Settle the conflict of W156 with main.`; got != want {
-		t.Errorf("settled by Djinn:\n got %s\nwant %s", got, want)
-	}
-	if got, want := EnlightenLine(q, "", "W13"),
-		`Djinn: Q43, the developer wants to know more before answering. W13 investigates, then revises it; you will `+
-			`hear when it ends.`; got != want {
-		t.Errorf("with an investigator:\n got %s\nwant %s", got, want)
 	}
 }
 
 func TestAnswerReachesTheLead(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	leads := &fakeLeads{}
 	settled := "" // What the harness did with the next answer.
@@ -158,6 +160,7 @@ func TestAnswerReachesTheLead(t *testing.T) {
 // "Enlighten me" reaches the lead as an answer does: one line, so the lead investigates without being told. What the
 // developer typed reaches it whole, quotes and all, however long: only its line breaks become spaces.
 func TestEnlightenReachesTheLead(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	leads := &fakeLeads{}
 	c := serve(t, WithLeads(leads))
@@ -207,6 +210,7 @@ func TestEnlightenReachesTheLead(t *testing.T) {
 }
 
 func TestAnswerInAnyWishToldToOneLead(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	leads := &fakeLeads{running: map[string][]string{}}
 	c := serve(t, WithLeads(leads))
@@ -219,7 +223,7 @@ func TestAnswerInAnyWishToldToOneLead(t *testing.T) {
 
 	// Create wish 1 and wish 2.
 	made1, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
-		Title: "Principal Wish", ProjectIds: []string{projID},
+		Title: "First Wish", ProjectIds: []string{projID},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -311,6 +315,7 @@ func TestAnswerInAnyWishToldToOneLead(t *testing.T) {
 }
 
 func TestLeadAnswerNotToldToLead(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	leads := &fakeLeads{}
 	c := serve(t, WithLeads(leads))
@@ -392,6 +397,7 @@ func TestLeadAnswerNotToldToLead(t *testing.T) {
 // not active, Tell reopens nothing, and refuses the lead's terminal when it runs a shell, where the line would run as
 // a command; for an active one, it refuses such a terminal too.
 func TestTellNeverTypesIntoAShell(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	leads := &fakeLeads{}
 	c := serve(t, WithLeads(leads))
@@ -442,6 +448,7 @@ func TestTellNeverTypesIntoAShell(t *testing.T) {
 // event for each. One answer is one event: the same answer again changes nothing, a new note takes the place of the
 // old one in the event that waits, or comes in one event once the lead read the answer; another choice is a change.
 func TestOneAnswerReachesTheLeadOnce(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	leads := &fakeLeads{}
 	hooks := 0 // How many times the harness acted on an answer.
@@ -492,7 +499,7 @@ func TestOneAnswerReachesTheLeadOnce(t *testing.T) {
 	if got := told(t, c.store); !slices.Equal(got, want) {
 		t.Errorf("queued\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if d := digest(); strings.Count(d, "Q01 answer:") != 1 || !strings.Contains(d, "1 event for the lead") {
+	if d := digest(); strings.Count(d, "Q01 [Name the page] answer:") != 1 || !strings.Contains(d, "1 event for the lead") {
 		t.Errorf("digest:\n%s\nwant one answer event", d)
 	}
 	if hooks != 1 {
@@ -527,5 +534,93 @@ func TestOneAnswerReachesTheLeadOnce(t *testing.T) {
 	}
 	if hooks != 2 {
 		t.Errorf("another choice: the harness acted %d times, want 2", hooks)
+	}
+}
+
+// TestLeadSay (Q78): LeadService.Say puts a block of kind "reply" (or "decided" with --decided) from the lead on the
+// wish, refuses empty text or more than 600 runes, and refuses a worker.
+func TestLeadSay(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	c := serve(t)
+	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Lamp bubble"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wishID := made.Msg.GetWish().GetId()
+
+	// Reply block from the lead.
+	replyRes, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   "  Two tasks run on the lamp (`W12`, `W14`).  ",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := replyRes.Msg.GetBlock(); b.GetKind() != "reply" || b.GetTaskId() != "" || b.GetWishId() != wishID ||
+		b.GetContent() != "Two tasks run on the lamp (`W12`, `W14`)." {
+		t.Errorf("reply block = %v", b)
+	}
+
+	// Decided block with --decided.
+	decidedRes, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId:  wishID,
+		Text:    "Kept the 22px pill radius so expanding the editor never shifts the eye socket.",
+		Decided: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := decidedRes.Msg.GetBlock(); b.GetKind() != "decided" || b.GetTaskId() != "" || b.GetWishId() != wishID {
+		t.Errorf("decided block = %v", b)
+	}
+
+	// Both blocks are listed on the wish in order.
+	listed, err := c.blocks.List(ctx, connect.NewRequest(&planv1.BlockServiceListRequest{WishId: wishID}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := listed.Msg.GetBlocks(); len(got) != 2 || got[0].GetKind() != "reply" || got[1].GetKind() != "decided" {
+		t.Errorf("listed blocks = %v", got)
+	}
+
+	// Empty text refused.
+	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   "   ",
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("empty text err = %v, want InvalidArgument", err)
+	}
+
+	// Exactly 600 multi-byte runes passes; 601 runes is refused with guidance to write a report block.
+	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   strings.Repeat("★", MaxLeadSayRunes),
+	})); err != nil {
+		t.Errorf("600 runes err = %v", err)
+	}
+	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   strings.Repeat("★", MaxLeadSayRunes+1),
+	})); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "--kind report") {
+		t.Errorf("601 runes err = %v, want InvalidArgument naming --kind report", err)
+	}
+
+	// Unknown wish refused.
+	if _, err := c.lead.Say(ctx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: uuid.NewString(),
+		Text:   "Hello",
+	})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("unknown wish err = %v, want NotFound", err)
+	}
+
+	// Worker caller refused on LeadService.Say.
+	workerCtx := WithCaller(ctx, &WorkerCaller{TaskID: uuid.NewString(), WishID: wishID})
+	srv := &LeadService{Wishes: &Wishes{Store: c.store}}
+	if _, err := srv.Say(workerCtx, connect.NewRequest(&planv1.LeadServiceSayRequest{
+		WishId: wishID,
+		Text:   "I am a worker",
+	})); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("worker Say err = %v, want PermissionDenied", err)
 	}
 }

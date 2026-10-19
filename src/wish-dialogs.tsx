@@ -1,12 +1,12 @@
-// The window's dialogs on the services: make a wish, add a project, look at a project, its checks and its skills, and the
-// settings: those that stay on this page (the language, the theme), and the global shortcut, which djinn takes.
+// The window's dialogs on the services: make a wish, add a project, and the settings: those that stay on this page
+// (the language, the theme), and the global shortcut, which djinn takes.
 import {
   ArrowRight,
-  BookOpen,
   Check,
   Folder,
   FolderOpen,
   LoaderCircle,
+  Moon,
   Search,
 } from "lucide-react";
 import {
@@ -21,15 +21,16 @@ import {
 
 import {
   Allowance,
-  type CheckRun,
-  CheckWhen,
+  Change,
+  type Lead,
+  type LeadExit,
   type Project,
-  type ProjectCheck,
-  ProjectPush,
-  type ProjectServiceShowResponse,
-  type ProjectSync,
   type Question,
-  type Skill,
+  AzimaState,
+  type Task,
+  TaskKind,
+  TaskRole,
+  TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import {
@@ -38,11 +39,11 @@ import {
   type UiServiceGetEnvironmentResponse,
 } from "../gen/ts/ui/v1/ui_pb";
 import { AgentSetupPanel, needsSetup, useAgents } from "./agent-setup";
+import { CommandText } from "./copy-command";
 import { message } from "./data/client";
-import { useClients } from "./data/djinn";
-import { MAX_ACTIVE, span, when } from "./data/format";
+import { useClients, useDjinn, useOptionalData } from "./data/djinn";
+import { MAX_ACTIVE, NOTE_MAX, noLead } from "./data/format";
 import { Brand, ModalFrame } from "./frame";
-import { SyncLines } from "./project-sync";
 import {
   chosenLanguage,
   language,
@@ -51,10 +52,20 @@ import {
   setLanguage,
   systemLanguage,
   t,
+  type TextKey,
 } from "./i18n";
+import {
+  type TextSize,
+  chosenTextSize,
+  setTextSize as applyTextSize,
+  textSizes,
+} from "./text-size";
 import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
+import { type Presence, presences } from "./data/eye";
+import { setPresence, usePresence } from "./djinn-eye";
 import { WishComposer } from "./wish-composer";
 import { WishDropdown } from "./wish-dropdown";
+import { leadTrouble } from "./wish-head";
 import { WishSmoke } from "./wish-smoke";
 import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
 import { platformShortcut, TooltipButton } from "./tooltip";
@@ -66,21 +77,36 @@ import { WorkspaceAction } from "./workspace-action";
 export function MakeWish({
   projects,
   active,
+  lead,
+  leadExit: leadExitProp,
+  leadStartError: leadStartErrorProp,
   onMade,
   onClose,
+  onResumeLead,
   onBusyChange,
   backActionRef,
   onBackSetupChange,
 }: {
   projects: Project[];
   active: number;
+  lead?: Lead;
+  leadExit?: LeadExit;
+  leadStartError?: string;
   onMade: (wish: Wish, warning?: string) => void;
   onClose: () => void;
+  onResumeLead?: () => Promise<unknown>;
   onBusyChange?: (busy: boolean) => void;
   backActionRef?: { current: (() => void) | null };
   onBackSetupChange?: (setup: boolean) => void;
 }) {
-  const clients = useClients();
+  const djinn = useDjinn();
+  const clients = djinn?.clients;
+  const store = djinn?.store;
+  const storeLead = useOptionalData((s) => s.lead, undefined);
+  const storeLeadDrive = useOptionalData((s) => s.leadDrive, undefined);
+  const storeLeadExit = useOptionalData((s) => s.leadExit, undefined);
+  const storeLeadStartError = useOptionalData((s) => s.leadStartError, "");
+  const storeLoaded = useOptionalData((s) => s.loaded, true);
   const full = active >= MAX_ACTIVE;
   const [prompt, setPrompt] = useState("");
   const [hasText, setHasText] = useState(false);
@@ -89,6 +115,8 @@ export function MakeWish({
   const [chosen, setChosen] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [startingLead, setStartingLead] = useState(false);
+  const [leadStarted, setLeadStarted] = useState(false);
   const submitting = useRef(false);
   const submissionFocus = useRef<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
@@ -102,8 +130,22 @@ export function MakeWish({
   const [setup, setSetup] = useState(false);
   const noAgent =
     !!agents.env?.providers.length && agents.env.providers.every(needsSetup);
+  const effectiveLead = lead ?? storeLead;
+  const effectiveLeadExit = leadExitProp ?? storeLeadExit;
+  const effectiveLeadStartError = leadStartErrorProp ?? storeLeadStartError;
+  const trouble = leadTrouble(effectiveLeadExit, effectiveLeadStartError);
+  const leadStopped =
+    !leadStarted &&
+    !storeLeadDrive &&
+    storeLoaded &&
+    (noLead(effectiveLead) || !!trouble);
+  useEffect(() => {
+    setLeadStarted(false);
+  }, [effectiveLead, effectiveLeadExit, effectiveLeadStartError]);
   const previousFocus = useRef<HTMLElement | null>(
-    document.activeElement as HTMLElement | null,
+    typeof document !== "undefined"
+      ? (document.activeElement as HTMLElement | null)
+      : null,
   );
   useEffect(() => {
     const focus = previousFocus.current;
@@ -154,16 +196,41 @@ export function MakeWish({
     : full
       ? t("make.submit_paused")
       : t("make.submit");
+  const startLead = async () => {
+    if (startingLead || busy) return;
+    setStartingLead(true);
+    setError("");
+    try {
+      if (onResumeLead) await onResumeLead();
+      else await clients!.lead.resume({});
+      setLeadStarted(true);
+      void store?.changed("", [Change.WISH]);
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setStartingLead(false);
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (submitting.current || !hasText || !prompt.trim() || overLimit) return;
+    if (
+      submitting.current ||
+      leadStopped ||
+      !hasText ||
+      !prompt.trim() ||
+      overLimit
+    )
+      return;
     submitting.current = true;
-    submissionFocus.current = document.activeElement as HTMLElement | null;
+    submissionFocus.current =
+      typeof document !== "undefined"
+        ? (document.activeElement as HTMLElement | null)
+        : null;
     setBusy(true);
     onBusyChange?.(true);
     setError("");
     try {
-      const res = await clients.wishes.make({
+      const res = await clients!.wishes.make({
         prompt: prompt.trim(),
         projectIds: selected,
         paused: full,
@@ -174,7 +241,7 @@ export function MakeWish({
       if (allowance !== Allowance.NONE)
         for (const projectId of selected)
           try {
-            await clients.wishes.allow({
+            await clients!.wishes.allow({
               wishId: made.id,
               projectId,
               mode: allowance,
@@ -382,6 +449,22 @@ export function MakeWish({
                       </button>
                     </div>
                   )}
+                  {!noAgent && leadStopped && (
+                    <div className="agent-warning" role="status">
+                      <span>{trouble ? trouble.text : t("make.no_lead")}</span>
+                      <CommandText text="djinn lead resume" />
+                      <button
+                        type="button"
+                        className="button secondary small"
+                        disabled={busy || startingLead}
+                        onClick={() => void startLead()}
+                      >
+                        {startingLead
+                          ? t("make.starting_lead")
+                          : t("lead_message.resume")}
+                      </button>
+                    </div>
+                  )}
                   {agents.error && (
                     <span className="wish-creation-inline-status" role="alert">
                       {agents.error}
@@ -433,7 +516,13 @@ export function MakeWish({
                 <TooltipButton
                   type="submit"
                   className="button accent workspace-action-control"
-                  disabled={busy || !hasText || !prompt.trim() || overLimit}
+                  disabled={
+                    busy ||
+                    leadStopped ||
+                    !hasText ||
+                    !prompt.trim() ||
+                    overLimit
+                  }
                   label={submitLabel}
                   tooltip={submitLabel}
                   shortcut={submitShortcut.label}
@@ -589,345 +678,6 @@ export function FolderField({
   );
 }
 
-// ProjectPanel shows a project as djinn knows it, the checks Djinn runs on its work with their last runs
-// (ProjectService.Show), and its skills (SkillService.List): its own and those it summons.
-export function ProjectPanel({
-  project,
-  onClose,
-  onToast,
-}: {
-  project: Project;
-  onClose: () => void;
-  onToast?: (text: string) => void;
-}) {
-  const clients = useClients();
-  const [skills, setSkills] = useState<Skill[] | undefined>();
-  const [shown, setShown] = useState<ProjectServiceShowResponse>();
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let live = true;
-    clients.skills
-      .list({ project: project.id })
-      .then((res) => live && setSkills(res.skills))
-      .catch((err) => live && setError(message(err)));
-    clients.projects
-      .show({ project: project.id })
-      .then((res) => live && setShown(res))
-      .catch((err) => live && setError(message(err)));
-    return () => {
-      live = false;
-    };
-  }, [clients, project.id]);
-
-  const currentPush =
-    shown?.project?.push ?? project.push ?? ProjectPush.STANDARD;
-  const syncs = shown?.project?.syncs ?? project.syncs;
-
-  // A push says how it went on its sync line, never in a toast: the line reads its answer, or its error.
-  const handlePush = (sync: ProjectSync) =>
-    clients.projects
-      .push({ project: project.id, wish: sync.wishId, branch: sync.branch })
-      .finally(() =>
-        clients.projects
-          .show({ project: project.id })
-          .then(setShown)
-          .catch(() => undefined),
-      );
-
-  // A watcher command allowed or taken back: the commands the answer lists replace the shown ones.
-  const handleAllow = async (watch: string, revoke: boolean) => {
-    try {
-      const res = await clients.projects.allow({
-        project: project.id,
-        watch,
-        revoke,
-      });
-      setShown((prev) =>
-        prev ? { ...prev, watchCommands: res.watchCommands } : prev,
-      );
-      return true;
-    } catch (err) {
-      const msg = message(err);
-      setError(msg);
-      onToast?.(msg);
-      return false;
-    }
-  };
-
-  const handleSetPush = async (nextPush: ProjectPush) => {
-    try {
-      const res = await clients.projects.setPush({
-        project: project.id,
-        push: nextPush,
-      });
-      setShown((prev) =>
-        prev
-          ? { ...prev, project: res.project }
-          : ({ project: res.project } as ProjectServiceShowResponse),
-      );
-    } catch (err) {
-      const msg = message(err);
-      setError(msg);
-      onToast?.(msg);
-    }
-  };
-
-  return (
-    <ModalFrame
-      title={project.name}
-      eyebrow={t("project.eyebrow")}
-      onClose={onClose}
-      wide
-    >
-      {shown?.problems?.map((p) => (
-        <p className="login-message" key={p}>
-          {p}
-        </p>
-      ))}
-      {shown?.warnings?.map((w) => (
-        <p className="login-message" key={w}>
-          {w}
-        </p>
-      ))}
-      <div className="setting-row">
-        <div>
-          <strong>{t("project.folder")}</strong>
-          <p>{project.directory || t("project.no_folder_detail")}</p>
-        </div>
-        <span className="badge muted">
-          {project.git ? t("project.git") : t("project.not_git")}
-        </span>
-      </div>
-      {project.remote && (
-        <div className="setting-row">
-          <div>
-            <strong>{t("project.remote")}</strong>
-            <p>{project.remote}</p>
-          </div>
-        </div>
-      )}
-      {project.git && (
-        <div className="setting-row">
-          <div>
-            <strong>{t("project.push_cadence")}</strong>
-            <p>
-              {currentPush === ProjectPush.ON_DEMAND
-                ? t("project.push_on_demand_detail")
-                : t("project.push_standard_detail")}
-            </p>
-            <SyncLines syncs={syncs} onPush={handlePush} />
-          </div>
-          <div className="project-push-actions">
-            <div
-              className="segmented-switch"
-              role="group"
-              aria-label={t("project.push_cadence")}
-            >
-              <button
-                type="button"
-                className={
-                  currentPush !== ProjectPush.ON_DEMAND ? "active" : ""
-                }
-                onClick={() => handleSetPush(ProjectPush.STANDARD)}
-              >
-                {t("project.push_standard")}
-              </button>
-              <button
-                type="button"
-                className={
-                  currentPush === ProjectPush.ON_DEMAND ? "active" : ""
-                }
-                onClick={() => handleSetPush(ProjectPush.ON_DEMAND)}
-              >
-                {t("project.push_on_demand")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      <div className="settings-divider" />
-      <h3>{t("project.checks")}</h3>
-      {shown === undefined && !error && (
-        <p className="muted-text">{t("common.loading")}</p>
-      )}
-      {shown && (
-        <ProjectChecks
-          setup={shown.setup}
-          checks={shown.checks}
-          runs={shown.project?.checkRuns ?? []}
-        />
-      )}
-      <div className="settings-divider" />
-      <h3>{t("project.watch_commands")}</h3>
-      <WatchCommands
-        commands={shown?.watchCommands ?? []}
-        onAllow={(watch) => handleAllow(watch, false)}
-        onRevoke={(watch) => handleAllow(watch, true)}
-      />
-      <div className="settings-divider" />
-      <h3>{t("project.skills")}</h3>
-      {error && <p className="login-message">{error}</p>}
-      {skills === undefined && !error && (
-        <p className="muted-text">{t("common.loading")}</p>
-      )}
-      {skills?.length === 0 && (
-        <p className="muted-text">{t("project.no_skills")}</p>
-      )}
-      {skills?.map((skill) => (
-        <div className="setting-row" key={`${skill.source}/${skill.name}`}>
-          <div>
-            <strong>{skill.name}</strong>
-            <p>{skill.missing || skill.description}</p>
-          </div>
-          {skill.source && (
-            <span className="badge muted">
-              {t("project.summoned", { source: skill.source })}
-            </span>
-          )}
-        </div>
-      ))}
-    </ModalFrame>
-  );
-}
-
-// WatchCommands lists the watcher commands the developer allows in a project for themselves, each with a button that
-// takes it back, and a field that allows one more: their own settings, never the repository's.
-export function WatchCommands({
-  commands,
-  onAllow,
-  onRevoke,
-}: {
-  commands: string[];
-  onAllow: (watch: string) => Promise<boolean>;
-  onRevoke: (watch: string) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (draft.trim() && (await onAllow(draft.trim()))) setDraft("");
-  };
-  return (
-    <>
-      <p className="muted-text">{t("project.watch_commands_detail")}</p>
-      {commands.map((command) => (
-        <div className="setting-row" key={command}>
-          <div>
-            <code>{command}</code>
-          </div>
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => onRevoke(command)}
-          >
-            {t("project.watch_revoke")}
-          </button>
-        </div>
-      ))}
-      <form className="folder-field" onSubmit={submit}>
-        <input
-          aria-label={t("project.watch_command")}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={t("project.watch_placeholder")}
-          spellCheck={false}
-        />
-        <button
-          type="submit"
-          className="button secondary"
-          disabled={!draft.trim()}
-        >
-          {t("project.watch_allow")}
-        </button>
-      </form>
-    </>
-  );
-}
-
-const whenKeys = {
-  [CheckWhen.UNSPECIFIED]: "project.check_setup",
-  [CheckWhen.COMMIT]: "project.check_commit",
-  [CheckWhen.PUSH]: "project.check_push",
-} as const;
-
-// ProjectChecks says what Djinn runs on a project's work: the setup that makes a fresh worktree ready, and each check
-// with when it runs, before a commit or before a push; each with its last run, the commit it checked and how it
-// ended, its output on hover when it failed.
-export function ProjectChecks({
-  setup,
-  checks,
-  runs,
-}: {
-  setup: string;
-  checks: ProjectCheck[];
-  runs: CheckRun[];
-}) {
-  if (!setup && checks.length === 0)
-    return <p className="muted-text">{t("project.no_checks")}</p>;
-  const last = (name: string, isSetup: boolean) =>
-    runs.find(
-      (r) => r.setup === isSetup && r.name.toLowerCase() === name.toLowerCase(),
-    );
-  const row = (
-    key: string,
-    name: string,
-    command: string,
-    whens: CheckWhen[],
-    run?: CheckRun,
-  ) => (
-    <div className="setting-row" key={key}>
-      <div>
-        <strong>{name}</strong>
-        <p>
-          <code>{command}</code>
-        </p>
-        <p
-          className={run && !run.passed ? "login-message" : "muted-text"}
-          title={run?.output || undefined}
-        >
-          {runText(run)}
-        </p>
-      </div>
-      <span>
-        {whens.map((w) => (
-          <span className="badge muted" key={w}>
-            {t(whenKeys[w])}
-          </span>
-        ))}
-      </span>
-    </div>
-  );
-  return (
-    <>
-      <p className="muted-text">{t("project.checks_detail")}</p>
-      {setup &&
-        row(
-          "setup",
-          "setup",
-          setup,
-          [CheckWhen.UNSPECIFIED],
-          last("setup", true),
-        )}
-      {checks.map((c) =>
-        row(`check-${c.name}`, c.name, c.command, c.when, last(c.name, false)),
-      )}
-    </>
-  );
-}
-
-// runText says how a check last ran: never yet, passed on a commit, or failed and why, its first line.
-function runText(run?: CheckRun): string {
-  if (!run) return t("project.check_never");
-  const at = {
-    sha: run.sha.slice(0, 8),
-    when: when(run.endTime),
-    took: span(Number(run.durationMs)),
-  };
-  if (run.passed) return t("project.check_passed", at);
-  const reason = run.reason.split("\n")[0].replace(/:$/, "");
-  return t("project.check_red", { ...at, reason });
-}
-
 // ShortcutField is the global shortcut that brings the window forward, typed in as Ctrl+Alt+Space; empty turns it
 // off. Saved on Enter or when the field is left. Disabled where djinn cannot take one: the browser.
 export function ShortcutField({
@@ -1075,19 +825,28 @@ function NotificationSetting() {
   );
 }
 
-// Settings: the agents djinn finds on this machine, the system notifications, the language and the theme of the page,
-// the global shortcut, and the way to the documentation.
-export function Settings({
-  onClose,
-  onDocs,
-}: {
-  onClose: () => void;
-  onDocs: () => void;
-}) {
+const presenceLabel: Record<Presence, TextKey> = {
+  alive: "settings.presence_alive",
+  discreet: "settings.presence_discreet",
+  none: "settings.presence_none",
+};
+
+const textSizeLabel: Record<TextSize, TextKey> = {
+  large: "settings.text_size_large",
+  "": "settings.text_size_default",
+  compact: "settings.text_size_compact",
+  "very-compact": "settings.text_size_very_compact",
+};
+
+// Settings: the agents djinn finds on this machine, the system notifications, the language, the theme and the text size
+// of the page, the Djinn's eye, and the global shortcut. The documentation, the Grimoire, has its own entry in the side panel (W89).
+export function Settings({ onClose }: { onClose: () => void }) {
   const clients = useClients();
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
   const agents = useAgents();
   const [theme, setTheme] = useState<Theme>(chosenTheme);
+  const [textSize, setTextSize] = useState<TextSize>(chosenTextSize);
+  const presence = usePresence();
   useEffect(() => {
     let live = true;
     clients.ui
@@ -1148,6 +907,44 @@ export function Settings({
           <option value="light">{t("settings.theme_light")}</option>
         </select>
       </div>
+      <div className="setting-row">
+        <div>
+          <strong>{t("settings.text_size")}</strong>
+          <p>{t("settings.text_size_detail")}</p>
+        </div>
+        <select
+          value={textSize}
+          aria-label={t("settings.text_size")}
+          onChange={(e) => {
+            const next = e.target.value as TextSize;
+            setTextSize(next);
+            applyTextSize(next);
+          }}
+        >
+          {textSizes.map((size) => (
+            <option key={size} value={size}>
+              {t(textSizeLabel[size])}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="setting-row">
+        <div>
+          <strong>{t("settings.presence")}</strong>
+          <p>{t("settings.presence_detail")}</p>
+        </div>
+        <select
+          value={presence}
+          aria-label={t("settings.presence")}
+          onChange={(e) => setPresence(e.target.value as Presence)}
+        >
+          {presences.map((value) => (
+            <option key={value} value={value}>
+              {t(presenceLabel[value])}
+            </option>
+          ))}
+        </select>
+      </div>
       <ShortcutField
         shortcut={env?.shortcut}
         onSave={async (chord) => {
@@ -1155,16 +952,6 @@ export function Settings({
           setEnv((prev) => prev && { ...prev, shortcut: res.shortcut });
         }}
       />
-      <div className="setting-row">
-        <div>
-          <strong>{t("settings.docs")}</strong>
-          <p>{t("settings.docs_detail")}</p>
-        </div>
-        <button type="button" className="button secondary" onClick={onDocs}>
-          <BookOpen size={14} />
-          {t("settings.docs_open")}
-        </button>
-      </div>
       <div className="settings-foot">
         <Brand small />
         <span>Djinn {env?.version}</span>
@@ -1303,6 +1090,7 @@ export function WithdrawQuestionDialog({
           <textarea
             autoFocus
             rows={3}
+            maxLength={NOTE_MAX}
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder={t("question.withdraw_note_placeholder")}
@@ -1320,6 +1108,173 @@ export function WithdrawQuestionDialog({
             disabled={busy}
           >
             {t("question.withdraw_confirm")}
+          </button>
+        </div>
+      </form>
+    </ModalFrame>
+  );
+}
+
+// sleepTasks are the tasks of a wish a question can sleep until, those not over yet (plan.over): work and azimas,
+// never a question's worker nor a watcher.
+export function sleepTasks(tasks: readonly Task[]): Task[] {
+  return tasks.filter((task) => {
+    if (task.role !== TaskRole.UNSPECIFIED || task.babysit) return false;
+    switch (task.status) {
+      case TaskStatus.DONE:
+        return (
+          task.kind === TaskKind.AZIMA && task.azima?.state !== AzimaState.DONE
+        );
+      case TaskStatus.STOPPED:
+      case TaskStatus.CANCELLED:
+        return false;
+    }
+    return true;
+  });
+}
+
+// sleepRequests are the pull or merge requests a question can sleep until: those a watcher of the wish babysits, not
+// merged yet.
+export function sleepRequests(tasks: readonly Task[]): Task[] {
+  return tasks.filter((task) => task.babysit?.url && !task.babysit.doneTime);
+}
+
+// sleepUntil is what a question sleeps until, as djinn question sleep --until takes it: the tasks over, the requests
+// merged, the time, and what you typed besides.
+export function sleepUntil(
+  tasks: readonly string[],
+  requests: readonly string[],
+  at: string,
+  other: string,
+): string[] {
+  return [
+    ...tasks,
+    ...requests.map((code) => `merged:${code}`),
+    ...(at ? [at] : []),
+    ...other
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean),
+  ];
+}
+
+// SleepQuestionDialog puts an open question to sleep until what you tick holds, all of it: tasks over, requests
+// merged, a time. It leaves the questions column until then; Djinn wakes it, the Djinn checks it, and it comes first.
+export function SleepQuestionDialog({
+  question,
+  tasks,
+  currentWishId,
+  onClose,
+  onSleep,
+}: {
+  question: Question;
+  // The tasks of its wish.
+  tasks: readonly Task[];
+  currentWishId: string;
+  onClose: () => void;
+  onSleep: (wishId: string, id: string, until: string[]) => Promise<unknown>;
+}) {
+  const open = useMemo(() => sleepTasks(tasks), [tasks]);
+  const requests = useMemo(() => sleepRequests(tasks), [tasks]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [merged, setMerged] = useState<string[]>([]);
+  const [at, setAt] = useState("");
+  const [other, setOther] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const until = sleepUntil(picked, merged, at, other);
+  const toggle = (list: string[], code: string) =>
+    list.includes(code) ? list.filter((c) => c !== code) : [...list, code];
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (until.length === 0) return;
+    setBusy(true);
+    try {
+      await onSleep(currentWishId, question.id, until);
+      onClose();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalFrame
+      title={t("question.sleep_dialog_title", { code: question.code })}
+      eyebrow={question.text}
+      onClose={onClose}
+    >
+      <form className="form-fields sleep-form" onSubmit={(e) => void submit(e)}>
+        <p className="muted-text">{t("question.sleep_dialog_hint")}</p>
+        {open.length > 0 && (
+          <fieldset className="sleep-choices">
+            <legend>{t("question.sleep_tasks")}</legend>
+            {open.map((task) => (
+              <label className="wish-project-choice" key={task.id}>
+                <input
+                  type="checkbox"
+                  checked={picked.includes(task.code)}
+                  onChange={() => setPicked(toggle(picked, task.code))}
+                  disabled={busy}
+                />
+                <span>
+                  <b>{task.code}</b> {task.title}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {requests.length > 0 && (
+          <fieldset className="sleep-choices">
+            <legend>{t("question.sleep_requests")}</legend>
+            {requests.map((task) => (
+              <label className="wish-project-choice" key={task.id}>
+                <input
+                  type="checkbox"
+                  checked={merged.includes(task.code)}
+                  onChange={() => setMerged(toggle(merged, task.code))}
+                  disabled={busy}
+                />
+                <span>
+                  <b>{task.code}</b> {task.babysit?.url}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <label>
+          <span>{t("question.sleep_time")}</span>
+          <input
+            type="datetime-local"
+            value={at}
+            onChange={(e) => setAt(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <label>
+          <span>{t("question.sleep_other")}</span>
+          <input
+            type="text"
+            value={other}
+            onChange={(e) => setOther(e.target.value)}
+            placeholder="W12, merged:W45, 3d"
+            disabled={busy}
+          />
+        </label>
+        {error && <p className="login-message">{error}</p>}
+        <div className="modal-footer">
+          <button type="button" className="button secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="submit"
+            className="button accent"
+            disabled={busy || until.length === 0}
+          >
+            <Moon size={14} aria-hidden="true" />
+            {t("question.sleep_confirm")}
           </button>
         </div>
       </form>

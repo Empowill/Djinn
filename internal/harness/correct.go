@@ -73,10 +73,14 @@ func (h *Harness) failed(
 			if head == "" {
 				head, _ = git(ctx, project.GetDirectory(), "rev-parse", "HEAD")
 			}
+			sha := head
+			if t.GetReview() == nil && t.GetCorrection() == nil && branchHasNoCommits(ctx, project.GetDirectory(), t.GetBranch()) {
+				sha = ""
+			}
 			committed := &planv1.TaskIntegration{
 				State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
 				Branch: in.GetBranch(),
-				Sha:    head,
+				Sha:    sha,
 			}
 			text := "integration: committed: " + in.GetBranch() + " holds the work already, at " + short8(head)
 			h.settleIntegration(ctx, []*planv1.Task{t}, committed, text, nil)
@@ -87,6 +91,11 @@ func (h *Harness) failed(
 	}
 	group = activeGroup
 	if len(group) == 0 {
+		return
+	}
+	// A batch whose correction failed, or that no correction may repair, merges one branch at a time (repair.go).
+	if works(group) > 1 && (attempts > 0 || settings.CorrectionAttempts == 0) {
+		h.stepByStep(ctx, group, in, text)
 		return
 	}
 	h.correct(ctx, wish, project, settings, group, in, text, attempts, true)
@@ -102,6 +111,18 @@ func (h *Harness) correct(
 	in = proto.CloneOf(in)
 	in.CorrectedBy, in.QuestionId, in.Attempts = "", "", attempts
 	if more && int(attempts) < settings.CorrectionAttempts {
+		// One correction repairs a branch at a time: the work waits for the one that runs, then merges alone, a
+		// correction of its own starting if it still fails (repair.go).
+		if r := h.repairOn(ctx, wish, project, in.GetBranch()); r != nil && !slices.ContainsFunc(group, func(t *planv1.Task) bool {
+			return t.GetId() == r.GetId()
+		}) {
+			why := fmt.Sprintf("waits for %s, which repairs %s: it merges once that work is in", r.GetCode(), in.GetBranch())
+			h.settleIntegration(ctx, group, &planv1.TaskIntegration{
+				State: planv1.IntegrationState_INTEGRATION_STATE_PENDING, Branch: in.GetBranch(), Reason: why, Alone: true,
+			}, text+"; "+why, nil)
+			return fmt.Sprintf("Djinn merges the work of %s again once %s, which repairs %s, is in", codes(originals(group)),
+				r.GetCode(), in.GetBranch())
+		}
 		c, err := h.spawnCorrection(ctx, wish, project, group, in, attempts+1)
 		if err == nil {
 			in.CorrectedBy, in.Attempts = c.GetId(), attempts+1
@@ -130,8 +151,9 @@ func didStart(t *planv1.Task) string {
 	return fmt.Sprintf("Djinn started %s: %s", t.GetCode(), t.GetTitle())
 }
 
-// spawnCorrection starts the attempt-th correction worker of group, tasks whose work failed as in says: a work task of
-// the failed task's provider, part of its azima, in a worktree on the failed merge, what failed in its first prompt.
+// spawnCorrection starts the attempt-th correction worker of group, tasks whose work failed as in says: a work task on
+// the project's provider and model, not the failed task's (Q95), part of its azima, in a worktree on the failed merge,
+// what failed in its first prompt.
 func (h *Harness) spawnCorrection(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, group []*planv1.Task, in *planv1.TaskIntegration, attempt int32,
 ) (*planv1.Task, error) {
@@ -144,8 +166,8 @@ func (h *Harness) spawnCorrection(
 	azima, note := h.azimaOf(ctx, from)
 	c, err := h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
 		WishId: wish.GetId(), ProjectId: project.GetId(), Title: mergeTitle(servedTasks(ctx, h.store, group), failureWhat(f)),
-		Prompt:   correctionPrompt("the work of "+codes(group), f.GetMergeBranch(), f, in.GetBranch(), settings, attempt),
-		Provider: from.GetProvider(), Model: from.GetModel(), PartOf: azima,
+		Prompt: correctionPrompt("the work of "+codes(group), f.GetMergeBranch(), f, in.GetBranch(), settings, attempt),
+		PartOf: azima,
 	}, &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}})
 	if err == nil && note != "" {
 		h.Note(c.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: note})
@@ -204,6 +226,7 @@ func correctionPrompt(work, merging string, f *planv1.IntegrationFailure, branch
 		for line := range strings.Lines(strings.TrimPrefix(f.GetOutput(), ":\n")) {
 			b.WriteString("    " + line)
 		}
+		b.WriteString(outputLines(f))
 		b.WriteString("\n\nMake the tests pass without undoing what either side did.")
 	} else {
 		fmt.Fprintf(&b, "You correct it. Your worktree is on that merge: the merge of %s is under way, its conflicts left "+
@@ -387,6 +410,11 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 				group = g
 			}
 			h.review(ctx, wish, project, settings, group, group[0].GetIntegration(), text, r.GetAttempt(), true)
+			continue
+		}
+		if works(group) > 1 {
+			// The correction of a batch failed: its work merges one branch at a time (repair.go).
+			h.stepByStep(ctx, group, group[0].GetIntegration(), text)
 			continue
 		}
 		h.correct(ctx, wish, project, settings, group, group[0].GetIntegration(), text, c.GetCorrection().GetAttempt(), true)

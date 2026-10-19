@@ -1,8 +1,10 @@
 package plan
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -24,17 +26,20 @@ func writeSkill(t *testing.T, dir, folder, name, front string) string {
 }
 
 func TestDescription(t *testing.T) {
-	tests := []struct{ front, want string }{
-		{"name: x\ndescription: Watch a merge request.\n", "Watch a merge request."},
-		{"description: \"Quoted: yes\"\n", "Quoted: yes"},
-		{"description: >-\n  Folded over\n  two lines.\nlicense: MIT\n", "Folded over two lines."},
-		{"name: x\n", ""},
+	t.Parallel()
+	tests := []struct{ name, front, want string }{
+		{"plain", "name: x\ndescription: Watch a merge request.\n", "Watch a merge request."},
+		{"quoted", "description: \"Quoted: yes\"\n", "Quoted: yes"},
+		{"folded", "description: >-\n  Folded over\n  two lines.\nlicense: MIT\n", "Folded over two lines."},
+		{"missing", "name: x\n", ""},
 	}
 	for _, tt := range tests {
-		dir := writeSkill(t, t.TempDir(), "s", "x", tt.front)
-		if got := Description(dir); got != tt.want {
-			t.Errorf("Description(%q) = %q, want %q", tt.front, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeSkill(t, t.TempDir(), "s", "x", tt.front)
+			if got := Description(dir); got != tt.want {
+				t.Errorf("Description(%q) = %q, want %q", tt.front, got, tt.want)
+			}
+		})
 	}
 	if got := Description(t.TempDir()); got != "" {
 		t.Errorf("Description without SKILL.md = %q", got)
@@ -44,6 +49,7 @@ func TestDescription(t *testing.T) {
 // TestProjectSkills: a project's skills are read in .agents/skills then .claude/skills; a name in both counts once,
 // and a folder without SKILL.md is no skill.
 func TestProjectSkills(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeSkill(t, dir, SkillFolders[0], "babysit-mr", "description: From agents.\n")
 	writeSkill(t, dir, SkillFolders[1], "Babysit-MR", "description: From claude.\n")
@@ -66,6 +72,7 @@ func TestProjectSkills(t *testing.T) {
 // TestSummon: a skill of one project is summoned into another, listed, refused when it cannot be, said missing
 // when its source loses it, and unsummoned. Neither project's folder changes.
 func TestSummon(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	skills := c.skills
 	app, infra := resolvedTempDir(t), resolvedTempDir(t)
@@ -112,9 +119,11 @@ func TestSummon(t *testing.T) {
 		{"app/../x", "infra", connect.CodeInvalidArgument},
 		{"app/babysit-mr", "", connect.CodeInvalidArgument},
 	} {
-		if _, err := summon(tt.skill, tt.into); code(err) != tt.code {
-			t.Errorf("summon %s into %q = %v, want %v", tt.skill, tt.into, err, tt.code)
-		}
+		t.Run(tt.skill+"_"+tt.into, func(t *testing.T) {
+			if _, err := summon(tt.skill, tt.into); code(err) != tt.code {
+				t.Errorf("summon %s into %q = %v, want %v", tt.skill, tt.into, err, tt.code)
+			}
+		})
 	}
 	// A project's own skill is never hidden by a summoned one.
 	writeSkill(t, app, SkillFolders[0], "terraform", "description: Another.\n")
@@ -176,4 +185,55 @@ func tree(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	return out
+}
+
+// TestSkillFrontApart: a front matter that Claude Code reads but that breaks the YAML outside metadata, as dolmen's
+// argument-hint lines do, is read all the same: metadata apart, and a warning that names the lines at fault. When
+// metadata itself breaks, the skill cannot be read.
+func TestSkillFrontApart(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	const source = "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n"
+	notion := writeSkill(t, dir, SkillFolders[0], "notion-ticket", "name: notion-ticket\ndescription: Tickets.\n"+
+		"user-invocable: true\nargument-hint: [bug|improvement] [description]\nallowed-tools:\n- Read\n- Write\n"+source+
+		"also: [a] [b]\n")
+	src, err := ReadSource(notion)
+	if err != nil || src == nil || src.Watch != "mentions --new" || src.Summary != "Tickets." {
+		t.Fatalf("ReadSource = %+v, %v", src, err)
+	}
+	_, warning, err := skillFront(notion)
+	if want := "SKILL.md: not YAML at line 5 (argument-hint: [bug|improvement] [description]), line 13 (also: [a] " +
+		"[b]): Djinn reads metadata apart; quoting the value fixes it"; err != nil || warning != want {
+		t.Errorf("skillFront = %q, %v; want %q", warning, err, want)
+	}
+
+	// No metadata: nothing for Djinn, still a warning.
+	open := writeSkill(t, dir, SkillFolders[0], "open-mr", "name: open-mr\nargument-hint: [ET-XXXX] [short title]\n")
+	if tmpl, err := ReadTemplate(open); tmpl != nil || err != nil {
+		t.Errorf("ReadTemplate = %v, %v; want none", tmpl, err)
+	}
+
+	// The front matter is fine: no warning.
+	writeSkill(t, dir, SkillFolders[0], "fine", "name: fine\nargument-hint: \"[a] [b]\"\n"+source)
+
+	// metadata breaks, or comes twice: unreadable, whatever the other keys.
+	for name, front := range map[string]string{
+		"meta-broken": "argument-hint: [a] [b]\nmetadata:\n  djinn: [\n",
+		"meta-twice":  "argument-hint: [a] [b]\n" + source + source,
+	} {
+		t.Run(name, func(t *testing.T) {
+			skill := writeSkill(t, dir, SkillFolders[0], name, front)
+			var unreadable *UnreadableSkillError
+			if _, err := ReadSource(skill); !errors.As(err, &unreadable) ||
+				!strings.HasPrefix(err.Error(), "SKILL.md: its front matter is not YAML: ") {
+				t.Errorf("%v; want unreadable", err)
+			}
+		})
+	}
+
+	_, warning, err = skillFront(open)
+	if want := "SKILL.md: not YAML at line 3 (argument-hint: [ET-XXXX] [short title]): Djinn reads metadata apart; " +
+		"quoting the value fixes it"; err != nil || warning != want {
+		t.Errorf("skillFront(open-mr) = %q, %v; want %q", warning, err, want)
+	}
 }

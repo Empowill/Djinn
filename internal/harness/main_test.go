@@ -27,7 +27,7 @@ type upkeep struct {
 // keepingUp makes an upkeep whose project's settings add settings to the integration's, and name the fake agent.
 func keepingUp(t *testing.T, settings string) *upkeep {
 	t.Helper()
-	in := integrating(t)
+	in := integrating(t, WithTick(20*time.Millisecond))
 	u := &upkeep{integration: in, main: in.branch, other: filepath.Join(t.TempDir(), "other")}
 	bare := in.remote(t)
 	in.git(t, in.repo, "remote", "set-head", "origin", u.main) // As a clone records the remote's default branch.
@@ -40,15 +40,11 @@ func keepingUp(t *testing.T, settings string) *upkeep {
 	}
 	writeFile(t, in.home, filepath.Join("projects", in.projectID, "settings.txtpb"),
 		"provider: PROVIDER_FAKE\ngenerated: \"gen/**\"\ngenerate: \"gen\"\ntest: \"test\"\n"+settings)
-	in.git(t, in.repo, "clone", "--quiet", "--branch", u.main, bare, u.other)
-	for _, args := range [][]string{{"config", "user.name", "Mate"}, {"config", "user.email", "mate@example.com"}} {
-		in.git(t, u.other, args...)
-	}
 	// Git's own upkeep after a commit, a fetch or a push costs a process each time: none in a test.
-	for _, dir := range []string{in.repo, bare, u.other} {
-		in.git(t, dir, "config", "maintenance.auto", "false")
-		in.git(t, dir, "config", "gc.auto", "0")
-	}
+	in.git(t, in.repo, "clone", "--quiet",
+		"-c", "user.name=Mate", "-c", "user.email=mate@example.com",
+		"-c", "maintenance.auto=false", "-c", "gc.auto=0",
+		"--branch", u.main, bare, u.other)
 	return u
 }
 
@@ -111,76 +107,10 @@ func (u *upkeep) holds(t *testing.T, sha string) bool {
 	return isAncestor(t.Context(), u.repo, sha, "refs/heads/"+u.branch)
 }
 
-// TestMergeMainAtARelease: main's commits wait for a release; the cadence keeps Djinn from looking at main more than
-// hourly; once main holds a release, Djinn merges main into the integration branch in its own worktree, the commit
-// checks run through their gates, the branch moves, the person's clean checkout follows, the journal and the wish say
-// it, and the window proposes the build. The release's own commit, the built interface, stays out.
-func TestMergeMainAtARelease(t *testing.T) {
+// TestLookAtMain: a release the running Djinn finds makes it look at main at once, whatever the cadence.
+func TestLookAtMain(t *testing.T) {
 	testx.Portable(t)
-	built := make(chan Built, 1)
-	u := keepingUp(t, "install: \"install\"\n")
-	u.h.built = func(b Built) { built <- b }
-	old := u.tip(t)
-	fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
-
-	// main is ahead, without a release: nothing is merged, and Djinn noted when it looked.
-	u.pass(t, 0)
-	looked := u.mainState(t).GetCheckTime().AsTime()
-	if u.tip(t) != old || len(u.merges(t)) != 0 || !looked.Equal(u.clock()) {
-		t.Fatalf("main merged without a release: %s; looked at %v, want %v", u.tip(t), looked, u.clock())
-	}
-
-	// A release comes, but within the hour Djinn does not look at main again.
-	dist := u.release(t, "v0.2.0")
-	u.pass(t, 59*time.Minute)
-	if u.tip(t) != old || !u.mainState(t).GetCheckTime().AsTime().Equal(looked) {
-		t.Fatalf("Djinn looked at main within the hour: %s, %v", u.tip(t), u.mainState(t))
-	}
-
-	// An hour after the last look: main is merged, tested, the branch moved.
-	u.pass(t, time.Minute)
-	tip := u.tip(t)
-	if tip == old || !u.holds(t, fix) || u.holds(t, dist) {
-		t.Fatalf("after the release: %s holds main %v, the release commit %v", tip, u.holds(t, fix), u.holds(t, dist))
-	}
-	if parents := strings.Fields(u.git(t, u.repo, "log", "-1", "--format=%P", tip)); len(parents) != 2 || parents[0] != old || parents[1] != fix {
-		t.Errorf("the merge's parents %v; want %s then main's %s", parents, old, fix)
-	}
-	if msg := u.git(t, u.repo, "log", "-1", "--format=%s", tip); msg != "Merge origin/"+u.main+" (v0.2.0) into feat/x" {
-		t.Errorf("the merge's message %q", msg)
-	}
-	wt := integrationDir(u.home, u.projectID, u.wishID)
-	if !slices.Contains(u.runs, "test in "+filepath.Join(wt, "app")) || !slices.Contains(u.gates, "test -") {
-		t.Errorf("the commit checks did not run in the integration worktree, under their gate: %v, %v", u.runs, u.gates)
-	}
-	if b, err := os.ReadFile(filepath.Join(u.repo, "app", "src", "login.txt")); err != nil || string(b) != "fixed\n" {
-		t.Errorf("your checkout did not follow: %q, %v", b, err)
-	}
-	merges := u.merges(t)
-	if len(merges) != 1 {
-		t.Fatalf("journal: %v", merges)
-	}
-	m := merges[0]
-	if m.GetBranch() != "feat/x" || m.GetMain() != "origin/"+u.main || m.GetMainSha() != fix || m.GetOldSha() != old ||
-		m.GetNewSha() != tip || m.GetCount() != 1 || m.GetRelease() != "v0.2.0" || !slices.Equal(m.GetCommits(), []string{"Fix the login"}) {
-		t.Errorf("the merge recorded %v", m)
-	}
-	if state := u.mainState(t); !proto.Equal(state.GetLast(), m) || state.GetHeld() != "" {
-		t.Errorf("the wish's head %v", state)
-	}
-	select {
-	case b := <-built:
-		if b.Sha != tip || b.Branch != "feat/x" || b.Install != "install" || !slices.Equal(b.Changes, []string{"Fix the login"}) {
-			t.Errorf("the build proposed %+v", b)
-		}
-	default:
-		t.Error("no build proposed")
-	}
-}
-
-// TestLookAtMainAtOnce: a release the running Djinn finds makes it look at main at once, whatever the cadence.
-func TestLookAtMainAtOnce(t *testing.T) {
-	testx.Portable(t)
+	t.Parallel()
 	u := keepingUp(t, "")
 	u.pass(t, 0)
 	fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
@@ -189,117 +119,6 @@ func TestLookAtMainAtOnce(t *testing.T) {
 	u.pass(t, time.Minute)
 	if !u.holds(t, fix) || len(u.merges(t)) != 1 || u.merges(t)[0].GetRelease() != "v0.3.0" {
 		t.Errorf("v0.3.0 not merged at once: %v", u.merges(t))
-	}
-}
-
-// TestMergeMainEachCommit: merge_main: MERGE_MAIN_COMMIT merges main once it holds any commit the branch lacks, a
-// release or not; MERGE_MAIN_OFF never does.
-func TestMergeMainEachCommit(t *testing.T) {
-	testx.Portable(t)
-	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
-	fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
-	u.pass(t, 0)
-	if !u.holds(t, fix) || len(u.merges(t)) != 1 || u.merges(t)[0].GetRelease() != "" || u.merges(t)[0].GetCount() != 1 {
-		t.Fatalf("main not merged at its commit: %v", u.merges(t))
-	}
-
-	writeFile(t, u.home, filepath.Join("projects", u.projectID, "settings.txtpb"), "test: \"test\"\nmerge_main: MERGE_MAIN_OFF\n")
-	next := u.onMain(t, "More", map[string]string{"app/src/more.txt": "more\n"})
-	u.h.LookAtMain()
-	u.pass(t, 2*time.Hour)
-	if u.holds(t, next) {
-		t.Error("merge_main off, main merged")
-	}
-}
-
-// TestMainConflictStartsACorrection: main conflicting in code with the integration branch leaves the branch as it
-// was and starts a correction worker by itself, on the merge of main under way, never a rebase; its work integrates
-// like any task's, and its success records main as merged, settled by it.
-func TestMainConflictStartsACorrection(t *testing.T) {
-	testx.Portable(t)
-	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
-	writeFile(t, u.repo, "app/README.md", "# Branch\n")
-	commitAll(t, u.repo, "The branch's readme")
-	old := u.tip(t)
-	theirs := u.onMain(t, "Main's readme", map[string]string{"app/README.md": "# Main\n"})
-	var conflict string
-	u.correctWith(func(dir, _ string) string {
-		b, _ := os.ReadFile(filepath.Join(dir, "README.md"))
-		conflict = string(b)
-		writeFile(t, dir, "README.md", "# Main and Branch\n")
-		commitAll(t, dir, "Settle the readme with main") // Which concludes the merge.
-		return ""
-	})
-
-	u.pass(t, 0)
-	state := u.mainState(t)
-	if u.tip(t) != old || state.GetCorrectedBy() == "" || state.GetAttempts() != 1 {
-		t.Fatalf("after the conflict: tip %s, %v", u.tip(t), state)
-	}
-	c := u.ended(t, state.GetCorrectedBy())
-	f := c.GetCorrection().GetFailure()
-	if c.GetTitle() != "Merge: origin/"+u.main+" — conflict in app/README.md" || c.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
-		f.GetMainSha() != theirs || f.GetBase() != old || !slices.Equal(f.GetFiles(), []string{"app/README.md"}) || len(f.GetTaskIds()) != 0 {
-		t.Fatalf("the correction worker %v", c)
-	}
-	want := "conflict: origin/" + u.main + " conflicts with feat/x in app/README.md; feat/x stays as it was; " + c.GetCode() +
-		" corrects it, attempt 1 of 2"
-	if state.GetHeld() != want {
-		t.Errorf("held %q; want %q", state.GetHeld(), want)
-	}
-	prompt, err := firstPrompt(u.db, c.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, s := range []string{"could not integrate origin/" + u.main + " into feat/x", "the merge of origin/" + u.main + " at " +
-		theirs[:8] + " is under way", "- app/README.md", "Its success brings origin/" + u.main + " in with yours"} {
-		if !strings.Contains(prompt, s) {
-			t.Errorf("the correction's prompt lacks %q:\n%s", s, prompt)
-		}
-	}
-	if !strings.Contains(conflict, "<<<<<<<") || !strings.Contains(conflict, "# Main") || !strings.Contains(conflict, "# Branch") {
-		t.Errorf("the correction's worktree did not hold the conflict: %q", conflict)
-	}
-
-	// Its work integrates like any task's: main is in, recorded as merged by it.
-	u.pass(t, time.Second)
-	tip := u.tip(t)
-	if !u.holds(t, theirs) || u.git(t, u.repo, "show", tip+":app/README.md") != "# Main and Branch" {
-		t.Fatalf("after the correction: %s", u.git(t, u.repo, "show", tip+":app/README.md"))
-	}
-	merges := u.merges(t)
-	if len(merges) != 1 || merges[0].GetCorrectedBy() != c.GetId() || merges[0].GetMainSha() != theirs || merges[0].GetNewSha() != tip ||
-		merges[0].GetOldSha() != old || merges[0].GetCount() != 1 {
-		t.Fatalf("journal: %v", merges)
-	}
-	if state := u.mainState(t); state.GetCorrectedBy() != "" || state.GetHeld() != "" || state.GetAttempts() != 0 {
-		t.Errorf("the wish's head after the correction: %v", state)
-	}
-}
-
-// TestMainAttemptsSpent: past correction_attempts, a merge of main that fails stays out until main moves.
-func TestMainAttemptsSpent(t *testing.T) {
-	testx.Portable(t)
-	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\ncorrection_attempts: 0\n")
-	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
-	old := u.tip(t)
-	u.onMain(t, "Break the login", map[string]string{"app/src/login.txt": "broken\n"})
-	u.pass(t, 0)
-	state := u.mainState(t)
-	if u.tip(t) != old || state.GetCorrectedBy() != "" || state.GetFailedSha() == "" ||
-		!strings.HasPrefix(state.GetHeld(), "red: test exited 1") || !strings.HasSuffix(state.GetHeld(), "Djinn merges origin/"+u.main+" again once it moves") {
-		t.Fatalf("after a red merge, no attempt allowed: %v", state)
-	}
-	runs := len(u.runs)
-	u.pass(t, 2*time.Hour)
-	if len(u.runs) != runs {
-		t.Errorf("the same main merged again: %v", u.runs[runs:])
-	}
-	u.testCode = 0
-	fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
-	u.pass(t, 2*time.Hour)
-	if !u.holds(t, fix) || u.mainState(t).GetFailedSha() != "" || u.mainState(t).GetHeld() != "" {
-		t.Errorf("main moved, not merged: %v", u.mainState(t))
 	}
 }
 
@@ -362,207 +181,382 @@ func TestReleaseFit(t *testing.T) {
 	}
 }
 
-// TestMainTagClash: when a local tag differs from origin's, fetching and merging main proceeds anyway; the clashing tag
-// is reported once on the wish as a block, and subsequent passes do not duplicate it.
-func TestMainTagClash(t *testing.T) {
+// TestMergeMain covers fetching and merging the remote's main into a wish's integration branch.
+func TestMergeMain(t *testing.T) {
 	testx.Portable(t)
-	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
-	// Make a local tag v0.1.0 on u.repo (pointing to the initial commit of u.repo).
-	u.git(t, u.repo, "tag", "v0.1.0")
+	t.Parallel()
 
-	// Teammate commits on main and tags it with a different commit as v0.1.0, then pushes branch and tag to origin.
-	fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
-	u.git(t, u.other, "tag", "v0.1.0")
-	u.git(t, u.other, "push", "--quiet", "origin", "refs/tags/v0.1.0")
+	// main's commits wait for a release; the cadence keeps Djinn from looking at main more than hourly; once main holds
+	// a release, Djinn merges main into the integration branch in its own worktree, the commit checks run through their
+	// gates, the branch moves, the person's clean checkout follows, the journal and the wish say it, and the window
+	// proposes the build. The release's own commit, the built interface, stays out.
+	t.Run("at a release", func(t *testing.T) {
+		t.Parallel()
+		built := make(chan Built, 1)
+		u := keepingUp(t, "install: \"install\"\n")
+		u.h.built = func(b Built) { built <- b }
+		old := u.tip(t)
+		fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
 
-	// Verify that the local tag and remote tag differ.
-	localSha := u.git(t, u.repo, "rev-parse", "refs/tags/v0.1.0")
-	remoteSha := u.git(t, u.other, "rev-parse", "refs/tags/v0.1.0")
-	if localSha == remoteSha {
-		t.Fatalf("local tag and remote tag point to the same sha: %s", localSha)
-	}
-
-	// First pass: main should be fetched and merged despite the clashing tag.
-	u.pass(t, 0)
-	if !u.holds(t, fix) || len(u.merges(t)) != 1 {
-		t.Fatalf("main was not merged: holds=%v merges=%d", u.holds(t, fix), len(u.merges(t)))
-	}
-	if state := u.mainState(t); state.GetHeld() != "" {
-		t.Errorf("main is held: %q", state.GetHeld())
-	}
-
-	// Verify the clashing tag was reported once on the wish as a block.
-	msg := "tag v0.1.0 differs from origin's: kept the local one"
-	blocks, err := store.List[*planv1.Block](t.Context(), u.db, store.Where{"wish_id": u.wishID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	for _, b := range blocks {
-		if b.GetTitle() == msg && b.GetContent() == msg && b.GetKind() == "report" {
-			count++
+		// main is ahead, without a release: nothing is merged, and Djinn noted when it looked.
+		u.pass(t, 0)
+		looked := u.mainState(t).GetCheckTime().AsTime()
+		if u.tip(t) != old || len(u.merges(t)) != 0 || !looked.Equal(u.clock()) {
+			t.Fatalf("main merged without a release: %s; looked at %v, want %v", u.tip(t), looked, u.clock())
 		}
-	}
-	if count != 1 {
-		t.Fatalf("expected 1 report block for clashing tag, found %d (total blocks: %d)", count, len(blocks))
-	}
 
-	// Verify the local tag remained unchanged.
-	if got := u.git(t, u.repo, "rev-parse", "refs/tags/v0.1.0"); got != localSha {
-		t.Errorf("local tag changed to %s; want %s", got, localSha)
-	}
-
-	// Second pass: another commit on main. The clash report must not be duplicated.
-	next := u.onMain(t, "More work", map[string]string{"app/src/more.txt": "more\n"})
-	u.pass(t, 2*time.Hour)
-	if !u.holds(t, next) {
-		t.Fatalf("next commit was not merged: %s", next)
-	}
-
-	blocks, err = store.List[*planv1.Block](t.Context(), u.db, store.Where{"wish_id": u.wishID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	count = 0
-	for _, b := range blocks {
-		if b.GetTitle() == msg {
-			count++
+		// A release comes, but within the hour Djinn does not look at main again.
+		dist := u.release(t, "v0.2.0")
+		u.pass(t, 59*time.Minute)
+		if u.tip(t) != old || !u.mainState(t).GetCheckTime().AsTime().Equal(looked) {
+			t.Fatalf("Djinn looked at main within the hour: %s, %v", u.tip(t), u.mainState(t))
 		}
-	}
-	if count != 1 {
-		t.Errorf("report block duplicated on second pass: count = %d", count)
-	}
-}
 
-// TestMainFetchFails: when fetching main from its remote fails, the reason shown is git's own message, not
-// "exit status 1".
-func TestMainFetchFails(t *testing.T) {
-	testx.Portable(t)
-	u := keepingUp(t, "")
-	// Set origin remote URL to a nonexistent path.
-	u.git(t, u.repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "nonexistent"))
+		// An hour after the last look: main is merged, tested, the branch moved.
+		u.pass(t, time.Minute)
+		tip := u.tip(t)
+		if tip == old || !u.holds(t, fix) || u.holds(t, dist) {
+			t.Fatalf("after the release: %s holds main %v, the release commit %v", tip, u.holds(t, fix), u.holds(t, dist))
+		}
+		if parents := strings.Fields(u.git(t, u.repo, "log", "-1", "--format=%P", tip)); len(parents) != 2 || parents[0] != old || parents[1] != fix {
+			t.Errorf("the merge's parents %v; want %s then main's %s", parents, old, fix)
+		}
+		if msg := u.git(t, u.repo, "log", "-1", "--format=%s", tip); msg != "Merge origin/"+u.main+" (v0.2.0) into feat/x" {
+			t.Errorf("the merge's message %q", msg)
+		}
+		wt := integrationDir(u.home, u.projectID, u.wishID)
+		if !slices.Contains(u.runs, "test in "+filepath.Join(wt, "app")) || !slices.Contains(u.gates, "test -") {
+			t.Errorf("the commit checks did not run in the integration worktree, under their gate: %v, %v", u.runs, u.gates)
+		}
+		if b, err := os.ReadFile(filepath.Join(u.repo, "app", "src", "login.txt")); err != nil || string(b) != "fixed\n" {
+			t.Errorf("your checkout did not follow: %q, %v", b, err)
+		}
+		merges := u.merges(t)
+		if len(merges) != 1 {
+			t.Fatalf("journal: %v", merges)
+		}
+		m := merges[0]
+		if m.GetBranch() != "feat/x" || m.GetMain() != "origin/"+u.main || m.GetMainSha() != fix || m.GetOldSha() != old ||
+			m.GetNewSha() != tip || m.GetCount() != 1 || m.GetRelease() != "v0.2.0" || !slices.Equal(m.GetCommits(), []string{"Fix the login"}) {
+			t.Errorf("the merge recorded %v", m)
+		}
+		if state := u.mainState(t); !proto.Equal(state.GetLast(), m) || state.GetHeld() != "" {
+			t.Errorf("the wish's head %v", state)
+		}
+		select {
+		case b := <-built:
+			if b.Sha != tip || b.Branch != "feat/x" || b.Install != "install" || !slices.Equal(b.Changes, []string{"Fix the login"}) {
+				t.Errorf("the build proposed %+v", b)
+			}
+		default:
+			t.Error("no build proposed")
+		}
+	})
 
-	u.pass(t, 0)
-	state := u.mainState(t)
-	held := state.GetHeld()
-	if held == "" {
-		t.Fatal("main state held is empty; expected failure reason")
-	}
-	if strings.Contains(held, "exit status 1") {
-		t.Errorf("held contains 'exit status 1': %q", held)
-	}
-	if !strings.Contains(held, "fatal:") {
-		t.Errorf("held does not contain git's fatal error message: %q", held)
-	}
-	if !strings.HasPrefix(held, "fetch ") {
-		t.Errorf("held lacks 'fetch ' prefix: %q", held)
-	}
-}
+	// merge_main: MERGE_MAIN_COMMIT merges main once it holds any commit the branch lacks, a release or not;
+	// MERGE_MAIN_OFF never does.
+	t.Run("each commit", func(t *testing.T) {
+		t.Parallel()
+		u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+		fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
+		u.pass(t, 0)
+		if !u.holds(t, fix) || len(u.merges(t)) != 1 || u.merges(t)[0].GetRelease() != "" || u.merges(t)[0].GetCount() != 1 {
+			t.Fatalf("main not merged at its commit: %v", u.merges(t))
+		}
 
-// TestMainMergeFails: when merging main fails without conflicts (e.g. unrelated histories), the reason shown
-// is git's own message, not "exit status 1".
-func TestMainMergeFails(t *testing.T) {
-	testx.Portable(t)
-	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
-	// Make an unrelated branch on u.other and force push it as main to origin.
-	u.git(t, u.other, "checkout", "--orphan", "unrelated")
-	commitAll(t, u.other, "Unrelated initial commit")
-	u.git(t, u.other, "push", "--force", "--quiet", "origin", "unrelated:refs/heads/"+u.main)
+		writeFile(t, u.home, filepath.Join("projects", u.projectID, "settings.txtpb"), "test: \"test\"\nmerge_main: MERGE_MAIN_OFF\n")
+		next := u.onMain(t, "More", map[string]string{"app/src/more.txt": "more\n"})
+		u.h.LookAtMain()
+		u.pass(t, 2*time.Hour)
+		if u.holds(t, next) {
+			t.Error("merge_main off, main merged")
+		}
+	})
 
-	u.pass(t, 0)
-	state := u.mainState(t)
-	held := state.GetHeld()
-	if held == "" {
-		t.Fatal("main state held is empty; expected failure reason")
-	}
-	if strings.Contains(held, "exit status 1") {
-		t.Errorf("held contains 'exit status 1': %q", held)
-	}
-	if !strings.Contains(held, "refusing to merge unrelated histories") {
-		t.Errorf("held does not contain git merge message: %q", held)
-	}
-}
+	// main conflicting in code with the integration branch leaves the branch as it was and starts a correction worker
+	// by itself, on the merge of main under way, never a rebase; its work integrates like any task's, and its success
+	// records main as merged, settled by it.
+	t.Run("conflict starts a correction", func(t *testing.T) {
+		t.Parallel()
+		u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+		writeFile(t, u.repo, "app/README.md", "# Branch\n")
+		commitAll(t, u.repo, "The branch's readme")
+		old := u.tip(t)
+		theirs := u.onMain(t, "Main's readme", map[string]string{"app/README.md": "# Main\n"})
+		var conflict string
+		u.correctWith(func(dir, _ string) string {
+			b, _ := os.ReadFile(filepath.Join(dir, "README.md"))
+			conflict = string(b)
+			writeFile(t, dir, "README.md", "# Main and Branch\n")
+			commitAll(t, dir, "Settle the readme with main") // Which concludes the merge.
+			return ""
+		})
 
-// TestMainCorrectionCleared: a merge of main held with a correction whose integration record was cleared
-// runs again on the next pass and merges when green.
-func TestMainCorrectionCleared(t *testing.T) {
-	testx.Portable(t)
-	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
-	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
-	theirs := u.onMain(t, "Feature on main", map[string]string{"app/src/feature.txt": "feat\n"})
-
-	u.pass(t, 0)
-	state := u.mainState(t)
-	if state.GetCorrectedBy() == "" {
-		t.Fatalf("main state %v; want corrected by a worker", state)
-	}
-	cID := state.GetCorrectedBy()
-	u.ended(t, cID)
-
-	u.mu.Lock()
-	u.testCode = 0
-	u.mu.Unlock()
-
-	none := "none"
-	if _, err := u.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:      cID,
-		Integration: &none,
-	})); err != nil {
-		t.Fatal(err)
-	}
-	if got := u.mainState(t).GetCorrectedBy(); got != "" {
-		t.Errorf("after clearing record, corrected_by = %q; want empty", got)
-	}
-
-	u.pass(t, 0)
-	if !u.holds(t, theirs) {
-		t.Fatalf("main not merged after record cleared: %v", u.mainState(t))
-	}
-	if state := u.mainState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
-		t.Errorf("after main merge succeeded, state: %v", state)
-	}
-}
-
-// TestMainCorrectionCancelled: a merge of main held with a correction that was cancelled
-// clears its link, runs again on the next pass and merges when green.
-func TestMainCorrectionCancelled(t *testing.T) {
-	testx.Portable(t)
-	u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
-	u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
-	theirs := u.onMain(t, "Feature on main", map[string]string{"app/src/feature.txt": "feat\n"})
-
-	u.pass(t, 0)
-	state := u.mainState(t)
-	if state.GetCorrectedBy() == "" {
-		t.Fatalf("main state %v; want corrected by a worker", state)
-	}
-	cID := state.GetCorrectedBy()
-	u.ended(t, cID)
-
-	// Cancel the correction worker (status 10).
-	if err := u.db.Tx(t.Context(), func(tx *store.Tx) error {
-		c, err := store.Get[*planv1.Task](t.Context(), tx, cID)
+		u.pass(t, 0)
+		state := u.mainState(t)
+		if u.tip(t) != old || state.GetCorrectedBy() == "" || state.GetAttempts() != 1 {
+			t.Fatalf("after the conflict: tip %s, %v", u.tip(t), state)
+		}
+		c := u.ended(t, state.GetCorrectedBy())
+		f := c.GetCorrection().GetFailure()
+		if c.GetTitle() != "Merge: origin/"+u.main+" — conflict in app/README.md" || c.GetProvider() != planv1.Provider_PROVIDER_FAKE ||
+			f.GetMainSha() != theirs || f.GetBase() != old || !slices.Equal(f.GetFiles(), []string{"app/README.md"}) || len(f.GetTaskIds()) != 0 {
+			t.Fatalf("the correction worker %v", c)
+		}
+		want := "conflict: origin/" + u.main + " conflicts with feat/x in app/README.md; feat/x stays as it was; " + c.GetCode() +
+			" corrects it, attempt 1 of 2"
+		if state.GetHeld() != want {
+			t.Errorf("held %q; want %q", state.GetHeld(), want)
+		}
+		prompt, err := firstPrompt(u.db, c.GetId())
 		if err != nil {
-			return err
+			t.Fatal(err)
 		}
-		c.Status = 10
-		if err := tx.Journal("test", "put", c); err != nil {
-			return err
+		for _, s := range []string{"could not integrate origin/" + u.main + " into feat/x", "the merge of origin/" + u.main + " at " +
+			theirs[:8] + " is under way", "- app/README.md", "Its success brings origin/" + u.main + " in with yours"} {
+			if !strings.Contains(prompt, s) {
+				t.Errorf("the correction's prompt lacks %q:\n%s", s, prompt)
+			}
 		}
-		return tx.Put(c)
-	}); err != nil {
-		t.Fatal(err)
-	}
+		if !strings.Contains(conflict, "<<<<<<<") || !strings.Contains(conflict, "# Main") || !strings.Contains(conflict, "# Branch") {
+			t.Errorf("the correction's worktree did not hold the conflict: %q", conflict)
+		}
 
-	u.mu.Lock()
-	u.testCode = 0
-	u.mu.Unlock()
+		// Its work integrates like any task's: main is in, recorded as merged by it.
+		u.pass(t, time.Second)
+		tip := u.tip(t)
+		if !u.holds(t, theirs) || u.git(t, u.repo, "show", tip+":app/README.md") != "# Main and Branch" {
+			t.Fatalf("after the correction: %s", u.git(t, u.repo, "show", tip+":app/README.md"))
+		}
+		merges := u.merges(t)
+		if len(merges) != 1 || merges[0].GetCorrectedBy() != c.GetId() || merges[0].GetMainSha() != theirs || merges[0].GetNewSha() != tip ||
+			merges[0].GetOldSha() != old || merges[0].GetCount() != 1 {
+			t.Fatalf("journal: %v", merges)
+		}
+		if state := u.mainState(t); state.GetCorrectedBy() != "" || state.GetHeld() != "" || state.GetAttempts() != 0 {
+			t.Errorf("the wish's head after the correction: %v", state)
+		}
+	})
 
-	u.pass(t, 0)
-	if !u.holds(t, theirs) {
-		t.Fatalf("main not merged after correction cancelled: %v", u.mainState(t))
+	// Past correction_attempts, a merge of main that fails stays out until main moves.
+	t.Run("attempts spent", func(t *testing.T) {
+		t.Parallel()
+		u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\ncorrection_attempts: 0\n")
+		u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
+		old := u.tip(t)
+		u.onMain(t, "Break the login", map[string]string{"app/src/login.txt": "broken\n"})
+		u.pass(t, 0)
+		state := u.mainState(t)
+		if u.tip(t) != old || state.GetCorrectedBy() != "" || state.GetFailedSha() == "" ||
+			!strings.HasPrefix(state.GetHeld(), "red: test exited 1") || !strings.HasSuffix(state.GetHeld(), "Djinn merges origin/"+u.main+" again once it moves") {
+			t.Fatalf("after a red merge, no attempt allowed: %v", state)
+		}
+		runs := len(u.runs)
+		u.pass(t, 2*time.Hour)
+		if len(u.runs) != runs {
+			t.Errorf("the same main merged again: %v", u.runs[runs:])
+		}
+		u.testCode = 0
+		fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
+		u.pass(t, 2*time.Hour)
+		if !u.holds(t, fix) || u.mainState(t).GetFailedSha() != "" || u.mainState(t).GetHeld() != "" {
+			t.Errorf("main moved, not merged: %v", u.mainState(t))
+		}
+	})
+
+	// When a local tag differs from origin's, fetching and merging main proceeds anyway; the clashing tag is reported
+	// once on the wish as a block, and subsequent passes do not duplicate it.
+	t.Run("tag clash", func(t *testing.T) {
+		t.Parallel()
+		u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+		u.git(t, u.repo, "tag", "v0.1.0")
+
+		fix := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
+		u.git(t, u.other, "tag", "v0.1.0")
+		u.git(t, u.other, "push", "--quiet", "origin", "refs/tags/v0.1.0")
+
+		localSha := u.git(t, u.repo, "rev-parse", "refs/tags/v0.1.0")
+		remoteSha := u.git(t, u.other, "rev-parse", "refs/tags/v0.1.0")
+		if localSha == remoteSha {
+			t.Fatalf("local tag and remote tag point to the same sha: %s", localSha)
+		}
+
+		u.pass(t, 0)
+		if !u.holds(t, fix) || len(u.merges(t)) != 1 {
+			t.Fatalf("main was not merged: holds=%v merges=%d", u.holds(t, fix), len(u.merges(t)))
+		}
+		if state := u.mainState(t); state.GetHeld() != "" {
+			t.Errorf("main is held: %q", state.GetHeld())
+		}
+
+		msg := "tag v0.1.0 differs from origin's: kept the local one"
+		blocks, err := store.List[*planv1.Block](t.Context(), u.db, store.Where{"wish_id": u.wishID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		for _, b := range blocks {
+			if b.GetTitle() == msg && b.GetContent() == msg && b.GetKind() == "report" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Fatalf("expected 1 report block for clashing tag, found %d (total blocks: %d)", count, len(blocks))
+		}
+		if got := u.git(t, u.repo, "rev-parse", "refs/tags/v0.1.0"); got != localSha {
+			t.Errorf("local tag changed to %s; want %s", got, localSha)
+		}
+
+		next := u.onMain(t, "More work", map[string]string{"app/src/more.txt": "more\n"})
+		u.pass(t, 2*time.Hour)
+		if !u.holds(t, next) {
+			t.Fatalf("next commit was not merged: %s", next)
+		}
+
+		blocks, err = store.List[*planv1.Block](t.Context(), u.db, store.Where{"wish_id": u.wishID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		count = 0
+		for _, b := range blocks {
+			if b.GetTitle() == msg {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("report block duplicated on second pass: count = %d", count)
+		}
+	})
+
+	// When fetching main from its remote fails, the reason shown is git's own message, not "exit status 1".
+	t.Run("fetch fails", func(t *testing.T) {
+		t.Parallel()
+		u := keepingUp(t, "")
+		u.git(t, u.repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "nonexistent"))
+
+		u.pass(t, 0)
+		state := u.mainState(t)
+		held := state.GetHeld()
+		if held == "" {
+			t.Fatal("main state held is empty; expected failure reason")
+		}
+		if strings.Contains(held, "exit status 1") {
+			t.Errorf("held contains 'exit status 1': %q", held)
+		}
+		if !strings.Contains(held, "fatal:") {
+			t.Errorf("held does not contain git's fatal error message: %q", held)
+		}
+		if !strings.HasPrefix(held, "fetch ") {
+			t.Errorf("held lacks 'fetch ' prefix: %q", held)
+		}
+	})
+
+	// When merging main fails without conflicts (e.g. unrelated histories), the reason shown is git's own message, not
+	// "exit status 1".
+	t.Run("merge fails", func(t *testing.T) {
+		t.Parallel()
+		u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+		u.git(t, u.other, "checkout", "--orphan", "unrelated")
+		commitAll(t, u.other, "Unrelated initial commit")
+		u.git(t, u.other, "push", "--force", "--quiet", "origin", "unrelated:refs/heads/"+u.main)
+
+		u.pass(t, 0)
+		state := u.mainState(t)
+		held := state.GetHeld()
+		if held == "" {
+			t.Fatal("main state held is empty; expected failure reason")
+		}
+		if strings.Contains(held, "exit status 1") {
+			t.Errorf("held contains 'exit status 1': %q", held)
+		}
+		if !strings.Contains(held, "refusing to merge unrelated histories") {
+			t.Errorf("held does not contain git merge message: %q", held)
+		}
+	})
+
+	// A merge of main held with a correction whose integration record was cleared or whose worker was cancelled runs
+	// again on the next pass and merges when green.
+	for _, tc := range []struct {
+		name   string
+		unhold func(t *testing.T, u *upkeep, cID string)
+	}{
+		{
+			name: "correction cleared",
+			unhold: func(t *testing.T, u *upkeep, cID string) {
+				none := "none"
+				if _, err := u.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:      cID,
+					Integration: &none,
+				})); err != nil {
+					t.Fatal(err)
+				}
+				if got := u.mainState(t).GetCorrectedBy(); got != "" {
+					t.Errorf("after clearing record, corrected_by = %q; want empty", got)
+				}
+			},
+		},
+		{
+			name: "correction cancelled",
+			unhold: func(t *testing.T, u *upkeep, cID string) {
+				if err := u.db.Tx(t.Context(), func(tx *store.Tx) error {
+					c, err := store.Get[*planv1.Task](t.Context(), tx, cID)
+					if err != nil {
+						return err
+					}
+					c.Status = 10
+					if err := tx.Journal("test", "put", c); err != nil {
+						return err
+					}
+					return tx.Put(c)
+				}); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+			u.testCode, u.testOut = 1, "--- FAIL: TestLogin"
+			theirs := u.onMain(t, "Feature on main", map[string]string{"app/src/feature.txt": "feat\n"})
+
+			u.pass(t, 0)
+			state := u.mainState(t)
+			if state.GetCorrectedBy() == "" {
+				t.Fatalf("main state %v; want corrected by a worker", state)
+			}
+			cID := state.GetCorrectedBy()
+			u.ended(t, cID)
+
+			tc.unhold(t, u, cID)
+
+			u.mu.Lock()
+			u.testCode = 0
+			u.mu.Unlock()
+
+			u.pass(t, 0)
+			if !u.holds(t, theirs) {
+				t.Fatalf("main not merged after %s: %v", tc.name, u.mainState(t))
+			}
+			if state := u.mainState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+				t.Errorf("after main merge succeeded, state: %v", state)
+			}
+		})
 	}
-	if state := u.mainState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
-		t.Errorf("after main merge succeeded, state: %v", state)
+}
+
+// TestReference (W146): the reference branch is the one main_branch names, else the repository's main or master; a
+// branch named that the repository does not hold is an error that names it.
+func TestReference(t *testing.T) {
+	t.Parallel()
+	repo := gitRepo(t)
+	project := &planv1.Project{Directory: repo, Git: true}
+	h := &Harness{}
+	branch, ref, err := h.Reference(t.Context(), project, "")
+	if err != nil || (branch != "main" && branch != "master") || ref != "refs/heads/"+branch {
+		t.Errorf("unnamed: %s, %s, %v; want the local main or master", branch, ref, err)
+	}
+	if _, _, err := h.Reference(t.Context(), project, "dev"); err == nil || !strings.Contains(err.Error(), "holds no dev") {
+		t.Errorf("dev, which the repository does not hold: %v", err)
 	}
 }

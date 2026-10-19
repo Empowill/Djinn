@@ -18,12 +18,16 @@ export function WorkspaceAction({
   expanded = false,
   className = "",
   layoutId = ACTION_LAYOUT_ID,
+  perch,
 }: {
   children: ReactNode;
   tone: WorkspaceActionTone;
   expanded?: boolean;
   className?: string;
   layoutId?: string;
+  // A place on the surface, outside its content: the Djinn's eye rests there (djinn-eye.tsx), and flies in under the
+  // surface that holds it.
+  perch?: ReactNode;
 }) {
   const reducedMotion = useReducedMotion();
   const transition = reducedMotion
@@ -42,7 +46,8 @@ export function WorkspaceAction({
       className={`workspace-action ${ACTION_TONE_CLASS[tone]}${expanded ? " is-expanded" : ""} ${className}`}
       initial={false}
       transition={transition}
-      style={{ borderRadius: 999 }}
+      style={{ borderRadius: 22 }}
+      data-eye-under={perch ? "" : undefined}
     >
       <div className="workspace-action-surface" aria-hidden="true">
         <motion.div
@@ -58,6 +63,17 @@ export function WorkspaceAction({
           aria-hidden="true"
         />
       </div>
+      {perch && (
+        // Laid out with the pill, so its scale while the pill unfolds never squeezes the perch.
+        <motion.span
+          layout="position"
+          transition={transition}
+          className="workspace-action-perch"
+          aria-hidden="true"
+        >
+          {perch}
+        </motion.span>
+      )}
       <motion.div
         layout="position"
         transition={transition}

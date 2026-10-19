@@ -149,117 +149,152 @@ func ref(code string) *planv1.TilasmRef {
 }
 
 func TestTilasmPutReplaceHistoryRestore(t *testing.T) {
-	ctx := t.Context()
-	home := t.TempDir()
-	c := serve(t, WithHome(home))
-	wish := c.wish(t)
-	ts := tasks(t, c, wish, "T29", "W1")
+	t.Parallel()
+	t.Run("folder_replace_history_restore", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		home := t.TempDir()
+		c := serve(t, WithHome(home))
+		wish := c.wish(t)
+		ts := tasks(t, c, wish, "T29", "W1")
 
-	src := folder(t, map[string]string{
-		"index.html":  page("The objects in the database", "A wish holds tasks."),
-		"img/one.svg": "<svg/>",
-		"tilasm.json": `{"not":"a file of the tilasm"}`,
+		src := folder(t, map[string]string{
+			"index.html":  page("The objects in the database", "A wish holds tasks."),
+			"img/one.svg": "<svg/>",
+			"tilasm.json": `{"not":"a file of the tilasm"}`,
+		})
+		put := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: src, Wish: wish, Cites: []string{"T29", "w1", ts["T29"].GetId()}})
+		first := put.GetTilasm()
+		if first.GetCode() != "L01" || first.GetTitle() != "The objects in the database" || first.GetAuthor() != "lead" ||
+			first.GetMaxBytes() != DefaultTilasmBytes || len(first.GetVersions()) != 1 {
+			t.Fatalf("first put = %v", first)
+		}
+		if !slices.Equal(first.GetCites(), []string{ts["T29"].GetId(), ts["W1"].GetId()}) {
+			t.Errorf("cites = %v, want T29 then W1, each once", first.GetCites())
+		}
+		if v := first.GetVersions()[0]; v.GetNumber() != 1 || v.GetFiles() != 2 || v.GetSize() == 0 {
+			t.Errorf("version 1 = %v, want 2 files: the manifest's name is Djinn's", v)
+		}
+		if want := filepath.Join(home, "tilasms", first.GetId(), "v1"); put.GetDirectory() != want {
+			t.Errorf("directory = %s, want %s", put.GetDirectory(), want)
+		}
+
+		got := getTilasm(t, c, "l01", 0)
+		if got.GetVersion() != 1 || !strings.Contains(got.GetText(), "A wish holds tasks.") || strings.Contains(got.GetText(), "not text") ||
+			strings.Contains(got.GetText(), "color") || !strings.Contains(got.GetText(), "a label") {
+			t.Errorf("text = %q: the page's words, without script nor style", got.GetText())
+		}
+		if !slices.Equal(got.GetFiles(), []string{"img/one.svg", "index.html"}) {
+			t.Errorf("files = %v", got.GetFiles())
+		}
+
+		// Put again by its code: a new version, same tilasm, its title and cites kept.
+		src2 := folder(t, map[string]string{"index.html": page("Renamed", "A wish holds tilasms too.")})
+		second := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: src2, Wish: wish, Code: "L01", Author: "W1"}).GetTilasm()
+		if second.GetId() != first.GetId() || second.GetTitle() != first.GetTitle() || len(second.GetVersions()) != 2 ||
+			second.GetVersions()[1].GetAuthor() != "W1" || len(second.GetCites()) != 2 {
+			t.Fatalf("second put = %v", second)
+		}
+		if text := getTilasm(t, c, "L01", 0).GetText(); !strings.Contains(text, "tilasms too") {
+			t.Errorf("latest text = %q, want version 2", text)
+		}
+		if text := getTilasm(t, c, "L01", 1).GetText(); !strings.Contains(text, "A wish holds tasks.") {
+			t.Errorf("version 1 text = %q", text)
+		}
+		history, err := c.tilasms.History(ctx, connect.NewRequest(&planv1.TilasmServiceHistoryRequest{Tilasm: ref("L01")}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history.Msg.GetVersions()) != 2 || history.Msg.GetDirectory() != filepath.Join(home, "tilasms", first.GetId()) {
+			t.Errorf("history = %v", history.Msg)
+		}
+
+		// Restore version 1: it comes back as version 3, and the others stay.
+		restored, err := c.tilasms.Restore(ctx, connect.NewRequest(&planv1.TilasmServiceRestoreRequest{Tilasm: ref("L01"), Version: 1}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if vs := restored.Msg.GetTilasm().GetVersions(); len(vs) != 3 || vs[2].GetRestoredFrom() != 1 || vs[2].GetFiles() != 2 {
+			t.Errorf("versions after restore = %v", vs)
+		}
+		if text := getTilasm(t, c, "L01", 0).GetText(); !strings.Contains(text, "A wish holds tasks.") {
+			t.Errorf("text after restore = %q, want version 1's", text)
+		}
+		if _, err := c.tilasms.Restore(ctx, connect.NewRequest(&planv1.TilasmServiceRestoreRequest{Tilasm: ref("L01"), Version: 9})); code(err) != connect.CodeNotFound {
+			t.Errorf("restore of a version it never had: %v, want not_found", err)
+		}
+
+		// A .zip of a folder is that folder; without a code, a new tilasm takes the next one.
+		z := zipOf(t, map[string]string{"notes/index.html": page("Notes", "Zipped."), "notes/a.txt": "a"})
+		other := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: z, Wish: wish, Title: "Notes, zipped"}).GetTilasm()
+		if other.GetCode() != "L02" || other.GetTitle() != "Notes, zipped" || other.GetVersions()[0].GetFiles() != 2 {
+			t.Errorf("zipped put = %v", other)
+		}
+
+		// What is not a tilasm is refused, saying why.
+		for name, req := range map[string]*planv1.TilasmServicePutRequest{
+			"no index.html":   {Path: folder(t, map[string]string{"readme.md": "#"}), Wish: wish},
+			"an unknown cite": {Path: src, Wish: wish, Cites: []string{"W9"}},
+			"a .zip escaping": {Path: zipOf(t, map[string]string{"index.html": "x", "../evil": "x"}), Wish: wish},
+		} {
+			t.Run(name, func(t *testing.T) {
+				if _, err := c.tilasms.Put(ctx, connect.NewRequest(req)); code(err) != connect.CodeInvalidArgument {
+					t.Errorf("%s: %v, want invalid_argument", name, err)
+				}
+			})
+		}
+		if _, err := os.Stat(filepath.Join(home, "tilasms", "..", "evil")); err == nil {
+			t.Error("a .zip wrote outside the tilasm")
+		}
+
+		// Every change is journaled.
+		journaled := map[string]int{}
+		if _, err := store.Commands(ctx, c.store, func(cmd store.Command) bool { journaled[cmd.Method]++; return false }); err != nil {
+			t.Fatal(err)
+		}
+		if journaled[planv1connect.TilasmServicePutProcedure] != 3 || journaled[planv1connect.TilasmServiceRestoreProcedure] != 1 {
+			t.Errorf("journal = %v, want 3 puts and 1 restore", journaled)
+		}
+		// Nothing is left on the way.
+		entries, _ := os.ReadDir(filepath.Join(home, "tilasms"))
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), ".") {
+				t.Errorf("a temporary folder is left: %s", e.Name())
+			}
+		}
 	})
-	put := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: src, Wish: wish, Cites: []string{"T29", "w1", ts["T29"].GetId()}})
-	first := put.GetTilasm()
-	if first.GetCode() != "L01" || first.GetTitle() != "The objects in the database" || first.GetAuthor() != "lead" ||
-		first.GetMaxBytes() != DefaultTilasmBytes || len(first.GetVersions()) != 1 {
-		t.Fatalf("first put = %v", first)
-	}
-	if !slices.Equal(first.GetCites(), []string{ts["T29"].GetId(), ts["W1"].GetId()}) {
-		t.Errorf("cites = %v, want T29 then W1, each once", first.GetCites())
-	}
-	if v := first.GetVersions()[0]; v.GetNumber() != 1 || v.GetFiles() != 2 || v.GetSize() == 0 {
-		t.Errorf("version 1 = %v, want 2 files: the manifest's name is Djinn's", v)
-	}
-	if want := filepath.Join(home, "tilasms", first.GetId(), "v1"); put.GetDirectory() != want {
-		t.Errorf("directory = %s, want %s", put.GetDirectory(), want)
-	}
 
-	got := getTilasm(t, c, "l01", 0)
-	if got.GetVersion() != 1 || !strings.Contains(got.GetText(), "A wish holds tasks.") || strings.Contains(got.GetText(), "not text") ||
-		strings.Contains(got.GetText(), "color") || !strings.Contains(got.GetText(), "a label") {
-		t.Errorf("text = %q: the page's words, without script nor style", got.GetText())
-	}
-	if !slices.Equal(got.GetFiles(), []string{"img/one.svg", "index.html"}) {
-		t.Errorf("files = %v", got.GetFiles())
-	}
+	t.Run("html_file", func(t *testing.T) {
+		t.Parallel()
+		c := serve(t, WithHome(t.TempDir()))
+		wish := c.wish(t)
 
-	// Put again by its code: a new version, same tilasm, its title and cites kept.
-	src2 := folder(t, map[string]string{"index.html": page("Renamed", "A wish holds tilasms too.")})
-	second := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: src2, Wish: wish, Code: "L01", Author: "W1"}).GetTilasm()
-	if second.GetId() != first.GetId() || second.GetTitle() != first.GetTitle() || len(second.GetVersions()) != 2 ||
-		second.GetVersions()[1].GetAuthor() != "W1" || len(second.GetCites()) != 2 {
-		t.Fatalf("second put = %v", second)
-	}
-	if text := getTilasm(t, c, "L01", 0).GetText(); !strings.Contains(text, "tilasms too") {
-		t.Errorf("latest text = %q, want version 2", text)
-	}
-	if text := getTilasm(t, c, "L01", 1).GetText(); !strings.Contains(text, "A wish holds tasks.") {
-		t.Errorf("version 1 text = %q", text)
-	}
-	history, err := c.tilasms.History(ctx, connect.NewRequest(&planv1.TilasmServiceHistoryRequest{Tilasm: ref("L01")}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(history.Msg.GetVersions()) != 2 || history.Msg.GetDirectory() != filepath.Join(home, "tilasms", first.GetId()) {
-		t.Errorf("history = %v", history.Msg)
-	}
-
-	// Restore version 1: it comes back as version 3, and the others stay.
-	restored, err := c.tilasms.Restore(ctx, connect.NewRequest(&planv1.TilasmServiceRestoreRequest{Tilasm: ref("L01"), Version: 1}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if vs := restored.Msg.GetTilasm().GetVersions(); len(vs) != 3 || vs[2].GetRestoredFrom() != 1 || vs[2].GetFiles() != 2 {
-		t.Errorf("versions after restore = %v", vs)
-	}
-	if text := getTilasm(t, c, "L01", 0).GetText(); !strings.Contains(text, "A wish holds tasks.") {
-		t.Errorf("text after restore = %q, want version 1's", text)
-	}
-	if _, err := c.tilasms.Restore(ctx, connect.NewRequest(&planv1.TilasmServiceRestoreRequest{Tilasm: ref("L01"), Version: 9})); code(err) != connect.CodeNotFound {
-		t.Errorf("restore of a version it never had: %v, want not_found", err)
-	}
-
-	// A .zip of a folder is that folder; without a code, a new tilasm takes the next one.
-	z := zipOf(t, map[string]string{"notes/index.html": page("Notes", "Zipped."), "notes/a.txt": "a"})
-	other := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: z, Wish: wish, Title: "Notes, zipped"}).GetTilasm()
-	if other.GetCode() != "L02" || other.GetTitle() != "Notes, zipped" || other.GetVersions()[0].GetFiles() != 2 {
-		t.Errorf("zipped put = %v", other)
-	}
-
-	// What is not a tilasm is refused, saying why.
-	for name, req := range map[string]*planv1.TilasmServicePutRequest{
-		"no index.html":   {Path: folder(t, map[string]string{"readme.md": "#"}), Wish: wish},
-		"an unknown cite": {Path: src, Wish: wish, Cites: []string{"W9"}},
-		"a .zip escaping": {Path: zipOf(t, map[string]string{"index.html": "x", "../evil": "x"}), Wish: wish},
-	} {
-		if _, err := c.tilasms.Put(ctx, connect.NewRequest(req)); code(err) != connect.CodeInvalidArgument {
-			t.Errorf("%s: %v, want invalid_argument", name, err)
+		dir := t.TempDir()
+		withTitle := filepath.Join(dir, "architecture.html")
+		if err := os.WriteFile(withTitle, []byte(page("System architecture", "The lamp and the smoke.")), 0o600); err != nil {
+			t.Fatal(err)
 		}
-	}
-	if _, err := os.Stat(filepath.Join(home, "tilasms", "..", "evil")); err == nil {
-		t.Error("a .zip wrote outside the tilasm")
-	}
-
-	// Every change is journaled.
-	journaled := map[string]int{}
-	if _, err := store.Commands(ctx, c.store, func(cmd store.Command) bool { journaled[cmd.Method]++; return false }); err != nil {
-		t.Fatal(err)
-	}
-	if journaled[planv1connect.TilasmServicePutProcedure] != 3 || journaled[planv1connect.TilasmServiceRestoreProcedure] != 1 {
-		t.Errorf("journal = %v, want 3 puts and 1 restore", journaled)
-	}
-	// Nothing is left on the way.
-	entries, _ := os.ReadDir(filepath.Join(home, "tilasms"))
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".") {
-			t.Errorf("a temporary folder is left: %s", e.Name())
+		first := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: withTitle, Wish: wish}).GetTilasm()
+		if first.GetCode() != "L01" || first.GetTitle() != "System architecture" || first.GetVersions()[0].GetFiles() != 1 {
+			t.Fatalf("single .html with title = %v", first)
 		}
-	}
+		if got := getTilasm(t, c, "L01", 0); !slices.Equal(got.GetFiles(), []string{"index.html"}) || !strings.Contains(got.GetText(), "The lamp and the smoke.") {
+			t.Errorf("stored .html tilasm = %v", got)
+		}
+
+		withoutTitle := filepath.Join(dir, "quick-sketch.htm")
+		if err := os.WriteFile(withoutTitle, []byte("<!doctype html><p>Only a paragraph.</p>"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		second := putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: withoutTitle, Wish: wish}).GetTilasm()
+		if second.GetCode() != "L02" || second.GetTitle() != "quick-sketch" || second.GetVersions()[0].GetFiles() != 1 {
+			t.Fatalf("single .htm without title = %v", second)
+		}
+	})
 }
 
 func TestTilasmSearch(t *testing.T) {
+	t.Parallel()
 	c := serve(t, WithHome(t.TempDir()))
 	wish := c.wish(t)
 	putTilasm(t, c, &planv1.TilasmServicePutRequest{Path: folder(t, map[string]string{"index.html": page("Data model", "Wish, task, question.")}), Wish: wish})
@@ -274,21 +309,24 @@ func TestTilasmSearch(t *testing.T) {
 		"question binary":  nil,
 		"talisman nothing": nil,
 	} {
-		res, err := c.tilasms.List(t.Context(), connect.NewRequest(&planv1.TilasmServiceListRequest{Wish: wish, Search: search}))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var got []string
-		for _, tl := range res.Msg.GetTilasms() {
-			got = append(got, tl.GetCode())
-		}
-		if !slices.Equal(got, want) {
-			t.Errorf("search %q = %v, want %v", search, got, want)
-		}
+		t.Run(search, func(t *testing.T) {
+			res, err := c.tilasms.List(t.Context(), connect.NewRequest(&planv1.TilasmServiceListRequest{Wish: wish, Search: search}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, tl := range res.Msg.GetTilasms() {
+				got = append(got, tl.GetCode())
+			}
+			if !slices.Equal(got, want) {
+				t.Errorf("search %q = %v, want %v", search, got, want)
+			}
+		})
 	}
 }
 
 func TestTilasmCeiling(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t, WithHome(t.TempDir()))
 	wish := c.wish(t)
@@ -318,6 +356,7 @@ func TestTilasmCeiling(t *testing.T) {
 }
 
 func TestTilasmExportImport(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t, WithHome(t.TempDir()))
 	wish := c.wish(t)
@@ -392,6 +431,7 @@ func TestTilasmExportImport(t *testing.T) {
 }
 
 func TestWishExportCarriesTilasms(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	srcHome := t.TempDir()
 	c := serve(t, WithHome(srcHome))
@@ -473,6 +513,7 @@ func TestWishExportCarriesTilasms(t *testing.T) {
 }
 
 func TestHTMLText(t *testing.T) {
+	t.Parallel()
 	title, text := htmlText(strings.NewReader(`<html><head><title> Model </title><script>x()</script></head>
 <body><h1>Entities</h1><p>A <b>wish</b>   holds
 tasks.</p><ul><li>Task</li><li>Tilasm &amp; its versions</li></ul><table><tr><td>id</td><td>UUID</td></tr></table></body></html>`))
@@ -483,6 +524,7 @@ tasks.</p><ul><li>Task</li><li>Tilasm &amp; its versions</li></ul><table><tr><td
 }
 
 func TestTilasmOpenAndLinks(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	var shown []string
 	window := true
@@ -519,22 +561,25 @@ func TestTilasmOpenAndLinks(t *testing.T) {
 
 	// A link resolves to the wish it shows; one not on this machine says so.
 	for _, c2 := range []struct {
+		name string
 		l    link.Link
 		wish string
 		code connect.Code
 	}{
-		{link.Link{Kind: link.Tilasm, ID: tilasm.GetId()}, wish, 0},
-		{link.Link{Kind: link.Wish, ID: wish}, wish, 0},
-		{link.Link{Kind: link.Tilasm, ID: store.NewID()}, "", connect.CodeNotFound},
-		{link.Link{Kind: link.Wish, ID: store.NewID()}, "", connect.CodeNotFound},
+		{"tilasm_found", link.Link{Kind: link.Tilasm, ID: tilasm.GetId()}, wish, 0},
+		{"wish_found", link.Link{Kind: link.Wish, ID: wish}, wish, 0},
+		{"tilasm_missing", link.Link{Kind: link.Tilasm, ID: store.NewID()}, "", connect.CodeNotFound},
+		{"wish_missing", link.Link{Kind: link.Wish, ID: store.NewID()}, "", connect.CodeNotFound},
 	} {
-		got, err := Linked(ctx, c.store, c2.l)
-		if got != c2.wish || (c2.code == 0) != (err == nil) || err != nil && connect.CodeOf(err) != c2.code {
-			t.Errorf("Linked(%v) = %q, %v", c2.l, got, err)
-		}
-		if err != nil && !strings.Contains(err.Error(), "on this machine") {
-			t.Errorf("Linked(%v): %v, want it to say it is not on this machine", c2.l, err)
-		}
+		t.Run(c2.name, func(t *testing.T) {
+			got, err := Linked(ctx, c.store, c2.l)
+			if got != c2.wish || (c2.code == 0) != (err == nil) || err != nil && connect.CodeOf(err) != c2.code {
+				t.Errorf("Linked(%v) = %q, %v", c2.l, got, err)
+			}
+			if err != nil && !strings.Contains(err.Error(), "on this machine") {
+				t.Errorf("Linked(%v): %v, want it to say it is not on this machine", c2.l, err)
+			}
+		})
 	}
 
 	// Without a window, open says so; without http, get gives no address.
@@ -598,5 +643,54 @@ func TestTilasmMovesRetryARefusedRename(t *testing.T) {
 	}
 	if text := getTilasm(t, c, "L01", 1).GetText(); !strings.Contains(text, "first version") {
 		t.Errorf("L01 after the import = %q, want its first version", text)
+	}
+}
+
+// TestSweepTilasmTemp: the staging folders a kill left in the tilasms' folder go; a tilasm an import put aside goes
+// back to its empty place, and one whose place is taken stays aside; the tilasms themselves are not touched.
+func TestSweepTilasmTemp(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	root := filepath.Join(home, "tilasms")
+	put := func(rel string) {
+		t.Helper()
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(rel), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, rel := range []string{
+		".put-1/index.html", ".drop-2/a.zip", ".import-3/x/v1/index.html", ".restore-4/index.html",
+		".replaced-5/gone/v1/index.html", ".replaced-6/taken/v1/index.html", "taken/v2/index.html",
+		"kept/v1/index.html", ".other/index.html",
+	} {
+		put(rel)
+	}
+	removed, kept, err := SweepTilasmTemp(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, dir := range removed {
+		names = append(names, filepath.Base(dir))
+	}
+	slices.Sort(names)
+	if want := []string{".drop-2", ".import-3", ".put-1", ".replaced-5", ".restore-4"}; !slices.Equal(names, want) {
+		t.Errorf("removed %v, want %v", names, want)
+	}
+	if want := []string{filepath.Join(root, ".replaced-6")}; !slices.Equal(kept, want) {
+		t.Errorf("kept %v, want %v", kept, want)
+	}
+	for _, rel := range []string{"gone/v1/index.html", "taken/v2/index.html", "kept/v1/index.html", ".other/index.html",
+		".replaced-6/taken/v1/index.html"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("%s: %v", rel, err)
+		}
+	}
+	if _, _, err := SweepTilasmTemp(t.TempDir()); err != nil {
+		t.Errorf("a data folder without tilasms: %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package harness
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,7 @@ func TestStreamQuietAfterResult(t *testing.T) {
 	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "mid-turn-message"}.env(t)
 	spec := Spec{TaskID: "t1", Dir: t.TempDir(), Prompt: "x", Env: env}
-	a := streamAgent{name: "claude", parser: &unsaidQueue{}, encode: claudeMessageLine, quiet: 200 * time.Millisecond}
+	a := streamAgent{name: "claude", parser: &unsaidQueue{}, encode: claudeMessageLine, quiet: 60 * time.Millisecond}
 	w, err := startStream(t.Context(), spec, os.Args[0], Claude{}.args(spec), Grace, a)
 	if err != nil {
 		t.Fatal(err)
@@ -42,7 +43,7 @@ func TestStreamQuietAfterResult(t *testing.T) {
 		t.Errorf("result = %+v", res)
 	}
 	statuses := texts(events, "STATUS")
-	if len(statuses) != 2 || !strings.HasPrefix(statuses[1], "claude said nothing for 200ms after its result") {
+	if len(statuses) != 2 || !strings.HasPrefix(statuses[1], "claude said nothing for 60ms after its result") {
 		t.Errorf("statuses = %q", statuses)
 	}
 	if err := w.Send("late"); err == nil {
@@ -60,7 +61,7 @@ func TestStreamIdleTimeout(t *testing.T) {
 		name:   "claude",
 		parser: &claudeParser{},
 		encode: claudeMessageLine,
-		idle:   200 * time.Millisecond,
+		idle:   60 * time.Millisecond,
 	}
 	w, err := startStream(t.Context(), spec, os.Args[0], Claude{}.args(spec), Grace, a)
 	if err != nil {
@@ -74,6 +75,51 @@ func TestStreamIdleTimeout(t *testing.T) {
 	hung.Stop()
 	res := w.Wait()
 	if res.Err == nil || !isStreamIdle(res.Err) {
+		t.Errorf("res = %+v, want stream idle error", res)
+	}
+}
+
+// TestAgyStreamIdle: with agy's parser, a model call that returns nothing is cut (W360). After an output that names
+// "task-" (a branch), which once stopped the timer for the whole run, the timer waits for the idle timeout; while a
+// command runs, of which agy's stream says nothing until it ends, for the tool cap instead of stopping; once the
+// command ended, for the idle timeout again. The recorded lines are read through the parser, then a worker whose agy
+// goes silent after the branch name is cut.
+func TestAgyStreamIdle(t *testing.T) {
+	t.Parallel()
+	const idle, toolIdle = 8 * time.Minute, 30 * time.Minute
+	for _, c := range []struct {
+		fixture string
+		want    time.Duration
+	}{
+		{fixture: "task-in-branch", want: idle},
+		{fixture: "command-runs", want: toolIdle},
+		{fixture: "background-task", want: idle},
+	} {
+		p := &agyParser{toolIdle: toolIdle}
+		for _, l := range fixtureLines(t, filepath.Join("testdata", "antigravity", c.fixture+".jsonl")) {
+			p.stdout(l)
+		}
+		if got, waits := idleWait(p, idle); got != c.want || !waits {
+			t.Errorf("%s: the timer waits %v (%v), want %v", c.fixture, got, waits, c.want)
+		}
+	}
+	if got, waits := idleWait(&claudeParser{}, idle); got != idle || !waits {
+		t.Errorf("claude: the timer waits %v (%v)", got, waits)
+	}
+
+	env, _, _ := fake{provider: "antigravity", fixture: "task-in-branch", end: "wait"}.env(t)
+	spec := Spec{TaskID: "t-idle", Dir: t.TempDir(), Prompt: "x", Env: env}
+	w, err := Antigravity{Command: os.Args[0], IdleTimeout: 60 * time.Millisecond}.Start(t.Context(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hung := time.AfterFunc(10*time.Second, func() {
+		t.Errorf("the worker still runs after 10s")
+		w.Stop()
+	})
+	_ = collect(w)
+	hung.Stop()
+	if res := w.Wait(); res.Err == nil || !isStreamIdle(res.Err) {
 		t.Errorf("res = %+v, want stream idle error", res)
 	}
 }

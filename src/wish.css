@@ -9,15 +9,17 @@
 /* The content follows the header, even when the window is taller than both: the shared rule centers it. */
 .wish-view .overview-content {
   margin: 0 auto auto;
-  padding-top: 24px;
+  padding-top: 1.5rem;
 }
 .wish-home-placeholder {
   display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   align-items: center;
   justify-content: center;
+  gap: 0.5rem;
 }
 .wish-home-placeholder h1 {
   margin: 0;
@@ -27,38 +29,310 @@
   letter-spacing: 0.02em;
 }
 
-/* The side panel: ranks, the three places, the sub-lists. */
+/* The side panel: ranks, the three places, the sub-lists. Each wish is dragged by its row. */
 .wish-nav[draggable="true"] {
   cursor: grab;
 }
 .wish-nav.dragged {
   opacity: 0.4;
 }
+/* Where a dragged wish would land: a thin line between two wishes, over the edge they share. */
+.wish-drop-line {
+  position: absolute;
+  left: 0.375rem;
+  right: 0.375rem;
+  height: 0.125rem;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
 .wish-rank {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 2px;
+  gap: 0.125rem;
   margin-left: auto;
   font: var(--font-size-body) var(--mono);
-  color: var(--muted-dim);
+  color: var(--muted);
+}
+/* --muted stays under 4.5:1 on a hovered row of the light menu (L17): its darker grey. */
+html[data-theme="light"] .mission-nav .wish-counts .wish-rank {
+  color: var(--n-a9);
 }
 .nav-counter.full {
-  background: var(--accent);
-  color: var(--bg);
+  background: transparent;
+  border-color: var(--n-47);
+  color: var(--n-e7);
 }
 .sidebar-section-label.sub {
   width: 100%;
+  height: 2.0625rem;
   justify-content: flex-start;
   gap: var(--space-1);
-  padding: 12px 10px 6px;
+  padding: 0.75rem 0.625rem 0.375rem;
   font-size: var(--font-size-body);
   letter-spacing: 0.5px;
-  color: var(--muted-dim);
+  color: var(--muted);
 }
-/* Three rows show; the others scroll under the pointer. */
-.wish-list {
+/* A wish's row is built around its icon (wish-icon.tsx, L09 v6), 24px, the size of the bank's grid, at the same place
+   folded or unfolded: 1.3125rem from the side panel's edge (its padding, --sidebar-pad, and the row's), the same top in
+   its row, the rows above it (styles.css) and the row itself as tall in both. Folded, an active wish keeps the room of
+   its second line under the icon, where its dots hang; the sub-lists keep their labels' room (wish-sidebar.tsx). */
+.mission-nav.wish-nav {
+  padding: 0.625rem;
+  padding-left: calc(1.3125rem - var(--sidebar-pad));
+}
+/* Folded, the row is the icon and its padding on both sides, its ground centred on it, whatever room a scroll bar takes. */
+.sidebar-collapsed .mission-nav.wish-nav {
+  justify-content: flex-start;
+  width: calc(1.5rem + 2 * (1.3125rem - var(--sidebar-pad)));
+  padding: 0.625rem calc(1.3125rem - var(--sidebar-pad));
+}
+.sidebar-collapsed .mission-nav.wish-nav.ranked {
+  padding-bottom: calc(0.625rem + 0.3125rem + 1.125rem);
+}
+/* Folded, the list reaches the side panel's edges, its padding in their place, and starts under its label: the marks on
+   the icons' corners are not cut, and the icons do not move. */
+.sidebar-collapsed .wish-list {
+  margin: 0 calc(-1 * var(--sidebar-pad));
+  padding-inline: var(--sidebar-pad);
+}
+.sidebar-collapsed .wish-drop-line {
+  left: 1rem;
+  right: 1rem;
+}
+@media (max-width: 820px) {
+  .mission-nav.wish-nav {
+    justify-content: flex-start;
+    width: calc(1.5rem + 2 * (1.3125rem - var(--sidebar-pad)));
+    padding: 0.625rem calc(1.3125rem - var(--sidebar-pad));
+  }
+  .mission-nav.wish-nav.ranked {
+    padding-bottom: calc(0.625rem + 0.3125rem + 1.125rem);
+  }
+  .wish-list {
+    margin-inline: calc(-1 * var(--sidebar-pad));
+    padding-inline: var(--sidebar-pad);
+  }
+}
+/* Selected, a row keeps its ground and takes no hover's tint (L21): its title is bolder and its icon's ink brighter. */
+.mission-nav.wish-nav.selected::after {
+  opacity: 0;
+}
+.mission-nav.wish-nav.selected > .wish-title {
+  font-weight: 500;
+}
+/* An active wish takes a second line: its states and its rank, under the title, past the icon (24px and the 9px gap).
+   Four states at once wrap rather than hide the rank. */
+.wish-nav.counted {
+  flex-wrap: wrap;
+  row-gap: 0.3125rem;
+}
+.wish-counts {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.625rem;
+  min-width: 0;
+  min-height: 1.125rem;
+  padding-left: 2.0625rem;
+  font: var(--font-size-body) var(--mono);
+}
+/* On that line a state is its glyph and its number in its state's colour, with no pill around it (wish-sidebar.tsx,
+   Sign): what runs a full dot, the questions the small hand, a lit ifrit the logo's flame. The rank closes the line. */
+.wish-sign {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--tone);
+  font: var(--font-size-body) var(--mono);
+  white-space: nowrap;
+}
+.wish-sign b {
+  font-weight: 600;
+}
+.wish-sign-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.wish-sign .waiting-hand {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+.wish-sign .ifrit-flame {
+  width: 0.75rem;
+  height: 0.8125rem;
+}
+.mission-nav .wish-counts .wish-rank {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+}
+/* A wish's own icon, with its marks: the hand, the flame, the dots and the corners show on the folded rail, and under
+   820px wide, where the bar narrows to its icons by CSS alone, unfolded (styles.css), its second line hidden. Unfolded,
+   the second line says them. Absolute marks, so the row keeps its height when a count comes and goes. */
+.wish-emblem {
+  position: relative;
+  display: inline-flex;
   flex: 0 0 auto;
-  max-height: calc(3 * 36px + 14px);
+  --halo: var(--n-14);
+}
+@media not all and (max-width: 820px) {
+  .app:not(.sidebar-collapsed) .wish-nav > .wish-emblem > :not(.wish-icon) {
+    display: none;
+  }
+}
+.mission-nav.selected .wish-emblem {
+  --halo: var(--n-1e);
+}
+.nav-item.selected .wish-emblem {
+  --halo: var(--n-28);
+}
+/* The line of an icon in the title's ink goes to the selected title's. A paused or granted wish's icon gives up its
+   duo: line and gilding in one grey, the mark's. */
+.mission-nav.selected .wish-icon {
+  --wi-ink: var(--wi-ink-selected);
+}
+.wish-nav.rest .wish-icon {
+  --il-line: var(--wi-rest);
+  --il-gild: var(--wi-rest);
+}
+/* The states move when the menu folds or unfolds, the icon never (styles.css, .sidebar-glide): unfolding, the second
+   line comes out from the icon's side; folding, the marks rise from it onto the icon's corners. By transform and
+   opacity only, once; with reduced motion, a fade. */
+.sidebar-glide .wish-counts {
+  animation: wish-states-open 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sidebar-glide.sidebar-collapsed .wish-emblem > :not(svg) {
+  animation: wish-states-fold 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes wish-states-open {
+  from {
+    opacity: 0;
+    transform: translateX(-0.75rem);
+  }
+}
+@keyframes wish-states-fold {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+@keyframes wish-states-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-glide .wish-counts,
+  .sidebar-glide.sidebar-collapsed .wish-emblem > :not(svg) {
+    animation-name: wish-states-fade !important;
+    animation-duration: 180ms !important;
+  }
+}
+html[data-motion="reduced"] .sidebar-glide .wish-counts,
+html[data-motion="reduced"]
+  .sidebar-glide.sidebar-collapsed
+  .wish-emblem
+  > :not(svg) {
+  animation-name: wish-states-fade !important;
+  animation-duration: 180ms !important;
+}
+/* The hand and the flame without background (L09 v6, Q57 C2): a halo of the row's colour keeps them apart from the
+   icon, no pill, no disc. The hand and the questions' count on its upper right, the flame on its upper left. */
+.wish-hand-corner {
+  position: absolute;
+  top: -0.125rem;
+  left: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--st-waiting);
+  font: 700 0.65625rem/1 var(--mono);
+  white-space: nowrap;
+}
+.wish-hand-corner b {
+  margin-left: 0.0625rem;
+  text-shadow:
+    0 0 1px var(--halo),
+    0 0 0.125rem var(--halo),
+    0 0 0.125rem var(--halo);
+}
+.wish-flame-corner {
+  position: absolute;
+  top: -0.125rem;
+  right: calc(100% - 0.0625rem);
+  display: inline-flex;
+}
+.wish-hand-corner svg,
+.wish-flame-corner svg {
+  display: block;
+  filter: drop-shadow(0 0 1px var(--halo)) drop-shadow(0 0 1px var(--halo));
+}
+.ifrit-flame {
+  height: 0.875rem;
+}
+.ifrit-flame-out {
+  fill: var(--st-ifrit);
+}
+.ifrit-flame-core {
+  fill: var(--ifrit-core);
+}
+/* On a wish's icon, 24px, the hand overlaps its upper right corner by 6px, as it did the icons of 20px. */
+.wish-nav .wish-hand-corner {
+  left: calc(100% - 0.375rem);
+}
+/* Under the icon, a dot for what works, merges included, and one for what investigates: never a number. */
+.wish-acts {
+  position: absolute;
+  top: calc(100% + 0.4375rem);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 0.25rem;
+}
+.wish-act {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 50%;
+  background: var(--tone);
+}
+/* The workers that wait for a place hang on the icon's lower right corner, the paused ones on its lower left: grey, a
+   seat or a circled pause and the number, no border. */
+.wish-place-corner,
+.wish-paused-corner {
+  position: absolute;
+  bottom: -0.375rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.0625rem;
+  font: 600 0.5625rem/1 var(--mono);
+  white-space: nowrap;
+}
+.wish-place-corner {
+  left: calc(100% - 0.0625rem);
+  color: var(--st-planned);
+}
+.wish-paused-corner {
+  right: calc(100% - 0.0625rem);
+  color: var(--st-paused);
+}
+.wish-ready {
+  color: var(--tone);
+  font: var(--font-size-body) var(--mono);
+  white-space: nowrap;
+}
+/* The three active wishes with their counts, the paused ones' label and three more rows show; the others scroll under
+   the pointer. A short window takes from the bar before the projects go under 65px (.mission-list). */
+.wish-list {
+  position: relative;
+  flex: 0 1 auto;
+  max-height: calc(3 * 4.1875rem + 2.0625rem + 3 * 2.75rem);
   overflow-y: hidden;
   scrollbar-gutter: stable;
 }
@@ -76,9 +350,9 @@
 }
 .wish-first {
   position: absolute;
-  right: 4px;
-  width: 24px;
-  height: 24px;
+  right: 0.25rem;
+  width: 1.5rem;
+  height: 1.5rem;
   opacity: 0;
 }
 .wish-row:hover .wish-first,
@@ -88,13 +362,219 @@
 
 /* Sections of a wish. */
 .wish-section {
-  margin-top: 28px;
+  margin-top: 1.75rem;
 }
 .wish-grant {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.wish-grant-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.wish-grant-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.wish-grant-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.wish-hold-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.wish-hold-row {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 0.625rem 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.wish-hold-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  min-width: 12rem;
+  flex: 1;
+}
+.wish-hold-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.wish-hold-why {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* The wish summary (bilan) once granted: the Djinn folds back into the lamp and the Khatam seal rises. */
+.wish-bilan {
+  border: 1px solid color-mix(in srgb, var(--sand) 48%, var(--line));
+  background: color-mix(in srgb, var(--sand) 6%, var(--surface));
+  border-radius: var(--radius-panel);
+  padding: 1.125rem 1.25rem;
+  margin-top: 1.375rem;
+  margin-bottom: 1rem;
+  display: grid;
+  grid-template-columns: 14.5rem 1fr;
+  gap: 1.25rem;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .wish-bilan {
+    grid-template-columns: 1fr;
+  }
+}
+.wish-bilan-art {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 11rem;
+}
+.wish-bilan-svg {
+  width: 13.75rem;
+  height: 9.25rem;
+  overflow: visible;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.wish-bilan-djinn {
+  transform-origin: 8.4375rem 4.5rem;
+  transition:
+    transform 820ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 680ms ease;
+}
+.wish-bilan-khatam {
+  transform-origin: 8.4375rem 2.875rem;
+  opacity: 0;
+  transform: scale(0.6) translateY(0.5rem);
+  transition:
+    transform 620ms cubic-bezier(0.22, 1, 0.36, 1) 360ms,
+    opacity 520ms ease 360ms;
+}
+.wish-bilan-eye-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  opacity: 0;
+  transform: translateY(0.25rem);
+  transition:
+    opacity 500ms ease 480ms,
+    transform 500ms ease 480ms;
+}
+.wish-bilan-eye-svg {
+  width: 1.75rem;
+  height: 1.0625rem;
+  flex-shrink: 0;
+}
+.wish-bilan.is-granted .wish-bilan-djinn {
+  transform: translate(0rem, 1.5rem) scale(0.08) rotate(-14deg);
+  opacity: 0;
+}
+.wish-bilan.is-granted .wish-bilan-khatam {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+.wish-bilan.is-granted .wish-bilan-eye-badge {
+  opacity: 1;
+  transform: translateY(0);
+}
+.wish-bilan-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.wish-bilan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.wish-bilan-kicker {
+  color: var(--sand);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.wish-bilan-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.wish-bilan-desc {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.wish-bilan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.625rem;
+  margin-top: 0.25rem;
+}
+.wish-bilan-stat {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 0.625rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.wish-bilan-stat-val {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.wish-bilan-stat-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.wish-bilan-quote {
+  margin-top: 0.25rem;
+  padding: 0.625rem 0.875rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: 0.8125rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 /* A task and its events. */
@@ -115,7 +595,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: 10px 14px;
+  padding: 0.625rem 0.875rem;
   text-align: left;
 }
 .wish-task-first-line {
@@ -134,7 +614,7 @@
 }
 .wish-task-first-line > svg {
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 0.125rem;
   color: var(--muted);
   transition: transform 0.25s;
 }
@@ -174,12 +654,12 @@
   width: 100%;
 }
 .wish-task-row.has-actions .wish-task-second-line {
-  padding-right: 95px;
+  padding-right: 5.9375rem;
 }
 .wish-task-actions {
   position: absolute;
-  right: 10px;
-  bottom: 6px;
+  right: 0.625rem;
+  bottom: 0.375rem;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -194,12 +674,13 @@
   flex-direction: column;
   gap: var(--space-1);
   width: max-content;
-  max-width: 420px;
+  max-width: 26.25rem;
   padding: var(--space-2) var(--space-3);
   background: var(--surface-raised);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-control);
-  box-shadow: 0 10px 35px color-mix(in srgb, var(--shadow) 60%, transparent);
+  box-shadow: 0 0.625rem 2.1875rem
+    color-mix(in srgb, var(--shadow) 60%, transparent);
   pointer-events: none;
   font-family: var(--font-sans);
   font-size: var(--font-size-body);
@@ -268,7 +749,7 @@
 }
 .wish-task-note {
   margin: 0;
-  padding: 0 14px 11px 34px;
+  padding: 0 0.875rem 0.6875rem 2.125rem;
   color: var(--muted);
 }
 .wish-task-note.machine-wait {
@@ -288,16 +769,63 @@
    serves. */
 .merge-label {
   flex-shrink: 0;
-  padding: 0 5px;
+  padding: 0 0.3125rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   color: var(--st-investigating);
-  font-size: var(--font-size-body, 12px);
-  line-height: 16px;
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1rem;
   white-space: nowrap;
 }
+/* An investigation (a study or an audit, never merged): a compact label in the investigation's violet. */
+.investigation-label {
+  flex-shrink: 0;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--st-investigating);
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1rem;
+  white-space: nowrap;
+}
+/* A mockup (a design task in a tilasm, never merged): a compact label in the mockup's pink (--k-mock). */
+.mockup-label {
+  flex-shrink: 0;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--k-mock);
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1rem;
+  white-space: nowrap;
+}
+/* An urgent task (the lead's, to unblock the wish, or for quick feedback): a compact label like a merge's. */
+.urgent-label {
+  flex-shrink: 0;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--st-failed);
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1rem;
+  white-space: nowrap;
+}
+/* A worker to relaunch (Task.health): an icon beside its code, the amber of a pause when stalled, the salmon of a
+   failure when it failed and may be relaunched. */
+.health-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--st-failed);
+}
+.health-mark.stalled {
+  color: var(--st-paused);
+}
+.wish-task-first-line > .health-mark {
+  margin-top: 0.25rem;
+}
 .wish-task-merges {
-  padding: 0 14px 10px 34px;
+  padding: 0 0.875rem 0.625rem 2.125rem;
 }
 .wish-task-merges-toggle,
 .wish-task-merged-in .text-button {
@@ -319,16 +847,16 @@
 }
 .wish-task-body {
   border-top: 1px solid var(--line);
-  padding: var(--space-3) 14px;
+  padding: var(--space-3) 0.875rem;
 }
 .wish-task-events {
-  max-height: 420px;
+  max-height: 26.25rem;
   overflow-y: auto;
   font: var(--font-size-body) var(--mono);
 }
 .wish-task-last-word {
   border-left: 2px solid var(--line-strong);
-  padding: 2px 0 2px var(--space-3);
+  padding: 0.125rem 0 0.125rem var(--space-3);
   margin-bottom: var(--space-3);
 }
 .wish-task-prompt-section {
@@ -395,17 +923,22 @@
 .wish-event {
   display: flex;
   gap: var(--space-2);
-  padding: 3px 0;
+  padding: 0.1875rem 0;
   color: var(--n-d1);
 }
 .wish-event svg {
   flex-shrink: 0;
-  margin-top: 3px;
+  margin-top: 0.1875rem;
   color: var(--muted-dim);
 }
 .wish-event-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* A wait that is over, folded into the line that ended it: muted, never read as where the task stands (W371). */
+.wish-event-waited {
+  display: block;
+  color: var(--muted-dim);
 }
 .wish-event.kind-4,
 .wish-event.kind-6,
@@ -425,7 +958,7 @@
   display: flex;
   gap: var(--space-2);
   border-top: 1px solid var(--line);
-  padding: var(--space-2) 14px;
+  padding: var(--space-2) 0.875rem;
 }
 .wish-task-send input {
   flex: 1;
@@ -438,12 +971,12 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-panel);
   background: var(--surface);
-  padding: 18px 20px;
+  padding: 1.125rem 1.25rem;
   margin-bottom: var(--space-3);
 }
 .wish-block h3 {
-  margin: 4px 0 10px;
-  font-size: 15px;
+  margin: 0.25rem 0 0.625rem;
+  font-size: 0.9375rem;
   font-weight: 500;
 }
 .wish-block-raw {
@@ -478,21 +1011,18 @@
   color: var(--n-e7);
   cursor: help;
   text-decoration: underline dotted;
-  text-underline-offset: 3px;
+  text-underline-offset: 0.1875rem;
 }
 .wish-spent .usage-unit-switch {
   background: transparent;
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
-  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm, 0.25rem);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: var(--font-size-small, 11px);
-  padding: 1px 6px;
+  font-size: var(--font-size-small, 0.6875rem);
+  padding: 1px 0.375rem;
   line-height: 1.2;
-}
-.wish-spent .usage-unit-switch:hover {
-  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
 }
 .wish-spent .spent-providers {
   color: var(--muted-dim);
@@ -500,9 +1030,7 @@
 
 /* The flying carpet of the active wishes: each line shows its wish. The Hourglass, below it, is selected alike. */
 .plan-nav.selected,
-.plan-nav.selected:hover,
-.hourglass-nav.selected,
-.hourglass-nav.selected:hover {
+.hourglass-nav.selected {
   background: var(--n-28);
   color: var(--n-e7);
 }
@@ -510,14 +1038,14 @@
 .wish-origin {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  max-width: 260px;
+  gap: 0.3125rem;
+  max-width: 16.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 1px 7px;
+  padding: 1px 0.4375rem;
   border: 1px solid var(--line-strong);
-  border-radius: 9px;
+  border-radius: 0.5625rem;
   color: var(--n-d1);
   font: var(--font-size-body) var(--font-sans);
 }
@@ -529,49 +1057,6 @@
   color: var(--muted);
 }
 
-.plan-wishes {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
-  gap: var(--space-3);
-  margin-bottom: 28px;
-}
-.plan-wish {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
-  text-align: left;
-}
-.plan-wish:hover {
-  border-color: var(--line-strong);
-}
-.plan-wish strong {
-  font-weight: 500;
-  color: var(--n-e7);
-}
-.plan-wish-title {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-.plan-wish-rank {
-  font: var(--font-size-body) var(--mono);
-  color: var(--muted-dim);
-}
-.plan-wish-counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  color: var(--muted);
-  font: var(--font-size-body) var(--mono);
-}
-.plan-wish-counts .waiting {
-  color: var(--accent);
-}
 .plan-waiting {
   margin-top: var(--space-4);
 }
@@ -597,11 +1082,11 @@
 .journal-list li {
   display: flex;
   gap: var(--space-3);
-  padding: 6px 0 6px var(--space-3);
+  padding: 0.375rem 0 0.375rem var(--space-3);
 }
 .journal-list time {
   flex-shrink: 0;
-  min-width: 110px;
+  min-width: 6.875rem;
   color: var(--muted-dim);
   font: var(--font-size-body) var(--mono);
 }
@@ -634,12 +1119,45 @@
   gap: var(--space-2);
   padding-right: var(--space-2);
 }
+/* The azimas not done, in their rank (azima-rank.tsx): each dragged by its grip, on the left of its heading; a thin line
+   shows where it would land, in the middle of the space between two cards. */
+.azima-list.ranked {
+  position: relative;
+}
+.azima-rank-item.dragged {
+  opacity: 0.4;
+}
+.azima-grip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: stretch;
+  align-items: center;
+  margin-right: calc(-1 * var(--space-2));
+  padding: 0 0 0 var(--space-2);
+  color: var(--muted-dim);
+  opacity: 0.5;
+  cursor: grab;
+}
+.azima-row:hover .azima-grip,
+.azima-grip:focus-visible {
+  opacity: 1;
+}
+.azima-drop-line {
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  height: 0.125rem;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
 .azima-heading {
   width: 100%;
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: 11px 14px;
+  padding: 0.6875rem 0.875rem;
   text-align: left;
 }
 .azima-row .azima-heading {
@@ -673,8 +1191,8 @@
 .azima-title-edit {
   flex: 1;
   min-width: 0;
-  margin: -3px 0;
-  padding: 2px 6px;
+  margin: -0.1875rem 0;
+  padding: 0.125rem 0.375rem;
   font: inherit;
   font-weight: 600;
   color: var(--text);
@@ -683,7 +1201,7 @@
   border-radius: var(--radius-control);
 }
 /* On a narrow card, what follows the title goes to a second line rather than squeezing it out. */
-@container azima (max-width: 560px) {
+@container azima (max-width: 35rem) {
   .azima-heading {
     flex-wrap: wrap;
     row-gap: var(--space-1);
@@ -707,7 +1225,7 @@
   color: var(--text);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-control);
-  padding: 1px 6px;
+  padding: 1px 0.375rem;
   white-space: nowrap;
 }
 .azima-progress {
@@ -718,9 +1236,9 @@
 /* How much of its work is done: a thin bar, its numbers beside it. */
 .azima-bar {
   display: flex;
-  width: 64px;
-  height: 4px;
-  border-radius: 2px;
+  width: 4rem;
+  height: 0.25rem;
+  border-radius: 0.125rem;
   background: var(--line);
   overflow: hidden;
 }
@@ -755,7 +1273,7 @@
   max-width: 80ch;
   padding-bottom: var(--space-3);
 }
-@container azima (min-width: 900px) {
+@container azima (min-width: 56.25rem) {
   .azima-body.with-side {
     grid-template-columns: minmax(0, min(40%, 50ch)) minmax(0, 1fr);
   }
@@ -782,7 +1300,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 5px 0;
+  padding: 0.3125rem 0;
   margin-bottom: var(--space-2);
   color: var(--muted);
   font-size: var(--font-size-body);
@@ -805,7 +1323,7 @@
 }
 .azima-proof ul {
   margin: var(--space-1) 0 var(--space-2);
-  padding-left: 18px;
+  padding-left: 1.125rem;
 }
 .draft-azima-body {
   border-top: 1px solid var(--line);
@@ -824,8 +1342,8 @@
 }
 .azima-description .ac-markdown :is(h1, h2, h3, h4),
 .draft-azima-description .ac-markdown :is(h1, h2, h3, h4) {
-  font-size: 13px;
-  margin: 14px 0 4px;
+  font-size: 0.8125rem;
+  margin: 0.875rem 0 0.25rem;
 }
 .azima-description .ac-markdown > :first-child,
 .draft-azima-description .ac-markdown > :first-child {
@@ -837,7 +1355,19 @@
   align-items: center;
 }
 .azima-actions .sync-line {
-  max-width: 240px;
+  max-width: 15rem;
+}
+/* Its work all in main: a small full round beside its code, its border uniform, the merge glyph in it. */
+.azima-merged {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  border: 1px solid var(--n-14);
+  background: var(--st-done);
+  color: var(--n-14);
 }
 .azima-pushed-status {
   font-size: var(--font-size-body);
@@ -847,10 +1377,10 @@
 .azima-pr-link {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
   font-size: var(--font-size-body);
   border-radius: var(--radius-control);
-  padding: 2px 7px;
+  padding: 0.125rem 0.4375rem;
   border: 1px solid var(--n-38);
   background: var(--n-20);
   color: var(--n-d1);
@@ -863,14 +1393,14 @@
 .wish-push-strategy {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 /* Writing to the lead: a pill floating at the bottom centre of the wish, which unfolds into its box
    (lead-message.tsx). Only the pill takes the pointer: the page under the row stays clickable. */
 .lead-message {
   position: absolute;
   right: 0;
-  bottom: 20px;
+  bottom: 1.25rem;
   left: 0;
   z-index: 20;
   display: flex;
@@ -878,11 +1408,24 @@
   align-items: center;
   pointer-events: none;
 }
-.lead-message > .workspace-action {
+.lead-message > .workspace-action,
+.lead-message-anchor {
   pointer-events: auto;
 }
+.lead-message-anchor {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  max-width: calc(100% - 2rem);
+}
+.lead-message-anchor:has(.workspace-action-lead.is-expanded) {
+  width: min(42.5rem, calc(100% - 2rem));
+}
+.lead-message-anchor > .workspace-action {
+  max-width: 100%;
+}
 .lead-message .workspace-action-lead.is-expanded {
-  width: min(680px, calc(100% - 32px));
+  width: 100%;
 }
 .lead-message-sent {
   display: inline-flex;
@@ -896,11 +1439,11 @@
 }
 .lead-message-sent.waiting svg {
   flex: none;
-  margin-top: 2px;
+  margin-top: 0.125rem;
 }
 /* The page scrolls past the pill: nothing stays under it. */
 .wish-view .mission-scroll {
-  padding-bottom: 80px;
+  padding-bottom: 5rem;
 }
 /* Wish creation is a page of the main shell. The request, tags, and actions float over its surface. */
 .lead-frame:has(.wish-creation) > .lead-terminal {
@@ -924,22 +1467,21 @@
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  --wish-action-bottom: clamp(28px, 8vh, 64px);
+  --wish-action-bottom: clamp(1.75rem, 8vh, 4rem);
 }
 .wish-creation-back {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 6px;
-  border-radius: 999px;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.375rem;
+  border-radius: 62.4375rem;
   color: var(--muted);
   pointer-events: auto;
 }
 .wish-creation-back:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 .wish-creation-scroll {
   position: relative;
@@ -967,7 +1509,7 @@
   max-width: 100%;
   flex: none;
   margin: 0;
-  padding: 80px 40px 0;
+  padding: 5rem 2.5rem 0;
   pointer-events: none;
 }
 .wish-creation-intro h1 {
@@ -976,7 +1518,7 @@
   max-width: 100%;
   font-size: 2.5rem;
   line-height: 1.2;
-  letter-spacing: -1.4px;
+  letter-spacing: -0.0875rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: clip;
@@ -984,7 +1526,7 @@
 @keyframes wish-creation-enter {
   from {
     opacity: 0;
-    transform: translateY(75px);
+    transform: translateY(4.6875rem);
   }
   to {
     opacity: var(--wish-entry-opacity, 1);
@@ -1007,10 +1549,10 @@
   animation-delay: 160ms;
 }
 .wish-creation-intro p {
-  max-width: 620px;
-  margin: 8px 0 0;
+  max-width: 38.75rem;
+  margin: 0.5rem 0 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.7;
 }
 /* The smoke follows the selected theme, so the request surface keeps a translucent plane over the solver without
@@ -1019,7 +1561,7 @@ html[data-theme="light"] .wish-creation-content::before {
   position: absolute;
   inset: 0 auto 0 0;
   z-index: 1;
-  width: min(40%, 640px);
+  width: min(40%, 40rem);
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--bg) 91%, transparent),
@@ -1077,12 +1619,12 @@ html[data-theme="light"] .wish-composer-caret {
   position: relative;
   z-index: 3;
   display: flex;
-  width: min(40%, 640px);
+  width: min(40%, 40rem);
   height: 100%;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  padding: 20px 40px 110px;
+  padding: 1.25rem 2.5rem 6.875rem;
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--bg) 91%, transparent),
@@ -1123,7 +1665,7 @@ html[data-theme="light"] .wish-composer-caret {
   width: 100%;
   color: var(--muted-dim);
   opacity: 1;
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.65;
   letter-spacing: normal;
   pointer-events: none;
@@ -1151,7 +1693,7 @@ html[data-theme="light"] .wish-composer-caret {
   position: relative;
   z-index: 2;
   width: 100%;
-  min-height: min(34vh, 420px);
+  min-height: min(34vh, 26.25rem);
   max-height: none;
   flex: 1;
   resize: none;
@@ -1163,7 +1705,7 @@ html[data-theme="light"] .wish-composer-caret {
   overflow-wrap: anywhere;
   background: transparent;
   color: var(--n-eb);
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.65;
   letter-spacing: normal;
   cursor: text;
@@ -1186,25 +1728,25 @@ html[data-theme="light"] .wish-composer-caret {
 }
 .wish-creation-error {
   flex-shrink: 0;
-  margin: 12px 0 0;
-  padding: 10px 12px;
+  margin: 0.75rem 0 0;
+  padding: 0.625rem 0.75rem;
   border: 1px solid var(--st-failed);
-  border-radius: 7px;
+  border-radius: 0.4375rem;
   color: var(--st-failed);
   background: color-mix(in srgb, var(--st-failed) 7%, transparent);
 }
 .wish-creation-form > .wish-creation-error {
   position: absolute;
-  bottom: calc(var(--wish-action-bottom) + 132px);
-  left: 40px;
+  bottom: calc(var(--wish-action-bottom) + 8.25rem);
+  left: 2.5rem;
   z-index: 8;
-  width: min(40%, 640px);
+  width: min(40%, 40rem);
   margin: 0;
 }
 .wish-smoke {
   position: relative;
   min-width: 0;
-  min-height: 240px;
+  min-height: 15rem;
   overflow: hidden;
   background: var(--smoke-bg);
   isolation: isolate;
@@ -1267,10 +1809,10 @@ html[data-theme="light"] .wish-composer-caret {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 0.5rem;
   width: 100%;
   min-height: 0;
-  margin: 0 0 20px;
+  margin: 0 0 1.25rem;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1279,16 +1821,16 @@ html[data-theme="light"] .wish-composer-caret {
 .wish-dropdown-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 26px;
-  min-height: 26px;
+  gap: 0.4375rem;
+  height: 1.625rem;
+  min-height: 1.625rem;
   max-width: 100%;
-  padding: 4px 8px;
+  padding: 0.25rem 0.5rem;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 62.4375rem;
   color: var(--muted);
   background: var(--surface-raised);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1;
   white-space: nowrap;
 }
@@ -1321,7 +1863,7 @@ html[data-theme="light"] .wish-composer-caret {
   flex: 1 1 auto;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1344,34 +1886,35 @@ html[data-theme="light"] .wish-composer-caret {
 }
 .wish-tag-menu {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 0.5rem);
   left: 0;
   z-index: 5;
-  width: min(320px, calc(100vw - 40px));
-  max-height: min(54vh, 360px);
+  width: min(20rem, calc(100vw - 2.5rem));
+  max-height: min(54vh, 22.5rem);
   overflow: auto;
-  padding: 8px;
+  padding: 0.5rem;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: 0.625rem;
   background: var(--surface-raised);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow) 43.9%, transparent);
+  box-shadow: 0 0.75rem 2rem
+    color-mix(in srgb, var(--shadow) 43.9%, transparent);
 }
 .wish-dropdown-options {
   display: grid;
-  gap: 2px;
+  gap: 0.125rem;
 }
 .wish-dropdown-option {
   display: block;
   width: 100%;
-  padding: 7px 9px;
+  padding: 0.4375rem 0.5625rem;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   color: var(--muted);
   background: transparent;
   text-align: left;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .wish-dropdown-option:hover,
 .wish-dropdown-option[aria-selected="true"] {
@@ -1380,19 +1923,19 @@ html[data-theme="light"] .wish-composer-caret {
 }
 .wish-project-search {
   position: relative;
-  margin: 0 0 6px;
+  margin: 0 0 0.375rem;
 }
 .wish-project-search > svg {
   position: absolute;
   top: 50%;
-  left: 10px;
+  left: 0.625rem;
   transform: translateY(-50%);
   color: var(--muted);
   pointer-events: none;
 }
 .wish-project-search input {
   width: 100%;
-  padding: 8px 9px 8px 30px;
+  padding: 0.5rem 0.5625rem 0.5rem 1.875rem;
   border-color: var(--line);
   background: var(--surface);
 }
@@ -1405,10 +1948,10 @@ html[data-theme="light"] .wish-composer-caret {
 .wish-project-option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   min-width: 0;
-  padding: 8px 9px;
-  border-radius: 6px;
+  padding: 0.5rem 0.5625rem;
+  border-radius: 0.375rem;
   color: var(--muted);
   cursor: pointer;
 }
@@ -1434,7 +1977,7 @@ html[data-theme="light"] .wish-composer-caret {
   opacity: 1;
 }
 .wish-project-empty {
-  padding: 10px 9px;
+  padding: 0.625rem 0.5625rem;
   color: var(--muted);
 }
 .wish-creation-inline-status {
@@ -1444,17 +1987,17 @@ html[data-theme="light"] .wish-composer-caret {
 .wish-creation-controls .agent-warning {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   margin: 0;
   color: var(--st-failed);
 }
 .wish-creation-controls .agent-warning .button {
-  padding: 5px 8px;
+  padding: 0.3125rem 0.5rem;
 }
 .wish-creation-status {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 0.4375rem;
   color: var(--text);
   font-size: var(--font-size-body);
 }
@@ -1470,9 +2013,9 @@ html[data-theme="light"] .wish-composer-caret {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  min-height: 66px;
-  padding: 12px 40px;
+  gap: 0.75rem;
+  min-height: 4.125rem;
+  padding: 0.75rem 2.5rem;
   border: 0;
   background: transparent;
   pointer-events: none;
@@ -1481,7 +2024,7 @@ html[data-theme="light"] .wish-composer-caret {
   pointer-events: auto;
 }
 .wish-creation-footer .button.accent {
-  min-width: 148px;
+  min-width: 9.25rem;
 }
 .main-shell:has(> .wish-creation) > .app-statusbar {
   display: none;
@@ -1497,15 +2040,15 @@ html[data-theme="light"] .wish-composer-caret {
 .wish-creation-content > .agent-setup {
   position: relative;
   z-index: 7;
-  width: min(720px, calc(100% - 80px));
-  margin: 12px 40px 0;
+  width: min(45rem, calc(100% - 5rem));
+  margin: 0.75rem 2.5rem 0;
 }
 .wish-creation:has(.agent-setup) .wish-creation-scroll {
   overflow: auto;
 }
 @media (max-width: 880px) {
   .wish-creation-request {
-    width: min(52%, 560px);
+    width: min(52%, 35rem);
   }
   .wish-creation-controls {
     width: 100%;
@@ -1515,11 +2058,11 @@ html[data-theme="light"] .wish-composer-caret {
   .wish-creation-intro {
     width: 100%;
     max-width: 100%;
-    padding: 68px 24px 0;
+    padding: 4.25rem 1.5rem 0;
   }
   .wish-creation-request {
     width: 100%;
-    padding: 20px 24px 110px;
+    padding: 1.25rem 1.5rem 6.875rem;
     background: linear-gradient(
       90deg,
       color-mix(in srgb, var(--bg) 94%, transparent),
@@ -1534,23 +2077,23 @@ html[data-theme="light"] .wish-composer-caret {
     align-items: flex-start;
   }
   .wish-creation-form > .wish-creation-error {
-    right: 24px;
-    bottom: calc(var(--wish-action-bottom) + 122px);
-    left: 24px;
+    right: 1.5rem;
+    bottom: calc(var(--wish-action-bottom) + 7.625rem);
+    left: 1.5rem;
     width: auto;
   }
   .wish-creation-footer {
-    min-height: 60px;
-    padding-right: 24px;
-    padding-left: 24px;
+    min-height: 3.75rem;
+    padding-right: 1.5rem;
+    padding-left: 1.5rem;
   }
   .wish-creation-footer .button.accent {
     min-width: 0;
   }
   .wish-creation-content > .agent-setup {
-    width: calc(100% - 48px);
-    margin-right: 24px;
-    margin-left: 24px;
+    width: calc(100% - 3rem);
+    margin-right: 1.5rem;
+    margin-left: 1.5rem;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1567,23 +2110,27 @@ html[data-theme="light"] .wish-composer-caret {
 .wish-lands-chip {
   position: relative;
 }
-.wish-lands {
+.wish-lands,
+.wish-models {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 7px;
+  gap: 0.375rem;
+  padding: 0.125rem 0.4375rem;
   border: 1px solid var(--n-38);
-  border-radius: 5px;
+  border-radius: 0.3125rem;
   background: var(--n-1c);
   color: var(--n-c4);
   font-size: var(--font-size-body);
 }
 button.wish-lands:hover,
-button.wish-lands[aria-expanded="true"] {
+button.wish-lands[aria-expanded="true"],
+button.wish-models:hover,
+button.wish-models[aria-expanded="true"] {
   border-color: var(--n-5e);
   color: var(--n-e7);
 }
-.wish-lands b {
+.wish-lands b,
+.wish-models b {
   font-weight: 600;
 }
 .wish-lands code,
@@ -1594,40 +2141,41 @@ button.wish-lands[aria-expanded="true"] {
 }
 .branch-picker {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 0.375rem);
   left: 0;
   z-index: 60;
-  width: 320px;
+  width: 20rem;
   max-width: 80vw;
-  padding: 5px;
+  padding: 0.3125rem;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.125rem;
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow) 35%, transparent);
+  border-radius: 0.5rem;
+  box-shadow: 0 0.625rem 1.875rem
+    color-mix(in srgb, var(--shadow) 35%, transparent);
 }
 .branch-picker input {
-  margin-bottom: 4px;
-  padding: 6px 8px;
+  margin-bottom: 0.25rem;
+  padding: 0.375rem 0.5rem;
   border: 1px solid var(--n-38);
-  border-radius: 5px;
+  border-radius: 0.3125rem;
   background: var(--n-14);
   color: var(--text);
   font: var(--font-size-body) var(--mono);
 }
 .branch-picker > p {
   margin: 0;
-  padding: 6px 8px;
+  padding: 0.375rem 0.5rem;
 }
 .branch-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 5px;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.3125rem;
   text-align: left;
   color: var(--text);
   overflow-wrap: anywhere;
@@ -1642,7 +2190,7 @@ button.wish-lands[aria-expanded="true"] {
 .branch-option.new {
   justify-content: flex-start;
   border-top: 1px solid var(--line);
-  border-radius: 0 0 5px 5px;
+  border-radius: 0 0 0.3125rem 0.3125rem;
   color: var(--n-c4);
 }
 /* An opened azima's own branch, across the card above its description and its parts. */
@@ -1651,7 +2199,7 @@ button.wish-lands[aria-expanded="true"] {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: 0.25rem 0.625rem;
   margin: 0 0 var(--space-3);
   color: var(--muted);
   font-size: var(--font-size-body);

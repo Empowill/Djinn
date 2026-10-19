@@ -23,8 +23,8 @@ func TestDepend(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	// No slot: the planned tasks wait, for their dependencies first.
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
-	wishID, _ := e.wish(t, gitRepo(t))
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	plan := func(title string) *planv1.Task {
 		t.Helper()
 		res, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
@@ -65,6 +65,7 @@ func TestDepend(t *testing.T) {
 		t.Errorf("A on a task of no wish: %v", err)
 	}
 	// The scheduler says what C waits for.
+	e.h.schedule(ctx)
 	waited := e.until(t, c.GetId(), func(task *planv1.Task) bool { return strings.Contains(task.GetWaitReason(), "waits for") })
 	if !strings.Contains(waited.GetWaitReason(), a.GetCode()) && !strings.Contains(waited.GetWaitReason(), b.GetCode()) {
 		t.Errorf("C waits: %q", waited.GetWaitReason())
@@ -73,6 +74,49 @@ func TestDepend(t *testing.T) {
 	if got, err := depend(c); err != nil || len(got.GetDependsOn()) != 0 {
 		t.Errorf("C on nothing: %v, %v", got, err)
 	}
+	if got, err := depend(b); err != nil || len(got.GetDependsOn()) != 0 {
+		t.Errorf("B on nothing: %v, %v", got, err)
+	}
+
+	// Depend sets several tasks at once, all or none: one cyclic edge among them changes nothing.
+	dependReq := func(req *planv1.TaskServiceDependRequest) (*planv1.TaskServiceDependResponse, error) {
+		res, err := e.tasks.Depend(ctx, connect.NewRequest(req))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	deps := func() [][]string {
+		var out [][]string
+		for _, task := range []*planv1.Task{a, b, c} {
+			out = append(out, e.get(t, task.GetId()).GetDependsOn())
+		}
+		return out
+	}
+	res, err := dependReq(&planv1.TaskServiceDependRequest{
+		TaskId: c.GetId(), After: []string{"W1,W2"}, Also: []*planv1.TaskAfter{{Task: "w2", After: []string{"W1"}}},
+	})
+	if err != nil || !slices.Equal(res.GetTask().GetDependsOn(), []string{a.GetId(), b.GetId()}) || len(res.GetAlso()) != 1 ||
+		!slices.Equal(res.GetAlso()[0].GetDependsOn(), []string{a.GetId()}) {
+		t.Fatalf("C after A and B, B after A: %v, %v", res, err)
+	}
+	before := deps()
+	_, err = dependReq(&planv1.TaskServiceDependRequest{TaskId: b.GetId(), Also: []*planv1.TaskAfter{{Task: "W1", After: []string{"W3"}}}})
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "W1 → W3 → W1") {
+		t.Errorf("a cyclic edge: %v", err)
+	}
+	if got := deps(); !slices.EqualFunc(got, before, slices.Equal) {
+		t.Errorf("after a refused call: %v, want %v", got, before)
+	}
+	if _, err := dependReq(&planv1.TaskServiceDependRequest{TaskId: a.GetId(), Also: []*planv1.TaskAfter{{Task: a.GetCode()}}}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("twice: %v", err)
+	}
+	if _, err := dependReq(&planv1.TaskServiceDependRequest{TaskId: a.GetId(), Also: []*planv1.TaskAfter{{Task: "W99"}}}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("a task of no wish: %v", err)
+	}
+	if got := deps(); !slices.EqualFunc(got, before, slices.Equal) {
+		t.Errorf("after refused calls: %v, want %v", got, before)
+	}
 }
 
 // TestSpawnBlocksWhilePassesRun: a new task spawned --blocks W5 is in W5's dependencies in the same step as its spawn,
@@ -80,6 +124,7 @@ func TestDepend(t *testing.T) {
 // pass started W5 first, the spawn is refused, saying where W5 stands, and makes nothing.
 func TestSpawnBlocksWhilePassesRun(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	l := &limit{}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, nativeFolder(t)) // Outside Git: no worktree to make, the test stays fast.
@@ -141,6 +186,7 @@ func TestSpawnBlocksWhilePassesRun(t *testing.T) {
 // for a task that has started, saying where it stands, and for one that would close a cycle, naming it.
 func TestSpawnAfterAndBlocks(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	l := &limit{slots: 1}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	wishID, _ := e.wish(t, nativeFolder(t))
@@ -203,58 +249,5 @@ func TestSpawnAfterAndBlocks(t *testing.T) {
 	}
 	if got := e.get(t, d.GetId()); !slices.Contains(got.GetDependsOn(), t1.Msg.GetTask().GetId()) || got.GetStartTime() != nil {
 		t.Errorf("D after the azima, not started: %v", got)
-	}
-}
-
-// TestDependSeveral: depend sets several tasks at once, all or none: one cyclic edge among them changes nothing.
-func TestDependSeveral(t *testing.T) {
-	testx.Portable(t)
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, nativeFolder(t))
-	later := &planv1.TaskServiceSpawnRequest{Later: true}
-	a, b, c := e.mustSpawn(t, wishID, "A", "text a", later), e.mustSpawn(t, wishID, "B", "text b", later),
-		e.mustSpawn(t, wishID, "C", "text c", later)
-	depend := func(req *planv1.TaskServiceDependRequest) (*planv1.TaskServiceDependResponse, error) {
-		res, err := e.tasks.Depend(t.Context(), connect.NewRequest(req))
-		if err != nil {
-			return nil, err
-		}
-		return res.Msg, nil
-	}
-	deps := func() [][]string {
-		var out [][]string
-		for _, task := range []*planv1.Task{a, b, c} {
-			out = append(out, e.get(t, task.GetId()).GetDependsOn())
-		}
-		return out
-	}
-
-	// C after A and B, B after A: a chain, in one call.
-	res, err := depend(&planv1.TaskServiceDependRequest{
-		TaskId: c.GetId(), After: []string{"W1,W2"}, Also: []*planv1.TaskAfter{{Task: "w2", After: []string{"W1"}}},
-	})
-	if err != nil || !slices.Equal(res.GetTask().GetDependsOn(), []string{a.GetId(), b.GetId()}) || len(res.GetAlso()) != 1 ||
-		!slices.Equal(res.GetAlso()[0].GetDependsOn(), []string{a.GetId()}) {
-		t.Fatalf("C after A and B, B after A: %v, %v", res, err)
-	}
-	before := deps()
-
-	// B after nothing, and A after C: A → C → B? No: A → C → A, through C after A. Nothing changes, B included.
-	_, err = depend(&planv1.TaskServiceDependRequest{TaskId: b.GetId(), Also: []*planv1.TaskAfter{{Task: "W1", After: []string{"W3"}}}})
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "W1 → W3 → W1") {
-		t.Errorf("a cyclic edge: %v", err)
-	}
-	if got := deps(); !slices.EqualFunc(got, before, slices.Equal) {
-		t.Errorf("after a refused call: %v, want %v", got, before)
-	}
-	// The same task twice, or a task of no wish, refuses the call too.
-	if _, err := depend(&planv1.TaskServiceDependRequest{TaskId: a.GetId(), Also: []*planv1.TaskAfter{{Task: a.GetCode()}}}); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("twice: %v", err)
-	}
-	if _, err := depend(&planv1.TaskServiceDependRequest{TaskId: a.GetId(), Also: []*planv1.TaskAfter{{Task: "W99"}}}); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("a task of no wish: %v", err)
-	}
-	if got := deps(); !slices.EqualFunc(got, before, slices.Equal) {
-		t.Errorf("after refused calls: %v, want %v", got, before)
 	}
 }

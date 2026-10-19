@@ -3,6 +3,8 @@ package harness
 import (
 	"context"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"buf.build/go/protovalidate"
@@ -50,6 +52,9 @@ func (s *Tasks) fillTasks(ctx context.Context, tasks []*planv1.Task) ([]*planv1.
 	if err := plan.FillTimes(ctx, s.h.store, filled, s.h.now()); err != nil {
 		return nil, plan.Status(err)
 	}
+	if err := plan.FillPrompts(ctx, s.h.store, filled); err != nil {
+		return nil, plan.Status(err)
+	}
 	s.h.FillModels(ctx, filled)
 	return filled, nil
 }
@@ -65,7 +70,18 @@ func (s *Tasks) Spawn(
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: task, Note: s.h.spawnNote(ctx, task)}), nil
+	note := joinNotes(s.h.spawnRepairNote(ctx, task), s.h.spawnNote(ctx, task), s.h.spawnOverlapNote(ctx, task))
+	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: task, Note: note}), nil
+}
+
+func joinNotes(notes ...string) string {
+	var out []string
+	for _, n := range notes {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 func (s *Tasks) List(
@@ -83,15 +99,33 @@ func (s *Tasks) List(
 		return nil, plan.Status(err)
 	}
 	if req.Msg.GetFailed() {
+		// A question has no project: the wish's questions, or all of them.
+		asked := store.Where{}
+		if id := req.Msg.GetWishId(); id != "" {
+			asked["wish_id"] = id
+		}
+		questions, err := store.List[*planv1.Question](ctx, s.h.store, asked)
+		if err != nil {
+			return nil, plan.Status(err)
+		}
 		var filtered []*planv1.Task
 		for _, t := range tasks {
 			if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED &&
-				!render.TaskDealtWith(t, tasks) &&
+				!render.TaskDealtWith(t, tasks) && !outrun(t, questions) &&
 				!(t.GetEnvCause() != "" && t.GetEnvReplays() < 2) {
 				filtered = append(filtered, t)
 			}
 		}
 		tasks = filtered
+	}
+	if req.Msg.GetLive() {
+		tasks = slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return !liveTask(t) })
+	}
+	if req.Msg.GetOpen() {
+		tasks = slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return !openTask(t) })
+	}
+	if statuses := req.Msg.GetStatus(); len(statuses) > 0 {
+		tasks = slices.DeleteFunc(tasks, func(t *planv1.Task) bool { return !slices.Contains(statuses, t.GetStatus()) })
 	}
 	page, nextToken, total, err := plan.Paginate(tasks, req.Msg.GetPageSize(), req.Msg.GetPageToken())
 	if err != nil {
@@ -101,11 +135,79 @@ func (s *Tasks) List(
 	if err != nil {
 		return nil, err
 	}
+	if req.Msg.GetShort() {
+		for i, t := range page {
+			page[i] = shortTask(t)
+		}
+	}
 	return connect.NewResponse(&planv1.TaskServiceListResponse{
 		Tasks:         page,
 		NextPageToken: nextToken,
 		Total:         total,
 	}), nil
+}
+
+// liveTask tells a task the lists of what runs read (TaskServiceListRequest.live): one not done nor cancelled, an
+// azima, done work still on its way into its branch, or a done task whose unclosed refused calls hold back the wish's
+// grant (L49).
+func liveTask(t *planv1.Task) bool {
+	if t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
+		return true
+	}
+	switch t.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_CANCELLED:
+		return false
+	case planv1.TaskStatus_TASK_STATUS_DONE:
+		return doneNotMerged(t) || plan.DoneWithProblems(t)
+	}
+	return true
+}
+
+// doneNotMerged tells done work still on its way into its branch: merging, waiting to merge, its merge failed or its
+// work left not committed.
+func doneNotMerged(t *planv1.Task) bool {
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		return false
+	}
+	switch t.GetIntegration().GetState() {
+	case planv1.IntegrationState_INTEGRATION_STATE_PENDING, planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING,
+		planv1.IntegrationState_INTEGRATION_STATE_RED, planv1.IntegrationState_INTEGRATION_STATE_CONFLICT,
+		planv1.IntegrationState_INTEGRATION_STATE_UNCOMMITTED:
+		return true
+	}
+	return false
+}
+
+// openTask tells a task of the open work (TaskServiceListRequest.open): one that runs or will, not one of the past.
+func openTask(t *planv1.Task) bool {
+	switch t.GetStatus() {
+	case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING,
+		planv1.TaskStatus_TASK_STATUS_PAUSED, planv1.TaskStatus_TASK_STATUS_RESUMING,
+		planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+		return true
+	}
+	return false
+}
+
+// shortTask is t in the few fields that say where it stands, for djinn task list --short: a lead reads them without
+// piping a list of whole tasks, prompts and runs included, through head or grep.
+func shortTask(t *planv1.Task) *planv1.Task {
+	return &planv1.Task{
+		Id: t.GetId(), Code: t.GetCode(), Title: t.GetTitle(), Status: t.GetStatus(), Kind: t.GetKind(),
+		Provider: t.GetProvider(), PartOf: t.GetPartOf(), DependsOn: t.GetDependsOn(), WaitReason: t.GetWaitReason(),
+		CreateTime: t.GetCreateTime(), StartTime: t.GetStartTime(), EndTime: t.GetEndTime(), Urgent: t.GetUrgent(),
+		Feedback: t.GetFeedback(),
+	}
+}
+
+func (s *Tasks) Overlaps(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceOverlapsRequest],
+) (*connect.Response[planv1.TaskServiceOverlapsResponse], error) {
+	res, err := s.h.Overlaps(ctx, req.Msg.GetWishId())
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	return connect.NewResponse(res), nil
 }
 
 func (s *Tasks) Get(
@@ -119,9 +221,6 @@ func (s *Tasks) Get(
 	filled, err := s.fillTasks(ctx, []*planv1.Task{task})
 	if err != nil {
 		return nil, err
-	}
-	if p, err := lastPrompt(ctx, s.h.store, task.GetId()); err == nil {
-		filled[0].Prompt = p
 	}
 	return connect.NewResponse(&planv1.TaskServiceGetResponse{Task: filled[0]}), nil
 }
@@ -186,13 +285,32 @@ func (s *Tasks) Watch(
 	if err := protovalidate.Validate(req.Msg); err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	return s.h.Watch(ctx, req.Msg.GetTaskId(), req.Msg.GetAfterSeq(), func(ev *planv1.TaskEvent) error {
+	task, err := s.h.resolveTaskID(ctx, req.Msg.GetTaskId(), req.Msg.GetWishId())
+	if err != nil {
+		return err
+	}
+	taskID := task.GetId()
+	send := func(ev *planv1.TaskEvent) error {
 		if !req.Msg.GetRaw() && ev.GetRaw() != "" {
 			ev = proto.CloneOf(ev)
 			ev.Raw = ""
 		}
 		return stream.Send(&planv1.TaskServiceWatchResponse{Event: ev})
-	})
+	}
+	after := req.Msg.GetAfterSeq()
+	if n := int(req.Msg.GetLast()); n > 0 {
+		from, err := s.h.lastEventsFrom(ctx, taskID, n)
+		if err != nil {
+			return err
+		}
+		after = max(after, from)
+		if !req.Msg.GetFollow() {
+			// A look at its last events, a final note among them: a running worker or a watcher that runs for days
+			// would hold the reader until it ends.
+			return s.h.Stored(ctx, taskID, after, send)
+		}
+	}
+	return s.h.Watch(ctx, taskID, after, send)
 }
 
 func (s *Tasks) Clean(
@@ -285,6 +403,24 @@ func (s *Tasks) Update(
 	return connect.NewResponse(&planv1.TaskServiceUpdateResponse{Task: task}), nil
 }
 
+func (s *Tasks) UpdateModels(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceUpdateModelsRequest],
+) (*connect.Response[planv1.TaskServiceUpdateModelsResponse], error) {
+	resp, err := s.h.UpdateModels(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	resp.Tasks, err = s.fillTasks(ctx, resp.Tasks)
+	if err != nil {
+		return nil, err
+	}
+	resp.Skipped, err = s.fillTasks(ctx, resp.Skipped)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(resp), nil
+}
+
 func (s *Tasks) Describe(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceDescribeRequest],
 ) (*connect.Response[planv1.TaskServiceDescribeResponse], error) {
@@ -313,6 +449,16 @@ func (s *Tasks) Move(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TaskServiceMoveResponse{Task: task}), nil
+}
+
+func (s *Tasks) Rank(
+	ctx context.Context, req *connect.Request[planv1.TaskServiceRankRequest],
+) (*connect.Response[planv1.TaskServiceRankResponse], error) {
+	azimas, err := s.h.Rank(ctx, req.Spec().Procedure, req.Msg)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.TaskServiceRankResponse{Azimas: azimas}), nil
 }
 func (s *Tasks) Diff(
 	ctx context.Context, req *connect.Request[planv1.TaskServiceDiffRequest],
@@ -377,7 +523,9 @@ func (h *Harness) FillModels(ctx context.Context, tasks []*planv1.Task) {
 		}
 		if t.GetModel() == "" {
 			var model string
-			if t.GetProjectId() != "" {
+			if cp, cm, ok := plan.ResolveWorkerSeat(h.home, workerKindOf(nil, t)); ok && cm != "" && (cp == t.GetProvider() || t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED) {
+				model = cm
+			} else if t.GetProjectId() != "" {
 				if project, err := store.Get[*planv1.Project](ctx, h.store, t.GetProjectId()); err == nil {
 					if settings, err := plan.LoadSettings(h.home, project); err == nil {
 						if settings.Model != "" && (settings.Provider == t.GetProvider() || settings.Provider == planv1.Provider_PROVIDER_UNSPECIFIED || t.GetProvider() == planv1.Provider_PROVIDER_UNSPECIFIED) {

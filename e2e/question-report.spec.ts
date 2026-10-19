@@ -1,10 +1,10 @@
 // A wish with a worker's report and a long question that names it, the shape of a real one (e2e/report-question.ts):
 // - the card reads top-down: what is at stake, its report, the recommendation, then the options, the gestures, the
-//   note; the context's first view keeps the options in sight on a laptop, and Read more unfolds the rest in place;
+//   note; open in the questions column, the context is whole, never cut behind a Read more;
 // - a command in an option or in the context is selectable and copies exactly, and copying never answers;
 // - the card opens the report it names, on demand; the report itself is a note for agents: no section of its own on
 //   the wish, it waits in the For agents tab with the other blocks.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -99,7 +99,7 @@ test("a long question reads top-down, its commands copy without answering, and t
     const card = page.locator(".question-card").filter({ hasText: QUESTION });
     await expect(card).toBeVisible();
 
-    // Top-down: the explanation, its report and the recommendation before the options, the gestures, then the note.
+    // Top-down: the explanation, its report and the recommendation before the options, the note, then the gestures.
     const top = async (locator: ReturnType<typeof card.locator>) =>
       (await locator.boundingBox())!.y;
     const optionA = card.getByRole("button", { name: /Done: I ran/ });
@@ -110,20 +110,17 @@ test("a long question reads top-down, its commands copy without answering, and t
       await top(card.locator(".question-report-link")),
       await top(card.locator(".recommendation")),
       await top(optionA),
-      await top(card.locator(".lamp-rub")),
       await top(card.getByLabel("Note with the answer")),
+      await top(card.locator(".lamp-rub")),
     ];
     expect(ys).toEqual([...ys].sort((x, y) => x - y));
 
-    // The context's first view: its first section; the options stay within a laptop's screen below the card's top.
+    // Open in the questions column, the context is whole: never cut behind a Read more (mockup L04 v2).
     await expect(card.getByText(CONTEXT_FIRST)).toBeVisible();
-    await expect(card.getByText(CONTEXT_LATER)).toHaveCount(0);
-    const cardTop = await top(card);
-    const optionBox = (await optionA.boundingBox())!;
-    expect(optionBox.y + optionBox.height - cardTop).toBeLessThan(768 - 60);
-    // Read more unfolds the rest in place, and folds it again.
-    await card.getByRole("button", { name: "Read more" }).click();
     await expect(card.getByText(CONTEXT_LATER)).toBeVisible();
+    await expect(card.getByRole("button", { name: "Read more" })).toHaveCount(
+      0,
+    );
 
     // A command of the context copies as it is.
     const inline = card
@@ -131,8 +128,6 @@ test("a long question reads top-down, its commands copy without answering, and t
       .filter({ hasText: "PAYROLL_CHECK=1 PAYROLL_CLIENT=acme" });
     await inline.getByRole("button", { name: "Copy the command" }).click();
     expect(await clipboard()).toBe("PAYROLL_CHECK=1 PAYROLL_CLIENT=acme");
-    await card.getByRole("button", { name: "Read less" }).click();
-    await expect(card.getByText(CONTEXT_LATER)).toHaveCount(0);
 
     // Pick B, then copy the command of A: it copies exactly, says so, and neither picks A nor answers.
     await expect(optionA).toHaveAttribute("aria-pressed", "true");

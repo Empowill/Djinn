@@ -76,6 +76,7 @@ func words(line string) []string {
 }
 
 func TestUserGuide(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile("../../docs/user-guide.md")
 	if err != nil {
 		t.Fatal(err)

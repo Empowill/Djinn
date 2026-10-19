@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +32,22 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
+// dumping runs dumpGoroutines on home until the end of the test, which waits for it to return: the test may then
+// restore dumpPoll, which it reads.
+func dumping(t *testing.T, home string, dump <-chan os.Signal, say io.Writer) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		dumpGoroutines(ctx, home, dump, say)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+}
+
 // awaitDump waits until say names a dump of the log folder of home, and returns what it holds.
 func awaitDump(t *testing.T, home string, say *syncBuffer) string {
 	t.Helper()
@@ -49,14 +67,15 @@ func awaitDump(t *testing.T, home string, say *syncBuffer) string {
 	}
 }
 
-// TestDumpGoroutinesOnRequestFile: logx.DumpRequest in the log folder writes the goroutines of the process there and
-// says where, on every system, and the process goes on (W511).
-func TestDumpGoroutinesOnRequestFile(t *testing.T) {
+// TestDumpGoroutines: logx.DumpRequest in the log folder writes the goroutines of the process there and
+// says where, on every system, and the process goes on (W511). SIGUSR2 asks it too, where it exists: TestNotifyDump.
+// It changes dumpPoll: not in parallel.
+func TestDumpGoroutines(t *testing.T) {
 	defer func(d time.Duration) { dumpPoll = d }(dumpPoll)
 	dumpPoll = 10 * time.Millisecond
 	home := t.TempDir()
 	var say syncBuffer
-	go dumpGoroutines(t.Context(), home, nil, &say)
+	dumping(t, home, nil, &say)
 	if err := os.MkdirAll(logx.Folder(home), 0o700); err != nil {
 		t.Fatal(err)
 	}

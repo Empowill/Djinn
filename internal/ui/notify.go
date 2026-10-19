@@ -15,6 +15,7 @@ import (
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/locales"
 )
@@ -34,6 +35,8 @@ type Notification struct {
 	QuestionID string
 	// Actions are the buttons that answer the question, in order.
 	Actions []Action
+	// Shown even while the window is in front on its wish: an ifrit's warning, which the page does not say.
+	Always bool
 }
 
 // Action is a button of a notification. Its ID comes back in Response.Action.
@@ -95,6 +98,8 @@ type Notices struct {
 	Show func(wishID, target string)
 	// Answer answers a question with a choice, as the window would.
 	Answer func(ctx context.Context, questionID string, choice planv1.Choice) error
+	// KeepLit says that the developer is there, as the Keep lit button of an ifrit's warning does (IfritWarning).
+	KeepLit func()
 
 	mu       sync.Mutex
 	notifier Notifier
@@ -223,7 +228,7 @@ func (n *Notices) committed(changes []proto.Message) {
 	for _, m := range changes {
 		switch m := m.(type) {
 		case *planv1.Question:
-			if !n.moved(m.GetId(), fmt.Sprint(m.GetAnswer() != nil)) {
+			if !n.moved(m.GetId(), fmt.Sprint(m.GetAnswer() != nil, render.Asleep(m))) {
 				continue
 			}
 		case *planv1.Task:
@@ -261,16 +266,17 @@ func (n *Notices) follow(ctx context.Context, m proto.Message) error {
 	switch m := m.(type) {
 	case *planv1.Question:
 		wishID = m.GetWishId()
-		if m.GetAnswer() == nil && recent(m.GetCreateTime()) {
+		// An asleep question waits for its conditions: it is news once it wakes.
+		woke := m.GetSleep().GetWakeTime()
+		if m.GetAnswer() == nil && !render.Asleep(m) && (recent(m.GetCreateTime()) || recent(woke)) {
 			err = n.question(ctx, m)
 		}
 	case *planv1.Task:
 		wishID = m.GetWishId()
-		switch m.GetStatus() {
-		case planv1.TaskStatus_TASK_STATUS_WAITING, planv1.TaskStatus_TASK_STATUS_FAILED:
-			if recent(m.GetEndTime()) {
-				err = n.task(ctx, m)
-			}
+		// A failed worker is the lead's (Q273), never the developer's: it reaches the developer only as a question the
+		// lead asks (W96).
+		if m.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING && recent(m.GetEndTime()) {
+			err = n.task(ctx, m)
 		}
 	case *planv1.InboxItem:
 		err = n.notifyItem(m)
@@ -301,31 +307,20 @@ func (n *Notices) question(ctx context.Context, q *planv1.Question) error {
 	return n.show("question:"+q.GetId(), note)
 }
 
-// task notifies a task that waits for the answer to its edit question, or failed.
+// task notifies a task that waits for the answer to its edit question.
 func (n *Notices) task(ctx context.Context, t *planv1.Task) error {
+	if t.GetEditQuestionId() == "" {
+		return nil
+	}
 	wish, err := n.activeWish(ctx, t.GetWishId())
 	if wish == nil || err != nil {
 		return err
 	}
 	key := fmt.Sprintf("task:%s:%d:%d", t.GetId(), t.GetStatus(), t.GetEndTime().AsTime().UnixNano())
-	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING {
-		if t.GetEditQuestionId() == "" {
-			return nil
-		}
-		// Its notification replaces the one of its question: the same event, now that the worker has read.
-		note := n.permissionNote(ctx, wish, t, t.GetEditQuestionId())
-		note.Title = n.text("notify.task_waiting_title", map[string]string{"code": t.GetCode(), "wish": wish.GetTitle()})
-		return n.show(key, note)
-	}
-	body := []string{clipText(t.GetTitle(), maxBody/2)}
-	if e := t.GetError(); e != "" {
-		body = append(body, clipText(e, maxBody/2))
-	}
-	return n.show(key, Notification{
-		ID: "task-" + t.GetId(), WishID: wish.GetId(), Target: "task-" + t.GetId(),
-		Title: n.text("notify.task_failed_title", map[string]string{"code": t.GetCode(), "wish": wish.GetTitle()}),
-		Body:  strings.Join(body, "\n"),
-	})
+	// Its notification replaces the one of its question: the same event, now that the worker has read.
+	note := n.permissionNote(ctx, wish, t, t.GetEditQuestionId())
+	note.Title = n.text("notify.task_waiting_title", map[string]string{"code": t.GetCode(), "wish": wish.GetTitle()})
+	return n.show(key, note)
 }
 
 // readiness notifies the wish of id when it just became ready to review (plan.Ready).
@@ -418,7 +413,7 @@ func (n *Notices) show(key string, note Notification) error {
 		}
 		n.seen[key] = true
 	}
-	inView := note.WishID != "" && n.focused && n.viewing == note.WishID
+	inView := note.WishID != "" && n.focused && n.viewing == note.WishID && !note.Always
 	n.mu.Unlock()
 	if inView {
 		return nil // The user sees it already.
@@ -552,10 +547,50 @@ func (n *Notices) notifyLeadPrompt(p *planv1.LeadPrompt) error {
 	})
 }
 
-// Respond follows what the user did with a notification: a button answers its question; a click, or an answer
-// that fails, brings the window forward on the wish, there, or as it is for an inbox item or the lead's choice,
-// which have none.
+// Window notifies what djinn up found about the window's page, which the page cannot say: that its web process ended,
+// and what Djinn did about it (window.Event). It shows whatever the window shows; a click brings the window forward.
+func (n *Notices) Window(title, body string) error {
+	return n.show("", Notification{ID: "djinn-window", Title: title, Body: body, Always: true})
+}
+
+// keepLit is the identifier of the Keep lit button of an ifrit's warning.
+const keepLit = "keep-lit"
+
+// IfritWarning notifies that the ifrit t goes out soon (Task.ifrit.out_time), unless the developer comes back: its
+// Keep lit button keeps it lit, a click shows it. Once per out time. It never waits.
+func (n *Notices) IfritWarning(t *planv1.Task) {
+	go func() {
+		defer logx.Crash("notices: ifrit", "task", t.GetCode())
+		if err := n.ifritWarning(context.Background(), t); err != nil {
+			logx.L().Warn("notify an ifrit's warning", "task", t.GetCode(), "err", err)
+		}
+	}()
+}
+
+func (n *Notices) ifritWarning(ctx context.Context, t *planv1.Task) error {
+	wish, err := store.Get[*planv1.Wish](ctx, n.Store, t.GetWishId())
+	if err != nil {
+		return err
+	}
+	out := t.GetIfrit().GetOutTime().AsTime().Local()
+	key := fmt.Sprintf("ifrit:%s:%d", t.GetId(), out.Unix())
+	vars := map[string]string{"code": t.GetCode(), "wish": wish.GetTitle(), "time": out.Format("15:04")}
+	return n.show(key, Notification{
+		ID: "ifrit-" + t.GetId(), WishID: wish.GetId(), Target: "task-" + t.GetId(),
+		Title:   n.text("notify.ifrit_out_title", vars),
+		Body:    n.text("notify.ifrit_out_body", vars),
+		Actions: []Action{{ID: keepLit, Title: n.text("notify.keep_lit", nil)}}, Always: true,
+	})
+}
+
+// Respond follows what the user did with a notification: a button answers its question, or keeps an ifrit lit; a
+// click, or an answer that fails, brings the window forward on the wish, there, or as it is for an inbox item or the
+// lead's choice, which have none.
 func (n *Notices) Respond(ctx context.Context, r Response) {
+	if r.Action == keepLit && n.KeepLit != nil {
+		n.KeepLit()
+		return
+	}
 	choice, ok := choices[r.Action]
 	if ok && n.Answer != nil {
 		err := n.Answer(ctx, r.QuestionID, choice)

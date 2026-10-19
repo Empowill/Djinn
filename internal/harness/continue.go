@@ -5,6 +5,7 @@ package harness
 // parent is closed, and points to its fork.
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -22,24 +23,26 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// Continue plans again a task no worker runs, done, failed, stopped or cut short: its next worker resumes its own
-// session, in its own worktree, on the prompt. It starts in this call when the scheduler would start it; otherwise
+// Continue plans again a task no worker runs, done, failed, stopped, cut short, or waiting on the blocking question its
+// worker asked (the answer continues it so, with the decision: answerAsker): its next worker resumes its own session,
+// in its own worktree, on the prompt. It starts in this call when the scheduler would start it; otherwise
 // it waits, with the reason, and the scheduler starts it. Refused while the task runs or is planned, when it
-// continues in a fork, when its worktree is gone, or when its agent cannot resume a session.
+// continues in a fork, when its worktree is gone, or when its agent cannot resume a session. A running worker the
+// scheduler flagged stalled is the exception: it is ended and continued on its session (continueStalled).
 func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.TaskServiceContinueRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
+	if woken, err := h.continueStalled(ctx, procedure, req); woken != nil || err != nil {
+		return woken, err
+	}
 	// No answer starts the worker again, and no pass of the scheduler decides, while it is planned again.
 	h.answering.Lock()
 	defer h.answering.Unlock()
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
-	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	task, running, err := h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
 	if err := h.continuable(ctx, task, running); err != nil {
 		return nil, err
 	}
@@ -54,6 +57,9 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	text := fmt.Sprintf("continued by the %s, was %s", plan.CloserWord(by), short(task.GetStatus()))
 	if e := task.GetError(); e != "" {
 		text += " (" + e + ")"
+	}
+	if ifritOut(task) {
+		text = "lit again by a message, was " + task.GetError()
 	}
 	turnPrompt := req.GetPrompt()
 	addPromptEvent := true
@@ -72,6 +78,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 	// Its own resumes count again from none: a person asked for this turn.
 	t.Status, t.Error, t.ResumeAfter, t.Resumes, t.Closed, t.Continuing = planv1.TaskStatus_TASK_STATUS_RESUMING, "", nil, 0, nil, true
 	t.WaitReason = ""
+	t.WaitQuestionId = "" // Continued, it no longer waits on its blocking question: the answer finds it running.
 	if foreignModel(t.GetProvider(), t.GetModel()) {
 		t.Model = DefaultModel(t.GetProvider())
 	}
@@ -89,7 +96,7 @@ func (h *Harness) Continue(ctx context.Context, procedure string, req *planv1.Ta
 			return err
 		}
 		if t.GetPartOf() != "" {
-			if err := reopenAzima(ctx, tx, t.GetPartOf(), t.GetCode()+" started"); err != nil {
+			if err := reopenAzima(ctx, tx, t.GetPartOf(), t, "started"); err != nil {
 				return err
 			}
 		}
@@ -136,7 +143,7 @@ func (h *Harness) continuable(ctx context.Context, t *planv1.Task, running bool)
 	switch s := t.GetStatus(); {
 	case running || s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED:
 		return refuse("runs: send it a message instead (djinn task send)")
-	case s == planv1.TaskStatus_TASK_STATUS_WAITING:
+	case s == planv1.TaskStatus_TASK_STATUS_WAITING && t.GetWaitQuestionId() == "":
 		return refuse("waits for the answer to its edit question")
 	case planned(t) || s == planv1.TaskStatus_TASK_STATUS_PENDING:
 		return refuse("has not started: it starts by itself, or djinn task stop drops it")
@@ -257,4 +264,44 @@ func closeParent(ctx context.Context, tx *store.Tx, parent *planv1.Task, fork st
 		return err
 	}
 	return putEvents(ctx, tx, newEvent(parent.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text}))
+}
+
+// continueStalled relaunches a running worker the scheduler flagged stalled (health.go): it is ended as the
+// Lamplighter ends one it wakes, and its task waits to be continued on its session, told to continue, or told the
+// prompt given. It returns the task once its worker ended; nil, nil for a task that is not a stalled running one.
+func (h *Harness) continueStalled(ctx context.Context, procedure string, req *planv1.TaskServiceContinueRequest) (*planv1.Task, error) {
+	id := req.GetTaskId()
+	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if task.GetHealth().GetState() != planv1.HealthState_HEALTH_STATE_STALLED {
+		return nil, nil
+	}
+	h.mu.Lock()
+	r := h.runs[id]
+	if r == nil || r.stopping || r.final || r.lamplighterEnd || r.silentWhy != "" {
+		h.mu.Unlock()
+		return nil, nil
+	}
+	r.lamplighterEnd = true
+	r.lamplighterReason = "stalled (" + task.GetHealth().GetReason() + "), relaunched by the " +
+		plan.CloserWord(cmp.Or(req.GetBy(), planv1.Closer_CLOSER_LEAD))
+	r.wakePrompt, r.relaunched = req.GetPrompt(), true
+	worker := r.worker
+	h.mu.Unlock()
+	if err := h.store.Tx(ctx, func(tx *store.Tx) error { return tx.Journal(actorLocal, procedure, req) }); err != nil {
+		return nil, plan.Status(err)
+	}
+	logx.L().Info("a stalled task is relaunched", "task", task.GetCode())
+	if worker != nil {
+		worker.Stop()
+	}
+	select {
+	case <-r.done:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	got, err := store.Get[*planv1.Task](ctx, h.store, id)
+	return got, plan.Status(err)
 }

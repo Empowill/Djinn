@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,19 +29,24 @@ const babysitMRFront = `metadata:
     source:
       watch: "sh assigned.sh"
       every: 10m
+      summary: >-
+        The merge requests
+        assigned to you.
 `
 
-// TestReadSource: a skill's source reads with its period, five minutes by default; one that cannot be used says
-// why, in djinn skill list too.
+// TestReadSource: a skill's source reads with its period, five minutes by default, and its summary on one line, the
+// skill's description without one; one that cannot be used says why, in djinn skill list too.
 func TestReadSource(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	src, err := ReadSource(agentSkill(t, dir, "babysit-mr", babysitMRFront))
-	if err != nil || src == nil || src.Skill != "babysit-mr" || src.Watch != "sh assigned.sh" || src.Every != 10*time.Minute {
+	if err != nil || src == nil || src.Skill != "babysit-mr" || src.Watch != "sh assigned.sh" || src.Every != 10*time.Minute ||
+		src.Summary != "The merge requests assigned to you." {
 		t.Fatalf("source = %+v, %v", src, err)
 	}
 	src, err = ReadSource(agentSkill(t, dir, "mentions", "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n"))
-	if err != nil || src.Every != SourceEvery {
-		t.Errorf("default period: %+v, %v", src, err)
+	if err != nil || src.Every != SourceEvery || src.Summary != "Test skill." {
+		t.Errorf("default period and summary: %+v, %v", src, err)
 	}
 	for name, front := range map[string]string{"plain": "", "wish-only": babysitFront} {
 		if src, err := ReadSource(agentSkill(t, dir, name, front)); src != nil || err != nil {
@@ -79,6 +85,7 @@ func TestReadSource(t *testing.T) {
 // until it is plugged in on this machine; a source is named <project>/<skill>, or by its skill alone when one
 // project holds it. Unplugged, it runs no more; one plugged in whose skill is gone is listed, to be unplugged.
 func TestSources(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	gong := &planv1.Project{Id: store.NewID(), Name: "gong", Directory: t.TempDir()}
@@ -92,7 +99,7 @@ func TestSources(t *testing.T) {
 	c.put(t, gong, bell, lamp)
 	running := func() []string {
 		t.Helper()
-		srcs, err := Sources(ctx, c.store, []*planv1.Project{bell, gong, lamp})
+		srcs, err := Sources(ctx, c.store, "", []*planv1.Project{bell, gong, lamp})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -180,10 +187,153 @@ func TestSources(t *testing.T) {
 	}
 }
 
+// TestKeepSourceRun: a source plugged in keeps its last run on this machine: when it ended, how many items it printed,
+// and why it failed, with the failures in a row and since when. djinn inbox sources shows it beside the summary. One
+// not plugged in keeps nothing, and unplugging a source forgets its run.
+func TestKeepSourceRun(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	c := serve(t)
+	gong := &planv1.Project{Id: store.NewID(), Name: "gong", Directory: t.TempDir()}
+	agentSkill(t, gong.GetDirectory(), "babysit-mr", babysitMRFront)
+	c.put(t, gong)
+	src := &Source{Skill: "babysit-mr", HolderID: gong.GetId(), Holder: "gong", ProjectID: gong.GetId()}
+	listed := func() *planv1.InboxSource {
+		t.Helper()
+		res, err := c.inbox.Sources(ctx, connect.NewRequest(&planv1.InboxServiceSourcesRequest{}))
+		if err != nil || len(res.Msg.GetSources()) != 1 {
+			t.Fatalf("sources = %v, %v", res, err)
+		}
+		return res.Msg.GetSources()[0]
+	}
+	start := time.Date(2026, 10, 16, 10, 42, 0, 0, time.UTC)
+	keep := func(minutes, items int, failed error) {
+		t.Helper()
+		if err := KeepSourceRun(ctx, c.store, src, start.Add(time.Duration(minutes)*time.Minute), items, failed); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	keep(0, 3, nil)
+	if s := listed(); s.GetLastRun() != nil || s.GetSummary() != "The merge requests assigned to you." {
+		t.Errorf("a source not plugged in: %v", s)
+	}
+	if _, err := c.inbox.Plug(ctx, connect.NewRequest(&planv1.InboxServicePlugRequest{Source: "babysit-mr"})); err != nil {
+		t.Fatal(err)
+	}
+	keep(5, 2, nil)
+	run := listed().GetLastRun()
+	if !run.GetEndTime().AsTime().Equal(start.Add(5*time.Minute)) || run.GetItems() != 2 || run.GetError() != "" ||
+		run.GetFailures() != 0 || run.GetFailingSince() != nil {
+		t.Errorf("a run that went well: %v", run)
+	}
+	keep(10, 0, errors.New("exit code 1; its error output: gh: not logged in"))
+	keep(15, 0, errors.New("exit code 1; its error output: gh: not logged in"))
+	run = listed().GetLastRun()
+	if !run.GetEndTime().AsTime().Equal(start.Add(15*time.Minute)) || run.GetItems() != 0 || run.GetFailures() != 2 ||
+		run.GetError() != "exit code 1; its error output: gh: not logged in" ||
+		!run.GetFailingSince().AsTime().Equal(start.Add(10*time.Minute)) {
+		t.Errorf("two runs that failed: %v", run)
+	}
+	keep(20, 1, nil)
+	if run = listed().GetLastRun(); run.GetItems() != 1 || run.GetError() != "" || run.GetFailures() != 0 ||
+		run.GetFailingSince() != nil {
+		t.Errorf("a run that went well again: %v", run)
+	}
+	if runs, err := store.List[*planv1.SourceRun](ctx, c.store, nil); err != nil || len(runs) != 1 {
+		t.Errorf("runs = %v, %v; want one per source", runs, err)
+	}
+
+	res, err := c.inbox.Unplug(ctx, connect.NewRequest(&planv1.InboxServiceUnplugRequest{Source: "babysit-mr"}))
+	if err != nil || res.Msg.GetSource().GetLastRun() != nil {
+		t.Fatalf("unplug: %v, %v", res, err)
+	}
+	keep(25, 4, nil)
+	if runs, err := store.List[*planv1.SourceRun](ctx, c.store, nil); err != nil || len(runs) != 0 {
+		t.Errorf("runs = %v, %v; want none once unplugged", runs, err)
+	}
+}
+
+// TestUnreadableSkill: a skill whose metadata breaks the YAML is no source of the inbox: the project's notices say
+// Djinn cannot read it, and why. One whose other key breaks it, as dolmen's argument-hint lines do, is an
+// information only. Plugged in before it broke, it stays listed with why, to be unplugged.
+func TestUnreadableSkill(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	c := serve(t)
+	dolmen := &planv1.Project{Id: store.NewID(), Name: "dolmen", Directory: t.TempDir()}
+	agentSkill(t, dolmen.GetDirectory(), "notion-ticket", "argument-hint: [bug|improvement] [description]\n")
+	agentSkill(t, dolmen.GetDirectory(), "broken-meta", "metadata:\n  djinn: [\n")
+	agentSkill(t, dolmen.GetDirectory(), "bad-djinn", "metadata:\n  djinn: [wish]\n")
+	agentSkill(t, dolmen.GetDirectory(), "mentions", "metadata:\n  djinn:\n    source:\n      watch: mentions --new\n")
+	c.put(t, dolmen)
+	listed := func() []string {
+		t.Helper()
+		res, err := c.inbox.Sources(ctx, connect.NewRequest(&planv1.InboxServiceSourcesRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, s := range res.Msg.GetSources() {
+			got = append(got, fmt.Sprintf("%s %t|%s", s.GetName(), s.GetPlugged(), s.GetError()))
+		}
+		return got
+	}
+	if got, want := listed(), []string{"dolmen/mentions false|"}; !slices.Equal(got, want) {
+		t.Errorf("listed %q, want %q", got, want)
+	}
+
+	show, err := c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "dolmen"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unreadable, warned []string
+	for _, n := range show.Msg.GetNotices() {
+		if n.GetTopic() != planv1.ProjectNoticeTopic_PROJECT_NOTICE_TOPIC_SKILL {
+			continue
+		}
+		if n.GetKind() == planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX {
+			unreadable = append(unreadable, n.GetSubject()+": "+n.GetDetail())
+		} else {
+			warned = append(warned, n.GetSubject()+": "+n.GetDetail())
+		}
+	}
+	if len(unreadable) != 2 ||
+		!strings.HasPrefix(unreadable[0], "bad-djinn: SKILL.md: metadata.djinn: ") ||
+		!strings.HasPrefix(unreadable[1], "broken-meta: SKILL.md: its front matter is not YAML: yaml: line ") {
+		t.Errorf("unreadable skills = %q", unreadable)
+	}
+	if !slices.Equal(warned, []string{"notion-ticket: SKILL.md: not YAML at line 4 (argument-hint: [bug|improvement] " +
+		"[description]): Djinn reads metadata apart; quoting the value fixes it"}) {
+		t.Errorf("skills read apart = %q", warned)
+	}
+
+	// Plugged in, then broken: listed with why, and unplugged.
+	if _, err := c.inbox.Plug(ctx, connect.NewRequest(&planv1.InboxServicePlugRequest{Source: "mentions"})); err != nil {
+		t.Fatal(err)
+	}
+	agentSkill(t, dolmen.GetDirectory(), "mentions", "metadata:\n  djinn:\n    source:\n      watch: [x\n")
+	if got := listed(); len(got) != 1 ||
+		!strings.HasPrefix(got[0], "dolmen/mentions true|SKILL.md: its front matter is not YAML") {
+		t.Errorf("listed %q", got)
+	}
+	if srcs, err := Sources(ctx, c.store, "", []*planv1.Project{dolmen}); err != nil || len(srcs) != 0 {
+		t.Errorf("running %v, %v; want none", srcs, err)
+	}
+	unplug := &planv1.InboxServiceUnplugRequest{Source: "dolmen/mentions"}
+	if _, err := c.inbox.Unplug(ctx, connect.NewRequest(unplug)); err != nil {
+		t.Fatal(err)
+	}
+	if got := listed(); len(got) != 0 {
+		t.Errorf("listed %q after unplugging", got)
+	}
+}
+
 // TestOwnSource: Djinn's own babysit-pr declares a source that reads with gh, and changes nothing: run with a fake
 // gh, it lists the pull requests assigned to the developer and those that request their review, read only. An assigned
 // one proposes the skill's wish; one to review proposes none of the skill.
 func TestOwnSource(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the source and the fake gh are shell scripts")
 	}
@@ -193,7 +343,8 @@ func TestOwnSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	src, err := ReadSource(filepath.Join(root, ".agents", "skills", "babysit-pr"))
-	if err != nil || src == nil || src.Watch != "sh .agents/skills/babysit-pr/inbox.sh" || src.Every != SourceEvery {
+	if err != nil || src == nil || src.Watch != "sh .agents/skills/babysit-pr/inbox.sh" || src.Every != SourceEvery ||
+		!strings.Contains(src.Summary, "assigned to you or that request your review") {
 		t.Fatalf("source = %+v, %v", src, err)
 	}
 
@@ -229,7 +380,7 @@ esac
 	c := serve(t)
 	djinn := &planv1.Project{Id: store.NewID(), Name: "djinn", Directory: root, Git: true}
 	c.put(t, djinn)
-	srcs, err := declaredSources(ctx, c.store, []*planv1.Project{djinn})
+	srcs, err := declaredSources(ctx, c.store, "", []*planv1.Project{djinn})
 	if err != nil || len(srcs) != 1 || srcs[0].Name() != "djinn/babysit-pr" || srcs[0].Plugged {
 		t.Fatalf("sources = %v, %v", srcs, err)
 	}
@@ -255,6 +406,7 @@ esac
 // until an answer. The same item, or one whose link a wish holds, is not proposed again; a dismissed or routed item
 // neither. Routing it makes the template's wish with its watcher and lead, or files it and tells the lead.
 func TestInbox(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("the lines are checked for the shells of Unix")
 	}
@@ -274,7 +426,7 @@ func TestInbox(t *testing.T) {
 	if _, err := setLead(t, c, &planv1.LeadServiceSetRequest{SessionId: session}); err != nil {
 		t.Fatal(err)
 	}
-	srcs, err := declaredSources(ctx, c.store, []*planv1.Project{gong})
+	srcs, err := declaredSources(ctx, c.store, "", []*planv1.Project{gong})
 	if err != nil || len(srcs) != 1 {
 		t.Fatalf("sources = %v, %v", srcs, err)
 	}
@@ -403,6 +555,7 @@ func TestInbox(t *testing.T) {
 }
 
 func TestItemKey(t *testing.T) {
+	t.Parallel()
 	for text, want := range map[string]string{
 		"Babysit !12\nhttps://gitlab.example.com/acme/gong/-/merge_requests/12.": "https://gitlab.example.com/acme/gong/-/merge_requests/12",
 		"  carol   mentioned you\nlunch?":                                        "carol mentioned you",

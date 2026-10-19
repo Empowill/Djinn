@@ -1,11 +1,13 @@
-// Keyboard shortcuts on a question card:
-// - Arrows or 1–4 pick an option when focus is on the card and not in the note.
+// Keyboard shortcuts on a question of the questions column (question-column.tsx):
+// - A letter (A, B, C…) or a digit (1–4) picks an option when focus is on the question and not in the note; the
+//   arrows go to the other questions (question-column.spec.ts).
 // - Shift+Enter inserts a new line in the note field.
 // - Enter in the note rubs the lamp and answers; Enter alone elsewhere on the card answers nothing (W574).
 // - Ctrl+Enter (Cmd+Enter on macOS) rubs the lamp from anywhere on the card.
 // - Ctrl+Shift+Enter triggers Enlighten me from anywhere on the card.
+// - Ctrl+Shift+Backspace (Cmd+Shift+Delete on macOS) opens the Withdraw confirmation from anywhere on the card.
 // - Ctrl+Enter without an option selected shows an alert and selects nothing.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -25,7 +27,7 @@ function djinn(...args: string[]): string {
   });
 }
 
-test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Shift+Enter, unpicked warning", async ({
+test("question card keyboard shortcuts: letters, 1-4, Shift+Enter, Enter, Ctrl+Shift+Enter, Ctrl+Shift+Backspace, unpicked warning", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -78,16 +80,55 @@ test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Sh
     await expect(diesel).toHaveAttribute("aria-pressed", "false");
     await expect(electric).toHaveAttribute("aria-pressed", "false");
 
-    // Focus card and navigate with ArrowDown / ArrowUp.
+    // Clicking, double-clicking, or pressing Enter/Space on an option button, or pressing Enter on the card body,
+    // only picks the option and never submits an answer (W574).
+    await diesel.click();
+    await expect(diesel).toHaveAttribute("aria-pressed", "true");
+    await expect(steam).toHaveAttribute("aria-pressed", "false");
+    await expect(card1).not.toHaveClass(/gesture-/);
+
+    await electric.dblclick();
+    await expect(electric).toHaveAttribute("aria-pressed", "true");
+    await expect(diesel).toHaveAttribute("aria-pressed", "false");
+    await expect(card1).not.toHaveClass(/gesture-/);
+
+    await steam.focus();
+    await page.keyboard.press("Enter");
+    await expect(steam).toHaveAttribute("aria-pressed", "true");
+    await expect(electric).toHaveAttribute("aria-pressed", "false");
+    await expect(card1).not.toHaveClass(/gesture-/);
+
+    await diesel.focus();
+    await page.keyboard.press(" ");
+    await expect(diesel).toHaveAttribute("aria-pressed", "true");
+    await expect(steam).toHaveAttribute("aria-pressed", "false");
+    await expect(card1).not.toHaveClass(/gesture-/);
+
+    await card1.getByText("Pick an engine").click();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(500);
+    await expect(card1).toBeVisible();
+    await expect(card1).not.toHaveClass(/gesture-/);
+    const [q1StillOpen] = JSON.parse(
+      djinn("question", "list", "--wish-id", wishId, "--json"),
+    ).questions;
+    expect(q1StillOpen.answer).toBeUndefined();
+
+    // Focus the question and pick by letter.
     await card1.focus();
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("b");
     await expect(diesel).toHaveAttribute("aria-pressed", "true");
     await expect(steam).toHaveAttribute("aria-pressed", "false");
 
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("C");
     await expect(electric).toHaveAttribute("aria-pressed", "true");
 
+    // The arrows are the column's: with one question, nothing moves and the pick stays.
     await page.keyboard.press("ArrowUp");
+    await expect(electric).toHaveAttribute("aria-pressed", "true");
+    await expect(card1).toBeFocused();
+
+    await page.keyboard.press("b");
     await expect(diesel).toHaveAttribute("aria-pressed", "true");
 
     // Number keys pick directly.
@@ -192,6 +233,56 @@ test("question card keyboard shortcuts: arrows, 1-4, Shift+Enter, Enter, Ctrl+Sh
     }>;
     const q3Answered = list.find((q) => q.text === "Choose a color");
     expect(q3Answered?.answer?.choice).toBe("CHOICE_B");
+
+    // 4. Question testing Ctrl+Shift+Backspace for Withdraw confirmation (and the Move icon in the top right corner).
+    djinn(
+      "question",
+      "ask",
+      "Keep or withdraw?",
+      wishId,
+      "--options",
+      "Keep",
+      "--options",
+      "Drop",
+    );
+
+    const card4 = page
+      .locator(".question-card")
+      .filter({ hasText: "Keep or withdraw?" });
+    await expect(card4).toBeVisible();
+    // Move, rarely used: an icon on the title's line, in the card's top right corner; the title wraps before it.
+    const move = card4.getByRole("button", {
+      name: "Move to another wish",
+      exact: true,
+    });
+    await expect(move).toBeVisible();
+    const moveBox = (await move.boundingBox())!;
+    const titleBox = (await card4
+      .locator(".question-row-title")
+      .boundingBox())!;
+    const cardBox = (await card4.boundingBox())!;
+    expect(
+      cardBox.x + cardBox.width - (moveBox.x + moveBox.width),
+    ).toBeLessThan(20);
+    expect(moveBox.y - cardBox.y).toBeLessThan(20);
+    expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(moveBox.x);
+    await move.click();
+    const moveDialog = page.getByRole("dialog", { name: /^Move Q/ });
+    await expect(moveDialog).toBeVisible();
+    await moveDialog
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    await expect(moveDialog).not.toBeVisible();
+
+    await card4.getByLabel("Note with the answer").focus();
+    await page.keyboard.press("Control+Shift+Backspace");
+
+    const dialog = page.getByRole("dialog", { name: /^Withdraw Q/ });
+    await expect(dialog).toBeVisible();
+    await dialog
+      .getByRole("button", { name: "Withdraw question", exact: true })
+      .click();
+    await expect(card4).not.toBeVisible();
 
     expect(errors).toEqual([]);
   } finally {

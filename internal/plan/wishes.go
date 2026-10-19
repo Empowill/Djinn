@@ -35,6 +35,7 @@ type WishWorkers interface {
 	// StopWish stops the wish's workers for good, and waits until they have ended.
 	StopWish(ctx context.Context, wishID string) error
 	HasRun(taskID string) bool
+	CloseOutrun(wishID, code string)
 }
 
 // shelve stops the workers of the wishes paused, and wakes the scheduler for the active ones; without workers,
@@ -81,30 +82,6 @@ func Ranked(all []*planv1.Wish) []*planv1.Wish {
 	// The store lists by identifier, a UUIDv7: oldest first, which the stable sort keeps between equal ranks.
 	slices.SortStableFunc(out, func(a, b *planv1.Wish) int { return cmp.Compare(rank(a), rank(b)) })
 	return out
-}
-
-// PrincipalWish returns the principal wish: one explicitly marked as principal by the developer
-// (preferring an active wish if marked), or the first active wish by rank.
-func PrincipalWish(ctx context.Context, r store.Reader) (*planv1.Wish, error) {
-	all, err := store.List[*planv1.Wish](ctx, r, nil)
-	if err != nil {
-		return nil, err
-	}
-	for _, w := range all {
-		if w.GetPrincipal() && Active(w) {
-			return w, nil
-		}
-	}
-	for _, w := range all {
-		if w.GetPrincipal() {
-			return w, nil
-		}
-	}
-	actives := Ranked(all)
-	if len(actives) > 0 {
-		return actives[0], nil
-	}
-	return nil, nil
 }
 
 // Ready tells whether Djinn proposes to grant a wish that has these tasks and questions: it has tasks, every one
@@ -158,14 +135,15 @@ func fill(ctx context.Context, r store.Reader, wishes ...*planv1.Wish) error {
 	return nil
 }
 
-// renumber gives the active wishes, in this order, the ranks 1 to n, and writes those that changed.
+// renumber gives the active wishes, in this order, the ranks 1 to n, and writes those that changed. An active wish
+// has no place among the wishes set aside.
 func renumber(tx *store.Tx, actives []*planv1.Wish) error {
 	for i, w := range actives {
 		rank := int32(i + 1)
-		if w.GetRank() == rank && w.GetState() == planv1.WishState_WISH_STATE_ACTIVE {
+		if w.GetRank() == rank && w.GetState() == planv1.WishState_WISH_STATE_ACTIVE && w.GetPlace() == 0 {
 			continue
 		}
-		w.Rank, w.State = rank, planv1.WishState_WISH_STATE_ACTIVE
+		w.Rank, w.State, w.Place = rank, planv1.WishState_WISH_STATE_ACTIVE, 0
 		if err := tx.Put(w); err != nil {
 			return err
 		}
@@ -220,6 +198,9 @@ func grantWish(ctx context.Context, tx *store.Tx, wish *planv1.Wish) error {
 		return nil
 	}
 	wish.State, wish.Rank, wish.GrantTime = planv1.WishState_WISH_STATE_GRANTED, 0, timestamppb.Now()
+	if err := setAside(ctx, tx, wish); err != nil {
+		return err
+	}
 	if err := tx.Put(wish); err != nil {
 		return err
 	}
@@ -251,6 +232,9 @@ func pauseWish(ctx context.Context, tx *store.Tx, wish *planv1.Wish) error {
 			"wish %q is granted, not active: there is nothing to pause", wish.GetTitle()))
 	}
 	wish.State, wish.Rank = planv1.WishState_WISH_STATE_PAUSED, 0
+	if err := setAside(ctx, tx, wish); err != nil {
+		return err
+	}
 	if err := tx.Put(wish); err != nil {
 		return err
 	}
@@ -282,7 +266,7 @@ func (w *Wishes) Activate(
 }
 
 // place makes wish active at the rank to, from 1, among the active wishes; 0 or beyond the last, last. Never beyond
-// the third place: the wishes pushed past it are paused, and returned.
+// the third place: the wishes pushed past it are paused, first among the paused ones, and returned.
 func place(ctx context.Context, tx *store.Tx, wish *planv1.Wish, to int) ([]*planv1.Wish, error) {
 	actives, err := ActiveWishes(ctx, tx)
 	if err != nil {
@@ -299,6 +283,9 @@ func place(ctx context.Context, tx *store.Tx, wish *planv1.Wish, to int) ([]*pla
 		last := actives[len(actives)-1]
 		actives = actives[:len(actives)-1]
 		last.State, last.Rank = planv1.WishState_WISH_STATE_PAUSED, 0
+		if err := setAside(ctx, tx, last); err != nil {
+			return nil, err
+		}
 		if err := tx.Put(last); err != nil {
 			return nil, err
 		}
@@ -350,6 +337,9 @@ func (w *Wishes) Delete(
 					return err
 				}
 			}
+			if err := tx.Delete(&planv1.GateWait{Id: t.GetId()}); err != nil {
+				return err
+			}
 			if err := tx.Delete(t); err != nil {
 				return err
 			}
@@ -377,6 +367,24 @@ func (w *Wishes) Delete(
 		}
 		for _, t := range tilasms {
 			if err := tx.Delete(t); err != nil {
+				return err
+			}
+		}
+		comments, err := store.List[*planv1.TilasmComment](ctx, tx, where)
+		if err != nil {
+			return err
+		}
+		for _, c := range comments {
+			if err := tx.Delete(c); err != nil {
+				return err
+			}
+		}
+		sends, err := store.List[*planv1.TilasmSend](ctx, tx, where)
+		if err != nil {
+			return err
+		}
+		for _, s := range sends {
+			if err := tx.Delete(s); err != nil {
 				return err
 			}
 		}
@@ -418,6 +426,9 @@ func cleanWorktrees(ctx context.Context, r store.Reader, tasks []*planv1.Task) (
 	var removed int32
 	for _, t := range tasks {
 		if t.GetWorktree() == "" {
+			if t.GetScratch() != "" {
+				_ = os.RemoveAll(t.GetScratch())
+			}
 			continue
 		}
 		project, err := store.Get[*planv1.Project](ctx, r, t.GetProjectId())
@@ -432,6 +443,8 @@ func cleanWorktrees(ctx context.Context, r store.Reader, tasks []*planv1.Task) (
 		}
 		if k != nil {
 			kept = append(kept, k)
+		} else if t.GetScratch() != "" {
+			_ = os.RemoveAll(t.GetScratch())
 		}
 	}
 	return kept, removed
@@ -470,6 +483,74 @@ func (w *Wishes) Move(
 	return connect.NewResponse(&planv1.WishServiceMoveResponse{Wishes: actives, Paused: paused}), nil
 }
 
+// Reorder moves a paused or granted wish to another place in the list of the wishes of its state, and shifts the
+// others. It stays as it is: Move makes it active.
+func (w *Wishes) Reorder(
+	ctx context.Context, req *connect.Request[planv1.WishServiceReorderRequest],
+) (*connect.Response[planv1.WishServiceReorderResponse], error) {
+	var list []*planv1.Wish
+	_, err := change(ctx, w, req.Spec(), req.Msg, func(tx *store.Tx, wish *planv1.Wish) error {
+		if Active(wish) {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"wish %q is active: djinn wish move gives it another rank", wish.GetTitle()))
+		}
+		all, err := store.List[*planv1.Wish](ctx, tx, nil)
+		if err != nil {
+			return err
+		}
+		list = slices.DeleteFunc(Shelf(all, wish.GetState()), func(o *planv1.Wish) bool { return o.GetId() == wish.GetId() })
+		list = slices.Insert(list, min(int(req.Msg.GetTo())-1, len(list)), wish)
+		return reshelve(tx, list)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := fill(ctx, w.Store, list...); err != nil {
+		return nil, Status(err)
+	}
+	return connect.NewResponse(&planv1.WishServiceReorderResponse{Wishes: list}), nil
+}
+
+// Shelf returns the wishes of all in state, paused or granted, in their order: by place, then those set aside before
+// Djinn recorded places, the oldest first.
+func Shelf(all []*planv1.Wish, state planv1.WishState) []*planv1.Wish {
+	out := slices.DeleteFunc(slices.Clone(all), func(w *planv1.Wish) bool { return Active(w) || w.GetState() != state })
+	place := func(w *planv1.Wish) int32 {
+		if w.GetPlace() <= 0 {
+			return math.MaxInt32
+		}
+		return w.GetPlace()
+	}
+	// The store lists by identifier, a UUIDv7: oldest first, which the stable sort keeps between equal places.
+	slices.SortStableFunc(out, func(a, b *planv1.Wish) int { return cmp.Compare(place(a), place(b)) })
+	return out
+}
+
+// setAside puts wish, just paused or granted, first in the list of the wishes of its state, and writes the others
+// it shifts; the caller writes wish. The one set aside last stays in sight, under the active ones.
+func setAside(ctx context.Context, tx *store.Tx, wish *planv1.Wish) error {
+	all, err := store.List[*planv1.Wish](ctx, tx, nil)
+	if err != nil {
+		return err
+	}
+	others := slices.DeleteFunc(Shelf(all, wish.GetState()), func(o *planv1.Wish) bool { return o.GetId() == wish.GetId() })
+	wish.Place = 1
+	return reshelve(tx, slices.Insert(others, 0, wish))
+}
+
+// reshelve gives the wishes of one list, in this order, the places 1 to n, and writes those that changed.
+func reshelve(tx *store.Tx, list []*planv1.Wish) error {
+	for i, w := range list {
+		if place := int32(i + 1); w.GetPlace() != place {
+			w.Place = place
+			if err := tx.Put(w); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // rerank closes the gaps in the ranks of the active wishes, after one left them.
 func rerank(ctx context.Context, tx *store.Tx) error {
 	actives, err := ActiveWishes(ctx, tx)
@@ -480,17 +561,10 @@ func rerank(ctx context.Context, tx *store.Tx) error {
 }
 
 // sorted orders wishes as List gives them: the active ones by rank, then the paused ones, then the granted ones,
-// each the oldest first.
+// each list in its own order (Shelf).
 func sorted(all []*planv1.Wish) []*planv1.Wish {
-	out := Ranked(all)
-	for _, state := range []planv1.WishState{planv1.WishState_WISH_STATE_PAUSED, planv1.WishState_WISH_STATE_GRANTED} {
-		for _, w := range all {
-			if w.GetState() == state {
-				out = append(out, w)
-			}
-		}
-	}
-	return out
+	return slices.Concat(Ranked(all), Shelf(all, planv1.WishState_WISH_STATE_PAUSED),
+		Shelf(all, planv1.WishState_WISH_STATE_GRANTED))
 }
 
 // ResolveWish finds a wish by identifier, rank (e.g. W1, 1), or title.
@@ -519,56 +593,4 @@ func ResolveWish(ctx context.Context, r store.Reader, name string) (*planv1.Wish
 		}
 	}
 	return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("wish %s not found", name))
-}
-
-// Principal sets or reports whether a wish is the principal wish.
-func (w *Wishes) Principal(
-	ctx context.Context, req *connect.Request[planv1.WishServicePrincipalRequest],
-) (*connect.Response[planv1.WishServicePrincipalResponse], error) {
-	if req.Msg.Principal != nil {
-		err := write(ctx, w.Store, req.Spec(), req.Msg, func(tx *store.Tx) error {
-			wish, err := store.Get[*planv1.Wish](ctx, tx, req.Msg.GetWishId())
-			if err != nil {
-				return err
-			}
-			if *req.Msg.Principal {
-				all, err := store.List[*planv1.Wish](ctx, tx, nil)
-				if err != nil {
-					return err
-				}
-				for _, other := range all {
-					if other.GetPrincipal() && other.GetId() != wish.GetId() {
-						other.Principal = false
-						if err := tx.Put(other); err != nil {
-							return err
-						}
-					}
-				}
-				wish.Principal = true
-			} else {
-				wish.Principal = false
-			}
-			return tx.Put(wish)
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	wish, err := store.Get[*planv1.Wish](ctx, w.Store, req.Msg.GetWishId())
-	if err != nil {
-		return nil, Status(err)
-	}
-	pw, err := PrincipalWish(ctx, w.Store)
-	if err != nil {
-		return nil, Status(err)
-	}
-	principalWishID := ""
-	if pw != nil {
-		principalWishID = pw.GetId()
-	}
-	return connect.NewResponse(&planv1.WishServicePrincipalResponse{
-		Principal:       principalWishID == wish.GetId(),
-		Explicit:        wish.GetPrincipal(),
-		PrincipalWishId: principalWishID,
-	}), nil
 }

@@ -32,7 +32,7 @@ func (h *Harness) Delete(ctx context.Context, procedure string, req *planv1.Task
 		h.mu.Lock()
 		running := h.runs[task.GetId()] != nil
 		h.mu.Unlock()
-		if running || task.GetWorktree() != "" || task.GetSessionId() != "" {
+		if running || task.GetWorktree() != "" || task.GetScratch() != "" || task.GetSessionId() != "" {
 			return connect.NewError(connect.CodeFailedPrecondition,
 				fmt.Errorf("task %s was run by a worker of this Djinn: it stays, as the record of that work", task.GetCode()))
 		}

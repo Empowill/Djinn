@@ -11,6 +11,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
 )
 
 // IsAzima tells whether the task is an azima: no worker ever runs it.
@@ -30,7 +32,8 @@ func IsAzima(t *planv1.Task) bool { return t.GetKind() == planv1.TaskKind_TASK_K
 // FillAzimas sets Task.azima on the azimas among tasks, from the tasks of their wish among tasks: give it every task of
 // the wishes read. An azima is done when its status is and none of its parts is still to finish: a part that runs or
 // waits keeps it in progress, whatever its plan file says. It is in progress when one of its parts has a worker on it
-// or is done, or an azima part of it is under way; open otherwise. Once every part is finished, its azimas done or to
+// or is done, or an azima part of it is under way; open otherwise. In progress with a watcher as its only live work
+// (onlyWatched: the babysit of its pull request), it is watching. Once every part is finished, its azimas done or to
 // validate in their turn, it is to validate (AWAITING_PROOF): nothing is left for Djinn, and the person checks its
 // plan file's boxes (Task.proof_needs say what each one needs) and validates it. It is ready when every task it
 // depends on is done.
@@ -95,6 +98,9 @@ func FillAzimas(tasks []*planv1.Task) {
 				s = planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
 			}
 		}
+		if s == planv1.AzimaState_AZIMA_STATE_IN_PROGRESS && onlyWatched(parts[t.GetId()], state) {
+			s = planv1.AzimaState_AZIMA_STATE_WATCHING
+		}
 		states[t.GetId()] = s
 		return s
 	}
@@ -108,15 +114,7 @@ func FillAzimas(tasks []*planv1.Task) {
 			Ready:  true,
 			Branch: AzimaBranchName(t),
 		}
-		// What Djinn records of its branch and pull request stays: its branch is cut from main, never from another's.
-		if existing := t.GetAzima(); existing != nil {
-			e.Sync = existing.GetSync()
-			e.Pr = existing.GetPr()
-			e.Main = existing.GetMain()
-			if existing.GetCutFrom() != "" {
-				e.CutFrom, e.BaseBranch, e.Named = existing.GetCutFrom(), existing.GetBaseBranch(), existing.GetNamed()
-			}
-		}
+		KeepAzimaRecord(e, t.GetAzima())
 		// A merge counts with the original task it serves (MergeHost): it runs, its original runs.
 		running := map[string]bool{}
 		for _, p := range parts[t.GetId()] {
@@ -159,6 +157,34 @@ func FillAzimas(tasks []*planv1.Task) {
 		}
 		t.Azima = e
 	}
+}
+
+// watches tells a watcher (Provider.PROVIDER_WATCH): a task that watches, such as the babysit of a pull request, and
+// has nothing to commit (dispatch.Watcher).
+func watches(t *planv1.Task) bool { return t.GetProvider() == planv1.Provider_PROVIDER_WATCH }
+
+// onlyWatched tells whether an azima's only live work, among its parts, is a watcher: a watcher part runs, or an azima
+// part is watching, and no work part runs, waits or is left to merge, every other azima part done or to validate. A
+// watcher that does not run is no work either. state is where an azima part stands.
+func onlyWatched(parts []*planv1.Task, state func(*planv1.Task) planv1.AzimaState) bool {
+	watched := false
+	for _, p := range parts {
+		switch {
+		case IsAzima(p):
+			switch state(p) {
+			case planv1.AzimaState_AZIMA_STATE_WATCHING:
+				watched = true
+			case planv1.AzimaState_AZIMA_STATE_DONE, planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF:
+			default:
+				return false
+			}
+		case watches(p):
+			watched = watched || working(p)
+		case !Finished(p) || taskMergingOrFailed(p):
+			return false
+		}
+	}
+	return watched
 }
 
 // accents are folded to their letter in a slug.
@@ -477,7 +503,43 @@ func Finished(t *planv1.Task) bool {
 	return false
 }
 
+// Settled tells a task of work finished whose work is neither merging nor failed to merge: an azima waits for it no
+// more.
+func Settled(t *planv1.Task) bool { return Finished(t) && !taskMergingOrFailed(t) }
+
+// AllMerged tells whether every azima of a wish among tasks, drafts left out, has its work all in main (Azima.merged),
+// one at least.
+func AllMerged(tasks []*planv1.Task) bool {
+	n := 0
+	for _, t := range tasks {
+		if !IsAzima(t) || t.GetDraft() {
+			continue
+		}
+		if t.GetAzima().GetMerged() == nil {
+			return false
+		}
+		n++
+	}
+	return n > 0
+}
+
 // WithAzimas is tasks with Task.azima set on their azimas, as clones: the store's own messages stay as they are.
+// KeepAzimaRecord copies into e, an azima's state as computed from its parts, what Djinn records of its branch and its
+// pull request, as recorded stores it: the branch's sync, the pull request, main's state, its merge into main, and what
+// its branch was cut from (from main, never from another's).
+func KeepAzimaRecord(e, recorded *planv1.Azima) {
+	if e == nil || recorded == nil {
+		return
+	}
+	e.Sync = recorded.GetSync()
+	e.Pr = recorded.GetPr()
+	e.Main = recorded.GetMain()
+	e.Merged = recorded.GetMerged()
+	if recorded.GetCutFrom() != "" {
+		e.CutFrom, e.BaseBranch, e.Named = recorded.GetCutFrom(), recorded.GetBaseBranch(), recorded.GetNamed()
+	}
+}
+
 func WithAzimas(tasks []*planv1.Task) []*planv1.Task {
 	if !slices.ContainsFunc(tasks, IsAzima) {
 		return tasks
@@ -537,6 +599,46 @@ func CompareCodes(a, b string) int {
 	pa, na := split(a)
 	pb, nb := split(b)
 	return cmp.Or(strings.Compare(pa, pb), cmp.Compare(na, nb), strings.Compare(a, b))
+}
+
+// AzimaOrder returns the azimas among tasks in their rank (Task.rank): the ranked ones first, from rank 1, then those
+// never ranked, a new one included, by code; a stable sort keeps the order of tasks between equals. Give it the tasks
+// of one wish: the ranks of two wishes do not compare.
+func AzimaOrder(tasks []*planv1.Task) []*planv1.Task {
+	var out []*planv1.Task
+	for _, t := range tasks {
+		if IsAzima(t) {
+			out = append(out, t)
+		}
+	}
+	rank := func(t *planv1.Task) int32 {
+		if t.GetRank() <= 0 {
+			return math.MaxInt32
+		}
+		return t.GetRank()
+	}
+	slices.SortStableFunc(out, func(a, b *planv1.Task) int {
+		return cmp.Or(cmp.Compare(rank(a), rank(b)), CompareCodes(a.GetCode(), b.GetCode()))
+	})
+	return out
+}
+
+// AzimaPlaces gives each azima among tasks, of every wish, its place among the azimas of its wish in their rank
+// (AzimaOrder), from 0 for the first.
+func AzimaPlaces(tasks []*planv1.Task) map[string]int {
+	byWish := map[string][]*planv1.Task{}
+	for _, t := range tasks {
+		if IsAzima(t) {
+			byWish[t.GetWishId()] = append(byWish[t.GetWishId()], t)
+		}
+	}
+	out := map[string]int{}
+	for _, azimas := range byWish {
+		for i, a := range AzimaOrder(azimas) {
+			out[a.GetId()] = i
+		}
+	}
+	return out
 }
 
 // PlanDir is the folder of a project that holds its plan files.
@@ -743,7 +845,7 @@ func WriteAfter(file string, codes []string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, b.Bytes(), info.Mode().Perm())
 }
 
 // WriteStatus writes an azima's status ("open", "draft", etc.) into its plan file's front matter.
@@ -789,7 +891,7 @@ func WriteStatus(file string, status string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, b.Bytes(), info.Mode().Perm())
 }
 
 // WriteDescription writes the description of an azima into its plan file, after its title heading.
@@ -840,7 +942,7 @@ func WriteDescription(file string, text string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, newContent, info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, newContent, info.Mode().Perm())
 }
 
 // WriteWish sets or removes the wish of an azima in its plan file's front matter.
@@ -912,7 +1014,7 @@ func WriteWish(file string, wish string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, b.Bytes(), info.Mode().Perm())
 }
 
 // WriteCode updates an azima's code in its plan file's front matter and title heading.
@@ -981,7 +1083,7 @@ func WriteCode(file string, code string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, b.Bytes(), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, b.Bytes(), info.Mode().Perm())
 }
 
 // WriteTitle writes an azima's title into its plan file's heading, the first "# " line after its front matter: its
@@ -1035,5 +1137,5 @@ func WriteTitle(file string, code string, title string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(file, append(slices.Clip(head), newBody...), info.Mode().Perm())
+	return true, fsx.WriteAtomic(file, append(slices.Clip(head), newBody...), info.Mode().Perm())
 }

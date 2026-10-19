@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,511 +17,627 @@ import (
 	djinnv1connect "github.com/empowill/djinn/gen/go/djinn/v1/djinnv1connect"
 )
 
-func TestReadWriteNotch(t *testing.T) {
+// settingsHome is a home folder whose settings.json holds settings; none when settings is "".
+func settingsHome(t *testing.T, settings string) string {
+	t.Helper()
 	home := t.TempDir()
+	if settings != "" {
+		if err := os.WriteFile(filepath.Join(home, settingsFile), []byte(settings), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return home
+}
 
-	// Default when settings.json does not exist.
-	if got := ReadNotch(home); got != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
-		t.Errorf("ReadNotch on missing file: got %v, want MEDIUM", got)
+// TestReadNotch: the notch saved in settings.json; Medium when none is, when the file is missing or broken, and for
+// an old saved Light.
+func TestReadNotch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		noHome   bool
+		settings string
+		want     djinnv1.LoadNotch
+	}{
+		{name: "no home", noHome: true, want: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
+		{name: "missing file", want: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
+		{name: "broken file", settings: `{"load":`, want: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
+		{name: "not saved", settings: `{"shortcut":"Ctrl+J"}`, want: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
+		{name: "saved light", settings: `{"shortcut":"Ctrl+J","load":"LOAD_NOTCH_LIGHT"}`,
+			want: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
+		{name: "saved numeric light", settings: `{"load":2}`, want: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
+		{name: "saved overclock", settings: `{"load":"LOAD_NOTCH_OVERCLOCK"}`,
+			want: djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK},
 	}
-
-	// Write an old saved "light" setting and ensure ReadNotch maps it to MEDIUM.
-	settingsPath := filepath.Join(home, settingsFile)
-	if err := os.WriteFile(settingsPath, []byte(`{"shortcut":"Ctrl+J","load":"LOAD_NOTCH_LIGHT"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := ReadNotch(home); got != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
-		t.Errorf("ReadNotch with saved light: got %v, want MEDIUM", got)
-	}
-
-	// Also test numeric value 2 for old saved light.
-	if err := os.WriteFile(settingsPath, []byte(`{"load":2}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := ReadNotch(home); got != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
-		t.Errorf("ReadNotch with saved numeric 2 (light): got %v, want MEDIUM", got)
-	}
-
-	// Overwrite with OVERCLOCK and verify shortcut preservation.
-	if err := os.WriteFile(settingsPath, []byte(`{"shortcut":"Ctrl+J"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := WriteNotch(home, djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK); err != nil {
-		t.Fatalf("WriteNotch OVERCLOCK: %v", err)
-	}
-	if got := ReadNotch(home); got != djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK {
-		t.Errorf("ReadNotch after OVERCLOCK write: got %v, want OVERCLOCK", got)
-	}
-
-	// Verify shortcut was preserved in settings.json.
-	data, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := string(data)
-	if !containsSubstring(content, "Ctrl+J") {
-		t.Errorf("WriteNotch did not preserve shortcut in %s", content)
-	}
-
-	// Overwrite with HIGH.
-	if err := WriteNotch(home, djinnv1.LoadNotch_LOAD_NOTCH_HIGH); err != nil {
-		t.Fatalf("WriteNotch: %v", err)
-	}
-	if got := ReadNotch(home); got != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
-		t.Errorf("ReadNotch after second write: got %v, want HIGH", got)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			home := ""
+			if !c.noHome {
+				home = settingsHome(t, c.settings)
+			}
+			if got := ReadNotch(home); got != c.want {
+				t.Errorf("ReadNotch = %v, want %v", got, c.want)
+			}
+		})
 	}
 }
 
-func TestLoadServiceHandler(t *testing.T) {
-	ctx := t.Context()
-	home := t.TempDir()
-
-	initPolicy := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
-	monitor := &Monitor{policy: initPolicy}
-
-	var updatedPolicy Policy
-	setPolicyCalled := 0
-	setPolicy := func(p Policy) {
-		setPolicyCalled++
-		updatedPolicy = p
+// TestWriteNotch: the notch is saved in settings.json beside the other settings, an old Light as Medium; without a
+// home, nothing is written.
+func TestWriteNotch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		noHome  bool
+		notches []djinnv1.LoadNotch // written in turn
+		want    djinnv1.LoadNotch
+	}{
+		{name: "overclock", notches: []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK},
+			want: djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK},
+		{name: "written again", notches: []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK,
+			djinnv1.LoadNotch_LOAD_NOTCH_HIGH}, want: djinnv1.LoadNotch_LOAD_NOTCH_HIGH},
+		{name: "light", notches: []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_LIGHT},
+			want: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM},
+		{name: "no home", noHome: true, notches: []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_HIGH}},
 	}
-
-	var broadcastedNotch djinnv1.LoadNotch
-	broadcastCalled := 0
-	broadcast := func(n djinnv1.LoadNotch) {
-		broadcastCalled++
-		broadcastedNotch = n
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if c.noHome {
+				if err := WriteNotch("", c.notches[0]); err != nil {
+					t.Errorf("WriteNotch without a home: %v", err)
+				}
+				return
+			}
+			home := settingsHome(t, `{"shortcut":"Ctrl+J"}`)
+			for _, n := range c.notches {
+				if err := WriteNotch(home, n); err != nil {
+					t.Fatalf("WriteNotch(%v): %v", n, err)
+				}
+			}
+			if got := ReadNotch(home); got != c.want {
+				t.Errorf("ReadNotch after WriteNotch = %v, want %v", got, c.want)
+			}
+			data, err := os.ReadFile(filepath.Join(home, settingsFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), "Ctrl+J") {
+				t.Errorf("WriteNotch did not preserve the shortcut in %s", data)
+			}
+		})
 	}
+}
 
+// TestReadIfritIdle: the minutes before an ifrit is put out, from 5 to 240; 0 when settings.json does not say.
+func TestReadIfritIdle(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		noHome   bool
+		settings string
+		want     uint32
+	}{
+		{name: "no home", noHome: true},
+		{name: "missing file"},
+		{name: "broken file", settings: `{"ifritIdleMinutes":`},
+		{name: "saved", settings: `{"ifritIdleMinutes":30}`, want: 30},
+		{name: "too short", settings: `{"ifritIdleMinutes":4}`},
+		{name: "too long", settings: `{"ifritIdleMinutes":241}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			home := ""
+			if !c.noHome {
+				home = settingsHome(t, c.settings)
+			}
+			if got := ReadIfritIdle(home); got != c.want {
+				t.Errorf("ReadIfritIdle = %d, want %d", got, c.want)
+			}
+		})
+	}
+}
+
+// TestReadLeadDriven: whether Djinn drives the lead, true unless settings.json says false.
+func TestReadLeadDriven(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		noHome   bool
+		settings string
+		want     bool
+	}{
+		{name: "no home", noHome: true, want: true},
+		{name: "missing file", want: true},
+		{name: "broken file", settings: `{"leadDriven":`, want: true},
+		{name: "unset", settings: `{}`, want: true},
+		{name: "saved true", settings: `{"leadDriven":true}`, want: true},
+		{name: "saved false", settings: `{"leadDriven":false}`, want: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			home := ""
+			if !c.noHome {
+				home = settingsHome(t, c.settings)
+			}
+			if got := ReadLeadDriven(home); got != c.want {
+				t.Errorf("ReadLeadDriven = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// serveLoad serves the load service of LoadHandler on a test server, and returns its client and the service.
+func serveLoad(t *testing.T, home string, m *Monitor, setPolicy func(Policy), broadcast func(djinnv1.LoadNotch),
+	workerMemory WorkerMemoryFunc, opts ...LoadOption,
+) (djinnv1connect.LoadServiceClient, *loadService) {
+	t.Helper()
+	var s *loadService
+	opts = append(opts, func(ls *loadService) { s = ls })
 	mux := http.NewServeMux()
-	mux.Handle(LoadHandler(home, monitor, setPolicy, broadcast, nil))
+	mux.Handle(LoadHandler(home, m, setPolicy, broadcast, workerMemory, opts...))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	return djinnv1connect.NewLoadServiceClient(srv.Client(), srv.URL), s
+}
 
-	client := djinnv1connect.NewLoadServiceClient(srv.Client(), srv.URL)
+// TestLoadHandler: a notch saved as auto is applied at start: the bar shows the notch the scheduler runs.
+func TestLoadHandler(t *testing.T) {
+	t.Parallel()
+	home := settingsHome(t, `{"load":"LOAD_NOTCH_AUTO"}`)
+	monitor := NewMonitor(NotchPolicy(ReadNotch(home)), func() (Snapshot, error) {
+		return Snapshot{Cores: 16}, nil
+	})
+	var calls []djinnv1.LoadNotch
+	var lastPolicy Policy
+	client, _ := serveLoad(t, home, monitor, func(p Policy) {
+		calls = append(calls, p.Notch)
+		lastPolicy = p
+	}, nil, nil, WithLoadTickInterval(0))
 
-	// Test Get.
-	getRes, err := client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+	res, err := client.Get(t.Context(), connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
-		t.Errorf("Get notch: got %v, want MEDIUM", getRes.Msg.GetNotch())
-	}
-	if getRes.Msg.GetWorkerPercentile() != 80 || getRes.Msg.GetWorkerEngagedAt() != "engaged at p80 (medium)" {
-		t.Errorf("Get percentile: p%d, %q", getRes.Msg.GetWorkerPercentile(), getRes.Msg.GetWorkerEngagedAt())
-	}
-
-	// Test Set with invalid/unspecified notch.
-	_, err = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
-		Notch: djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED,
-	}))
-	if err == nil {
-		t.Fatal("Set with UNSPECIFIED should fail")
-	}
-
-	// Test Set to MINIMAL.
-	setRes, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
-		Notch: djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
-	}))
-	if err != nil {
-		t.Fatalf("Set MINIMAL: %v", err)
-	}
-	if setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("Set response notch: got %v, want MINIMAL", setRes.Msg.GetNotch())
-	}
-
-	// Verify callbacks, monitor state, and disk persistence.
-	if setPolicyCalled != 1 {
-		t.Errorf("setPolicy called %d times, want 1", setPolicyCalled)
-	}
-	if updatedPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("updatedPolicy notch: got %v, want MINIMAL", updatedPolicy.Notch)
-	}
-	if broadcastCalled != 1 {
-		t.Errorf("broadcast called %d times, want 1", broadcastCalled)
-	}
-	if broadcastedNotch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("broadcasted notch: got %v, want MINIMAL", broadcastedNotch)
-	}
-	if monitor.Policy().Notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("monitor policy notch: got %v, want MINIMAL", monitor.Policy().Notch)
-	}
-	if diskNotch := ReadNotch(home); diskNotch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("disk notch: got %v, want MINIMAL", diskNotch)
-	}
-
-	// Test Get after Set.
-	getRes2, err := client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
-	if err != nil {
-		t.Fatalf("Get after Set: %v", err)
-	}
-	if getRes2.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("Get after Set: got %v, want MINIMAL", getRes2.Msg.GetNotch())
-	}
-	if getRes2.Msg.GetWorkerPercentile() != 95 || getRes2.Msg.GetWorkerEngagedAt() != "engaged at p95 (minimal)" {
-		t.Errorf("Get after Set percentile: p%d, %q", getRes2.Msg.GetWorkerPercentile(), getRes2.Msg.GetWorkerEngagedAt())
-	}
-}
-
-func TestLoadServiceWatch(t *testing.T) {
-	restore := SetWatchInterval(30 * time.Millisecond)
-	t.Cleanup(restore)
-
-	home := t.TempDir()
-	initPolicy := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
-	monitor := NewMonitor(initPolicy, func() (Snapshot, error) {
-		return Snapshot{
-			MemoryTotal:     16 * GiB,
-			MemoryAvailable: 10 * GiB,
-		}, nil
-	})
-
-	var engagedMem atomic.Uint64
-	var workerMem atomic.Uint64
-	engagedMem.Store(3 * GiB)
-	workerMem.Store(1 * GiB)
-
-	workerMemory := func(ctx context.Context, p Policy) (uint64, uint64, error) {
-		return engagedMem.Load(), workerMem.Load(), nil
-	}
-
-	mux := http.NewServeMux()
-	mux.Handle(LoadHandler(home, monitor, nil, nil, workerMemory))
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-
-	client := djinnv1connect.NewLoadServiceClient(srv.Client(), srv.URL)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	stream, err := client.Watch(ctx, connect.NewRequest(&djinnv1.LoadServiceWatchRequest{}))
-	if err != nil {
-		t.Fatalf("Watch: %v", err)
-	}
-
-	recv := make(chan *djinnv1.LoadServiceWatchResponse, 10)
-	recvErr := make(chan error, 1)
-	go func() {
-		for stream.Receive() {
-			recv <- stream.Msg()
+	resp := res.Msg
+	var barSlots int32
+	for _, ns := range resp.GetNotchSlots() {
+		if ns.GetNotch() == resp.GetNotch() {
+			barSlots = ns.GetSlots()
+			break
 		}
-		recvErr <- stream.Err()
-	}()
-
-	// 1. Initial message sent immediately
-	var first *djinnv1.LoadServiceWatchResponse
-	select {
-	case first = <-recv:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for initial watch response")
 	}
-
-	if first.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
-		t.Errorf("initial notch: got %v, want MEDIUM", first.GetNotch())
+	if resp.GetNotch() != monitor.Policy().Notch || barSlots != resp.GetSlots() || len(calls) == 0 {
+		t.Fatalf("the bar shows %v (%d slots), the scheduler runs %v (%d slots); setPolicy calls: %v",
+			resp.GetNotch(), barSlots, monitor.Policy().Notch, resp.GetSlots(), calls)
 	}
-	if first.GetMemoryTotalBytes() != 16*GiB {
-		t.Errorf("initial total: got %v, want 16 GiB", first.GetMemoryTotalBytes())
-	}
-	if first.GetMemoryAvailableBytes() != 10*GiB {
-		t.Errorf("initial available: got %v, want 10 GiB", first.GetMemoryAvailableBytes())
-	}
-	if first.GetEngagedMemoryBytes() != 3*GiB {
-		t.Errorf("initial engaged: got %v, want 3 GiB", first.GetEngagedMemoryBytes())
-	}
-	if first.GetWorkerMemoryBytes() != 1*GiB {
-		t.Errorf("initial worker: got %v, want 1 GiB", first.GetWorkerMemoryBytes())
-	}
-
-	// 2. Deduplication: no changes -> no messages sent across ticks (nothing sent when nothing changes)
-	select {
-	case msg := <-recv:
-		t.Fatalf("unexpected message without changes: %v", msg)
-	case <-time.After(80 * time.Millisecond):
-		// Expected: nothing sent
-	}
-
-	// 3. Set notch triggers rate-limited update
-	_, err = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
-		Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
-	}))
-	if err != nil {
-		t.Fatalf("Set HIGH: %v", err)
-	}
-
-	var second *djinnv1.LoadServiceWatchResponse
-	select {
-	case second = <-recv:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for update after Set")
-	}
-	if second.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
-		t.Errorf("second notch: got %v, want HIGH", second.GetNotch())
-	}
-
-	// 4. Memory change detected on periodic tick
-	engagedMem.Store(5 * GiB)
-	workerMem.Store(2 * GiB)
-
-	var third *djinnv1.LoadServiceWatchResponse
-	select {
-	case third = <-recv:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for update after memory change")
-	}
-	if third.GetEngagedMemoryBytes() != 5*GiB || third.GetWorkerMemoryBytes() != 2*GiB {
-		t.Errorf("third memory: got engaged=%v worker=%v, want 5 GiB and 2 GiB",
-			third.GetEngagedMemoryBytes(), third.GetWorkerMemoryBytes())
-	}
-
-	// 5. Rate limiting: rapid changes within interval are throttled
-	t0 := time.Now()
-	_, _ = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_LIGHT}))
-	_, _ = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX}))
-
-	var fourth *djinnv1.LoadServiceWatchResponse
-	select {
-	case fourth = <-recv:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for fourth message")
-	}
-	if fourth.GetNotch() == djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
-		t.Error("fourth notch unspecified")
-	}
-	elapsed := time.Since(t0)
-	if elapsed < 20*time.Millisecond {
-		t.Errorf("update arrived too fast (%v), expected rate limit around 30ms", elapsed)
-	}
-
-	// 6. Context cancellation ends stream
-	cancel()
-	select {
-	case <-recvErr:
-	case <-time.After(time.Second):
-		t.Fatal("stream did not terminate after context cancel")
+	if !monitor.Policy().Auto || !lastPolicy.Auto {
+		t.Errorf("policy Auto: monitor=%v, setPolicy=%v, want true", monitor.Policy().Auto, lastPolicy.Auto)
 	}
 }
 
-func TestLoadServiceAuto(t *testing.T) {
+// TestLoadService_Get: the notch in effect, the percentile it engages a worker at, and, at each read, how many workers
+// the scheduler lets run now and at each notch, how many run, how many the developer started by hand, and whether
+// lowering the notch pauses workers.
+func TestLoadService_Get(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{"medium", func(t *testing.T) {
+			client, _ := serveLoad(t, t.TempDir(), &Monitor{policy: NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)},
+				nil, nil, nil)
+			res, err := client.Get(t.Context(), connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if res.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+				t.Errorf("Get notch: got %v, want MEDIUM", res.Msg.GetNotch())
+			}
+			if res.Msg.GetWorkerPercentile() != 80 || res.Msg.GetWorkerEngagedAt() != "engaged at p80 (medium)" {
+				t.Errorf("Get percentile: p%d, %q", res.Msg.GetWorkerPercentile(), res.Msg.GetWorkerEngagedAt())
+			}
+			if res.Msg.GetAuto() || res.Msg.GetAutoReason() != nil {
+				t.Errorf("Get: %v, want no auto", res.Msg)
+			}
+		}},
+		{"slots", func(t *testing.T) {
+			snap := slotMachines[3]
+			m := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH), func() (Snapshot, error) { return snap, nil })
+			m.every = 0
+			client, _ := serveLoad(t, t.TempDir(), m, nil, nil, nil, WithLoadTickInterval(0),
+				WithLoadRunningWorkers(func() int { return 7 }), WithLoadPausedWorkers(func() int { return 1 }),
+				WithLoadForcedWorkers(func() int { return 1 }), WithLoadLowerPauses(func() bool { return true }))
+			res, err := client.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+				t.Fatalf("Set: %v", res.Msg)
+			}
+			got, err := client.Get(t.Context(), connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			g := got.Msg
+			if g.GetSlots() != 6 || g.GetRunningWorkers() != 7 || g.GetPausedWorkers() != 1 || g.GetForcedWorkers() != 1 ||
+				!g.GetLowerPauses() {
+				t.Errorf("Get: slots %d, running %d, paused %d, forced %d, lower pauses %v", g.GetSlots(), g.GetRunningWorkers(),
+					g.GetPausedWorkers(), g.GetForcedWorkers(), g.GetLowerPauses())
+			}
+			want := map[djinnv1.LoadNotch]int32{}
+			for _, ns := range m.NotchSlots() {
+				want[ns.Notch] = int32(ns.Slots)
+			}
+			if len(g.GetNotchSlots()) != len(ManualNotches) {
+				t.Fatalf("notch slots: %v", g.GetNotchSlots())
+			}
+			for _, ns := range g.GetNotchSlots() {
+				if ns.GetSlots() != want[ns.GetNotch()] {
+					t.Errorf("%v: %d slots, want %d", ns.GetNotch(), ns.GetSlots(), want[ns.GetNotch()])
+				}
+			}
+			if want[djinnv1.LoadNotch_LOAD_NOTCH_HIGH] != g.GetSlots() {
+				t.Errorf("the notch in effect shows %d, runs %d", want[djinnv1.LoadNotch_LOAD_NOTCH_HIGH], g.GetSlots())
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			c.run(t)
+		})
+	}
+}
+
+// TestLoadService_Set: a notch set is applied to the policy, broadcast, and saved; one unspecified is refused; the
+// overrides of djinn up's flags stay.
+func TestLoadService_Set(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{"unspecified", func(t *testing.T) {
+			client, _ := serveLoad(t, t.TempDir(), &Monitor{policy: DefaultPolicy()}, nil, nil, nil)
+			if _, err := client.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+				Notch: djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED,
+			})); err == nil {
+				t.Fatal("Set with UNSPECIFIED should fail")
+			}
+		}},
+		{"minimal", func(t *testing.T) {
+			ctx := t.Context()
+			home := t.TempDir()
+			monitor := &Monitor{policy: NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)}
+			var updatedPolicy Policy
+			setPolicyCalled := 0
+			var broadcastedNotch djinnv1.LoadNotch
+			broadcastCalled := 0
+			client, _ := serveLoad(t, home, monitor, func(p Policy) {
+				setPolicyCalled++
+				updatedPolicy = p
+			}, func(n djinnv1.LoadNotch) {
+				broadcastCalled++
+				broadcastedNotch = n
+			}, nil)
+			setRes, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+				Notch: djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
+			}))
+			if err != nil {
+				t.Fatalf("Set MINIMAL: %v", err)
+			}
+			if setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+				t.Errorf("Set response notch: got %v, want MINIMAL", setRes.Msg.GetNotch())
+			}
+			// The callbacks, the monitor's state, and the notch saved.
+			if setPolicyCalled != 1 {
+				t.Errorf("setPolicy called %d times, want 1", setPolicyCalled)
+			}
+			if updatedPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+				t.Errorf("updatedPolicy notch: got %v, want MINIMAL", updatedPolicy.Notch)
+			}
+			if broadcastCalled != 1 {
+				t.Errorf("broadcast called %d times, want 1", broadcastCalled)
+			}
+			if broadcastedNotch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+				t.Errorf("broadcasted notch: got %v, want MINIMAL", broadcastedNotch)
+			}
+			if monitor.Policy().Notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+				t.Errorf("monitor policy notch: got %v, want MINIMAL", monitor.Policy().Notch)
+			}
+			if diskNotch := ReadNotch(home); diskNotch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+				t.Errorf("disk notch: got %v, want MINIMAL", diskNotch)
+			}
+			// Get after Set.
+			getRes, err := client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+			if err != nil {
+				t.Fatalf("Get after Set: %v", err)
+			}
+			if getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
+				t.Errorf("Get after Set: got %v, want MINIMAL", getRes.Msg.GetNotch())
+			}
+			if getRes.Msg.GetWorkerPercentile() != 95 || getRes.Msg.GetWorkerEngagedAt() != "engaged at p95 (minimal)" {
+				t.Errorf("Get after Set percentile: p%d, %q", getRes.Msg.GetWorkerPercentile(), getRes.Msg.GetWorkerEngagedAt())
+			}
+		}},
+		{"keeps worker memory guard", func(t *testing.T) {
+			initPolicy := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
+			initPolicy.Workers = 5
+			initPolicy.WorkerMemory = 4 * GiB
+			initPolicy.WorkerMemoryGuard = 1.75
+			monitor := NewMonitor(initPolicy, func() (Snapshot, error) {
+				return Snapshot{Cores: 16}, nil
+			})
+			var recorded Policy
+			client, _ := serveLoad(t, t.TempDir(), monitor, func(p Policy) { recorded = p }, nil, nil, WithLoadTickInterval(0))
+			if _, err := client.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+				Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+			})); err != nil {
+				t.Fatalf("Set HIGH: %v", err)
+			}
+			got := monitor.Policy()
+			if got.Workers != 5 || got.WorkerMemory != 4*GiB || got.WorkerMemoryGuard != 1.75 {
+				t.Errorf("monitor policy overrides after Set: Workers=%d WorkerMemory=%d WorkerMemoryGuard=%v, want 5, %d, 1.75",
+					got.Workers, got.WorkerMemory, got.WorkerMemoryGuard, 4*GiB)
+			}
+			if recorded.Workers != 5 || recorded.WorkerMemory != 4*GiB || recorded.WorkerMemoryGuard != 1.75 {
+				t.Errorf("setPolicy overrides after Set: Workers=%d WorkerMemory=%d WorkerMemoryGuard=%v, want 5, %d, 1.75",
+					recorded.Workers, recorded.WorkerMemory, recorded.WorkerMemoryGuard, 4*GiB)
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			c.run(t)
+		})
+	}
+}
+
+// TestLoadService_Tick: in auto mode, set from Max, a build outside Djinn lowers the notch one step once it stayed 3
+// minutes above the high mark, applied to the policy and broadcast, and the reason read by Get and Watch; a manual
+// notch leaves auto mode: no reason any more.
+func TestLoadService_Tick(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	home := t.TempDir()
-
 	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	clock := func() time.Time { return fakeNow }
-	var working bool
-	signal := func() bool { return working }
-
-	initPolicy := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
-	monitor := &Monitor{policy: initPolicy}
-
+	outside := Outside{CPU: 60, CPUKnown: true}
+	source := func(time.Time) (Outside, bool) { return outside, true }
+	monitor := &Monitor{policy: NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)}
 	var latestPolicy Policy
-	setPolicy := func(p Policy) {
-		latestPolicy = p
-	}
-
 	var latestBroadcast djinnv1.LoadNotch
-	broadcast := func(n djinnv1.LoadNotch) {
-		latestBroadcast = n
-	}
-
-	ac := NewAutoController(
-		djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
-		WithAutoClock(clock),
-		WithAutoSignal(signal),
-		WithAutoStepDuration(1*time.Minute),
+	client, s := serveLoad(t, home, monitor,
+		func(p Policy) { latestPolicy = p },
+		func(n djinnv1.LoadNotch) { latestBroadcast = n },
+		nil,
+		WithLoadClock(clock),
+		WithLoadOutside(source),
+		WithLoadTickInterval(0), // manual beats in the test
 	)
 
-	mux := http.NewServeMux()
-	mux.Handle(LoadHandler(
-		home,
-		monitor,
-		setPolicy,
-		broadcast,
-		nil,
-		WithLoadAutoController(ac),
-		WithLoadTickInterval(0), // manual ticking in test
-	))
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-
-	client := djinnv1connect.NewLoadServiceClient(srv.Client(), srv.URL)
-
-	// Initial state: medium, not auto
 	getRes, err := client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM || getRes.Msg.GetAuto() {
-		t.Fatalf("Initial Get: notch=%v auto=%v", getRes.Msg.GetNotch(), getRes.Msg.GetAuto())
+	if getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM || getRes.Msg.GetAuto() || getRes.Msg.GetAutoReason() != nil {
+		t.Fatalf("Initial Get: %v", getRes.Msg)
 	}
 
-	// 1. Switch to AUTO mode while developer is working
-	working = true
-	setRes, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
-		Notch: djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
-	}))
+	// Max chosen, then Auto: it starts from Max, the next beats deciding; nothing measured yet.
+	if _, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX})); err != nil {
+		t.Fatal(err)
+	}
+	setRes, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_AUTO}))
 	if err != nil {
 		t.Fatalf("Set AUTO: %v", err)
 	}
-	if !setRes.Msg.GetAuto() {
-		t.Errorf("Set AUTO response: auto=%v, want true", setRes.Msg.GetAuto())
+	if !setRes.Msg.GetAuto() || setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MAX || setRes.Msg.GetChosenNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
+		t.Fatalf("Set AUTO: %v, want auto at Max", setRes.Msg)
 	}
-	if setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("Set AUTO while working: got notch=%v, want MINIMAL", setRes.Msg.GetNotch())
-	}
-	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("Policy notch: got %v, want MINIMAL", latestPolicy.Notch)
-	}
-	if latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("Broadcast notch: got %v, want MINIMAL", latestBroadcast)
+	if ReadNotch(home) != djinnv1.LoadNotch_LOAD_NOTCH_AUTO {
+		t.Errorf("saved notch %v, want auto", ReadNotch(home))
 	}
 
-	// Get reflects auto state and effective notch
+	// A build outside Djinn: one notch down once it stayed 3 minutes above the high mark, from the first beat on,
+	// applied to the policy and broadcast.
+	for range 10 {
+		fakeNow = fakeNow.Add(AutoBeat)
+		s.Tick()
+	}
+	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_HIGH || !latestPolicy.Auto || latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+		t.Errorf("after 3 min outside: policy %v auto %v, broadcast %v, want High", latestPolicy.Notch, latestPolicy.Auto, latestBroadcast)
+	}
 	getRes, err = client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if !getRes.Msg.GetAuto() || getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("Get after Set AUTO: auto=%v, notch=%v", getRes.Msg.GetAuto(), getRes.Msg.GetNotch())
+	reason := getRes.Msg.GetAutoReason()
+	if getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH || reason.GetOutsidePercent() != 60 ||
+		reason.GetStep() != djinnv1.LoadAutoStep_LOAD_AUTO_STEP_LOWER || reason.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM ||
+		reason.GetInSeconds() != 180 {
+		t.Errorf("Get in auto: %v, want High, outside 60 %%, down to Medium in 3 min", getRes.Msg)
+	}
+	if w := s.snapshot(ctx); w.GetAutoReason().GetOutsidePercent() != 60 {
+		t.Errorf("Watch: reason %v", w.GetAutoReason())
 	}
 
-	// 2. Machine at rest: Tick advances notch to MEDIUM after 1 minute
-	working = false
-	fakeNow = fakeNow.Add(1 * time.Minute)
-	changed, notch := ac.Tick()
-	if !changed || notch != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
-		t.Fatalf("Tick after 1m rest: changed=%v, notch=%v, want MEDIUM", changed, notch)
-	}
-	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
-		t.Errorf("Policy notch after tick: got %v, want MEDIUM", latestPolicy.Notch)
-	}
-	if latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
-		t.Errorf("Broadcast notch after tick: got %v, want MEDIUM", latestBroadcast)
-	}
-
-	// 3. Manual notch selection exits AUTO mode
-	setRes, err = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
-		Notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX,
-	}))
+	// A manual notch leaves auto mode: no reason any more.
+	setRes, err = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX}))
 	if err != nil {
 		t.Fatalf("Set MAX: %v", err)
 	}
-	if setRes.Msg.GetAuto() {
-		t.Errorf("Set MAX response: auto=%v, want false", setRes.Msg.GetAuto())
+	if setRes.Msg.GetAuto() || setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MAX || latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
+		t.Errorf("Set MAX: %v, policy %v", setRes.Msg, latestPolicy.Notch)
 	}
-	if setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
-		t.Errorf("Set MAX response: notch=%v, want MAX", setRes.Msg.GetNotch())
-	}
-	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
-		t.Errorf("Policy notch after manual set: got %v, want MAX", latestPolicy.Notch)
-	}
-
-	// Get reflects manual mode
 	getRes, err = client.Get(ctx, connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if getRes.Msg.GetAuto() || getRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
-		t.Errorf("Get after manual set: auto=%v, notch=%v", getRes.Msg.GetAuto(), getRes.Msg.GetNotch())
+	if getRes.Msg.GetAuto() || getRes.Msg.GetAutoReason() != nil {
+		t.Errorf("Get after manual set: %v", getRes.Msg)
 	}
 }
 
-func TestLoadServiceWithIdleSource(t *testing.T) {
-	ctx := t.Context()
-	home := t.TempDir()
+// TestLoadService_Watch: the stream sends the state at once, then only what changed, at most once an interval; it
+// says the slots Get says. Not parallel: SetWatchInterval sets the interval of every stream.
+func TestLoadService_Watch(t *testing.T) {
+	cases := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{"stream", func(t *testing.T) {
+			restore := SetWatchInterval(30 * time.Millisecond)
+			t.Cleanup(restore)
+			monitor := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), func() (Snapshot, error) {
+				return Snapshot{
+					MemoryTotal:     16 * GiB,
+					MemoryAvailable: 10 * GiB,
+				}, nil
+			})
+			var engagedMem atomic.Uint64
+			var workerMem atomic.Uint64
+			engagedMem.Store(3 * GiB)
+			workerMem.Store(1 * GiB)
+			workerMemory := func(ctx context.Context, p Policy) (uint64, uint64, error) {
+				return engagedMem.Load(), workerMem.Load(), nil
+			}
+			client, _ := serveLoad(t, t.TempDir(), monitor, nil, nil, workerMemory)
 
-	fakeNow := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
-	clock := func() time.Time { return fakeNow }
-	signal := func() bool { return false }
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			stream, err := client.Watch(ctx, connect.NewRequest(&djinnv1.LoadServiceWatchRequest{}))
+			if err != nil {
+				t.Fatalf("Watch: %v", err)
+			}
+			recv := make(chan *djinnv1.LoadServiceWatchResponse, 10)
+			recvErr := make(chan error, 1)
+			go func() {
+				for stream.Receive() {
+					recv <- stream.Msg()
+				}
+				recvErr <- stream.Err()
+			}()
 
-	var idleDuration time.Duration
-	idleOk := true
-	idleSource := func() (time.Duration, bool) {
-		return idleDuration, idleOk
-	}
+			// 1. Initial message sent immediately
+			var first *djinnv1.LoadServiceWatchResponse
+			select {
+			case first = <-recv:
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for initial watch response")
+			}
+			if first.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+				t.Errorf("initial notch: got %v, want MEDIUM", first.GetNotch())
+			}
+			if first.GetMemoryTotalBytes() != 16*GiB {
+				t.Errorf("initial total: got %v, want 16 GiB", first.GetMemoryTotalBytes())
+			}
+			if first.GetMemoryAvailableBytes() != 10*GiB {
+				t.Errorf("initial available: got %v, want 10 GiB", first.GetMemoryAvailableBytes())
+			}
+			if first.GetEngagedMemoryBytes() != 3*GiB {
+				t.Errorf("initial engaged: got %v, want 3 GiB", first.GetEngagedMemoryBytes())
+			}
+			if first.GetWorkerMemoryBytes() != 1*GiB {
+				t.Errorf("initial worker: got %v, want 1 GiB", first.GetWorkerMemoryBytes())
+			}
 
-	initPolicy := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
-	monitor := &Monitor{policy: initPolicy}
+			// 2. Deduplication: no changes -> no messages sent across ticks (nothing sent when nothing changes)
+			select {
+			case msg := <-recv:
+				t.Fatalf("unexpected message without changes: %v", msg)
+			case <-time.After(80 * time.Millisecond):
+				// Expected: nothing sent
+			}
 
-	var latestPolicy Policy
-	setPolicy := func(p Policy) {
-		latestPolicy = p
-	}
+			// 3. Set notch triggers rate-limited update
+			if _, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+				Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+			})); err != nil {
+				t.Fatalf("Set HIGH: %v", err)
+			}
+			var second *djinnv1.LoadServiceWatchResponse
+			select {
+			case second = <-recv:
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for update after Set")
+			}
+			if second.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+				t.Errorf("second notch: got %v, want HIGH", second.GetNotch())
+			}
 
-	var latestBroadcast djinnv1.LoadNotch
-	broadcast := func(n djinnv1.LoadNotch) {
-		latestBroadcast = n
-	}
+			// 4. Memory change detected on periodic tick
+			engagedMem.Store(5 * GiB)
+			workerMem.Store(2 * GiB)
+			var third *djinnv1.LoadServiceWatchResponse
+			select {
+			case third = <-recv:
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for update after memory change")
+			}
+			if third.GetEngagedMemoryBytes() != 5*GiB || third.GetWorkerMemoryBytes() != 2*GiB {
+				t.Errorf("third memory: got engaged=%v worker=%v, want 5 GiB and 2 GiB",
+					third.GetEngagedMemoryBytes(), third.GetWorkerMemoryBytes())
+			}
 
-	// 1. Configure LoadHandler with WithLoadIdleSource
-	prefix, handler := LoadHandler(
-		home,
-		monitor,
-		setPolicy,
-		broadcast,
-		nil,
-		WithLoadClock(clock),
-		WithLoadSignal(signal),
-		WithLoadIdleSource(idleSource),
-		WithLoadStepDuration(1*time.Minute),
-		WithLoadTickInterval(0),
-	)
+			// 5. Rate limiting: rapid changes within interval are throttled
+			t0 := time.Now()
+			_, _ = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_LIGHT}))
+			_, _ = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX}))
+			var fourth *djinnv1.LoadServiceWatchResponse
+			select {
+			case fourth = <-recv:
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for fourth message")
+			}
+			if fourth.GetNotch() == djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
+				t.Error("fourth notch unspecified")
+			}
+			if elapsed := time.Since(t0); elapsed < 20*time.Millisecond {
+				t.Errorf("update arrived too fast (%v), expected rate limit around 30ms", elapsed)
+			}
 
-	mux := http.NewServeMux()
-	mux.Handle(prefix, handler)
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-
-	client := djinnv1connect.NewLoadServiceClient(srv.Client(), srv.URL)
-
-	// Set initial saved notch to MAX
-	if err := WriteNotch(home, djinnv1.LoadNotch_LOAD_NOTCH_MAX); err != nil {
-		t.Fatal(err)
+			// 6. Context cancellation ends stream
+			cancel()
+			select {
+			case <-recvErr:
+			case <-time.After(time.Second):
+				t.Fatal("stream did not terminate after context cancel")
+			}
+		}},
+		// The watch says the slots Get says.
+		{"slots", func(t *testing.T) {
+			snap := slotMachines[3]
+			m := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH), func() (Snapshot, error) { return snap, nil })
+			m.every = 0
+			client, _ := serveLoad(t, t.TempDir(), m, nil, nil, nil, WithLoadTickInterval(0),
+				WithLoadForcedWorkers(func() int { return 1 }), WithLoadLowerPauses(func() bool { return true }))
+			got, err := client.Get(t.Context(), connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream, err := client.Watch(t.Context(), connect.NewRequest(&djinnv1.LoadServiceWatchRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			if !stream.Receive() {
+				t.Fatal(stream.Err())
+			}
+			w := stream.Msg()
+			if w.GetSlots() != got.Msg.GetSlots() || w.GetSlots() != 6 || w.GetForcedWorkers() != 1 || !w.GetLowerPauses() ||
+				len(w.GetNotchSlots()) != len(ManualNotches) {
+				t.Errorf("Watch: %v", w)
+			}
+		}},
 	}
-
-	// When user is actively typing (idle = 5s < 30s), switching to AUTO drops directly to MINIMAL
-	idleDuration = 5 * time.Second
-	setRes, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
-		Notch: djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
-	}))
-	if err != nil {
-		t.Fatalf("Set AUTO: %v", err)
+	for _, c := range cases {
+		t.Run(c.name, c.run)
 	}
-	if !setRes.Msg.GetAuto() {
-		t.Errorf("expected auto mode, got false")
-	}
-	if setRes.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Fatalf("Set AUTO while active: got %v, want MINIMAL", setRes.Msg.GetNotch())
-	}
-	if latestPolicy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("latestPolicy notch: got %v, want MINIMAL", latestPolicy.Notch)
-	}
-	if latestBroadcast != djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL {
-		t.Errorf("latestBroadcast notch: got %v, want MINIMAL", latestBroadcast)
-	}
-
-	// When user is idle (idle = 5m >= 3m), manual exit and reentry to AUTO with chosen=HIGH preserves HIGH
-	idleDuration = 5 * time.Minute
-	_, _ = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
-		Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
-	}))
-	setRes2, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
-		Notch: djinnv1.LoadNotch_LOAD_NOTCH_AUTO,
-	}))
-	if err != nil {
-		t.Fatalf("Set AUTO while idle: %v", err)
-	}
-	if setRes2.Msg.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
-		t.Fatalf("Set AUTO while idle: got %v, want HIGH", setRes2.Msg.GetNotch())
-	}
-}
-
-func containsSubstring(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

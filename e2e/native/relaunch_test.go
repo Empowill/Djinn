@@ -1,0 +1,130 @@
+package native
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+// watched starts binary for a test of the window's watch, on the GPU whatever started the tests: a Djinn started by
+// hand in software rendering passes it to its workers.
+func watched(t *testing.T, env ...string) (*djinn, func() string) {
+	t.Helper()
+	binary := os.Getenv("DJINN_E2E_NATIVE")
+	if binary == "" {
+		t.Skip("opens a native window: run it with go tool task e2e-native")
+	}
+	if runtime.GOOS != "linux" {
+		t.Skip("the window is watched on Linux only")
+	}
+	d := start(t, binary, append(env, "WEBKIT_DISABLE_DMABUF_RENDERER", "WEBKIT_DISABLE_COMPOSITING_MODE")...)
+	return d, func() string {
+		b, _ := os.ReadFile(filepath.Join(d.home, "logs", "djinn.log"))
+		return string(b)
+	}
+}
+
+// logs waits until the log holds each of want.
+func logs(t *testing.T, log func() string, want ...string) {
+	t.Helper()
+	eventually(t, 30*time.Second, func() error {
+		for _, w := range want {
+			if !strings.Contains(log(), w) {
+				return fmt.Errorf("the log lacks %q:\n%s", w, log())
+			}
+		}
+		return nil
+	})
+}
+
+// shows waits until the window shows the interface.
+func shows(t *testing.T, d *djinn) {
+	t.Helper()
+	eventually(t, 30*time.Second, func() error {
+		var page struct {
+			Bridge bool `json:"bridge"`
+		}
+		if err := d.eval(`return { bridge: !!document.querySelector(".wish-app") };`, &page); err != nil {
+			return err
+		}
+		if !page.Bridge {
+			return fmt.Errorf("the interface does not show")
+		}
+		return nil
+	})
+}
+
+// TestNativeWebProcessEnds: the web process of a window that runs dies mid-session, with no GPU hang (W366): its end
+// is logged with its reason, the page loads again with a new web process, and the page's console reaches djinn up's
+// output. Every stop names its source (decision Q84).
+func TestNativeWebProcessEnds(t *testing.T) {
+	d, log := watched(t)
+	logs(t, log, `msg="window: load" event=started`, `msg="window: load" event=committed`)
+	shows(t, d)
+	web := webProcesses(t, d.cmd.Process.Pid)
+	if len(web) != 1 {
+		t.Fatalf("web processes %v; want one", web)
+	}
+	// Only the web process of this test's own djinn, by its PID.
+	p, err := os.FindProcess(web[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Kill(); err != nil { // SIGKILL; syscall.Kill does not build on Windows.
+		t.Fatal(err)
+	}
+	logs(t, log, `msg="window: the web process of the page ended" reason=crashed`,
+		`msg="window: the page loads again" page=2`)
+	if !strings.Contains(d.out.String(), "djinn: Djinn's window lost its page.") {
+		t.Errorf("not said on the output:\n%s", d.out.String())
+	}
+	shows(t, d)
+	var none struct{}
+	if err := d.eval(`console.log("w354 console check"); return {};`, &none); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, 10*time.Second, func() error {
+		if !strings.Contains(d.out.String(), "w354 console check") {
+			return fmt.Errorf("the page's console is not on djinn's output:\n%s", d.out.String())
+		}
+		return nil
+	})
+	if after := webProcesses(t, d.cmd.Process.Pid); len(after) != 1 || after[0] == web[0] {
+		t.Errorf("web processes %v after the reload; want one new", after)
+	}
+	d.stop(t)
+	if !strings.Contains(log(), `msg="shutdown begins" why="SIGINT (Ctrl+C in djinn up's terminal, or kill -INT)"`) {
+		t.Errorf("the stop does not name its source:\n%s", log())
+	}
+}
+
+// webProcesses is the WebKit web processes started by pid, the oldest first.
+func webProcesses(t *testing.T, pid int) []int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found []int
+	for _, e := range entries {
+		child, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		stat, err := os.ReadFile(filepath.Join("/proc", e.Name(), "stat"))
+		if err != nil {
+			continue
+		}
+		s := string(stat)
+		fields := strings.Fields(s[strings.LastIndexByte(s, ')')+1:])
+		if len(fields) > 1 && fields[1] == strconv.Itoa(pid) && strings.Contains(s, "(WebKitWeb") {
+			found = append(found, child)
+		}
+	}
+	return found // /proc lists by PID: the oldest first, short of a wrap.
+}

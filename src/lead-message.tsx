@@ -2,24 +2,80 @@
 // unfolds into a box whose text goes to the one lead's terminal (LeadService.Tell), about the wish if there is one, as
 // if the developer typed it there. Enter sends, Shift+Enter breaks the line, Escape folds the pill and returns focus
 // to it, Cmd/Ctrl+I opens it. A click or the focus going anywhere else folds it too, so the shortcut always opens it
-// focused. The draft stays with the wish, the flying carpet's with it.
+// focused. The draft stays with the wish, the flying carpet's with it. When the lead answers or tells a decision it
+// took alone (LeadService.Say: blocks of kind reply or decided), the eye comes to the socket and speaks in a bubble
+// held to the pill (Decision Q78 A, tilasm L13 v6).
 import { Check, Clock, MessageSquare, Send, Terminal, X } from "lucide-react";
 import {
   type KeyboardEvent,
+  type RefObject,
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
+import type { Block } from "../gen/ts/plan/v1/plan_pb";
 import { message } from "./data/client";
-import { useClients, useStore } from "./data/djinn";
+import { useClients, useOptionalData, useStore } from "./data/djinn";
+import {
+  advanceLeadSay,
+  bubblePlace,
+  leadSayQueue,
+  readLastSent,
+  readSeenIds,
+  writeLastSent,
+  writeSeenIds,
+} from "./data/eye";
+import type { WishDetail } from "./data/store";
+import { EyePerch, useEyeLead, useEyeSpeaking } from "./djinn-eye";
 import { t } from "./i18n";
 import { useInstructionDraft } from "./instruction-draft";
+import { onTextSize } from "./text-size";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { WorkspaceAction } from "./workspace-action";
 import "./instruction.css";
+
+const emptyDetails: Record<string, WishDetail> = {};
+const emptyBlocks: readonly Block[] = [];
+
+// Auto-grows a textarea up to its CSS max-height, then scrolls inside.
+export function useGrowTextarea(
+  box: RefObject<HTMLTextAreaElement | null>,
+  text: string,
+  active = true,
+) {
+  useLayoutEffect(() => {
+    if (!active) return;
+    const textarea = box.current;
+    if (!textarea) return;
+
+    const resize = () => {
+      textarea.style.height = "auto";
+      textarea.style.overflowY = "hidden";
+      const maxHeight =
+        typeof window !== "undefined" &&
+        typeof window.getComputedStyle === "function"
+          ? Number.parseFloat(window.getComputedStyle(textarea).maxHeight)
+          : Number.NaN;
+      const height = Number.isFinite(maxHeight)
+        ? Math.min(textarea.scrollHeight, maxHeight)
+        : textarea.scrollHeight;
+      textarea.style.height = `${height}px`;
+      textarea.style.overflowY =
+        textarea.scrollHeight > height ? "auto" : "hidden";
+    };
+    resize();
+    const stopTextSize = onTextSize(resize);
+    window.addEventListener("resize", resize);
+    return () => {
+      stopTextSize();
+      window.removeEventListener("resize", resize);
+    };
+  }, [box, text, active]);
+}
 
 export function LeadMessage({
   wishId = "",
@@ -42,6 +98,28 @@ export function LeadMessage({
   // The last text was refused, the lead not running in its terminal: the pill offers to start it too.
   const [refused, setRefused] = useState(false);
   const offline = stopped || refused;
+  useEyeLead(offline);
+  const details = useOptionalData((s) => s.details, emptyDetails);
+  const blocks = useMemo(() => {
+    if (wishId) return details[wishId]?.blocks ?? emptyBlocks;
+    const all: Block[] = [];
+    for (const d of Object.values(details)) {
+      for (const b of d.blocks) all.push(b);
+    }
+    return all;
+  }, [details, wishId]);
+  const [seen, setSeen] = useState<Set<string>>(() => readSeenIds());
+  const [lastSent, setLastSent] = useState<string>(() => readLastSent(wishId));
+  useEffect(() => {
+    setLastSent(readLastSent(wishId));
+  }, [wishId]);
+  const queue = useMemo(() => leadSayQueue(blocks, seen), [blocks, seen]);
+  const current = queue[0];
+  useEyeSpeaking(queue.length > 0);
+  const [bubbleOpen, setBubbleOpen] = useState(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const anchor = useRef<HTMLDivElement>(null);
+  const [roomLeft, setRoomLeft] = useState(1024);
   const box = useRef<HTMLTextAreaElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const restoreFocus = useRef(false);
@@ -55,8 +133,22 @@ export function LeadMessage({
     mounted.current = true;
     return () => {
       mounted.current = false;
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
     };
   }, []);
+  useLayoutEffect(() => {
+    if (!current) {
+      setBubbleOpen(false);
+      return;
+    }
+    const measure = () => {
+      const rect = anchor.current?.getBoundingClientRect();
+      if (rect && rect.width > 0) setRoomLeft(rect.left - 24);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [current, open]);
   useEffect(() => {
     if (open) {
       box.current?.focus({ preventScroll: true });
@@ -69,28 +161,7 @@ export function LeadMessage({
     );
     return () => window.cancelAnimationFrame(frame);
   }, [open, wishId, id]);
-  useLayoutEffect(() => {
-    if (!open) return;
-    const textarea = box.current;
-    if (!textarea) return;
-
-    const resize = () => {
-      textarea.style.height = "auto";
-      textarea.style.overflowY = "hidden";
-      const maxHeight = Number.parseFloat(
-        window.getComputedStyle(textarea).maxHeight,
-      );
-      const height = Number.isFinite(maxHeight)
-        ? Math.min(textarea.scrollHeight, maxHeight)
-        : textarea.scrollHeight;
-      textarea.style.height = `${height}px`;
-      textarea.style.overflowY =
-        textarea.scrollHeight > height ? "auto" : "hidden";
-    };
-    resize();
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, [open, state.text]);
+  useGrowTextarea(box, state.text, open);
   useEffect(() => {
     const keys = (event: globalThis.KeyboardEvent) => {
       if (
@@ -157,6 +228,8 @@ export function LeadMessage({
     if (!text) return;
     try {
       const { waiting } = await clients.lead.tell({ text, wishId });
+      writeLastSent(wishId, text);
+      setLastSent(text.replace(/\s+/g, " ").trim());
       draft.set({ text: "", notice: waiting ? "waiting" : "sent" });
       setRefused(false);
     } catch (error) {
@@ -200,132 +273,188 @@ export function LeadMessage({
       void send();
     }
   };
+  const place = bubblePlace(open, roomLeft);
+  const isDecided = current?.kind.toLowerCase() === "decided";
   return (
-    <div className="lead-message" ref={root}>
-      <WorkspaceAction
-        tone="secondary"
-        expanded={open}
-        className="workspace-action-lead"
-      >
-        {open ? (
+    <div className="lead-message" ref={root} data-eye-place="">
+      <div className="lead-message-anchor" ref={anchor}>
+        {current && (
           <div
-            id={`${id}-panel`}
-            className="lead-message-panel workspace-action-editor-shell"
-            role="dialog"
-            aria-label={t("lead_message.title")}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape") return;
-              event.preventDefault();
-              event.stopPropagation();
-              close();
+            className={`lead-bubble ${place === "side" ? "is-side" : "is-above"}${bubbleOpen ? " is-open" : ""}`}
+            role="status"
+            aria-live="polite"
+            onMouseDown={(event) => event.preventDefault()}
+            onMouseEnter={() => {
+              if (hoverTimer.current) clearTimeout(hoverTimer.current);
+              hoverTimer.current = setTimeout(() => setBubbleOpen(true), 150);
+            }}
+            onMouseLeave={() => {
+              if (hoverTimer.current) clearTimeout(hoverTimer.current);
+              hoverTimer.current = setTimeout(() => setBubbleOpen(false), 300);
+            }}
+            onClick={() => {
+              if (hoverTimer.current) clearTimeout(hoverTimer.current);
+              const next = advanceLeadSay(queue, seen);
+              setSeen(next.seen);
+              writeSeenIds(next.seen);
+              if (!next.next) setBubbleOpen(false);
             }}
           >
-            <form
-              className={`workspace-action-editor ${offline ? "" : "is-running"}`}
-              onSubmit={(event) => {
+            <div className="lead-bubble-head">
+              <span className="lead-bubble-kind">
+                {isDecided
+                  ? t("lead_message.decided")
+                  : t("lead_message.reply")}
+              </span>
+              {queue.length > 1 && (
+                <span className="lead-bubble-count">1 / {queue.length}</span>
+              )}
+            </div>
+            {!isDecided && lastSent && (
+              <div className="lead-bubble-quote">
+                {t("lead_message.in_reply_to", { text: lastSent })}
+              </div>
+            )}
+            <div className="lead-bubble-text">{current.content?.trim()}</div>
+          </div>
+        )}
+        <WorkspaceAction
+          tone="secondary"
+          expanded={open}
+          className="workspace-action-lead"
+          perch={
+            // The socket on the pill's left, a porthole of the seal's emerald: its icon at rest, the eye when it listens,
+            // behind two halves that part for it (djinn-eye.css). The whole pill is the eye's place: folded or open, the
+            // focus in it brings the eye to the socket.
+            <span className="lead-socket">
+              <EyePerch name="pill" opens />
+              <span className="lead-socket-upper" />
+              <span className="lead-socket-lower" />
+              <MessageSquare size={14} aria-hidden="true" />
+              <span className="lead-socket-ring" />
+            </span>
+          }
+        >
+          {open ? (
+            <div
+              id={`${id}-panel`}
+              className="lead-message-panel workspace-action-editor-shell"
+              role="dialog"
+              aria-label={t("lead_message.title")}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
                 event.preventDefault();
-                void send();
+                event.stopPropagation();
+                close();
               }}
             >
-              {offline && (
+              <form
+                className={`workspace-action-editor ${offline ? "" : "is-running"}`}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void send();
+                }}
+              >
+                {offline && (
+                  <TooltipButton
+                    className="workspace-action-leading"
+                    disabled={resuming}
+                    onClick={() => void resume()}
+                    label={t("lead_message.resume")}
+                  >
+                    <Terminal size={13} aria-hidden="true" />
+                  </TooltipButton>
+                )}
+                <label
+                  htmlFor={`${id}-input`}
+                  className="workspace-action-sr-only"
+                >
+                  {placeholder}
+                </label>
+                <textarea
+                  id={`${id}-input`}
+                  ref={box}
+                  rows={1}
+                  value={state.text}
+                  onChange={(event) =>
+                    draft.set({
+                      text: event.target.value,
+                      error: "",
+                      notice: "",
+                    })
+                  }
+                  onKeyDown={keys}
+                  placeholder={placeholder}
+                  aria-invalid={!!state.error}
+                  aria-describedby={
+                    state.error
+                      ? `${id}-error`
+                      : state.notice
+                        ? `${id}-notice`
+                        : undefined
+                  }
+                  readOnly={state.busy}
+                />
+                {state.error && (
+                  <p
+                    id={`${id}-error`}
+                    className="instruction-error workspace-action-feedback"
+                    role="alert"
+                  >
+                    {state.error}
+                  </p>
+                )}
+                {state.notice && (
+                  <span
+                    id={`${id}-notice`}
+                    className={`lead-message-sent workspace-action-feedback ${state.notice}`}
+                    role="status"
+                  >
+                    {state.notice === "waiting" ? (
+                      <Clock size={12} aria-hidden="true" />
+                    ) : (
+                      <Check size={12} aria-hidden="true" />
+                    )}
+                    {state.notice === "waiting"
+                      ? t("lead_message.waiting")
+                      : t("lead_message.sent")}
+                  </span>
+                )}
                 <TooltipButton
-                  className="workspace-action-leading"
-                  disabled={resuming}
-                  onClick={() => void resume()}
-                  label={t("lead_message.resume")}
+                  type="submit"
+                  className="workspace-action-send"
+                  disabled={state.busy || !state.text.trim()}
+                  label={t("lead_message.send")}
+                  tooltip={t("lead_message.hint")}
                 >
-                  <Terminal size={13} aria-hidden="true" />
+                  <Send size={14} aria-hidden="true" />
                 </TooltipButton>
-              )}
-              <label
-                htmlFor={`${id}-input`}
-                className="workspace-action-sr-only"
-              >
-                {placeholder}
-              </label>
-              <textarea
-                id={`${id}-input`}
-                ref={box}
-                rows={1}
-                value={state.text}
-                onChange={(event) =>
-                  draft.set({
-                    text: event.target.value,
-                    error: "",
-                    notice: "",
-                  })
-                }
-                onKeyDown={keys}
-                placeholder={placeholder}
-                aria-invalid={!!state.error}
-                aria-describedby={
-                  state.error
-                    ? `${id}-error`
-                    : state.notice
-                      ? `${id}-notice`
-                      : undefined
-                }
-                readOnly={state.busy}
-              />
-              {state.error && (
-                <p
-                  id={`${id}-error`}
-                  className="instruction-error workspace-action-feedback"
-                  role="alert"
+                <TooltipButton
+                  className="workspace-action-close"
+                  onClick={close}
+                  label={t("lead_message.close")}
                 >
-                  {state.error}
-                </p>
-              )}
-              {state.notice && (
-                <span
-                  id={`${id}-notice`}
-                  className={`lead-message-sent workspace-action-feedback ${state.notice}`}
-                  role="status"
-                >
-                  {state.notice === "waiting" ? (
-                    <Clock size={12} aria-hidden="true" />
-                  ) : (
-                    <Check size={12} aria-hidden="true" />
-                  )}
-                  {state.notice === "waiting"
-                    ? t("lead_message.waiting")
-                    : t("lead_message.sent")}
-                </span>
-              )}
-              <TooltipButton
-                type="submit"
-                className="workspace-action-send"
-                disabled={state.busy || !state.text.trim()}
-                label={t("lead_message.send")}
-                tooltip={t("lead_message.hint")}
-              >
-                <Send size={14} aria-hidden="true" />
-              </TooltipButton>
-              <TooltipButton
-                className="workspace-action-close"
-                onClick={close}
-                label={t("lead_message.close")}
-              >
-                <X size={13} aria-hidden="true" />
-              </TooltipButton>
-            </form>
-          </div>
-        ) : (
-          <TooltipButton
-            id={`${id}-toggle`}
-            className="workspace-action-control"
-            onClick={() => setOpen(true)}
-            label={t("lead_message.open")}
-            shortcut={shortcut.label}
-            aria-keyshortcuts={shortcut.aria}
-            aria-expanded={false}
-            aria-controls={`${id}-panel`}
-          >
-            <MessageSquare size={15} aria-hidden="true" />
-            <span>{t("lead_message.open")}</span>
-          </TooltipButton>
-        )}
-      </WorkspaceAction>
+                  <X size={13} aria-hidden="true" />
+                </TooltipButton>
+              </form>
+            </div>
+          ) : (
+            <TooltipButton
+              id={`${id}-toggle`}
+              className="workspace-action-control"
+              onClick={() => setOpen(true)}
+              label={t("lead_message.open")}
+              tooltip=""
+              shortcut={shortcut.label}
+              aria-keyshortcuts={shortcut.aria}
+              aria-expanded={false}
+              aria-controls={`${id}-panel`}
+            >
+              <span>{t("lead_message.open")}</span>
+            </TooltipButton>
+          )}
+        </WorkspaceAction>
+      </div>
     </div>
   );
 }

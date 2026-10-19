@@ -1,0 +1,275 @@
+/* A project's configuration panel: the folder and remote under its name, then one box per part, what waits for you
+   first. Each box is rounded with a uniform border; the lines inside it are square, split by straight separators. */
+.project-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.5rem;
+  font: var(--font-size-body, 0.75rem) var(--mono);
+  color: var(--n-8f);
+  overflow-wrap: anywhere;
+}
+.config-box {
+  margin-top: 1rem;
+  padding: 0.75rem 0.9375rem;
+  border: 1px solid var(--n-42);
+  border-radius: 0.5rem;
+  background: var(--n-20);
+}
+.config-box.to-fix {
+  border-color: color-mix(in srgb, var(--st-failed) 55%, var(--n-42));
+  background: color-mix(in srgb, var(--st-failed) 6%, var(--n-20));
+}
+.config-box > h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--n-d1);
+}
+.config-box.to-fix > h3 {
+  color: var(--st-failed);
+}
+.config-box .setting-row {
+  padding: 0.625rem 0;
+}
+.config-box .setting-row + .setting-row {
+  border-top: 1px solid var(--n-33);
+}
+/* Where a value comes from: Djinn's default, the team's file or yours, the file on hover. */
+.config-from {
+  margin-left: 0.5rem;
+  font: var(--font-size-body, 0.75rem) var(--mono);
+  font-weight: 400;
+  color: var(--n-8f);
+}
+.config-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.5rem 0;
+  font-size: var(--font-size-body, 0.75rem);
+  color: var(--n-b6);
+  line-height: 1.6;
+}
+.config-line + .config-line {
+  border-top: 1px solid var(--n-33);
+}
+.config-line > svg {
+  flex-shrink: 0;
+  margin-top: 0.1875rem;
+  color: var(--n-8f);
+}
+.config-line strong {
+  font-weight: 450;
+  color: var(--n-d1);
+}
+.config-line p + p {
+  margin-top: 0.25rem;
+}
+/* An entry of the journal of changes: when, the commit and who above its title, then what it changed. One that
+   waits for your look has the flame, its lines that ask in the colour of what waits. */
+.config-change.waits > svg {
+  color: var(--st-failed);
+}
+.change-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+  font: var(--font-size-body, 0.75rem) var(--mono);
+  color: var(--n-8f);
+}
+.change-lines {
+  margin: 0.25rem 0 0.25rem 1rem;
+  list-style: disc;
+}
+.change-lines .asks {
+  color: var(--st-failed);
+}
+/* The reference branch you choose: the button that opens the list, then the list and where the choice is written. */
+.config-line > div > .button {
+  margin-top: 0.375rem;
+}
+.branch-choice {
+  margin-top: 0.375rem;
+}
+.branch-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.branch-choice select {
+  min-width: 12rem;
+  font-size: var(--font-size-body, 0.75rem);
+  background: var(--n-25);
+  border-color: var(--n-57);
+  color: var(--n-c4);
+}
+/* One thing Djinn found in the configuration: its sentence, the error as read, then what settles it. */
+.notice {
+  padding: 0.625rem 0;
+  font-size: var(--font-size-body, 0.75rem);
+  color: var(--n-b6);
+  line-height: 1.6;
+}
+.notice + .notice {
+  border-top: 1px solid var(--n-33);
+}
+.notice-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  color: var(--n-d1);
+}
+.notice-text > svg {
+  flex-shrink: 0;
+  margin-top: 0.1875rem;
+  color: var(--n-8f);
+}
+.notice.to-fix .notice-text > svg {
+  color: var(--st-failed);
+}
+.notice-detail {
+  margin: 0.375rem 0 0 1.3125rem;
+  font: var(--font-size-body, 0.75rem) var(--mono);
+  color: var(--n-8f);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.notice-where {
+  margin: 0.375rem 0 0 1.3125rem;
+  color: var(--n-8f);
+  overflow-wrap: anywhere;
+}
+.notice-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0 1.3125rem;
+}
+.notice-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  max-width: 15rem;
+}
+.notice-choice p {
+  color: var(--n-8f);
+}
+/* A skill's role for Djinn, under what it does. */
+.skill-role {
+  color: var(--n-a9);
+}
+.skill-role.to-fix {
+  color: var(--st-failed);
+}
+/* A setting: its name as the files write it, its value, where it comes from. */
+.config-setting {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) 1fr auto;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.375rem 0;
+  font-size: var(--font-size-body, 0.75rem);
+  color: var(--n-c4);
+  overflow-wrap: anywhere;
+}
+.config-setting + .config-setting {
+  border-top: 1px solid var(--n-33);
+}
+.config-setting code {
+  color: var(--n-d1);
+}
+.config-setting .config-from {
+  margin-left: 0;
+}
+.config-more {
+  margin-top: 0.375rem;
+}
+.config-more > summary {
+  cursor: pointer;
+  padding: 0.375rem 0;
+  font-size: var(--font-size-body, 0.75rem);
+  color: var(--n-8f);
+}
+.config-more > summary:hover {
+  color: var(--n-d1);
+}
+.summoning-providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+.summoning-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1875rem 0.5rem;
+  border: 1px solid var(--n-57);
+  border-radius: var(--radius-control, 0.4375rem);
+  background: var(--n-25);
+  color: var(--n-c4);
+  font-size: var(--font-size-small, 0.6875rem);
+}
+.summoning-provider.unsigned {
+  border: 1px solid var(--n-33);
+  background: transparent;
+  color: var(--n-6f);
+  opacity: 0.75;
+}
+.summoning-provider.unsigned code {
+  color: var(--n-8f);
+}
+.summoning-row-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+}
+.summoning-list {
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.9375rem;
+}
+.config-box .summoning-row {
+  padding: 0.4375rem 0;
+}
+.summoning-row + .summoning-row {
+  border-top: 1px solid var(--n-33);
+}
+.summoning-select {
+  min-width: 14rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--n-57);
+  border-radius: var(--radius-control, 0.4375rem);
+  background: var(--n-25);
+  color: var(--n-c4);
+  font-size: var(--font-size-body, 0.75rem);
+}
+.summoning-select:disabled {
+  opacity: 0.6;
+}
+.summoning-bulk-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--font-size-body, 0.75rem);
+  color: var(--n-c4);
+  cursor: pointer;
+}
+.update-models-preview {
+  margin-top: 0.5rem;
+}
+.update-models-preview .notice-detail {
+  margin-left: 0;
+}
+.wish-models-picker {
+  min-width: 24rem;
+  max-width: 34rem;
+  padding: 0.75rem;
+}

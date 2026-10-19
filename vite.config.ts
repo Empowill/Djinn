@@ -13,6 +13,15 @@ export default defineConfig({
   plugins: [
     react(),
     {
+      name: "djinn-splash",
+      transformIndexHtml(html) {
+        return html.replace(
+          "<!-- djinn:splash -->",
+          readFileSync("internal/docsite/splash.html", "utf8"),
+        );
+      },
+    },
+    {
       name: "renderer-csp",
       transformIndexHtml(_html, context) {
         const port = context.server?.config.server.port || 4317;
@@ -46,6 +55,63 @@ export default defineConfig({
           fileName: MERMAID_FRAME,
           source: await diagramFrame(),
         });
+      },
+    },
+    {
+      // Keep the initial document free of the 2 MB JS bundle and 200 kB stylesheet so WebKitGTK finishes the initial
+      // document load immediately, lifts its visual-update suppression, and paints #djinn-splash on the first frame
+      // (< 200 ms) before boot.js attaches the bundle stylesheet and module script.
+      name: "splash-first",
+      apply: "build",
+      generateBundle() {
+        this.emitFile({
+          type: "asset",
+          fileName: "assets/boot.js",
+          source: [
+            "let booted = false;",
+            "const boot = () => {",
+            "  if (booted) return;",
+            "  booted = true;",
+            '  const css = document.querySelector(\'meta[name="djinn-entry-css"]\')?.getAttribute("content");',
+            "  if (css) {",
+            '    const link = document.createElement("link");',
+            '    link.rel = "stylesheet";',
+            '    link.crossOrigin = "";',
+            "    link.href = css;",
+            "    document.head.appendChild(link);",
+            "  }",
+            '  const js = document.querySelector(\'meta[name="djinn-entry-js"]\')?.getAttribute("content");',
+            "  if (js) {",
+            '    const script = document.createElement("script");',
+            '    script.type = "module";',
+            '    script.crossOrigin = "";',
+            "    script.src = js;",
+            "    document.head.appendChild(script);",
+            "  }",
+            "};",
+            "const schedule = () => {",
+            "  requestAnimationFrame(() => setTimeout(boot, 0));",
+            "  setTimeout(boot, 32);",
+            "};",
+            'if (document.readyState === "complete") schedule();',
+            'else window.addEventListener("load", schedule, { once: true });',
+            "",
+          ].join("\n"),
+        });
+      },
+      transformIndexHtml: {
+        order: "post",
+        handler(html) {
+          return html
+            .replace(
+              /<script type="module" crossorigin src="([^"]+)"><\/script>/g,
+              '<meta name="djinn-entry-js" content="$1"><script type="module" src="./assets/boot.js"></script>',
+            )
+            .replace(
+              /<link rel="stylesheet" crossorigin href="([^"]+)">/g,
+              '<meta name="djinn-entry-css" content="$1">',
+            );
+        },
       },
     },
   ],

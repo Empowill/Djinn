@@ -22,6 +22,8 @@ import {
   type LeadPrompt,
   LeadPromptSchema,
   LeadSchema,
+  type LeadServiceGetResponse,
+  LeadServiceGetResponseSchema,
   type Project,
   ProjectSchema,
   type Question,
@@ -31,12 +33,41 @@ import {
   TaskEventKind,
   TaskSchema,
   type Wish,
-  WishSchema,
   type WishChanges,
   WishChangesSchema,
+  WishSchema,
+  WishState,
 } from "../../gen/ts/plan/v1/plan_pb";
-import { type Tilasm, TilasmSchema } from "../../gen/ts/plan/v1/tilasm_pb";
+import {
+  type Tilasm,
+  type TilasmComment,
+  TilasmCommentSchema,
+  type TilasmHold,
+  TilasmHoldSchema,
+  TilasmSchema,
+  type TilasmSendRead,
+  TilasmSendReadSchema,
+  type TilasmSends,
+  TilasmSendsSchema,
+} from "../../gen/ts/plan/v1/tilasm_pb";
 import { type Clients, message, notFound, unimplemented } from "./client";
+
+export type ReadState = "reading" | "slow" | "ready" | "failed";
+
+export type ReadKind =
+  | Change
+  | "wishes"
+  | "projects"
+  | "tasks"
+  | "questions"
+  | "blocks"
+  | "tilasms"
+  | "inbox"
+  | "machine"
+  | "commands"
+  | "review"
+  | "project"
+  | "terminal";
 
 // What the page shows of one wish, read while a screen shows it.
 export interface WishDetail {
@@ -45,6 +76,16 @@ export interface WishDetail {
   blocks: Block[];
   // Its tilasms, by code.
   tilasms: Tilasm[];
+  // The developer's draft comments on its tilasms, read with them: the window's alone.
+  drafts: TilasmComment[];
+  // Why some of its tilasms take no send for now, read with the drafts: computed by the server.
+  holds: TilasmHold[];
+  // The comments sent on its tilasms, with the Djinn's replies, read with the drafts.
+  sent: TilasmComment[];
+  // The sends on its tilasms the Djinn read, read with the drafts: computed by the server.
+  reads: TilasmSendRead[];
+  // What an iterate or launch send does for each tilasm linked to an open question, read with the drafts: computed by the server.
+  sends: TilasmSends[];
   // Read at least once.
   loaded: boolean;
   // Totals from the server for paginated lists.
@@ -62,6 +103,8 @@ export interface WishDetail {
 export interface State {
   // The watch stream answers: what shows follows djinn as it changes.
   live: boolean;
+  // The watch stream answered at least once since start.
+  everLive?: boolean;
   // The wishes and the projects were read at least once.
   loaded: boolean;
   // Why the last read failed; empty when it did not.
@@ -74,6 +117,13 @@ export interface State {
   leadExit?: LeadExit;
   // Why the last start of the lead failed, until one succeeds; empty when none did.
   leadStartError?: string;
+  // While Djinn drives the lead: where it runs (seat), the accounts of this machine, the usage limit it hit, if any
+  // (limit), the running or failed batch (batch), and the journal of past batches (journal); unset when the lead runs
+  // in its terminal.
+  leadDrive?: Pick<
+    LeadServiceGetResponse,
+    "seat" | "accounts" | "limit" | "batch" | "journal"
+  >;
   // As WishService.List gives them: the active ones by rank, then the paused ones, then the granted ones.
   wishes: Wish[];
   details: Readonly<Record<string, WishDetail>>;
@@ -104,7 +154,8 @@ export interface Store {
   // Follows a task's events until the returned function is called, or the task ends. Once no screen follows it, its
   // events are dropped after a while: a task card closed frees them.
   follow(taskId: string): () => void;
-  // Reads a task's prompt alone, without loading its other events.
+  // Reads a task's prompt alone, without loading its other events. It never fails: a read that fails gives "" and is
+  // made again after retry, its prompt in the store's prompts once it answers.
   readPrompt(taskId: string): Promise<string>;
   // Reads again what changed, as a write the page made says it: the watch says it too, a moment later.
   changed(wishId: string, changes: Change[]): Promise<void>;
@@ -113,6 +164,16 @@ export interface Store {
   putQuestion(question: Question): void;
   // Reads the machine and its gates.
   readMachine(): Promise<void>;
+  // How far a read is for a kind (and a wish when the kind is a wish's): reading, slow after 2 s, ready, or failed.
+  readState(kind: ReadKind, wishId?: string): ReadState;
+  // Reads again at once a kind whose read failed.
+  retryRead(kind: ReadKind, wishId?: string): void;
+  // Follows a screen's own read so readState and retryRead cover it too.
+  trackRead<T>(
+    kind: ReadKind,
+    id: string | undefined,
+    run: () => Promise<T>,
+  ): Promise<T>;
 }
 
 // How long a read of the store waits for djinn's answer before it fails, and is made again.
@@ -125,6 +186,11 @@ const EMPTY_DETAIL: WishDetail = {
   questions: [],
   blocks: [],
   tilasms: [],
+  drafts: [],
+  holds: [],
+  sent: [],
+  reads: [],
+  sends: [],
   loaded: false,
   loadedKinds: new Set<Change>(),
 };
@@ -350,12 +416,14 @@ export function createStore(
   // How long the events of a task no screen shows stay kept.
   forget = 5_000,
   timeout = READ_TIMEOUT,
+  slowMs = 2_000,
 ): Store {
   // A read that gets no answer fails after timeout, and is made again: one call that never ends would hold every
   // read after it, and the screens would show what they had, an answered question still open (incident Q253).
   const call = { timeoutMs: timeout };
   let state: State = {
     live: false,
+    everLive: false,
     loaded: false,
     error: "",
     projects: [],
@@ -384,22 +452,211 @@ export function createStore(
   const opened = new Map<string, number>();
   // The kinds of each wish not shown that changed meanwhile: what it holds of them is read again when it shows.
   const stale = new Map<string, Set<Change>>();
+  // Keys whose RPC is currently in flight so duplicate open()/loadKinds() calls at start do not issue a second read.
+  const inFlight = new Set<string>();
+  const inFlightPromises = new Map<string, Promise<void>>();
+  // Requested kinds for each wish across open() and loadKinds() calls, used to set detail.loaded once all are read.
+  const requestedKinds = new Map<string, Set<Change>>();
+  // ReadState tracking per key ("wishes", "projects", "inbox", "machine", "${wishId}:${kind}", "${kind}:${id}").
+  const loadedKeys = new Set<string>();
+  const slowKeys = new Set<string>();
+  const failedKeys = new Set<string>();
+  const slowTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const trackedRunners = new Map<string, () => void>();
+
+  function normalizeKind(kind: ReadKind): ReadKind {
+    switch (kind) {
+      case "tasks":
+        return Change.TASK;
+      case "questions":
+        return Change.QUESTION;
+      case "blocks":
+        return Change.BLOCK;
+      case "tilasms":
+        return Change.TILASM;
+      default:
+        return kind;
+    }
+  }
+
+  function keyFor(rawKind: ReadKind, wishId?: string): string {
+    const kind = normalizeKind(rawKind);
+    if (kind === Change.WISH || kind === "wishes") return "wishes";
+    if (kind === Change.PROJECT || kind === "projects") return "projects";
+    if (kind === Change.INBOX || kind === "inbox") return "inbox";
+    if (kind === "machine") return "machine";
+    if (
+      kind === Change.TASK ||
+      kind === Change.QUESTION ||
+      kind === Change.BLOCK ||
+      kind === Change.TILASM
+    ) {
+      return wishId ? `${wishId}:${kind}` : String(kind);
+    }
+    return wishId ? `${kind}:${wishId}` : String(kind);
+  }
+
+  function clearSlowTimer(key: string) {
+    const t = slowTimers.get(key);
+    if (t !== undefined) {
+      clearTimeout(t);
+      slowTimers.delete(key);
+    }
+  }
+
+  function ensureSlowTimer(key: string) {
+    if (loadedKeys.has(key) || slowKeys.has(key) || slowTimers.has(key)) return;
+    const t = setTimeout(() => {
+      slowTimers.delete(key);
+      if (stopped || loadedKeys.has(key) || failedKeys.has(key)) return;
+      slowKeys.add(key);
+      set({});
+    }, slowMs);
+    (t as unknown as { unref?: () => void }).unref?.();
+    slowTimers.set(key, t);
+  }
+
+  function startReadKey(key: string) {
+    inFlight.add(key);
+    inFlightChanges.delete(key);
+    if (!loadedKeys.has(key)) {
+      ensureSlowTimer(key);
+    }
+  }
+
+  function finishReadKey(key: string, ok: boolean, notify = false) {
+    inFlight.delete(key);
+    inFlightPromises.delete(key);
+    inFlightChanges.delete(key);
+    clearSlowTimer(key);
+    if (ok) {
+      const changed =
+        !loadedKeys.has(key) || slowKeys.has(key) || failedKeys.has(key);
+      loadedKeys.add(key);
+      slowKeys.delete(key);
+      failedKeys.delete(key);
+      if (notify && changed) set({});
+    } else if (!loadedKeys.has(key)) {
+      slowKeys.delete(key);
+      const changed = !failedKeys.has(key);
+      failedKeys.add(key);
+      if (notify && changed) set({});
+    }
+  }
+
+  function readState(rawKind: ReadKind, wishId?: string): ReadState {
+    const kind = normalizeKind(rawKind);
+    if (
+      !wishId &&
+      (kind === Change.TASK ||
+        kind === Change.QUESTION ||
+        kind === Change.BLOCK ||
+        kind === Change.TILASM)
+    ) {
+      const wState = readState("wishes");
+      if (wState !== "ready") return wState;
+      const activeWishes = state.wishes.filter(
+        (w) =>
+          w.state === WishState.ACTIVE || w.state === WishState.UNSPECIFIED,
+      );
+      let hasSlow = false;
+      let hasReading = false;
+      for (const w of activeWishes) {
+        const s = readState(kind, w.id);
+        if (s === "failed") return "failed";
+        if (s === "slow") hasSlow = true;
+        else if (s !== "ready") hasReading = true;
+      }
+      if (hasSlow) return "slow";
+      if (hasReading) return "reading";
+      return "ready";
+    }
+    const key = keyFor(kind, wishId);
+    if (key === "wishes" && (loadedKeys.has("wishes") || state.loaded))
+      return "ready";
+    if (
+      key === "projects" &&
+      (loadedKeys.has("projects") ||
+        (state.loaded &&
+          !pending.projects &&
+          !inFlight.has("projects") &&
+          !slowKeys.has("projects") &&
+          !failedKeys.has("projects")))
+    )
+      return "ready";
+    if (
+      key === "inbox" &&
+      (loadedKeys.has("inbox") ||
+        (state.loaded &&
+          !pending.inbox &&
+          !inFlight.has("inbox") &&
+          !slowKeys.has("inbox") &&
+          !failedKeys.has("inbox")))
+    )
+      return "ready";
+    if (
+      key === "machine" &&
+      (loadedKeys.has("machine") || state.machine !== undefined)
+    )
+      return "ready";
+    if (
+      wishId &&
+      (kind === Change.TASK ||
+        kind === Change.QUESTION ||
+        kind === Change.BLOCK ||
+        kind === Change.TILASM)
+    ) {
+      const detail = state.details[wishId];
+      if (detail?.loadedKinds.has(kind) || detail?.loaded) return "ready";
+      if (
+        (loadedKeys.has("wishes") || state.loaded) &&
+        !state.wishes.some((w) => w.id === wishId) &&
+        !opened.has(wishId) &&
+        !requestedKinds.has(wishId) &&
+        !pending.details.has(wishId) &&
+        !inFlight.has(key) &&
+        !failedKeys.has(key) &&
+        !slowKeys.has(key)
+      )
+        return "ready";
+    }
+    if (loadedKeys.has(key)) return "ready";
+    if (failedKeys.has(key)) return "failed";
+    if (slowKeys.has(key)) return "slow";
+    return "reading";
+  }
+
   const fresh = (wishId: string, kind: Change) =>
     !!state.details[wishId]?.loadedKinds.has(kind) &&
     !stale.get(wishId)?.has(kind);
   const loadingMore = new Set<string>();
   const pendingPrompts = new Map<string, Promise<string>>();
   const lastReadAt = new Map<string, number>();
+  // Incremental watch changes that arrived while a "${wishId}:${kind}" read was already in flight, re-applied when
+  // that read finishes so an older list snapshot does not overwrite a newer watch update.
+  const inFlightChanges = new Map<string, WishChanges[]>();
   // How long a read that failed waits before it is made again, by key: it doubles at each failure, up to a minute.
   const backoff = new Map<string, number>();
   // The store no longer follows djinn: a read that failed is not made again.
   let stopped = false;
 
-  let active: Promise<void> | undefined;
+  const activeReads = new Set<Promise<void>>();
   let scheduled: Promise<void> | undefined;
   let scheduledResolve: (() => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timerAt = 0;
+  // Waiters from changed(): each resolves as soon as a read that started at or after its registration completes for
+  // its keys, without waiting an extra THROTTLE_MS if the write's own WatchChanges event arrived while that read was
+  // in flight.
+  const waiters = new Map<string, (() => void)[]>();
+  const claimWaiters = (key: string, p: Promise<void>) => {
+    const list = waiters.get(key);
+    if (!list?.length) return;
+    waiters.delete(key);
+    void p.finally(() => {
+      for (const r of list) r();
+    });
+  };
 
   // mark notes what to read again; with changed, the tasks, questions and blocks it brings need no read. A change
   // this page does not know reads everything again. Only loaded kinds of opened wishes are re-read.
@@ -445,10 +702,11 @@ export function createStore(
       for (const id of ids) {
         if (!opened.has(id)) continue;
         const detail = state.details[id];
-        // Do not load hidden tabs! Only re-read if already loaded.
+        // Do not load hidden tabs! Only re-read if already loaded, pending, or in flight.
         const loaded = detail
           ? detail.loadedKinds.has(change)
-          : pending.details.get(id)?.has(change);
+          : pending.details.get(id)?.has(change) ||
+            inFlight.has(`${id}:${change}`);
         if (!loaded) continue;
         const kinds = pending.details.get(id) ?? new Set<Change>();
         kinds.add(change);
@@ -470,10 +728,11 @@ export function createStore(
       for (const k of kinds) pend.add(k);
       pending.details.set(wishId, pend);
     }
-    set({ live: true });
+    set({ live: true, everLive: true });
   }
 
   function canRead(key: string, now: number): boolean {
+    if (inFlight.has(key)) return false;
     const last = lastReadAt.get(key);
     return last === undefined || now - last >= throttle;
   }
@@ -481,6 +740,7 @@ export function createStore(
   function nextDelay(now: number): number {
     let minWait = Infinity;
     const check = (key: string) => {
+      if (inFlight.has(key)) return;
       const last = lastReadAt.get(key);
       if (last === undefined) minWait = 0;
       else {
@@ -503,6 +763,18 @@ export function createStore(
     return minWait === Infinity ? -1 : minWait;
   }
 
+  function isWishFullyLoaded(
+    wishId: string,
+    loadedKinds: Set<Change>,
+  ): boolean {
+    const req = requestedKinds.get(wishId);
+    if (!req || req.size === 0) return loadedKinds.size > 0;
+    for (const k of req) {
+      if (!loadedKinds.has(k)) return false;
+    }
+    return true;
+  }
+
   async function read() {
     const now = Date.now();
     const wishes = pending.wishes && canRead("wishes", now);
@@ -511,29 +783,35 @@ export function createStore(
     if (wishes) {
       pending.wishes = false;
       lastReadAt.set("wishes", now);
+      startReadKey("wishes");
     }
     if (projects) {
       pending.projects = false;
       lastReadAt.set("projects", now);
+      startReadKey("projects");
     }
     if (inbox) {
       pending.inbox = false;
       lastReadAt.set("inbox", now);
+      startReadKey("inbox");
     }
 
     const details: [string, Set<Change>][] = [];
     for (const [wishId, kinds] of pending.details) {
       const eligible = new Set<Change>();
       for (const k of kinds) {
-        if (canRead(`${wishId}:${k}`, now)) {
+        const key = `${wishId}:${k}`;
+        if (canRead(key, now)) {
           eligible.add(k);
         }
       }
       if (eligible.size > 0) {
         details.push([wishId, eligible]);
         for (const k of eligible) {
+          const key = `${wishId}:${k}`;
           kinds.delete(k);
-          lastReadAt.set(`${wishId}:${k}`, now);
+          lastReadAt.set(key, now);
+          startReadKey(key);
         }
         if (kinds.size === 0) {
           pending.details.delete(wishId);
@@ -553,8 +831,50 @@ export function createStore(
     ) {
       return;
     }
-    const patch: Partial<State> = {};
-    const errors: string[] = [];
+
+    // Apply incremental watch changes immediately for already-loaded kinds that are not being full-read right now.
+    if (changes.length > 0) {
+      const next = { ...state.details };
+      let touched = false;
+      for (const [wishId, list] of changes) {
+        const eligible = details.find(([id]) => id === wishId)?.[1];
+        for (const k of CARRIED) {
+          const key = `${wishId}:${k}`;
+          if (inFlight.has(key) && !eligible?.has(k)) {
+            inFlightChanges.set(key, [
+              ...(inFlightChanges.get(key) ?? []),
+              ...list,
+            ]);
+          }
+        }
+        const detail = next[wishId];
+        if (!detail || (!detail.loaded && detail.loadedKinds.size === 0))
+          continue;
+        const mask: Partial<WishDetail> = {
+          ...(eligible?.has(Change.TASK) ? { tasks: detail.tasks } : {}),
+          ...(eligible?.has(Change.QUESTION)
+            ? { questions: detail.questions }
+            : {}),
+          ...(eligible?.has(Change.BLOCK) ? { blocks: detail.blocks } : {}),
+        };
+        next[wishId] = list.reduce((d, c) => apply(d, c, mask), detail);
+        touched ||= next[wishId] !== detail;
+      }
+      if (touched) {
+        let prompts = state.prompts;
+        for (const [wishId, detail] of Object.entries(next)) {
+          const prevTasks = state.details[wishId]?.tasks ?? [];
+          if (detail.tasks !== prevTasks) {
+            prompts = syncPrompts(prevTasks, detail.tasks, prompts) ?? prompts;
+          }
+        }
+        set({
+          details: next,
+          ...(prompts !== state.prompts ? { prompts } : {}),
+        });
+      }
+    }
+
     const reads: Promise<void>[] = [];
     // A read that fails is read again after retry: what it would have brought (a task spawned, a worker started)
     // must not wait for the next change of the same thing, which may come only as it ends.
@@ -566,101 +886,358 @@ export function createStore(
       lastReadAt.set(key, Date.now() + Math.max(0, wait - throttle));
     };
     const attempt = (
+      key: string,
       run: () => Promise<void>,
       failed?: () => void,
-      key?: string,
-    ) =>
-      reads.push(
-        run().then(
-          () => void (key && backoff.delete(key)),
-          (error) => {
-            errors.push(message(error));
-            if (!unimplemented(error)) failed?.();
-          },
-        ),
+    ) => {
+      const p = run().then(
+        () => {
+          backoff.delete(key);
+          finishReadKey(key, true);
+        },
+        (error) => {
+          if (unimplemented(error)) {
+            finishReadKey(key, true);
+            return;
+          }
+          finishReadKey(key, false);
+          failed?.();
+          set({ error: message(error) });
+        },
       );
-    // The kinds of each wish whose read failed: not taken as loaded, read again.
-    const failedKinds = new Map<string, Set<Change>>();
+      inFlightPromises.set(key, p);
+      claimWaiters(key, p);
+      reads.push(p);
+    };
+
+    const publishDetail = (
+      wishId: string,
+      kind: Change,
+      update: (cur: WishDetail) => Partial<WishDetail>,
+    ) => {
+      const key = `${wishId}:${kind}`;
+      const queued = inFlightChanges.get(key);
+      backoff.delete(key);
+      finishReadKey(key, true);
+      stale.get(wishId)?.delete(kind);
+      const prevDetail = state.details[wishId] ?? EMPTY_DETAIL;
+      const got = update(prevDetail);
+      let tasks = got.tasks ?? prevDetail.tasks;
+      let questions = got.questions
+        ? questionsAhead(prevDetail.questions, got.questions)
+        : prevDetail.questions;
+      let blocks = got.blocks ?? prevDetail.blocks;
+      const tilasms = got.tilasms ?? prevDetail.tilasms;
+      const drafts = got.drafts ?? prevDetail.drafts;
+      const holds = got.holds ?? prevDetail.holds;
+      const sent = got.sent ?? prevDetail.sent;
+      const readsList = got.reads ?? prevDetail.reads;
+      const sends = got.sends ?? prevDetail.sends;
+      let tasksTotal =
+        got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
+      let questionsTotal =
+        got.questionsTotal !== undefined
+          ? got.questionsTotal
+          : prevDetail.questionsTotal;
+      let blocksTotal =
+        got.blocksTotal !== undefined
+          ? got.blocksTotal
+          : prevDetail.blocksTotal;
+      const tasksNextToken =
+        got.tasksNextToken !== undefined
+          ? got.tasksNextToken
+          : prevDetail.tasksNextToken;
+      const questionsNextToken =
+        got.questionsNextToken !== undefined
+          ? got.questionsNextToken
+          : prevDetail.questionsNextToken;
+      const blocksNextToken =
+        got.blocksNextToken !== undefined
+          ? got.blocksNextToken
+          : prevDetail.blocksNextToken;
+      let loadedKinds = prevDetail.loadedKinds;
+      let kindsChanged = false;
+      if (!loadedKinds.has(kind)) {
+        loadedKinds = new Set(loadedKinds);
+        loadedKinds.add(kind);
+        kindsChanged = true;
+      }
+      if (queued && queued.length > 0 && CARRIED.has(kind)) {
+        const mask: Partial<WishDetail> = {
+          ...(kind !== Change.TASK ? { tasks } : {}),
+          ...(kind !== Change.QUESTION ? { questions } : {}),
+          ...(kind !== Change.BLOCK ? { blocks } : {}),
+        };
+        const base: WishDetail = {
+          ...prevDetail,
+          tasks,
+          questions,
+          blocks,
+          tasksTotal,
+          questionsTotal,
+          blocksTotal,
+          loadedKinds,
+        };
+        const applied = queued.reduce((d, c) => apply(d, c, mask), base);
+        if (kind === Change.TASK) {
+          tasks = reconcile(TaskSchema, prevDetail.tasks, applied.tasks);
+          tasksTotal = applied.tasksTotal;
+        } else if (kind === Change.QUESTION) {
+          questions = reconcile(
+            QuestionSchema,
+            prevDetail.questions,
+            applied.questions,
+          );
+          questionsTotal = applied.questionsTotal;
+        } else if (kind === Change.BLOCK) {
+          blocks = reconcile(BlockSchema, prevDetail.blocks, applied.blocks);
+          blocksTotal = applied.blocksTotal;
+        }
+      }
+      const nowLoaded =
+        prevDetail.loaded || isWishFullyLoaded(wishId, loadedKinds);
+      if (
+        prevDetail.loaded === nowLoaded &&
+        tasks === prevDetail.tasks &&
+        questions === prevDetail.questions &&
+        blocks === prevDetail.blocks &&
+        tilasms === prevDetail.tilasms &&
+        drafts === prevDetail.drafts &&
+        holds === prevDetail.holds &&
+        sent === prevDetail.sent &&
+        readsList === prevDetail.reads &&
+        sends === prevDetail.sends &&
+        tasksTotal === prevDetail.tasksTotal &&
+        questionsTotal === prevDetail.questionsTotal &&
+        blocksTotal === prevDetail.blocksTotal &&
+        tasksNextToken === prevDetail.tasksNextToken &&
+        questionsNextToken === prevDetail.questionsNextToken &&
+        blocksNextToken === prevDetail.blocksNextToken &&
+        !kindsChanged &&
+        !state.error
+      ) {
+        set({});
+        return;
+      }
+      const nextDetail: WishDetail = {
+        tasks,
+        questions,
+        blocks,
+        tilasms,
+        drafts,
+        holds,
+        sent,
+        reads: readsList,
+        sends,
+        loaded: nowLoaded,
+        tasksTotal,
+        questionsTotal,
+        blocksTotal,
+        tasksNextToken,
+        questionsNextToken,
+        blocksNextToken,
+        loadedKinds,
+      };
+      const prompts =
+        tasks !== prevDetail.tasks
+          ? syncPrompts(prevDetail.tasks, tasks, state.prompts)
+          : undefined;
+      set({
+        details: { ...state.details, [wishId]: nextDetail },
+        ...(prompts ? { prompts } : {}),
+        ...(state.error ? { error: "" } : {}),
+      });
+    };
+
     const attemptKind = (
       wishId: string,
       kind: Change,
-      run: () => Promise<void>,
-    ) =>
-      attempt(
-        run,
-        () => {
-          failedKinds.set(
-            wishId,
-            (failedKinds.get(wishId) ?? new Set<Change>()).add(kind),
-          );
+      run: () => Promise<(cur: WishDetail) => Partial<WishDetail>>,
+    ) => {
+      const key = `${wishId}:${kind}`;
+      const p = run().then(
+        (updater) => publishDetail(wishId, kind, updater),
+        (error) => {
+          if (unimplemented(error)) {
+            publishDetail(wishId, kind, () => ({}));
+            return;
+          }
+          finishReadKey(key, false);
           // A wish no longer shown reads it when it shows again.
           stale.set(wishId, (stale.get(wishId) ?? new Set<Change>()).add(kind));
           if (opened.has(wishId))
-            again(`${wishId}:${kind}`, () =>
+            again(key, () =>
               pending.details.set(
                 wishId,
                 (pending.details.get(wishId) ?? new Set<Change>()).add(kind),
               ),
             );
+          set({ error: message(error) });
         },
-        `${wishId}:${kind}`,
       );
+      inFlightPromises.set(key, p);
+      claimWaiters(key, p);
+      reads.push(p);
+    };
+
     if (wishes)
       attempt(
+        "wishes",
         async () => {
-          const list = (await clients.wishes.list({}, call)).wishes;
+          const [wishesRes, leadRes] = await Promise.all([
+            clients.wishes.list({}, call),
+            clients.lead.get({}, call).catch((error: unknown) => {
+              if (unimplemented(error)) return undefined;
+              throw error;
+            }),
+          ]);
+          finishReadKey("wishes", true);
+          const patch: Partial<State> = {};
+          const list = wishesRes.wishes;
           const reconciled = reconcile(WishSchema, state.wishes, list);
           if (reconciled !== state.wishes) patch.wishes = reconciled;
-          const { lead, prompt, exit, startError } = await clients.lead.get(
-            {},
-            call,
-          );
-          const sameLead =
-            (!state.lead && !lead) ||
-            (state.lead && lead ? equals(LeadSchema, state.lead, lead) : false);
-          if (!sameLead) patch.lead = lead;
-          const samePrompt =
-            (!state.leadPrompt && !prompt) ||
-            (state.leadPrompt && prompt
-              ? equals(LeadPromptSchema, state.leadPrompt, prompt)
-              : false);
-          if (!samePrompt) patch.leadPrompt = prompt;
-          if (state.leadExit?.code !== exit?.code || !state.leadExit !== !exit)
-            patch.leadExit = exit;
-          if ((state.leadStartError ?? "") !== startError)
-            patch.leadStartError = startError;
+          if (leadRes) {
+            const {
+              lead,
+              prompt,
+              exit,
+              startError,
+              driven,
+              seat,
+              accounts,
+              limit,
+              batch,
+              journal,
+            } = leadRes;
+            const sameLead =
+              (!state.lead && !lead) ||
+              (state.lead && lead
+                ? equals(LeadSchema, state.lead, lead)
+                : false);
+            if (!sameLead) patch.lead = lead;
+            const samePrompt =
+              (!state.leadPrompt && !prompt) ||
+              (state.leadPrompt && prompt
+                ? equals(LeadPromptSchema, state.leadPrompt, prompt)
+                : false);
+            if (!samePrompt) patch.leadPrompt = prompt;
+            if (
+              state.leadExit?.code !== exit?.code ||
+              !state.leadExit !== !exit
+            )
+              patch.leadExit = exit;
+            if ((state.leadStartError ?? "") !== startError)
+              patch.leadStartError = startError;
+            const drive = driven
+              ? create(LeadServiceGetResponseSchema, {
+                  seat,
+                  accounts,
+                  limit,
+                  batch,
+                  journal,
+                })
+              : undefined;
+            const sameDrive =
+              (!state.leadDrive && !drive) ||
+              (state.leadDrive && drive
+                ? equals(
+                    LeadServiceGetResponseSchema,
+                    create(LeadServiceGetResponseSchema, state.leadDrive),
+                    drive,
+                  )
+                : false);
+            if (!sameDrive)
+              patch.leadDrive = drive && {
+                seat: drive.seat,
+                accounts: drive.accounts,
+                limit: drive.limit,
+                batch: drive.batch,
+                journal: drive.journal,
+              };
+          }
+          if (loadedKeys.has("projects") && !state.loaded) patch.loaded = true;
+          if (state.error) patch.error = "";
+          set(patch);
         },
         () => again("wishes", () => (pending.wishes = true)),
-        "wishes",
       );
     if (projects)
-      attempt(async () => {
-        const list = (await clients.projects.list({}, call)).projects;
-        const reconciled = reconcile(ProjectSchema, state.projects, list);
-        if (reconciled !== state.projects) patch.projects = reconciled;
-      });
+      attempt(
+        "projects",
+        async () => {
+          const list = (await clients.projects.list({}, call)).projects;
+          finishReadKey("projects", true);
+          const patch: Partial<State> = {};
+          const reconciled = reconcile(ProjectSchema, state.projects, list);
+          if (reconciled !== state.projects) patch.projects = reconciled;
+          if (loadedKeys.has("wishes") && !state.loaded) patch.loaded = true;
+          if (state.error) patch.error = "";
+          set(patch);
+        },
+        () => again("projects", () => (pending.projects = true)),
+      );
     if (inbox)
-      attempt(async () => {
-        const list = (await clients.inbox.list({}, call)).items;
-        const reconciled = reconcile(InboxItemSchema, state.inbox, list);
-        if (reconciled !== state.inbox) patch.inbox = reconciled;
-      });
-    if (inbox)
-      attempt(async () => {
-        const list = (await clients.inbox.sources({}, call)).sources;
-        const reconciled = reconcile(InboxSourceSchema, state.sources, list);
-        if (reconciled !== state.sources) patch.sources = reconciled;
-      });
-    const read: Record<string, Partial<WishDetail>> = {};
+      attempt(
+        "inbox",
+        async () => {
+          const [itemsRes, sourcesRes] = await Promise.all([
+            clients.inbox.list({}, call),
+            clients.inbox.sources({}, call).catch((error: unknown) => {
+              if (unimplemented(error)) return undefined;
+              throw error;
+            }),
+          ]);
+          finishReadKey("inbox", true);
+          const patch: Partial<State> = {};
+          const reconciledItems = reconcile(
+            InboxItemSchema,
+            state.inbox,
+            itemsRes.items,
+          );
+          if (reconciledItems !== state.inbox) patch.inbox = reconciledItems;
+          if (sourcesRes) {
+            const reconciledSources = reconcile(
+              InboxSourceSchema,
+              state.sources,
+              sourcesRes.sources,
+            );
+            if (reconciledSources !== state.sources)
+              patch.sources = reconciledSources;
+          }
+          if (state.error) patch.error = "";
+          set(patch);
+        },
+        () => again("inbox", () => (pending.inbox = true)),
+      );
     for (const [wishId, kinds] of details) {
-      const prevDetail = state.details[wishId] ?? EMPTY_DETAIL;
-      const into: Partial<WishDetail> = (read[wishId] = {});
+      const startDetail = state.details[wishId] ?? EMPTY_DETAIL;
       if (kinds.has(Change.TASK))
         attemptKind(wishId, Change.TASK, async () => {
           const res = await clients.tasks.list({ wishId }, call);
+          // Past the first page, the tasks the lists of what runs read come too (live): the glance shows a wish's
+          // waiting work from the start, not once the Tasks tab read further (W219).
+          let live: Task[] = [];
+          // Page after page, but never the same page twice.
+          const seen = new Set<string>();
+          let token = "";
+          while (res.nextPageToken && !seen.has(token)) {
+            seen.add(token);
+            const page = await clients.tasks.list(
+              { wishId, live: true, pageSize: 200, pageToken: token },
+              call,
+            );
+            live = live.concat(page.tasks);
+            token = page.nextPageToken;
+            if (!token) break;
+          }
+          const liveIds = new Set(live.map((x) => x.id));
           // The read goes as far as the tasks shown went, as for the questions: after a restart, an enlighten task
-          // ended meanwhile past the first page shows ended, not running as it was (incident Q274, W544).
-          const furthest = prevDetail.tasks.at(-1)?.id ?? "";
+          // ended meanwhile past the first page shows ended, not running as it was (incident Q274, W544). The live
+          // ones read already are not that far: only those read by a page, or that are live no longer.
+          const furthest = startDetail.tasks.reduce(
+            (far, x) => (!liveIds.has(x.id) && x.id > far ? x.id : far),
+            "",
+          );
           let allTasks = res.tasks;
           let next = res.nextPageToken;
           while (next && (allTasks.at(-1)?.id ?? "") < furthest) {
@@ -671,16 +1248,24 @@ export function createStore(
             allTasks = allTasks.concat(page.tasks);
             next = page.nextPageToken;
           }
-          into.tasks = reconcile(TaskSchema, prevDetail.tasks, allTasks);
-          into.tasksTotal = res.total;
-          into.tasksNextToken = next;
+          if (live.length) {
+            const paged = new Set(allTasks.map((x) => x.id));
+            allTasks = allTasks
+              .concat(live.filter((x) => !paged.has(x.id)))
+              .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+          }
+          return (cur) => ({
+            tasks: reconcile(TaskSchema, cur.tasks, allTasks),
+            tasksTotal: res.total,
+            tasksNextToken: next,
+          });
         });
       if (kinds.has(Change.QUESTION))
         attemptKind(wishId, Change.QUESTION, async () => {
           const res = await clients.questions.list({ wishId }, call);
           // The read goes as far as the questions shown went: one answered past the first page stays, answered,
           // instead of leaving the screens with the open ones (incident Q253).
-          const furthest = prevDetail.questions.at(-1)?.id ?? "";
+          const furthest = startDetail.questions.at(-1)?.id ?? "";
           let allQuestions = res.questions;
           let next = res.nextPageToken;
           while (next && (allQuestions.at(-1)?.id ?? "") < furthest) {
@@ -715,178 +1300,156 @@ export function createStore(
               byID,
             );
           }
-          into.questions = reconcile(
-            QuestionSchema,
-            prevDetail.questions,
-            allQuestions,
-          );
-          into.questionsTotal = res.total;
-          into.questionsNextToken = next;
+          return (cur) => ({
+            questions: reconcile(QuestionSchema, cur.questions, allQuestions),
+            questionsTotal: res.total,
+            questionsNextToken: next,
+          });
         });
       if (kinds.has(Change.BLOCK))
         attemptKind(wishId, Change.BLOCK, async () => {
           const res = await clients.blocks.list({ wishId }, call);
-          into.blocks = reconcile(BlockSchema, prevDetail.blocks, res.blocks);
-          into.blocksTotal = res.total;
-          into.blocksNextToken = res.nextPageToken;
+          return (cur) => ({
+            blocks: reconcile(BlockSchema, cur.blocks, res.blocks),
+            blocksTotal: res.total,
+            blocksNextToken: res.nextPageToken,
+          });
         });
       if (kinds.has(Change.TILASM))
         attemptKind(wishId, Change.TILASM, async () => {
-          const list = (await clients.tilasms.list({ wish: wishId }, call))
-            .tilasms;
-          into.tilasms = reconcile(TilasmSchema, prevDetail.tilasms, list);
+          const [listRes, draftsRes] = await Promise.all([
+            clients.tilasms.list({ wish: wishId }, call),
+            clients.tilasms
+              .drafts({ wish: wishId }, call)
+              .catch((error: unknown) => {
+                if (unimplemented(error))
+                  return {
+                    comments: [],
+                    holds: [],
+                    sent: [],
+                    reads: [],
+                    sends: [],
+                  };
+                throw error;
+              }),
+          ]);
+          return (cur) => {
+            const sameHolds =
+              cur.holds.length === draftsRes.holds.length &&
+              draftsRes.holds.every((h, i) =>
+                equals(TilasmHoldSchema, h, cur.holds[i]),
+              );
+            const sameReads =
+              cur.reads.length === draftsRes.reads.length &&
+              draftsRes.reads.every((r, i) =>
+                equals(TilasmSendReadSchema, r, cur.reads[i]),
+              );
+            const resSends = draftsRes.sends ?? [];
+            const sameSends =
+              cur.sends.length === resSends.length &&
+              resSends.every((s, i) =>
+                equals(TilasmSendsSchema, s, cur.sends[i]),
+              );
+            return {
+              tilasms: reconcile(TilasmSchema, cur.tilasms, listRes.tilasms),
+              drafts: reconcile(
+                TilasmCommentSchema,
+                cur.drafts,
+                draftsRes.comments,
+              ),
+              holds: sameHolds ? cur.holds : draftsRes.holds,
+              reads: sameReads ? cur.reads : draftsRes.reads,
+              sends: sameSends ? cur.sends : resSends,
+              sent: reconcile(TilasmCommentSchema, cur.sent, draftsRes.sent),
+            };
+          };
         });
     }
     await Promise.all(reads);
-    const next = { ...state.details };
-    let touched = false;
-    for (const [wishId, got] of Object.entries(read)) {
-      const prevDetail = next[wishId] ?? EMPTY_DETAIL;
-      const tasks = got.tasks ?? prevDetail.tasks;
-      // What the screens got meanwhile (a write's answer, a page loaded) and is further along stays.
-      const questions = got.questions
-        ? questionsAhead(prevDetail.questions, got.questions)
-        : prevDetail.questions;
-      const blocks = got.blocks ?? prevDetail.blocks;
-      const tilasms = got.tilasms ?? prevDetail.tilasms;
-      const tasksTotal =
-        got.tasksTotal !== undefined ? got.tasksTotal : prevDetail.tasksTotal;
-      const questionsTotal =
-        got.questionsTotal !== undefined
-          ? got.questionsTotal
-          : prevDetail.questionsTotal;
-      const blocksTotal =
-        got.blocksTotal !== undefined
-          ? got.blocksTotal
-          : prevDetail.blocksTotal;
-      const tasksNextToken =
-        got.tasksNextToken !== undefined
-          ? got.tasksNextToken
-          : prevDetail.tasksNextToken;
-      const questionsNextToken =
-        got.questionsNextToken !== undefined
-          ? got.questionsNextToken
-          : prevDetail.questionsNextToken;
-      const blocksNextToken =
-        got.blocksNextToken !== undefined
-          ? got.blocksNextToken
-          : prevDetail.blocksNextToken;
-      const loadedKinds = new Set(prevDetail.loadedKinds);
-      let kindsChanged = false;
-      const requested = details.find(([id]) => id === wishId)?.[1];
-      if (requested) {
-        for (const k of requested) {
-          if (failedKinds.get(wishId)?.has(k)) continue;
-          stale.get(wishId)?.delete(k);
-          if (!loadedKinds.has(k)) {
-            loadedKinds.add(k);
-            kindsChanged = true;
-          }
-        }
-      }
-      if (
-        prevDetail.loaded &&
-        tasks === prevDetail.tasks &&
-        questions === prevDetail.questions &&
-        blocks === prevDetail.blocks &&
-        tilasms === prevDetail.tilasms &&
-        tasksTotal === prevDetail.tasksTotal &&
-        questionsTotal === prevDetail.questionsTotal &&
-        blocksTotal === prevDetail.blocksTotal &&
-        tasksNextToken === prevDetail.tasksNextToken &&
-        questionsNextToken === prevDetail.questionsNextToken &&
-        blocksNextToken === prevDetail.blocksNextToken &&
-        !kindsChanged
-      ) {
-        continue;
-      }
-      next[wishId] = {
-        tasks,
-        questions,
-        blocks,
-        tilasms,
-        loaded: true,
-        tasksTotal,
-        questionsTotal,
-        blocksTotal,
-        tasksNextToken,
-        questionsNextToken,
-        blocksNextToken,
-        loadedKinds: kindsChanged ? loadedKinds : prevDetail.loadedKinds,
-      };
-      touched = true;
-    }
-    // What the watch brought goes on what was read: a wish not read yet has nothing to put it on, and reads it all.
-    for (const [wishId, list] of changes) {
-      const detail = next[wishId];
-      if (!detail?.loaded) continue;
-      const got = read[wishId] ?? {};
-      next[wishId] = list.reduce((d, c) => apply(d, c, got), detail);
-      touched ||= next[wishId] !== detail;
-    }
-    if (touched) patch.details = next;
-    if (wishes && projects && !errors.length) patch.loaded = true;
-    if (
-      wishes ||
-      projects ||
-      inbox ||
-      details.length > 0 ||
-      changes.length > 0 ||
-      errors.length > 0 ||
-      state.error
-    ) {
-      patch.error = errors[0] ?? "";
-      set(patch);
-    }
   }
 
-  function scheduleFlush(delay: number): Promise<void> {
+  function syncPrompts(
+    prevTasks: Task[],
+    nextTasks: Task[],
+    base = state.prompts,
+  ): Record<string, string> | undefined {
+    const prevById = new Map(prevTasks.map((t) => [t.id, t.prompt]));
+    let next: Record<string, string> | undefined;
+    for (const t of nextTasks) {
+      if (!t.prompt) continue;
+      const cur = (next ?? base)[t.id];
+      if (!cur || t.prompt !== prevById.get(t.id)) {
+        if (cur !== t.prompt) {
+          next ??= { ...base };
+          next[t.id] = t.prompt;
+        }
+      }
+    }
+    return next;
+  }
+
+  function ensureScheduled(): Promise<void> {
     if (!scheduled) {
       scheduled = new Promise<void>((resolve) => {
         scheduledResolve = resolve;
       });
     }
+    return scheduled;
+  }
+
+  function scheduleFlush(delay: number): Promise<void> {
+    const out = ensureScheduled();
     const target = Date.now() + Math.max(0, delay);
     if (timer !== undefined) {
       if (target < timerAt) {
         clearTimeout(timer);
         timer = undefined;
       } else {
-        return scheduled;
+        return out;
       }
     }
     timerAt = target;
     const wait = Math.max(0, target - Date.now());
     timer = setTimeout(runScheduled, wait);
-    return scheduled;
+    return out;
+  }
+
+  function launchRead(): Promise<void> {
+    const promise: Promise<void> = read().finally(() => {
+      activeReads.delete(promise);
+      checkAfterActive();
+    });
+    activeReads.add(promise);
+    return promise;
   }
 
   async function runScheduled() {
     timer = undefined;
     timerAt = 0;
-    if (active) return;
-    const resolve = scheduledResolve;
-    scheduled = undefined;
-    scheduledResolve = undefined;
-
-    const promise = (async () => {
-      try {
-        await read();
-      } finally {
-        active = undefined;
-        checkAfterActive();
-      }
-    })();
-    active = promise;
-    await promise;
-    resolve?.();
+    const delay = nextDelay(Date.now());
+    if (delay > 0) {
+      scheduleFlush(delay);
+      return;
+    }
+    if (delay === 0) {
+      await launchRead();
+    } else {
+      checkAfterActive();
+    }
   }
 
   function checkAfterActive() {
     const delay = nextDelay(Date.now());
-    if (delay >= 0) {
+    if (delay === 0) {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+        timerAt = 0;
+      }
+      void launchRead();
+    } else if (delay > 0) {
       scheduleFlush(delay);
-    } else if (scheduledResolve) {
+    } else if (activeReads.size === 0 && scheduledResolve) {
       const resolve = scheduledResolve;
       scheduled = undefined;
       scheduledResolve = undefined;
@@ -896,40 +1459,23 @@ export function createStore(
 
   // flush reads what is pending; a change that comes while it reads is read right after, coalesced and throttled.
   function flush(): Promise<void> {
-    if (active) {
-      if (!scheduled) {
-        scheduled = new Promise<void>((resolve) => {
-          scheduledResolve = resolve;
-        });
-      }
-      return scheduled;
-    }
     const now = Date.now();
     const delay = nextDelay(now);
     if (delay > 0) {
       return scheduleFlush(delay);
+    }
+    if (delay < 0) {
+      if (activeReads.size > 0) return ensureScheduled();
+      return Promise.resolve();
     }
     if (timer !== undefined) {
       clearTimeout(timer);
       timer = undefined;
       timerAt = 0;
     }
-    const resolve = scheduledResolve;
-    scheduled = undefined;
-    scheduledResolve = undefined;
-    const promise = (async () => {
-      try {
-        await read();
-      } finally {
-        active = undefined;
-        checkAfterActive();
-      }
-    })();
-    active = promise;
-    if (resolve) {
-      void promise.then(resolve);
-    }
-    return active;
+    const out = ensureScheduled();
+    void launchRead();
+    return out;
   }
 
   // How many screens show each task's events; its stream runs while one does.
@@ -950,9 +1496,11 @@ export function createStore(
       const fresh = buffer.filter((e) => e.seq > lastSeq);
       buffer = [];
       if (!fresh.length) return;
-      const promptEvent = fresh.find((e) => e.kind === TaskEventKind.PROMPT);
+      const promptEvent = fresh
+        .filter((e) => e.kind === TaskEventKind.PROMPT)
+        .at(-1);
       const patchPrompts =
-        promptEvent && !state.prompts[taskId]
+        promptEvent && state.prompts[taskId] !== promptEvent.text
           ? { prompts: { ...state.prompts, [taskId]: promptEvent.text } }
           : undefined;
       const kept = [...known, ...fresh].slice(-MAX_EVENTS);
@@ -987,6 +1535,129 @@ export function createStore(
     }
   }
 
+  // readPrompt reads a task's prompt alone (Store.readPrompt).
+  async function readPrompt(taskId: string): Promise<string> {
+    if (state.prompts[taskId]) return state.prompts[taskId];
+    const pending = pendingPrompts.get(taskId);
+    if (pending) return pending;
+    const read = (async () => {
+      const key = `prompt:${taskId}`;
+      try {
+        const res = await clients.tasks.get({ taskId }, call);
+        backoff.delete(key);
+        const prompt = res.task?.prompt ?? "";
+        if (prompt) {
+          set({ prompts: { ...state.prompts, [taskId]: prompt } });
+        }
+        return prompt;
+      } catch (error) {
+        // A call the network cut (Chromium aborts every request in flight when an interface comes or goes, W7) or a
+        // djinn that restarts: read again, never an error thrown at the page. A task gone has no prompt to read.
+        if (!stopped && !notFound(error) && !unimplemented(error)) {
+          const wait = backoff.get(key) ?? retry;
+          backoff.set(key, Math.min(wait * 2, 60_000));
+          setTimeout(() => void readPrompt(taskId), wait);
+        }
+        return "";
+      } finally {
+        pendingPrompts.delete(taskId);
+      }
+    })();
+    pendingPrompts.set(taskId, read);
+    return read;
+  }
+
+  async function readMachine() {
+    startReadKey("machine");
+    try {
+      const [machine, gates] = await Promise.all([
+        clients.machine.show({}, call),
+        clients.gates.list({}, call),
+      ]);
+      finishReadKey("machine", true);
+      set({ machine: machine.machine, gates: gates.gates });
+    } catch (error) {
+      finishReadKey("machine", unimplemented(error));
+      set({ error: message(error) });
+    }
+  }
+
+  function retryRead(rawKind: ReadKind, wishId?: string) {
+    const kind = normalizeKind(rawKind);
+    if (
+      !wishId &&
+      (kind === Change.TASK ||
+        kind === Change.QUESTION ||
+        kind === Change.BLOCK ||
+        kind === Change.TILASM)
+    ) {
+      if (readState("wishes") === "failed") retryRead("wishes");
+      for (const w of state.wishes) {
+        if (
+          (w.state === WishState.ACTIVE || w.state === WishState.UNSPECIFIED) &&
+          readState(kind, w.id) === "failed"
+        ) {
+          retryRead(kind, w.id);
+        }
+      }
+      return;
+    }
+    const key = keyFor(kind, wishId);
+    failedKeys.delete(key);
+    slowKeys.delete(key);
+    backoff.delete(key);
+    lastReadAt.delete(key);
+    ensureSlowTimer(key);
+    set({});
+    if (key === "wishes") {
+      pending.wishes = true;
+      void flush();
+    } else if (key === "projects") {
+      pending.projects = true;
+      void flush();
+    } else if (key === "inbox") {
+      pending.inbox = true;
+      void flush();
+    } else if (key === "machine") {
+      void readMachine();
+    } else if (
+      wishId &&
+      (kind === Change.TASK ||
+        kind === Change.QUESTION ||
+        kind === Change.BLOCK ||
+        kind === Change.TILASM)
+    ) {
+      const pendingKinds = pending.details.get(wishId) ?? new Set<Change>();
+      pendingKinds.add(kind);
+      pending.details.set(wishId, pendingKinds);
+      void flush();
+    } else {
+      trackedRunners.get(key)?.();
+    }
+  }
+
+  function trackRead<T>(
+    kind: ReadKind,
+    id: string | undefined,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const key = keyFor(kind, id);
+    trackedRunners.set(key, () => {
+      void trackRead(kind, id, run).catch(() => {});
+    });
+    startReadKey(key);
+    return run().then(
+      (res) => {
+        finishReadKey(key, true, true);
+        return res;
+      },
+      (err) => {
+        finishReadKey(key, unimplemented(err), true);
+        throw err;
+      },
+    );
+  }
+
   return {
     clients,
     getState: () => state,
@@ -996,6 +1667,8 @@ export function createStore(
     },
     start() {
       stopped = false;
+      ensureSlowTimer("wishes");
+      ensureSlowTimer("projects");
       const abort = new AbortController();
       void (async () => {
         while (!abort.signal.aborted) {
@@ -1019,6 +1692,10 @@ export function createStore(
       return () => {
         stopped = true;
         abort.abort();
+        for (const t of slowTimers.values()) clearTimeout(t);
+        slowTimers.clear();
+        for (const list of waiters.values()) for (const r of list) r();
+        waiters.clear();
         if (timer !== undefined) {
           clearTimeout(timer);
           timer = undefined;
@@ -1029,10 +1706,15 @@ export function createStore(
     open(wishId, kinds) {
       opened.set(wishId, (opened.get(wishId) ?? 0) + 1);
       const toLoad = kinds && kinds.length > 0 ? kinds : DETAIL;
+      const req = requestedKinds.get(wishId) ?? new Set<Change>();
+      for (const k of toLoad) req.add(k);
+      requestedKinds.set(wishId, req);
       const pendingKinds = pending.details.get(wishId) ?? new Set<Change>();
       let added = false;
       for (const k of toLoad) {
-        if (!fresh(wishId, k)) {
+        const key = `${wishId}:${k}`;
+        ensureSlowTimer(key);
+        if (!fresh(wishId, k) && !inFlight.has(key)) {
           pendingKinds.add(k);
           added = true;
         }
@@ -1048,16 +1730,31 @@ export function createStore(
       };
     },
     async loadKinds(wishId, kinds) {
+      const req = requestedKinds.get(wishId) ?? new Set<Change>();
+      for (const k of kinds) req.add(k);
+      requestedKinds.set(wishId, req);
       const needed = kinds.filter((k) => !fresh(wishId, k));
       if (!needed.length) return;
       const pendingKinds = pending.details.get(wishId) ?? new Set<Change>();
-      for (const k of needed) pendingKinds.add(k);
-      pending.details.set(wishId, pendingKinds);
+      let added = false;
+      for (const k of needed) {
+        const key = `${wishId}:${k}`;
+        ensureSlowTimer(key);
+        if (!inFlight.has(key)) {
+          pendingKinds.add(k);
+          added = true;
+        }
+      }
+      if (added) {
+        pending.details.set(wishId, pendingKinds);
+      }
       await flush();
     },
     async loadMore(wishId, kind, pageSize) {
       const key = `${wishId}:${kind}`;
       if (loadingMore.has(key)) return;
+      const inflight = inFlightPromises.get(key);
+      if (inflight) await inflight;
       const detail = state.details[wishId];
       if (!detail) return;
       loadingMore.add(key);
@@ -1102,6 +1799,7 @@ export function createStore(
             new Set(),
             byID,
           );
+          const prompts = syncPrompts(cur.tasks, res.tasks);
           set({
             details: {
               ...state.details,
@@ -1112,6 +1810,7 @@ export function createStore(
                 tasksNextToken: res.nextPageToken,
               },
             },
+            ...(prompts ? { prompts } : {}),
           });
         } else if (kind === Change.BLOCK && detail.blocksNextToken) {
           const res = await clients.blocks.list(
@@ -1182,25 +1881,7 @@ export function createStore(
         );
       };
     },
-    async readPrompt(taskId) {
-      if (state.prompts[taskId]) return state.prompts[taskId];
-      const pending = pendingPrompts.get(taskId);
-      if (pending) return pending;
-      const read = (async () => {
-        try {
-          const res = await clients.tasks.get({ taskId });
-          const prompt = res.task?.prompt ?? "";
-          if (prompt) {
-            set({ prompts: { ...state.prompts, [taskId]: prompt } });
-          }
-          return prompt;
-        } finally {
-          pendingPrompts.delete(taskId);
-        }
-      })();
-      pendingPrompts.set(taskId, read);
-      return read;
-    },
+    readPrompt,
     putQuestion(question) {
       const detail = state.details[question.wishId];
       if (!detail?.loadedKinds.has(Change.QUESTION)) return;
@@ -1210,31 +1891,63 @@ export function createStore(
         set({ details: { ...state.details, [question.wishId]: next } });
     },
     changed(wishId, changes) {
+      mark(wishId, changes);
+      const keys = new Set<string>();
+      const ids = wishId ? [wishId] : [...opened.keys()];
       for (const change of changes) {
-        if (change === Change.WISH) lastReadAt.delete("wishes");
-        else if (change === Change.PROJECT) lastReadAt.delete("projects");
-        else if (change === Change.INBOX) lastReadAt.delete("inbox");
-        else if (wishId && DETAIL.includes(change))
-          lastReadAt.delete(`${wishId}:${change}`);
+        if (!Change[change] || change === Change.UNSPECIFIED) {
+          lastReadAt.clear();
+          if (pending.wishes) keys.add("wishes");
+          if (pending.projects) keys.add("projects");
+          if (pending.inbox) keys.add("inbox");
+          for (const id of ids) {
+            for (const k of pending.details.get(id) ?? []) {
+              keys.add(`${id}:${k}`);
+            }
+          }
+        } else if (change === Change.WISH) {
+          lastReadAt.delete("wishes");
+          if (pending.wishes) keys.add("wishes");
+        } else if (change === Change.PROJECT) {
+          lastReadAt.delete("projects");
+          if (pending.projects) keys.add("projects");
+        } else if (change === Change.INBOX) {
+          lastReadAt.delete("inbox");
+          if (pending.inbox) keys.add("inbox");
+        } else if (DETAIL.includes(change)) {
+          for (const id of ids) {
+            const key = `${id}:${change}`;
+            lastReadAt.delete(key);
+            if (pending.details.get(id)?.has(change)) {
+              keys.add(key);
+            }
+          }
+        }
       }
       if (timer !== undefined) {
         clearTimeout(timer);
         timer = undefined;
         timerAt = 0;
       }
-      mark(wishId, changes);
-      return flush();
+      const awaited = Promise.all(
+        [...keys].map(
+          (key) =>
+            new Promise<void>((resolve) => {
+              let list = waiters.get(key);
+              if (!list) {
+                list = [];
+                waiters.set(key, list);
+              }
+              list.push(resolve);
+            }),
+        ),
+      ).then(() => {});
+      void flush();
+      return keys.size > 0 ? awaited : Promise.resolve();
     },
-    async readMachine() {
-      try {
-        const [machine, gates] = await Promise.all([
-          clients.machine.show({}),
-          clients.gates.list({}),
-        ]);
-        set({ machine: machine.machine, gates: gates.gates });
-      } catch (error) {
-        set({ error: message(error) });
-      }
-    },
+    readMachine,
+    readState,
+    retryRead,
+    trackRead,
   };
 }

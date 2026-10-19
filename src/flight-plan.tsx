@@ -1,59 +1,52 @@
 // The flying carpet was called the flight plan: this file, FlightPlan and the flight-plan class keep that name.
-// The flying carpet of the active wishes, merged (T13): a bar at the top while something waits for you, then each
-// wish at a glance, then what waits for you (the open questions of every wish, the blocking ones first, the workers
-// that wait, the wishes Djinn proposes to grant, the proofs you can give of the azimas whose work is done), and the
-// questions you asked to investigate. The tasks of every wish
-// have a tab of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
+// The flying carpet of the active wishes, merged (T13): a bar at the top while something waits for you, then two
+// columns (mockup L04 v2): on the left, what waits for you (the open questions of every wish, grouped by wish in the
+// questions column, question-column.tsx; then the workers that wait, the proofs you can give of the azimas whose work
+// is done, the wishes Djinn proposes to grant, and the questions you asked to investigate); on the right, the glance:
+// each wish's workers running now and to come (glance.tsx), which opens the wish. The tasks of every wish have a tab
+// of their own (task-tabs.tsx), and so have their decisions (decision-log.tsx). Every line shows the wish
 // it comes from, and an answer, a stop or a grant goes back to it. Each wish keeps its own view; an empty section is hidden.
-// The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal, the pill at the
-// bottom writes to it.
-import { GitMerge } from "lucide-react";
-import {
-  type CSSProperties,
-  type ReactNode,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+// The Djinn, the one lead, is at hand as on a wish: Talk to the Djinn in the header opens its terminal (driven by Djinn,
+// the chip of its seat moves it instead), the pill at the bottom writes to it.
+import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 
 import {
   Change,
   type Choice,
   Closer,
-  type MarkKind,
   type Provider,
   type Question,
   type Task,
-  TaskStatus,
   type Wish,
 } from "../gen/ts/plan/v1/plan_pb";
 import { AttentionBar, attentionOf, useReach } from "./attention";
 import { type Decision, decisionOf } from "./data/decisions";
-import { useData, usePausable, useWishDetails } from "./data/djinn";
+import {
+  type ReadState,
+  useData,
+  usePausable,
+  useReadState,
+  useRetryRead,
+  useSlowWishCode,
+  useWishDetails,
+} from "./data/djinn";
 import {
   type AzimaGroup,
   flightPlan,
-  isAzima,
   mergeNest,
   spent,
   taskMapOf,
 } from "./data/flight";
-import {
-  investigating,
-  noLead,
-  runningOf,
-  waitsForYou,
-  watcherRuns,
-  wishTone,
-} from "./data/format";
+import { fixerOf, noLead, watcherRuns } from "./data/format";
+import { litIfrits } from "./data/ifrit";
 import { DecisionLog } from "./decision-log";
 import { t } from "./i18n";
 import { Inbox } from "./inbox";
 import { LeadMessage } from "./lead-message";
+import { useEyeNeeds } from "./djinn-eye";
 import { useWrites } from "./marks";
 import { useKeepPlace } from "./scroll-anchor";
-import { CountPill, StatusBadge } from "./status";
+import { StatusBadge } from "./status";
 import {
   AzimaCard,
   azimaFinished,
@@ -62,16 +55,26 @@ import {
   proofWords,
   useStickyRoom,
 } from "./azima";
-import { MoveQuestionDialog, WithdrawQuestionDialog } from "./wish-dialogs";
+import {
+  MoveQuestionDialog,
+  SleepQuestionDialog,
+  WithdrawQuestionDialog,
+} from "./wish-dialogs";
 import { TaskSections, type View, ViewTabs } from "./task-tabs";
 import { OperatingLoad } from "./operating-load";
 import { SpentLine } from "./usage";
 import { Machine } from "./visuals";
-import { WishQuestion } from "./wish-question";
+import { QuestionColumn, questionGroups } from "./question-column";
+import { Glance } from "./glance";
 import { WishTask } from "./wish-task";
 import { HourglassLine } from "./hourglass";
 import { PageHeader } from "./page-header";
-import { LeadButton, leadTrouble, recordedAgent } from "./wish-head";
+import {
+  LeadButton,
+  leadTrouble,
+  recordedAgent,
+  type SeatChoice,
+} from "./wish-head";
 import {
   GrantCard,
   InvestigatingSection,
@@ -84,12 +87,15 @@ const noTasks: readonly Task[] = [];
 export function FlightPlan({
   wishes,
   onOpen,
+  onOpenProject,
   onToast,
   onSetupAgents,
 }: {
   // The active wishes, by rank.
   wishes: Wish[];
   onOpen: (wishId: string) => void;
+  // Opens a project's panel, from its line in the inbox.
+  onOpenProject?: (projectId: string) => void;
   onToast: (text: string) => void;
   onSetupAgents?: () => void;
 }) {
@@ -98,6 +104,7 @@ export function FlightPlan({
   const leadExit = useData((s) => s.leadExit);
   const leadStartError = useData((s) => s.leadStartError);
   const leadPrompt = useData((s) => s.leadPrompt);
+  const leadDrive = useData((s) => s.leadDrive);
   const allWishes = useData((s) => s.wishes);
   const projectById = useMemo(
     () => new Map(projects.map((p) => [p.id, p])),
@@ -106,6 +113,28 @@ export function FlightPlan({
   const pausable = usePausable();
   const wishIds = useMemo(() => wishes.map((w) => w.id), [wishes]);
   const details = useWishDetails(wishIds);
+  const wishesState = useReadState(Change.WISH);
+  const questionsState = useReadState(Change.QUESTION);
+  const tasksState = useReadState(Change.TASK);
+  const blocksState = useReadState(Change.BLOCK);
+  const retryQuestions = useRetryRead(Change.QUESTION);
+  const retryTasks = useRetryRead(Change.TASK);
+  const retryBlocks = useRetryRead(Change.BLOCK);
+  const slowQuestionWish = useSlowWishCode(Change.QUESTION);
+  const decisionsState: ReadState =
+    questionsState === "failed" ||
+    blocksState === "failed" ||
+    tasksState === "failed"
+      ? "failed"
+      : questionsState === "slow" ||
+          blocksState === "slow" ||
+          tasksState === "slow"
+        ? "slow"
+        : questionsState === "reading" ||
+            blocksState === "reading" ||
+            tasksState === "reading"
+          ? "reading"
+          : "ready";
   const plan = useMemo(() => flightPlan(wishes, details), [wishes, details]);
   const allTasks = useMemo(
     () => wishes.flatMap((w) => details[w.id]?.tasks ?? []),
@@ -115,18 +144,51 @@ export function FlightPlan({
   const scrollRef = useRef<HTMLDivElement>(null);
   const keepPlace = useKeepPlace(scrollRef);
   useStickyRoom(scrollRef, false);
-  const { clients, act, quiet, answer, enlighten, mark, move, withdraw } =
-    useWrites(onToast);
+  const {
+    clients,
+    act,
+    quiet,
+    answer,
+    enlighten,
+    urge,
+    move,
+    withdraw,
+    later,
+    sleep,
+  } = useWrites(onToast);
   const waits =
     plan.questions.length +
     plan.waitingLead.length +
     plan.waiting.length +
     plan.ready.length +
     plan.proofs.length;
+  // Nothing waits and nothing runs: the questions column shows the Djinn asleep, and says so.
+  const calm =
+    plan.loaded &&
+    questionsState === "ready" &&
+    tasksState === "ready" &&
+    wishes.length > 0 &&
+    waits +
+      plan.running.length +
+      plan.investigating.length +
+      plan.asleep.length ===
+      0;
   const renderAttentionOrigin = useCallback(
     (wish: Wish) => wishOrigin(wish),
     [],
   );
+  // The lit ifrits of every active wish, the latest activity first: a band each, at the top of what waits for you.
+  const ifrits = useMemo(
+    () =>
+      litIfrits(
+        wishes.flatMap((wish) =>
+          (details[wish.id]?.tasks ?? []).map((item) => ({ wish, item })),
+        ),
+      ),
+    [wishes, details],
+  );
+  // A worker waiting or an ifrit lit: the Djinn's eye lets its flame shine.
+  useEyeNeeds(plan.waiting.length > 0 || ifrits.length > 0);
   const attention = useMemo(
     () =>
       attentionOf(
@@ -135,6 +197,11 @@ export function FlightPlan({
         plan.ready,
         renderAttentionOrigin,
         leadPrompt,
+        ifrits,
+        leadDrive?.limit && {
+          limit: leadDrive.limit,
+          accounts: leadDrive.accounts,
+        },
       ),
     [
       plan.questions,
@@ -143,6 +210,8 @@ export function FlightPlan({
       plan.ready,
       renderAttentionOrigin,
       leadPrompt,
+      ifrits,
+      leadDrive,
     ],
   );
   const [view, setView] = useState<View>("main");
@@ -158,6 +227,33 @@ export function FlightPlan({
     wishId: string;
     question: Question;
   } | null>(null);
+  const moveQuestion = useCallback(
+    (question: Question) =>
+      setMovingQuestion({ wishId: question.wishId, question }),
+    [],
+  );
+  const withdrawQuestion = useCallback(
+    (question: Question) =>
+      setWithdrawingQuestion({ wishId: question.wishId, question }),
+    [],
+  );
+  const laterQuestion = useCallback(
+    (question: Question) =>
+      later(question.wishId, question.id, !!question.laterTime),
+    [later],
+  );
+  const [sleepingQuestion, setSleepingQuestion] = useState<Question | null>(
+    null,
+  );
+  const wakeQuestion = useCallback(
+    (question: Question) => sleep(question.wishId, question.id, [], true),
+    [sleep],
+  );
+  // The questions column, one group per wish (question-column.tsx).
+  const questionsByWish = useMemo(
+    () => questionGroups(wishes, plan.questions),
+    [wishes, plan.questions],
+  );
   // What a link between a decision and a task brings into sight in the other tab: its id.
   const [focus, setFocus] = useState("");
   const show = useCallback((to: View, id = "") => {
@@ -173,10 +269,12 @@ export function FlightPlan({
         ...plan.decisions.map(({ item }) => `decision-${item.id}`),
         ...plan.waiting.map(({ item }) => `waiting-${item.id}`),
         ...plan.ready.map((wish) => `grant-${wish.id}`),
+        ...ifrits.map(({ item }) => `task-${item.id}`),
       ]),
-    [plan.questions, plan.decisions, plan.waiting, plan.ready],
+    [plan.questions, plan.decisions, plan.waiting, plan.ready, ifrits],
   );
-  const { reach } = useReach(show, shown);
+  const { reach, to } = useReach(show, shown);
+  const openTask = useCallback((task: Task) => to(`task-${task.id}`), [to]);
 
   const wishById = useMemo(
     () => new Map(wishes.map((w) => [w.id, w])),
@@ -257,6 +355,11 @@ export function FlightPlan({
     [quiet, act, clients.tasks],
   );
 
+  const handleUrge = useCallback(
+    (task: Task, urgent: boolean) => quiet(urge(task, urgent)),
+    [quiet, urge],
+  );
+
   const handleDone = useCallback(
     (note: string, task: Task) =>
       act(
@@ -269,6 +372,23 @@ export function FlightPlan({
           }),
         [Change.TASK],
         t("task.marked_done", { task: task.code }),
+      ),
+    [act, clients.tasks],
+  );
+
+  // An ifrit put out: a message lights it again, in its own session and worktree.
+  const handleRelight = useCallback(
+    (text: string, task: Task) =>
+      act(
+        task.wishId,
+        () =>
+          clients.tasks.continue({
+            taskId: task.id,
+            prompt: text,
+            by: Closer.DEVELOPER,
+          }),
+        [Change.TASK],
+        t("ifrit.relit", { code: task.code }),
       ),
     [act, clients.tasks],
   );
@@ -304,6 +424,7 @@ export function FlightPlan({
           key={item.id}
           task={item}
           origin={wish ? wishOrigin(wish) : undefined}
+          fixedBy={fixerOf(item, details[item.wishId]?.tasks ?? noTasks)?.code}
           decision={wish ? decisionOfTask(item, wish) : undefined}
           focused={focus === item.id}
           onDecision={handleDecision}
@@ -312,7 +433,9 @@ export function FlightPlan({
           onStart={handleStart}
           onSend={handleSend}
           onHold={pausable ? handleHold : undefined}
+          onUrge={handleUrge}
           onDone={handleDone}
+          onRelight={handleRelight}
           merges={merges}
           nested={merges?.map(row)}
           mergeOpen={nest.host.get(focus) === item.id}
@@ -323,6 +446,7 @@ export function FlightPlan({
     },
     [
       nestOf,
+      details,
       wishById,
       decisionOfTask,
       focus,
@@ -333,7 +457,9 @@ export function FlightPlan({
       handleSend,
       pausable,
       handleHold,
+      handleUrge,
       handleDone,
+      handleRelight,
       handleTurnComments,
     ],
   );
@@ -480,14 +606,6 @@ export function FlightPlan({
     [answer],
   );
 
-  const handleQuestionMark = useCallback(
-    (kind: MarkKind, remove: boolean, q?: Question) => {
-      if (q) return mark(q.wishId, q.id, kind, remove);
-      return Promise.resolve();
-    },
-    [mark],
-  );
-
   const handleQuestionEnlighten = useCallback(
     (note: string, q?: Question) => {
       if (q) return enlighten(q.wishId, q.id, note);
@@ -515,7 +633,10 @@ export function FlightPlan({
     ({ wish }: { wish: Wish }) => wishOrigin(wish),
     [],
   );
-  const checkDecisionNoLead = useCallback(() => noLead(lead), [lead]);
+  const checkDecisionNoLead = useCallback(
+    () => noLead(lead, leadDrive),
+    [lead, leadDrive],
+  );
   // resumeLead resumes the Djinn, or starts one of another agent, on no wish; what Djinn says of it shows as a toast.
   const resumeLead = (provider?: Provider) => {
     let note = "";
@@ -523,6 +644,18 @@ export function FlightPlan({
       "",
       async () => {
         ({ note } = await clients.lead.resume({ provider }));
+      },
+      [Change.WISH],
+      () => note,
+    );
+  };
+  // moveLead moves the lead Djinn drives to another seat; what Djinn says of it shows as a toast.
+  const moveLead = (seat: SeatChoice) => {
+    let note = "";
+    return act(
+      "",
+      async () => {
+        ({ note } = await clients.lead.move(seat));
       },
       [Change.WISH],
       () => note,
@@ -549,6 +682,8 @@ export function FlightPlan({
             onLead={() => quiet(resumeLead())}
             onPick={(provider) => quiet(resumeLead(provider))}
             onSetup={onSetupAgents}
+            drive={leadDrive}
+            onMove={(seat) => quiet(moveLead(seat))}
           />
         }
       >
@@ -561,9 +696,11 @@ export function FlightPlan({
             <span className="eyebrow">{t("plan.eyebrow")}</span>
             <h1>{t("plan.title")}</h1>
             <p>
-              {wishes.length
+              {wishes.length > 0
                 ? t("plan.detail", { count: wishes.length })
-                : t("plan.empty")}
+                : wishesState === "ready"
+                  ? t("plan.empty")
+                  : null}
             </p>
           </div>
           <div className="hero-visual">
@@ -583,11 +720,18 @@ export function FlightPlan({
             view={view}
             main={t("plan.title")}
             tasks={
-              plan.moving.length +
-              plan.finished.length +
-              plan.azimas.reduce((n, { item }) => n + item.parts.length, 0)
+              tasksState === "ready" ||
+              plan.moving.length + plan.finished.length + plan.azimas.length > 0
+                ? plan.moving.length +
+                  plan.finished.length +
+                  plan.azimas.reduce((n, { item }) => n + item.parts.length, 0)
+                : null
             }
-            decisions={plan.decisions.length}
+            decisions={
+              decisionsState === "ready" || plan.decisions.length > 0
+                ? plan.decisions.length
+                : null
+            }
             onView={(to) => show(to)}
           />
           {view === "decisions" && (
@@ -596,6 +740,12 @@ export function FlightPlan({
               origin={renderDecisionOrigin}
               noLead={checkDecisionNoLead}
               focus={focus}
+              readState={decisionsState}
+              onRetry={() => {
+                retryQuestions();
+                retryBlocks();
+                retryTasks();
+              }}
               onTask={handleTaskFocus}
             />
           )}
@@ -610,227 +760,55 @@ export function FlightPlan({
               fold="plan"
               showDone={showDone}
               showDrafts={showDrafts}
+              readState={tasksState}
+              readingKind="carpet_tasks"
+              readingCount={wishes.length}
+              onRetry={retryTasks}
               renderAzima={renderAzimaItem}
               renderDraft={renderDraftItem}
               render={renderMovingItem}
               aside={<SpentLine spent={flightPlanSpent} />}
             />
           )}
-          {view === "main" && <Inbox onOpen={onOpen} onToast={onToast} />}
+          {view === "main" && (
+            <Inbox
+              onOpen={onOpen}
+              onOpenProject={onOpenProject}
+              onToast={onToast}
+            />
+          )}
           {view === "main" && (
             <>
               <div className="main-columns">
-                {wishes.length > 0 && (
-                  <div className="main-side">
+                <div className="main-moves">
+                  <QuestionColumn
+                    groups={questionsByWish}
+                    headings
+                    onOpenWish={onOpen}
+                    noLead={noLead(lead, leadDrive)}
+                    readState={questionsState}
+                    wishCode={slowQuestionWish}
+                    eyePerch
+                    onRetry={retryQuestions}
+                    onAnswer={handleQuestionAnswer}
+                    onEnlighten={handleQuestionEnlighten}
+                    onMove={moveQuestion}
+                    onWithdraw={withdrawQuestion}
+                    onLater={laterQuestion}
+                    onSleep={setSleepingQuestion}
+                    asleep={plan.asleep}
+                    onWake={wakeQuestion}
+                    calm={calm}
+                  />
+                  {plan.waiting.length +
+                    plan.proofs.length +
+                    plan.ready.length >
+                    0 && (
                     <section
-                      className="plan-wishes"
-                      aria-label={t("sidebar.wishes")}
-                    >
-                      {wishes.map((wish) => {
-                        const detail = details[wish.id];
-                        const open =
-                          detail?.questions.filter(waitsForYou).length ?? 0;
-                        const digging =
-                          detail?.questions.filter(investigating).length ?? 0;
-                        const { running, watching, merging } = runningOf(
-                          detail?.tasks ?? [],
-                        );
-                        // Work merging is Djinn at work on the wish: its tone, not its count of workers (W577).
-                        const busy = running + merging;
-                        const done =
-                          detail?.tasks.filter(
-                            (x) => x.status === TaskStatus.DONE && !isAzima(x),
-                          ).length ?? 0;
-                        // A cancelled task will never be done: it shows apart, out of the progress.
-                        const cancelled =
-                          detail?.tasks.filter(
-                            (x) => x.status === TaskStatus.CANCELLED,
-                          ).length ?? 0;
-                        const total =
-                          (detail?.tasks.filter((x) => !isAzima(x)).length ??
-                            0) - cancelled;
-                        const failed =
-                          detail?.tasks.filter(
-                            (x) => x.status === TaskStatus.FAILED,
-                          ).length ?? 0;
-                        return (
-                          <button
-                            key={wish.id}
-                            className={`plan-wish tone-${wishTone(wish, open, busy, watching)}`}
-                            onClick={() => onOpen(wish.id)}
-                            title={t("plan.open_wish")}
-                          >
-                            <span className="plan-wish-title">
-                              <span className="plan-wish-rank">
-                                {wish.rank}
-                              </span>
-                              <strong>{wish.title}</strong>
-                            </span>
-                            <span className="plan-wish-counts">
-                              <StatusBadge
-                                tone={wishTone(wish, open, busy, watching)}
-                                label={
-                                  open
-                                    ? t("plan.questions", { count: open })
-                                    : wish.ready
-                                      ? t("wish.ready")
-                                      : running
-                                        ? t("plan.running", { count: running })
-                                        : merging
-                                          ? t("plan.merging", {
-                                              count: merging,
-                                            })
-                                          : watching
-                                            ? t("plan.watching", {
-                                                count: watching,
-                                              })
-                                            : t("pill.calm")
-                                }
-                              />
-                              {digging > 0 && (
-                                <CountPill
-                                  tone="investigating"
-                                  count={digging}
-                                  label={t("pill.investigating_detail", {
-                                    count: digging,
-                                  })}
-                                />
-                              )}
-                              {open > 0 && running > 0 && (
-                                <CountPill
-                                  tone="running"
-                                  count={running}
-                                  label={t("plan.running", { count: running })}
-                                />
-                              )}
-                              {merging > 0 && (open > 0 || running > 0) && (
-                                <CountPill
-                                  tone="running"
-                                  icon={GitMerge}
-                                  count={merging}
-                                  label={t("plan.merging_detail", {
-                                    count: merging,
-                                  })}
-                                />
-                              )}
-                              {(open > 0 || running > 0) && watching > 0 && (
-                                <CountPill
-                                  tone="watching"
-                                  count={watching}
-                                  label={t("plan.watching", {
-                                    count: watching,
-                                  })}
-                                />
-                              )}
-                              {failed > 0 && (
-                                <CountPill
-                                  tone="failed"
-                                  count={failed}
-                                  label={t("pill.failed_detail", {
-                                    count: failed,
-                                  })}
-                                />
-                              )}
-                              {cancelled > 0 && (
-                                <CountPill
-                                  tone="cancelled"
-                                  count={cancelled}
-                                  label={t("pill.cancelled_detail", {
-                                    count: cancelled,
-                                  })}
-                                />
-                              )}
-                              {total > 0 && (
-                                <CountPill
-                                  tone="done"
-                                  count={done}
-                                  label={t("pill.done_detail", {
-                                    done,
-                                    count: total,
-                                  })}
-                                >
-                                  / {total}
-                                </CountPill>
-                              )}
-                            </span>
-                            {total > 0 && (
-                              <span
-                                className="plan-wish-progress"
-                                style={
-                                  {
-                                    "--done": `${(100 * done) / total}%`,
-                                  } as CSSProperties
-                                }
-                                aria-hidden="true"
-                              />
-                            )}
-                            <SpentLine
-                              spent={spent(detail?.tasks ?? [])}
-                              showSwitch={false}
-                            />
-                          </button>
-                        );
-                      })}
-                    </section>
-                  </div>
-                )}
-
-                {waits > 0 && (
-                  <div className="main-moves">
-                    <section
-                      className="action-center"
+                      className="your-move"
                       id="action-center"
                       aria-label={t("panels.your_move")}
                     >
-                      <div className="section-title">
-                        <h2>{t("panels.your_move")}</h2>
-                        <p>
-                          {plan.questions.length > 0
-                            ? t("wish.questions_wait", {
-                                count: plan.questions.length,
-                              })
-                            : t("panels.your_move_detail")}
-                        </p>
-                      </div>
-                      {plan.questions.length > 0 && (
-                        <section className="decisions-section">
-                          <div className="section-heading">
-                            <h3>
-                              {t("panels.decisions")}
-                              <span className="count">
-                                {plan.questions.length}
-                              </span>
-                            </h3>
-                          </div>
-                          {plan.questions.map(
-                            ({ wish, item, blocking, report }) => (
-                              <WishQuestion
-                                key={item.id}
-                                question={item}
-                                origin={wishOrigin(wish)}
-                                blocking={blocking}
-                                report={report}
-                                noLead={noLead(lead)}
-                                onAnswer={handleQuestionAnswer}
-                                onMark={handleQuestionMark}
-                                onEnlighten={handleQuestionEnlighten}
-                                onMove={(q) =>
-                                  setMovingQuestion({
-                                    wishId: wish.id,
-                                    question: q,
-                                  })
-                                }
-                                onWithdraw={(q) =>
-                                  setWithdrawingQuestion({
-                                    wishId: wish.id,
-                                    question: q,
-                                  })
-                                }
-                              />
-                            ),
-                          )}
-                        </section>
-                      )}
                       {plan.waiting.length > 0 && (
                         <WaitingTasks waiting={plan.waiting} origin />
                       )}
@@ -876,37 +854,34 @@ export function FlightPlan({
                         />
                       ))}
                     </section>
-                  </div>
-                )}
-
-                {plan.investigating.length > 0 && (
-                  <div className="main-side">
+                  )}
+                  {plan.investigating.length > 0 && (
                     <InvestigatingSection
                       questions={plan.investigating}
                       origin
                       onAnswer={handleQuestionAnswer}
-                      onMark={handleQuestionMark}
-                      onMove={(q) =>
-                        setMovingQuestion({
-                          wishId: q.wishId,
-                          question: q,
-                        })
-                      }
-                      onWithdraw={(q) =>
-                        setWithdrawingQuestion({
-                          wishId: q.wishId,
-                          question: q,
-                        })
-                      }
+                      onMove={moveQuestion}
+                      onWithdraw={withdrawQuestion}
                     />
-                  </div>
+                  )}
+                </div>
+                {(wishes.length > 0 ||
+                  wishesState !== "ready" ||
+                  !!leadDrive?.batch) && (
+                  <Glance
+                    wishes={wishes}
+                    tasksOf={details}
+                    all={allWishes.length > 0 ? allWishes : wishes}
+                    readState={
+                      wishesState !== "ready" ? wishesState : tasksState
+                    }
+                    onRetry={retryTasks}
+                    onRetryLead={() => quiet(resumeLead())}
+                    onOpenWish={onOpen}
+                    onOpenTask={openTask}
+                  />
                 )}
               </div>
-
-              {plan.loaded &&
-                wishes.length > 0 &&
-                waits + plan.running.length + plan.investigating.length ===
-                  0 && <p className="muted-text">{t("plan.calm")}</p>}
 
               {/* The machine's live graphs are in the Hourglass (hourglass.tsx): here, its load in a line. */}
               <HourglassLine />
@@ -947,6 +922,15 @@ export function FlightPlan({
           onMove={move}
         />
       )}
+      {sleepingQuestion && (
+        <SleepQuestionDialog
+          question={sleepingQuestion}
+          tasks={details[sleepingQuestion.wishId]?.tasks ?? []}
+          currentWishId={sleepingQuestion.wishId}
+          onClose={() => setSleepingQuestion(null)}
+          onSleep={sleep}
+        />
+      )}
       {withdrawingQuestion && (
         <WithdrawQuestionDialog
           question={withdrawingQuestion.question}
@@ -955,7 +939,10 @@ export function FlightPlan({
           onWithdraw={withdraw}
         />
       )}
-      <LeadMessage stopped={!lead || !!trouble} onResume={() => resumeLead()} />
+      <LeadMessage
+        stopped={!leadDrive && (!lead || !!trouble)}
+        onResume={() => resumeLead()}
+      />
     </div>
   );
 }

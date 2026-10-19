@@ -9,7 +9,9 @@ import {
   ChevronDown,
   ExternalLink,
   GitBranch,
+  GitMerge,
   Pencil,
+  X,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -23,6 +25,7 @@ import {
 } from "react";
 
 import {
+  type AzimaMerged,
   AzimaPrState,
   AzimaState,
   type ProjectSync,
@@ -55,8 +58,8 @@ import { StatusBadge } from "./status";
 import { Fold } from "./task-tabs";
 
 // azimaTone and azimaLabel say where an azima stands: done in green, under way in blue while a worker runs on one of
-// its parts, its work done and its proof awaited in olive, planned grey otherwise. Never orange: an azima waits for no
-// one's answer.
+// its parts, teal with an eye while a watcher is its only live work (the babysit of its pull request), its work done
+// and its proof awaited in olive, planned grey otherwise. Never orange: an azima waits for no one's answer.
 function azimaState(azima: Task, _parts?: readonly Task[]): AzimaState {
   if (azima.draft || azima.azima?.state === AzimaState.DRAFT)
     return AzimaState.DRAFT;
@@ -77,6 +80,8 @@ function azimaTone(azima: Task, _parts?: readonly Task[]): Tone {
       const running = (azima.azima?.partsRunning ?? 0) > 0;
       return running ? "running" : "planned";
     }
+    case AzimaState.WATCHING:
+      return "watching";
     case AzimaState.AWAITING_PROOF:
       return "proof";
     case AzimaState.DRAFT:
@@ -89,6 +94,7 @@ const labels: Record<AzimaState, TextKey> = {
   [AzimaState.UNSPECIFIED]: "azima.state_open",
   [AzimaState.OPEN]: "azima.state_open",
   [AzimaState.IN_PROGRESS]: "azima.state_in_progress",
+  [AzimaState.WATCHING]: "azima.state_watching",
   [AzimaState.DONE]: "azima.state_done",
   [AzimaState.AWAITING_PROOF]: "azima.state_awaiting_proof",
   [AzimaState.DRAFT]: "azima.state_draft",
@@ -208,6 +214,27 @@ function RenameButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+// MergedMark is the small mark of an azima whose work is all in its project's main branch (Azima.merged, which Djinn
+// computes and clears once work is added to it): a full round, its border uniform, the merge glyph in it; how Djinn
+// found it on hover, by its request merged or by its commits in main.
+function MergedMark({ merged }: { merged: AzimaMerged }) {
+  const branch = merged.mainBranch || "main";
+  const label = t("azima.merged", { branch });
+  const how = merged.requestUrl
+    ? t("azima.merged_request", { url: merged.requestUrl })
+    : t("azima.merged_commits", { branch, sha: merged.mainSha.slice(0, 8) });
+  return (
+    <span
+      className="azima-merged"
+      role="img"
+      aria-label={label}
+      title={`${label}\n${how}`}
+    >
+      <GitMerge size={12} strokeWidth={2.5} aria-hidden="true" />
+    </span>
+  );
+}
+
 export const AzimaCard = memo(function AzimaCard({
   azima,
   parts,
@@ -218,11 +245,13 @@ export const AzimaCard = memo(function AzimaCard({
   isPerAzima = false,
   sync: ownSync,
   onPush,
+  onForgetSync,
   onOpenPr,
   onValidate,
   onRename,
   renaming: startRenaming = false,
   nest = noNest,
+  grip,
 }: {
   azima: Task;
   // The work part of it, in the order to show: merges nested under the task they serve left out.
@@ -240,6 +269,8 @@ export const AzimaCard = memo(function AzimaCard({
   sync?: ProjectSync;
   // Pushes the azima's own branch.
   onPush?: (azima: Task) => Promise<unknown> | void;
+  // Forgets the sync of its branch, landed in main: the project's syncs leave it out until it moves.
+  onForgetSync?: (sync: ProjectSync) => void;
   // Opens the pull request in the external browser.
   onOpenPr?: (url: string) => void;
   // Validates the azima once its work is done: it is marked done, by you.
@@ -250,6 +281,8 @@ export const AzimaCard = memo(function AzimaCard({
   renaming?: boolean;
   // Where the merges of its wish show: a part whose merge still runs moves with it.
   nest?: MergeNest;
+  // The grip it is dragged by to change its rank, on the left of its heading (azima-rank.tsx).
+  grip?: ReactNode;
 }) {
   const state = azimaState(azima, parts);
   // The part in sight, or the one a merge in sight sits under.
@@ -308,6 +341,7 @@ export const AzimaCard = memo(function AzimaCard({
   const waiting = Math.max(0, total - done - running);
   const isRunning =
     state === AzimaState.IN_PROGRESS ||
+    state === AzimaState.WATCHING ||
     (azima.azima?.partsRunning ?? 0) > 0 ||
     running > 0;
   const now = useNow(isRunning);
@@ -347,12 +381,18 @@ export const AzimaCard = memo(function AzimaCard({
     : [];
   const sync = ownSync ?? azima.azima?.sync;
   const outOfSync = isSyncShown(sync);
-  const isPushed = Boolean(
-    sync &&
-    sync.ahead === 0 &&
-    sync.behind === 0 &&
-    (sync.target || sync.remote || sync.branch),
-  );
+  // Its work in main already, nothing waits for a push: landed, its sync to forget. A push of it running shows instead.
+  const landed =
+    sync?.landed && sync.ahead === 0 && sync.behind === 0 ? sync : undefined;
+  const isLanded = Boolean(landed) && !outOfSync;
+  const isPushed =
+    !isLanded &&
+    Boolean(
+      sync &&
+      sync.ahead === 0 &&
+      sync.behind === 0 &&
+      (sync.target || sync.remote || sync.branch),
+    );
   const canPush = outOfSync && Boolean(onPush);
   const { pushing, outcomes, push } = usePushes(
     onPush && (() => onPush(azima)),
@@ -368,7 +408,7 @@ export const AzimaCard = memo(function AzimaCard({
         : t("azima.pr_open")
     : null;
 
-  const hasActions = outOfSync || isPushed || Boolean(prText);
+  const hasActions = outOfSync || isPushed || isLanded || Boolean(prText);
   // The heading reads at a glance: its state, code, title, what it waits for, its bar. The rest is on hover: what comes
   // before it on its title; its parts, counted by state, and its time on its bar; what its proof needs on its badge,
   // and in the card opened, with its own branch.
@@ -393,6 +433,7 @@ export const AzimaCard = memo(function AzimaCard({
       aria-label={`${azima.code} ${azima.title}`}
     >
       <div className="azima-row">
+        {grip}
         {renaming ? (
           <div className="azima-heading">
             <StatusBadge
@@ -421,6 +462,7 @@ export const AzimaCard = memo(function AzimaCard({
               title={needs}
             />
             <span className="agent-code">{azima.code}</span>
+            {azima.azima?.merged && <MergedMark merged={azima.azima.merged} />}
             <strong title={facts}>{azima.title}</strong>
             <span className="azima-meta">
               {origin}
@@ -473,6 +515,32 @@ export const AzimaCard = memo(function AzimaCard({
             )}
             {isPushed && !outOfSync && (
               <span className="azima-pushed-status">{t("azima.pushed")}</span>
+            )}
+            {isLanded && landed && (
+              <>
+                <span
+                  className="azima-pushed-status"
+                  title={t("azima.landed_detail", { branch: landed.branch })}
+                >
+                  {t("azima.landed", { branch: baseBranch || "main" })}
+                </span>
+                {onForgetSync && (
+                  <button
+                    type="button"
+                    className="icon-button azima-forget-sync"
+                    title={t("azima.forget_sync", { branch: landed.branch })}
+                    aria-label={t("azima.forget_sync", {
+                      branch: landed.branch,
+                    })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onForgetSync(landed);
+                    }}
+                  >
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                )}
+              </>
             )}
             {prUrl ? (
               <a

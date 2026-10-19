@@ -44,11 +44,11 @@ func (h *Harness) openRequest(ctx context.Context, q *planv1.Question) string {
 		h.openedRequest(ctx, o, req.URL)
 		return fmt.Sprintf("%s is open already: %s", requestName(forge, req.Number), req.URL)
 	}
-	if skill := openSkill(o.project); skill != "" {
+	if skill := openSkill(h.home, o.project); skill != "" {
 		task, err := h.spawn(ctx, planv1connect.TaskServiceSpawnProcedure, &planv1.TaskServiceSpawnRequest{
 			WishId: o.wish.GetId(), ProjectId: o.project.GetId(), Title: "Open the draft " + kind + " of " + o.branch,
 			Prompt: openPrompt(o, kind, skill),
-		}, nil)
+		}, &planv1.Task{}) // Djinn spawns it: never a repair it claims.
 		if err != nil {
 			logx.L().Warn("spawn the opening of a request", "question", q.GetCode(), "branch", o.branch, "err", err)
 			return fmt.Sprintf("Djinn could not spawn a task: spawn one to open the %s of %s with the skill %s", kind, o.branch, skill)
@@ -108,6 +108,9 @@ func (h *Harness) proposedRequest(ctx context.Context, q *planv1.Question) (*ope
 	if o.azima != nil {
 		parts, _ := h.azimaTasks(ctx, wish.GetId(), o.azima.GetId())
 		o.branch, o.base = azimaBranchName(o.azima), azimaPRBase(ctx, repo, settings, o.azima)
+		if o.base == "" {
+			return nil, errors.New("the project has no main branch: name it with djinn project set-branch, or main_branch in its settings")
+		}
 		o.title, o.body = h.draftAzimaPR(ctx, o.azima, parts)
 		return o, nil
 	}
@@ -162,8 +165,8 @@ func createdURL(out string) (string, int) {
 
 // openSkill is the project's own skill that opens a request: its name says open or create, and mr, pr or request
 // (dolmen's open-mr-empowill). "" when the project has none.
-func openSkill(project *planv1.Project) string {
-	for _, s := range plan.ProjectSkills(project.GetDirectory()) {
+func openSkill(home string, project *planv1.Project) string {
+	for _, s := range plan.ProjectSkills(plan.ConfigDir(home, project)) {
 		words := strings.FieldsFunc(strings.ToLower(s.Name), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 		has := func(names ...string) bool {
 			return slices.ContainsFunc(words, func(w string) bool { return slices.Contains(names, w) })

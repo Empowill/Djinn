@@ -1,7 +1,7 @@
 // End-to-end render performance on a real-size wish (W174): measures opening the wish, switching between tabs
 // (tasks, decisions, journal, blocks), opening a task, and change arrival over the live watch stream.
 // Run alone with: go tool task e2e -- e2e/wish-render.spec.ts
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -97,8 +97,8 @@ test.describe("wish render performance @render", () => {
             const isReady = () => {
               const h1 = document.querySelector(".hero h1");
               const tabs = document.querySelector(".view-tabs");
-              const journal = document.querySelector(".wish-journal");
-              return h1 && tabs && journal;
+              const main = document.querySelector(".main-columns");
+              return h1 && tabs && main;
             };
 
             if (isReady()) {
@@ -160,7 +160,7 @@ test.describe("wish render performance @render", () => {
       },
       {
         id: "journal",
-        buttonId: "view-tab-main",
+        buttonId: "view-tab-history",
         readySelector: ".wish-journal",
       },
       {
@@ -320,74 +320,87 @@ test.describe("wish render performance @render", () => {
     }
 
     // 4. Measure change arrival (one change arriving over watch stream)
-    // Make sure we are on the main/journal tab where questions are shown in the action center
+    // Make sure we are on the main tab where questions are shown in the action center
     const mainTab = page.locator("#view-tab-main");
     if ((await mainTab.getAttribute("aria-selected")) !== "true") {
       await mainTab.click();
-      await expect(page.locator(".wish-journal")).toBeVisible();
+      await expect(page.locator(".main-columns")).toBeVisible();
     }
 
     const changeMeasures: number[] = [];
-    for (let i = 0; i < runs; i++) {
-      const questionTitle = `Measure Question ${label} ${i + 1} ${randomUUID().slice(0, 8)}`;
-      const startMark = `change-start-${i}-${label}`;
-      const endMark = `change-end-${i}-${label}`;
-      const measureName = `change-duration-${i}-${label}`;
+    const asked: string[] = [];
+    try {
+      for (let i = 0; i < runs; i++) {
+        const questionTitle = `Measure Question ${label} ${i + 1} ${randomUUID().slice(0, 8)}`;
+        const startMark = `change-start-${i}-${label}`;
+        const endMark = `change-end-${i}-${label}`;
+        const measureName = `change-duration-${i}-${label}`;
 
-      // Start observer in the page before triggering the command
-      const waitPromise = page.evaluate(
-        async ({ questionTitle, startMark, endMark, measureName }) => {
-          return new Promise<number>((resolve) => {
-            const check = () => {
-              const cards = Array.from(
-                document.querySelectorAll(".question-card"),
-              );
-              const found = cards.some((c) =>
-                c.textContent?.includes(questionTitle),
-              );
-              if (found) {
-                performance.mark(endMark);
-                performance.measure(measureName, startMark, endMark);
-                const entries = performance.getEntriesByName(measureName);
-                resolve(entries[entries.length - 1]?.duration ?? 0);
-                return true;
-              }
-              return false;
-            };
+        // Start observer in the page before triggering the command
+        const waitPromise = page.evaluate(
+          async ({ questionTitle, startMark, endMark, measureName }) => {
+            return new Promise<number>((resolve) => {
+              const check = () => {
+                const cards = Array.from(
+                  document.querySelectorAll(".question-card"),
+                );
+                const found = cards.some((c) =>
+                  c.textContent?.includes(questionTitle),
+                );
+                if (found) {
+                  performance.mark(endMark);
+                  performance.measure(measureName, startMark, endMark);
+                  const entries = performance.getEntriesByName(measureName);
+                  resolve(entries[entries.length - 1]?.duration ?? 0);
+                  return true;
+                }
+                return false;
+              };
 
-            if (check()) return;
+              if (check()) return;
 
-            const observer = new MutationObserver(() => {
-              if (check()) {
-                observer.disconnect();
-              }
+              const observer = new MutationObserver(() => {
+                if (check()) {
+                  observer.disconnect();
+                }
+              });
+              observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+              });
             });
-            observer.observe(document.body, { childList: true, subtree: true });
-          });
-        },
-        { questionTitle, startMark, endMark, measureName },
-      );
+          },
+          { questionTitle, startMark, endMark, measureName },
+        );
 
-      await page.evaluate(
-        ({ startMark }) => {
-          performance.mark(startMark);
-        },
-        { startMark },
-      );
+        await page.evaluate(
+          ({ startMark }) => {
+            performance.mark(startMark);
+          },
+          { startMark },
+        );
 
-      djinn(
-        "question",
-        "ask",
-        questionTitle,
-        wishId,
-        "--options",
-        "A",
-        "--options",
-        "B",
-      );
+        const res = JSON.parse(
+          djinn(
+            "question",
+            "ask",
+            questionTitle,
+            wishId,
+            "--options",
+            "A",
+            "--options",
+            "B",
+            "--json",
+          ),
+        );
+        asked.push(res.question.id);
 
-      const duration = await waitPromise;
-      changeMeasures.push(duration);
+        const duration = await waitPromise;
+        changeMeasures.push(duration);
+      }
+    } finally {
+      for (const id of asked)
+        djinn("question", "withdraw", id, "--note", "measured");
     }
 
     const medianOpen = median(openMeasures);
@@ -528,8 +541,25 @@ test.describe("wish render performance @render", () => {
     const drawn = await page.locator(".task-tree .tree-row").count();
     expect(drawn).toBeGreaterThan(10);
     expect(drawn).toBeLessThan(180);
-    // A click opens the task's card beside the tree.
+    // Left of the lanes, each row's moment to the second (W214); its day only where it changes from the row above.
+    const dates = await page
+      .locator(".task-tree .tree-row .tree-date")
+      .allTextContents();
+    expect(dates).toHaveLength(drawn);
+    for (const d of dates) expect(d).toMatch(/\d{2}:\d{2}:\d{2}/);
+    const days = dates.filter((d) => /^\d{2}\/\d{2} /.test(d)).length;
+    expect(days).toBeGreaterThan(0);
+    expect(days).toBeLessThan(drawn);
     const first = page.locator(".task-tree .tree-row").first();
+    const dateBox = await first.locator(".tree-date").boundingBox();
+    const dotBox = await first.locator(".tree-dot").boundingBox();
+    expect(dateBox!.x + dateBox!.width).toBeLessThanOrEqual(dotBox!.x + 1);
+    // Hovered, the row says which moment its date is, and when the task ended.
+    await first.hover();
+    await expect(page.locator(".tree-tip")).toContainText(
+      /(Started|Created) \d{2}\/\d{2} \d{2}:\d{2}:\d{2}/,
+    );
+    // A click opens the task's card beside the tree.
     const code = await first.getAttribute("data-task");
     await first.click();
     await expect(page.locator(".task-tree-card .wish-task.open")).toContainText(
@@ -599,6 +629,45 @@ test.describe("wish render performance @render", () => {
         } catch {}
       }
       djinn("wish", "delete", workerWish.id);
+    }
+  });
+
+  test("waking splash shows from the first frame in dark and light system theme, then leaves once the first reads complete", async ({
+    page,
+  }) => {
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      let releaseWishes: (() => void) | undefined;
+      const held = new Promise<void>((resolve) => {
+        releaseWishes = resolve;
+      });
+      await page.route("**/plan.v1.WishService/List", async (route) => {
+        await held;
+        await route.continue();
+      });
+
+      await page.goto(process.env.DJINN_URL!, {
+        waitUntil: "domcontentloaded",
+      });
+      const splash = page.locator("#djinn-splash");
+      await expect(splash).toBeVisible();
+      await expect(page.locator("#djinn-splash-text")).toHaveText(
+        "Djinn wakes…",
+      );
+      const bg = await splash.evaluate(
+        (el) => getComputedStyle(el).backgroundColor,
+      );
+      expect(bg).toBe(
+        scheme === "dark" ? "rgb(14, 14, 16)" : "rgb(245, 242, 235)",
+      );
+
+      releaseWishes?.();
+      await expect(splash).toHaveCount(0);
+      await expect(page.locator("#djinn-splash-style")).toHaveCount(0);
+      await expect(
+        page.locator(".app-statusbar").getByText("Live"),
+      ).toBeVisible();
+      await page.unroute("**/plan.v1.WishService/List");
     }
   });
 });

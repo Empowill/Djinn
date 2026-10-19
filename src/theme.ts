@@ -48,7 +48,7 @@ export function followSystem() {
 // shownTheme is the theme on the page now.
 export const shownTheme = (): "dark" | "light" =>
   typeof document !== "undefined" &&
-  document.documentElement.dataset.theme === "light"
+  document.documentElement?.dataset?.theme === "light"
     ? "light"
     : "dark";
 
@@ -65,7 +65,7 @@ export function onTheme(callback: () => void): () => void {
 
 // useShownTheme renders again when the theme changes.
 export const useShownTheme = () =>
-  useSyncExternalStore(onTheme, shownTheme, () => "dark" as const);
+  useSyncExternalStore(onTheme, shownTheme, shownTheme);
 
 // token reads a colour of theme.css as the page has it now; empty outside a page.
 export function token(name: string): string {

@@ -33,6 +33,27 @@ message Tilasm {
   google.protobuf.Timestamp update_time = 9;
   // Most a version may hold, in bytes, its files summed: a put beyond it is refused, saying so.
   int64 max_bytes = 10;
+  // Where it is published on claude.ai, and the developer's go-ahead to publish it: kept on this machine, an export
+  // leaves it out. Unset until the developer confirms, in the window, the first publish.
+  TilasmArtifact artifact = 11;
+}
+
+// TilasmArtifact is a tilasm published on claude.ai as a private artifact, as Djinn read it from the Artifact tool's
+// result: never what a model says.
+message TilasmArtifact {
+  // Its address, https://claude.ai/artifact/<id>; empty until the first publish. A publish again reuses it.
+  string url = 1;
+  // The tilasm's version published last; 0 before the first publish. Below the latest, a version waits.
+  int32 version = 2;
+  // Its own version on claude.ai, 1 at the first publish.
+  int32 artifact_version = 3;
+  // When it was published last.
+  google.protobuf.Timestamp publish_time = 4;
+  // When the developer confirmed, in the window, that the tilasm holds no personal data of a client and may leave for
+  // claude.ai. No first publish without it; a publish again on its address asks no more.
+  google.protobuf.Timestamp confirm_time = 5;
+  // What the last publish cost, in US dollars, as Claude reported it.
+  double cost_usd = 6;
 }
 
 // TilasmVersion is one put of a tilasm: its files stay in tilasms/<id>/v<number>/.
@@ -83,13 +104,196 @@ message TilasmFile {
   bytes content = 3;
 }
 
+// TilasmComment is a remark of the developer on a tilasm: on a passage, on an element, or on the whole of it. A draft
+// reaches no agent and costs nothing; SendComments sends every draft of the tilasm at once, as one lead event. Kept on
+// this machine: a tilasm's export leaves its comments out.
+message TilasmComment {
+  option (djinn.v1.unique) = {fields: ["tilasm_id", "code"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The tilasm it is on.
+  string tilasm_id = 2;
+  // The wish of that tilasm.
+  string wish_id = 3;
+  // Short code within the tilasm, like C3: L42 C3 names it.
+  string code = 4 [(buf.validate.field).string.pattern = "^C[0-9]{1,4}$"];
+  // What the developer wrote.
+  string text = 5 [(buf.validate.field).string.max_len = 8000];
+  // Where it is; unset: the whole tilasm.
+  TilasmAnchor anchor = 6;
+  // The version it was written on.
+  int32 version = 7;
+  // A draft, or sent.
+  CommentState state = 8;
+  // The send it left with, 1, 2… within the tilasm; 0 while a draft.
+  int32 send = 9;
+  // When it was written.
+  google.protobuf.Timestamp create_time = 10;
+  // When its draft was last edited.
+  google.protobuf.Timestamp update_time = 11;
+  // When it was sent.
+  google.protobuf.Timestamp send_time = 12;
+  // The Djinn's reply, and the tasks it made of it.
+  CommentReply reply = 13;
+  // The comment it follows up, by code (C2), when the developer answered a reply.
+  string follows = 14 [(buf.validate.field).string.max_len = 10];
+}
+
+// TilasmAnchor is what a comment is on, kept so that it is found again in another version.
+message TilasmAnchor {
+  // The page of the tilasm: index.html, or another of its .html files.
+  string page = 1 [(buf.validate.field).string.max_len = 4096];
+  // A passage: the text quoted, the 32 characters before and after it, and its place in the page's text.
+  string exact = 2 [(buf.validate.field).string.max_len = 2000];
+  string prefix = 3 [(buf.validate.field).string.max_len = 200];
+  string suffix = 4 [(buf.validate.field).string.max_len = 200];
+  int32 start = 5;
+  int32 end = 6;
+  // An element: its id, else its path from the body, with the start of its text.
+  string element_id = 7 [(buf.validate.field).string.max_len = 1000];
+  string path = 8 [(buf.validate.field).string.max_len = 2000];
+  string fingerprint = 9 [(buf.validate.field).string.max_len = 2000];
+  // What the developer saw: the heading above it, "figure: The path of a notice".
+  string label = 10 [(buf.validate.field).string.max_len = 1000];
+  // Where it stands in the latest version the window read: found, changed or lost, and which version.
+  AnchorStatus status = 11;
+  int32 status_version = 12;
+}
+
+// CommentReply is the Djinn's answer to a sent comment: what it did, or why not.
+message CommentReply {
+  // The reply.
+  string text = 1 [(buf.validate.field).string.max_len = 4000];
+  // Who wrote it: the lead, or a task's code (W12).
+  string author = 2 [(buf.validate.field).string.max_len = 100];
+  // When it was written.
+  google.protobuf.Timestamp create_time = 3;
+  // The tasks made of the comment, by identifier.
+  repeated string task_ids = 4;
+}
+
+// CommentState is where a comment stands: written, or sent to the Djinn.
+enum CommentState {
+  // Not set.
+  COMMENT_STATE_UNSPECIFIED = 0;
+  // Written, not sent: no agent reads it.
+  COMMENT_STATE_DRAFT = 1;
+  // Sent to the Djinn: it no longer changes.
+  COMMENT_STATE_SENT = 2;
+}
+
+// TilasmSend is one send of a tilasm's comments to the Djinn, from the window: what the developer chose. Kept so that a
+// launch is never given twice, and so that the lead reads the choice with the comments.
+message TilasmSend {
+  option (djinn.v1.unique) = {fields: ["tilasm_id", "number"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The tilasm sent on.
+  string tilasm_id = 2;
+  // The wish of that tilasm.
+  string wish_id = 3;
+  // 1, 2… within the tilasm: the comments it carried have it as their send.
+  int32 number = 4;
+  // What the developer chose: launch the work with the comments, or iterate on the tilasm.
+  SendChoice choice = 5;
+  // The open question that linked the tilasm when it was sent, by identifier; empty when none did. A launch without
+  // a comment answered it with its recommended option.
+  string question_id = 6;
+  // When it was sent.
+  google.protobuf.Timestamp create_time = 7;
+}
+
+// TilasmSendRead is when the Djinn read a send of a tilasm's comments: its lead event acknowledged (LeadEvent.ack_time),
+// computed on every read, never stored. The cards of the comments it carried say so.
+message TilasmSendRead {
+  // The tilasm sent on.
+  string tilasm_id = 1;
+  // The send, 1, 2… within the tilasm.
+  int32 send = 2;
+  // When the lead acknowledged its event; unset once Djinn no longer keeps the event, a week after it was read.
+  google.protobuf.Timestamp read_time = 3;
+}
+
+// SendChoice is what the developer asks of the Djinn with a send of comments.
+enum SendChoice {
+  // Not set.
+  SEND_CHOICE_UNSPECIFIED = 0;
+  // Launch the work the tilasm explains, as the comments say. Without a comment, the open question that links the
+  // tilasm is answered with its recommended option.
+  SEND_CHOICE_LAUNCH = 1;
+  // Iterate on the tilasm: its next version, as the comments say.
+  SEND_CHOICE_ITERATE = 2;
+}
+
+// TilasmHold is why a tilasm takes no send for now, computed on every read from its tasks, questions and sends, never
+// stored: the window greys its buttons, and its comments too unless a send waits.
+message TilasmHold {
+  // The tilasm held.
+  string tilasm_id = 1;
+  // Why.
+  TilasmHoldReason reason = 2;
+  // What holds it: the task's code (W12), the question's (Q29); empty for a launch that answered no question.
+  string code = 3;
+  // The send that launched it, or that waits for the Djinn; 0 otherwise.
+  int32 send = 4;
+}
+
+// TilasmHoldReason says why a tilasm takes no send.
+enum TilasmHoldReason {
+  // Not set.
+  TILASM_HOLD_REASON_UNSPECIFIED = 0;
+  // A task that puts its next version (--code L01 in its prompt) runs or is planned.
+  TILASM_HOLD_REASON_REWORK = 1;
+  // A task given it (--tilasm L01, its link in the prompt) runs or is planned.
+  TILASM_HOLD_REASON_WORK = 2;
+  // Its work was launched: a send chose to launch, or the question that links it was answered and none is open.
+  TILASM_HOLD_REASON_LAUNCHED = 3;
+  // A send waits for the Djinn to read it: only the send buttons wait.
+  TILASM_HOLD_REASON_SENT = 4;
+}
+
+// TilasmSends is what an iterate or a launch send on a tilasm does now, computed on every read from the open question
+// that links it, never stored: the window labels and tints its buttons from it.
+message TilasmSends {
+  // The tilasm.
+  string tilasm_id = 1;
+  // The open question that links the tilasm, by code (Q01); empty when none does.
+  string question = 2;
+  // The option an iterate send starts a mockup round on (A, B, C, D, yes); empty when an iterate send goes to the lead.
+  string iterate_option = 3;
+  // The round of the mockup that option is on now (1 on v1), and how many rounds it allows; 0 when iterate_option is empty.
+  int32 round = 4;
+  int32 rounds = 5;
+  // The recommended option a launch send without a comment answers with (A, B, C, D, yes); empty when it answers none.
+  string launch_option = 6;
+  // What that recommended option's plan starts when it launches by itself (work, mockup, investigation); empty when it
+  // has no plan or waits for the lead.
+  string launch_kind = 7;
+  // The title of that recommended option's plan; empty when it has none.
+  string launch_title = 8;
+}
+
+// AnchorStatus is how a comment's anchor was found again in a later version.
+enum AnchorStatus {
+  // Not looked for yet.
+  ANCHOR_STATUS_UNSPECIFIED = 0;
+  // Found as it was, perhaps moved.
+  ANCHOR_STATUS_FOUND = 1;
+  // Found changed: a passage or an element that shares most of its words.
+  ANCHOR_STATUS_CHANGED = 2;
+  // Not found: the passage or the element is gone.
+  ANCHOR_STATUS_LOST = 3;
+}
+
 // Tilasms, or talismans: the material that explains a wish, kept on this machine and linked from anywhere. A put
 // replaces a tilasm with a new version, and the earlier ones can be read and restored.
 service TilasmService {
   option (djinn.v1.alias) = "talisman";
 
-  // Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
-  // version of that one, its links unchanged.
+  // Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
+  // with --code a new version of that one, its links unchanged.
   rpc Put(TilasmServicePutRequest) returns (TilasmServicePutResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -131,24 +335,321 @@ service TilasmService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-  // export wrote is imported, as Import; any other is put, as Put.
+  // Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
+  // djinn tilasm export wrote is imported, as Import; any other is put, as Put.
   rpc PutData(TilasmServicePutDataRequest) returns (TilasmServicePutDataResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Read the comments the developer sent on a tilasm, each with the passage or the element it is on: those of one send
+  // with --send, as its comments event names it, else every send. A draft never shows: it is the developer's alone.
+  rpc Comments(TilasmServiceCommentsRequest) returns (TilasmServiceCommentsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Write a draft comment on a tilasm, from the window: a new one, or an edit of one not sent yet; a sent one is refused.
+  rpc PutComment(TilasmServicePutCommentRequest) returns (TilasmServicePutCommentResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Delete a draft comment, from the window; a sent one stays. It returns the draft, for the window's Undo to put back.
+  rpc DeleteComment(TilasmServiceDeleteCommentRequest) returns (TilasmServiceDeleteCommentResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // The draft comments on a wish's tilasms, for the window: no agent reads them. And those sent, with their replies.
+  rpc Drafts(TilasmServiceDraftsRequest) returns (TilasmServiceDraftsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
+  // explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
+  // comment answers the open question that links the tilasm with its recommended option, as approving it does. A
+  // tilasm held (TilasmHold) takes no send: a launch is never given twice.
+  rpc SendComments(TilasmServiceSendCommentsRequest) returns (TilasmServiceSendCommentsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Reply to a comment the developer sent: what you did with it, or why not, and the tasks you made of it. Every sent
+  // comment gets one; its card shows it. A second reply replaces the first. A draft takes none: no agent reads it.
+  rpc Reply(TilasmServiceReplyRequest) returns (TilasmServiceReplyResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Write where the window found the anchors of a tilasm's comments in its latest version, from the window: found,
+  // changed or lost, on drafts and sent comments alike, whose words do not change. A version that is no longer the
+  // latest places nothing: the window places the comments again in the next one.
+  rpc PlaceComments(TilasmServicePlaceCommentsRequest) returns (TilasmServicePlaceCommentsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Publish a tilasm's latest version on claude.ai, as a private artifact of the developer's Claude account: its page
+  // with its files beside it, at their paths, those of a type claude.ai serves (a spreadsheet or a document is left
+  // out). Djinn builds what is sent; one short Claude call, under the paid gate, sends it, at the address of its last
+  // publish when it has one. Refused until
+  // the developer confirms, in the window, that the tilasm holds no personal data of a client: its first publish
+  // comes from them. Only the owner of the account opens the artifact until they share it on claude.ai.
+  rpc Publish(TilasmServicePublishRequest) returns (TilasmServicePublishResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Record the developer's go-ahead to publish a tilasm on claude.ai, from the window: they checked that it holds no
+  // personal data of a client, its images included. The first publish waits for it.
+  rpc ConfirmPublish(TilasmServiceConfirmPublishRequest) returns (TilasmServiceConfirmPublishResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Whether tilasms can be published on claude.ai from this machine, for the window: Claude Code signed in, and its
+  // Artifact tool offered, which a first call reads once per start of Djinn.
+  rpc CheckPublish(TilasmServiceCheckPublishRequest) returns (TilasmServiceCheckPublishResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message TilasmServicePublishRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServicePublishResponse {
+  // The tilasm, its artifact in it.
+  Tilasm tilasm = 1;
+  // The artifact's address, https://claude.ai/artifact/<id>.
+  string url = 2;
+  // How many files went beside the page.
+  int32 files = 3;
+  // The tilasm's files left out, of a type claude.ai does not serve: their links lead nowhere there.
+  repeated string left_out = 4;
+  // What was sent, in bytes.
+  int64 size = 5;
+  // What the publish cost, in US dollars.
+  double cost_usd = 6;
+}
+
+message TilasmServiceConfirmPublishRequest {
+  // The tilasm the developer checked.
+  string tilasm_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceConfirmPublishResponse {
+  // The tilasm, its go-ahead in its artifact.
+  Tilasm tilasm = 1;
+}
+
+message TilasmServiceCheckPublishRequest {}
+
+message TilasmServiceCheckPublishResponse {
+  // Tilasms can be published from this machine.
+  bool available = 1;
+  // Why not; unspecified when they can.
+  PublishBlock block = 2;
+  // What the check met, as the command said it, when it failed: not translated.
+  string detail = 3;
+}
+
+// PublishBlock says why tilasms cannot be published on claude.ai from this machine.
+enum PublishBlock {
+  // Not set: nothing blocks.
+  PUBLISH_BLOCK_UNSPECIFIED = 0;
+  // Claude Code is not installed: no claude on the PATH.
+  PUBLISH_BLOCK_NO_CLAUDE = 1;
+  // Claude Code is not signed in, on the user's folder nor on any account.
+  PUBLISH_BLOCK_SIGNED_OUT = 2;
+  // Claude Code offers no Artifact tool: its version, the account's plan or its organization's policy.
+  PUBLISH_BLOCK_NO_ARTIFACT_TOOL = 3;
+  // The call that looks for the Artifact tool failed.
+  PUBLISH_BLOCK_CHECK_FAILED = 4;
+}
+
+message TilasmServiceReplyRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The comment, by its code within the tilasm (C3).
+  string comment = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[Cc][0-9]{1,4}$"
+  ];
+  // The reply: what you did with the comment, or why not; a question back when you did not understand it.
+  string text = 3 [(buf.validate.field).string.max_len = 4000];
+  // A task made of the comment, by code (W60) or identifier; repeat it for each.
+  repeated string task = 4 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 64
+  ];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Who replies: your task's code (W12) for a worker; lead by default.
+  string author = 6 [(buf.validate.field).string.max_len = 100];
+}
+
+message TilasmServiceReplyResponse {
+  // The comment, its reply in it.
+  TilasmComment comment = 1;
+  // How many comments of the tilasm sent still wait for a reply.
+  int32 unanswered = 2;
+}
+
+message TilasmServicePlaceCommentsRequest {
+  // The tilasm whose comments were placed.
+  string tilasm_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The version of the page they were looked for in.
+  int32 version = 2 [(buf.validate.field).int32.gte = 1];
+  // Each comment placed, with how its anchor stands there.
+  repeated CommentPlace places = 3 [(buf.validate.field).repeated.max_items = 10000];
+}
+
+// CommentPlace is how a comment's anchor stands in a version of its tilasm.
+message CommentPlace {
+  // The comment.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // Found, changed or lost.
+  AnchorStatus status = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+}
+
+message TilasmServicePlaceCommentsResponse {
+  // The comments whose anchor took a new status, as stored.
+  repeated TilasmComment comments = 1;
+}
+
+message TilasmServiceSendCommentsRequest {
+  // The tilasm whose drafts to send.
+  string tilasm_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Launch the work with the comments, or iterate on the tilasm.
+  SendChoice choice = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // A comment on the whole tilasm, written above the buttons: it leaves with the drafts.
+  string text = 3 [(buf.validate.field).string.max_len = 8000];
+}
+
+message TilasmServiceSendCommentsResponse {
+  // The send.
+  TilasmSend send = 1;
+  // The comments it carried, by code.
+  repeated TilasmComment comments = 2;
+  // The question a launch without a comment answered, by code (Q29); empty when it answered none.
+  string answered = 3;
+  // The question an iterate send started an iteration round on, by code (Q61), when an option of that open question
+  // linking the tilasm plans a mockup within its rounds (ROUND_KIND_ITERATE): the mockup task reads the comments, no
+  // comments event goes to the lead. Empty otherwise.
+  string iterated = 4;
+  // The mockup task the iteration started, by code (W301); empty when none started, the lead told instead.
+  string iterate = 5;
+}
+
+message TilasmServicePutCommentRequest {
+  // The tilasm it is on.
+  string tilasm_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The draft to edit; a new draft without it, with the next code and the tilasm's latest version.
+  string id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What the developer wrote.
+  string text = 3 [(buf.validate.field).string.max_len = 8000];
+  // Where it is; unset: the whole tilasm. An edit keeps its anchor unless one is given.
+  TilasmAnchor anchor = 4;
+  // The comment it follows up, by code (C2).
+  string follows = 5 [(buf.validate.field).string.max_len = 10];
+  // A draft DeleteComment returned, put back whole as the window's Undo asks: its place, its code unless another comment
+  // took it meanwhile, its version. The other fields are left out then.
+  TilasmComment deleted = 6;
+}
+
+message TilasmServicePutCommentResponse {
+  // The draft as stored.
+  TilasmComment comment = 1;
+}
+
+message TilasmServiceDeleteCommentRequest {
+  // The draft to delete.
+  string id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceDeleteCommentResponse {
+  // The draft deleted, whole: PutComment puts it back.
+  TilasmComment comment = 1;
+}
+
+message TilasmServiceDraftsRequest {
+  // The wish whose tilasms' drafts to read.
+  string wish = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TilasmServiceDraftsResponse {
+  // The drafts, in the order they were written.
+  repeated TilasmComment comments = 1;
+  // The tilasms of the wish that take no send for now, and why.
+  repeated TilasmHold holds = 2;
+  // The comments sent on them, with the Djinn's replies, for their cards: by send, then code.
+  repeated TilasmComment sent = 3;
+  // The sends the Djinn read, by tilasm then send; one that waits for it is not in it.
+  repeated TilasmSendRead reads = 4;
+  // What a send on each tilasm of the wish does now, computed from the open question that links it.
+  repeated TilasmSends sends = 5;
+}
+
+message TilasmServiceCommentsRequest {
+  // The tilasm: its code (L01) or its identifier.
+  TilasmRef tilasm = 1 [(buf.validate.field).required = true];
+  // The wish, when a code is given and several wishes have it.
+  string wish = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Only the comments of this send, 1, 2…; by default every send.
+  int32 send = 3 [(buf.validate.field).int32.gte = 0];
+}
+
+message TilasmServiceCommentsResponse {
+  // The comments to read: the tilasm, then each send, then each of its comments with what it is on.
+  string text = 1;
+  // The same comments, by send then code.
+  repeated TilasmComment comments = 2 [(djinn.v1.json_only) = true];
 }
 
 message TilasmServicePutRequest {
-  // The folder that holds the index.html, or a .zip of it; a relative path starts from the current directory.
+  // The folder that holds the index.html, an .html file, or a .zip of it; a relative path starts from the current directory.
   string path = 1 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 4096
   ];
   // The wish it explains.
   string wish = 2 [(buf.validate.field).string.uuid = true];
-  // Title, in a line; by default the <title> of its index.html, or the folder's name. A new version keeps the title
-  // it had unless one is given.
+  // Title, in a line; by default the <title> of its index.html, or the folder's or file's name. A new version keeps the
+  // title it had unless one is given.
   string title = 3 [(buf.validate.field).string.max_len = 1000];
   // The tilasm to put again, by its code (L01): a new version of it. Without it, a new tilasm with the next code.
   string code = 4 [

@@ -204,6 +204,9 @@ func collect(ctx context.Context, r store.Reader, wishID string, events eventsOf
 	if exp.Commands, err = commands(ctx, r, exp); err != nil {
 		return nil, nil, err
 	}
+	if exp.LeadBatches, err = LeadJournal(ctx, r, []string{wishID}, 200); err != nil {
+		return nil, nil, err
+	}
 	return exp, projects, nil
 }
 
@@ -372,8 +375,12 @@ func names(m protoreflect.Message, ids map[string]bool) bool {
 func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 	exp = proto.Clone(exp).(*planv1.WishExport)
 	for _, t := range exp.GetTasks() {
-		// The worktree is a folder here, and the agent session lives in this machine's provider.
-		t.Worktree, t.SessionId, t.ForkSession = "", "", ""
+		// The worktree and scratch folder are folders here, and the agent session lives in this machine's provider.
+		t.Worktree, t.Scratch, t.SessionId, t.ForkSession = "", "", "", ""
+		for _, serve := range t.GetIfrit().GetServes() {
+			// An ifrit's serves run here, in a folder of this machine.
+			serve.Pid, serve.Directory = 0, ""
+		}
 	}
 	for _, e := range exp.GetEvents() {
 		e.Raw = ""
@@ -397,6 +404,9 @@ func portable(exp *planv1.WishExport, scrub *scrubber) *planv1.WishExport {
 		if packed, err := anypb.New(req); err == nil {
 			c.Request = packed
 		}
+	}
+	for _, b := range exp.GetLeadBatches() {
+		b.SessionId, b.Account = "", ""
 	}
 	scrub.message(exp.ProtoReflect())
 	// The rank is this machine's order of its wishes; the readiness is computed where the wish is read.
@@ -540,19 +550,7 @@ var renamer = fsx.OS()
 // writeFile writes data to file through a temporary file, so that a failed export leaves no half file and a reader
 // sees the old content or the new one.
 func writeFile(file string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(file), ".djinn-export-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return renamer.Rename(tmp.Name(), file)
+	return renamer.WriteAtomic(file, data, 0o600)
 }
 
 // load imports an export in one transaction, journaled as ImportData with the content itself: the journal then
@@ -583,8 +581,9 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			return err
 		}
 		wish := exp.GetWish()
-		// A wish replaced keeps its place among the active ones; another goes last.
-		place := MaxActive
+		// A wish replaced keeps its place among the active ones, or in its list set aside; another goes last among
+		// the active ones, first in its list set aside.
+		place, before := MaxActive, (*planv1.Wish)(nil)
 		if old, err := store.Get[*planv1.Wish](ctx, tx, wish.GetId()); err == nil {
 			if !replace {
 				return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf(
@@ -593,6 +592,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			if Active(old) && old.GetRank() > 0 {
 				place = int(old.GetRank()) - 1
 			}
+			before = old
 			tilasms, err := store.List[*planv1.Tilasm](ctx, tx, store.Where{"wish_id": old.GetId()})
 			if err != nil {
 				return err
@@ -629,7 +629,7 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 		if t := wish.GetTemplate(); t != nil {
 			t.ProjectId = local[t.GetProjectId()]
 		}
-		wish.Rank, wish.Ready = 0, false
+		wish.Rank, wish.Ready, wish.Place = 0, false, 0
 		if Active(wish) {
 			actives, err := ActiveWishes(ctx, tx)
 			if err != nil {
@@ -647,12 +647,21 @@ func (w *Wishes) load(ctx context.Context, data []byte, replace bool) (*planv1.W
 			}
 		}
 		res.Wish = wish
+		switch {
+		case Active(wish):
+		case before.GetState() == wish.GetState() && before.GetPlace() > 0:
+			wish.Place = before.GetPlace()
+		default:
+			if err := setAside(ctx, tx, wish); err != nil {
+				return err
+			}
+		}
 		if err := tx.Put(wish); err != nil {
 			return err
 		}
 		for _, t := range exp.GetTasks() {
 			t.ProjectId = local[t.GetProjectId()]
-			t.Worktree, t.SessionId, t.ForkSession = "", "", ""
+			t.Worktree, t.Scratch, t.SessionId, t.ForkSession = "", "", "", ""
 			// Planned on the other machine: this one's scheduler never starts it by itself.
 			t.Scheduled, t.Continuing = false, false
 			if s := t.GetStatus(); s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED ||
@@ -696,6 +705,11 @@ func entities(exp *planv1.WishExport) []proto.Message {
 	}
 	for _, t := range exp.GetTilasms() {
 		out = append(out, t.GetTilasm())
+	}
+	for _, b := range exp.GetLeadBatches() {
+		if b.GetId() != "" {
+			out = append(out, b)
+		}
 	}
 	return out
 }
@@ -845,7 +859,7 @@ func forget(ctx context.Context, tx *store.Tx, wishID string) error {
 		for _, e := range events {
 			all = append(all, e)
 		}
-		all = append(all, t)
+		all = append(all, &planv1.GateWait{Id: t.GetId()}, t)
 	}
 	questions, err := store.List[*planv1.Question](ctx, tx, where)
 	if err != nil {

@@ -178,9 +178,9 @@ func fileExcerpt(ctx context.Context, dir, commit, file string, startLine, endLi
 // continues the task when it can be continued (djinn task continue), or spawns a correction task in its azima whose
 // prompt quotes each comment with its code excerpt. Each comment then records the task it went to.
 func (h *Harness) TurnComments(ctx context.Context, procedure string, req *planv1.TaskServiceTurnCommentsRequest) (*planv1.TaskServiceTurnCommentsResponse, error) {
-	task, err := store.Get[*planv1.Task](ctx, h.store, req.GetTaskId())
+	task, _, err := h.taskAndRun(ctx, req.GetTaskId())
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
 	if !taskEnded(task.GetStatus()) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s has not ended: %s", task.GetCode(), short(task.GetStatus())))
@@ -201,9 +201,11 @@ func (h *Harness) TurnComments(ctx context.Context, procedure string, req *planv
 	prompt := formatTurnCommentsPrompt(task, waiting)
 
 	logx.Lock(&h.sched, "scheduler")
-	h.mu.Lock()
-	running := h.runs[task.GetId()] != nil
-	h.mu.Unlock()
+	task, running, err := h.taskAndRun(ctx, task.GetId())
+	if err != nil {
+		h.sched.Unlock()
+		return nil, err
+	}
 	contErr := h.continuable(ctx, task, running)
 	h.sched.Unlock()
 
@@ -233,7 +235,7 @@ func (h *Harness) TurnComments(ctx context.Context, procedure string, req *planv
 			Model:     task.GetModel(),
 			PartOf:    azima,
 			After:     after,
-		}, nil)
+		}, &planv1.Task{}) // Djinn spawns it: never a repair it claims.
 	}
 	if err != nil {
 		return nil, err

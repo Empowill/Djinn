@@ -35,7 +35,7 @@
   </nav>
   {{- end}}
 </header>
-{{- if .Questions}}
+{{- if or .Questions .AsleepLine}}
 <section id="questions">
   {{- template "head" (pair (pair (index .T "page.questions") (index .T "page.questions_sub")) (len .Questions))}}
   {{- range .Questions}}
@@ -68,6 +68,9 @@
     {{- end}}
     </div>
   </details>
+  {{- end}}
+  {{- if .AsleepLine}}
+  <p class="hint">{{.AsleepLine}}</p>
   {{- end}}
 </section>
 {{- end}}
@@ -261,7 +264,7 @@
     <thead><tr><th>{{index $T "page.when"}}</th><th>{{index $T "page.what"}}</th></tr></thead>
     <tbody>
     {{- range $es}}
-    <tr><td class="at"><time>{{.At}}</time></td><td class="what">{{if .Command}}<code>{{.Command}}</code> {{end}}{{if .Note}}<div class="md">{{.Note}}</div>{{else}}{{.Summary}}{{end}}</td></tr>
+    <tr><td class="at"><time>{{.At}}</time></td><td class="what">{{if .Command}}<code>{{.Command}}</code> {{end}}{{.Summary}}</td></tr>
     {{- end}}
     </tbody>
   </table>

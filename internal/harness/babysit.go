@@ -269,6 +269,9 @@ func (h *Harness) babysitOpened(t *planv1.Task) {
 	go func() {
 		defer logx.Crash("babysit", "task", t.GetCode())
 		defer h.babysitting.Done()
+		if !h.waitNetwork(h.ctx) { // Its forge cannot answer before the network is back (network.go).
+			return
+		}
 		if err := h.babysit(h.ctx, t); err != nil && h.ctx.Err() == nil {
 			logx.L().Warn("babysit what a task opened", "loop", "babysit", "task", t.GetCode(), "err", err)
 		}
@@ -287,7 +290,7 @@ func (h *Harness) babysit(ctx context.Context, t *planv1.Task) error {
 		return err
 	}
 	forge := forgeOf(ctx, project)
-	decl := plan.ProjectBabysit(project, forge)
+	decl := plan.ProjectBabysit(h.home, project, forge)
 	if decl == nil {
 		return nil
 	}
@@ -342,7 +345,9 @@ func (h *Harness) babysit(ctx context.Context, t *planv1.Task) error {
 
 // babysitSpawn makes the spawn of a task with --babysit a watcher of the project's babysit: its command, unless the
 // request gives one, its restart and its done line. The request is found as it starts (resolveBabysit).
-func babysitSpawn(ctx context.Context, req *planv1.TaskServiceSpawnRequest, project *planv1.Project, task *planv1.Task) (*planv1.TaskServiceSpawnRequest, error) {
+func babysitSpawn(
+	ctx context.Context, home string, req *planv1.TaskServiceSpawnRequest, project *planv1.Project, task *planv1.Task,
+) (*planv1.TaskServiceSpawnRequest, error) {
 	if !req.GetBabysit() {
 		return req, nil
 	}
@@ -352,7 +357,7 @@ func babysitSpawn(ctx context.Context, req *planv1.TaskServiceSpawnRequest, proj
 	if project == nil || !project.GetGit() {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("--babysit watches a pull or merge request: the task's project is no Git repository"))
 	}
-	decl := plan.ProjectBabysit(project, forgeOf(ctx, project))
+	decl := plan.ProjectBabysit(home, project, forgeOf(ctx, project))
 	if decl == nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"project %s names no babysit: one of its skills declares it under metadata.djinn.babysit (docs/wish-templates.md)",

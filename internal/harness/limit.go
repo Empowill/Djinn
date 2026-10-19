@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/empowill/djinn/internal/usage"
 )
 
 // Limit is a provider's usage limit that stopped a worker: the account's session or weekly limit, a quota, a rate
@@ -12,8 +14,129 @@ import (
 type Limit struct {
 	// What is the limit, for a reader: "the account's session limit".
 	What string
+	// Model is the model the limit message names ("claude-opus-4-6"), or "" when the message names no model.
+	Model string
 	// Until is when it resets; zero when the provider did not say.
 	Until time.Time
+	// PerMinute is true for a short per-minute rate or token bucket (TPM/RPM, HTTP 429) that refills within a minute
+	// or two rather than a multi-hour session or daily quota.
+	PerMinute bool
+}
+
+// multiHourQuotaRe matches quota messages that name a multi-hour or multi-day window rather than a per-minute bucket.
+var multiHourQuotaRe = regexp.MustCompile(`(?i)\b(per[ _]day|daily|per[ _]hour|hourly|five_hour|seven_day|session|weekly|monthly)\b`)
+
+var (
+	// limitURLRe matches HTTP(S) URLs so a documentation link (such as .../models/standard-paygo) is never read as a model.
+	limitURLRe = regexp.MustCompile(`(?i)\bhttps?://\S+`)
+	// limitModelRe extracts a model candidate introduced as a model in a limit message or wait reason.
+	limitModelRe = regexp.MustCompile(`(?i)(?:\b(?:for|on)\s+model\s+(?:'([^']+)'|"([^"]+)"|([a-z0-9][a-z0-9._/-]*))|\bmodel(?:\s*[:=]|\s+)(?:'([^']+)'|"([^"]+)"|([a-z0-9][a-z0-9._/-]*))|(?:^|[\s'"=(])models/([a-z0-9][a-z0-9._-]*)\b)`)
+	// limitTokenRe scans individual tokens in a limit message when a known model identifier appears directly.
+	limitTokenRe = regexp.MustCompile(`[A-Za-z0-9][A-Za-z0-9._/-]*`)
+	// canonicalModelRe matches canonical model identifiers of Claude, Gemini/Antigravity, and OpenAI/Codex.
+	canonicalModelRe = regexp.MustCompile(`^(?:claude-(?:opus|sonnet|haiku|fable)-[a-z0-9._-]+|claude-[0-9][a-z0-9._-]*|gemini-[0-9][a-z0-9._-]*|gpt-[0-9][a-z0-9._-]*|o[134](?:-[a-z0-9._-]+)?|codex-[a-z0-9._-]+)$`)
+)
+
+// knownAgentModels maps lowercase model identifiers and display labels (including `agy models`) to their canonical model ID.
+var knownAgentModels = map[string]string{
+	"gemini-4-argon-high":       "gemini-4-argon-high",
+	"gemini 4 argon (high)":     "gemini-4-argon-high",
+	"gemini-4-argon":            "gemini-4-argon-high",
+	"gemini 4 argon":            "gemini-4-argon-high",
+	"gemini-4-argon-medium":     "gemini-4-argon-medium",
+	"gemini 4 argon (medium)":   "gemini-4-argon-medium",
+	"gemini-4-argon-low":        "gemini-4-argon-low",
+	"gemini 4 argon (low)":      "gemini-4-argon-low",
+	"gemini-3.8-flash-high":     "gemini-3.8-flash-high",
+	"gemini 3.8 flash (high)":   "gemini-3.8-flash-high",
+	"gemini-3.8-flash-medium":   "gemini-3.8-flash-medium",
+	"gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
+	"gemini-3.8-flash-low":      "gemini-3.8-flash-low",
+	"gemini 3.8 flash (low)":    "gemini-3.8-flash-low",
+	"gemini-3.7-flash-high":     "gemini-3.7-flash-high",
+	"gemini 3.7 flash (high)":   "gemini-3.7-flash-high",
+	"gemini-3.7-flash-medium":   "gemini-3.7-flash-medium",
+	"gemini 3.7 flash (medium)": "gemini-3.7-flash-medium",
+	"gemini-3.7-flash-low":      "gemini-3.7-flash-low",
+	"gemini 3.7 flash (low)":    "gemini-3.7-flash-low",
+	"gemini-3.6-flash-high":     "gemini-3.6-flash-high",
+	"gemini 3.6 flash (high)":   "gemini-3.6-flash-high",
+	"gemini-3.6-flash-medium":   "gemini-3.6-flash-medium",
+	"gemini 3.6 flash (medium)": "gemini-3.6-flash-medium",
+	"gemini-3.6-flash-low":      "gemini-3.6-flash-low",
+	"gemini 3.6 flash (low)":    "gemini-3.6-flash-low",
+	"gemini-3.1-pro-high":       "gemini-3.1-pro-high",
+	"gemini 3.1 pro (high)":     "gemini-3.1-pro-high",
+	"gemini-3.1-pro-low":        "gemini-3.1-pro-low",
+	"gemini 3.1 pro (low)":      "gemini-3.1-pro-low",
+}
+
+// CanonicalModel returns the canonical model identifier when raw names a recognized agent model (from `agy models`, the
+// pricing table, or a provider's model family), and "" when raw is empty, a URL, or not a model name (such as
+// "standard-paygo").
+func CanonicalModel(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = strings.Trim(s, "'\".,;:")
+	if s == "" || strings.Contains(s, "://") || strings.HasPrefix(strings.ToLower(s), "www.") {
+		return ""
+	}
+	lower := strings.ToLower(s)
+	if m, ok := knownAgentModels[lower]; ok {
+		return m
+	}
+	if table, err := usage.DefaultTable(); err == nil {
+		for id, m := range table.Models {
+			if strings.EqualFold(s, id) || (m.Label != "" && strings.EqualFold(s, m.Label)) {
+				return strings.ToLower(id)
+			}
+		}
+	}
+	s = strings.Trim(s, "()[]{}<>")
+	lower = strings.ToLower(s)
+	for _, prefix := range []string{"models/", "google/", "anthropic/", "openai/"} {
+		if strings.HasPrefix(lower, prefix) {
+			lower = strings.TrimPrefix(lower, prefix)
+			break
+		}
+	}
+	if lower == "" || strings.Contains(lower, "/") {
+		return ""
+	}
+	if m, ok := knownAgentModels[lower]; ok {
+		return m
+	}
+	if table, err := usage.DefaultTable(); err == nil {
+		for id := range table.Models {
+			if lower == strings.ToLower(id) {
+				return lower
+			}
+		}
+	}
+	if canonicalModelRe.MatchString(lower) {
+		return lower
+	}
+	return ""
+}
+
+// LimitModel returns the canonical model name a limit message or wait reason proves exhausted, or "" when the message
+// names no model. It never reads a model from a URL.
+func LimitModel(text string) string {
+	clean := limitURLRe.ReplaceAllString(text, " ")
+	for _, m := range limitModelRe.FindAllStringSubmatch(clean, -1) {
+		for _, g := range m[1:] {
+			if g != "" {
+				if model := CanonicalModel(g); model != "" {
+					return model
+				}
+			}
+		}
+	}
+	for _, tok := range limitTokenRe.FindAllString(clean, -1) {
+		if model := CanonicalModel(tok); model != "" {
+			return model
+		}
+	}
+	return ""
 }
 
 // limitKinds name the limits a provider's message speaks of, the most precise first. The messages are the
@@ -21,21 +144,24 @@ type Limit struct {
 // its older "Claude AI usage limit reached|<unix time>", Codex's usageLimitExceeded, agy's RESOURCE_EXHAUSTED
 // (supposed, docs/providers.md).
 var limitKinds = []struct {
-	re   *regexp.Regexp
-	what string
+	re        *regexp.Regexp
+	what      string
+	perMinute bool
 }{
-	{regexp.MustCompile(`(?i)\bsession limit\b|\bfive_hour\b`), "the account's session limit"},
-	{regexp.MustCompile(`(?i)\bweekly limit\b|\bseven_day`), "the account's weekly limit"},
-	{regexp.MustCompile(`(?i)usage limit|usageLimitExceeded|usage_limit_reached`), "the account's usage limit"},
-	{regexp.MustCompile(`(?i)RESOURCE_EXHAUSTED|quota exceeded|quota exhausted`), "the provider's quota"},
-	{regexp.MustCompile(`(?i)rate[ _]limit(ed)?\b|too many requests|\bHTTP 429\b`), "the provider's rate limit"},
+	{regexp.MustCompile(`(?i)\bsession limit\b|\bfive_hour\b`), "the account's session limit", false},
+	{regexp.MustCompile(`(?i)\bweekly limit\b|\bseven_day`), "the account's weekly limit", false},
+	{regexp.MustCompile(`(?i)usage limit|usageLimitExceeded|usage_limit_reached`), "the account's usage limit", false},
+	{regexp.MustCompile(`(?i)RESOURCE_EXHAUSTED|quota exceeded|quota exhausted`), "the provider's quota", true},
+	{regexp.MustCompile(`(?i)rate[ _]limit(ed)?\b|too many requests|\b(?:HTTP|code) 429\b`), "the provider's rate limit", true},
 }
 
 // limitIn finds a usage limit in the reason a worker failed with, and when it resets when the message says it.
 func limitIn(reason string, now time.Time) (Limit, bool) {
 	for _, k := range limitKinds {
 		if k.re.MatchString(reason) {
-			return Limit{What: k.what, Until: resetIn(reason, now)}, true
+			until := resetIn(reason, now)
+			perMin := k.perMinute && until.IsZero() && !multiHourQuotaRe.MatchString(reason)
+			return Limit{What: k.what, Model: LimitModel(reason), Until: until, PerMinute: perMin}, true
 		}
 	}
 	return Limit{}, false
@@ -112,16 +238,33 @@ func limitBackoff(resumes int32) time.Duration {
 	return d
 }
 
-// limitText says what a task waits for: "the account's session limit, resets at 07:20", in the machine's time.
-func limitText(l Limit, after time.Time, now time.Time) string {
-	if !l.Until.IsZero() {
-		return l.What + ", resets at " + clockText(l.Until, now)
+// rateLimitBackoff is how long a task waits for a per-minute rate or token bucket (TPM/RPM, HTTP 429 without a reset
+// clock): 60s -> 90s -> 120s.
+func rateLimitBackoff(hits int) time.Duration {
+	switch {
+	case hits <= 0:
+		return 60 * time.Second
+	case hits == 1:
+		return 90 * time.Second
+	default:
+		return 120 * time.Second
 	}
-	return l.What + ", tries again at " + clockText(after, now)
 }
 
-// clockText writes a time of the machine's day: 07:20, or with its date when it is not today.
-func clockText(t, now time.Time) string {
+// limitText says what a task waits for: "the account's session limit, resets at 07:20", in the machine's time.
+func limitText(l Limit, after time.Time, now time.Time) string {
+	what := l.What
+	if l.Model != "" && !strings.Contains(strings.ToLower(what), strings.ToLower(l.Model)) {
+		what += " for model " + l.Model
+	}
+	if !l.Until.IsZero() {
+		return what + ", resets at " + ClockText(l.Until, now)
+	}
+	return what + ", tries again at " + ClockText(after, now)
+}
+
+// ClockText writes a time of the machine's day: 07:20, or with its date when it is not today.
+func ClockText(t, now time.Time) string {
 	t, now = t.Local(), now.Local()
 	if y, m, d := t.Date(); y != now.Year() || m != now.Month() || d != now.Day() {
 		return t.Format("2006-01-02 15:04")

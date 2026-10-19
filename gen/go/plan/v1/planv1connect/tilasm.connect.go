@@ -51,12 +51,38 @@ const (
 	TilasmServiceImportProcedure = "/plan.v1.TilasmService/Import"
 	// TilasmServicePutDataProcedure is the fully-qualified name of the TilasmService's PutData RPC.
 	TilasmServicePutDataProcedure = "/plan.v1.TilasmService/PutData"
+	// TilasmServiceCommentsProcedure is the fully-qualified name of the TilasmService's Comments RPC.
+	TilasmServiceCommentsProcedure = "/plan.v1.TilasmService/Comments"
+	// TilasmServicePutCommentProcedure is the fully-qualified name of the TilasmService's PutComment
+	// RPC.
+	TilasmServicePutCommentProcedure = "/plan.v1.TilasmService/PutComment"
+	// TilasmServiceDeleteCommentProcedure is the fully-qualified name of the TilasmService's
+	// DeleteComment RPC.
+	TilasmServiceDeleteCommentProcedure = "/plan.v1.TilasmService/DeleteComment"
+	// TilasmServiceDraftsProcedure is the fully-qualified name of the TilasmService's Drafts RPC.
+	TilasmServiceDraftsProcedure = "/plan.v1.TilasmService/Drafts"
+	// TilasmServiceSendCommentsProcedure is the fully-qualified name of the TilasmService's
+	// SendComments RPC.
+	TilasmServiceSendCommentsProcedure = "/plan.v1.TilasmService/SendComments"
+	// TilasmServiceReplyProcedure is the fully-qualified name of the TilasmService's Reply RPC.
+	TilasmServiceReplyProcedure = "/plan.v1.TilasmService/Reply"
+	// TilasmServicePlaceCommentsProcedure is the fully-qualified name of the TilasmService's
+	// PlaceComments RPC.
+	TilasmServicePlaceCommentsProcedure = "/plan.v1.TilasmService/PlaceComments"
+	// TilasmServicePublishProcedure is the fully-qualified name of the TilasmService's Publish RPC.
+	TilasmServicePublishProcedure = "/plan.v1.TilasmService/Publish"
+	// TilasmServiceConfirmPublishProcedure is the fully-qualified name of the TilasmService's
+	// ConfirmPublish RPC.
+	TilasmServiceConfirmPublishProcedure = "/plan.v1.TilasmService/ConfirmPublish"
+	// TilasmServiceCheckPublishProcedure is the fully-qualified name of the TilasmService's
+	// CheckPublish RPC.
+	TilasmServiceCheckPublishProcedure = "/plan.v1.TilasmService/CheckPublish"
 )
 
 // TilasmServiceClient is a client for the plan.v1.TilasmService service.
 type TilasmServiceClient interface {
-	// Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
-	// version of that one, its links unchanged.
+	// Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
+	// with --code a new version of that one, its links unchanged.
 	Put(context.Context, *connect.Request[v1.TilasmServicePutRequest]) (*connect.Response[v1.TilasmServicePutResponse], error)
 	// List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.
 	List(context.Context, *connect.Request[v1.TilasmServiceListRequest]) (*connect.Response[v1.TilasmServiceListResponse], error)
@@ -73,9 +99,43 @@ type TilasmServiceClient interface {
 	Export(context.Context, *connect.Request[v1.TilasmServiceExportRequest]) (*connect.Response[v1.TilasmServiceExportResponse], error)
 	// Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.
 	Import(context.Context, *connect.Request[v1.TilasmServiceImportRequest]) (*connect.Response[v1.TilasmServiceImportResponse], error)
-	// Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-	// export wrote is imported, as Import; any other is put, as Put.
+	// Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
+	// djinn tilasm export wrote is imported, as Import; any other is put, as Put.
 	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
+	// Read the comments the developer sent on a tilasm, each with the passage or the element it is on: those of one send
+	// with --send, as its comments event names it, else every send. A draft never shows: it is the developer's alone.
+	Comments(context.Context, *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error)
+	// Write a draft comment on a tilasm, from the window: a new one, or an edit of one not sent yet; a sent one is refused.
+	PutComment(context.Context, *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error)
+	// Delete a draft comment, from the window; a sent one stays. It returns the draft, for the window's Undo to put back.
+	DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error)
+	// The draft comments on a wish's tilasms, for the window: no agent reads them. And those sent, with their replies.
+	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
+	// Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
+	// explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
+	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
+	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
+	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
+	// Reply to a comment the developer sent: what you did with it, or why not, and the tasks you made of it. Every sent
+	// comment gets one; its card shows it. A second reply replaces the first. A draft takes none: no agent reads it.
+	Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error)
+	// Write where the window found the anchors of a tilasm's comments in its latest version, from the window: found,
+	// changed or lost, on drafts and sent comments alike, whose words do not change. A version that is no longer the
+	// latest places nothing: the window places the comments again in the next one.
+	PlaceComments(context.Context, *connect.Request[v1.TilasmServicePlaceCommentsRequest]) (*connect.Response[v1.TilasmServicePlaceCommentsResponse], error)
+	// Publish a tilasm's latest version on claude.ai, as a private artifact of the developer's Claude account: its page
+	// with its files beside it, at their paths, those of a type claude.ai serves (a spreadsheet or a document is left
+	// out). Djinn builds what is sent; one short Claude call, under the paid gate, sends it, at the address of its last
+	// publish when it has one. Refused until
+	// the developer confirms, in the window, that the tilasm holds no personal data of a client: its first publish
+	// comes from them. Only the owner of the account opens the artifact until they share it on claude.ai.
+	Publish(context.Context, *connect.Request[v1.TilasmServicePublishRequest]) (*connect.Response[v1.TilasmServicePublishResponse], error)
+	// Record the developer's go-ahead to publish a tilasm on claude.ai, from the window: they checked that it holds no
+	// personal data of a client, its images included. The first publish waits for it.
+	ConfirmPublish(context.Context, *connect.Request[v1.TilasmServiceConfirmPublishRequest]) (*connect.Response[v1.TilasmServiceConfirmPublishResponse], error)
+	// Whether tilasms can be published on claude.ai from this machine, for the window: Claude Code signed in, and its
+	// Artifact tool offered, which a first call reads once per start of Djinn.
+	CheckPublish(context.Context, *connect.Request[v1.TilasmServiceCheckPublishRequest]) (*connect.Response[v1.TilasmServiceCheckPublishResponse], error)
 }
 
 // NewTilasmServiceClient constructs a client for the plan.v1.TilasmService service. By default, it
@@ -146,20 +206,93 @@ func NewTilasmServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(tilasmServiceMethods.ByName("PutData")),
 			connect.WithClientOptions(opts...),
 		),
+		comments: connect.NewClient[v1.TilasmServiceCommentsRequest, v1.TilasmServiceCommentsResponse](
+			httpClient,
+			baseURL+TilasmServiceCommentsProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Comments")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		putComment: connect.NewClient[v1.TilasmServicePutCommentRequest, v1.TilasmServicePutCommentResponse](
+			httpClient,
+			baseURL+TilasmServicePutCommentProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("PutComment")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteComment: connect.NewClient[v1.TilasmServiceDeleteCommentRequest, v1.TilasmServiceDeleteCommentResponse](
+			httpClient,
+			baseURL+TilasmServiceDeleteCommentProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("DeleteComment")),
+			connect.WithClientOptions(opts...),
+		),
+		drafts: connect.NewClient[v1.TilasmServiceDraftsRequest, v1.TilasmServiceDraftsResponse](
+			httpClient,
+			baseURL+TilasmServiceDraftsProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Drafts")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		sendComments: connect.NewClient[v1.TilasmServiceSendCommentsRequest, v1.TilasmServiceSendCommentsResponse](
+			httpClient,
+			baseURL+TilasmServiceSendCommentsProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("SendComments")),
+			connect.WithClientOptions(opts...),
+		),
+		reply: connect.NewClient[v1.TilasmServiceReplyRequest, v1.TilasmServiceReplyResponse](
+			httpClient,
+			baseURL+TilasmServiceReplyProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Reply")),
+			connect.WithClientOptions(opts...),
+		),
+		placeComments: connect.NewClient[v1.TilasmServicePlaceCommentsRequest, v1.TilasmServicePlaceCommentsResponse](
+			httpClient,
+			baseURL+TilasmServicePlaceCommentsProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("PlaceComments")),
+			connect.WithClientOptions(opts...),
+		),
+		publish: connect.NewClient[v1.TilasmServicePublishRequest, v1.TilasmServicePublishResponse](
+			httpClient,
+			baseURL+TilasmServicePublishProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("Publish")),
+			connect.WithClientOptions(opts...),
+		),
+		confirmPublish: connect.NewClient[v1.TilasmServiceConfirmPublishRequest, v1.TilasmServiceConfirmPublishResponse](
+			httpClient,
+			baseURL+TilasmServiceConfirmPublishProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("ConfirmPublish")),
+			connect.WithClientOptions(opts...),
+		),
+		checkPublish: connect.NewClient[v1.TilasmServiceCheckPublishRequest, v1.TilasmServiceCheckPublishResponse](
+			httpClient,
+			baseURL+TilasmServiceCheckPublishProcedure,
+			connect.WithSchema(tilasmServiceMethods.ByName("CheckPublish")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // tilasmServiceClient implements TilasmServiceClient.
 type tilasmServiceClient struct {
-	put     *connect.Client[v1.TilasmServicePutRequest, v1.TilasmServicePutResponse]
-	list    *connect.Client[v1.TilasmServiceListRequest, v1.TilasmServiceListResponse]
-	get     *connect.Client[v1.TilasmServiceGetRequest, v1.TilasmServiceGetResponse]
-	open    *connect.Client[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse]
-	history *connect.Client[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse]
-	restore *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
-	export  *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
-	_import *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
-	putData *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
+	put            *connect.Client[v1.TilasmServicePutRequest, v1.TilasmServicePutResponse]
+	list           *connect.Client[v1.TilasmServiceListRequest, v1.TilasmServiceListResponse]
+	get            *connect.Client[v1.TilasmServiceGetRequest, v1.TilasmServiceGetResponse]
+	open           *connect.Client[v1.TilasmServiceOpenRequest, v1.TilasmServiceOpenResponse]
+	history        *connect.Client[v1.TilasmServiceHistoryRequest, v1.TilasmServiceHistoryResponse]
+	restore        *connect.Client[v1.TilasmServiceRestoreRequest, v1.TilasmServiceRestoreResponse]
+	export         *connect.Client[v1.TilasmServiceExportRequest, v1.TilasmServiceExportResponse]
+	_import        *connect.Client[v1.TilasmServiceImportRequest, v1.TilasmServiceImportResponse]
+	putData        *connect.Client[v1.TilasmServicePutDataRequest, v1.TilasmServicePutDataResponse]
+	comments       *connect.Client[v1.TilasmServiceCommentsRequest, v1.TilasmServiceCommentsResponse]
+	putComment     *connect.Client[v1.TilasmServicePutCommentRequest, v1.TilasmServicePutCommentResponse]
+	deleteComment  *connect.Client[v1.TilasmServiceDeleteCommentRequest, v1.TilasmServiceDeleteCommentResponse]
+	drafts         *connect.Client[v1.TilasmServiceDraftsRequest, v1.TilasmServiceDraftsResponse]
+	sendComments   *connect.Client[v1.TilasmServiceSendCommentsRequest, v1.TilasmServiceSendCommentsResponse]
+	reply          *connect.Client[v1.TilasmServiceReplyRequest, v1.TilasmServiceReplyResponse]
+	placeComments  *connect.Client[v1.TilasmServicePlaceCommentsRequest, v1.TilasmServicePlaceCommentsResponse]
+	publish        *connect.Client[v1.TilasmServicePublishRequest, v1.TilasmServicePublishResponse]
+	confirmPublish *connect.Client[v1.TilasmServiceConfirmPublishRequest, v1.TilasmServiceConfirmPublishResponse]
+	checkPublish   *connect.Client[v1.TilasmServiceCheckPublishRequest, v1.TilasmServiceCheckPublishResponse]
 }
 
 // Put calls plan.v1.TilasmService.Put.
@@ -207,10 +340,60 @@ func (c *tilasmServiceClient) PutData(ctx context.Context, req *connect.Request[
 	return c.putData.CallUnary(ctx, req)
 }
 
+// Comments calls plan.v1.TilasmService.Comments.
+func (c *tilasmServiceClient) Comments(ctx context.Context, req *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error) {
+	return c.comments.CallUnary(ctx, req)
+}
+
+// PutComment calls plan.v1.TilasmService.PutComment.
+func (c *tilasmServiceClient) PutComment(ctx context.Context, req *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error) {
+	return c.putComment.CallUnary(ctx, req)
+}
+
+// DeleteComment calls plan.v1.TilasmService.DeleteComment.
+func (c *tilasmServiceClient) DeleteComment(ctx context.Context, req *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error) {
+	return c.deleteComment.CallUnary(ctx, req)
+}
+
+// Drafts calls plan.v1.TilasmService.Drafts.
+func (c *tilasmServiceClient) Drafts(ctx context.Context, req *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error) {
+	return c.drafts.CallUnary(ctx, req)
+}
+
+// SendComments calls plan.v1.TilasmService.SendComments.
+func (c *tilasmServiceClient) SendComments(ctx context.Context, req *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error) {
+	return c.sendComments.CallUnary(ctx, req)
+}
+
+// Reply calls plan.v1.TilasmService.Reply.
+func (c *tilasmServiceClient) Reply(ctx context.Context, req *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error) {
+	return c.reply.CallUnary(ctx, req)
+}
+
+// PlaceComments calls plan.v1.TilasmService.PlaceComments.
+func (c *tilasmServiceClient) PlaceComments(ctx context.Context, req *connect.Request[v1.TilasmServicePlaceCommentsRequest]) (*connect.Response[v1.TilasmServicePlaceCommentsResponse], error) {
+	return c.placeComments.CallUnary(ctx, req)
+}
+
+// Publish calls plan.v1.TilasmService.Publish.
+func (c *tilasmServiceClient) Publish(ctx context.Context, req *connect.Request[v1.TilasmServicePublishRequest]) (*connect.Response[v1.TilasmServicePublishResponse], error) {
+	return c.publish.CallUnary(ctx, req)
+}
+
+// ConfirmPublish calls plan.v1.TilasmService.ConfirmPublish.
+func (c *tilasmServiceClient) ConfirmPublish(ctx context.Context, req *connect.Request[v1.TilasmServiceConfirmPublishRequest]) (*connect.Response[v1.TilasmServiceConfirmPublishResponse], error) {
+	return c.confirmPublish.CallUnary(ctx, req)
+}
+
+// CheckPublish calls plan.v1.TilasmService.CheckPublish.
+func (c *tilasmServiceClient) CheckPublish(ctx context.Context, req *connect.Request[v1.TilasmServiceCheckPublishRequest]) (*connect.Response[v1.TilasmServiceCheckPublishResponse], error) {
+	return c.checkPublish.CallUnary(ctx, req)
+}
+
 // TilasmServiceHandler is an implementation of the plan.v1.TilasmService service.
 type TilasmServiceHandler interface {
-	// Put a folder that holds an index.html, or a .zip of one, as a tilasm of the wish: a new one, or with --code a new
-	// version of that one, its links unchanged.
+	// Put a folder that holds an index.html, an .html file, or a .zip of one, as a tilasm of the wish: a new one, or
+	// with --code a new version of that one, its links unchanged.
 	Put(context.Context, *connect.Request[v1.TilasmServicePutRequest]) (*connect.Response[v1.TilasmServicePutResponse], error)
 	// List the tilasms, of a wish or of all; --search keeps those whose code, title or text holds every word.
 	List(context.Context, *connect.Request[v1.TilasmServiceListRequest]) (*connect.Response[v1.TilasmServiceListResponse], error)
@@ -227,9 +410,43 @@ type TilasmServiceHandler interface {
 	Export(context.Context, *connect.Request[v1.TilasmServiceExportRequest]) (*connect.Response[v1.TilasmServiceExportResponse], error)
 	// Import a tilasm's .zip into a wish: a new version of the same tilasm when the wish has it, else a new tilasm.
 	Import(context.Context, *connect.Request[v1.TilasmServiceImportRequest]) (*connect.Response[v1.TilasmServiceImportResponse], error)
-	// Put the files the window read, dropped on the Tilasms tab: a folder's files, or a .zip. A .zip that djinn tilasm
-	// export wrote is imported, as Import; any other is put, as Put.
+	// Put the files the window read, dropped on the Tilasms tab: a folder's files, an .html file, or a .zip. A .zip that
+	// djinn tilasm export wrote is imported, as Import; any other is put, as Put.
 	PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error)
+	// Read the comments the developer sent on a tilasm, each with the passage or the element it is on: those of one send
+	// with --send, as its comments event names it, else every send. A draft never shows: it is the developer's alone.
+	Comments(context.Context, *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error)
+	// Write a draft comment on a tilasm, from the window: a new one, or an edit of one not sent yet; a sent one is refused.
+	PutComment(context.Context, *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error)
+	// Delete a draft comment, from the window; a sent one stays. It returns the draft, for the window's Undo to put back.
+	DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error)
+	// The draft comments on a wish's tilasms, for the window: no agent reads them. And those sent, with their replies.
+	Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error)
+	// Send every draft of a tilasm to the Djinn at once, from the window, with the developer's choice: launch the work it
+	// explains, or iterate on the tilasm. One lead event per send, whatever the number of comments. A launch without a
+	// comment answers the open question that links the tilasm with its recommended option, as approving it does. A
+	// tilasm held (TilasmHold) takes no send: a launch is never given twice.
+	SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error)
+	// Reply to a comment the developer sent: what you did with it, or why not, and the tasks you made of it. Every sent
+	// comment gets one; its card shows it. A second reply replaces the first. A draft takes none: no agent reads it.
+	Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error)
+	// Write where the window found the anchors of a tilasm's comments in its latest version, from the window: found,
+	// changed or lost, on drafts and sent comments alike, whose words do not change. A version that is no longer the
+	// latest places nothing: the window places the comments again in the next one.
+	PlaceComments(context.Context, *connect.Request[v1.TilasmServicePlaceCommentsRequest]) (*connect.Response[v1.TilasmServicePlaceCommentsResponse], error)
+	// Publish a tilasm's latest version on claude.ai, as a private artifact of the developer's Claude account: its page
+	// with its files beside it, at their paths, those of a type claude.ai serves (a spreadsheet or a document is left
+	// out). Djinn builds what is sent; one short Claude call, under the paid gate, sends it, at the address of its last
+	// publish when it has one. Refused until
+	// the developer confirms, in the window, that the tilasm holds no personal data of a client: its first publish
+	// comes from them. Only the owner of the account opens the artifact until they share it on claude.ai.
+	Publish(context.Context, *connect.Request[v1.TilasmServicePublishRequest]) (*connect.Response[v1.TilasmServicePublishResponse], error)
+	// Record the developer's go-ahead to publish a tilasm on claude.ai, from the window: they checked that it holds no
+	// personal data of a client, its images included. The first publish waits for it.
+	ConfirmPublish(context.Context, *connect.Request[v1.TilasmServiceConfirmPublishRequest]) (*connect.Response[v1.TilasmServiceConfirmPublishResponse], error)
+	// Whether tilasms can be published on claude.ai from this machine, for the window: Claude Code signed in, and its
+	// Artifact tool offered, which a first call reads once per start of Djinn.
+	CheckPublish(context.Context, *connect.Request[v1.TilasmServiceCheckPublishRequest]) (*connect.Response[v1.TilasmServiceCheckPublishResponse], error)
 }
 
 // NewTilasmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -296,6 +513,69 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(tilasmServiceMethods.ByName("PutData")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tilasmServiceCommentsHandler := connect.NewUnaryHandler(
+		TilasmServiceCommentsProcedure,
+		svc.Comments,
+		connect.WithSchema(tilasmServiceMethods.ByName("Comments")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServicePutCommentHandler := connect.NewUnaryHandler(
+		TilasmServicePutCommentProcedure,
+		svc.PutComment,
+		connect.WithSchema(tilasmServiceMethods.ByName("PutComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceDeleteCommentHandler := connect.NewUnaryHandler(
+		TilasmServiceDeleteCommentProcedure,
+		svc.DeleteComment,
+		connect.WithSchema(tilasmServiceMethods.ByName("DeleteComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceDraftsHandler := connect.NewUnaryHandler(
+		TilasmServiceDraftsProcedure,
+		svc.Drafts,
+		connect.WithSchema(tilasmServiceMethods.ByName("Drafts")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceSendCommentsHandler := connect.NewUnaryHandler(
+		TilasmServiceSendCommentsProcedure,
+		svc.SendComments,
+		connect.WithSchema(tilasmServiceMethods.ByName("SendComments")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceReplyHandler := connect.NewUnaryHandler(
+		TilasmServiceReplyProcedure,
+		svc.Reply,
+		connect.WithSchema(tilasmServiceMethods.ByName("Reply")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServicePlaceCommentsHandler := connect.NewUnaryHandler(
+		TilasmServicePlaceCommentsProcedure,
+		svc.PlaceComments,
+		connect.WithSchema(tilasmServiceMethods.ByName("PlaceComments")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServicePublishHandler := connect.NewUnaryHandler(
+		TilasmServicePublishProcedure,
+		svc.Publish,
+		connect.WithSchema(tilasmServiceMethods.ByName("Publish")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceConfirmPublishHandler := connect.NewUnaryHandler(
+		TilasmServiceConfirmPublishProcedure,
+		svc.ConfirmPublish,
+		connect.WithSchema(tilasmServiceMethods.ByName("ConfirmPublish")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tilasmServiceCheckPublishHandler := connect.NewUnaryHandler(
+		TilasmServiceCheckPublishProcedure,
+		svc.CheckPublish,
+		connect.WithSchema(tilasmServiceMethods.ByName("CheckPublish")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/plan.v1.TilasmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TilasmServicePutProcedure:
@@ -316,6 +596,26 @@ func NewTilasmServiceHandler(svc TilasmServiceHandler, opts ...connect.HandlerOp
 			tilasmServiceImportHandler.ServeHTTP(w, r)
 		case TilasmServicePutDataProcedure:
 			tilasmServicePutDataHandler.ServeHTTP(w, r)
+		case TilasmServiceCommentsProcedure:
+			tilasmServiceCommentsHandler.ServeHTTP(w, r)
+		case TilasmServicePutCommentProcedure:
+			tilasmServicePutCommentHandler.ServeHTTP(w, r)
+		case TilasmServiceDeleteCommentProcedure:
+			tilasmServiceDeleteCommentHandler.ServeHTTP(w, r)
+		case TilasmServiceDraftsProcedure:
+			tilasmServiceDraftsHandler.ServeHTTP(w, r)
+		case TilasmServiceSendCommentsProcedure:
+			tilasmServiceSendCommentsHandler.ServeHTTP(w, r)
+		case TilasmServiceReplyProcedure:
+			tilasmServiceReplyHandler.ServeHTTP(w, r)
+		case TilasmServicePlaceCommentsProcedure:
+			tilasmServicePlaceCommentsHandler.ServeHTTP(w, r)
+		case TilasmServicePublishProcedure:
+			tilasmServicePublishHandler.ServeHTTP(w, r)
+		case TilasmServiceConfirmPublishProcedure:
+			tilasmServiceConfirmPublishHandler.ServeHTTP(w, r)
+		case TilasmServiceCheckPublishProcedure:
+			tilasmServiceCheckPublishHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -359,4 +659,44 @@ func (UnimplementedTilasmServiceHandler) Import(context.Context, *connect.Reques
 
 func (UnimplementedTilasmServiceHandler) PutData(context.Context, *connect.Request[v1.TilasmServicePutDataRequest]) (*connect.Response[v1.TilasmServicePutDataResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.PutData is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Comments(context.Context, *connect.Request[v1.TilasmServiceCommentsRequest]) (*connect.Response[v1.TilasmServiceCommentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Comments is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) PutComment(context.Context, *connect.Request[v1.TilasmServicePutCommentRequest]) (*connect.Response[v1.TilasmServicePutCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.PutComment is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) DeleteComment(context.Context, *connect.Request[v1.TilasmServiceDeleteCommentRequest]) (*connect.Response[v1.TilasmServiceDeleteCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.DeleteComment is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Drafts(context.Context, *connect.Request[v1.TilasmServiceDraftsRequest]) (*connect.Response[v1.TilasmServiceDraftsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Drafts is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) SendComments(context.Context, *connect.Request[v1.TilasmServiceSendCommentsRequest]) (*connect.Response[v1.TilasmServiceSendCommentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.SendComments is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Reply(context.Context, *connect.Request[v1.TilasmServiceReplyRequest]) (*connect.Response[v1.TilasmServiceReplyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Reply is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) PlaceComments(context.Context, *connect.Request[v1.TilasmServicePlaceCommentsRequest]) (*connect.Response[v1.TilasmServicePlaceCommentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.PlaceComments is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) Publish(context.Context, *connect.Request[v1.TilasmServicePublishRequest]) (*connect.Response[v1.TilasmServicePublishResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.Publish is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) ConfirmPublish(context.Context, *connect.Request[v1.TilasmServiceConfirmPublishRequest]) (*connect.Response[v1.TilasmServiceConfirmPublishResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.ConfirmPublish is not implemented"))
+}
+
+func (UnimplementedTilasmServiceHandler) CheckPublish(context.Context, *connect.Request[v1.TilasmServiceCheckPublishRequest]) (*connect.Response[v1.TilasmServiceCheckPublishResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.TilasmService.CheckPublish is not implemented"))
 }

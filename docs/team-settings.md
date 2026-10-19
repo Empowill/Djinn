@@ -31,6 +31,33 @@ test_one: "go tool task test-pkg -- {pkg}"
 install: "go tool task install"
 ```
 
+### Where Djinn reads it
+
+In a Git repository with a remote, Djinn reads the team's `.agents/settings.txtpb`, the project's
+`.agents/permissions.txtpb` and its skills (`.agents/skills`, `.claude/skills`) on the
+[reference branch](#keeping-up-with-main), in its tree at the last fetch (`origin/main`), not in your copy: a branch
+checked out in your folder, or a change you have not pushed, does not change the configuration Djinn runs the project
+with. Djinn extracts those folders once per digest of their trees into its data folder (`cache/config/<digest>`), and
+reads them again only when a fetch moves the reference branch. A message about a file it cannot read names it there
+(`origin/main:.agents/settings.txtpb`); you fix it in your copy, and it counts once pushed and fetched. The commands
+(the setup, the checks, the sources) still run in the project's folder or the wish's worktree. A project outside Git,
+without a remote, or whose reference branch is not fetched yet, keeps its folder as the source. Your own file is always
+read in Djinn's data folder.
+
+Djinn watches that branch for you: every 5 minutes, and after each of its pushes, it fetches the reference branch alone
+(no tags), then compares the digest of the `.agents` and `.claude/skills` trees with the one of its last look; nothing
+is read again while it has not moved. When it has, each commit of the branch that changed those trees (following first
+parents, the merges into it included) becomes an entry of the project's journal of changes, told in sentences: a check
+new, gone or changed, the setup, the reference branch the file names, the other settings by name; the commands the
+permissions allow or deny, editing, the network, the mode; each skill new, gone or changed, and what changed in it (its
+wish template, inbox source, babysit, description, instructions, files); the other files of `.agents`. Past 20 commits
+in one look, the older ones are told together; a change of the reference branch itself is told as one entry, the whole
+difference. The first look tells the last 5 commits that changed the configuration as history. The journal keeps the
+50 newest entries per project, in Djinn's data, on this machine.
+
+A change is applied as soon as it is fetched. Those that give the workers more, or change what a skill makes or runs for
+Djinn, wait for your look (see the `change` topic below).
+
 | Setting          | What it sets, when a task names none                                   | Not set                    |
 | ---------------- | ---------------------------------------------------------------------- | -------------------------- |
 | `provider`       | The agent of the project's workers: claude, codex, antigravity, fake.  | claude                     |
@@ -40,13 +67,13 @@ install: "go tool task install"
 | `generated`      | The files code generation makes, as globs (`gen/**`), repeated: see [integration](#integration). | none |
 | `generate`       | The command that makes them, in the project's folder.                   | none                       |
 | `setup`          | The command that makes a fresh worktree ready (`npm ci`), in the project's folder: see [checks](#checks). | none |
-| `checks`         | The commands Djinn runs before it commits a task's work, before it pushes, or both, each through a gate of its name: see [checks](#checks). Set, Djinn integrates finished work. A file that sets some sets them all. | none: integration into a wish's own branch only, untested |
+| `checks`         | The commands Djinn runs before it merges a task's work, before it pushes, or both, each through a gate of its name: see [checks](#checks). Set, Djinn integrates finished work. A file that sets some sets them all. | none: integration into a wish's own branch only, untested |
 | `test_one`       | The command template a worker runs for targeted tests (`go tool task test-pkg -- {pkg}`): see [checks](#checks). | none: worker runs tests covering what it changed |
 | `test`           | The former name of a check run before each commit: `test: "make test"` is the check `test` at `commit`. | none |
 | `correction_attempts` | How many correction workers Djinn starts for work that conflicts in code or tests red, before it asks you: see [integration](#integration). `0`: it asks at once. | `2` |
 | `install`        | The command that installs the integration branch once pushed, in the project's folder: the window proposes it. | none: nothing proposed |
 | `install_questions` | When Djinn asks the developer to install builds: `always` (default), `when_needed` (only when necessary, stating why; for projects whose builds install automatically after each push), `never`. | `always` |
-| `main_branch`    | The project's main branch, which Djinn merges into each wish's integration branch: see [keeping up with main](#keeping-up-with-main). | the remote's default branch, else `main`, else `master` |
+| `main_branch`    | The project's main branch, its reference branch, which Djinn merges into each wish's integration branch: see [keeping up with main](#keeping-up-with-main). `djinn project set-branch <project> <branch>` writes it in your own file (`--unset` takes it back), as does **Change** under the reference branch of the project's configuration in the window; a team that follows another branch than the remote's default names it here, for everyone. | the remote's default branch, else `main`, else `master` |
 | `merge_main`     | When Djinn merges it: `MERGE_MAIN_RELEASE` (once main holds a release the branch lacks), `MERGE_MAIN_COMMIT` (once it holds any commit the branch lacks), `MERGE_MAIN_OFF`. | at each release |
 | `merge_main_minutes` | How often, in minutes, Djinn fetches main to look at it, at most. A release the running Djinn finds makes it look at once. | `60` |
 | `install_releases` | For the project a Djinn built from a checkout comes from: a newer release installs by itself while that checkout is on main. `false`: it is only offered. | on |
@@ -62,6 +89,7 @@ read from **your own file only**, never from the repository's (which lists its c
 | Setting          | What it sets                                                            | Not set |
 | ---------------- | ----------------------------------------------------------------------- | ------- |
 | `watch_commands` | The commands a watcher may run in the project besides those `.agents/permissions.txtpb` lists, each a command or its start on a word boundary, repeated: see [what a watcher may run](wish-templates.md#what-a-watcher-may-run). The project's `denied_commands` still win. `djinn project allow <project> --watch '<command>'` adds one (`--revoke` takes it back), as does the project's panel in the window; `djinn project show` lists them, from `DEVELOPER`. | none |
+| `serve_commands` | The commands an ifrit's serve may run in the project (`djinn serve run`, its command and its `--stop` command) besides those `.agents/permissions.txtpb` lists, by the same rule as `watch_commands`, read from your own file only. The project's `denied_commands` still win. `djinn project allow <project> --serve '<command>'` adds one (`--revoke` takes it back); `djinn project show` lists them, from `DEVELOPER`. | none |
 
 Four more set the *investigators*, the small tasks Djinn starts by itself on a question of a wish after
 "Enlighten me": `Q03: enlighten` investigates and revises the question (see [agent protocol](agent-protocol.md)).
@@ -85,7 +113,8 @@ and their start event says why (`antigravity cannot run read-only: claude`). On 
 ## Branch names
 
 In a Git repository each worker edits its own worktree, on a new branch from the tip of its wish's
-[integration branch](#integration), or the project's `HEAD` when the wish has none. `branch` names it,
+[integration branch](#integration), or the project's reference branch when the wish has none, never your copy's `HEAD`
+([where a worker starts](#where-a-worker-starts)). `branch` names it,
 with three placeholders:
 
 | Placeholder | Becomes                                                                 | Task W1 "Fix the login page" |
@@ -122,8 +151,9 @@ other file says. Your `provider: PROVIDER_CODEX` never runs codex with the team'
 to a task of that provider: `--provider fake` gets no model from the files. Your file can lift the team's budget
 with `max_budget_usd: 0`; a task's flag cannot, as `0` there means "not given".
 
-Djinn reads both files each time a task is spawned, from the project's own folder (the branch checked out there),
-not from the task's worktree. A task keeps what it got: changing a file changes the next tasks only.
+Djinn reads both files each time a task is spawned, where [it reads the configuration](#where-djinn-reads-it), not from
+the task's worktree. A task keeps what it got: changing a file changes the next tasks only. No worker starts from what
+your copy has checked out, nor from its changes (W227, see [where a worker starts](#where-a-worker-starts)).
 
 ## See where each setting comes from
 
@@ -154,9 +184,64 @@ developer_file: /home/me/.config/djinn/projects/01a1…/settings.txtpb
 
 ## A file Djinn cannot read
 
-A malformed file, an unknown field, a value out of range: Djinn still starts, and `djinn project show` lists the
-problem under `problems`, with the file and the line. The other file still shows. Spawning a task in the project
-fails with the same message until you fix it: a team's budget never silently vanishes.
+A malformed file, a value out of range, two checks of one name: Djinn still starts, and `djinn project show` lists the
+problem under `notices`, a thing to fix with the file and the line, as the project's configuration in the window
+does. The other file still shows. A task spawned in the project waits, saying `settings unreadable: …`, and starts once you fix
+it; merges there wait too: a team's budget never silently vanishes. An unknown field, which a newer Djinn may know, is
+only an information: the line is ignored.
+
+## What Djinn finds in a project
+
+`djinn project show` lists, under `notices`, what Djinn finds in the project's configuration on this machine, computed
+on every read: the things to fix first, then the information. Each notice has a `kind` (`to fix` or `information`), a
+`topic`, the `subject` it names, one sentence (`text`), the error as read (`detail`), and one `action`, with the
+`file` it changes or the `command` that does it.
+
+| Topic | To fix | Information |
+| --- | --- | --- |
+| `settings` | A file Djinn cannot read | A field a newer Djinn knows; `watch_commands` or `serve_commands` in the team's file |
+| `permissions` | `.agents/permissions.txtpb` Djinn cannot read: no worker, watcher nor source starts | A field a newer Djinn knows |
+| `branch` | No reference branch found, or the one `main_branch` names is not in the repository | Your copy has another branch checked out (Djinn reads the configuration on the reference branch all the same, and starts no worker from your copy) |
+| `setup` | The setup's last run failed, with the command it still is | |
+| `skill` | A `SKILL.md` Djinn cannot read; a wish template, inbox source or babysit it cannot use; a summoned skill it no longer finds | |
+| `source` | A source this machine has not decided on: plug it in, or unplug it to say no | A source plugged in that no skill declares any more |
+| `change` | A change on the reference branch that waits for your look: a command allowed or no longer denied, editing, the network or the auto mode turned on, a wish template or a babysit new or changed, the command of a source plugged in on this machine changed. `djinn project acknowledge <project>` marks them seen; the notice's `command` names one by its commit | |
+
+`djinn project list` gives each project's `to_fix`, the number of things to fix.
+
+`djinn project show` also gives the project's `reference`, its reference branch as Djinn finds it: the `branch`, the
+`ref` Djinn merges it from (`origin/main`), the `commit` that ref points at (empty when the repository does not hold
+it yet), the `source` of its name (`SETTING_SOURCE_DEFAULT` for the remote's default branch, else `main`, else `master`;
+otherwise the file whose `main_branch` names it) and the branch your copy has `checked_out`. The project's
+configuration in the window shows the same, with each setting and where it comes from.
+
+It gives the `watch` too, how Djinn last looked at the reference branch: the `ref`, the `commit` and the `digest` of
+the configuration's trees there, when Djinn found that commit (`find_time`) and why the last fetch failed
+(`fetch_error`, as git said it; empty when it went well). Then `changes`, the journal, the newest first, the last 20:
+each with the `commit` (the newest when it tells several, `commits` says how many), its `author`, `title` and
+`commit_time`, its `lines` (a `topic`, a `subject`, a sentence in `text`, and `asks` when it calls for your look),
+`first_look` for the history the first look told, and the `seen_time` once you marked it seen.
+
+`djinn project set-branch <project> <branch>` chooses the reference branch for you: it writes `main_branch` in your own
+file, never in the repository's, so nothing is committed behind the team, and yours wins over the team's. It refuses a
+branch the repository does not hold, on its remote when it has one (fetch it first), and a project outside Git.
+`djinn project set-branch <project> --unset` takes your choice back: the team's file names the branch again, else
+Djinn's default does. The project's configuration in the window does the same with **Change** under its reference
+branch, which lists the remote's branches as your copy last fetched them (`djinn project branches <project>
+--reference`).
+
+The **Summoning Circle** in the window (below the Grimoire in the side panel; `djinn lead get-circle` and `djinn lead
+set-circle` on the command line) chooses the model for each kind of worker across all projects: Djinn (lead),
+investigation, mockup, ifrit, work, merge correction, merge review, and question investigator. Only providers installed
+and signed in on this machine are offered as choices (unsigned providers appear greyed out with how to sign in); models
+come from the agent itself where it reports them (`agy models`) and from the shared price table (`internal/usage/prices.yaml`),
+never a second hand-written list in the UI. Each dropdown shows each model once by its label (`"Gemini 4 Argon (High)"`)
+while storing and sending its canonical model identifier (`"gemini-4-argon-high"`, passed to `agy` as `"Gemini 4 Argon (High)"`).
+The lead row offers Antigravity when the lead runs in a terminal, and shows a tooltip when a driven lead cannot run it.
+Every row except the lead defaults to **Same as lead**, following the lead's choice when it changes. Any legacy
+per-project `provider`, `model` or `question_model` in your developer settings file (`projects/<id>/settings.txtpb`) is
+migrated once into the Summoning Circle and dropped from the per-project file; `djinn task spawn --provider --model`
+remains the lead's per-task escape hatch.
 
 ## No secret, ever
 
@@ -188,13 +273,17 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
   again: the task's events say `commit checks: lint passed by the worker on this tree, not run again`. Any change
   after it, a merge that brings other work, or a failed run, and the check runs.
 - **Push checks** run on the branch's tip when a push is due. A check that passed as a commit check on that very commit
-  does not run again. Red, the push is **held**: the tasks' events and the wish's head say why. Red twice in a row, or
-  at once when no work of the wish is left to commit in the project, Djinn starts a correction worker (within
-  `correction_attempts`). If the correction fails, or its attempts are spent, or none can start, Djinn asks you: try
-  again with a new correction worker, take the push checks over yourself, or push without the push checks this once.
-  A correction stopped on request stays the correction for ten minutes, time to continue it on another agent. A
-  question about the push withdrawn, or the branch moved since its checks were red (even pushed by hand), runs the
-  push checks again: green, the hold lifts; red at a new commit, Djinn withdraws a stale question and acts again.
+  does not run again. Red, the push is **held**: the tasks' events and the wish's head say why, and the whole output
+  is kept in `projects/<id>/checks/` of Djinn's data folder (the last 100 red runs, any check), the events naming the
+  file and the failing tests. Push checks never run twice on the same tree: when the push is due again on it, or at
+  once when no work of the wish is left to commit in the project, Djinn starts a correction worker (within
+  `correction_attempts`, on the project's `provider` and `model`) instead of running them; only a push the developer asks for or approves checks it again. If the correction fails, or its attempts are spent, or none can start, Djinn tells the lead
+  (a move event, no question to the developer): retry a correction, drop the work, or leave it waiting. While the push
+  is held, the wish's new tasks in the project wait (`waits for feat/x to be green again`), corrections and
+  investigators aside; so they do while any correction repairs the branch (`waits for W9 to settle the conflict in
+  feat/x`). A correction stopped on request stays the correction for ten minutes, time to continue it on
+  another agent. New work committed, or the branch moved since its checks were red (even pushed by hand), runs the
+  push checks again: green, the hold lifts.
 - **The setup** makes the integration worktree, and the install worktree, ready before the first command there (a
   check, `generate`, `install`): once, then again when the setup command or a lock file changes (`package-lock.json`,
   `go.sum`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`, `uv.lock` and the like, anywhere in the
@@ -206,8 +295,8 @@ checks { name: "lint" command: "make lint" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_
 - **Targeted tests (`test_one`)**: when a project names `test_one` (such as `test_one: "go tool task test-pkg -- {pkg}"`),
   Djinn includes the command template in the project's checks brief. Workers run the commit checks before they end,
   and then only the targeted tests covering what they changed, leaving the push checks (such as the full test suite) for Djinn.
-- `djinn project show <project>` and the project's view in the window list the setup and the checks, each with its
-  last run: the commit it checked, when, how long, and why it failed.
+- `djinn project show <project>` and the project's configuration in the window list the setup and the checks, each
+  with its last run: the commit it checked, when, how long, and why it failed.
 
 A check's name is letters, digits, `-` and `_`; two checks never share a name, case ignored. `test: "make test"`, the
 former single test command, still works: it is the check `test` at `commit`, unless the file names a check `test`.
@@ -238,27 +327,39 @@ brings it there by itself, no model ([T07](../plan/8e8d3d76-orchestrator.md)):
 5. **Red** (a commit check, or the setup), or a **conflict** in code: the branch stays as it was, and the task says
    what failed. The tasks that end
    after it are committed on their own meanwhile.
-6. **A correction worker** starts by itself: a work task part of the same azima as the failed task, of its provider,
+6. **A correction worker** starts by itself: a work task part of the same azima as the failed task, on the project's
+   `provider` and `model` (whatever the failed task ran on),
    its worktree on the failed merge (the branch, and that merge again, its conflicts left in place; or the work merged,
-   for a red check), what failed in its first prompt: the files in conflict, or the check's command and
-   the end of its output. It commits its work, which concludes the merge, and its branch integrates like any task's,
+   for a red check), what failed in its first prompt: the files in conflict, or the check's command,
+   the end of its output and the file that keeps the whole of it. It commits its work, which concludes the merge, and its branch integrates like any task's,
    at once and alone. Green, the failed tasks are committed with it, saying
    `corrected by W5`. A correction whose work fails in turn, or whose worker fails, counts as an attempt.
-7. Past `correction_attempts` (2 by default), Djinn **asks you** on the wish: try again (a new correction worker, its
-   attempts counted again), leave it (the work stays out of the branch), or you take it (the question says how to
-   find the failed merge). The question blocks nothing else: the rest of the wish goes on. A correction worker you
-   stop leaves it to you, asked the same.
-8. **Work not committed is not merged, and Djinn commits nothing blindly.** Before merging a task, a correction
+7. Past `correction_attempts` (2 by default), Djinn **tells the lead**, a move event and no question to the
+   developer: "the work of W2 into feat/x failed: …. The move is yours: retry a correction, drop the work, or leave it
+   waiting." The rest of the wish goes on. A correction worker stopped, and not continued within ten minutes, leaves
+   the work failed (`Merge failed`), its event saying so.
+8. **Work with no commit of its own is not merged.** A task whose branch holds no commit beyond the one it started
+   from, its worktree clean, gets no integration: its `ended` line says `nothing to merge: no commit of its own`, and no
+   branch is made or moved for it. A merge that changes nothing, its branch's commits in the integration branch's
+   tree already, is undone: Djinn never makes an empty merge commit, and the task is committed at the branch as it is.
+9. **Work not committed is not merged, and Djinn commits nothing blindly.** Before merging a task, a correction
    worker's included, Djinn looks at its worktree (`git status --porcelain`, untracked files included, the project's
    `.gitignore` applying). Clean, it merges as above. With changes, the task is **uncommitted**: a **review worker**
-   starts by itself, a work task part of the same azima, of the task's provider, in that task's worktree and on its
-   branch, the task's title and prompt, the files and their diff (clipped) in its first prompt. It commits what
-   belongs to the task, with a message in the repository's style, reverts or deletes the rest (debug output, scratch
-   files, artifacts), and ends with a line saying what it kept, what it dropped, and why. Its branch then integrates
-   like any task's, and the task says `uncommitted: reviewed by W5`. A review that fails, or leaves changes in turn,
-   counts as an attempt; past `correction_attempts`, Djinn asks you, as above. Review and correction workers may run
-   `git add`, `git commit`, `git restore`, `git rm` and `git clean` besides the project's `commands`; its
-   `denied_commands` still win.
+   starts by itself, a work task part of the same azima, on the project's `provider` and `model`, in that task's worktree and on its
+   branch, the task's title, prompt and final note, the files (with a hint for a name that suggests a secret, an
+   output or a screenshot) and their diff (clipped) in its first prompt. It judges each path: it commits what belongs
+   to the task's change, staged by name, with a message in the repository's style, real work the task's worker forgot
+   to commit included; it leaves the rest where it is, not committed (scratch files, probes, screenshots, outputs,
+   generated files the project does not track, env files and secrets), and when in doubt leaves it out. Its final note
+   ends with `Committed: <paths>. Left: <path> (why), …`. Its branch then integrates like any task's, without what it
+   left, and the task says `uncommitted: reviewed by W5`; its worktree stays, holding what was left, and the lead reads
+   that line under the merge line. A path the review leaves without naming it after `Left:` in that line (whole, from a
+   folder of the project down, or by a folder ending with `/`) is not judged; a review that fails, or leaves such a path,
+   counts as an attempt; past `correction_attempts`, Djinn tells the lead, as above. Every worker that may edit may run
+   `git status`, `git diff`, `git log`, `git add`, `git commit`, `git restore` and `git rm` besides the project's
+   `commands`, as it commits its own work before it ends; a correction worker `git clean` too; its `denied_commands`
+   still win. A review worker is denied
+   `git add -A`, `git add --all`, `git add .`, `git add -u`, `git commit -a`, `git clean` and `git stash`.
 
 In a project whose settings name no check, Djinn does the same, no check run, when the wish has a branch of its own
 there (`djinn wish set-integration <wish> --branch feat/x --create-branch`), neither the project's main branch nor an
@@ -278,6 +379,29 @@ leaving it without an integration record so Djinn will not integrate it on its o
 --integration pending` puts the work of a done task without one back in line, as when its worker ended: once the
 wish has a branch of its own, say; refused, saying why, when Djinn would not integrate it.
 
+### Where a worker starts
+
+A worker's worktree starts from a commit Djinn names, never from your copy: not from what it has checked out, nor from
+its changes not committed (W227). By push strategy:
+
+| Strategy | A worker starts from |
+| --- | --- |
+| Per wish | The wish's integration branch, the reference branch unless you named another |
+| Per azima, part of an azima | The azima's branch, cut from the remote's reference branch when the azima is made (or its first part starts) |
+| Per azima, part of no azima | The wish's integration branch, as per wish: the branch that work lands in |
+
+The branch's local tip, unless the remote's copy holds commits it lacks and nothing of its own: the remote's then, as
+`from origin/main at 1a2b3c4d` says. A wish that records no integration branch starts from the reference branch. The
+reference branch is fetched first, at most once a minute, and read from the remote (`refs/remotes/origin/main`), the
+local branch only in a repository without a remote or whose remote lacks it; without one at all, the worker does not
+start and says why. Review and correction workers work where the work they review or correct is.
+
+The one case where Djinn touches your copy's files is the integration branch being the one it has checked out: Git's
+`HEAD` there is that branch, so it cannot move without the files following (moved alone, your copy would show the work
+undone, and your next commit would undo it). Clean, the copy follows by a fast-forward (a two-way `read-tree`, what
+`git merge --ff-only` does to the files); with changes not committed, the branch is not moved and the work waits,
+saying so. Djinn never checks out, resets or merges in your copy.
+
 ### Pushing
 
 Pushing the integration branch to its remote is Djinn's, never an agent's: `.agents/permissions.txtpb` denies `git
@@ -285,7 +409,9 @@ push` to every worker, and their environment makes the push impossible whatever 
 pushes](providers.md#no-worker-pushes)). Djinn checks it each time a task's merge ends, and a push is **due**:
 
 - when an azima ends: it is done or to validate, as its state says (every part finished: a failed part keeps it in
-  progress, one cut short for good does not), and its last part is committed;
+  progress, one cut short for good does not), and its last part is committed. Its watchers do not count: one that
+  babysits the azima's pull or merge request runs until the merge, so a correction committed while it watches pushes
+  the branch, though the azima shows watching, not done, until its watcher ends;
 - or once three tasks are committed since the last push and more than an hour has passed since it.
 
 The [push checks](#checks) run first, on the branch's tip: red, they hold the push.
@@ -335,7 +461,8 @@ which works like a wish's integration branch:
   Djinn knows it, never another azima's branch. An azima made before its wish was switched gets its branch when its
   first part starts, or its first work is merged. Djinn records on the azima its branch, the main it lands in and the
   commit it was cut from (`djinn task get <azima> --json`: `azima.branch`, `azima.base_branch`, `azima.cut_from`); a
-  title changed later keeps the branch's name. It is never cut again while it exists, and never rebased.
+  title changed later keeps the branch's name. It is never cut again while it exists, and never rebased; deleted, it is
+  never made again by itself (a done azima, below).
 - **Its work merges into it** as a wish's does ([integration](#integration)); work of no azima goes to the wish's
   integration branch.
 - **It keeps up with main** by the same `merge_main` rules ([keeping up with main](#keeping-up-with-main)), where it
@@ -375,6 +502,14 @@ repository last fetched it (a teammate pushed to the pull request's branch), tak
 would push nothing there without forcing, and never forces. The work waits, saying why; the lead hears it once; once a
 person aligns the branches, the work merges. The project's main branch is kept up by its own rules
 ([keeping up with main](#keeping-up-with-main)).
+
+**A done azima, a deleted branch.** Work done in an azima after it is done is not merged: Djinn
+merges nothing more into a done azima's branch and never pushes it by itself (`djinn project push --branch` still
+pushes it when you ask). Nor does Djinn make an azima's branch again once it is deleted, here or wherever its work
+landed (in main through another merge request, say): not from main, not from the remote's copy. The work waits, saying
+why, and the lead hears it once, in one line: reopen the azima (for a deleted branch, name it again with
+`djinn task update <azima> --branch <name>`: made from the remote's when the remote holds it, else cut from main) or
+drop the work (`djinn task done <task> --drop`). A live azima whose branch is there merges and pushes as above.
 
 **Switching a wish to per azima when its work already lives on the wish's branch.** A wish that pushed per wish, one
 azima carrying its subject, has that azima's work merged into the wish's integration branch, `ET-1234-the-fix`, perhaps
@@ -425,10 +560,12 @@ workers, naming them), or when the running build is broken (a crash or failed ch
 (set in Djinn's own settings: the window proposes each new build, to install or skip), no install questions are asked.
 
 The commands' words are split on spaces, without a shell. The integration branch of a wish is, in each project, the
-branch your checkout was on when the wish was made; `djinn wish set-integration <wish> --branch feat/x` changes it, or
-the chip that names it in the wish's head, to a local branch (`djinn project branches <project>` lists them, Djinn's
-task branches left out) or to a new one made from it (`--create-branch`; from the remote's branch of that name when the
-remote holds one, an open pull request's). A change is refused while a merge into the
+project's reference branch when the wish was made (`main_branch`, else the remote's default branch, else `main`, else
+`master`), never the branch your copy has checked out (W227); `djinn wish set-integration <wish> --branch feat/x`
+changes it, or the chip that names it in the wish's head, to a local branch (`djinn project branches <project>` lists
+them, Djinn's task branches left out, with the reference branch) or to a new one made from it (`--create-branch`; from
+the remote's branch of that name when the remote holds one, an open pull request's; from the reference branch, the
+remote's, for a wish that records none). A change is refused while a merge into the
 branch runs (a batch merged and tested, a correction or review worker, main's merge settled), Djinn naming it. Per wish,
 a wish's work lands in that branch; per azima, an azima's work lands in main through its own branch and pull request.
 
@@ -443,8 +580,9 @@ main simply moves to main's commit:
 1. **When it looks.** At most every `merge_main_minutes` (an hour by default), and at once when the running Djinn finds
    a new release, Djinn fetches main from its remote, with the tags, through git with your own credentials, never
    prompting for them; a repository without a remote looks at its local main. Main is `main_branch`, else the remote's
-   default branch (`origin/HEAD`, as a clone records it), else `main`, else `master`. A wish whose integration branch is
-   main itself has nothing to merge.
+   default branch (`origin/HEAD`, as a clone records it), else `main`, else `master`; the same branch is the one an
+   azima's branch is cut from and its pull request aims at, never `main` in place of the one named. A wish whose
+   integration branch is main itself has nothing to merge.
 2. **When it merges.** By default (`MERGE_MAIN_RELEASE`), once main holds a release the branch lacks: a tag `v1.2.3`
    whose commit, or the commit it sits on, is in main (`task release` puts the built interface in a commit of its own
    on top of main, off any branch: that commit never comes in). `MERGE_MAIN_COMMIT` merges as soon as main holds any

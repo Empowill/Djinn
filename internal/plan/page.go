@@ -208,7 +208,8 @@ func (p *Pages) render(ctx context.Context, id string, create bool) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err
 	}
-	return writeFile(file, data)
+	// Unsynced: a page changes often, and its next change renders it again from the database.
+	return renamer.WriteAtomicNoSync(file, data, 0o600)
 }
 
 func (p *Pages) forget(id string) {

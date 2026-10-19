@@ -63,6 +63,7 @@ func (h *Harness) mainPass(ctx context.Context) {
 		logx.L().Error("read the wishes", "loop", "main", "err", err)
 		return
 	}
+	fetched := map[string]error{} // main is fetched once a pass in each repository, by repository and ref (fetchedKey).
 	for _, wish := range wishes {
 		if s := wish.GetState(); s == planv1.WishState_WISH_STATE_PAUSED || s == planv1.WishState_WISH_STATE_GRANTED {
 			continue
@@ -71,8 +72,9 @@ func (h *Harness) mainPass(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			h.keepUp(ctx, wish, projectID, now)
+			h.keepUp(ctx, wish, projectID, now, fetched)
 		}
+		h.lookMerged(ctx, wish, now, fetched)
 	}
 }
 
@@ -128,7 +130,7 @@ func azimaMain(projectID string, edit func(*planv1.WishMain)) func(*planv1.Azima
 // keepUp merges the main branch of the project projectID into wish's integration branch there, and under the
 // per-azima push strategy into the branches of its azimas not done, when a look is due (now: whatever the cadence)
 // and main holds what the settings wait for.
-func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID string, now bool) {
+func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID string, now bool, fetched map[string]error) {
 	project, err := store.Get[*planv1.Project](ctx, h.store, projectID)
 	if err != nil || !project.GetGit() {
 		return
@@ -154,7 +156,6 @@ func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID strin
 		!slices.ContainsFunc(lines, func(l mainLine) bool { return l.branch == branch }) {
 		lines = slices.Insert(lines, 0, mainLine{wish: wish, project: project, branch: branch})
 	}
-	fetched := map[string]error{} // main is fetched once for every line of a look.
 	for _, l := range lines {
 		if ctx.Err() != nil {
 			return
@@ -164,7 +165,7 @@ func (h *Harness) keepUp(ctx context.Context, wish *planv1.Wish, projectID strin
 }
 
 // keepLineUp merges main into the branch of the line l when a look is due and main holds what the settings wait for;
-// fetched holds main's fetches already made in this look, by ref.
+// fetched holds main's fetches already made in this pass (fetchedKey).
 func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Settings, now bool, fetched map[string]error) {
 	branch := l.branch
 	state := h.lineState(ctx, l)
@@ -176,15 +177,20 @@ func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Sett
 		h.editLine(ctx, l, func(m *planv1.WishMain) { m.CorrectedBy = "" })
 		now = true
 	}
-	repo := l.project.GetDirectory()
-	key := l.key()
-	// Main merged into a branch whose remote holds commits it lacks could not be pushed (remote_branch.go).
-	if why := apart(ctx, repo, settings, branch); why != "" {
-		h.editLine(ctx, l, func(m *planv1.WishMain) { m.Held = why })
-		h.tellApart(ctx, l.wish, why)
+	// Nothing merges into a branch a correction repairs, main no more than work (repair.go): it waits for it.
+	if r := h.repairOn(ctx, l.wish, l.project, branch); r != nil {
 		return
 	}
-	if last := state.GetCheckTime(); !now && last != nil && h.now().Sub(last.AsTime()) < settings.MergeMainEvery {
+	repo := l.project.GetDirectory()
+	key := l.key()
+	// Main merged into a branch whose remote holds commits it lacks could not be pushed: the branch is brought up to
+	// the remote's first, as this repository last saw it, fetched when a look is due; or main waits (remote_branch.go).
+	due := now || state.GetCheckTime() == nil || h.now().Sub(state.GetCheckTime().AsTime()) >= settings.MergeMainEvery
+	if why := h.catchUp(ctx, l.wish, repo, branch, due); why != "" {
+		h.editLine(ctx, l, func(m *planv1.WishMain) { m.Held = why })
+		return
+	}
+	if !due {
 		// Not time to look at main yet; a merge tested green moves the branch as soon as it can.
 		if t, ok := h.mainTested[key]; ok {
 			if old, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
@@ -207,9 +213,9 @@ func (h *Harness) keepLineUp(ctx context.Context, l mainLine, settings plan.Sett
 		return
 	case err == nil:
 		var ok bool
-		if err, ok = fetched[ref]; !ok {
+		if err, ok = fetched[fetchedKey(repo, ref)]; !ok {
 			err = h.fetchMain(ctx, l.wish.GetId(), repo, ref)
-			fetched[ref] = err
+			fetched[fetchedKey(repo, ref)] = err
 		}
 	}
 	if err != nil {
@@ -289,6 +295,7 @@ func (h *Harness) mergeMain(
 	defer h.integrateMu.Unlock()
 	key := l.key()
 	repo := l.project.GetDirectory()
+	h.setDoing("the merge of " + shown + " into " + l.branch)
 	done, ok := h.mainTested[key]
 	message := "djinn: merge " + shown
 	switch {
@@ -299,6 +306,7 @@ func (h *Harness) mergeMain(
 		sha, f, why := h.mergeAndCheckMain(ctx, l.wish, l.project, settings, l.branch, shown, mainSha, old, release)
 		switch {
 		case ctx.Err() != nil:
+			h.cutPass()
 			return // djinn up stops: main is merged again at the next start.
 		case f != nil:
 			h.mainFailed(ctx, l, settings, shown, f, attempts)
@@ -309,6 +317,10 @@ func (h *Harness) mergeMain(
 		}
 		done = mainTested{old: old, main: mainSha, sha: sha, shown: shown, release: release}
 		h.mainTested[key] = done
+	}
+	if ctx.Err() != nil {
+		h.cutPass()
+		return // djinn up stops: main is merged again at the next start.
 	}
 	holder, why, moved := moveBranch(ctx, repo, l.branch, old, done.sha, message)
 	if why != "" {
@@ -339,10 +351,13 @@ func (h *Harness) mergeAndCheckMain(
 	if release != "" {
 		msg = fmt.Sprintf("Merge %s (%s) into %s", shown, release, branch)
 	}
-	if _, err := git(ctx, wt, "merge", "--no-ff", "--no-edit", "-m", msg, mainSha); err != nil {
-		conflicts := conflicted(ctx, wt)
+	// A merge begun ends, or is aborted, though djinn up stops: none is left half done in the worktree (W52).
+	keep, done := gitx.Uncut(ctx)
+	defer done()
+	if _, err := git(keep, wt, "merge", "--no-ff", "--no-edit", "-m", msg, mainSha); err != nil {
+		conflicts := conflicted(keep, wt)
 		conflict := func(why string) (string, *planv1.IntegrationFailure, string) {
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return "", &planv1.IntegrationFailure{
 				State: planv1.IntegrationState_INTEGRATION_STATE_CONFLICT, Base: old, MergeBranch: mainSha, Files: conflicts,
 				Reason: why, MainSha: mainSha,
@@ -350,16 +365,16 @@ func (h *Harness) mergeAndCheckMain(
 		}
 		switch {
 		case errors.Is(err, errNoIdentity):
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return "", nil, noIdentity
 		case len(conflicts) == 0:
-			_, _ = git(ctx, wt, "merge", "--abort")
+			_, _ = git(keep, wt, "merge", "--abort")
 			return "", nil, fmt.Sprintf("merge %s: %v", shown, err)
 		case !generatedOnly(conflicts, prefix, settings.Generated) || settings.Generate == "":
 			return conflict(fmt.Sprintf("%s conflicts with %s in %s", shown, branch, strings.Join(conflicts, ", ")))
 		}
 		if why := h.settleGenerated(ctx, shown, "", wt, dir, settings.Generate, conflicts, func() string {
-			failed, _, _ := h.setUp(ctx, project, settings, wish.GetId(), "", wt, dir)
+			failed, _, _, _ := h.setUp(ctx, project, settings, wish.GetId(), "", wt, dir)
 			return failed
 		}); why != "" {
 			return conflict(why)
@@ -369,15 +384,15 @@ func (h *Harness) mergeAndCheckMain(
 	if err != nil {
 		return "", nil, err.Error()
 	}
-	command, why, out, stopped := h.commitChecks(ctx, wish, project, settings, nil, sha, wt, dir, func(*planv1.ProjectCheck) {})
+	command, why, out, run, stopped := h.commitChecks(ctx, wish, project, settings, nil, sha, wt, dir, func(*planv1.ProjectCheck) {})
 	switch {
 	case stopped != "":
 		return "", nil, stopped
 	case why != "":
-		return "", &planv1.IntegrationFailure{
+		return "", keptOutput(&planv1.IntegrationFailure{
 			State: planv1.IntegrationState_INTEGRATION_STATE_RED, Base: sha, Command: command, Output: tail(out), Reason: why,
 			MainSha: mainSha,
-		}, ""
+		}, run), ""
 	}
 	return sha, nil, ""
 }
@@ -473,6 +488,9 @@ func (h *Harness) mainMerged(
 	}
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(actorHarness, methodMain, record); err != nil {
+			return err
+		}
+		if err := tx.Change(&planv1.ProjectSync{WishId: wish.GetId(), Branch: branch}); err != nil {
 			return err
 		}
 		merged := func(m *planv1.WishMain) {
@@ -580,23 +598,21 @@ func findMain(ctx context.Context, repo, name string) (main, ref string, err err
 		}
 		return name, "refs/remotes/" + remote + "/" + target, nil
 	}
-	remote, _ := pushTarget(ctx, repo, "HEAD") // origin, else the only remote
-	if remote != "" {
-		if head, err := git(ctx, repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/"+remote+"/HEAD"); err == nil {
-			name := strings.TrimPrefix(head, remote+"/")
-			return name, "refs/remotes/" + remote + "/" + name, nil
-		}
+	return plan.DefaultReference(ctx, repo)
+}
+
+// Reference is the project's reference branch, from name, its main_branch setting, as mainRef finds it, and the ref
+// Djinn merges it from; an error when the repository does not hold that ref, nor finds any.
+func (h *Harness) Reference(ctx context.Context, project *planv1.Project, name string) (branch, ref string, err error) {
+	repo := project.GetDirectory()
+	if branch, ref, err = findMain(ctx, repo, name); err != nil {
+		return "", "", err
 	}
-	for _, name := range []string{"main", "master"} {
-		if remote != "" {
-			if _, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/remotes/"+remote+"/"+name); err == nil {
-				return name, "refs/remotes/" + remote + "/" + name, nil
-			}
-		} else if _, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+name); err == nil {
-			return name, "refs/heads/" + name, nil
-		}
+	if _, err := plan.RefCommit(ctx, repo, ref); err != nil {
+		short := strings.TrimPrefix(strings.TrimPrefix(ref, "refs/remotes/"), "refs/heads/")
+		return branch, ref, fmt.Errorf("the repository holds no %s: fetch it, or name another branch", short)
 	}
-	return "", "", errors.New("the project has no main branch: name it with main_branch in its settings")
+	return branch, ref, nil
 }
 
 // reTagClash matches git's error line when a tag fetch is rejected because it would clobber an existing local tag.
@@ -619,6 +635,7 @@ func (h *Harness) fetchMain(ctx context.Context, wishID, repo, ref string) error
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
+		h.netSign(planv1.Provider_PROVIDER_UNSPECIFIED, out.String(), false)
 		return fmt.Errorf("fetch %s from %s: %s", target, remote, cmp.Or(strings.TrimSpace(out.String()), err.Error()))
 	}
 	tagCmd, cancelTags := gitx.Command(ctx, repo, "fetch", "--tags", remote)

@@ -117,7 +117,7 @@ opens a wish that already knows how to work. How a project declares one: [`docs/
   pull request open then merged: a summary, then `MERGED` and exit 0; `docs/wish-templates.md`)
 - [x] `babysit-mr` for GitLab: its template matches a merge request's link or `!12`, not a pull request; its watcher,
   under Djinn's permissions, prints each change of the pipeline's jobs, merge status and comments, `MERGED` on the
-  merge and exits, and only reads. (`TestBabysitMRReadsOnly`, a fake `glab` on the `PATH`; `docs/wish-templates.md`)
+  merge and exits, and only reads. (`TestWatch_BabysitMR`, a fake `glab` on the `PATH`; `docs/wish-templates.md`)
 - [ ] `babysit-mr` run by hand on a real merge request open then merged. (needs: a person and a GitLab project)
 - [x] The brief's rules tell a lead to spawn a watcher (`--provider watch`, `--restart`) instead of polling, and to
   propose a template (`metadata.djinn.wish`) for a request that comes back. (`TestBrief`, `briefRules`;
@@ -135,8 +135,8 @@ opens a wish that already knows how to work. How a project declares one: [`docs/
 
 - Who pushes a babysat pull request's fixes? The design (09/10/2026) and both babysit skills have the lead review
   the workers' diffs, then "commit and push once for the round". Since T30, agents never push: Djinn commits each
-  task's work into the wish's integration branch, by default the branch the project's checkout was on when the wish
-  was made, and pushes it. For a babysit wish that branch must be the pull request's own: `djinn wish set-integration`
+  task's work into the wish's integration branch, by default the project's reference branch (since W227; before, the
+  branch the project's checkout was on when the wish was made), and pushes it. For a babysit wish that branch must be the pull request's own: `djinn wish set-integration`
   can set it, but neither the template nor the skills do, and the skills' step 3 still tells the lead to push.
 
 - The Agent Skills format describes `metadata` as a map of strings; `metadata.djinn.wish` nests a map. Claude Code
@@ -213,7 +213,7 @@ request is: filed in a wish, or a new one, from a template when one matches (an 
 - [x] E2e: a fake source prints an assigned merge request, the card proposes the babysit template, a click makes the
   wish with its watcher. (`e2e/inbox.spec.ts`)
 - [x] The inbox shows outside the flying carpet: a count in the side panel, a notification for a new item.
-  (`TestNoticesShowNewInboxItems`: a new item is notified once, with its source and its text; a dismissed, routed or
+  (`TestNoticesRun/shows_new_inbox_items`: a new item is notified once, with its source and its text; a dismissed, routed or
   old one is not; `tests/screens.test.mjs` "the side panel counts the new inbox items on the flying carpet's entry,
   even with no active wish")
 - [x] A source runs only once plugged in, per machine; an unplugged one never starts a command. (`TestSourceUnplugged`:

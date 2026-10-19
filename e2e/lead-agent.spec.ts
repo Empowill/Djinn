@@ -2,12 +2,18 @@
 // found on djinn's PATH, and picking Antigravity starts a lead of it in the lead's terminal, from the same first
 // message as every lead, and it becomes the one lead. The description under the title edits in place.
 // The agents are fake: claude and agy scripts on djinn's PATH.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { dropLead, leadFolder, leadRows, setLead } from "./lead";
+import {
+  dropLead,
+  dropTerminalLead,
+  leadFolder,
+  leadRows,
+  setLead,
+} from "./lead";
 import { portable } from "./portable";
 
 const binary = path.resolve(
@@ -73,6 +79,7 @@ test("the description under the title edits in place, as djinn wish describe", a
 
 test.describe("Lead of another agent", () => {
   test.skip(process.platform === "win32", "the fake agents are shell scripts");
+  test.beforeEach(dropTerminalLead);
   test.afterEach(dropLead);
 
   test("the arrow beside Lead starts an Antigravity lead, which becomes the lead", async ({

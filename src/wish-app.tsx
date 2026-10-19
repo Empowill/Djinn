@@ -1,40 +1,68 @@
-// The window, on the services: the side panel (the flying carpet, the Hourglass, the wishes by rank, the projects), the
-// flying carpet of the active wishes, the Hourglass's live metrics or the wish shown, and the status bar (whether the
-// page follows djinn, the machine). What stays on this page is how it shows: what is shown and the side panel folded.
-import { ArrowLeft, PanelLeft, Plus, Settings2, Upload } from "lucide-react";
+// The window, on the services: the side panel (the flying carpet, the wishes by rank, the projects, the Hourglass, the
+// Grimoire), the flying carpet of the active wishes, the Hourglass's live metrics, the Grimoire or the wish shown, and
+// the status bar (whether the page follows djinn, the machine). What stays on this page is how it shows: what is shown
+// and the side panel folded.
+import { ArrowLeft, PanelLeft, Plus, Settings2 } from "lucide-react";
 import { AnimatePresence, LayoutGroup } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Change, type ProjectSync, type Wish } from "../gen/ts/plan/v1/plan_pb";
+import { ShownTheme } from "../gen/ts/ui/v1/ui_pb";
+import { useShownTheme } from "./theme";
 import { message } from "./data/client";
 import {
   useClients,
   useData,
   useDjinn,
   useMachine,
+  useReadState,
+  useRetryRead,
   useStore,
   useWishDetails,
 } from "./data/djinn";
+import type { ReadState } from "./data/store";
+import { ReadingLine } from "./reading-line";
 import { importWish } from "./data/exchange";
-import { isActive, runningOf, waitsForYou } from "./data/format";
+import { followPresence } from "./data/presence";
+import {
+  date,
+  gateWaiters,
+  isActive,
+  runningOf,
+  waitsForYou,
+  waitsOf,
+} from "./data/format";
 import { AgentSetup, needsSetup } from "./agent-setup";
 import { FlightPlan } from "./flight-plan";
 import { Brand, Toast } from "./frame";
 import { HOURGLASS, Hourglass } from "./hourglass";
-import { t } from "./i18n";
+import { HeldGates } from "./ifrit";
+import { language, t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { platformShortcut, TooltipButton } from "./tooltip";
-import { AddProject, MakeWish, ProjectPanel, Settings } from "./wish-dialogs";
-import { Docs } from "./docs";
+import { useInboxCount } from "./inbox";
+import { ProjectPanel } from "./project-panel";
+import { SummoningCircle } from "./summoning-circle";
+import { AddProject, MakeWish, Settings } from "./wish-dialogs";
+import { Docs, GRIMOIRE } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
 import { startWishSmokePrewarm } from "./wish-smoke";
-import { type Opening, type Reaching, WishView } from "./wish-view";
+import { TilasmOver } from "./tilasm-over";
+import {
+  type Landing,
+  type Opening,
+  type Reaching,
+  WishView,
+} from "./wish-view";
+import { DjinnEye } from "./djinn-eye";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, pageDigit } from "./page-keys";
+import { hideSplash } from "./splash";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | "docs" | "agents" | null;
+type Modal = "make" | "project" | "settings" | "agents" | "summoning" | null;
 
 // What the window shows instead of a wish: the flying carpet of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -70,7 +98,7 @@ export function WishApp() {
   const loaded = useData((s) => s.loaded);
   const live = useData((s) => s.live);
   const error = useData((s) => s.error);
-  const inbox = useData((s) => s.inbox.length);
+  const inbox = useInboxCount();
   const [selected, setSelected] = useState(() => stored("djinn.wish"));
   // Keep a just-created wish renderable for the same commit as MakeWish leaves, so the shared action surface can
   // animate into the wish view while the next store list is still in flight.
@@ -78,8 +106,9 @@ export function WishApp() {
   const [collapsed, setCollapsed] = useState(
     () => stored("djinn.sidebar.collapsed") === "1",
   );
-  // The sidebar glides only once folded or unfolded by hand, never as the page opens.
-  const [glide, setGlide] = useState(false);
+  // The sidebar glides only once folded or unfolded by hand, never as the page opens, and for the glide's time only:
+  // a wish's states coming later appear without it. A count of the folds, so that a second fold keeps the glide.
+  const [glide, setGlide] = useState(0);
   const [modal, setModal] = useState<Modal>(null);
   const [making, setMaking] = useState(false);
   const [projectId, setProjectId] = useState("");
@@ -90,16 +119,23 @@ export function WishApp() {
   const [opening, setOpening] = useState<Opening>();
   // The element a line of the attention bar asks to bring into sight, in its wish; a new object at each request.
   const [reaching, setReaching] = useState<Reaching>();
+  // The wish clicked in the side panel, even the one shown: its first tab, the questions, and nothing over it; a new
+  // object at each click.
+  const [landing, setLanding] = useState<Landing>();
   const importRef = useRef<HTMLInputElement>(null);
   const closeToast = useCallback(() => setToast(""), []);
   const closeMake = useCallback(() => setModal(null), []);
-  const closeDocs = useCallback(() => setModal(null), []);
   const toggleSidebar = useCallback(() => {
-    setGlide(true);
+    setGlide((n) => n + 1);
     setCollapsed((value) => !value);
   }, []);
-  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN) or the Hourglass (HOURGLASS), by
-  // the side panel or by the keyboard (PAGES).
+  useEffect(() => {
+    if (!glide) return;
+    const timer = window.setTimeout(() => setGlide(0), 400);
+    return () => window.clearTimeout(timer);
+  }, [glide]);
+  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN), the Hourglass (HOURGLASS) or the
+  // Grimoire (GRIMOIRE), by the side panel or by the keyboard (PAGES).
   const showPage = useCallback((page: string) => {
     setSelected(page);
     setModal(null);
@@ -138,6 +174,7 @@ export function WishApp() {
   useEffect(() => {
     setOpening((o) => (o && o.wishId !== selected ? undefined : o));
     setReaching((r) => (r && r.wishId !== selected ? undefined : r));
+    setLanding((l) => (l && l.wishId !== selected ? undefined : l));
   }, [selected]);
   // The window opens with no agent ready (none installed and signed in, or of unknown sign-in): the setup of the agents
   // opens by itself. Otherwise it waits in the settings and the lead's menu.
@@ -215,36 +252,76 @@ export function WishApp() {
   // The active wishes are always read: the flying carpet and the side panel count what waits in each.
   const active = wishes.filter(isActive);
   const details = useWishDetails(active.map((w) => w.id));
+  const gateWaiting = useData((s) => gateWaiters(s.gates));
   const counts = Object.fromEntries(
     active.map((w) => [
       w.id,
       {
         questions: details[w.id]?.questions.filter(waitsForYou).length ?? 0,
         ...runningOf(details[w.id]?.tasks ?? []),
+        waits: waitsOf(details[w.id]?.tasks ?? [], gateWaiting),
       },
     ]),
   );
-  // What shows: the wish chosen, or the Hourglass, else the flying carpet while a wish is active, else the first wish.
+  // What shows: the wish chosen, or the Hourglass, or the Grimoire, else the flying carpet while a wish is active, else
+  // the first wish.
   const chosen = wishes.find((w) => w.id === selected);
   const pendingWish = justMade?.id === selected ? justMade : undefined;
   const hourglass = !chosen && !pendingWish && selected === HOURGLASS;
+  const grimoire = !chosen && !pendingWish && selected === GRIMOIRE;
   const plan =
     !hourglass &&
+    !grimoire &&
     !chosen &&
     !pendingWish &&
     (selected === PLAN || active.length > 0);
   const wish =
-    plan || hourglass ? undefined : (chosen ?? pendingWish ?? wishes[0]);
+    plan || hourglass || grimoire
+      ? undefined
+      : (chosen ?? pendingWish ?? wishes[0]);
   // Until the wishes are read, no page is chosen: the home page would show, then give way to the flying carpet or a wish
-  // with a header of its own, and a gauge focused or measured in between would be gone. A failed read shows home.
-  const settling = !loaded && !error;
+  // with a header of its own, and a gauge focused or measured in between would be gone.
+  const wishesState = useReadState("wishes");
+  const projectsState = useReadState("projects");
+  const retryWishes = useRetryRead("wishes");
+  const retryProjects = useRetryRead("projects");
+  const settling = wishes.length === 0 && wishesState !== "ready";
+  // The waking splash in index.html stays from the first frame until the first wishes read completes, or hands off to
+  // the in-app reading lines when a read goes slow or fails.
+  useEffect(() => {
+    if (
+      loaded ||
+      wishesState !== "reading" ||
+      projectsState === "slow" ||
+      projectsState === "failed"
+    ) {
+      hideSplash();
+    }
+  }, [loaded, projectsState, wishesState]);
   const shownId = wish?.id ?? "";
   const newWishShortcut = platformShortcut("N");
   const sidebarShortcut = platformShortcut("\\");
-  // djinn sends no notification for the wish shown while the window is in front.
+  // djinn sends no notification for the wish shown while the window is in front; the theme shown, the system's
+  // resolved, sets the Djinn's tone.
+  const theme = useShownTheme();
   useEffect(() => {
-    void clients.ui.view({ wishId: shownId }).catch(() => undefined);
-  }, [clients, shownId]);
+    void clients.ui
+      .view({
+        wishId: shownId,
+        theme: theme === "light" ? ShownTheme.LIGHT : ShownTheme.DARK,
+      })
+      .catch(() => undefined);
+  }, [clients, shownId, theme]);
+  // A key, a click or a scroll in the window in front says the developer is there: it keeps their ifrits lit.
+  useEffect(
+    () =>
+      followPresence(
+        () => clients.ui.touch({}),
+        window,
+        () => document.hasFocus(),
+      ),
+    [clients],
+  );
   const project = projects.find((p) => p.id === projectId);
 
   const move = (wishId: string, to: number) =>
@@ -252,15 +329,20 @@ export function WishApp() {
       .move({ wishId, to })
       .catch((err) => setToast(message(err)))
       .finally(() => void data.changed(wishId, [Change.WISH]));
+  const reorder = (wishId: string, to: number) =>
+    void clients.wishes
+      .reorder({ wishId, to })
+      .catch((err) => setToast(message(err)))
+      .finally(() => void data.changed(wishId, [Change.WISH]));
 
   const importFile = async (file: File) => {
     try {
       const res = await importWish(clients, file);
-      await data.changed(res.wishId, [Change.WISH, Change.PROJECT]);
       setSelected(res.wishId);
       setToast(
         res.already ? t("import.already") : res.note || t("import.done"),
       );
+      void data.changed(res.wishId, [Change.WISH, Change.PROJECT]);
     } catch (err) {
       setToast(message(err));
     }
@@ -271,6 +353,14 @@ export function WishApp() {
     (id: string, sync: ProjectSync) =>
       clients.projects
         .push({ project: id, wish: sync.wishId, branch: sync.branch })
+        .finally(() => void data.changed("", [Change.PROJECT])),
+    [clients, data],
+  );
+
+  const pullProject = useCallback(
+    (id: string, sync: ProjectSync) =>
+      clients.projects
+        .pull({ project: id, branch: sync.branch })
         .finally(() => void data.changed("", [Change.PROJECT])),
     [clients, data],
   );
@@ -293,21 +383,7 @@ export function WishApp() {
           makeBackAction.current?.();
         }}
       >
-        <TooltipButton
-          type="button"
-          className="sidebar-toggle app-toolbar-toggle"
-          onClick={toggleSidebar}
-          disabled={making}
-          label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-          tooltip={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
-          shortcut={sidebarShortcut.label}
-          aria-keyshortcuts={sidebarShortcut.aria}
-          aria-expanded={!collapsed}
-          aria-controls="djinn-sidebar"
-        >
-          <PanelLeft size={16} aria-hidden="true" />
-        </TooltipButton>
-        {/* Back shows on the page that needs it, after the toggle, which never moves. */}
+        {/* Back shows on the page that needs it. */}
         {modal === "make" && (
           <TooltipButton
             type="button"
@@ -331,9 +407,23 @@ export function WishApp() {
       >
         <div className="sidebar-brand">
           <div className="sidebar-brand-main">
-            <Brand small={collapsed} />
+            <Brand small={collapsed} eye />
             {!collapsed && <span className="version-tag">EARLY ACCESS</span>}
           </div>
+          <TooltipButton
+            type="button"
+            className="sidebar-toggle"
+            onClick={toggleSidebar}
+            disabled={making}
+            label={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+            tooltip={collapsed ? t("app.expand_nav") : t("app.collapse_nav")}
+            shortcut={sidebarShortcut.label}
+            aria-keyshortcuts={sidebarShortcut.aria}
+            aria-expanded={!collapsed}
+            aria-controls="djinn-sidebar"
+          >
+            <PanelLeft size={16} aria-hidden="true" />
+          </TooltipButton>
         </div>
         {/* Folded, the sidebar is a rail of icons that keeps each wish's counts (Q03). */}
         <div className="sidebar-content">
@@ -365,27 +455,28 @@ export function WishApp() {
             onSelectPlan={() => showPage(PLAN)}
             hourglassSelected={hourglass}
             onSelectHourglass={() => showPage(HOURGLASS)}
+            grimoireSelected={grimoire}
+            onSelectGrimoire={() => showPage(GRIMOIRE)}
+            onOpenSummoningCircle={() => setModal("summoning")}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
             onSelectWish={(id) => {
               setSelected(id);
               setModal(null);
+              setOpening(undefined);
+              setReaching(undefined);
+              setLanding({ wishId: id });
             }}
             onSelectProject={setProjectId}
             onMove={move}
+            onReorder={reorder}
             onNewProject={() => setModal("project")}
             onPush={pushProject}
+            onPull={pullProject}
+            onImportWish={() => importRef.current?.click()}
+            importDisabled={!loaded}
           />
-          <button
-            className="nav-item import-nav"
-            onClick={() => importRef.current?.click()}
-            title={t("app.import_wish")}
-            disabled={!loaded}
-          >
-            <Upload size={15} />
-            {!collapsed && <span>{t("app.import_wish")}</span>}
-          </button>
           <div className="sidebar-bottom">
             <button
               className="profile"
@@ -407,51 +498,73 @@ export function WishApp() {
         </div>
       </aside>
       <main className="main-shell">
-        <LayoutGroup id="workspace-action-group">
-          {modal === "make" ? (
-            <MakeWish
-              projects={projects}
-              active={active.length}
-              onBusyChange={setMaking}
-              backActionRef={makeBackAction}
-              onBackSetupChange={setMakeBackInSetup}
-              onClose={closeMake}
-              onMade={(made, warning) => {
-                setModal(null);
-                setSelected(made.id);
-                setJustMade(made);
-                void data.changed(made.id, [Change.WISH]);
-                if (warning) setToast(warning);
-              }}
-            />
-          ) : settling ? (
-            <div className="wish-view" aria-busy="true" />
-          ) : hourglass ? (
-            <Hourglass
-              wishes={active}
-              target={reaching?.wishId === HOURGLASS ? reaching : undefined}
-            />
-          ) : plan ? (
-            <FlightPlan
-              wishes={active}
-              onOpen={setSelected}
-              onToast={setToast}
-              onSetupAgents={() => setModal("agents")}
-            />
-          ) : wish ? (
-            <WishView
-              key={wish.id}
-              wish={wish}
-              opening={opening?.wishId === wish.id ? opening : undefined}
-              reaching={reaching?.wishId === wish.id ? reaching : undefined}
-              onToast={setToast}
-              onSetupAgents={() => setModal("agents")}
-            />
-          ) : (
-            <HomePlaceholder />
-          )}
-          <StatusBar live={live} error={error} />
-        </LayoutGroup>
+        {/* A tilasm a question names opens over the view shown, which stays as it is under it. */}
+        <TilasmOver
+          view={modal === "make" ? "make" : selected}
+          landing={landing}
+          onToast={setToast}
+        >
+          <LayoutGroup id="workspace-action-group">
+            {modal === "make" ? (
+              <MakeWish
+                projects={projects}
+                active={active.length}
+                onBusyChange={setMaking}
+                backActionRef={makeBackAction}
+                onBackSetupChange={setMakeBackInSetup}
+                onClose={closeMake}
+                onMade={(made, warning) => {
+                  setModal(null);
+                  setSelected(made.id);
+                  setJustMade(made);
+                  void data.changed(made.id, [Change.WISH]);
+                  if (warning) setToast(warning);
+                }}
+              />
+            ) : settling ? (
+              <div className="wish-view" aria-busy={wishesState !== "failed"}>
+                <ReadingLine
+                  kind="wishes"
+                  state={wishesState}
+                  size="card-r"
+                  onRetry={retryWishes}
+                />
+              </div>
+            ) : hourglass ? (
+              <Hourglass
+                wishes={active}
+                target={reaching?.wishId === HOURGLASS ? reaching : undefined}
+              />
+            ) : grimoire ? (
+              <Docs />
+            ) : plan ? (
+              <FlightPlan
+                wishes={active}
+                onOpen={setSelected}
+                onOpenProject={setProjectId}
+                onToast={setToast}
+                onSetupAgents={() => setModal("agents")}
+              />
+            ) : wish ? (
+              <WishView
+                key={wish.id}
+                wish={wish}
+                opening={opening?.wishId === wish.id ? opening : undefined}
+                reaching={reaching?.wishId === wish.id ? reaching : undefined}
+                landing={landing?.wishId === wish.id ? landing : undefined}
+                onToast={setToast}
+                onSetupAgents={() => setModal("agents")}
+              />
+            ) : (
+              <HomePlaceholder
+                projects={projects.length}
+                projectsState={projectsState}
+                onRetryProjects={retryProjects}
+              />
+            )}
+            <StatusBar live={live} error={error} />
+          </LayoutGroup>
+        </TilasmOver>
       </main>
       <AnimatePresence>
         {modal === "project" && (
@@ -464,14 +577,11 @@ export function WishApp() {
             }}
           />
         )}
-        {modal === "settings" && (
-          <Settings
-            onClose={() => setModal(null)}
-            onDocs={() => setModal("docs")}
-          />
-        )}
-        {modal === "docs" && <Docs onClose={closeDocs} />}
+        {modal === "settings" && <Settings onClose={() => setModal(null)} />}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
+        {modal === "summoning" && (
+          <SummoningCircle onClose={() => setModal(null)} />
+        )}
         {project && modal !== "make" && (
           <ProjectPanel
             project={project}
@@ -481,6 +591,7 @@ export function WishApp() {
         )}
       </AnimatePresence>
       <Toast text={toast} onClose={closeToast} />
+      <DjinnEye live={live} />
       <input
         type="file"
         accept=".json,.djinn"
@@ -497,37 +608,97 @@ export function WishApp() {
   );
 }
 
-function HomePlaceholder() {
+// HomePlaceholder is the window with no wish at all: the lamp waits, for a first project, or for a first wish.
+function HomePlaceholder({
+  projects,
+  projectsState = "ready",
+  onRetryProjects,
+}: {
+  projects: number;
+  projectsState?: ReadState;
+  onRetryProjects?: () => void;
+}) {
   return (
     <div className="wish-view">
       <PageHeader middle={<OperatingLoad />} />
       <div className="wish-home-placeholder">
         <h1>{t("home.title")}</h1>
+        {projectsState !== "ready" ? (
+          <ReadingLine
+            kind="projects"
+            state={projectsState}
+            size="card-r"
+            onRetry={onRetryProjects}
+          />
+        ) : (
+          <EmptyState art="home">
+            {projects ? t("home.no_wish") : t("home.no_project")}
+          </EmptyState>
+        )}
       </div>
     </div>
   );
 }
 
-// StatusBar says whether the page follows djinn, and how the machine is doing.
+// StatusBar says whether the page follows djinn, how the machine is doing, quietly whether the network is down (W285),
+// and the gates held (HeldGates).
 function StatusBar({ live, error }: { live: boolean; error: string }) {
+  const store = useStore();
   const machine = useMachine();
   const gates = useData((s) => s.gates);
-  const held = gates.filter((g) => g.holder).length;
+  const everLive = useData((s) => s.everLive);
+  const wishes = useData((s) => s.wishes);
+  useData((s) => s);
+  const down = date(machine?.networkDownSince);
+  const active = wishes.filter(isActive);
+  const wishesReady = store.readState("wishes") === "ready";
+  const tasksDone = active.filter(
+    (w) => store.readState(Change.TASK, w.id) === "ready",
+  ).length;
+  const failed = [
+    store.readState("wishes") === "failed" ? 1 : 0,
+    store.readState("projects") === "failed" ? 1 : 0,
+    ...active.flatMap((w) => [
+      store.readState(Change.TASK, w.id) === "failed" ? 1 : 0,
+      store.readState(Change.QUESTION, w.id) === "failed" ? 1 : 0,
+      store.readState(Change.BLOCK, w.id) === "failed" ? 1 : 0,
+    ]),
+  ].reduce((a, b) => a + b, 0);
+  const label = !live
+    ? everLive || error
+      ? t("status.reconnecting")
+      : t("status.connecting")
+    : failed > 0
+      ? t("status.failed", { count: failed })
+      : !wishesReady
+        ? t("reading.wishes")
+        : tasksDone < active.length
+          ? t("status.reading_of", { n: tasksDone, count: active.length })
+          : t("status.live");
   return (
     <footer className="app-statusbar">
       <span title={error || undefined}>
         <span className={`status-dot ${live ? "green" : "neutral"}`} />
-        {live ? t("status.live") : t("status.reconnecting")}
+        {label}
       </span>
-      <span>
+      <span title={down ? t("status.network_down_hint") : undefined}>
         {machine &&
           t("status.machine", {
             running: machine.running,
             workers: machine.workers,
           })}
         {machine?.pressure && ` · ${machine.pressure}`}
+        {down &&
+          ` · ${t("status.network_down", {
+            time: down.toLocaleTimeString(language, {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          })}`}
       </span>
-      <span>{held > 0 && t("status.gates", { count: held })}</span>
+      <span>
+        <HeldGates gates={gates} />
+      </span>
     </footer>
   );
 }

@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -20,7 +21,9 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/ui"
+	usagepkg "github.com/empowill/djinn/internal/usage"
 )
 
 // Antigravity runs Google's Antigravity CLI headless: `agy --input-format stream-json --output-format stream-json`,
@@ -35,9 +38,29 @@ type Antigravity struct {
 	Command string
 	// Grace is how long a worker asked to stop has before it is killed; Grace by default.
 	Grace time.Duration
-	// IdleTimeout is how long a model call that returns nothing may wait before being cut and continued; StreamIdleTimeout by default.
+	// IdleTimeout is how long a model call that returns nothing may wait before being cut and continued;
+	// AgyIdleTimeout by default.
 	IdleTimeout time.Duration
+	// ToolIdleTimeout is how long agy may say nothing while a tool step or a background task of its own runs, before
+	// being cut and continued all the same; AgyToolIdleTimeout by default.
+	ToolIdleTimeout time.Duration
 }
+
+// AgyIdleTimeout is Antigravity's IdleTimeout by default: above agy's own idle timeout on its model's stream (5 min,
+// then agy retries the call by itself 4 s later and keeps its session; agy 1.4.1, W360), so that agy's retry comes
+// first, and Djinn cuts only a call that its retry did not save either.
+const AgyIdleTimeout = 8 * time.Minute
+
+// AgyToolIdleTimeout is Antigravity's ToolIdleTimeout by default. agy's stream-json says nothing while a command runs,
+// in the foreground or in the background: a background command is a tool step that stays ACTIVE until the command
+// ends, and agy holds back the steps that follow it until then, the model's own included (agy 1.3.3 and 1.4.1, W16
+// and W308). Past this cap, a silence is taken as a model call that returns nothing: a worker runs commands under 9
+// minutes each (workerWaitRule), and a gate wait seldom lasts longer.
+const AgyToolIdleTimeout = 30 * time.Minute
+
+// agyRulesFile is the rule file Start writes in Spec.Dir when Spec.SystemPrompt is set: agy loads GEMINI.md from its
+// working folder as a workspace rule, while Claude and Codex ignore it if the lead moves between agents.
+const agyRulesFile = "GEMINI.md"
 
 // args are the arguments of agy for spec. The prompt goes on the input, not on the command line: -p takes the
 // prompt as its value, and stream-json input replaces it.
@@ -47,19 +70,20 @@ type Antigravity struct {
 //
 // A read-only task is refused: agy's plan mode asks before writing but is not read-only, and what --sandbox blocks is
 // not documented. agy runs outside a project once a real capture proves that nothing is written or run. For the
-// same reason, permissions without edit are refused.
+// same reason, permissions without edit and without WriteDirs are refused; the driven lead runs in its own folder
+// (Spec.WriteDirs) where accept-edits is bounded by agyProject's write grants.
 //
-// With permissions, edit becomes --mode accept-edits, and network off --sandbox, which only restricts more. The rest
-// goes in an agy project of Djinn's own, given with --project (agyProject): agy takes no list of commands nor of
-// writable folders at launch. agy 1.3.3 has no auto mode on its command line (--mode takes accept-edits or plan):
-// AUTO runs as accept-edits, its project allowing every command but the denied ones.
+// With permissions, edit (or WriteDirs) becomes --mode accept-edits. The rest goes in an agy project of Djinn's own,
+// given with --project (agyProject): agy takes no list of commands nor of writable folders at launch. agy 1.3.3 has
+// no auto mode on its command line (--mode takes accept-edits or plan): AUTO runs as accept-edits, its project
+// allowing every command but the denied ones.
 func (a Antigravity) args(spec Spec) ([]string, error) {
 	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
 	if spec.ReadOnly {
 		return nil, fmt.Errorf("agy cannot run a read-only task yet: %w; use claude or codex", ErrReadOnly)
 	}
 	if p := spec.Permissions; p != nil {
-		if !p.GetEdit() {
+		if !p.GetEdit() && len(spec.WriteDirs) == 0 {
 			return nil, fmt.Errorf("agy cannot run without editing yet (the project's %s says edit: false): %w; use claude or codex",
 				filepath.ToSlash(PermissionsFile), ErrReadOnly)
 		}
@@ -81,10 +105,27 @@ func (a Antigravity) args(spec Spec) ([]string, error) {
 		args = append(args, "--conversation", spec.Resume)
 	}
 	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_ANTIGRAVITY, spec.Model) {
-		args = append(args, "--model", spec.Model)
+		args = append(args, "--model", agyModel(spec.Model))
 	}
 	// agy has no spending cap: MaxBudgetUSD is not enforced.
 	return args, nil
+}
+
+// agyModel maps short aliases or legacy labels for Antigravity's Argon and Flash models to the canonical
+// model IDs agy expects on --model.
+func agyModel(model string) string {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "gemini 4 argon (high)", "gemini-4-argon-high", "gemini-4-argon", "gemini 4 argon", "gemini-argon", "argon":
+		return "gemini-4-argon-high"
+	case "gemini 4 argon (medium)", "gemini-4-argon-medium":
+		return "gemini-4-argon-medium"
+	case "gemini 3.8 flash (high)", "gemini-3.8-flash-high", "gemini-3.8-flash", "gemini 3.8 flash", "gemini-flash", "flash":
+		return "gemini-3.8-flash-high"
+	case "gemini 3.8 flash (medium)", "gemini-3.8-flash-medium":
+		return "gemini-3.8-flash-medium"
+	default:
+		return model
+	}
 }
 
 func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
@@ -99,6 +140,11 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if err != nil {
 		return nil, err
 	}
+	if spec.SystemPrompt != "" {
+		if err := fsx.WriteAtomic(filepath.Join(spec.Dir, agyRulesFile), []byte(spec.SystemPrompt), 0o600); err != nil {
+			return nil, fmt.Errorf("write agy's system prompt: %w", err)
+		}
+	}
 	if spec.Permissions != nil {
 		if err := writeAgyProject(spec); err != nil {
 			return nil, err
@@ -110,7 +156,9 @@ func (a Antigravity) Start(ctx context.Context, spec Spec) (Worker, error) {
 			return agyWorkDone(ctx, spec.Dir, spec.StartHead, spec.Branch)
 		}
 	}
-	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: &agyParser{isWorkDone: isWorkDone}, idle: a.IdleTimeout, encode: agyMessageLine})
+	idle, toolIdle := cmp.Or(a.IdleTimeout, AgyIdleTimeout), cmp.Or(a.ToolIdleTimeout, AgyToolIdleTimeout)
+	parser := &agyParser{isWorkDone: isWorkDone, toolIdle: toolIdle, model: spec.Model}
+	return startStream(ctx, spec, command, args, grace, streamAgent{name: "agy", parser: parser, idle: idle, holdTurn: true, encode: agyMessageLine})
 }
 
 // agyMessageLine is a user message as agy reads it in stream-json.
@@ -271,7 +319,8 @@ func djinnDenials(dir string, keepPaths []string) []string {
 // For reading, agy headless requires explicit read_file grants (W254, W269). Djinn grants read_file on what a
 // worker needs to read: the repository (main checkout and .git), Go's root, module and build caches, npm's cache,
 // /usr and /etc read-only, and the user's home with denials for secrets and Djinn's own data folder except the
-// task's worktree.
+// task's worktree and the folders it reads there (Spec.ReadDirs: the versions of the tilasms it is given, W360), as a
+// denial wins over any grant.
 func agyProject(spec Spec) agyProjectFile {
 	p := spec.Permissions
 	f := agyProjectFile{ID: agyProjectID(spec.Dir), Name: "Djinn " + filepath.Base(spec.Dir)}
@@ -303,11 +352,20 @@ func agyProject(spec Spec) agyProjectFile {
 	if spec.SkillsDir != "" {
 		addKeep(spec.SkillsDir)
 	}
+	for _, d := range spec.WriteDirs {
+		addKeep(d)
+	}
+	for _, d := range spec.ReadDirs {
+		addKeep(d)
+	}
 
 	if p.GetEdit() {
 		for _, d := range append([]string{cleanDir}, gitDirs...) {
 			g.Allow = appendUnique(g.Allow, "write_file("+d+")")
 		}
+	}
+	for _, d := range spec.WriteDirs {
+		g.Allow = appendUnique(g.Allow, "write_file("+filepath.Clean(d)+")")
 	}
 
 	// Reads: repository (main checkout and .git), Go root, module and build caches, npm cache, /usr, /etc, and user's home.
@@ -320,6 +378,12 @@ func agyProject(spec Spec) agyProjectFile {
 	}
 	if spec.SkillsDir != "" {
 		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(spec.SkillsDir)+")")
+	}
+	for _, d := range spec.WriteDirs {
+		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(d)+")")
+	}
+	for _, d := range spec.ReadDirs {
+		g.Allow = appendUnique(g.Allow, "read_file("+filepath.Clean(d)+")")
 	}
 	goRoot, modCache, buildCache, npmCache := agyCaches()
 	if goRoot != "" {
@@ -391,23 +455,25 @@ func agyProject(spec Spec) agyProjectFile {
 		}
 	}
 
-	// Denials for Djinn's own data folder except the task's worktree.
+	// Denials for Djinn's own data folder except the task's worktree (or the whole folder when Spec.ReadDirs grants it).
 	if djinnDir, err := djinnDataDir(); err == nil && djinnDir != "" {
 		cleanDjinn := filepath.Clean(djinnDir)
-		anyInside := false
-		for _, k := range keepPaths {
-			rel, err := filepath.Rel(cleanDjinn, k)
-			if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
-				anyInside = true
-				break
+		if !slices.Contains(keepPaths, cleanDjinn) {
+			anyInside := false
+			for _, k := range keepPaths {
+				rel, err := filepath.Rel(cleanDjinn, k)
+				if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+					anyInside = true
+					break
+				}
 			}
-		}
-		if anyInside {
-			for _, d := range djinnDenials(cleanDjinn, keepPaths) {
-				g.Deny = appendUnique(g.Deny, d)
+			if anyInside {
+				for _, d := range djinnDenials(cleanDjinn, keepPaths) {
+					g.Deny = appendUnique(g.Deny, d)
+				}
+			} else {
+				g.Deny = appendUnique(g.Deny, "read_file("+cleanDjinn+")")
 			}
-		} else {
-			g.Deny = appendUnique(g.Deny, "read_file("+cleanDjinn+")")
 		}
 	}
 
@@ -488,12 +554,7 @@ func writeAgyProject(spec Spec) error {
 		return fmt.Errorf("agy's projects folder: %w", err)
 	}
 	path := filepath.Join(dir, f.ID+".json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
-		return fmt.Errorf("write agy's project: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	if err := fsx.WriteAtomic(path, append(b, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write agy's project: %w", err)
 	}
 	return nil
@@ -537,6 +598,8 @@ type agyStep struct {
 	} `json:"tool_info"`
 	Error   json.RawMessage `json:"error"`
 	Message json.RawMessage `json:"message"`
+	// Content is the text of a step, a system message's in agy's transcript; the stream has carried none so far.
+	Content json.RawMessage `json:"content"`
 }
 
 type agyResult struct {
@@ -567,15 +630,21 @@ const agyContinuePrompt = "continue where you stopped, keep answers and edits sh
 // agyIdlePause is what agy prints when execution is paused waiting for tasks to complete.
 const agyIdlePause = "There are no tools called. Execution paused. Waiting for task completion."
 
-var agyBgTaskIDRegex = regexp.MustCompile(`\b(task-[a-zA-Z0-9_\-]+)\b`)
+// agyBgNotice is agy's own notice of a command sent to the background, in the output of its tool step: "Tool is
+// running as a background task with task id: <conversation>/task-19" (agy 1.4.1, its transcript). Nothing else names
+// a background task: a branch, a file or a text that holds "task-" is no task (W360). The stream has not carried the
+// notice so far (W16, W308): a background command stays an ACTIVE tool step there until it ends.
+var agyBgNotice = regexp.MustCompile(`Tool is running as a background task with task id: (\S+/task-\d+)`)
 
-func extractBgTaskID(s string) string {
-	m := agyBgTaskIDRegex.FindStringSubmatch(s)
-	if len(m) > 1 {
-		return m[1]
-	}
-	return ""
+// agyBgTask is a background task agy said it started, and the tool step that started it.
+type agyBgTask struct {
+	id   string
+	step int
 }
+
+// agyBgStopped is in the system message agy writes when it stopped every background task: "[Notice] All your
+// subagents and background tasks have been stopped due to server restart." (agy 1.4.1, its transcript).
+const agyBgStopped = "background tasks have been stopped"
 
 const (
 	agyMaxRetryPromptContinuations = 3
@@ -626,6 +695,9 @@ var re5xx = regexp.MustCompile(`\b5\d{2}\b`)
 
 // isAgyTransientNetworkError reports whether text is a transient network error from agy or its API.
 func isAgyTransientNetworkError(text string) bool {
+	if _, ok := limitIn(text, time.Time{}); ok {
+		return false
+	}
 	lower := strings.ToLower(text)
 	switch {
 	case strings.Contains(lower, "stream was interrupted") || strings.Contains(lower, "stream interrupted") ||
@@ -651,6 +723,9 @@ func isAgyTransientNetworkError(text string) bool {
 // isAgyRetryPrompt says whether text is one of agy's own retry prompts to its model (malformed
 // function call, output token limit, or transient model retry error) rather than the agent's final answer.
 func isAgyRetryPrompt(text string) bool {
+	if _, ok := limitIn(text, time.Time{}); ok {
+		return false
+	}
 	lower := strings.ToLower(text)
 	switch {
 	case strings.Contains(lower, "improperly formatted function call"):
@@ -670,9 +745,25 @@ func isAgyRetryPrompt(text string) bool {
 	}
 }
 
-// agyWorkDone reports whether the worktree at dir is clean and branch has commits since startHead.
+func agyAheadOf(ctx context.Context, dir, base, curHead string) bool {
+	if base == "" || curHead == "" || base == curHead {
+		return false
+	}
+	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", base, curHead); err != nil {
+		return false
+	}
+	countStr, err := git(ctx, dir, "rev-list", "--count", base+".."+curHead)
+	if err != nil {
+		return false
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(countStr))
+	return err == nil && count > 0
+}
+
+// agyWorkDone reports whether the worktree at dir is clean and branch has commits since startHead
+// (or since the branch's base commit when the branch was resumed or rebased across runs).
 func agyWorkDone(ctx context.Context, dir, startHead, branch string) bool {
-	if dir == "" || startHead == "" {
+	if dir == "" || (startHead == "" && branch == "") {
 		return false
 	}
 	uncomm, err := uncommittedDir(ctx, dir)
@@ -684,20 +775,6 @@ func agyWorkDone(ctx context.Context, dir, startHead, branch string) bool {
 		return false
 	}
 	curHead = strings.TrimSpace(curHead)
-	if curHead == startHead {
-		return false
-	}
-	if _, err := git(ctx, dir, "merge-base", "--is-ancestor", startHead, curHead); err != nil {
-		return false
-	}
-	countStr, err := git(ctx, dir, "rev-list", "--count", startHead+".."+curHead)
-	if err != nil {
-		return false
-	}
-	count, err := strconv.Atoi(strings.TrimSpace(countStr))
-	if err != nil || count <= 0 {
-		return false
-	}
 	if branch != "" {
 		if branchHead, err := git(ctx, dir, "rev-parse", "--verify", "refs/heads/"+branch); err == nil {
 			if strings.TrimSpace(branchHead) != curHead {
@@ -705,7 +782,19 @@ func agyWorkDone(ctx context.Context, dir, startHead, branch string) bool {
 			}
 		}
 	}
-	return true
+	if agyAheadOf(ctx, dir, startHead, curHead) {
+		return true
+	}
+	if branch != "" {
+		branchStart := branchStartCommit(ctx, dir, branch)
+		if agyAheadOf(ctx, dir, branchStart, curHead) {
+			return true
+		}
+		if branchStart != "" && branchStart != curHead && startHead != "" && startHead != curHead {
+			return true
+		}
+	}
+	return false
 }
 
 // agyParser reads agy's stream-json. The agent's text comes in deltas: it is gathered per step, and said once
@@ -715,10 +804,12 @@ type agyParser struct {
 	order       []int                    // their indexes, in the order they started
 	toolsIn     map[int]bool             // tool steps whose call is said already
 	retries     int                      // retry prompt continuations sent by Djinn
-	bgTasks     map[string]bool          // background tasks started by agy
+	bgTasks     []agyBgTask              // background tasks agy said it started (agyBgNotice), the oldest first
 	idleRetries int                      // idle pause continuations sent by Djinn
+	toolIdle    time.Duration            // how long agy may say nothing while a tool or a background task runs
 
 	sessionID   string
+	model       string
 	turnEnded   bool
 	turnRetried bool
 
@@ -737,6 +828,12 @@ type agyParser struct {
 
 func (p *agyParser) toolRunning() bool {
 	return p != nil && (len(p.toolsIn) > 0 || len(p.bgTasks) > 0)
+}
+
+// idleCap is how long agy may say nothing while a tool step or a background task runs: the stream idle timer stays
+// armed, so that a model call that returns nothing is always cut (AgyToolIdleTimeout).
+func (p *agyParser) idleCap() time.Duration {
+	return p.toolIdle
 }
 
 func (p *agyParser) handleIdlePause(events *lineEvents) *turnEnd {
@@ -764,56 +861,66 @@ func (p *agyParser) handleIdlePause(events *lineEvents) *turnEnd {
 	return &turnEnd{failure: errText}
 }
 
-func (p *agyParser) recordBgTask(name string, params json.RawMessage, output *string) {
-	if p.bgTasks == nil {
-		p.bgTasks = make(map[string]bool)
+// bgStep is the index in bgTasks of the background task the tool step started; -1 for none.
+func (p *agyParser) bgStep(step int) int {
+	return slices.IndexFunc(p.bgTasks, func(t agyBgTask) bool { return t.step == step })
+}
+
+// endBg forgets the background tasks that end tells ended.
+func (p *agyParser) endBg(ended func(t agyBgTask) bool) {
+	p.bgTasks = slices.DeleteFunc(p.bgTasks, ended)
+}
+
+// manageTask reads a manage_task step: a task killed, or whose status is no longer RUNNING, has ended.
+func (p *agyParser) manageTask(params json.RawMessage, output string) {
+	var mp struct {
+		Action string `json:"Action"`
+		TaskID string `json:"TaskId"`
 	}
-	switch name {
-	case "run_command":
-		if output != nil && (strings.Contains(*output, "sent to the background") || strings.Contains(*output, "background task") || strings.Contains(*output, "task-")) {
-			if id := extractBgTaskID(*output); id != "" {
-				p.bgTasks[id] = true
-			}
+	if json.Unmarshal(params, &mp) != nil || mp.TaskID == "" {
+		return
+	}
+	status := ""
+	for l := range strings.Lines(output) {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "Status:"); ok {
+			status = strings.TrimSpace(v)
 		}
-	case "schedule":
-		if output != nil {
-			if id := extractBgTaskID(*output); id != "" {
-				p.bgTasks[id] = true
-			}
-		}
-	case "manage_task":
-		var mp struct {
-			Action string `json:"Action"`
-			TaskID string `json:"TaskId"`
-		}
-		if json.Unmarshal(params, &mp) == nil {
-			if mp.Action == "kill" && mp.TaskID != "" {
-				delete(p.bgTasks, mp.TaskID)
-			}
-		}
+	}
+	if mp.Action == "kill" || status != "" && status != "RUNNING" {
+		p.endBg(func(t agyBgTask) bool { return t.id == mp.TaskID })
 	}
 }
 
-func (p *agyParser) checkBgTaskFinished(text string) {
-	if len(p.bgTasks) == 0 {
-		return
-	}
-	if strings.Contains(text, "completed") || strings.Contains(text, "exited with code") || strings.Contains(text, "finished") {
-		if id := extractBgTaskID(text); id != "" {
-			delete(p.bgTasks, id)
-		}
+// systemMessage reads a system_message step: agy writes one as each background task ends, and as it stops them all.
+// In the stream it carries no text (agy 1.3.3 and 1.4.1, W16 and W308): it ends the oldest background task. A text,
+// when one comes, names the tasks that ended.
+func (p *agyParser) systemMessage(text string) {
+	switch {
+	case len(p.bgTasks) == 0:
+	case strings.TrimSpace(text) == "":
+		p.bgTasks = p.bgTasks[1:]
+	case strings.Contains(text, agyBgStopped):
+		p.bgTasks = nil
+	default:
+		p.endBg(func(t agyBgTask) bool { return strings.Contains(text, t.id) })
 	}
 }
 
 func (p *agyParser) canFinishNow() bool {
-	return p.answered && len(p.toolsIn) == 0 && p.isWorkDone != nil && p.isWorkDone()
+	return p.answered && len(p.toolsIn) == 0 && len(p.bgTasks) == 0 && p.isWorkDone != nil && p.isWorkDone()
+}
+
+func (p *agyParser) canFinishTurn() bool {
+	return p != nil && (p.closingFailed || p.canFinishNow())
 }
 
 func (p *agyParser) finishClosingError(events *lineEvents, why string) *turnEnd {
 	p.turnEnded = true
-	p.closingFailed = true
 	*events = append(*events, p.cut()...)
-	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "closing call failed: "+why)
+	if !p.closingFailed {
+		p.closingFailed = true
+		events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, "closing call failed: "+why)
+	}
 	return &turnEnd{}
 }
 
@@ -845,7 +952,7 @@ func (p *agyParser) retryOrEnd(events *lineEvents, convID, retryText string, isT
 }
 
 func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
-	if p.closingFailed {
+	if p.closingFailed && p.turnEnded {
 		return nil
 	}
 	convID := m.ConversationID
@@ -859,7 +966,7 @@ func (p *agyParser) errorEvent(events *lineEvents, m *agyLine) *turnEnd {
 	if strings.Contains(errText, agyIdlePause) && len(p.bgTasks) == 0 {
 		return p.handleIdlePause(events)
 	}
-	if p.canFinishNow() {
+	if p.closingFailed || p.canFinishNow() {
 		return p.finishClosingError(events, errText)
 	}
 	if isAgyRetryPrompt(errText) {
@@ -901,6 +1008,7 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 		if m.Init != nil && m.Init.Model != "" {
 			text += ", model " + m.Init.Model
 			model = m.Init.Model
+			p.model = m.Init.Model
 		}
 		ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
 		ev.SessionID = m.ConversationID
@@ -922,7 +1030,7 @@ func (p *agyParser) stdout(raw string) ([]Event, *turnEnd) {
 
 // step reads a step update, and says whether Djinn knows its kind: a known step may say nothing yet.
 func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
-	if p.closingFailed {
+	if p.closingFailed && p.turnEnded {
 		return false, nil
 	}
 	if s.ConversationID != "" {
@@ -936,6 +1044,9 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		p.turnEnded = false
 		p.answered = false
 	}
+	if s.StepType == "tool" {
+		p.answered = false
+	}
 	stepErr := extractAgyError(s.Error, extractAgyError(s.Message, ""))
 	if s.ToolInfo != nil && s.ToolInfo.Error != nil && stepErr == "" {
 		stepErr = s.ToolInfo.Error.Message
@@ -945,7 +1056,7 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		if convID == "" {
 			convID = p.sessionID
 		}
-		if p.canFinishNow() {
+		if s.StepType != "tool" && (p.closingFailed || p.canFinishNow()) {
 			delete(p.toolsIn, s.StepIndex)
 			p.forget(s.StepIndex)
 			return true, p.finishClosingError(events, stepErr)
@@ -973,7 +1084,11 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		return true, p.handleIdlePause(events)
 	}
 	switch s.StepType {
-	case "user_input", "checkpoint", "system_message", "system":
+	case "system_message":
+		if s.State == "DONE" {
+			p.systemMessage(extractAgyError(s.Content, s.TextDelta))
+		}
+	case "user_input", "checkpoint", "system":
 		// The prompt Djinn sent, and agy's own bookkeeping: nothing to say.
 	case "agent_response":
 		b := p.text[s.StepIndex]
@@ -988,7 +1103,6 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 		b.WriteString(s.TextDelta)
 		if s.State == "DONE" {
 			text := b.String()
-			p.checkBgTaskFinished(text)
 			if strings.TrimSpace(text) != "" {
 				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TEXT, strings.TrimRight(text, "\n"))
 				p.answered = true
@@ -1010,7 +1124,8 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 				failure = ti.Error.Message
 			}
 		}
-		if !p.toolsIn[s.StepIndex] {
+		bg := p.bgStep(s.StepIndex)
+		if !p.toolsIn[s.StepIndex] && bg < 0 {
 			if p.toolsIn == nil {
 				p.toolsIn = map[int]bool{}
 			}
@@ -1018,14 +1133,30 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 			p.lastStep, p.lastCall, p.lastAnswered = s.StepIndex, agyCall(name, params), false
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL, strings.TrimSpace(name+" "+compactOrEmpty(params)))
 		}
+		if m := agyBgNotice.FindStringSubmatch(outputStr); m != nil {
+			// The command goes on in the background, and the turn without it, until a system message tells its end.
+			if bg < 0 {
+				p.bgTasks = append(p.bgTasks, agyBgTask{id: m[1], step: s.StepIndex})
+				p.lastAnswered = p.lastAnswered || s.StepIndex == p.lastStep
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, strings.TrimRight(outputStr, "\r\n"))
+			}
+			delete(p.toolsIn, s.StepIndex)
+			break
+		}
+		if s.State == "DONE" || s.State == "ERROR" {
+			if bg >= 0 { // The background command ended: its step says how.
+				p.endBg(func(t agyBgTask) bool { return t.step == s.StepIndex })
+			}
+		}
 		if s.State == "DONE" {
 			text := ""
 			if output != nil {
 				text = strings.TrimRight(*output, "\r\n")
 				p.lastAnswered = p.lastAnswered || s.StepIndex == p.lastStep
 			}
-			p.recordBgTask(name, params, output)
-			p.checkBgTaskFinished(text)
+			if name == "manage_task" {
+				p.manageTask(params, text)
+			}
 			events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
 			delete(p.toolsIn, s.StepIndex)
 		}
@@ -1034,10 +1165,12 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 			if s.StepIndex == p.lastStep {
 				p.lastAnswered = true
 			}
-			if strings.Contains(failure, agyDenyRule) {
+			if m := agyDeniedPath.FindStringSubmatch(failure); m != nil && strings.Contains(failure, agyDenyRule) {
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+m[1]+" "+m[2])
+			} else if strings.Contains(failure, agyDenyRule) {
 				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, permissionDenied+agyCall(name, params))
 			} else {
-				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, strings.TrimSpace(failure))
+				events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, strings.TrimSpace(failure)).ToolError = true
 			}
 			delete(p.toolsIn, s.StepIndex)
 		}
@@ -1048,9 +1181,6 @@ func (p *agyParser) step(events *lineEvents, s *agyStep) (bool, *turnEnd) {
 }
 
 func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
-	if p.closingFailed {
-		return nil
-	}
 	convID := r.ConversationID
 	if convID == "" {
 		convID = p.sessionID
@@ -1069,7 +1199,7 @@ func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
 			errText = retryText
 		}
 		switch {
-		case p.canFinishNow() && (r.Status != "SUCCESS" || errText != "" || isAgyTransientNetworkError(errText)):
+		case (p.closingFailed || p.canFinishNow()) && (r.Status != "SUCCESS" || errText != "" || isAgyTransientNetworkError(errText)):
 			if errText == "" {
 				errText = "agy ended its turn with status " + r.Status
 			}
@@ -1104,12 +1234,19 @@ func (p *agyParser) result(events *lineEvents, r *agyResult) *turnEnd {
 		}
 	}
 	// The usage of a result is what the whole conversation spent so far. agy gives no cost: tokens only. Its
-	// thinking tokens are counted as written ones.
+	// thinking tokens are counted as written ones, and the cost is estimated from the price table.
 	usage := &planv1.Usage{}
 	if u := r.Usage; u != nil {
 		usage.InputTokens, usage.OutputTokens = u.InputTokens, u.OutputTokens+u.ThinkingTokens
 		usage.CacheReadTokens = u.CacheReadTokens
 		usage.ThinkingTokens = u.ThinkingTokens
+		if usage.InputTokens > 0 || usage.OutputTokens > 0 || usage.CacheReadTokens > 0 {
+			if tbl, err := usagepkg.DefaultTable(); err == nil {
+				if cost, priced, _ := tbl.Estimate(usage, p.model, planv1.Provider_PROVIDER_ANTIGRAVITY); priced {
+					usage.CostUsd = cost
+				}
+			}
+		}
 	}
 	ev := events.add(planv1.TaskEventKind_TASK_EVENT_KIND_USAGE, fmt.Sprintf("%d turns, %d tokens in, %d out",
 		r.NumTurns, usage.GetInputTokens(), usage.GetOutputTokens()))
@@ -1179,6 +1316,11 @@ const agyDenied = "headless mode cannot prompt for"
 // 1.3.3), a project's deny grant included.
 const agyDenyRule = "deny rule"
 
+// agyDeniedPath finds the path a deny grant refused to a file tool: `permission check failed for read_file "/x/a.html":
+// Permission denied for read_file(/x/a.html). Matches user-configured deny rule.` (real runs, agy 1.4.1, W308): a
+// path outside the folders Djinn's project grants, which no mode grants (pathPermissions).
+var agyDeniedPath = regexp.MustCompile(`Permission denied for (read_file|write_file)\((.+?)\)\. `)
+
 // agyDeniedPermission finds the permission in the denial notice.
 var agyDeniedPermission = regexp.MustCompile(`required the "([^"]+)" permission`)
 
@@ -1204,7 +1346,6 @@ func (p *agyParser) stderr(raw string) []Event {
 			}
 		}
 		if p.canFinishNow() {
-			p.turnEnded = true
 			p.closingFailed = true
 			return []Event{{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "closing call failed: " + text, Raw: raw}}
 		}

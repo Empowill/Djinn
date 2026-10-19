@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -16,7 +17,8 @@ import (
 // Done marks a task done by hand: a task no worker runs now, planned, waiting, cut short, failed, stopped or
 // imported. The task records who closed it, when and why, apart from a worker's own done. A running or paused task
 // is refused (stop it first), and so is a task done already, but one done with problems (plan.DoneWithProblems):
-// marked done, it is closed as seen, nothing else changes. A task waiting on it may start.
+// marked done, it is closed as seen, nothing else changes. A task waiting on it may start. A lit ifrit is ended
+// instead: its input closes, and its work integrates once its agent ends (doneIfrit).
 func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskServiceDoneRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	// No answer starts the worker again, and no pass of the scheduler starts a planned task, while it closes.
@@ -24,20 +26,25 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 	defer h.answering.Unlock()
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
-	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	task, running, err := h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
 	switch s := task.GetStatus(); {
-	case plan.DoneWithProblems(task):
+	case plan.DoneWithProblems(task) && !req.GetDrop():
 		return h.doneSeen(ctx, procedure, req, task)
 	case s == planv1.TaskStatus_TASK_STATUS_DONE:
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is done already", task.GetCode()))
+		if !req.GetDrop() || task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_COMMITTED ||
+			(task.GetClosed() != nil && task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_UNSPECIFIED) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is done already", task.GetCode()))
+		}
+		if task.GetIntegration().GetState() == planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is integrating: refused while it merges", task.GetCode()))
+		}
 	case s == planv1.TaskStatus_TASK_STATUS_CANCELLED:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is cancelled already", task.GetCode()))
+	case running && s == planv1.TaskStatus_TASK_STATUS_RUNNING && dispatch.Ifrit(task):
+		return h.doneIfrit(ctx, procedure, req, task)
 	case running || s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED:
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("task %s is %s: stop it first (djinn task stop)", task.GetCode(), short(s)))
@@ -67,7 +74,7 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 		text += ": " + n
 	}
 	var unmerged bool
-	if task.GetBranch() != "" {
+	if task.GetBranch() != "" && !dispatch.ChangesNoCode(task) { // An investigation's or a mockup's commits are never merged.
 		wish, _ := store.Get[*planv1.Wish](ctx, h.store, task.GetWishId())
 		project, _ := store.Get[*planv1.Project](ctx, h.store, task.GetProjectId())
 		if project != nil && project.GetGit() {
@@ -75,7 +82,7 @@ func (h *Harness) Done(ctx context.Context, procedure string, req *planv1.TaskSe
 			unmerged = branchHoldsUnmergedCommits(ctx, project.GetDirectory(), task.GetBranch(), intBranch)
 		}
 	}
-	if unmerged {
+	if unmerged || (task.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && req.GetDrop()) {
 		if req.GetDrop() {
 			if req.GetNote() == "" {
 				return nil, connect.NewError(connect.CodeInvalidArgument,
@@ -155,4 +162,36 @@ func (h *Harness) doneSeen(ctx context.Context, procedure string, req *planv1.Ta
 	}
 	h.notify()
 	return task, nil
+}
+
+// taskAndRun returns the task id as stored and whether a worker runs for it now. When its run is getting its final
+// status (r.final), taskAndRun waits until the run has written the task and left h.runs before reading the store.
+func (h *Harness) taskAndRun(ctx context.Context, id string) (*planv1.Task, bool, error) {
+	for {
+		h.mu.Lock()
+		r := h.runs[id]
+		ending := r != nil && r.final
+		h.mu.Unlock()
+		if ending {
+			select {
+			case <-r.done:
+			case <-ctx.Done():
+				return nil, false, ctx.Err()
+			}
+			continue
+		}
+		task, err := store.Get[*planv1.Task](ctx, h.store, id)
+		if err != nil {
+			return nil, false, plan.Status(err)
+		}
+		if r == nil {
+			return task, false, nil
+		}
+		h.mu.Lock()
+		still := h.runs[id] == r && !r.final
+		h.mu.Unlock()
+		if still {
+			return task, true, nil
+		}
+	}
 }

@@ -15,17 +15,27 @@ repeat them.
 ## For agents
 - **Run the tasks, not the tools.** `go tool task test`, `go tool task gen`, `go tool task e2e`,
   `go tool task build`: they set the tags and the order.
-- **Run Djinn's commit checks before you end.** [`.agents/settings.txtpb`](.agents/settings.txtpb) names them: the
-  lint before Djinn commits your work (`djinn gate run lint -- go tool task lint`), the tests before it pushes.
+- **Run Djinn's commit checks, then commit your work, before you end.** [`.agents/settings.txtpb`](.agents/settings.txtpb)
+  names them: the lint before Djinn merges your work (`djinn gate run lint -- go tool task lint`), the tests before it
+  pushes. Commit in the repository's style and leave nothing not committed: Djinn commits nothing for you.
 - **A story that touches the window** (interface under the UI folder, the stream it reads, the server calls it makes)
   runs this spec before it ends (`go tool task e2e -- e2e/wish-render.spec.ts`); other stories do not.
+- **A change to what Djinn does updates its documentation in the same change**: a feature, a concept, a screen, a
+  command, a behaviour. Rewrite its chapter or card in the documentation site (`docs/site/index.html`); a new concept
+  gets its card. The Command line tab reads the command tree: keep a proto comment or a `cli.Builtins` entry true.
 - **Read [`docs/pitfalls.md`](docs/pitfalls.md) before you chase a failure**: the code's known traps, how to spot them.
-- **Never call a paid model in a test.** Record a stream instead (`docs/providers.md`).
+- **Write tests by the rules in [`CONTRIBUTING.md`](CONTRIBUTING.md#writing-tests).** Never call a paid model in a
+  test: record a stream instead (`docs/providers.md`).
 - **A license check comes before any reuse** of third-party code: see the license section of
   `CONTRIBUTING.md`, and name every new dependency in your change description.
 - **What you add to a wish's plan is smoke** unless the code computes on it: write a block, do
   not add a field.
+- **Locate symbols and lines with `rg -n` or `grep -n` before reading a file.** Never page through a file with
+  `view_file` 800 lines at a time: pass `StartLine` and `EndLine` (`<= 200` lines) around the match so the context
+  stays below compaction.
 
 ## Interface
 - Rounded elements use a uniform border on all sides, or no border. Never combine a rounded card with a
   one-sided border or a thicker accent border on one side. Straight separators belong on square elements.
+- A list being read never moves under the reader: new items append below the older ones, a revision keeps an item's
+  place, and the scroll stays anchored on what is on screen (`src/scroll-anchor.ts`).

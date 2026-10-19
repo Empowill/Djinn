@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -49,11 +50,23 @@ func (e *env) lastDid() string {
 	return e.did[len(e.did)-1]
 }
 
-// testProviders are the providers of a test: a watcher's waits are the test's, not a second.
+// testProviders are the providers of a test: a watcher's waits are the test's, not a second; and no paid model. Claude,
+// the provider of a project that names none, which Djinn's own workers run on (Q95), plays a script like the fake; the
+// other agents refuse to start: a test that runs one sets its own.
 func testProviders() map[planv1.Provider]Provider {
 	providers := Providers()
 	providers[planv1.Provider_PROVIDER_WATCH] = fastWatch
+	providers[planv1.Provider_PROVIDER_CLAUDE] = Fake{}
+	providers[planv1.Provider_PROVIDER_CODEX] = noPaidModel{}
+	providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = noPaidModel{}
 	return providers
+}
+
+// noPaidModel is an agent a test did not set: it never starts.
+type noPaidModel struct{}
+
+func (noPaidModel) Start(context.Context, Spec) (Worker, error) {
+	return nil, errors.New("no paid model in a test: set this provider in the test")
 }
 
 // fastWatch is a watcher whose command makes a paragraph after 50 ms of silence, and starts again 50 ms after it ends.
@@ -87,7 +100,7 @@ func upWith(t *testing.T, home string, providers map[planv1.Provider]Provider, o
 	}
 	mux := http.NewServeMux()
 	for prefix, handler := range plan.Handlers(db, plan.WithAnswered(answered), plan.WithEnlightened(h.Enlightened),
-		plan.WithWorkers(h)) {
+		plan.WithIterated(h.Iterated), plan.WithWorkers(h), plan.WithLaunch(h.LaunchPlan)) {
 		mux.Handle(prefix, handler)
 	}
 	mux.Handle(Handler(h))
@@ -211,11 +224,15 @@ func TestSpawnInGit(t *testing.T) {
 		t.Errorf("spawned %v", task)
 	}
 	wantDir := filepath.Join(e.home, "projects", projectID, "worktrees", task.GetId())
-	if task.GetWorktree() != wantDir || !strings.HasPrefix(task.GetBranch(), "w1-try-the-harness-") {
-		t.Errorf("worktree %s on %s; want %s", task.GetWorktree(), task.GetBranch(), wantDir)
+	wantScratch := filepath.Join(e.home, "scratch", projectID, task.GetId())
+	if task.GetWorktree() != wantDir || task.GetScratch() != wantScratch || !strings.HasPrefix(task.GetBranch(), "w1-try-the-harness-") {
+		t.Errorf("worktree %s, scratch %s on %s; want %s, %s", task.GetWorktree(), task.GetScratch(), task.GetBranch(), wantDir, wantScratch)
 	}
 	if _, err := os.Stat(filepath.Join(wantDir, "app", "README.md")); err != nil {
 		t.Errorf("the worktree lacks the project: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wantScratch, "shot.png"), []byte("png"), 0o600); err != nil {
+		t.Errorf("the scratch folder cannot be written: %v", err)
 	}
 
 	events := e.watch(t.Context(), t, task.GetId(), 0)
@@ -230,7 +247,8 @@ func TestSpawnInGit(t *testing.T) {
 
 	done := e.get(t, task.GetId())
 	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || done.GetUsage().GetCostUsd() != 0.5 ||
-		done.GetUsage().GetInputTokens() != 100 || done.GetSessionId() != task.GetId() || done.GetEndTime() == nil {
+		done.GetUsage().GetInputTokens() != 100 || done.GetSessionId() != task.GetId() || done.GetEndTime() == nil ||
+		done.GetScratch() != wantScratch {
 		t.Errorf("done = %v", done)
 	}
 	// Resuming from a position sends only what follows.
@@ -238,23 +256,26 @@ func TestSpawnInGit(t *testing.T) {
 		t.Errorf("after 6: %v", eventKinds(rest))
 	}
 
-	// A second task of the wish gets the next code and its own worktree.
+	// A second task of the wish gets the next code and its own worktree and scratch folder.
 	second := e.spawn(t, wishID, "text again")
-	if second.GetCode() != "W2" || second.GetWorktree() == task.GetWorktree() {
+	if second.GetCode() != "W2" || second.GetWorktree() == task.GetWorktree() || second.GetScratch() == task.GetScratch() {
 		t.Errorf("second task %v", second)
 	}
 	e.watch(t.Context(), t, second.GetId(), 0)
 
-	// Clean removes the worktree, keeps the branch, and leaves the project's folder as it was.
+	// Clean removes the worktree and the scratch folder, keeps the branch, and leaves the project's folder as it was.
 	cleaned, err := e.tasks.Clean(t.Context(), connect.NewRequest(&planv1.TaskServiceCleanRequest{TaskId: task.GetId()}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleaned.Msg.GetTask().GetWorktree() != "" {
-		t.Errorf("cleaned task still has a worktree")
+	if cleaned.Msg.GetTask().GetWorktree() != "" || cleaned.Msg.GetTask().GetScratch() != "" {
+		t.Errorf("cleaned task still has worktree %q or scratch %q", cleaned.Msg.GetTask().GetWorktree(), cleaned.Msg.GetTask().GetScratch())
 	}
 	if _, err := os.Stat(wantDir); !os.IsNotExist(err) {
 		t.Errorf("worktree still there: %v", err)
+	}
+	if _, err := os.Stat(wantScratch); !os.IsNotExist(err) {
+		t.Errorf("scratch folder still there: %v", err)
 	}
 	if out, _ := git(t.Context(), repo, "branch", "--list", task.GetBranch()); out == "" {
 		t.Error("the branch went with the worktree")
@@ -323,6 +344,15 @@ func TestSpawnRefused(t *testing.T) {
 			t.Errorf("%s: %v, want %v", tt.name, err, tt.code)
 		}
 	}
+	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: store.NewID()}))
+	if err == nil {
+		for s.Receive() {
+		}
+		err = s.Err()
+	}
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("watch an unknown task: %v", err)
+	}
 }
 
 func TestStopLongWorker(t *testing.T) {
@@ -357,7 +387,8 @@ func TestStopLongWorker(t *testing.T) {
 
 // TestNothingLostOnShutdown: djinn up stops while a worker runs; its task is interrupted, keeps what resuming it
 // needs, and its events survive the restart. The next start resumes it, in the same task, worktree and session, and
-// it finishes. A task a crash left running is resumed the same way.
+// it finishes. A task a crash left running is resumed the same way; a planned task that no worker ever started stays
+// pending across a restart.
 func TestNothingLostOnShutdown(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -366,6 +397,16 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	e := up(t, home)
 	wishID, _ := e.wish(t, repo)
 	task := e.spawn(t, wishID, "text halfway\nusage 10 2 0.01\nsleep 1h")
+	planned := &planv1.Task{Id: "01a118d0-0000-7000-8000-000000000001", WishId: "01a118d0-0000-7000-8000-0000000000aa",
+		Code: "T01", Title: "planned", Status: planv1.TaskStatus_TASK_STATUS_PENDING}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "put", planned); err != nil {
+			return err
+		}
+		return tx.Put(planned)
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Wait until the worker has said what it had to say before its long sleep.
 	ctx, cancel := context.WithCancel(t.Context())
@@ -386,6 +427,9 @@ func TestNothingLostOnShutdown(t *testing.T) {
 	worktree := before.GetWorktree()
 
 	e = up(t, home)
+	if gotPlan, err := store.Get[*planv1.Task](t.Context(), e.db, planned.GetId()); err != nil || gotPlan.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
+		t.Errorf("planned task after a restart: %v, %v", gotPlan.GetStatus(), err)
+	}
 	events := e.watch(t.Context(), t, task.GetId(), 0)
 	got := e.get(t, task.GetId())
 	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetWorktree() != worktree || got.GetSessionId() != task.GetId() ||
@@ -473,50 +517,6 @@ func putTask(t *testing.T, db *store.Store, task *planv1.Task, prompt string) {
 	}
 }
 
-func TestWatchUnknown(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	s, err := e.tasks.Watch(t.Context(), connect.NewRequest(&planv1.TaskServiceWatchRequest{TaskId: store.NewID()}))
-	if err == nil {
-		for s.Receive() {
-		}
-		err = s.Err()
-	}
-	if connect.CodeOf(err) != connect.CodeNotFound {
-		t.Errorf("watch an unknown task: %v", err)
-	}
-}
-
-// TestRecoverLeavesPlannedTasks: a task that no worker ever started, such as the plan of an imported wish, stays
-// pending across a restart; only a started one is interrupted.
-func TestRecoverLeavesPlannedTasks(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	home := t.TempDir()
-	e := up(t, home)
-	planned := &planv1.Task{Id: "01a118d0-0000-7000-8000-000000000001", WishId: "01a118d0-0000-7000-8000-0000000000aa",
-		Code: "T01", Title: "planned", Status: planv1.TaskStatus_TASK_STATUS_PENDING}
-	err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "put", planned); err != nil {
-			return err
-		}
-		return tx.Put(planned)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.down()
-	e = up(t, home)
-	got, err := store.Get[*planv1.Task](t.Context(), e.db, planned.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
-		t.Errorf("planned task after a restart: %s, want pending", got.GetStatus())
-	}
-}
-
 // waitFor polls cond until it holds, or fails after a few seconds.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
@@ -525,7 +525,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		if time.Now().After(deadline) {
 			t.Fatalf("waited in vain for %s", what)
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -540,10 +540,10 @@ func TestWarmLeftovers(t *testing.T) {
 	_, projectID := e.wish(t, repo)
 	left := worktreeDir(home, projectID, store.NewID())
 	taken := worktreeDir(home, projectID, store.NewID())
-	if _, err := addWorktree(t.Context(), repo, left, "djinn-warm-deadbeef"); err != nil {
+	if _, err := addWorktreeFrom(t.Context(), repo, left, "djinn-warm-deadbeef", "HEAD"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := addWorktree(t.Context(), repo, taken, "w1-a-task-12345678"); err != nil {
+	if _, err := addWorktreeFrom(t.Context(), repo, taken, "w1-a-task-12345678", "HEAD"); err != nil {
 		t.Fatal(err)
 	}
 	e.down()
@@ -562,5 +562,115 @@ func TestWarmLeftovers(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(taken, "app")); err != nil {
 		t.Errorf("a task's worktree was removed: %v", err)
+	}
+}
+
+// TestScratch: each work task in a project gets a scratch folder under <data>/scratch/<project>/<task>, exported as
+// DJINN_SCRATCH, named in its first prompt, allowed in Spec.WriteDirs, recorded on the task, kept while the task can
+// continue, and cleaned with the worktree; an older task without Task.scratch gets one when resumed or continued.
+func TestScratch(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	repo := gitRepo(t)
+	home := t.TempDir()
+	rec := promptsProvider{Provider: Fake{}, mu: &sync.Mutex{}, specs: map[string]Spec{}}
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_FAKE] = rec
+	e := upWith(t, home, providers)
+	wishID, projectID := e.wish(t, repo)
+	writeFile(t, home, filepath.Join("projects", projectID, "settings.txtpb"), lintAtCommit)
+
+	w1 := e.spawn(t, wishID, "fail needs retry")
+	wantScratch := workScratchDir(home, projectID, w1.GetId())
+	if w1.GetScratch() != wantScratch {
+		t.Fatalf("w1 scratch = %q, want %q", w1.GetScratch(), wantScratch)
+	}
+	if err := os.WriteFile(filepath.Join(wantScratch, "probe.txt"), []byte("ok"), 0o600); err != nil {
+		t.Fatalf("write in scratch folder: %v", err)
+	}
+	e.watch(t.Context(), t, w1.GetId(), 0)
+
+	spec := rec.spec(w1.GetId())
+	if !slices.Contains(spec.Env, "DJINN_SCRATCH="+wantScratch) {
+		t.Errorf("Spec.Env missing DJINN_SCRATCH=%s: %v", wantScratch, spec.Env)
+	}
+	if !slices.Contains(spec.WriteDirs, wantScratch) {
+		t.Errorf("Spec.WriteDirs missing %s: %v", wantScratch, spec.WriteDirs)
+	}
+	wantPrompt := "Your scratch folder is `" + wantScratch + "` (`$DJINN_SCRATCH`)."
+	if !strings.Contains(spec.Prompt, wantPrompt) {
+		t.Errorf("Spec.Prompt missing %q:\n%s", wantPrompt, spec.Prompt)
+	}
+
+	// Failed task can still be continued: its scratch folder and files stay.
+	failed := e.get(t, w1.GetId())
+	if failed.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED || failed.GetScratch() != wantScratch {
+		t.Errorf("failed = %v", failed)
+	}
+	if _, err := os.Stat(filepath.Join(wantScratch, "probe.txt")); err != nil {
+		t.Errorf("scratch file removed while task can continue: %v", err)
+	}
+
+	// Cancelling the task removes its worktree and its scratch folder.
+	canceled, err := e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
+		TaskId: w1.GetId(), Note: "no longer needed",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canceled.Msg.GetTask().GetWorktree() != "" || canceled.Msg.GetTask().GetScratch() != "" {
+		t.Errorf("canceled task kept worktree %q or scratch %q", canceled.Msg.GetTask().GetWorktree(), canceled.Msg.GetTask().GetScratch())
+	}
+	if _, err := os.Stat(wantScratch); !os.IsNotExist(err) {
+		t.Errorf("canceled task's scratch folder still on disk: %v", err)
+	}
+
+	// An older task recorded before Task.scratch existed (empty Scratch, existing Worktree) keeps working when
+	// continued, gets a new scratch folder created and exported, and leaves any old folder in $HOME untouched.
+	legacyHomeDir := filepath.Join(t.TempDir(), "w2-old-home-scratch")
+	if err := os.MkdirAll(legacyHomeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	w2 := e.spawn(t, wishID, "text first turn")
+	e.watch(t.Context(), t, w2.GetId(), 0)
+	w2Scratch := workScratchDir(home, projectID, w2.GetId())
+	if err := os.RemoveAll(w2Scratch); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		cur, err := store.Get[*planv1.Task](t.Context(), tx, w2.GetId())
+		if err != nil {
+			return err
+		}
+		cur.Scratch = ""
+		if err := tx.Journal("test", "old", cur); err != nil {
+			return err
+		}
+		return tx.Put(cur)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	afterSeq := int64(len(e.watch(t.Context(), t, w2.GetId(), 0)))
+	cont, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{
+		TaskId: w2.GetId(), Prompt: proto.String("text second turn"),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cont.Msg.GetTask().GetWorktree() != w2.GetWorktree() || cont.Msg.GetTask().GetScratch() != w2Scratch {
+		t.Errorf("continued old task: worktree %q (want %q), scratch %q (want %q)",
+			cont.Msg.GetTask().GetWorktree(), w2.GetWorktree(), cont.Msg.GetTask().GetScratch(), w2Scratch)
+	}
+	if info, err := os.Stat(w2Scratch); err != nil || !info.IsDir() {
+		t.Errorf("continued old task's scratch folder not created: %v", err)
+	}
+	e.watch(t.Context(), t, w2.GetId(), afterSeq)
+	spec2 := rec.spec(w2.GetId())
+	if !slices.Contains(spec2.Env, "DJINN_SCRATCH="+w2Scratch) || !slices.Contains(spec2.WriteDirs, w2Scratch) {
+		t.Errorf("continued old task spec: env=%v writeDirs=%v", spec2.Env, spec2.WriteDirs)
+	}
+	if _, err := os.Stat(legacyHomeDir); err != nil {
+		t.Errorf("legacy home folder was touched: %v", err)
 	}
 }

@@ -1,22 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- The mark of the documentation: a brass lamp and its wisp. A stand-in until Djinn's icon (build/icon.svg) is
-       drawn: replace this file with it, nothing else names the drawing. -->
-  <defs>
-    <linearGradient id="brass" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#f6dfa4"/>
-      <stop offset=".45" stop-color="#d9ac55"/>
-      <stop offset="1" stop-color="#8f6522"/>
-    </linearGradient>
-    <linearGradient id="wisp" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#e9c97d"/>
-      <stop offset="1" stop-color="#a9b8ff" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-  <path d="M51 33c-3-6 3-10 0-16s4-9 2-14" fill="none" stroke="url(#wisp)" stroke-width="2.4" stroke-linecap="round"/>
-  <path d="M13 38c-7-1-8 8 1 7" fill="none" stroke="url(#brass)" stroke-width="2.6" stroke-linecap="round"/>
-  <path d="M10 40c0-6.5 8-10 21-10 9 0 14 2 18 4.5l8.5-4c1.4-.7 2.4.8 1.3 1.8L50 42c-4 4.5-10 6-19 6-13 0-21-2.5-21-8z" fill="url(#brass)"/>
-  <path d="M21 30.4c0-5.8 4.6-8.4 9.5-8.4s9.5 2.6 9.5 8.4" fill="url(#brass)"/>
-  <circle cx="30.5" cy="19.5" r="2.4" fill="url(#brass)"/>
-  <path d="M25 48h11l3 5H22z" fill="url(#brass)"/>
-  <rect x="19" y="53" width="23" height="3" rx="1.5" fill="url(#brass)"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 148 148" fill="none">
+  <!-- The mark of Djinn (Tilasm L02 sigil, light/white-ground edition): two rotated squares forming the 8-pointed
+       khatam star, surrounded by 48 radial ticks and an outer seal ring, with the saffron flame at the heart. -->
+  <circle cx="74" cy="74" r="70" fill="#f4f8f6" stroke="#146b5a" stroke-width="3.2" />
+  <circle cx="74" cy="74" r="64" stroke="#cbe0d9" stroke-width="0.9" />
+  <path
+    d="M138 74L129.5 74M119.25 119.25L113.24 113.24M74 138L74 129.5M28.75 119.25L34.76 113.24M10 74L18.5 74M28.75 28.75L34.76 34.76M74 10L74 18.5M119.25 28.75L113.24 34.76"
+    stroke="#0f594a"
+    stroke-width="2.6"
+    stroke-linecap="round"
+  />
+  <path
+    d="M137.45 82.35L133.98 81.9M135.82 90.56L132.44 89.66M133.13 98.49L129.89 97.15M129.43 106L126.39 104.25M124.77 112.96L122 110.83M112.96 124.77L110.83 122M106 129.43L104.25 126.39M98.49 133.13L97.15 129.89M90.56 135.82L89.66 132.44M82.35 137.45L81.9 133.98M65.65 137.45L66.1 133.98M57.44 135.82L58.34 132.44M49.51 133.13L50.85 129.89M42 129.43L43.75 126.39M35.04 124.77L37.17 122M23.23 112.96L26 110.83M18.57 106L21.61 104.25M14.87 98.49L18.11 97.15M12.18 90.56L15.56 89.66M10.55 82.35L14.02 81.9M10.55 65.65L14.02 66.1M12.18 57.44L15.56 58.34M14.87 49.51L18.11 50.85M18.57 42L21.61 43.75M23.23 35.04L26 37.17M35.04 23.23L37.17 26M42 18.57L43.75 21.61M49.51 14.87L50.85 18.11M57.44 12.18L58.34 15.56M65.65 10.55L66.1 14.02M82.35 10.55L81.9 14.02M90.56 12.18L89.66 15.56M98.49 14.87L97.15 18.11M106 18.57L104.25 21.61M112.96 23.23L110.83 26M124.77 35.04L122 37.17M129.43 42L126.39 43.75M133.13 49.51L129.89 50.85M135.82 57.44L132.44 58.34M137.45 65.65L133.98 66.1"
+    stroke="#146b5a"
+    stroke-width="1.5"
+    stroke-linecap="round"
+  />
+  <rect
+    x="40"
+    y="40"
+    width="68"
+    height="68"
+    fill="#e5f2ed"
+    fill-opacity="0.7"
+    stroke="#0f594a"
+    stroke-width="3.4"
+    stroke-linejoin="round"
+  />
+  <rect
+    x="40"
+    y="40"
+    width="68"
+    height="68"
+    transform="rotate(45 74 74)"
+    fill="#e5f2ed"
+    fill-opacity="0.7"
+    stroke="#0f594a"
+    stroke-width="3.4"
+    stroke-linejoin="round"
+  />
+  <circle cx="74" cy="74" r="22" fill="#d6e9e3" stroke="#0f594a" stroke-width="2.8" />
+  <path
+    d="M74 56 C 84 68, 82 83, 74 86 C 66 83, 64 68, 74 56 Z"
+    fill="#c88214"
+    stroke="#7a4b00"
+    stroke-width="1.2"
+    stroke-linejoin="round"
+  />
+  <path d="M74 63 C 79 71, 78 80, 74 82 C 70 80, 69 71, 74 63 Z" fill="#f0b24a" />
 </svg>

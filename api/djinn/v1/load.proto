@@ -20,7 +20,7 @@ enum LoadNotch {
   LOAD_NOTCH_HIGH = 4;
   // Max load: 100% of the machine's capacity, standard CPU priority.
   LOAD_NOTCH_MAX = 5;
-  // Auto load: adapts operating load between minimal and chosen notch based on developer activity.
+  // Auto load: adapts operating load between minimal and the chosen notch to the load outside Djinn.
   LOAD_NOTCH_AUTO = 6;
   // Overclock load: 150% of the machine's capacity, accepts pressure, standard CPU priority.
   LOAD_NOTCH_OVERCLOCK = 7;
@@ -90,6 +90,8 @@ message LoadServiceGetResponse {
   // Whether lowering the notch pauses the newest workers above what it lets run: not in auto mode, nor on Windows,
   // where they finish their run. Investigators, corrections, reviews and workers started by hand always finish theirs.
   bool lower_pauses = 18;
+  // Why auto mode runs at its notch; unset outside auto mode.
+  LoadAutoReason auto_reason = 19;
 }
 
 message LoadServiceSetRequest {
@@ -153,6 +155,44 @@ message LoadServiceWatchResponse {
   int32 forced_workers = 19;
   // Whether lowering the notch pauses the newest workers above what it lets run (LoadServiceGetResponse.lower_pauses).
   bool lower_pauses = 20;
+  // Why auto mode runs at its notch; unset outside auto mode.
+  LoadAutoReason auto_reason = 21;
+}
+
+// LoadAutoStep is what auto mode does with its notch, from the load outside Djinn against its marks.
+enum LoadAutoStep {
+  // Not set.
+  LOAD_AUTO_STEP_UNSPECIFIED = 0;
+  // Between the marks, back within 5 points of the mark it passed, or nothing measured yet: auto keeps its notch.
+  LOAD_AUTO_STEP_HOLD = 1;
+  // Above the high mark: one notch down once that load stayed there 3 minutes.
+  LOAD_AUTO_STEP_LOWER = 2;
+  // Below the low marks: one notch up once that load stayed there 5 minutes.
+  LOAD_AUTO_STEP_RAISE = 3;
+  // Below the low marks at the chosen notch: auto runs up to it.
+  LOAD_AUTO_STEP_CEILING = 4;
+  // Above the high mark at Minimal: auto goes no lower.
+  LOAD_AUTO_STEP_FLOOR = 5;
+}
+
+// LoadAutoReason says why auto mode runs at its notch: the load outside Djinn (the machine's CPU and memory beyond
+// Djinn's own tree, as the Hourglass splits it), read every 20 seconds and averaged.
+message LoadAutoReason {
+  // The load outside Djinn, averaged over window_seconds, in percent of the machine: its CPU, or its memory when
+  // memory is set.
+  double outside_percent = 1;
+  // Whether outside_percent is the memory, where it decides, rather than the CPU.
+  bool memory = 2;
+  // The span of the average, in seconds: 2 minutes against the high mark, up to 10 against the low ones; 0 when
+  // nothing is measured yet.
+  int32 window_seconds = 3;
+  // What auto mode does next if the load stays where it is.
+  LoadAutoStep step = 4;
+  // The notch of that step: the next one when lowering or raising, the chosen one at the ceiling, the one in effect
+  // otherwise.
+  LoadNotch notch = 5;
+  // Seconds before that step if the load stays where it is; 0 when holding.
+  int32 in_seconds = 6;
 }
 
 // LoadNotchSlots is the most workers a notch lets run on the machine now.

@@ -33,24 +33,31 @@ var notices = []string{"LICENSE", "NOTICE", "docs/THIRD_PARTY_NOTICES.md"}
 const SumsFile = "SHA256SUMS"
 
 func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run runs the command line args, the command's name left out, against the module at the working folder, and
+// returns the exit code: 2 for a wrong usage, 1 for a failure.
+func run(args []string, stdout, stderr io.Writer) int {
 	var err error
 	switch {
-	case len(os.Args) == 3 && os.Args[1] == "pack":
+	case len(args) == 2 && args[0] == "pack":
 		var out string
-		out, err = pack(os.Args[2], ".")
+		out, err = pack(args[1], ".")
 		if err == nil {
-			fmt.Println(out)
+			fmt.Fprintln(stdout, out)
 		}
-	case len(os.Args) == 3 && os.Args[1] == "sums":
-		err = sums(os.Args[2])
+	case len(args) == 2 && args[0] == "sums":
+		err = sums(args[1])
 	default:
-		fmt.Fprintln(os.Stderr, "usage: releasepack pack <folder> | releasepack sums <folder>")
-		os.Exit(2)
+		fmt.Fprintln(stderr, "usage: releasepack pack <folder> | releasepack sums <folder>")
+		return 2
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "releasepack:", err)
-		os.Exit(1)
+		fmt.Fprintln(stderr, "releasepack:", err)
+		return 1
 	}
+	return 0
 }
 
 // pack copies the notices found in root into dir, then archives dir beside it, under its own name. It returns the

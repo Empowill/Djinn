@@ -1,234 +1,207 @@
 package machine
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"testing/fstest"
 	"time"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
-	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
-	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 )
 
-func TestSeriesRingBuffer(t *testing.T) {
-	rec := NewSeriesRecorder(nil, nil)
+// TestSeriesRecorder_Points: the points recorded since a cutoff, in order, the oldest dropped once the ring is full.
+func TestSeriesRecorder_Points(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
-
-	// Empty recorder
-	if pts := rec.Points(time.Time{}); len(pts) != 0 {
-		t.Fatalf("expected 0 points, got %d", len(pts))
+	cases := []struct {
+		name   string
+		added  int
+		cutoff time.Time
+		want   []float64 // the CPU of the first and the last point
+		n      int
+	}{
+		{name: "empty"},
+		{name: "all", added: 5, want: []float64{0, 40}, n: 5},
+		{name: "since a cutoff", added: 5, cutoff: now.Add(2 * time.Minute), want: []float64{20, 40}, n: 3},
+		// Two points past the ring: the two oldest dropped.
+		{name: "full", added: maxMachineSamples + 2, want: []float64{20, float64(maxMachineSamples+1) * 10}, n: maxMachineSamples},
 	}
-
-	// Add 5 points
-	for i := 0; i < 5; i++ {
-		rec.AddPoint(&machinev1.MachinePoint{
-			Time:            timestamppb.New(now.Add(time.Duration(i) * time.Minute)),
-			CpuPercent:      float64(i * 10),
-			MemoryBytes:     uint64(i * 100),
-			DjinnCpuPercent: float64(i),
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			rec := NewSeriesRecorder(nil, nil)
+			for i := range c.added {
+				rec.AddPoint(&machinev1.MachinePoint{
+					Time:            timestamppb.New(now.Add(time.Duration(i) * time.Minute)),
+					CpuPercent:      float64(i * 10),
+					MemoryBytes:     uint64(i * 100),
+					DjinnCpuPercent: float64(i),
+				})
+			}
+			pts := rec.Points(c.cutoff)
+			if len(pts) != c.n {
+				t.Fatalf("%d points, want %d", len(pts), c.n)
+			}
+			if c.n > 0 && (pts[0].GetCpuPercent() != c.want[0] || pts[c.n-1].GetCpuPercent() != c.want[1]) {
+				t.Errorf("first %v, last %v; want %v", pts[0], pts[c.n-1], c.want)
+			}
 		})
 	}
-
-	pts := rec.Points(time.Time{})
-	if len(pts) != 5 {
-		t.Fatalf("expected 5 points, got %d", len(pts))
-	}
-	if pts[0].GetCpuPercent() != 0 || pts[4].GetCpuPercent() != 40 {
-		t.Errorf("unexpected points: first=%v, last=%v", pts[0], pts[4])
-	}
-
-	// Cutoff filter
-	cutoff := now.Add(2 * time.Minute)
-	filtered := rec.Points(cutoff)
-	if len(filtered) != 3 {
-		t.Fatalf("expected 3 points after cutoff, got %d", len(filtered))
-	}
-	if filtered[0].GetCpuPercent() != 20 {
-		t.Errorf("expected first point after cutoff to be 20, got %v", filtered[0].GetCpuPercent())
-	}
 }
 
-func TestSeriesRecorderProcStat(t *testing.T) {
-	fsys := fstest.MapFS{
-		"proc/stat": &fstest.MapFile{
-			Data: []byte("cpu  100 20 50 830 0 0 0 0 0 0\n"),
-		},
-	}
-	rec := NewSeriesRecorder(nil, func(pid int, cgroup string) (Group, error) {
-		return Group{CPU: 100 * time.Millisecond, Memory: 10 << 20}, nil
-	})
-	rec.SetFS(fsys)
-
-	// First sample sets baseline
-	rec.Sample()
-
-	// Update proc stat to simulate 100 ticks elapsed, 50 busy (50% CPU)
-	fsys["proc/stat"] = &fstest.MapFile{
-		Data: []byte("cpu  140 20 60 880 0 0 0 0 0 0\n"), // total 1100 (+100), idle 880 (+50), busy 50
-	}
-
-	rec.Sample()
-
-	pts := rec.Points(time.Time{})
-	if len(pts) != 2 {
-		t.Fatalf("expected 2 points, got %d", len(pts))
-	}
-	last := pts[1]
-	if last.GetCpuPercent() != 50 {
-		t.Errorf("expected 50%% CPU, got %v", last.GetCpuPercent())
-	}
-	if last.GetDjinnMemoryBytes() != 10<<20 {
-		t.Errorf("expected 10 MiB djinn memory, got %v", last.GetDjinnMemoryBytes())
-	}
-}
-
-func TestMachineServiceSeries(t *testing.T) {
-	now := time.Now()
-	rec := NewSeriesRecorder(nil, nil)
-	rec.AddPoint(&machinev1.MachinePoint{
-		Time:        timestamppb.New(now.Add(-5 * time.Minute)),
-		CpuPercent:  25.5,
-		MemoryBytes: 2048 << 20,
-	})
-
-	gateIvs := []*machinev1.GateInterval{
-		{
-			Gate:        "lint",
-			TaskId:      "task-1",
-			Command:     "go tool task lint",
-			AskedTime:   timestamppb.New(now.Add(-4 * time.Minute)),
-			GrantTime:   timestamppb.New(now.Add(-3 * time.Minute)),
-			ReleaseTime: timestamppb.New(now.Add(-2 * time.Minute)),
-		},
-	}
-
-	workerList := []*machinev1.WorkerSeries{
-		{
-			TaskId:   "task-1",
-			Code:     "W1",
-			Title:    "Worker 1",
-			Provider: planv1.Provider_PROVIDER_CLAUDE,
-			Model:    "claude-3-7-sonnet",
-			Points: []*machinev1.WorkerPoint{
-				{
-					Time:        timestamppb.New(now.Add(-5 * time.Minute)),
-					CpuPercent:  12.0,
-					MemoryBytes: 512 << 20,
+// TestSeriesRecorder_Sample: each sample reads the machine's CPU and memory, Djinn's line (its work, or its tree) and
+// Djinn's own process. The cases sleep between samples, 200 ms at most: the CPU shares are read over real time.
+func TestSeriesRecorder_Sample(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		// The machine's CPU from /proc/stat, between two samples; Djinn's memory from its tree.
+		{"proc stat", func(t *testing.T) {
+			fsys := fstest.MapFS{
+				"proc/stat": &fstest.MapFile{
+					Data: []byte("cpu  100 20 50 830 0 0 0 0 0 0\n"),
 				},
-			},
-			Gates: gateIvs,
-		},
-	}
+			}
+			rec := NewSeriesRecorder(nil, func(pid int, cgroup string) (Group, error) {
+				return Group{CPU: 100 * time.Millisecond, Memory: 10 << 20}, nil
+			})
+			rec.SetFS(fsys)
 
-	workers := func(time.Time) {}
-	mux := http.NewServeMux()
-	path, h := Handler(
-		NewMonitor(Policy{Share: 0.8}, func() (Snapshot, error) {
-			return Snapshot{Cores: 8, MemoryTotal: 16 << 30, MemoryAvailable: 8 << 30}, nil
-		}),
-		func() int { return 1 },
-		nil,
-		WithSeriesRecorder(rec),
-		WithSeriesWorkers(func(cutoff time.Time, ivs []*machinev1.GateInterval) []*machinev1.WorkerSeries {
-			workers(cutoff)
-			return workerList
-		}),
-		WithSeriesIntervals(func(cutoff time.Time) []*machinev1.GateInterval {
-			return gateIvs
-		}),
-	)
-	mux.Handle(path, h)
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
+			// First sample sets baseline
+			rec.Sample()
 
-	client := machinev1connect.NewMachineServiceClient(srv.Client(), srv.URL)
-	res, err := client.Series(context.Background(), connect.NewRequest(&machinev1.MachineServiceSeriesRequest{
-		Minutes: 30,
-	}))
-	if err != nil {
-		t.Fatalf("Series RPC failed: %v", err)
-	}
+			// Update proc stat to simulate 100 ticks elapsed, 50 busy (50% CPU)
+			fsys["proc/stat"] = &fstest.MapFile{
+				Data: []byte("cpu  140 20 60 880 0 0 0 0 0 0\n"), // total 1100 (+100), idle 880 (+50), busy 50
+			}
 
-	msg := res.Msg
-	if msg.GetMachine() == nil {
-		t.Fatal("expected machine series")
-	}
-	if len(msg.GetMachine().GetPoints()) != 1 {
-		t.Errorf("expected 1 machine point, got %d", len(msg.GetMachine().GetPoints()))
-	}
-	if len(msg.GetWorkers()) != 1 {
-		t.Fatalf("expected 1 worker series, got %d", len(msg.GetWorkers()))
-	}
-	ws := msg.GetWorkers()[0]
-	if ws.GetCode() != "W1" || ws.GetTitle() != "Worker 1" {
-		t.Errorf("unexpected worker: %v", ws)
-	}
-	if len(msg.GetGates()) != 1 {
-		t.Errorf("expected 1 gate interval, got %d", len(msg.GetGates()))
-	}
+			rec.Sample()
 
-	// Since a point: only the points measured after it, the gate intervals of the whole window.
-	rec.AddPoint(&machinev1.MachinePoint{Time: timestamppb.New(now.Add(-time.Minute)), CpuPercent: 40})
-	var asked time.Time
-	workers = func(cutoff time.Time) { asked = cutoff }
-	res, err = client.Series(context.Background(), connect.NewRequest(&machinev1.MachineServiceSeriesRequest{
-		Minutes: 30, Since: timestamppb.New(now.Add(-5 * time.Minute)),
-	}))
-	if err != nil {
-		t.Fatal(err)
+			pts := rec.Points(time.Time{})
+			if len(pts) != 2 {
+				t.Fatalf("expected 2 points, got %d", len(pts))
+			}
+			last := pts[1]
+			if last.GetCpuPercent() != 50 {
+				t.Errorf("expected 50%% CPU, got %v", last.GetCpuPercent())
+			}
+			if last.GetDjinnMemoryBytes() != 10<<20 {
+				t.Errorf("expected 10 MiB djinn memory, got %v", last.GetDjinnMemoryBytes())
+			}
+		}},
+		// Djinn's own process is read apart from what it started, and Djinn's CPU, read in percent of
+		// one core, is drawn as a share of the machine: 400% of one core on 8 cores is 50%.
+		{"self", func(t *testing.T) {
+			m := NewMonitor(Policy{}, func() (Snapshot, error) { return Snapshot{Cores: 8, MemoryTotal: 16 << 30}, nil })
+			var group, self time.Duration
+			rec := NewSeriesRecorder(m, func(int, string) (Group, error) {
+				return Group{CPU: group, Memory: 3 << 30}, nil
+			})
+			rec.SetFS(nil)
+			rec.ReadSelf(func() (Group, error) { return Group{CPU: self, Memory: 140 << 20}, nil })
+			rec.Sample()
+			time.Sleep(50 * time.Millisecond)
+			// In 50 ms, the group spent 200 ms of CPU (400% of a core), Djinn itself 25 ms (50% of a core).
+			group, self = 200*time.Millisecond, 25*time.Millisecond
+			rec.Sample()
+			last := rec.Points(time.Time{})[1]
+			// At least 50 ms passed: at most 50% of the machine, never the 400% of one core; Djinn itself an eighth of
+			// it.
+			djinn, own := last.GetDjinnCpuPercent(), last.GetSelfCpuPercent()
+			if djinn <= 0 || djinn > 50.1 {
+				t.Errorf("Djinn and what it started = %v%% of the machine, want at most 50%%", djinn)
+			}
+			if ratio := own / djinn; ratio < 0.1 || ratio > 0.15 {
+				t.Errorf("Djinn itself = %v%%, %v of the whole, want an eighth", own, ratio)
+			}
+			if last.GetSelfMemoryBytes() != 140<<20 || last.GetDjinnMemoryBytes() != 3<<30 {
+				t.Errorf("memory: itself %d, with what it started %d", last.GetSelfMemoryBytes(), last.GetDjinnMemoryBytes())
+			}
+		}},
+		// The Djinn line counts what its work's counters grew by: a scope or a process that ends never takes back what
+		// it used, so the line never falls to 0 % when a test run ends (W347). A djinn-*.scope made since the last
+		// reading counts all it used; a process first read counts from its next reading.
+		{"work", func(t *testing.T) {
+			fsys := fstest.MapFS{"proc/stat": &fstest.MapFile{Data: []byte("cpu  100 0 0 900 0 0 0 0 0 0\n")}}
+			monitor := NewMonitor(DefaultPolicy(), func() (Snapshot, error) { return Snapshot{Cores: 1, MemoryTotal: 100}, nil })
+			rec := NewSeriesRecorder(monitor, func(int, string) (Group, error) { t.Error("the tree read beside the work"); return Group{}, nil })
+			rec.SetFS(fsys)
+			const worker, check = "/a/djinn-W1-1.scope", "/a/djinn-gate-test-2.scope"
+			w := Work{
+				Cgroups: map[string]time.Duration{"/a/app-djinn.scope": time.Second, worker: time.Hour},
+				Procs:   map[int]time.Duration{7: 10 * time.Second},
+				Memory:  15,
+			}
+			rec.ReadWork(func() (Work, error) { return w, nil })
+			var before time.Time // just before the last sample: the recorder reads its time after it
+			sample := func(next Work) *machinev1.MachinePoint {
+				t.Helper()
+				time.Sleep(100 * time.Millisecond)
+				w = next
+				before = time.Now()
+				rec.Sample()
+				pts := rec.Points(time.Time{})
+				return pts[len(pts)-1]
+			}
+			rec.Sample()
+			start := time.Now()
+
+			// The worker's scope ends (its test run with it), a check's scope starts: 20 ms of Djinn's own, 30 ms of
+			// the check's, 10 ms of process 7; process 8, adopted meanwhile, an hour before.
+			p := sample(Work{
+				Cgroups: map[string]time.Duration{"/a/app-djinn.scope": time.Second + 20*time.Millisecond, check: 30 * time.Millisecond},
+				Procs:   map[int]time.Duration{7: 10*time.Second + 10*time.Millisecond, 8: time.Hour},
+				Memory:  20,
+			})
+			// The recorder's interval began before start and ended after before: at least before - start.
+			if got, most := p.GetDjinnCpuPercent(), float64(60*time.Millisecond)/float64(before.Sub(start))*100; got <= 0 || got > most+0.1 {
+				t.Errorf("Djinn CPU %v %%, want 60 ms of its work, at most %.1f %%: never the ended scope's hour", got, most)
+			}
+			if p.GetDjinnMemoryBytes() != 20 {
+				t.Errorf("Djinn memory %d, want 20", p.GetDjinnMemoryBytes())
+			}
+
+			// Process 8 counts from its second reading; process 7 ended.
+			p = sample(Work{
+				Cgroups: map[string]time.Duration{"/a/app-djinn.scope": time.Second + 20*time.Millisecond, check: 30 * time.Millisecond},
+				Procs:   map[int]time.Duration{8: time.Hour + 40*time.Millisecond},
+			})
+			if got := p.GetDjinnCpuPercent(); got <= 0 || got > 40.1 {
+				t.Errorf("Djinn CPU %v %%, want process 8's 40 ms over 100 ms or more", got)
+			}
+		}},
 	}
-	if pts := res.Msg.GetMachine().GetPoints(); len(pts) != 1 || pts[0].GetCpuPercent() != 40 {
-		t.Errorf("points since the first = %v, want the second alone", pts)
-	}
-	if !asked.After(now.Add(-5 * time.Minute)) {
-		t.Errorf("workers asked from %v, want after the first point", asked)
-	}
-	if len(res.Msg.GetGates()) != 1 {
-		t.Errorf("gate intervals since = %d, want the window's 1", len(res.Msg.GetGates()))
-	}
-	// A since older than the window: the window.
-	res, err = client.Series(context.Background(), connect.NewRequest(&machinev1.MachineServiceSeriesRequest{
-		Minutes: 30, Since: timestamppb.New(now.Add(-2 * time.Hour)),
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pts := res.Msg.GetMachine().GetPoints(); len(pts) != 2 {
-		t.Errorf("points since before the window = %d, want 2", len(pts))
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			c.run(t)
+		})
 	}
 }
 
-// TestSeriesRecorderSelf: Djinn's own process is read apart from what it started, and Djinn's CPU, read in percent of
-// one core, is drawn as a share of the machine: 400% of one core on 8 cores is 50%.
-func TestSeriesRecorderSelf(t *testing.T) {
-	m := NewMonitor(Policy{}, func() (Snapshot, error) { return Snapshot{Cores: 8, MemoryTotal: 16 << 30}, nil })
-	var group, self time.Duration
-	rec := NewSeriesRecorder(m, func(int, string) (Group, error) {
-		return Group{CPU: group, Memory: 3 << 30}, nil
-	})
-	rec.SetFS(nil)
-	rec.ReadSelf(func() (Group, error) { return Group{CPU: self, Memory: 140 << 20}, nil })
-	rec.Sample()
-	time.Sleep(50 * time.Millisecond)
-	// In 50 ms, the group spent 200 ms of CPU (400% of a core), Djinn itself 25 ms (50% of a core).
-	group, self = 200*time.Millisecond, 25*time.Millisecond
-	rec.Sample()
-	last := rec.Points(time.Time{})[1]
-	// At least 50 ms passed: at most 50% of the machine, never the 400% of one core; Djinn itself an eighth of it.
-	djinn, own := last.GetDjinnCpuPercent(), last.GetSelfCpuPercent()
-	if djinn <= 0 || djinn > 50.1 {
-		t.Errorf("Djinn and what it started = %v%% of the machine, want at most 50%%", djinn)
+// TestSeriesRecorder_Keep: kept, each sample after the first goes to the store's history too.
+func TestSeriesRecorder_Keep(t *testing.T) {
+	t.Parallel()
+	db, err := store.Open(t.Context(), "", plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ratio := own / djinn; ratio < 0.1 || ratio > 0.15 {
-		t.Errorf("Djinn itself = %v%%, %v of the whole, want an eighth", own, ratio)
-	}
-	if last.GetSelfMemoryBytes() != 140<<20 || last.GetDjinnMemoryBytes() != 3<<30 {
-		t.Errorf("memory: itself %d, with what it started %d", last.GetSelfMemoryBytes(), last.GetDjinnMemoryBytes())
+	t.Cleanup(func() { db.Close() })
+	h := NewHistory(db)
+	fsys := fstest.MapFS{"proc/stat": &fstest.MapFile{Data: []byte("cpu  100 20 50 830 0 0 0 0 0 0\n")}}
+	rec := NewSeriesRecorder(nil, nil)
+	rec.SetFS(fsys)
+	rec.Keep(h)
+	start := time.Now().Add(-time.Second)
+	rec.Sample()
+	fsys["proc/stat"] = &fstest.MapFile{Data: []byte("cpu  140 20 60 880 0 0 0 0 0 0\n")}
+	rec.Sample()
+	if pts := h.MachinePoints(t.Context(), start, time.Now().Add(time.Second)); len(pts) != 1 || pts[0].GetCpuPercent() != 50 {
+		t.Errorf("history points %v, want the second sample's", pts)
 	}
 }

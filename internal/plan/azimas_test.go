@@ -19,6 +19,7 @@ import (
 // TestAzimaRoundTrip: a task's kind, its azima and its plan file come back from the store as they were put; what an
 // azima computes is filled on a clone, never on the store's message.
 func TestAzimaRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	s, err := store.Open(ctx, "", Entities()...)
 	if err != nil {
@@ -75,102 +76,231 @@ func errorsJoin(errs ...error) error {
 // TestFillAzimas: an azima is done when marked done; in progress when a part runs or is done, or an azima part of it is
 // under way; open otherwise; ready when every task it depends on is done.
 func TestFillAzimas(t *testing.T) {
-	task := func(code string, kind planv1.TaskKind, status planv1.TaskStatus, partOf string, deps ...string) *planv1.Task {
-		return &planv1.Task{Id: code, Code: code, Kind: kind, Status: status, PartOf: partOf, DependsOn: deps}
-	}
-	const plan, work = planv1.TaskKind_TASK_KIND_AZIMA, planv1.TaskKind_TASK_KIND_UNSPECIFIED
-	pending, done, failed := planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_FAILED
-	tasks := []*planv1.Task{
-		task("T1", plan, done, ""),
-		task("T2", plan, pending, "", "T1"),
-		task("T3", plan, pending, "", "T1", "T2"),
-		task("T4", plan, pending, "T3"),
-		task("W1", work, done, "T2"),
-		task("W2", work, failed, "T2"),
-		task("W3", work, planv1.TaskStatus_TASK_STATUS_PAUSED, "T4"),
-		task("W4", work, failed, "T5"),
-		task("T5", plan, pending, "", "W2"),
-		{Id: "T6", Code: "T6", Kind: plan, Status: pending, Draft: true},
-		task("T7", plan, done, ""),
-		{Id: "W5", Code: "W5", Kind: work, Status: done, PartOf: "T7", Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING}},
-		task("T8", plan, pending, "", "T7"),
-		// A cancelled part is no work left: out of the total, listed all the same.
-		task("T9", plan, pending, ""),
-		task("W6", work, done, "T9"),
-		task("W7", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T9"),
-		task("T10", plan, pending, ""),
-		task("W8", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T10"),
-		task("T11", plan, done, ""),
-		task("W9", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T11"),
-	}
-	FillAzimas(tasks)
-	// No branch is based on another's: an azima's branch is cut from main, whatever it waits for.
-	for code, want := range map[string]*planv1.Azima{
-		"T1": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true, Branch: "djinn/T1"},
-		"T2": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 2, PartsDone: 1, Branch: "djinn/T2"},
-		// Its part T4 is under way, through W3.
-		"T3": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Parts: 1, Branch: "djinn/T3"},
-		"T4": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, Branch: "djinn/T4"},
-		// A failed part is not progress.
-		"T5": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Parts: 1, Branch: "djinn/T5"},
-		"T6": {State: planv1.AzimaState_AZIMA_STATE_DRAFT, Ready: true, Branch: "djinn/T6"},
-		// T7 has a done part whose work is merging: in progress, partsRunning=1, partsDone=0.
-		"T7": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, PartsDone: 0, Branch: "djinn/T7"},
-		// T8 waits for T7, which is not done yet: Ready is false.
-		"T8": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: false, Branch: "djinn/T8"},
-		// T9's work is done, its other part cancelled: 1/1, its proof awaited.
-		"T9": {State: planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF, Ready: true, Parts: 1, PartsDone: 1, Branch: "djinn/T9"},
-		// T10's only part is cancelled: nothing to count, nothing waiting, nothing under way.
-		"T10": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true, Branch: "djinn/T10"},
-		// T11 is closed, its only part cancelled: done, and it folds.
-		"T11": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true, Branch: "djinn/T11"},
-	} {
-		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
-		if got := tasks[i].GetAzima(); !proto.Equal(got, want) {
-			t.Errorf("%s: %v, want %v", code, got, want)
+	t.Parallel()
+	t.Run("states", func(t *testing.T) {
+		t.Parallel()
+		task := func(code string, kind planv1.TaskKind, status planv1.TaskStatus, partOf string, deps ...string) *planv1.Task {
+			return &planv1.Task{Id: code, Code: code, Kind: kind, Status: status, PartOf: partOf, DependsOn: deps}
 		}
-	}
-	if tasks[4].GetAzima() != nil {
-		t.Error("work has an azima state")
-	}
-}
+		const plan, work = planv1.TaskKind_TASK_KIND_AZIMA, planv1.TaskKind_TASK_KIND_UNSPECIFIED
+		pending, done, failed := planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_FAILED
+		tasks := []*planv1.Task{
+			task("T1", plan, done, ""),
+			task("T2", plan, pending, "", "T1"),
+			task("T3", plan, pending, "", "T1", "T2"),
+			task("T4", plan, pending, "T3"),
+			task("W1", work, done, "T2"),
+			task("W2", work, failed, "T2"),
+			task("W3", work, planv1.TaskStatus_TASK_STATUS_PAUSED, "T4"),
+			task("W4", work, failed, "T5"),
+			task("T5", plan, pending, "", "W2"),
+			{Id: "T6", Code: "T6", Kind: plan, Status: pending, Draft: true},
+			task("T7", plan, done, ""),
+			{Id: "W5", Code: "W5", Kind: work, Status: done, PartOf: "T7", Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_PENDING}},
+			task("T8", plan, pending, "", "T7"),
+			// A cancelled part is no work left: out of the total, listed all the same.
+			task("T9", plan, pending, ""),
+			task("W6", work, done, "T9"),
+			task("W7", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T9"),
+			task("T10", plan, pending, ""),
+			task("W8", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T10"),
+			task("T11", plan, done, ""),
+			task("W9", work, planv1.TaskStatus_TASK_STATUS_CANCELLED, "T11"),
+		}
+		FillAzimas(tasks)
+		// No branch is based on another's: an azima's branch is cut from main, whatever it waits for.
+		for code, want := range map[string]*planv1.Azima{
+			"T1": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true, Branch: "djinn/T1"},
+			"T2": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 2, PartsDone: 1, Branch: "djinn/T2"},
+			// Its part T4 is under way, through W3.
+			"T3": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Parts: 1, Branch: "djinn/T3"},
+			"T4": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, Branch: "djinn/T4"},
+			// A failed part is not progress.
+			"T5": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Parts: 1, Branch: "djinn/T5"},
+			"T6": {State: planv1.AzimaState_AZIMA_STATE_DRAFT, Ready: true, Branch: "djinn/T6"},
+			// T7 has a done part whose work is merging: in progress, partsRunning=1, partsDone=0.
+			"T7": {State: planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, Ready: true, Parts: 1, PartsRunning: 1, PartsDone: 0, Branch: "djinn/T7"},
+			// T8 waits for T7, which is not done yet: Ready is false.
+			"T8": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: false, Branch: "djinn/T8"},
+			// T9's work is done, its other part cancelled: 1/1, its proof awaited.
+			"T9": {State: planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF, Ready: true, Parts: 1, PartsDone: 1, Branch: "djinn/T9"},
+			// T10's only part is cancelled: nothing to count, nothing waiting, nothing under way.
+			"T10": {State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true, Branch: "djinn/T10"},
+			// T11 is closed, its only part cancelled: done, and it folds.
+			"T11": {State: planv1.AzimaState_AZIMA_STATE_DONE, Ready: true, Branch: "djinn/T11"},
+		} {
+			i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
+			if got := tasks[i].GetAzima(); !proto.Equal(got, want) {
+				t.Errorf("%s: %v, want %v", code, got, want)
+			}
+		}
+		if tasks[4].GetAzima() != nil {
+			t.Error("work has an azima state")
+		}
+	})
 
-// TestFillAzimasKeepsTheCut: what Djinn records of an azima's branch once it cut it from main stays on every read:
-// its name, even once its title changed, the main it lands in, the commit it was cut from, where it stands against
-// main and its pull request. A base branch without a cut, as an old read computed it, is left out.
-func TestFillAzimasKeepsTheCut(t *testing.T) {
-	const sha = "0123456789abcdef0123456789abcdef01234567"
-	main := &planv1.WishMain{ProjectId: "p", Held: "main holds no release the branch lacks"}
-	pr := &planv1.AzimaPr{Url: "https://example.com/pull/7", State: planv1.AzimaPrState_AZIMA_PR_STATE_OPEN}
-	cut := &planv1.Task{
-		Id: "T1", Code: "T1", Title: "A new title", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
-		Azima: &planv1.Azima{Branch: "djinn/T1-the-first-title", BaseBranch: "main", CutFrom: sha, Main: main, Pr: pr},
-	}
-	old := &planv1.Task{
-		Id: "T2", Code: "T2", Title: "Stacked", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
-		Azima: &planv1.Azima{Branch: "djinn/T2-stacked", BaseBranch: "djinn/T1-the-first-title"},
-	}
-	if got := AzimaBranchName(cut); got != "djinn/T1-the-first-title" {
-		t.Errorf("AzimaBranchName = %q, want the recorded branch", got)
-	}
-	FillAzimas([]*planv1.Task{cut, old})
-	want := &planv1.Azima{
-		State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true, Branch: "djinn/T1-the-first-title", BaseBranch: "main", CutFrom: sha,
-		Main: main, Pr: pr,
-	}
-	if got := cut.GetAzima(); !proto.Equal(got, want) {
-		t.Errorf("cut: %v, want %v", got, want)
-	}
-	want = &planv1.Azima{State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true, Branch: "djinn/T2-stacked"}
-	if got := old.GetAzima(); !proto.Equal(got, want) {
-		t.Errorf("old: %v, want %v", got, want)
-	}
+	// What Djinn records of an azima's branch once it cut it from main stays on every read: its name, even once its
+	// title changed, the main it lands in, the commit it was cut from, where it stands against main and its pull
+	// request. A base branch without a cut, as an old read computed it, is left out.
+	t.Run("keeps the cut", func(t *testing.T) {
+		t.Parallel()
+		const sha = "0123456789abcdef0123456789abcdef01234567"
+		main := &planv1.WishMain{ProjectId: "p", Held: "main holds no release the branch lacks"}
+		pr := &planv1.AzimaPr{Url: "https://example.com/pull/7", State: planv1.AzimaPrState_AZIMA_PR_STATE_OPEN}
+		cut := &planv1.Task{
+			Id: "T1", Code: "T1", Title: "A new title", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+			Azima: &planv1.Azima{Branch: "djinn/T1-the-first-title", BaseBranch: "main", CutFrom: sha, Main: main, Pr: pr},
+		}
+		old := &planv1.Task{
+			Id: "T2", Code: "T2", Title: "Stacked", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING,
+			Azima: &planv1.Azima{Branch: "djinn/T2-stacked", BaseBranch: "djinn/T1-the-first-title"},
+		}
+		if got := AzimaBranchName(cut); got != "djinn/T1-the-first-title" {
+			t.Errorf("AzimaBranchName = %q, want the recorded branch", got)
+		}
+		FillAzimas([]*planv1.Task{cut, old})
+		want := &planv1.Azima{
+			State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true, Branch: "djinn/T1-the-first-title", BaseBranch: "main", CutFrom: sha,
+			Main: main, Pr: pr,
+		}
+		if got := cut.GetAzima(); !proto.Equal(got, want) {
+			t.Errorf("cut: %v, want %v", got, want)
+		}
+		want = &planv1.Azima{State: planv1.AzimaState_AZIMA_STATE_OPEN, Ready: true, Branch: "djinn/T2-stacked"}
+		if got := old.GetAzima(); !proto.Equal(got, want) {
+			t.Errorf("old: %v, want %v", got, want)
+		}
+	})
+
+	// An azima under way awaits its proof once its work is finished (done, stopped, or cut short for good), its azimas
+	// done or awaiting theirs, and its plan file leaves only boxes that need a proof no worker can give.
+	t.Run("awaiting proof", func(t *testing.T) {
+		t.Parallel()
+		needs := []*planv1.ProofNeed{{Box: "Opened on a Mac.", Needs: "a Mac", Provers: []planv1.Prover{planv1.Prover_PROVER_MAC}}}
+		azima := func(code, partOf string, proof bool) *planv1.Task {
+			a := &planv1.Task{Id: code, Code: code, Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING, PartOf: partOf}
+			if proof {
+				a.ProofNeeds = needs
+			}
+			return a
+		}
+		work := func(code, partOf string, status planv1.TaskStatus) *planv1.Task {
+			return &planv1.Task{Id: code, Code: code, Status: status, PartOf: partOf}
+		}
+		const (
+			done, stopped, cut = planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED
+			failed, resuming   = planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_RESUMING
+			pending, running   = planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING
+		)
+		const (
+			open, under = planv1.AzimaState_AZIMA_STATE_OPEN, planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
+			proof       = planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
+		)
+		tasks := []*planv1.Task{
+			// Its work done, stopped, or cut short for good.
+			azima("T1", "", true), work("W1", "T1", done), work("W2", "T1", stopped), work("W3", "T1", cut),
+			// Work left: planned, running, failed or resuming.
+			azima("T2", "", true), work("W4", "T2", done), work("W5", "T2", pending),
+			azima("T3", "", true), work("W6", "T3", done), work("W7", "T3", running),
+			azima("T4", "", true), work("W8", "T4", done), work("W9", "T4", failed),
+			azima("T5", "", true), work("W10", "T5", done), work("W11", "T5", resuming),
+			// A box without needs: its work done, it is to validate all the same; the person checks the box.
+			azima("T6", "", false), work("W12", "T6", done),
+			// Nothing under way: open, whatever its file says.
+			azima("T7", "", true), work("W13", "T7", stopped),
+			// Its azima part awaits its proof too: it does; one with work left holds the other back.
+			azima("T8", "", true), azima("T9", "T8", true), work("W14", "T9", done),
+			azima("T10", "", true), azima("T11", "T10", true), work("W15", "T11", done), work("W16", "T11", pending),
+			// Done stays done.
+			{Id: "T12", Code: "T12", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done, ProofNeeds: needs},
+			// Closed, its plan file saying done, but work part of it runs or waits: in progress until it ends.
+			{Id: "T13", Code: "T13", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W17", "T13", done),
+			work("W18", "T13", running),
+			{Id: "T14", Code: "T14", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W19", "T14", pending),
+			// Closed, with a part failed: in progress, as with the push (harness.azimaEnded); one cut short for good is
+			// finished, and it is done.
+			{Id: "T15", Code: "T15", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W20", "T15", done),
+			work("W21", "T15", failed),
+			{Id: "T16", Code: "T16", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W22", "T16", done),
+			work("W23", "T16", cut),
+		}
+		FillAzimas(tasks)
+		for code, want := range map[string]planv1.AzimaState{
+			"T1": proof, "T2": under, "T3": under, "T4": under, "T5": under, "T6": proof, "T7": open,
+			"T8": proof, "T9": proof, "T10": under, "T11": under, "T12": planv1.AzimaState_AZIMA_STATE_DONE,
+			"T13": under, "T14": under, "T15": under, "T16": planv1.AzimaState_AZIMA_STATE_DONE,
+		} {
+			i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
+			if got := tasks[i].GetAzima().GetState(); got != want {
+				t.Errorf("%s: %v, want %v", code, got, want)
+			}
+		}
+	})
+
+	// An azima whose only live work is a watcher (the babysit of its pull request) is watching, not in progress: closed
+	// or not, its work finished, its azimas done, to validate or watching in their turn.
+	t.Run("watching", func(t *testing.T) {
+		t.Parallel()
+		const (
+			done, stopped, failed = planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_FAILED
+			pending, running      = planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING
+			paused                = planv1.TaskStatus_TASK_STATUS_PAUSED
+		)
+		azima := func(code, partOf string, status planv1.TaskStatus) *planv1.Task {
+			return &planv1.Task{Id: code, Code: code, Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: status, PartOf: partOf}
+		}
+		work := func(code, partOf string, status planv1.TaskStatus) *planv1.Task {
+			return &planv1.Task{Id: code, Code: code, Status: status, PartOf: partOf}
+		}
+		watcher := func(code, partOf string, status planv1.TaskStatus) *planv1.Task {
+			return &planv1.Task{Id: code, Code: code, Status: status, PartOf: partOf, Provider: planv1.Provider_PROVIDER_WATCH}
+		}
+		merging := work("W14", "T9", done)
+		merging.Integration = &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING}
+		tasks := []*planv1.Task{
+			// Its work done, its watcher running: watching, closed or not; paused, the watcher still holds its place.
+			azima("T1", "", pending), work("W1", "T1", done), watcher("B1", "T1", running),
+			azima("T2", "", done), work("W2", "T2", done), work("W3", "T2", stopped), watcher("B2", "T2", running),
+			azima("T3", "", pending), watcher("B3", "T3", paused),
+			// Work left beside the watcher: in progress.
+			azima("T4", "", pending), work("W4", "T4", done), work("W5", "T4", running), watcher("B4", "T4", running),
+			azima("T5", "", pending), work("W6", "T5", pending), watcher("B5", "T5", running),
+			azima("T6", "", done), work("W7", "T6", failed), watcher("B6", "T6", running),
+			// Its azima part watching: it watches too; its azima part with work left keeps it in progress.
+			azima("T7", "", pending), work("W8", "T7", done), azima("T8", "T7", pending), work("W9", "T8", done),
+			watcher("B7", "T8", running),
+			azima("T9", "", pending), work("W10", "T9", done), watcher("B8", "T9", running), merging,
+			// The watcher ended, or has not started: the existing states.
+			azima("T10", "", done), work("W11", "T10", done), watcher("B9", "T10", done),
+			azima("T11", "", pending), work("W12", "T11", done), watcher("B10", "T11", stopped),
+			azima("T12", "", pending), work("W13", "T12", done), watcher("B11", "T12", pending),
+		}
+		FillAzimas(tasks)
+		const (
+			under, watching = planv1.AzimaState_AZIMA_STATE_IN_PROGRESS, planv1.AzimaState_AZIMA_STATE_WATCHING
+			proof           = planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
+		)
+		for code, want := range map[string]planv1.AzimaState{
+			"T1": watching, "T2": watching, "T3": watching, "T4": under, "T5": under, "T6": under, "T7": watching,
+			"T8": watching, "T9": under, "T10": planv1.AzimaState_AZIMA_STATE_DONE, "T11": proof, "T12": under,
+		} {
+			i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
+			if got := tasks[i].GetAzima().GetState(); got != want {
+				t.Errorf("%s: %v, want %v", code, got, want)
+			}
+		}
+		// What it counts stays: the watcher is a part that runs.
+		if e := tasks[0].GetAzima(); e.GetParts() != 2 || e.GetPartsDone() != 1 || e.GetPartsRunning() != 1 {
+			t.Errorf("T1 counts %d parts, %d done, %d running; want 2, 1, 1", e.GetParts(), e.GetPartsDone(), e.GetPartsRunning())
+		}
+	})
 }
 
 // TestAzimaDependencies: an azima waits for another itself or through its work; work inside one azima waiting for
 // work of the same, or for work of no azima, makes no azima wait. RefuseAzimaDependencies refuses only what a change
 // adds; RefuseSwitchToAzima refuses any, naming them in a line.
 func TestAzimaDependencies(t *testing.T) {
+	t.Parallel()
 	task := func(code string, kind planv1.TaskKind, partOf string, deps ...string) *planv1.Task {
 		return &planv1.Task{Id: code, Code: code, Kind: kind, PartOf: partOf, DependsOn: deps}
 	}
@@ -208,207 +338,301 @@ func TestAzimaDependencies(t *testing.T) {
 	}
 }
 
-// TestAwaitingProof: an azima under way awaits its proof once its work is finished (done, stopped, or cut short for
-// good), its azimas done or awaiting theirs, and its plan file leaves only boxes that need a proof no worker can give.
-// Work left, a part failed or resuming, a box without needs, or nothing under way keeps it where it was. A closed azima
-// with a part failed is in progress, not done. The push takes the same rule for an azima's end (TestPushDue).
-func TestAwaitingProof(t *testing.T) {
-	needs := []*planv1.ProofNeed{{Box: "Opened on a Mac.", Needs: "a Mac", Provers: []planv1.Prover{planv1.Prover_PROVER_MAC}}}
-	azima := func(code, partOf string, proof bool) *planv1.Task {
-		a := &planv1.Task{Id: code, Code: code, Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: planv1.TaskStatus_TASK_STATUS_PENDING, PartOf: partOf}
-		if proof {
-			a.ProofNeeds = needs
-		}
-		return a
-	}
-	work := func(code, partOf string, status planv1.TaskStatus) *planv1.Task {
-		return &planv1.Task{Id: code, Code: code, Status: status, PartOf: partOf}
-	}
-	const (
-		done, stopped, cut = planv1.TaskStatus_TASK_STATUS_DONE, planv1.TaskStatus_TASK_STATUS_STOPPED, planv1.TaskStatus_TASK_STATUS_INTERRUPTED
-		failed, resuming   = planv1.TaskStatus_TASK_STATUS_FAILED, planv1.TaskStatus_TASK_STATUS_RESUMING
-		pending, running   = planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING
-	)
-	const (
-		open, under = planv1.AzimaState_AZIMA_STATE_OPEN, planv1.AzimaState_AZIMA_STATE_IN_PROGRESS
-		proof       = planv1.AzimaState_AZIMA_STATE_AWAITING_PROOF
-	)
-	tasks := []*planv1.Task{
-		// Its work done, stopped, or cut short for good.
-		azima("T1", "", true), work("W1", "T1", done), work("W2", "T1", stopped), work("W3", "T1", cut),
-		// Work left: planned, running, failed or resuming.
-		azima("T2", "", true), work("W4", "T2", done), work("W5", "T2", pending),
-		azima("T3", "", true), work("W6", "T3", done), work("W7", "T3", running),
-		azima("T4", "", true), work("W8", "T4", done), work("W9", "T4", failed),
-		azima("T5", "", true), work("W10", "T5", done), work("W11", "T5", resuming),
-		// A box without needs: its work done, it is to validate all the same; the person checks the box.
-		azima("T6", "", false), work("W12", "T6", done),
-		// Nothing under way: open, whatever its file says.
-		azima("T7", "", true), work("W13", "T7", stopped),
-		// Its azima part awaits its proof too: it does; one with work left holds the other back.
-		azima("T8", "", true), azima("T9", "T8", true), work("W14", "T9", done),
-		azima("T10", "", true), azima("T11", "T10", true), work("W15", "T11", done), work("W16", "T11", pending),
-		// Done stays done.
-		{Id: "T12", Code: "T12", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done, ProofNeeds: needs},
-		// Closed, its plan file saying done, but work part of it runs or waits: in progress until it ends.
-		{Id: "T13", Code: "T13", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W17", "T13", done),
-		work("W18", "T13", running),
-		{Id: "T14", Code: "T14", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W19", "T14", pending),
-		// Closed, with a part failed: in progress, as with the push (harness.azimaEnded); one cut short for good is
-		// finished, and it is done.
-		{Id: "T15", Code: "T15", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W20", "T15", done),
-		work("W21", "T15", failed),
-		{Id: "T16", Code: "T16", Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: done}, work("W22", "T16", done),
-		work("W23", "T16", cut),
-	}
-	FillAzimas(tasks)
-	for code, want := range map[string]planv1.AzimaState{
-		"T1": proof, "T2": under, "T3": under, "T4": under, "T5": under, "T6": proof, "T7": open,
-		"T8": proof, "T9": proof, "T10": under, "T11": under, "T12": planv1.AzimaState_AZIMA_STATE_DONE,
-		"T13": under, "T14": under, "T15": under, "T16": planv1.AzimaState_AZIMA_STATE_DONE,
-	} {
-		i := slices.IndexFunc(tasks, func(x *planv1.Task) bool { return x.GetCode() == code })
-		if got := tasks[i].GetAzima().GetState(); got != want {
-			t.Errorf("%s: %v, want %v", code, got, want)
-		}
-	}
-}
-
-// TestAzimaFiles: a plan file's front matter and title are read, the README's absence of one skips it; its after line
-// is written after its status, replaced, and removed, a file already right left as it is.
+// TestAzimaFiles: a plan file's front matter, title, draft description, wish, code and subdirectories are read and
+// written back; the README's absence of front matter skips it, and a file already right is left as it is.
 func TestAzimaFiles(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, PlanDir), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	write := func(name, text string) string {
-		path := filepath.Join(dir, PlanDir, name)
-		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+	t.Parallel()
+	t.Run("front matter and after", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, PlanDir), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		return path
-	}
-	write("README.md", "# Plan\n\n- [ ] T07\n")
-	orch := write("8e8d3d76-orchestrator.md", "---\nid: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76\ncode: T07\nphase: 2\nstatus: in-progress\n---\n\n# T07 · The orchestrator\n\nBody.\n")
-	write("later.md", "---\ncode: T15\nphase: later\nstatus: done\nafter: T07, T17\n---\n# T15 - Work spread over trusted machines\n")
-	files, err := ReadAzimaFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []AzimaFile{
-		{Path: "plan/8e8d3d76-orchestrator.md", ID: "01a1184f-cf1b-7a9e-90f4-3c598e8d3d76", Code: "T07", Phase: "2", Status: "in-progress", Title: "The orchestrator"},
-		{Path: "plan/later.md", Code: "T15", Phase: "later", Status: "done", Title: "Work spread over trusted machines", After: []string{"T07", "T17"}},
-	}
-	if len(files) != len(want) {
-		t.Fatalf("files: %+v", files)
-	}
-	for i := range want {
-		if f, w := files[i], want[i]; f.Path != w.Path || f.ID != w.ID || f.Code != w.Code || f.Phase != w.Phase ||
-			f.Status != w.Status || f.Title != w.Title || !slices.Equal(f.After, w.After) {
-			t.Errorf("file %d: %+v, want %+v", i, f, w)
+		write := func(name, text string) string {
+			path := filepath.Join(dir, PlanDir, name)
+			if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return path
 		}
-	}
-	if !files[1].Done() || files[0].Done() {
-		t.Error("done")
-	}
-
-	check := func(codes []string, changed bool, front string) {
-		t.Helper()
-		got, err := WriteAfter(orch, codes)
-		if err != nil || got != changed {
-			t.Fatalf("WriteAfter(%v) = %v, %v", codes, got, err)
-		}
-		data, err := os.ReadFile(orch)
+		write("README.md", "# Plan\n\n- [ ] T07\n")
+		orch := write("8e8d3d76-orchestrator.md", "---\nid: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76\ncode: T07\nphase: 2\nstatus: in-progress\n---\n\n# T07 · The orchestrator\n\nBody.\n")
+		write("later.md", "---\ncode: T15\nphase: later\nstatus: done\nafter: T07, T17\n---\n# T15 - Work spread over trusted machines\n")
+		files, err := ReadAzimaFiles(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := "---\nid: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76\ncode: T07\nphase: 2\nstatus: in-progress\n" + front +
-			"---\n\n# T07 · The orchestrator\n\nBody.\n"; string(data) != want {
-			t.Errorf("file:\n%s\nwant\n%s", data, want)
+		want := []AzimaFile{
+			{Path: "plan/8e8d3d76-orchestrator.md", ID: "01a1184f-cf1b-7a9e-90f4-3c598e8d3d76", Code: "T07", Phase: "2", Status: "in-progress", Title: "The orchestrator"},
+			{Path: "plan/later.md", Code: "T15", Phase: "later", Status: "done", Title: "Work spread over trusted machines", After: []string{"T07", "T17"}},
 		}
-	}
-	check([]string{"T08", "T17"}, true, "after: T08 T17\n")
-	check([]string{"T08", "T17"}, false, "after: T08 T17\n")
-	check([]string{"T17"}, true, "after: T17\n")
-	check(nil, true, "")
-	check(nil, false, "")
-}
+		if len(files) != len(want) {
+			t.Fatalf("files: %+v", files)
+		}
+		for i := range want {
+			if f, w := files[i], want[i]; f.Path != w.Path || f.ID != w.ID || f.Code != w.Code || f.Phase != w.Phase ||
+				f.Status != w.Status || f.Title != w.Title || !slices.Equal(f.After, w.After) {
+				t.Errorf("file %d: %+v, want %+v", i, f, w)
+			}
+		}
+		if !files[1].Done() || files[0].Done() {
+			t.Error("done")
+		}
 
-// TestDraftAzimaFile: a plan file with status: draft is parsed as a draft, its description holding its goal and body;
-// WriteDescription updates its markdown body, and WriteStatus updates its status.
-func TestDraftAzimaFile(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, PlanDir), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	content := "---\ncode: T31\nstatus: draft\nafter: T07\n---\n\n# T31 · Spreading work over machines\n\n## Goal\nAnticipate and research.\n\n## Design\nDetails here.\n"
-	path := filepath.Join(dir, PlanDir, "t31-draft.md")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	files, err := ReadAzimaFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) != 1 {
-		t.Fatalf("expected 1 file, got %d", len(files))
-	}
-	f := files[0]
-	if !f.Draft() {
-		t.Errorf("Draft() = false, want true")
-	}
-	if f.Done() || f.Closes() {
-		t.Errorf("Done()=%v, Closes()=%v, want false", f.Done(), f.Closes())
-	}
-	if f.Code != "T31" || f.Title != "Spreading work over machines" {
-		t.Errorf("Code=%q, Title=%q", f.Code, f.Title)
-	}
-	if !slices.Equal(f.After, []string{"T07"}) {
-		t.Errorf("After=%v, want [T07]", f.After)
-	}
-	wantDesc := "## Goal\nAnticipate and research.\n\n## Design\nDetails here."
-	if f.Description != wantDesc {
-		t.Errorf("Description = %q, want %q", f.Description, wantDesc)
-	}
+		check := func(codes []string, changed bool, front string) {
+			t.Helper()
+			got, err := WriteAfter(orch, codes)
+			if err != nil || got != changed {
+				t.Fatalf("WriteAfter(%v) = %v, %v", codes, got, err)
+			}
+			data, err := os.ReadFile(orch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := "---\nid: 01a1184f-cf1b-7a9e-90f4-3c598e8d3d76\ncode: T07\nphase: 2\nstatus: in-progress\n" + front +
+				"---\n\n# T07 · The orchestrator\n\nBody.\n"; string(data) != want {
+				t.Errorf("file:\n%s\nwant\n%s", data, want)
+			}
+		}
+		check([]string{"T08", "T17"}, true, "after: T08 T17\n")
+		check([]string{"T08", "T17"}, false, "after: T08 T17\n")
+		check([]string{"T17"}, true, "after: T17\n")
+		check(nil, true, "")
+		check(nil, false, "")
+	})
 
-	// WriteDescription replaces the description while preserving the front matter and title.
-	newDesc := "## Goal\nRevised goal.\n\n## Research\nSome research."
-	changed, err := WriteDescription(path, newDesc)
-	if err != nil || !changed {
-		t.Fatalf("WriteDescription: changed=%v, err=%v", changed, err)
-	}
-	files, err = ReadAzimaFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if files[0].Description != newDesc {
-		t.Errorf("updated description = %q, want %q", files[0].Description, newDesc)
-	}
-	if !files[0].Draft() || files[0].Code != "T31" {
-		t.Errorf("front matter was damaged: draft=%v, code=%q", files[0].Draft(), files[0].Code)
-	}
+	t.Run("draft description and status", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, PlanDir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		content := "---\ncode: T31\nstatus: draft\nafter: T07\n---\n\n# T31 · Spreading work over machines\n\n## Goal\nAnticipate and research.\n\n## Design\nDetails here.\n"
+		path := filepath.Join(dir, PlanDir, "t31-draft.md")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		files, err := ReadAzimaFiles(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(files) != 1 {
+			t.Fatalf("expected 1 file, got %d", len(files))
+		}
+		f := files[0]
+		if !f.Draft() {
+			t.Errorf("Draft() = false, want true")
+		}
+		if f.Done() || f.Closes() {
+			t.Errorf("Done()=%v, Closes()=%v, want false", f.Done(), f.Closes())
+		}
+		if f.Code != "T31" || f.Title != "Spreading work over machines" {
+			t.Errorf("Code=%q, Title=%q", f.Code, f.Title)
+		}
+		if !slices.Equal(f.After, []string{"T07"}) {
+			t.Errorf("After=%v, want [T07]", f.After)
+		}
+		wantDesc := "## Goal\nAnticipate and research.\n\n## Design\nDetails here."
+		if f.Description != wantDesc {
+			t.Errorf("Description = %q, want %q", f.Description, wantDesc)
+		}
 
-	// WriteStatus changes status from draft to open.
-	changed, err = WriteStatus(path, "open")
-	if err != nil || !changed {
-		t.Fatalf("WriteStatus: changed=%v, err=%v", changed, err)
-	}
-	files, err = ReadAzimaFiles(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if files[0].Draft() {
-		t.Errorf("after WriteStatus(open), Draft() is still true")
-	}
-	if files[0].Status != "open" {
-		t.Errorf("Status = %q, want open", files[0].Status)
-	}
-	if files[0].Description != newDesc {
-		t.Errorf("WriteStatus damaged description: %q", files[0].Description)
-	}
+		// WriteDescription replaces the description while preserving the front matter and title.
+		newDesc := "## Goal\nRevised goal.\n\n## Research\nSome research."
+		changed, err := WriteDescription(path, newDesc)
+		if err != nil || !changed {
+			t.Fatalf("WriteDescription: changed=%v, err=%v", changed, err)
+		}
+		files, err = ReadAzimaFiles(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if files[0].Description != newDesc {
+			t.Errorf("updated description = %q, want %q", files[0].Description, newDesc)
+		}
+		if !files[0].Draft() || files[0].Code != "T31" {
+			t.Errorf("front matter was damaged: draft=%v, code=%q", files[0].Draft(), files[0].Code)
+		}
+
+		// WriteStatus changes status from draft to open.
+		changed, err = WriteStatus(path, "open")
+		if err != nil || !changed {
+			t.Fatalf("WriteStatus: changed=%v, err=%v", changed, err)
+		}
+		files, err = ReadAzimaFiles(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if files[0].Draft() {
+			t.Errorf("after WriteStatus(open), Draft() is still true")
+		}
+		if files[0].Status != "open" {
+			t.Errorf("Status = %q, want open", files[0].Status)
+		}
+		if files[0].Description != newDesc {
+			t.Errorf("WriteStatus damaged description: %q", files[0].Description)
+		}
+	})
+
+	t.Run("write wish", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "task.md")
+		content := `---
+id: 01a1184f-cf15-74c4-bd3f-4d72fe63ed30
+code: T01
+status: draft
+---
+# T01 · Test Task
+
+Description here.
+`
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Add wish
+		changed, err := WriteWish(path, "Collaborative Djinn")
+		if err != nil {
+			t.Fatalf("WriteWish err: %v", err)
+		}
+		if !changed {
+			t.Errorf("WriteWish changed = false, want true")
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, ok := parseAzimaFile(data)
+		if !ok || f.Wish != "Collaborative Djinn" {
+			t.Errorf("parsed wish = %q, want %q", f.Wish, "Collaborative Djinn")
+		}
+
+		// Idempotent
+		changed, err = WriteWish(path, "Collaborative Djinn")
+		if err != nil || changed {
+			t.Errorf("WriteWish idempotent changed = %v, err = %v", changed, err)
+		}
+
+		// Quoting when special chars
+		changed, err = WriteWish(path, "Wish: Special #1")
+		if err != nil || !changed {
+			t.Fatalf("WriteWish special err = %v, changed = %v", err, changed)
+		}
+		data, err = os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, ok = parseAzimaFile(data)
+		if !ok || f.Wish != "Wish: Special #1" {
+			t.Errorf("parsed wish special = %q, want %q", f.Wish, "Wish: Special #1")
+		}
+
+		// Clear wish
+		changed, err = WriteWish(path, "")
+		if err != nil || !changed {
+			t.Fatalf("WriteWish clear err = %v, changed = %v", err, changed)
+		}
+		data, err = os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, ok = parseAzimaFile(data)
+		if !ok || f.Wish != "" {
+			t.Errorf("parsed wish after clear = %q, want empty", f.Wish)
+		}
+	})
+
+	t.Run("write code", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "task.md")
+		content := `---
+id: 01a1184f-cf15-74c4-bd3f-4d72fe63ed30
+code: T01
+status: draft
+---
+# T01 · Test Task
+
+Description here.
+`
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		changed, err := WriteCode(path, "T05")
+		if err != nil {
+			t.Fatalf("WriteCode err: %v", err)
+		}
+		if !changed {
+			t.Errorf("WriteCode changed = false, want true")
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, ok := parseAzimaFile(data)
+		if !ok || f.Code != "T05" {
+			t.Errorf("parsed code = %q, want T05", f.Code)
+		}
+		if f.Title != "Test Task" {
+			t.Errorf("parsed title = %q, want Test Task", f.Title)
+		}
+		if !strings.Contains(string(data), "# T05 · Test Task") {
+			t.Errorf("file body does not contain updated heading:\n%s", string(data))
+		}
+
+		// Idempotent
+		changed, err = WriteCode(path, "T05")
+		if err != nil || changed {
+			t.Errorf("WriteCode idempotent changed = %v, err = %v", changed, err)
+		}
+	})
+
+	t.Run("subdirectories", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		planDir := filepath.Join(dir, PlanDir)
+		subDir := filepath.Join(planDir, "collab-wish")
+		if err := os.MkdirAll(subDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		f1 := filepath.Join(planDir, "one.md")
+		f2 := filepath.Join(subDir, "two.md")
+		c1 := "---\ncode: T01\n---\n# T01 · One\n"
+		c2 := "---\ncode: T02\n---\n# T02 · Two\n"
+		if err := os.WriteFile(f1, []byte(c1), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f2, []byte(c2), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		files, err := ReadAzimaFiles(dir)
+		if err != nil {
+			t.Fatalf("ReadAzimaFiles err: %v", err)
+		}
+		if len(files) != 2 {
+			t.Fatalf("ReadAzimaFiles len = %d, want 2", len(files))
+		}
+		byCode := map[string]AzimaFile{}
+		for _, f := range files {
+			byCode[f.Code] = f
+		}
+		if byCode["T01"].Wish != "" {
+			t.Errorf("T01 wish = %q, want empty", byCode["T01"].Wish)
+		}
+		if byCode["T02"].Wish != "collab-wish" {
+			t.Errorf("T02 wish = %q, want collab-wish", byCode["T02"].Wish)
+		}
+	})
 }
 
 func TestCompareCodes(t *testing.T) {
+	t.Parallel()
 	codes := []string{"T10", "W2", "T2", "t3", "T01", "W10"}
 	slices.SortFunc(codes, CompareCodes)
 	if want := []string{"T01", "T2", "t3", "T10", "W2", "W10"}; !slices.Equal(codes, want) {
@@ -416,11 +640,11 @@ func TestCompareCodes(t *testing.T) {
 	}
 }
 
-// TestBriefAzimas: the brief shows the plan as a graph, the ready azimas first (the one under way before the open one),
-// then the blocked ones with what they wait for, those awaiting their proof apart with who gives it, the done ones on
-// one line; no azima is in the running, waiting or
-// finished work, and work says its azima.
+// TestBriefAzimas: the brief shows the plan as a graph in rank order (W134), the ranked azimas first, then the others
+// by code, ready or with what they wait for, those awaiting their proof apart with who gives it, the done ones on one
+// line; no azima is in the running, waiting or finished work, and work says its azima.
 func TestBriefAzimas(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c := serve(t)
 	made, err := c.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Plan the lamp"}))
@@ -436,10 +660,14 @@ func TestBriefAzimas(t *testing.T) {
 	pending, done := planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_DONE
 	t1 := azima("T1", "The data", done)
 	t2 := azima("T2", "The protos", done)
+	// Their work all in main (W192): by a request, and by its commits in a main named master.
+	t1.Azima = &planv1.Azima{Merged: &planv1.AzimaMerged{RequestUrl: "https://github.com/acme/lamp/pull/7"}}
+	t2.Azima = &planv1.Azima{Merged: &planv1.AzimaMerged{MainBranch: "master", MainSha: "53698aea"}}
 	t3 := azima("T3", "The window", pending, t1.GetId())
 	t4 := azima("T4", "The orchestrator", pending, t1.GetId(), t2.GetId())
 	t5 := azima("T5", "Spread the work", pending, t2.GetId(), t3.GetId(), t4.GetId())
 	t10 := azima("T10", "Releases", pending, t4.GetId())
+	t5.Rank, t10.Rank = 2, 1
 	t11 := azima("T11", "Windows", pending)
 	t11.ProofNeeds = []*planv1.ProofNeed{
 		{Box: "Opens on Windows 11.", Needs: "a Windows 11 machine", Provers: []planv1.Prover{planv1.Prover_PROVER_WINDOWS}},
@@ -464,11 +692,17 @@ func TestBriefAzimas(t *testing.T) {
 		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, CreateTime: day, StartTime: day, Provider: planv1.Provider_PROVIDER_CLAUDE}
 	planned := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W2", Title: "Draw it", PartOf: t3.GetId(),
 		Status: pending, CreateTime: day, Scheduled: true}
+	// Its work done, the babysit of its pull request runs: watching, under way with the ones in progress.
+	t13 := azima("T13", "Babysat", pending)
+	merged := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W6", Title: "Ship it", PartOf: t13.GetId(),
+		Status: done, CreateTime: day}
+	babysit := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W7", Title: "Babysit the PR", PartOf: t13.GetId(),
+		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, CreateTime: day, StartTime: day, Provider: planv1.Provider_PROVIDER_WATCH}
 	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(actor, "test/put", t1); err != nil {
 			return err
 		}
-		for _, task := range []*planv1.Task{t1, t2, t3, t4, t5, t10, t11, t12, t31, running, planned, built, updated, dropped} {
+		for _, task := range []*planv1.Task{t1, t2, t3, t4, t5, t10, t11, t12, t31, running, planned, built, updated, dropped, t13, merged, babysit} {
 			if err := tx.Put(task); err != nil {
 				return err
 			}
@@ -486,13 +720,15 @@ func TestBriefAzimas(t *testing.T) {
 		t.Fatalf("no azimas:\n%s", brief.Moving)
 	}
 	azimas, rest, _ := strings.Cut(azimas, "\n## ")
-	want := "The plan as a graph, the ready azimas first. Spawn their work `--part-of <azima>`.\n\n" +
-		"- **T4** The orchestrator: ready, in progress, 0 of 1 parts done, 1 running\n" +
-		"- **T3** The window: ready, open, 0 of 1 parts done\n" +
-		"- **T5** Spread the work: waits for T3, T4 (after T2, T3, T4); open\n" +
+	want := "The plan as a graph, in rank order: Djinn starts the work of the first azimas first " +
+		"(`djinn task rank <azima> --top`, `--before T07`, `--after T07`). Spawn their work `--part-of <azima>`.\n\n" +
 		"- **T10** Releases: waits for T4; open\n" +
+		"- **T5** Spread the work: waits for T3, T4 (after T2, T3, T4); open\n" +
+		"- **T3** The window: ready, open, 0 of 1 parts done\n" +
+		"- **T4** The orchestrator: ready, in progress, 0 of 1 parts done, 1 running\n" +
+		"- **T13** Babysat: ready, watching (only a watcher runs), 1 of 2 parts done, 1 running\n" +
 		"- Work done, waiting for its proof: T11 needs a Windows machine, Clément's review; T12 needs a release, a person.\n" +
-		"- Done: T1, T2.\n" +
+		"- Done: T1 (merged into main), T2 (merged into master).\n" +
 		"- Drafts: T31 Spreading work — open with djinn task open T31 (explained by L01).\n"
 	if azimas != want {
 		t.Errorf("azimas =\n%s\nwant\n%s", azimas, want)
@@ -509,10 +745,42 @@ func TestBriefAzimas(t *testing.T) {
 	if !strings.Contains(brief.Stable, "--part-of <azima>") || !strings.Contains(brief.Stable, "djinn plan sync <wish>") {
 		t.Errorf("the rules leave the azimas out:\n%s", brief.Stable)
 	}
+	if strings.Contains(azimas, "Every azima is merged into main") {
+		t.Errorf("every azima said merged, though T3 is not:\n%s", azimas)
+	}
+
+	// Every azima but the draft merged into main: the brief says to propose the grant.
+	if err := c.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(actor, "test/put", t1); err != nil {
+			return err
+		}
+		for _, task := range []*planv1.Task{t3, t4, t5, t10, t11, t12, t13} {
+			task.Azima = &planv1.Azima{Merged: &planv1.AzimaMerged{MainBranch: "main"}}
+			if err := tx.Put(task); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if brief, err = BuildBrief(ctx, c.store, t.TempDir(), wishID); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{
+		"- **T3** The window: ready, open, 0 of 1 parts done; merged into main\n",
+		"T11 needs a Windows machine, Clément's review (merged into main);",
+		"- Every azima is merged into main: propose to the developer to grant the wish.\n",
+	} {
+		if !strings.Contains(brief.Moving, line) {
+			t.Errorf("brief lacks %q:\n%s", line, brief.Moving)
+		}
+	}
 }
 
 // TestHasUnfinishedParts: tells whether an azima has unfinished parts or nested azimas with unfinished parts.
 func TestHasUnfinishedParts(t *testing.T) {
+	t.Parallel()
 	azima := func(id, partOf string, status planv1.TaskStatus) *planv1.Task {
 		return &planv1.Task{Id: id, Code: id, Kind: planv1.TaskKind_TASK_KIND_AZIMA, Status: status, PartOf: partOf}
 	}
@@ -610,124 +878,10 @@ func TestHasUnfinishedParts(t *testing.T) {
 	}
 }
 
-func TestWriteWish(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "task.md")
-	content := `---
-id: 01a1184f-cf15-74c4-bd3f-4d72fe63ed30
-code: T01
-status: draft
----
-# T01 · Test Task
-
-Description here.
-`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Add wish
-	changed, err := WriteWish(path, "Collaborative Djinn")
-	if err != nil {
-		t.Fatalf("WriteWish err: %v", err)
-	}
-	if !changed {
-		t.Errorf("WriteWish changed = false, want true")
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f, ok := parseAzimaFile(data)
-	if !ok || f.Wish != "Collaborative Djinn" {
-		t.Errorf("parsed wish = %q, want %q", f.Wish, "Collaborative Djinn")
-	}
-
-	// Idempotent
-	changed, err = WriteWish(path, "Collaborative Djinn")
-	if err != nil || changed {
-		t.Errorf("WriteWish idempotent changed = %v, err = %v", changed, err)
-	}
-
-	// Quoting when special chars
-	changed, err = WriteWish(path, "Wish: Special #1")
-	if err != nil || !changed {
-		t.Fatalf("WriteWish special err = %v, changed = %v", err, changed)
-	}
-	data, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f, ok = parseAzimaFile(data)
-	if !ok || f.Wish != "Wish: Special #1" {
-		t.Errorf("parsed wish special = %q, want %q", f.Wish, "Wish: Special #1")
-	}
-
-	// Clear wish
-	changed, err = WriteWish(path, "")
-	if err != nil || !changed {
-		t.Fatalf("WriteWish clear err = %v, changed = %v", err, changed)
-	}
-	data, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f, ok = parseAzimaFile(data)
-	if !ok || f.Wish != "" {
-		t.Errorf("parsed wish after clear = %q, want empty", f.Wish)
-	}
-}
-
-func TestWriteCode(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "task.md")
-	content := `---
-id: 01a1184f-cf15-74c4-bd3f-4d72fe63ed30
-code: T01
-status: draft
----
-# T01 · Test Task
-
-Description here.
-`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	changed, err := WriteCode(path, "T05")
-	if err != nil {
-		t.Fatalf("WriteCode err: %v", err)
-	}
-	if !changed {
-		t.Errorf("WriteCode changed = false, want true")
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f, ok := parseAzimaFile(data)
-	if !ok || f.Code != "T05" {
-		t.Errorf("parsed code = %q, want T05", f.Code)
-	}
-	if f.Title != "Test Task" {
-		t.Errorf("parsed title = %q, want Test Task", f.Title)
-	}
-	if !strings.Contains(string(data), "# T05 · Test Task") {
-		t.Errorf("file body does not contain updated heading:\n%s", string(data))
-	}
-
-	// Idempotent
-	changed, err = WriteCode(path, "T05")
-	if err != nil || changed {
-		t.Errorf("WriteCode idempotent changed = %v, err = %v", changed, err)
-	}
-}
-
 // TestWriteTitle: the title goes into the heading, its code and separator kept; a heading without the code is the
 // title alone; a file without a heading gets one; line endings stay; the title reads back as it was written.
 func TestWriteTitle(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ name, before, after string }{
 		{"code and separator kept",
 			"---\ncode: T36\n---\n\n# T36: Old\n\nGoal.\n",
@@ -747,6 +901,7 @@ func TestWriteTitle(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			path := filepath.Join(t.TempDir(), "t36.md")
 			if err := os.WriteFile(path, []byte(c.before), 0o644); err != nil {
 				t.Fatal(err)
@@ -769,43 +924,5 @@ func TestWriteTitle(t *testing.T) {
 				t.Errorf("WriteTitle again: changed %v, err %v", changed, err)
 			}
 		})
-	}
-}
-
-func TestReadAzimaFilesSubdirectories(t *testing.T) {
-	dir := t.TempDir()
-	planDir := filepath.Join(dir, PlanDir)
-	subDir := filepath.Join(planDir, "collab-wish")
-	if err := os.MkdirAll(subDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	f1 := filepath.Join(planDir, "one.md")
-	f2 := filepath.Join(subDir, "two.md")
-	c1 := "---\ncode: T01\n---\n# T01 · One\n"
-	c2 := "---\ncode: T02\n---\n# T02 · Two\n"
-	if err := os.WriteFile(f1, []byte(c1), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(f2, []byte(c2), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	files, err := ReadAzimaFiles(dir)
-	if err != nil {
-		t.Fatalf("ReadAzimaFiles err: %v", err)
-	}
-	if len(files) != 2 {
-		t.Fatalf("ReadAzimaFiles len = %d, want 2", len(files))
-	}
-	byCode := map[string]AzimaFile{}
-	for _, f := range files {
-		byCode[f.Code] = f
-	}
-	if byCode["T01"].Wish != "" {
-		t.Errorf("T01 wish = %q, want empty", byCode["T01"].Wish)
-	}
-	if byCode["T02"].Wish != "collab-wish" {
-		t.Errorf("T02 wish = %q, want collab-wish", byCode["T02"].Wish)
 	}
 }

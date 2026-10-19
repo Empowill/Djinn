@@ -2,10 +2,7 @@ package server_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
-	"errors"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,28 +12,27 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"testing/fstest"
-	"time"
 
-	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	demov1 "github.com/empowill/djinn/gen/go/demo/v1"
-	"github.com/empowill/djinn/gen/go/demo/v1/demov1connect"
 	"github.com/empowill/djinn/internal/server"
 )
 
 func TestTransportFor(t *testing.T) {
+	t.Parallel()
 	for goos, want := range map[string]server.Transport{
 		"windows": server.HTTP,
 		"darwin":  server.Wails,
 		"linux":   server.Wails,
 		"freebsd": server.Wails,
 	} {
-		if got := server.TransportFor(goos); got != want {
-			t.Errorf("TransportFor(%q) = %q, want %q", goos, got, want)
-		}
+		t.Run(goos, func(t *testing.T) {
+			t.Parallel()
+			if got := server.TransportFor(goos); got != want {
+				t.Errorf("TransportFor(%q) = %q, want %q", goos, got, want)
+			}
+		})
 	}
 }
 
@@ -67,278 +63,141 @@ func ownerOnly(t *testing.T, path string) {
 	}
 }
 
-func TestAddrFile(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "home") // Created by WriteAddr.
-	if _, err := server.ReadAddr(home); err == nil || !strings.Contains(err.Error(), "djinn up") {
-		t.Fatalf("no file: %v, want an error that says to run djinn up", err)
-	}
-
-	const addr = "http://127.0.0.1:4000/?token=s3cret"
-	path := filepath.Join(home, server.AddrFile)
-	// A file left with loose permissions is replaced, not reused.
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	remove, err := server.WriteAddr(home, addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ownerOnly(t, path)
-	if got, err := server.ReadAddr(home); err != nil || got != addr {
-		t.Fatalf("ReadAddr = %q, %v, want %q", got, err, addr)
-	}
-	remove()
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("after remove: %v, want no file", err)
-	}
-
-	// A server that started since owns the file: the first one leaves it.
-	remove, err = server.WriteAddr(home, addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := server.WriteAddr(home, "unix:///elsewhere/djinn.sock"); err != nil {
-		t.Fatal(err)
-	}
-	remove()
-	if got, err := server.ReadAddr(home); err != nil || got != "unix:///elsewhere/djinn.sock" {
-		t.Fatalf("after the first server stops: %q, %v, want the second address", got, err)
-	}
-}
-
 func TestListenUnix(t *testing.T) {
-	path := filepath.Join(shortDir(t), "djinn.sock")
-	ln, err := server.ListenUnix(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ownerOnly(t, path)
-	if _, err := server.ListenUnix(path); err == nil || !strings.Contains(err.Error(), "already running") {
-		t.Fatalf("second listener: %v, want already running", err)
-	}
-	ln.Close()
+	t.Parallel()
+
+	t.Run("refuses a second listener", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(shortDir(t), "djinn.sock")
+		ln, err := server.ListenUnix(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		ownerOnly(t, path)
+		if _, err := server.ListenUnix(path); err == nil || !strings.Contains(err.Error(), "already running") {
+			t.Fatalf("second listener: %v, want already running", err)
+		}
+	})
 
 	// A socket file nobody listens on, as a crash leaves it, is replaced.
-	stale, err := net.Listen("unix", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stale.(*net.UnixListener).SetUnlinkOnClose(false)
-	stale.Close()
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("the stale socket should remain: %v", err)
-	}
-	ln, err = server.ListenUnix(path)
-	if err != nil {
-		t.Fatalf("stale socket: %v", err)
-	}
-	ln.Close()
-
-	long := filepath.Join(shortDir(t), strings.Repeat("d", 100), "djinn.sock")
-	if _, err := server.ListenUnix(long); err == nil || !strings.Contains(err.Error(), "DJINN_HOME") {
-		t.Fatalf("long path: %v, want a hint to shorten DJINN_HOME", err)
-	}
-}
-
-// protoClient returns an HTTP client to network and address that speaks HTTP/1.1, or h2c only (prior knowledge).
-func protoClient(network, address string, h2c bool) *http.Client {
-	var d net.Dialer
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) { return d.DialContext(ctx, network, address) },
-	}
-	if h2c {
-		transport.Protocols = new(http.Protocols)
-		transport.Protocols.SetUnencryptedHTTP2(true)
-	}
-	return &http.Client{Transport: transport}
-}
-
-// echoHandler serves bench.v1.Echo/Echo, a unary call, and bench.v1.Echo/Chat, a bidirectional stream, which
-// return what they receive.
-func echoHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/bench.v1.Echo/Echo", connect.NewUnaryHandler("/bench.v1.Echo/Echo",
-		func(_ context.Context, req *connect.Request[wrapperspb.StringValue]) (*connect.Response[wrapperspb.StringValue], error) {
-			return connect.NewResponse(req.Msg), nil
-		}))
-	mux.Handle("/bench.v1.Echo/Chat", connect.NewBidiStreamHandler("/bench.v1.Echo/Chat",
-		func(_ context.Context, s *connect.BidiStream[wrapperspb.StringValue, wrapperspb.StringValue]) error {
-			for {
-				msg, err := s.Receive()
-				if errors.Is(err, io.EOF) {
-					return nil
-				}
-				if err != nil {
-					return err
-				}
-				if err := s.Send(msg); err != nil {
-					return err
-				}
-			}
-		}))
-	demoPrefix, demo := demov1connect.NewDemoServiceHandler(countTo{})
-	return server.Handler(fstest.MapFS{}, nil, map[string]http.Handler{"/bench.v1.Echo/": mux, demoPrefix: demo})
-}
-
-// countTo sends 1, 2, … up to the request at once: demo.Service waits between two values.
-type countTo struct{}
-
-func (countTo) Count(
-	_ context.Context, req *connect.Request[demov1.CountRequest], s *connect.ServerStream[demov1.CountResponse],
-) error {
-	for v := int32(1); v <= req.Msg.GetUpTo(); v++ {
-		if err := s.Send(&demov1.CountResponse{Value: v}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// TestUnixSocketSpeaksH2C checks the protocols of the Unix socket: HTTP/1.1, which the command line uses, and h2c,
-// which carries a bidirectional stream message by message.
-func TestUnixSocketSpeaksH2C(t *testing.T) {
-	socket := filepath.Join(shortDir(t), server.SocketFile)
-	ln, err := server.ListenUnix(socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Serve(t.Context(), ln, echoHandler()) //nolint:errcheck // Stops with the test.
-
-	for _, h2c := range []bool{false, true} {
-		res, err := protoClient("unix", socket, h2c).Get("http://djinn/")
+	t.Run("replaces a stale socket", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(shortDir(t), "djinn.sock")
+		stale, err := net.Listen("unix", path)
 		if err != nil {
-			t.Fatalf("h2c %v: %v", h2c, err)
+			t.Fatal(err)
 		}
-		res.Body.Close()
-		if want := map[bool]int{false: 1, true: 2}[h2c]; res.ProtoMajor != want {
-			t.Errorf("h2c %v: HTTP/%d, want HTTP/%d", h2c, res.ProtoMajor, want)
+		stale.(*net.UnixListener).SetUnlinkOnClose(false)
+		stale.Close()
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("the stale socket should remain: %v", err)
 		}
-	}
-
-	// Each answer comes back before the next message is sent: the stream goes both ways at once. A transport that
-	// waited for the end of the request would block here, until the deadline.
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	chat := connect.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](
-		protoClient("unix", socket, true), "http://djinn/bench.v1.Echo/Chat").CallBidiStream(ctx)
-	for _, word := range []string{"one", "two", "three"} {
-		if err := chat.Send(wrapperspb.String(word)); err != nil {
-			t.Fatalf("send %s: %v", word, err)
-		}
-		got, err := chat.Receive()
+		ln, err := server.ListenUnix(path)
 		if err != nil {
-			t.Fatalf("receive %s: %v", word, err)
+			t.Fatalf("stale socket: %v", err)
 		}
-		if got.GetValue() != word {
-			t.Fatalf("got %q, want %q", got.GetValue(), word)
+		ln.Close()
+	})
+
+	t.Run("refuses a long path", func(t *testing.T) {
+		t.Parallel()
+		long := filepath.Join(shortDir(t), strings.Repeat("d", 100), "djinn.sock")
+		if _, err := server.ListenUnix(long); err == nil || !strings.Contains(err.Error(), "DJINN_HOME") {
+			t.Fatalf("long path: %v, want a hint to shorten DJINN_HOME", err)
 		}
-	}
-	if err := chat.CloseRequest(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := chat.Receive(); !errors.Is(err, io.EOF) {
-		t.Fatalf("end of the chat: %v, want EOF", err)
-	}
-	if err := chat.CloseResponse(); err != nil {
-		t.Fatal(err)
-	}
+	})
 }
 
-// TestLoopbackStaysHTTP1 checks that the loopback server, which browsers reach, speaks HTTP/1.1 only.
-func TestLoopbackStaysHTTP1(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Serve(t.Context(), ln, echoHandler()) //nolint:errcheck // Stops with the test.
+func TestWriteAddr(t *testing.T) {
+	t.Parallel()
+	const addr = "http://127.0.0.1:4000/?token=s3cret"
 
-	res, err := protoClient("tcp", ln.Addr().String(), false).Get("http://djinn/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	res.Body.Close()
-	if res.ProtoMajor != 1 {
-		t.Errorf("HTTP/%d, want HTTP/1.1", res.ProtoMajor)
-	}
-	if res, err := protoClient("tcp", ln.Addr().String(), true).Get("http://djinn/"); err == nil {
-		res.Body.Close()
-		t.Fatalf("h2c over TCP answered HTTP/%d, want a refusal", res.ProtoMajor)
-	}
+	// A file left with loose permissions is replaced, not reused; remove deletes it.
+	t.Run("replaces a loose file", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		path := filepath.Join(home, server.AddrFile)
+		if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		remove, err := server.WriteAddr(home, addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ownerOnly(t, path)
+		if got, err := server.ReadAddr(home); err != nil || got != addr {
+			t.Fatalf("ReadAddr = %q, %v, want %q", got, err, addr)
+		}
+		remove()
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("after remove: %v, want no file", err)
+		}
+	})
+
+	// A server that started since owns the file: the first one leaves it.
+	t.Run("leaves a newer address", func(t *testing.T) {
+		t.Parallel()
+		home := filepath.Join(t.TempDir(), "home") // Created by WriteAddr.
+		remove, err := server.WriteAddr(home, addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := server.WriteAddr(home, "unix:///elsewhere/djinn.sock"); err != nil {
+			t.Fatal(err)
+		}
+		remove()
+		if got, err := server.ReadAddr(home); err != nil || got != "unix:///elsewhere/djinn.sock" {
+			t.Fatalf("after the first server stops: %q, %v, want the second address", got, err)
+		}
+	})
 }
 
-// TestNoCompression checks that the services answer in the clear although connect-go clients, like the command
-// line, and browsers ask for gzip.
-func TestNoCompression(t *testing.T) {
-	socket := filepath.Join(shortDir(t), server.SocketFile)
-	ln, err := server.ListenUnix(socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Serve(t.Context(), ln, echoHandler()) //nolint:errcheck // Stops with the test.
-	hc := protoClient("unix", socket, false)
-
-	// connect-go with its defaults, as the command line calls: it accepts gzip.
-	var sent, encoding string
-	spy := connect.WithInterceptors(connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			res, err := next(ctx, req)
-			sent = req.Header().Get("Accept-Encoding")
-			if res != nil {
-				encoding = res.Header().Get("Content-Encoding")
+func TestReadAddr(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		home    func(t *testing.T) string
+		want    string
+		wantErr string
+	}{
+		{"no file says to run djinn up", func(t *testing.T) string { return t.TempDir() }, "", "djinn up"},
+		{"no data directory", func(*testing.T) string { return "" }, "", "data directory is empty"},
+		{"empty file", func(t *testing.T) string {
+			home := t.TempDir()
+			if err := os.WriteFile(filepath.Join(home, server.AddrFile), []byte("\n"), 0o600); err != nil {
+				t.Fatal(err)
 			}
-			return res, err
-		}
-	}))
-	echo := connect.NewClient[wrapperspb.StringValue, wrapperspb.StringValue](hc, "http://djinn/bench.v1.Echo/Echo", spy)
-	big := strings.Repeat("compressible ", 1000)
-	res, err := echo.CallUnary(t.Context(), connect.NewRequest(wrapperspb.String(big)))
-	if err != nil || res.Msg.GetValue() != big {
-		t.Fatalf("echo: %v", err)
+			return home
+		}, "", "is empty"},
+		{"address on its line", func(t *testing.T) string {
+			home := t.TempDir()
+			if err := os.WriteFile(filepath.Join(home, server.AddrFile), []byte("unix:///d/djinn.sock\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return home
+		}, "unix:///d/djinn.sock", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := server.ReadAddr(tc.home(t))
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("ReadAddr = %q, %v, want an error with %q", got, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("ReadAddr = %q, %v, want %q", got, err, tc.want)
+			}
+		})
 	}
-	if !strings.Contains(sent, "gzip") {
-		t.Fatalf("the client sent Accept-Encoding %q: the test no longer asks for gzip", sent)
-	}
-	if encoding != "" {
-		t.Errorf("unary response: Content-Encoding %q, want none", encoding)
-	}
-
-	// A browser asks with Accept-Encoding on every request.
-	req, _ := http.NewRequest(http.MethodPost, "http://djinn/bench.v1.Echo/Echo", strings.NewReader(`"`+big+`"`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-	raw, err := hc.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw.Body.Close()
-	if raw.StatusCode != http.StatusOK || raw.Header.Get("Content-Encoding") != "" {
-		t.Errorf("browser-like unary: status %d, Content-Encoding %q, want 200 and none",
-			raw.StatusCode, raw.Header.Get("Content-Encoding"))
-	}
-
-	// A stream: connect-go asks with Connect-Accept-Encoding.
-	stream, err := demov1connect.NewDemoServiceClient(hc, "http://djinn").
-		Count(t.Context(), connect.NewRequest(&demov1.CountRequest{UpTo: 3}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for stream.Receive() {
-	}
-	if err := stream.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if e := stream.ResponseHeader().Get("Connect-Content-Encoding"); e != "" {
-		t.Errorf("stream: Connect-Content-Encoding %q, want none", e)
-	}
-	stream.Close()
 }
 
 // TestWholeWrites checks that through WholeWrites, as the window's wails:// handler serves, each message of a Connect
 // stream reaches the writer in one Write: on macOS, WebKit held back a payload written after its prefix.
 func TestWholeWrites(t *testing.T) {
+	t.Parallel()
 	body, err := proto.Marshal(&demov1.CountRequest{UpTo: 3})
 	if err != nil {
 		t.Fatal(err)

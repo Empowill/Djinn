@@ -386,11 +386,76 @@ func TestDiff(t *testing.T) {
 	if len(resIntegrated.Msg.GetFiles()) == 0 {
 		t.Errorf("integrated task diff expected changed files, got 0")
 	}
+
+	// 9. Merge branch into baseBranch (--no-ff) and verify diff when Integration is not yet COMMITTED
+	// (merge-base(branch, baseBranch) == branch, so resolveBaseAndHead uses branchStartCommit)
+	// and when a subsequent 0-commit branch has a stale Integration.Sha pointing to the merge commit.
+	if _, err := git(ctx, repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "merge", "--no-ff", "-m", "Merge W1", branch); err != nil {
+		t.Fatal(err)
+	}
+	mergedHead, err := git(ctx, repo, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	noCommitBranch := "djinn/W2-no-commits"
+	if _, err := git(ctx, repo, "branch", noCommitBranch, mergedHead); err != nil {
+		t.Fatal(err)
+	}
+	err = e.db.Tx(ctx, func(tx *store.Tx) error {
+		_ = tx.Journal("local", "test", &planv1.Task{})
+		if err := tx.Put(&planv1.Task{
+			Id:         taskID,
+			WishId:     wishID,
+			ProjectId:  projectID,
+			Code:       "W1",
+			Title:      "Merged branch without committed state",
+			Branch:     branch,
+			Status:     planv1.TaskStatus_TASK_STATUS_DONE,
+			CreateTime: timestamppb.Now(),
+		}); err != nil {
+			return err
+		}
+		return tx.Put(&planv1.Task{
+			Id:        store.NewID(),
+			WishId:    wishID,
+			ProjectId: projectID,
+			Code:      "W2",
+			Title:     "No-commit task with stale integration sha",
+			Branch:    noCommitBranch,
+			Status:    planv1.TaskStatus_TASK_STATUS_DONE,
+			Integration: &planv1.TaskIntegration{
+				State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+				Branch: baseBranch,
+				Sha:    mergedHead,
+			},
+			CreateTime: timestamppb.Now(),
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resAlreadyMerged, err := e.tasks.Diff(ctx, connect.NewRequest(diffReq))
+	if err != nil {
+		t.Fatalf("already-merged task diff failed: %v", err)
+	}
+	if len(resAlreadyMerged.Msg.GetFiles()) == 0 {
+		t.Errorf("already-merged task diff expected changed files from branchStartCommit..branch, got 0")
+	}
+	resNoCommit, err := e.tasks.Diff(ctx, connect.NewRequest(&planv1.TaskServiceDiffRequest{
+		Task:   &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: "W2"}},
+		WishId: wishID,
+	}))
+	if err != nil {
+		t.Fatalf("no-commit task diff failed: %v", err)
+	}
+	if len(resNoCommit.Msg.GetFiles()) != 0 {
+		t.Errorf("no-commit task diff expected 0 files even with stale integration sha, got %d", len(resNoCommit.Msg.GetFiles()))
+	}
 }
 
-// TestDiffChunks reads a diff of several hunks by chunks of every size: put end to end, the chunks give back the whole
+// TestNewDiffChunk reads a diff of several hunks by chunks of every size: put end to end, the chunks give back the whole
 // diff's lines, a hunk cut by a chunk carried on in the next.
-func TestDiffChunks(t *testing.T) {
+func TestNewDiffChunk(t *testing.T) {
 	t.Parallel()
 	diff := []string{
 		"diff --git a/a.go b/a.go", "index 1..2 100644", "--- a/a.go", "+++ b/a.go",
@@ -449,5 +514,173 @@ func TestDiffChunks(t *testing.T) {
 		if patch.String() != strings.Join(diff, "\n")+"\n" {
 			t.Errorf("chunks of %d lines give back another patch: %q", size, patch.String())
 		}
+	}
+}
+
+// TestDiffUncommitted reads what a task's worktree holds not committed: a tracked file changed and not staged, a new
+// file staged, untracked files, text or binary, the ignored ones left out; then nothing once the worktree is gone.
+func TestDiffUncommitted(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	ctx := t.Context()
+
+	repo := gitRepo(t)
+	write := func(dir, name, text string) {
+		t.Helper()
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(repo, "main.go", "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n")
+	write(repo, ".gitignore", "*.log\n")
+	for _, args := range [][]string{{"add", "."}, {"commit", "--quiet", "-m", "Base commit"}} {
+		if _, err := git(ctx, repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	branch := "djinn/W1-uncommitted"
+	wt := filepath.Join(t.TempDir(), "wt")
+	if _, err := git(ctx, repo, "worktree", "add", "--quiet", "-b", branch, wt); err != nil {
+		t.Fatal(err)
+	}
+	// Committed work, which the uncommitted view leaves to the task's diff.
+	write(wt, "done.go", "package main\n")
+	for _, args := range [][]string{{"add", "done.go"}, {"commit", "--quiet", "-m", "Done"}} {
+		if _, err := git(ctx, wt, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	head, err := git(ctx, wt, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(wt, "main.go", "package main\n\nfunc main() {\n\tprintln(\"lamp\")\n}\n")
+	write(wt, "staged.go", "package main\n\nvar staged = 1\n")
+	if _, err := git(ctx, wt, "add", "staged.go"); err != nil {
+		t.Fatal(err)
+	}
+	write(wt, "notes/new file.md", "first\nsecond\nno newline")
+	write(wt, "image.bin", "PNG\x00\x01")
+	write(wt, "build.log", "ignored\n")
+
+	e := up(t, t.TempDir())
+	wishID, projectID := e.wish(t, repo)
+	put := func(code, worktree string) {
+		t.Helper()
+		err := e.db.Tx(ctx, func(tx *store.Tx) error {
+			if err := tx.Journal("local", "test", &planv1.Task{}); err != nil {
+				return err
+			}
+			return tx.Put(&planv1.Task{
+				Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: code, Title: "Uncommitted " + code,
+				Branch: branch, Worktree: worktree, Status: planv1.TaskStatus_TASK_STATUS_RUNNING, CreateTime: timestamppb.Now(),
+			})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("W1", wt)
+	put("W2", "")
+	diff := func(code, file string) *planv1.TaskServiceDiffResponse {
+		t.Helper()
+		res, err := e.tasks.Diff(ctx, connect.NewRequest(&planv1.TaskServiceDiffRequest{
+			Task: &planv1.TaskRef{Ref: &planv1.TaskRef_Code{Code: code}}, WishId: wishID, File: file, Uncommitted: true,
+		}))
+		if err != nil {
+			t.Fatalf("Diff %s %q: %v", code, file, err)
+		}
+		return res.Msg
+	}
+
+	list := diff("W1", "")
+	if list.GetNoWorktree() || list.GetBase() != head || list.GetHead() != "" {
+		t.Errorf("list: no_worktree %v, base %q head %q, want base %s and no head", list.GetNoWorktree(), list.GetBase(), list.GetHead(), head)
+	}
+	type file struct {
+		path           string
+		status         planv1.DiffStatus
+		added, deleted int32
+		binary         bool
+	}
+	var got []file
+	for _, f := range list.GetFiles() {
+		got = append(got, file{f.GetPath(), f.GetStatus(), f.GetAdded(), f.GetDeleted(), f.GetBinary()})
+	}
+	want := []file{
+		{"image.bin", planv1.DiffStatus_DIFF_STATUS_ADDED, 0, 0, true},
+		{"main.go", planv1.DiffStatus_DIFF_STATUS_MODIFIED, 1, 1, false},
+		{"notes/new file.md", planv1.DiffStatus_DIFF_STATUS_ADDED, 3, 0, false},
+		{"staged.go", planv1.DiffStatus_DIFF_STATUS_ADDED, 3, 0, false},
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("files = %v, want %v", got, want)
+	}
+	if !list.GetFiles()[0].GetFolded() {
+		t.Error("image.bin is not folded")
+	}
+
+	lines := func(d *planv1.TaskFileDiff) (out []string) {
+		for _, h := range d.GetHunks() {
+			for _, l := range h.GetLines() {
+				out = append(out, fmt.Sprintf("%d %d %d %s", l.GetKind(), l.GetOldLine(), l.GetNewLine(), l.GetText()))
+			}
+		}
+		return out
+	}
+	untracked := diff("W1", "notes/new file.md").GetFile()
+	if got, want := lines(untracked), []string{"2 0 1 first", "2 0 2 second", "2 0 3 no newline"}; !slices.Equal(got, want) {
+		t.Errorf("untracked lines = %q, want %q", got, want)
+	}
+	if untracked.GetAdded() != 3 || len(untracked.GetHunks()) != 1 || untracked.GetHunks()[0].GetHeader() != "@@ -0,0 +1,3 @@" {
+		t.Errorf("untracked: +%d, hunks %v", untracked.GetAdded(), untracked.GetHunks())
+	}
+	if !strings.HasPrefix(untracked.GetPatch(), "diff --git a/notes/new file.md b/notes/new file.md\nnew file mode 100644\n--- /dev/null\n") ||
+		!strings.HasSuffix(untracked.GetPatch(), "+no newline\n\\ No newline at end of file\n") {
+		t.Errorf("untracked patch = %q", untracked.GetPatch())
+	}
+	// The command line gives a file absolute, from the worktree.
+	modified := diff("W1", filepath.Join(wt, "main.go")).GetFile()
+	if modified.GetPath() != "main.go" || modified.GetAdded() != 1 || modified.GetDeleted() != 1 || !strings.Contains(modified.GetPatch(), "+\tprintln(\"lamp\")") {
+		t.Errorf("main.go: %s +%d -%d %q", modified.GetPath(), modified.GetAdded(), modified.GetDeleted(), modified.GetPatch())
+	}
+	if staged := diff("W1", "staged.go").GetFile(); staged.GetAdded() != 3 {
+		t.Errorf("staged.go: +%d, want 3", staged.GetAdded())
+	}
+	if bin := diff("W1", "image.bin").GetFile(); !bin.GetBinary() || len(bin.GetHunks()) != 0 {
+		t.Errorf("image.bin: binary %v, %d hunks", bin.GetBinary(), len(bin.GetHunks()))
+	}
+	if ignored := diff("W1", "build.log").GetFile(); ignored.GetTotalLines() != 0 {
+		t.Errorf("an ignored file shows %d lines", ignored.GetTotalLines())
+	}
+	// The task's committed work stays in its diff: done.go is not in the worktree's changes.
+	if committed := diff("W1", "done.go").GetFile(); committed.GetTotalLines() != 0 {
+		t.Errorf("done.go shows %d lines of committed work", committed.GetTotalLines())
+	}
+
+	// A clean worktree has nothing to show; one never made, or removed, says so.
+	for _, args := range [][]string{{"reset", "--hard", "--quiet"}, {"clean", "-fd", "--quiet"}} {
+		if _, err := git(ctx, wt, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if clean := diff("W1", ""); clean.GetNoWorktree() || len(clean.GetFiles()) != 0 {
+		t.Errorf("clean worktree: no_worktree %v, %d files", clean.GetNoWorktree(), len(clean.GetFiles()))
+	}
+	if none := diff("W2", ""); !none.GetNoWorktree() || len(none.GetFiles()) != 0 {
+		t.Errorf("no worktree: no_worktree %v, %d files", none.GetNoWorktree(), len(none.GetFiles()))
+	}
+	if _, err := git(ctx, repo, "worktree", "remove", "--force", wt); err != nil {
+		t.Fatal(err)
+	}
+	if gone := diff("W1", ""); !gone.GetNoWorktree() {
+		t.Error("removed worktree: no_worktree = false")
+	}
+	if gone := diff("W1", "main.go"); !gone.GetNoWorktree() || gone.GetFile() != nil {
+		t.Errorf("removed worktree, one file: no_worktree %v, file %v", gone.GetNoWorktree(), gone.GetFile())
 	}
 }

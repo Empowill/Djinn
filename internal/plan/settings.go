@@ -17,8 +17,11 @@ import (
 
 	"buf.build/go/protovalidate"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/fsx"
 	"github.com/empowill/djinn/internal/store"
 )
 
@@ -42,6 +45,12 @@ func ReadSettings(path string) (*planv1.ProjectSettings, error) {
 // something that looks like a secret is refused, comments included, without repeating it. Any unknown fields are discarded,
 // logged once as warnings, and returned in warnings.
 func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, error) {
+	return readSettingsNamed(path, path)
+}
+
+// readSettingsNamed is ReadSettingsWithWarnings, its messages naming the file name: where Djinn read it from, a
+// reference branch's tree.
+func readSettingsNamed(path, name string) (*planv1.ProjectSettings, []string, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, nil
@@ -50,10 +59,10 @@ func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, e
 		return nil, nil, err
 	}
 	if line, why := secretIn(b); line > 0 {
-		return nil, nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", path, line, why)
+		return nil, nil, fmt.Errorf("%s: line %d %s; this file holds no secret: remove it", name, line, why)
 	}
 	if line, key := removedKeyIn(b); line > 0 {
-		return nil, nil, fmt.Errorf("%s: line %d names %s: this key was removed; delete the line", path, line, key)
+		return nil, nil, fmt.Errorf("%s: line %d names %s: this key was removed; delete the line", name, line, key)
 	}
 	s := &planv1.ProjectSettings{}
 	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
@@ -68,22 +77,22 @@ func ReadSettingsWithWarnings(path string) (*planv1.ProjectSettings, []string, e
 	unknowns := FindUnknownFields(normalized, s)
 	var warnings []string
 	for _, u := range unknowns {
-		warnings = append(warnings, WarnUnknownField(path, u))
+		warnings = append(warnings, WarnUnknownField(name, u))
 	}
 	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
 	if err := opts.Unmarshal(normalized, s); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
 	if err := protovalidate.Validate(s); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
 	seen := map[string]bool{}
 	for _, c := range s.GetChecks() {
-		name := strings.ToLower(c.GetName())
-		if seen[name] {
-			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", path, c.GetName())
+		lower := strings.ToLower(c.GetName())
+		if seen[lower] {
+			return nil, nil, fmt.Errorf("%s: two checks are named %s: names ignore case", name, c.GetName())
 		}
-		seen[name] = true
+		seen[lower] = true
 	}
 	return s, warnings, nil
 }
@@ -172,7 +181,7 @@ type Settings struct {
 	Generated                []string
 	Generate, Setup, Install string
 	TestOne                  string
-	// The checks Djinn runs before it commits a task's work and before it pushes, in the order the file names them.
+	// The checks Djinn runs before it merges a task's work and before it pushes, in the order the file names them.
 	Checks []*planv1.ProjectCheck
 	// How many correction workers Djinn starts for a batch that conflicts in code or tests red, before it asks.
 	CorrectionAttempts int
@@ -198,6 +207,9 @@ type Settings struct {
 	// WatchCommands are the commands, or their starts, the developer lets a watcher run in the project besides those
 	// its .agents/permissions.txtpb lists: from their own file only.
 	WatchCommands []string
+	// ServeCommands are the commands, or their starts, the developer lets an ifrit's serve run in the project besides
+	// those its .agents/permissions.txtpb lists: from their own file only.
+	ServeCommands []string
 	// InstallBuilds says whether a build of the running Djinn's line, once pushed, installs by itself (W554).
 	InstallBuilds bool
 	Warnings      []string
@@ -208,12 +220,23 @@ type Settings struct {
 	QuestionProviderFrom, QuestionModelFrom, QuestionBudgetFrom                                        planv1.SettingSource
 	MainBranchFrom, MergeMainFrom, MergeMainEveryFrom, InstallReleasesFrom, PushFrom, PushStrategyFrom planv1.SettingSource
 	InstallQuestionsFrom, BabysitFrom, WatchCommandsFrom, InstallBuildsFrom                            planv1.SettingSource
+	ServeCommandsFrom                                                                                  planv1.SettingSource
 }
 
 // CanReadOnly tells whether a provider can run a question worker (read-only).
 func CanReadOnly(p planv1.Provider) bool {
 	switch p {
 	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_FAKE:
+		return true
+	default:
+		return false
+	}
+}
+
+// CanIfrit tells whether a provider can run an ifrit (keeps its input open between turns).
+func CanIfrit(p planv1.Provider) bool {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_ANTIGRAVITY, planv1.Provider_PROVIDER_FAKE:
 		return true
 	default:
 		return false
@@ -258,7 +281,7 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		PushStrategy:     planv1.PushStrategy_PUSH_STRATEGY_WISH,
 		InstallQuestions: DefaultInstallQuestions,
 		MainBranchFrom:   def, MergeMainFrom: def, MergeMainEveryFrom: def, InstallReleasesFrom: def, PushFrom: def, PushStrategyFrom: def,
-		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
+		InstallQuestionsFrom: def, Babysit: true, BabysitFrom: def, WatchCommandsFrom: def, ServeCommandsFrom: def, InstallBuilds: true, InstallBuildsFrom: def,
 	}
 	questionModel := false // a file set it
 	for _, f := range []struct {
@@ -347,6 +370,9 @@ func ResolveSettings(repo, dev *planv1.ProjectSettings) Settings {
 		if len(f.settings.GetWatchCommands()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
 			s.WatchCommands, s.WatchCommandsFrom = f.settings.GetWatchCommands(), f.from
 		}
+		if len(f.settings.GetServeCommands()) > 0 && f.from == planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+			s.ServeCommands, s.ServeCommandsFrom = f.settings.GetServeCommands(), f.from
+		}
 	}
 	effective := s.QuestionProvider
 	if effective == planv1.Provider_PROVIDER_UNSPECIFIED {
@@ -389,39 +415,104 @@ func LoadSettings(home string, project *planv1.Project) (Settings, error) {
 
 // loadSettings reads both files of project, and why each one that could not be read was not.
 func loadSettings(home string, project *planv1.Project) (repo, dev *planv1.ProjectSettings, warnings []string, problems []error) {
-	if project == nil {
-		return nil, nil, nil, nil
-	}
-	repoFile, devFile := settingsFiles(home, project)
-	var err error
-	var w []string
-	if repoFile != "" {
-		if repo, w, err = ReadSettingsWithWarnings(repoFile); err != nil {
-			problems = append(problems, err)
-		} else {
-			if len(repo.GetWatchCommands()) > 0 {
-				w = append(w, repoFile+": watch_commands is ignored: a developer allows a watcher command in their own "+
-					"file (djinn project allow --watch), the repository lists its commands in .agents/permissions.txtpb")
-			}
-			for _, warn := range w {
-				if !slices.Contains(warnings, warn) {
-					warnings = append(warnings, warn)
-				}
-			}
+	return loadSettingsFiles(readSettingsFiles(home, project))
+}
+
+func loadSettingsFiles(files []settingsRead) (repo, dev *planv1.ProjectSettings, warnings []string, problems []error) {
+	for _, f := range files {
+		if f.err != nil {
+			problems = append(problems, f.err)
+			continue
 		}
-	}
-	if devFile != "" {
-		if dev, w, err = ReadSettingsWithWarnings(devFile); err != nil {
-			problems = append(problems, err)
+		if f.team {
+			repo = f.settings
 		} else {
-			for _, warn := range w {
-				if !slices.Contains(warnings, warn) {
-					warnings = append(warnings, warn)
-				}
+			dev = f.settings
+		}
+		for _, warn := range f.warnings {
+			if !slices.Contains(warnings, warn.text) {
+				warnings = append(warnings, warn.text)
 			}
 		}
 	}
 	return repo, dev, warnings, problems
+}
+
+// settingsRead is one settings file of a project as Djinn read it.
+type settingsRead struct {
+	// path is the file; team tells the repository's from the developer's.
+	path string
+	team bool
+	// settings are what it holds; nil without the file, or when it cannot be read: err says why.
+	settings *planv1.ProjectSettings
+	err      error
+	// warnings are what Djinn ignored in it.
+	warnings []settingsWarning
+}
+
+// settingsWarning is a thing a settings file holds that Djinn ignores; ignored says a line to remove, not a field a
+// newer Djinn knows.
+type settingsWarning struct {
+	text    string
+	ignored bool
+}
+
+// readSettingsFiles reads the files of project: the repository's, then the developer's; a file project has no path
+// for is left out.
+func readSettingsFiles(home string, project *planv1.Project) []settingsRead {
+	if project == nil {
+		return nil
+	}
+	return readSettingsFilesConfig(home, project, ProjectConfig(home, project))
+}
+
+func readSettingsFilesConfig(home string, project *planv1.Project, config Config) []settingsRead {
+	if project == nil {
+		return nil
+	}
+	repoFile, devFile := settingsFiles(home, project)
+	var out []settingsRead
+	for _, f := range []settingsRead{{path: repoFile, team: true}, {path: devFile}} {
+		if f.path == "" {
+			continue
+		}
+		if !f.team {
+			migrateDeveloperSettingsFile(home, f.path)
+		}
+		read, name := f.path, f.path
+		if f.team {
+			// The team's file is read where Djinn reads the project's configuration: the reference branch's tree.
+			read = filepath.Join(config.Dir, SettingsFile)
+			name = config.Named(read)
+		}
+		var w []string
+		f.settings, w, f.err = readSettingsNamed(read, name)
+		for _, text := range w {
+			f.warnings = append(f.warnings, settingsWarning{text: text})
+		}
+		if f.err == nil && f.team && config.TeamBranch != "" && f.settings.GetMainBranch() == "" {
+			// The default branch's tree named the reference branch, whose own tree does not: it stays the reference.
+			if f.settings == nil {
+				f.settings = &planv1.ProjectSettings{}
+			}
+			f.settings = proto.CloneOf(f.settings)
+			f.settings.MainBranch = &config.TeamBranch
+		}
+		if f.err == nil && f.team {
+			if len(f.settings.GetWatchCommands()) > 0 {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": watch_commands is " +
+					"ignored: a developer allows a watcher command in their own file (djinn project allow --watch), the " +
+					"repository lists its commands in .agents/permissions.txtpb"})
+			}
+			if len(f.settings.GetServeCommands()) > 0 {
+				f.warnings = append(f.warnings, settingsWarning{ignored: true, text: name + ": serve_commands is " +
+					"ignored: a developer allows a serve command in their own file (djinn project allow --serve), the " +
+					"repository lists its commands in .agents/permissions.txtpb"})
+			}
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // Rows are the settings as djinn project show lists them.
@@ -458,6 +549,7 @@ func (s Settings) Rows() []*planv1.ProjectSetting {
 		{Name: "push_strategy", Value: PushStrategyWord(s.PushStrategy), Source: s.PushStrategyFrom},
 		{Name: "babysit", Value: strconv.FormatBool(s.Babysit), Source: s.BabysitFrom},
 		{Name: "watch_commands", Value: strings.Join(s.WatchCommands, "; "), Source: s.WatchCommandsFrom},
+		{Name: "serve_commands", Value: strings.Join(s.ServeCommands, "; "), Source: s.ServeCommandsFrom},
 	}
 }
 
@@ -572,29 +664,43 @@ func saveDeveloper(home, projectID string, change func(*planv1.ProjectSettings) 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	return s, os.WriteFile(path, b, 0o600)
+	return s, fsx.WriteAtomic(path, b, 0o600)
 }
 
 // AllowWatch adds command to the watcher commands the developer allows in the project, in their settings file in
 // home, or takes it back with revoke: the commands allowed then. Its words are joined by single spaces, as a
 // watcher's command is compared.
 func AllowWatch(home, projectID, command string, revoke bool) ([]string, error) {
-	command = strings.Join(strings.Fields(command), " ")
 	s, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
-		at := slices.Index(s.GetWatchCommands(), command)
-		switch {
-		case command == "":
-			return errors.New("a watcher command has words")
-		case revoke && at < 0:
-			return fmt.Errorf("%q is not a watcher command you allow", command)
-		case revoke:
-			s.WatchCommands = slices.Delete(s.WatchCommands, at, at+1)
-		case at < 0:
-			s.WatchCommands = append(s.WatchCommands, command)
-		}
-		return nil
+		return allowIn(&s.WatchCommands, "watcher", command, revoke)
 	})
 	return s.GetWatchCommands(), err
+}
+
+// AllowServe is AllowWatch for the commands an ifrit's serve runs (djinn serve run).
+func AllowServe(home, projectID, command string, revoke bool) ([]string, error) {
+	s, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		return allowIn(&s.ServeCommands, "serve", command, revoke)
+	})
+	return s.GetServeCommands(), err
+}
+
+// allowIn adds command, its words joined by single spaces, to the commands of what (watcher, serve), or takes it
+// back with revoke.
+func allowIn(commands *[]string, what, command string, revoke bool) error {
+	command = strings.Join(strings.Fields(command), " ")
+	at := slices.Index(*commands, command)
+	switch {
+	case command == "":
+		return fmt.Errorf("a %s command has words", what)
+	case revoke && at < 0:
+		return fmt.Errorf("%q is not a %s command you allow", command, what)
+	case revoke:
+		*commands = slices.Delete(*commands, at, at+1)
+	case at < 0:
+		*commands = append(*commands, command)
+	}
+	return nil
 }
 
 // PushStrategyWord is how a wish integrates its work, as the settings say it: wish, azima.
@@ -614,6 +720,271 @@ func SaveDeveloperPushStrategy(home, projectID string, strategy planv1.PushStrat
 		return nil
 	})
 	return err
+}
+
+// SaveDeveloperMainBranch writes branch as the main_branch setting of the developer's settings file in home, or
+// removes it when branch is empty: the team's file names the reference branch again, else Djinn finds it.
+func SaveDeveloperMainBranch(home, projectID, branch string) error {
+	_, err := saveDeveloper(home, projectID, func(s *planv1.ProjectSettings) error {
+		s.MainBranch = nil
+		if branch != "" {
+			s.MainBranch = &branch
+		}
+		return nil
+	})
+	return err
+}
+
+// ValidWorkerProvider reports whether p is a provider a project's workers may run by default.
+func ValidWorkerProvider(p planv1.Provider) bool {
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX, planv1.Provider_PROVIDER_ANTIGRAVITY:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsClaudeModel reports whether m is a model identifier of Claude.
+func IsClaudeModel(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	return m == "claude" || strings.HasPrefix(m, "claude-") ||
+		strings.HasPrefix(m, "claude/") ||
+		strings.HasPrefix(m, "anthropic/") ||
+		strings.Contains(m, ".claude-") ||
+		m == "fable" || strings.HasPrefix(m, "fable-") || strings.HasPrefix(m, "fable/") || strings.HasPrefix(m, "fable[") ||
+		m == "sonnet" || strings.HasPrefix(m, "sonnet-") || strings.HasPrefix(m, "sonnet/") || strings.HasPrefix(m, "sonnet[") ||
+		m == "opus" || strings.HasPrefix(m, "opus-") || strings.HasPrefix(m, "opus/") || strings.HasPrefix(m, "opus[") ||
+		m == "haiku" || strings.HasPrefix(m, "haiku-") || strings.HasPrefix(m, "haiku/") || strings.HasPrefix(m, "haiku[")
+}
+
+// IsAntigravityModel reports whether m is a model identifier of Antigravity.
+func IsAntigravityModel(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	return m == "gemini" || strings.HasPrefix(m, "gemini-") ||
+		strings.HasPrefix(m, "gemini/") ||
+		strings.HasPrefix(m, "google/") ||
+		strings.Contains(m, ".gemini-") ||
+		m == "argon" || strings.Contains(m, "argon")
+}
+
+// IsCodexModel reports whether m is a model identifier of Codex.
+func IsCodexModel(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	return m == "codex" || strings.HasPrefix(m, "codex-") ||
+		strings.HasPrefix(m, "gpt-") ||
+		strings.HasPrefix(m, "openai/") ||
+		strings.Contains(m, ".gpt-") ||
+		strings.HasSuffix(m, "-codex") ||
+		strings.HasPrefix(m, "code-") ||
+		m == "o1" || strings.HasPrefix(m, "o1-") || strings.HasPrefix(m, "o1.") || strings.HasPrefix(m, "o1/") ||
+		m == "o3" || strings.HasPrefix(m, "o3-") || strings.HasPrefix(m, "o3.") || strings.HasPrefix(m, "o3/") ||
+		m == "o4" || strings.HasPrefix(m, "o4-") || strings.HasPrefix(m, "o4.") || strings.HasPrefix(m, "o4/")
+}
+
+// ValidateProviderModel checks that model is empty (the provider's own default) or a well-formed model of provider p.
+func ValidateProviderModel(p planv1.Provider, model string) error {
+	if !ValidWorkerProvider(p) {
+		return fmt.Errorf("provider %s cannot be a project's default: choose claude, codex or antigravity", providerName(p))
+	}
+	if model == "" {
+		return nil
+	}
+	if strings.TrimSpace(model) == "" {
+		return fmt.Errorf("model %q is blank", model)
+	}
+	if err := protovalidate.Validate(&planv1.ProjectSettings{Model: &model}); err != nil {
+		return fmt.Errorf("model %q: %w", model, err)
+	}
+	switch p {
+	case planv1.Provider_PROVIDER_CLAUDE:
+		if IsAntigravityModel(model) || IsCodexModel(model) {
+			return fmt.Errorf("model %q belongs to another provider, not claude", model)
+		}
+		if !IsClaudeModel(model) {
+			return fmt.Errorf("unknown model %q for provider claude", model)
+		}
+	case planv1.Provider_PROVIDER_CODEX:
+		if IsClaudeModel(model) || IsAntigravityModel(model) {
+			return fmt.Errorf("model %q belongs to another provider, not codex", model)
+		}
+		if !IsCodexModel(model) {
+			return fmt.Errorf("unknown model %q for provider codex", model)
+		}
+	case planv1.Provider_PROVIDER_ANTIGRAVITY:
+		if IsClaudeModel(model) || IsCodexModel(model) {
+			return fmt.Errorf("model %q belongs to another provider, not antigravity", model)
+		}
+		if !IsAntigravityModel(model) {
+			return fmt.Errorf("unknown model %q for provider antigravity", model)
+		}
+	}
+	return nil
+}
+
+// ValidateTaskModel normalizes a task's model (expanding human labels and short aliases such as "Gemini 4 Argon" or
+// "argon") and checks that it is valid for provider p.
+func ValidateTaskModel(p planv1.Provider, model string) (string, error) {
+	if model == "" || p == planv1.Provider_PROVIDER_WATCH {
+		return "", nil
+	}
+	if strings.TrimSpace(model) == "" {
+		return "", fmt.Errorf("model %q is blank", model)
+	}
+	norm := strings.TrimSpace(model)
+	if p == planv1.Provider_PROVIDER_FAKE {
+		if err := protovalidate.Validate(&planv1.ProjectSettings{Model: &norm}); err != nil {
+			return "", fmt.Errorf("model %q: %w", model, err)
+		}
+		return norm, nil
+	}
+	norm = NormalizeCircleModel(norm)
+	if err := ValidateProviderModel(p, norm); err != nil {
+		return "", err
+	}
+	if err := validateSharedModel(norm); err != nil {
+		return "", err
+	}
+	return norm, nil
+}
+
+// ValidateQuestionModel checks that model is empty or a valid model for the project's question workers.
+func ValidateQuestionModel(workerProvider, questionProvider planv1.Provider, model string) error {
+	if model == "" {
+		return nil
+	}
+	eff := questionProvider
+	if eff == planv1.Provider_PROVIDER_UNSPECIFIED {
+		if CanReadOnly(workerProvider) {
+			eff = workerProvider
+		} else {
+			eff = planv1.Provider_PROVIDER_CLAUDE
+		}
+	}
+	if err := ValidateProviderModel(workerProvider, model); err == nil {
+		return nil
+	}
+	if eff != workerProvider {
+		if err := ValidateProviderModel(eff, model); err == nil {
+			return nil
+		}
+	}
+	return ValidateProviderModel(workerProvider, model)
+}
+
+var devModelLine = regexp.MustCompile(`(?m)^[ \t]*(provider|model|question_provider|question_model)[ \t]*:.*(?:\r?\n|$)`)
+
+// migrateDeveloperSettingsFile reads any legacy per-project provider/model choices from devFile once as the starting
+// value of the Summoning Circle in home, normalizing labels to canonical model IDs, then drops them from devFile.
+func migrateDeveloperSettingsFile(home, devFile string) {
+	if home == "" || devFile == "" {
+		return
+	}
+	b, err := os.ReadFile(devFile)
+	if err != nil {
+		return
+	}
+	if line, _ := secretIn(b); line > 0 {
+		return
+	}
+	if line, _ := removedKeyIn(b); line > 0 {
+		return
+	}
+	s := &planv1.ProjectSettings{}
+	normalized := normalizeInstallQuestions.ReplaceAllFunc(b, func(match []byte) []byte {
+		parts := normalizeInstallQuestions.FindSubmatch(match)
+		if len(parts) == 3 {
+			prefix := parts[1]
+			val := strings.ToUpper(string(parts[2]))
+			return append(prefix, []byte("INSTALL_QUESTIONS_"+val)...)
+		}
+		return match
+	})
+	opts := prototext.UnmarshalOptions{DiscardUnknown: true}
+	if err := opts.Unmarshal(normalized, s); err != nil {
+		return
+	}
+	hasWorker := s.Provider != nil || s.Model != nil
+	hasQuestion := s.QuestionProvider != nil || s.QuestionModel != nil
+	if !hasWorker && !hasQuestion {
+		return
+	}
+
+	var workerProvider planv1.Provider
+	var workerModel string
+	if hasWorker {
+		workerProvider = s.GetProvider()
+		workerModel = NormalizeCircleModel(s.GetModel())
+		if workerProvider == planv1.Provider_PROVIDER_UNSPECIFIED && workerModel != "" {
+			workerProvider = ProviderForCircleModel(workerModel)
+		}
+		if workerProvider != planv1.Provider_PROVIDER_UNSPECIFIED && workerModel == "" {
+			workerModel = DefaultCircleModel(workerProvider)
+		}
+		if !ValidWorkerProvider(workerProvider) || ValidateProviderModel(workerProvider, workerModel) != nil {
+			return
+		}
+	}
+
+	var qProvider planv1.Provider
+	var qModel string
+	if hasQuestion {
+		qProvider = s.GetQuestionProvider()
+		qModel = NormalizeCircleModel(s.GetQuestionModel())
+		if qProvider == planv1.Provider_PROVIDER_UNSPECIFIED && qModel != "" {
+			qProvider = ProviderForCircleModel(qModel)
+		}
+		if qProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+			if CanReadOnly(workerProvider) {
+				qProvider = workerProvider
+			} else {
+				qProvider = planv1.Provider_PROVIDER_CLAUDE
+			}
+		}
+		if qModel == "" {
+			qModel = DefaultCircleModel(qProvider)
+		}
+		if !CanReadOnly(qProvider) || ValidateProviderModel(qProvider, qModel) != nil {
+			return
+		}
+	}
+
+	_ = changeSettings(home, func(settings *uiv1.Settings) error {
+		setIfMissing := func(kind planv1.WorkerKind, p planv1.Provider, m string) {
+			for _, row := range settings.Circle {
+				if row.GetKind() == kind && (row.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || row.GetModel() != "") {
+					return
+				}
+			}
+			settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
+				Kind:     kind,
+				Provider: p,
+				Model:    m,
+			})
+		}
+		if hasWorker {
+			for _, kind := range []planv1.WorkerKind{
+				planv1.WorkerKind_WORKER_KIND_INVESTIGATION,
+				planv1.WorkerKind_WORKER_KIND_MOCKUP,
+				planv1.WorkerKind_WORKER_KIND_IFRIT,
+				planv1.WorkerKind_WORKER_KIND_WORK,
+				planv1.WorkerKind_WORKER_KIND_CORRECTION,
+				planv1.WorkerKind_WORKER_KIND_REVIEW,
+			} {
+				if kind == planv1.WorkerKind_WORKER_KIND_IFRIT && !CanIfrit(workerProvider) {
+					continue
+				}
+				setIfMissing(kind, workerProvider, workerModel)
+			}
+		}
+		if hasQuestion {
+			setIfMissing(planv1.WorkerKind_WORKER_KIND_QUESTION, qProvider, qModel)
+		}
+		return nil
+	})
+
+	stripped := devModelLine.ReplaceAll(b, nil)
+	_ = fsx.WriteAtomic(devFile, stripped, 0o600)
 }
 
 // ResolveWishPushStrategy resolves the push strategy and its source for a wish, falling back to the project settings.
@@ -679,26 +1050,8 @@ func (s Settings) ChecksBrief() string {
 	if !s.Integrates() {
 		return ""
 	}
-	list := func(when planv1.CheckWhen) string {
-		var names []string
-		for _, c := range s.ChecksAt(when) {
-			names = append(names, "`"+GateCommand(c)+"`")
-		}
-		return strings.Join(names, ", ")
-	}
 	var b strings.Builder
-	b.WriteString("Djinn checks this project's work")
-	commit, push := list(planv1.CheckWhen_CHECK_WHEN_COMMIT), list(planv1.CheckWhen_CHECK_WHEN_PUSH)
-	if commit != "" {
-		b.WriteString(" before it commits a task's work, with " + commit)
-	}
-	if push != "" {
-		if commit != "" {
-			b.WriteString(";")
-		}
-		b.WriteString(" before it pushes, with " + push)
-	}
-	b.WriteString(".")
+	commit, push := s.checksWhen(&b)
 	commitHasTest := slices.ContainsFunc(s.ChecksAt(planv1.CheckWhen_CHECK_WHEN_COMMIT), func(c *planv1.ProjectCheck) bool {
 		return strings.EqualFold(c.GetName(), "test")
 	})
@@ -724,8 +1077,63 @@ func (s Settings) ChecksBrief() string {
 		}
 		b.WriteString("; do not run the push checks (" + push + "): Djinn runs them before pushing.")
 	}
+	s.setupBrief(&b)
+	return b.String()
+}
+
+// IfritChecksBrief is ChecksBrief for an ifrit's first prompt (T51): which checks Djinn runs and when, but an ifrit
+// runs none of them after a change: Djinn runs the commit checks once the developer finishes it. "" for a project
+// that sets none.
+func (s Settings) IfritChecksBrief() string {
+	if !s.Integrates() {
+		return ""
+	}
+	var b strings.Builder
+	commit, push := s.checksWhen(&b)
+	switch {
+	case commit != "" && push != "":
+		b.WriteString(" Run neither after a change: Djinn runs the commit checks once you are finished, the push checks " +
+			"before it pushes.")
+	case commit != "":
+		b.WriteString(" Do not run them after a change: Djinn runs them once you are finished.")
+	case push != "":
+		b.WriteString(" Do not run them: Djinn runs them before it pushes.")
+	}
+	if s.TestOne != "" {
+		b.WriteString(" A test the developer asks for runs with `" + s.TestOne + "`.")
+	}
+	s.setupBrief(&b)
+	return b.String()
+}
+
+// checksWhen writes to b which checks Djinn runs on the project's work, before it merges a task's work and before it
+// pushes, and returns them, each list "" when there is none.
+func (s Settings) checksWhen(b *strings.Builder) (commit, push string) {
+	list := func(when planv1.CheckWhen) string {
+		var names []string
+		for _, c := range s.ChecksAt(when) {
+			names = append(names, "`"+GateCommand(c)+"`")
+		}
+		return strings.Join(names, ", ")
+	}
+	b.WriteString("Djinn checks this project's work")
+	commit, push = list(planv1.CheckWhen_CHECK_WHEN_COMMIT), list(planv1.CheckWhen_CHECK_WHEN_PUSH)
+	if commit != "" {
+		b.WriteString(" before it merges a task's work, with " + commit)
+	}
+	if push != "" {
+		if commit != "" {
+			b.WriteString(";")
+		}
+		b.WriteString(" before it pushes, with " + push)
+	}
+	b.WriteString(".")
+	return commit, push
+}
+
+// setupBrief writes to b what a fresh worktree needs first, if anything.
+func (s Settings) setupBrief(b *strings.Builder) {
 	if s.Setup != "" {
 		b.WriteString(" A fresh worktree needs `" + s.Setup + "` first.")
 	}
-	return b.String()
 }

@@ -6,6 +6,7 @@ package ui.v1;
 import "buf/validate/validate.proto";
 import "djinn/v1/load.proto";
 import "djinn/v1/options.proto";
+import "plan/v1/plan.proto";
 
 // What the window needs to show and follow the plan.
 service UiService {
@@ -77,8 +78,14 @@ service UiService {
   rpc OpenNotificationSettings(UiServiceOpenNotificationSettingsRequest) returns (UiServiceOpenNotificationSettingsResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
-  // Say which wish the page shows: no notification comes for it while the window is in front.
+  // Say which wish the page shows, and its theme: no notification comes for that wish while the window is in front,
+  // and the driven lead takes the tone of that theme.
   rpc View(UiServiceViewRequest) returns (UiServiceViewResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+  }
+  // Say that the developer is there: a key, a click or a scroll in the window in front, sent at most every 30 seconds.
+  // It keeps the ifrits lit.
+  rpc Touch(UiServiceTouchRequest) returns (UiServiceTouchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
   }
 }
@@ -117,12 +124,43 @@ message Shortcut {
 }
 
 // The window's settings that Djinn acts on, in settings.json of the data directory. The page keeps its own (the
-// language, the theme).
+// language, the theme chosen); it tells Djinn the theme it shows (shown_theme).
 message Settings {
   // The global shortcut's chord. Unset: the default one. Empty: off.
   optional string shortcut = 1;
   // The operating load notch in effect on this machine. Unset: default (medium).
   optional djinn.v1.LoadNotch load = 2;
+  // Minutes without you in Djinn before Djinn puts an ifrit out, 5 to 240: your pace on this machine. Unset: 30.
+  // djinn up --ifrit-idle, and an ifrit's own (djinn task spawn --idle-minutes), come first.
+  optional uint32 ifrit_idle_minutes = 3 [(buf.validate.field).uint32 = {
+    gte: 5
+    lte: 240
+  }];
+  // Djinn drives the lead (decision Q31, Q51): a fresh headless session for each batch of the lead's events and of
+  // what you write to the Djinn, with the rules, the events whole, the briefs of their wishes and the lead's journal in
+  // its prompt; no terminal, no djinn lead watch. Unset or true: Djinn drives the lead. False: the lead runs in its
+  // terminal. djinn up reads it as it starts.
+  optional bool lead_driven = 4;
+  // The accounts of the agents on this machine, each a folder of the agent's own where it keeps its login (djinn lead
+  // add-account). No token: the login stays the agent's.
+  repeated plan.v1.Account accounts = 5;
+  // Where the lead Djinn drives runs (djinn lead move). Unset: Claude, its default model and sign-in.
+  plan.v1.LeadSeat lead = 6;
+  // The theme the window shows, as the last page to say it did (UiService.View), kept across restarts: each batch of
+  // the driven lead speaks in its tone (decision Q36). Unset: no page said it yet, and the Djinn stays plain.
+  ShownTheme shown_theme = 7;
+  // Summoning Circle: one global model choice per kind of worker across all projects.
+  repeated plan.v1.WorkerSeat circle = 8;
+}
+
+// ShownTheme is the theme a page shows: the system's resolved by the page, never "system".
+enum ShownTheme {
+  // Not known: no page said it.
+  SHOWN_THEME_UNSPECIFIED = 0;
+  // Dark: the Djinn is the mocking demon of the lamp.
+  SHOWN_THEME_DARK = 1;
+  // Light: the Djinn is the solar Djinn.
+  SHOWN_THEME_LIGHT = 2;
 }
 
 // An agent command line. Djinn looks for it on its PATH, the PATH of the user's login shell, and the folders its
@@ -144,6 +182,18 @@ message Provider {
   string install_command = 7;
   // The command line that signs the agent in, from its official documentation.
   string login_command = 8;
+  // The agent's accounts on this machine beside its default sign-in, each checked in its own folder.
+  repeated AccountSetup accounts = 9;
+}
+
+// AccountSetup is where an account of an agent stands, and how to sign it in.
+message AccountSetup {
+  // The account.
+  plan.v1.Account account = 1;
+  // Whether it is signed in: the agent's status command, run with the account's folder.
+  ProviderState state = 2;
+  // The command line that signs it in, in its folder, through the user's shell.
+  string login_command = 3;
 }
 
 // ProviderState is whether an agent command line is installed and signed in.
@@ -413,6 +463,13 @@ message UiServiceOpenNotificationSettingsResponse {}
 message UiServiceViewRequest {
   // The wish the page shows; empty for none (the flying carpet, a dialog of its own).
   string wish_id = 1 [(buf.validate.field).string.max_len = 64];
+  // The theme the page shows, sent again when it changes: Djinn keeps it for the driven lead's tone. Unset: the one
+  // kept stays.
+  ShownTheme theme = 2 [(buf.validate.field).enum.defined_only = true];
 }
 
 message UiServiceViewResponse {}
+
+message UiServiceTouchRequest {}
+
+message UiServiceTouchResponse {}

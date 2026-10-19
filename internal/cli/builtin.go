@@ -66,6 +66,23 @@ address in the data folder, for the other commands.`,
 				"$DJINN_ENLIGHTEN_WORKERS (on or off), else on.",
 		},
 		{
+			Name: "--ifrit-idle", Type: "duration",
+			Help: "How long you may leave Djinn alone before it puts an ifrit out, from 5m to 4h, like 30m; an ifrit " +
+				"spawned with --idle-minutes keeps its own; default the window's settings, else 30m.",
+		},
+		{
+			Name: "--disk-trim-gb", Type: "int", Default: "30", Env: "DJINN_DISK_TRIM_GB",
+			Help: "Under this many GB free where the Go build cache is, delete its entries unused for a day, before a " +
+				"worker starts and before push checks; read only when go is on the PATH (go env GOCACHE); 0 never trims; " +
+				"default $DJINN_DISK_TRIM_GB.",
+		},
+		{
+			Name: "--disk-full-gb", Type: "int", Default: "10", Env: "DJINN_DISK_FULL_GB",
+			Help: "Under this many GB free where Djinn's data folder or the Go build cache is, tell the lead the disk is " +
+				"almost full, naming the biggest folders, and hold the push checks until space comes back; 0 never; " +
+				"default $DJINN_DISK_FULL_GB.",
+		},
+		{
 			Name: "--pprof", Type: "bool", Env: "DJINN_PPROF",
 			Help: "Serve Go's profiles of djinn up at /debug/pprof/, on its own address only (the Unix socket, or the " +
 				"loopback server and its token), to measure what it spends its CPU and memory on; default " +

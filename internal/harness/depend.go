@@ -174,11 +174,12 @@ func (h *Harness) block(ctx context.Context, tx *store.Tx, task *planv1.Task, na
 func (h *Harness) Group(ctx context.Context, procedure string, req *planv1.TaskServiceGroupRequest) (*planv1.Task, error) {
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
-	h.mu.Lock()
-	running := h.runs[req.GetTaskId()] != nil
-	h.mu.Unlock()
+	_, running, err := h.taskAndRun(ctx, req.GetTaskId())
+	if err != nil {
+		return nil, err
+	}
 	var task *planv1.Task
-	err := h.store.Tx(ctx, func(tx *store.Tx) error {
+	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		var err error
 		if task, err = store.Get[*planv1.Task](ctx, tx, req.GetTaskId()); err != nil {
 			return err
@@ -215,7 +216,7 @@ func (h *Harness) Group(ctx context.Context, procedure string, req *planv1.TaskS
 			return err
 		}
 		if azima != "" && task.GetPartOf() != azima {
-			if err := reopenAzima(ctx, tx, azima, task.GetCode()+" grouped"); err != nil {
+			if err := reopenAzima(ctx, tx, azima, task, "grouped"); err != nil {
 				return err
 			}
 		}

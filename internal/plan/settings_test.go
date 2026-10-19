@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/usage"
 )
 
 // writeSettings writes content at path, creating its folders.
@@ -29,67 +31,181 @@ func writeSettings(t *testing.T, path, content string) {
 	}
 }
 
+// TestReadSettings: a settings file reads as its settings, none when there is no file; what Djinn would refuse to run
+// is an error naming the file, and a secret is refused without being repeated.
 func TestReadSettings(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.txtpb")
-	if s, err := ReadSettings(path); s != nil || err != nil {
-		t.Errorf("no file: %v, %v", s, err)
-	}
-	writeSettings(t, path, "# proto-message: plan.v1.ProjectSettings\nprovider: PROVIDER_CODEX\nmodel: \"gpt-5.1-codex\"\n"+
-		"max_budget_usd: 2.5\nbranch: \"djinn/{code}-{slug}-{uuid8}\"\n")
-	s, err := ReadSettings(path)
-	if err != nil || s.GetProvider() != planv1.Provider_PROVIDER_CODEX || s.GetModel() != "gpt-5.1-codex" || s.GetMaxBudgetUsd() != 2.5 ||
-		s.GetBranch() != "djinn/{code}-{slug}-{uuid8}" {
-		t.Errorf("valid file: %v, %v", s, err)
-	}
-	for _, branch := range []string{"{uuid8}", "feature/{slug}_{uuid8}", "T.{code}.{uuid8}", "{code}{uuid8}"} {
-		writeSettings(t, path, "branch: \""+branch+"\"\n")
-		if s, err := ReadSettings(path); err != nil || s.GetBranch() != branch {
-			t.Errorf("branch %s: %v, %v", branch, s, err)
+	t.Parallel()
+	t.Run("valid", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "settings.txtpb")
+		if s, err := ReadSettings(path); s != nil || err != nil {
+			t.Errorf("no file: %v, %v", s, err)
 		}
-	}
-	for _, model := range []string{"claude-sonnet-4-5-20250929", "us.anthropic.claude-opus-4-1-20250805-v1:0", "opus[1m]"} {
-		writeSettings(t, path, "model: \""+model+"\"\n")
-		if s, err := ReadSettings(path); err != nil || s.GetModel() != model {
-			t.Errorf("model %s: %v, %v", model, s, err)
+		writeSettings(t, path, "# proto-message: plan.v1.ProjectSettings\nprovider: PROVIDER_CODEX\nmodel: \"gpt-5.1-codex\"\n"+
+			"max_budget_usd: 2.5\nbranch: \"djinn/{code}-{slug}-{uuid8}\"\n")
+		s, err := ReadSettings(path)
+		if err != nil || s.GetProvider() != planv1.Provider_PROVIDER_CODEX || s.GetModel() != "gpt-5.1-codex" || s.GetMaxBudgetUsd() != 2.5 ||
+			s.GetBranch() != "djinn/{code}-{slug}-{uuid8}" {
+			t.Errorf("valid file: %v, %v", s, err)
 		}
-	}
-	writeSettings(t, path, "setup: \"npm ci\"\nchecks { name: \"lint\" command: \"go tool task lint\" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }\n"+
-		"checks { name: \"test\" command: \"go tool task test\" when: CHECK_WHEN_PUSH }\n")
-	if s, err := ReadSettings(path); err != nil || s.GetSetup() != "npm ci" ||
-		ChecksText(s.GetChecks()) != "lint: go tool task lint (commit, push); test: go tool task test (push)" {
-		t.Errorf("checks: %v, %v", s, err)
-	}
-	for _, bad := range []string{
-		"checks { name: \"lint\" command: \"a\" when: CHECK_WHEN_COMMIT }\nchecks { name: \"LINT\" command: \"b\" when: CHECK_WHEN_PUSH }\n",
-		"checks { name: \"lint\" command: \"a\" }\n",
-		"checks { name: \"lint\" command: \"a\" when: CHECK_WHEN_UNSPECIFIED }\n",
-		"checks { name: \"lint\" command: \"a\" when: [CHECK_WHEN_PUSH, CHECK_WHEN_PUSH] }\n",
-		"checks { name: \"lint\" when: CHECK_WHEN_PUSH }\n",
-		"checks { name: \"../lint\" command: \"a\" when: CHECK_WHEN_PUSH }\n",
-		"provider: PROVIDER_CLAUDE\nprovider: \n",
-		"provider: PROVIDER_WATCH\n",
-		"provider: PROVIDER_UNSPECIFIED\n",
-		"max_budget_usd: -1\n",
-		"model: \"opus; rm -rf /\"\n",
-		"branch: \"\"\n",
-		"branch: \"{code}-{slug}\"\n",
-		"branch: \"{code}-{ticket}-{uuid8}\"\n",
-		"branch: \"feature//{uuid8}\"\n",
-		"branch: \"../{uuid8}\"\n",
-		"branch: \"-{uuid8}\"\n",
-		"branch: \"{uuid8}/\"\n",
-		"branch: \"a b-{uuid8}\"\n",
-		"branch: \"{uuid8}@{1}\"\n",
-	} {
-		writeSettings(t, path, bad)
-		if s, err := ReadSettings(path); err == nil || !strings.Contains(err.Error(), path) {
-			t.Errorf("%q: %v, %v; want an error naming the file", bad, s, err)
+		for _, branch := range []string{"{uuid8}", "feature/{slug}_{uuid8}", "T.{code}.{uuid8}", "{code}{uuid8}"} {
+			writeSettings(t, path, "branch: \""+branch+"\"\n")
+			if s, err := ReadSettings(path); err != nil || s.GetBranch() != branch {
+				t.Errorf("branch %s: %v, %v", branch, s, err)
+			}
 		}
-	}
+		for _, model := range []string{
+			"claude-sonnet-4-5-20250929", "us.anthropic.claude-opus-4-1-20250805-v1:0", "opus[1m]",
+			"gemini-4-argon-high",
+		} {
+			writeSettings(t, path, "model: \""+model+"\"\nquestion_model: \""+model+"\"\n")
+			if s, err := ReadSettings(path); err != nil || s.GetModel() != model || s.GetQuestionModel() != model {
+				t.Errorf("model %s: %v, %v", model, s, err)
+			}
+		}
+		writeSettings(t, path, "setup: \"npm ci\"\nchecks { name: \"lint\" command: \"go tool task lint\" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }\n"+
+			"checks { name: \"test\" command: \"go tool task test\" when: CHECK_WHEN_PUSH }\n")
+		if s, err := ReadSettings(path); err != nil || s.GetSetup() != "npm ci" ||
+			ChecksText(s.GetChecks()) != "lint: go tool task lint (commit, push); test: go tool task test (push)" {
+			t.Errorf("checks: %v, %v", s, err)
+		}
+		for _, tc := range []struct {
+			text string
+			read func(*planv1.ProjectSettings) bool
+		}{
+			{"babysit: false\n", func(s *planv1.ProjectSettings) bool { return s.Babysit != nil && !s.GetBabysit() }},
+			{"install_builds: false\n", func(s *planv1.ProjectSettings) bool { return s.InstallBuilds != nil && !s.GetInstallBuilds() }},
+			// Install questions read in lowercase too.
+			{"install_questions: when_needed\n", func(s *planv1.ProjectSettings) bool {
+				return s.GetInstallQuestions() == planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED
+			}},
+			{"install_questions: never\n", func(s *planv1.ProjectSettings) bool {
+				return s.GetInstallQuestions() == planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER
+			}},
+			{"install_questions: always\n", func(s *planv1.ProjectSettings) bool {
+				return s.GetInstallQuestions() == planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS
+			}},
+			{"install_questions: INSTALL_QUESTIONS_WHEN_NEEDED\n", func(s *planv1.ProjectSettings) bool {
+				return s.GetInstallQuestions() == planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED
+			}},
+			// A comment mentioning a removed key is not refused.
+			{"# answer_workers was removed\nenlighten_workers: true\n", func(s *planv1.ProjectSettings) bool { return s.GetEnlightenWorkers() }},
+		} {
+			writeSettings(t, path, tc.text)
+			if s, err := ReadSettings(path); err != nil || s == nil || !tc.read(s) {
+				t.Errorf("%q read as %v (%v)", tc.text, s, err)
+			}
+		}
+	})
+
+	t.Run("refused", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "settings.txtpb")
+		for _, bad := range []string{
+			"checks { name: \"lint\" command: \"a\" when: CHECK_WHEN_COMMIT }\nchecks { name: \"LINT\" command: \"b\" when: CHECK_WHEN_PUSH }\n",
+			"checks { name: \"lint\" command: \"a\" }\n",
+			"checks { name: \"lint\" command: \"a\" when: CHECK_WHEN_UNSPECIFIED }\n",
+			"checks { name: \"lint\" command: \"a\" when: [CHECK_WHEN_PUSH, CHECK_WHEN_PUSH] }\n",
+			"checks { name: \"lint\" when: CHECK_WHEN_PUSH }\n",
+			"checks { name: \"../lint\" command: \"a\" when: CHECK_WHEN_PUSH }\n",
+			"provider: PROVIDER_CLAUDE\nprovider: \n",
+			"provider: PROVIDER_WATCH\n",
+			"provider: PROVIDER_UNSPECIFIED\n",
+			"max_budget_usd: -1\n",
+			"model: \"opus; rm -rf /\"\n",
+			"model: \"Gemini 4 Argon (High)\"\n",
+			"question_model: \"Gemini 4 Argon (High)\"\n",
+			"branch: \"\"\n",
+			"branch: \"{code}-{slug}\"\n",
+			"branch: \"{code}-{ticket}-{uuid8}\"\n",
+			"branch: \"feature//{uuid8}\"\n",
+			"branch: \"../{uuid8}\"\n",
+			"branch: \"-{uuid8}\"\n",
+			"branch: \"{uuid8}/\"\n",
+			"branch: \"a b-{uuid8}\"\n",
+			"branch: \"{uuid8}@{1}\"\n",
+			// A main branch Git would refuse, a cadence under a minute, or no merge_main.
+			"main_branch: \"ma in\"\n",
+			"merge_main_minutes: 0\n",
+			"merge_main: MERGE_MAIN_UNSPECIFIED\n",
+		} {
+			writeSettings(t, path, bad)
+			if s, err := ReadSettings(path); err == nil || !strings.Contains(err.Error(), path) {
+				t.Errorf("%q: %v, %v; want an error naming the file", bad, s, err)
+			}
+		}
+	})
+
+	t.Run("secrets", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "settings.txtpb")
+		for _, secret := range []string{
+			"api_key: \"abc\"\n",
+			"  ANTHROPIC_AUTH_TOKEN: \"abc\"\n",
+			"model: \"sk-ant-api03-AbCdEfGhIjKlMnOp\"\n",
+			"# the team's token: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345\nprovider: PROVIDER_CLAUDE\n",
+			"model: \"aZ09bY18cX27dW36eV45fU54gT63hS72\"\n",
+			"model: \"AKIAIOSFODNN7EXAMPLE\"\n",
+		} {
+			writeSettings(t, path, secret)
+			s, err := ReadSettings(path)
+			if err == nil || !strings.Contains(err.Error(), "holds no secret") {
+				t.Errorf("%q: %v, %v; want it refused as a secret", secret, s, err)
+				continue
+			}
+			for _, w := range word.FindAllString(secret, -1) {
+				if len(w) >= 16 && strings.ContainsAny(w, "0123456789") && strings.Contains(err.Error(), w) {
+					t.Errorf("%q: the error repeats the secret: %v", secret, err)
+				}
+			}
+		}
+	})
+
+	t.Run("removed keys", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "settings.txtpb")
+		for _, tc := range []struct {
+			content  string
+			wantKey  string
+			wantLine int
+		}{
+			{"answer_workers: true\n", "answer_workers", 1},
+			{"answer_workers: false\n", "answer_workers", 1},
+			{"question_workers: true\n", "question_workers", 1},
+			{"question_workers: false\n", "question_workers", 1},
+			{"# a comment\nanswer_workers: true\n", "answer_workers", 2},
+			{"provider: PROVIDER_CLAUDE\nquestion_workers: true\n", "question_workers", 2},
+			{"  answer_workers: true\n", "answer_workers", 1},
+		} {
+			writeSettings(t, path, tc.content)
+			s, err := ReadSettings(path)
+			if err == nil {
+				t.Errorf("%q: got %v, want refused", tc.content, s)
+				continue
+			}
+			wantMsg := fmt.Sprintf("line %d names %s: this key was removed; delete the line", tc.wantLine, tc.wantKey)
+			if !strings.Contains(err.Error(), wantMsg) {
+				t.Errorf("%q: got error %v, want substring %q", tc.content, err, wantMsg)
+			}
+		}
+	})
+
+	// Djinn's repository names its setup and its checks, the lint before each commit and the tests before each push.
+	t.Run("djinn's own", func(t *testing.T) {
+		t.Parallel()
+		s, err := ReadSettings(filepath.Join("..", "..", SettingsFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := ChecksText(s.GetChecks()), "lint: go tool task lint (commit); test: go tool task test (push)"; s.GetSetup() != "npm ci" || got != want {
+			t.Errorf("setup %q, checks %q; want npm ci, %q", s.GetSetup(), got, want)
+		}
+	})
 }
 
-func TestReadSettingsUnknownField(t *testing.T) {
-	ResetWarnedUnknownFields()
+// TestReadSettingsWithWarnings: an unknown field is read past, and named in a warning.
+func TestReadSettingsWithWarnings(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "settings.txtpb")
 	writeSettings(t, path, "provider: PROVIDER_CODEX\nunknown_setting: true\n")
 	s, warnings, err := ReadSettingsWithWarnings(path)
@@ -104,213 +220,469 @@ func TestReadSettingsUnknownField(t *testing.T) {
 	}
 }
 
-func TestLoadSettingsUnknownField(t *testing.T) {
-	ResetWarnedUnknownFields()
-	home := t.TempDir()
-	repo := t.TempDir()
-	writeSettings(t, filepath.Join(repo, ".agents", "settings.txtpb"), "provider: PROVIDER_CODEX\nunknown_feature: true\n")
-	p := &planv1.Project{Id: "p1", Directory: repo, Git: true}
-	s, err := LoadSettings(home, p)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if s.Provider != planv1.Provider_PROVIDER_CODEX {
-		t.Errorf("provider: got %v, want PROVIDER_CODEX", s.Provider)
-	}
-	if len(s.Warnings) != 1 || !strings.Contains(s.Warnings[0], "unknown_feature") || !strings.Contains(s.Warnings[0], "a newer Djinn knows it") {
-		t.Errorf("warnings: got %v, want warning for unknown_feature", s.Warnings)
-	}
-}
-
-func TestSettingsRefuseSecrets(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.txtpb")
-	for _, secret := range []string{
-		"api_key: \"abc\"\n",
-		"  ANTHROPIC_AUTH_TOKEN: \"abc\"\n",
-		"model: \"sk-ant-api03-AbCdEfGhIjKlMnOp\"\n",
-		"# the team's token: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ012345\nprovider: PROVIDER_CLAUDE\n",
-		"model: \"aZ09bY18cX27dW36eV45fU54gT63hS72\"\n",
-		"model: \"AKIAIOSFODNN7EXAMPLE\"\n",
-	} {
-		writeSettings(t, path, secret)
-		s, err := ReadSettings(path)
-		if err == nil || !strings.Contains(err.Error(), "holds no secret") {
-			t.Errorf("%q: %v, %v; want it refused as a secret", secret, s, err)
-			continue
+// TestLoadSettings: a project's settings carry the warnings of its file, and what the developer saved for it.
+func TestLoadSettings(t *testing.T) {
+	t.Parallel()
+	t.Run("unknown field", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		repo := t.TempDir()
+		writeSettings(t, filepath.Join(repo, ".agents", "settings.txtpb"), "provider: PROVIDER_CODEX\nunknown_feature: true\n")
+		p := &planv1.Project{Id: "p1", Directory: repo, Git: true}
+		s, err := LoadSettings(home, p)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
-		for _, w := range word.FindAllString(secret, -1) {
-			if len(w) >= 16 && strings.ContainsAny(w, "0123456789") && strings.Contains(err.Error(), w) {
-				t.Errorf("%q: the error repeats the secret: %v", secret, err)
-			}
+		if s.Provider != planv1.Provider_PROVIDER_CODEX {
+			t.Errorf("provider: got %v, want PROVIDER_CODEX", s.Provider)
 		}
-	}
-}
+		if len(s.Warnings) != 1 || !strings.Contains(s.Warnings[0], "unknown_feature") || !strings.Contains(s.Warnings[0], "a newer Djinn knows it") {
+			t.Errorf("warnings: got %v, want warning for unknown_feature", s.Warnings)
+		}
+	})
 
-func TestSettingsRefuseRemovedKeys(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.txtpb")
+	// SaveDeveloperPush, SaveDeveloperPushStrategy and SaveDeveloperInstallQuestions write the developer's choice,
+	// which LoadSettings reads back as the developer's; each needs a home and a project.
+	const projectID = "01946059-e68b-7cb8-8c1d-6b586e3f4ea2"
 	for _, tc := range []struct {
-		content  string
-		wantKey  string
-		wantLine int
+		name string
+		save func(home, projectID string) error
+		read func(Settings) (string, planv1.SettingSource)
+		want string
 	}{
-		{"answer_workers: true\n", "answer_workers", 1},
-		{"answer_workers: false\n", "answer_workers", 1},
-		{"question_workers: true\n", "question_workers", 1},
-		{"question_workers: false\n", "question_workers", 1},
-		{"# a comment\nanswer_workers: true\n", "answer_workers", 2},
-		{"provider: PROVIDER_CLAUDE\nquestion_workers: true\n", "question_workers", 2},
-		{"  answer_workers: true\n", "answer_workers", 1},
+		{
+			"push",
+			func(home, id string) error {
+				return SaveDeveloperPush(home, id, planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND)
+			},
+			func(s Settings) (string, planv1.SettingSource) { return s.Push.String(), s.PushFrom },
+			planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND.String(),
+		},
+		{
+			"push strategy",
+			func(home, id string) error {
+				return SaveDeveloperPushStrategy(home, id, planv1.PushStrategy_PUSH_STRATEGY_AZIMA)
+			},
+			func(s Settings) (string, planv1.SettingSource) { return s.PushStrategy.String(), s.PushStrategyFrom },
+			planv1.PushStrategy_PUSH_STRATEGY_AZIMA.String(),
+		},
+		{
+			"install questions",
+			func(home, id string) error {
+				return SaveDeveloperInstallQuestions(home, id, planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED)
+			},
+			func(s Settings) (string, planv1.SettingSource) {
+				return s.InstallQuestions.String(), s.InstallQuestionsFrom
+			},
+			planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED.String(),
+		},
 	} {
-		writeSettings(t, path, tc.content)
-		s, err := ReadSettings(path)
-		if err == nil {
-			t.Errorf("%q: got %v, want refused", tc.content, s)
-			continue
-		}
-		wantMsg := fmt.Sprintf("line %d names %s: this key was removed; delete the line", tc.wantLine, tc.wantKey)
-		if !strings.Contains(err.Error(), wantMsg) {
-			t.Errorf("%q: got error %v, want substring %q", tc.content, err, wantMsg)
-		}
-	}
-
-	// A comment mentioning a removed key is not refused.
-	writeSettings(t, path, "# answer_workers was removed\nenlighten_workers: true\n")
-	s, err := ReadSettings(path)
-	if err != nil {
-		t.Errorf("comment with removed key refused: %v", err)
-	}
-	if s == nil || !s.GetEnlightenWorkers() {
-		t.Errorf("got %v, want enlighten_workers: true", s)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			home := t.TempDir()
+			if err := tc.save(home, projectID); err != nil {
+				t.Fatal(err)
+			}
+			s, err := LoadSettings(home, &planv1.Project{Id: projectID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, from := tc.read(s); got != tc.want || from != planv1.SettingSource_SETTING_SOURCE_DEVELOPER {
+				t.Errorf("saved: %s from %v; want %s from the developer", got, from, tc.want)
+			}
+			if err := tc.save("", projectID); err == nil {
+				t.Error("saved without home: want error")
+			}
+			if err := tc.save(home, ""); err == nil {
+				t.Error("saved without project ID: want error")
+			}
+		})
 	}
 }
 
+// TestResolveSettings: each setting comes from the developer's file, else the repository's, else Djinn's default, and
+// says where it comes from; its row in Rows shows both.
 func TestResolveSettings(t *testing.T) {
-	const (
-		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
-		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
-		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
-	)
-	claude, codex := planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX
-	team := &planv1.ProjectSettings{
-		Provider: &claude, Model: proto.String("opus"), MaxBudgetUsd: proto.Float64(3), Branch: proto.String("djinn/{code}-{uuid8}"),
-	}
-	for _, c := range []struct {
-		name      string
-		repo, dev *planv1.ProjectSettings
-		want      Settings
-	}{
-		{"neither file", nil, nil, Settings{
-			Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
-		}},
-		{"the repository's only", team, nil, Settings{
-			Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
-		}},
-		{"the developer's win, setting by setting", team, &planv1.ProjectSettings{Model: proto.String("sonnet")}, Settings{
-			Provider: claude, Model: "sonnet", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
-		}},
-		{"a provider brings its model, not the other file's", team, &planv1.ProjectSettings{Provider: &codex}, Settings{
-			Provider: codex, MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
-		}},
-		{"an explicit zero lifts the team's budget", team, &planv1.ProjectSettings{MaxBudgetUsd: proto.Float64(0)}, Settings{
-			Provider: claude, Model: "opus", Branch: "djinn/{code}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: dev, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
-		}},
-		{"the developer's branch wins", team, &planv1.ProjectSettings{Branch: proto.String("me/{slug}-{uuid8}")}, Settings{
-			Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "me/{slug}-{uuid8}",
-			ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: dev, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
-		}},
-		{"the developer's only", nil, &planv1.ProjectSettings{Provider: &codex, Model: proto.String("gpt-5.1-codex")}, Settings{
-			Provider: codex, Model: "gpt-5.1-codex", Branch: DefaultBranch,
-			ProviderFrom: dev, ModelFrom: dev, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
-		}},
-		{"the integration's, the developer's winning", &planv1.ProjectSettings{
-			Generated: []string{"gen/**", "docs/schema.json"}, Generate: proto.String("go tool task gen"), Test: proto.String("go tool task test"),
-			Install: proto.String("go tool task install"),
-		}, &planv1.ProjectSettings{Test: proto.String("go tool task test-go")}, Settings{
-			Provider: claude, Branch: DefaultBranch, Generated: []string{"gen/**", "docs/schema.json"}, Generate: "go tool task gen",
-			Checks: []*planv1.ProjectCheck{atCommit("test", "go tool task test-go")}, ProviderFrom: def, ModelFrom: def,
-			BudgetFrom: def, BranchFrom: def, GeneratedFrom: repo, GenerateFrom: repo, SetupFrom: def, ChecksFrom: dev,
-			InstallFrom: repo, Install: "go tool task install", CorrectionAttempts: 2, AttemptsFrom: def,
-		}},
-		{"the checks of one file, its test among them", &planv1.ProjectSettings{
-			Setup: proto.String("npm ci"), Test: proto.String("go tool task test"),
-			Checks: []*planv1.ProjectCheck{atCommit("lint", "go tool task lint")},
-		}, nil, Settings{
-			Provider: claude, Branch: DefaultBranch, Setup: "npm ci",
-			Checks:       []*planv1.ProjectCheck{atCommit("lint", "go tool task lint"), atCommit("test", "go tool task test")},
-			ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
-			SetupFrom: repo, ChecksFrom: repo, InstallFrom: def, CorrectionAttempts: 2, AttemptsFrom: def,
-		}},
-		{"a file that sets checks sets them all", &planv1.ProjectSettings{
-			Checks: []*planv1.ProjectCheck{atCommit("lint", "go tool task lint")}, Test: proto.String("go tool task test"),
-		}, &planv1.ProjectSettings{Checks: []*planv1.ProjectCheck{atCommit("test", "make check")}, Test: proto.String("make test")}, Settings{
-			Provider: claude, Branch: DefaultBranch, Checks: []*planv1.ProjectCheck{atCommit("test", "make check")},
-			ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
-			SetupFrom: def, ChecksFrom: dev, InstallFrom: def, CorrectionAttempts: 2, AttemptsFrom: def,
-		}},
-		{"no correction worker", nil, &planv1.ProjectSettings{CorrectionAttempts: proto.Int32(0)}, Settings{
-			Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def,
-			GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: dev,
-		}},
-	} {
-		got := ResolveSettings(c.repo, c.dev)
-		// The question workers' settings are TestQuestionSettings'.
-		got.EnlightenWorkers = false
-		got.QuestionProvider, got.QuestionModel, got.QuestionBudgetUSD = 0, "", 0
-		got.EnlightenWorkersFrom = 0
-		got.QuestionProviderFrom, got.QuestionModelFrom, got.QuestionBudgetFrom = 0, 0, 0
-		// Main's are TestMainSettings'.
-		got.MainBranch, got.MergeMain, got.MergeMainEvery, got.InstallReleases = "", 0, 0, false
-		got.MainBranchFrom, got.MergeMainFrom, got.MergeMainEveryFrom, got.InstallReleasesFrom = 0, 0, 0, 0
-		// Push is TestPushSettings', push strategy is TestPushStrategySettings', test_one is TestTestOneSettings'.
-		got.Push, got.PushFrom = 0, 0
-		got.PushStrategy, got.PushStrategyFrom = 0, 0
-		got.TestOne, got.TestOneFrom = "", 0
-		// Install questions is TestInstallQuestionsSettings'.
-		got.InstallQuestions, got.InstallQuestionsFrom = 0, 0
-		// Babysit is TestBabysitSettings'.
-		got.Babysit, got.BabysitFrom = false, 0
-		// Watch commands are TestWatchCommandsSettings'.
-		got.WatchCommands, got.WatchCommandsFrom = nil, 0
-		// Install builds is TestInstallBuildsSettings'.
-		got.InstallBuilds, got.InstallBuildsFrom = false, 0
-		if !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
-		}
-	}
-}
-
-// TestBabysitSettings: babysitting what tasks open is on by default; either file turns it off, the developer's
-// winning, read from a settings file as babysit: false.
-func TestBabysitSettings(t *testing.T) {
 	t.Parallel()
 	const (
 		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
 		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
 		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
 	)
-	for _, c := range []struct {
+	claude, codex := planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX
+
+	t.Run("whole", func(t *testing.T) {
+		t.Parallel()
+		team := &planv1.ProjectSettings{
+			Provider: &claude, Model: proto.String("opus"), MaxBudgetUsd: proto.Float64(3), Branch: proto.String("djinn/{code}-{uuid8}"),
+		}
+		for _, c := range []struct {
+			name      string
+			repo, dev *planv1.ProjectSettings
+			want      Settings
+		}{
+			{"neither file", nil, nil, Settings{
+				Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			}},
+			{"the repository's only", team, nil, Settings{
+				Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
+				ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			}},
+			{"the developer's win, setting by setting", team, &planv1.ProjectSettings{Model: proto.String("sonnet")}, Settings{
+				Provider: claude, Model: "sonnet", MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
+				ProviderFrom: repo, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			}},
+			{"a provider brings its model, not the other file's", team, &planv1.ProjectSettings{Provider: &codex}, Settings{
+				Provider: codex, MaxBudgetUSD: 3, Branch: "djinn/{code}-{uuid8}",
+				ProviderFrom: dev, ModelFrom: dev, BudgetFrom: repo, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			}},
+			{"an explicit zero lifts the team's budget", team, &planv1.ProjectSettings{MaxBudgetUsd: proto.Float64(0)}, Settings{
+				Provider: claude, Model: "opus", Branch: "djinn/{code}-{uuid8}",
+				ProviderFrom: repo, ModelFrom: repo, BudgetFrom: dev, BranchFrom: repo, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			}},
+			{"the developer's branch wins", team, &planv1.ProjectSettings{Branch: proto.String("me/{slug}-{uuid8}")}, Settings{
+				Provider: claude, Model: "opus", MaxBudgetUSD: 3, Branch: "me/{slug}-{uuid8}",
+				ProviderFrom: repo, ModelFrom: repo, BudgetFrom: repo, BranchFrom: dev, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			}},
+			{"the developer's only", nil, &planv1.ProjectSettings{Provider: &codex, Model: proto.String("gpt-5.1-codex")}, Settings{
+				Provider: codex, Model: "gpt-5.1-codex", Branch: DefaultBranch,
+				ProviderFrom: dev, ModelFrom: dev, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: def, CorrectionAttempts: 2,
+			}},
+			{"the integration's, the developer's winning", &planv1.ProjectSettings{
+				Generated: []string{"gen/**", "docs/schema.json"}, Generate: proto.String("go tool task gen"), Test: proto.String("go tool task test"),
+				Install: proto.String("go tool task install"),
+			}, &planv1.ProjectSettings{Test: proto.String("go tool task test-go")}, Settings{
+				Provider: claude, Branch: DefaultBranch, Generated: []string{"gen/**", "docs/schema.json"}, Generate: "go tool task gen",
+				Checks: []*planv1.ProjectCheck{atCommit("test", "go tool task test-go")}, ProviderFrom: def, ModelFrom: def,
+				BudgetFrom: def, BranchFrom: def, GeneratedFrom: repo, GenerateFrom: repo, SetupFrom: def, ChecksFrom: dev,
+				InstallFrom: repo, Install: "go tool task install", CorrectionAttempts: 2, AttemptsFrom: def,
+			}},
+			{"the checks of one file, its test among them", &planv1.ProjectSettings{
+				Setup: proto.String("npm ci"), Test: proto.String("go tool task test"),
+				Checks: []*planv1.ProjectCheck{atCommit("lint", "go tool task lint")},
+			}, nil, Settings{
+				Provider: claude, Branch: DefaultBranch, Setup: "npm ci",
+				Checks:       []*planv1.ProjectCheck{atCommit("lint", "go tool task lint"), atCommit("test", "go tool task test")},
+				ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
+				SetupFrom: repo, ChecksFrom: repo, InstallFrom: def, CorrectionAttempts: 2, AttemptsFrom: def,
+			}},
+			{"a file that sets checks sets them all", &planv1.ProjectSettings{
+				Checks: []*planv1.ProjectCheck{atCommit("lint", "go tool task lint")}, Test: proto.String("go tool task test"),
+			}, &planv1.ProjectSettings{Checks: []*planv1.ProjectCheck{atCommit("test", "make check")}, Test: proto.String("make test")}, Settings{
+				Provider: claude, Branch: DefaultBranch, Checks: []*planv1.ProjectCheck{atCommit("test", "make check")},
+				ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def, GeneratedFrom: def, GenerateFrom: def,
+				SetupFrom: def, ChecksFrom: dev, InstallFrom: def, CorrectionAttempts: 2, AttemptsFrom: def,
+			}},
+			{"no correction worker", nil, &planv1.ProjectSettings{CorrectionAttempts: proto.Int32(0)}, Settings{
+				Provider: claude, Branch: DefaultBranch, ProviderFrom: def, ModelFrom: def, BudgetFrom: def, BranchFrom: def,
+				GeneratedFrom: def, GenerateFrom: def, SetupFrom: def, ChecksFrom: def, InstallFrom: def, AttemptsFrom: dev,
+			}},
+		} {
+			got := ResolveSettings(c.repo, c.dev)
+			// The settings below have their own subtests.
+			got.EnlightenWorkers = false
+			got.QuestionProvider, got.QuestionModel, got.QuestionBudgetUSD = 0, "", 0
+			got.EnlightenWorkersFrom = 0
+			got.QuestionProviderFrom, got.QuestionModelFrom, got.QuestionBudgetFrom = 0, 0, 0
+			got.MainBranch, got.MergeMain, got.MergeMainEvery, got.InstallReleases = "", 0, 0, false
+			got.MainBranchFrom, got.MergeMainFrom, got.MergeMainEveryFrom, got.InstallReleasesFrom = 0, 0, 0, 0
+			got.Push, got.PushFrom = 0, 0
+			got.PushStrategy, got.PushStrategyFrom = 0, 0
+			got.TestOne, got.TestOneFrom = "", 0
+			got.InstallQuestions, got.InstallQuestionsFrom = 0, 0
+			got.Babysit, got.BabysitFrom = false, 0
+			got.WatchCommands, got.WatchCommandsFrom = nil, 0
+			got.ServeCommands, got.ServeCommandsFrom = nil, 0
+			got.InstallBuilds, got.InstallBuildsFrom = false, 0
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
+			}
+		}
+	})
+
+	// One setting at a time: its value (the enum and the word for it), its source, and its row. Babysitting what tasks
+	// open, and installing a build of the running Djinn's line, are on by default; Djinn pushes at the standard cadence
+	// and integrates per wish; it asks to install builds; a project may name its targeted-test command (test_one).
+	type step struct {
 		name      string
 		repo, dev *planv1.ProjectSettings
-		want      bool
+		want      string // the value, as its row says it
 		from      planv1.SettingSource
-	}{
-		{"neither file", nil, nil, true, def},
-		{"the repository turns it off", &planv1.ProjectSettings{Babysit: proto.Bool(false)}, nil, false, repo},
-		{"the developer turns it on again", &planv1.ProjectSettings{Babysit: proto.Bool(false)},
-			&planv1.ProjectSettings{Babysit: proto.Bool(true)}, true, dev},
-	} {
-		if s := ResolveSettings(c.repo, c.dev); s.Babysit != c.want || s.BabysitFrom != c.from {
-			t.Errorf("%s: babysit %v from %v, want %v from %v", c.name, s.Babysit, s.BabysitFrom, c.want, c.from)
-		}
 	}
-	path := filepath.Join(t.TempDir(), "settings.txtpb")
-	writeSettings(t, path, "babysit: false\n")
-	if s, err := ReadSettings(path); err != nil || s.Babysit == nil || s.GetBabysit() {
-		t.Errorf("babysit: false read as %v (%v)", s.Babysit, err)
+	onDemand, standard := planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND, planv1.ProjectPush_PROJECT_PUSH_STANDARD
+	wishStrat, azimaStrat := planv1.PushStrategy_PUSH_STRATEGY_WISH, planv1.PushStrategy_PUSH_STRATEGY_AZIMA
+	always := planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS
+	whenNeeded := planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED
+	never := planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER
+	for _, k := range []struct {
+		row   string
+		value func(Settings) (string, planv1.SettingSource) // the field, as its row says it, and its source
+		enum  func(Settings) string                         // the enum behind the word, if any
+		steps []step
+	}{
+		{
+			row:   "babysit",
+			value: func(s Settings) (string, planv1.SettingSource) { return strconv.FormatBool(s.Babysit), s.BabysitFrom },
+			steps: []step{
+				{"neither file", nil, nil, "true", def},
+				{"the repository turns it off", &planv1.ProjectSettings{Babysit: proto.Bool(false)}, nil, "false", repo},
+				{"the developer turns it on again", &planv1.ProjectSettings{Babysit: proto.Bool(false)},
+					&planv1.ProjectSettings{Babysit: proto.Bool(true)}, "true", dev},
+			},
+		},
+		{
+			row: "install_builds",
+			value: func(s Settings) (string, planv1.SettingSource) {
+				return strconv.FormatBool(s.InstallBuilds), s.InstallBuildsFrom
+			},
+			steps: []step{
+				{"neither file", nil, nil, "true", def},
+				{"the repository turns it off", &planv1.ProjectSettings{InstallBuilds: proto.Bool(false)}, nil, "false", repo},
+				{"the developer turns it on again", &planv1.ProjectSettings{InstallBuilds: proto.Bool(false)},
+					&planv1.ProjectSettings{InstallBuilds: proto.Bool(true)}, "true", dev},
+			},
+		},
+		{
+			row:   "test_one",
+			value: func(s Settings) (string, planv1.SettingSource) { return s.TestOne, s.TestOneFrom },
+			steps: []step{
+				{"neither file", nil, nil, "", def},
+				{"the repository's", &planv1.ProjectSettings{TestOne: proto.String("go tool task test-pkg -- {pkg}")}, nil,
+					"go tool task test-pkg -- {pkg}", repo},
+				{"the developer's win", &planv1.ProjectSettings{TestOne: proto.String("go tool task test-pkg -- {pkg}")},
+					&planv1.ProjectSettings{TestOne: proto.String("npm test -- {spec}")}, "npm test -- {spec}", dev},
+			},
+		},
+		{
+			row:   "push",
+			value: func(s Settings) (string, planv1.SettingSource) { return ProjectPushWord(s.Push), s.PushFrom },
+			enum:  func(s Settings) string { return strings.ToLower(strings.TrimPrefix(s.Push.String(), "PROJECT_PUSH_")) },
+			steps: []step{
+				{"neither file", nil, nil, "standard", def},
+				{"the team's on demand", &planv1.ProjectSettings{Push: &onDemand}, nil, "on_demand", repo},
+				{"the developer overrides to standard", &planv1.ProjectSettings{Push: &onDemand}, &planv1.ProjectSettings{Push: &standard}, "standard", dev},
+			},
+		},
+		{
+			row: "push_strategy",
+			value: func(s Settings) (string, planv1.SettingSource) {
+				return PushStrategyWord(s.PushStrategy), s.PushStrategyFrom
+			},
+			enum: func(s Settings) string {
+				return strings.ToLower(strings.TrimPrefix(s.PushStrategy.String(), "PUSH_STRATEGY_"))
+			},
+			steps: []step{
+				{"neither file", nil, nil, "wish", def},
+				{"the team's azima", &planv1.ProjectSettings{PushStrategy: &azimaStrat}, nil, "azima", repo},
+				{"the developer overrides to wish", &planv1.ProjectSettings{PushStrategy: &azimaStrat},
+					&planv1.ProjectSettings{PushStrategy: &wishStrat}, "wish", dev},
+			},
+		},
+		{
+			row: "install_questions",
+			value: func(s Settings) (string, planv1.SettingSource) {
+				return InstallQuestionsWord(s.InstallQuestions), s.InstallQuestionsFrom
+			},
+			enum: func(s Settings) string {
+				return strings.ToLower(strings.TrimPrefix(s.InstallQuestions.String(), "INSTALL_QUESTIONS_"))
+			},
+			steps: []step{
+				{"neither file", nil, nil, "always", def},
+				{"repo sets when_needed", &planv1.ProjectSettings{InstallQuestions: &whenNeeded}, nil, "when_needed", repo},
+				{"repo sets never", &planv1.ProjectSettings{InstallQuestions: &never}, nil, "never", repo},
+				{"dev overrides to always", &planv1.ProjectSettings{InstallQuestions: &whenNeeded},
+					&planv1.ProjectSettings{InstallQuestions: &always}, "always", dev},
+				{"dev overrides to never", &planv1.ProjectSettings{InstallQuestions: &whenNeeded},
+					&planv1.ProjectSettings{InstallQuestions: &never}, "never", dev},
+			},
+		},
+	} {
+		t.Run(k.row, func(t *testing.T) {
+			t.Parallel()
+			for _, c := range k.steps {
+				s := ResolveSettings(c.repo, c.dev)
+				if got, from := k.value(s); got != c.want || from != c.from {
+					t.Errorf("%s: %s=%q from %v; want %q from %v", c.name, k.row, got, from, c.want, c.from)
+				}
+				if k.enum != nil && k.enum(s) != c.want {
+					t.Errorf("%s: %s is %s; want %s", c.name, k.row, k.enum(s), c.want)
+				}
+				i := slices.IndexFunc(s.Rows(), func(r *planv1.ProjectSetting) bool { return r.GetName() == k.row })
+				if i < 0 || s.Rows()[i].GetValue() != c.want || s.Rows()[i].GetSource() != c.from {
+					t.Errorf("%s: no row says %s=%s from %v", c.name, k.row, c.want, c.from)
+				}
+			}
+		})
+	}
+
+	// Enlighten workers are on by default and answer workers off, on a cheaper model for claude and the provider's own
+	// default for another, with a budget; either file changes them, and a file that sets the provider resets the model.
+	t.Run("question workers", func(t *testing.T) {
+		t.Parallel()
+		antigravity := planv1.Provider_PROVIDER_ANTIGRAVITY
+		fake := planv1.Provider_PROVIDER_FAKE
+		type q struct {
+			enlighten bool
+			provider  planv1.Provider
+			model     string
+			budget    float64
+		}
+		for _, c := range []struct {
+			name      string
+			repo, dev *planv1.ProjectSettings
+			want      q
+		}{
+			{"neither file", nil, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
+			{"another provider", &planv1.ProjectSettings{Provider: &codex}, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
+			{"antigravity falls back to sonnet", &planv1.ProjectSettings{Provider: &antigravity}, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
+			{"specific enlighten_workers", &planv1.ProjectSettings{
+				EnlightenWorkers: proto.Bool(false),
+			}, nil, q{false, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
+			{"the developer's win", &planv1.ProjectSettings{EnlightenWorkers: proto.Bool(true), QuestionProvider: &fake, QuestionModel: proto.String("haiku")},
+				&planv1.ProjectSettings{EnlightenWorkers: proto.Bool(false), QuestionProvider: &codex, QuestionModel: proto.String("")}, q{false, codex, "", DefaultQuestionBudgetUSD}},
+			{"a provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
+				&planv1.ProjectSettings{Provider: &codex}, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
+			{"a question_provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
+				&planv1.ProjectSettings{QuestionProvider: &codex}, q{true, codex, "", DefaultQuestionBudgetUSD}},
+			{"inherits configured strong model", &planv1.ProjectSettings{Model: proto.String("opus")},
+				nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "opus", DefaultQuestionBudgetUSD}},
+			{"inherits configured codex model", &planv1.ProjectSettings{Provider: &codex, Model: proto.String("gpt-5.1-codex")},
+				nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "gpt-5.1-codex", DefaultQuestionBudgetUSD}},
+		} {
+			s := ResolveSettings(c.repo, c.dev)
+			if got := (q{s.EnlightenWorkers, s.QuestionProvider, s.QuestionModel, s.QuestionBudgetUSD}); got != c.want {
+				t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
+			}
+		}
+	})
+
+	// By default Djinn merges the remote's default branch at each release, fetched at most hourly, and a release of
+	// Djinn installs by itself on main; either file changes them, the developer's winning, and the rows say where each
+	// comes from.
+	t.Run("main", func(t *testing.T) {
+		t.Parallel()
+		commit, off := planv1.MergeMain_MERGE_MAIN_COMMIT, planv1.MergeMain_MERGE_MAIN_OFF
+		type m struct {
+			branch  string
+			when    planv1.MergeMain
+			every   time.Duration
+			install bool
+			from    [4]planv1.SettingSource
+		}
+		for _, c := range []struct {
+			name      string
+			repo, dev *planv1.ProjectSettings
+			want      m
+			rows      string
+		}{
+			{"neither file", nil, nil, m{"", planv1.MergeMain_MERGE_MAIN_RELEASE, time.Hour, true, [4]planv1.SettingSource{def, def, def, def}},
+				"main_branch=, merge_main=release, merge_main_minutes=60, install_releases=true"},
+			{"the team's", &planv1.ProjectSettings{
+				MainBranch: proto.String("trunk"), MergeMain: &commit, MergeMainMinutes: proto.Int32(15), InstallReleases: proto.Bool(false),
+			}, nil, m{"trunk", commit, 15 * time.Minute, false, [4]planv1.SettingSource{repo, repo, repo, repo}},
+				"main_branch=trunk, merge_main=commit, merge_main_minutes=15, install_releases=false"},
+			{"the developer's win", &planv1.ProjectSettings{MainBranch: proto.String("trunk"), MergeMain: &commit},
+				&planv1.ProjectSettings{MergeMain: &off, InstallReleases: proto.Bool(false)},
+				m{"trunk", off, time.Hour, false, [4]planv1.SettingSource{repo, dev, def, dev}},
+				"main_branch=trunk, merge_main=off, merge_main_minutes=60, install_releases=false"},
+		} {
+			s := ResolveSettings(c.repo, c.dev)
+			got := m{s.MainBranch, s.MergeMain, s.MergeMainEvery, s.InstallReleases,
+				[4]planv1.SettingSource{s.MainBranchFrom, s.MergeMainFrom, s.MergeMainEveryFrom, s.InstallReleasesFrom}}
+			if got != c.want {
+				t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
+			}
+			var rows []string
+			for _, r := range s.Rows() {
+				if slices.Contains(mainRows, r.GetName()) {
+					rows = append(rows, r.GetName()+"="+r.GetValue())
+				}
+			}
+			if got := strings.Join(rows, ", "); got != c.rows {
+				t.Errorf("%s: rows %s; want %s", c.name, got, c.rows)
+			}
+		}
+	})
+}
+
+// mainRows are the rows of the settings that keep a wish's integration branch up with main.
+var mainRows = []string{"main_branch", "merge_main", "merge_main_minutes", "install_releases"}
+
+// TestEffectiveWishPushStrategy: a wish's explicit push strategy overrides its projects', which come from the built-in
+// default, then the repository's file, then the developer's.
+func TestEffectiveWishPushStrategy(t *testing.T) {
+	t.Parallel()
+	const (
+		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
+		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
+		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
+		wish = planv1.SettingSource_SETTING_SOURCE_WISH
+	)
+	wishStrat, azimaStrat := planv1.PushStrategy_PUSH_STRATEGY_WISH, planv1.PushStrategy_PUSH_STRATEGY_AZIMA
+	home := t.TempDir()
+
+	// Wish resolution: an unspecified strategy falls back to project settings; an explicit strategy overrides.
+	pSettings := Settings{PushStrategy: wishStrat, PushStrategyFrom: def}
+	wUnspecified := &planv1.Wish{PushStrategy: planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED}
+	if gotStrat, gotFrom := ResolveWishPushStrategy(wUnspecified, pSettings); gotStrat != wishStrat || gotFrom != def {
+		t.Errorf("unspecified wish strategy: %v from %v; want %v from %v", gotStrat, gotFrom, wishStrat, def)
+	}
+
+	wAzima := &planv1.Wish{PushStrategy: azimaStrat}
+	if gotStrat, gotFrom := ResolveWishPushStrategy(wAzima, pSettings); gotStrat != azimaStrat || gotFrom != wish {
+		t.Errorf("explicit azima wish strategy: %v from %v; want %v from %v", gotStrat, gotFrom, azimaStrat, wish)
+	}
+
+	pSettingsAzima := Settings{PushStrategy: azimaStrat, PushStrategyFrom: dev}
+	wWish := &planv1.Wish{PushStrategy: wishStrat}
+	if gotStrat, gotFrom := ResolveWishPushStrategy(wWish, pSettingsAzima); gotStrat != wishStrat || gotFrom != wish {
+		t.Errorf("explicit wish override: %v from %v; want %v from %v", gotStrat, gotFrom, wishStrat, wish)
+	}
+
+	// Resolution order with store: built-in default < repository < developer < wish override.
+	sStore, err := store.Open(t.Context(), "", Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sStore.Close()
+
+	projDir := t.TempDir()
+	pEntity := &planv1.Project{Id: store.NewID(), Directory: projDir, Name: "myproj"}
+	if err := sStore.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "/test", &planv1.WishServiceListRequest{}); err != nil {
+			return err
+		}
+		return tx.Put(pEntity)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	w := &planv1.Wish{Id: store.NewID(), ProjectIds: []string{pEntity.GetId()}}
+
+	// (a) built-in default: wish, default
+	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != wishStrat || src != def {
+		t.Errorf("EffectiveWishPushStrategy built-in = %v, %v; want wish, default", strat, src)
+	}
+
+	// (b) repository default: azima, repository
+	repoSettingsFile := filepath.Join(projDir, ".agents", "settings.txtpb")
+	writeSettings(t, repoSettingsFile, "push_strategy: PUSH_STRATEGY_AZIMA\n")
+	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != azimaStrat || src != repo {
+		t.Errorf("EffectiveWishPushStrategy repo = %v, %v; want azima, repository", strat, src)
+	}
+
+	// (c) developer default overrides repository: wish, developer
+	if err := SaveDeveloperPushStrategy(home, pEntity.GetId(), wishStrat); err != nil {
+		t.Fatal(err)
+	}
+	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != wishStrat || src != dev {
+		t.Errorf("EffectiveWishPushStrategy dev = %v, %v; want wish, developer", strat, src)
+	}
+
+	// (d) wish override overrides developer default: azima, wish
+	w.PushStrategy = azimaStrat
+	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != azimaStrat || src != wish {
+		t.Errorf("EffectiveWishPushStrategy wish override = %v, %v; want azima, wish", strat, src)
 	}
 }
 
@@ -392,183 +764,34 @@ func TestWatchCommandsSettings(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".agents")); !os.IsNotExist(err) {
 		t.Errorf("the repository was touched: %v", err)
 	}
+	// An ifrit's serve commands (djinn project allow --serve), beside the watcher's.
+	serveRes, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{Project: "dolmen", Serve: proto.String("npm  run dev")}))
+	if err != nil || !slices.Equal(serveRes.Msg.GetServeCommands(), []string{"npm run dev"}) ||
+		!slices.Equal(serveRes.Msg.GetWatchCommands(), []string{"glab mr view"}) {
+		t.Errorf("a serve command allowed: %v, %v", serveRes, err)
+	}
+	if _, err := c.projects.Allow(ctx, connect.NewRequest(&planv1.ProjectServiceAllowRequest{
+		Project: "dolmen", Serve: proto.String("npm run dev"), Watch: proto.String("glab mr view"),
+	})); code(err) != connect.CodeInvalidArgument {
+		t.Errorf("--serve and --watch at once: %v", err)
+	}
+	if s := ResolveSettings(&planv1.ProjectSettings{ServeCommands: []string{"rm -rf"}}, nil); len(s.ServeCommands) != 0 {
+		t.Errorf("the repository's serve commands: %q, want none", s.ServeCommands)
+	}
 
 	writeSettings(t, filepath.Join(dir, SettingsFile), "watch_commands: \"rm -rf\"\n")
 	show, err = c.projects.Show(ctx, connect.NewRequest(&planv1.ProjectServiceShowRequest{Project: "dolmen"}))
-	if err != nil || !slices.ContainsFunc(show.Msg.GetWarnings(), func(w string) bool { return strings.Contains(w, "watch_commands is ignored") }) ||
+	if err != nil || !slices.ContainsFunc(show.Msg.GetNotices(), func(n *planv1.ProjectNotice) bool {
+		return n.GetAction() == planv1.ProjectNoticeAction_PROJECT_NOTICE_ACTION_FIX_FILE &&
+			strings.Contains(n.GetDetail(), "watch_commands is ignored")
+	}) ||
 		slices.Contains(show.Msg.GetWatchCommands(), "rm -rf") {
 		t.Errorf("the repository's watch_commands: %v, %v", show.Msg, err)
 	}
 }
 
-// TestInstallBuildsSettings: a build of the running Djinn's line installs by itself by default; either file turns it
-// off, the developer's winning, read from a settings file as install_builds: false, and its row says so.
-func TestInstallBuildsSettings(t *testing.T) {
-	t.Parallel()
-	const (
-		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
-		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
-		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
-	)
-	for _, c := range []struct {
-		name      string
-		repo, dev *planv1.ProjectSettings
-		want      bool
-		from      planv1.SettingSource
-	}{
-		{"neither file", nil, nil, true, def},
-		{"the repository turns it off", &planv1.ProjectSettings{InstallBuilds: proto.Bool(false)}, nil, false, repo},
-		{"the developer turns it on again", &planv1.ProjectSettings{InstallBuilds: proto.Bool(false)},
-			&planv1.ProjectSettings{InstallBuilds: proto.Bool(true)}, true, dev},
-	} {
-		s := ResolveSettings(c.repo, c.dev)
-		if s.InstallBuilds != c.want || s.InstallBuildsFrom != c.from {
-			t.Errorf("%s: install_builds %v from %v, want %v from %v", c.name, s.InstallBuilds, s.InstallBuildsFrom, c.want, c.from)
-		}
-		i := slices.IndexFunc(s.Rows(), func(r *planv1.ProjectSetting) bool { return r.GetName() == "install_builds" })
-		if i < 0 || s.Rows()[i].GetValue() != strconv.FormatBool(c.want) || s.Rows()[i].GetSource() != c.from {
-			t.Errorf("%s: no row says install_builds=%v", c.name, c.want)
-		}
-	}
-	path := filepath.Join(t.TempDir(), "settings.txtpb")
-	writeSettings(t, path, "install_builds: false\n")
-	if s, err := ReadSettings(path); err != nil || s.InstallBuilds == nil || s.GetInstallBuilds() {
-		t.Errorf("install_builds: false read as %v (%v)", s.InstallBuilds, err)
-	}
-}
-
-// TestTestOneSettings: a project may name its targeted-test command in its settings (test_one),
-// either file sets it, and the developer's file overrides the repository's.
-func TestTestOneSettings(t *testing.T) {
-	def, repo, dev := planv1.SettingSource_SETTING_SOURCE_DEFAULT, planv1.SettingSource_SETTING_SOURCE_REPOSITORY, planv1.SettingSource_SETTING_SOURCE_DEVELOPER
-
-	// 1. Neither file: default empty
-	s := ResolveSettings(nil, nil)
-	if s.TestOne != "" || s.TestOneFrom != def {
-		t.Errorf("default test_one: %q from %v; want empty from %v", s.TestOne, s.TestOneFrom, def)
-	}
-
-	// 2. Repository file sets test_one
-	repoSettings := &planv1.ProjectSettings{TestOne: proto.String("go tool task test-pkg -- {pkg}")}
-	s = ResolveSettings(repoSettings, nil)
-	if s.TestOne != "go tool task test-pkg -- {pkg}" || s.TestOneFrom != repo {
-		t.Errorf("repo test_one: %q from %v; want template from %v", s.TestOne, s.TestOneFrom, repo)
-	}
-
-	// 3. Developer file overrides repository file
-	devSettings := &planv1.ProjectSettings{TestOne: proto.String("npm test -- {spec}")}
-	s = ResolveSettings(repoSettings, devSettings)
-	if s.TestOne != "npm test -- {spec}" || s.TestOneFrom != dev {
-		t.Errorf("dev test_one override: %q from %v; want template from %v", s.TestOne, s.TestOneFrom, dev)
-	}
-}
-
-// TestQuestionSettings: enlighten workers are on by default and answer workers off, on a cheaper model for claude
-// and the provider's own default for another, with a budget; either file changes them, and a file that sets the
-// provider resets the model.
-func TestQuestionSettings(t *testing.T) {
-	codex := planv1.Provider_PROVIDER_CODEX
-	antigravity := planv1.Provider_PROVIDER_ANTIGRAVITY
-	fake := planv1.Provider_PROVIDER_FAKE
-	type q struct {
-		enlighten bool
-		provider  planv1.Provider
-		model     string
-		budget    float64
-	}
-	for _, c := range []struct {
-		name      string
-		repo, dev *planv1.ProjectSettings
-		want      q
-	}{
-		{"neither file", nil, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
-		{"another provider", &planv1.ProjectSettings{Provider: &codex}, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
-		{"antigravity falls back to sonnet", &planv1.ProjectSettings{Provider: &antigravity}, nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
-		{"specific enlighten_workers", &planv1.ProjectSettings{
-			EnlightenWorkers: proto.Bool(false),
-		}, nil, q{false, planv1.Provider_PROVIDER_UNSPECIFIED, DefaultQuestionModel, DefaultQuestionBudgetUSD}},
-		{"the developer's win", &planv1.ProjectSettings{EnlightenWorkers: proto.Bool(true), QuestionProvider: &fake, QuestionModel: proto.String("haiku")},
-			&planv1.ProjectSettings{EnlightenWorkers: proto.Bool(false), QuestionProvider: &codex, QuestionModel: proto.String("")}, q{false, codex, "", DefaultQuestionBudgetUSD}},
-		{"a provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
-			&planv1.ProjectSettings{Provider: &codex}, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "", DefaultQuestionBudgetUSD}},
-		{"a question_provider resets the model", &planv1.ProjectSettings{QuestionModel: proto.String("haiku")},
-			&planv1.ProjectSettings{QuestionProvider: &codex}, q{true, codex, "", DefaultQuestionBudgetUSD}},
-		{"inherits configured strong model", &planv1.ProjectSettings{Model: proto.String("opus")},
-			nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "opus", DefaultQuestionBudgetUSD}},
-		{"inherits configured codex model", &planv1.ProjectSettings{Provider: &codex, Model: proto.String("gpt-5.1-codex")},
-			nil, q{true, planv1.Provider_PROVIDER_UNSPECIFIED, "gpt-5.1-codex", DefaultQuestionBudgetUSD}},
-	} {
-		s := ResolveSettings(c.repo, c.dev)
-		if got := (q{s.EnlightenWorkers, s.QuestionProvider, s.QuestionModel, s.QuestionBudgetUSD}); got != c.want {
-			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
-		}
-	}
-}
-
-// mainRows are the rows of the settings that keep a wish's integration branch up with main: TestMainSettings'.
-var mainRows = []string{"main_branch", "merge_main", "merge_main_minutes", "install_releases"}
-
-// TestMainSettings: by default Djinn merges the remote's default branch at each release, fetched at most hourly, and
-// a release of Djinn installs by itself on main; either file changes them, the developer's winning, and the rows say
-// where each comes from.
-func TestMainSettings(t *testing.T) {
-	const (
-		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
-		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
-		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
-	)
-	commit, off := planv1.MergeMain_MERGE_MAIN_COMMIT, planv1.MergeMain_MERGE_MAIN_OFF
-	type m struct {
-		branch  string
-		when    planv1.MergeMain
-		every   time.Duration
-		install bool
-		from    [4]planv1.SettingSource
-	}
-	for _, c := range []struct {
-		name      string
-		repo, dev *planv1.ProjectSettings
-		want      m
-		rows      string
-	}{
-		{"neither file", nil, nil, m{"", planv1.MergeMain_MERGE_MAIN_RELEASE, time.Hour, true, [4]planv1.SettingSource{def, def, def, def}},
-			"main_branch=, merge_main=release, merge_main_minutes=60, install_releases=true"},
-		{"the team's", &planv1.ProjectSettings{
-			MainBranch: proto.String("trunk"), MergeMain: &commit, MergeMainMinutes: proto.Int32(15), InstallReleases: proto.Bool(false),
-		}, nil, m{"trunk", commit, 15 * time.Minute, false, [4]planv1.SettingSource{repo, repo, repo, repo}},
-			"main_branch=trunk, merge_main=commit, merge_main_minutes=15, install_releases=false"},
-		{"the developer's win", &planv1.ProjectSettings{MainBranch: proto.String("trunk"), MergeMain: &commit},
-			&planv1.ProjectSettings{MergeMain: &off, InstallReleases: proto.Bool(false)},
-			m{"trunk", off, time.Hour, false, [4]planv1.SettingSource{repo, dev, def, dev}},
-			"main_branch=trunk, merge_main=off, merge_main_minutes=60, install_releases=false"},
-	} {
-		s := ResolveSettings(c.repo, c.dev)
-		got := m{s.MainBranch, s.MergeMain, s.MergeMainEvery, s.InstallReleases,
-			[4]planv1.SettingSource{s.MainBranchFrom, s.MergeMainFrom, s.MergeMainEveryFrom, s.InstallReleasesFrom}}
-		if got != c.want {
-			t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
-		}
-		var rows []string
-		for _, r := range s.Rows() {
-			if slices.Contains(mainRows, r.GetName()) {
-				rows = append(rows, r.GetName()+"="+r.GetValue())
-			}
-		}
-		if got := strings.Join(rows, ", "); got != c.rows {
-			t.Errorf("%s: rows %s; want %s", c.name, got, c.rows)
-		}
-	}
-	// A main branch Git would refuse, a cadence under a minute, or no merge_main are refused when the file is read.
-	for _, text := range []string{"main_branch: \"ma in\"\n", "merge_main_minutes: 0\n", "merge_main: MERGE_MAIN_UNSPECIFIED\n"} {
-		path := filepath.Join(t.TempDir(), "settings.txtpb")
-		writeSettings(t, path, text)
-		if _, err := ReadSettings(path); err == nil {
-			t.Errorf("%q: read without error", text)
-		}
-	}
-}
-
 func TestProjectShow(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	home := t.TempDir()
 	c := serve(t, WithHome(home))
@@ -593,7 +816,7 @@ func TestProjectShow(t *testing.T) {
 		var b []string
 		for _, s := range res.GetSettings() {
 			if strings.HasPrefix(s.GetName(), "question_") || s.GetName() == "enlighten_workers" || slices.Contains(mainRows, s.GetName()) {
-				continue // The question workers' and main's are checked apart.
+				continue // TestResolveSettings checks the question workers' and main's.
 			}
 			b = append(b, s.GetName()+"="+s.GetValue()+" "+strings.TrimPrefix(s.GetSource().String(), "SETTING_SOURCE_"))
 		}
@@ -603,11 +826,11 @@ func TestProjectShow(t *testing.T) {
 	res := show()
 	repoFile := filepath.Join(project.GetDirectory(), ".agents", "settings.txtpb")
 	devFile := filepath.Join(home, "projects", project.GetId(), "settings.txtpb")
-	if res.GetRepositoryFile() != repoFile || res.GetDeveloperFile() != devFile || len(res.GetProblems()) > 0 {
-		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetProblems(), repoFile, devFile)
+	if res.GetRepositoryFile() != repoFile || res.GetDeveloperFile() != devFile || len(res.GetNotices()) > 0 {
+		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetNotices(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -623,11 +846,14 @@ func TestProjectShow(t *testing.T) {
 	writeSettings(t, repoFile, "provider: PROVIDER_CLAUDE\nmodel: \"opus\"\nmax_budget_usd: 3\nbranch: \"djinn/{code}-{uuid8}\"\n"+
 		"generated: \"gen/**\"\ngenerated: \"docs/schema.json\"\ngenerate: \"go tool task gen\"\ntest: \"go tool task test\"\ncorrection_attempts: 3\ninstall: \"go tool task install\"\n")
 	writeSettings(t, devFile, "model: \"sonnet\"\nbranch: \"me/{slug}-{uuid8}\"\ntest: \"go tool task test-go\"\n")
-	if got, want := rows(show()), "provider=claude REPOSITORY, model=sonnet DEVELOPER, max_budget_usd=3 REPOSITORY, "+
+	if got, want := rows(show()), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
+	}
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-sonnet-5-5" {
+		t.Errorf("migrated work seat = (%v, %q, %v); want (PROVIDER_CLAUDE, claude-sonnet-5-5, true)", p, m, ok)
 	}
 
 	// A malformed file is a problem shown, not a failure: the other file still counts.
@@ -636,11 +862,12 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
-	if len(res.GetProblems()) != 1 || !strings.Contains(res.GetProblems()[0], devFile) {
-		t.Errorf("problems = %v; want one naming %s", res.GetProblems(), devFile)
+	if n := res.GetNotices(); len(n) != 1 || n[0].GetKind() != planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX ||
+		n[0].GetFile() != devFile || !strings.Contains(n[0].GetDetail(), devFile) || res.GetProject().GetToFix() != 1 {
+		t.Errorf("notices = %v, to fix %d; want one naming %s", n, res.GetProject().GetToFix(), devFile)
 	}
 	if _, err := LoadSettings(home, project); err == nil || !strings.Contains(err.Error(), devFile) {
 		t.Errorf("LoadSettings = %v; want an error naming %s", err, devFile)
@@ -664,315 +891,343 @@ func atCommit(name, command string) *planv1.ProjectCheck {
 	return &planv1.ProjectCheck{Name: name, Command: command, When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_COMMIT}}
 }
 
+// TestIfritChecksBrief (T51, Q11): an ifrit's first prompt says which checks Djinn runs, but that it runs none after
+// a change: Djinn runs the commit checks once it is finished; a test the developer asks for has its command.
+func TestIfritChecksBrief(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		s    Settings
+		want string
+	}{
+		{"no check", Settings{}, ""},
+		{"both", Settings{Setup: "npm ci", TestOne: "go tool task test-pkg -- {pkg}", Checks: []*planv1.ProjectCheck{
+			atCommit("lint", "go tool task lint"),
+			{Name: "test", Command: "go tool task test", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}},
+		}}, "Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- go tool task lint`; " +
+			"before it pushes, with `djinn gate run test -- go tool task test`. Run neither after a change: Djinn runs the " +
+			"commit checks once you are finished, the push checks before it pushes. A test the developer asks for runs with " +
+			"`go tool task test-pkg -- {pkg}`. A fresh worktree needs `npm ci` first."},
+		{"commit only", Settings{Checks: []*planv1.ProjectCheck{atCommit("test", "make test")}},
+			"Djinn checks this project's work before it merges a task's work, with `djinn gate run test -- make test`. " +
+				"Do not run them after a change: Djinn runs them once you are finished."},
+		{"push only", Settings{Checks: []*planv1.ProjectCheck{{Name: "lint", Command: "make lint", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}}}},
+			"Djinn checks this project's work before it pushes, with `djinn gate run lint -- make lint`. Do not run them: " +
+				"Djinn runs them before it pushes."},
+	} {
+		got := tc.s.IfritChecksBrief()
+		if got != tc.want {
+			t.Errorf("%s:\n%s\nwant:\n%s", tc.name, got, tc.want)
+		}
+		if strings.Contains(got, "A worker runs the commit checks") {
+			t.Errorf("%s: an ifrit is told to run the commit checks: %s", tc.name, got)
+		}
+	}
+}
+
 // TestChecksBrief: the lead's brief and each worker's first prompt say which checks Djinn runs and when, how to run
 // them through their gates, and what a fresh worktree needs first; nothing for a project without checks.
 func TestChecksBrief(t *testing.T) {
-	if got := (Settings{}).ChecksBrief(); got != "" {
-		t.Errorf("no check: %q", got)
-	}
-	s := Settings{Setup: "npm ci", Checks: []*planv1.ProjectCheck{
+	t.Parallel()
+	lintAndTest := []*planv1.ProjectCheck{
 		atCommit("lint", "go tool task lint"),
 		{Name: "test", Command: "go tool task test", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}},
-	}}
-	want := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
-		"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
-		"and fixes what they find, then only the tests that cover what it changed; do not run the push checks (`djinn gate run test -- go tool task test`): " +
-		"Djinn runs them before pushing. A fresh worktree needs `npm ci` first."
-	if got := s.ChecksBrief(); got != want {
-		t.Errorf("brief:\n%s\nwant:\n%s", got, want)
 	}
-
-	// With test_one template
-	sTestOne := Settings{
-		Setup: "npm ci",
-		Checks: []*planv1.ProjectCheck{
-			atCommit("lint", "go tool task lint"),
-			{Name: "test", Command: "go tool task test", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}},
-		},
-		TestOne: "go tool task test-pkg -- {pkg}",
-	}
-	wantTestOne := "Djinn checks this project's work before it commits a task's work, with `djinn gate run lint -- go tool task lint`; " +
-		"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
-		"and fixes what they find, then only the tests that cover what it changed (`go tool task test-pkg -- {pkg}`); " +
-		"do not run the push checks (`djinn gate run test -- go tool task test`): Djinn runs them before pushing. A fresh worktree needs `npm ci` first."
-	if got := sTestOne.ChecksBrief(); got != wantTestOne {
-		t.Errorf("brief with test_one:\n%s\nwant:\n%s", got, wantTestOne)
-	}
-
-	// When a commit check is the whole suite (name "test")
-	sWhole := Settings{Checks: []*planv1.ProjectCheck{atCommit("test", "make test")}}
-	wantWhole := "Djinn checks this project's work before it commits a task's work, with `djinn gate run test -- make test`. " +
-		"A worker runs the commit checks before it ends, and fixes what they find (the commit check is the whole suite)."
-	if got := sWhole.ChecksBrief(); got != wantWhole {
-		t.Errorf("brief whole suite at commit:\n%s\nwant:\n%s", got, wantWhole)
-	}
-
-	push := Settings{Checks: []*planv1.ProjectCheck{{Name: "lint", Command: "make lint", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}}}}
-	wantPush := "Djinn checks this project's work before it pushes, with `djinn gate run lint -- make lint`. " +
-		"A worker runs only the tests that cover what it changed; do not run the push checks (`djinn gate run lint -- make lint`): Djinn runs them before pushing."
-	if got, want := push.ChecksBrief(), wantPush; got != want {
-		t.Errorf("push only: %q; want %q", got, want)
-	}
-}
-
-// TestDjinnsOwnSettings: Djinn's repository names its setup and its checks, the lint before each commit and the tests
-// before each push, in a file Djinn reads.
-func TestDjinnsOwnSettings(t *testing.T) {
-	s, err := ReadSettings(filepath.Join("..", "..", SettingsFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := ChecksText(s.GetChecks()), "lint: go tool task lint (commit); test: go tool task test (push)"; s.GetSetup() != "npm ci" || got != want {
-		t.Errorf("setup %q, checks %q; want npm ci, %q", s.GetSetup(), got, want)
-	}
-}
-
-// TestPushSettings: by default Djinn pushes at the standard cadence; either file changes it, the developer's
-// winning, and SaveDeveloperPush writes the developer's choice.
-func TestPushSettings(t *testing.T) {
-	const (
-		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
-		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
-		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
-	)
-	standard, onDemand := planv1.ProjectPush_PROJECT_PUSH_STANDARD, planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND
-	for _, c := range []struct {
-		name      string
-		repo, dev *planv1.ProjectSettings
-		wantPush  planv1.ProjectPush
-		wantFrom  planv1.SettingSource
-		wantWord  string
-	}{
-		{"neither file", nil, nil, standard, def, "standard"},
-		{"the team's on demand", &planv1.ProjectSettings{Push: &onDemand}, nil, onDemand, repo, "on_demand"},
-		{"the developer overrides to standard", &planv1.ProjectSettings{Push: &onDemand}, &planv1.ProjectSettings{Push: &standard}, standard, dev, "standard"},
-	} {
-		s := ResolveSettings(c.repo, c.dev)
-		if s.Push != c.wantPush || s.PushFrom != c.wantFrom {
-			t.Errorf("%s: push=%v from=%v; want %v from=%v", c.name, s.Push, s.PushFrom, c.wantPush, c.wantFrom)
-		}
-		if got := ProjectPushWord(s.Push); got != c.wantWord {
-			t.Errorf("%s: word=%s; want %s", c.name, got, c.wantWord)
-		}
-	}
-
-	home := t.TempDir()
-	projectID := "01946059-e68b-7cb8-8c1d-6b586e3f4ea2"
-	project := &planv1.Project{Id: projectID}
-
-	if err := SaveDeveloperPush(home, projectID, onDemand); err != nil {
-		t.Fatalf("SaveDeveloperPush: %v", err)
-	}
-	s, err := LoadSettings(home, project)
-	if err != nil {
-		t.Fatalf("LoadSettings: %v", err)
-	}
-	if s.Push != onDemand || s.PushFrom != dev {
-		t.Errorf("saved developer push: %v from %v; want on_demand from developer", s.Push, s.PushFrom)
-	}
-
-	if err := SaveDeveloperPush("", projectID, onDemand); err == nil {
-		t.Error("SaveDeveloperPush without home: want error")
-	}
-	if err := SaveDeveloperPush(home, "", onDemand); err == nil {
-		t.Error("SaveDeveloperPush without project ID: want error")
-	}
-}
-
-// TestPushStrategySettings: by default Djinn integrates per wish; either file changes it, the developer's
-// winning, SaveDeveloperPushStrategy writes the developer's choice, and a wish's explicit strategy overrides both.
-func TestPushStrategySettings(t *testing.T) {
-	const (
-		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
-		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
-		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
-		wish = planv1.SettingSource_SETTING_SOURCE_WISH
-	)
-	wishStrat, azimaStrat := planv1.PushStrategy_PUSH_STRATEGY_WISH, planv1.PushStrategy_PUSH_STRATEGY_AZIMA
-	for _, c := range []struct {
-		name         string
-		repo, dev    *planv1.ProjectSettings
-		wantStrategy planv1.PushStrategy
-		wantFrom     planv1.SettingSource
-		wantWord     string
-	}{
-		{"neither file", nil, nil, wishStrat, def, "wish"},
-		{"the team's azima", &planv1.ProjectSettings{PushStrategy: &azimaStrat}, nil, azimaStrat, repo, "azima"},
-		{"the developer overrides to wish", &planv1.ProjectSettings{PushStrategy: &azimaStrat}, &planv1.ProjectSettings{PushStrategy: &wishStrat}, wishStrat, dev, "wish"},
-	} {
-		s := ResolveSettings(c.repo, c.dev)
-		if s.PushStrategy != c.wantStrategy || s.PushStrategyFrom != c.wantFrom {
-			t.Errorf("%s: push_strategy=%v from=%v; want %v from=%v", c.name, s.PushStrategy, s.PushStrategyFrom, c.wantStrategy, c.wantFrom)
-		}
-		if got := PushStrategyWord(s.PushStrategy); got != c.wantWord {
-			t.Errorf("%s: word=%s; want %s", c.name, got, c.wantWord)
-		}
-	}
-
-	home := t.TempDir()
-	projectID := "01946059-e68b-7cb8-8c1d-6b586e3f4ea2"
-	project := &planv1.Project{Id: projectID}
-
-	if err := SaveDeveloperPushStrategy(home, projectID, azimaStrat); err != nil {
-		t.Fatalf("SaveDeveloperPushStrategy: %v", err)
-	}
-	s, err := LoadSettings(home, project)
-	if err != nil {
-		t.Fatalf("LoadSettings: %v", err)
-	}
-	if s.PushStrategy != azimaStrat || s.PushStrategyFrom != dev {
-		t.Errorf("saved developer push strategy: %v from %v; want azima from developer", s.PushStrategy, s.PushStrategyFrom)
-	}
-
-	if err := SaveDeveloperPushStrategy("", projectID, azimaStrat); err == nil {
-		t.Error("SaveDeveloperPushStrategy without home: want error")
-	}
-	if err := SaveDeveloperPushStrategy(home, "", azimaStrat); err == nil {
-		t.Error("SaveDeveloperPushStrategy without project ID: want error")
-	}
-
-	// Wish resolution: an unspecified strategy falls back to project settings; an explicit strategy overrides.
-	pSettings := Settings{PushStrategy: wishStrat, PushStrategyFrom: def}
-	wUnspecified := &planv1.Wish{PushStrategy: planv1.PushStrategy_PUSH_STRATEGY_UNSPECIFIED}
-	if gotStrat, gotFrom := ResolveWishPushStrategy(wUnspecified, pSettings); gotStrat != wishStrat || gotFrom != def {
-		t.Errorf("unspecified wish strategy: %v from %v; want %v from %v", gotStrat, gotFrom, wishStrat, def)
-	}
-
-	wAzima := &planv1.Wish{PushStrategy: azimaStrat}
-	if gotStrat, gotFrom := ResolveWishPushStrategy(wAzima, pSettings); gotStrat != azimaStrat || gotFrom != wish {
-		t.Errorf("explicit azima wish strategy: %v from %v; want %v from %v", gotStrat, gotFrom, azimaStrat, wish)
-	}
-
-	pSettingsAzima := Settings{PushStrategy: azimaStrat, PushStrategyFrom: dev}
-	wWish := &planv1.Wish{PushStrategy: wishStrat}
-	if gotStrat, gotFrom := ResolveWishPushStrategy(wWish, pSettingsAzima); gotStrat != wishStrat || gotFrom != wish {
-		t.Errorf("explicit wish override: %v from %v; want %v from %v", gotStrat, gotFrom, wishStrat, wish)
-	}
-
-	// Resolution order with store: built-in default < repository < developer < wish override.
-	sStore, err := store.Open(t.Context(), "", Entities()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer sStore.Close()
-
-	projDir := t.TempDir()
-	pEntity := &planv1.Project{Id: store.NewID(), Directory: projDir, Name: "myproj"}
-	if err := sStore.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "/test", &planv1.WishServiceListRequest{}); err != nil {
-			return err
-		}
-		return tx.Put(pEntity)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	w := &planv1.Wish{Id: store.NewID(), ProjectIds: []string{pEntity.GetId()}}
-
-	// (a) built-in default: wish, default
-	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != wishStrat || src != def {
-		t.Errorf("EffectiveWishPushStrategy built-in = %v, %v; want wish, default", strat, src)
-	}
-
-	// (b) repository default: azima, repository
-	repoSettingsFile := filepath.Join(projDir, ".agents", "settings.txtpb")
-	writeSettings(t, repoSettingsFile, "push_strategy: PUSH_STRATEGY_AZIMA\n")
-	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != azimaStrat || src != repo {
-		t.Errorf("EffectiveWishPushStrategy repo = %v, %v; want azima, repository", strat, src)
-	}
-
-	// (c) developer default overrides repository: wish, developer
-	if err := SaveDeveloperPushStrategy(home, pEntity.GetId(), wishStrat); err != nil {
-		t.Fatal(err)
-	}
-	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != wishStrat || src != dev {
-		t.Errorf("EffectiveWishPushStrategy dev = %v, %v; want wish, developer", strat, src)
-	}
-
-	// (d) wish override overrides developer default: azima, wish
-	w.PushStrategy = azimaStrat
-	if strat, src, err := EffectiveWishPushStrategy(t.Context(), sStore, home, w); err != nil || strat != azimaStrat || src != wish {
-		t.Errorf("EffectiveWishPushStrategy wish override = %v, %v; want azima, wish", strat, src)
-	}
-}
-
-// TestInstallQuestionsSettings: by default Djinn asks to install builds; either file changes it, the developer's
-// winning, and SaveDeveloperInstallQuestions writes the developer's choice.
-func TestInstallQuestionsSettings(t *testing.T) {
-	const (
-		def  = planv1.SettingSource_SETTING_SOURCE_DEFAULT
-		repo = planv1.SettingSource_SETTING_SOURCE_REPOSITORY
-		dev  = planv1.SettingSource_SETTING_SOURCE_DEVELOPER
-	)
-	always := planv1.InstallQuestions_INSTALL_QUESTIONS_ALWAYS
-	whenNeeded := planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED
-	never := planv1.InstallQuestions_INSTALL_QUESTIONS_NEVER
-
-	for _, c := range []struct {
-		name          string
-		repo, dev     *planv1.ProjectSettings
-		wantQuestions planv1.InstallQuestions
-		wantFrom      planv1.SettingSource
-		wantWord      string
-	}{
-		{"neither file", nil, nil, always, def, "always"},
-		{"repo sets when_needed", &planv1.ProjectSettings{InstallQuestions: &whenNeeded}, nil, whenNeeded, repo, "when_needed"},
-		{"repo sets never", &planv1.ProjectSettings{InstallQuestions: &never}, nil, never, repo, "never"},
-		{"dev overrides to always", &planv1.ProjectSettings{InstallQuestions: &whenNeeded}, &planv1.ProjectSettings{InstallQuestions: &always}, always, dev, "always"},
-		{"dev overrides to never", &planv1.ProjectSettings{InstallQuestions: &whenNeeded}, &planv1.ProjectSettings{InstallQuestions: &never}, never, dev, "never"},
-	} {
-		s := ResolveSettings(c.repo, c.dev)
-		if s.InstallQuestions != c.wantQuestions || s.InstallQuestionsFrom != c.wantFrom {
-			t.Errorf("%s: install_questions=%v from=%v; want %v from=%v", c.name, s.InstallQuestions, s.InstallQuestionsFrom, c.wantQuestions, c.wantFrom)
-		}
-		if got := InstallQuestionsWord(s.InstallQuestions); got != c.wantWord {
-			t.Errorf("%s: word=%s; want %s", c.name, got, c.wantWord)
-		}
-	}
-
-	// Reading normalized settings from file (lowercase values)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "settings.txtpb")
 	for _, tc := range []struct {
-		content string
-		want    planv1.InstallQuestions
+		name string
+		s    Settings
+		want string
 	}{
-		{"install_questions: when_needed\n", whenNeeded},
-		{"install_questions: never\n", never},
-		{"install_questions: always\n", always},
-		{"install_questions: INSTALL_QUESTIONS_WHEN_NEEDED\n", whenNeeded},
+		{"no check", Settings{}, ""},
+		{"commit and push", Settings{Setup: "npm ci", Checks: lintAndTest},
+			"Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- go tool task lint`; " +
+				"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
+				"and fixes what they find, then only the tests that cover what it changed; do not run the push checks (`djinn gate run test -- go tool task test`): " +
+				"Djinn runs them before pushing. A fresh worktree needs `npm ci` first."},
+		{"with test_one", Settings{Setup: "npm ci", Checks: lintAndTest, TestOne: "go tool task test-pkg -- {pkg}"},
+			"Djinn checks this project's work before it merges a task's work, with `djinn gate run lint -- go tool task lint`; " +
+				"before it pushes, with `djinn gate run test -- go tool task test`. A worker runs the commit checks before it ends, " +
+				"and fixes what they find, then only the tests that cover what it changed (`go tool task test-pkg -- {pkg}`); " +
+				"do not run the push checks (`djinn gate run test -- go tool task test`): Djinn runs them before pushing. A fresh worktree needs `npm ci` first."},
+		// A commit check named test is the whole suite.
+		{"whole suite at commit", Settings{Checks: []*planv1.ProjectCheck{atCommit("test", "make test")}},
+			"Djinn checks this project's work before it merges a task's work, with `djinn gate run test -- make test`. " +
+				"A worker runs the commit checks before it ends, and fixes what they find (the commit check is the whole suite)."},
+		{"push only", Settings{Checks: []*planv1.ProjectCheck{{Name: "lint", Command: "make lint", When: []planv1.CheckWhen{planv1.CheckWhen_CHECK_WHEN_PUSH}}}},
+			"Djinn checks this project's work before it pushes, with `djinn gate run lint -- make lint`. " +
+				"A worker runs only the tests that cover what it changed; do not run the push checks (`djinn gate run lint -- make lint`): Djinn runs them before pushing."},
 	} {
-		if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+		if got := tc.s.ChecksBrief(); got != tc.want {
+			t.Errorf("%s:\n%s\nwant:\n%s", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestLeadCircleAndMigration (W400): LeadService.GetCircle and SetCircle configure the global Summoning Circle by
+// canonical model ID across all worker kinds, "Same as lead" follows lead changes, labels with spaces are refused,
+// and an existing per-project developer settings file migrates once and drops its model fields.
+func TestLeadCircleAndMigration(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st, err := store.Open(ctx, "", Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	home := t.TempDir()
+	wishes := &Wishes{Store: st, Home: home}
+	lead := &LeadService{Wishes: wishes, UserHome: t.TempDir(), Path: t.TempDir()}
+
+	// 1. Fresh circle: lead defaults to claude-sonnet-5-5; every other row is "Same as lead" (empty).
+	initRes, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
+	if err != nil {
+		t.Fatalf("GetCircle: %v", err)
+	}
+	if len(initRes.Msg.GetRows()) != len(CircleRowOrder) {
+		t.Fatalf("len(rows) = %d, want %d", len(initRes.Msg.GetRows()), len(CircleRowOrder))
+	}
+	for i, row := range initRes.Msg.GetRows() {
+		if row.GetKind() != CircleRowOrder[i] {
+			t.Errorf("row %d kind = %v, want %v", i, row.GetKind(), CircleRowOrder[i])
+		}
+		if i == 0 {
+			if row.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || row.GetModel() != "claude-sonnet-5-5" {
+				t.Errorf("lead row = %v, want claude / claude-sonnet-5-5", row)
+			}
+		} else if row.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || row.GetModel() != "" {
+			t.Errorf("row %v = %v, want Same as lead (unspecified / empty)", row.GetKind(), row)
+		}
+	}
+
+	// 2. Old per-project developer file with a human-readable label migrates once to canonical IDs and drops its model lines.
+	devFile := DeveloperSettingsFile(home, "proj-1")
+	writeSettings(t, devFile, "provider: PROVIDER_ANTIGRAVITY\nmodel: \"Gemini 4 Argon (High)\"\nquestion_model: \"haiku\"\npush: PROJECT_PUSH_ON_DEMAND\n")
+
+	migRes, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
+	if err != nil {
+		t.Fatalf("GetCircle after devFile write: %v", err)
+	}
+	byKind := make(map[planv1.WorkerKind]*planv1.WorkerSeat)
+	for _, r := range migRes.Msg.GetRows() {
+		byKind[r.GetKind()] = r
+	}
+	if got := byKind[planv1.WorkerKind_WORKER_KIND_WORK]; got.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || got.GetModel() != "gemini-4-argon-high" {
+		t.Errorf("migrated work row = %v, want antigravity / gemini-4-argon-high", got)
+	}
+	if got := byKind[planv1.WorkerKind_WORKER_KIND_QUESTION]; got.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || got.GetModel() != "claude-haiku-5-5" {
+		t.Errorf("migrated question row = %v, want claude / claude-haiku-5-5", got)
+	}
+	rem, err := ReadSettings(devFile)
+	if err != nil {
+		t.Fatalf("ReadSettings(devFile) after migration: %v", err)
+	}
+	if rem.Provider != nil || rem.Model != nil || rem.QuestionProvider != nil || rem.QuestionModel != nil {
+		t.Errorf("devFile still holds model fields after migration: %v", rem)
+	}
+	if rem.GetPush() != planv1.ProjectPush_PROJECT_PUSH_ON_DEMAND {
+		t.Errorf("devFile lost push setting during migration: %v", rem)
+	}
+
+	// 3. SetCircle sets lead to codex / gpt-5.3-codex, work to "Same as lead", and review to claude-fable-5-1; work follows the lead.
+	if _, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
+		Provider: planv1.Provider_PROVIDER_CODEX,
+		Model:    "gpt-5.3-codex",
+	})); err != nil {
+		t.Fatalf("SetCircle lead: %v", err)
+	}
+	if _, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind: planv1.WorkerKind_WORKER_KIND_WORK,
+	})); err != nil {
+		t.Fatalf("SetCircle work: %v", err)
+	}
+	setRes, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind:     planv1.WorkerKind_WORKER_KIND_REVIEW,
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+		Model:    "claude-fable-5-1",
+	}))
+	if err != nil {
+		t.Fatalf("SetCircle review: %v", err)
+	}
+	byKind = make(map[planv1.WorkerKind]*planv1.WorkerSeat)
+	for _, r := range setRes.Msg.GetRows() {
+		byKind[r.GetKind()] = r
+	}
+	if got := byKind[planv1.WorkerKind_WORKER_KIND_WORK]; got.GetProvider() != planv1.Provider_PROVIDER_UNSPECIFIED || got.GetModel() != "" {
+		t.Errorf("work row = %v, want Same as lead", got)
+	}
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CODEX || m != "gpt-5.3-codex" {
+		t.Errorf("work seat following lead = (%v, %q, %v), want (CODEX, gpt-5.3-codex, true)", p, m, ok)
+	}
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_REVIEW); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-fable-5-1" {
+		t.Errorf("review seat = (%v, %q, %v), want (CLAUDE, claude-fable-5-1, true)", p, m, ok)
+	}
+
+	// Moving the lead updates what "Same as lead" resolves to.
+	if _, err := lead.Move(ctx, connect.NewRequest(&planv1.LeadServiceMoveRequest{
+		Provider: planv1.Provider_PROVIDER_CLAUDE,
+		Model:    "claude-opus-5-5",
+	})); err != nil {
+		t.Fatalf("Move lead: %v", err)
+	}
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-opus-5-5" {
+		t.Errorf("work seat after lead Move = (%v, %q, %v), want (CLAUDE, claude-opus-5-5, true)", p, m, ok)
+	}
+
+	// Terminal lead (lead.Turns == nil) accepts Antigravity on the lead row.
+	if _, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
+		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+		Model:    "gemini-4-argon-high",
+	})); err != nil {
+		t.Fatalf("SetCircle terminal lead to Antigravity: %v", err)
+	}
+	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_LEAD); !ok || p != planv1.Provider_PROVIDER_ANTIGRAVITY || m != "gemini-4-argon-high" {
+		t.Errorf("lead seat = (%v, %q, %v), want (ANTIGRAVITY, gemini-4-argon-high, true)", p, m, ok)
+	}
+
+	// 4. SetCircle refuses unspecified kind, labels with spaces, unverified models not in prices.yaml, foreign models, unknown models, and Antigravity for question.
+	for _, bad := range []*planv1.LeadServiceSetCircleRequest{
+		{Kind: planv1.WorkerKind_WORKER_KIND_UNSPECIFIED, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "claude-sonnet-5-5"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "Gemini 4 Argon (High)"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "Claude Sonnet 5.5"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "claude-opus-5-8"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_LEAD, Provider: planv1.Provider_PROVIDER_CODEX, Model: "gpt-5.5-codex"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "gemini-3.8-pro-high"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_QUESTION, Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, Model: "gemini-4-argon-high"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "gpt-5.5"},
+		{Kind: planv1.WorkerKind_WORKER_KIND_WORK, Provider: planv1.Provider_PROVIDER_CLAUDE, Model: "unknown-model-xyz"},
+	} {
+		if _, err := lead.SetCircle(ctx, connect.NewRequest(bad)); err == nil {
+			t.Errorf("SetCircle(%v): succeeded, want error", bad)
+		}
+	}
+}
+
+// TestLeadCircleProvidersAndModels (W417): GetCircle offers only providers that are installed and signed in,
+// takes Antigravity models from `agy models` and Claude/Codex models from the shared price table, ensures every
+// offered model ID is in usage.DefaultTable().Models, and offers Antigravity on the lead row when terminal-driven
+// while explaining why when the driven lead is active.
+func TestLeadCircleProvidersAndModels(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st, err := store.Open(ctx, "", Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	home := t.TempDir()
+	userHome := t.TempDir()
+	binDir := t.TempDir()
+
+	writeExecutable := func(name, shScript, cmdScript string) {
+		t.Helper()
+		p := filepath.Join(binDir, name)
+		content := shScript
+		if runtime.GOOS == "windows" {
+			p += ".cmd"
+			content = cmdScript
+		}
+		if err := os.WriteFile(p, []byte(content), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		ps, err := ReadSettings(path)
-		if err != nil {
-			t.Fatalf("ReadSettings(%q): %v", tc.content, err)
-		}
-		if ps.GetInstallQuestions() != tc.want {
-			t.Errorf("ReadSettings(%q) = %v, want %v", tc.content, ps.GetInstallQuestions(), tc.want)
-		}
+	}
+	writeExecutable("claude", "#!/bin/sh\nexit 0\n", "@exit /b 0\r\n")
+	writeExecutable("codex", "#!/bin/sh\nexit 0\n", "@exit /b 0\r\n")
+	writeExecutable(
+		"agy",
+		"#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf 'Available models:\\r\\n\\r\\n  \\r  gemini-4-argon-high\\r\\n  gemini-3.8-flash-high (default)\\r\\n  unpriced-experimental-model\\r\\n'\n  exit 0\nfi\nexit 0\n",
+		"@echo off\r\nif not \"%~1\"==\"models\" exit /b 0\r\necho Available models:\r\necho.\r\necho   gemini-4-argon-high\r\necho   gemini-3.8-flash-high (default)\r\necho   unpriced-experimental-model\r\nexit /b 0\r\n",
+	)
+
+	// Sign in Claude and Antigravity, leave Codex unsigned.
+	if err := os.MkdirAll(filepath.Join(userHome, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userHome, ".claude", ".credentials.json"), []byte(`{"claudeAiOauth":{"accessToken":"tok"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(userHome, ".gemini", "antigravity-cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userHome, ".gemini", "antigravity-cli", "antigravity-oauth-token"), []byte("tok"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
-	home := t.TempDir()
-	projectID := "01946059-e68b-7cb8-8c1d-6b586e3f4ea2"
-	project := &planv1.Project{Id: projectID}
+	wishes := &Wishes{Store: st, Home: home}
+	lead := &LeadService{Wishes: wishes, UserHome: userHome, Path: binDir}
 
-	if err := SaveDeveloperInstallQuestions(home, projectID, whenNeeded); err != nil {
-		t.Fatalf("SaveDeveloperInstallQuestions: %v", err)
-	}
-	s, err := LoadSettings(home, project)
+	res, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
 	if err != nil {
-		t.Fatalf("LoadSettings: %v", err)
-	}
-	if s.InstallQuestions != whenNeeded || s.InstallQuestionsFrom != dev {
-		t.Errorf("saved developer install_questions: %v from %v; want when_needed from developer", s.InstallQuestions, s.InstallQuestionsFrom)
+		t.Fatalf("GetCircle: %v", err)
 	}
 
-	if err := SaveDeveloperInstallQuestions("", projectID, whenNeeded); err == nil {
-		t.Error("SaveDeveloperInstallQuestions without home: want error")
+	byProv := make(map[planv1.Provider]*planv1.CircleProvider)
+	for _, p := range res.Msg.GetProviders() {
+		byProv[p.GetProvider()] = p
 	}
-	if err := SaveDeveloperInstallQuestions(home, "", whenNeeded); err == nil {
-		t.Error("SaveDeveloperInstallQuestions without project ID: want error")
+	if got := byProv[planv1.Provider_PROVIDER_CLAUDE]; !got.GetSignedIn() || !got.GetLeadSupported() {
+		t.Errorf("Claude provider = %v, want signed_in=true lead_supported=true", got)
+	}
+	if got := byProv[planv1.Provider_PROVIDER_CODEX]; got.GetSignedIn() || got.GetLoginCommand() != "codex login" {
+		t.Errorf("Codex provider = %v, want signed_in=false login_command='codex login'", got)
+	}
+	if got := byProv[planv1.Provider_PROVIDER_ANTIGRAVITY]; !got.GetSignedIn() || !got.GetLeadSupported() || got.GetLoginCommand() != "agy" {
+		t.Errorf("Antigravity provider (terminal lead) = %v, want signed_in=true lead_supported=true login_command='agy'", got)
+	}
+
+	table, err := usage.DefaultTable()
+	if err != nil {
+		t.Fatalf("usage.DefaultTable: %v", err)
+	}
+	seenModels := make(map[string]*planv1.CircleModel)
+	for _, m := range res.Msg.GetModels() {
+		seenModels[m.GetId()] = m
+		if _, ok := table.Models[m.GetId()]; !ok {
+			t.Errorf("offered model %q is not in usage.DefaultTable().Models", m.GetId())
+		}
+		if m.GetLabel() == "" {
+			t.Errorf("offered model %q has empty label", m.GetId())
+		}
+		if m.GetProvider() == planv1.Provider_PROVIDER_CODEX {
+			t.Errorf("unsigned provider CODEX model %q was offered in GetCircle.Models", m.GetId())
+		}
+	}
+	// Claude models from shared table, including claude-fable-5-1, must be offered.
+	if _, ok := seenModels["claude-fable-5-1"]; !ok {
+		t.Errorf("claude-fable-5-1 missing from offered models: %v", res.Msg.GetModels())
+	}
+	// Antigravity models come from `agy models` intersected with shared table.
+	if _, ok := seenModels["gemini-4-argon-high"]; !ok {
+		t.Errorf("gemini-4-argon-high from agy models missing from offered models")
+	}
+	if _, ok := seenModels["gemini-3.8-flash-high"]; !ok {
+		t.Errorf("gemini-3.8-flash-high from agy models missing from offered models")
+	}
+	if _, ok := seenModels["gemini-4-argon-medium"]; ok {
+		t.Errorf("gemini-4-argon-medium was offered even though `agy models` did not list it")
+	}
+
+	// When DriveLead is enabled on the store (driven lead), Antigravity stays lead_supported=true, and SetCircle accepts it on WORKER_KIND_LEAD.
+	DriveLead(st, nil)
+	drivenRes, err := lead.GetCircle(ctx, connect.NewRequest(&planv1.LeadServiceGetCircleRequest{}))
+	if err != nil {
+		t.Fatalf("driven lead.GetCircle: %v", err)
+	}
+	for _, p := range drivenRes.Msg.GetProviders() {
+		if p.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY {
+			if !p.GetLeadSupported() || p.GetLeadUnavailableReason() != "" {
+				t.Errorf("drivenLead Antigravity provider = %v, want lead_supported=true without reason", p)
+			}
+		}
+	}
+	if _, err := lead.SetCircle(ctx, connect.NewRequest(&planv1.LeadServiceSetCircleRequest{
+		Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
+		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+		Model:    "gemini-4-argon-high",
+	})); err != nil {
+		t.Errorf("driven lead.SetCircle(LEAD, ANTIGRAVITY) failed: %v", err)
 	}
 }

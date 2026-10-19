@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -115,7 +116,7 @@ func (l *limit) set(slots int, pressure string) {
 func TestDependsOn(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour)) // Only a task that ends wakes the scheduler.
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	first := e.mustSpawn(t, wishID, "First", "wait\ntext one", nil)
 	second := e.mustSpawn(t, wishID, "Second", "text two", &planv1.TaskServiceSpawnRequest{DependsOn: []string{"w1"}})
@@ -131,6 +132,10 @@ func TestDependsOn(t *testing.T) {
 	if len(texts) < 4 || texts[1] != "waiting: waits for W1 (running)" || !strings.HasPrefix(texts[2], "started fake") ||
 		texts[len(texts)-1] != "done" {
 		t.Errorf("events of the second task: %q", texts)
+	}
+	// Its start says how long it waited, and for what (W371): the page shows the waiting line as past.
+	if len(texts) > 2 && !regexp.MustCompile(`, after waiting \d+ s: waits for W1 \(running\)$`).MatchString(texts[2]) {
+		t.Errorf("start of the second task: %q; want the wait it ended", texts[2])
 	}
 	first, second = e.get(t, first.GetId()), e.get(t, second.GetId())
 	if second.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || second.GetWaitReason() != "" ||
@@ -182,24 +187,25 @@ func TestDependsOn(t *testing.T) {
 
 // TestGateHeldOutside: a gate held outside the running workers (a person's terminal, a lead, a script) takes a slot:
 // on a full machine a new worker waits, saying so, and starts once the gate is given back, woken with no tick. A
-// running worker holds its own gates in its slot (Works).
+// running worker holds its own gates in its slot (Works). Djinn serves the gates: one slot of the three is kept for
+// the merges and pushes (Q26).
 func TestGateHeldOutside(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	l := &limit{slots: 2}
+	l := &limit{slots: 3}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
 	var outside atomic.Int32
-	e.h.GatesOutside(func() int { return int(outside.Load()) })
-	wishID, _ := e.wish(t, gitRepo(t))
-	busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", nil)
+	e.h.GatesOutside(func() (int, int) { return int(outside.Load()), 0 })
+	wishID, _ := e.wish(t, nativeFolder(t))
+	busy := e.mustSpawn(t, wishID, "Busy", "sleep 1h", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s1"}})
 	if !e.h.Works(busy.GetId()) {
 		t.Errorf("the running worker of %s does not work", busy.GetCode())
 	}
 
 	outside.Store(1)
-	next := e.mustSpawn(t, wishID, "Next", "text one", nil)
-	if next.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING ||
-		next.GetWaitReason() != "1 worker runs and 1 gate is held outside the workers, the most this machine holds (set by the test)" {
+	next := e.mustSpawn(t, wishID, "Next", "text one", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
+	if next.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || next.GetWaitReason() != "1 worker runs and 1 gate is held "+
+		"outside the workers, 1 slot is kept for merges and pushes, the most this machine holds (set by the test)" {
 		t.Fatalf("spawned beside a gate held outside: %v", next)
 	}
 	if e.h.Works(next.GetId()) {
@@ -212,6 +218,59 @@ func TestGateHeldOutside(t *testing.T) {
 	}
 }
 
+// TestSlotKeptForMerges: on a machine of several slots full of workers, one slot stays free for the gates of merges and
+// pushes (Q26): a new worker never takes it, a merge's gate held outside the workers takes it and the machine holds no
+// more than its slots, and once it is given back the slot is kept again. On a machine of one slot, nothing is kept: a
+// worker takes it.
+func TestSlotKeptForMerges(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	l := &limit{slots: 3}
+	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
+	var outside, merges atomic.Int32
+	e.h.GatesOutside(func() (int, int) { return int(outside.Load()), int(merges.Load()) })
+	wishID, _ := e.wish(t, nativeFolder(t))
+	first := e.mustSpawn(t, wishID, "First", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s1"}})
+	second := e.mustSpawn(t, wishID, "Second", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
+	third := e.mustSpawn(t, wishID, "Third", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s3"}})
+	for _, task := range []*planv1.Task{first, second} {
+		if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+			t.Fatalf("%s does not run: %v", task.GetCode(), task)
+		}
+	}
+	const kept = "2 workers run, 1 slot is kept for merges and pushes, the most this machine holds (set by the test)"
+	if third.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || third.GetWaitReason() != kept {
+		t.Fatalf("the third took the kept slot: %v", third)
+	}
+
+	// A merge's gate held outside the workers takes the kept slot: the third still waits, for that gate.
+	outside.Store(1)
+	merges.Store(1)
+	e.h.Wake()
+	held := "2 workers run and 1 gate is held outside the workers, the most this machine holds (set by the test)"
+	e.until(t, third.GetId(), func(t *planv1.Task) bool { return t.GetWaitReason() == held })
+	outside.Store(0)
+	merges.Store(0)
+	e.h.Wake()
+	e.until(t, third.GetId(), func(t *planv1.Task) bool { return t.GetWaitReason() == kept })
+
+	for _, task := range []*planv1.Task{first, second, third} {
+		e.release(t, task.GetId())
+	}
+	for _, task := range []*planv1.Task{first, second, third} {
+		if got := e.ended(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Errorf("once a worker ended: %v", got)
+		}
+	}
+
+	// One slot alone: nothing is kept, a worker takes it.
+	l.set(1, "")
+	alone := e.mustSpawn(t, wishID, "Alone", "text one", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s4"}})
+	if got := e.ended(t, alone.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("on one slot: %v", got)
+	}
+}
+
 // TestSlots: never more workers than the slots, the next planned task starts as soon as one frees, and a planned
 // task waits while the machine is under pressure.
 func TestSlots(t *testing.T) {
@@ -219,11 +278,13 @@ func TestSlots(t *testing.T) {
 	t.Parallel()
 	l := &limit{slots: 2}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	var tasks []*planv1.Task
 	for i := range 4 {
-		tasks = append(tasks, e.mustSpawn(t, wishID, "Busy", "wait", nil))
+		tasks = append(tasks, e.mustSpawn(t, wishID, "Busy", "wait", &planv1.TaskServiceSpawnRequest{
+			WriteScopes: []string{fmt.Sprintf("s%d", i)},
+		}))
 		if want := i < 2; (tasks[i].GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING) != want {
 			t.Fatalf("task %d: %v", i+1, tasks[i])
 		}
@@ -264,17 +325,17 @@ func TestSlots(t *testing.T) {
 
 	// Under pressure nothing starts, and the task says why; once the pressure falls, it starts.
 	l.set(2, "simulated")
-	e.down()
-	e = up(t, e.home, WithCapacity(l.capacity), WithTick(20*time.Millisecond))
-	waiting := e.mustSpawn(t, wishID, "Heavy", "text ok", nil)
+	waiting := e.mustSpawn(t, wishID, "Heavy", "text ok", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s5"}})
 	if waiting.GetWaitReason() != "the machine is under pressure: simulated" {
 		t.Fatalf("under pressure: %v", waiting)
 	}
-	time.Sleep(100 * time.Millisecond)
+	e.h.Wake()
+	time.Sleep(25 * time.Millisecond)
 	if got := e.get(t, waiting.GetId()); got.GetStartTime() != nil {
 		t.Fatalf("started under pressure: %v", got)
 	}
 	l.set(2, "")
+	e.h.Wake()
 	if got := e.ended(t, waiting.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
 		t.Errorf("after the pressure: %v", got)
 	}
@@ -294,21 +355,21 @@ func TestMemoryHoldsWorker(t *testing.T) {
 		return free
 	}
 	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 4}).capacity), WithMemory(available, machine.DefaultPolicy()),
-		WithTick(20*time.Millisecond))
-	wishID, _ := e.wish(t, gitRepo(t))
+		WithTick(10*time.Millisecond))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
-	first := e.mustSpawn(t, wishID, "First", "sleep 30s", nil)
+	first := e.mustSpawn(t, wishID, "First", "sleep 30s", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s1"}})
 	if first.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
 		t.Fatalf("first: %v", first)
 	}
 	// The first may still take its 1 GiB: 1 GiB is left, not the 1 GiB and 512 MiB a second needs.
-	second := e.mustSpawn(t, wishID, "Second", "text ok", nil)
+	second := e.mustSpawn(t, wishID, "Second", "text ok", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
 	want := "a fake worker peaks at 1.0 GiB (none measured yet), 2.0 GiB free, 1.0 GiB of it for the workers running, " +
 		"512 MiB kept"
 	if second.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || second.GetWaitReason() != want {
 		t.Fatalf("second: %v, want it waiting because %q", second, want)
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond)
 	if got := e.get(t, second.GetId()); got.GetStartTime() != nil {
 		t.Fatalf("started on a tight machine: %v", got)
 	}
@@ -329,7 +390,7 @@ func TestPlannedSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	l := &limit{slots: 1, pressure: "simulated"}
-	e := up(t, home, WithCapacity(l.capacity), WithTick(20*time.Millisecond))
+	e := up(t, home, WithCapacity(l.capacity), WithTick(10*time.Millisecond))
 	wishID, _ := e.wish(t, gitRepo(t))
 	later := e.mustSpawn(t, wishID, "Later", "text later", &planv1.TaskServiceSpawnRequest{Later: true})
 	if later.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !later.GetScheduled() {
@@ -337,7 +398,7 @@ func TestPlannedSurvivesRestart(t *testing.T) {
 	}
 	e.down()
 	l.set(1, "")
-	e = up(t, home, WithCapacity(l.capacity), WithTick(20*time.Millisecond))
+	e = up(t, home, WithCapacity(l.capacity), WithTick(10*time.Millisecond))
 	if got := e.ended(t, later.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE || got.GetWorktree() == "" {
 		t.Errorf("after the restart: %v", got)
 	}
@@ -349,7 +410,7 @@ func TestStopPlanned(t *testing.T) {
 	t.Parallel()
 	l := &limit{slots: 0}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	first := e.mustSpawn(t, wishID, "First", "text one", nil)
 	second := e.mustSpawn(t, wishID, "Second", "text two", &planv1.TaskServiceSpawnRequest{DependsOn: []string{"W1"}})
 	res, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: first.GetId()}))
@@ -435,11 +496,10 @@ func TestScopes(t *testing.T) {
 func TestRank(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(50*time.Millisecond))
-	repo := gitRepo(t)
-	older, _ := e.wish(t, repo)
-	busy := e.mustSpawn(t, older, "Busy", "wait", nil)
-	olderNext := e.mustSpawn(t, older, "Older", "text older", nil)
+	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 1}).capacity), WithTick(15*time.Millisecond))
+	older, _ := e.wish(t, nativeFolder(t))
+	busy := e.mustSpawn(t, older, "Busy", "wait", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s1"}})
+	olderNext := e.mustSpawn(t, older, "Older", "text older", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
 	w, err := e.wishes.Make(t.Context(), connect.NewRequest(&planv1.WishServiceMakeRequest{Title: "Newer", ProjectIds: []string{busy.GetProjectId()}}))
 	if err != nil {
 		t.Fatal(err)
@@ -448,7 +508,7 @@ func TestRank(t *testing.T) {
 	if _, err := e.wishes.Move(t.Context(), connect.NewRequest(&planv1.WishServiceMoveRequest{WishId: newer, To: 1})); err != nil {
 		t.Fatal(err)
 	}
-	newerNext := e.mustSpawn(t, newer, "Newer", "text newer", nil)
+	newerNext := e.mustSpawn(t, newer, "Newer", "text newer", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s3"}})
 	e.release(t, busy.GetId())
 	a, b := e.ended(t, olderNext.GetId()), e.ended(t, newerNext.GetId())
 	if !b.GetStartTime().AsTime().Before(a.GetStartTime().AsTime()) {
@@ -459,11 +519,11 @@ func TestRank(t *testing.T) {
 	if _, err := e.wishes.Pause(t.Context(), connect.NewRequest(&planv1.WishServicePauseRequest{WishId: newer})); err != nil {
 		t.Fatal(err)
 	}
-	paused := e.mustSpawn(t, newer, "Paused", "text later", nil)
+	paused := e.mustSpawn(t, newer, "Paused", "text later", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s4"}})
 	if paused.GetWaitReason() != "its wish is paused" {
 		t.Fatalf("on a paused wish: %v", paused)
 	}
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(40 * time.Millisecond)
 	if got := e.get(t, paused.GetId()); got.GetStartTime() != nil {
 		t.Fatalf("started on a paused wish: %v", got)
 	}
@@ -480,9 +540,11 @@ func TestNote(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
-	task := e.mustSpawn(t, wishID, "Gated", "sleep 300ms", nil)
+	wishID, _ := e.wish(t, nativeFolder(t))
+	task := e.mustSpawn(t, wishID, "Gated", "wait", nil)
+	e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 	e.h.Note(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_GATE, Text: "gate codegen: taken"})
+	e.release(t, task.GetId())
 	e.ended(t, task.GetId())
 	e.h.Note(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_GATE, Text: "gate codegen: given back"})
 	events := e.watch(t.Context(), t, task.GetId(), 0)
@@ -601,7 +663,7 @@ func TestScopeForWorkerMemoryGuard(t *testing.T) {
 func TestSetPolicyDoesNotKillRunningWorkers(t *testing.T) {
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
 	// Start worker under MAX policy.
 	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX))
@@ -639,7 +701,7 @@ func TestSpawnUnreadableSettingsWaitsThenStarts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	e := up(t, t.TempDir(), WithTick(20*time.Millisecond))
+	e := up(t, t.TempDir(), WithTick(10*time.Millisecond))
 	wishID, _ := e.wish(t, repo)
 
 	// Spawning when settings are unreadable should put the task in PENDING state with wait reason.
@@ -655,7 +717,7 @@ func TestSpawnUnreadableSettingsWaitsThenStarts(t *testing.T) {
 	}
 
 	// Verify task does not start while settings are broken.
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(30 * time.Millisecond)
 	curr := e.get(t, task.GetId())
 	if curr.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || curr.GetStartTime() != nil {
 		t.Fatalf("task started while settings unreadable: %v", curr)
@@ -708,9 +770,10 @@ func TestDependencyWorkIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// 1. Done dependency without integration record and with unmerged commits -> dependent waits.
 	w1 := &planv1.Task{
 		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W1", Title: "Task 1",
-		Status: planv1.TaskStatus_TASK_STATUS_INTERRUPTED, Branch: b1, CreateTime: timestamppb.Now(),
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b1, CreateTime: timestamppb.Now(),
 	}
 	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
 		_ = tx.Journal("test", "put", w1)
@@ -719,16 +782,7 @@ func TestDependencyWorkIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 1. Dependency closed by hand with unmerged commits -> dependent waits.
-	dropVal := true
-	_, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
-		TaskId: w1.GetId(), Drop: &dropVal, Note: "dropped for test",
-	}))
-	if err != nil {
-		t.Fatalf("task done: %v", err)
-	}
-
-	w2 := e.mustSpawn(t, wishID, "W2", "wait\ntext 2", &planv1.TaskServiceSpawnRequest{
+	w2 := e.mustSpawn(t, wishID, "W2", "text 2", &planv1.TaskServiceSpawnRequest{
 		DependsOn: []string{"W1"},
 	})
 	wantWait := "waits for W1's work to reach " + mainBranch
@@ -752,7 +806,7 @@ func TestDependencyWorkIntegration(t *testing.T) {
 
 	none := "none"
 	forceVal := true
-	_, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
 		TaskId:      w1.GetId(),
 		Integration: &none,
 		Force:       &forceVal,
@@ -762,7 +816,7 @@ func TestDependencyWorkIntegration(t *testing.T) {
 	}
 
 	e.h.wake()
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(15 * time.Millisecond)
 	curr2 := e.get(t, w2.GetId())
 	if curr2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || curr2.GetWaitReason() != wantWait || curr2.GetStartTime() != nil {
 		t.Fatalf("w2 after clearing integration record: status=%v, waitReason=%q, want %q", curr2.GetStatus(), curr2.GetWaitReason(), wantWait)
@@ -773,13 +827,9 @@ func TestDependencyWorkIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.h.wake()
-	e.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	curr2 = e.get(t, w2.GetId())
-	if curr2.GetStartTime() == nil {
-		t.Errorf("w2 should have started after merge")
+	if got := e.ended(t, w2.GetId()); got.GetStartTime() == nil || got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("w2 should have started and ended done after merge: %v", got)
 	}
-	e.release(t, w2.GetId())
-	e.ended(t, w2.GetId())
 
 	// 4. No record and no commits -> dependent starts.
 	b3 := "branch-no-commits"
@@ -797,12 +847,12 @@ func TestDependencyWorkIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w4 := e.mustSpawn(t, wishID, "W4", "wait\ntext 4", &planv1.TaskServiceSpawnRequest{
+	w4 := e.mustSpawn(t, wishID, "W4", "text 4", &planv1.TaskServiceSpawnRequest{
 		DependsOn: []string{"W3"},
 	})
-	e.until(t, w4.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-	e.release(t, w4.GetId())
-	e.ended(t, w4.GetId())
+	if got := e.ended(t, w4.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("w4 = %v", got)
+	}
 
 	// 5. Worktree check: when worker's worktree is created, unmerged dependency commits prevent starting.
 	// Create task W5 with unmerged commits on branch b5.
@@ -856,20 +906,76 @@ func TestDependencyWorkIntegration(t *testing.T) {
 	if curr6.GetStartTime() != nil {
 		t.Errorf("curr6 should not have started")
 	}
+
+	// 6. Cancelled dependency with unmerged branch, --drop closed dependency with unmerged branch,
+	// 0-commit committed dependency, and forkOf replacement do not block or tilt.
+	wCancelled := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W7", Title: "Cancelled task",
+		Status: planv1.TaskStatus_TASK_STATUS_CANCELLED, Branch: b5, CreateTime: timestamppb.Now(),
+	}
+	wDroppedZero := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W8", Title: "Dropped 0-commit task",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b3, CreateTime: timestamppb.Now(),
+		Integration: &planv1.TaskIntegration{
+			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: mainBranch,
+			Sha:    "",
+		},
+	}
+	w5.Status = planv1.TaskStatus_TASK_STATUS_INTERRUPTED
+	wForkReplacement := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W9", Title: "Replacement for W5",
+		Status: planv1.TaskStatus_TASK_STATUS_DONE, Branch: b3, ForkOf: w5.GetCode(), CreateTime: timestamppb.Now(),
+		Integration: &planv1.TaskIntegration{
+			State:  planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+			Branch: mainBranch,
+			Sha:    "",
+		},
+	}
+	wToDrop := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W10", Title: "Stopped task closed with --drop",
+		Status: planv1.TaskStatus_TASK_STATUS_STOPPED, Branch: b5, CreateTime: timestamppb.Now(),
+	}
+	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
+		for _, tk := range []*planv1.Task{w5, wCancelled, wDroppedZero, wForkReplacement, wToDrop} {
+			_ = tx.Journal("test", "put", tk)
+			if err := tx.Put(tk); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dropVal := true
+	if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+		TaskId: wToDrop.GetId(), Drop: &dropVal, Note: "work superseded, dropped",
+	})); err != nil {
+		t.Fatalf("done --drop on W10: %v", err)
+	}
+	w11 := e.mustSpawn(t, wishID, "W11", "text 11", &planv1.TaskServiceSpawnRequest{
+		DependsOn: []string{wCancelled.GetCode(), wDroppedZero.GetCode(), w5.GetCode(), wToDrop.GetCode()},
+	})
+	if got := e.ended(t, w11.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+		t.Errorf("w11 = %v", got)
+	}
 }
 
 // TestStartAnyway: a planned task that waits for the machine alone says so, and starts at once when forced, under
-// pressure; one that waits for a dependency is refused, and keeps waiting.
+// pressure; one that waits for a dependency is refused, and keeps waiting. Only the first waits for room, the window's
+// place; the second's hold is its dependency, the window's count of what holds a wish's waiting workers.
 func TestStartAnyway(t *testing.T) {
+	t.Parallel()
 	l := &limit{slots: 1, pressure: "simulated"}
 	e := up(t, t.TempDir(), WithCapacity(l.capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	held := e.mustSpawn(t, wishID, "Held", "text ok", nil)
-	if !held.GetMachineWait() || held.GetWaitReason() != "the machine is under pressure: simulated" {
+	if !held.GetMachineWait() || !held.GetRoomWait() || held.GetHold() != planv1.TaskHold_TASK_HOLD_PLACE ||
+		held.GetWaitReason() != "the machine is under pressure: simulated" {
 		t.Fatalf("under pressure: %v", held)
 	}
 	after := e.mustSpawn(t, wishID, "After", "text after", &planv1.TaskServiceSpawnRequest{DependsOn: []string{held.GetCode()}})
-	if after.GetMachineWait() {
+	if after.GetMachineWait() || after.GetRoomWait() || after.GetHold() != planv1.TaskHold_TASK_HOLD_DEPENDENCY {
 		t.Errorf("waits for a dependency, not for the machine: %v", after)
 	}
 	start := func(id string) (*planv1.Task, error) {
@@ -883,10 +989,11 @@ func TestStartAnyway(t *testing.T) {
 		!strings.Contains(err.Error(), "waits for W1") {
 		t.Errorf("forcing a task held by a dependency: %v", err)
 	}
-	// Its provider's usage limit holds it as well: forced, it is refused; Start frees the machine only.
+	// A provider limit hold (TASK_HOLD_LIMIT) passes when started by hand (W409).
+	held.Model = "claude-opus-4-6"
 	limit := &planv1.Task{Id: store.NewID(), WishId: wishID, Code: "W9", Title: "Limited", Provider: held.GetProvider(),
-		Status: planv1.TaskStatus_TASK_STATUS_RESUMING, Scheduled: true, CreateTime: timestamppb.Now(),
-		ResumeAfter: timestamppb.New(time.Now().Add(time.Hour)), WaitReason: "the session limit"}
+		Model: "claude-opus-4-6", Status: planv1.TaskStatus_TASK_STATUS_RESUMING, Scheduled: true, CreateTime: timestamppb.Now(),
+		ResumeAfter: timestamppb.New(time.Now().Add(time.Hour)), WaitReason: "the provider's quota for model claude-opus-4-6"}
 	put := func(task *planv1.Task) {
 		if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
 			if err := tx.Journal("test", "put", task); err != nil {
@@ -897,18 +1004,13 @@ func TestStartAnyway(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	put(limit)
-	if _, err := start(held.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition ||
-		!strings.Contains(err.Error(), "waits for the session limit") {
-		t.Errorf("forcing a task held by its provider's usage limit: %v", err)
-	}
-	limit.Status, limit.ResumeAfter, limit.WaitReason = planv1.TaskStatus_TASK_STATUS_CANCELLED, nil, ""
+	put(held)
 	put(limit)
 	got, err := start(held.GetId())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("forcing a task held by its provider's usage limit: %v", err)
 	}
-	if got.GetStartTime() == nil || got.GetMachineWait() || got.GetWaitReason() != "" {
+	if got.GetStartTime() == nil || got.GetMachineWait() || got.GetRoomWait() || got.GetHold() != 0 || got.GetWaitReason() != "" {
 		t.Errorf("forced = %v", got)
 	}
 	if got := e.ended(t, held.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
@@ -916,5 +1018,21 @@ func TestStartAnyway(t *testing.T) {
 	}
 	if _, err := start(held.GetId()); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("forcing a task that ran: %v", err)
+	}
+}
+
+// TestWaitedFor: a wait says itself to the second under an hour, to the minute above.
+func TestWaitedFor(t *testing.T) {
+	t.Parallel()
+	for d, want := range map[time.Duration]string{
+		-time.Second:                               "0 s",
+		45*time.Second + 400*time.Millisecond:      "45 s",
+		8*time.Minute + 28*time.Second:             "8 min 28 s",
+		21*time.Minute + 22*time.Second:            "21 min 22 s",
+		time.Hour + 5*time.Minute + 59*time.Second: "1 h 05 min",
+	} {
+		if got := waitedFor(d); got != want {
+			t.Errorf("waitedFor(%v) = %q; want %q", d, got, want)
+		}
 	}
 }

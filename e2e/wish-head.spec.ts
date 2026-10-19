@@ -1,20 +1,39 @@
 // The buttons at the top of a wish, against the real djinn up --browser (see global-setup.ts): Share writes the wish's
-// export (binary protobuf), a file the command line imports again; Talk to the Djinn resumes the one lead, the Djinn,
-// in its terminal, focused on the wish, and on no wish from the flying carpet's header. The lead is a fake claude on
-// djinn's PATH that repeats what it reads. The chip beside the push strategy says where the wish's work lands, in a
-// real Git repository, and changes its branch. The trash has its own spec (wish-lifecycle.spec.ts).
-import { expect, test } from "@playwright/test";
+// export (binary protobuf), a file the command line imports again; Talk to the Djinn on the flying carpet's header
+// resumes the one lead, the Djinn, in its terminal, on no wish (on a wish, lead-switch.spec.ts checks it); driven by
+// Djinn, a chip of the lead's seat replaces it, and a batch that failed twice is retried from its line in the side
+// journal (Decision Q115 B). The lead is
+// a fake claude on djinn's PATH that repeats what it reads. The chip beside the push strategy says where the wish's
+// work lands, in a real Git repository, and changes its branch. The trash has its own spec (wish-lifecycle.spec.ts).
+import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { dropLead, leadFolder, leadRows, setLead } from "./lead";
+import {
+  LeadBatchState,
+  LeadServiceGetResponseSchema,
+  LeadServiceResumeRequestSchema,
+  LeadServiceResumeResponseSchema,
+  Provider,
+} from "../gen/ts/plan/v1/plan_pb";
+import {
+  dropLead,
+  dropTerminalLead,
+  leadFolder,
+  leadRows,
+  setLead,
+} from "./lead";
 
 const binary = path.resolve(
   __dirname,
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
 const session = "6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
+// UPDATE_SHOTS=1 writes the driven head and its side journal, dark and light, to test-results/e2e/driven-lead-*.png.
+const shots = path.join(__dirname, "../test-results/e2e");
 
 function djinn(...args: string[]): string {
   return execFileSync(binary, args, {
@@ -77,37 +96,8 @@ test("Share writes the wish's export, which imports again", async ({
 
 test.describe("Lead", () => {
   test.skip(process.platform === "win32", "the fake claude is a shell script");
+  test.beforeEach(dropTerminalLead);
   test.afterEach(dropLead);
-
-  test("Lead resumes the one lead in its terminal, focused on the wish", async ({
-    page,
-  }) => {
-    const folder = leadFolder();
-    const title = `Lead from the button ${randomUUID().slice(0, 8)}`;
-    const wishId = await open(page, title);
-    setLead(session, folder);
-
-    const lead = page
-      .locator(".topbar-actions")
-      .getByRole("button", { name: "Talk to the Djinn" });
-    await expect(lead).toHaveAttribute(
-      "title",
-      "Opens the Djinn's terminal, focused on this wish",
-    );
-    await lead.click();
-    const terminal = page.getByRole("region", { name: "Terminal" });
-    await expect(
-      terminal.locator(".lead-terminal-command").first(),
-    ).toContainText(`claude --resume ${session}`);
-    await expect(
-      leadRows(page, `fake-claude --resume ${session} in ${folder}`),
-    ).toHaveCount(1);
-    // Typed in the lead, so echoed, then read after Enter: the fake lead says it again.
-    await expect(
-      leadRows(page, `Focus on the wish ${title} (${wishId})`),
-    ).toHaveCount(2);
-    djinn("wish", "delete", wishId);
-  });
 
   test("Talk to the Djinn on the flying carpet opens the Djinn's terminal, on no wish", async ({
     page,
@@ -227,7 +217,7 @@ test("the head says where the wish's work lands, and a click changes the branch"
     djinn("open", `djinn://wish/${wishId}`);
     await page.goto(process.env.DJINN_URL!);
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    const chip = page.locator(".hero-meta button.wish-lands");
+    const chip = page.locator(".hero-meta button.wish-lands").first();
     await expect(chip).toHaveText("Lands in main");
 
     // Read in both themes, switched as the settings do, once the colours have changed: a reload within a minute of the
@@ -240,7 +230,7 @@ test("the head says where the wish's work lands, and a click changes the branch"
           document
             .getAnimations()
             .filter((a) => a instanceof CSSTransition)
-            .map((a) => a.finished),
+            .map((a) => a.finished.catch(() => {})),
         );
       }, theme);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
@@ -265,6 +255,17 @@ test("the head says where the wish's work lands, and a click changes the branch"
       "true",
     );
     await expect(picker.getByRole("button", { name: "release" })).toBeVisible();
+    // The open menu extends below the wish header and sits above the content beneath it, neither clipped by .hero nor covered by .overview-content.
+    const aboveContent = await page.evaluate(() => {
+      const menu = document.querySelector(".hero-meta .branch-picker");
+      const content = document.querySelector(".overview-content");
+      if (!menu || !content) return false;
+      const m = menu.getBoundingClientRect();
+      const c = content.getBoundingClientRect();
+      const hit = document.elementFromPoint(m.left + m.width / 2, m.bottom - 6);
+      return m.bottom > c.top && hit !== null && menu.contains(hit);
+    });
+    expect(aboveContent).toBe(true);
     await picker.getByRole("textbox", { name: "Branch" }).fill("feat/lamp");
     await picker
       .getByRole("button", { name: "New branch feat/lamp from main" })
@@ -284,9 +285,297 @@ test("the head says where the wish's work lands, and a click changes the branch"
     await picker.getByRole("button", { name: "release" }).click();
     await expect(chip).toHaveText("Lands in release");
     expect(landsIn()).toBe("release");
+
+    // The Models dropdown in the wish header also opens above the content below and closes on Escape.
+    const modelsButton = page.locator(".hero-meta button.wish-models");
+    await modelsButton.click();
+    const modelsDialog = page.getByRole("dialog", {
+      name: "Change open tasks in one gesture",
+    });
+    await expect(modelsDialog).toBeVisible();
+    const modelsAboveContent = await page.evaluate(() => {
+      const menu = document.querySelector(".hero-meta .wish-models-picker");
+      const content = document.querySelector(".overview-content");
+      if (!menu || !content) return false;
+      const m = menu.getBoundingClientRect();
+      const c = content.getBoundingClientRect();
+      const hit = document.elementFromPoint(m.left + m.width / 2, m.bottom - 6);
+      return m.bottom > c.top && hit !== null && menu.contains(hit);
+    });
+    expect(modelsAboveContent).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(modelsDialog).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
     await page.evaluate(() => localStorage.removeItem("djinn.theme"));
+    djinn("wish", "delete", wishId);
+  }
+});
+
+test("the History tab shows the wish commands and the lead journal for that wish", async ({
+  page,
+}) => {
+  const suffix = randomUUID().slice(0, 8);
+  const title = `History of the lamp ${suffix}`;
+  const wishId = JSON.parse(djinn("wish", "make", title, "--paused", "--json"))
+    .wish.id as string;
+  const exportFile = path.join(
+    process.env.DJINN_E2E_HOME!,
+    `history-${suffix}.json`,
+  );
+  try {
+    djinn("wish", "describe", wishId, "--text", "Keep the wick trimmed.");
+    djinn("wish", "export", wishId, "--file", exportFile);
+    const exp = JSON.parse(fs.readFileSync(exportFile, "utf8"));
+    const now = new Date().toISOString();
+    exp.lead_batches = [
+      {
+        id: `batch-${suffix}`,
+        state: "LEAD_BATCH_STATE_DONE",
+        start_time: now,
+        end_time: now,
+        provider: "PROVIDER_CLAUDE",
+        model: "claude-opus-4-7",
+        wish_ids: [wishId],
+        events: ["W1 merged"],
+        commands: ["djinn task spawn W2"],
+        note: "Spawned W2 to trim the wick.",
+        usage: { cost_usd: 0.08 },
+      },
+    ];
+    fs.writeFileSync(exportFile, JSON.stringify(exp));
+    djinn("wish", "import", exportFile, "--replace");
+
+    djinn("open", `djinn://wish/${wishId}`);
+    await page.goto(process.env.DJINN_URL!);
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+
+    const historyTab = page.locator("#view-tab-history");
+    await expect(historyTab).toContainText("History");
+    await historyTab.click();
+
+    const panel = page.getByRole("tabpanel", { name: "History" });
+    const row = panel
+      .locator(".lead-batch-row")
+      .filter({ hasText: "Spawned W2 to trim the wick." });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("claude-opus-4-7");
+    await expect(row).toContainText("djinn task spawn W2");
+    await expect(row).toContainText("Spawned W2 to trim the wick.");
+    await expect(row).toContainText("$0.08");
+    await expect(panel.locator(".journal-list tr.command")).toHaveCount(2);
+    await expect(panel.locator(".journal-list")).toContainText("wish describe");
+    await expect(panel.locator(".journal-list")).toContainText(
+      "Keep the wick trimmed.",
+    );
+  } finally {
+    fs.rmSync(exportFile, { force: true });
+    djinn("wish", "delete", wishId);
+  }
+});
+
+test("next to Lead, the driven lead shows the running batch, the journal and a failed batch's retry", async ({
+  page,
+}) => {
+  const suffix = randomUUID().slice(0, 8);
+  const title = `Driven lead ${suffix}`;
+  const start = timestampFromDate(new Date(Date.now() - 30_000));
+  await page.route("**/plan.v1.LeadService/Get", (route) =>
+    route.fulfill({
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          LeadServiceGetResponseSchema,
+          create(LeadServiceGetResponseSchema, {
+            driven: true,
+            seat: { provider: Provider.CLAUDE, model: "claude-opus-4-7" },
+            batch: {
+              id: "b-run",
+              state: LeadBatchState.RUNNING,
+              startTime: start,
+              provider: Provider.CLAUDE,
+              model: "claude-opus-4-7",
+              events: ["W1 merged", "Q01 answered"],
+              attempt: 2,
+              usage: { costUsd: 0.04 },
+            },
+            journal: [
+              {
+                id: "b-done",
+                state: LeadBatchState.DONE,
+                startTime: start,
+                endTime: start,
+                provider: Provider.CLAUDE,
+                model: "claude-opus-4-7",
+                sessionId: "a1b2c3d4-e5f6-4789-8012-34567890abcd",
+                events: ["wish created"],
+                commands: ["djinn task spawn W1"],
+                note: "Spawned W1 for the lamp.",
+                usage: { costUsd: 0.12 },
+              },
+              {
+                id: "b-fail",
+                state: LeadBatchState.FAILED,
+                startTime: start,
+                endTime: start,
+                provider: Provider.CLAUDE,
+                model: "claude-opus-4-7",
+                attempt: 3,
+                error: "exit status 1",
+                usage: { costUsd: 0.02 },
+              },
+            ],
+          }),
+        ),
+      ),
+    }),
+  );
+  const wishId = await open(page, title);
+  try {
+    const actions = page.locator(".topbar-actions");
+    const status = actions.locator(".lead-batch.running");
+    await expect(status).toBeVisible();
+    await expect(status.locator(".lead-batch-events")).toHaveText("2 events");
+    await expect(status.locator(".lead-batch-retry")).toHaveText("try 2");
+    await expect(status.locator(".lead-batch-cost")).toHaveText("$0.04");
+
+    const journalBtn = actions.locator(".lead-journal-button");
+    await expect(journalBtn).toHaveText("2");
+    await journalBtn.click();
+
+    const dialog = actions.getByRole("dialog", { name: "Lead journal" });
+    await expect(dialog).toBeVisible();
+    const rows = dialog.locator(".lead-batch-row");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText("claude-opus-4-7");
+    await expect(rows.nth(0)).toContainText("a1b2c3d4");
+    await expect(rows.nth(0)).toContainText("djinn task spawn W1");
+    await expect(rows.nth(0)).toContainText("Spawned W1 for the lamp.");
+    await expect(rows.nth(0)).toContainText("$0.12");
+    await expect(rows.nth(1)).toHaveClass(/failed/);
+    await expect(rows.nth(1)).toContainText("try 3");
+    await expect(rows.nth(1)).toContainText("failed");
+    await expect(rows.nth(1)).toContainText("exit status 1");
+  } finally {
+    djinn("wish", "delete", wishId);
+  }
+});
+
+test("driven, no Talk to the Djinn: the seat's chip opens the seats, and Retry on the failed line resumes the lead", async ({
+  page,
+}) => {
+  const title = `Driven retry ${randomUUID().slice(0, 8)}`;
+  const start = timestampFromDate(new Date(Date.now() - 40_000));
+  const end = timestampFromDate(new Date(Date.now() - 10_000));
+  await page.route("**/plan.v1.LeadService/Get", (route) =>
+    route.fulfill({
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          LeadServiceGetResponseSchema,
+          create(LeadServiceGetResponseSchema, {
+            driven: true,
+            seat: { provider: Provider.CLAUDE, model: "claude-opus-4-7" },
+            // The batch failed twice: its events wait for a retry.
+            startError:
+              "The Djinn's batch of 1 event(s) failed twice: exit status 1.",
+            batch: {
+              id: "b-twice",
+              state: LeadBatchState.FAILED,
+              startTime: start,
+              endTime: end,
+              provider: Provider.CLAUDE,
+              model: "claude-opus-4-7",
+              events: ["W1 merged"],
+              commands: ["djinn task get W1"],
+              attempt: 2,
+              error: "exit status 1",
+              usage: { costUsd: 0.03 },
+            },
+          }),
+        ),
+      ),
+    }),
+  );
+  const resumed: string[] = [];
+  await page.route("**/plan.v1.LeadService/Resume", (route) => {
+    const req = fromBinary(
+      LeadServiceResumeRequestSchema,
+      route.request().postDataBuffer() ?? Buffer.alloc(0),
+    );
+    resumed.push(req.wishId);
+    return route.fulfill({
+      contentType: "application/proto",
+      body: Buffer.from(
+        toBinary(
+          LeadServiceResumeResponseSchema,
+          create(LeadServiceResumeResponseSchema, {
+            note: "Djinn drives the lead: the events that wait go to a new session now.",
+          }),
+        ),
+      ),
+    });
+  });
+  const wishId = await open(page, title);
+  try {
+    const actions = page.locator(".topbar-actions");
+    await expect(actions.locator(".lead-batch.failed")).toBeVisible();
+    await expect(
+      actions.getByRole("button", { name: "Talk to the Djinn", exact: true }),
+    ).toHaveCount(0);
+    await expect(actions.locator(".lead-dot")).toHaveCount(0);
+    await expect(actions.locator(".lead-batch.failed")).toContainText(
+      "try 2 failed",
+    );
+    await expect(actions).not.toContainText("Talk to the Djinn");
+
+    // The seat, in a chip; its menu moves the lead.
+    const seat = actions.getByRole("button", {
+      name: "The Djinn runs on Claude Code · opus 4.7: move it",
+    });
+    await expect(seat).toHaveText("Claude Code · opus 4.7");
+    await seat.click();
+    const menu = actions.getByRole("menu", { name: "Choose the agent" });
+    await expect(menu).toBeVisible();
+    await expect(
+      menu.getByRole("menuitem", { name: /Claude.*The Djinn runs here/ }),
+    ).toHaveAttribute("aria-current", "true");
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+
+    // Retry is on the failed line of the side journal, once.
+    const failed = page.locator(".glance .lead-side-log-line.failed");
+    await expect(failed).toHaveText("✕ exit status 1 · Retry");
+    await expect(
+      page.getByRole("button", { name: "Retry", exact: true }),
+    ).toHaveCount(1);
+    if (process.env.UPDATE_SHOTS)
+      for (const theme of ["dark", "light"]) {
+        await page.evaluate((v) => {
+          localStorage.setItem("djinn.theme", v);
+          document.documentElement.dataset.theme = v;
+        }, theme);
+        await expect(page.locator(`html[data-theme="${theme}"]`)).toHaveCount(
+          1,
+        );
+        await page.locator(".page-header").screenshot({
+          path: path.join(shots, `driven-lead-head-${theme}.png`),
+        });
+        await page.locator(".glance .lead-side-log").screenshot({
+          path: path.join(shots, `driven-lead-retry-${theme}.png`),
+        });
+        await seat.click();
+        await page.screenshot({
+          path: path.join(shots, `driven-lead-seats-${theme}.png`),
+        });
+        await page.keyboard.press("Escape");
+      }
+    await failed.getByRole("button", { name: "Retry" }).click();
+    await expect.poll(() => resumed).toEqual([wishId]);
+    await expect(page.locator(".toast")).toContainText(
+      "the events that wait go to a new session now",
+    );
+  } finally {
     djinn("wish", "delete", wishId);
   }
 });

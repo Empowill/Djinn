@@ -5,7 +5,7 @@
 // Screenshots, dark and light, go to test-results/e2e/resources-*.png.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { timestampFromMs } from "@bufbuild/protobuf/wkt";
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -42,7 +42,7 @@ const wishes = (): Wish[] =>
 const GIB = 1024n ** 3n;
 const MIB = 1024n ** 2n;
 
-// The series of the last minutes: the machine and one worker, a sample every 5 s; a peak of the machine's CPU at 95%.
+// The series of the last minutes: the machine and workers, a sample every 5 s; a peak of the machine's CPU at 95%.
 function series(taskId: string, wishId: string, title: string, end: number) {
   const times = Array.from({ length: 24 }, (_, i) => end - (23 - i) * 5_000);
   return create(MachineServiceSeriesResponseSchema, {
@@ -60,7 +60,34 @@ function series(taskId: string, wishId: string, title: string, end: number) {
         selfMemoryBytes: 140n * MIB,
       })),
     },
+    disk: {
+      availableBytes: 180n * GIB,
+      totalBytes: 512n * GIB,
+      folders: [
+        { path: "/home/dev/.cache/go-build", sizeBytes: 14n * GIB },
+        { path: "/home/dev/djinn/node_modules", sizeBytes: 640n * MIB },
+        {
+          path: "/home/dev/.config/djinn/projects/oil/worktrees",
+          sizeBytes: 420n * MIB,
+        },
+        { path: "/home/dev/.config/djinn", sizeBytes: 180n * MIB },
+      ],
+    },
     workers: [
+      {
+        taskId: `${taskId}-watch`,
+        wishId,
+        code: "W2",
+        title: "Watch the pull request checks until CI passes",
+        provider: Provider.WATCH,
+        peakCpuPercent: 4,
+        peakMemoryBytes: 48n * MIB,
+        points: times.map((t) => ({
+          time: timestampFromMs(t),
+          cpuPercent: 2,
+          memoryBytes: 42n * MIB,
+        })),
+      },
       {
         taskId,
         wishId,
@@ -89,6 +116,13 @@ function since(taskId: string, wishId: string, title: string, at: number) {
   full.workers[0].points = [
     {
       ...full.workers[0].points[0],
+      time: timestampFromMs(at),
+      cpuPercent: 2,
+    },
+  ];
+  full.workers[1].points = [
+    {
+      ...full.workers[1].points[0],
       time: timestampFromMs(at),
       cpuPercent: 70,
     },
@@ -186,6 +220,12 @@ async function routeResources(
   );
 }
 
+// What each test makes, paused once it ends: the specs after find the place as they left it (e2e/test.ts).
+const made: string[] = [];
+test.afterEach(() => {
+  for (const id of made.splice(0)) djinn("wish", "pause", id);
+});
+
 test("the resources panel: values on hover and keys, live samples, and a worker's eye opening its task in its wish", async ({
   page,
 }) => {
@@ -196,6 +236,7 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
 
   const tag = randomUUID().slice(0, 8);
   const wishId = randomUUID();
+  made.push(wishId);
   const azimaId = randomUUID();
   const w1 = randomUUID();
   const title = `Measure the lamp's oil, then say in full what the wick burns while the flame holds steady ${tag}`;
@@ -272,6 +313,12 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     "aria-pressed",
     "true",
   );
+  // The Resources tab shows the machine's CPU and memory charts as well as the two worker heatmaps side by side.
+  await expect(panel.locator(".resource-machine .resource-chart")).toHaveCount(
+    2,
+  );
+  await expect(panel.locator(".resource-heatmap-group")).toHaveCount(2);
+  await expect(panel.locator(".resource-heatmap-switch")).toHaveCount(0);
   const worker = panel.locator(".resource-worker", { hasText: "W1" });
   // The title in full on the worker's title line: it wraps, never cut.
   await expect(worker.locator(".resource-worker-name")).toHaveText(title);
@@ -285,6 +332,14 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     .first()
     .boundingBox();
   expect(box!.height).toBeGreaterThanOrEqual(180);
+  if (process.env.RESOURCE_SHOTS) {
+    await panel.screenshot({
+      path: path.join(shots, "hourglass-resources-dark.png"),
+    });
+  }
+
+  // The Gates tab: machine CPU and RAM stacked above the gates and commands.
+  await panel.getByRole("tab", { name: "Gates" }).click();
   // The commands of the wish's project, grouped under their gates, the most time first; none of a project at rest.
   const commands = panel.locator(".resource-commands");
   await expect(commands.locator(".resource-project-name")).toHaveText([
@@ -308,9 +363,10 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await expect(commands.locator(".resource-command-args").first()).toHaveText(
     "2 sets of arguments: -- e2e/wish-render.spec.ts, -- e2e/resources.spec.ts",
   );
-  await commands.screenshot({
-    path: path.join(shots, "resources-commands-dark.png"),
-  });
+  if (process.env.RESOURCE_SHOTS)
+    await commands.screenshot({
+      path: path.join(shots, "resources-commands-dark.png"),
+    });
 
   // Djinn apart from what it started, both named.
   await expect(panel.locator(".resource-legend li")).toHaveText([
@@ -336,10 +392,11 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   expect(seen).toContain("Djinn and what it started 8%");
   expect(seen).toContain("Djinn itself 1%");
   await expect(cpu.locator(".resource-chart-cursor")).toHaveCount(1);
-  await page.screenshot({
-    path: path.join(shots, "resources-hover-dark.png"),
-    clip: (await panel.locator(".resource-machine").boundingBox())!,
-  });
+  if (process.env.RESOURCE_SHOTS)
+    await page.screenshot({
+      path: path.join(shots, "resources-hover-dark.png"),
+      clip: (await panel.locator(".resource-machine").boundingBox())!,
+    });
 
   // The keys, the pointer away: the last sample.
   await page.mouse.move(0, 0);
@@ -354,9 +411,6 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
     timeout: 12_000,
   });
   await expect(plot).toBeFocused();
-  await expect(
-    worker.locator(".resource-chart.cpu .resource-chart-now"),
-  ).toContainText("now 70%");
   await page.keyboard.press("End");
   await expect(cpu.locator(".resource-chart-readout strong")).toHaveText(
     "CPU 55%",
@@ -368,22 +422,49 @@ test("the resources panel: values on hover and keys, live samples, and a worker'
   await page.keyboard.press("Escape");
   await expect(cpu.locator(".resource-chart-readout")).toHaveCount(0);
 
-  // The light theme.
-  await page.evaluate(async () => {
-    document.documentElement.dataset.theme = "light";
-    // The colours' transitions end; an endless animation elsewhere (a running worker's orb) is not waited for.
-    await Promise.all(
-      document
-        .getAnimations()
-        .filter((a) => a instanceof CSSTransition)
-        .map((a) => a.finished),
-    );
-  });
-  await page.mouse.move(0, 0);
-  await panel.screenshot({ path: path.join(shots, "resources-light.png") });
-  await page.evaluate(() => {
-    document.documentElement.dataset.theme = "dark";
-  });
+  if (process.env.RESOURCE_SHOTS) {
+    await plot.evaluate((el: SVGElement) => el.blur());
+    await panel.locator(".consumption-panel-heading").scrollIntoViewIfNeeded();
+    await panel.screenshot({
+      path: path.join(shots, "hourglass-gates-dark.png"),
+    });
+    await panel.getByRole("tab", { name: "Disk" }).click();
+    await panel.screenshot({
+      path: path.join(shots, "hourglass-disk-dark.png"),
+    });
+    // The light theme across all three tabs.
+    await page.evaluate(async () => {
+      document.documentElement.dataset.theme = "light";
+      await Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a instanceof CSSTransition)
+          .map((a) => a.finished.catch(() => {})),
+      );
+    });
+    await page.mouse.move(0, 0);
+    await panel.screenshot({
+      path: path.join(shots, "hourglass-disk-light.png"),
+    });
+    await panel.getByRole("tab", { name: "Gates" }).click();
+    await panel.screenshot({
+      path: path.join(shots, "hourglass-gates-light.png"),
+    });
+    await panel.getByRole("tab", { name: "Resources" }).click();
+    await panel.screenshot({
+      path: path.join(shots, "hourglass-resources-light.png"),
+    });
+    await panel.screenshot({ path: path.join(shots, "resources-light.png") });
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = "dark";
+    });
+  } else {
+    await panel.getByRole("tab", { name: "Resources" }).click();
+  }
+
+  await expect(
+    worker.locator(".resource-chart.cpu .resource-chart-now"),
+  ).toContainText("now 70%");
 
   // The eye, by the keyboard: the wish opens on its Tasks tab, the task's card open and in sight.
   const eye = worker.getByRole("button", { name: "Open W1 in its wish" });

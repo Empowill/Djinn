@@ -2,17 +2,21 @@
 // read only. No button: an answered question was answered, a decision block was written; nothing asks to be read or
 // approved again. Each row opens with its subject's emoji; who took it follows, in the status language: the developer
 // in the human tone, with an icon and a word, an agent in plain words. A row links to the tasks it led to, and a task
-// links back to its decision (Task.decision). An answer in a wish without a lead session says no lead was told. The
+// links back to its decision (Task.decision); the task the chosen option planned, launched on the answer (decision
+// Q25), comes first, on its own line. An answer in a wish without a lead session says no lead was told. The
 // latest decisions show, the older ones fold behind a line (older.tsx); a long note folds under its first line, and
 // its body is rendered once opened.
 import { Bot, CornerDownRight } from "lucide-react";
 import { type ReactNode, memo, useEffect, useState } from "react";
 
 import { type Decision, BY_LEAD } from "./data/decisions";
-import { answerText, firstLine, when } from "./data/format";
+import { answerText, firstLine, launchedPlan, when } from "./data/format";
+import type { ReadState } from "./data/store";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
 import { MarkdownBody } from "./markdown-body";
 import { OlderLine, useRecent } from "./older";
+import { ReadingLine } from "./reading-line";
 import { StatusBadge } from "./status";
 
 import "./decision-log.css";
@@ -27,6 +31,8 @@ export function DecisionLog<T extends { item: Decision }>({
   origin,
   noLead,
   focus = "",
+  readState = "ready",
+  onRetry,
   onTask,
   onMore,
 }: {
@@ -39,6 +45,8 @@ export function DecisionLog<T extends { item: Decision }>({
   noLead?: (item: T) => boolean;
   // The decision to bring into sight: its id.
   focus?: string;
+  readState?: ReadState;
+  onRetry?: () => void;
   // Opens a task in the Tasks tab.
   onTask: (taskId: string) => void;
   // Loads more decisions from the server when unfolded.
@@ -66,11 +74,25 @@ export function DecisionLog<T extends { item: Decision }>({
       <div className="section-title">
         <h2>
           {t("tabs.decisions")}
-          <span className="count">{totalCount}</span>
+          {readState !== "ready" && items.length === 0 ? (
+            <span className="count unread">·</span>
+          ) : (
+            <span className="count">{totalCount}</span>
+          )}
         </h2>
         <p>{t("decision.detail")}</p>
       </div>
-      {items.length === 0 && <p className="muted-text">{t("decision.none")}</p>}
+      {items.length === 0 &&
+        (readState !== "ready" ? (
+          <ReadingLine
+            kind="decisions"
+            state={readState}
+            size="card-r"
+            onRetry={onRetry}
+          />
+        ) : (
+          <EmptyState art="decisions">{t("decision.none")}</EmptyState>
+        ))}
       {items.length > 0 && (
         <div className="card-grid">
           {items.slice(0, shown).map((item) => (
@@ -138,6 +160,12 @@ const DecisionRow = memo(function DecisionRow({
   const note = q ? (q.answer?.note ?? "") : (d.block?.content ?? "");
   const long =
     note.length > LONG_NOTE || note.split("\n").length > LONG_NOTE_LINES;
+  // The task the chosen option planned, once launched: its own line, and no more among the others it led to.
+  const plan = q && launchedPlan(q);
+  const launched = plan && d.tasks.find((task) => task.id === plan.taskId);
+  const others = plan
+    ? d.tasks.filter((task) => task.id !== plan.taskId)
+    : d.tasks;
   return (
     <article
       className={`decision-row ${d.human ? "tone-human" : "agent"} ${focused ? "focused" : ""}`}
@@ -169,11 +197,35 @@ const DecisionRow = memo(function DecisionRow({
               <MarkdownBody text={note} />
             </div>
           ))}
-        {d.tasks.length > 0 && (
+        {plan && (
+          <p className="decision-tasks decision-launched">
+            <CornerDownRight size={13} aria-hidden="true" />
+            {t("decision.launched")}
+            <a
+              className="agent-code"
+              href={`#task-${plan.taskId}`}
+              title={t("decision.open_task", {
+                task: launched?.code || plan.title,
+              })}
+              onClick={(event) => {
+                event.preventDefault();
+                onTask(plan.taskId);
+              }}
+            >
+              {launched?.code || plan.title}
+            </a>
+            {launched && (
+              <span className="decision-launched-title">
+                {launched.title || plan.title}
+              </span>
+            )}
+          </p>
+        )}
+        {others.length > 0 && (
           <p className="decision-tasks">
             <CornerDownRight size={13} aria-hidden="true" />
             {t("decision.led_to")}
-            {d.tasks.map((task) => (
+            {others.map((task) => (
               <a
                 key={task.id}
                 className="agent-code"

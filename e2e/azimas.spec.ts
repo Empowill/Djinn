@@ -3,7 +3,7 @@
 // said to wait for you. What is finished folds, the done azimas and the finished parts, until a click shows it. Opened,
 // an azima's Markdown description is on the left, its parts on the right; a narrow window stacks them. Every run makes
 // fresh identifiers, so --repeat-each works on the same djinn.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -258,5 +258,103 @@ test("the Tasks tab groups work under its azima, and no azima waits for you", as
     try {
       djinn("wish", "pause", wishId);
     } catch {}
+  }
+});
+
+test("an azima whose work is all in main carries its mark, in both themes", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const wishId = randomUUID();
+  const title = `Land the lamp ${wishId.slice(0, 8)}`;
+  const [t1, t2] = [randomUUID(), randomUUID()];
+  const task = (
+    code: string,
+    taskTitle: string,
+    status: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    id: randomUUID(),
+    wish_id: wishId,
+    code,
+    title: taskTitle,
+    status: `TASK_STATUS_${status}`,
+    create_time: "2026-10-17T09:00:00Z",
+    ...extra,
+  });
+  const file = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-merged-")),
+    "wish.json",
+  );
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      version: 1,
+      create_time: "2026-10-17T09:10:00Z",
+      wish: { id: wishId, title, create_time: "2026-10-17T09:00:00Z" },
+      tasks: [
+        task("T1", "The export button", "PENDING", {
+          id: t1,
+          kind: "TASK_KIND_AZIMA",
+          // What Djinn recorded: its pull request merged after its work ended.
+          azima: {
+            merged: {
+              time: "2026-10-17T09:08:00Z",
+              request_url: "https://github.com/acme/lamp/pull/7",
+            },
+          },
+        }),
+        task("T2", "The PDF rendering", "PENDING", {
+          id: t2,
+          kind: "TASK_KIND_AZIMA",
+        }),
+        task("W1", "Add the button", "DONE", {
+          part_of: t1,
+          end_time: "2026-10-17T09:05:00Z",
+        }),
+        task("W2", "Render it", "DONE", {
+          part_of: t2,
+          end_time: "2026-10-17T09:06:00Z",
+        }),
+      ],
+    }),
+  );
+  djinn("wish", "import", file);
+  try {
+    await page.goto(process.env.DJINN_URL!);
+    await page.locator(".wish-nav").filter({ hasText: title }).click();
+    await page.getByRole("tab", { name: /^Tasks/ }).click();
+    const cards = page.locator(".tasks-azimas .azima-card");
+    const mark = cards
+      .filter({ hasText: "The export button" })
+      .locator(".azima-heading .azima-merged");
+    await expect(mark).toHaveAttribute("aria-label", "Merged into main");
+    await expect(mark).toHaveAttribute(
+      "title",
+      "Merged into main\nAll its work is in it: its pull request merged, https://github.com/acme/lamp/pull/7. A task added to it clears this mark.",
+    );
+    await expect(
+      cards.filter({ hasText: "The PDF rendering" }).locator(".azima-merged"),
+    ).toHaveCount(0);
+    // A small full round: the merge glyph in the page's own tone, on green (both themes: tests/styles.test.cjs).
+    const look = await mark.evaluate((el) => {
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return {
+        width: rect.width,
+        height: rect.height,
+        radius: style.borderTopLeftRadius,
+        background: style.backgroundColor,
+        color: style.color,
+      };
+    });
+    expect(look.width).toBeCloseTo(look.height, 0);
+    expect(look.width).toBeLessThan(20);
+    expect(look.radius).toBe("50%");
+    expect(look.background).not.toBe(look.color);
+    expect(errors).toEqual([]);
+  } finally {
+    djinn("wish", "delete", wishId);
   }
 });

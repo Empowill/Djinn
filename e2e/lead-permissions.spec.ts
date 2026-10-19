@@ -3,11 +3,16 @@
 // in every wish; a click goes to the lead's terminal as its keys would, only while it shows that very choice. The lead
 // is a fake codex, a POSIX script: it draws Codex's approval of a command, reads one key, then draws its prompt. No
 // model runs.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { dropLead, leadFolder, leadRows as rows } from "./lead";
+import {
+  dropLead,
+  dropTerminalLead,
+  leadFolder,
+  leadRows as rows,
+} from "./lead";
 
 const binary = path.resolve(__dirname, "../bin/djinn-e2e");
 // Not the session of another spec: one session runs in one terminal.
@@ -51,6 +56,7 @@ exec cat
     { mode: 0o755 },
   ),
 );
+test.beforeEach(dropTerminalLead);
 test.afterEach(dropLead);
 test.afterAll(() => fs.rmSync(codex(), { force: true }));
 

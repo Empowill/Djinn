@@ -24,10 +24,10 @@ var dumpWait = 10 * time.Second
 
 // runDebugDump is djinn debug dump: the server writes its goroutines to its log folder, asked by a call or, when it
 // does not answer, by a request file (W511).
-func runDebugDump(args []string) int {
+func runDebugDump(args []string, stdout, stderr io.Writer) int {
 	var addr string
 	flags := cli.DebugDump.FlagSet(map[string]any{"addr": &addr})
-	flags.SetOutput(os.Stderr)
+	flags.SetOutput(stderr)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -35,24 +35,24 @@ func runDebugDump(args []string) int {
 		return 2
 	}
 	if flags.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "djinn debug dump: unexpected argument %q\n", flags.Arg(0))
+		fmt.Fprintf(stderr, "djinn debug dump: unexpected argument %q\n", flags.Arg(0))
 		return 2
 	}
 	home, err := ui.Home()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "djinn debug dump:", err)
+		fmt.Fprintln(stderr, "djinn debug dump:", err)
 		return 1
 	}
 	if addr == "" {
 		addr, _ = server.ReadAddr(home)
 	}
-	path, err := debugDump(context.Background(), home, addr, os.Stderr)
+	path, err := debugDump(context.Background(), home, addr, stderr)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "djinn debug dump:", err)
+		fmt.Fprintln(stderr, "djinn debug dump:", err)
 		return 1
 	}
-	fmt.Println(path)
-	fmt.Fprintf(os.Stderr, "djinn: send it with the log, %s\n", filepath.Join(logx.Folder(home), logx.File))
+	fmt.Fprintln(stdout, path)
+	fmt.Fprintf(stderr, "djinn: send it with the log, %s\n", filepath.Join(logx.Folder(home), logx.File))
 	return 0
 }
 

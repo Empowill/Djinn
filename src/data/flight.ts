@@ -1,6 +1,7 @@
 // The flying carpet of the active wishes, merged from what the store read of each: one list of questions, of what
 // waits, of what runs, of the decisions. Every item keeps its wish. The order is the page's (the Go page of a
-// wish sorts the same way); what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
+// wish sorts the same way), but for the open questions, which the window lists as they were asked (byAsked) where the
+// page puts the most urgent first; what the lamp decides (a wish's rank, whether it is ready) comes from the lamp.
 // The flying carpet was called the flight plan: this file, flightPlan and FlightPlan keep that name.
 import {
   AzimaState,
@@ -14,14 +15,18 @@ import {
   TaskKind,
   TaskStatus,
   type Wish,
+  WishState,
 } from "../../gen/ts/plan/v1/plan_pb";
 import { type Decision, decisionsOf, later } from "./decisions";
 import {
+  asleep,
+  date as dateOf,
   investigating,
   isOpen,
   isTaskMerging,
   waitsForYou,
   watcherRuns,
+  woken,
 } from "./format";
 import { estimateCost, getPriceTable } from "./prices";
 import { reportOf, reportsOf } from "./reports";
@@ -46,15 +51,42 @@ export const EMPTY_BLOCKING: string[] = [];
 export function urgency(question: OpenQuestion): number {
   if (question.blocking.length) return 0;
   if (question.item.move && question.item.before) return 1;
-  return question.item.before ? 2 : 3;
+  return question.item.before ? 2 : CAN_WAIT;
 }
 
-// byUrgency orders open questions: blocking, then before X, then can wait. A sort keeps the order within a level.
-export function byUrgency(a: OpenQuestion, b: OpenQuestion): number {
-  return urgency(a) - urgency(b);
+// The urgency of a question that can wait: no task waits for it, and it names nothing it is needed before, a move
+// included (Q13).
+export const CAN_WAIT = 3;
+
+// holdsUp tells an open question that keeps its wish from moving forward and cannot wait, as its card says: a task
+// waits for it, or it is needed before something, a move of the developer's or not. Only these are lines of the bar
+// of what waits for you (attention.tsx); one that can wait shows in the questions column alone.
+export function holdsUp(question: OpenQuestion): boolean {
+  return urgency(question) < CAN_WAIT;
 }
 
-// Something that waits for the user and is not a question: a worker that waits for an answer, one cut short.
+// placeOf is where a question stands among the others: when it was asked, or when you put it off for later if that
+// came after (Question.laterTime), as Djinn's page and brief place it (render.Place).
+export function placeOf(question: Question): number {
+  return Math.max(time(question.createTime), time(question.laterTime));
+}
+
+// byAsked orders questions as they were asked, the oldest first: a new one always comes below, and a revision, which
+// keeps its creation time, never moves one. One put off for later goes below those asked before, and stays there; one
+// that woke from its sleep comes first, the first woken first (render.ByPlace). The window lists them so (AGENTS.md,
+// Interface); its urgency shows on each.
+export function byAsked(a: Item<Question>, b: Item<Question>): number {
+  const wa = woken(a.item);
+  const wb = woken(b.item);
+  if (wa !== wb) return wa ? -1 : 1;
+  return (
+    (wa ? time(a.item.sleep?.wakeTime) - time(b.item.sleep?.wakeTime) : 0) ||
+    placeOf(a.item) - placeOf(b.item) ||
+    (a.item.id < b.item.id ? -1 : a.item.id > b.item.id ? 1 : 0)
+  );
+}
+
+// Something that waits for the user and is not a question: a worker that waits for an answer before it edits.
 export interface Waiting extends Item<Task> {
   // The code of the question the task waits for, when it is open.
   question: string;
@@ -69,6 +101,8 @@ export interface FlightPlan {
   waitingLead: OpenQuestion[];
   // The questions you asked to investigate: they wait for the lead.
   investigating: OpenQuestion[];
+  // The questions asleep until their conditions hold: they wait for them, out of the questions column.
+  asleep: OpenQuestion[];
   waiting: Waiting[];
   // The wishes Djinn proposes to grant.
   ready: Wish[];
@@ -88,15 +122,20 @@ export interface FlightPlan {
   loaded: boolean;
 }
 
+// waitsOn is the question a waiting task needs answered: the blocking question its worker asked, or its edit
+// question; "" for a task that does not wait (internal/render.WaitsOn).
+export function waitsOn(task: Task): string {
+  if (task.status !== TaskStatus.WAITING) return "";
+  return task.waitQuestionId || task.editQuestionId;
+}
+
 // blocking maps a question to the codes of the tasks that wait for its answer.
 export function blocking(tasks: readonly Task[]): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const task of tasks) {
-    if (task.status !== TaskStatus.WAITING || !task.editQuestionId) continue;
-    out.set(task.editQuestionId, [
-      ...(out.get(task.editQuestionId) ?? []),
-      task.code,
-    ]);
+    const id = waitsOn(task);
+    if (!id) continue;
+    out.set(id, [...(out.get(id) ?? []), task.code]);
   }
   return out;
 }
@@ -150,6 +189,52 @@ export function loose(tasks: readonly Task[]): Task[] {
 // conflicted, or its tests or push checks failed) or a review of work left not committed (internal/plan.IsMerge).
 export function isMerge(task: Task): boolean {
   return !!task.correction || !!task.review;
+}
+
+// canUrge tells a task the developer may mark urgent, or whose urgent mark they may take off (djinn task update
+// --feedback, --urgent=false): work to run or running (urgeable). Not a merge, which Djinn serves first
+// already, an investigation, served first too, or an ifrit, which takes its place whatever the machine.
+export function canUrge(task: Task): boolean {
+  if (isMerge(task) || isInvestigation(task) || task.kind === TaskKind.IFRIT) {
+    return false;
+  }
+  return urgeable(task);
+}
+
+// isInvestigation tells a short study or audit the lead launched to align with the developer, whose commits are never
+// merged (internal/dispatch.Investigation): it is served first, and ends in a tilasm and a question.
+export function isInvestigation(task: Task): boolean {
+  return task.kind === TaskKind.INVESTIGATION;
+}
+
+// isMockup tells a mockup task the lead or a question launched so the developer can review a design in a tilasm and
+// iterate on it, whose commits are never merged (internal/dispatch.Mockup): it is served first.
+export function isMockup(task: Task): boolean {
+  return task.kind === TaskKind.MOCKUP;
+}
+
+// isUrgent tells a task the lead or the developer marked urgent, to unblock its wish or for the developer's quick
+// feedback (task.feedback), while it is to run or runs: it passes the queue and takes a slot on a full machine
+// (internal/dispatch.Urgent). A watcher or an azima never is.
+export function isUrgent(task: Task): boolean {
+  return !!task.urgent && urgeable(task);
+}
+
+// urgeable tells a task that may carry the urgent mark: one to run or running (planned, resuming, running, paused,
+// waiting on its question), not a watcher or an azima, which take no slot.
+function urgeable(task: Task): boolean {
+  if (task.provider === Provider.WATCH || isAzima(task)) {
+    return false;
+  }
+  switch (task.status) {
+    case TaskStatus.PENDING:
+    case TaskStatus.RESUMING:
+    case TaskStatus.RUNNING:
+    case TaskStatus.PAUSED:
+    case TaskStatus.WAITING:
+      return true;
+  }
+  return false;
 }
 
 // mergeOf are the tasks a merge brings the work of, by id.
@@ -383,31 +468,59 @@ export function compareCodes(a: string, b: string): number {
   return pa < pb ? -1 : pa > pb ? 1 : na - nb || (a < b ? -1 : a > b ? 1 : 0);
 }
 
+// compareWorkers orders workers inside a state of the lists of what runs: the one begun first above, then by code,
+// those never begun last. A worker that starts or ends never moves the others under the reader.
+export function compareWorkers(
+  a: Pick<Task, "code"> & Partial<Pick<Task, "firstStartTime" | "startTime">>,
+  b: Pick<Task, "code"> & Partial<Pick<Task, "firstStartTime" | "startTime">>,
+): number {
+  const begun = (x: typeof a) =>
+    dateOf(x.firstStartTime)?.getTime() ??
+    dateOf(x.startTime)?.getTime() ??
+    Infinity;
+  const [x, y] = [begun(a), begun(b)];
+  if (x !== y) return x < y ? -1 : 1;
+  return compareCodes(a.code, b.code);
+}
+
+// compareRanks orders the azimas of a wish in their rank (Task.rank), as the lead or the developer set it: the ranked
+// ones first, from 1, then those never ranked, a new one included, by code (internal/plan.AzimaOrder).
+export function compareRanks(a: Task, b: Task): number {
+  const rank = (x: Task) => x.rank || Number.MAX_SAFE_INTEGER;
+  return rank(a) - rank(b) || compareCodes(a.code, b.code);
+}
+
 // azimaRank orders the azimas in a stable order between renders and between days:
-// 0: azimas that move (a worker running on one of its parts, or in progress)
+// 0: azimas that move (a worker running on one of its parts, in progress, or watching)
 // 1: azimas waiting for the developer (awaiting proof / to validate)
 // 2: ready azimas not started (open and ready to begin)
 // 3: blocked azimas (waiting for unfinished dependencies)
 // 4: drafts (not ready to spawn parts into)
 // 5: done azimas (finished, folded at the end)
-// Within each group, azimas are ordered strictly by the plan's code order (compareCodes),
-// never by time or by a count that changes every minute.
+// Within each group, azimas follow their rank (compareRanks), never time or a count that changes every minute. The
+// flying carpet groups the azimas of every wish so; a wish's own Tasks tab keeps them in their rank alone, as the
+// developer drags them.
 export function azimaRank(task: Task): number {
   if (isDraftAzima(task) || task.azima?.state === AzimaState.DRAFT) return 4;
   const state = task.azima?.state ?? AzimaState.OPEN;
   if (state === AzimaState.DONE) return 5;
-  if ((task.azima?.partsRunning ?? 0) > 0 || state === AzimaState.IN_PROGRESS)
+  if (
+    (task.azima?.partsRunning ?? 0) > 0 ||
+    state === AzimaState.IN_PROGRESS ||
+    state === AzimaState.WATCHING
+  )
     return 0;
   if (state === AzimaState.AWAITING_PROOF) return 1;
   if (task.azima && !task.azima.ready) return 3;
   return 2;
 }
 
-// azimaGroups are the azimas among tasks with their parts, in the order of azimaRank, then by code.
+// azimaGroups are the azimas of a wish among tasks with their parts, in their rank (compareRanks): the order its work
+// starts in, which the developer changes by dragging them.
 export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
   return tasks
     .filter((x) => isAzima(x) && !isDraftAzima(x))
-    .sort((a, b) => azimaRank(a) - azimaRank(b) || compareCodes(a.code, b.code))
+    .sort(compareRanks)
     .map((azima) => {
       const nest = mergeNest(tasks);
       const parts = tasks.filter(
@@ -423,11 +536,9 @@ export function azimaGroups(tasks: readonly Task[]): AzimaGroup[] {
     });
 }
 
-// draftAzimas are the draft azimas among tasks, ordered by code.
+// draftAzimas are the draft azimas among tasks, in their rank.
 export function draftAzimas(tasks: readonly Task[]): Task[] {
-  return tasks
-    .filter(isDraftAzima)
-    .sort((a, b) => compareCodes(a.code, b.code));
+  return tasks.filter(isDraftAzima).sort(compareRanks);
 }
 
 // The order of the tasks that move or wait: what runs or broke first (running, cut short, failed, resuming), then
@@ -467,11 +578,18 @@ export function movingTasks(tasks: readonly Task[]): Task[] {
     .sort(byMotion);
 }
 
-// openQuestions are a wish's questions that wait for your answer, the blocking ones first, then those needed before
-// something, then those that can wait; each level in the order they were asked. Those being investigated wait for the
-// lead: investigatingQuestions.
+// openQuestions are a wish's questions that wait for your answer, in the order they were asked (byAsked). Those being
+// investigated wait for the lead: investigatingQuestions.
 export function openQuestions(wish: Wish, detail: WishDetail): OpenQuestion[] {
   return questionsWhere(wish, detail, waitsForYou);
+}
+
+// asleepQuestions are a wish's open questions asleep until their conditions hold, in the order they were asked.
+export function asleepQuestions(
+  wish: Wish,
+  detail: WishDetail,
+): OpenQuestion[] {
+  return questionsWhere(wish, detail, asleep);
 }
 
 export function investigatingQuestions(
@@ -507,7 +625,7 @@ function questionsWhere(
         ...(report && { report }),
       };
     })
-    .sort(byUrgency);
+    .sort(byAsked);
 }
 
 // forkedAs is the code of the task that took over one cut short: a task of its wish forked from its session; "" when
@@ -524,44 +642,17 @@ export function forkedAs(task: Task, tasks: readonly Task[]): string {
   );
 }
 
-// taskDealtWith tells whether a failed worker has been addressed: marked done, cancelled, continued (or forked),
-// or a new task names it in its title, decision, forkOf, or as a correction/review target.
-export function taskDealtWith(task: Task, tasks: readonly Task[]): boolean {
-  if (task.status === TaskStatus.DONE || task.status === TaskStatus.CANCELLED)
-    return true;
-  if (task.continuing) return true;
-  if (task.closed?.continuedIn) return true;
-  if (forkedAs(task, tasks) !== "") return true;
-  const code = task.code;
-  if (!code) return false;
-  const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const word = new RegExp(`\\b${escaped}\\b`);
-  return tasks.some(
-    (other) =>
-      other.id !== task.id &&
-      (other.forkOf === code ||
-        other.decision === code ||
-        word.test(other.title) ||
-        (other.correction?.failure?.taskIds ?? []).includes(task.id) ||
-        (other.review?.taskIds ?? []).includes(task.id)),
-  );
-}
-
-// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, or cut short by a stop and
-// not resumed. A task Djinn resumes by itself (RESUMING), or one resumed as another task, is not the user's move; nor
-// are the calls a worker's permissions refused (Task.refused): the lead hears of them and decides (Q273).
+// waitingTasks are a wish's tasks that wait for the user: for an answer before they edit, or to the blocking question
+// their worker asked. A failed worker never does,
+// whatever made it fail, refused calls included: it is the lead's, who takes it up again, closes it, or asks the user a
+// question for a right only they grant (Q273, W96: W19, an investigator failed on refused commands, waited for you
+// with nothing you could do).
 export function waitingTasks(wish: Wish, detail: WishDetail): Waiting[] {
   const questions = new Map(detail.questions.map((q) => [q.id, q]));
   return detail.tasks
-    .filter(
-      (task) =>
-        task.status === TaskStatus.WAITING ||
-        (task.status === TaskStatus.FAILED &&
-          !taskDealtWith(task, detail.tasks) &&
-          !(task.envCause && (task.envReplays ?? 0) < 2)),
-    )
+    .filter((task) => task.status === TaskStatus.WAITING)
     .map((item) => {
-      const q = questions.get(item.editQuestionId);
+      const q = questions.get(waitsOn(item));
       const id = mergeNest(detail.tasks).host.get(item.id);
       const host = id ? detail.tasks.find((x) => x.id === id) : undefined;
       return {
@@ -582,6 +673,7 @@ export function flightPlan(
     questions: [],
     waitingLead: [],
     investigating: [],
+    asleep: [],
     waiting: [],
     ready: [],
     running: [],
@@ -601,6 +693,7 @@ export function flightPlan(
     plan.questions.push(...openQuestions(wish, detail));
     plan.waitingLead.push(...waitingLeadQuestions(wish, detail));
     plan.investigating.push(...investigatingQuestions(wish, detail));
+    plan.asleep.push(...asleepQuestions(wish, detail));
     plan.waiting.push(...waitingTasks(wish, detail));
     for (const item of detail.tasks) {
       if (
@@ -627,18 +720,17 @@ export function flightPlan(
     ))
       plan.decisions.push({ wish, item });
   }
-  // Blocking, then before X, then can wait across every wish; within a level each keeps its wish's rank and its order.
-  plan.questions.sort(byUrgency);
-  plan.waitingLead.sort(byUrgency);
+  // The questions stay by wish, in the wishes' rank, each wish's in the order they were asked: nothing sorts them
+  // across wishes, so a new one never comes above the others of its wish.
   plan.decisions.sort((a, b) => later(a.item.at, b.item.at));
   plan.moving.sort((a, b) => byMotion(a.item, b.item));
   plan.azimas.sort(
     (a, b) =>
       azimaRank(a.item.azima) - azimaRank(b.item.azima) ||
-      compareCodes(a.item.azima.code, b.item.azima.code),
+      compareRanks(a.item.azima, b.item.azima),
   );
   plan.finished.sort((a, b) => newestEnded(a.item, b.item));
-  plan.drafts.sort((a, b) => compareCodes(a.item.code, b.item.code));
+  plan.drafts.sort((a, b) => compareRanks(a.item, b.item));
   return plan;
 }
 
@@ -816,4 +908,107 @@ export function codeMapOf(
     codeMaps.set(tasks, m);
   }
   return m;
+}
+
+// doneWithProblems tells a task whose worker ended done while its permissions refused some of its calls, with nobody
+// having acknowledged it yet (internal/plan.DoneWithProblems).
+export function doneWithProblems(task: Task): boolean {
+  return (
+    task.status === TaskStatus.DONE &&
+    (task.refused?.count ?? 0) > 0 &&
+    !task.closed
+  );
+}
+
+// GrantHold is one obstacle that keeps a wish's automatic ready state false once all active worker tasks have finished:
+// a done task with unacknowledged refused tool calls, a watcher still running, an azima awaiting validation, or an open
+// question.
+export type GrantHold =
+  | { id: string; kind: "refused"; task: Task }
+  | { id: string; kind: "watcher"; task: Task }
+  | { id: string; kind: "azima"; task: Task }
+  | { id: string; kind: "question"; question: Question };
+
+// grantHolds lists the obstacles holding back a wish's ready state, ordered by kind and code.
+export function grantHolds(
+  tasks: readonly Task[],
+  questions: readonly Question[],
+): GrantHold[] {
+  const out: GrantHold[] = [];
+  const sortedTasks = [...tasks].sort((a, b) => compareCodes(a.code, b.code));
+  for (const task of sortedTasks) {
+    if (!isAzima(task) && doneWithProblems(task)) {
+      out.push({ id: `refused-${task.id}`, kind: "refused", task });
+    }
+  }
+  for (const task of sortedTasks) {
+    if (
+      !isAzima(task) &&
+      task.provider === Provider.WATCH &&
+      !finishedTask(task)
+    ) {
+      out.push({ id: `watcher-${task.id}`, kind: "watcher", task });
+    }
+  }
+  for (const task of sortedTasks) {
+    if (
+      isAzima(task) &&
+      !isDraftAzima(task) &&
+      task.status !== TaskStatus.DONE &&
+      (task.azima?.state === AzimaState.AWAITING_PROOF ||
+        task.azima?.state === AzimaState.WATCHING)
+    ) {
+      out.push({ id: `azima-${task.id}`, kind: "azima", task });
+    }
+  }
+  const sortedQuestions = [...questions]
+    .filter(isOpen)
+    .sort((a, b) => compareCodes(a.code, b.code));
+  for (const question of sortedQuestions) {
+    out.push({ id: `question-${question.id}`, kind: "question", question });
+  }
+  return out;
+}
+
+// canCloseWish tells whether the wish's closure card should show: either the wish is ready, or all its active worker
+// tasks have settled (done or cancelled, none still merging) and at least one task hold (refused calls, running
+// watcher, or azima awaiting validation) remains.
+export function canCloseWish(wish: Wish, tasks: readonly Task[]): boolean {
+  if (wish.state === WishState.GRANTED) return false;
+  if (wish.ready) return true;
+  const nonDraft = tasks.filter((t) => !isDraftAzima(t));
+  if (nonDraft.length === 0) return false;
+  let hasHold = false;
+  for (const t of nonDraft) {
+    if (isAzima(t)) {
+      const s = t.azima?.state;
+      if (
+        t.status !== TaskStatus.DONE &&
+        s !== AzimaState.DONE &&
+        s !== AzimaState.AWAITING_PROOF &&
+        s !== AzimaState.WATCHING
+      ) {
+        return false;
+      }
+      if (
+        t.status !== TaskStatus.DONE &&
+        (s === AzimaState.AWAITING_PROOF || s === AzimaState.WATCHING)
+      ) {
+        hasHold = true;
+      }
+      continue;
+    }
+    if (t.provider === Provider.WATCH) {
+      if (!finishedTask(t)) hasHold = true;
+      continue;
+    }
+    if (
+      (t.status !== TaskStatus.DONE && t.status !== TaskStatus.CANCELLED) ||
+      workOnItsWay(t)
+    ) {
+      return false;
+    }
+    if (doneWithProblems(t)) hasHold = true;
+  }
+  return hasHold;
 }

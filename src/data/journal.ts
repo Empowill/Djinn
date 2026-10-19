@@ -1,18 +1,13 @@
 // The journal of a wish, as its page shows it (internal/render): the commands that changed it, from
-// WishService.Snapshot, and the blocks of kind "log", the latest first. A command says in a line what it did, read
-// from its request.
+// WishService.Snapshot, the latest first. A command says in a line what it did, read from its request.
 import { createRegistry } from "@bufbuild/protobuf";
 import { type Timestamp, anyUnpack } from "@bufbuild/protobuf/wkt";
 
 import {
-  type Block,
   type Command,
   type WishExport,
   file_plan_v1_plan,
 } from "../../gen/ts/plan/v1/plan_pb";
-
-// The kind of the blocks that tell the story of the wish: they go to the journal, not to the notes.
-export const LOG_KIND = "log";
 
 // The most journal entries shown.
 export const MAX_JOURNAL = 200;
@@ -20,18 +15,12 @@ export const MAX_JOURNAL = 200;
 export interface Entry {
   id: string;
   at?: Timestamp;
-  // The command, as the command line names it: "question answer". Empty for a log block.
+  // The command, as the command line names it: "question answer".
   command: string;
   summary: string;
-  // A log block's content, in Markdown.
-  note: string;
 }
 
 const registry = createRegistry(file_plan_v1_plan);
-
-export function isLog(block: Block): boolean {
-  return block.kind.toLowerCase() === LOG_KIND;
-}
 
 const kebab = (s: string) =>
   s.replace(/[A-Z]/g, (c, i) => (i ? "-" : "") + c.toLowerCase());
@@ -97,6 +86,25 @@ function summary(command: Command, exp: WishExport): string {
       const note = String(r.note ?? "");
       return `${code} ${note}`.trim();
     }
+    case "plan.v1.QuestionServiceLaterRequest": {
+      const ref = (r.question as { ref?: { case?: string; value?: string } })
+        ?.ref;
+      const code =
+        ref?.case === "id"
+          ? (exp.questions.find((q) => q.id === ref.value)?.code ?? "")
+          : (ref?.value ?? "");
+      return r.clear ? `${code} --clear`.trim() : code;
+    }
+    case "plan.v1.QuestionServiceSleepRequest": {
+      const ref = (r.question as { ref?: { case?: string; value?: string } })
+        ?.ref;
+      const code =
+        ref?.case === "id"
+          ? (exp.questions.find((q) => q.id === ref.value)?.code ?? "")
+          : (ref?.value ?? "");
+      if (r.wake) return `${code} --wake`.trim();
+      return `${code} ${((r.until as string[]) ?? []).join(", ")}`.trim();
+    }
     case "plan.v1.BlockServicePutRequest":
       return `${String(r.kind ?? "")} ${String(r.title ?? "")}`.trim();
     case "plan.v1.WishServiceAllowRequest": {
@@ -106,6 +114,7 @@ function summary(command: Command, exp: WishExport): string {
       return `${modes[Number(r.mode)] ?? ""} ${project}`.trim();
     }
     case "plan.v1.WishServiceMoveRequest":
+    case "plan.v1.WishServiceReorderRequest":
       return String(r.to ?? "");
   }
   if (typeof r.taskId === "string") return task(r.taskId);
@@ -115,28 +124,11 @@ function summary(command: Command, exp: WishExport): string {
 const ms = (ts?: Timestamp) =>
   ts ? Number(ts.seconds) * 1000 + ts.nanos / 1e6 : 0;
 
-const blockEntries = new WeakMap<Block, Entry>();
 const commandEntries = new WeakMap<Command, Entry>();
 
-// journal is the wish's journal: its commands and its log blocks, the latest first, at most MAX_JOURNAL.
-export function journal(
-  exp: WishExport | undefined,
-  blocks: readonly Block[],
-): Entry[] {
-  const entries: Entry[] = blocks.filter(isLog).map((b) => {
-    let entry = blockEntries.get(b);
-    if (!entry) {
-      entry = {
-        id: b.id,
-        at: b.createTime,
-        command: "",
-        summary: b.title,
-        note: b.content.trim(),
-      };
-      blockEntries.set(b, entry);
-    }
-    return entry;
-  });
+// journal is the wish's command history: the commands that changed it, the latest first, at most MAX_JOURNAL.
+export function journal(exp: WishExport | undefined): Entry[] {
+  const entries: Entry[] = [];
   for (const c of exp?.commands ?? []) {
     let entry = commandEntries.get(c);
     if (!entry) {
@@ -145,7 +137,6 @@ export function journal(
         at: c.at,
         command: commandName(c.method),
         summary: summary(c, exp!),
-        note: "",
       };
       commandEntries.set(c, entry);
     }

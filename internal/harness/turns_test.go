@@ -1,6 +1,8 @@
 package harness
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"slices"
 	"sync/atomic"
@@ -47,7 +49,7 @@ func TestTurnsAcrossRuns(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	e := up(t, t.TempDir(), WithTaskMaxTurns(40))
-	wishID, _ := e.wish(t, gitRepo(t))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	first := e.ended(t, e.mustSpawn(t, wishID, "Count turns", "turns 7\ntext first", nil).GetId())
 	if got := first.GetTurns(); got.GetRun() != 7 || got.GetLimit() != 40 || got.GetTotal() != 7 {
 		t.Fatalf("first run: turns %v, want 7 of 40, 7 in all", got)
@@ -74,8 +76,8 @@ func TestTurnsWrittenWithResources(t *testing.T) {
 		// A process more or less at each reading: each one is worth writing.
 		return machine.Group{Processes: 1 + int(readings.Add(1)%2), Memory: 100 << 20}, nil
 	}
-	e := upWith(t, t.TempDir(), providers, WithMeasure(20*time.Millisecond, read), WithTaskMaxTurns(40))
-	wishID, _ := e.wish(t, gitRepo(t))
+	e := upWith(t, t.TempDir(), providers, WithMeasure(10*time.Millisecond, read), WithTaskMaxTurns(40))
+	wishID, _ := e.wish(t, nativeFolder(t))
 	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 		WishId: wishID, Title: "Count turns", Prompt: "x", Provider: planv1.Provider_PROVIDER_CLAUDE,
 	}))
@@ -122,5 +124,31 @@ func TestTurnsWrittenWithResources(t *testing.T) {
 	}
 	if got := e.ended(t, id); len(got.GetComments()) != 1 || got.GetTurns().GetRun() != 3 {
 		t.Errorf("stopped: comments %v, turns %v; want the comment, 3 turns", got.GetComments(), got.GetTurns())
+	}
+}
+
+// TestClaudeSpent (W213): claude's parser estimates what the run spent as the assistant lines come, at the prices
+// Djinn knows, each message once at its last line (its usage grows from line to line), on the first event of each
+// line: what an investigation's budget is weighed against before claude says its cost at a result.
+func TestClaudeSpent(t *testing.T) {
+	t.Parallel()
+	line := func(id string, out, cacheWrite int) string {
+		return fmt.Sprintf(`{"type":"assistant","message":{"id":%q,"model":"claude-sonnet-4-5","content":[{"type":"text",`+
+			`"text":"step"}],"usage":{"input_tokens":4,"cache_creation_input_tokens":%d,"cache_read_input_tokens":9000,`+
+			`"output_tokens":%d}},"parent_tool_use_id":null}`, id, cacheWrite, out)
+	}
+	p := &claudeParser{}
+	var got []float64
+	for _, l := range []string{line("msg_01", 20, 0), line("msg_01", 50, 0), line("msg_02", 100, 1000)} {
+		evs, _ := p.stdout(l)
+		got = append(got, evs[0].Spent)
+	}
+	// $3 in, $15 out, $0.30 cache read, $6.0 cache write per million tokens.
+	want := []float64{0.003012, 0.003462, 0.003462 + 0.010212}
+	for i := range want {
+		if math.Abs(got[i]-want[i]) > 1e-9 {
+			t.Errorf("spent %v, want %v", got, want)
+			break
+		}
 	}
 }

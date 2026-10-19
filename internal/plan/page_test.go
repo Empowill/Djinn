@@ -62,33 +62,99 @@ func eventually(t *testing.T, file, want string) {
 	}
 }
 
-func TestPageHasNoLocalPath(t *testing.T) {
-	ctx := t.Context()
-	c, wish, repo := source(t)
-	data := t.TempDir()
-	home, _ := os.UserHomeDir()
-	note := "Logs in " + filepath.Join(data, "worktrees", "w1") + " and " + filepath.Join(home, "notes.md")
-	if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{WishId: wish.GetId(), Title: "Where", Content: note})); err != nil {
-		t.Fatal(err)
-	}
-	page, err := NewPages(c.store, data, "v0-test").Page(ctx, wish.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	html := string(page)
-	for _, leak := range []string{repo, filepath.Dir(repo), home, data, "s3cret", "session-42", "secretCode", "the code itself"} {
-		if strings.Contains(html, leak) {
-			t.Errorf("the page holds %q", leak)
+func TestPage(t *testing.T) {
+	t.Parallel()
+	t.Run("no local path", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		c, wish, repo := source(t)
+		data := t.TempDir()
+		home, _ := os.UserHomeDir()
+		note := "Logs in " + filepath.Join(data, "worktrees", "w1") + " and " + filepath.Join(home, "notes.md")
+		if _, err := c.blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{WishId: wish.GetId(), Title: "Where", Content: note})); err != nil {
+			t.Fatal(err)
 		}
-	}
-	for _, s := range []string{"Ship the API", "Which store?", "Write the store", "Logs in djinn-data", "~"} {
-		if !strings.Contains(html, s) {
-			t.Errorf("the page lacks %q", s)
+		page, err := NewPages(c.store, data, "v0-test").Page(ctx, wish.GetId())
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
+		html := string(page)
+		for _, leak := range []string{repo, filepath.Dir(repo), home, data, "s3cret", "session-42", "secretCode", "the code itself"} {
+			if strings.Contains(html, leak) {
+				t.Errorf("the page holds %q", leak)
+			}
+		}
+		for _, s := range []string{"Ship the API", "Which store?", "Write the store", "Logs in djinn-data", "~"} {
+			if !strings.Contains(html, s) {
+				t.Errorf("the page lacks %q", s)
+			}
+		}
+	})
+
+	// A page renders each time a worker speaks, and a wish's events are most of the store. It reads only those it shows,
+	// from the last written back: the latest ones and each task's last word, never a tool's output, nor another wish's.
+	// The page is the one every event would make.
+	t.Run("reads the events it shows", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		c, pages := servePages(t, t.TempDir())
+		wish, other := c.wish(t), c.wish(t)
+		tasks, others := map[string]*planv1.Task{}, map[string]*planv1.Task{}
+		// W1 spoke long ago, then only ran tools; W2 talks a lot; W3 only runs tools; another wish's W1 talks last.
+		talk(t, c.store, wish, tasks, 1, "W1 text Long ago, W1 said this", "W3 tool_call Bash ls")
+		talk(t, c.store, wish, tasks, 20, "W1 tool_result total 8", "W3 tool_result x")
+		talk(t, c.store, wish, tasks, 150, "W2 text Step", "W2 tool_call Bash ls", "W2 status running", "W2 text  ")
+		talk(t, c.store, other, others, 30, "W1 text Elsewhere")
+
+		all := []*planv1.Task{tasks["W1"], tasks["W2"], tasks["W3"]}
+		events, err := pageEvents(ctx, c.store, all)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, e := range events {
+			got = append(got, fmt.Sprint(e.GetTaskId() == tasks["W1"].GetId(), e.GetSeq()))
+		}
+		// W1's last word, then W2's render.MaxEvents last texts and statuses: its last 100 rounds of four events, of which
+		// a tool call, and an empty text that is not shown.
+		want := []string{"true 1"}
+		for i := 150 - render.MaxEvents/2 + 1; i <= 150; i++ {
+			want = append(want, fmt.Sprint(false, 4*i-3), fmt.Sprint(false, 4*i-1))
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("events read: %d, %v…; want %d, %v…", len(got), got[:min(len(got), 3)], len(want), want[:3])
+		}
+
+		// Another wish talks so much that its events hide this one's: each task's are read apart, to the same events.
+		talk(t, c.store, other, others, foreignEvents+1, "W1 text Elsewhere")
+		again, err := pageEvents(ctx, c.store, all)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.EqualFunc(again, events, func(a, b *planv1.TaskEvent) bool { return a.GetId() == b.GetId() }) {
+			t.Errorf("events read past another wish's: %d, want the %d read before", len(again), len(events))
+		}
+
+		now := time.Now()
+		lean, err := pages.page(ctx, wish, pageEvents, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		full, err := pages.page(ctx, wish, allEvents, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(lean) != string(full) {
+			t.Error("the page from the events it reads differs from the page from every event")
+		}
+		if html := string(lean); !strings.Contains(html, "Long ago, W1 said this") || strings.Contains(html, "Elsewhere") {
+			t.Error("the page lacks W1's last word, or shows another wish's")
+		}
+	})
 }
 
 func TestRender(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	c, _ := servePages(t, t.TempDir())
 	wish := c.wish(t)
@@ -157,7 +223,7 @@ func TestSync(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.ask(t, wish)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Errorf("a deleted page came back: %v", err)
 	}
@@ -173,6 +239,8 @@ func TestSync(t *testing.T) {
 // text of W1. The tasks are made the first time they are named, in wish.
 func talk(t testing.TB, s *store.Store, wish string, tasks map[string]*planv1.Task, n int, says ...string) {
 	t.Helper()
+	raw := strings.Repeat("x", 4<<10)
+	now := timestamppb.Now()
 	err := s.Tx(t.Context(), func(tx *store.Tx) error {
 		if err := tx.Journal("test", "test/talk", &planv1.TaskEvent{}); err != nil {
 			return err
@@ -195,7 +263,7 @@ func talk(t testing.TB, s *store.Store, wish string, tasks map[string]*planv1.Ta
 				ev := &planv1.TaskEvent{
 					Id: store.NewID(), TaskId: task.GetId(), Seq: task.GetUsage().GetInputTokens(), Text: text,
 					Kind: planv1.TaskEventKind(planv1.TaskEventKind_value["TASK_EVENT_KIND_"+strings.ToUpper(kind)]),
-					Raw:  strings.Repeat("x", 4<<10), CreateTime: timestamppb.Now(),
+					Raw:  raw, CreateTime: now,
 				}
 				if err := tx.Put(ev); err != nil {
 					return err
@@ -206,66 +274,6 @@ func talk(t testing.TB, s *store.Store, wish string, tasks map[string]*planv1.Ta
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-}
-
-// TestPageReadsTheEventsItShows: a page renders each time a worker speaks, and a wish's events are most of the store.
-// It reads only those it shows, from the last written back: the latest ones and each task's last word, never a tool's
-// output, nor another wish's. The page is the one every event would make.
-func TestPageReadsTheEventsItShows(t *testing.T) {
-	ctx := t.Context()
-	c, pages := servePages(t, t.TempDir())
-	wish, other := c.wish(t), c.wish(t)
-	tasks, others := map[string]*planv1.Task{}, map[string]*planv1.Task{}
-	// W1 spoke long ago, then only ran tools; W2 talks a lot; W3 only runs tools; another wish's W1 talks last.
-	talk(t, c.store, wish, tasks, 1, "W1 text Long ago, W1 said this", "W3 tool_call Bash ls")
-	talk(t, c.store, wish, tasks, 20, "W1 tool_result total 8", "W3 tool_result x")
-	talk(t, c.store, wish, tasks, 150, "W2 text Step", "W2 tool_call Bash ls", "W2 status running", "W2 text  ")
-	talk(t, c.store, other, others, 30, "W1 text Elsewhere")
-
-	all := []*planv1.Task{tasks["W1"], tasks["W2"], tasks["W3"]}
-	events, err := pageEvents(ctx, c.store, all)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []string
-	for _, e := range events {
-		got = append(got, fmt.Sprint(e.GetTaskId() == tasks["W1"].GetId(), e.GetSeq()))
-	}
-	// W1's last word, then W2's render.MaxEvents last texts and statuses: its last 100 rounds of four events, of which
-	// a tool call, and an empty text that is not shown.
-	want := []string{"true 1"}
-	for i := 150 - render.MaxEvents/2 + 1; i <= 150; i++ {
-		want = append(want, fmt.Sprint(false, 4*i-3), fmt.Sprint(false, 4*i-1))
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("events read: %d, %v…; want %d, %v…", len(got), got[:min(len(got), 3)], len(want), want[:3])
-	}
-
-	// Another wish talks so much that its events hide this one's: each task's are read apart, to the same events.
-	talk(t, c.store, other, others, foreignEvents+1, "W1 text Elsewhere")
-	again, err := pageEvents(ctx, c.store, all)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.EqualFunc(again, events, func(a, b *planv1.TaskEvent) bool { return a.GetId() == b.GetId() }) {
-		t.Errorf("events read past another wish's: %d, want the %d read before", len(again), len(events))
-	}
-
-	now := time.Now()
-	lean, err := pages.page(ctx, wish, pageEvents, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	full, err := pages.page(ctx, wish, allEvents, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(lean) != string(full) {
-		t.Error("the page from the events it reads differs from the page from every event")
-	}
-	if html := string(lean); !strings.Contains(html, "Long ago, W1 said this") || strings.Contains(html, "Elsewhere") {
-		t.Error("the page lacks W1's last word, or shows another wish's")
 	}
 }
 

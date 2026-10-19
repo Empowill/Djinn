@@ -5,13 +5,14 @@
 // Run alone with: go tool task e2e -- e2e/hourglass.spec.ts
 import { create, toBinary } from "@bufbuild/protobuf";
 import { timestampFromMs } from "@bufbuild/protobuf/wkt";
-import { type Request, expect, test } from "@playwright/test";
+import { type Request, expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import {
   CommandServiceListResponseSchema,
+  DiskRisk,
   MachineServiceSeriesResponseSchema,
 } from "../gen/ts/machine/v1/machine_pb";
 import { Provider } from "../gen/ts/plan/v1/plan_pb";
@@ -32,14 +33,15 @@ function djinn(...args: string[]): string {
 function series(taskId: string, wishId: string) {
   const end = Date.now();
   const times = Array.from({ length: 12 }, (_, i) => end - (11 - i) * 5_000);
+  const gib = 1024n ** 3n;
   return create(MachineServiceSeriesResponseSchema, {
     machine: {
       cores: 8,
-      memoryTotalBytes: 16n * 1024n ** 3n,
+      memoryTotalBytes: 16n * gib,
       points: times.map((t) => ({
         time: timestampFromMs(t),
         cpuPercent: 30,
-        memoryBytes: 6n * 1024n ** 3n,
+        memoryBytes: 6n * gib,
       })),
     },
     workers: [
@@ -58,6 +60,35 @@ function series(taskId: string, wishId: string) {
         })),
       },
     ],
+    disk: {
+      path: "/home/dev/.config/djinn",
+      totalBytes: 500n * gib,
+      availableBytes: 200n * gib,
+      folders: [
+        {
+          path: "/home/dev/.config/djinn/projects/app/worktrees",
+          sizeBytes: 12n * gib,
+        },
+      ],
+      items: [
+        {
+          kind: "go-build",
+          path: "/home/dev/.cache/go-build",
+          sizeBytes: 40n * gib,
+          reclaimableBytes: 30n * gib,
+          risk: DiskRisk.REBUILD,
+          command: "find ~/.cache/go-build -type f -mmin +360 -delete",
+        },
+        {
+          kind: "pnpm",
+          path: "/home/dev/.local/share/pnpm + /home/dev/.cache/pnpm",
+          sizeBytes: 3n * gib,
+          reclaimableUnknown: true,
+          risk: DiskRisk.SAFE,
+          command: "pnpm store prune",
+        },
+      ],
+    },
   });
 }
 
@@ -137,16 +168,26 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
   try {
     await page.goto(process.env.DJINN_URL!);
     await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
-    await expect(page.locator(".flight-plan .live-dot").first()).toBeVisible({
+    await expect(
+      page
+        .locator(".flight-plan .glance-wide .glance-row .glance-dot.run")
+        .first(),
+    ).toBeVisible({
       timeout: 15_000,
     });
-    // The menu: the Hourglass right below the flying carpet, before the wishes.
+    // The menu: the Hourglass at the bottom of the side panel, the Grimoire under it (W89), right above the profile.
     const entries = page.locator(
-      ".sidebar .plan-nav, .sidebar .hourglass-nav, .sidebar .wish-nav",
+      ".sidebar .plan-nav, .sidebar .wish-list, .sidebar .project-list, .sidebar .import-nav, .sidebar .hourglass-nav, .sidebar .grimoire-nav, .sidebar .sidebar-bottom",
     );
     await expect(entries.nth(0)).toHaveClass(/plan-nav/);
-    await expect(entries.nth(1)).toHaveClass(/hourglass-nav/);
-    await expect(entries.nth(1)).toHaveText("Hourglass");
+    await expect(entries.nth(1)).toHaveClass(/wish-list/);
+    await expect(entries.nth(2)).toHaveClass(/project-list/);
+    await expect(entries.nth(3)).toHaveClass(/import-nav/);
+    await expect(entries.nth(4)).toHaveClass(/hourglass-nav/);
+    await expect(entries.nth(4)).toHaveText("Hourglass");
+    await expect(entries.nth(5)).toHaveClass(/grimoire-nav/);
+    await expect(entries.nth(5)).toHaveText("Grimoire");
+    await expect(entries.nth(6)).toHaveClass(/sidebar-bottom/);
 
     // The flying carpet: no live graph, no series read; one line of the machine's load.
     await expect(page.locator(".consumption-panel")).toHaveCount(0);
@@ -171,13 +212,24 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
     await expect(
       sections.first().locator(".resource-machine .resource-chart"),
     ).toHaveCount(2);
+    await expect(
+      sections.first().locator(".resource-heatmap-group"),
+    ).toHaveCount(2);
     await expect(page.locator(`#worker-${taskId}`)).toContainText(
       "Count the grains",
     );
+    await sections.first().getByRole("tab", { name: "Gates" }).click();
+    await expect(
+      sections.first().locator(".resource-machine .resource-chart"),
+    ).toHaveCount(2);
     await expect
       .poll(() => reads.series, { timeout: 12_000 })
       .toBeGreaterThan(1);
     expect(reads.commands).toBeGreaterThan(0);
+    await sections.first().getByRole("tab", { name: "Disk" }).click();
+    await expect(
+      sections.first().locator(".resource-disk .resource-disk-bar"),
+    ).toBeVisible();
 
     // Left: the flying carpet again; no measure is read any more, none stays open, the streams are those of before.
     await page.locator(".sidebar .plan-nav").click();

@@ -84,9 +84,9 @@ func ReadBabysit(dir string) (*Babysit, error) {
 // ProjectBabysit is the babysit declaration of the project's own skills for forge (ForgeGitHub, ForgeGitLab): the
 // first by name that names this forge, else the first that names none. nil without one. A summoned skill does not
 // count: its watcher would run in the folder of the project that holds it, not in the request's repository.
-func ProjectBabysit(project *planv1.Project, forge string) *Babysit {
+func ProjectBabysit(home string, project *planv1.Project, forge string) *Babysit {
 	var anyForge *Babysit
-	for _, s := range ProjectSkills(project.GetDirectory()) {
+	for _, s := range ProjectSkills(ConfigDir(home, project)) {
 		b, err := ReadBabysit(s.Dir)
 		switch {
 		case err != nil || b == nil:

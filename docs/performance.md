@@ -131,8 +131,16 @@ Comparison of re-reading and broadcasting the whole wish on each change versus e
 Every call of Djinn goes through one SQLite connection: a call that holds it long makes every other one wait, the
 command line's included. W504 found one: `djinn task list` decoded every event of every task to add up the time each
 waited for a gate, 270,000 events and about 480 MB on the developer's data, half a minute while the lead's other calls
-waited. A task's gate wait now reads only its gate events, and only those past the last fill (`plan.FillTimes`); a
-`task list` on that data takes 5 s the first time after a start, then under half a second. Every git command Djinn
+waited. A task's gate wait then read only its gate events, and only those past the last fill, but that memory was
+lost at each start: the first task lists after a start still read every event of every task, 466,000 of them in W271,
+and the window showed its wishes empty for seconds (W283). Djinn now keeps each task's gate wait apart
+(`planv1.GateWait`), counted as it writes each gate event (`plan.CountGate`, from `putEvents`); a task list reads that
+count alone (`plan.FillTimes`). A task from before it is counted from its events once, at its first list, and kept.
+On a copy of the developer's data (1,418 tasks, 480,000 events), cold start, page cache dropped, the window's first
+reads (the wishes, then each active wish's tasks) all answered 6.9 to 13.8 s after the start before and 1.7 to 1.8 s
+after, at load 9 to 16; 13 to 19 s before and 2.0 to 3.1 s after at load 45 to 50. The first start after the update,
+which counts the 446 started tasks of the active wishes, takes as long as before, once.
+Every git command Djinn
 runs has a deadline (`internal/gitx`): 5 minutes for one that reaches a remote, 10 for one that stays in the
 repository, and its output is let go 5 s after it is killed, even when an ssh it started still holds it.
 
@@ -157,4 +165,7 @@ To see where a frozen djinn up waits, without stopping it:
   In the dump, look for goroutines waiting in `database/sql.(*DB).conn` (waiting for the connection), and the one
   holding it.
 - **For profiles**, start it with `--pprof` (or `DJINN_PPROF=on`): it serves Go's profiles at `/debug/pprof/` on its own
-  address, `goroutine?debug=2` for the stacks, `profile?seconds=30` for where its CPU goes.
+  address, `goroutine?debug=2` for the stacks, `profile?seconds=30` for where its CPU goes. A Djinn that Djinn
+  installed was built with `-trimpath` (W303): its profiles name files by module path. Give pprof the checkout:
+  `go tool pprof -trim_path=github.com/empowill/djinn -source_path=$PWD profile.pb.gz`; or build one with full paths,
+  `go build -trimpath=false ./cmd/djinn`.

@@ -91,11 +91,12 @@ For wish-level benchmarks measuring store reads, full Protobuf serialization, an
 
 ## Protected by
 
-`internal/server/transport_test.go`: the Unix socket speaks HTTP/1.1 and h2c and carries a bidirectional stream
-message by message (`TestUnixSocketSpeaksH2C`); the loopback server refuses h2c (`TestLoopbackStaysHTTP1`); a
-unary call and a stream come back uncompressed though the client asks for gzip (`TestNoCompression`); through
-`server.WholeWrites`, each message of a stream is one write (`TestWholeWrites`).
-`internal/server/server_test.go`: an empty response still gets its 200 (`TestEmptyResponseIsAnswered`).
+`internal/server/server_test.go`: the Unix socket speaks HTTP/1.1 and h2c and carries a bidirectional stream
+message by message (`TestServe/unix_socket_speaks_h2c`); the loopback server refuses h2c
+(`TestServe/loopback_stays_http1`); a unary call and a stream come back uncompressed though the client asks for
+gzip (`TestHandler/no_compression`); an empty response still gets its 200 (`TestHandler/empty_response_answered`).
+`internal/server/transport_test.go`: through `server.WholeWrites`, each message of a stream is one write
+(`TestWholeWrites`).
 `tools/windowcheck`: the same, in the native window. `e2e/native`: a wish made and a question asked by the command
 line show in the real window without a reload. `shim/djinn.test.mjs`: the window sends binary Protobuf and
 asks for no compression.

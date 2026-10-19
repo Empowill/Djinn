@@ -35,9 +35,6 @@ type Prompt struct {
 // ErrNoPrompt: the screen shows no choice, or another one than the window showed.
 var ErrNoPrompt = errors.New("the terminal shows no such choice now")
 
-// keyGap is how long Choose waits between two keys: an agent that reads keys in one go would take them as a paste.
-var keyGap = 80 * time.Millisecond
-
 // optionRow is a numbered option: an optional marker, its number, then its text.
 var optionRow = regexp.MustCompile(`^([❯›>▶→]\s*)?(\d{1,2})[.)]\s+(\S.*)$`)
 
@@ -303,7 +300,7 @@ func (t *Terminal) Choose(title string, lines, options []string, index int) erro
 			select {
 			case <-t.done:
 				return ErrExited
-			case <-time.After(keyGap):
+			case <-time.After(t.pace.keyGap):
 			}
 		}
 		// A command can change while the keys settle: never confirm a different request.

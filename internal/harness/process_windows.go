@@ -5,6 +5,7 @@ package harness
 import (
 	"errors"
 	"os/exec"
+	"sync"
 	"syscall"
 
 	"golang.org/x/sys/windows"
@@ -51,14 +52,62 @@ func setPriority(p *process, low bool) error {
 	return windows.SetPriorityClass(h, workerClass(low))
 }
 
-// terminate stops the process. Windows has no signal to ask a console process to stop: it is killed at once.
-// What it started survives; a job object will hold the whole tree when the machine task (T14) needs one.
+// jobs are the job objects of the processes that run, each nested in Djinn's (startGuard): what a process starts once
+// it is in its job joins it.
+var jobs = struct {
+	sync.Mutex
+	of map[*process]windows.Handle
+}{of: map[*process]windows.Handle{}}
+
+// adopt puts the started process in a job of its own. What it started before it is in escapes the job; without a
+// job (an error), only the process is ever killed.
+func adopt(p *process) {
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		return
+	}
+	h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(p.cmd.Process.Pid))
+	if err != nil {
+		windows.CloseHandle(job)
+		return
+	}
+	defer windows.CloseHandle(h)
+	if windows.AssignProcessToJobObject(job, h) != nil {
+		windows.CloseHandle(job)
+		return
+	}
+	jobs.Lock()
+	jobs.of[p] = job
+	jobs.Unlock()
+}
+
+// terminate stops the process and what its job holds. Windows has no signal to ask a console process to stop: they
+// are killed at once.
 func terminate(p *process) { kill(p) }
 
-// kill kills the process.
+// kill kills the process, and what its job holds.
 func kill(p *process) {
 	if p.cmd.Process != nil {
 		_ = p.cmd.Process.Kill()
+	}
+	jobs.Lock()
+	defer jobs.Unlock()
+	if job, ok := jobs.of[p]; ok {
+		_ = windows.TerminateJobObject(job, 1)
+	}
+}
+
+// holdExit is false on Windows: the job finds what is left.
+func holdExit(*exec.Cmd) bool { return false }
+
+// stopLeft kills what the ended process left in its job, at once (see terminate), and lets the job go.
+func stopLeft(p *process, _ bool) {
+	jobs.Lock()
+	defer jobs.Unlock()
+	if job, ok := jobs.of[p]; ok {
+		_ = windows.TerminateJobObject(job, 1)
+		_ = windows.CloseHandle(job)
+		delete(jobs.of, p)
 	}
 }
 

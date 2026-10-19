@@ -10,9 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -66,6 +68,9 @@ func restore(ctx context.Context, home, archive string, now time.Time, r fsx.Ren
 		return nil, fmt.Errorf("%w (%s): close its window, or stop djinn up (Ctrl+C where it runs, or end its "+
 			"process), then restore again", ErrRunning, home)
 	}
+	if _, err := finish(home, r); err != nil {
+		return nil, fmt.Errorf("a restore was cut: %w", err)
+	}
 	parent := filepath.Dir(home)
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return nil, err
@@ -97,13 +102,101 @@ func restore(ctx context.Context, home, archive string, now time.Time, r fsx.Ren
 	for i := 2; exists(out.Aside); i++ {
 		out.Aside = fmt.Sprintf("%s.before-restore-%s-%d", home, now.Format("2006-01-02-150405"), i)
 	}
+	// Between the two renames there is no data folder: the mark lets Finish end a restore a stop cuts there.
+	mark := filepath.Join(tmp, restoreMark)
+	if err := fsx.WriteAtomic(mark, []byte(out.Aside), 0o600); err != nil {
+		return nil, err
+	}
 	if err := r.Rename(home, out.Aside); err != nil {
 		return nil, fmt.Errorf("move %s aside (close what uses it, then restore again): %w", home, err)
 	}
 	if err := r.Rename(tmp, home); err != nil {
 		return nil, errors.Join(fmt.Errorf("put the restored folder in place: %w", err), r.Rename(out.Aside, home))
 	}
-	return out, moveWorktrees(out.Aside, home, r)
+	err = moveWorktrees(out.Aside, home, r)
+	return out, errors.Join(err, removeMark(home))
+}
+
+// restoreMark is the file a restore writes in the folder it extracted, before it moves the data folder aside: it
+// names the folder put aside, whose worktrees move into the restored one. It goes once the worktrees moved.
+const restoreMark = ".djinn-restoring"
+
+func removeMark(home string) error {
+	if err := os.Remove(filepath.Join(home, restoreMark)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return fsx.SyncDir(home)
+}
+
+// Finish ends a restore of the data folder home that a stop cut, and removes what restores cut sooner left next to
+// it; djinn up calls it before it opens home, and a restore before it starts. A stop between the restore's two
+// renames left no data folder: the restored folder, extracted whole and marked, goes in place, and the worktrees of
+// the folder put aside follow it. It returns what it did, one line each; none when there was nothing to do.
+func Finish(home string) ([]string, error) {
+	return finish(home, fsx.OS())
+}
+
+func finish(home string, r fsx.Renamer) ([]string, error) {
+	home, err := filepath.Abs(home)
+	if err != nil {
+		return nil, err
+	}
+	parent := filepath.Dir(home)
+	entries, err := os.ReadDir(parent)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var left, marked []string // Folders extracted by restores, marked the newest first.
+	var newest []time.Time
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), "."+filepath.Base(home)+".restore-") {
+			continue
+		}
+		dir := filepath.Join(parent, e.Name())
+		info, err := os.Stat(filepath.Join(dir, restoreMark))
+		if err != nil {
+			left = append(left, dir)
+			continue
+		}
+		at := slices.IndexFunc(newest, func(t time.Time) bool { return info.ModTime().After(t) })
+		if at < 0 {
+			at = len(newest)
+		}
+		marked, newest = slices.Insert(marked, at, dir), slices.Insert(newest, at, info.ModTime())
+	}
+	var did []string
+	if !exists(home) && len(marked) > 0 {
+		if err := r.Rename(marked[0], home); err != nil {
+			return nil, fmt.Errorf("put in place the folder a cut restore extracted, %s: %w", marked[0], err)
+		}
+		did = append(did, "finished the restore of "+home+" that a stop cut")
+		marked = marked[1:]
+	}
+	if aside, err := os.ReadFile(filepath.Join(home, restoreMark)); err == nil {
+		err := moveWorktrees(string(aside), home, r)
+		if err = errors.Join(err, removeMark(home)); err != nil {
+			return did, err
+		}
+		did = append(did, fmt.Sprintf("moved the worktrees of %s into %s", aside, home))
+	}
+	// Cut before the data folder moved: home is the folder it was. One left marked while home has no database stays,
+	// the only copy of the data, perhaps.
+	var errs []error
+	for _, dir := range slices.Concat(left, marked) {
+		if slices.Contains(marked, dir) && !exists(filepath.Join(home, store.File)) {
+			did = append(did, fmt.Sprintf("kept %s, a restored data folder: %s has no database", dir, home))
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		did = append(did, "removed the folder of a cut restore, "+dir)
+	}
+	return did, errors.Join(errs...)
 }
 
 // extract writes the entries of the archive into dir, which is empty, and returns how many files it wrote. It

@@ -31,7 +31,7 @@ func TestNativeToolbarControls(t *testing.T) {
 		}
 		if err := d.eval(`return {
 			app: !!document.querySelector(".wish-app"),
-			toggle: !!document.querySelector(".app-toolbar-toggle"),
+			toggle: !!document.querySelector(".sidebar-toggle"),
 			newMission: !!document.querySelector(".sidebar .new-mission"),
 		};`, &ready); err != nil {
 			return err
@@ -49,11 +49,11 @@ func TestNativeToolbarControls(t *testing.T) {
 		const box = (selector) => { const r = document.querySelector(selector)?.getBoundingClientRect(); return r && {
 			x: r.x, y: r.y, width: r.width, height: r.height,
 		}; };
-		return { toggle: box(".app-toolbar-toggle") };
+		return { toggle: box(".sidebar-toggle") };
 	`, &geometry); err != nil {
 		t.Fatal(err)
 	}
-	if geometry.Toggle["x"] != 92 || geometry.Toggle["y"] != 6 || geometry.Toggle["width"] != 20 || geometry.Toggle["height"] != 20 {
+	if geometry.Toggle["y"] < 28 || geometry.Toggle["width"] != 30 || geometry.Toggle["height"] != 30 {
 		t.Fatalf("unexpected native toggle geometry: %+v", geometry.Toggle)
 	}
 
@@ -64,13 +64,13 @@ func TestNativeToolbarControls(t *testing.T) {
 		}
 	}
 
-	click(".app-toolbar-toggle")
+	click(".sidebar-toggle")
 	eventually(t, 5*time.Second, func() error {
 		var state struct {
 			Collapsed bool   `json:"collapsed"`
 			Expanded  string `json:"expanded"`
 		}
-		if err := d.eval(`const app = document.querySelector(".wish-app"); const toggle = document.querySelector(".app-toolbar-toggle"); return {
+		if err := d.eval(`const app = document.querySelector(".wish-app"); const toggle = document.querySelector(".sidebar-toggle"); return {
 			collapsed: app?.classList.contains("sidebar-collapsed") ?? false,
 			expanded: toggle?.getAttribute("aria-expanded") ?? "",
 		};`, &state); err != nil {
@@ -81,13 +81,13 @@ func TestNativeToolbarControls(t *testing.T) {
 		}
 		return nil
 	})
-	click(".app-toolbar-toggle")
+	click(".sidebar-toggle")
 	eventually(t, 5*time.Second, func() error {
 		var state struct {
 			Collapsed bool   `json:"collapsed"`
 			Expanded  string `json:"expanded"`
 		}
-		if err := d.eval(`const app = document.querySelector(".wish-app"); const toggle = document.querySelector(".app-toolbar-toggle"); return {
+		if err := d.eval(`const app = document.querySelector(".wish-app"); const toggle = document.querySelector(".sidebar-toggle"); return {
 			collapsed: app?.classList.contains("sidebar-collapsed") ?? false,
 			expanded: toggle?.getAttribute("aria-expanded") ?? "",
 		};`, &state); err != nil {

@@ -37,6 +37,22 @@ func WithSeriesIntervals(fn func(cutoff time.Time) []*machinev1.GateInterval) Ha
 	return func(s *service) { s.intervals = fn }
 }
 
+// WithNetwork sets the function telling since when the network is down (the harness's NetworkDownSince); nil while
+// it is up.
+func WithNetwork(fn func() *timestamppb.Timestamp) HandlerOption {
+	return func(s *service) { s.network = fn }
+}
+
+// WithDiskFolders sets the function returning the main folders on disk, biggest first, with their size.
+func WithDiskFolders(fn func() []*machinev1.DiskFolder) HandlerOption {
+	return func(s *service) { s.diskFolders = fn }
+}
+
+// WithDiskItems sets the function returning the known caches and stores on the machine, biggest first.
+func WithDiskItems(fn func() []*machinev1.DiskItem) HandlerOption {
+	return func(s *service) { s.diskItems = fn }
+}
+
 // Handler returns the Connect handler of MachineService on m, and its path prefix. running counts the workers that
 // run now, uses lists what each one uses; nil counts and lists none.
 func Handler(m *Monitor, running func() int, uses func() []*machinev1.WorkerUse, opts ...HandlerOption) (string, http.Handler) {
@@ -49,13 +65,45 @@ func Handler(m *Monitor, running func() int, uses func() []*machinev1.WorkerUse,
 
 type service struct {
 	machinev1connect.UnimplementedMachineServiceHandler
-	m         *Monitor
-	running   func() int
-	uses      func() []*machinev1.WorkerUse
-	recorder  *SeriesRecorder
-	history   *History
-	workers   func(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries
-	intervals func(cutoff time.Time) []*machinev1.GateInterval
+	m           *Monitor
+	running     func() int
+	uses        func() []*machinev1.WorkerUse
+	recorder    *SeriesRecorder
+	history     *History
+	workers     func(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries
+	intervals   func(cutoff time.Time) []*machinev1.GateInterval
+	network     func() *timestamppb.Timestamp
+	diskFolders func() []*machinev1.DiskFolder
+	diskItems   func() []*machinev1.DiskItem
+}
+
+func (s *service) disk(snap Snapshot) *machinev1.Disk {
+	var folders []*machinev1.DiskFolder
+	var items []*machinev1.DiskItem
+	switch {
+	case s.diskFolders != nil && s.diskItems != nil:
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			items = s.diskItems()
+		}()
+		folders = s.diskFolders()
+		<-done
+	case s.diskFolders != nil:
+		folders = s.diskFolders()
+	case s.diskItems != nil:
+		items = s.diskItems()
+	}
+	if snap.Disk == nil && len(folders) == 0 && len(items) == 0 {
+		return nil
+	}
+	out := &machinev1.Disk{Folders: folders, Items: items}
+	if d := snap.Disk; d != nil {
+		out.Path = d.Path
+		out.TotalBytes = d.Total
+		out.AvailableBytes = d.Available
+	}
+	return out
 }
 
 func (s *service) Show(
@@ -79,9 +127,7 @@ func (s *service) Show(
 	if p := snap.Memory; p != nil {
 		out.MemoryPressure = &machinev1.Pressure{SomeAvg10: p.Some, FullAvg10: p.Full}
 	}
-	if d := snap.Disk; d != nil {
-		out.Disk = &machinev1.Disk{Path: d.Path, TotalBytes: d.Total, AvailableBytes: d.Available}
-	}
+	out.Disk = s.disk(snap)
 	for _, g := range snap.GPUs {
 		out.Gpus = append(out.Gpus, &machinev1.Gpu{
 			Vendor: g.Vendor, Name: g.Name, Driver: g.Driver, DriverVersion: g.DriverVersion, MemoryBytes: g.Memory,
@@ -96,6 +142,9 @@ func (s *service) Show(
 		out.WorkerUses = s.uses()
 	}
 	out.WorkerMeasure = NotMeasured
+	if s.network != nil {
+		out.NetworkDownSince = s.network()
+	}
 	return connect.NewResponse(&machinev1.MachineServiceShowResponse{Machine: out}), nil
 }
 
@@ -168,5 +217,6 @@ func (s *service) Series(
 		Workers:       workerSeries,
 		Gates:         gateIntervals,
 		WorkerMeasure: NotMeasured,
+		Disk:          s.disk(snap),
 	}), nil
 }

@@ -8,6 +8,7 @@ import (
 
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,23 @@ func remoteOf(dir string) string {
 		return ""
 	}
 	return cleanRemote(strings.TrimSpace(string(out)))
+}
+
+// remoteName is the remote Djinn reads the reference branch from in the repository in dir, as the harness finds it:
+// origin, else the only one; empty without a remote, or with several and no origin.
+func remoteName(ctx context.Context, dir string) string {
+	out, err := gitOut(ctx, dir, "remote")
+	if err != nil {
+		return ""
+	}
+	names := strings.Fields(out)
+	switch {
+	case slices.Contains(names, "origin"):
+		return "origin"
+	case len(names) == 1:
+		return names[0]
+	}
+	return ""
 }
 
 // cleanRemote removes the credentials a remote URL may hold: the password, and over HTTP the user name too, which
@@ -99,6 +117,57 @@ func remoteKey(remote string) string {
 func sameRemote(a, b string) bool {
 	ka, kb := remoteKey(a), remoteKey(b)
 	return ka != "" && ka == kb
+}
+
+// remoteRepo splits a remote URL into its lowercase host and case-preserved repository path.
+func remoteRepo(remote string) (host, path string) {
+	r := strings.TrimSpace(remote)
+	if r == "" {
+		return "", ""
+	}
+	if i := strings.Index(r, "://"); i >= 0 {
+		h, p, _ := strings.Cut(r[i+3:], "/")
+		if at := strings.LastIndex(h, "@"); at >= 0 {
+			h = h[at+1:]
+		}
+		if hp, port, ok := strings.Cut(h, ":"); ok && strings.Trim(port, "0123456789") == "" {
+			h = hp
+		}
+		host, path = strings.ToLower(h), p
+	} else if colon, slash := strings.Index(r, ":"), strings.Index(r, "/"); colon >= 0 && (slash < 0 || colon < slash) {
+		h := r[:colon]
+		if at := strings.LastIndex(h, "@"); at >= 0 {
+			h = h[at+1:]
+		}
+		host, path = strings.ToLower(h), r[colon+1:]
+	} else {
+		h, p, _ := strings.Cut(r, "/")
+		host, path = strings.ToLower(h), p
+	}
+	path = strings.TrimRight(path, "/")
+	path = strings.TrimSuffix(path, ".git")
+	path = strings.TrimSuffix(path, ".GIT")
+	path = strings.TrimRight(path, "/")
+	if host == "" || path == "" {
+		return "", ""
+	}
+	return host, path
+}
+
+// forgeRequestURL returns the URL of pull or merge request number on the forge of remote (GitLab or GitHub), or "".
+func forgeRequestURL(remote string, number int) string {
+	if number <= 0 {
+		return ""
+	}
+	host, path := remoteRepo(remote)
+	switch {
+	case strings.Contains(host, "gitlab"):
+		return "https://" + host + "/" + path + "/-/merge_requests/" + strconv.Itoa(number)
+	case strings.Contains(host, "github"):
+		return "https://" + host + "/" + path + "/pull/" + strconv.Itoa(number)
+	default:
+		return ""
+	}
 }
 
 // Downloads returns the folder where files the user asked for land: the XDG download folder on Linux, which may

@@ -16,6 +16,7 @@ import (
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
 
@@ -72,7 +73,7 @@ func sourcesUp(e *env) (scan func() int, said <-chan string) {
 		item, err := inbox.Receive(ctx, src, text)
 		out <- text
 		return item, err
-	}, Watch{Quiet: 50 * time.Millisecond}, time.Hour)
+	}, Watch{Quiet: 15 * time.Millisecond}, time.Hour)
 	return scan, out
 }
 
@@ -88,6 +89,29 @@ func nextSaid(t *testing.T, said <-chan string) string {
 	}
 }
 
+// keptRun is the last run the source of the skill keeps, once ok says it is the one awaited.
+func keptRun(t *testing.T, e *env, skill string, ok func(*planv1.SourceRun) bool) *planv1.SourceRun {
+	t.Helper()
+	var last *planv1.SourceRun
+	for range 2000 {
+		runs, err := store.List[*planv1.SourceRun](t.Context(), e.db, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range runs {
+			if r.GetSkill() == skill {
+				last = r
+			}
+		}
+		if last != nil && ok(last) {
+			return last
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("the source %s keeps %v", skill, last)
+	return nil
+}
+
 // plugSource plugs in the source named name, through the API.
 func plugSource(t *testing.T, client planv1connect.InboxServiceClient, name string) {
 	t.Helper()
@@ -96,139 +120,177 @@ func plugSource(t *testing.T, client planv1connect.InboxServiceClient, name stri
 	}
 }
 
-// TestSourceReadsOnly: a skill's source runs like a watcher, and each item it prints becomes an inbox item. Its
-// command reads an empty input: Djinn writes nothing to it. Dismissing an item and routing one run no command: the
-// source ran once, as declared, and the project's folder is as it was.
-func TestSourceReadsOnly(t *testing.T) {
+func TestRunSources(t *testing.T) {
 	t.Parallel()
-	home := t.TempDir()
-	e := up(t, home)
-	dir := t.TempDir()
-	runs := filepath.Join(t.TempDir(), "runs")
-	command := watchCommand("input:"+runs, "say:Babysit !12 · Fix the wick",
-		"say:https://gitlab.example.com/acme/gong/-/merge_requests/12", "say:", "say:carol mentioned you")
-	sourceSkill(t, dir, "assigned", command)
-	before := files(t, dir)
-	scan, said := sourcesUp(e)
-	if _, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir})); err != nil {
-		t.Fatal(err)
-	}
-	client := planv1connect.NewInboxServiceClient(e.srv.Client(), e.srv.URL)
-	plugSource(t, client, "assigned")
-	scan()
-	nextSaid(t, said)
-	nextSaid(t, said)
 
-	res, err := client.List(t.Context(), connect.NewRequest(&planv1.InboxServiceListRequest{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	items := res.Msg.GetItems()
-	var texts []string
-	for _, i := range items {
-		texts = append(texts, i.GetSource()+": "+i.GetText())
-	}
-	if want := []string{"assigned: carol mentioned you",
-		"assigned: Babysit !12 · Fix the wick\nhttps://gitlab.example.com/acme/gong/-/merge_requests/12"}; !slices.Equal(texts, want) {
-		t.Fatalf("items %q, want %q", texts, want)
-	}
+	// A skill's source runs like a watcher, and each item it prints becomes an inbox item. Its command reads an empty
+	// input: Djinn writes nothing to it. Dismissing an item and routing one run no command: the source ran once, as
+	// declared, and the project's folder is as it was.
+	t.Run("reads_only", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		e := up(t, home)
+		dir := t.TempDir()
+		runs := filepath.Join(t.TempDir(), "runs")
+		command := watchCommand("input:"+runs, "say:Babysit !12 · Fix the wick",
+			"say:https://gitlab.example.com/acme/gong/-/merge_requests/12", "say:", "say:carol mentioned you")
+		sourceSkill(t, dir, "assigned", command)
+		before := files(t, dir)
+		scan, said := sourcesUp(e)
+		if _, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir})); err != nil {
+			t.Fatal(err)
+		}
+		client := planv1connect.NewInboxServiceClient(e.srv.Client(), e.srv.URL)
+		plugSource(t, client, "assigned")
+		scan()
+		nextSaid(t, said)
+		nextSaid(t, said)
 
-	if _, err := client.Dismiss(t.Context(), connect.NewRequest(&planv1.InboxServiceDismissRequest{ItemId: items[0].GetId()})); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.Route(t.Context(), connect.NewRequest(&planv1.InboxServiceRouteRequest{
-		ItemId: items[1].GetId(), Choice: planv1.Choice_CHOICE_A,
-	})); err != nil {
-		t.Fatal(err)
-	}
-	// Two more passes: neither starts the command again, its watcher waiting its five minutes.
-	if n := scan() + scan(); n != 2 {
-		t.Errorf("%d sources running over two passes, want one each", n)
-	}
-	b, err := os.ReadFile(runs)
-	if err != nil || strings.Split(strings.TrimSpace(string(b)), "\n")[0] != "read 0 bytes" || strings.Count(string(b), "\n") != 1 {
-		t.Errorf("the source's runs: %q, %v; want one run that read nothing", b, err)
-	}
-	if after := files(t, dir); len(after) != len(before) {
-		t.Errorf("the project's folder changed: %v", after)
-	}
-	wishes, err := e.wishes.List(t.Context(), connect.NewRequest(&planv1.WishServiceListRequest{}))
-	if err != nil || len(wishes.Msg.GetWishes()) != 1 || wishes.Msg.GetWishes()[0].GetTitle() != "Babysit !12 · Fix the wick" {
-		t.Errorf("wishes = %v, %v", wishes.Msg.GetWishes(), err)
-	}
-}
+		res, err := client.List(t.Context(), connect.NewRequest(&planv1.InboxServiceListRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		items := res.Msg.GetItems()
+		var texts []string
+		for _, i := range items {
+			texts = append(texts, i.GetSource()+": "+i.GetText())
+		}
+		if want := []string{"assigned: carol mentioned you",
+			"assigned: Babysit !12 · Fix the wick\nhttps://gitlab.example.com/acme/gong/-/merge_requests/12"}; !slices.Equal(texts, want) {
+			t.Fatalf("items %q, want %q", texts, want)
+		}
 
-// TestSourceRefused: where a project lists the commands its workers may run, a source must be one of them; one
-// that is not never runs, plugged in or not.
-func TestSourceRefused(t *testing.T) {
-	t.Parallel()
-	home := t.TempDir()
-	e := up(t, home)
-	dir := t.TempDir()
-	runs := filepath.Join(t.TempDir(), "runs")
-	sourceSkill(t, dir, "assigned", watchCommand("input:"+runs, "say:hello"))
-	if err := os.WriteFile(filepath.Join(dir, PermissionsFile), []byte(`commands: "go test"`+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	scan, _ := sourcesUp(e)
-	if _, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir})); err != nil {
-		t.Fatal(err)
-	}
-	plugSource(t, planv1connect.NewInboxServiceClient(e.srv.Client(), e.srv.URL), "assigned")
-	if n := scan(); n != 0 {
-		t.Errorf("%d sources running, want none", n)
-	}
-	if _, err := os.Stat(runs); !os.IsNotExist(err) {
-		t.Errorf("a source the project does not allow ran: %v", err)
-	}
-}
+		if _, err := client.Dismiss(t.Context(), connect.NewRequest(&planv1.InboxServiceDismissRequest{ItemId: items[0].GetId()})); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.Route(t.Context(), connect.NewRequest(&planv1.InboxServiceRouteRequest{
+			ItemId: items[1].GetId(), Choice: planv1.Choice_CHOICE_A,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		// Two more passes: neither starts the command again, its watcher waiting its five minutes.
+		if n := scan() + scan(); n != 2 {
+			t.Errorf("%d sources running over two passes, want one each", n)
+		}
+		b, err := os.ReadFile(runs)
+		if err != nil || strings.Split(strings.TrimSpace(string(b)), "\n")[0] != "read 0 bytes" || strings.Count(string(b), "\n") != 1 {
+			t.Errorf("the source's runs: %q, %v; want one run that read nothing", b, err)
+		}
+		if after := files(t, dir); len(after) != len(before) {
+			t.Errorf("the project's folder changed: %v", after)
+		}
+		// Its run is kept: it went well, and printed two items.
+		keptRun(t, e, "assigned", func(r *planv1.SourceRun) bool {
+			return r.GetItems() == 2 && r.GetError() == "" && r.GetFailures() == 0 && r.GetEndTime() != nil
+		})
+		wishes, err := e.wishes.List(t.Context(), connect.NewRequest(&planv1.WishServiceListRequest{}))
+		if err != nil || len(wishes.Msg.GetWishes()) != 1 || wishes.Msg.GetWishes()[0].GetTitle() != "Babysit !12 · Fix the wick" {
+			t.Errorf("wishes = %v, %v", wishes.Msg.GetWishes(), err)
+		}
+	})
 
-// TestSourceUnplugged: a source runs only once plugged in on this machine. Declared by a project's skill and not
-// plugged in, its command never starts; plugged in, it starts once, and passes start no other; unplugged, its watcher
-// stops, and plugging it in again starts a new one.
-func TestSourceUnplugged(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	dir := t.TempDir()
-	runs := filepath.Join(t.TempDir(), "runs")
-	sourceSkill(t, dir, "assigned", watchCommand("input:"+runs, "say:carol mentioned you", "wait"))
-	scan, said := sourcesUp(e)
-	if _, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir})); err != nil {
-		t.Fatal(err)
-	}
-	if n := scan(); n != 0 {
-		t.Fatalf("%d sources running before the plug, want none", n)
-	}
-	if n := runCount(t, runs); n != 0 {
-		t.Fatalf("a source not plugged in started %d commands, want 0", n)
-	}
+	// Where a project lists the commands its workers may run, a source must be one of them; one that is not never runs,
+	// plugged in or not.
+	t.Run("refused", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		e := up(t, home)
+		dir := t.TempDir()
+		runs := filepath.Join(t.TempDir(), "runs")
+		sourceSkill(t, dir, "assigned", watchCommand("input:"+runs, "say:hello"))
+		if err := os.WriteFile(filepath.Join(dir, PermissionsFile), []byte(`commands: "go test"`+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		scan, _ := sourcesUp(e)
+		if _, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir})); err != nil {
+			t.Fatal(err)
+		}
+		plugSource(t, planv1connect.NewInboxServiceClient(e.srv.Client(), e.srv.URL), "assigned")
+		if n := scan(); n != 0 {
+			t.Errorf("%d sources running, want none", n)
+		}
+		if _, err := os.Stat(runs); !os.IsNotExist(err) {
+			t.Errorf("a source the project does not allow ran: %v", err)
+		}
+		// Why it does not run is kept, as a run that could not start.
+		if r := keptRun(t, e, "assigned", func(*planv1.SourceRun) bool { return true }); r.GetFailures() != 1 ||
+			!strings.Contains(r.GetError(), "does not let its workers run") {
+			t.Errorf("run = %v", r)
+		}
+	})
 
-	client := planv1connect.NewInboxServiceClient(e.srv.Client(), e.srv.URL)
-	plugSource(t, client, "assigned")
-	if n := scan(); n != 1 {
-		t.Fatalf("%d sources running once plugged in, want 1", n)
-	}
-	if text := nextSaid(t, said); text != "carol mentioned you" {
-		t.Errorf("said %q", text)
-	}
-	if n := scan() + scan(); n != 2 || runCount(t, runs) != 1 {
-		t.Fatalf("over two more passes: %d running, %d commands started; want 1 each time, 1 command", n, runCount(t, runs))
-	}
+	// A source whose command fails keeps why, with its last error lines, and how many runs failed in a row. Its error
+	// output makes no item.
+	t.Run("fails", func(t *testing.T) {
+		t.Parallel()
+		e := up(t, t.TempDir())
+		dir := t.TempDir()
+		sourceSkill(t, dir, "assigned", watchCommand("err:gh: not logged in", "exit:1"))
+		scan, _ := sourcesUp(e)
+		if _, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir})); err != nil {
+			t.Fatal(err)
+		}
+		client := planv1connect.NewInboxServiceClient(e.srv.Client(), e.srv.URL)
+		plugSource(t, client, "assigned")
+		scan()
+		r := keptRun(t, e, "assigned", func(r *planv1.SourceRun) bool { return r.GetFailures() > 0 })
+		if r.GetFailures() != 1 || r.GetItems() != 0 || r.GetError() != "exit code 1; its error output: gh: not logged in" ||
+			!r.GetFailingSince().AsTime().Equal(r.GetEndTime().AsTime()) {
+			t.Errorf("run = %v", r)
+		}
+		res, err := client.List(t.Context(), connect.NewRequest(&planv1.InboxServiceListRequest{All: true}))
+		if err != nil || len(res.Msg.GetItems()) != 0 {
+			t.Errorf("items = %v, %v; want none", res, err)
+		}
+	})
 
-	res, err := client.Unplug(t.Context(), connect.NewRequest(&planv1.InboxServiceUnplugRequest{Source: "assigned"}))
-	if err != nil || res.Msg.GetSource().GetPlugged() {
-		t.Fatalf("unplug: %v, %v", res, err)
-	}
-	if n := scan(); n != 0 {
-		t.Fatalf("%d sources running once unplugged, want none", n)
-	}
-	plugSource(t, client, "assigned")
-	if n := scan(); n != 1 {
-		t.Fatalf("%d sources running once plugged in again, want 1", n)
-	}
-	nextSaid(t, said)
-	if n := runCount(t, runs); n != 2 {
-		t.Errorf("the source started %d commands, want 2", n)
-	}
+	// A source runs only once plugged in on this machine. Declared by a project's skill and not plugged in, its command
+	// never starts; plugged in, it starts once, and passes start no other; unplugged, its watcher stops, and plugging
+	// it in again starts a new one.
+	t.Run("unplugged", func(t *testing.T) {
+		testx.Portable(t)
+		t.Parallel()
+		e := up(t, t.TempDir())
+		dir := t.TempDir()
+		runs := filepath.Join(t.TempDir(), "runs")
+		sourceSkill(t, dir, "assigned", watchCommand("input:"+runs, "say:carol mentioned you", "wait"))
+		scan, said := sourcesUp(e)
+		if _, err := e.project.Add(t.Context(), connect.NewRequest(&planv1.ProjectServiceAddRequest{Directory: dir})); err != nil {
+			t.Fatal(err)
+		}
+		if n := scan(); n != 0 {
+			t.Fatalf("%d sources running before the plug, want none", n)
+		}
+		if n := runCount(t, runs); n != 0 {
+			t.Fatalf("a source not plugged in started %d commands, want 0", n)
+		}
+
+		client := planv1connect.NewInboxServiceClient(e.srv.Client(), e.srv.URL)
+		plugSource(t, client, "assigned")
+		if n := scan(); n != 1 {
+			t.Fatalf("%d sources running once plugged in, want 1", n)
+		}
+		if text := nextSaid(t, said); text != "carol mentioned you" {
+			t.Errorf("said %q", text)
+		}
+		if n := scan() + scan(); n != 2 || runCount(t, runs) != 1 {
+			t.Fatalf("over two more passes: %d running, %d commands started; want 1 each time, 1 command", n, runCount(t, runs))
+		}
+
+		res, err := client.Unplug(t.Context(), connect.NewRequest(&planv1.InboxServiceUnplugRequest{Source: "assigned"}))
+		if err != nil || res.Msg.GetSource().GetPlugged() {
+			t.Fatalf("unplug: %v, %v", res, err)
+		}
+		if n := scan(); n != 0 {
+			t.Fatalf("%d sources running once unplugged, want none", n)
+		}
+		plugSource(t, client, "assigned")
+		if n := scan(); n != 1 {
+			t.Fatalf("%d sources running once plugged in again, want 1", n)
+		}
+		nextSaid(t, said)
+		if n := runCount(t, runs); n != 2 {
+			t.Errorf("the source started %d commands, want 2", n)
+		}
+	})
 }

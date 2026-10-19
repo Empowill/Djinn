@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -43,7 +46,9 @@ const codexVersion = "0.3.0"
 // opens the workspace-write sandbox, and the network follows the permissions. LISTED asks for every command
 // codex does not trust by itself ("untrusted"), and Djinn approves the listed ones; AUTO lets codex ask when it
 // needs to ("on-request") and routes the approvals to codex's own reviewer ("auto_review"). codex takes no list
-// of commands at launch: in AUTO, the reviewer decides, denied commands included.
+// of commands at launch: in AUTO, the reviewer decides, denied commands included. The folders a worker may write in
+// without editing (Spec.WriteDirs, the driven lead's) open the workspace-write sandbox on them alone: its workspace,
+// and the others as writable roots.
 func codexAccess(spec Spec) (sandbox string, reviewer any, approval string, policy map[string]any, ok bool) {
 	p := spec.Permissions
 	switch {
@@ -56,11 +61,17 @@ func codexAccess(spec Spec) (sandbox string, reviewer any, approval string, poli
 	if effectiveMode(p) == djinnv1.Mode_MODE_AUTO {
 		approval, reviewer = "on-request", "auto_review"
 	}
-	if !p.GetEdit() {
+	if !p.GetEdit() && len(spec.WriteDirs) == 0 {
 		return "read-only", reviewer, approval, map[string]any{"type": "readOnly", "networkAccess": p.GetNetwork()}, true
 	}
+	roots := []any{}
+	for _, dir := range spec.WriteDirs {
+		if filepath.Clean(dir) != filepath.Clean(spec.Dir) {
+			roots = append(roots, dir)
+		}
+	}
 	return "workspace-write", reviewer, approval, map[string]any{
-		"type": "workspaceWrite", "writableRoots": []any{}, "networkAccess": p.GetNetwork(),
+		"type": "workspaceWrite", "writableRoots": roots, "networkAccess": p.GetNetwork(),
 		"excludeTmpdirEnvVar": false, "excludeSlashTmp": false,
 	}, true
 }
@@ -79,10 +90,15 @@ func (c Codex) threadRequest(spec Spec) (string, map[string]any) {
 	if spec.Model != "" && !foreignModel(planv1.Provider_PROVIDER_CODEX, spec.Model) {
 		params["model"] = spec.Model
 	}
+	// The driven lead's rules are codex's developer instructions, as they are Claude's appended system prompt.
+	instructions := spec.SystemPrompt
 	if text := skillsInstructions(spec.Skills); text != "" {
 		// codex finds skills only in .agents/skills from the working folder up to the repository's root, and in
 		// the user's folders: it is told where the summoned ones are instead.
-		params["developerInstructions"] = text
+		instructions = strings.TrimSpace(instructions + "\n\n" + text)
+	}
+	if instructions != "" {
+		params["developerInstructions"] = instructions
 	}
 	if spec.Resume == "" {
 		return "thread/start", params
@@ -456,8 +472,13 @@ func (w *codexWorker) request(events *lineEvents, m *codexMessage) {
 	switch m.Method {
 	case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
 		perms := w.spec.Permissions
-		if w.spec.ReadOnly {
+		switch {
+		case w.spec.ReadOnly:
 			perms = nil
+		case perms != nil && !perms.GetEdit() && len(w.spec.WriteDirs) > 0 && m.Method == "item/fileChange/requestApproval":
+			// Its folders to write in are its workspace and writable roots: a change inside them is accepted.
+			perms = proto.CloneOf(perms)
+			perms.Edit = true
 		}
 		decision := codexDecision(perms, m.Method, p)
 		_ = w.write(map[string]any{"id": m.ID, "result": map[string]any{"decision": decision}})
@@ -705,4 +726,5 @@ func (w *codexWorker) itemCompleted(events *lineEvents, it *codexItem) {
 		text = it.Status
 	}
 	events.add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
+	(*events)[len(*events)-1].ToolError = failed
 }

@@ -14,7 +14,14 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
 - **The brief says where the wishes stand, and how to lead them.** `djinn brief` gives the Djinn every active
   wish at once (each wish's title, description, open questions, what runs and waits, its azimas), then Djinn's rules
   once; paused and granted wishes in one line each. `djinn wish brief <wish>` gives one wish's detail (latest decisions,
-  blocks, and the Djinn's last session). Reconstructing the state is not the Djinn's job.
+  blocks, and the Djinn's last session). Reconstructing the state is not the Djinn's job. The brief starts with the rule
+  on direct commands and ends with a line per active wish and that rule again: an agent whose tool keeps only the end
+  of a long output (Antigravity's `run_command`) still sees both. `djinn brief --wishes` prints where the wishes stand
+  without the rules.
+- **The Djinn runs each command alone.** A pipe, a chain (`&&`, `||`, `;`), a loop, a redirection or a substitution
+  around a `djinn` command makes the developer approve it by hand: the first message, the brief and the note
+  `direct-commands` forbid them, and flags replace them (`djinn brief --wishes`, `djinn lead notes a,b` or `--all`,
+  `djinn task list --short`, `djinn task list --open`, `djinn task watch --last 5`).
 - **A wish describes itself.** Its description is a few lines: what it is for, its scope, where it goes.
   `djinn wish describe <wish> --text "…"` sets it; the developer edits it in the wish's head, under its title (a
   click, saved when the field is left). Until someone writes one, the title stands for it.
@@ -33,8 +40,11 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   developer, and asks again, a new question, only on a real doubt; an answer it does not fully understand (the
   choice, its note, how they fit) is one, and no task starts from it. Djinn's rules in the brief say it, and so does
   the first message of every session of the Djinn.
-- **The Djinn says nothing in its terminal, ever.** The developer never reads it, and every word written there costs
-  output tokens for nothing: the Djinn's turns end with no text at all, no recap, no question codes, no "done". Every report, finding, status or "done as you asked" is a question in
+- **The developer does not read the Djinn's terminal.** Every word written there is lost to them and costs output
+  tokens for nothing: every question, doubt or choice the Djinn has goes into a question in the wish concerned, never
+  only into its text, and a fact for the next leads into a block; its terminal reply stays one short line at most, no
+  recap, no summary, no "done". The brief says so at its start and its end, and so does the first message of every
+  lead; the driven lead's rules say it first (`DrivenRules`). Every report, finding, status or "done as you asked" is a question in
   the wish concerned, often a yes/no acknowledgement with "OK, nothing to do" as an option; a real wait on the
   developer is a `--move` question that says so. Never two questions for one gesture: the Djinn withdraws a question
   the moment a task or Djinn does what it asked. A line typed in the Djinn's terminal is a request like any other,
@@ -43,12 +53,13 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   (🚀 a merge or a release, 🔎 a review, 🔐 a right or a permission, 🧪 a check or a test, 📦 a build, 🌿 a branch,
   🧭 an organisation choice, 🪵 logs, ⚠️ an incident); the same emoji goes in `--icon`.
 - **The Djinn's notes stay true.** `djinn lead notes` gives how to lead, learnt from past wishes (`lead/notes/`, built
-  into Djinn). When a task fixes what a note describes, the Djinn updates or removes that note in the same breath, by
-  a task that edits `lead/notes/`; no cleanup waits for later.
+  into Djinn); `djinn lead notes a,b` or `--all` prints several in one command. When a task fixes what a note
+  describes, the Djinn updates or removes that note in the same breath, by a task that edits `lead/notes/`; no cleanup
+  waits for later.
 - **The Djinn starts the same way, whatever its agent.** Its first message is one line, the same for claude, codex
   and antigravity: run `djinn brief`, then continue from what it says (`StartLine` in
   `internal/plan/newlead.go`). Nothing in it is about one agent or a wish's state: the Djinn on another agent than the
-  last one takes over from the brief, without the old session. In the window, the arrow beside **Talk to the Djinn** lists
+  last one takes over from the brief, without the old session. In the window, the arrow beside **Talk to the Djinn** (the Djinn in its terminal) lists
   the agents found on this machine (`UiService.GetEnvironment`: `claude`, `codex`, `agy`), those missing shown
   disabled; picking the agent the Djinn last ran on resumes it (claude by session id, antigravity with `agy --continue` in the
   Djinn's folder as the folder's most recent conversation), another starts the Djinn anew on that agent in its
@@ -68,6 +79,31 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   `djinn question move <question> --wish <wish> [--follow]` moves an open question to another wish (retiring its code
   in this wish, taking the next code in the other; `--follow` moves tasks naming this question as their decision along
   with it). `djinn question withdraw <question> [--note "…"]` withdraws an open question without an answer.
+  `djinn question later <question> [--clear]` puts an open question off (the window's Later): Djinn stores the time
+  (`later_time`), and the window, the page and the brief list a wish's open questions by the later of when each was
+  asked and when it was put off (`render.Place`, `byAsked`), oldest first; `--clear` gives it its place back.
+- **Asleep questions (Decision Q33).** `djinn question sleep <question> --until …` (or `--sleep-until` on `ask` and
+  `revise`) stores typed conditions (`Question.sleep`, `SleepCondition`), all to hold: a task of the wish over, by code
+  (done, stopped, cancelled or deleted; an azima, closed); `merged:W45`, a request merged as Djinn knows it (the
+  babysit watcher W45, the one babysitting what W45 opened, or azima W45's pull request; a request's address says the
+  same), the watcher's done line stamping `TaskBabysit.done_time`; a time (`2026-10-20`, `2026-10-20T09:00`, RFC 3339)
+  or a delay (`3d`, `2h`). Conditions that all hold already are refused. An asleep question is out of the window's
+  column, the bar, the notifications and the brief's open questions (listed apart, `render.Asleep`). The scheduler's
+  pass (`wakeQuestions`), reading the questions only while one may sleep, wakes each whose conditions hold: it sets
+  `wake_time`, drops `later_time`, journals `harness/wake`, and queues a `LEAD_EVENT_KIND_WOKE` event for the lead,
+  who checks the question's facts and revises it if they changed; woken, it lists first (`render.Woken`, `byAsked`).
+  `--wake` wakes it by hand (`by_hand`), with the same event.
+- **Planned options (Decision Q25).** An option may carry the task it launches: `djinn question ask --plan-file
+  <file>`, one per option, header lines named as `djinn task spawn`'s flags (`option`, `title`, `project-id`,
+  `provider`, `model`, `part-of`, `after`, `blocks`, `tilasm`, `kind`), then a blank line and the prompt
+  (`Question.plans`, `internal/plan/plans.go`). `djinn question revise --plan-file` replaces an option's plan; a file
+  holding only its `option:` line removes it. An answer without a note, on a plan with no `after` and no `blocks`,
+  launches it at once, its decision the question (`W40 launched as planned`). A note or a dependency leaves it to the
+  Djinn: its answer event carries, under its line (`LeadEvent.detail`), the question, the answer and its note, the
+  plan, and how each task it names stands now against when it was planned; `djinn question launch <question>`
+  launches it, as it is or with spawn's flags in place of the plan's. A plan that no longer holds (its azima closed,
+  a task it comes after cancelled, a task it blocks started) never launches: the event says why, and launch refuses
+  it until the flags change what fails.
 - **Moves only the developer can make.** Granting a right, pushing a tag, opening or merging a PR, starting a
   release, checking on a Mac or Windows, installing and restarting: the Djinn asks them through `djinn question ask`,
   with the exact command in the question. In a project with `install_questions: never` (such as Djinn itself), Djinn
@@ -137,7 +173,10 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   - a task ending without failure (the Djinn's cue to check its final note, revised questions, or spawned tasks),
     once: a work worker's end is its merge line; with nothing to merge, or in a project that integrates nothing, an
     `ended` event says it, with the first line of its final note (`W1 done: …`, incident W1 of wish Dew,
-    12/10/2026);
+    12/10/2026); a worker with no commit of its own is never merged, its line saying so (`W103 done, nothing to
+    merge: no commit of its own. …`, W196);
+  - work that waits out of its azima's branch, the azima done or its branch deleted: one `move` line, once (`azima T2
+    is done: …; reopen T2 or drop the work`), Djinn making no branch again and pushing nothing;
   - the calls a worker's permissions refused in its run (its `permission denied: …` events, counted on the task's
     `refused`), in its `ended` or `failed` event, with the command that would grant them, whole in the digest: `W1 done,
     6 commands refused (permission): djinn, ls, git, …; djinn wish allow <wish> --mode auto would let the agent judge
@@ -151,10 +190,15 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   - a watcher waking the Djinn;
   - Djinn restarted: `Djinn: restarted on version v1.4.0: 2 workers interrupted (W12, W14), resumed by Djinn: W12; not
     resumed, the move is yours: W14.`
+  - the network went down, or came back (W285), one `network` line each, of no wish: `Djinn: the network is down since
+    15:12 (Could not resolve host: github.com); Djinn holds its outside work and resumes it once back.`, then `Djinn: the
+    network is back (down from 15:12, 28 min); Djinn resumes, one per pass: paused W12; cut W14.` Nothing to do in
+    between: Djinn pauses and resumes the workers, holds and reruns the push checks that failed on the network itself;
+    a failure or a red check during an outage is never the code's.
   Everything else goes to the journal and the window.
 - **The Djinn's events wait in a queue; the Djinn watches it (Decision Q191).** Each of these is a `LeadEvent` in the
   store, with an id (a UUIDv7), a time, a kind (`ended`, `failed`, `merged`, `answer`, `enlighten`, `move`, `restart`,
-  `watch`, `request`, `approved`), the wish and the code it is about, and its line; one queue for the Djinn, whatever the wish
+  `watch`, `request`, `approved`, `network`…), the wish and the code it is about, and its line; one queue for the Djinn, whatever the wish
   (`internal/plan/leadwatch.go`). `djinn lead watch [--after <cursor>] [--timeout 1h]` blocks until an event waits,
   lets the events settle (2 seconds of quiet, 10 at most: the lines of one integration pass, or a failure and the
   correction Djinn starts for it, come within a second or two, and one digest is one turn of the Djinn instead of
@@ -227,6 +271,9 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
   developer renames it from its card in the window too. `djinn task update <azima> --branch <name>` names its branch,
   adopting a branch that exists as it is, or cutting one from main under that name (refused on a work task and while a
   merge runs into it).
+  A worker's prompt is five to twenty lines of Markdown, a bullet or a short headed part each: Gain (the outcome in
+  one sentence), Scope (and the open tasks' files it must not touch), Validation (the number to reach when there is
+  one), References by link (lead note `worker-prompts`).
   When writing a worker's prompt, ask for the commit checks and the targeted tests, never "run the whole test suite"; the push checks are Djinn's.
 - **The plan is a graph of azimas.** An azima (Arabic ʿazīma, the incantation that binds and commands a djinn) is a
   part of the plan, coded `T07`: a task of kind `AZIMA` that no worker runs, the scheduler never starts, and that never
@@ -248,29 +295,51 @@ The Djinn is the agent the developer talks to. It changes the plan with `djinn`,
     scheduler starts W5 in between. Never spawn, then depend: that leaves the gap. `--blocks` is refused on a task
     that has started (running, paused, done…), saying which, and on one that would close a cycle;
   - work on the ready azimas first, the brief's "Azimas" section: an azima is ready once every task it depends on is
-    done, in progress once a part runs or is done, done once marked done (`djinn task done`), its file says so, or
-    every Done-when box of its file is checked (`djinn plan sync` reports a file whose status line lags);
+    done, in progress once a part runs or is done, watching while a watcher (the babysit of its pull request) is its
+    only live work, done once marked done (`djinn task done`), its file says so, or every Done-when box of its file
+    is checked (`djinn plan sync` reports a file whose status line lags);
   - an azima under way awaits its proof (`AWAITING_PROOF`) once its work is finished (done, stopped, or cut short for
     good) and every unchecked Done-when box of its file says `(needs: …)`, or holds boxes that do: a person, a
     machine, a release or a real model gives the proof, never a worker. The brief lists these apart ("Work done,
     waiting for its proof: T01 needs a Mac, a person"); spawn no work for them. A box without needs is work left, and
     keeps its azima in progress;
+  - an azima is merged into main (`Azima.merged`, W192) once all its work is in its project's main branch, every work
+    task part of it finished, one at least done: its pull or merge request merged after the last of its work ended (the
+    done line of the watcher that babysits it, part of it, on its request's address or on what one of its tasks
+    opened; or the integration's look at the forge, no more often than before), or every commit of its own branch
+    and of its done tasks' branches, with the commit each was merged as, in the remote's main, fetched at most once a
+    `merge_main_minutes` by that look. A request closed without a merge never marks it. The lead hears a
+    `LEAD_EVENT_KIND_LANDED` line once it turns on, which says when every azima of the wish is merged: then propose
+    to the developer to grant the wish; the brief says "merged into main" on each, and "Every azima is merged into
+    main" once they all are. A work task spawned, grouped or started part of it clears the mark (its azima's events
+    say "no longer merged into main"); Djinn marks it again once that work is in main too;
   - re-sequence as the plan learns: `djinn task depend <task> --after … --also W6=W5,W3` replaces what several
     tasks wait for at once, all or none, `djinn task group <task> --part-of T07` its azima. Djinn refuses a cycle,
     through dependencies and azimas together, naming it, and then changes nothing. An azima absorbed into another is
     deleted (`djinn task delete`) only once its parts are regrouped, and a task only once no task waits for it (rewire
     them first, in one `--also`): Djinn names them; its code is never given again. `--depends-on` is the former
     name of `--after`, still read.
-- **Keep the graph free of conflicts.** The Djinn keeps the graph of tasks and azimas so that workers do not collide,
-  along an iterative and de-risked path. Tasks that touch the same files, protos, generated files or the same tests go
-  one after the other (`--after`, or `--write-scopes` when the project uses them), never side by side, but never chain
-  tasks in a naive sequential line (`W1 -> W2 -> W3 -> W4`) just to be safe: estimate impacted packages and files at a
-  high level (without reading code) and maximize parallelism in the DAG so multiple workers run concurrently, adding
-  `--after` only between tasks that directly target the same file or proto (Djinn already has merge conflict resolution
-  for minor overlaps). Large work is cut into small steps, each merged and green before the next starts. A task starts
-  from the integrated branch: never spawn while the wish's integration points at another branch (a quarantine), since a
-  task started there carries that branch into the next merge (W399 brought the replay sink's node_modules link into
-  feat/wails-go on 11/10). A conflict or a red merge is a signal to re-sequence, not only to correct.
+- **The Djinn owns the wish's DAG (W230, W340).** Before each spawn it reads what runs and what comes
+  (`djinn task list --wish-id <wish> --open --short`; `--status running --status pending` for precise states) and the
+  files that work touches (`djinn task overlaps <wish>`: a running, waiting or done-not-merged task's diff against its
+  merge-base with the branch it merges into, untracked files included; a planned task's write scopes, or "paths
+  unknown"; the pairs of tasks that touch the same files, generated files aside). `djinn wish brief` carries the same
+  overlaps in a short Overlaps section. At `djinn task spawn`, `djinn question launch` and `djinn plan launch`, Djinn
+  also checks the wish's open tasks not already ordered with the new task in the DAG (from their branch diffs,
+  `--write-scopes`, and the repository paths, packages and specs named in both prompts): when any may collide, the
+  answer names them with the reason (`diff: …`, `write-scopes: …`, `prompt: …`) and suggests
+  `djinn task depend <task> --after …`, and Djinn records the warning as a `status` event on the task; the spawn is
+  never refused so a repair can pass. Work on files an open task touches goes to that task (`djinn task update
+  <task> --prompt` while planned, `djinn task send` while it runs) or `--after` it, never beside it; the Djinn gives
+  `--write-scopes` when it knows the paths; big work is a chain of small steps, each merged and green before the next,
+  never a fan on the same packages, while work on other files runs side by side (never a naive line `W1 -> W2 -> W3`
+  just to be safe). A task starts from the integrated branch: never spawn while the wish's integration points at
+  another branch (a quarantine; W399 brought the replay sink's node_modules link into feat/wails-go on 11/10). A
+  conflict or a red merge is a signal to re-sequence, not only to correct. While a correction repairs the wish's branch
+  (a conflict, red checks, main's merge), Djinn starts no new worker of the wish in that project (`waits for W225 to
+  settle the conflict in feat/qol`): reviews, the urgent task and investigators aside, the running workers going on.
+  Corrections and reviews take a slot at once, pausing the lowest work task: never `djinn task start` them, and never
+  spawn around the hold.
 - **Watchers.** To wait on something outside, the Djinn spawns a watcher instead of polling:
   `djinn task spawn <wish> --title … --provider watch --prompt "<command>"` runs the command, with no agent, no model
   and no slot, and each new paragraph it prints wakes the Djinn. `--restart` starts again a command that exits on each
@@ -303,7 +372,7 @@ A worker is one agent process per task: Claude Code, Codex or Antigravity, in th
 Djinn runs, what a worker may do, and how each agent signs in: [`providers.md`](providers.md).
 
 Djinn reads each worker's stream into the same task events, stored with the task and streamed by
-`djinn task watch` (`--raw` adds the provider's own line):
+`djinn task watch` (`--raw` adds the provider's own line, `--last 5` starts at the last five events stored):
 
 | Event         | What it holds                                                    |
 | ------------- | ---------------------------------------------------------------- |
@@ -324,4 +393,6 @@ a model: every provider case is a recorded stream, replayed through the real pro
 The scheduler starts planned and resuming tasks in a strict 5-tier dispatch order (investigators and converters first,
 then corrections and reviews, resumed work tasks, work tasks unblocking others on the critical path, and other work tasks).
 When slots are full or memory is short, investigators preempt the lowest-priority work task: pausing it or interrupting
-it to resume later without spending a resume attempt. Details: [scheduler order and preemption](providers.md#the-schedulers-order-and-preemption).
+it to resume later without spending a resume attempt. On a full machine, corrections and reviews pause it the same way
+for its slot (W233). While a correction repairs a wish's integration branch, no new worker of the wish starts in that
+project (`dispatch.pushHeld`): reviews, urgent tasks and question workers aside. Details: [scheduler order and preemption](providers.md#the-schedulers-order-and-preemption).

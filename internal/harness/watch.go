@@ -8,12 +8,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
+
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/gen/go/plan/v1/planv1connect"
@@ -52,10 +56,23 @@ type Watch struct {
 	// Gap is the least time between two starts of a command that exits 0 at once, and between two starts of one
 	// that fails; 0 for one second.
 	Gap time.Duration
-	// Items ends a paragraph on an empty line too: each one is an item of an inbox source.
+	// Items ends a paragraph on an empty line too, and leaves the error output out of them: each one is an item of an
+	// inbox source.
 	Items bool
 	// Endless starts the command again however many times it dies in a row: an inbox source never gives up.
 	Endless bool
+	// Runs says the end of each run of the command, by an event with Ran: an inbox source keeps its last run.
+	Runs bool
+}
+
+// Ran is the end of a run of a watcher's command, on its event when Watch.Runs is set. The paragraphs of that run
+// came before it.
+type Ran struct {
+	// End is when it ended, or could not start.
+	End time.Time
+	// Err is why it failed: its exit code and the last lines of its error output, or why it could not start; nil
+	// when it exited 0.
+	Err error
 }
 
 // Watched is a paragraph a watcher's command printed, on its event; or, without a first line, the end of a command
@@ -170,12 +187,13 @@ func (w *watchWorker) Cgroup() string {
 	return w.proc.cgroup
 }
 
-// Pause stops the command where it is; between two runs, the next one waits.
+// Pause stops the command where it is; between two runs, the next one waits. A command that just ended, not yet
+// cleared (running), is between two runs.
 func (w *watchWorker) Pause() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.proc != nil {
-		if err := w.proc.Pause(); err != nil {
+		if err := w.proc.Pause(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			return err
 		}
 	}
@@ -190,7 +208,7 @@ func (w *watchWorker) Resume() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.proc != nil {
-		if err := w.proc.Resume(); err != nil {
+		if err := w.proc.Resume(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			return err
 		}
 	}
@@ -245,6 +263,13 @@ func (w *watchWorker) loop() {
 		if w.finished.Load() {
 			w.res = Result{}
 			return
+		}
+		if w.c.Runs && w.ctx.Err() == nil {
+			ran := &Ran{End: time.Now()}
+			if died(res) {
+				ran.Err = errors.New(death(res, w.errs))
+			}
+			w.events <- Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Ran: ran}
 		}
 		if w.ctx.Err() != nil || !again {
 			w.res = res
@@ -346,6 +371,10 @@ func (w *watchWorker) read(p *process, next func(Result) bool) Result {
 				if len(w.errs) > watchErrLines {
 					w.errs = w.errs[1:]
 				}
+			}
+			if l.stderr && w.c.Items {
+				// An inbox source's error output makes no item: its run keeps the last lines, as why it failed.
+				continue
 			}
 			if text == "" {
 				if w.c.Items {
@@ -602,8 +631,14 @@ func (h *Harness) wakeLead(r *run, w *Watched, text string) {
 	if w.First == "" {
 		return
 	}
-	// A babysit's done line ends it, in any wish; a template's asks whether to grant the wish too.
+	// A babysit's done line ends it, in any wish, and says when its request was merged (a question may sleep until
+	// then); a template's asks whether to grant the wish too.
 	done := plan.DoneLineOf(r.task.GetBabysit().GetDoneWhen(), text) != ""
+	if done {
+		babysit := proto.CloneOf(r.task.GetBabysit()) // Replaced, never changed: a copy of the task taken before shares it.
+		babysit.DoneTime = timestamppb.New(h.now())
+		r.task.Babysit = babysit
+	}
 	if watched != nil {
 		grant, err := watched(ctx, r.task, text)
 		if err != nil {

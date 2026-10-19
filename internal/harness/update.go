@@ -11,16 +11,18 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
 
 // Update edits a task in place: only the fields given change, in one journaled transaction.
-// A task not started (planned, waiting) may change everything; a running or paused task may change its title only;
+// A task not started (planned, waiting) may change everything; a running or paused task may change its title and its
+// urgent mark only (one urgent repair and one urgent feedback task per wish, refuseSecondUrgent);
 // a finished task (done, failed, stopped, cut short) may change title, provider/model, prompt (for its next continue),
 // azima, and integration (none clears it, pending puts a done task's work back in line); never its dependencies once
-// it ran. An azima changes its title (renameAzima) or its branch (nameAzimaBranch) only.
+// it ran. An azima changes its title (renameAzima), its branch (nameAzimaBranch) or its rank (rankAzima) only.
 func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
 	h.answering.Lock()
@@ -28,9 +30,21 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 
-	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	task, running, err := h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
+	}
+	if req.Rank != nil {
+		if !plan.IsAzima(task) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"task %s is work: only an azima has a rank; its azima's rank orders it", task.GetCode()))
+		}
+		if req.Title != nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil || req.Urgent != nil || req.Feedback != nil ||
+			req.Branch != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--rank goes alone: rank an azima in a call of its own"))
+		}
+		return h.rankAzima(ctx, procedure, req, task)
 	}
 	if req.Branch != nil {
 		if !plan.IsAzima(task) {
@@ -38,14 +52,14 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 				"task %s is work: only an azima has a branch of its own; a work task's branch is Djinn's", task.GetCode()))
 		}
 		if req.Title != nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
-			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil {
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil || req.Urgent != nil || req.Feedback != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--branch goes alone: name an azima's branch in a call of its own"))
 		}
 		return h.nameAzimaBranch(ctx, procedure, req, task)
 	}
 	if task.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		if req.Title == nil || req.Prompt != nil || req.Provider != nil || req.Model != nil || req.PartOf != nil || req.After != nil ||
-			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil {
+			req.Decision != nil || req.MaxBudgetUsd != nil || req.WriteScopes != nil || req.Integration != nil || req.Urgent != nil || req.Feedback != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"task %s is an azima of the plan: no worker runs it; only its title, or its branch, changes", task.GetCode()))
 		}
@@ -62,13 +76,14 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	budgetGiven := req.MaxBudgetUsd != nil
 	scopesGiven := req.WriteScopes != nil
 	integrationGiven := req.Integration != nil
+	urgentGiven := req.Urgent != nil || req.Feedback != nil
 
-	if !titleGiven && !promptGiven && !providerGiven && !modelGiven && !partOfGiven && !afterGiven && !decisionGiven && !budgetGiven && !scopesGiven && !integrationGiven {
+	if !titleGiven && !promptGiven && !providerGiven && !modelGiven && !partOfGiven && !afterGiven && !decisionGiven && !budgetGiven && !scopesGiven && !integrationGiven && !urgentGiven {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("nothing to update: give at least one field"))
 	}
 
 	if task.GetProvider() == planv1.Provider_PROVIDER_WATCH {
-		if providerGiven || modelGiven {
+		if providerGiven || modelGiven || req.GetUrgent() || req.GetFeedback() {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is a watcher: no agent runs it", task.GetCode()))
 		}
 	}
@@ -80,9 +95,6 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		}
 	}
 
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
 	s := task.GetStatus()
 	if running && s != planv1.TaskStatus_TASK_STATUS_PAUSED {
 		s = planv1.TaskStatus_TASK_STATUS_RUNNING
@@ -135,7 +147,16 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		}
 	}
 	if req.Model != nil {
-		t.Model = *req.Model
+		if req.Provider == nil && *req.Model != "" {
+			if inferred := plan.ProviderForCircleModel(*req.Model); inferred != planv1.Provider_PROVIDER_UNSPECIFIED && inferred != t.GetProvider() {
+				return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("model %q belongs to %s, not %s", *req.Model, short(inferred), short(t.GetProvider())))
+			}
+		}
+		norm, err := plan.ValidateTaskModel(t.GetProvider(), *req.Model)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		t.Model = norm
 	} else if providerChanged || foreignModel(t.GetProvider(), t.GetModel()) {
 		t.Model = DefaultModel(t.GetProvider())
 	}
@@ -197,6 +218,26 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		return nil, plan.Status(err)
 	}
 
+	if urgentGiven {
+		// --feedback marks it urgent for feedback, or takes the mark off; --urgent alone marks it a repair. --feedback=false
+		// alone leaves a repair's mark: it takes off only the mark it names.
+		switch {
+		case req.Urgent == nil && !req.GetFeedback():
+			t.Urgent, t.Feedback = t.GetUrgent() && !t.GetFeedback(), false
+		default:
+			t.Urgent, t.Feedback = req.GetUrgent() || req.GetFeedback(), req.GetFeedback()
+		}
+		if t.GetUrgent() && !dispatch.Urgent(t) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition,
+				fmt.Errorf("task %s is %s: only a task to run or running may be urgent", task.GetCode(), short(task.GetStatus())))
+		}
+		if t.GetUrgent() {
+			if err := refuseSecondUrgent(tasks, t); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	newDeps := t.GetDependsOn()
 	if afterGiven {
 		deps, err := resolveIn(tasks, req.GetAfter(), "dependency")
@@ -246,7 +287,7 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 			}
 		}
 		if partOfGiven && newAzima != "" && task.GetPartOf() != newAzima {
-			if err := reopenAzima(ctx, tx, newAzima, task.GetCode()+" grouped"); err != nil {
+			if err := reopenAzima(ctx, tx, newAzima, task, "grouped"); err != nil {
 				return err
 			}
 		}
@@ -268,6 +309,14 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 		return nil, plan.Status(err)
 	}
 
+	if urgentGiven && t.GetUrgent() {
+		// A running worker marked urgent stays beyond the slots: the load bar never pauses it (enforceNotchCapacity).
+		h.mu.Lock()
+		if r := h.runs[id]; r != nil {
+			r.forced = true
+		}
+		h.mu.Unlock()
+	}
 	h.notify()
 	h.wake()
 	if integrationGiven {
@@ -281,10 +330,30 @@ func (h *Harness) Update(ctx context.Context, procedure string, req *planv1.Task
 	if err := plan.FillTilasms(ctx, h.store, filled); err != nil {
 		return nil, plan.Status(err)
 	}
-	if p, err := lastPrompt(ctx, h.store, t.GetId()); err == nil {
-		filled[0].Prompt = p
+	if err := plan.FillPrompts(ctx, h.store, filled); err != nil {
+		return nil, plan.Status(err)
 	}
 	return filled[0], nil
+}
+
+// refuseSecondUrgent refuses to mark t urgent while another task of its wish is of its class (dispatch.UrgentOf),
+// naming it: one urgent repair and one urgent feedback task at a time, or none passes the queue.
+func refuseSecondUrgent(tasks []*planv1.Task, t *planv1.Task) error {
+	if dispatch.Investigation(t) {
+		return connect.NewError(connect.CodeInvalidArgument,
+			errors.New("an investigation is served first already: --urgent and --feedback are for work"))
+	}
+	if o := dispatch.UrgentOf(tasks, t.GetWishId(), t.GetId(), t.GetFeedback()); o != nil {
+		if t.GetFeedback() {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+				"%s (%s) is urgent for feedback already: one urgent feedback task per wish at a time; take its mark off first: djinn task update %s --feedback=false",
+				o.GetCode(), o.GetTitle(), o.GetCode()))
+		}
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+			"%s (%s) is urgent already: one urgent repair per wish at a time (a feedback task may be urgent beside it); take its mark off first: djinn task update %s --urgent=false",
+			o.GetCode(), o.GetTitle(), o.GetId()))
+	}
+	return nil
 }
 
 // pendAgain puts the work of task, done without an integration record, back in line to be merged in t, its copy: as
@@ -342,4 +411,250 @@ func (h *Harness) renameAzima(ctx context.Context, procedure string, req *planv1
 	}
 	h.notify()
 	return h.withAzima(ctx, t)
+}
+
+// UpdateModels changes the provider and model of every open task that calls a model (work, investigations,
+// corrections, reviews, enlighten workers) and the defaults for future spawns, skipping watchers and finished
+// tasks. Dry run by default; applied when req.GetYes() is true. Running tasks change at their next start, or
+// now when req.GetNow() is true.
+func (h *Harness) UpdateModels(ctx context.Context, procedure string, req *planv1.TaskServiceUpdateModelsRequest) (*planv1.TaskServiceUpdateModelsResponse, error) {
+	if req.GetWishId() != "" && req.GetProjectId() != "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("give at most one of --wish-id or --project-id"))
+	}
+	if req.GetWishId() != "" {
+		if _, err := store.Get[*planv1.Wish](ctx, h.store, req.GetWishId()); err != nil {
+			return nil, plan.Status(err)
+		}
+	}
+	if req.GetProjectId() != "" {
+		if _, err := store.Get[*planv1.Project](ctx, h.store, req.GetProjectId()); err != nil {
+			return nil, plan.Status(err)
+		}
+	}
+
+	p := req.GetProvider()
+	rawModel := strings.TrimSpace(req.GetModel())
+	if p == planv1.Provider_PROVIDER_UNSPECIFIED && rawModel != "" {
+		p = plan.ProviderForCircleModel(rawModel)
+	}
+	if p == planv1.Provider_PROVIDER_UNSPECIFIED || p == planv1.Provider_PROVIDER_WATCH {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("give --provider (claude, codex or antigravity) or a known --model"))
+	}
+	if _, ok := h.providers[p]; !ok && !plan.ValidWorkerProvider(p) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("provider %s is not available", short(p)))
+	}
+
+	var model string
+	if rawModel != "" {
+		if inferred := plan.ProviderForCircleModel(rawModel); inferred != planv1.Provider_PROVIDER_UNSPECIFIED && inferred != p {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("model %q belongs to %s, not %s", rawModel, short(inferred), short(p)))
+		}
+		norm, err := plan.ValidateTaskModel(p, rawModel)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		model = norm
+	}
+	if model == "" {
+		model = DefaultModel(p)
+	}
+
+	where := store.Where{}
+	if id := req.GetWishId(); id != "" {
+		where["wish_id"] = id
+	}
+	tasks, err := store.List[*planv1.Task](ctx, h.store, where)
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+	if projectID := req.GetProjectId(); projectID != "" {
+		wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
+		if err != nil {
+			return nil, plan.Status(err)
+		}
+		wishInProject := make(map[string]bool)
+		for _, w := range wishes {
+			if slices.Contains(w.GetProjectIds(), projectID) {
+				wishInProject[w.GetId()] = true
+			}
+		}
+		tasks = slices.DeleteFunc(tasks, func(t *planv1.Task) bool {
+			return t.GetProjectId() != projectID && !wishInProject[t.GetWishId()]
+		})
+	}
+
+	var (
+		updated      []*planv1.Task
+		skipped      []*planv1.Task
+		changedIDs   []string
+		runningCount int
+	)
+
+	for _, task := range tasks {
+		if plan.IsAzima(task) || !openTask(task) {
+			continue
+		}
+		if watching(task) || dispatch.Ifrit(task) {
+			skipped = append(skipped, shortModelTask(task))
+			continue
+		}
+
+		h.mu.Lock()
+		r := h.runs[task.GetId()]
+		h.mu.Unlock()
+		isRunning := r != nil || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING || task.GetStatus() == planv1.TaskStatus_TASK_STATUS_PAUSED
+		if isRunning {
+			runningCount++
+		}
+
+		cp := proto.CloneOf(task)
+		currentProvider := task.GetProvider()
+		if currentProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+			currentProvider = planv1.Provider_PROVIDER_CLAUDE
+		}
+		hasRun := isRunning || task.GetStartTime() != nil || task.GetSessionId() != "" || task.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING
+		providerChanged := p != currentProvider || task.GetProvider() != p
+		cp.Provider = p
+		cp.Model = model
+		if providerChanged {
+			changedIDs = append(changedIDs, cp.GetId())
+			if hasRun {
+				cp.PriorProvider = currentProvider
+				cp.SessionId = ""
+			}
+			if !isRunning && cp.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && cp.GetResumeAfter() != nil {
+				cp.ResumeAfter = nil
+				cp.WaitReason = ""
+			}
+		}
+		updated = append(updated, cp)
+	}
+
+	shortUpdated := make([]*planv1.Task, len(updated))
+	for i, cp := range updated {
+		shortUpdated[i] = shortModelTask(cp)
+	}
+
+	var defaults []*planv1.WorkerSeat
+	if !req.GetYes() {
+		defaults = plan.PreviewWorkerDefaults(p, model)
+		runDetail := fmt.Sprintf("%d running", runningCount)
+		if runningCount > 0 {
+			if req.GetNow() {
+				runDetail = fmt.Sprintf("%d running: would restart now", runningCount)
+			} else {
+				runDetail = fmt.Sprintf("%d running: at next start", runningCount)
+			}
+		}
+		note := fmt.Sprintf("dry run: %d open task(s) would change to %s (%s) (%s, %d skipped) and defaults for future spawns; pass --yes to apply",
+			len(updated), short(p), model, runDetail, len(skipped))
+		return &planv1.TaskServiceUpdateModelsResponse{
+			Text:     note,
+			DryRun:   true,
+			Provider: p,
+			Model:    model,
+			Tasks:    shortUpdated,
+			Skipped:  skipped,
+			Circle:   defaults,
+		}, nil
+	}
+
+	defaults, err = plan.UpdateWorkerDefaults(h.home, p, model)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	h.mu.Lock()
+	for _, cp := range updated {
+		if r := h.runs[cp.GetId()]; r != nil {
+			r.nextProvider = p
+			r.nextModel = model
+		}
+	}
+	h.mu.Unlock()
+
+	err = h.store.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal(plan.CallerActor(ctx), procedure, req); err != nil {
+			return err
+		}
+		for _, cp := range updated {
+			if err := tx.Put(cp); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, plan.Status(err)
+	}
+
+	for _, id := range changedIDs {
+		h.clearRateHits(id)
+	}
+
+	if req.GetNow() {
+		why := fmt.Sprintf("switched to %s (%s)", short(p), model)
+		var dones []chan struct{}
+		h.mu.Lock()
+		for _, cp := range updated {
+			if r := h.runs[cp.GetId()]; r != nil {
+				r.preemptedWhy = why
+				r.stopping = true
+				if pauser, ok := r.worker.(Pauser); ok && r.paused {
+					_ = pauser.Resume()
+				}
+				if r.worker != nil {
+					r.worker.Stop()
+				}
+				dones = append(dones, r.done)
+			}
+		}
+		h.mu.Unlock()
+		for _, done := range dones {
+			select {
+			case <-done:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+
+	h.notify()
+	h.wake()
+
+	runDetail := fmt.Sprintf("%d running", runningCount)
+	if runningCount > 0 {
+		if req.GetNow() {
+			runDetail = fmt.Sprintf("%d running: restarted now", runningCount)
+		} else {
+			runDetail = fmt.Sprintf("%d running: at next start", runningCount)
+		}
+	}
+	note := fmt.Sprintf("updated %d open task(s) to %s (%s) (%s, %d skipped) and defaults for future spawns",
+		len(updated), short(p), model, runDetail, len(skipped))
+	return &planv1.TaskServiceUpdateModelsResponse{
+		Text:     note,
+		DryRun:   false,
+		Provider: p,
+		Model:    model,
+		Tasks:    shortUpdated,
+		Skipped:  skipped,
+		Circle:   defaults,
+	}, nil
+}
+
+func shortModelTask(t *planv1.Task) *planv1.Task {
+	return &planv1.Task{
+		Id:            t.GetId(),
+		Code:          t.GetCode(),
+		WishId:        t.GetWishId(),
+		ProjectId:     t.GetProjectId(),
+		Title:         t.GetTitle(),
+		Status:        t.GetStatus(),
+		Kind:          t.GetKind(),
+		Role:          t.GetRole(),
+		Provider:      t.GetProvider(),
+		Model:         t.GetModel(),
+		PriorProvider: t.GetPriorProvider(),
+	}
 }

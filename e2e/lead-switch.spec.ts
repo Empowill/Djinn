@@ -1,11 +1,18 @@
-// One lead for every wish, against the real djinn up --browser (see global-setup.ts): Lead, on any wish, brings the
-// same lead's terminal and focuses it on that wish; switching the wish shown leaves that terminal as it is, and no
-// terminal starts by itself. The lead is a fake claude on djinn's PATH that says how it was called, then repeats what
-// it reads.
-import { expect, test, type Page } from "@playwright/test";
+// One lead for every wish, against the real djinn up --browser (see global-setup.ts): djinn lead resume --wish-id from
+// the command line shows the wish and resumes the one lead in its terminal, focused on that wish; Talk to the Djinn on
+// another wish brings the same lead's terminal and focuses it on that wish; switching the wish shown leaves that
+// terminal as it is, and no terminal starts by itself. The lead is a fake claude on djinn's PATH that says how it was
+// called, then repeats what it reads.
+import { expect, test, type Page } from "./test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { dropLead, leadFolder, leadRows as rows, setLead } from "./lead";
+import {
+  dropLead,
+  dropTerminalLead,
+  leadFolder,
+  leadRows as rows,
+  setLead,
+} from "./lead";
 
 const binary = path.resolve(
   __dirname,
@@ -27,20 +34,26 @@ function wish(title: string) {
 
 // lead clicks Talk to the Djinn at the top of the wish shown.
 async function lead(page: Page) {
-  await page
+  const button = page
     .locator(".topbar-actions")
-    .getByRole("button", { name: "Talk to the Djinn", exact: true })
-    .click();
+    .getByRole("button", { name: "Talk to the Djinn", exact: true });
+  await expect(button).toHaveAttribute(
+    "title",
+    "Opens the Djinn's terminal, focused on this wish",
+  );
+  await button.click();
 }
 
 test.skip(process.platform === "win32", "the fake claude is a shell script");
 
 const made: string[] = [];
-// The next specs find room for their wishes, and no lead running.
-test.afterAll(async () => {
-  for (const id of made) djinn("wish", "delete", id);
+test.beforeEach(dropTerminalLead);
+// The next specs find room for their wishes, and no lead running: after each test, before the fixture of e2e/test.ts
+// reads the place.
+test.afterEach(async () => {
+  await dropLead();
+  for (const id of made.splice(0)) djinn("wish", "delete", id);
 });
-test.afterEach(dropLead);
 
 test("Lead on each wish focuses the one lead on it, whatever wish is shown", async ({
   page,
@@ -68,11 +81,13 @@ test("Lead on each wish focuses the one lead on it, whatever wish is shown", asy
   // No terminal starts by itself.
   await expect(command).toHaveCount(0);
 
-  // Lead on Brass: the lead resumes on its session, told to focus on Brass.
-  await page.locator(".wish-nav", { hasText: "Brass lamp" }).click();
-  await lead(page);
+  // djinn lead resume on Brass: the page shows Brass and the lead resumes on its session, told to focus on Brass.
+  const resumed = djinn("lead", "resume", "--wish-id", brass);
+  expect(resumed).toContain("terminal: lead");
+  await expect(page.locator(".hero h1")).toHaveText("Brass lamp");
   await expect(command).toContainText(`claude --resume ${session}`);
   await expect(rows(page, started)).toHaveCount(1);
+  // Typed in the lead, so echoed, then read after Enter: the fake lead says it again.
   await expect(
     rows(page, `Focus on the wish Brass lamp (${brass})`),
   ).toHaveCount(2);

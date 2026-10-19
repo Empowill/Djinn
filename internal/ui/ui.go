@@ -26,6 +26,7 @@ import (
 	"github.com/empowill/djinn/gen/go/ui/v1/uiv1connect"
 	"github.com/empowill/djinn/internal/link"
 	"github.com/empowill/djinn/internal/logx"
+	"github.com/empowill/djinn/internal/plan"
 )
 
 // Service implements uiv1connect.UiServiceHandler.
@@ -44,8 +45,9 @@ type Service struct {
 	// Window tells that Raise brings a native window to the front.
 	Window bool
 	// Restart restarts Djinn on the newer one that waits at its path, once the response to Update is sent, and
-	// returns the version it restarts on and how many terminals it will run again. Nil: Update is unavailable.
-	Restart func() (version string, terminals int, err error)
+	// returns the version it restarts on and how many terminals it will run again; by names who asked, for the log
+	// of the stop (StopBy). Nil: Update is unavailable.
+	Restart func(by string) (version string, terminals int, err error)
 	// AgentPath is the PATH where GetEnvironment looks for the agents, and nowhere else. Nil: Djinn's own, brought
 	// up to date by machine.ExtendPath, which the workers and the leads get too. Tests replace it.
 	AgentPath func() string
@@ -81,6 +83,8 @@ type Service struct {
 	Known func(ctx context.Context, wishID string) bool
 	// Notices shows the system notifications, and knows whether the system lets it. Nil: none (a test).
 	Notices *Notices
+	// Touched says that the developer is there (harness.Presence): it keeps the ifrits lit. Nil: nothing.
+	Touched func()
 
 	dialogs sync.Mutex // One folder dialog at a time.
 
@@ -297,10 +301,11 @@ func (s *Service) GetEnvironment(
 		res.Shortcut = s.Shortcuts.State()
 	}
 	if req.Msg.GetAgents() {
+		accounts := plan.ReadAccounts(s.Home)
 		if s.AgentPath != nil {
-			res.Providers = checkAgents(ctx, s.AgentPath())
+			res.Providers = checkAgents(ctx, s.AgentPath(), accounts)
 		} else {
-			res.Providers = checkAgents(ctx, launchPath())
+			res.Providers = checkAgents(ctx, launchPath(), accounts)
 		}
 	} else {
 		for _, p := range providers {
@@ -655,7 +660,7 @@ func (s *Service) Update(
 	if s.Restart == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this djinn cannot update itself"))
 	}
-	version, terminals, err := s.Restart()
+	version, terminals, err := s.Restart(StopBy(ctx, req.Header(), installed != ""))
 	if err != nil {
 		s.setInstalling(nil)
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
@@ -702,14 +707,9 @@ func (s *Service) WatchShow(
 ) error {
 	ch, show, stop := s.watchShows(ctx)
 	defer stop()
-	// The headers go out at once: the window knows it is watching before anything is asked.
-	if err := stream.Send(nil); err != nil {
+	// The headers go out at once (with the replayed show if any): the window knows it is watching before anything is asked.
+	if err := stream.Send(show); err != nil {
 		return err
-	}
-	if show != nil {
-		if err := stream.Send(show); err != nil {
-			return err
-		}
 	}
 	for {
 		select {
@@ -830,5 +830,18 @@ func (s *Service) View(
 	if s.Notices != nil {
 		s.Notices.View(req.Msg.GetWishId())
 	}
+	// The theme the page shows, for the driven lead's tone: the last page to say it wins.
+	if err := plan.SetShownTheme(s.Home, req.Msg.GetTheme()); err != nil {
+		logx.L().Warn("keep the theme shown", "err", err)
+	}
 	return connect.NewResponse(&uiv1.UiServiceViewResponse{}), nil
+}
+
+func (s *Service) Touch(
+	context.Context, *connect.Request[uiv1.UiServiceTouchRequest],
+) (*connect.Response[uiv1.UiServiceTouchResponse], error) {
+	if s.Touched != nil {
+		s.Touched()
+	}
+	return connect.NewResponse(&uiv1.UiServiceTouchResponse{}), nil
 }

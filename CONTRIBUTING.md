@@ -51,7 +51,7 @@ Each one is a decision. Changing one is a discussion first.
   one agent's own (`.claude/settings.json`) follows from `.agents/`, and a test checks it.
 - **The lead's memory lives in Djinn.** How to lead, learnt from past wishes, is kept in [`lead/notes/`](lead/README.md),
   one note per file, built into the binary and read only at run time, for any lead whatever its agent. The brief
-  lists them; `djinn lead notes <name>` prints one. A note changes by pull request, like any doc.
+  lists them; `djinn lead notes <name>` prints one, `djinn lead notes a,b` or `--all` several. A note changes by pull request, like any doc.
 - **Auto mode by default.** Agents run in their own auto mode, trusted as their providers
   document it.
 - **A worker's rights come from where it runs.** Outside any project: read only. In a project:
@@ -63,10 +63,11 @@ Each one is a decision. Changing one is a discussion first.
 - **Heavy runs take a gate.** Workers share one machine: tests, e2e, code generation and builds run
   through the running Djinn, one at a time: `djinn gate run <name> -- go tool task test`. `.agents/`
   allows no heavy command directly; light ones (`lint`, `test-pkg` on a package) run as they are.
-- **Workers never commit.** A worker edits its worktree; `.agents/` gives it no `git commit` and no
-  `git push`. Djinn commits each task's work as it ends, tested, and pushes the branch on a cadence: one CI
-  run per push instead of one per worker. Only the review and correction workers Djinn starts by itself commit, in
-  their worktree ([integration](docs/team-settings.md#integration)); Djinn commits nothing blindly.
+- **Workers commit, never push.** A worker commits its work in its worktree before it ends, in the repository's
+  style, and leaves nothing not committed; Djinn commits nothing for it. Djinn merges each task's commits as it ends,
+  checked, and pushes the branch on a cadence: one CI run per push instead of one per worker. What a worker leaves
+  not committed is not merged: a review worker sorts it out ([integration](docs/team-settings.md#integration)).
+  `git push` fails for every worker.
 - **Two words from the theme, no more.** You make a *wish*; you *summon* a skill. Everything
   else is plain.
 - **Names ignore case.** Two names that differ only by case are one name.
@@ -128,14 +129,24 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 - Task, buf and the protobuf generators come with the Go module.
 
 **Everyday commands** (`go tool task --list` for all)
-- `go tool task test`: every test (Go, interface, end-to-end). Parts: `test-go`, `test-ui`, `e2e`;
-  `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` fails on any Go test over 10 s on Linux,
-  the reference, and over 15 s elsewhere, where a process costs ten times more and a test over 10 s is only reported
-  (`tools/slowtests`): a fake clock, a short tick, a wait on an event, never a sleep that waits for luck.
+- `go tool task test`: every test (Go, interface, end-to-end), the three parts at once (`tools/testall`), each
+  writing its output to `test-results/<part>.log`: a green part's output prints as it ends, a red one's at the end,
+  and the last line names the parts that failed. Parts: `test-go`, `test-ui`, `e2e`;
+  `test-pkg -- -run TestX ./cmd/djinn` for some packages. `test-go` alone fails on any Go test over 10 s on Linux,
+  the reference measure; beside the other parts (`test`, where the browsers share the cores), on CI, or elsewhere
+  (15 s), a test over 10 s is reported and fails only over twice the limit (`tools/slowtests`): a fake clock, a short
+  tick, a wait on an event, never a sleep that waits for luck.
   `slowtests` watches the suite's total time (sum and wall clock) against a repository baseline
   (`tools/slowtests/baseline.json`), warning without failing if the total grows past the baseline by over 25%
-  (update with `go run ./tools/slowtests -update-baseline`). The `e2e` suite watches its wall clock against
+  (update with `go run ./tools/slowtests -update-baseline`). Its last line names the tests that failed: a red
+  push check keeps only the end of the output. The `e2e` suite watches its wall clock against
   `e2e/baseline.json` similarly (update with `UPDATE_BASELINE=1`).
+  - **One djinn per Playwright worker.** `e2e/global-setup.ts` starts as many `djinn up --browser` as workers, a
+    data folder each; a worker's specs share theirs, in the order Playwright gives them. Three workers on a
+    developer's machine, two on CI (`DJINN_E2E_WORKERS` or `-- --workers N` moves it). A spec imports `test` and
+    `expect` from `e2e/test.ts`: its fixture fails a test that leaves an active wish it made or an open question it
+    asked, pausing or withdrawing them for the specs after. A spec makes its own state (`djinn wish make --json`
+    through `bin/djinn-e2e`) and deletes or pauses it before it ends.
   - **Windows runs what targets the system.** Linux and macOS run every test; the Windows job sets
     `DJINN_TEST_SYSTEM_ONLY=1`, which skips the tests marked portable: `testx.Portable(t)` first in a Go test
     (`internal/testx`), `portable()` in an end-to-end spec (`e2e/portable.ts`). Mark a test portable when it pays
@@ -144,7 +155,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
     the interface alone. Never mark one that reaches what differs on Windows: a `_windows.go` file or a
     `runtime.GOOS` branch, processes and their stop, paths and worktrees, the terminal, the command line's files.
     A test that costs nothing stays unmarked: it runs everywhere. Two portable tests stay unmarked as Windows'
-    smoke of that logic, end to end: `TestCommitEachTaskAlone` (the integration) and `TestDependsOn` (the
+    smoke of that logic, end to end: `TestCommitABatch` (the integration) and `TestDependsOn` (the
     scheduler). `DJINN_TEST_SYSTEM_ONLY=1 go tool task test` runs on any system what Windows runs.
 - `go tool task test-race`: the Go tests under the race detector (needs CGO); `-- <go test arguments>` narrows it.
 - A wish of real size, to measure on before optimizing: `internal/testx/bigwish` makes it, the same bytes every time,
@@ -155,23 +166,34 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
     to open the wish, switch tabs, show a change arriving) against millisecond budgets. A story that touches the window
     (interface under the UI folder, the stream it reads, the server calls it makes) runs this spec before it ends;
     other stories do not. Kept out of the default `go tool task e2e` run.
+  - **Time budgets:** the cases tagged `@budget` hold the window to milliseconds (the Grimoire's scroll, a key in the
+    terminal, a note typed on a question, a long diff's chunks). Other workers' load fails them whatever the change,
+    so the default run and the push check leave them out. A story that touches what one measures runs it on a quiet
+    machine: `go tool task e2e -- --grep @budget`, or its spec named alone (`go tool task e2e -- e2e/docs.spec.ts`),
+    which runs its budget too.
   - **The creation page's smoke:** the cases tagged `@solver` run its WebGL2 solver, which takes about a minute to
     show glyphs on the software WebGL2 of a headless browser; `go tool task e2e -- e2e/wish-composer.spec.ts --grep
     @solver` (or `e2e/theme.spec.ts`) runs them, the default run leaves them out. A story that changes the smoke runs
     them, and `go tool task e2e-native -- -run TestNativeSmokeGeometry` on the native window.
-- `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it. `go tool task format` fixes what
-  can be.
+- `go tool task lint`: every check (protos, Go, types, formatting), as CI runs it, with the Go and interface checks
+  running side by side. `go tool task format` fixes what can be.
   - Go: [golangci-lint](.golangci.yml), pinned in its own module (`tools/golangci/go.mod`): nothing to install. It
     formats (gofmt) and runs vet with the linters, on the headless build and on cmd/djinn with the `mcp` tag.
   - Interface: [ESLint](eslint.config.mjs) (typescript-eslint, @eslint-react, the rules of hooks); `tsc` checks the
-    types, Prettier owns the layout.
+    types, Prettier owns the layout. `tsc` keeps what it checked in `node_modules/.cache/tsc` (`tsBuildInfoFile`,
+    shared with the build's `tsc -b`); ESLint and Prettier keep theirs outside `node_modules` in the system temp
+    folder, keyed by project and content so every worktree shares them and `npm ci` never wipes them.
 - `go tool task gen`: code from the protos, and the descriptors the command line embeds.
-- `go tool task docs`: the documentation site, its concepts and its command line, into `bin/docs` (open
-  `bin/docs/index.html`, offline). Its sources are in [`docs/site`](docs/site); `djinn up` serves it at `/docs/`, and
-  the settings open it. The Command line tab has nothing to regenerate by hand: `djinn up` and `go tool task docs`
+- `go tool task docs`: the Grimoire, Djinn's documentation, into `bin/docs` (open `bin/docs/index.html`, offline):
+  its navigation on the left from the first view, beside it its splash page, then Introduction, a page per concept,
+  and the command line; each page is a script of its own, `pages/<slug>.js`, that the site loads when the page is
+  opened, the others in idle time. Its sources are in [`docs/site`](docs/site): one Markdown file per page in `docs/site/pages`, in
+  English and with no code (Djinn is used without code), each listed in `Nav` (`internal/docsite/grimoire.go`) with
+  its title's locale key; `TestNav` fails on a page missing from either, `TestPageHTML` on a page with code. `djinn up` serves it at `/docs/`, and
+  the side panel's Grimoire shows it as a page of the window, its navigation in the window's language. The Command line tab has nothing to regenerate by hand: `djinn up` and `go tool task docs`
   fill it from the command tree djinn is built from (`internal/cli`), so a method added to a proto, or a flag, is
   there at once. A command written by hand in `cmd/djinn` takes its entry in `cli.Builtins`, which is its `--help`
-  too; `TestEveryCommandIsDocumented` fails on one that runs without it.
+  too; `TestHandwritten` fails on one that runs without it.
 - `go tool task build`: the `dev` binary, `bin/djinn`. Then `bin/djinn up`.
 - `go tool task dev`: the page reloads as you edit React, djinn rebuilds and restarts as you edit Go; in the browser,
   on its own data (`bin/dev-home`). Open the URL it prints.
@@ -196,6 +218,8 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 - Three wishes are active at most; the others wait, paused. `djinn wish pause <wish-id>` sets one aside and stops its
   workers; `djinn wish activate <wish-id>` takes it back, its workers resumed, in the last place (three being active,
   the third wish is paused); `djinn wish move <wish-id> --to 1` gives one priority, active or not;
+  `djinn wish reorder <wish-id> --to 1` puts a paused or granted one first in its list, which a wish paused or granted
+  enters first;
   `djinn wish grant <wish-id>` says it is done; `djinn wish delete <wish-id>` deletes it with its tasks,
   closes its lead's terminal and removes the worktrees with no work of their own (branches all stay).
   `djinn wish allow <wish-id> --mode edit|auto|none` sets what its workers may do in a project.
@@ -203,9 +227,14 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   on; `djinn task stop` works on a paused one. A worker that holds or waits for a gate is not paused. The buttons on
   its card in the window do the same. Not on Windows yet.
 - A planned task that waits for the machine alone (no slot free, or the machine under pressure) says so in the window,
-  with "Start anyway"; `djinn task start <task-id>` does the same. It never jumps a usage limit, a push hold or a
-  task that goes first. On macOS, the system's memory pressure holds workers back at warning on the Minimal notch,
-  at critical only from Medium up.
+  with "Start anyway"; `djinn task start <task-id>` does the same, and passes a usage limit hold too. It never jumps a
+  push hold or a task that goes first. On macOS, the system's memory pressure holds workers back at warning on the
+  Minimal notch, at critical only from Medium up.
+- The lead marks the one task that unblocks a wish urgent (`djinn task spawn --urgent`,
+  `djinn task update <task-id> --urgent`, `--urgent=false` to take it off): it goes before every planned task, takes
+  a slot whatever the machine, as `djinn task start` does, and starts while the push checks are red, to repair the
+  branch once its corrections gave up. One urgent task per wish while it is to run or runs: a second is refused,
+  naming the first. The window labels it Urgent.
 - In a project whose settings name its checks ([`docs/team-settings.md`](docs/team-settings.md#checks)), Djinn
   integrates finished work by itself: as each task ends, alone, it merges the task's branch in a worktree of its own
   (made ready by the `setup` command, again when a lock file changes), makes the generated files again on a conflict
@@ -232,7 +261,9 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   naming it.
 - The plan of a wish is a graph of azimas (`T07`): tasks no worker runs, which work is part of. `djinn task spawn …
   --part-of T07` spawns work in one, `djinn task group <task-id> --part-of T07` moves it, `djinn task spawn <wish>
-  --kind azima --title "…"` makes one. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes
+  --kind azima --title "…"` makes one, last in its wish's rank: `djinn task rank <azima> --top` (`--before T07`,
+  `--after T07`), `djinn task update <azima> --rank N`, or a drag in the Tasks tab ranks it, and the scheduler and
+  the gates serve the work of the first azimas first, within the wish's own rank. `djinn plan sync <wish-id>` reads them from the projects' `plan/*.md` and writes
   each one's `after:` back from the store ([T07](plan/8e8d3d76-orchestrator.md)). The Tasks tab groups work under its
   azima. One whose work is finished and whose file's unchecked "Done when" boxes all say `(needs: …)` awaits its
   proof ("Proof awaited"): a person, a machine, a release or a real model gives it, never a worker.
@@ -251,7 +282,10 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   (`tilasms/<id>/v<n>/`), never in a project; `--code L01` puts a new version of it. `djinn tilasm get L01` gives an
   agent its text and the folder of its files; `history`, `restore <version>`, `export` (a `.zip` with `tilasm.json`)
   and `import <zip> --wish <wish-id>` follow, and `djinn wish export` carries them. A tilasm holds 50 MiB at most.
-  `djinn talisman …` is the same command ([T25](plan/4a699d0f-review-at-a-glance.md)). Djinn serves each one's latest version at
+  `djinn talisman …` is the same command ([T25](plan/4a699d0f-review-at-a-glance.md)). `djinn tilasm publish L01`
+  puts its latest version on claude.ai, a private artifact of the developer's Claude account, by one short Claude call
+  under the `paid` gate, at the address of its last publish; its first publish is the developer's, from its row in the
+  window, once they checked it holds no personal data of a client. Djinn serves each one's latest version at
   `/tilasm/<id>/`, with a content security policy of its own: its scripts and files run, the network and Djinn stay
   out of reach. The wish's *Tilasms* tab lists them, opens one in a sandboxed frame, searches their titles and text,
   restores a version and exports one; a folder or a `.zip` dropped on it becomes a tilasm. The brief lists the wish's
@@ -262,7 +296,9 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   http: `--browser`, Windows), opens the app on it from a browser, a chat, a terminal or a Markdown file; so does
   `djinn://wish/<id>`. The system runs `djinn open <link>`, which hands it to the running Djinn, starting it when none
   runs; the window shows the wish's *Tilasms* tab on that tilasm, or says it does not know the link. `djinn tilasm
-  open L01` does the same. Inside the app, such a link in a block, a question, a decision or the brief opens in place.
+  open L01` does the same. Inside the app, such a link in a block, a question, a decision or the brief opens in place;
+  a tilasm's link in a question opens it full size over the view, which stays as it was, and closing it returns to
+  the link.
   The scheme is registered without sudo: on Linux `go tool task install` adds it to the menu entry
   (`MimeType=x-scheme-handler/djinn`, `xdg-mime default`); on macOS `Djinn.app` declares it (`CFBundleURLTypes`);
   on Windows the install, or else `djinn up`, writes it in the user's registry (`HKCU\Software\Classes\djinn`).
@@ -272,7 +308,8 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   time, peak memory, duration); `djinn command list [--project <name>]` shows the costs. Held outside a running
   worker (a person's terminal, a lead, `djinn gate hold <name> --pid <pid>`), a gate takes a worker's slot, is
   measured when its process is known, and goes back once that process ends or after its timeout (an hour by default).
-  Next time, the gate waits until the machine has the memory the command peaked at. On Linux with a user systemd,
+  Next time, the gate waits until the machine has the memory the command peaked at. Djinn's own gates to merge or
+  push go before the others, and on a machine of more than one slot one is kept free for them (Q26). On Linux with a user systemd,
   each worker runs in a systemd user scope of its own (`djinn-<task code>-<uuid8>`), which stopping, pausing and
   measuring take whole, even a process that left its group; elsewhere `djinn up` says so once, and workers run in their
   process group. `djinn up --worker-cpu 150` caps each worker at 150% of a core, `--worker-memory 4096` at 4 GiB, where
@@ -290,7 +327,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
 - One lead, the Djinn, leads every wish, in the window's terminal tab "The Djinn". `djinn lead set <session-id> [--provider <agent>]
   [--directory <folder>]` records its session; `djinn lead get` shows it; `djinn lead resume` resumes it, starting
   Djinn if needed, and `--wish-id <wish-id>` shows the wish and focuses the lead on it (the wish's Talk to the Djinn button does the
-  same). A second `djinn up` brings the window to the front. `djinn lead tell "…" [--wish-id <wish-id>]` writes to the
+  same, the lead in its terminal; driven, Retry on a failed batch's line in the side journal). A second `djinn up` brings the window to the front. `djinn lead tell "…" [--wish-id <wish-id>]` writes to the
   lead in its terminal as if you typed it there, line breaks kept: it waits while you type there or a choice is on
   screen; about a wish, it starts with "About wish <title> (<id>):". It never starts the lead, nor types into a shell.
 - `djinn wish route "<request>" --wish-id <wish-id> --ask`: a request that is not about the wish becomes a card, without a
@@ -300,7 +337,7 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   `.agents/skills/babysit-pr` for a GitHub pull request, `.agents/skills/babysit-mr` for a GitLab merge request
   ([`docs/wish-templates.md`](docs/wish-templates.md)).
 - `djinn lead brief` (or `djinn brief`): every active wish at once and how to lead them, computed from the store; every
-  new lead, of any agent, starts by running it. `djinn wish brief <wish-id>`: where one wish stands, which the lead
+  new lead, of any agent, starts by running it; `--wishes` prints where the wishes stand without the rules. `djinn wish brief <wish-id>`: where one wish stands, which the lead
   reads when focused on it. `djinn wish describe <wish-id> --text "…"` gives the wish the few lines it opens with
   (also edited under the wish's title). `djinn lead resume --provider antigravity` (or the arrow beside Talk to the Djinn) starts a
   lead of another agent than the recorded one's.
@@ -312,14 +349,15 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   … --icon 🧱` give it its subject's emoji (one emoji); `djinn task spawn … --decision Q43` (a question's code, or a
   decision block's id) says which decision a task comes from. The window lists them in a "Decisions" tab, read only:
   who took each one (you, the lead, a worker) and the tasks it led to; the page and the brief follow.
-- An answer goes to the wish's lead (or to the principal lead), which turns the decision into tasks itself (`--decision Q43`),
+- An answer goes to the lead, which turns the decision into tasks itself (`--decision Q43`),
   placing them in the graph; "Enlighten me" starts an investigator, "Q43: enlighten", which revises the question. Investigators read,
   take a slot like any agent (on a full machine, the newest work task's, paused until they end), and tell the lead what they did. `enlighten_workers: false` in a project's settings ([`docs/team-settings.md`](docs/team-settings.md))
   or `djinn up --enlighten-workers=false` turns them off. A worker's `djinn block put`, `question ask` and `revise` name its task from
   `$DJINN_TASK_ID`: the decision log says "By W12".
 - An open question is blocking when a task waits for its answer, red; `djinn question ask … --before "before the merge"`
   makes it orange under those words; without them it can wait, grey. `djinn question revise … --before …` changes them,
-  `--before ""` lets it wait. Everywhere, blocking comes first, then before X, then can wait.
+  `--before ""` lets it wait. Everywhere, blocking comes first, then before X, then can wait. The bar of what waits
+  for you lists only the questions that cannot wait (`holdsUp` in `src/data/flight.ts`), never one that can.
 - With the window, what waits for you in an active wish shows as a system notification: a question (a button
   answers it), a task that waits or failed, a wish ready to review; a click shows the wish there. None for the wish
   the window shows while it is in front. A new inbox item shows as one too, and the side panel counts the new ones on
@@ -331,11 +369,30 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   "Djinn e2e"). Opens a window a few seconds, so it is not in `test` ([T05](plan/b6a680bf-testing.md)).
 - Tests and CI build with `-tags headless`: no window, no CGO.
 
+## Writing tests
+
+- **Behaviour, data logic and real incidents only.** Write no new test for a small visual fix (padding, spacing, an
+  icon over a letter): check it by hand with dark and light shots, the lint and the existing tests.
+- **One test per function, beside its source.** Put `<file>_test.go` beside `<file>.go` (`tests/<component>.test.mjs`
+  in the interface), one `TestFunction` with its cases in a `t.Run` table (in `internal/harness`, scenarios under the
+  method they drive), `testx.Main(m)` and shared helpers in `testmain_test.go`, and package coverage at 80 % or more.
+- **Parallel, no sleep, under 2 s.** Use `t.Parallel()` (or comment why a test is serial), a fake clock, a short tick,
+  a wake or an event wait instead of sleeping, and a plain folder or in-process replay when Git or a subprocess is not
+  under test (`go test -race -count=3`; `tools/slowtests` fails `test-go` at 10 s on Linux, 2x beside `e2e` or on CI).
+- **Unit tests for data; clean e2e specs.** Check store, pagination and ordering in Go or `tests/data-*.test.mjs`. E2e
+  specs import `e2e/test.ts`, clean their place in `afterEach`, run one theme and scroll mode unless tested, gate
+  screenshot loops behind `*_SHOTS`, keep cadence checks in `@budget`, and never call a paid model
+  ([`docs/providers.md`](docs/providers.md)).
+
 ## How we work
 
 - **Tasks live in [`plan/`](plan/README.md)**, one file each. The README checklist is the only
   tracker.
 - **Every change is reviewed** by a maintainer.
+- **Every change carries its documentation.** A change to what Djinn does (a feature, a concept, a screen, a command,
+  a behaviour) updates the documentation site in the same change: its chapter or card in the Concepts tab of
+  [`docs/site/index.html`](docs/site/index.html), a new card for a new concept. The Command line tab follows the
+  command tree by itself, so a command's documentation is its proto comment or its `cli.Builtins` entry.
 - **How to release**: write the notes first, `docs/releases/vX.Y.Z.md`, with the
   [`release-notes`](.agents/skills/release-notes/SKILL.md) skill, which also gives the commands. From main, `go tool
   task release VERSION=vX.Y.Z` then `git push origin vX.Y.Z` opens a draft with every binary, published once read

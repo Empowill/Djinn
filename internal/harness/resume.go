@@ -100,6 +100,8 @@ func (h *Harness) queueInterrupted(ctx context.Context, tasks []*planv1.Task) (r
 			}
 			t = proto.CloneOf(t)
 			t.EnvReplays++
+			t.Resumes = 0
+			h.clearRateHits(t.GetId())
 			t.EnvBuild = h.version
 			t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", byEnvReplay, nil
 			ev := Event{
@@ -182,12 +184,30 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 	if r.limit != nil {
 		// The provider said so on a line of its own: what limit, and when it resets, to the second.
 		l.What = r.limit.What
-		if !r.limit.Until.IsZero() {
+		if r.limit.Model != "" {
+			l.Model = r.limit.Model
+		}
+		switch {
+		case !r.limit.Until.IsZero():
 			l.Until = r.limit.Until
+			l.PerMinute = false
+		case r.limit.PerMinute:
+			l.PerMinute = true
+		case multiHourQuotaRe.MatchString(r.limit.What):
+			l.PerMinute = false
 		}
 	} else if !ok {
 		return
 	}
+	if l.PerMinute {
+		hits := h.incRateHits(t.GetId()) - 1
+		after := now.Add(rateLimitBackoff(hits))
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_RESUMING, ""
+		t.WaitReason, t.ResumeAfter, t.Hold = limitText(l, after, now), timestamppb.New(after), planv1.TaskHold_TASK_HOLD_LIMIT
+		logx.L().Info("task held", "task", t.GetCode(), "hold", planv1.TaskHold_TASK_HOLD_LIMIT.String(), "why", t.WaitReason)
+		return
+	}
+	h.clearRateHits(t.GetId())
 	if t.GetResumes() >= maxResumes {
 		t.Error = exhausted(t.GetError())
 		return
@@ -199,7 +219,26 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 		after = after.Add(time.Minute) // Once it has reset, not at the very second.
 	}
 	t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_RESUMING, ""
-	t.WaitReason, t.ResumeAfter = limitText(l, after, now), timestamppb.New(after)
+	t.WaitReason, t.ResumeAfter, t.Hold = limitText(l, after, now), timestamppb.New(after), planv1.TaskHold_TASK_HOLD_LIMIT
+	logx.L().Info("task held", "task", t.GetCode(), "hold", planv1.TaskHold_TASK_HOLD_LIMIT.String(), "why", t.WaitReason)
+}
+
+// perMinuteHits returns the number of consecutive per-minute rate limit hits implied by t's wait (1 for 60s, 2 for
+// 90s, 3 for 120s), or 0 when t is not waiting on a short per-minute rate or token bucket.
+func perMinuteHits(t *planv1.Task) int {
+	if t.GetResumeAfter() == nil || t.GetEndTime() == nil || !strings.Contains(t.GetWaitReason(), ", tries again at ") {
+		return 0
+	}
+	switch t.GetResumeAfter().AsTime().Sub(t.GetEndTime().AsTime()) {
+	case rateLimitBackoff(0):
+		return 1
+	case rateLimitBackoff(1):
+		return 2
+	case rateLimitBackoff(2):
+		return 3
+	default:
+		return 0
+	}
 }
 
 // relaunch starts again the worker of a task Djinn resumes: in its worktree (or its project's folder, or its own
@@ -219,17 +258,24 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	}
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		if _, err := plan.LoadSettings(h.home, project); err != nil {
-			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false)
+			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false, false, 0)
 			return nil
 		}
 	}
 	t = proto.CloneOf(t)
 	by := byRestart
+	fromRateLimit := false
 	switch {
 	case t.GetContinuing():
 		by = byContinue
 	case t.GetResumeAfter() != nil:
 		by = byLimit
+		if !h.hasRateHits(t.GetId()) {
+			for range perMinuteHits(t) {
+				h.incRateHits(t.GetId())
+			}
+		}
+		fromRateLimit = h.hasRateHits(t.GetId())
 	case strings.HasPrefix(t.GetWaitReason(), whyWishPaused):
 		by = byWish
 	case strings.HasPrefix(t.GetWaitReason(), whyEditGranted):
@@ -240,17 +286,26 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		by = byPreempt
 	case strings.HasPrefix(t.GetWaitReason(), whyLost):
 		by = byLost
+	case strings.HasPrefix(t.GetWaitReason(), whyNetworkDown):
+		by = byNetwork
 	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
-	t.Status, t.WaitReason, t.MachineWait, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", false, nil
+	t.Status, t.WaitReason, t.MachineWait, t.RoomWait, t.Hold, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", false, false, 0, nil
 	switch by {
 	case byContinue:
 		t.Continuing = false // Cut short again, it resumes as any task does.
 	case byLimit:
-		t.Resumes++
+		if !fromRateLimit {
+			t.Resumes++
+		}
+	case byNetwork:
+		if end := t.GetEndTime(); end == nil || !h.netCut(end.AsTime()) {
+			t.Resumes++ // No outage confirmed when it was cut: a resume spent, as for a limit; an outage costs none.
+		}
 	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byLost:
 		// No resume spent.
 	}
+	t.EndTime = nil
 	provider, ok := h.providers[t.GetProvider()]
 	if !ok {
 		h.failPlanned(ctx, t, fmt.Sprintf("provider %s is not available", t.GetProvider()))
@@ -291,7 +346,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 			planv1.TaskAccess_TASK_ACCESS_DJINN:
 			// Decided by the developer's answer, outside any project, or by the task's role: it stays.
 		default:
-			access, declared, err := decideAccess(project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
+			access, declared, err := decideAccess(h.home, project, t.GetProvider(), plan.AllowanceOf(wish, project.GetId()))
 			if err != nil {
 				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
 			}
@@ -300,6 +355,9 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 			}
 		}
 		if t.GetPriorProvider() != planv1.Provider_PROVIDER_UNSPECIFIED {
+			if providerChanged && !r.watcher {
+				t.SessionId = store.NewID()
+			}
 			t.PriorProvider = planv1.Provider_PROVIDER_UNSPECIFIED
 		}
 		if foreignModel(t.GetProvider(), t.GetModel()) && !r.watcher {
@@ -326,6 +384,21 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	return nil
 }
 
+// taskStartBranch is the branch a worktree made again for t, a task of project, starts from: where its work lands, as
+// at its launch (workerStartBranch); "" when its wish or the project's settings cannot be read, the reference branch
+// then.
+func (h *Harness) taskStartBranch(ctx context.Context, project *planv1.Project, t *planv1.Task) string {
+	wish, err := store.Get[*planv1.Wish](ctx, h.store, t.GetWishId())
+	if err != nil {
+		return ""
+	}
+	settings, err := plan.LoadSettings(h.home, project)
+	if err != nil {
+		return ""
+	}
+	return h.workerStartBranch(ctx, wish, project, settings, t)
+}
+
 // resumeWorker starts the worker of a resumed task where its last one worked, by: byRestart, byLimit, or byContinue
 // with the prompt it was continued with. The caller owns the run's task.
 func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Project, prep prepared, prompt, by string, priorProvider planv1.Provider) error {
@@ -345,7 +418,6 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return err
 		}
 		spec := Spec{TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: command, Restart: t.GetRestart()}
-		r.base = t.GetUsage()
 		text := fmt.Sprintf("resumed %s: started watch in %s%s%s", by, dir, watchText(t), how)
 		return h.start(r, provider, spec, text)
 	case t.GetWorktree() != "":
@@ -356,9 +428,9 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		dir = filepath.Join(t.GetWorktree(), filepath.FromSlash(prefix))
 		if _, err := os.Stat(dir); err != nil {
 			if by == byEnvReplay {
-				sha, _, _ := startPoint(h.ctx, project.GetDirectory(), "")
-				if sha == "" {
-					sha = "HEAD"
+				sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+				if err != nil {
+					return fmt.Errorf("create the worktree: %w", err)
 				}
 				if dir, err = addWorktreeFrom(h.ctx, project.GetDirectory(), t.GetWorktree(), t.GetBranch(), sha); err != nil {
 					return fmt.Errorf("create the worktree: %w", err)
@@ -370,11 +442,10 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	case project.GetGit() && !r.light: // A question worker reads in the project's folder.
 		if by == byEnvReplay {
 			t.Worktree = worktreeDir(h.home, project.GetId(), t.GetId())
-			sha, _, _ := startPoint(h.ctx, project.GetDirectory(), "")
-			if sha == "" {
-				sha = "HEAD"
+			sha, _, err := h.startPoint(h.ctx, project, h.taskStartBranch(h.ctx, project, t))
+			if err != nil {
+				return fmt.Errorf("create the worktree: %w", err)
 			}
-			var err error
 			if dir, err = addWorktreeFrom(h.ctx, project.GetDirectory(), t.GetWorktree(), t.GetBranch(), sha); err != nil {
 				return fmt.Errorf("create the worktree: %w", err)
 			}
@@ -382,7 +453,15 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			return errors.New("its worktree is gone: it cannot be resumed")
 		}
 	}
-	budget := t.GetMaxBudgetUsd()
+	if project != nil && !r.watcher && !r.light && h.home != "" {
+		if t.GetScratch() == "" {
+			t.Scratch = workScratchDir(h.home, project.GetId(), t.GetId())
+		}
+		if err := os.MkdirAll(t.GetScratch(), 0o700); err != nil {
+			return fmt.Errorf("create the scratch folder: %w", err)
+		}
+	}
+	budget := providerBudget(t)
 	if budget > 0 {
 		if budget -= t.GetUsage().GetCostUsd(); budget <= 0 {
 			return fmt.Errorf("its budget of $%.2f is spent", t.GetMaxBudgetUsd())
@@ -412,6 +491,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		line = envReplayLine
 	case byPreempt:
 		line = preemptLine
+	case byNetwork:
+		line = networkLine
 	}
 	model := t.GetModel()
 	if foreignModel(t.GetProvider(), model) && !r.watcher {
@@ -420,12 +501,19 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	}
 	spec := Spec{
 		TaskID: t.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Model: model, MaxBudgetUSD: budget,
-		Resume: t.GetSessionId(), Prompt: line,
+		Resume: t.GetSessionId(), Prompt: line, ReadDirs: plan.TilasmDirs(h.home, prompt),
+	}
+	var err error
+	if spec.WriteDirs, err = h.questionWriteDirs(t); err != nil {
+		return err
 	}
 	how := ", resuming its session"
 	providerChanged := priorProvider != planv1.Provider_PROVIDER_UNSPECIFIED && priorProvider != t.GetProvider()
 	switch {
 	case providerChanged:
+		if t.GetSessionId() != "" {
+			spec.TaskID = t.GetSessionId()
+		}
 		spec.Resume = ""
 		spec.Prompt = briefed(r, prompt, readOnly)
 		how = fmt.Sprintf(", provider changed: %s → %s, starts from its first prompt", short(priorProvider), short(t.GetProvider()))
@@ -447,7 +535,15 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 			spec.Prompt = line // It holds the first prompt already.
 		}
 	}
-	r.base = t.GetUsage()
+	// What was sent to its last worker and never read: told with its prompt, received once it says something.
+	unread, err := unreceived(h.ctx, h.store, t.GetId())
+	if err != nil {
+		return err
+	}
+	if len(unread) > 0 {
+		spec.Prompt += "\n\n" + unreceivedText(unread)
+		r.unread = unread
+	}
 	spec.Skills, spec.SkillsDir = h.summon(context.Background(), r, project)
 	where := "in " + dir
 	if t.GetBranch() != "" {
@@ -455,7 +551,7 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 	}
 	text := fmt.Sprintf("resumed %s: started %s %s%s, %s%s", by,
 		short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
-	if by == byLimit {
+	if by == byLimit && !h.hasRateHits(t.GetId()) {
 		text = fmt.Sprintf("resumed %s (%d of %d): started %s %s%s, %s%s", by, t.GetResumes(), maxResumes,
 			short(t.GetProvider()), where, how, accessText(t, nil), skillsText(spec.Skills))
 	}
@@ -492,6 +588,7 @@ func (h *Harness) replayEnvFailures(ctx context.Context, provider planv1.Provide
 	for _, w := range wishes {
 		wish[w.GetId()] = w
 	}
+	now := h.now()
 	for _, t := range tasks {
 		if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED &&
 			t.GetEnvCause() != "" &&
@@ -501,8 +598,23 @@ func (h *Harness) replayEnvFailures(ctx context.Context, provider planv1.Provide
 			if !t.GetScheduled() || w == nil || w.GetState() == planv1.WishState_WISH_STATE_GRANTED || render.ForkedAs(t, tasks) != "" {
 				continue
 			}
+			if l, ok := limitIn(t.GetError(), endOf(t, now)); ok {
+				reset := l.Until
+				if reset.IsZero() {
+					if l.PerMinute {
+						reset = endOf(t, now).Add(rateLimitBackoff(0))
+					} else {
+						reset = endOf(t, now).Add(limitBackoff(0))
+					}
+				}
+				if now.Before(reset) {
+					continue
+				}
+			}
 			t = proto.CloneOf(t)
 			t.EnvReplays++
+			t.Resumes = 0
+			h.clearRateHits(t.GetId())
 			t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", byEnvReplay, nil
 			ev := Event{
 				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,

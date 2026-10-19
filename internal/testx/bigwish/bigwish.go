@@ -339,7 +339,7 @@ var blockKinds = []struct {
 	weight int
 	words  int
 }{
-	{"log", 42, 25},
+	{"finding", 42, 25},
 	{"decision", 30, 60},
 	{"report", 16, 120},
 	{"section", 8, 300},
@@ -452,7 +452,7 @@ func (g *gen) request(method string) proto.Message {
 	case planv1connect.TaskServiceCleanProcedure:
 		return &planv1.TaskServiceCleanRequest{TaskId: task()}
 	case planv1connect.BlockServicePutProcedure:
-		return &planv1.BlockServicePutRequest{WishId: WishID, Kind: "log", Title: g.sentence(7), Content: g.text(25)}
+		return &planv1.BlockServicePutRequest{WishId: WishID, Kind: "finding", Title: g.sentence(7), Content: g.text(25)}
 	case planv1connect.QuestionServiceAskProcedure:
 		return &planv1.QuestionServiceAskRequest{WishId: WishID, Text: g.sentence(25) + "?", Context: g.text(30)}
 	case planv1connect.QuestionServiceAnswerProcedure:

@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/dispatch"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
@@ -21,7 +22,8 @@ import (
 // A task's seal is the set of constraints Djinn gives the worker of a task (docs/providers.md, "A task's seal"). Its
 // budgets are here, enforced by the Lamplighter: SilenceLimit, TaskMaxWallTime and TaskMaxTurns. The rest is decided
 // where it applies: the access and how each agent's sandbox applies it (decideAccess, accessSpec), the wakes
-// (maxWakes) and usage-limit resumes (maxResumes), the spending cap (Task.max_budget_usd), the push guard and the
+// (maxWakes) and usage-limit resumes (maxResumes), the spending cap (Task.max_budget_usd), an investigation's shorter
+// limits, at which it is asked to publish (investigationDue), the push guard and the
 // worker's identity (gitGuard, plan.WorkerGuard), the write scopes (dispatch), the load notch's CPU priority
 // (lowPriority) and the worker's memory ceiling (scopeFor), the slots and the gates.
 
@@ -30,9 +32,11 @@ import (
 // command is excluded by checking the gate it holds or waits for. An idle or dead worker past this limit is ended.
 const SilenceLimit = 15 * time.Minute
 
-// TaskMaxWallTime is how long a task may run in total before being stopped: the sum of its runs (taskWallTime), time
-// waiting for a gate included, never reset by a continue. Generous for heavy builds and e2e-heavy tasks (past an hour),
-// while stopping 4h runaway zombies.
+// TaskMaxWallTime is how long a task may run before being stopped: the sum of its runs in the current budget
+// (taskWallTime), time waiting for a gate included, time held between runs (a usage limit, a pause) left out.
+// Automatic resumes (restart, limit lifted, Lamplighter wakes) keep counting; a deliberate continue (djinn task
+// continue) opens a new budget. Generous for heavy builds and e2e-heavy tasks (past an hour), while stopping 4h
+// runaway zombies.
 const TaskMaxWallTime = 2 * time.Hour
 
 // TaskMaxTurns is how many model turns a worker may take before being stopped: a guard against an endless loop, not a
@@ -78,7 +82,8 @@ func WithTaskMaxTurns(n int) Option { return func(h *Harness) { h.maxTurns = n }
 // workers are ended, then woken (continued on their session, W296/W320) up to maxWakes times in a row, else failed. A
 // task whose status is RUNNING but has no active worker run (a lost process) is also found and ended the same way. A
 // budget of the task's seal (wall time, turns) stops a worker for good: no wake. A watcher is supervised apart, before
-// any budget (watcherLife).
+// any budget (watcherLife). An ifrit that listens between two turns is never silent too long, and its wall time
+// counts its turns only.
 func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLost bool) {
 	now := h.now()
 	limit := cmp.Or(h.silenceLimit, SilenceLimit)
@@ -96,14 +101,13 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 				logx.L().Info("lamplighter restarts a lost watcher", "task", t.GetCode())
 				h.restartLostWatcher(ctx, t)
 			} else {
-				logx.L().Info("lamplighter ends a lost task", "task", t.GetCode())
 				h.endLostProcess(ctx, t)
 			}
 			anyLost = true
 			continue
 		}
 
-		if r.stopping || r.final || r.paused || r.lamplighterEnd {
+		if r.stopping || r.final || r.paused || r.lamplighterEnd || r.silentWhy != "" {
 			h.mu.Unlock()
 			continue
 		}
@@ -115,11 +119,32 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 			continue
 		}
 
+		// An investigation or a mockup is asked to publish at its time limit or its budget, and stopped past a grace.
+		if dispatch.ChangesNoCode(t) {
+			ask, stop := h.investigationDue(t, r, now)
+			if stop != "" {
+				r.stopping, r.stoppingReason = true, stop
+				worker := r.worker
+				h.mu.Unlock()
+				logx.L().Info("lamplighter stops an investigation or a mockup", "task", t.GetCode(), "why", stop)
+				if worker != nil {
+					worker.Stop()
+				}
+				continue
+			}
+			if ask != "" {
+				go h.askToPublish(r, t, ask)
+			}
+		}
+
 		// Budget per task: check wall time and turns against limits.
 		maxWall := cmp.Or(h.maxWallTime, TaskMaxWallTime)
 		maxTurns := h.turnLimit()
 
 		wallTime := taskWallTime(t, now)
+		if r.ifrit {
+			wallTime -= r.listenedBy(now) // Its budget counts its turns, never its listening.
+		}
 		if wallTime >= maxWall {
 			r.stopping = true
 			r.stoppingReason = fmt.Sprintf("budget exceeded: wall time %s (limit %s)", wallTime.Round(time.Second), maxWall.Round(time.Second))
@@ -142,6 +167,12 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 			if worker != nil {
 				worker.Stop()
 			}
+			continue
+		}
+
+		// An ifrit that listens waits on its input for the next message: its silence is its rest, no fault.
+		if !r.listenSince.IsZero() {
+			h.mu.Unlock()
 			continue
 		}
 
@@ -248,7 +279,7 @@ func notWoken(t *planv1.Task, why string) string {
 // markWoken makes t, whose worker the Lamplighter ended for why, wait to be continued on its session: its last run
 // ends woken.
 func markWoken(t *planv1.Task, why string, end *timestamppb.Timestamp) {
-	t.Status, t.Error, t.Continuing, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true, why
+	t.Status, t.Error, t.Continuing, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", true, why, nil
 	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].GetEndTime() == nil {
 		t.Runs[len(t.Runs)-1].EndTime = end
 	}
@@ -257,11 +288,29 @@ func markWoken(t *planv1.Task, why string, end *timestamppb.Timestamp) {
 	}
 }
 
-// endLostProcess ends a task whose status is RUNNING but that the harness has no run for (a lost process).
+// endLostProcess ends a task whose status is RUNNING but that the harness has no run for (a lost process). Read
+// again first: a worker that ended since the pass listed it wrote its end, and forgot its run, after (W492).
 func (h *Harness) endLostProcess(ctx context.Context, t *planv1.Task) {
+	code := t.GetCode()
+	t, err := store.Get[*planv1.Task](ctx, h.store, t.GetId())
+	if err != nil {
+		if ctx.Err() == nil {
+			logx.L().Error("end a lost task", "loop", "lamplighter", "task", code, "err", err)
+		}
+		return
+	}
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		return
+	}
+	h.mu.Lock()
+	_, runs := h.runs[t.GetId()]
+	h.mu.Unlock()
+	if runs {
+		return
+	}
+	logx.L().Info("lamplighter ends a lost task", "task", code)
 	now := h.now()
 	nowPb := timestamppb.New(now)
-	t = proto.CloneOf(t)
 	t.EndTime = nowPb
 	if canWake(t) {
 		markWoken(t, whyLost, nowPb)
@@ -276,27 +325,55 @@ func (h *Harness) endLostProcess(ctx context.Context, t *planv1.Task) {
 	h.wake()
 }
 
-// taskWallTime computes the total wall time consumed by task t up to now across all its runs.
+// continuedAfter reports whether a run that ended for reason ended the task (stopped, failed or done), so any run
+// after it comes from a deliberate continue (djinn task continue) with a fresh wall-time budget. Automatic resumes
+// (wake, silent, limit, network, restart, interrupted, pause, preemption, waiting) keep counting the same budget.
+func continuedAfter(reason string) bool {
+	switch reason {
+	case "stopped", "failed", "done":
+		return true
+	default:
+		return false
+	}
+}
+
+// taskWallTime computes the wall time task t has spent in its current budget up to now: the sum of its runs since the
+// first start or the last deliberate continue (continuedAfter), leaving out time spent held between runs (a usage
+// limit, a network outage, a pause, a restart).
 func taskWallTime(t *planv1.Task, now time.Time) time.Duration {
 	if t == nil {
 		return 0
 	}
+	runs := t.GetRuns()
+	if len(runs) == 0 {
+		if t.GetStartTime() != nil && now.After(t.GetStartTime().AsTime()) {
+			return now.Sub(t.GetStartTime().AsTime())
+		}
+		return 0
+	}
 	var total time.Duration
-	for _, run := range t.GetRuns() {
+	for i, run := range runs {
 		if run.GetStartTime() == nil {
 			continue
 		}
 		start := run.GetStartTime().AsTime()
 		end := now
-		if run.GetEndTime() != nil {
+		switch {
+		case run.GetEndTime() != nil:
 			end = run.GetEndTime().AsTime()
+		case t.GetStatus() != planv1.TaskStatus_TASK_STATUS_UNSPECIFIED && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING:
+			if t.GetEndTime() != nil {
+				end = t.GetEndTime().AsTime()
+			} else {
+				end = start
+			}
 		}
 		if end.After(start) {
 			total += end.Sub(start)
 		}
-	}
-	if total == 0 && t.GetStartTime() != nil {
-		total = now.Sub(t.GetStartTime().AsTime())
+		if continuedAfter(run.GetReason()) && (i < len(runs)-1 || t.GetContinuing()) {
+			total = 0
+		}
 	}
 	return total
 }
@@ -359,15 +436,20 @@ func (l *watcherLife) ended(res Result, restart bool, ran time.Duration) (wait t
 // gaveUp is the error of a watcher whose command died watchTries times in a row: the last death, and the last lines
 // of its error output.
 func gaveUp(res Result, errLines []string) error {
+	return fmt.Errorf("its command died %d times in a row; the last time: %s", watchTries, death(res, errLines))
+}
+
+// death says why a run of a watcher's command died: its exit code, or why it could not run, then the last lines of
+// its error output.
+func death(res Result, errLines []string) string {
 	why := fmt.Sprintf("exit code %d", res.ExitCode)
 	if res.Err != nil {
 		why = res.Err.Error()
 	}
-	text := fmt.Sprintf("its command died %d times in a row; the last time: %s", watchTries, why)
 	if len(errLines) > 0 {
-		text += "; its error output: " + strings.Join(errLines, " / ")
+		why += "; its error output: " + strings.Join(errLines, " / ")
 	}
-	return errors.New(text)
+	return why
 }
 
 // restartLostWatcher starts again the command of a watcher whose process is lost: its task waits to resume, and the

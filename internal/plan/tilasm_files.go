@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -47,9 +50,15 @@ func (t *Tilasms) PutData(
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	defer removeIf(dir)
-	name := dropName(m.GetName())
+	files := m.GetFiles()
+	singleHTML := len(files) == 1 && !strings.ContainsAny(files[0].GetPath(), `/\`) && isHTMLFile(files[0].GetPath())
+	rawName := m.GetName()
+	if singleHTML {
+		rawName = trimHTMLExt(cmp.Or(rawName, files[0].GetPath()))
+	}
+	name := dropName(rawName)
 	author := cmp.Or(m.GetAuthor(), developerAuthor)
-	if files := m.GetFiles(); len(files) == 1 && bytes.HasPrefix(files[0].GetContent(), []byte("PK\x03\x04")) {
+	if len(files) == 1 && bytes.HasPrefix(files[0].GetContent(), []byte("PK\x03\x04")) {
 		file := filepath.Join(dir, strings.TrimSuffix(name, ".zip")+".zip")
 		if err := os.WriteFile(file, files[0].GetContent(), 0o600); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)
@@ -77,10 +86,13 @@ func (t *Tilasms) PutData(
 	}
 	folder := filepath.Join(dir, name)
 	var size int64
-	for _, f := range m.GetFiles() {
+	for _, f := range files {
 		rel := filepath.FromSlash(f.GetPath())
 		if !filepath.IsLocal(rel) {
 			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s leaves the folder", f.GetPath()))
+		}
+		if singleHTML {
+			rel = tilasmIndex
 		}
 		// The ceiling counts again as the files are put; this only spares writing what it would refuse.
 		if size += int64(len(f.GetContent())); size > t.ceiling(nil)*2 {
@@ -102,6 +114,13 @@ func (t *Tilasms) PutData(
 		return nil, err
 	}
 	return connect.NewResponse(&planv1.TilasmServicePutDataResponse{Tilasm: tilasm}), nil
+}
+
+func trimHTMLExt(name string) string {
+	if isHTMLFile(name) {
+		return name[:len(name)-len(path.Ext(strings.ReplaceAll(name, `\`, "/")))]
+	}
+	return name
 }
 
 // dropName is the name of what was dropped, as a file name: the title of a tilasm whose index.html has none.
@@ -187,9 +206,26 @@ var tilasmTypes = map[string]string{
 	".md":    "text/plain; charset=utf-8",
 }
 
+// tilasmBridge is the script Djinn appends to each HTML page of a tilasm it serves, never to its files (L08): in the
+// sandboxed frame, it tells the window the passage the developer selects, and highlights the passages commented.
+//
+//go:embed tilasm_bridge.js
+var tilasmBridge []byte
+
+// bridgeTag is what ends each HTML page of a tilasm as Djinn serves it: the bridge, from the server's own origin, which
+// the policy already lets a tilasm load (script-src 'self').
+const bridgeTag = "\n<script src=\"" + server.TilasmBridge + "\"></script>\n"
+
+// bridgeETag names the bridge by its content: a new Djinn's is never taken for the one the browser kept.
+var bridgeETag = func() string {
+	sum := sha256.Sum256(tilasmBridge)
+	return fmt.Sprintf(`"%x"`, sum[:8])
+}()
+
 // Files serves the latest version of each tilasm at server.TilasmPrefix: /tilasm/<id>/ is its index.html, and its
 // other files are under it, by their paths. Every answer carries tilasmPolicy. A folder serves its index.html, never a
-// listing.
+// listing. An HTML page ends with the bridge's tag (bridgeTag), its other files are served as they are, and
+// server.TilasmBridge serves the bridge.
 func (t *Tilasms) Files() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -202,6 +238,12 @@ func (t *Tilasms) Files() http.Handler {
 		h.Set("Access-Control-Allow-Origin", "*")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "a tilasm's files are read only", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.URL.Path == server.TilasmBridge {
+			h.Set("Content-Type", tilasmTypes[".js"])
+			h.Set("Etag", bridgeETag)
+			http.ServeContent(w, r, "bridge.js", time.Time{}, bytes.NewReader(tilasmBridge))
 			return
 		}
 		id, rest, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, server.TilasmPrefix), "/")
@@ -258,6 +300,15 @@ func (t *Tilasms) Files() http.Handler {
 		if typ := cmp.Or(tilasmTypes[ext], mime.TypeByExtension(ext)); typ != "" {
 			h.Set("Content-Type", typ)
 		}
-		http.ServeContent(w, r, name, info.ModTime(), f.(io.ReadSeeker)) // os.DirFS opens an *os.File.
+		if !isHTMLFile(name) {
+			http.ServeContent(w, r, name, info.ModTime(), f.(io.ReadSeeker)) // os.DirFS opens an *os.File.
+			return
+		}
+		page, err := io.ReadAll(f)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.ServeContent(w, r, name, info.ModTime(), bytes.NewReader(append(page, bridgeTag...)))
 	})
 }

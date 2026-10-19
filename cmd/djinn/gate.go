@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,7 +18,7 @@ import (
 
 // runGate is djinn gate run: the one command that runs something on the caller's side, so it is written here and
 // not generated from the protos; its help is cli.GateRun. It returns the exit code.
-func runGate(args []string) int {
+func runGate(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	name, taskID, addr := "", os.Getenv("DJINN_TASK_ID"), os.Getenv("DJINN_ADDR")
 	var command []string
 	for i := 0; i < len(args); i++ {
@@ -26,7 +27,7 @@ func runGate(args []string) int {
 			command = args[i+1:]
 			i = len(args)
 		case a == "-h" || a == "--help":
-			cli.GateRun.WriteHelp(os.Stdout)
+			cli.GateRun.WriteHelp(stdout)
 			return 0
 		case (a == "--task-id" || a == "--addr") && i+1 < len(args):
 			i++
@@ -42,14 +43,14 @@ func runGate(args []string) int {
 		case name == "" && !strings.HasPrefix(a, "-"):
 			name = a
 		default:
-			fmt.Fprintf(os.Stderr, "error: unexpected argument %q\n", a)
-			cli.GateRun.WriteHelp(os.Stderr)
+			fmt.Fprintf(stderr, "error: unexpected argument %q\n", a)
+			cli.GateRun.WriteHelp(stderr)
 			return 2
 		}
 	}
 	if name == "" || len(command) == 0 {
-		fmt.Fprintln(os.Stderr, "error: a gate name and a command after -- are required")
-		cli.GateRun.WriteHelp(os.Stderr)
+		fmt.Fprintln(stderr, "error: a gate name and a command after -- are required")
+		cli.GateRun.WriteHelp(stderr)
 		return 2
 	}
 	code, err := func() (int, error) {
@@ -70,12 +71,12 @@ func runGate(args []string) int {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 		return gate.Run(ctx, machinev1connect.NewGateServiceClient(client, base), name, taskID, gate.Command{
-			Args: command, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, Notice: os.Stderr,
+			Args: command, Stdin: stdin, Stdout: stdout, Stderr: stderr, Notice: stderr,
 			Costs: machinev1connect.NewCommandServiceClient(client, base),
 		})
 	}()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(stderr, "error:", err)
 		return 1
 	}
 	return code

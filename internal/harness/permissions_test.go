@@ -148,77 +148,111 @@ func splitUnquoted(command string) []string {
 	return append(parts, cur.String())
 }
 
-// TestQuestionWorkerClaudeRules: what Claude gets for a question worker (TASK_ACCESS_DJINN), as its permission
-// syntax reads it (code.claude.com/docs/en/permissions, read 2026-10-10): dontAsk, which still runs file reads in
-// its working folder, the project's, with Read, Grep and Glob, and searches the web with WebFetch and WebSearch,
-// none of them denied nor taken away; each djinn command allowed with its arguments by Bash(<command> *), the same
-// as Bash(<command>:*); no edit.
-func TestQuestionWorkerClaudeRules(t *testing.T) {
+func TestClaudePermissions(t *testing.T) {
 	t.Parallel()
-	readOnly, perms := accessSpec(planv1.TaskAccess_TASK_ACCESS_DJINN, nil)
-	args := Claude{}.args(Spec{TaskID: "t1", Dir: t.TempDir(), ReadOnly: readOnly, Permissions: perms})
-	joined := strings.Join(args, " ")
-	if readOnly || !strings.Contains(joined, "--permission-mode dontAsk") || strings.Contains(joined, "--tools") ||
-		strings.Contains(joined, "--restricted") {
-		t.Fatalf("args = %q", args)
-	}
-	var settings struct {
-		Permissions struct{ Allow, Deny []string }
-	}
-	if err := json.Unmarshal([]byte(args[slices.Index(args, "--settings")+1]), &settings); err != nil {
-		t.Fatal(err)
-	}
-	allow, deny := settings.Permissions.Allow, settings.Permissions.Deny
-	for _, c := range slices.Concat(djinnCommands, gitRead) {
-		if !slices.Contains(allow, "Bash("+c+" *)") {
-			t.Errorf("%s is not allowed with its arguments: %v", c, allow)
+
+	// What Claude gets for a question worker (TASK_ACCESS_DJINN), as its permission syntax reads it
+	// (code.claude.com/docs/en/permissions, read 2026-10-10): dontAsk, which still runs file reads in its working
+	// folder, the project's, with Read, Grep and Glob, and searches the web with WebFetch and WebSearch, none of them
+	// denied nor taken away; each djinn command allowed with its arguments by Bash(<command> *), the same as
+	// Bash(<command>:*); no edit.
+	t.Run("question_worker", func(t *testing.T) {
+		t.Parallel()
+		readOnly, perms := accessSpec(planv1.TaskAccess_TASK_ACCESS_DJINN, nil)
+		args := Claude{}.args(Spec{TaskID: "t1", Dir: t.TempDir(), ReadOnly: readOnly, Permissions: perms})
+		joined := strings.Join(args, " ")
+		if readOnly || !strings.Contains(joined, "--permission-mode dontAsk") || strings.Contains(joined, "--tools") ||
+			strings.Contains(joined, "--restricted") {
+			t.Fatalf("args = %q", args)
 		}
-	}
-	for _, w := range []string{"WebFetch", "WebSearch"} {
-		if !slices.Contains(allow, w) {
-			t.Errorf("%s is not allowed: %v", w, allow)
+		var settings struct {
+			Permissions struct{ Allow, Deny []string }
 		}
-	}
-	for _, d := range deny {
-		if tool, _, _ := strings.Cut(d, "("); slices.Contains([]string{"Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"}, tool) {
-			t.Errorf("%s denies what a question worker needs", d)
+		if err := json.Unmarshal([]byte(args[slices.Index(args, "--settings")+1]), &settings); err != nil {
+			t.Fatal(err)
 		}
-	}
-	for _, d := range []string{"Edit", "Write", "NotebookEdit"} {
-		if !slices.Contains(deny, d) {
-			t.Errorf("%s is not denied: %v", d, deny)
-		}
-	}
-	// Claude splits a command on its operators outside quotes, and allows it only when a rule matches every part.
-	allowed := func(command string) bool {
-		for _, part := range splitUnquoted(command) {
-			part = strings.TrimSpace(part)
-			if strings.Contains(part, " > ") || strings.Contains(part, " >> ") {
-				return false
-			}
-			if !slices.ContainsFunc(allow, func(rule string) bool {
-				p, ok := strings.CutSuffix(strings.TrimPrefix(rule, "Bash("), " *)")
-				return ok && strings.HasPrefix(rule, "Bash(") && (part == p || strings.HasPrefix(part, p+" "))
-			}) {
-				return false
+		allow, deny := settings.Permissions.Allow, settings.Permissions.Deny
+		for _, c := range slices.Concat(djinnCommands, gitRead) {
+			if !slices.Contains(allow, "Bash("+c+" *)") {
+				t.Errorf("%s is not allowed with its arguments: %v", c, allow)
 			}
 		}
-		return true
-	}
-	for command, want := range map[string]bool{
-		`djinn task spawn w1 --title "Move the store" --prompt "In internal/store." --decision Q01`: true,
-		"djinn task list --wish-id w1":                                      true,
-		`djinn question revise Q01 --wish-id w1 --context "SQLite is free"`: true,
-		"djinn question revise Q01 --wish-id w1 --options \"A: First\" --options \"B: Second\" " +
-			"--recommendation \"B: Second\" --context \"One-line why.\n\n- Fact one (verified).\n- Fact two (verified).\"": true,
-		"djinn task list --wish-id w1 | grep Q01; sed -n 1,40p x.go": false,
-		"djinn task list --wish-id w1 > tasks.txt && cat tasks.txt":  false,
-		"djinn gate run test -- go tool task test":                   false,
-	} {
-		if got := allowed(command); got != want {
-			t.Errorf("allowed(%q) = %v, want %v", command, got, want)
+		for _, w := range []string{"WebFetch", "WebSearch"} {
+			if !slices.Contains(allow, w) {
+				t.Errorf("%s is not allowed: %v", w, allow)
+			}
 		}
-	}
+		for _, d := range deny {
+			if tool, _, _ := strings.Cut(d, "("); slices.Contains([]string{"Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"}, tool) {
+				t.Errorf("%s denies what a question worker needs", d)
+			}
+		}
+		for _, d := range []string{"Edit", "Write", "NotebookEdit"} {
+			if !slices.Contains(deny, d) {
+				t.Errorf("%s is not denied: %v", d, deny)
+			}
+		}
+		// Claude splits a command on its operators outside quotes, and allows it only when a rule matches every part.
+		allowed := func(command string) bool {
+			for _, part := range splitUnquoted(command) {
+				part = strings.TrimSpace(part)
+				if strings.Contains(part, " > ") || strings.Contains(part, " >> ") {
+					return false
+				}
+				if !slices.ContainsFunc(allow, func(rule string) bool {
+					p, ok := strings.CutSuffix(strings.TrimPrefix(rule, "Bash("), " *)")
+					return ok && strings.HasPrefix(rule, "Bash(") && (part == p || strings.HasPrefix(part, p+" "))
+				}) {
+					return false
+				}
+			}
+			return true
+		}
+		for command, want := range map[string]bool{
+			`djinn task spawn w1 --title "Move the store" --prompt "In internal/store." --decision Q01`: true,
+			"djinn task list --wish-id w1":                                      true,
+			`djinn question revise Q01 --wish-id w1 --context "SQLite is free"`: true,
+			"djinn question revise Q01 --wish-id w1 --options \"A: First\" --options \"B: Second\" " +
+				"--recommendation \"B: Second\" --context \"One-line why.\n\n- Fact one (verified).\n- Fact two (verified).\"": true,
+			"djinn task list --wish-id w1 | grep Q01; sed -n 1,40p x.go": false,
+			"djinn task list --wish-id w1 > tasks.txt && cat tasks.txt":  false,
+			"djinn gate run test -- go tool task test":                   false,
+		} {
+			if got := allowed(command); got != want {
+				t.Errorf("allowed(%q) = %v, want %v", command, got, want)
+			}
+		}
+	})
+
+	// Djinn's own .agents/permissions.txtpb is valid, and .claude/settings.json, for a contributor who runs claude in
+	// the repository without Djinn, holds exactly what Djinn translates from it.
+	t.Run("repo", func(t *testing.T) {
+		t.Parallel()
+		root := filepath.Join("..", "..")
+		p, err := LoadPermissions(root)
+		if err != nil || p == nil {
+			t.Fatalf("%s: %v, %v", PermissionsFile, p, err)
+		}
+		if !p.GetEdit() || p.GetNetwork() || effectiveMode(p) != djinnv1.Mode_MODE_AUTO {
+			t.Errorf("Djinn's permissions: %v", p)
+		}
+		want, err := json.MarshalIndent(map[string]any{"permissions": claudePermissions(p)}, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got, wantAny any
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatalf(".claude/settings.json: %v", err)
+		}
+		_ = json.Unmarshal(want, &wantAny)
+		if !reflect.DeepEqual(got, wantAny) {
+			t.Errorf(".claude/settings.json does not follow %s; write it so:\n%s", PermissionsFile, want)
+		}
+	})
 }
 
 // TestDecideAccess: the order of docs/providers.md. Outside any project, read-only; .agents/permissions.txtpb
@@ -259,6 +293,7 @@ func TestDecideAccess(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			for _, f := range tt.files {
 				content := ""
@@ -267,49 +302,19 @@ func TestDecideAccess(t *testing.T) {
 				}
 				writeFile(t, dir, f, content)
 			}
-			got, perms, err := decideAccess(&planv1.Project{Directory: dir, Git: tt.git}, tt.kind, planv1.Allowance_ALLOWANCE_NONE)
+			got, perms, err := decideAccess("", &planv1.Project{Directory: dir, Git: tt.git}, tt.kind, planv1.Allowance_ALLOWANCE_NONE)
 			if err != nil || got != tt.want || (got == agents) != (perms != nil) {
 				t.Errorf("access = %v, %v, %v; want %v", got, perms, err, tt.want)
 			}
 		})
 	}
-	if got, _, err := decideAccess(nil, claude, planv1.Allowance_ALLOWANCE_AUTO); got != readOnly || err != nil {
+	if got, _, err := decideAccess("", nil, claude, planv1.Allowance_ALLOWANCE_AUTO); got != readOnly || err != nil {
 		t.Errorf("outside any project: %v, %v", got, err)
 	}
 	dir := t.TempDir()
 	writeFile(t, dir, ".agents/permissions.txtpb", "edit: yes please\n")
-	if _, _, err := decideAccess(&planv1.Project{Directory: dir, Git: true}, claude, planv1.Allowance_ALLOWANCE_EDIT); err == nil {
+	if _, _, err := decideAccess("", &planv1.Project{Directory: dir, Git: true}, claude, planv1.Allowance_ALLOWANCE_EDIT); err == nil {
 		t.Error("an invalid permissions file: no error")
-	}
-}
-
-// TestRepoPermissions: Djinn's own .agents/permissions.txtpb is valid, and .claude/settings.json, for a contributor
-// who runs claude in the repository without Djinn, holds exactly what Djinn translates from it.
-func TestRepoPermissions(t *testing.T) {
-	t.Parallel()
-	root := filepath.Join("..", "..")
-	p, err := LoadPermissions(root)
-	if err != nil || p == nil {
-		t.Fatalf("%s: %v, %v", PermissionsFile, p, err)
-	}
-	if !p.GetEdit() || p.GetNetwork() || effectiveMode(p) != djinnv1.Mode_MODE_AUTO {
-		t.Errorf("Djinn's permissions: %v", p)
-	}
-	want, err := json.MarshalIndent(map[string]any{"permissions": claudePermissions(p)}, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got, wantAny any
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatalf(".claude/settings.json: %v", err)
-	}
-	_ = json.Unmarshal(want, &wantAny)
-	if !reflect.DeepEqual(got, wantAny) {
-		t.Errorf(".claude/settings.json does not follow %s; write it so:\n%s", PermissionsFile, want)
 	}
 }
 
@@ -339,8 +344,10 @@ func TestCodexDecision(t *testing.T) {
 		{"another request", listed, "item/tool/requestUserInput", codexApproval{}, "decline"},
 	}
 	for _, tt := range tests {
-		if got := codexDecision(tt.p, tt.m, tt.a); got != tt.want {
-			t.Errorf("%s: %s, want %s", tt.name, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			if got := codexDecision(tt.p, tt.m, tt.a); got != tt.want {
+				t.Errorf("got %s, want %s", got, tt.want)
+			}
+		})
 	}
 }

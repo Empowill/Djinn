@@ -43,1178 +43,1297 @@ func (s *spyProvider) lastSpec() Spec {
 	return s.specs[len(s.specs)-1]
 }
 
-// TestUpdatePlannedAllFields: a planned task can update every field in one journaled transaction,
-// keeping its id, code, and dependents.
-func TestUpdatePlannedAllFields(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	// Create a dependency task
-	second := e.mustSpawn(t, wishID, "Second task", "text second", &planv1.TaskServiceSpawnRequest{Later: true})
-
-	// Create an open azima
-	azRes, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID,
-		Title:  "Phase 1 Azima",
-		Kind:   planv1.TaskKind_TASK_KIND_AZIMA,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	azima := azRes.Msg.GetTask()
-
-	// Create a decision block
-	blocks := planv1connect.NewBlockServiceClient(e.srv.Client(), e.srv.URL)
-	bRes, err := blocks.Put(t.Context(), connect.NewRequest(&planv1.BlockServicePutRequest{
-		WishId: wishID,
-		Kind:   "decision",
-		Title:  "Choose DB",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	decisionID := bRes.Msg.GetBlock().GetId()
-
-	// Spawn the planned task
-	initialPrompt := "text initial prompt"
-	first := e.mustSpawn(t, wishID, "Initial title", initialPrompt, &planv1.TaskServiceSpawnRequest{
-		Provider: planv1.Provider_PROVIDER_FAKE,
-		Later:    true,
-	})
-
-	// Dependent waiting on first
-	dep := e.mustSpawn(t, wishID, "Dependent", "text dependent", &planv1.TaskServiceSpawnRequest{
-		After: []string{first.GetCode()},
-	})
-
-	// Update all fields
-	newTitle := "Updated Title"
-	newPrompt := "text updated prompt"
-	newProvider := planv1.Provider_PROVIDER_ANTIGRAVITY
-	newModel := "gemini-3.8-flash-high"
-	partOf := azima.GetCode()
-	after := []string{second.GetCode()}
-	budget := 3.50
-	scopes := []string{"doc", "src"}
-
-	res, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:       first.GetId(),
-		Title:        &newTitle,
-		Prompt:       &newPrompt,
-		Provider:     &newProvider,
-		Model:        &newModel,
-		PartOf:       &partOf,
-		After:        after,
-		Decision:     &decisionID,
-		MaxBudgetUsd: &budget,
-		WriteScopes:  scopes,
-	}))
-	if err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-
-	task := res.Msg.GetTask()
-	if task.GetId() != first.GetId() || task.GetCode() != first.GetCode() {
-		t.Errorf("task ID/Code changed: id %q vs %q, code %q vs %q", task.GetId(), first.GetId(), task.GetCode(), first.GetCode())
-	}
-	if task.GetTitle() != newTitle {
-		t.Errorf("title: %q, want %q", task.GetTitle(), newTitle)
-	}
-	if task.GetPrompt() != newPrompt {
-		t.Errorf("prompt: %q, want %q", task.GetPrompt(), newPrompt)
-	}
-	if task.GetProvider() != newProvider || task.GetModel() != newModel {
-		t.Errorf("provider/model: %v/%s, want %v/%s", task.GetProvider(), task.GetModel(), newProvider, newModel)
-	}
-	if task.GetPartOf() != azima.GetId() {
-		t.Errorf("part of: %q, want %q", task.GetPartOf(), azima.GetId())
-	}
-	if !slices.Contains(task.GetDependsOn(), second.GetId()) {
-		t.Errorf("depends on: %v, want to contain %s", task.GetDependsOn(), second.GetId())
-	}
-	if task.GetDecision() != decisionID {
-		t.Errorf("decision: %q, want %q", task.GetDecision(), decisionID)
-	}
-	if task.GetMaxBudgetUsd() != budget {
-		t.Errorf("budget: %v, want %v", task.GetMaxBudgetUsd(), budget)
-	}
-	if !slices.Equal(task.GetWriteScopes(), scopes) {
-		t.Errorf("write scopes: %v, want %v", task.GetWriteScopes(), scopes)
-	}
-
-	// Verify prompt in Get
-	got := e.get(t, first.GetId())
-	if got.GetPrompt() != newPrompt {
-		t.Errorf("get prompt: %q, want %q", got.GetPrompt(), newPrompt)
-	}
-
-	// Verify history contains both prompt events
-	events, err := store.List[*planv1.TaskEvent](t.Context(), e.db, store.Where{"task_id": first.GetId()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var promptTexts []string
-	for _, ev := range events {
-		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
-			promptTexts = append(promptTexts, ev.GetText())
-		}
-	}
-	if len(promptTexts) != 2 || promptTexts[0] != initialPrompt || promptTexts[1] != newPrompt {
-		t.Errorf("prompt history: %v, want [%q, %q]", promptTexts, initialPrompt, newPrompt)
-	}
-
-	// dep is STILL waiting on first
-	depGot := e.get(t, dep.GetId())
-	if !slices.Contains(depGot.GetDependsOn(), first.GetId()) {
-		t.Errorf("dep depends on: %v, want to contain %s", depGot.GetDependsOn(), first.GetId())
-	}
+func (s *spyProvider) allSpecs() []Spec {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.specs)
 }
 
-// TestUpdatePlannedOnlyGivenFieldsChange: only the fields given change, other fields stay as they were.
-func TestUpdatePlannedOnlyGivenFieldsChange(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	firstPrompt := "text first"
-	initialTitle := "Initial Title"
-	task := e.mustSpawn(t, wishID, initialTitle, firstPrompt, &planv1.TaskServiceSpawnRequest{
-		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
-		Model:    "gemini-3.8-flash-high",
-		Later:    true,
-	})
-
-	// Update only title
-	newTitle := "Changed Title"
-	res, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-		Title:  &newTitle,
-	}))
-	if err != nil {
-		t.Fatalf("Update title: %v", err)
-	}
-	if res.Msg.GetTask().GetTitle() != newTitle {
-		t.Errorf("title: %q, want %q", res.Msg.GetTask().GetTitle(), newTitle)
-	}
-	if res.Msg.GetTask().GetPrompt() != firstPrompt {
-		t.Errorf("prompt: %q, want %q", res.Msg.GetTask().GetPrompt(), firstPrompt)
-	}
-	if res.Msg.GetTask().GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || res.Msg.GetTask().GetModel() != "gemini-3.8-flash-high" {
-		t.Errorf("provider/model: %v/%s", res.Msg.GetTask().GetProvider(), res.Msg.GetTask().GetModel())
-	}
-
-	// Update only prompt
-	secondPrompt := "text second prompt"
-	res, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-		Prompt: &secondPrompt,
-	}))
-	if err != nil {
-		t.Fatalf("Update prompt: %v", err)
-	}
-	if res.Msg.GetTask().GetPrompt() != secondPrompt {
-		t.Errorf("prompt: %q, want %q", res.Msg.GetTask().GetPrompt(), secondPrompt)
-	}
-	if res.Msg.GetTask().GetTitle() != newTitle {
-		t.Errorf("title: %q, want %q", res.Msg.GetTask().GetTitle(), newTitle)
-	}
-
-	// Update only model
-	customModel := "custom-model-v1"
-	res, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-		Model:  &customModel,
-	}))
-	if err != nil {
-		t.Fatalf("Update model: %v", err)
-	}
-	if res.Msg.GetTask().GetModel() != customModel {
-		t.Errorf("model: %q, want %q", res.Msg.GetTask().GetModel(), customModel)
-	}
-
-	// Clear model with ""
-	emptyModel := ""
-	res, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-		Model:  &emptyModel,
-	}))
-	if err != nil {
-		t.Fatalf("Update empty model: %v", err)
-	}
-	if res.Msg.GetTask().GetModel() != "" {
-		t.Errorf("model after clear: %q, want empty", res.Msg.GetTask().GetModel())
-	}
-
-	// Change provider without model: resets to provider default model
-	claude := planv1.Provider_PROVIDER_CLAUDE
-	res, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:   task.GetId(),
-		Provider: &claude,
-	}))
-	if err != nil {
-		t.Fatalf("Update provider: %v", err)
-	}
-	if res.Msg.GetTask().GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
-		t.Errorf("provider: %v, want claude", res.Msg.GetTask().GetProvider())
-	}
-	if res.Msg.GetTask().GetModel() != "claude-sonnet-5-5" {
-		t.Errorf("model: %q, want default claude-sonnet-5-5", res.Msg.GetTask().GetModel())
-	}
-}
-
-// TestUpdateNothingGiven: error when no fields are provided.
-func TestUpdateNothingGiven(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	task := e.mustSpawn(t, wishID, "Planned", "text ok", &planv1.TaskServiceSpawnRequest{Later: true})
-
-	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-	}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Fatalf("err: %v, want InvalidArgument", err)
-	}
-	if !strings.Contains(err.Error(), "nothing to update: give at least one field") {
-		t.Errorf("err: %q, want containing 'nothing to update: give at least one field'", err.Error())
-	}
-}
-
-// TestUpdateRefusedCycleAndDraftAzima: self-wait, cycle in dependencies, and draft azima are refused.
-func TestUpdateRefusedCycleAndDraftAzima(t *testing.T) {
+func TestUpdate(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
 	ctx := t.Context()
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
 
-	taskA := e.mustSpawn(t, wishID, "Task A", "text A", &planv1.TaskServiceSpawnRequest{Later: true})
-	taskB := e.mustSpawn(t, wishID, "Task B", "text B", &planv1.TaskServiceSpawnRequest{
-		Later: true,
-		After: []string{taskA.GetCode()},
-	})
-
-	// Self-wait
-	_, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: taskA.GetId(),
-		After:  []string{taskA.GetCode()},
-	}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Fatalf("self-wait err: %v, want InvalidArgument", err)
-	}
-	wantSelfErr := "task " + taskA.GetCode() + " cannot wait for itself"
-	if !strings.Contains(err.Error(), wantSelfErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantSelfErr)
-	}
-
-	// Dependency cycle: B waits on A, update A to wait on B
-	_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: taskA.GetId(),
-		After:  []string{taskB.GetCode()},
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("cycle err: %v, want FailedPrecondition", err)
-	}
-	if !strings.Contains(err.Error(), "the tasks of a wish form no cycle") {
-		t.Errorf("err: %q, want containing 'the tasks of a wish form no cycle'", err.Error())
-	}
-
-	// Draft azima refusal
-	azRes, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID,
-		Title:  "Draft Azima",
-		Kind:   planv1.TaskKind_TASK_KIND_AZIMA,
-		Draft:  true,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	draftAzima := azRes.Msg.GetTask()
-
-	draftCode := draftAzima.GetCode()
-	_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: taskA.GetId(),
-		PartOf: &draftCode,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("draft azima err: %v, want FailedPrecondition", err)
-	}
-	wantDraftErr := "azima " + draftCode + " is a draft: open it first with djinn task open " + draftCode
-	if !strings.Contains(err.Error(), wantDraftErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantDraftErr)
-	}
-}
-
-// TestUpdateRunningAndPausedRules: running or paused task may change title only; prompt uses djinn task send; the rest after it ends.
-func TestUpdateRunningAndPausedRules(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	// Spawn a worker that waits for a message (RUNNING)
-	task := e.spawn(t, wishID, "wait")
-	if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
-		t.Fatalf("task status: %v, want running", task.GetStatus())
-	}
-
-	// Running task: update title succeeds
-	newTitle := "Running Title Updated"
-	res, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-		Title:  &newTitle,
-	}))
-	if err != nil {
-		t.Fatalf("update title while running: %v", err)
-	}
-	if res.Msg.GetTask().GetTitle() != newTitle {
-		t.Errorf("title: %q, want %q", res.Msg.GetTask().GetTitle(), newTitle)
-	}
-
-	// Running task: update prompt fails with "use djinn task send"
-	p := "new prompt"
-	_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-		Prompt: &p,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("update prompt while running err: %v, want FailedPrecondition", err)
-	}
-	wantPromptErr := "task " + task.GetCode() + " is running: use djinn task send"
-	if !strings.Contains(err.Error(), wantPromptErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantPromptErr)
-	}
-
-	// Running task: update provider/model/after fails with "the rest after it ends"
-	claude := planv1.Provider_PROVIDER_CLAUDE
-	_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:   task.GetId(),
-		Provider: &claude,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("update provider while running err: %v, want FailedPrecondition", err)
-	}
-	wantRestErr := "task " + task.GetCode() + " is running: the rest after it ends"
-	if !strings.Contains(err.Error(), wantRestErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantRestErr)
-	}
-
-	// Pause the worker (PAUSED)
-	_, err = e.tasks.Pause(ctx, connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: task.GetId()}))
-	if err != nil {
-		t.Fatalf("pause: %v", err)
-	}
-
-	// Paused task: update title succeeds
-	pausedTitle := "Paused Title Updated"
-	res, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-		Title:  &pausedTitle,
-	}))
-	if err != nil {
-		t.Fatalf("update title while paused: %v", err)
-	}
-	if res.Msg.GetTask().GetTitle() != pausedTitle {
-		t.Errorf("title: %q, want %q", res.Msg.GetTask().GetTitle(), pausedTitle)
-	}
-
-	// Paused task: update prompt fails with "use djinn task send"
-	_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-		Prompt: &p,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("update prompt while paused err: %v, want FailedPrecondition", err)
-	}
-	wantPausedPromptErr := "task " + task.GetCode() + " is paused: use djinn task send"
-	if !strings.Contains(err.Error(), wantPausedPromptErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantPausedPromptErr)
-	}
-
-	// Paused task: update provider fails with "the rest after it ends"
-	_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:   task.GetId(),
-		Provider: &claude,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("update provider while paused err: %v, want FailedPrecondition", err)
-	}
-	wantPausedRestErr := "task " + task.GetCode() + " is paused: the rest after it ends"
-	if !strings.Contains(err.Error(), wantPausedRestErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantPausedRestErr)
-	}
-}
-
-// TestUpdateFinishedTaskRules: finished task (done, failed, stopped, cut short) may change title,
-// provider/model, prompt (for next continue), and azima; never its dependencies once it ran;
-// decision/budget/scopes refused.
-func TestUpdateFinishedTaskRules(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	// Create an open azima to move into
-	azRes, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID,
-		Title:  "Phase 2 Azima",
-		Kind:   planv1.TaskKind_TASK_KIND_AZIMA,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	azima := azRes.Msg.GetTask()
-
-	anotherTask := e.mustSpawn(t, wishID, "Another", "text", &planv1.TaskServiceSpawnRequest{Later: true})
-
-	// Spawn a task that fails
-	first := e.ended(t, e.mustSpawn(t, wishID, "Failed task", "fail tests broke", nil).GetId())
-	if first.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
-		t.Fatalf("task status: %v, want failed", first.GetStatus())
-	}
-
-	// Update dependencies once it ran: refused
-	_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: first.GetId(),
-		After:  []string{anotherTask.GetCode()},
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("update dependencies on finished task: err %v, want FailedPrecondition", err)
-	}
-	wantDepErr := "task " + first.GetCode() + " has run: never its dependencies once it ran"
-	if !strings.Contains(err.Error(), wantDepErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantDepErr)
-	}
-
-	// Update decision / budget / scopes on finished task: refused
-	budget := 10.0
-	_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:       first.GetId(),
-		MaxBudgetUsd: &budget,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("update budget on finished task: err %v, want FailedPrecondition", err)
-	}
-	wantBudgetErr := "task " + first.GetCode() + " has run: only title, prompt, provider, model and azima may change"
-	if !strings.Contains(err.Error(), wantBudgetErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantBudgetErr)
-	}
-
-	// Update title, provider, model, prompt, azima: ALL succeed on finished task
-	newTitle := "Failed Task Renamed"
-	newPrompt := "text new prompt for continue"
-	agy := planv1.Provider_PROVIDER_ANTIGRAVITY
-	model := "gemini-3.8-flash-high"
-	partOf := azima.GetCode()
-
-	res, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:   first.GetId(),
-		Title:    &newTitle,
-		Prompt:   &newPrompt,
-		Provider: &agy,
-		Model:    &model,
-		PartOf:   &partOf,
-	}))
-	if err != nil {
-		t.Fatalf("update finished task allowed fields: %v", err)
-	}
-	task := res.Msg.GetTask()
-	if task.GetTitle() != newTitle || task.GetPrompt() != newPrompt ||
-		task.GetProvider() != agy || task.GetModel() != model || task.GetPartOf() != azima.GetId() {
-		t.Errorf("updated finished task: %v", task)
-	}
-}
-
-// TestUpdateFinishedPromptContinueUsesNewPrompt: updating prompt on a finished task makes subsequent
-// continue without prompt use that prompt for the continue turn, without duplicate prompt events.
-func TestUpdateFinishedPromptContinueUsesNewPrompt(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx := t.Context()
-	spy := &spyProvider{}
-	providers := map[planv1.Provider]Provider{
-		planv1.Provider_PROVIDER_FAKE: spy,
-	}
-	e := upWith(t, t.TempDir(), providers)
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	// Spawn a task that fails
-	firstPrompt := "text first run\nfail broke"
-	first := e.ended(t, e.mustSpawn(t, wishID, "Failing task", firstPrompt, nil).GetId())
-	if first.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
-		t.Fatalf("status: %v, want failed", first.GetStatus())
-	}
-
-	// Update prompt
-	updatedPrompt := "text continued run\nusage 100 10 0.01"
-	_, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: first.GetId(),
-		Prompt: &updatedPrompt,
-	}))
-	if err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-
-	// Verify get shows the new prompt
-	got := e.get(t, first.GetId())
-	if got.GetPrompt() != updatedPrompt {
-		t.Errorf("get prompt: %q, want %q", got.GetPrompt(), updatedPrompt)
-	}
-
-	// Continue WITHOUT prompt
-	cont, err := e.tasks.Continue(ctx, connect.NewRequest(&planv1.TaskServiceContinueRequest{
-		TaskId: first.GetId(),
-	}))
-	if err != nil {
-		t.Fatalf("Continue: %v", err)
-	}
-	if cont.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
-		t.Errorf("status after continue: %v, want running", cont.Msg.GetTask().GetStatus())
-	}
-
-	// Let it finish
-	done := e.ended(t, first.GetId())
-	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("status: %v, want done", done.GetStatus())
-	}
-
-	// Check worker spec received the updated prompt
-	spec := spy.lastSpec()
-	if !strings.Contains(spec.Prompt, "text continued run") {
-		t.Errorf("worker Prompt: %q, want to contain 'text continued run'", spec.Prompt)
-	}
-
-	// Events check: exactly 2 PROMPT events (the initial spawn prompt, and the update prompt)
-	events := e.watch(ctx, t, first.GetId(), 0)
-	var promptCount int
-	for _, ev := range events {
-		if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
-			promptCount++
-		}
-	}
-	if promptCount != 2 {
-		t.Errorf("PROMPT events count: %d, want 2", promptCount)
-	}
-}
-
-// TestUpdateFailedContinuedStartsNewSession: a failed task continued after provider change starts on the new
-// provider from its first prompt.
-func TestUpdateFailedContinuedStartsNewSession(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
+	l := &limit{slots: 0}
+	fakeSpy := &spyProvider{}
 	claudeSpy := &spyProvider{}
 	agySpy := &spyProvider{}
 	providers := map[planv1.Provider]Provider{
+		planv1.Provider_PROVIDER_FAKE:        fakeSpy,
 		planv1.Provider_PROVIDER_CLAUDE:      claudeSpy,
 		planv1.Provider_PROVIDER_ANTIGRAVITY: agySpy,
-		planv1.Provider_PROVIDER_FAKE:        Fake{},
 		planv1.Provider_PROVIDER_WATCH:       fastWatch,
 	}
-	e := upWith(t, t.TempDir(), providers)
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	// Spawn a claude task that fails
-	firstPrompt := "text hello from claude\nfail tests broke"
-	first := e.ended(t, e.mustSpawn(t, wishID, "Failed task", firstPrompt, &planv1.TaskServiceSpawnRequest{
-		Provider: planv1.Provider_PROVIDER_CLAUDE,
-	}).GetId())
-	if first.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
-		t.Fatalf("task status: %v, want failed", first.GetStatus())
-	}
-
-	// Change agent to antigravity
-	agy := planv1.Provider_PROVIDER_ANTIGRAVITY
-	model := "gemini-3.8-flash-high"
-	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:   first.GetId(),
-		Provider: &agy,
-		Model:    &model,
-	}))
-	if err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-
-	// Continue the task with a prompt
-	contPrompt := "text continue prompt"
-	cont, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{
-		TaskId: first.GetId(),
-		Prompt: &contPrompt,
-	}))
-	if err != nil {
-		t.Fatalf("continue: %v", err)
-	}
-	if cont.Msg.GetTask().GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY {
-		t.Errorf("continued provider: %v, want antigravity", cont.Msg.GetTask().GetProvider())
-	}
-
-	// Wait for continued run to end
-	done := e.ended(t, first.GetId())
-
-	// Check antigravity spy was called with new session and first prompt
-	spec := agySpy.lastSpec()
-	if spec.Resume != "" {
-		t.Errorf("antigravity Resume: %q, want empty (new session)", spec.Resume)
-	}
-	if !strings.Contains(spec.Prompt, "text hello from claude") {
-		t.Errorf("antigravity Prompt: %q, want to contain first prompt", spec.Prompt)
-	}
-	if strings.Contains(spec.Prompt, "text continue prompt") {
-		t.Errorf("antigravity Prompt: %q, should NOT use continue prompt", spec.Prompt)
-	}
-	if spec.Model != model {
-		t.Errorf("antigravity Model: %q, want %q", spec.Model, model)
-	}
-
-	// Verify events include the start event saying provider changed
-	events := e.watch(t.Context(), t, done.GetId(), 0)
-	var foundChangeText bool
-	wantEvent := "provider changed: claude → antigravity, starts from its first prompt"
-	for _, ev := range events {
-		if strings.Contains(ev.GetText(), wantEvent) {
-			foundChangeText = true
-			break
-		}
-	}
-	if !foundChangeText {
-		t.Errorf("events lack %q", wantEvent)
-	}
-}
-
-// TestUpdateProviderChangeResetsModel: when a task ran on a provider that recorded a model from the stream,
-// changing provider without --model resets the model to the new provider's default and clears the recorded model.
-func TestUpdateProviderChangeResetsModel(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	claudeSpy := &spyProvider{}
-	agySpy := &spyProvider{}
-	providers := map[planv1.Provider]Provider{
-		planv1.Provider_PROVIDER_CLAUDE:      claudeSpy,
-		planv1.Provider_PROVIDER_ANTIGRAVITY: agySpy,
-		planv1.Provider_PROVIDER_FAKE:        Fake{},
-		planv1.Provider_PROVIDER_WATCH:       fastWatch,
-	}
-	e := upWith(t, t.TempDir(), providers)
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	// Spawn a task on Antigravity that records gemini-3.8-flash-high from its stream and fails.
-	firstPrompt := "model gemini-3.8-flash-high\ntext working\nfail Antigravity failed"
-	first := e.ended(t, e.mustSpawn(t, wishID, "Antigravity task", firstPrompt, &planv1.TaskServiceSpawnRequest{
-		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
-	}).GetId())
-	if first.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
-		t.Fatalf("task status: %v, want failed", first.GetStatus())
-	}
-	if got, want := first.GetModel(), "gemini-3.8-flash-high"; got != want {
-		t.Fatalf("task recorded model: %q, want %q", got, want)
-	}
-
-	// Change agent to claude without --model: model resets to claude default and output shows it.
-	claude := planv1.Provider_PROVIDER_CLAUDE
-	res, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:   first.GetId(),
-		Provider: &claude,
-	}))
-	if err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-	if got, want := res.Msg.GetTask().GetProvider(), planv1.Provider_PROVIDER_CLAUDE; got != want {
-		t.Errorf("response provider: %v, want %v", got, want)
-	}
-	if got, want := res.Msg.GetTask().GetModel(), "claude-sonnet-5-5"; got != want {
-		t.Errorf("response model: %q, want %q", got, want)
-	}
-
-	// Stored task has new provider and default model.
-	stored := e.get(t, first.GetId())
-	if got, want := stored.GetProvider(), planv1.Provider_PROVIDER_CLAUDE; got != want {
-		t.Errorf("stored provider: %v, want %v", got, want)
-	}
-	if got, want := stored.GetModel(), "claude-sonnet-5-5"; got != want {
-		t.Errorf("stored model: %q, want %q", got, want)
-	}
-}
-
-// TestUpdateProviderChangeExplicitModelKept: when changing provider with an explicit model,
-// that model is kept.
-func TestUpdateProviderChangeExplicitModelKept(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	claudeSpy := &spyProvider{}
-	agySpy := &spyProvider{}
-	providers := map[planv1.Provider]Provider{
-		planv1.Provider_PROVIDER_CLAUDE:      claudeSpy,
-		planv1.Provider_PROVIDER_ANTIGRAVITY: agySpy,
-		planv1.Provider_PROVIDER_FAKE:        Fake{},
-		planv1.Provider_PROVIDER_WATCH:       fastWatch,
-	}
-	e := upWith(t, t.TempDir(), providers)
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	first := e.ended(t, e.mustSpawn(t, wishID, "Antigravity task", "model gemini-3.8-flash-high\nfail broke", &planv1.TaskServiceSpawnRequest{
-		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
-	}).GetId())
-
-	// Update with explicit model
-	claude := planv1.Provider_PROVIDER_CLAUDE
-	explicitModel := "claude-3-5-haiku-20241022"
-	res, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:   first.GetId(),
-		Provider: &claude,
-		Model:    &explicitModel,
-	}))
-	if err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-	if got, want := res.Msg.GetTask().GetModel(), explicitModel; got != want {
-		t.Errorf("model: %q, want %q", got, want)
-	}
-	stored := e.get(t, first.GetId())
-	if got, want := stored.GetModel(), explicitModel; got != want {
-		t.Errorf("stored model: %q, want %q", got, want)
-	}
-}
-
-// TestUpdateWatcher: updating provider or model on a watcher is refused.
-func TestUpdateWatcher(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	watcher := e.mustSpawn(t, wishID, "Watcher task", "echo hi", &planv1.TaskServiceSpawnRequest{
-		Provider: planv1.Provider_PROVIDER_WATCH,
-		Later:    true,
-	})
-
-	claude := planv1.Provider_PROVIDER_CLAUDE
-	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:   watcher.GetId(),
-		Provider: &claude,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("update watcher provider err: %v, want FailedPrecondition", err)
-	}
-	wantWatcherErr := "task " + watcher.GetCode() + " is a watcher: no agent runs it"
-	if !strings.Contains(err.Error(), wantWatcherErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantWatcherErr)
-	}
-}
-
-// TestUpdateRenamesAnAzima: djinn task update --title renames an azima without a plan file; any other field of an
-// azima is still refused.
-func TestUpdateRenamesAnAzima(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
-		WishId: wishID,
-		Title:  "Phase 1 Azima",
-		Kind:   planv1.TaskKind_TASK_KIND_AZIMA,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	azima := res.Msg.GetTask()
-
-	var out, errs bytes.Buffer
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	code := cli.Run(ctx, []string{"task", "update", azima.GetId(), "--title", "Phase 1 reaches main: PR #3 merged"},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 || !strings.Contains(out.String(), "title: Phase 1 reaches main: PR #3 merged") {
-		t.Errorf("djinn task update --title on an azima: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
-	}
-	if got := e.get(t, azima.GetId()); got.GetTitle() != "Phase 1 reaches main: PR #3 merged" || !plan.IsAzima(got) {
-		t.Errorf("stored azima: title %q, kind %v", got.GetTitle(), got.GetKind())
-	}
-
-	prompt := "text do it"
-	newTitle := "Renamed with a prompt"
-	_, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: azima.GetId(),
-		Title:  &newTitle,
-		Prompt: &prompt,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("update azima prompt err: %v, want FailedPrecondition", err)
-	}
-	wantAzimaErr := "task " + azima.GetCode() + " is an azima of the plan: no worker runs it; only its title, or its branch, changes"
-	if !strings.Contains(err.Error(), wantAzimaErr) {
-		t.Errorf("err: %q, want %q", err.Error(), wantAzimaErr)
-	}
-	if got := e.get(t, azima.GetId()).GetTitle(); got != "Phase 1 reaches main: PR #3 merged" {
-		t.Errorf("title after a refused update: %q", got)
-	}
-
-	twoLines := "One\ntwo"
-	_, err = e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{TaskId: azima.GetId(), Title: &twoLines}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("update azima with a title of two lines err: %v, want InvalidArgument", err)
-	}
-}
-
-// TestUpdateRenamesAnAzimaInItsPlanFile: djinn task update --title on an azima with a plan file writes the title into
-// the file's heading, its code kept; djinn plan sync then keeps the new title.
-func TestUpdateRenamesAnAzimaInItsPlanFile(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	dir := t.TempDir()
-	file := filepath.Join(dir, plan.PlanDir, "t1.md")
-	writeFile(t, dir, filepath.Join(plan.PlanDir, "t1.md"),
-		"---\ncode: T1\nstatus: in-progress\n---\n\n# T1 · Old title\n\nThe goal.\n\n## Done when\n\n- [ ] it ships\n")
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, dir)
-	sync := func() {
+	e := upWith(t, t.TempDir(), providers, WithCapacity(l.capacity), WithTick(time.Hour))
+	rootT := t
+	wish0, projectID := e.wish(t, nativeFolder(t))
+	lastWish := wish0
+	lastHasSlots := false
+	newWish := func(t *testing.T, slots int) string {
 		t.Helper()
-		if _, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID})); err != nil {
+		hasSlots := slots > 0
+		if e.last == lastWish && hasSlots == lastHasSlots {
+			l.set(slots, "")
+			return lastWish
+		}
+		if e.last != "" {
+			if _, err := e.wishes.Pause(ctx, connect.NewRequest(&planv1.WishServicePauseRequest{WishId: e.last})); err != nil {
+				t.Fatal(err)
+			}
+		}
+		l.set(slots, "")
+		w, err := e.wishes.Make(ctx, connect.NewRequest(&planv1.WishServiceMakeRequest{
+			Title: "Run Djinn on itself", ProjectIds: []string{projectID},
+		}))
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	sync()
-	var t1 *planv1.Task
-	for _, task := range e.list(t, wishID) {
-		if task.GetCode() == "T1" {
-			t1 = task
-		}
-	}
-	if t1 == nil || t1.GetTitle() != "Old title" {
-		t.Fatalf("T1 after sync: %v", t1)
+		e.last = w.Msg.GetWish().GetId()
+		lastWish = e.last
+		lastHasSlots = hasSlots
+		return e.last
 	}
 
-	var out, errs bytes.Buffer
-	code := cli.Run(ctx, []string{"task", "update", t1.GetId(), "--title", "feat/x reaches main: PR #3 merged"},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 || !strings.Contains(out.String(), "title: feat/x reaches main: PR #3 merged") {
-		t.Errorf("djinn task update --title: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
-	}
-	data, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "---\ncode: T1\nstatus: in-progress\n---\n\n# T1 · feat/x reaches main: PR #3 merged\n\nThe goal.\n\n## Done when\n\n- [ ] it ships\n"
-	if string(data) != want {
-		t.Errorf("plan file:\n%s\nwant:\n%s", data, want)
-	}
+	cases := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{
+			name: "planned_all_fields",
+			run: func(t *testing.T) {
+				wishID := newWish(t, 0)
+				second := e.mustSpawn(t, wishID, "Second task", "text second", nil)
 
-	sync()
-	if got := e.get(t, t1.GetId()); got.GetTitle() != "feat/x reaches main: PR #3 merged" || got.GetDescription() != "The goal.\n\n## Done when\n\n- [ ] it ships" {
-		t.Errorf("T1 after a sync: title %q, description %q", got.GetTitle(), got.GetDescription())
-	}
-}
+				azRes, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+					WishId: wishID,
+					Title:  "Phase 1 Azima",
+					Kind:   planv1.TaskKind_TASK_KIND_AZIMA,
+				}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				azima := azRes.Msg.GetTask()
 
-// TestUpdateJournal: TaskService.Update records a single journal entry.
-func TestUpdateJournal(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+				blocks := planv1connect.NewBlockServiceClient(e.srv.Client(), e.srv.URL)
+				bRes, err := blocks.Put(ctx, connect.NewRequest(&planv1.BlockServicePutRequest{
+					WishId: wishID,
+					Kind:   "decision",
+					Title:  "Choose DB",
+				}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				decisionID := bRes.Msg.GetBlock().GetId()
 
-	task := e.mustSpawn(t, wishID, "Planned", "text first", &planv1.TaskServiceSpawnRequest{Later: true})
+				initialPrompt := "text initial prompt"
+				first := e.mustSpawn(t, wishID, "Initial title", initialPrompt, &planv1.TaskServiceSpawnRequest{
+					Provider: planv1.Provider_PROVIDER_FAKE,
+				})
+				dep := e.mustSpawn(t, wishID, "Dependent", "text dependent", &planv1.TaskServiceSpawnRequest{
+					After: []string{first.GetCode()},
+				})
 
-	newTitle := "Journaled Title"
-	newPrompt := "text journaled prompt"
-	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId: task.GetId(),
-		Title:  &newTitle,
-		Prompt: &newPrompt,
-	}))
-	if err != nil {
-		t.Fatalf("Update: %v", err)
-	}
+				newTitle := "Updated Title"
+				newPrompt := "text updated prompt"
+				newProvider := planv1.Provider_PROVIDER_ANTIGRAVITY
+				newModel := "gemini-3.8-flash-high"
+				partOf := azima.GetCode()
+				after := []string{second.GetCode()}
+				budget := 3.50
+				scopes := []string{"doc", "src"}
 
-	cmds, err := store.Commands(t.Context(), e.db, func(c store.Command) bool {
-		return c.Method == planv1connect.TaskServiceUpdateProcedure
-	})
-	if err != nil || len(cmds) != 1 {
-		t.Errorf("journaled %d Update commands (%v), want 1", len(cmds), err)
-	}
-}
+				res, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:       first.GetId(),
+					Title:        &newTitle,
+					Prompt:       &newPrompt,
+					Provider:     &newProvider,
+					Model:        &newModel,
+					PartOf:       &partOf,
+					After:        after,
+					Decision:     &decisionID,
+					MaxBudgetUsd: &budget,
+					WriteScopes:  scopes,
+				}))
+				if err != nil {
+					t.Fatalf("Update: %v", err)
+				}
 
-// TestUpdateCLIAndAlias: djinn task update and the alias djinn task set-agent from the command line.
-func TestUpdateCLIAndAlias(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
+				task := res.Msg.GetTask()
+				if task.GetId() != first.GetId() || task.GetCode() != first.GetCode() {
+					t.Errorf("task ID/Code changed: id %q vs %q, code %q vs %q", task.GetId(), first.GetId(), task.GetCode(), first.GetCode())
+				}
+				if task.GetTitle() != newTitle || task.GetPrompt() != newPrompt {
+					t.Errorf("title/prompt: %q/%q, want %q/%q", task.GetTitle(), task.GetPrompt(), newTitle, newPrompt)
+				}
+				if task.GetProvider() != newProvider || task.GetModel() != newModel {
+					t.Errorf("provider/model: %v/%s, want %v/%s", task.GetProvider(), task.GetModel(), newProvider, newModel)
+				}
+				if task.GetPartOf() != azima.GetId() || !slices.Contains(task.GetDependsOn(), second.GetId()) {
+					t.Errorf("partOf/dependsOn: %q/%v", task.GetPartOf(), task.GetDependsOn())
+				}
+				if task.GetDecision() != decisionID || task.GetMaxBudgetUsd() != budget || !slices.Equal(task.GetWriteScopes(), scopes) {
+					t.Errorf("decision/budget/scopes: %q/%v/%v", task.GetDecision(), task.GetMaxBudgetUsd(), task.GetWriteScopes())
+				}
+				if got := e.get(t, first.GetId()); got.GetPrompt() != newPrompt {
+					t.Errorf("get prompt: %q, want %q", got.GetPrompt(), newPrompt)
+				}
 
-	firstPrompt := "text hello CLI"
-	task := e.mustSpawn(t, wishID, "CLI test task", firstPrompt, &planv1.TaskServiceSpawnRequest{
-		Provider: planv1.Provider_PROVIDER_FAKE,
-		Later:    true,
-	})
-
-	var out, errs bytes.Buffer
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	// djinn task get shows the prompt
-	code := cli.Run(ctx, []string{"task", "get", task.GetId()},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 || !strings.Contains(out.String(), "prompt: "+firstPrompt) {
-		t.Errorf("djinn task get: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
-	}
-
-	// djinn task update updates title and prompt
-	out.Reset()
-	errs.Reset()
-	code = cli.Run(ctx, []string{"task", "update", task.GetId(), "--title", "CLI Updated Title", "--prompt", "text updated prompt CLI"},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 || !strings.Contains(out.String(), "title: CLI Updated Title") || !strings.Contains(out.String(), "prompt: text updated prompt CLI") {
-		t.Errorf("djinn task update: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
-	}
-
-	// djinn task set-agent alias changes provider and model
-	out.Reset()
-	errs.Reset()
-	code = cli.Run(ctx, []string{"task", "set-agent", task.GetId(), "--provider", "antigravity", "--model", "gemini-3.8-flash-high"},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 || !strings.Contains(out.String(), "provider: antigravity") || !strings.Contains(out.String(), "model: gemini-3.8-flash-high") {
-		t.Errorf("djinn task set-agent: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
-	}
-
-	// djinn task set-agent --model "" clears model
-	out.Reset()
-	errs.Reset()
-	code = cli.Run(ctx, []string{"task", "set-agent", task.GetId(), "--model", ""},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 {
-		t.Errorf("djinn task set-agent --model \"\": code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
-	}
-	stored, err := store.Get[*planv1.Task](ctx, e.db, task.GetId())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stored.GetModel() != "" {
-		t.Errorf("model after clearing: %q, want empty", stored.GetModel())
-	}
-
-	// djinn task set-agent --provider claude (no --model) resets model to claude's default and command output says it
-	out.Reset()
-	errs.Reset()
-	code = cli.Run(ctx, []string{"task", "set-agent", task.GetId(), "--provider", "claude"},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 || !strings.Contains(out.String(), "provider: claude") || !strings.Contains(out.String(), "model: claude-sonnet-5-5") {
-		t.Errorf("djinn task set-agent --provider claude: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
-	}
-	got := e.get(t, task.GetId())
-	if got.GetModel() != "claude-sonnet-5-5" {
-		t.Errorf("model after provider change: %q, want %q", got.GetModel(), "claude-sonnet-5-5")
-	}
-}
-
-// TestContinueWithForeignModelInStoreSanitizes: if a task in the store has a foreign model
-// recorded from another provider, Continue sanitizes it to the current provider's default model.
-func TestContinueWithForeignModelInStoreSanitizes(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	claudeSpy := &spyProvider{}
-	providers := map[planv1.Provider]Provider{
-		planv1.Provider_PROVIDER_CLAUDE: claudeSpy,
-		planv1.Provider_PROVIDER_FAKE:   Fake{},
-		planv1.Provider_PROVIDER_WATCH:  fastWatch,
-	}
-	e := upWith(t, t.TempDir(), providers)
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	first := e.ended(t, e.mustSpawn(t, wishID, "Failed claude task", "fail broke", &planv1.TaskServiceSpawnRequest{
-		Provider: planv1.Provider_PROVIDER_CLAUDE,
-	}).GetId())
-
-	// Manually inject a foreign model into the store (simulating an old task or foreign stream record).
-	task := e.get(t, first.GetId())
-	task.Model = "gemini-3.8-flash-high"
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "test/put", task); err != nil {
-			return err
-		}
-		return tx.Put(task)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Continue the task: Continue sanitizes the model.
-	p := "text continue"
-	cont, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{
-		TaskId: first.GetId(),
-		Prompt: &p,
-	}))
-	if err != nil {
-		t.Fatalf("continue: %v", err)
-	}
-	if got, want := cont.Msg.GetTask().GetModel(), "claude-sonnet-5-5"; got != want {
-		t.Errorf("continued response model: %q, want %q", got, want)
-	}
-	e.ended(t, first.GetId())
-
-	spec := claudeSpy.lastSpec()
-	if got, want := spec.Model, "claude-sonnet-5-5"; got != want {
-		t.Errorf("worker spec.Model: %q, want %q", got, want)
-	}
-}
-
-// TestUpdateIntegrationNone: djinn task update <task> --integration none clears the integration record,
-// refused while it is merging (integrating).
-func TestUpdateIntegrationNone(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	task := e.mustSpawn(t, wishID, "Finished task", "text hello", &planv1.TaskServiceSpawnRequest{
-		Provider: planv1.Provider_PROVIDER_FAKE,
-		Later:    true,
-	})
-	// Set task as finished with an integration record
-	stored := e.get(t, task.GetId())
-	stored.Status = planv1.TaskStatus_TASK_STATUS_DONE
-	stored.Integration = &planv1.TaskIntegration{
-		State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
-		Sha:   "deadbeef",
-	}
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "test/put", stored); err != nil {
-			return err
-		}
-		return tx.Put(stored)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// 1. Refused while integrating
-	stored.Integration.State = planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "test/put", stored); err != nil {
-			return err
-		}
-		return tx.Put(stored)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	none := "none"
-	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:      task.GetId(),
-		Integration: &none,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatalf("while integrating, got %v, want FailedPrecondition", err)
-	}
-
-	// 2. Allowed when not integrating: clears integration record via CLI
-	stored.Integration.State = planv1.IntegrationState_INTEGRATION_STATE_COMMITTED
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		if err := tx.Journal("test", "test/put", stored); err != nil {
-			return err
-		}
-		return tx.Put(stored)
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	var out, errs bytes.Buffer
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	code := cli.Run(ctx, []string{"task", "update", task.GetId(), "--integration", "none"},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 {
-		t.Fatalf("djinn task update --integration none failed with code %d: %s", code, errs.String())
-	}
-
-	after := e.get(t, task.GetId())
-	if after.GetIntegration() != nil {
-		t.Fatalf("task integration after update --integration none: got %v, want nil", after.GetIntegration())
-	}
-}
-
-// TestUpdateIntegrationNoneUnmergedBranch: clearing integration record when the branch holds unmerged commits
-// is refused unless --force is given.
-func TestUpdateIntegrationNoneUnmergedBranch(t *testing.T) {
-	testx.Portable(t)
-	t.Parallel()
-	repo := gitRepo(t)
-	mainBranch := plan.CheckedOutBranch(t.Context(), repo)
-
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity), WithTick(time.Hour))
-	wishID, projectID := e.wish(t, repo)
-
-	b := "branch-with-commits"
-	if _, err := git(t.Context(), repo, "checkout", "-b", b); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(repo+"/app/test.txt", []byte("unmerged\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git(t.Context(), repo, "add", "."); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git(t.Context(), repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "unmerged commit"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git(t.Context(), repo, "checkout", mainBranch); err != nil {
-		t.Fatal(err)
-	}
-
-	task := &planv1.Task{
-		Id:        store.NewID(),
-		WishId:    wishID,
-		ProjectId: projectID,
-		Code:      "W1",
-		Title:     "Task with unmerged commits",
-		Status:    planv1.TaskStatus_TASK_STATUS_DONE,
-		Branch:    b,
-		Integration: &planv1.TaskIntegration{
-			State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
-			Sha:   "deadbeef",
+				events, err := store.List[*planv1.TaskEvent](ctx, e.db, store.Where{"task_id": first.GetId()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var promptTexts []string
+				for _, ev := range events {
+					if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
+						promptTexts = append(promptTexts, ev.GetText())
+					}
+				}
+				if len(promptTexts) != 2 || promptTexts[0] != initialPrompt || promptTexts[1] != newPrompt {
+					t.Errorf("prompt history: %v, want [%q, %q]", promptTexts, initialPrompt, newPrompt)
+				}
+				if depGot := e.get(t, dep.GetId()); !slices.Contains(depGot.GetDependsOn(), first.GetId()) {
+					t.Errorf("dep depends on: %v, want to contain %s", depGot.GetDependsOn(), first.GetId())
+				}
+			},
 		},
-		CreateTime: timestamppb.Now(),
-	}
-	if err := e.db.Tx(t.Context(), func(tx *store.Tx) error {
-		_ = tx.Journal("test", "put", task)
-		return tx.Put(task)
-	}); err != nil {
-		t.Fatal(err)
+		{
+			name: "planned_only_given_fields_change",
+			run: func(t *testing.T) {
+				wishID := newWish(t, 0)
+				firstPrompt := "text first"
+				task := e.mustSpawn(t, wishID, "Initial Title", firstPrompt, &planv1.TaskServiceSpawnRequest{
+					Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+					Model:    "gemini-3.8-flash-high",
+				})
+
+				newTitle := "Changed Title"
+				res, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Title:  &newTitle,
+				}))
+				if err != nil {
+					t.Fatalf("Update title: %v", err)
+				}
+				if got := res.Msg.GetTask(); got.GetTitle() != newTitle || got.GetPrompt() != firstPrompt ||
+					got.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || got.GetModel() != "gemini-3.8-flash-high" {
+					t.Errorf("after title update: %v", got)
+				}
+
+				secondPrompt := "text second prompt"
+				res, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Prompt: &secondPrompt,
+				}))
+				if err != nil {
+					t.Fatalf("Update prompt: %v", err)
+				}
+				if got := res.Msg.GetTask(); got.GetPrompt() != secondPrompt || got.GetTitle() != newTitle {
+					t.Errorf("after prompt update: %v", got)
+				}
+
+				invalidModel := "custom-model-v1"
+				if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Model:  &invalidModel,
+				})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+					t.Fatalf("Update invalid model error = %v, want InvalidArgument", err)
+				}
+
+				customModel := "Gemini 4 Argon"
+				res, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Model:  &customModel,
+				}))
+				if err != nil || res.Msg.GetTask().GetModel() != "gemini-4-argon-high" {
+					t.Fatalf("Update model: %v, got %q", err, res.Msg.GetTask().GetModel())
+				}
+
+				emptyModel := ""
+				res, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Model:  &emptyModel,
+				}))
+				if err != nil || res.Msg.GetTask().GetModel() != "" {
+					t.Fatalf("Update empty model: %v, got %q", err, res.Msg.GetTask().GetModel())
+				}
+
+				claude := planv1.Provider_PROVIDER_CLAUDE
+				res, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:   task.GetId(),
+					Provider: &claude,
+				}))
+				if err != nil {
+					t.Fatalf("Update provider: %v", err)
+				}
+				if got := res.Msg.GetTask(); got.GetProvider() != planv1.Provider_PROVIDER_CLAUDE || got.GetModel() != "claude-sonnet-5-5" {
+					t.Errorf("after provider update: provider=%v model=%q", got.GetProvider(), got.GetModel())
+				}
+			},
+		},
+		{
+			name: "nothing_given_cycle_and_draft_azima",
+			run: func(t *testing.T) {
+				wishID := newWish(t, 0)
+				taskA := e.mustSpawn(t, wishID, "Task A", "text A", nil)
+				taskB := e.mustSpawn(t, wishID, "Task B", "text B", &planv1.TaskServiceSpawnRequest{
+					After: []string{taskA.GetCode()},
+				})
+
+				_, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{TaskId: taskA.GetId()}))
+				if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "nothing to update: give at least one field") {
+					t.Errorf("nothing given: %v", err)
+				}
+
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: taskA.GetId(),
+					After:  []string{taskA.GetCode()},
+				}))
+				if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "task "+taskA.GetCode()+" cannot wait for itself") {
+					t.Errorf("self-wait: %v", err)
+				}
+
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: taskA.GetId(),
+					After:  []string{taskB.GetCode()},
+				}))
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the tasks of a wish form no cycle") {
+					t.Errorf("cycle: %v", err)
+				}
+
+				azRes, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+					WishId: wishID,
+					Title:  "Draft Azima",
+					Kind:   planv1.TaskKind_TASK_KIND_AZIMA,
+					Draft:  true,
+				}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				draftCode := azRes.Msg.GetTask().GetCode()
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: taskA.GetId(),
+					PartOf: &draftCode,
+				}))
+				wantDraftErr := "azima " + draftCode + " is a draft: open it first with djinn task open " + draftCode
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), wantDraftErr) {
+					t.Errorf("draft azima: %v, want %q", err, wantDraftErr)
+				}
+			},
+		},
+		{
+			name: "running_and_paused_rules",
+			run: func(t *testing.T) {
+				wishID := newWish(t, 2)
+				task := e.spawn(t, wishID, "wait")
+				if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+					t.Fatalf("task status: %v, want running", task.GetStatus())
+				}
+
+				newTitle := "Running Title Updated"
+				res, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Title:  &newTitle,
+				}))
+				if err != nil || res.Msg.GetTask().GetTitle() != newTitle {
+					t.Fatalf("update title while running: %v, got %q", err, res.Msg.GetTask().GetTitle())
+				}
+
+				p := "new prompt"
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Prompt: &p,
+				}))
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "task "+task.GetCode()+" is running: use djinn task send") {
+					t.Errorf("update prompt while running: %v", err)
+				}
+
+				claude := planv1.Provider_PROVIDER_CLAUDE
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:   task.GetId(),
+					Provider: &claude,
+				}))
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "task "+task.GetCode()+" is running: the rest after it ends") {
+					t.Errorf("update provider while running: %v", err)
+				}
+
+				if _, err := e.tasks.Pause(ctx, connect.NewRequest(&planv1.TaskServicePauseRequest{TaskId: task.GetId()})); err != nil {
+					t.Fatalf("pause: %v", err)
+				}
+
+				pausedTitle := "Paused Title Updated"
+				res, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Title:  &pausedTitle,
+				}))
+				if err != nil || res.Msg.GetTask().GetTitle() != pausedTitle {
+					t.Fatalf("update title while paused: %v, got %q", err, res.Msg.GetTask().GetTitle())
+				}
+
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Prompt: &p,
+				}))
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "task "+task.GetCode()+" is paused: use djinn task send") {
+					t.Errorf("update prompt while paused: %v", err)
+				}
+
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:   task.GetId(),
+					Provider: &claude,
+				}))
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "task "+task.GetCode()+" is paused: the rest after it ends") {
+					t.Errorf("update provider while paused: %v", err)
+				}
+
+				if _, err := e.tasks.Stop(ctx, connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: task.GetId()})); err != nil {
+					t.Fatalf("stop: %v", err)
+				}
+				e.ended(t, task.GetId())
+			},
+		},
+		{
+			name: "finished_task_rules_and_continue",
+			run: func(t *testing.T) {
+				wishID := newWish(t, 2)
+				azRes, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+					WishId: wishID,
+					Title:  "Phase 2 Azima",
+					Kind:   planv1.TaskKind_TASK_KIND_AZIMA,
+				}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				azima := azRes.Msg.GetTask()
+				anotherTask := e.mustSpawn(t, wishID, "Another", "text", &planv1.TaskServiceSpawnRequest{Later: true, WriteScopes: []string{"s1"}})
+				first := e.mustSpawn(t, wishID, "Failed task", "text first run\nfail tests broke", &planv1.TaskServiceSpawnRequest{WriteScopes: []string{"s2"}})
+				e.ended(t, anotherTask.GetId())
+				first = e.ended(t, first.GetId())
+				if first.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED {
+					t.Fatalf("task status: %v, want failed", first.GetStatus())
+				}
+
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: first.GetId(),
+					After:  []string{anotherTask.GetCode()},
+				}))
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "task "+first.GetCode()+" has run: never its dependencies once it ran") {
+					t.Errorf("update dependencies on finished task: %v", err)
+				}
+
+				budget := 10.0
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:       first.GetId(),
+					MaxBudgetUsd: &budget,
+				}))
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "task "+first.GetCode()+" has run: only title, prompt, provider, model and azima may change") {
+					t.Errorf("update budget on finished task: %v", err)
+				}
+
+				newTitle := "Failed Task Renamed"
+				updatedPrompt := "text continued run\nusage 100 10 0.01"
+				partOf := azima.GetCode()
+				if res, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: anotherTask.GetId(),
+					PartOf: &partOf,
+				})); err != nil || res.Msg.GetTask().GetPartOf() != azima.GetId() {
+					t.Fatalf("update finished task partOf: err=%v partOf=%q", err, res.Msg.GetTask().GetPartOf())
+				}
+
+				res, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: first.GetId(),
+					Title:  &newTitle,
+					Prompt: &updatedPrompt,
+				}))
+				if err != nil {
+					t.Fatalf("update finished task allowed fields: %v", err)
+				}
+				if task := res.Msg.GetTask(); task.GetTitle() != newTitle || task.GetPrompt() != updatedPrompt {
+					t.Errorf("updated finished task: %v", task)
+				}
+
+				cont, err := e.tasks.Continue(ctx, connect.NewRequest(&planv1.TaskServiceContinueRequest{TaskId: first.GetId()}))
+				if err != nil {
+					t.Fatalf("Continue: %v", err)
+				}
+				if cont.Msg.GetTask().GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+					t.Errorf("status after continue: %v, want running", cont.Msg.GetTask().GetStatus())
+				}
+				done := e.ended(t, first.GetId())
+				if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+					t.Errorf("status: %v, want done", done.GetStatus())
+				}
+				if spec := fakeSpy.lastSpec(); !strings.Contains(spec.Prompt, "text continued run") {
+					t.Errorf("worker Prompt: %q, want to contain 'text continued run'", spec.Prompt)
+				}
+				events := e.watch(ctx, t, first.GetId(), 0)
+				var promptCount int
+				for _, ev := range events {
+					if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
+						promptCount++
+					}
+				}
+				if promptCount != 2 {
+					t.Errorf("PROMPT events count: %d, want 2", promptCount)
+				}
+			},
+		},
+		{
+			name: "failed_continued_starts_new_session_and_provider_model_rules",
+			run: func(t *testing.T) {
+				wishID := newWish(t, 2)
+				firstPrompt := "text hello from claude\nfail tests broke"
+				first := e.mustSpawn(t, wishID, "Failed task", firstPrompt, &planv1.TaskServiceSpawnRequest{
+					Provider:    planv1.Provider_PROVIDER_CLAUDE,
+					WriteScopes: []string{"s1"},
+				})
+				streamed := e.mustSpawn(t, wishID, "Antigravity task", "model gemini-3.8-flash-high\ntext working\nfail Antigravity failed", &planv1.TaskServiceSpawnRequest{
+					Provider:    planv1.Provider_PROVIDER_ANTIGRAVITY,
+					WriteScopes: []string{"s2"},
+				})
+				first = e.ended(t, first.GetId())
+				streamed = e.ended(t, streamed.GetId())
+
+				agy := planv1.Provider_PROVIDER_ANTIGRAVITY
+				model := "gemini-3.8-flash-high"
+				if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:   first.GetId(),
+					Provider: &agy,
+					Model:    &model,
+				})); err != nil {
+					t.Fatalf("Update: %v", err)
+				}
+
+				contPrompt := "text continue prompt"
+				cont, err := e.tasks.Continue(ctx, connect.NewRequest(&planv1.TaskServiceContinueRequest{
+					TaskId: first.GetId(),
+					Prompt: &contPrompt,
+				}))
+				if err != nil {
+					t.Fatalf("continue: %v", err)
+				}
+				if cont.Msg.GetTask().GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY {
+					t.Errorf("continued provider: %v, want antigravity", cont.Msg.GetTask().GetProvider())
+				}
+				done := e.ended(t, first.GetId())
+
+				spec := agySpy.lastSpec()
+				if spec.Resume != "" || !strings.Contains(spec.Prompt, "text hello from claude") ||
+					strings.Contains(spec.Prompt, "text continue prompt") || spec.Model != model {
+					t.Errorf("antigravity spec: resume=%q model=%q prompt=%q", spec.Resume, spec.Model, spec.Prompt)
+				}
+
+				events := e.watch(ctx, t, done.GetId(), 0)
+				wantEvent := "provider changed: claude → antigravity, starts from its first prompt"
+				var foundChangeText bool
+				for _, ev := range events {
+					if strings.Contains(ev.GetText(), wantEvent) {
+						foundChangeText = true
+						break
+					}
+				}
+				if !foundChangeText {
+					t.Errorf("events lack %q", wantEvent)
+				}
+
+				// Provider change without --model resets recorded stream model to new provider's default; with --model keeps it.
+				if streamed.GetModel() != "gemini-3.8-flash-high" {
+					t.Fatalf("task recorded model: %q", streamed.GetModel())
+				}
+				claude := planv1.Provider_PROVIDER_CLAUDE
+				res, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:   streamed.GetId(),
+					Provider: &claude,
+				}))
+				if err != nil {
+					t.Fatalf("Update provider without model: %v", err)
+				}
+				if res.Msg.GetTask().GetProvider() != planv1.Provider_PROVIDER_CLAUDE || res.Msg.GetTask().GetModel() != "claude-sonnet-5-5" {
+					t.Errorf("after provider reset: %v", res.Msg.GetTask())
+				}
+
+				explicitModel := "claude-haiku-5-5"
+				res, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:   streamed.GetId(),
+					Provider: &claude,
+					Model:    &explicitModel,
+				}))
+				if err != nil {
+					t.Fatalf("explicit model Update: %v", err)
+				}
+				if res.Msg.GetTask().GetModel() != explicitModel || e.get(t, streamed.GetId()).GetModel() != explicitModel {
+					t.Errorf("explicit model: model=%q", res.Msg.GetTask().GetModel())
+				}
+			},
+		},
+		{
+			name: "continue_with_foreign_model_sanitizes",
+			run: func(t *testing.T) {
+				wishID := newWish(t, 2)
+				first := e.ended(t, e.mustSpawn(t, wishID, "Failed claude task", "fail broke", &planv1.TaskServiceSpawnRequest{
+					Provider: planv1.Provider_PROVIDER_CLAUDE,
+				}).GetId())
+
+				task := e.get(t, first.GetId())
+				task.Model = "gemini-3.8-flash-high"
+				if err := e.db.Tx(ctx, func(tx *store.Tx) error {
+					if err := tx.Journal("test", "test/put", task); err != nil {
+						return err
+					}
+					return tx.Put(task)
+				}); err != nil {
+					t.Fatal(err)
+				}
+
+				p := "text continue"
+				cont, err := e.tasks.Continue(ctx, connect.NewRequest(&planv1.TaskServiceContinueRequest{
+					TaskId: first.GetId(),
+					Prompt: &p,
+				}))
+				if err != nil {
+					t.Fatalf("continue: %v", err)
+				}
+				if got, want := cont.Msg.GetTask().GetModel(), "claude-sonnet-5-5"; got != want {
+					t.Errorf("continued response model: %q, want %q", got, want)
+				}
+				e.ended(t, first.GetId())
+				if got, want := claudeSpy.lastSpec().Model, "claude-sonnet-5-5"; got != want {
+					t.Errorf("worker spec.Model: %q, want %q", got, want)
+				}
+			},
+		},
+		{
+			name: "watcher_and_azima_rules",
+			run: func(t *testing.T) {
+				l.set(0, "")
+				dir := rootT.TempDir()
+				writeFile(t, dir, "AGENTS.md", "# Rules\n")
+				file := filepath.Join(dir, plan.PlanDir, "t1.md")
+				writeFile(t, dir, filepath.Join(plan.PlanDir, "t1.md"),
+					"---\ncode: T1\nstatus: in-progress\n---\n\n# T1 · Old title\n\nThe goal.\n\n## Done when\n\n- [ ] it ships\n")
+				wishID, _ := e.wish(t, dir)
+
+				watcher := e.mustSpawn(t, wishID, "Watcher task", "echo hi", &planv1.TaskServiceSpawnRequest{
+					Provider: planv1.Provider_PROVIDER_WATCH,
+				})
+				claude := planv1.Provider_PROVIDER_CLAUDE
+				_, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:   watcher.GetId(),
+					Provider: &claude,
+				}))
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "task "+watcher.GetCode()+" is a watcher: no agent runs it") {
+					t.Errorf("update watcher provider: %v", err)
+				}
+
+				res, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+					WishId: wishID,
+					Title:  "Phase 1 Azima",
+					Kind:   planv1.TaskKind_TASK_KIND_AZIMA,
+				}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				azima := res.Msg.GetTask()
+
+				var out, errs bytes.Buffer
+				code := cli.Run(ctx, []string{"task", "update", azima.GetId(), "--title", "Phase 1 reaches main: PR #3 merged"},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code != 0 || !strings.Contains(out.String(), "title: Phase 1 reaches main: PR #3 merged") {
+					t.Errorf("djinn task update --title on an azima: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+				}
+				if got := e.get(t, azima.GetId()); got.GetTitle() != "Phase 1 reaches main: PR #3 merged" || !plan.IsAzima(got) {
+					t.Errorf("stored azima: title %q, kind %v", got.GetTitle(), got.GetKind())
+				}
+
+				prompt := "text do it"
+				newTitle := "Renamed with a prompt"
+				_, err = e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: azima.GetId(),
+					Title:  &newTitle,
+					Prompt: &prompt,
+				}))
+				wantAzimaErr := "task " + azima.GetCode() + " is an azima of the plan: no worker runs it; only its title, or its branch, changes"
+				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), wantAzimaErr) {
+					t.Errorf("update azima prompt: %v", err)
+				}
+				twoLines := "One\ntwo"
+				if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{TaskId: azima.GetId(), Title: &twoLines})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+					t.Errorf("two-line azima title: %v", err)
+				}
+
+				// Plan file azima rename and sync.
+				sync := func() {
+					t.Helper()
+					if _, err := e.plans.Sync(ctx, connect.NewRequest(&planv1.PlanServiceSyncRequest{WishId: wishID})); err != nil {
+						t.Fatal(err)
+					}
+				}
+				sync()
+				var t1 *planv1.Task
+				for _, task := range e.list(t, wishID) {
+					if task.GetCode() == "T1" {
+						t1 = task
+					}
+				}
+				if t1 == nil || t1.GetTitle() != "Old title" {
+					t.Fatalf("T1 after sync: %v", t1)
+				}
+				out.Reset()
+				errs.Reset()
+				code = cli.Run(ctx, []string{"task", "update", t1.GetId(), "--title", "feat/x reaches main: PR #3 merged"},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code != 0 || !strings.Contains(out.String(), "title: feat/x reaches main: PR #3 merged") {
+					t.Errorf("djinn task update --title on plan azima: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+				}
+				data, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := "---\ncode: T1\nstatus: in-progress\n---\n\n# T1 · feat/x reaches main: PR #3 merged\n\nThe goal.\n\n## Done when\n\n- [ ] it ships\n"
+				if string(data) != want {
+					t.Errorf("plan file:\n%s\nwant:\n%s", data, want)
+				}
+				sync()
+				if got := e.get(t, t1.GetId()); got.GetTitle() != "feat/x reaches main: PR #3 merged" || got.GetDescription() != "The goal.\n\n## Done when\n\n- [ ] it ships" {
+					t.Errorf("T1 after a sync: title %q, description %q", got.GetTitle(), got.GetDescription())
+				}
+			},
+		},
+		{
+			name: "journal_cli_and_alias",
+			run: func(t *testing.T) {
+				wishID := newWish(t, 0)
+				firstPrompt := "text hello CLI"
+				task := e.mustSpawn(t, wishID, "CLI test task", firstPrompt, &planv1.TaskServiceSpawnRequest{
+					Provider: planv1.Provider_PROVIDER_FAKE,
+				})
+
+				beforeCmds, err := store.Commands(ctx, e.db, func(c store.Command) bool {
+					return c.Method == planv1connect.TaskServiceUpdateProcedure
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				newTitle := "Journaled Title"
+				newPrompt := "text journaled prompt"
+				if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: task.GetId(),
+					Title:  &newTitle,
+					Prompt: &newPrompt,
+				})); err != nil {
+					t.Fatalf("Update: %v", err)
+				}
+				afterCmds, err := store.Commands(ctx, e.db, func(c store.Command) bool {
+					return c.Method == planv1connect.TaskServiceUpdateProcedure
+				})
+				if err != nil || len(afterCmds)-len(beforeCmds) != 1 {
+					t.Errorf("journaled %d Update commands (%v), want 1", len(afterCmds)-len(beforeCmds), err)
+				}
+
+				var out, errs bytes.Buffer
+				code := cli.Run(ctx, []string{"task", "get", task.GetId()},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code != 0 || !strings.Contains(out.String(), "prompt: "+newPrompt) {
+					t.Errorf("djinn task get: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+				}
+
+				out.Reset()
+				errs.Reset()
+				code = cli.Run(ctx, []string{"task", "update", task.GetId(), "--title", "CLI Updated Title", "--prompt", "text updated prompt CLI"},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code != 0 || !strings.Contains(out.String(), "title: CLI Updated Title") || !strings.Contains(out.String(), "prompt: text updated prompt CLI") {
+					t.Errorf("djinn task update: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+				}
+
+				out.Reset()
+				errs.Reset()
+				code = cli.Run(ctx, []string{"task", "set-agent", task.GetId(), "--provider", "antigravity", "--model", "gemini-3.8-flash-high"},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code != 0 || !strings.Contains(out.String(), "provider: antigravity") || !strings.Contains(out.String(), "model: gemini-3.8-flash-high") {
+					t.Errorf("djinn task set-agent: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+				}
+
+				out.Reset()
+				errs.Reset()
+				code = cli.Run(ctx, []string{"task", "set-agent", task.GetId(), "--model", ""},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code != 0 {
+					t.Errorf("djinn task set-agent --model \"\": code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+				}
+				stored, err := store.Get[*planv1.Task](ctx, e.db, task.GetId())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if stored.GetModel() != "" {
+					t.Errorf("model after clearing: %q, want empty", stored.GetModel())
+				}
+
+				out.Reset()
+				errs.Reset()
+				code = cli.Run(ctx, []string{"task", "set-agent", task.GetId(), "--provider", "claude"},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code != 0 || !strings.Contains(out.String(), "provider: claude") || !strings.Contains(out.String(), "model: claude-sonnet-5-5") {
+					t.Errorf("djinn task set-agent --provider claude: code %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errs.String())
+				}
+				if got := e.get(t, task.GetId()); got.GetModel() != "claude-sonnet-5-5" {
+					t.Errorf("model after provider change: %q, want %q", got.GetModel(), "claude-sonnet-5-5")
+				}
+			},
+		},
+		{
+			name: "integration_none_and_unmerged_branch",
+			run: func(t *testing.T) {
+				l.set(0, "")
+				repo := gitRepo(rootT)
+				mainBranch := plan.CheckedOutBranch(ctx, repo)
+				wishID, projectID := e.wish(t, repo)
+
+				b := "branch-with-commits"
+				if _, err := git(ctx, repo, "checkout", "-b", b); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(repo, "app", "test.txt"), []byte("unmerged\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := git(ctx, repo, "add", "."); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := git(ctx, repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "unmerged commit"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := git(ctx, repo, "checkout", mainBranch); err != nil {
+					t.Fatal(err)
+				}
+
+				task := &planv1.Task{
+					Id:        store.NewID(),
+					WishId:    wishID,
+					ProjectId: projectID,
+					Code:      "W1",
+					Title:     "Task with unmerged commits",
+					Status:    planv1.TaskStatus_TASK_STATUS_DONE,
+					Branch:    b,
+					Integration: &planv1.TaskIntegration{
+						State: planv1.IntegrationState_INTEGRATION_STATE_INTEGRATING,
+						Sha:   "deadbeef",
+					},
+					CreateTime: timestamppb.Now(),
+				}
+				putTask := func(tk *planv1.Task) {
+					if err := e.db.Tx(ctx, func(tx *store.Tx) error {
+						_ = tx.Journal("test", "put", tk)
+						return tx.Put(tk)
+					}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				putTask(task)
+
+				none := "none"
+				// 1. Refused while integrating.
+				if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:      task.GetId(),
+					Integration: &none,
+				})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+					t.Fatalf("while integrating, got %v, want FailedPrecondition", err)
+				}
+
+				// 2. Committed on unmerged branch refused without --force, allowed with --force.
+				task.Integration.State = planv1.IntegrationState_INTEGRATION_STATE_COMMITTED
+				putTask(task)
+
+				if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:      task.GetId(),
+					Integration: &none,
+				})); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "--force") {
+					t.Fatalf("expected FailedPrecondition with --force, got: %v", err)
+				}
+
+				var out, errs bytes.Buffer
+				code := cli.Run(ctx, []string{"task", "update", task.GetId(), "--integration", "none"},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code == 0 || !strings.Contains(errs.String(), "--force") {
+					t.Fatalf("cli run should fail without --force, got code %d, errs: %s", code, errs.String())
+				}
+
+				out.Reset()
+				errs.Reset()
+				code = cli.Run(ctx, []string{"task", "update", task.GetId(), "--integration", "none", "--force"},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code != 0 {
+					t.Fatalf("cli run with --force failed with code %d: %s", code, errs.String())
+				}
+				if after := e.get(t, task.GetId()); after.GetIntegration() != nil {
+					t.Fatalf("task integration after update --integration none --force: got %v, want nil", after.GetIntegration())
+				}
+
+				// 3. Without unmerged branch, --integration none succeeds without --force.
+				task.Branch = ""
+				task.Integration = &planv1.TaskIntegration{
+					State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+					Sha:   "deadbeef",
+				}
+				putTask(task)
+				out.Reset()
+				errs.Reset()
+				code = cli.Run(ctx, []string{"task", "update", task.GetId(), "--integration", "none"},
+					cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
+				if code != 0 || e.get(t, task.GetId()).GetIntegration() != nil {
+					t.Fatalf("djinn task update --integration none failed: code=%d errs=%s", code, errs.String())
+				}
+			},
+		},
+		{
+			name: "planned_reflected_in_list_and_watch",
+			run: func(t *testing.T) {
+				wishID := newWish(t, 0)
+				dep := e.mustSpawn(t, wishID, "Dependency task", "text dep", nil)
+				first := e.mustSpawn(t, wishID, "Initial title", "text initial prompt", &planv1.TaskServiceSpawnRequest{
+					Provider: planv1.Provider_PROVIDER_FAKE,
+				})
+
+				wishes := planv1connect.NewWishServiceClient(e.srv.Client(), e.srv.URL)
+				watchCtx, cancelWatch := context.WithCancel(ctx)
+				defer cancelWatch()
+				stream, err := wishes.Watch(watchCtx, connect.NewRequest(&planv1.WishServiceWatchRequest{}))
+				if err != nil {
+					t.Fatalf("Watch: %v", err)
+				}
+				if !stream.Receive() {
+					t.Fatalf("initial watch receive: %v", stream.Err())
+				}
+
+				onlyPrompt := "text prompt-only rewrite"
+				if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId: first.GetId(),
+					Prompt: &onlyPrompt,
+				})); err != nil {
+					t.Fatalf("Update prompt only: %v", err)
+				}
+
+				var watchedPromptOnly *planv1.Task
+				for stream.Receive() {
+					msg := stream.Msg()
+					if msg.GetWishId() != wishID {
+						continue
+					}
+					for _, ct := range msg.GetChanged().GetTasks() {
+						if ct.GetId() == first.GetId() {
+							watchedPromptOnly = ct
+							break
+						}
+					}
+					if watchedPromptOnly != nil {
+						break
+					}
+				}
+				if watchedPromptOnly == nil || watchedPromptOnly.GetPrompt() != onlyPrompt {
+					t.Fatalf("watched task after prompt-only update: got %v, want prompt %q", watchedPromptOnly, onlyPrompt)
+				}
+
+				newTitle := "Rewritten Title"
+				newPrompt := "text rewritten prompt"
+				newProvider := planv1.Provider_PROVIDER_ANTIGRAVITY
+				newModel := "gemini-3.8-flash-high"
+				after := []string{dep.GetCode()}
+
+				if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+					TaskId:   first.GetId(),
+					Title:    &newTitle,
+					Prompt:   &newPrompt,
+					Provider: &newProvider,
+					Model:    &newModel,
+					After:    after,
+				})); err != nil {
+					t.Fatalf("Update: %v", err)
+				}
+
+				var watchedTask *planv1.Task
+				for stream.Receive() {
+					msg := stream.Msg()
+					if msg.GetWishId() != wishID {
+						continue
+					}
+					for _, ct := range msg.GetChanged().GetTasks() {
+						if ct.GetId() == first.GetId() {
+							watchedTask = ct
+							break
+						}
+					}
+					if watchedTask != nil {
+						break
+					}
+				}
+				if watchedTask == nil {
+					t.Fatalf("watch stream ended without updated task: %v", stream.Err())
+				}
+				if watchedTask.GetPrompt() != newPrompt || watchedTask.GetTitle() != newTitle ||
+					watchedTask.GetProvider() != newProvider || watchedTask.GetModel() != newModel ||
+					!slices.Equal(watchedTask.GetDependsOn(), []string{dep.GetId()}) {
+					t.Errorf("watched task after update: %v", watchedTask)
+				}
+
+				listRes, err := e.tasks.List(ctx, connect.NewRequest(&planv1.TaskServiceListRequest{WishId: wishID}))
+				if err != nil {
+					t.Fatalf("List: %v", err)
+				}
+				var listedTask *planv1.Task
+				for _, lt := range listRes.Msg.GetTasks() {
+					if lt.GetId() == first.GetId() {
+						listedTask = lt
+						break
+					}
+				}
+				if listedTask == nil || listedTask.GetPrompt() != newPrompt || listedTask.GetTitle() != newTitle ||
+					listedTask.GetProvider() != newProvider || listedTask.GetModel() != newModel ||
+					!slices.Equal(listedTask.GetDependsOn(), []string{dep.GetId()}) {
+					t.Errorf("listed task after update: %v", listedTask)
+				}
+			},
+		},
 	}
 
-	none := "none"
-	// 1. Refused without --force via API
-	_, err := e.tasks.Update(t.Context(), connect.NewRequest(&planv1.TaskServiceUpdateRequest{
-		TaskId:      task.GetId(),
-		Integration: &none,
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "--force") {
-		t.Fatalf("expected FailedPrecondition with --force, got: %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, tc.run)
 	}
+}
 
-	// 2. Refused without --force via CLI
-	var out, errs bytes.Buffer
-	code := cli.Run(t.Context(), []string{"task", "update", task.GetId(), "--integration", "none"},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code == 0 || !strings.Contains(errs.String(), "--force") {
-		t.Fatalf("cli run should fail without --force, got code %d, errs: %s", code, errs.String())
-	}
+func TestUpdateModelsAndClaudeRoundTrip(t *testing.T) {
+	testx.Portable(t)
+	ctx := t.Context()
 
-	// 3. Allowed with --force via CLI
-	out.Reset()
-	errs.Reset()
-	code = cli.Run(t.Context(), []string{"task", "update", task.GetId(), "--integration", "none", "--force"},
-		cli.Config{Version: "test", Addr: e.srv.URL, HTTP: e.srv.Client(), Stdout: &out, Stderr: &errs})
-	if code != 0 {
-		t.Fatalf("cli run with --force failed with code %d: %s", code, errs.String())
-	}
+	t.Run("model_validation_before_waiting", func(t *testing.T) {
+		l := &limit{slots: 0}
+		providers := map[planv1.Provider]Provider{
+			planv1.Provider_PROVIDER_FAKE:        &spyProvider{},
+			planv1.Provider_PROVIDER_CLAUDE:      &spyProvider{},
+			planv1.Provider_PROVIDER_CODEX:       &spyProvider{},
+			planv1.Provider_PROVIDER_ANTIGRAVITY: &spyProvider{},
+		}
+		e := upWith(t, t.TempDir(), providers, WithCapacity(l.capacity), WithTick(time.Hour))
+		wishID, _ := e.wish(t, nativeFolder(t))
 
-	after := e.get(t, task.GetId())
-	if after.GetIntegration() != nil {
-		t.Fatalf("task integration after update --integration none --force: got %v, want nil", after.GetIntegration())
-	}
+		for _, tc := range []struct {
+			provider planv1.Provider
+			model    string
+			want     string
+		}{
+			{planv1.Provider_PROVIDER_CLAUDE, "claude-opus-5-5", "claude-opus-5-5"},
+			{planv1.Provider_PROVIDER_CLAUDE, "claude-fable-5-1", "claude-fable-5-1"},
+			{planv1.Provider_PROVIDER_ANTIGRAVITY, "Gemini 4 Argon", "gemini-4-argon-high"},
+			{planv1.Provider_PROVIDER_ANTIGRAVITY, "argon", "gemini-4-argon-high"},
+		} {
+			task := e.mustSpawn(t, wishID, "Valid "+tc.model, "text ok", &planv1.TaskServiceSpawnRequest{
+				Provider: tc.provider,
+				Model:    tc.model,
+			})
+			if task.GetModel() != tc.want {
+				t.Errorf("Spawn(%v, %q) model = %q, want %q", tc.provider, tc.model, task.GetModel(), tc.want)
+			}
+		}
+
+		if _, err := e.tasks.Spawn(ctx, connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId:   wishID,
+			Title:    "Invalid model",
+			Prompt:   "text bad",
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-nonexistent-99",
+		})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("Spawn invalid model err = %v, want InvalidArgument", err)
+		}
+	})
+
+	t.Run("kinds_dry_run_and_apply", func(t *testing.T) {
+		l := &limit{slots: 0}
+		providers := map[planv1.Provider]Provider{
+			planv1.Provider_PROVIDER_FAKE:        &spyProvider{},
+			planv1.Provider_PROVIDER_CLAUDE:      &spyProvider{},
+			planv1.Provider_PROVIDER_CODEX:       &spyProvider{},
+			planv1.Provider_PROVIDER_ANTIGRAVITY: &spyProvider{},
+			planv1.Provider_PROVIDER_WATCH:       fastWatch,
+		}
+		e := upWith(t, t.TempDir(), providers, WithCapacity(l.capacity), WithTick(time.Hour))
+		wishID, _ := e.wish(t, gitRepo(t))
+
+		workTask := e.mustSpawn(t, wishID, "Work Task", "text work", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-sonnet-5-5",
+		})
+		invTask := e.mustSpawn(t, wishID, "Investigation Task", "text inv", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-sonnet-5-5",
+			Kind:     planv1.TaskKind_TASK_KIND_INVESTIGATION,
+		})
+		corrTask := &planv1.Task{
+			Id:         store.NewID(),
+			Code:       "W96",
+			WishId:     wishID,
+			Title:      "Correction Task",
+			Status:     planv1.TaskStatus_TASK_STATUS_PENDING,
+			Provider:   planv1.Provider_PROVIDER_CLAUDE,
+			Model:      "claude-sonnet-5-5",
+			Correction: &planv1.TaskCorrection{Attempt: 1},
+			CreateTime: timestamppb.Now(),
+		}
+		revTask := &planv1.Task{
+			Id:         store.NewID(),
+			Code:       "W97",
+			WishId:     wishID,
+			Title:      "Review Task",
+			Status:     planv1.TaskStatus_TASK_STATUS_PENDING,
+			Provider:   planv1.Provider_PROVIDER_CLAUDE,
+			Model:      "claude-sonnet-5-5",
+			Review:     &planv1.TaskReview{TaskIds: []string{workTask.GetId()}},
+			CreateTime: timestamppb.Now(),
+		}
+		enlightenTask := &planv1.Task{
+			Id:         store.NewID(),
+			Code:       "W99",
+			WishId:     wishID,
+			Title:      "Enlighten Q1",
+			Role:       planv1.TaskRole_TASK_ROLE_INVESTIGATOR,
+			Status:     planv1.TaskStatus_TASK_STATUS_PENDING,
+			Provider:   planv1.Provider_PROVIDER_CLAUDE,
+			Model:      "claude-sonnet-5-5",
+			CreateTime: timestamppb.Now(),
+		}
+		doneTask := &planv1.Task{
+			Id:         store.NewID(),
+			Code:       "W98",
+			WishId:     wishID,
+			Title:      "Finished Task",
+			Status:     planv1.TaskStatus_TASK_STATUS_DONE,
+			Provider:   planv1.Provider_PROVIDER_CLAUDE,
+			Model:      "claude-sonnet-5-5",
+			CreateTime: timestamppb.Now(),
+		}
+		if err := e.db.Tx(ctx, func(tx *store.Tx) error {
+			for _, tk := range []*planv1.Task{corrTask, revTask, enlightenTask, doneTask} {
+				if err := tx.Journal("test", "test/put", tk); err != nil {
+					return err
+				}
+				if err := tx.Put(tk); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		watchTask := e.mustSpawn(t, wishID, "Watcher Task", "echo ok", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_WATCH,
+		})
+
+		argon := "argon"
+		dryRes, err := e.tasks.UpdateModels(ctx, connect.NewRequest(&planv1.TaskServiceUpdateModelsRequest{
+			WishId:   wishID,
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+			Model:    &argon,
+		}))
+		if err != nil {
+			t.Fatalf("UpdateModels dry run: %v", err)
+		}
+		if !dryRes.Msg.GetDryRun() {
+			t.Fatalf("dry run DryRun = false, want true")
+		}
+		if len(dryRes.Msg.GetTasks()) != 5 {
+			t.Fatalf("dry run Tasks = %d, want 5", len(dryRes.Msg.GetTasks()))
+		}
+		if len(dryRes.Msg.GetSkipped()) != 1 || dryRes.Msg.GetSkipped()[0].GetId() != watchTask.GetId() {
+			t.Fatalf("dry run Skipped = %v, want [%s]", dryRes.Msg.GetSkipped(), watchTask.GetCode())
+		}
+		if len(dryRes.Msg.GetCircle()) != 5 {
+			t.Fatalf("dry run Circle = %d, want 5", len(dryRes.Msg.GetCircle()))
+		}
+		if got := e.get(t, workTask.GetId()); got.GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
+			t.Fatalf("dry run mutated store: provider = %v", got.GetProvider())
+		}
+
+		labelModel := "Gemini 4 Argon"
+		applyRes, err := e.tasks.UpdateModels(ctx, connect.NewRequest(&planv1.TaskServiceUpdateModelsRequest{
+			WishId:   wishID,
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+			Model:    &labelModel,
+			Yes:      true,
+		}))
+		if err != nil {
+			t.Fatalf("UpdateModels apply: %v", err)
+		}
+		if applyRes.Msg.GetDryRun() {
+			t.Fatalf("apply DryRun = true, want false")
+		}
+		for _, id := range []string{workTask.GetId(), invTask.GetId(), corrTask.GetId(), revTask.GetId(), enlightenTask.GetId()} {
+			got := e.get(t, id)
+			if got.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || got.GetModel() != "gemini-4-argon-high" {
+				t.Errorf("task %s after apply: provider=%v model=%q", got.GetCode(), got.GetProvider(), got.GetModel())
+			}
+		}
+		if got := e.get(t, watchTask.GetId()); got.GetProvider() != planv1.Provider_PROVIDER_WATCH {
+			t.Errorf("watcher changed: %v", got.GetProvider())
+		}
+		if got := e.get(t, doneTask.GetId()); got.GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
+			t.Errorf("done task changed: %v", got.GetProvider())
+		}
+		for _, kind := range plan.WorkerCircleKinds {
+			p, m, ok := plan.ResolveWorkerSeat(e.h.home, kind)
+			if !ok || p != planv1.Provider_PROVIDER_ANTIGRAVITY || m != "gemini-4-argon-high" {
+				t.Errorf("ResolveWorkerSeat(%v) = (%v, %q, %v), want (ANTIGRAVITY, gemini-4-argon-high, true)", kind, p, m, ok)
+			}
+		}
+	})
+
+	t.Run("running_next_start_and_now", func(t *testing.T) {
+		l := &limit{slots: 2}
+		claudeSpy := &spyProvider{}
+		agySpy := &spyProvider{}
+		providers := map[planv1.Provider]Provider{
+			planv1.Provider_PROVIDER_FAKE:        &spyProvider{},
+			planv1.Provider_PROVIDER_CLAUDE:      claudeSpy,
+			planv1.Provider_PROVIDER_ANTIGRAVITY: agySpy,
+		}
+		e := upWith(t, t.TempDir(), providers, WithCapacity(l.capacity), WithTick(time.Hour))
+		wishID, _ := e.wish(t, nativeFolder(t))
+
+		// Next start: running task finishes its run on Claude, then has Antigravity for its next start.
+		nextTask := e.mustSpawn(t, wishID, "Next Start Task", "wait\ntext done first", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-sonnet-5-5",
+		})
+		settle(t, "nextTask running", func() bool {
+			return e.get(t, nextTask.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+		})
+
+		flashModel := "gemini-3.8-flash-high"
+		if _, err := e.tasks.UpdateModels(ctx, connect.NewRequest(&planv1.TaskServiceUpdateModelsRequest{
+			WishId:   wishID,
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+			Model:    &flashModel,
+			Yes:      true,
+			Now:      false,
+		})); err != nil {
+			t.Fatalf("UpdateModels next start: %v", err)
+		}
+		if got := e.get(t, nextTask.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+			t.Fatalf("status while running = %v, want RUNNING", got.GetStatus())
+		}
+		if _, err := e.tasks.Send(ctx, connect.NewRequest(&planv1.TaskServiceSendRequest{
+			TaskId: nextTask.GetId(),
+			Text:   "release",
+		})); err != nil {
+			t.Fatalf("Send release: %v", err)
+		}
+		doneNext := e.ended(t, nextTask.GetId())
+		if doneNext.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY || doneNext.GetModel() != "gemini-3.8-flash-high" ||
+			doneNext.GetPriorProvider() != planv1.Provider_PROVIDER_CLAUDE {
+			t.Fatalf("after run ended: provider=%v model=%q prior=%v", doneNext.GetProvider(), doneNext.GetModel(), doneNext.GetPriorProvider())
+		}
+
+		// --now: running task is interrupted immediately and restarts on Claude.
+		nowTask := e.mustSpawn(t, wishID, "Now Task", "wait\ntext done now", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+			Model:    "gemini-3.8-flash-high",
+		})
+		settle(t, "nowTask running on antigravity", func() bool {
+			return e.get(t, nowTask.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+		})
+
+		opusModel := "claude-opus-5-5"
+		if _, err := e.tasks.UpdateModels(ctx, connect.NewRequest(&planv1.TaskServiceUpdateModelsRequest{
+			WishId:   wishID,
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    &opusModel,
+			Yes:      true,
+			Now:      true,
+		})); err != nil {
+			t.Fatalf("UpdateModels --now: %v", err)
+		}
+		settle(t, "nowTask restarted on claude", func() bool {
+			got := e.get(t, nowTask.GetId())
+			return got.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING &&
+				got.GetProvider() == planv1.Provider_PROVIDER_CLAUDE &&
+				got.GetModel() == "claude-opus-5-5" &&
+				len(claudeSpy.allSpecs()) >= 2
+		})
+		if _, err := e.tasks.Send(ctx, connect.NewRequest(&planv1.TaskServiceSendRequest{
+			TaskId: nowTask.GetId(),
+			Text:   "release",
+		})); err != nil {
+			t.Fatalf("Send release to nowTask: %v", err)
+		}
+		e.ended(t, nowTask.GetId())
+	})
+
+	t.Run("claude_antigravity_claude_round_trip", func(t *testing.T) {
+		l := &limit{slots: 2}
+		claudeSpy := &spyProvider{}
+		agySpy := &spyProvider{}
+		providers := map[planv1.Provider]Provider{
+			planv1.Provider_PROVIDER_FAKE:        &spyProvider{},
+			planv1.Provider_PROVIDER_CLAUDE:      claudeSpy,
+			planv1.Provider_PROVIDER_ANTIGRAVITY: agySpy,
+		}
+		e := upWith(t, t.TempDir(), providers, WithCapacity(l.capacity), WithTick(time.Hour))
+		wishID, _ := e.wish(t, nativeFolder(t))
+
+		// 1. Run on Claude (ends failed so Continue can resume it across providers).
+		task := e.mustSpawn(t, wishID, "Round Trip", "text step 1 on claude\nfail stop1", &planv1.TaskServiceSpawnRequest{
+			Provider: planv1.Provider_PROVIDER_CLAUDE,
+			Model:    "claude-sonnet-5-5",
+		})
+		e.ended(t, task.GetId())
+		if specs := claudeSpy.allSpecs(); len(specs) != 1 || specs[0].TaskID != task.GetId() || specs[0].Resume != "" {
+			t.Fatalf("first claude spec = %+v", specs)
+		}
+
+		// 2. Switch to Antigravity and continue.
+		agy := planv1.Provider_PROVIDER_ANTIGRAVITY
+		step2 := "text step 2 on antigravity\nfail stop2"
+		if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+			TaskId:   task.GetId(),
+			Provider: &agy,
+			Prompt:   &step2,
+		})); err != nil {
+			t.Fatalf("Update to antigravity: %v", err)
+		}
+		if _, err := e.tasks.Continue(ctx, connect.NewRequest(&planv1.TaskServiceContinueRequest{
+			TaskId: task.GetId(),
+		})); err != nil {
+			t.Fatalf("Continue on antigravity: %v", err)
+		}
+		e.ended(t, task.GetId())
+		if specs := agySpy.allSpecs(); len(specs) != 1 || specs[0].Resume != "" || specs[0].TaskID == task.GetId() {
+			t.Fatalf("antigravity spec = %+v, want fresh session ID != task ID", specs)
+		}
+
+		// 3. Switch back to Claude and continue: must NOT reuse task.GetId() as Session ID with Resume="".
+		claude := planv1.Provider_PROVIDER_CLAUDE
+		step3 := "text step 3 back on claude"
+		if _, err := e.tasks.Update(ctx, connect.NewRequest(&planv1.TaskServiceUpdateRequest{
+			TaskId:   task.GetId(),
+			Provider: &claude,
+			Prompt:   &step3,
+		})); err != nil {
+			t.Fatalf("Update back to claude: %v", err)
+		}
+		if _, err := e.tasks.Continue(ctx, connect.NewRequest(&planv1.TaskServiceContinueRequest{
+			TaskId: task.GetId(),
+		})); err != nil {
+			t.Fatalf("Continue back on claude: %v", err)
+		}
+		doneTask := e.ended(t, task.GetId())
+		specs := claudeSpy.allSpecs()
+		if len(specs) != 2 {
+			t.Fatalf("claude specs = %d, want 2", len(specs))
+		}
+		secondClaude := specs[1]
+		if secondClaude.Resume != "" {
+			t.Errorf("second claude spec Resume = %q, want empty (handoff from antigravity)", secondClaude.Resume)
+		}
+		if secondClaude.TaskID == "" || secondClaude.TaskID == task.GetId() {
+			t.Errorf("second claude spec TaskID = %q, must be a fresh session ID != task ID %q", secondClaude.TaskID, task.GetId())
+		}
+		if doneTask.GetSessionId() != secondClaude.TaskID {
+			t.Errorf("task SessionId = %q, want %q recorded on task", doneTask.GetSessionId(), secondClaude.TaskID)
+		}
+	})
 }

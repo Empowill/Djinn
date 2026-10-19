@@ -10,9 +10,10 @@ import (
 	"github.com/empowill/djinn/internal/store"
 )
 
-// TestMergeTitleThroughCorrections: a correction of a correction (W422 of W419 of W401) is titled from W401, the work
+// TestMergeTitle: a correction of a correction (W422 of W419 of W401) is titled from W401, the work
 // it brings in the end, in words, its code after them, then what failed; one line.
-func TestMergeTitleThroughCorrections(t *testing.T) {
+func TestMergeTitle(t *testing.T) {
+	t.Parallel()
 	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), store.File), plan.Entities()...)
 	if err != nil {
 		t.Fatal(err)
@@ -69,6 +70,7 @@ func TestMergeTitleThroughCorrections(t *testing.T) {
 
 // TestFailedChecks: a push-check correction names what failed, out of the check's output.
 func TestFailedChecks(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ out, reason, want string }{
 		{"--- FAIL: TestNoFrench (0.01s)\n    locales_test.go:40: ...\nFAIL\nFAIL\tgithub.com/empowill/djinn/locales\t0.3s\n", "test: exit status 1", "TestNoFrench"},
 		{"ok  \tx\nFAIL\tgithub.com/empowill/djinn/internal/harness\t12.1s\nFAIL\n", "test: exit status 1", "harness"},

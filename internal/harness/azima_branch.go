@@ -11,6 +11,7 @@ package harness
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -55,19 +56,60 @@ func (h *Harness) refuseAzimaDependencies(ctx context.Context, r store.Reader, w
 	return plan.RefuseAzimaDependencies(tasks, graph)
 }
 
+// heldOutError is why the work of an azima waits out of its branch, which Djinn neither makes again nor pushes: the azima
+// is done, or its branch, recorded on it, is deleted (W196: wish Dew 13 oct, 17/10/2026, Djinn made the deleted branch
+// of azima T2, done, again from the remote's, merged a task into it and pushed it). The person reopens the azima or
+// drops the work.
+type heldOutError struct {
+	branch, why string
+}
+
+func (e *heldOutError) Error() string { return e.why }
+
+// azimaBranchFor is the branch work of azima, in wish, merges into in project (azimaBranch); a *heldOutError when it waits:
+// the azima done, its branch neither made nor merged into (nor pushed: pushAzimaBranchesIfDue), or its branch deleted.
+// The lead of wish is told once why, in one line.
+func (h *Harness) azimaBranchFor(
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, azima *planv1.Task,
+) (string, error) {
+	var branch string
+	var err error
+	if azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+		err = &heldOutError{branch: azimaBranchName(azima), why: azimaDoneWhy(azima)}
+	} else {
+		branch, err = h.azimaBranch(ctx, project, settings, azima)
+	}
+	if held := (*heldOutError)(nil); errors.As(err, &held) {
+		h.tellApart(ctx, wish, held.why)
+	}
+	return branch, err
+}
+
+// azimaDoneWhy is why the work of azima, done, waits: Djinn merges nothing more into its branch, nor pushes it.
+func azimaDoneWhy(azima *planv1.Task) string {
+	return fmt.Sprintf("azima %s is done: Djinn merges into its branch %s and pushes it no more; reopen %s or drop the work",
+		azima.GetCode(), azimaBranchName(azima), azima.GetCode())
+}
+
 // azimaBranch is the branch of azima in project under the per-azima push strategy, cut from main's commit as Djinn
-// knows it (resolveMainSha) when it does not exist yet, and recorded on the azima when project is the azima's own; a
+// knows it, the remote's fetched first (resolveMainSha), when it does not exist yet, and recorded on the azima when project is the azima's own; a
 // branch the developer named is made from the remote's when the remote holds it. A branch that exists stays as it is:
-// never cut again, never rebased.
+// never cut again, never rebased. One recorded on the azima, deleted since, is never made again: a *heldOutError says it,
+// until the developer names it again (djinn task update <azima> --branch).
 func (h *Harness) azimaBranch(ctx context.Context, project *planv1.Project, settings plan.Settings, azima *planv1.Task) (string, error) {
 	branch := azimaBranchName(azima)
 	repo := project.GetDirectory()
 	if commitOf(ctx, repo, "refs/heads/"+branch) != "" {
 		return branch, nil
 	}
+	if p := azima.GetProjectId(); azima.GetAzima().GetCutFrom() != "" && (p == "" || p == project.GetId()) {
+		return "", &heldOutError{branch: branch, why: fmt.Sprintf(
+			"%s, the branch of azima %s, is deleted: Djinn makes it no more; reopen %s (djinn task update %s --branch) or drop the work",
+			branch, azima.GetCode(), azima.GetCode(), azima.GetCode())}
+	}
 	if azima.GetAzima().GetNamed() {
-		// A branch the developer named, gone from here since, may live on the remote: made from it again, never cut
-		// from main (remote_branch.go).
+		// A branch the developer named, never recorded here (an azima named before Djinn recorded its cut), may live
+		// on the remote: made from it, never cut from main (remote_branch.go).
 		shown, theirs, err := fetchBranch(ctx, repo, branch)
 		if err != nil {
 			return "", fmt.Errorf("%s is not in the repository, and Djinn cannot tell whether the remote holds it: %w", branch, err)
@@ -80,6 +122,7 @@ func (h *Harness) azimaBranch(ctx context.Context, project *planv1.Project, sett
 			return branch, nil
 		}
 	}
+	h.fetchReference(ctx, repo, settings) // Cut from the remote's main as it is now, never from what the copy last pulled.
 	main, sha, err := resolveMainSha(ctx, repo, settings)
 	if err != nil {
 		return "", err
@@ -92,9 +135,6 @@ func (h *Harness) azimaBranch(ctx context.Context, project *planv1.Project, sett
 	}
 	logx.L().Info("azima branch cut", "azima", azima.GetCode(), "branch", branch, "from", main, "at", short8(sha))
 	if p := azima.GetProjectId(); p == "" || p == project.GetId() {
-		if main == "HEAD" {
-			main = "" // No main branch: the checkout's commit, landing nowhere named.
-		}
 		h.editAzima(ctx, azima.GetId(), func(e *planv1.Azima) { e.Branch, e.BaseBranch, e.CutFrom = branch, main, sha })
 	}
 	return branch, nil
@@ -217,7 +257,8 @@ func (h *Harness) nameAzimaBranch(ctx context.Context, procedure string, req *pl
 	}
 	current := plan.AzimaBranchName(azima)
 	e := azima.GetAzima()
-	if current == branch && e.GetNamed() && e.GetCutFrom() != "" {
+	// Named again, a branch deleted since is made again (azimaBranch makes it no more by itself).
+	if current == branch && e.GetNamed() && e.GetCutFrom() != "" && commitOf(ctx, repo, "refs/heads/"+branch) != "" {
 		return h.withAzima(ctx, azima)
 	}
 	for _, b := range []string{current, branch} {
@@ -276,9 +317,6 @@ func (h *Harness) nameAzimaBranch(ctx context.Context, procedure string, req *pl
 		}
 	}
 	base := main
-	if base == "HEAD" {
-		base = "" // No main branch: the checkout's commit, landing nowhere named.
-	}
 	var named *planv1.Task
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(plan.CallerActor(ctx), procedure, req); err != nil {

@@ -1,9 +1,17 @@
 import React, { useEffect, useSyncExternalStore } from "react";
 
-import { LoadNotch } from "../gen/ts/djinn/v1/load_pb";
+import {
+  type LoadAutoReason,
+  LoadAutoStep,
+  LoadNotch,
+} from "../gen/ts/djinn/v1/load_pb";
+import { IfritState } from "../gen/ts/plan/v1/plan_pb";
 import type { Clients } from "./data/client";
-import { type Djinn, useDjinn } from "./data/djinn";
+import { type Djinn, useDjinn, useOptionalData } from "./data/djinn";
+import { ifritLit } from "./data/ifrit";
+import { span } from "./data/format";
 import { t } from "./i18n";
+import { ToneIcon } from "./status";
 import { still } from "./stillness";
 import { memory } from "./usage";
 import "./operating-load.css";
@@ -30,6 +38,8 @@ interface LoadData {
   forcedWorkers: number;
   // Whether lowering the notch pauses the newest workers above it, or lets them finish their run.
   lowerPauses: boolean;
+  // Why auto mode runs at its notch (W253); undefined outside auto mode.
+  autoReason?: LoadAutoReason;
 }
 
 // The fields the server's Get and Watch both send about the workers.
@@ -38,13 +48,17 @@ interface WorkerFields {
   notchSlots: { notch: LoadNotch; slots: number }[];
   forcedWorkers: number;
   lowerPauses: boolean;
+  autoReason?: LoadAutoReason;
 }
 
 // workerFields reads them, keeping what the page knew when the server sends no slot (an older one).
 function workerFields(
   res: WorkerFields,
   data: LoadData,
-): Pick<LoadData, "slots" | "notchSlots" | "forcedWorkers" | "lowerPauses"> {
+): Pick<
+  LoadData,
+  "slots" | "notchSlots" | "forcedWorkers" | "lowerPauses" | "autoReason"
+> {
   const notchSlots: Partial<Record<LoadNotch, number>> = {};
   for (const n of res.notchSlots) notchSlots[n.notch] = n.slots;
   return {
@@ -52,6 +66,7 @@ function workerFields(
     notchSlots: res.notchSlots.length ? notchSlots : data.notchSlots,
     forcedWorkers: res.forcedWorkers,
     lowerPauses: res.lowerPauses,
+    autoReason: res.autoReason,
   };
 }
 
@@ -77,6 +92,8 @@ class LoadManager {
     lowerPauses: true,
   };
   private previewNotch: LoadNotch | null = null;
+  // The Auto button hovered or focused: the preview explains Auto.
+  private previewAuto = false;
   private listeners = new Set<() => void>();
   private abort: AbortController | null = null;
   private clients: Clients | null = null;
@@ -124,6 +141,14 @@ class LoadManager {
     this.notify();
   }
 
+  getPreviewAuto = (): boolean => this.previewAuto;
+
+  setPreviewAuto(on: boolean) {
+    if (this.previewAuto === on) return;
+    this.previewAuto = on;
+    this.notify();
+  }
+
   subscribe = (listener: () => void) => {
     if (this.stopTimer) {
       clearTimeout(this.stopTimer);
@@ -155,12 +180,16 @@ class LoadManager {
     if (!this.clients && !this.djinn) return;
     this.abort = new AbortController();
     const signal = this.abort.signal;
+    // Once the stream has spoken, it alone says the load: it sends only what changed since its last message, so a Get
+    // answered after it and kept would stay on screen. A Get read minimal after the stream's medium, the stream then
+    // sent nothing when the notch went back to medium, and the window showed minimal for good (W248).
+    let streamed = false;
 
     if (this.clients) {
       void this.clients.load
         .get({}, { signal })
         .then((res) => {
-          if (signal.aborted) return;
+          if (signal.aborted || streamed) return;
           const auto = Boolean(res.auto);
           const notch = res.notch || this.data.notch;
           const chosenNotch = res.chosenNotch || this.data.chosenNotch || notch;
@@ -201,6 +230,7 @@ class LoadManager {
     if (this.djinn?.load) {
       this.unsubscribeLoad = this.djinn.load.subscribe((res) => {
         if (signal.aborted) return;
+        streamed = true;
         this.data = {
           notch: res.notch || this.data.notch,
           auto: Boolean(res.auto),
@@ -229,6 +259,7 @@ class LoadManager {
         try {
           for await (const res of this.clients!.load.watch({}, { signal })) {
             if (signal.aborted) return;
+            streamed = true;
             this.data = {
               notch: res.notch || this.data.notch,
               auto: Boolean(res.auto),
@@ -389,17 +420,49 @@ function workersAt(
 }
 
 // overLimit says how many workers run beyond what a notch lets run, and why: started by hand (they stay), the rest
-// finishing their run, or pausing when the bar moves there and lowering pauses (previewed).
+// finishing their run, or pausing when the bar moves there and lowering pauses (previewed). ifrits is how many lit
+// ifrits are at work: Djinn starts them beyond the slots and counts them among the forced workers, and the gauge
+// counts them apart.
 function overLimit(
   data: Pick<
     LoadData,
     "runningWorkers" | "forcedWorkers" | "notchSlots" | "baseSlots"
   >,
   notch: LoadNotch,
+  ifrits = 0,
 ): { byHand: number; others: number } {
-  const over = Math.max(0, data.runningWorkers - workersAt(data, notch));
-  const byHand = Math.min(data.forcedWorkers, over);
+  const over = Math.max(
+    0,
+    data.runningWorkers - ifrits - workersAt(data, notch),
+  );
+  const byHand = Math.min(Math.max(0, data.forcedWorkers - ifrits), over);
   return { byHand, others: over - byHand };
+}
+
+// The lit ifrits of the wishes read, and how many of them are at work on a turn (taking a slot).
+function useIfrits(): { lit: number; working: number } {
+  const lit = useOptionalData(
+    (s) =>
+      Object.values(s.details).reduce(
+        (n, d) => n + d.tasks.filter(ifritLit).length,
+        0,
+      ),
+    0,
+  );
+  const working = useOptionalData(
+    (s) =>
+      Object.values(s.details).reduce(
+        (n, d) =>
+          n +
+          d.tasks.filter(
+            (task) =>
+              ifritLit(task) && task.ifrit?.state !== IfritState.LISTENING,
+          ).length,
+        0,
+      ),
+    0,
+  );
+  return { lit, working };
 }
 
 const MEMORY_RESERVE = 2n * 1024n * 1024n * 1024n; // 2 GiB
@@ -435,12 +498,53 @@ function notchTooltip(
     case LoadNotch.MAX:
       return t("load.tooltip.max", { workers: workersAt(data, notch) });
     case LoadNotch.OVERCLOCK:
-      return t("load.tooltip.overclock", { workers: workersAt(data, notch) });
+      return `${t("load.tooltip.overclock", { workers: workersAt(data, notch) })} ${t("load.overclock_risk")}`;
     case LoadNotch.AUTO:
       return t("load.tooltip.auto", { chosen: notchLabel(chosenNotch) });
     default:
       return "";
   }
+}
+
+// autoReasonLine says in one line why auto runs at its notch: the load outside Djinn, how long it stayed on its side
+// of the marks, and the step it leads to (W253).
+export function autoReasonLine(reason: LoadAutoReason | undefined): string {
+  if (!reason) return "";
+  const notch = notchLabel(reason.notch);
+  if (!reason.windowSeconds) return t("load.auto_reason.unmeasured", { notch });
+  const params = {
+    what: t(reason.memory ? "load.auto_reason.memory" : "load.auto_reason.cpu"),
+    pct: Math.round(reason.outsidePercent),
+    time: span(reason.windowSeconds * 1000),
+    wait: span(reason.inSeconds * 1000),
+    notch,
+  };
+  switch (reason.step) {
+    case LoadAutoStep.LOWER:
+      return t("load.auto_reason.lower", params);
+    case LoadAutoStep.RAISE:
+      return t("load.auto_reason.raise", params);
+    case LoadAutoStep.CEILING:
+      return t("load.auto_reason.ceiling", params);
+    case LoadAutoStep.FLOOR:
+      return t("load.auto_reason.floor", params);
+    default:
+      return t("load.auto_reason.hold", params);
+  }
+}
+
+// nearestNotch is the index of the stop nearest a pointer at clientX over box, the stops' row: the stops stand at
+// even steps from its left end to its right end.
+function nearestNotch(clientX: number, box: { left: number; width: number }) {
+  if (box.width <= 0) return null;
+  const ratio = Math.max(0, Math.min(1, (clientX - box.left) / box.width));
+  return Math.round(ratio * (NOTCHES.length - 1));
+}
+
+// stopAt is the distance from the track's left end to the stop at index i: the stops' row is inset by the thumb's
+// half, 0.4375rem, at each end (operating-load.css).
+function stopAt(i: number): string {
+  return `calc(0.4375rem + ${i / (NOTCHES.length - 1)} * (100% - 0.875rem))`;
 }
 
 // useAnimatedNumber glides to target when glide changes with it: the notch the developer moves to. Any other move
@@ -562,20 +666,36 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
         })
       : baseTooltip;
 
+  // The stop nearest the pointer, measured on the stops' row (the slider's own box before it is drawn).
+  const stopsRef = React.useRef<HTMLDivElement>(null);
+  const nearest = (e: React.MouseEvent<HTMLDivElement>) => {
+    const box = (
+      stopsRef.current ?? e.currentTarget
+    )?.getBoundingClientRect?.();
+    const idx = box ? nearestNotch(e.clientX, box) : null;
+    return idx === null ? null : (NOTCHES[idx] ?? null);
+  };
+
+  // A click anywhere on the track sets the nearest stop.
   const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement)?.tagName === "BUTTON") return;
-    const rect = e.currentTarget?.getBoundingClientRect?.() ?? {
-      left: 0,
-      width: 0,
-    };
-    if (rect.width <= 0) return;
-    const ratio = Math.max(
-      0,
-      Math.min(1, (e.clientX - rect.left) / rect.width),
-    );
-    const idx = Math.min(4, Math.max(0, Math.round(ratio * 4)));
+    const notch = nearest(e);
+    if (notch === null) return;
     loadManager.setPreviewNotch(null);
-    void loadManager.setNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
+    void loadManager.setNotch(notch);
+  };
+
+  // The pointer anywhere on the track, gaps included, previews the stop nearest it: the preview changes only when
+  // that stop changes, never falling back to the level in effect between two stops (W37).
+  const handleTrackMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const notch = nearest(e);
+    if (notch !== null) loadManager.setPreviewNotch(notch);
+  };
+
+  // select sets a notch from a label or a stop: the same move from either.
+  const select = (notch: LoadNotch) => {
+    loadManager.setPreviewNotch(null);
+    void loadManager.setNotch(notch);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -596,38 +716,80 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
     void loadManager.setNotch(NOTCHES[nextIdx] ?? LoadNotch.MEDIUM);
   };
 
+  // The gauge's fill: solid up to the level in effect, striped on to the previewed level when it is higher, or over
+  // the part a lower previewed level would give up.
+  const activeIndex = Math.max(0, NOTCHES.indexOf(activeNotch));
   return (
     <div
       className="operating-load-slider"
       data-notch={notchSlug(displayNotch)}
       onClick={handleTrackClick}
+      onMouseMove={handleTrackMove}
+      onMouseLeave={() => loadManager.setPreviewNotch(null)}
     >
-      <input
-        type="range"
-        role="slider"
-        min={1}
-        max={5}
-        step={1}
-        value={sliderIndex + 1}
-        onInput={(e) => {
-          const idx = Number(e.currentTarget.value) - 1;
-          loadManager.setPreviewNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
-        }}
-        onChange={(e) => {
-          const idx = Number(e.currentTarget.value) - 1;
-          loadManager.setPreviewNotch(null);
-          void loadManager.setNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
-        }}
-        onKeyDown={handleKeyDown}
-        onBlur={() => loadManager.setPreviewNotch(null)}
-        aria-label={t("load.label")}
-        aria-valuemin={1}
-        aria-valuemax={5}
-        aria-valuenow={sliderIndex + 1}
-        aria-valuetext={valuetext}
-        title={sliderTooltip}
-        className="operating-load-input"
-      />
+      <div className="operating-load-track">
+        <input
+          type="range"
+          role="slider"
+          min={1}
+          max={5}
+          step={1}
+          value={sliderIndex + 1}
+          onInput={(e) => {
+            const idx = Number(e.currentTarget.value) - 1;
+            loadManager.setPreviewNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
+          }}
+          onChange={(e) => {
+            const idx = Number(e.currentTarget.value) - 1;
+            loadManager.setPreviewNotch(null);
+            void loadManager.setNotch(NOTCHES[idx] ?? LoadNotch.MEDIUM);
+          }}
+          onKeyDown={handleKeyDown}
+          onBlur={() => loadManager.setPreviewNotch(null)}
+          aria-label={t("load.label")}
+          aria-valuemin={1}
+          aria-valuemax={5}
+          aria-valuenow={sliderIndex + 1}
+          aria-valuetext={valuetext}
+          aria-description={sliderTooltip}
+          className="operating-load-input"
+        />
+        <div
+          className="operating-load-fill-reach"
+          data-notch={notchSlug(displayNotch)}
+          style={{ width: stopAt(Math.max(activeIndex, sliderIndex)) }}
+        />
+        <div
+          className="operating-load-fill"
+          data-notch={notchSlug(activeNotch)}
+          style={{ width: stopAt(Math.min(activeIndex, sliderIndex)) }}
+        />
+        {/* A round stop per notch on the track, a button each: the one shown filled (it stands for the cursor), the
+            one in effect let through to the cursor beneath, which it drags. */}
+        <div className="operating-load-stops" ref={stopsRef}>
+          {NOTCHES.map((n, i) => {
+            const inEffect = !data.auto && activeNotch === n;
+            return (
+              <button
+                key={n}
+                type="button"
+                data-notch={notchSlug(n)}
+                className={`operating-load-stop${i === sliderIndex ? " current" : ""}${inEffect ? " active" : ""}`}
+                style={{ left: `${(i / (NOTCHES.length - 1)) * 100}%` }}
+                aria-label={notchLabel(n)}
+                aria-pressed={inEffect}
+                onFocus={() => loadManager.setPreviewNotch(n)}
+                onBlur={() => loadManager.setPreviewNotch(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  select(n);
+                }}
+                aria-description={notchTooltip(n, data, chosen)}
+              />
+            );
+          })}
+        </div>
+      </div>
       <div className="operating-load-notches">
         {NOTCHES.map((n) => (
           <button
@@ -636,14 +798,16 @@ const OperatingLoadSlider = React.memo(function OperatingLoadSlider() {
             tabIndex={-1}
             data-notch={notchSlug(n)}
             className={`operating-load-notch ${!data.auto && activeNotch === n ? "active" : ""}`}
-            onMouseEnter={() => loadManager.setPreviewNotch(n)}
-            onMouseLeave={() => loadManager.setPreviewNotch(null)}
+            // A label previews its own notch: spread edge to edge, the end labels sit off their stops.
+            onMouseMove={(e) => {
+              e.stopPropagation();
+              loadManager.setPreviewNotch(n);
+            }}
             onClick={(e) => {
               e.stopPropagation();
-              loadManager.setPreviewNotch(null);
-              void loadManager.setNotch(n);
+              select(n);
             }}
-            title={notchTooltip(n, data, chosen)}
+            aria-description={notchTooltip(n, data, chosen)}
           >
             {notchLabel(n)}
           </button>
@@ -669,7 +833,11 @@ const OperatingLoadAuto = React.memo(function OperatingLoadAuto() {
         data-notch="auto"
         className={`operating-load-notch ${data.auto ? "active" : ""}`}
         onClick={() => void loadManager.setNotch(LoadNotch.AUTO)}
-        title={notchTooltip(LoadNotch.AUTO, data, chosen)}
+        onMouseEnter={() => loadManager.setPreviewAuto(true)}
+        onMouseLeave={() => loadManager.setPreviewAuto(false)}
+        onFocus={() => loadManager.setPreviewAuto(true)}
+        onBlur={() => loadManager.setPreviewAuto(false)}
+        aria-description={notchTooltip(LoadNotch.AUTO, data, chosen)}
       >
         {t("load.notch.auto")}
       </button>
@@ -677,7 +845,10 @@ const OperatingLoadAuto = React.memo(function OperatingLoadAuto() {
         <span
           className="operating-load-effective"
           data-effective={notchSlug(data.notch)}
-          title={notchTooltip(LoadNotch.AUTO, data, chosen)}
+          aria-description={
+            autoReasonLine(data.autoReason) ||
+            notchTooltip(LoadNotch.AUTO, data, chosen)
+          }
         >
           ({notchLabel(data.notch)})
         </span>
@@ -698,9 +869,20 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
     loadManager.getPreviewNotch,
   );
 
+  const previewAuto = useSyncExternalStore(
+    loadManager.subscribe,
+    loadManager.getPreviewAuto,
+    loadManager.getPreviewAuto,
+  );
+
   const displayNotch = preview ?? data.notch;
   const allowedWorkers = workersAt(data, displayNotch);
-  const over = overLimit(data, displayNotch);
+  const ifrits = useIfrits();
+  const over = overLimit(data, displayNotch, ifrits.working);
+  // Overclock previewed, or in effect with no other level previewed: its risk, as a warning. Auto hovered or on: what
+  // it does.
+  const risk = displayNotch === LoadNotch.OVERCLOCK;
+  const explainAuto = previewAuto || data.auto;
   // Previewing a notch below the one in effect: what moving there does to the workers above its limit.
   const previewing =
     preview !== null && workersAt(data, preview) < workersAt(data, data.notch);
@@ -762,6 +944,7 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
     ? "load.limited_by_memory"
     : "load.limited_by_cpu";
 
+  // Laid over the page under the gauge, shown while the gauge is hovered or has the keyboard (operating-load.css).
   return (
     <div
       className="operating-load-forecast operating-load-memory"
@@ -776,7 +959,10 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
         })}
       </div>
       <div className="operating-load-forecast-row">
-        <span className="operating-load-forecast-label" title={lowerText}>
+        <span
+          className="operating-load-forecast-label"
+          aria-description={lowerText}
+        >
           {t("load.forecast_cpu_running", {
             running: data.runningWorkers,
             workers: Math.round(animatedWorkers),
@@ -786,6 +972,13 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
             <span className="operating-load-forecast-paused">
               {" · "}
               {t("load.forecast_paused", { count: data.pausedWorkers })}
+            </span>
+          )}
+          {ifrits.lit > 0 && (
+            <span className="operating-load-forecast-ifrit tone-ifrit">
+              {" · "}
+              <ToneIcon tone="ifrit" size={12} />
+              {t("load.forecast_ifrits", { count: ifrits.lit })}
             </span>
           )}
           {over.byHand > 0 && (
@@ -806,10 +999,7 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
             </span>
           )}
         </span>
-        <div
-          className="operating-load-bar"
-          title={`CPU: ${data.runningWorkers} / ${allowedWorkers}${data.pausedWorkers > 0 ? ` (${data.pausedWorkers} paused)` : ""}`}
-        >
+        <div className="operating-load-bar">
           <div
             className="operating-load-bar-limit"
             style={{ width: `${cpuLimitPct}%` }}
@@ -828,10 +1018,7 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
             used: memory(data.workerMemoryBytes),
           })}
         </span>
-        <div
-          className="operating-load-bar"
-          title={`Memory: ${memory(data.workerMemoryBytes)} / ${memory(limitMemory)}`}
-        >
+        <div className="operating-load-bar">
           <div
             className="operating-load-bar-limit"
             style={{ width: `${memLimitPct}%` }}
@@ -842,6 +1029,25 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
           />
         </div>
       </div>
+      {risk && (
+        <div className="operating-load-forecast-note operating-load-forecast-risk">
+          {t("load.overclock_risk")}
+        </div>
+      )}
+      {explainAuto && (
+        <div className="operating-load-forecast-note">
+          {notchTooltip(
+            LoadNotch.AUTO,
+            data,
+            data.chosenNotch || LoadNotch.MEDIUM,
+          )}
+        </div>
+      )}
+      {data.auto && data.autoReason && (
+        <div className="operating-load-forecast-note operating-load-auto-reason">
+          {autoReasonLine(data.autoReason)}
+        </div>
+      )}
     </div>
   );
 });
@@ -859,6 +1065,8 @@ export const OperatingLoad = React.memo(function OperatingLoad() {
     }
   }, [djinn]);
 
+  // No element of the gauge carries a title: the browser's own tooltip came up late over the coloured preview, a
+  // hover on a hover (W32). Names stay in aria-label, the longer explanations in aria-description.
   return (
     <div className="operating-load" role="group" aria-label={t("load.label")}>
       <OperatingLoadSlider />
@@ -881,4 +1089,6 @@ export {
   workersAt,
   overLimit,
   computeEngagedLimit,
+  nearestNotch,
+  stopAt,
 };

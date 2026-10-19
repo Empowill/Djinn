@@ -26,6 +26,10 @@ import (
 // TilasmPrefix is where the tilasms' files are served, each tilasm's under /tilasm/<id>/ (plan.Tilasms.Files).
 const TilasmPrefix = "/tilasm/"
 
+// TilasmBridge is the script that ends each HTML page of a tilasm Djinn serves (plan.Tilasms.Files): the same for every
+// tilasm, it holds no secret, and a sandboxed frame loads it with neither the cookie nor a tilasm's key.
+const TilasmBridge = TilasmPrefix + "bridge.js"
+
 // Handler serves each Connect service at its path prefix, as returned by a generated New…Handler, the documentation
 // site from docs at /docs/ when docs is not nil, and the interface from ui for every other path.
 //
@@ -181,6 +185,10 @@ func Guard(next http.Handler, token, origin string) http.Handler {
 		// A tilasm's frame has an opaque origin: the browser sends the cookie for the frame's page, never for the files
 		// it loads (Origin null, Sec-Fetch-Site cross-site). Its page is sent to an address with a key of its own, from
 		// which the files load.
+		if r.URL.Path == TilasmBridge && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if id, key, rest, ok := keyedTilasm(r.URL.Path); ok {
 			if (r.Method != http.MethodGet && r.Method != http.MethodHead) ||
 				subtle.ConstantTimeCompare([]byte(key), []byte(FrameKey(token, id))) != 1 {

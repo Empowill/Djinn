@@ -103,5 +103,5 @@ func (n *leadNote) write(note restartNote) error {
 	if err != nil {
 		return err
 	}
-	return fsx.WriteAtomic(n.path, data)
+	return fsx.WriteAtomic(n.path, data, 0o600)
 }

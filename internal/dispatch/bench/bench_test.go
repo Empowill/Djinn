@@ -9,6 +9,7 @@ import (
 
 // TestGo: the plain Go scheduler decides every case as written by hand, and says why a task waits or fails.
 func TestGo(t *testing.T) {
+	t.Parallel()
 	cases, err := Cases()
 	if err != nil {
 		t.Fatal(err)
@@ -16,21 +17,23 @@ func TestGo(t *testing.T) {
 	if len(cases) < 20 {
 		t.Fatalf("%d cases", len(cases))
 	}
-	var results []Result
-	for _, c := range cases {
-		r := Go(c, time.Millisecond)
-		results = append(results, r)
-		if !r.Right() {
-			t.Errorf("%s: wrong for %v: %+v", c.Name, r.Wrong, r.Answers)
-		}
-		if len(r.Answers) != len(c.Expect) {
-			t.Errorf("%s: %d answers for %d planned tasks", c.Name, len(r.Answers), len(c.Expect))
-		}
-		for _, a := range r.Answers {
-			if (a.Decision == Start) != (a.Reason == "") {
-				t.Errorf("%s: %s %s with reason %q", c.Name, a.Code, a.Decision, a.Reason)
+	results := make([]Result, len(cases))
+	for i, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			r := Go(c, time.Millisecond)
+			results[i] = r
+			if !r.Right() {
+				t.Errorf("%s: wrong for %v: %+v", c.Name, r.Wrong, r.Answers)
 			}
-		}
+			if len(r.Answers) != len(c.Expect) {
+				t.Errorf("%s: %d answers for %d planned tasks", c.Name, len(r.Answers), len(c.Expect))
+			}
+			for _, a := range r.Answers {
+				if (a.Decision == Start) != (a.Reason == "") {
+					t.Errorf("%s: %s %s with reason %q", c.Name, a.Code, a.Decision, a.Reason)
+				}
+			}
+		})
 	}
 	var b strings.Builder
 	Table(&b, "Go", results)
@@ -42,6 +45,7 @@ func TestGo(t *testing.T) {
 
 // TestCheck: a case that names what it lacks, or expects nothing of a planned task, is refused.
 func TestCheck(t *testing.T) {
+	t.Parallel()
 	for _, c := range []Case{
 		{Name: "no wish", Tasks: []Task{{Code: "W1", Wish: "A", Status: "planned"}}, Expect: map[string]string{"W1": Start}},
 		{Name: "no expectation", Wishes: []Wish{{ID: "A"}}, Tasks: []Task{{Code: "W1", Wish: "A", Status: "planned"}}},
@@ -51,8 +55,11 @@ func TestCheck(t *testing.T) {
 		{Name: "a bad decision", Wishes: []Wish{{ID: "A"}}, Tasks: []Task{{Code: "W1", Wish: "A", Status: "planned"}},
 			Expect: map[string]string{"W1": "later"}},
 	} {
-		if err := c.check(); err == nil {
-			t.Errorf("%s: accepted", c.Name)
-		}
+		t.Run(c.Name, func(t *testing.T) {
+			t.Parallel()
+			if err := c.check(); err == nil {
+				t.Errorf("%s: accepted", c.Name)
+			}
+		})
 	}
 }

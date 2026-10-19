@@ -32,6 +32,8 @@ import { type Djinn, useData, useDjinn, useStore } from "./data/djinn";
 import type { TerminalInfo } from "./data/terminal";
 import "./lead-terminal.css";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
+import { onTextSize, textScale } from "./text-size";
 import { onTheme, token } from "./theme";
 import { AddProject } from "./wish-dialogs";
 
@@ -243,6 +245,8 @@ function LeadTerminal({
   }, [api]);
   // A lead that ended keeps its tab, after a reload too, once LeadService.Get says so; closed, it stays closed.
   const leadEnded = useData((s) => !!s.leadExit);
+  // Driven by Djinn, the lead has no terminal: the empty panel says how to talk to it instead.
+  const driven = useData((s) => !!s.leadDrive);
   useEffect(() => {
     if (!leadEnded) return;
     add({ name: LEAD });
@@ -468,20 +472,32 @@ function LeadTerminal({
       <div className="lead-terminal-screen" ref={host} hidden={!name} />
       {!name && !collapsed && (
         <div className="lead-terminal-empty">
-          <p>{t("terminal.none")}</p>
-          <button className="button accent" onClick={onNew}>
-            <Plus size={14} />
-            {t("terminal.new_tab")}
-          </button>
+          <EmptyState
+            art="terminal"
+            after={
+              <button className="button accent" onClick={onNew}>
+                <Plus size={14} />
+                {t("terminal.new_tab")}
+              </button>
+            }
+          >
+            {driven ? t("terminal.none_driven") : t("terminal.none")}
+          </EmptyState>
         </div>
       )}
       {noProject && !collapsed && (
         <div className="lead-terminal-empty">
-          <p>{t("terminal.no_project")}</p>
-          <button className="button accent" onClick={() => setAdding(true)}>
-            <FolderPlus size={14} />
-            {t("sidebar.new_project")}
-          </button>
+          <EmptyState
+            art="noproject"
+            after={
+              <button className="button accent" onClick={() => setAdding(true)}>
+                <FolderPlus size={14} />
+                {t("sidebar.new_project")}
+              </button>
+            }
+          >
+            {t("terminal.no_project")}
+          </EmptyState>
         </div>
       )}
       {adding && (
@@ -496,6 +512,10 @@ function LeadTerminal({
     </section>
   );
 }
+
+// terminalFontSize is the emulator's font size: 13px at the default text size, scaled with it (text-size.ts) to the
+// half pixel.
+const terminalFontSize = () => Math.round(26 * textScale()) / 2;
 
 // mountTerminal runs an emulator in element on the terminal of djinn that request opens or attaches to, and tells
 // onStatus where its program stands, until dispose. The window's terminal and the agents' setup both use it; onNew,
@@ -515,13 +535,17 @@ export function mountTerminal(
   const api = djinn.terminal;
   const term = new Terminal({
     fontFamily: '"IBM Plex Mono", monospace',
-    fontSize: 13,
+    fontSize: terminalFontSize(),
     cursorBlink: true,
     scrollback: 5000,
     allowProposedApi: false,
     theme: terminalTheme(),
   });
   const stopTheme = onTheme(() => (term.options.theme = terminalTheme()));
+  const stopTextSize = onTextSize(() => {
+    term.options.fontSize = terminalFontSize();
+    fitSafely(fit);
+  });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(
@@ -558,6 +582,7 @@ export function mountTerminal(
   // The app's own shortcuts (Escape, Ctrl+K…) must not take the keys typed into the terminal.
   const keep = (event: KeyboardEvent) => event.stopPropagation();
   element.addEventListener("keydown", keep);
+  const stopInputGuard = guardTerminalInput(term, element);
 
   const abort = new AbortController();
   let id = "";
@@ -641,10 +666,91 @@ export function mountTerminal(
     dispose: () => {
       abort.abort();
       stopTheme();
+      stopTextSize();
+      stopInputGuard();
       inputs.forEach((d) => d.dispose());
       element.removeEventListener("keydown", keep);
       term.dispose();
     },
+  };
+}
+
+// guardTerminalInput keeps WebKitGTK's input methods and xterm.js's hidden textarea in step:
+// - xterm.js does not preventDefault on keypress (Space, Shift+letter, keyCode 0) or clear Linux mouse selections, so
+//   characters and WebKit's non-breaking spaces accumulate in the textarea between compositions;
+// - WebKitGTK's IBus and Simple input methods commit direct accented keys (keyCode 229, insertFromComposition,
+//   compositionend) without firing compositionstart, so CompositionHelper slices from index 0 of the textarea and
+//   sends every accumulated space and accented character again.
+export function guardTerminalInput(
+  term: Terminal,
+  element: HTMLElement,
+): () => void {
+  const ta = term.textarea;
+  if (!ta) return () => {};
+  let composing = false;
+  let pending = 0;
+  const release = () => {
+    setTimeout(() => {
+      if (pending > 0) pending--;
+      if (!composing && pending === 0 && ta.value !== "") ta.value = "";
+    }, 0);
+  };
+  const onElementKeyDown = () => {
+    if (!composing && pending === 0 && ta.value !== "") ta.value = "";
+  };
+  const onTextareaKeyDown = (ev: KeyboardEvent) => {
+    if (ev.keyCode === 229) {
+      pending++;
+      release();
+    } else if (
+      composing &&
+      ev.keyCode !== 16 &&
+      ev.keyCode !== 17 &&
+      ev.keyCode !== 18 &&
+      ev.keyCode !== 20
+    ) {
+      composing = false;
+      pending++;
+      release();
+    }
+  };
+  const onBeforeInput = (ev: InputEvent) => {
+    if (!composing && ev.inputType === "insertFromComposition") {
+      if (pending === 0 && ta.value !== "") ta.value = "";
+      composing = true;
+      ta.dispatchEvent(new CompositionEvent("compositionstart"));
+    }
+  };
+  const onCompositionStart = () => {
+    if (!composing && pending === 0 && ta.value !== "") ta.value = "";
+    composing = true;
+  };
+  const onCompositionEnd = () => {
+    composing = false;
+    pending++;
+    release();
+  };
+  const onBlur = () => {
+    composing = false;
+  };
+  const onKeyPress = (ev: KeyboardEvent) => {
+    ev.preventDefault();
+  };
+  element.addEventListener("keydown", onElementKeyDown, true);
+  ta.addEventListener("keydown", onTextareaKeyDown, true);
+  ta.addEventListener("beforeinput", onBeforeInput, true);
+  ta.addEventListener("compositionstart", onCompositionStart, true);
+  ta.addEventListener("compositionend", onCompositionEnd);
+  ta.addEventListener("blur", onBlur);
+  ta.addEventListener("keypress", onKeyPress);
+  return () => {
+    element.removeEventListener("keydown", onElementKeyDown, true);
+    ta.removeEventListener("keydown", onTextareaKeyDown, true);
+    ta.removeEventListener("beforeinput", onBeforeInput, true);
+    ta.removeEventListener("compositionstart", onCompositionStart, true);
+    ta.removeEventListener("compositionend", onCompositionEnd);
+    ta.removeEventListener("blur", onBlur);
+    ta.removeEventListener("keypress", onKeyPress);
   };
 }
 

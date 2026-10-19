@@ -3,10 +3,12 @@ import { visualizationMessage } from "./visualization-document";
 import { MERMAID_FRAME } from "./mermaid-frame";
 import "./mermaid-diagram.css";
 import { t } from "./i18n";
+import { useTextScale } from "./text-size";
 import { token, useShownTheme } from "./theme";
 
-// The diagram's colours: the theme on the page, from the tokens of theme.css.
-function diagramLook(theme: "dark" | "light") {
+// The diagram's colours: the theme on the page, from the tokens of theme.css; its text, 12px at the default text
+// size, follows the text size (text-size.ts).
+function diagramLook(theme: "dark" | "light", scale: number) {
   const [ground, text, box, border, line] = [
     "n-19",
     "n-e7",
@@ -21,7 +23,7 @@ function diagramLook(theme: "dark" | "light") {
     config: {
       theme: theme === "light" ? "neutral" : "dark",
       themeVariables: {
-        fontSize: "12px",
+        fontSize: `${Math.round(12 * scale * 10) / 10}px`,
         background: ground,
         primaryColor: box,
         primaryTextColor: text,
@@ -34,9 +36,11 @@ function diagramLook(theme: "dark" | "light") {
 }
 
 // The diagram draws in the frame the server serves (mermaid-frame.ts), which loads the bundled engine only when a
-// Markdown Mermaid block is on the page. The page posts it the source and the theme; it answers the height it drew.
+// Markdown Mermaid block is on the page. The page posts it the source, the theme and the text size; it answers the
+// height it drew.
 function DiagramFrame({ source }: { source: string }) {
   const theme = useShownTheme();
+  const scale = useTextScale();
   const frame = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [drawn, setDrawn] = useState(false);
@@ -63,11 +67,16 @@ function DiagramFrame({ source }: { source: string }) {
     };
     window.addEventListener("message", receive);
     target.postMessage(
-      { type: "djinn:mermaid-render", token, source, ...diagramLook(theme) },
+      {
+        type: "djinn:mermaid-render",
+        token,
+        source,
+        ...diagramLook(theme, scale),
+      },
       "*",
     );
     return () => window.removeEventListener("message", receive);
-  }, [source, theme, loaded, tooLong]);
+  }, [source, theme, scale, loaded, tooLong]);
   const shown = error || (tooLong && t("mermaid.too_long"));
   return (
     <>

@@ -14,7 +14,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"connectrpc.com/connect"
@@ -62,6 +64,17 @@ type Tilasms struct {
 	// URL is the local http address of a tilasm's latest version, by its identifier; empty, or nil, while Djinn serves
 	// no http.
 	URL func(id string) string
+	// Marks answers the question a launch without a comment approves; nil: such a launch is unavailable.
+	Marks *Marks
+	// Wake, when set, wakes the lead's watch once a send queued its event.
+	Wake func()
+	// Questions, when set, iterates on the question whose mockup option iterates on a tilasm its comments are sent
+	// on to iterate (Questions.iterated).
+	Questions *Questions
+	// Publisher publishes tilasms on claude.ai; nil: Publish is unavailable.
+	Publisher *Publisher
+
+	publishing sync.Map // The tilasms being published, by id: one publish at a time each.
 }
 
 // TilasmDir is the folder of a tilasm in the data folder home: version n is in its folder v<n>.
@@ -79,6 +92,64 @@ func tempDir(home, prefix string) (string, error) {
 		return "", err
 	}
 	return os.MkdirTemp(root, "."+prefix+"-*")
+}
+
+// stagingPrefixes are the folders of tempDir that hold only new files, on their way in: the store knows none of them
+// until they are renamed in place.
+var stagingPrefixes = []string{"drop", "put", "restore", "import", "publish"}
+
+// SweepTilasmTemp tidies the tilasms' folder of home after a djinn up that a kill cut, before anything writes there:
+// it removes the staging folders of tempDir, and returns the paths it removed. A folder of an import that went aside
+// (the "replaced" prefix) holds a tilasm's previous files: one whose place is empty goes back to it; one whose place
+// is taken stays, as the cut may have come before the import's transaction, and is returned in kept. Nothing else is
+// touched.
+func SweepTilasmTemp(home string) (removed, kept []string, err error) {
+	root := filepath.Join(home, "tilasms")
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var errs []error
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || !strings.HasPrefix(name, ".") {
+			continue
+		}
+		dir := filepath.Join(root, name)
+		if slices.ContainsFunc(stagingPrefixes, func(p string) bool { return strings.HasPrefix(name, "."+p+"-") }) {
+			if err := os.RemoveAll(dir); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			removed = append(removed, dir)
+			continue
+		}
+		if !strings.HasPrefix(name, ".replaced-") {
+			continue
+		}
+		held, err := os.ReadDir(dir)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		for _, h := range held {
+			back := TilasmDir(home, h.Name())
+			if _, err := os.Stat(back); errors.Is(err, fs.ErrNotExist) {
+				if err := renamer.Rename(filepath.Join(dir, h.Name()), back); err != nil {
+					errs = append(errs, err)
+				}
+			}
+		}
+		if os.Remove(dir) == nil { // Empty: everything went back.
+			removed = append(removed, dir)
+		} else {
+			kept = append(kept, dir)
+		}
+	}
+	return removed, kept, errors.Join(errs...)
 }
 
 func (t *Tilasms) ready() error {
@@ -249,8 +320,13 @@ func bytesText(n int64) string {
 	return fmt.Sprintf("%d bytes", n)
 }
 
-// stagePath copies a folder, or the content of a .zip, into a temporary folder, up to limit bytes: past it, it stops
-// and says at which file. The folder must hold an index.html at its root.
+func isHTMLFile(name string) bool {
+	ext := strings.ToLower(path.Ext(strings.ReplaceAll(name, `\`, "/")))
+	return ext == ".html" || ext == ".htm"
+}
+
+// stagePath copies a folder, an .html file, or the content of a .zip, into a temporary folder, up to limit bytes: past
+// it, it stops and says at which file. The folder must hold an index.html at its root.
 func (t *Tilasms) stagePath(src string, limit int64) (*staged, error) {
 	info, err := os.Stat(src)
 	if err != nil {
@@ -261,12 +337,15 @@ func (t *Tilasms) stagePath(src string, limit int64) (*staged, error) {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	s := &staged{dir: dir}
-	if info.IsDir() {
+	switch {
+	case info.IsDir():
 		err = s.copyFolder(src, limit)
-	} else {
+	case isHTMLFile(src):
+		err = s.copyHTML(src, limit)
+	default:
 		var zr *zip.ReadCloser
 		if zr, err = zip.OpenReader(src); err != nil {
-			err = connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is neither a folder nor a .zip: %w", src, err))
+			err = connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s is neither a folder, an .html file, nor a .zip: %w", src, err))
 		} else {
 			err = s.copyZip(&zr.Reader, limit)
 			zr.Close()
@@ -280,6 +359,23 @@ func (t *Tilasms) stagePath(src string, limit int64) (*staged, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+func (s *staged) copyHTML(src string, limit int64) error {
+	linfo, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	if linfo.Mode()&fs.ModeSymlink != 0 {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"%s is a symbolic link: a tilasm holds its files themselves", filepath.Base(src)))
+	}
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return s.add(tilasmIndex, f, limit)
 }
 
 // index checks that the files hold an index.html, and reads its title.
@@ -727,7 +823,7 @@ func (t *Tilasms) Export(
 		return nil, Status(err)
 	}
 	manifest, err := protojson.MarshalOptions{Multiline: true, Indent: "  ", UseProtoNames: true}.Marshal(
-		&planv1.TilasmExport{Tilasm: tilasm, CiteCodes: codes})
+		&planv1.TilasmExport{Tilasm: exported(tilasm), CiteCodes: codes})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -1156,9 +1252,20 @@ func tilasmsOf(ctx context.Context, r store.Reader, wishID string) ([]*planv1.Ti
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, &planv1.TilasmExport{Tilasm: t, CiteCodes: codes})
+		out = append(out, &planv1.TilasmExport{Tilasm: exported(t), CiteCodes: codes})
 	}
 	return out, nil
+}
+
+// exported is a tilasm as an export carries it: without its artifact, the developer's own on claude.ai and their
+// go-ahead to publish it, which stay on this machine.
+func exported(t *planv1.Tilasm) *planv1.Tilasm {
+	if t.GetArtifact() == nil {
+		return t
+	}
+	t = proto.CloneOf(t)
+	t.Artifact = nil
+	return t
 }
 
 // checkTilasms refuses tilasms of an export that do not hold together: of another wish, a code given twice, a cite
@@ -1234,11 +1341,39 @@ func citing(all []*planv1.Tilasm, taskID string) []string {
 	return out
 }
 
+// tilasmContextHead opens what a worker's first prompt holds of the tilasms it is given, after the lead's words.
+const tilasmContextHead = "# Tilasms given as context\n"
+
 // tilasmPromptText is how much of a tilasm's text a worker's first prompt holds: the rest is in its files.
 const tilasmPromptText = 20000
 
 // tilasmPromptFiles is how many of a tilasm's files a worker's first prompt names.
 const tilasmPromptFiles = 20
+
+// tilasmFilesLine starts the line of TilasmContext that names the folder of a tilasm's version (TilasmDirs).
+const tilasmFilesLine = "- Files, version "
+
+// TilasmDirs are the version folders of the tilasms a worker's first prompt gives it (TilasmContext), in Djinn's
+// data folder home: the folders the worker reads besides its own (harness.Spec.ReadDirs).
+func TilasmDirs(home, prompt string) []string {
+	_, context, ok := strings.Cut(prompt, tilasmContextHead)
+	if !ok || home == "" {
+		return nil
+	}
+	root := filepath.Join(home, "tilasms") + string(filepath.Separator)
+	var dirs []string
+	for l := range strings.Lines(context) {
+		rest, ok := strings.CutPrefix(l, tilasmFilesLine)
+		if !ok {
+			continue
+		}
+		_, dir, ok := strings.Cut(strings.TrimSpace(rest), ": ")
+		if dir = filepath.Clean(dir); ok && strings.HasPrefix(dir, root) && !slices.Contains(dirs, dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
+}
 
 // TilasmContext is what a worker's first prompt holds of the tilasms it is given (djinn task spawn --tilasm): for each,
 // its code, title, link, what it explains, the folder of its latest version's files and the text of its page. names
@@ -1246,14 +1381,16 @@ const tilasmPromptFiles = 20
 // Djinn's data folder. Empty for no name.
 func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, names []string) (string, error) {
 	var tilasms []*planv1.Tilasm
+	pins := map[string]int32{}
 	for _, list := range names {
 		for _, name := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
-			tilasm, err := wishTilasm(ctx, r, wishID, name)
+			tilasm, pin, err := pinnedTilasm(ctx, r, wishID, name)
 			if err != nil {
 				return "", err
 			}
 			if !slices.ContainsFunc(tilasms, func(t *planv1.Tilasm) bool { return t.GetId() == tilasm.GetId() }) {
 				tilasms = append(tilasms, tilasm)
+				pins[tilasm.GetId()] = pin
 			}
 		}
 	}
@@ -1264,11 +1401,11 @@ func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, nam
 		return "", connect.NewError(connect.CodeUnavailable, errors.New("this server keeps no tilasms: run djinn up"))
 	}
 	var b strings.Builder
-	b.WriteString("# Tilasms given as context\n\n")
+	b.WriteString(tilasmContextHead + "\n")
 	b.WriteString("The material that explains this work, kept by Djinn outside the project: read its files where they " +
 		"are, and do not copy them into the project. `djinn tilasm get <code>` reads one again.\n")
 	for _, tilasm := range tilasms {
-		n, err := pickVersion(tilasm, 0)
+		n, err := pickVersion(tilasm, pins[tilasm.GetId()])
 		if err != nil {
 			return "", err
 		}
@@ -1286,7 +1423,7 @@ func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, nam
 		if err != nil {
 			return "", connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("read the files of %s: %w", tilasm.GetCode(), err))
 		}
-		fmt.Fprintf(&b, "- Files, version %d: %s\n", n, dir)
+		fmt.Fprintf(&b, tilasmFilesLine+"%d: %s\n", n, dir)
 		if len(files) > tilasmPromptFiles {
 			files = append(files[:tilasmPromptFiles], fmt.Sprintf("and %d more", len(files)-tilasmPromptFiles))
 		}
@@ -1301,6 +1438,25 @@ func TilasmContext(ctx context.Context, r store.Reader, home, wishID string, nam
 		}
 	}
 	return b.String(), nil
+}
+
+// pinnedTilasm is the tilasm of the wish a name gives (wishTilasm), and the version it pins after an @: L18@2, L18@v2,
+// or its identifier@2; 0 when it pins none, for its latest.
+func pinnedTilasm(ctx context.Context, r store.Reader, wishID, name string) (*planv1.Tilasm, int32, error) {
+	base, at, pinned := strings.Cut(name, "@")
+	tilasm, err := wishTilasm(ctx, r, wishID, base)
+	if err != nil || !pinned {
+		return tilasm, 0, err
+	}
+	n, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(at), "v"), 10, 32)
+	if err != nil || n < 1 {
+		return nil, 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"tilasm %s pins no version: write %s@2 for its version 2", name, base))
+	}
+	if _, err := pickVersion(tilasm, int32(n)); err != nil {
+		return nil, 0, err
+	}
+	return tilasm, int32(n), nil
 }
 
 // wishTilasm is the tilasm of the wish named by its code, any case, or its identifier; another wish's is refused.

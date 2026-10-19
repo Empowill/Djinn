@@ -11,6 +11,7 @@ import (
 // TestIcon: a question and a block carry the emoji their writer gives, one emoji only; a block keeps its icon when
 // another field changes.
 func TestIcon(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	wishID := c.wish(t)
 	q, err := c.questions.Ask(t.Context(), connect.NewRequest(&planv1.QuestionServiceAskRequest{
@@ -61,6 +62,7 @@ func TestIcon(t *testing.T) {
 // TestDecision: a task names the decision it comes from, an answered question by its code or id, or a decision block
 // by its id; anything else is refused, and says why.
 func TestDecision(t *testing.T) {
+	t.Parallel()
 	c := serve(t)
 	wishID, other := c.wish(t), c.wish(t)
 	open := c.ask(t, wishID)
@@ -84,10 +86,12 @@ func TestDecision(t *testing.T) {
 		{q.GetId(), q.GetCode()},
 		{decision, decision},
 	} {
-		got, err := Decision(t.Context(), c.store, wishID, tt.ref)
-		if err != nil || got != tt.want {
-			t.Errorf("Decision(%s) = %q, %v; want %q", tt.ref, got, err, tt.want)
-		}
+		t.Run("ok/"+tt.ref, func(t *testing.T) {
+			got, err := Decision(t.Context(), c.store, wishID, tt.ref)
+			if err != nil || got != tt.want {
+				t.Errorf("Decision(%s) = %q, %v; want %q", tt.ref, got, err, tt.want)
+			}
+		})
 	}
 	for _, tt := range []struct {
 		ref  string
@@ -99,8 +103,10 @@ func TestDecision(t *testing.T) {
 		{elsewhere, connect.CodeInvalidArgument},
 		{"01890000-0000-7000-8000-000000000000", connect.CodeInvalidArgument},
 	} {
-		if _, err := Decision(t.Context(), c.store, wishID, tt.ref); code(err) != tt.code {
-			t.Errorf("Decision(%s): %v, want %v", tt.ref, err, tt.code)
-		}
+		t.Run("refused/"+tt.ref, func(t *testing.T) {
+			if _, err := Decision(t.Context(), c.store, wishID, tt.ref); code(err) != tt.code {
+				t.Errorf("Decision(%s): %v, want %v", tt.ref, err, tt.code)
+			}
+		})
 	}
 }

@@ -1,6 +1,6 @@
 // The terminal pinned at the bottom of the window, against the real djinn up --browser (see global-setup.ts): a
 // POSIX shell on a pseudo-terminal of djinn, reached through the shim.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./test";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -133,36 +133,38 @@ test("a reopened window finds the terminal and its output", async ({
   }
 });
 
-test("a key reaches the terminal in well under a key repeat", async ({
-  page,
-}) => {
-  await page.goto(djinnURL());
-  await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
-  // The page's own requests, one after the other as the terminal sends keys: Connect in JSON, same origin, the
-  // session cookie.
-  const mean = await page.evaluate(async () => {
-    const call = async (method: string, body: object) => {
-      const res = await fetch(`/terminal.v1.TerminalService/${method}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+test(
+  "a key reaches the terminal in well under a key repeat",
+  { tag: "@budget" },
+  async ({ page }) => {
+    await page.goto(djinnURL());
+    await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
+    // The page's own requests, one after the other as the terminal sends keys: Connect in JSON, same origin, the
+    // session cookie.
+    const mean = await page.evaluate(async () => {
+      const call = async (method: string, body: object) => {
+        const res = await fetch(`/terminal.v1.TerminalService/${method}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`${method}: ${res.status}`);
+        return res.json();
+      };
+      const { terminal } = await call("Open", {
+        name: "main",
+        cols: 80,
+        rows: 24,
       });
-      if (!res.ok) throw new Error(`${method}: ${res.status}`);
-      return res.json();
-    };
-    const { terminal } = await call("Open", {
-      name: "main",
-      cols: 80,
-      rows: 24,
+      const n = 200;
+      const start = performance.now();
+      for (let i = 0; i < n; i++) await call("Write", { id: terminal.id });
+      return (performance.now() - start) / n;
     });
-    const n = 200;
-    const start = performance.now();
-    for (let i = 0; i < n; i++) await call("Write", { id: terminal.id });
-    return (performance.now() - start) / n;
-  });
-  console.log(`write round trip over loopback HTTP: ${mean.toFixed(2)} ms`);
-  expect(mean).toBeLessThan(15);
-});
+    console.log(`write round trip over loopback HTTP: ${mean.toFixed(2)} ms`);
+    expect(mean).toBeLessThan(15);
+  },
+);
 
 // agy (Antigravity) 1.3.2 opens with queries to the terminal (XTVERSION, DA1, DECRQM 2026 and 2027, OSC 11), then
 // draws its logo, and goes on once the answers come. A fake agy prints the first frame the real one wrote in Djinn's
@@ -216,4 +218,283 @@ stty sane
   await typeLine(page, "echo agy-''gone");
   await expect(line(page, "agy-gone")).toHaveCount(1);
   expect(errors).toEqual([]);
+});
+
+test("direct and dead-key accented input reaches the program without extra spaces", async ({
+  page,
+}) => {
+  const dir = fs.mkdtempSync(path.join(process.env.DJINN_E2E_HOME!, "ime-"));
+  const out = path.join(dir, "typed");
+  await page.goto(djinnURL());
+  await expect(page.locator(".lead-terminal .xterm")).toBeVisible();
+  await typeLine(
+    page,
+    `IFS= read -r line; printf '%s' "$line" > '${out}'; echo ime-''done`,
+  );
+  await page.locator(".lead-terminal .xterm").click();
+  // Replay the exact DOM event sequences WebKitGTK fires on a French layout:
+  // - Space keys whose keypress inserts into the hidden textarea (and WebKit's non-breaking space rebalancing) unless
+  //   prevented;
+  // - IBus direct accented keys (\u00e9, \u00e0, \u00e7, \u00f9), which fire keydown(229),
+  //   beforeinput(insertFromComposition), input and compositionend without compositionstart;
+  // - IBus dead-key composition (^ then e -> \u00ea), which preedits "^", deletes it, ends composition and commits
+  //   \u00ea in a second composition;
+  // - gtk-im-context-simple dead-key composition (diaeresis then i -> \u00ef), which fires compositionend("") on the
+  //   dead key and commits \u00ef without compositionstart.
+  await page.evaluate(async () => {
+    const ta = document.querySelector<HTMLTextAreaElement>(
+      ".lead-terminal .xterm-helper-textarea",
+    )!;
+    ta.focus();
+    const tick = () => new Promise((r) => setTimeout(r, 10));
+    const ascii = async (ch: string) => {
+      const code = ch.toUpperCase().charCodeAt(0);
+      ta.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: ch,
+          keyCode: code,
+          which: code,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await tick();
+    };
+    const space = async () => {
+      ta.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: " ",
+          code: "Space",
+          keyCode: 32,
+          which: 32,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      const kp = new KeyboardEvent("keypress", {
+        key: " ",
+        code: "Space",
+        keyCode: 32,
+        charCode: 32,
+        which: 32,
+        bubbles: true,
+        cancelable: true,
+      });
+      if (ta.dispatchEvent(kp)) {
+        ta.value = (ta.value + " ").replace(/ {2}$/u, "\u00a0 ");
+        ta.dispatchEvent(
+          new InputEvent("input", {
+            data: " ",
+            inputType: "insertText",
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      }
+      await tick();
+    };
+    const directAccent = async (ch: string) => {
+      ta.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Unidentified",
+          keyCode: 229,
+          which: 229,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new InputEvent("beforeinput", {
+          data: ch,
+          inputType: "insertFromComposition",
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        }),
+      );
+      ta.value = ta.value.replace(/\u00a0 $/u, "  ") + ch;
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: ch,
+          inputType: "insertFromComposition",
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", {
+          data: ch,
+          bubbles: true,
+        }),
+      );
+      await tick();
+    };
+    const ibusDeadKey = async (dead: string, ch: string) => {
+      ta.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Unidentified",
+          keyCode: 229,
+          which: 229,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new CompositionEvent("compositionstart", {
+          data: "",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new CompositionEvent("compositionupdate", {
+          data: dead,
+          bubbles: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new InputEvent("beforeinput", {
+          data: dead,
+          inputType: "insertCompositionText",
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      ta.value += dead;
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: dead,
+          inputType: "insertCompositionText",
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      await tick();
+      ta.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Unidentified",
+          keyCode: 229,
+          which: 229,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new InputEvent("beforeinput", {
+          data: null,
+          inputType: "deleteCompositionText",
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      ta.value = ta.value.slice(0, -dead.length);
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: null,
+          inputType: "deleteCompositionText",
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", {
+          data: "",
+          bubbles: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new CompositionEvent("compositionstart", {
+          data: "",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new InputEvent("beforeinput", {
+          data: ch,
+          inputType: "insertFromComposition",
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        }),
+      );
+      ta.value += ch;
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: ch,
+          inputType: "insertFromComposition",
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", {
+          data: ch,
+          bubbles: true,
+        }),
+      );
+      await tick();
+    };
+    const simpleDeadKey = async (ch: string) => {
+      ta.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Unidentified",
+          keyCode: 229,
+          which: 229,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      ta.dispatchEvent(
+        new CompositionEvent("compositionend", {
+          data: "",
+          bubbles: true,
+        }),
+      );
+      await tick();
+      await directAccent(ch);
+    };
+
+    // Type two spaces then Backspace x2 first (leaves spaces in textarea without the fix), then:
+    // "d\u00e9cision d\u00e9j\u00e0 \u00eate \u00e7a o\u00f9 \u00ef"
+    await space();
+    await space();
+    for (let i = 0; i < 2; i++) {
+      ta.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Backspace",
+          keyCode: 8,
+          which: 8,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await tick();
+    }
+    await ascii("d");
+    await directAccent("\u00e9");
+    for (const c of "cision") await ascii(c);
+    await space();
+    await ascii("d");
+    await directAccent("\u00e9");
+    await ascii("j");
+    await directAccent("\u00e0");
+    await space();
+    await ibusDeadKey("^", "\u00ea");
+    await ascii("t");
+    await ascii("e");
+    await space();
+    await directAccent("\u00e7");
+    await ascii("a");
+    await space();
+    await ascii("o");
+    await directAccent("\u00f9");
+    await space();
+    await simpleDeadKey("\u00ef");
+  });
+  await page.keyboard.press("Enter");
+  await expect(line(page, "ime-done")).toHaveCount(1);
+  expect(fs.readFileSync(out, "utf8")).toBe(
+    "d\u00e9cision d\u00e9j\u00e0 \u00eate \u00e7a o\u00f9 \u00ef",
+  );
 });

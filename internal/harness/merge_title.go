@@ -113,9 +113,16 @@ var (
 	playwrightFail = regexp.MustCompile(`(?m)^\s*(?:\d+\)|✘)\s+(?:\[[^\]]+\]\s+›\s+)?(\S+\.spec\.[jt]s)`)
 )
 
-// failedChecks names what failed in a push check's output, short: its failing Go tests or packages, or its failing
-// specs; else the check's name, out of the failure's reason ("test: exit status 1").
+// failedChecks names what failed in a push check, short: the tests its whole output names failing (failingTests), else
+// those its output's end names, Go tests or packages, or specs; else the check's name, out of the failure's reason
+// ("test: exit status 1").
 func failedChecks(f *planv1.IntegrationFailure) string {
+	if failed := f.GetFailed(); len(failed) > 0 {
+		if len(failed) > 3 {
+			return strings.Join(failed[:3], ", ") + fmt.Sprintf(" and %d more", len(failed)-3)
+		}
+		return strings.Join(failed, ", ")
+	}
 	out := f.GetOutput()
 	var names []string
 	add := func(s string) {

@@ -4,9 +4,11 @@
 // of its tests did (its test binary ended in the middle: a panic in a goroutine after its test ended, an os.Exit, a
 // kill) gets its raw output printed, and the tests it was running named.
 //
-// Linux is the reference: there -max fails. Elsewhere a process costs ten times more (a test spawning git takes
-// 0.7 s on Linux and 7 s on the Windows runner, the same test), so a test over -max is reported and fails only
-// over -max-elsewhere: a test that hangs or grows tenfold is still caught there.
+// Linux is the reference: where the push check runs, -max fails. On CI (when CI is set), beside the other parts of
+// go tool task test (DJINN_TEST_BESIDE, set by tools/testall: the end-to-end tests' browsers share the cores) or on
+// another system where a process costs ten times more (a test spawning git takes 0.7 s on Linux and 7 s on the Windows
+// runner, the same test), a test over -max is reported and fails only over twice -max (or -max-elsewhere): a test that
+// hangs or grows tenfold is still caught there. `go tool task test-go` alone, on Linux, holds the strict limit.
 //
 //	go test -json ./... | go run ./tools/slowtests
 //
@@ -16,6 +18,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -37,14 +40,11 @@ const (
 // allowed are the tests that may take longer than -max, by package and name ("github.com/…/cmd/djinn TestX"), each
 // with why it cannot be fast. Keep it empty.
 var allowed = map[string]string{
-	// Real djinn up processes: each test starts one or two full djinn up servers and CLI commands.
-	"github.com/empowill/djinn/cmd/djinn TestUpdateFromRelease":                                     "two real djinn up processes, one restarting into the other",
-	"github.com/empowill/djinn/cmd/djinn TestCrashReopensTheLeads":                                  "two real djinn up processes across a kill",
-	"github.com/empowill/djinn/cmd/djinn TestUpdate":                                                "two real djinn up processes across a restart",
-	"github.com/empowill/djinn/cmd/djinn TestWishResume":                                            "a real djinn up process and a djinn CLI invocation",
-	"github.com/empowill/djinn/cmd/djinn TestCrashResumesTheWorkers":                                "two real djinn up processes across a kill",
-	"github.com/empowill/djinn/cmd/djinn TestWindowTerminalOpensInAProject":                         "a real djinn up process and a djinn CLI invocation",
-	"github.com/empowill/djinn/cmd/djinn TestCrossVet":                                              "runs cross-platform go vet for Windows and Darwin targets across all dependencies on cold cache",
+	// Real djinn up processes. TestRunUp, TestRunUpdate, TestCarryLead and TestRunOpen start theirs in parallel subtests,
+	// whose time go test does not count in their parent's: only the tests below start them in turn.
+	"github.com/empowill/djinn/cmd/djinn TestLeadNote": "three real djinn up processes in turn, across a kill and a stop",
+	// Behind the crossvet tag, out of go tool task test: CI's Linux job runs it (.github/workflows/ci.yml).
+	"github.com/empowill/djinn/cmd/djinn TestCrossVet":                                              "go vet of cmd/djinn and its tests for Windows and Darwin, every dependency type-checked on a cold build cache (48 s)",
 	"github.com/empowill/djinn/internal/testx/bigwish TestSizes":                                    "generates a 10x wish with thousands of tasks and events",
 	"github.com/empowill/djinn/internal/harness TestRestartResumesInOrder":                          "starts 7 sequential workers across a simulated restart",
 	"github.com/empowill/djinn/internal/harness TestEnvFailureReplayOnVersionChange":                "starts 5 sequential harness instances across simulated version upgrades",
@@ -78,6 +78,7 @@ type slow struct {
 // result is what check found.
 type result struct {
 	failed    bool          // a test, a package or a build failed
+	failures  []string      // the tests that failed, subtests included, and the packages cut in the middle, in order
 	slow      []slow        // the tests over the limit and not allowed, the slowest first
 	sum       time.Duration // sum of all top-level test durations
 	wallClock time.Duration // wall clock duration of the test run
@@ -220,42 +221,76 @@ func reportTotal(out, errOut io.Writer, res result, baselinePath string, updateB
 }
 
 func main() {
-	limit := flag.Duration("max", defaultMax, "the longest a top-level test may take, on Linux")
-	elsewhere := flag.Duration("max-elsewhere", 15*time.Second,
-		"the longest a top-level test may take on another system, where one over -max is only reported")
-	baselineFlag := flag.String("baseline", "", "path to baseline.json (defaults to tools/slowtests/baseline.json)")
-	updateBaseline := flag.Bool("update-baseline", false, "update baseline.json with measured totals")
-	flag.Parse()
-
-	res, err := check(os.Stdin, os.Stdout, *limit)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "slowtests:", err)
-		os.Exit(1)
-	}
-	baselinePath := findBaseline(*baselineFlag)
-	reportTotal(os.Stdout, os.Stderr, res, baselinePath, *updateBaseline)
-
-	fail := failLimit(runtime.GOOS, *limit, *elsewhere)
-	if len(res.slow) > 0 {
-		fmt.Fprintf(os.Stderr, "\nThese tests take longer than %s: make them fast (a fake clock, a short tick, a wait on an event "+
-			"instead of a sleep), or say why in tools/slowtests/main.go (allowed).\n", *limit)
-		if fail != *limit {
-			fmt.Fprintf(os.Stderr, "On %s they are reported; only one over %s fails (Linux is the reference).\n",
-				runtime.GOOS, fail)
-		}
-		for _, s := range res.slow {
-			fmt.Fprintf(os.Stderr, "  %s  %s\n", s.elapsed.Round(10*time.Millisecond), s.name)
-		}
-	}
-	if res.failed || len(over(res.slow, fail)) > 0 {
-		os.Exit(1)
-	}
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, runtime.GOOS, os.Getenv("CI") != "",
+		os.Getenv("DJINN_TEST_BESIDE") != ""))
 }
 
-// failLimit is how long a test may take before it fails on goos: limit on Linux, elsewhere on the others.
-func failLimit(goos string, limit, elsewhere time.Duration) time.Duration {
+// run reads go test -json from in as the flags of args say, on goos, on CI or not, beside the other parts of go tool
+// task test or not, and returns the exit code.
+func run(args []string, in io.Reader, stdout, stderr io.Writer, goos string, ci, beside bool) int {
+	flags := flag.NewFlagSet("slowtests", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	limit := flags.Duration("max", defaultMax, "the longest a top-level test may take, on Linux")
+	elsewhere := flags.Duration("max-elsewhere", 15*time.Second,
+		"the longest a top-level test may take on another system, where one over -max is only reported")
+	baselineFlag := flags.String("baseline", "", "path to baseline.json (defaults to tools/slowtests/baseline.json)")
+	updateBaseline := flags.Bool("update-baseline", false, "update baseline.json with measured totals")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+
+	res, err := check(in, stdout, *limit)
+	if err != nil {
+		fmt.Fprintln(stderr, "slowtests:", err)
+		return 1
+	}
+	baselinePath := findBaseline(*baselineFlag)
+	reportTotal(stdout, stderr, res, baselinePath, *updateBaseline)
+
+	fail := failLimit(goos, ci || beside, *limit, *elsewhere)
+	if len(res.slow) > 0 {
+		fmt.Fprintf(stderr, "\nThese tests take longer than %s: make them fast (a fake clock, a short tick, a wait on an event "+
+			"instead of a sleep), or say why in tools/slowtests/main.go (allowed).\n", *limit)
+		if fail != *limit {
+			where := goos
+			switch {
+			case ci:
+				where = "CI (" + goos + ")"
+			case beside:
+				where = goos + " beside the end-to-end tests"
+			}
+			fmt.Fprintf(stderr, "On %s they are reported; only one over %s fails (Linux is the reference).\n",
+				where, fail)
+		}
+		for _, s := range res.slow {
+			fmt.Fprintf(stderr, "  %s  %s\n", s.elapsed.Round(10*time.Millisecond), s.name)
+		}
+	}
+	// Last, since a push check keeps only the end of the output (W135: it kept "FAIL …/internal/harness", not which test).
+	if len(res.failures) > 0 {
+		fmt.Fprintf(stderr, "\nFailed: %s\n", strings.Join(res.failures, ", "))
+	}
+	if res.failed || len(over(res.slow, fail)) > 0 {
+		return 1
+	}
+	return 0
+}
+
+// failLimit is how long a test may take before it fails on goos: limit on Linux alone and outside CI (the reference
+// measure), twice limit on Linux CI or beside the end-to-end tests (ci), and elsewhere (at least twice limit on CI)
+// on the other systems.
+func failLimit(goos string, ci bool, limit, elsewhere time.Duration) time.Duration {
 	if goos == "linux" {
+		if ci {
+			return 2 * limit
+		}
 		return limit
+	}
+	if ci {
+		return max(2*limit, elsewhere)
 	}
 	return max(limit, elsewhere)
 }
@@ -311,8 +346,12 @@ func checkClock(in io.Reader, out io.Writer, limit time.Duration, now func() tim
 			}
 			if e.Action == "fail" {
 				res.failed = true
-				if !testFailed[e.Package] && e.FailedBuild == "" {
+				switch {
+				case e.FailedBuild != "":
+					res.failures = append(res.failures, e.Package+" (build failed)")
+				case !testFailed[e.Package]:
 					printCut(out, e.Package, raw[e.Package], held)
+					res.failures = append(res.failures, e.Package+" (its test binary ended in the middle)")
 				}
 			}
 			if e.Action == "pass" || e.Action == "fail" || e.Action == "skip" {
@@ -330,6 +369,7 @@ func checkClock(in io.Reader, out io.Writer, limit time.Duration, now func() tim
 			if e.Action == "fail" {
 				res.failed = true
 				testFailed[e.Package] = true
+				res.failures = append(res.failures, key)
 				fmt.Fprint(out, strings.Join(held[key], ""))
 			}
 			delete(held, key)

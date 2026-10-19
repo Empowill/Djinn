@@ -1,9 +1,11 @@
 // The Tilasms tab, against the real djinn up --browser (see global-setup.ts): the lead puts a tilasm with the command
 // line, the developer opens it in the tab, in a frame Djinn serves with a policy of its own (its scripts and files run,
 // a fetch is refused, Djinn's page is out of reach), searches it, "talisman" too, and restores its first version once
-// the lead put another. Every run makes a fresh wish, so --repeat-each works on the same djinn. A screenshot of the tab
-// goes to test-results/e2e/.
-import { expect, test } from "@playwright/test";
+// the lead put another; it goes full size beside the side panel and back. Every run makes a fresh wish, so
+// --repeat-each works on the same djinn. A tilasm a question links to opens full size over the wish's first page and
+// over the flying carpet, and closes back on the link. Screenshots of the tab, and of a tilasm full size in both
+// themes, go to test-results/e2e/.
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -89,7 +91,82 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
         frame.locator("#img").evaluate((img: HTMLImageElement) => img.width),
       )
       .toBe(20);
-    await page.screenshot({ path: path.join(shots, "tilasms-dark.png") });
+    if (process.env.TILASM_SHOTS)
+      await page.screenshot({ path: path.join(shots, "tilasms-dark.png") });
+
+    // Full size: the frame covers everything right of the side panel, which stays usable; Escape (outside the frame)
+    // and the small button leave it, the same tilasm open, the page and the frame scrolled where they were.
+    const scroller = page.locator(".wish-view .mission-scroll");
+    await frame
+      .locator("body")
+      .evaluate((body) => (body.style.minHeight = "4000px"));
+    await frame.locator("body").evaluate(() => window.scrollTo(0, 900));
+    await scroller.evaluate((el) => (el.scrollTop = 120));
+    const places = async () => ({
+      page: await scroller.evaluate((el) => el.scrollTop),
+      frame: await frame.locator("body").evaluate(() => window.scrollY),
+    });
+    const before = await places();
+    expect(before.page).toBe(120);
+    expect(before.frame).toBe(900);
+    const full = page.locator(".tilasm-view.full > iframe.tilasm-frame");
+    const enter = page.getByRole("button", { name: "Full size", exact: true });
+    const leave = page.getByRole("button", { name: "Leave full size" });
+    const list = panel.locator(".tilasm-list");
+    for (const how of ["Escape", "button"]) {
+      await enter.click();
+      await expect(full).toBeVisible();
+      await expect(leave).toBeFocused();
+      const shell = (await page.locator(".main-shell").boundingBox())!;
+      const box = (await full.boundingBox())!;
+      for (const side of ["x", "y", "width", "height"] as const)
+        expect(Math.abs(box[side] - shell[side])).toBeLessThan(1);
+      const sidebar = (await page.locator("#djinn-sidebar").boundingBox())!;
+      expect(sidebar.x + sidebar.width).toBeLessThanOrEqual(box.x + 1);
+      expect(
+        await page.evaluate(
+          ([x, y]) =>
+            !!document
+              .elementFromPoint(x, y)
+              ?.closest("#djinn-sidebar, .app-toolbar"),
+          [sidebar.x + sidebar.width / 2, sidebar.y + sidebar.height / 2],
+        ),
+      ).toBe(true);
+      // What the frame covers is out of the keyboard's reach, and keeps its place.
+      await expect(list).toHaveJSProperty("inert", true);
+      expect(await places()).toEqual(before);
+      if (how === "Escape") {
+        if (process.env.TILASM_SHOTS) {
+          for (const theme of ["dark", "light"]) {
+            await page.evaluate(async (theme) => {
+              document.documentElement.dataset.theme = theme;
+              await Promise.all(
+                document
+                  .getAnimations()
+                  .filter((a) => a instanceof CSSTransition)
+                  .map((a) => a.finished.catch(() => {})),
+              );
+            }, theme);
+            await page.screenshot({
+              path: path.join(shots, `tilasms-full-${theme}.png`),
+            });
+          }
+          await page.evaluate(() => {
+            document.documentElement.dataset.theme = "dark";
+          });
+        }
+        await page.keyboard.press("Escape");
+      } else await leave.click();
+      await expect(full).toHaveCount(0);
+      await expect(enter).toBeFocused();
+      await expect(row).toHaveClass(/\bopen\b/);
+      await expect(list).toHaveJSProperty("inert", false);
+      expect({ how, ...(await places()) }).toEqual({ how, ...before });
+    }
+    await frame.locator("body").evaluate((body) => {
+      body.style.minHeight = "";
+      window.scrollTo(0, 0);
+    });
 
     // The search, on the titles and the text within the wish; the kind's own name finds them all.
     const search = panel.getByRole("searchbox");
@@ -123,6 +200,162 @@ test("a tilasm put by the command line opens in the Tilasms tab, isolated, and i
     await expect(versions).toHaveCount(3);
     await expect(versions.first()).toContainText("developer");
     await expect(versions.first()).toContainText("restores v1");
+
+    // Choosing a single .html file in the drop zone adds a new tilasm, opens it, and lists it first (newest to oldest).
+    const single = path.join(dir, "sketch.html");
+    fs.writeFileSync(
+      single,
+      "<!doctype html><html><head><title>Flame sketch</title></head><body><p>Single HTML file.</p></body></html>",
+    );
+    await panel
+      .locator('.tilasm-drop input[type="file"]')
+      .setInputFiles(single);
+    await expect(panel.locator(".tilasm-row")).toHaveCount(2);
+    await expect(panel.locator(".tilasm-row").first()).toContainText("L02");
+    await expect(panel.locator(".tilasm-row").first()).toContainText(
+      "Flame sketch",
+    );
+    await expect(frame.locator("body")).toContainText("Single HTML file.");
+
+    // Another view opened from the side panel leaves full size.
+    await enter.click();
+    await expect(full).toBeVisible();
+    await page.locator(".hourglass-nav").click();
+    await expect(page.locator("iframe.tilasm-frame")).toHaveCount(0);
+    await expect(page.locator(".main-shell [inert]")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    djinn("wish", "pause", wishId);
+  }
+});
+
+test("a tilasm a question links to opens full size over the wish's page and the flying carpet, and closes back on the link", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  // Three wishes at a time: the earlier specs' wishes make way.
+  const listed = JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];
+  for (const w of listed.filter(
+    (w: { state: string }) => w.state === "WISH_STATE_ACTIVE",
+  ))
+    djinn("wish", "pause", w.id);
+  const title = `Read the lamp ${randomUUID().slice(0, 8)}`;
+  const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
+    .id as string;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-tilasm-"));
+  try {
+    fs.writeFileSync(path.join(dir, "index.html"), index);
+    fs.mkdirSync(path.join(dir, "js"));
+    fs.mkdirSync(path.join(dir, "img"));
+    fs.writeFileSync(path.join(dir, "js/app.js"), app);
+    fs.writeFileSync(
+      path.join(dir, "img/wick.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20"/></svg>',
+    );
+    const id = JSON.parse(
+      djinn("tilasm", "put", dir, "--wish", wishId, "--json"),
+    ).tilasm.id as string;
+    const href = `djinn://tilasm/${id}`;
+    // A context long enough that the link is read with the page scrolled.
+    const long = Array.from(
+      { length: 24 },
+      (_, i) => `Paragraph ${i + 1} on the wick, the oil and the flame.`,
+    ).join("\n\n");
+    const question = "Which wick for the lamp?";
+    djinn(
+      "question",
+      "ask",
+      question,
+      wishId,
+      "--options",
+      "Cotton",
+      "--options",
+      "Hemp",
+      "--context",
+      `${long}\n\nThe lamp's anatomy: ${href}`,
+    );
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(process.env.DJINN_URL!);
+    const shell = page.locator(".main-shell");
+    const view = shell.locator(":scope > .wish-view");
+    const scroller = view.locator(".mission-scroll");
+    const over = shell.locator(":scope > .tilasm-view.over");
+    const frame = over.locator("iframe.tilasm-frame");
+    const close = over.getByRole("button", { name: "Close the tilasm" });
+    for (const [where, how] of [
+      ["wish", "Escape"],
+      ["carpet", "button"],
+    ] as const) {
+      if (where === "wish")
+        await page.locator(".wish-nav").filter({ hasText: title }).click();
+      else {
+        await page.locator(".plan-nav").click();
+        await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+      }
+      const card = view.locator(".question-card").filter({ hasText: question });
+      const link = card
+        .locator(".question-context")
+        .getByRole("link", { name: href });
+      const hemp = card.getByRole("button", { name: /Hemp/ });
+      await hemp.click();
+      await expect(hemp).toHaveAttribute("aria-pressed", "true");
+      // In the middle of the view: at its top, the bar of what waits for you would take the click, and Playwright
+      // would scroll again to click, after the scroll is read.
+      await link.evaluate((el) => el.scrollIntoView({ block: "center" }));
+      // The card is marked: the same element after, never drawn again.
+      await card.evaluate(
+        (el, where) => el.setAttribute("data-kept", where),
+        where,
+      );
+      const top = await scroller.evaluate((el) => el.scrollTop);
+      expect(top).toBeGreaterThan(0);
+      await link.click();
+      // Over the view, full size: everything right of the side panel; the tilasm's own page runs in it.
+      await expect(frame).toBeVisible();
+      await expect(
+        page.frameLocator(".tilasm-view.over iframe").locator("#run"),
+      ).toHaveText("scripts run");
+      const box = (await frame.boundingBox())!;
+      const room = (await shell.boundingBox())!;
+      for (const side of ["x", "y", "width", "height"] as const)
+        expect(Math.abs(box[side] - room[side])).toBeLessThan(1);
+      await expect(close).toBeFocused();
+      // Nothing navigated: the view stays mounted under it, inert, scrolled where it was.
+      await expect(view).toHaveJSProperty("inert", true);
+      await expect(card).toHaveAttribute("data-kept", where);
+      expect(await scroller.evaluate((el) => el.scrollTop)).toBe(top);
+      await expect(page.getByRole("tabpanel", { name: "Tilasms" })).toHaveCount(
+        0,
+      );
+      if (where === "carpet")
+        await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+      if (how === "Escape") {
+        if (where === "wish" && process.env.TILASM_SHOTS)
+          await page.screenshot({
+            path: path.join(shots, "tilasm-over.png"),
+          });
+        await page.keyboard.press("Escape");
+      } else await close.click();
+      // Closed: back on the link, the question as it was, ready to answer; nothing moved.
+      await expect(over).toHaveCount(0);
+      await expect(link).toBeFocused();
+      await expect(view).toHaveJSProperty("inert", false);
+      await expect(card).toHaveAttribute("data-kept", where);
+      await expect(hemp).toHaveAttribute("aria-pressed", "true");
+      expect({
+        how,
+        top: await scroller.evaluate((el) => el.scrollTop),
+      }).toEqual({ how, top });
+    }
+    // Nothing answered the question.
+    const [asked] = JSON.parse(
+      djinn("question", "list", "--wish-id", wishId, "--json"),
+    ).questions;
+    expect(asked.answer).toBeUndefined();
     expect(errors).toEqual([]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

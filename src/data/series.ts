@@ -80,5 +80,6 @@ export function mergeSeries(
         points: append(was.machine?.points ?? [], next.machine.points, cutoff),
       }
     : was.machine;
-  return { ...next, machine, workers };
+  const disk = next.disk ?? was.disk;
+  return { ...next, machine, workers, disk };
 }

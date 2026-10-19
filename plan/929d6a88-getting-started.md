@@ -56,7 +56,7 @@ The top of the main README is for them; contributors come after.
   release, and the agent prompt, not written yet)
 - [ ] The time from `go install` to an open window on a real project is measured. (needs: a release tag, and a
   person to time it)
-- [x] The README top is kept in sync by every change to the install. (b09fb6b: `TestReadmeInstallLines` in
+- [x] The README top is kept in sync by every change to the install. (b09fb6b: `TestReadme` in
   `tools/releasepack`: each README line takes a script of `scripts/`, from the releases it defaults to, says what
   its usage says, and `release.yml` ships it; a renamed script fails it)
 - [x] Once installed, the user guide takes over: `docs/user-guide.md` describes the Go app as it is, from `djinn up`

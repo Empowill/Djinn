@@ -13,6 +13,8 @@ import (
 
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/fsx"
+	"github.com/empowill/djinn/internal/usage"
 )
 
 // Claude runs Claude Code: `claude -p` reading and writing stream-json, one JSON message per line. The process
@@ -30,6 +32,10 @@ type Claude struct {
 
 // claudeReadTools are the only tools of a read-only worker: reading files, finding them, searching them.
 const claudeReadTools = "Read,Glob,Grep"
+
+// claudeRulesFile holds spec.SystemPrompt in spec.Dir, for --append-system-prompt-file: the driven lead's rules
+// exceed Windows's 32,767-character command line (CreateProcessW).
+const claudeRulesFile = "rules.md"
 
 // claudeAgentsMd has Claude read the project's AGENTS.md as well as its CLAUDE.md, the import of one by the other
 // read once. The built-in plugin that reads AGENTS.md takes this option from a --settings file, not from the
@@ -53,8 +59,23 @@ func (c Claude) args(spec Spec) []string {
 		settings := map[string]any{"pluginConfigs": claudeAgentsMd}
 		if p := spec.Permissions; p != nil {
 			perms := claudePermissions(p)
+			if len(spec.WriteDirs) > 0 {
+				// A deny wins over every allow: its folders' allow rules would not work. Don't-ask refuses an edit
+				// elsewhere that no rule allows.
+				perms["deny"] = slices.DeleteFunc(perms["deny"].([]string), func(r string) bool {
+					return r == "Edit" || r == "Write" || r == "NotebookEdit"
+				})
+			}
 			settings["permissions"] = perms
 			args = append(args, "--permission-mode", perms["defaultMode"].(string))
+		}
+		if allow := claudeDirRules(spec); len(allow) > 0 {
+			perms, _ := settings["permissions"].(map[string]any)
+			if perms == nil {
+				perms = map[string]any{"allow": []string{}, "deny": []string{}}
+				settings["permissions"] = perms
+			}
+			perms["allow"] = append(perms["allow"].([]string), allow...)
 		}
 		if allow, deny := claudeSkillRules(spec); len(allow)+len(deny) > 0 {
 			perms, _ := settings["permissions"].(map[string]any)
@@ -89,7 +110,30 @@ func (c Claude) args(spec Spec) []string {
 	if spec.MaxBudgetUSD > 0 {
 		args = append(args, "--max-budget-usd", strconv.FormatFloat(spec.MaxBudgetUSD, 'f', -1, 64))
 	}
+	if spec.MaxTurns > 0 {
+		// Print mode only; a run that reaches it ends with error_max_turns (code.claude.com/docs/en/cli-reference).
+		args = append(args, "--max-turns", strconv.Itoa(spec.MaxTurns))
+	}
+	if spec.SystemPrompt != "" {
+		// The same text for every session: with the machine's sections moved to the first message, the system
+		// prompt is the same from one session to the next, and its cache serves them all (cli-reference). A file
+		// carries it: the driven lead's rules exceed Windows's 32,767-character command line (CreateProcessW).
+		args = append(args, "--append-system-prompt-file", filepath.Join(spec.Dir, claudeRulesFile),
+			"--exclude-dynamic-system-prompt-sections")
+	}
 	return append(args, c.Extra...)
+}
+
+// claudeDirRules are the permission rules of spec's WriteDirs and ReadDirs: writing in the first, reading in both.
+func claudeDirRules(spec Spec) []string {
+	var allow []string
+	for _, dir := range spec.WriteDirs {
+		allow = append(allow, "Edit("+claudeAbsolute(dir)+"/**)", "Write("+claudeAbsolute(dir)+"/**)")
+	}
+	for _, dir := range append(slices.Clone(spec.WriteDirs), spec.ReadDirs...) {
+		allow = append(allow, "Read("+claudeAbsolute(dir)+"/**)")
+	}
+	return allow
 }
 
 // claudePermissions are the permissions of Claude's settings for p: allow and deny rules, and the mode. Edit
@@ -153,8 +197,22 @@ func (c Claude) Start(ctx context.Context, spec Spec) (Worker, error) {
 	if grace == 0 {
 		grace = Grace
 	}
+	if spec.SystemPrompt != "" {
+		if err := fsx.WriteAtomic(filepath.Join(spec.Dir, claudeRulesFile), []byte(spec.SystemPrompt), 0o600); err != nil {
+			return nil, fmt.Errorf("write claude's system prompt: %w", err)
+		}
+	}
+	// First, so that a caller's Env may set it otherwise; after Djinn's own environment, which it overrides.
+	spec.Env = append([]string{claudeBackgroundWait}, spec.Env...)
 	return startStream(ctx, spec, command, c.args(spec), grace, streamAgent{name: "claude", parser: &claudeParser{}, idle: c.IdleTimeout, encode: claudeMessageLine})
 }
+
+// claudeBackgroundWait lets claude -p wait for its background work after its last turn, however long (W80): by
+// default it stops a Monitor watch, a background subagent or workflow still running 10 minutes after the result, and
+// the task ended done lost a paid run its worker watched (W31 of wish Will retour beta). The task's life bounds the
+// wait instead: a stopped or ended task stops everything its worker started (stopLeft). Claude Code v2.1.182 or
+// later reads it (code.claude.com/docs/en/env-vars.md, headless.md "Background tasks at exit").
+const claudeBackgroundWait = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0"
 
 // claudeMessageLine is a user message as claude reads it in stream-json.
 func claudeMessageLine(text string) ([]byte, error) {
@@ -171,6 +229,11 @@ type claudeParser struct {
 	message   string // the id of the last assistant message
 	turns     int    // assistant messages so far
 	counted   bool   // a turn is counted that no event has said yet
+	// What the run spent so far, estimated from the usage of each assistant message (a subagent's too), the last line
+	// of each message counting: claude says its cost at a result only (claudeSpent).
+	costs  map[string]float64
+	spent  float64
+	unsaid bool // spent changed since an event said it
 }
 
 func (p *claudeParser) toolRunning() bool {
@@ -187,6 +250,10 @@ func (p *claudeParser) stdout(raw string) ([]Event, *turnEnd) {
 		if p.counted && len(events) > 0 {
 			events[0].Turns, p.counted = p.turns, false
 		}
+		p.estimate(raw)
+		if p.unsaid && len(events) > 0 {
+			events[0].Spent, p.unsaid = p.spent, false
+		}
 		for _, ev := range events {
 			switch ev.Kind {
 			case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL:
@@ -202,6 +269,50 @@ func (p *claudeParser) stdout(raw string) ([]Event, *turnEnd) {
 		}
 	}
 	return events, end
+}
+
+// claudeSpent is what Djinn reads of an assistant line to estimate what it cost.
+type claudeSpent struct {
+	Type    string `json:"type"`
+	Message *struct {
+		ID    string `json:"id"`
+		Model string `json:"model"`
+		Usage *struct {
+			InputTokens              int64 `json:"input_tokens"`
+			OutputTokens             int64 `json:"output_tokens"`
+			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+		} `json:"usage"`
+	} `json:"message"`
+}
+
+// estimate adds what the assistant line raw cost to what the run spent, at the prices Djinn knows (internal/usage): the
+// lines of one message repeat its usage, the last one the largest, so each message counts once, at its last line. A
+// line of no message, or of a model Djinn has no price for, changes nothing.
+func (p *claudeParser) estimate(raw string) {
+	if !strings.HasPrefix(raw, `{"type":"assistant"`) {
+		return
+	}
+	var m claudeSpent
+	if json.Unmarshal([]byte(raw), &m) != nil || m.Message == nil || m.Message.Usage == nil || m.Message.ID == "" {
+		return
+	}
+	table, err := usage.DefaultTable()
+	if err != nil {
+		return
+	}
+	u := m.Message.Usage
+	cost, priced, _ := table.Estimate(&planv1.Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+		CacheReadTokens: u.CacheReadInputTokens, CacheWriteTokens: u.CacheCreationInputTokens}, m.Message.Model,
+		planv1.Provider_PROVIDER_CLAUDE)
+	if !priced {
+		return
+	}
+	if p.costs == nil {
+		p.costs = map[string]float64{}
+	}
+	p.spent += cost - p.costs[m.Message.ID]
+	p.costs[m.Message.ID], p.unsaid = cost, true
 }
 
 func (*claudeParser) stderr(raw string) []Event {
@@ -237,6 +348,10 @@ type claudeMessage struct {
 		OutputTokens             int64 `json:"output_tokens"`
 		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+		ThinkingTokens           int64 `json:"thinking_tokens"`
+		OutputTokensDetails      *struct {
+			ThinkingTokens int64 `json:"thinking_tokens"`
+		} `json:"output_tokens_details"`
 	} `json:"usage"`
 	// ModelUsage is the usage per model. Seen on a real run (claude 2.1.293): the root usage may be all zeros
 	// while the figures are here, so it is read first.
@@ -245,6 +360,7 @@ type claudeMessage struct {
 		OutputTokens             int64 `json:"outputTokens"`
 		CacheReadInputTokens     int64 `json:"cacheReadInputTokens"`
 		CacheCreationInputTokens int64 `json:"cacheCreationInputTokens"`
+		ThinkingTokens           int64 `json:"thinkingTokens"`
 	} `json:"modelUsage"`
 	// On a rate_limit_event.
 	RateLimitInfo *struct {
@@ -352,6 +468,7 @@ func readClaude(raw string) ([]Event, *turnEnd, string) {
 					text = "error: " + text
 				}
 				add(planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT, text)
+				events[len(events)-1].ToolError = b.IsError
 			}
 		}
 	case "result":
@@ -377,10 +494,17 @@ func readClaude(raw string) ([]Event, *turnEnd, string) {
 			usage.OutputTokens += u.OutputTokens
 			usage.CacheReadTokens += u.CacheReadInputTokens
 			usage.CacheWriteTokens += u.CacheCreationInputTokens
+			usage.ThinkingTokens += u.ThinkingTokens
 		}
 		if u := m.Usage; len(m.ModelUsage) == 0 && u != nil {
 			usage.InputTokens, usage.OutputTokens = u.InputTokens, u.OutputTokens
 			usage.CacheReadTokens, usage.CacheWriteTokens = u.CacheReadInputTokens, u.CacheCreationInputTokens
+		}
+		if u := m.Usage; usage.ThinkingTokens == 0 && u != nil {
+			usage.ThinkingTokens = u.ThinkingTokens
+			if usage.ThinkingTokens == 0 && u.OutputTokensDetails != nil {
+				usage.ThinkingTokens = u.OutputTokensDetails.ThinkingTokens
+			}
 		}
 		ev := add(planv1.TaskEventKind_TASK_EVENT_KIND_USAGE, fmt.Sprintf("%d turns, %d tokens in, %d out, $%.4f",
 			m.NumTurns, usage.GetInputTokens(), usage.GetOutputTokens(), usage.GetCostUsd()))

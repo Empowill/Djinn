@@ -64,6 +64,15 @@ function pick(scroller: HTMLElement): Mark[] {
   return levels.flat().map((el) => ({ el, top: layoutTop(el) }));
 }
 
+// How each scroller this script keeps takes the reader's place again, where it is now.
+const places = new WeakMap<HTMLElement, () => void>();
+
+// placeTaken says the scroller was just scrolled at the reader's gesture (a move to another question): the place kept
+// is where it is now, not where it was before the page changed with it.
+export function placeTaken(scroller: HTMLElement) {
+  places.get(scroller)?.();
+}
+
 // keepPlace keeps the place of the reader in scroller until the returned function is called.
 export function keepPlace(scroller: HTMLElement): () => void {
   if (CSS.supports("overflow-anchor", "auto")) return () => {};
@@ -74,11 +83,19 @@ export function keepPlace(scroller: HTMLElement): () => void {
   let scroll = 0;
   // The scroll this script set last: its own scroll event is not the reader's.
   let wrote = -1;
+  let frame = 0;
   const mark = () => {
+    frame = 0;
     marks = pick(scroller);
     scroll = scroller.scrollTop;
+    wrote = scroller.scrollTop;
   };
   const hold = () => {
+    if (frame || Math.abs(scroller.scrollTop - wrote) >= 1) {
+      if (frame) cancelAnimationFrame(frame);
+      mark();
+      return;
+    }
     const anchor = marks.find((m) => inFlow(m.el));
     if (!anchor) return mark();
     const target = scroll + layoutTop(anchor.el) - anchor.top;
@@ -87,7 +104,6 @@ export function keepPlace(scroller: HTMLElement): () => void {
       wrote = scroller.scrollTop;
     }
   };
-  let frame = 0;
   const onScroll = () => {
     if (Math.abs(scroller.scrollTop - wrote) < 1) return;
     cancelAnimationFrame(frame);
@@ -110,7 +126,12 @@ export function keepPlace(scroller: HTMLElement): () => void {
   watch();
   scroller.addEventListener("scroll", onScroll, { passive: true });
   mark();
+  places.set(scroller, () => {
+    cancelAnimationFrame(frame);
+    mark();
+  });
   return () => {
+    places.delete(scroller);
     cancelAnimationFrame(frame);
     scroller.removeEventListener("scroll", onScroll);
     mutations.disconnect();

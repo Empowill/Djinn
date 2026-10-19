@@ -22,6 +22,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/dispatch"
+	"github.com/empowill/djinn/internal/gitx"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
@@ -40,6 +41,7 @@ const (
 	methodEnd      = "harness/end"      // the worker ended; the request is the task
 	methodRecover  = "harness/recover"  // djinn up found a task whose worker it had lost; the request is the task
 	methodAnswer   = "harness/answer"   // the task took the answer to its edit question; the request is the task
+	methodLaunch   = "harness/launch"   // a question's planned task was launched; the request is the question
 	methodReceived = "harness/received" // the worker took a message in; the request is the event
 	methodHold     = "harness/hold"     // the task's worker was paused or resumed; the request is the task
 	methodMeasure  = "harness/measure"  // what the task's worker uses was read; the request is the reading
@@ -70,8 +72,10 @@ type Harness struct {
 	ctx    context.Context // cancelled by Close: every worker stops
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // one per run
+	cuts   stopCuts       // what a stop cuts, for the next start (cut.go)
 
 	answering        sync.Mutex    // one answer to an edit question at a time
+	launching        sync.Mutex    // one launch of a question's planned task at a time
 	questioning      sync.Mutex    // one question worker decided at a time (question.go)
 	enlightenWorkers *bool         // enlighten workers start (WithEnlightenWorkers); nil: follows project settings
 	enlightenWait    time.Duration // how long an investigator may take to start (WithEnlightenWait); 0: the default
@@ -106,27 +110,46 @@ type Harness struct {
 	kick       chan struct{} // wakes the scheduler
 	scheduling sync.Once
 	loopDone   chan struct{} // closed when the scheduler has stopped; nil until Schedule
+	sleepers   atomic.Bool   // a question may sleep: the scheduler's next pass reads them (wakeQuestions)
 
 	// The integration of finished work (integrate.go).
 	gates            TakeGate      // nil: commands run without a gate
 	commands         RunCommand    // nil: the processes the commands name
 	integrateTick    time.Duration // a pass at least this often; 0: a minute
 	integrateKick    chan struct{} // wakes the integration
+	configKick       chan struct{} // wakes the watch of the configuration (WatchConfig)
+	configTick       time.Duration // a look at least this often; 0: plan.ConfigLookEvery
+	configWatching   sync.Once
 	integrating      sync.Once
 	integrateDone    chan struct{}         // closed when the integration has stopped; nil until Integrate
 	tested           map[string]tested     // by wish/project; owned by the integration's pass
-	integrateMu      sync.Mutex            // held while a batch is integrated, main merged, or the push checks run: they share a worktree
+	integrateMu      sync.Mutex            // held while a batch is integrated, main merged, or a push decided after its checks (push_apart.go)
 	installMu        sync.Mutex            // held while a build is installed
 	installing       string                // the commit installed now, guarded by mu
 	installed        map[string]string     // by projectID: sha of last installed build, guarded by mu
 	uninstalledDelay time.Duration         // how long a build waits uninstalled before asking; 0: defaultUninstalledDelay
-	pushMu           sync.Mutex            // held while an integration branch is pushed
+	pushMu           sync.Mutex            // held while an integration branch is pushed: its push checks use the push worktree
+	pushJobsMu       sync.Mutex            // guards pushJobs
+	pushJobs         map[string]*pushJob   // by pushKey: the pushes run apart from the pass (push_apart.go)
 	pushingMu        sync.Mutex            // guards pushing
 	pushing          string                // the push that runs now (pushKey), "" between pushes
 	built            func(Built)           // nil: no build is proposed
 	mainTested       map[string]mainTested // by mainLine.key; owned by the integration's pass
+	pushWaits        map[string]bool       // by wish/project/branch: a push due waits for merges, said (repair.go); owned by the integration's pass
 	mainNow          atomic.Bool           // a release was found: the next pass looks at main whatever the cadence
 	toldApart        map[string]bool       // by wish and what was told the lead of a branch apart from its remote's (remote_branch.go), guarded by mu
+	referenceFetched map[string]time.Time  // by repository, when its reference branch was last fetched (fetchReference), guarded by mu
+	mergedLooks      map[string]time.Time  // by repository, when Djinn last fetched main to find azimas merged into it (merged.go), guarded by mu
+
+	// The workers' health (health.go), judged by the scheduler's pass: guarded by sched.
+	accountOf AccountFunc                     // nil: no agent's account is read
+	accounts  map[planv1.Provider]accountSeen // each agent's account, as last read
+
+	// The network, as Djinn knows it (network.go).
+	net network
+
+	// The disks' free space, as Djinn knows it (disk.go).
+	disk disk
 
 	// Babysitting what tasks open (babysit.go).
 	babysitting sync.WaitGroup // one per look for what a task opened; Close waits for them
@@ -139,15 +162,19 @@ type Harness struct {
 	closed       bool
 	held         func(taskID string) []string // the gates a task holds (HeldGates); nil: none known
 	waiting      func(taskID string) []string // the gates a task waits for (HeldGates); nil: none known
-	outside      func() int                   // the gates held outside the running workers (GatesOutside); nil: none
+	outside      func() (int, int)            // the gates held outside the running workers, and of them the merges' and pushes' (GatesOutside); nil: none
 	silenceLimit time.Duration                // silence limit before the Lamplighter checks a worker (lamplighter.go)
 	maxWallTime  time.Duration                // ceiling on wall time budget per task (lamplighter.go)
+	ifritIdle    time.Duration                // how long the developer may leave Djinn alone before an ifrit goes out (ifrit.go)
+	presence     *Presence                    // when the developer last did something in Djinn (presence.go)
+	ifritWarned  func(*planv1.Task)           // shows that an ifrit goes out soon (WarnIfrits), guarded by mu; nil: nothing shows
 	maxTurns     int                          // ceiling on model turns budget per task (lamplighter.go)
 	version      string                       // version of the running binary (WithVersion)
 	builtFrom    map[string]string            // by project id: the branch the running binary was built from (compare.go)
 	runs         map[string]*run              // by task id
 	changed      chan struct{}                // closed at the next change of a task without worker (notifyLocked)
-	preempted    map[string]string            // investigator task ID -> paused work task ID, guarded by mu
+	preempted    map[string]string            // investigator or merge task ID -> paused work task ID, guarded by mu
+	rateHits     map[string]int               // task ID -> consecutive per-minute rate limit hits, guarded by mu
 	goos         func() string                // runtime.GOOS; nil: runtime.GOOS
 	aliasesMu    sync.RWMutex
 	aliases      map[string]string // alias -> model ID
@@ -156,17 +183,23 @@ type Harness struct {
 	// they hold (Resident), without waiting for a pass or a spawn that holds mu. Taken after mu, never before it.
 	useMu    sync.Mutex
 	resident map[string]uint64 // by task ID: the resident memory of a worker, as last read, watchers left out
+
+	// The serves the ifrits run (serve.go), apart from mu: a serve's start and stop take seconds. Never taken with mu
+	// held, nor mu with it.
+	servesMu sync.Mutex
+	serving  map[string]*ifritServes // by task ID
 }
 
 // run is a task at work: its worker, or the workers it runs one after the other when the task starts again.
 type run struct {
-	id    string
-	wish  string             // the task's wish, which never changes
-	done  chan struct{}      // closed once the task has its final status
-	wake  chan struct{}      // an answer waits in answers
-	notes chan Event         // events from outside the worker (a gate), for the pump to write
-	sends chan *message      // messages for the worker (inbox.go), for the pump to deliver
-	holds chan chan struct{} // a pause or a resume for the pump to write; closed once written
+	id     string
+	wish   string             // the task's wish, which never changes
+	done   chan struct{}      // closed once the task has its final status
+	wake   chan struct{}      // an answer waits in answers
+	notes  chan Event         // events from outside the worker (a gate), for the pump to write
+	sends  chan *message      // messages for the worker (inbox.go), for the pump to deliver
+	timers chan struct{}      // an ifrit's timers to look at (ifritTimers), for the pump
+	holds  chan chan struct{} // a pause or a resume for the pump to write; closed once written
 
 	// Guarded by Harness.mu.
 	worker             Worker
@@ -180,58 +213,87 @@ type run struct {
 	paused             bool                 // the worker holds still: it takes no slot
 	notchPaused        bool                 // paused by the operating load notch
 	slotPaused         bool                 // paused to give its slot to an investigator: resumed first when a slot frees
+	netPaused          bool                 // paused while the network is down: resumed once it is back (network.go)
+	inTool             bool                 // a tool call of the worker runs: the network does not pause it (network.go)
 	forced             bool                 // started or resumed by hand, whatever the slots (Harness.Forced)
 	holdWhy            string               // why the worker holds still (preemption or pause reason)
 	preemptedWhy       string               // if set, stopping to make room for an investigator
 	watcher            bool                 // a watcher runs a command, and takes no slot
 	light              bool                 // a question worker reads and runs djinn's commands: it takes no slot
+	ifrit              bool                 // an ifrit: its agent's input stays open between turns (ifrit.go)
+	listenSince        time.Time            // when the ifrit began to listen; zero while it works: it takes no slot meanwhile
+	listened           time.Duration        // how long the ifrit listened before listenSince, over all its runs
+	out                string               // why the ifrit goes out (ifritTimers): its input closes, and it ends out
+	outAt              time.Time            // when the ifrit goes out unless the developer comes back (ifritTimers)
+	ending             bool                 // djinn task done closed the ifrit's input (doneIfrit): it ends done, never out
 	final              bool                 // the task is getting its final status: an answer waits for done instead
 	answers            []*planv1.Question   // answers to the task's edit question, for the pump to apply
+	shown              *planv1.Task         // a copy of task as last written, replaced, never changed: what the scheduler reads of it (W182)
 	use                *machinev1.WorkerUse // what its worker uses, at the last reading (measure.go); nil before one; guarded by Harness.useMu
 	samples            *workerRing          // recent measurement samples (measure.go); guarded by Harness.useMu
 	resources          *planv1.Resources    // the task's resources as its pump last set them, for the readers apart from the pump; guarded by Harness.useMu
 	subs               map[chan *planv1.TaskEvent]struct{}
-	startTime          time.Time     // when the current run started
-	turns              int           // model turns of the current worker (lamplighter.go), kept on the task by setTurns
-	lastActivity       time.Time     // when the worker last produced an event (lamplighter.go)
-	lastLamplighterCPU time.Duration // CPU time used at the Lamplighter's previous check
-	lamplighterEnd     bool          // the Lamplighter ended this worker
-	lamplighterReason  string        // why the Lamplighter ended it ("silent for N min")
+	startTime          time.Time            // when the current run started
+	turns              int                  // model turns of the current worker (lamplighter.go), kept on the task by setTurns
+	lastActivity       time.Time            // when the worker last produced an event (lamplighter.go)
+	lastKind           planv1.TaskEventKind // the kind of that event: after its turn's result, a worker may wait for its background work (health.go)
+	lastLamplighterCPU time.Duration        // CPU time used at the Lamplighter's previous check
+	resultAt           time.Time            // when the worker's turn ended with its result, said nothing of a new turn since; zero otherwise (silent.go)
+	resultNote         bool                 // that turn left a final note
+	silentWhy          string               // why Djinn stops the worker, silent after its result (silent.go)
+	silentNote         bool                 // it had written its final note: it ends done
+	lamplighterEnd     bool                 // the Lamplighter ended this worker
+	lamplighterReason  string               // why the Lamplighter ended it ("silent for N min")
+	wakePrompt         string               // what the woken worker is told, when not to continue (continueStalled)
+	relaunched         bool                 // the lead or the developer relaunched it, stalled (continueStalled): woken whatever its wakes
+	publishAt          time.Time            // when the Lamplighter asked the investigation to publish in this run (investigation.go)
+	publishWhy         string               // what it reached then: its time limit or its budget
+	spent              float64              // what the task spent so far, its run's estimate (Event.Spent) included
 
 	// Owned by whoever writes the task: Spawn, then the pump.
 	task           *planv1.Task
-	base           *planv1.Usage // what the task had spent before this worker
-	turnsBefore    int           // the task's model turns before this worker
-	restart        bool          // the worker stops to start again, allowed to edit
-	unread         []string      // messages the worker took on its input and has said nothing after yet
-	branch         string        // the branch template of the project's settings, for launch; empty: the default
-	from           string        // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
-	checks         string        // what the project's settings say of the checks Djinn runs, for the worker's first prompt
-	pushChecks     []string      // commands of the project's push checks, to note when a worker runs them
-	testOne        string        // project's targeted test command template or prefix
-	notedPush      bool          // already noted that worker ran push checks
-	fallback       string        // why the worker fell back to another provider, for its start event
-	failure        string        // the last error the current worker said: it never ends done
-	limit          *Limit        // the usage limit the current worker said it hit: it wins over failure
-	refused        string        // the last call its permissions refused, as the worker said it (question.go)
-	refusals       *denials      // the calls its permissions refused in this run (refusals.go)
-	envReplayed    bool          // a tool call/result already triggered replay of env failures
-	startHead      string        // HEAD commit when the worker started
-	answered       bool          // worker gave its final answer (text after tool calls)
-	closingFailed  bool          // closing call failed after final answer and committed work
-	requestedModel string        // model as requested before stream events
+	base           *planv1.Usage   // baseline added to a cumulative session result (prior sessions, minus any fork parent)
+	spentBase      float64         // what the task had spent before the current run's mid-turn estimate (Event.Spent)
+	turnsBefore    int             // the task's model turns before this worker
+	restart        bool            // the worker stops to start again, allowed to edit
+	unread         []string        // messages the worker took on its input and has said nothing after yet
+	unreadWaitTurn bool            // messages in unread were delivered while an agy turn was under way: acknowledged once the next turn speaks
+	tools          int             // tool calls of the current worker without a result yet: it is mid-turn (take)
+	held           *message        // a message for the end of the worker's turn, written once tools is 0 (turnOver)
+	branch         string          // the branch template of the project's settings, for launch; empty: the default
+	from           string          // the wish's integration branch in the project, which its worktree starts from; empty: HEAD
+	checks         string          // what the project's settings say of the checks Djinn runs, for the worker's first prompt
+	pushChecks     []string        // commands of the project's push checks, to note when a worker runs them
+	testOne        string          // project's targeted test command template or prefix
+	notedPush      bool            // already noted that worker ran push checks
+	fallback       string          // why the worker fell back to another provider, for its start event
+	failure        string          // the last error the current worker said: it never ends done
+	limit          *Limit          // the usage limit the current worker said it hit: it wins over failure
+	refused        string          // the last call its permissions refused, as the worker said it (question.go)
+	refusals       *denials        // the calls its permissions refused in this run (refusals.go)
+	envReplayed    bool            // a tool call/result already triggered replay of env failures
+	startHead      string          // HEAD commit when the worker started
+	answered       bool            // worker gave its final answer (text after tool calls)
+	closingFailed  bool            // closing call failed after final answer and committed work
+	requestedModel string          // model as requested before stream events
+	nextProvider   planv1.Provider // provider queued by UpdateModels to take effect when this run ends
+	nextModel      string          // model queued by UpdateModels to take effect when this run ends
 }
 
 // newRun is the run of task, registered so that a watcher never misses its first events.
 // It fails when Djinn is stopping, or when the task already runs.
 func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 	r := &run{
-		id: task.GetId(), wish: task.GetWishId(), task: task, base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
-		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}),
+		id: task.GetId(), wish: task.GetWishId(), task: task, shown: proto.CloneOf(task), base: task.GetUsage(), done: make(chan struct{}), wake: make(chan struct{}, 1),
+		notes: make(chan Event, 64), sends: make(chan *message), holds: make(chan chan struct{}), timers: make(chan struct{}, 1),
 		subs: map[chan *planv1.TaskEvent]struct{}{}, watcher: watching(task),
 		light: questionWorker(task), requestedModel: task.GetModel(),
 		token:        store.NewID(),
 		lastActivity: h.now(),
+	}
+	if pt := task.GetInvestigation().GetPublishTime(); pt != nil && pt.IsValid() {
+		r.publishAt = pt.AsTime()
+		r.publishWhy = task.GetInvestigation().GetPublishWhy()
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -241,7 +303,9 @@ func (h *Harness) newRun(task *planv1.Task) (*run, error) {
 	case h.runs[r.id] != nil:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is running", task.GetCode()))
 	}
-	r.forced = h.forcing == r.id // Started by hand (Start): counted so from its first instant.
+	r.ifrit = dispatch.Ifrit(task)
+	// Started by hand (Start), an ifrit or an urgent task (dispatch.Urgent): beyond the slots from its first instant.
+	r.forced = h.forcing == r.id || r.ifrit || dispatch.Urgent(task)
 	h.runs[r.id] = r
 	h.wg.Add(1)
 	h.notifyLocked() // A watcher of the planned task follows its worker now.
@@ -255,15 +319,18 @@ func New(s *store.Store, home string, providers map[planv1.Provider]Provider, op
 	h := &Harness{
 		store: s, home: home, providers: providers, ctx: ctx, cancel: cancel, runs: map[string]*run{},
 		tick: 2 * time.Second, kick: make(chan struct{}, 1), changed: make(chan struct{}),
-		integrateKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, toldApart: map[string]bool{},
-		installed: map[string]string{}, preempted: map[string]string{}, aliases: map[string]string{},
+		integrateKick: make(chan struct{}, 1), configKick: make(chan struct{}, 1), tested: map[string]tested{}, mainTested: map[string]mainTested{}, pushWaits: map[string]bool{}, toldApart: map[string]bool{}, referenceFetched: map[string]time.Time{}, mergedLooks: map[string]time.Time{},
+		pushJobs:  map[string]*pushJob{},
+		installed: map[string]string{}, preempted: map[string]string{}, rateHits: map[string]int{}, aliases: map[string]string{},
 		resident: map[string]uint64{},
 	}
+	h.ctx = gitx.OnCut(ctx, h.cutGit) // The gits a stop cuts are told to the next start (cut.go).
 	def := machine.DefaultPolicy()
 	h.policy.Store(&def)
 	for _, o := range opts {
 		o(h)
 	}
+	h.presence = &Presence{now: h.now, touched: h.pokeIfrits}
 	h.batcher = newTellBatcher(h)
 	dumps := ""
 	if home != "" {
@@ -309,12 +376,16 @@ func (h *Harness) Close() {
 	if h.integrateDone != nil {
 		<-h.integrateDone
 	}
+	h.waitPushes() // The pushes the integration started apart stop with it.
 	if h.batcher != nil {
 		h.batcher.Close()
 	}
 	h.wg.Wait()
 	h.babysitting.Wait()
+	h.net.wg.Wait()
+	h.disk.wg.Wait()
 	h.children.close() // What the workers left running stops with them.
+	h.writeCuts()
 }
 
 // Recover marks as interrupted the tasks a previous djinn up left running: their workers died with it. They keep
@@ -323,12 +394,19 @@ func (h *Harness) Close() {
 // running, and those it stopped as it ended, interrupted since it started (lastStart). First, the azimas stored as
 // work before tasks had kinds become azimas (migrateAzimas), and a task part of an azima that is gone becomes part of
 // none (ungroupOrphans). Before all, the processes the last djinn up started and left running are stopped
-// (children.sweep), so that no task resumes beside its old worker: the restart event names them.
+// (children.sweep), so that no task resumes beside its old worker: the restart event names them; an ifrit's serves
+// they ran are stopped, their stop commands run (recoverServes).
 func (h *Harness) Recover(ctx context.Context) error {
 	orphans := h.children.sweep()
+	locked := h.unlockWorktrees(ctx) // No git of the last djinn up runs now, and none of this one yet.
+	cut := readCuts(h.home)
+	h.sweepTemp(ctx)
 	h.cleanWarmLeftovers(ctx)
 	tasks, err := store.List[*planv1.Task](ctx, h.store, nil)
 	if err != nil {
+		return err
+	}
+	if err := h.recoverServes(ctx, tasks); err != nil {
 		return err
 	}
 	if err := h.rebuildTaskRunsFromJournal(ctx, tasks); err != nil {
@@ -340,7 +418,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 	if err := h.ungroupOrphans(ctx, tasks); err != nil {
 		return err
 	}
-	h.recoverIntegrations(ctx, tasks)
+	integrating := h.recoverIntegrations(ctx, tasks)
 	for _, t := range tasks {
 		if t.GetModel() != "" && !isModelAlias(t.GetModel()) {
 			h.learnAliases(t.GetModel())
@@ -355,11 +433,18 @@ func (h *Harness) Recover(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var interrupted []string
+	var interrupted, out []string
 	for _, t := range tasks {
 		switch t.GetStatus() {
 		case planv1.TaskStatus_TASK_STATUS_PENDING, planv1.TaskStatus_TASK_STATUS_RUNNING, planv1.TaskStatus_TASK_STATUS_PAUSED:
 		case planv1.TaskStatus_TASK_STATUS_INTERRUPTED:
+			if dispatch.Ifrit(t) { // Lit as the last djinn up ended: it comes back out, never resumed by itself.
+				if err := h.putOut(ctx, t); err != nil {
+					return err
+				}
+				out = append(out, t.GetCode())
+				continue
+			}
 			// Stopped as the last djinn up ended (end): its worker ran, resumed by Djinn or not.
 			if !lastStart.IsZero() && t.GetEndTime().AsTime().After(lastStart) && !watching(t) {
 				interrupted = append(interrupted, t.GetCode())
@@ -370,6 +455,13 @@ func (h *Harness) Recover(ctx context.Context) error {
 		}
 		// A task no worker ever started (planned, or imported with a wish) waits for one: nothing to interrupt.
 		if t.GetStartTime() == nil {
+			continue
+		}
+		if dispatch.Ifrit(t) { // Lit as the last djinn up crashed: it comes back out.
+			if err := h.putOut(ctx, t); err != nil {
+				return err
+			}
+			out = append(out, t.GetCode())
 			continue
 		}
 		if !watching(t) { // A watcher is no worker: the restart line counts it apart.
@@ -403,10 +495,12 @@ func (h *Harness) Recover(ctx context.Context) error {
 	}
 	// The lead hears of the restart from its queue, whether its watch died with the last djinn up or not.
 	restart := &planv1.LeadEvent{Kind: planv1.LeadEventKind_LEAD_EVENT_KIND_RESTART,
-		Text: restartLine(h.version, interrupted, resumed, watchers, orphans)}
+		Text: restartLine(h.version, interrupted, resumed, watchers, out, orphans, cutPart(cut, integrating),
+			lockedPart(locked))}
 	if err := plan.QueueLeadEvent(ctx, h.store, restart, h.now()); err != nil {
 		return fmt.Errorf("tell the lead of the restart: %w", err)
 	}
+	h.recoverOutrun(ctx, tasks)
 	return h.recoverAzimas(ctx, tasks)
 }
 
@@ -428,9 +522,10 @@ func (h *Harness) lastStart(ctx context.Context) (time.Time, error) {
 
 // restartLine is what the lead's restart event says: the version Djinn started on, the workers the last djinn up
 // left running and Djinn interrupted (or that it stopped, and Djinn resumes), those of them it resumes by itself,
-// apart the watchers it resumes: a watcher is no worker, and the processes the last djinn up left running that Djinn
-// stopped, by their labels (orphansPart).
-func restartLine(version string, interrupted, resumed, watchers, orphans []string) string {
+// apart the watchers it resumes: a watcher is no worker, the ifrits it left lit, which come back out (putOut), the
+// processes the last djinn up left running that Djinn stopped, by their labels (orphansPart), and the parts more,
+// each "" for none: what the stop cut (cutPart), what it left in the person's checkouts (lockedPart).
+func restartLine(version string, interrupted, resumed, watchers, out, orphans []string, more ...string) string {
 	if version == "" {
 		version = "unknown"
 	}
@@ -462,8 +557,20 @@ func restartLine(version string, interrupted, resumed, watchers, orphans []strin
 		parts = append(parts, fmt.Sprintf("%d %s resumed: %s", len(watchers), plural(len(watchers), "watcher"),
 			strings.Join(watchers, ", ")))
 	}
+	switch len(out) {
+	case 0:
+	case 1:
+		parts = append(parts, out[0]+" (ifrit) is out: a message lights it again")
+	default:
+		parts = append(parts, strings.Join(out, ", ")+" (ifrits) are out: a message lights each again")
+	}
 	if part := orphansPart(orphans); part != "" {
 		parts = append(parts, part)
+	}
+	for _, part := range more {
+		if part != "" {
+			parts = append(parts, part)
+		}
 	}
 	if len(parts) == 0 {
 		return line + ": no worker was running."
@@ -621,6 +728,9 @@ func runReason(t *planv1.Task, r *run) string {
 		if strings.Contains(strings.ToLower(t.GetWaitReason()), "preempt") {
 			return "preemption"
 		}
+		if networkWait(t) {
+			return "network"
+		}
 		return "limit"
 	case planv1.TaskStatus_TASK_STATUS_PAUSED:
 		return "pause"
@@ -632,6 +742,8 @@ func runReason(t *planv1.Task, r *run) string {
 		return "failed"
 	case planv1.TaskStatus_TASK_STATUS_DONE:
 		return "done"
+	case planv1.TaskStatus_TASK_STATUS_WAITING:
+		return "waiting"
 	default:
 		return "done"
 	}
@@ -685,17 +797,41 @@ func (h *Harness) cleanWarmLeftovers(ctx context.Context) {
 // write scope taken, no slot free, the machine under pressure), or planned for later, is created pending with the
 // reason, and the scheduler starts it as soon as it can. What the worker may do is decided when it starts
 // (prepare).
+// A task that repairs the wish's red push checks becomes their correction, or is refused while another one repairs
+// them (pushrepair.go).
 func (h *Harness) Spawn(ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest) (*planv1.Task, error) {
-	return h.spawn(ctx, procedure, req, nil)
+	task, err := h.spawn(ctx, procedure, req, nil)
+	if err == nil && task.GetCorrection().GetAdopted() {
+		h.adoptRepair(ctx, task)
+	}
+	return task, err
 }
 
 // spawn is Spawn, of a task Djinn spawns by itself when made is set, with what made says it is for: a correction
 // worker (Task.correction), whose worktree starts on the failed merge, a review worker (Task.review), which works in
-// the worktree and on the branch of the task it reviews (made's), or a question worker (Task.role and question), which
-// reads in its project's folder.
+// the worktree and on the branch of the task it reviews (made's), a question worker (Task.role and question), which
+// reads in its project's folder, or nothing more (an empty task). Without made, the spawn comes from outside Djinn: a
+// repair of the red push checks is claimed (claimRepair).
 func (h *Harness) spawn(
 	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, made *planv1.Task,
 ) (*planv1.Task, error) {
+	if path := req.GetPromptFile(); path != "" {
+		if req.GetPrompt() != "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				errors.New("give prompt or prompt_file, not both"))
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read prompt_file: %w", err))
+		}
+		text := strings.TrimRight(string(data), "\r\n")
+		if len(text) > 200000 {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("prompt_file exceeds 200000 bytes (%d)", len(text)))
+		}
+		req = proto.CloneOf(req)
+		req.Prompt, req.PromptFile = text, ""
+	}
 	if req.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA {
 		return h.spawnAzima(ctx, procedure, req)
 	}
@@ -730,20 +866,26 @@ func (h *Harness) spawn(
 		return nil, plan.Status(err)
 	}
 	task.ProjectId = project.GetId()
-	if req, err = babysitSpawn(ctx, req, project, task); err != nil {
+	if req, err = babysitSpawn(ctx, h.home, req, project, task); err != nil {
 		return nil, err
 	}
 	prompt := cmp.Or(req.GetPrompt(), req.GetTitle())
-	// The project's settings fill what the request leaves out (docs/team-settings.md). A watcher runs a command:
-	// none applies to it.
+	// The Summoning Circle (settings.json) and the project's settings fill what the request leaves out
+	// (docs/team-settings.md). A watcher runs a command: none applies to it.
 	var settings plan.Settings
 	var settingsErr error
+	defaultProvider := planv1.Provider_PROVIDER_UNSPECIFIED
+	defaultModel := ""
 	if req.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		if settings, settingsErr = plan.LoadSettings(h.home, project); settingsErr != nil {
 			settings = plan.ResolveSettings(nil, nil)
 		}
+		defaultProvider, defaultModel = settings.Provider, settings.Model
+		if cp, cm, ok := plan.ResolveWorkerSeat(h.home, workerKindOf(req, task)); ok {
+			defaultProvider, defaultModel = cp, cm
+		}
 	}
-	kind := cmp.Or(req.GetProvider(), settings.Provider, planv1.Provider_PROVIDER_CLAUDE)
+	kind := cmp.Or(req.GetProvider(), defaultProvider, planv1.Provider_PROVIDER_CLAUDE)
 	src, err := forkSource(ctx, h.store, wish, req)
 	if err != nil {
 		return nil, plan.Status(err)
@@ -755,11 +897,9 @@ func (h *Harness) spawn(
 	// transaction. A fork of a task that runs or is done leaves it as it is.
 	var parent *planv1.Task
 	if src.task != nil && forkCloses(src.task) {
-		h.mu.Lock()
-		if h.runs[src.task.GetId()] == nil {
+		if _, running, err := h.taskAndRun(ctx, src.task.GetId()); err == nil && !running {
 			parent = src.task
 		}
-		h.mu.Unlock()
 	}
 	task.Provider = kind
 	provider, ok := h.providers[kind]
@@ -768,11 +908,18 @@ func (h *Harness) spawn(
 	}
 	// A question worker's model and budget are the project's question workers', in its request.
 	if kind != planv1.Provider_PROVIDER_WATCH && !questionWorker(task) {
-		if task.Model == "" && kind == settings.Provider {
-			task.Model = settings.Model
+		if task.Model == "" && kind == defaultProvider {
+			task.Model = defaultModel
 		}
 		if task.MaxBudgetUsd == 0 {
 			task.MaxBudgetUsd = settings.MaxBudgetUSD
+		}
+		if task.Model != "" {
+			norm, err := plan.ValidateTaskModel(kind, task.Model)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			task.Model = norm
 		}
 	}
 	if len(req.GetTilasm()) > 0 {
@@ -791,8 +938,22 @@ func (h *Harness) spawn(
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a watcher runs its command in a project: the wish has none"))
 		}
 		task.Restart = req.GetRestart()
+		if req.GetUrgent() || req.GetFeedback() {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--urgent is for an agent: a watcher takes no slot"))
+		}
 	} else if req.GetRestart() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("--restart is for a watcher (--provider watch)"))
+	}
+	if err := ifritSpawn(req, kind, project, task); err != nil {
+		return nil, err
+	}
+	if err := investigationSpawn(req, kind, project, task); err != nil {
+		return nil, err
+	}
+	if made == nil {
+		if task.Question, err = mockupQuestion(ctx, h.store, req); err != nil {
+			return nil, err
+		}
 	}
 	if task.DependsOn, err = resolveDeps(ctx, h.store, wish.GetId(), after(req)); err != nil {
 		return nil, plan.Status(err)
@@ -817,6 +978,17 @@ func (h *Harness) spawn(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	if req.GetUrgent() || req.GetFeedback() {
+		task.Urgent, task.Feedback = true, req.GetFeedback()
+		if err := refuseSecondUrgent(tasks, task); err != nil {
+			return nil, err
+		}
+	}
+	if made == nil {
+		if err := h.claimRepair(req, wish, project, task, tasks); err != nil {
+			return nil, err
+		}
+	}
 	for _, b := range blocked {
 		tasks[slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == b.GetId() })] = b
 	}
@@ -827,14 +999,16 @@ func (h *Harness) spawn(
 		return nil, plan.Status(err)
 	}
 	var why, failed string
-	var machine, slot bool
+	var machine, room, slot bool
+	var hold planv1.TaskHold
 	for _, d := range sit.Pass() {
 		if d.Task == task {
-			why, failed, machine, slot = d.Why, d.Failed, d.Machine, d.Slot
+			why, failed, machine, room, slot, hold = d.Why, d.Failed, d.Machine, d.Room, d.Slot, d.Hold
 		}
 	}
 	var preemptedCode string
-	if task.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+	switch {
+	case dispatch.ServedFirst(task):
 		if why != "" && isMemoryShort(why) {
 			if code, err := h.interruptPausedForMemory(ctx, task); err == nil && code != "" {
 				preemptedCode = code
@@ -844,7 +1018,7 @@ func (h *Harness) spawn(
 				if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 					for _, d := range sit2.Pass() {
 						if d.Task == task {
-							why, failed, machine = d.Why, d.Failed, d.Machine
+							why, failed, machine, room, hold = d.Why, d.Failed, d.Machine, d.Room, d.Hold
 						}
 					}
 				}
@@ -858,7 +1032,7 @@ func (h *Harness) spawn(
 					if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 						for _, d := range sit2.Pass() {
 							if d.Task == task {
-								why, failed, machine = d.Why, d.Failed, d.Machine
+								why, failed, machine, room, hold = d.Why, d.Failed, d.Machine, d.Room, d.Hold
 							}
 						}
 					}
@@ -867,10 +1041,15 @@ func (h *Harness) spawn(
 		} else if slot {
 			// It takes the slot of the work task it pauses, never one more: none to pause, it waits for a slot.
 			if code, err := h.preemptForSlot(ctx, task); err == nil && code != "" {
-				preemptedCode, why, machine = code, "", false
+				preemptedCode, why, machine, room, hold = code, "", false, false, 0
 			}
 		}
-	} else if why != "" && isMemoryShort(why) {
+	case slot && plan.IsMerge(task):
+		// A merge or a repair takes the slot of the work task it pauses, as an investigator does (W233).
+		if code, err := h.preemptForSlot(ctx, task); err == nil && code != "" {
+			preemptedCode, why, machine, room, hold = code, "", false, false, 0
+		}
+	case why != "" && isMemoryShort(why):
 		if code, err := h.interruptPausedForMemory(ctx, task); err == nil && code != "" {
 			preemptedCode = code
 			if fresh, err3 := store.List[*planv1.Task](ctx, h.store, nil); err3 == nil {
@@ -879,7 +1058,7 @@ func (h *Harness) spawn(
 			if sit2, err2 := h.situation(ctx, append(tasks, task)); err2 == nil {
 				for _, d := range sit2.Pass() {
 					if d.Task == task {
-						why, failed, machine = d.Why, d.Failed, d.Machine
+						why, failed, machine, room, hold = d.Why, d.Failed, d.Machine, d.Room, d.Hold
 					}
 				}
 			}
@@ -889,13 +1068,22 @@ func (h *Harness) spawn(
 	case failed != "":
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the task would never start: %s", failed))
 	case settingsErr != nil:
-		why, machine = fmt.Sprintf("settings unreadable: %v", settingsErr), false
+		why, machine, room, hold = fmt.Sprintf("settings unreadable: %v", settingsErr), false, false, 0
 	case req.GetLater() && why == "":
 		why = "planned: it starts at the scheduler's next pass"
 	}
+	var overlaps []spawnOverlap
+	if made == nil {
+		for _, b := range blocked {
+			if i := slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == b.GetId() }); i >= 0 {
+				tasks[i] = b
+			}
+		}
+		overlaps = h.spawnOverlaps(ctx, wish, project, task, parent, cmp.Or(req.GetPrompt(), req.GetTitle()), tasks)
+	}
 	if why != "" {
-		task.MachineWait = machine
-		return h.plan(ctx, procedure, req, task, parent, prompt, why)
+		task.MachineWait, task.RoomWait, task.Hold = machine, room, hold
+		return h.plan(ctx, procedure, req, task, parent, prompt, why, overlaps)
 	}
 
 	actor := spawner(task) // before a babysit spawned by hand knows its request
@@ -919,7 +1107,7 @@ func (h *Harness) spawn(
 	}
 	var prep prepared
 	prompted := h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
-	var preEv *planv1.TaskEvent
+	var preEv, overlapEv *planv1.TaskEvent
 	if preemptedCode != "" {
 		preEv = h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "preempted " + preemptedCode + " to make room"})
 	}
@@ -930,8 +1118,14 @@ func (h *Harness) spawn(
 		if task.Code, err = nextCode(ctx, tx, wish.GetId()); err != nil {
 			return err
 		}
+		if len(overlaps) > 0 {
+			overlapEv = h.newEvent(task.GetId(), Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: formatSpawnOverlaps(task.GetCode(), overlaps),
+			})
+		}
 		if task.PartOf != "" {
-			if err := reopenAzima(ctx, tx, task.PartOf, task.Code+" spawned"); err != nil {
+			if err := reopenAzima(ctx, tx, task.PartOf, task, "spawned"); err != nil {
 				return err
 			}
 		}
@@ -940,7 +1134,7 @@ func (h *Harness) spawn(
 				return err
 			}
 		}
-		if prep, err = prepare(ctx, tx, task, wish, project); err != nil {
+		if prep, err = prepare(ctx, tx, h.home, task, wish, project); err != nil {
 			return err
 		}
 		if err := h.block(ctx, tx, task, req.GetBlocks()); err != nil {
@@ -953,7 +1147,12 @@ func (h *Harness) spawn(
 			return err
 		}
 		if preEv != nil {
-			return putEvents(ctx, tx, preEv)
+			if err := putEvents(ctx, tx, preEv); err != nil {
+				return err
+			}
+		}
+		if overlapEv != nil {
+			return putEvents(ctx, tx, overlapEv)
 		}
 		return nil
 	})
@@ -965,6 +1164,9 @@ func (h *Harness) spawn(
 	if preEv != nil {
 		h.publish(r, preEv)
 	}
+	if overlapEv != nil {
+		h.publish(r, overlapEv)
+	}
 	if len(blocked) > 0 {
 		h.wake() // The tasks it blocks say what they wait for now.
 	}
@@ -972,9 +1174,9 @@ func (h *Harness) spawn(
 }
 
 // spawner is who spawns task, as the journal records it: Djinn for a correction, a review or a question worker, or the
-// watcher of a request a task opened; the developer's side otherwise.
+// watcher of a request a task opened; the developer's side otherwise, a repair Djinn took as a correction included.
 func spawner(task *planv1.Task) string {
-	if task.GetCorrection() != nil || task.GetReview() != nil || questionWorker(task) || task.GetBabysit().GetUrl() != "" {
+	if (task.GetCorrection() != nil && !task.GetCorrection().GetAdopted()) || task.GetReview() != nil || questionWorker(task) || task.GetBabysit().GetUrl() != "" {
 		return actorHarness
 	}
 	return actorLocal
@@ -989,6 +1191,7 @@ func after(req *planv1.TaskServiceSpawnRequest) []string {
 // the tasks it blocks (--blocks) wait for it; the scheduler starts it.
 func (h *Harness) plan(
 	ctx context.Context, procedure string, req *planv1.TaskServiceSpawnRequest, task, parent *planv1.Task, prompt, why string,
+	overlaps []spawnOverlap,
 ) (*planv1.Task, error) {
 	task.WaitReason = why
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
@@ -1000,7 +1203,7 @@ func (h *Harness) plan(
 			return err
 		}
 		if task.PartOf != "" {
-			if err := reopenAzima(ctx, tx, task.PartOf, task.Code+" spawned"); err != nil {
+			if err := reopenAzima(ctx, tx, task.PartOf, task, "spawned"); err != nil {
 				return err
 			}
 		}
@@ -1018,11 +1221,21 @@ func (h *Harness) plan(
 		if err := putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})); err != nil {
 			return err
 		}
-		return putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why}))
+		if err := putEvents(ctx, tx, h.newEvent(task.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "waiting: " + why})); err != nil {
+			return err
+		}
+		if len(overlaps) > 0 {
+			return putEvents(ctx, tx, h.newEvent(task.GetId(), Event{
+				Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS,
+				Text: formatSpawnOverlaps(task.GetCode(), overlaps),
+			}))
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, plan.Status(err)
 	}
+	logx.L().Info("task held", "task", task.GetCode(), "hold", task.GetHold().String(), "why", why)
 	h.notify()
 	h.wake()
 	return task, nil
@@ -1038,7 +1251,9 @@ type prepared struct {
 // prepare decides what the task's worker may do (decideAccess), in tx: in a folder outside Git without any agent
 // configuration, the worker starts read-only, and the task asks the developer whether it may edit the project's
 // files.
-func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.Wish, project *planv1.Project) (prepared, error) {
+func prepare(
+	ctx context.Context, tx *store.Tx, home string, task *planv1.Task, wish *planv1.Wish, project *planv1.Project,
+) (prepared, error) {
 	var p prepared
 	var err error
 	if questionWorker(task) {
@@ -1046,7 +1261,7 @@ func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.
 		task.Access = planv1.TaskAccess_TASK_ACCESS_DJINN
 		return p, nil
 	}
-	if task.Access, p.declared, err = decideAccess(project, task.GetProvider(), plan.AllowanceOf(wish, project.GetId())); err != nil {
+	if task.Access, p.declared, err = decideAccess(home, project, task.GetProvider(), plan.AllowanceOf(wish, project.GetId())); err != nil {
 		return p, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("project %s: %w", project.GetName(), err))
 	}
 	if task.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING && watching(task) {
@@ -1064,23 +1279,94 @@ func prepare(ctx context.Context, tx *store.Tx, task *planv1.Task, wish *planv1.
 	return p, nil
 }
 
-const workerHandRule = "To try a command by hand, start a Djinn of your own with its own data folder; never create a wish, a question or a task in the person's Djinn to test."
+const workerHandRule = "Write any scratch file, temporary data, screenshot, build output or test Djinn data folder in your scratch folder (`$DJINN_SCRATCH`), never in the home folder or `/tmp`. To try a command by hand, start a Djinn of your own with its own data folder in `$DJINN_SCRATCH`; never create a wish, a question or a task in the person's Djinn to test."
 
 // workerCheckRule (Q246): what an agent can check, it checks; the developer runs no command to verify a worker's work.
 const workerCheckRule = "Never ask the developer for a check, a measure, a log to read, a CI result to look at or a command to run: do it yourself when you can; otherwise say in your final note what remains to verify, and the lead spawns a task for it or lets a watcher report it (a CI result comes from the PR's babysit watcher)."
 const workerMoveRule = "A question to the developer is only for a decision or a move only a person can make (grant a right, push a tag, open or merge a PR, start a release, check on a Mac or Windows Djinn does not have, install): ask it with `djinn question ask` before you end. " + plan.QuestionShape
-const workerRules = workerHandRule + " " + workerCheckRule + " " + workerMoveRule
+
+// workerCommitRule (W360): a worker that edits a worktree commits its work itself; Djinn commits nothing for it, and
+// starts a review worker on what it leaves (docs/team-settings.md#integration). Review and correction workers are
+// told how to commit in their own prompts.
+const workerCommitRule = "Commit your work before you end, with a message in the repository's style (`git log` shows it), and leave nothing not committed: Djinn commits nothing for you, and a review worker judges what you leave."
+
+// workerWaitRule (W80): a worker that ends its turn on a run still going ends its task, and Djinn removes the worktree
+// the run writes to.
+const workerWaitRule = "Never end a turn while a long run you started is going (a benchmark, a build, a background command, a monitor): your task ends with your turn, and Djinn removes its worktree. Wait for it in the foreground, in commands under 9 minutes each (`sleep`, then read its output), until it ends; then report what it gave."
+
+// workerDoubtRule (W260, decision Q50): a worker in real doubt asks a blocking question and ends its turn, its task
+// continued with the decision; otherwise it decides, and says so. One blocking question at a time, plan.BlockingCap in
+// all, plan.FreeCap that do not block: the questions service refuses more.
+const workerDoubtRule = "Ask a blocking question (`djinn question ask --wait`) only in real doubt: two valid designs " +
+	"whose consequences the developer will see (the interface, a behaviour, data, a cost), where a wrong pick throws " +
+	"away the work that follows. Decide alone on naming, internals, what a test settles, and what a decision of the " +
+	"wish settles already: read the wish's questions first (`djinn question list`). Before you ask with --wait, commit " +
+	"all the work that does not depend on the answer; then end your turn, saying what waits for it: Djinn frees your " +
+	"slot, keeps your worktree and session, and continues your task with \"Decision Qnn: ...\" once answered. A " +
+	"choice you made that the developer may want to revisit is a question without --wait: go on with your pick. One " +
+	"blocking question at a time, two per task, and three that do not block; past them, decide, and say it in your " +
+	"final note."
+
+// workerReadRule (W405): locate symbols with rg -n or grep -n before reading a file, and pass StartLine/EndLine (<= 200
+// lines) instead of paging 800 lines at a time so agy stays below its ~120k compaction threshold.
+const workerReadRule = "Locate symbols and lines with `rg -n` or `grep -n` before reading a file; never page through a " +
+	"file with `view_file` 800 lines at a time. Pass `StartLine` and `EndLine` (`<= 200` lines) around the match so the " +
+	"context stays below compaction."
+const workerRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule + " " +
+	workerDoubtRule + " " + workerReadRule
+
+// investigationRules are an investigation's or a mockup's: a worker's, but for the blocking question, as it ends with
+// its question.
+const investigationRules = workerHandRule + " " + workerCheckRule + " " + workerWaitRule + " " + workerMoveRule + " " +
+	workerReadRule
+
+// ifritRule (T51, Q11) is how an ifrit works: a turn per request, then it listens; Djinn runs what lasts, and keeps it
+// alive. It replaces workerWaitRule, whose wait in the foreground would hold its turn open.
+const ifritRule = "You are an ifrit: Djinn keeps you lit between the developer's requests, which the Djinn relays to " +
+	"you as messages. After each request: make the change, say in three lines at most what changed and how to see it " +
+	"(its URL), then end your turn; Djinn keeps you alive, and the next message starts your next turn. Run every " +
+	"durable process (a dev server, a stack) with `djinn serve run <name> \"<command>\"` (`--port 5173=front`, " +
+	"`--gate <gate>`, `--stop \"<command>\"`), never with `&` or `nohup`: Djinn shows its ports as links, and stops it " +
+	"when you go out or end. Never wait in a loop or sleep. Run no check and no test suite after a change: only the " +
+	"tests a request names, when it asks."
+const ifritRules = workerHandRule + " " + workerCheckRule + " " + ifritRule + " " + workerMoveRule + " " + workerReadRule
 
 // briefed is the first prompt of the run's task as its worker reads it, at launch and on a resume that gives it again:
 // a worker that edits a worktree learns which checks its work meets (run.checks), to run the commit checks before it
-// ends, to run what it can check itself, and to ask only a decision or a move only the developer can make.
+// ends, to commit its work (workerCommitRule), to run what it can check itself, and to ask only a decision or a move
+// only the developer can make. An ifrit
+// learns its own rules instead (ifritRule), whatever folder it works in.
 func briefed(r *run, prompt string, readOnly bool) string {
-	if r.task.GetBranch() != "" && !readOnly {
+	rules := workerRules
+	if r.ifrit {
+		rules = ifritRules
+	}
+	switch {
+	case dispatch.Investigation(r.task):
+		rules = investigationRule(r.task) + " " + investigationRules
+	case dispatch.Mockup(r.task):
+		rules = mockupRule(r.task) + " " + investigationRules
+	}
+	edits := r.task.GetBranch() != "" && !readOnly
+	if r.ifrit && !edits && r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
+		if s := r.task.GetScratch(); s != "" {
+			rules = "Your scratch folder is `" + s + "` (`$DJINN_SCRATCH`). " + rules
+		}
+		return prompt + "\n\n" + rules
+	}
+	if edits && !r.ifrit && !dispatch.Investigation(r.task) && !dispatch.Mockup(r.task) && r.task.GetReview() == nil &&
+		r.task.GetCorrection() == nil {
+		rules = workerCommitRule + " " + rules
+	}
+	if s := r.task.GetScratch(); s != "" {
+		rules = "Your scratch folder is `" + s + "` (`$DJINN_SCRATCH`). " + rules
+	}
+	if edits {
 		if r.checks != "" {
-			return prompt + "\n\n" + r.checks + " " + workerRules
+			return prompt + "\n\n" + r.checks + " " + rules
 		}
 		if r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
-			return prompt + "\n\n" + workerRules
+			return prompt + "\n\n" + rules
 		}
 	}
 	return prompt
@@ -1123,13 +1409,13 @@ func (h *Harness) launch(
 		case f != nil:
 			dir, err = correctionWorktree(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), f)
 		default:
-			if sha, from, err = startPoint(ctx, project.GetDirectory(), r.from); err == nil {
-				if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), task, sha, r.from); depWhy != "" {
+			if sha, from, err = h.startPoint(ctx, project, r.from); err == nil {
+				if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), task, sha, cmp.Or(r.from, from)); depWhy != "" {
 					logx.L().Info("worktree not created: a dependency is not merged", "task", task.GetCode(), "why", depWhy)
 					_ = os.RemoveAll(skillsDir)
 					task.Branch, task.Worktree = "", ""
-					h.forget(r)
-					h.setWaiting(ctx, task, depWhy, false)
+					h.forgetWithoutWake(r)
+					h.setWaiting(ctx, task, depWhy, false, false, planv1.TaskHold_TASK_HOLD_DEPENDENCY)
 					return store.Get[*planv1.Task](ctx, h.store, task.GetId())
 				}
 				dir, err = addWorktreeFrom(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), sha)
@@ -1144,6 +1430,13 @@ func (h *Harness) launch(
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: create the worktree: %w", task.GetCode(), err))
 		}
 	}
+	if project != nil && !r.watcher && !r.light && h.home != "" {
+		task.Scratch = workScratchDir(h.home, project.GetId(), task.GetId())
+		if err := os.MkdirAll(task.GetScratch(), 0o700); err != nil {
+			h.finish(r, Result{ExitCode: -1, Err: fmt.Errorf("create the scratch folder: %w", err)})
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: create its scratch folder: %w", task.GetCode(), err))
+		}
+	}
 	where := "in " + dir
 	if task.GetBranch() != "" {
 		where += ", on branch " + task.GetBranch() + fromText
@@ -1155,8 +1448,13 @@ func (h *Harness) launch(
 	}
 	spec := Spec{
 		TaskID: task.GetId(), Dir: dir, ReadOnly: readOnly, Permissions: perms, Prompt: prompt, Model: model,
-		MaxBudgetUSD: task.GetMaxBudgetUsd(), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
-		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(),
+		MaxBudgetUSD: providerBudget(task), Resume: task.GetForkSession(), Fork: task.GetForkSession() != "",
+		Skills: skills, SkillsDir: skillsDir, Restart: task.GetRestart(), ReadDirs: plan.TilasmDirs(h.home, prompt),
+	}
+	var err error
+	if spec.WriteDirs, err = h.questionWriteDirs(task); err != nil {
+		h.finish(r, Result{ExitCode: -1, Err: err})
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: %w", task.GetCode(), err))
 	}
 	if task.GetForkOf() != "" {
 		where += ", forked from " + forkText(task.GetForkOf())
@@ -1181,7 +1479,7 @@ func (h *Harness) launch(
 		text = "started " + short(task.GetProvider()) + how + " " + where + ": " + questionStart(task) + "; " +
 			accessText(task, nil)
 	}
-	err := h.start(r, provider, spec, text)
+	err = h.start(r, provider, spec, text)
 	if err != nil && r.light && questionWorker(task) && task.GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
 		if claudeProvider, ok := h.providers[planv1.Provider_PROVIDER_CLAUDE]; ok {
 			origProvider := task.GetProvider()
@@ -1215,8 +1513,8 @@ func (h *Harness) launch(
 	return started, nil
 }
 
-// start marks the run's task running, says so with text, and starts its worker with spec. On an error the task is
-// left to the caller to end.
+// start marks the run's task running, says so with text, and how long and for what it waited before (waited), and
+// starts its worker with spec. On an error the task is left to the caller to end.
 func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error {
 	t := r.task
 	now := h.now()
@@ -1225,12 +1523,29 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		t.FirstStartTime = nowPb
 	}
 	t.Status, t.StartTime, t.EndTime, t.ExitCode, t.Error = planv1.TaskStatus_TASK_STATUS_RUNNING, nowPb, nil, 0, ""
+	t.WaitReason, t.MachineWait, t.RoomWait, t.Hold, t.ResumeAfter = "", false, false, 0, nil
 	t.LastActivityTime = nowPb
 	h.mu.Lock()
 	r.startTime = now
 	r.lastActivity = now
+	r.resultAt, r.silentWhy, r.silentNote = time.Time{}, "", false
 	r.code = t.GetCode()
+	r.listenSince, r.listened = time.Time{}, t.GetIfrit().GetListened().AsDuration()
 	h.mu.Unlock()
+	if r.ifrit {
+		setIfrit(t, planv1.IfritState_IFRIT_STATE_WORKING, r.listened)
+		spec.Listen = true
+		since := h.presence.Last()
+		if since.Before(now) {
+			since = now // Lit at the developer's word: they were there.
+		}
+		outAt := since.Add(h.IfritIdle(t))
+		h.mu.Lock()
+		r.outAt = outAt
+		h.mu.Unlock()
+	}
+	r.base = h.usageBase(t, spec)
+	r.spentBase = t.GetUsage().GetCostUsd()
 	r.turnsBefore = int(t.GetTurns().GetTotal())
 	h.setTurns(r, func(int) int { return 1 })
 	if len(t.Runs) > 0 && t.Runs[len(t.Runs)-1].EndTime == nil {
@@ -1250,8 +1565,13 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 			wt = spec.Dir
 		}
 		if wt != "" {
-			if head, err := git(h.ctx, wt, "rev-parse", "HEAD"); err == nil {
-				r.startHead = strings.TrimSpace(head)
+			if t.GetBranch() != "" && t.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
+				r.startHead = branchStartCommit(h.ctx, wt, t.GetBranch())
+			}
+			if r.startHead == "" {
+				if head, err := git(h.ctx, wt, "rev-parse", "HEAD"); err == nil {
+					r.startHead = strings.TrimSpace(head)
+				}
 			}
 		}
 	}
@@ -1262,7 +1582,11 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	if (t.GetModel() == "" || foreignModel(t.GetProvider(), t.GetModel())) && !r.watcher {
 		t.Model = DefaultModel(t.GetProvider())
 	}
+	text += h.waited(h.ctx, t.GetId(), now)
 	h.write(r, actorHarness, methodStart, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
+	if r.ifrit {
+		h.relightServes(r, spec.Dir) // Before its agent: the message it was lit for may be about them.
+	}
 	// A worker that calls djinn knows its task; the Git guard keeps it from pushing.
 	guard, err := gitGuard(h.home, spec.Dir)
 	if err != nil {
@@ -1273,6 +1597,12 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		"DJINN_WISH_ID=" + t.GetWishId(),
 		"DJINN_WORKER_TOKEN=" + r.token,
 	}, guard...)
+	if t.GetScratch() != "" {
+		spec.Env = append(spec.Env, "DJINN_SCRATCH="+t.GetScratch())
+		if !spec.ReadOnly && (spec.Permissions == nil || spec.Permissions.GetEdit()) && !slices.Contains(spec.WriteDirs, t.GetScratch()) {
+			spec.WriteDirs = append(spec.WriteDirs, t.GetScratch())
+		}
+	}
 	if r.watcher {
 		// Its state folder, DJINN_HOME/watchers/<task>, outlives each run of its command (watcherLife); made before
 		// it starts, as a lead's command expects when it names a file there (W7 of wish Dew).
@@ -1296,7 +1626,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		if wt == "" {
 			wt = spec.Dir
 		}
-		return agyWorkDone(h.ctx, wt, r.startHead, t.GetBranch())
+		return h.taskWorkDone(r, t, wt)
 	}
 	h.prepare()
 	w, err := provider.Start(h.ctx, spec)
@@ -1420,17 +1750,22 @@ func (h *Harness) drain(r *run) Result {
 			h.measure(r, m)
 		case ev, ok := <-events:
 			if !ok {
-				r.unread = nil // A worker started again never had them.
+				r.unread, r.unreadWaitTurn, r.held, r.tools = nil, false, nil, 0 // A worker started again never had them.
+				h.mu.Lock()
+				r.inTool = false
+				h.mu.Unlock()
 				return r.worker.Wait()
 			}
 			h.record(r, ev)
 		case ev := <-r.notes:
-			h.write(r, actorHarness, methodEvent, nil, ev)
+			h.note(r, ev)
 		case m := <-r.sends:
-			m.reply <- h.deliver(r, m)
+			m.reply <- h.take(r, m)
 		case written := <-r.holds:
 			h.writeHold(r)
 			close(written)
+		case <-r.timers:
+			h.ifritTimers(r)
 		case <-r.wake:
 			for _, q := range h.takeAnswers(r) {
 				if h.applyAnswer(r, q) && !r.restart {
@@ -1463,9 +1798,17 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Usage != nil {
 		r.task.Usage, changed = sum(r.base, ev.Usage), true
+		h.mu.Lock()
+		r.spent = r.task.Usage.GetCostUsd()
+		h.mu.Unlock()
 	}
 	if ev.Turns > 0 {
 		h.setTurns(r, func(n int) int { return max(n, ev.Turns) })
+	}
+	if ev.Spent > 0 {
+		h.mu.Lock()
+		r.spent = r.spentBase + ev.Spent
+		h.mu.Unlock()
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_USAGE {
 		var uTurns int
@@ -1476,8 +1819,16 @@ func (h *Harness) record(r *run, ev Event) {
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
 		h.setTurns(r, func(n int) int { return n + 1 })
 	}
+	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR &&
+		(r.task.GetProvider() == planv1.Provider_PROVIDER_ANTIGRAVITY || r.task.GetProvider() == planv1.Provider_PROVIDER_FAKE) &&
+		(r.closingFailed || (r.answered && r.tools == 0 && h.taskWorkDone(r, r.task, r.task.GetWorktree()))) {
+		ev.Kind = planv1.TaskEventKind_TASK_EVENT_KIND_STATUS
+		ev.Text = "closing call failed: " + ev.Text
+		ev.Limit = nil
+	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_ERROR {
 		r.failure = ev.Text
+		h.netSign(r.task.GetProvider(), ev.Text, true) // Its agent cannot reach its provider: the network may be down.
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TEXT && strings.TrimSpace(ev.Text) != "" && !strings.HasSuffix(ev.Text, " [cut]") {
 		r.answered = true
@@ -1490,6 +1841,7 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_STATUS && strings.HasPrefix(ev.Text, "closing call failed: ") {
 		r.closingFailed = true
+		logx.L().Info("closing call failed after final answer", "task", r.task.GetCode(), "why", strings.TrimPrefix(ev.Text, "closing call failed: "))
 	}
 	if ev.Limit != nil {
 		r.limit = ev.Limit
@@ -1499,7 +1851,15 @@ func (h *Harness) record(r *run, ev Event) {
 		r.refuse(what)
 	}
 	if w := ev.Watched; w != nil && w.First != "" {
-		r.task.LastLine, changed = clipRunes(w.First, watchLineMax), true
+		line := clipRunes(w.First, watchLineMax)
+		if line != r.task.GetLastLine() || r.task.GetLastLineTime() == nil {
+			r.task.LastLineTime = timestamppb.New(h.now()) // The same state said again keeps its time.
+		}
+		r.task.LastLine, changed = line, true
+	}
+	if ev.Ifrit != planv1.IfritState_IFRIT_STATE_UNSPECIFIED && r.ifrit {
+		h.ifritTurn(r, ev.Ifrit)
+		changed = true
 	}
 	var task proto.Message
 	if changed {
@@ -1507,6 +1867,26 @@ func (h *Harness) record(r *run, ev Event) {
 	}
 	h.acknowledge(r, ev)
 	h.write(r, actorWorker, methodEvent, task, ev)
+	switch ev.Kind {
+	case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL:
+		r.tools++
+	case planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_RESULT:
+		r.tools = max(r.tools-1, 0)
+		h.turnOver(r)
+	case planv1.TaskEventKind_TASK_EVENT_KIND_USAGE: // A turn's result says its usage: a call cut short has no result.
+		r.tools = 0
+		r.unreadWaitTurn = false
+		h.turnOver(r)
+		h.resulted(r)
+	}
+	if inTool := r.tools > 0; inTool != r.inTool { // Read by the scheduler's pass under mu (pauseForNetwork).
+		h.mu.Lock()
+		r.inTool = inTool
+		h.mu.Unlock()
+	}
+	if ev.Ifrit == planv1.IfritState_IFRIT_STATE_LISTENING && r.ifrit {
+		h.ifritTimers(r) // Its turn ended: past its out time, it goes out now.
+	}
 	if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL && !r.notedPush {
 		if r.ranPushCheck(ev.Text) || r.ranPushCheck(ev.Raw) {
 			r.notedPush = true
@@ -1530,6 +1910,9 @@ func (h *Harness) record(r *run, ev Event) {
 // setChecks records what the project's settings say of checks Djinn runs, and its push checks to watch for.
 func (r *run) setChecks(settings plan.Settings) {
 	r.checks = settings.ChecksBrief()
+	if r.ifrit {
+		r.checks = settings.IfritChecksBrief()
+	}
 	r.testOne = settings.TestOne
 	var pushes []string
 	commitNames := make(map[string]bool)
@@ -1654,23 +2037,54 @@ func (h *Harness) finish(r *run, res Result) {
 	}
 }
 
+// taskWorkDone reports whether task t has completed its deliverables: for a ChangesNoCode task (investigation or
+// question worker), a published tilasm, question or plan block; for a code task, a clean worktree ahead of startHead.
+func (h *Harness) taskWorkDone(r *run, t *planv1.Task, wt string) bool {
+	if dispatch.ChangesNoCode(t) && changesNoCodeDone(h.ctx, h.store, t) {
+		return true
+	}
+	if wt == "" {
+		return false
+	}
+	return agyWorkDone(h.ctx, wt, r.startHead, t.GetBranch())
+}
+
+func (h *Harness) incRateHits(taskID string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.rateHits[taskID]++
+	return h.rateHits[taskID]
+}
+
+func (h *Harness) hasRateHits(taskID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.rateHits[taskID] > 0
+}
+
+func (h *Harness) clearRateHits(taskID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.rateHits, taskID)
+}
+
 // agyDoneAfterWork checks whether an antigravity worker already gave its final answer and committed its work
-// (worktree clean, branch ahead with commits made in this run) and only then hit an error.
+// (worktree clean, branch ahead with commits made in this run, or published its ChangesNoCode deliverables) and only
+// then hit an error.
 func (h *Harness) agyDoneAfterWork(r *run, res Result) bool {
-	if r.task.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY {
+	if r.task.GetProvider() != planv1.Provider_PROVIDER_ANTIGRAVITY && r.task.GetProvider() != planv1.Provider_PROVIDER_FAKE {
 		return false
 	}
 	if r.closingFailed {
 		return true
 	}
+	if res.Err == nil && res.ExitCode == 0 && r.failure == "" {
+		return false
+	}
 	if !r.answered {
 		return false
 	}
-	wt := r.task.GetWorktree()
-	if wt == "" {
-		return false
-	}
-	return agyWorkDone(h.ctx, wt, r.startHead, r.task.GetBranch())
+	return h.taskWorkDone(r, r.task, r.task.GetWorktree())
 }
 
 // end gives the task its final status, then lets its watchers go. A task whose worker read while it asks whether
@@ -1679,16 +2093,23 @@ func (h *Harness) agyDoneAfterWork(r *run, res Result) bool {
 // process then exited 0, fails the task with the reason. But a failure its provider's usage limit caused is no
 // failure: the task waits for the limit to reset, and resumes.
 func (h *Harness) end(r *run, res Result) {
+	if r.ifrit {
+		h.endServes(r) // Before the notes: what its serves said before they stopped is stale now.
+	}
 	for flushed := false; !flushed; {
 		select {
 		case ev := <-r.notes:
-			h.write(r, actorHarness, methodEvent, nil, ev)
+			h.note(r, ev)
 		default:
 			flushed = true
 		}
 	}
 	h.mu.Lock()
 	stopping, stoppingReason, shelved, preemptedWhy, lamplighterEnd, lamplighterReason := r.stopping, r.stoppingReason, r.shelved, r.preemptedWhy, r.lamplighterEnd, r.lamplighterReason
+	silentWhy, silentNote := r.silentWhy, r.silentNote
+	relaunched := r.relaunched
+	out := r.out
+	nextProvider, nextModel := r.nextProvider, r.nextModel
 	h.mu.Unlock()
 	var streamIdleReason string
 	if isStreamIdle(res.Err) {
@@ -1720,7 +2141,18 @@ func (h *Harness) end(r *run, res Result) {
 	now := h.now()
 	nowPb := timestamppb.New(now)
 	t.EndTime, t.ExitCode = nowPb, int32(res.ExitCode)
-	// Under useMu, as measure sets them (lowestWorkTask copies the task). A copy: the reading is shared with what the
+	if r.ifrit {
+		h.mu.Lock()
+		listened := r.listenedBy(now)
+		h.mu.Unlock()
+		state := planv1.IfritState_IFRIT_STATE_UNSPECIFIED
+		if out != "" && !stopping {
+			state = planv1.IfritState_IFRIT_STATE_OUT
+		}
+		setIfrit(t, state, listened)
+		t.Ifrit.OutTime, t.Ifrit.WarnTime = nil, nil
+	}
+	// Under useMu, as measure sets them. A copy: the reading is shared with what the
 	// workers use (Uses, RunsSeries), which never changes it.
 	h.useMu.Lock()
 	if t.Resources != nil {
@@ -1739,16 +2171,24 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	h.useMu.Unlock()
 	switch {
+	case preemptedWhy != "" && t.GetStartTime() == nil:
+		t.Status, t.Error, t.EndTime, t.ExitCode, t.WaitReason = planv1.TaskStatus_TASK_STATUS_PENDING, "", nil, 0, preemptedWhy
 	case preemptedWhy != "":
-		t.Status, t.Error, t.WaitReason = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy
+		t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RESUMING, "", preemptedWhy, nil
 	case stopping:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, cmp.Or(stoppingReason, "stopped on request")
+	case out != "":
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_STOPPED, out
+	case silentWhy != "":
+		endedSilent(t, silentWhy, silentNote)
+	case streamIdleEnd && !lamplighterEnd && h.netHolds():
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, streamIdleReason // The network cut it: networkCut.
 	case lamplighterEnd || streamIdleEnd:
 		why := streamIdleReason
 		if lamplighterEnd {
 			why = lamplighterReason
 		}
-		if canWake(t) {
+		if canWake(t) || (relaunched && plan.CanResume(t.GetProvider())) {
 			markWoken(t, why, nowPb)
 			logx.L().Info("lamplighter wakes a task", "task", t.GetCode(), "why", why)
 		} else {
@@ -1775,17 +2215,18 @@ func (h *Harness) end(r *run, res Result) {
 		if why == "" {
 			why = "model error"
 		}
-		res.Err, res.ExitCode, r.failure = nil, 0, ""
+		res.Err, res.ExitCode, r.failure, r.limit = nil, 0, "", nil
 		if !r.closingFailed {
 			r.closingFailed = true
+			logx.L().Info("closing call failed after final answer", "task", t.GetCode(), "why", why)
 			h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "closing call failed: " + why})
 		}
 	case res.Err != nil:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, res.Err.Error()
-	case res.ExitCode != 0:
-		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, fmt.Sprintf("exit code %d", res.ExitCode)
 	case r.failure != "":
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, r.failure
+	case res.ExitCode != 0:
+		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_FAILED, fmt.Sprintf("exit code %d", res.ExitCode)
 	case t.GetAccess() == planv1.TaskAccess_TASK_ACCESS_ASKING:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_WAITING, "waiting for the answer to its edit question"
 	case r.light && r.refused != "" && questionWorker(t) && !h.questionDid(t):
@@ -1793,13 +2234,28 @@ func (h *Harness) end(r *run, res Result) {
 	default:
 		t.Status, t.Error = planv1.TaskStatus_TASK_STATUS_DONE, ""
 	}
+	// A worker that asked a blocking question ends its turn, not its task: the task waits on the question, its slot
+	// free; answered while it ran without the decision reaching it, the task continues with it at once.
+	var decision *planv1.Question
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE && !r.light && !r.watcher {
+		if q := h.waitOn(context.Background(), t); q != nil {
+			waitOnQuestion(t, q)
+			if q.GetAnswer() != nil {
+				decision = q
+			}
+		}
+	}
 	if !r.watcher {
 		t.Refused = r.refusals
 	}
 	integrate, left := h.pendIntegration(t)
+	if dispatch.ChangesNoCode(t) {
+		h.unpausePreempted(t) // The work task it paused for its slot resumes first.
+	}
 	why := t.GetError()
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		h.limited(r, t)
+		h.networkCut(r, t, streamIdleEnd)
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		if cause, isEnv := classifyFailure(r, t, res); isEnv {
@@ -1808,6 +2264,7 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
+		h.clearRateHits(t.GetId())
 		if err := h.replayEnvFailures(context.Background(), t.GetProvider()); err != nil {
 			logx.L().Error("start again the tasks failed for their environment", "task", t.GetCode(), "err", err)
 		}
@@ -1816,6 +2273,9 @@ func (h *Harness) end(r *run, res Result) {
 		}
 	}
 	reason := runReason(t, r)
+	if silentWhy != "" && t.GetContinuing() {
+		reason = runSilent
+	}
 	if len(t.Runs) > 0 {
 		last := t.Runs[len(t.Runs)-1]
 		if last.EndTime == nil {
@@ -1825,23 +2285,49 @@ func (h *Harness) end(r *run, res Result) {
 	}
 	text := short(t.GetStatus())
 	switch {
+	case t.GetWaitQuestionId() != "" && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_WAITING:
+		text = "waiting: " + t.GetError() + "; its slot is free, and the answer continues it with the decision"
 	case preemptedWhy != "":
 		text = "resuming: " + preemptedWhy
 	case shelved:
 		text = "resuming: " + whyWishPaused
+	case silentWhy != "":
+		text = silentText(t, silentWhy)
 	case lamplighterEnd && t.GetContinuing():
 		text = "resuming: " + lamplighterReason + "; continued"
 	case streamIdleEnd && t.GetContinuing():
 		text = "resuming: " + streamIdleReason + "; continued"
+	case ifritOut(t):
+		text = t.GetError() // It says out, and why.
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_PENDING:
 		text = "waiting: " + whyStoppedFirst
-	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING:
+	case networkWait(t):
+		text = "resuming: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it once the network is back"
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil:
 		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
 	case t.GetError() != "":
 		text += ": " + t.GetError()
 	}
 	if (lamplighterEnd || streamIdleEnd) && t.GetContinuing() {
-		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: agyContinuePrompt})
+		h.mu.Lock()
+		prompt := cmp.Or(r.wakePrompt, agyContinuePrompt)
+		h.mu.Unlock()
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: prompt})
+	}
+	if silentWhy != "" && t.GetContinuing() {
+		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT, Text: finishPrompt})
+	}
+	if nextProvider != planv1.Provider_PROVIDER_UNSPECIFIED {
+		currentProvider := t.GetProvider()
+		if currentProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+			currentProvider = planv1.Provider_PROVIDER_CLAUDE
+		}
+		if nextProvider != currentProvider {
+			t.PriorProvider = currentProvider
+			t.SessionId = ""
+		}
+		t.Provider = nextProvider
+		t.Model = nextModel
 	}
 	h.write(r, actorHarness, methodEnd, t, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
 	if integrate {
@@ -1850,23 +2336,31 @@ func (h *Harness) end(r *run, res Result) {
 			text = "integration: waiting: " + t.GetIntegration().GetReason()
 		}
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: text})
-		h.kickIntegrate()
 	}
-	if left != "" {
+	if left != "" && left != nothingToMerge { // Work that brings nothing: its end's line says it (tellDone).
 		h.write(r, actorHarness, methodEvent, nil, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "integration: none: " + left})
 	}
 	switch {
 	case watching(t) && t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED:
 		h.tellWatcherFailed(t)
-	case !r.light && !watching(t):
+	case ifritOut(t):
+		h.tellOut(t)
+	case silentWhy != "" && t.GetStatus() != planv1.TaskStatus_TASK_STATUS_FAILED:
+		if !tellsDone(t) || !toldDoneAtEnd(t, integrate) { // Else its done line says it.
+			h.tellSilent(t, silentWhy, integrate) // Its one line: done, or continued once.
+		}
+		h.babysitOpened(proto.CloneOf(t))
+	case iterates(t) && !relaunched:
+		h.mockupEnded(t) // Its one line, as an investigator's: the version it put, the question it revised or not.
+	case !r.light && !watching(t) && !relaunched: // Relaunched, its lead or the developer asked for it.
 		h.workerEnded(t)
 		h.babysitOpened(proto.CloneOf(t))
 	}
-	if tellsDone(t) && toldDoneAtEnd(t, integrate) {
-		h.tellDone(context.Background(), t, notIntegrated(left))
+	if tellsDone(t) && toldDoneAtEnd(t, integrate) && !iterates(t) {
+		h.tellDone(context.Background(), t, notIntegrated(left), silentWhy)
 	}
 	if t.GetCorrection() != nil || t.GetReview() != nil {
-		h.kickIntegrate()
+		h.unpausePreempted(t) // The work task it paused for its slot resumes once that slot is free.
 	}
 	if r.light {
 		h.questionEnded(t) // The lead learns what it did, before the task's watchers let go, as a watcher's lead does.
@@ -1874,6 +2368,12 @@ func (h *Harness) end(r *run, res Result) {
 	// The links to the summoned skills go with the worker; a worker started again makes them anew.
 	_ = os.RemoveAll(skillsDir(h.home, r.id))
 	h.forget(r)
+	if integrate || t.GetCorrection() != nil || t.GetReview() != nil {
+		h.kickIntegrate()
+	}
+	if decision != nil {
+		h.decideLater(t, decision)
+	}
 }
 
 // classifyFailure determines whether a worker's failure was caused by the provider's environment or by its work.
@@ -1925,12 +2425,21 @@ func (h *Harness) workerEnded(t *planv1.Task) {
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED ||
 		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && (t.GetResumeAfter() != nil || t.GetContinuing())) ||
 		(t.GetStatus() == planv1.TaskStatus_TASK_STATUS_STOPPED && !strings.HasPrefix(t.GetError(), "stopped on request")) {
+		if h.flaggedAtEnd(t) {
+			return // The scheduler's next pass flags it, in one line with the command that relaunches it (health.go).
+		}
 		h.tellWorkerFailed(t)
 	}
 }
 
 // forget removes the run once its task is written for good, and ends its watchers' live feed.
 func (h *Harness) forget(r *run) {
+	h.forgetWithoutWake(r)
+	h.wake() // A slot, a scope or a dependency may have freed.
+}
+
+// forgetWithoutWake removes a run that never started a worker without waking the scheduler again.
+func (h *Harness) forgetWithoutWake(r *run) {
 	h.mu.Lock()
 	delete(h.runs, r.id)
 	h.useMu.Lock()
@@ -1944,7 +2453,6 @@ func (h *Harness) forget(r *run) {
 	h.mu.Unlock()
 	close(r.done)
 	h.wg.Done()
-	h.wake() // A slot, a scope or a dependency may have freed.
 }
 
 // write records an event of the run, and the task when it is not nil, in one transaction journaled under
@@ -1966,27 +2474,43 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 	if req == nil {
 		req = te
 	}
+	h.mu.Lock()
+	nextProvider, nextModel := r.nextProvider, r.nextModel
+	h.mu.Unlock()
 	err := h.store.Tx(context.Background(), func(tx *store.Tx) error {
 		if err := tx.Journal(actor, method, req); err != nil {
 			return err
 		}
 		if task != nil {
+			putTask := task
 			if pt, ok := task.(*planv1.Task); ok {
 				carry(tx, pt)
+				if method != methodEnd && nextProvider != planv1.Provider_PROVIDER_UNSPECIFIED {
+					cp := proto.CloneOf(pt)
+					currentProvider := pt.GetProvider()
+					if currentProvider == planv1.Provider_PROVIDER_UNSPECIFIED {
+						currentProvider = planv1.Provider_PROVIDER_CLAUDE
+					}
+					if nextProvider != currentProvider {
+						cp.PriorProvider = currentProvider
+						cp.SessionId = ""
+					}
+					cp.Provider = nextProvider
+					cp.Model = nextModel
+					putTask = cp
+				}
 			}
-			if err := tx.Put(task); err != nil {
+			if err := tx.Put(putTask); err != nil {
 				return err
 			}
 		}
 		if method == methodStart || (method == methodHold && ev.Text == "resumed") {
-			var partOf, code string
+			part := r.task
 			if pt, ok := task.(*planv1.Task); ok && pt != nil {
-				partOf, code = pt.GetPartOf(), pt.GetCode()
-			} else if r.task != nil {
-				partOf, code = r.task.GetPartOf(), r.task.GetCode()
+				part = pt
 			}
-			if partOf != "" {
-				if err := reopenAzima(context.Background(), tx, partOf, code+" started"); err != nil {
+			if partOf := part.GetPartOf(); partOf != "" {
+				if err := reopenAzima(context.Background(), tx, partOf, part, "started"); err != nil {
 					return err
 				}
 			}
@@ -1996,10 +2520,19 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 	if err != nil {
 		return nil, err
 	}
+	// The scheduler reads a copy: the pump changes its task without a lock (W182).
+	var shown *planv1.Task
+	if pt, ok := task.(*planv1.Task); ok && pt.GetId() == r.id {
+		shown = proto.CloneOf(pt)
+	}
 	h.mu.Lock()
-	r.lastActivity = h.now()
+	r.lastActivity, r.lastKind = h.now(), te.GetKind()
+	r.said(te.GetKind())
 	if r.task != nil {
 		r.task.LastActivityTime = timestamppb.New(r.lastActivity)
+	}
+	if shown != nil {
+		r.shown = shown
 	}
 	h.mu.Unlock()
 	h.publish(r, te)
@@ -2007,14 +2540,26 @@ func (h *Harness) writeAs(r *run, actor, method string, req, task proto.Message,
 }
 
 // carry copies onto the run's copy of its task, before it is written, what is stored on the task from outside the
-// run while it runs: the comments on its diff, the developer's marks, and the babysit Djinn found it does
-// (adoptBabysit).
+// run while it runs: the comments on its diff, the developer's marks, its title and urgent mark (Update, W234), the
+// babysit Djinn found it does (adoptBabysit), and the health the scheduler judged it by.
 func carry(tx *store.Tx, t *planv1.Task) {
 	if stored, err := store.Get[*planv1.Task](context.Background(), tx, t.GetId()); err == nil {
 		t.Comments = stored.GetComments()
 		t.Marks = stored.GetMarks()
+		t.Title = stored.GetTitle()
+		t.Urgent, t.Feedback = stored.GetUrgent(), stored.GetFeedback()
+		// The health the scheduler judged this run by (health.go): one judged before it started is the last run's.
+		t.Health = nil
+		if health := stored.GetHealth(); health != nil && t.GetStartTime() != nil &&
+			!health.GetSince().AsTime().Before(t.GetStartTime().AsTime()) {
+			t.Health = health
+		}
 		if t.GetBabysit().GetUrl() == "" && stored.GetBabysit().GetUrl() != "" {
-			t.Babysit = stored.GetBabysit()
+			done := t.GetBabysit().GetDoneTime()
+			t.Babysit = proto.CloneOf(stored.GetBabysit())
+			if done != nil {
+				t.Babysit.DoneTime = done
+			}
 		}
 	}
 }
@@ -2038,7 +2583,8 @@ func newEvent(taskID string, ev Event) *planv1.TaskEvent {
 // putEvents writes the events in tx, each at the position after its task's last event. It is the one place that
 // numbers a task's events: the store has one connection, so a transaction reads the last position no other writer
 // can take before it commits. A run that counted its events apart gave one position to two events when a gate's note
-// or an integration step was written beside it, and the second was lost (W534).
+// or an integration step was written beside it, and the second was lost (W534). It counts a gate event in its
+// task's gate wait (plan.CountGate).
 func putEvents(ctx context.Context, tx *store.Tx, events ...*planv1.TaskEvent) error {
 	for _, e := range events {
 		seq, err := lastSeq(ctx, tx, e.GetTaskId())
@@ -2046,6 +2592,9 @@ func putEvents(ctx context.Context, tx *store.Tx, events ...*planv1.TaskEvent) e
 			return err
 		}
 		e.Seq = seq + 1
+		if err := plan.CountGate(ctx, tx, e); err != nil {
+			return err
+		}
 		if err := tx.Put(e); err != nil {
 			return err
 		}
@@ -2060,16 +2609,136 @@ func clip(s string) string {
 	return s[:maxText] + fmt.Sprintf("… (%d bytes cut)", len(s)-maxText)
 }
 
-// sum adds what a run spent to what the task had spent before it.
+// sum adds what a run's session spent to the baseline before that session, clamping at zero when a forked session
+// reports less than its parent baseline.
 func sum(base, run *planv1.Usage) *planv1.Usage {
 	return &planv1.Usage{
-		InputTokens:      base.GetInputTokens() + run.GetInputTokens(),
-		OutputTokens:     base.GetOutputTokens() + run.GetOutputTokens(),
-		CacheReadTokens:  base.GetCacheReadTokens() + run.GetCacheReadTokens(),
-		CacheWriteTokens: base.GetCacheWriteTokens() + run.GetCacheWriteTokens(),
-		CostUsd:          base.GetCostUsd() + run.GetCostUsd(),
-		ThinkingTokens:   base.GetThinkingTokens() + run.GetThinkingTokens(),
+		InputTokens:      max(0, base.GetInputTokens()+run.GetInputTokens()),
+		OutputTokens:     max(0, base.GetOutputTokens()+run.GetOutputTokens()),
+		CacheReadTokens:  max(0, base.GetCacheReadTokens()+run.GetCacheReadTokens()),
+		CacheWriteTokens: max(0, base.GetCacheWriteTokens()+run.GetCacheWriteTokens()),
+		CostUsd:          max(0, base.GetCostUsd()+run.GetCostUsd()),
+		ThinkingTokens:   max(0, base.GetThinkingTokens()+run.GetThinkingTokens()),
 	}
+}
+
+func subUsage(a, b *planv1.Usage) *planv1.Usage {
+	if a == nil && b == nil {
+		return nil
+	}
+	return &planv1.Usage{
+		InputTokens:      a.GetInputTokens() - b.GetInputTokens(),
+		OutputTokens:     a.GetOutputTokens() - b.GetOutputTokens(),
+		CacheReadTokens:  a.GetCacheReadTokens() - b.GetCacheReadTokens(),
+		CacheWriteTokens: a.GetCacheWriteTokens() - b.GetCacheWriteTokens(),
+		CostUsd:          a.GetCostUsd() - b.GetCostUsd(),
+		ThinkingTokens:   a.GetThinkingTokens() - b.GetThinkingTokens(),
+	}
+}
+
+// usageBase returns the baseline to add to a worker's cumulative session result event.
+// Each result event from Claude, Antigravity, or Codex reports the cumulative total for the active session.
+// Therefore:
+//   - Starting a new session (spec.Resume == "") carries over t.GetUsage() from any prior session.
+//   - Forking a session (spec.Fork) subtracts the parent session's cumulative baseline.
+//   - Resuming the same session (spec.Resume != "" && !spec.Fork) does not add t.GetUsage() from the same session
+//     a second time; it only keeps prior sessions' usage (when the task switched sessions earlier) or the negative
+//     fork baseline (when the task is still on its forked session).
+func (h *Harness) usageBase(t *planv1.Task, spec Spec) *planv1.Usage {
+	if spec.Resume == "" {
+		return proto.CloneOf(t.GetUsage())
+	}
+	if spec.Fork {
+		return subUsage(t.GetUsage(), h.forkUsage(t, spec.Resume))
+	}
+	last, switched := h.sessionUsage(t.GetId(), spec.Resume)
+	if !switched {
+		if t.GetForkSession() != "" {
+			return subUsage(nil, h.forkUsage(t, t.GetForkSession()))
+		}
+		return nil
+	}
+	if last != nil {
+		return subUsage(t.GetUsage(), last)
+	}
+	return proto.CloneOf(t.GetUsage())
+}
+
+// forkUsage returns the cumulative session usage of the parent session that t forked from.
+func (h *Harness) forkUsage(t *planv1.Task, sessionID string) *planv1.Usage {
+	if h.store == nil {
+		return nil
+	}
+	if t.GetForkOf() == forkLead && sessionID != "" {
+		if batches, err := store.List[*planv1.LeadBatch](h.ctx, h.store, nil); err == nil {
+			var found *planv1.Usage
+			for _, b := range batches {
+				if b.GetSessionId() == sessionID && b.GetUsage() != nil {
+					found = proto.CloneOf(b.GetUsage())
+				}
+			}
+			if found != nil {
+				return found
+			}
+		}
+	}
+	var where store.Where
+	if t.GetWishId() != "" {
+		where = store.Where{"wish_id": t.GetWishId()}
+	}
+	tasks, err := store.List[*planv1.Task](h.ctx, h.store, where)
+	if err != nil {
+		return nil
+	}
+	for _, other := range tasks {
+		if other.GetId() == t.GetId() {
+			continue
+		}
+		if (t.GetForkOf() != "" && other.GetCode() == t.GetForkOf()) || (sessionID != "" && other.GetSessionId() == sessionID) {
+			if u, _ := h.sessionUsage(other.GetId(), sessionID); u != nil {
+				return u
+			}
+			if other.GetUsage() != nil {
+				return proto.CloneOf(other.GetUsage())
+			}
+		}
+	}
+	return nil
+}
+
+// sessionUsage returns the latest raw USAGE event emitted by taskID in its current session, and whether taskID
+// switched from an earlier session to the current one.
+func (h *Harness) sessionUsage(taskID, sessionID string) (last *planv1.Usage, switched bool) {
+	if h.store == nil || taskID == "" {
+		return nil, false
+	}
+	_ = store.Latest(h.ctx, h.store, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
+		switch e.GetKind() {
+		case planv1.TaskEventKind_TASK_EVENT_KIND_USAGE:
+			if last == nil && e.GetUsage() != nil {
+				last = proto.CloneOf(e.GetUsage())
+			}
+		case planv1.TaskEventKind_TASK_EVENT_KIND_STATUS:
+			text := e.GetText()
+			if strings.Contains(text, "from its first prompt") {
+				switched = true
+				return false
+			}
+			if sessionID != "" && strings.HasPrefix(text, "session ") {
+				sid := strings.TrimPrefix(text, "session ")
+				if i := strings.IndexByte(sid, ','); i >= 0 {
+					sid = sid[:i]
+				}
+				sid = strings.TrimSpace(sid)
+				if sid != "" && sid != sessionID {
+					switched = true
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return last, switched
 }
 
 // lastSeq is the position of the task's last event. A task's events are written in the order of their positions, each
@@ -2136,7 +2805,7 @@ func (h *Harness) stopPlanned(ctx context.Context, procedure string, req *planv1
 	if dispatch.Resuming(task) {
 		why = "stopped on request while it waited to resume"
 	}
-	task.Status, task.Error, task.WaitReason, task.MachineWait, task.ResumeAfter, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", false,
+	task.Status, task.Error, task.WaitReason, task.MachineWait, task.RoomWait, task.Hold, task.ResumeAfter, task.EndTime = planv1.TaskStatus_TASK_STATUS_STOPPED, why, "", false, false, 0,
 		nil, timestamppb.Now()
 	h.writeAlone(ctx, actorLocal, procedure, req, task.GetId(), task, Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, Text: "stopped: " + task.GetError()})
 	h.sched.Unlock()
@@ -2229,13 +2898,14 @@ func (h *Harness) hold(ctx context.Context, procedure string, req proto.Message,
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
 	}
 	r.paused = pause
-	byHarness := procedure == methodNotch || procedure == methodPreempt
+	byHarness := procedure == methodNotch || procedure == methodPreempt || procedure == methodNetwork
 	if pause {
 		r.notchPaused = (procedure == methodNotch)
 		r.slotPaused = (procedure == methodPreempt)
+		r.netPaused = (procedure == methodNetwork)
 	} else {
 		// Resumed by hand, it takes a slot whatever the others: the load bar shows it (Forced).
-		r.notchPaused, r.slotPaused, r.forced = false, false, !byHarness
+		r.notchPaused, r.slotPaused, r.netPaused, r.forced = false, false, false, !byHarness
 	}
 	if len(why) > 0 {
 		r.holdWhy = why[0]
@@ -2336,6 +3006,42 @@ func (h *Harness) Note(taskID string, ev Event) {
 	h.writeAlone(context.Background(), actorHarness, methodEvent, nil, taskID, nil, ev)
 }
 
+// lastEventsFrom is the position after which the task's last n stored events start: 0 when it has n or fewer.
+func (h *Harness) lastEventsFrom(ctx context.Context, taskID string, n int) (int64, error) {
+	var from int64
+	seen := 0
+	err := store.Latest(ctx, h.store, store.Where{"task_id": taskID}, func(e *planv1.TaskEvent) bool {
+		seen++
+		if seen > n {
+			from = e.GetSeq()
+			return false
+		}
+		return true
+	})
+	if err != nil {
+		return 0, plan.Status(err)
+	}
+	return from, nil
+}
+
+// Stored sends the task's events stored after the position after, then returns: it follows no task, running or not.
+func (h *Harness) Stored(ctx context.Context, taskID string, after int64, send func(*planv1.TaskEvent) error) error {
+	if _, err := store.Get[*planv1.Task](ctx, h.store, taskID); err != nil {
+		return plan.Status(err)
+	}
+	events, err := store.ListAfter[*planv1.TaskEvent](ctx, h.store, store.Where{"task_id": taskID},
+		store.After{Field: "seq", From: after})
+	if err != nil {
+		return plan.Status(err)
+	}
+	for _, ev := range events {
+		if err := send(ev); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Watch sends the task's events after the position after, as they come, until the task has ended and all its
 // events are sent, or ctx ends.
 func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send func(*planv1.TaskEvent) error) error {
@@ -2350,8 +3056,17 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 		return send(ev)
 	}
 	for {
-		// Subscribe, then read what is stored: an event written in between comes both ways, and only once out.
+		// Read the task and subscribe before listing its stored events: an event written while the worker runs comes
+		// on ch and from the store, emitted once; a task seen ended here had already written its last event before
+		// its run was forgotten.
 		changed := h.generation()
+		task, err := store.Get[*planv1.Task](ctx, h.store, taskID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil //nolint:nilerr // Watching ends with its context: not an error.
+			}
+			return plan.Status(err)
+		}
 		ch := h.subscribe(taskID)
 		// Those past after only: a watcher let go, or following a task that starts, reads again what it lacks, not
 		// the thousands of events of a long task (W504).
@@ -2368,9 +3083,8 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 			}
 		}
 		if ch == nil {
-			task, err := store.Get[*planv1.Task](ctx, h.store, taskID)
-			if s := task.GetStatus(); err == nil && (s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED) {
-				// Its worker started since it was subscribed to: its run is there, follow it.
+			if s := task.GetStatus(); s == planv1.TaskStatus_TASK_STATUS_RUNNING || s == planv1.TaskStatus_TASK_STATUS_PAUSED {
+				// Its worker ended since the task was read, or is starting: read the store again.
 				select {
 				case <-changed:
 				case <-time.After(10 * time.Millisecond):
@@ -2379,11 +3093,8 @@ func (h *Harness) Watch(ctx context.Context, taskID string, after int64, send fu
 				}
 				continue
 			}
-			if err != nil || !planned(task) {
-				if ctx.Err() != nil {
-					return nil //nolint:nilerr // Watching ends with its context: not an error.
-				}
-				return plan.Status(err) // The task has ended: the store holds all its events.
+			if !planned(task) {
+				return nil // The task had ended before its events were listed: the store held them all.
 			}
 			// A planned task: follow it until its worker starts, or it ends without one.
 			select {
@@ -2453,16 +3164,13 @@ func (h *Harness) publish(r *run, ev *planv1.TaskEvent) {
 	}
 }
 
-// Clean removes the worktree of a task that has ended. Its branch stays.
+// Clean removes the worktree and scratch folder of a task that has ended. Its branch stays.
 func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskServiceCleanRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
-	task, err := store.Get[*planv1.Task](ctx, h.store, id)
+	task, running, err := h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
-	h.mu.Lock()
-	running := h.runs[id] != nil
-	h.mu.Unlock()
 	switch {
 	case running:
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s is running: stop it first", task.GetCode()))
@@ -2475,6 +3183,10 @@ func (h *Harness) Clean(ctx context.Context, procedure string, req *planv1.TaskS
 	}
 	if err := removeWorktree(ctx, project.GetDirectory(), task.GetWorktree(), req.GetForce()); err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("task %s: %w", task.GetCode(), err))
+	}
+	if task.GetScratch() != "" {
+		_ = os.RemoveAll(task.GetScratch())
+		task.Scratch = ""
 	}
 	text := "worktree removed"
 	if task.GetBranch() != "" {
@@ -2516,36 +3228,36 @@ func DefaultModel(p planv1.Provider) string {
 	}
 }
 
-func isClaudeModel(m string) bool {
-	m = strings.ToLower(strings.TrimSpace(m))
-	return m == "claude" || strings.HasPrefix(m, "claude-") ||
-		strings.HasPrefix(m, "claude/") ||
-		strings.HasPrefix(m, "anthropic/") ||
-		strings.Contains(m, ".claude-") ||
-		m == "sonnet" || strings.HasPrefix(m, "sonnet-") || strings.HasPrefix(m, "sonnet/") ||
-		m == "opus" || strings.HasPrefix(m, "opus-") || strings.HasPrefix(m, "opus/") ||
-		m == "haiku" || strings.HasPrefix(m, "haiku-") || strings.HasPrefix(m, "haiku/")
+// workerKindOf returns the Summoning Circle worker kind for a task being spawned or inspected.
+func workerKindOf(req *planv1.TaskServiceSpawnRequest, t *planv1.Task) planv1.WorkerKind {
+	if t.GetRole() == planv1.TaskRole_TASK_ROLE_INVESTIGATOR {
+		return planv1.WorkerKind_WORKER_KIND_QUESTION
+	}
+	if t.GetReview() != nil {
+		return planv1.WorkerKind_WORKER_KIND_REVIEW
+	}
+	if t.GetCorrection() != nil {
+		return planv1.WorkerKind_WORKER_KIND_CORRECTION
+	}
+	k := t.GetKind()
+	if req != nil && k == planv1.TaskKind_TASK_KIND_UNSPECIFIED {
+		k = req.GetKind()
+	}
+	switch k {
+	case planv1.TaskKind_TASK_KIND_INVESTIGATION:
+		return planv1.WorkerKind_WORKER_KIND_INVESTIGATION
+	case planv1.TaskKind_TASK_KIND_MOCKUP:
+		return planv1.WorkerKind_WORKER_KIND_MOCKUP
+	case planv1.TaskKind_TASK_KIND_IFRIT:
+		return planv1.WorkerKind_WORKER_KIND_IFRIT
+	default:
+		return planv1.WorkerKind_WORKER_KIND_WORK
+	}
 }
 
-func isAntigravityModel(m string) bool {
-	m = strings.ToLower(strings.TrimSpace(m))
-	return m == "gemini" || strings.HasPrefix(m, "gemini-") ||
-		strings.HasPrefix(m, "gemini/") ||
-		strings.HasPrefix(m, "google/") ||
-		strings.Contains(m, ".gemini-")
-}
-
-func isCodexModel(m string) bool {
-	m = strings.ToLower(strings.TrimSpace(m))
-	return strings.HasPrefix(m, "gpt-") ||
-		strings.HasPrefix(m, "openai/") ||
-		strings.Contains(m, ".gpt-") ||
-		strings.HasSuffix(m, "-codex") ||
-		strings.HasPrefix(m, "code-") ||
-		m == "o1" || strings.HasPrefix(m, "o1-") || strings.HasPrefix(m, "o1.") || strings.HasPrefix(m, "o1/") ||
-		m == "o3" || strings.HasPrefix(m, "o3-") || strings.HasPrefix(m, "o3.") || strings.HasPrefix(m, "o3/") ||
-		m == "o4" || strings.HasPrefix(m, "o4-") || strings.HasPrefix(m, "o4.") || strings.HasPrefix(m, "o4/")
-}
+func isClaudeModel(m string) bool      { return plan.IsClaudeModel(m) }
+func isAntigravityModel(m string) bool { return plan.IsAntigravityModel(m) }
+func isCodexModel(m string) bool       { return plan.IsCodexModel(m) }
 
 // foreignModel reports whether model is a model identifier belonging to a provider other than p.
 // Unknown or custom models are not considered foreign.

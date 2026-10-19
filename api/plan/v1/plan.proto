@@ -42,10 +42,173 @@ message Project {
   // How each branch Djinn pushes in the project stands against its remote, computed on every read: the integration
   // branch of each active or paused wish there, then the own branch of each of their azimas, once the branch exists.
   repeated ProjectSync syncs = 12;
+  // How many things of its configuration wait for you to fix, computed on every read: the notices of kind to fix
+  // that djinn project show lists.
+  int32 to_fix = 13;
+  // The first thing to fix in one sentence, the text of its notice, computed on every read; empty when nothing waits.
+  // The inbox's line of the project says it from its first paint: a sentence that came later would grow the line,
+  // and move what is read below it.
+  string first_fix = 14;
 
   // The one sync of the integration branch of a single wish, which syncs replaced.
   reserved 9;
   reserved "sync";
+}
+
+// ProjectNotice is one thing Djinn finds in a project's configuration as this machine reads it, computed on every
+// read and never stored: a thing to fix, that waits for you, or an information. It says what it is in one sentence,
+// and the one action that settles it.
+message ProjectNotice {
+  // To fix, or information.
+  ProjectNoticeKind kind = 1;
+  // The part of the configuration it comes from.
+  ProjectNoticeTopic topic = 2;
+  // What it names there: a file (.agents/settings.txtpb), a skill, a source (<project>/<skill>), a branch
+  // (origin/main).
+  string subject = 3;
+  // What it is, and what it changes, in one sentence.
+  string text = 4;
+  // The error as Djinn read it, the line at fault and all; empty when the sentence says it all.
+  string detail = 5;
+  // The one action that settles it; unspecified for an information that needs none.
+  ProjectNoticeAction action = 6;
+  // The file the action changes, absolute; empty when it changes none.
+  string file = 7;
+  // The command line that does the action, when one does: djinn inbox plug djinn/babysit-pr. Empty otherwise.
+  string command = 8;
+}
+
+// ProjectNoticeKind says whether a project notice waits for you.
+enum ProjectNoticeKind {
+  // Not set.
+  PROJECT_NOTICE_KIND_UNSPECIFIED = 0;
+  // A decision or a problem that waits for you: Project.to_fix counts them.
+  PROJECT_NOTICE_KIND_TO_FIX = 1;
+  // Worth knowing; nothing waits for you.
+  PROJECT_NOTICE_KIND_INFORMATION = 2;
+}
+
+// ProjectNoticeTopic is the part of a project's configuration a notice comes from.
+enum ProjectNoticeTopic {
+  // Not set.
+  PROJECT_NOTICE_TOPIC_UNSPECIFIED = 0;
+  // A settings file: the team's .agents/settings.txtpb, or your own in Djinn's data folder.
+  PROJECT_NOTICE_TOPIC_SETTINGS = 1;
+  // The project's .agents/permissions.txtpb.
+  PROJECT_NOTICE_TOPIC_PERMISSIONS = 2;
+  // A skill the project holds or summons: its SKILL.md, its wish template, inbox source and babysit.
+  PROJECT_NOTICE_TOPIC_SKILL = 3;
+  // The setup command, by its last run.
+  PROJECT_NOTICE_TOPIC_SETUP = 4;
+  // The reference branch (main_branch), and the branch your copy has checked out.
+  PROJECT_NOTICE_TOPIC_BRANCH = 5;
+  // An inbox source of the project's skills, as this machine decided it.
+  PROJECT_NOTICE_TOPIC_SOURCE = 6;
+  // A change of the configuration on the reference branch, from the journal of changes (ConfigChange).
+  PROJECT_NOTICE_TOPIC_CHANGE = 7;
+}
+
+// ProjectNoticeAction is the one action that settles a project notice.
+enum ProjectNoticeAction {
+  // None: an information to read.
+  PROJECT_NOTICE_ACTION_UNSPECIFIED = 0;
+  // Correct the file it names: by hand, or by a worker.
+  PROJECT_NOTICE_ACTION_FIX_FILE = 1;
+  // Decide on this machine whether the source runs: plug it in (djinn inbox plug), or unplug it to say no.
+  PROJECT_NOTICE_ACTION_PLUG_SOURCE = 2;
+  // Unplug the source: it runs nothing.
+  PROJECT_NOTICE_ACTION_UNPLUG_SOURCE = 3;
+  // Unsummon the skill: it is no longer found.
+  PROJECT_NOTICE_ACTION_UNSUMMON_SKILL = 4;
+  // Name the reference branch, a branch the repository holds, with main_branch in your own settings file.
+  PROJECT_NOTICE_ACTION_NAME_BRANCH = 5;
+  // Read a change of the configuration on the reference branch, already applied, and mark it seen (djinn project
+  // acknowledge).
+  PROJECT_NOTICE_ACTION_ACKNOWLEDGE_CHANGE = 6;
+}
+
+// ProjectReference is a project's reference branch as Djinn finds it on this machine: the branch it keeps wishes up
+// to date with and pull requests aim at, the commit it points at, where its name comes from, and the branch your copy
+// has checked out.
+message ProjectReference {
+  // The branch: main.
+  string branch = 1;
+  // The ref Djinn merges it from, short: origin/main, or main in a repository without a remote.
+  string ref = 2;
+  // The commit that ref points at, in full; empty when the repository does not hold it (a notice says so).
+  string commit = 3;
+  // Where its name comes from: Djinn's default (the remote's default branch, else main, else master), or the
+  // main_branch setting of the team's file or of yours.
+  SettingSource source = 4;
+  // The branch your copy has checked out; empty when it is detached.
+  string checked_out = 5;
+}
+
+// ConfigWatch is how Djinn watches a project's configuration on its reference branch, on this machine: every 5
+// minutes, and after each push of Djinn, it fetches that branch alone, then compares the digest of the .agents and
+// .claude/skills trees with the one of its last look. Kept in Djinn's data, never in the repository.
+message ConfigWatch {
+  option (djinn.v1.unique) = {fields: ["project_id"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project.
+  string project_id = 2;
+  // The ref Djinn read the configuration from, short: origin/main.
+  string ref = 3;
+  // The commit that ref pointed at, in full.
+  string commit = 4;
+  // The digest of the configuration's trees in that commit: the name of its folder in Djinn's cache.
+  string digest = 5;
+  // When Djinn first found that commit.
+  google.protobuf.Timestamp find_time = 6;
+  // Why the last fetch failed, as git said it; empty when it went well. Djinn then compares what the copy holds.
+  string fetch_error = 7;
+}
+
+// ConfigChange is one entry of a project's journal of configuration changes: a commit of its reference branch that
+// changed the .agents or .claude/skills trees, told in sentences. Djinn writes it when its watch finds the digest of
+// those trees changed (ConfigWatch); the change is already applied, since Djinn reads the configuration on that
+// branch. Kept in Djinn's data, on this machine.
+message ConfigChange {
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project.
+  string project_id = 2;
+  // The ref it came on, short: origin/main.
+  string ref = 3;
+  // The commit, in full; the newest one when the entry tells several.
+  string commit = 4;
+  // Its author, and its first line.
+  string author = 5;
+  string title = 6;
+  // When it was committed.
+  google.protobuf.Timestamp commit_time = 7;
+  // When Djinn found it.
+  google.protobuf.Timestamp find_time = 8;
+  // How many commits the entry tells: 1, more when Djinn told a long run of them at once, or when the reference
+  // branch itself changed.
+  int32 commits = 9;
+  // What changed, a sentence each.
+  repeated ConfigChangeLine lines = 10;
+  // Found by the first look at the project: told as history, nothing waits for you.
+  bool first_look = 11;
+  // When you marked it seen; unset while a line asks for your look and you have not.
+  google.protobuf.Timestamp seen_time = 12;
+}
+
+// ConfigChangeLine is one thing a configuration change did, in one sentence.
+message ConfigChangeLine {
+  // The part of the configuration it changed: settings, permissions, a skill, the reference branch.
+  ProjectNoticeTopic topic = 1;
+  // What it names there: a check, a skill, a source (<project>/<skill>), a branch.
+  string subject = 2;
+  // What changed, in one sentence.
+  string text = 3;
+  // A decision comes back to you: the change gives the workers more (a permission), changes what a skill makes or
+  // runs for Djinn (a wish template, a babysit, the command of a source plugged in here). The project's gear lights
+  // until you mark the change seen. A new source asks through its own notice, until you plug it in or say no.
+  bool asks = 4;
 }
 
 // ProjectSync says how a branch Djinn pushes stands against its remote target: a wish's integration branch, or an
@@ -74,6 +237,9 @@ message ProjectSync {
   PushRun push = 11;
   // The correction worker Djinn started to make the push checks pass, by code, while the push is held.
   string correction = 12;
+  // The azima is done, or awaits its proof, and every commit of its branch is in the remote's main, or in the branch it
+  // lands in: its work landed there, nothing waits for a push. ahead never counts the commits main holds already.
+  bool landed = 13;
 }
 
 // CheckRun is the last run of a project's check (ProjectCheck), or of its setup command.
@@ -95,12 +261,16 @@ message CheckRun {
   bool passed = 8;
   // Its exit code; -1 when it could not run.
   int32 exit_code = 9;
-  // When it failed, why, and the end of its output.
+  // When it failed, why, and the end of its output (the whole of it in output_file).
   string reason = 10;
   string output = 11;
   // When it ended, and how long it took, in milliseconds.
   google.protobuf.Timestamp end_time = 12;
   int64 duration_ms = 13;
+  // When it failed, the file under Djinn's data folder that keeps its whole output (checks/ of its project), and the
+  // tests or specs its output names as failing.
+  string output_file = 14;
+  repeated string failed = 15;
 }
 
 // A skill a project summons from another project. It stays in its source, and the summoning project follows it:
@@ -195,12 +365,13 @@ message ProjectSettings {
   // once in each integration worktree, before the first command there, and again when its lock files change. Its
   // words are split on spaces, without a shell.
   optional string setup = 13 [(buf.validate.field).string.max_len = 500];
-  // The commands Djinn runs on the project's work, each through a gate of its name, before it commits a task's work
+  // The commands Djinn runs on the project's work, each through a gate of its name, before it merges a task's work
   // into its wish's integration branch, before it pushes that branch, or both. Djinn integrates the project's finished
   // work only once one is set. A file that sets some sets them all; names ignore case and are unique.
   repeated ProjectCheck checks = 14 [(buf.validate.field).repeated.max_items = 20];
   // The project's main branch, which Djinn merges into each wish's integration branch to keep it up with it: "main".
-  // Not set: the default branch of the remote (its HEAD), else main, else master.
+  // Not set: the default branch of the remote (its HEAD), else main, else master. djinn project set-branch, or the
+  // selector of the project's panel, writes it in your own file.
   optional string main_branch = 15 [
     (buf.validate.field).string.max_len = 200,
     (buf.validate.field).string.pattern = "^[A-Za-z0-9._/-]*$"
@@ -273,6 +444,19 @@ message ProjectSettings {
   // priority, once no gate runs and the machine is not under pressure; the restart is left to the person's click.
   // Other branches' builds are only offered. Not set: on.
   optional bool install_builds = 28;
+  // Commands an ifrit's serve may run in the project (djinn serve run), or the start of each on a word boundary,
+  // besides those .agents/permissions.txtpb lists: its command and its stop command. A developer's own allowance, read
+  // from their own file only (djinn project allow --serve), like watch_commands; the project's denied_commands still
+  // win. Not set: none.
+  repeated string serve_commands = 29 [(buf.validate.field).repeated = {
+    max_items: 50
+    items: {
+      string: {
+        min_len: 1
+        max_len: 500
+      }
+    }
+  }];
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.
@@ -421,9 +605,15 @@ message Wish {
   // Push strategy for the wish: wish (one integration branch per wish) or azima (one branch per azima).
   // Unset: takes the project's default.
   PushStrategy push_strategy = 20;
-  // Whether the developer explicitly marked this wish as the principal wish. When unset, the active wish with the
-  // lowest rank (rank 1) is the principal wish.
-  bool principal = 21;
+  reserved 21;
+  reserved "principal";
+  // Place in the list of the paused wishes, or of the granted ones, from 1 for the first: you order each by hand
+  // (djinn wish reorder). A wish paused or granted comes first in its list; one set aside before Djinn recorded places
+  // has none, and comes after the others, the oldest first. 0 for an active wish.
+  int32 place = 22;
+  // Its icon in the window's menu: a name of the bank of wish icons (djinn wish icons), which the Djinn chooses for
+  // its subject (djinn wish icon). Empty until then: the window draws the wish's mark, grey.
+  string icon = 23;
 }
 
 // PushMode is how Djinn pushes a wish's integration branch to its remote once a push is due.
@@ -474,7 +664,8 @@ message WishPush {
   bool approved = 5;
   // Why the project's push checks hold the push, at the branch's tip then; empty once they pass.
   string held = 6;
-  // How many times in a row they held it: at the second, or once no work is left to commit, Djinn asks.
+  // How many times in a row they ran red and held it. Push checks never run twice on the same tree: due again on it,
+  // or once no work is left to commit, Djinn starts a correction.
   int32 held_runs = 7;
   // The person said to push without the push checks: the next push skips them, once.
   bool unchecked = 8;
@@ -488,6 +679,9 @@ message WishPush {
   IntegrationFailure failure = 12;
   // The last push Djinn ran in this project, or runs now: its push checks, then git push.
   PushRun run = 13;
+  // The branches whose sync the developer forgot (djinn project forget-sync), each with its tip then: Project.syncs
+  // leaves a branch out while its tip stays there, and shows it again once it moves.
+  map<string, string> forgotten = 14;
 }
 
 // PushRun is a push Djinn runs, or ran, of one branch: what the window shows on its sync line, the same however it
@@ -662,6 +856,13 @@ message LeadEvent {
   string ack_session_id = 7;
   // When it was acknowledged.
   google.protobuf.Timestamp ack_time = 8;
+  // What the digest prints in full under its line, when one line cannot carry it: the task an answer's option planned,
+  // its dependencies' states, and how to launch it; what a review worker committed and left, and why.
+  string detail = 9;
+  // What the event's line cuts and the lead must read whole: the final note of the task that ended, the note of the
+  // answer. A digest prints it under its line, cut past a few screens with the command that prints it whole (djinn
+  // lead event); a driven lead's batch carries it whole.
+  string note = 10;
 }
 
 // LeadEventKind says what a lead event is about.
@@ -690,6 +891,164 @@ enum LeadEventKind {
   // The developer approved a decision the lead or a worker took: a question they answered. An approval that
   // answers an open question is an answer; one of the developer's own decisions changes nothing for the lead.
   LEAD_EVENT_KIND_APPROVED = 10;
+  // An ifrit's turn ended: the first line of its answer, which the window shows too.
+  LEAD_EVENT_KIND_REPLIED = 11;
+  // An ifrit went out, and why: the developer left Djinn alone, or Djinn restarted. A message lights it again.
+  LEAD_EVENT_KIND_OUT = 12;
+  // The developer wrote to the Djinn (Write to the Djinn, djinn lead tell) while Djinn drives the lead: their words
+  // whole, in the next batch like any event.
+  LEAD_EVENT_KIND_MESSAGE = 13;
+  // The developer sent their comments on a tilasm, all at once, with their choice: launch its work, or iterate on it.
+  // Its code is the tilasm's; its line, how many comments and the command that reads them.
+  LEAD_EVENT_KIND_COMMENTS = 14;
+  // An asleep question woke (Question.sleep): its conditions held, or the developer woke it. The lead checks that its
+  // facts still hold (costs, the state of tasks and requests) and revises it if they changed.
+  LEAD_EVENT_KIND_WOKE = 15;
+  // A worker's health changed (W188): a task flagged to relaunch (stalled, or retriable after a failure), with the
+  // command that relaunches it; or the tasks Djinn resumes by itself because their usage limit lifted.
+  LEAD_EVENT_KIND_HEALTH = 16;
+  // An azima's work is all in its project's main branch (Azima.merged turned on), once; its line says when every azima
+  // of the wish is, so that the lead proposes to grant the wish.
+  LEAD_EVENT_KIND_LANDED = 17;
+  // A worker asked a blocking question (djinn question ask --wait): its task waits for the answer once its turn ends.
+  // The lead answers it only from a decision the wish already took or from its plan, or revises it to enrich it; a new
+  // choice is the developer's.
+  LEAD_EVENT_KIND_ASKED = 18;
+  // The network went down, or came back (W285): one line each, of no wish. Down, Djinn starts no worker, pauses the
+  // running ones between their turns, holds its pushes, fetches and forge calls, and sends the workers the outage cut
+  // back to resume; back, it resumes them one per pass, repairs first, and runs again once the push checks that failed
+  // on the network.
+  LEAD_EVENT_KIND_NETWORK = 19;
+  // The disk is almost full, or space came back (W303): one line each, of no wish. Under the threshold (djinn up
+  // --disk-full-gb), the line names the free space, the detail the biggest folders Djinn knows; the push checks wait
+  // instead of failing, and run once space comes back.
+  LEAD_EVENT_KIND_DISK = 20;
+}
+
+// LeadBatch is one turn of the lead Djinn drives (decision Q31): a fresh headless session that took a batch of the
+// lead's events, acted on them with djinn's commands, and ended. The batches are the lead's journal: who led (the
+// agent, its model, its session), on what, what it ran and what it said at the end of its turn, and what it cost.
+// Every batch's prompt carries the latest entries of the wishes it is about, so that no lead depends on what another
+// one remembers.
+message LeadBatch {
+  // Identifier, a UUIDv7: the batches go in its order.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // When its session started, and ended; unset while it runs.
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+  // The agent and the model that led it, as the agent said.
+  Provider provider = 4;
+  string model = 5;
+  // The session, new for each batch: claude --resume takes it to read what it did.
+  string session_id = 6;
+  // 1 for its first session, 2 for the one Djinn starts again once after a failure.
+  int32 attempt = 7;
+  // The events it took, by identifier, and each in a line as the digest writes it.
+  repeated string event_ids = 8;
+  repeated string events = 9;
+  // The wishes its events are about.
+  repeated string wish_ids = 10;
+  // Where it stands.
+  LeadBatchState state = 11;
+  // Why it failed, when it did.
+  string error = 12;
+  // The commands the lead ran, in order, a line each.
+  repeated string commands = 13;
+  // The line that ended its turn, for the journal and the next leads.
+  string note = 14;
+  // What it spent.
+  Usage usage = 15;
+  // How many characters its prompt held: the rules aside, its events, briefs and journal.
+  int32 prompt_chars = 16;
+  // The account it ran on, by its name (Account.name); empty for the agent's own sign-in.
+  string account = 17;
+}
+
+// Account is a sign-in of an agent on this machine beside its default one: a folder of the agent's own where it keeps
+// its configuration, its sessions and its login (Claude Code's CLAUDE_CONFIG_DIR, Codex's CODEX_HOME). The developer
+// signs in there once, with the agent's own command; Djinn names the folder and passes it to the sessions it starts,
+// and never reads nor stores a token. Kept in settings.json of Djinn's data folder: never a secret, never shared.
+message Account {
+  // How the commands name it: lowercase letters, digits and dashes, such as work.
+  string name = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"];
+  // Its agent: claude or codex. Antigravity documents no folder of its own per sign-in.
+  Provider provider = 2;
+  // What the window calls it, such as Work subscription; its name when empty.
+  string label = 3;
+  // The agent's folder for it, absolute: ~/.claude-<name> or ~/.codex-<name> unless given.
+  string config_directory = 4;
+}
+
+// WorkerKind is a kind of model-calling worker in the Summoning Circle.
+enum WorkerKind {
+  // Unspecified worker kind.
+  WORKER_KIND_UNSPECIFIED = 0;
+  // Djinn (the lead session).
+  WORKER_KIND_LEAD = 1;
+  // Investigation worker (read-only codebase research).
+  WORKER_KIND_INVESTIGATION = 2;
+  // Mockup worker (HTML/CSS interface options).
+  WORKER_KIND_MOCKUP = 3;
+  // Ifrit (the interactive room).
+  WORKER_KIND_IFRIT = 4;
+  // Work task (standard code implementation).
+  WORKER_KIND_WORK = 5;
+  // Merge correction worker (branch conflict resolution and lint/test repair).
+  WORKER_KIND_CORRECTION = 6;
+  // Merge review worker (adversarial review before merge).
+  WORKER_KIND_REVIEW = 7;
+  // Question investigator (fact verification before asking a question).
+  WORKER_KIND_QUESTION = 8;
+}
+
+// WorkerSeat is the chosen provider and model for one kind of worker in the
+// global Summoning Circle. For every kind except WORKER_KIND_LEAD, an empty
+// model means "Same as lead".
+message WorkerSeat {
+  // Kind of worker.
+  WorkerKind kind = 1;
+  // Agent provider. PROVIDER_UNSPECIFIED means "Same as lead" (or Claude for lead).
+  Provider provider = 2;
+  // Model ID (e.g. "claude-sonnet-5-5", "gemini-4-argon-high"). Empty means "Same as lead".
+  string model = 3;
+}
+
+// LeadSeat is where the lead Djinn drives runs: its agent, its model, its account. Each batch's session starts there,
+// with the lead's journal, until the developer moves it (djinn lead move, the lead's menu).
+message LeadSeat {
+  // The agent: claude (the default) or codex.
+  Provider provider = 1;
+  // The model; empty for the agent's default.
+  string model = 2;
+  // The account, by its name; empty for the agent's own sign-in.
+  string account = 3;
+}
+
+// LeadLimit is a usage limit the lead Djinn drives hit: its events wait, and Djinn moves it nowhere by itself. The
+// window offers each move in one click.
+message LeadLimit {
+  // What stopped it, for a reader: "the account's session limit, resets at 07:20".
+  string text = 1;
+  // When the limit resets, and the waiting events go to the same seat again; unset when the agent did not say, and
+  // Djinn tries again later.
+  google.protobuf.Timestamp until = 2;
+  // The seat that hit it.
+  LeadSeat seat = 3;
+  // Where the lead may go instead: the other agents and accounts of this machine whose sign-in is not known to be
+  // missing, the closest first.
+  repeated LeadSeat moves = 4;
+}
+
+// LeadBatchState is where a batch of the driven lead stands.
+enum LeadBatchState {
+  // Not set.
+  LEAD_BATCH_STATE_UNSPECIFIED = 0;
+  // Its session runs.
+  LEAD_BATCH_STATE_RUNNING = 1;
+  // Its session ended its turn: its events are acknowledged.
+  LEAD_BATCH_STATE_DONE = 2;
+  // Its session failed: its events wait still, for the attempt that follows, or the next batch.
+  LEAD_BATCH_STATE_FAILED = 3;
 }
 
 // Allowance is a right the developer allows a wish's workers in one of its projects, an explicit decision that
@@ -731,8 +1090,10 @@ enum TaskStatus {
   // worktree; the next djinn up resumes it (RESUMING) unless it cannot: imported, its worktree gone, its wish
   // granted, or already resumed as another task (Task.fork_of).
   TASK_STATUS_INTERRUPTED = 6;
-  // Its worker ended read-only, and the task waits for the developer's answer to its edit question
-  // (Task.edit_question_id): a yes starts the worker again, allowed to edit the project's files.
+  // Its worker ended its turn, and the task waits for an answer, without a worker and without a slot of the machine:
+  // read-only, to its edit question (Task.edit_question_id), where a yes starts the worker again, allowed to edit the
+  // project's files; or to the blocking question its worker asked (Task.wait_question_id), where the answer continues
+  // it with the decision once a slot is free. Its worktree, branch, session and write scopes stay.
   TASK_STATUS_WAITING = 7;
   // Its worker holds still on request, without losing anything, until it is resumed. It takes no slot of the
   // machine meanwhile.
@@ -897,6 +1258,9 @@ message Task {
   // The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an
   // agent.
   string last_line = 30;
+  // When a watcher's first line last changed (last_line): since when the state it says holds, GREEN since 10:42. Unset
+  // for an agent.
+  google.protobuf.Timestamp last_line_time = 76;
   // Who marked the task done by hand, when and why (TaskService.Done), or which fork continues it. Empty for a task
   // its worker finished.
   Closure closed = 31;
@@ -938,7 +1302,8 @@ message Task {
   // What Djinn started the task for, on a question of the wish; none for a task the lead or the developer spawned. A
   // question worker takes a slot of the machine like any agent and runs in its project's folder, reading.
   TaskRole role = 44;
-  // The code of the question a question worker works on (Q52); empty for any other task.
+  // The code of the question a question worker works on (Q52), or that a mockup task iterates on; empty for any
+  // other task.
   string question = 45 [(buf.validate.field).string.max_len = 64];
   // For a review worker, which Djinn starts by itself when a task's worktree holds changes not committed: what it
   // reviews. It works in that task's worktree, on its branch, and its branch integrates like any task's.
@@ -991,6 +1356,105 @@ message Task {
   // For a watcher that babysits a pull or merge request with the project's babysit skill (metadata.djinn.babysit): the
   // request, and the line that ends the watcher. Unset for any other task.
   TaskBabysit babysit = 68;
+  // For an ifrit (TASK_KIND_IFRIT): where it stands, its timers and its serves. Unset for any other task.
+  TaskIfrit ifrit = 69;
+  // The lead marked the task urgent (djinn task spawn --urgent, djinn task update --urgent), to unblock its wish, or the
+  // lead or the developer (the toggle on its card in the window) for the developer's quick feedback (feedback): the
+  // mark goes on and off while the task is planned, waits, is paused or runs, and its run keeps it. While planned, it goes before every other planned task, a repair before
+  // a feedback task, takes a slot even on a full machine (as djinn task start does) and is not held by its integration
+  // branch's red push checks. At most one task of a wish is urgent of each class while it is to run or runs: one
+  // repair, one feedback (dispatch.Urgent, dispatch.UrgentOf).
+  bool urgent = 70;
+  // For an azima: its place among the azimas of its wish, from 1 for the first, as the lead or the developer ranks them
+  // (djinn task rank, a drag in the window). Djinn starts the waiting work of the first azimas first, within its wish's
+  // own rank among the wishes, and the gates serve it first after Djinn's merges and pushes. 0 for an azima never
+  // ranked, a new one included: after the ranked ones, by code (plan.AzimaOrder). 0 for work.
+  int32 rank = 71;
+  // The planned task waits for room on the machine alone: no slot is free (gates held outside the workers take slots),
+  // the machine is under pressure, or its memory is short, for it or for a task that goes first and that it waits
+  // behind (machine_wait, and the tasks queued after one the memory holds). False when a dependency, its integration
+  // branch's red push checks, a usage limit, a write scope, its wish or a question holds it. True too while the network
+  // holds it, which djinn task start may override; hold says which holds it.
+  bool room_wait = 72;
+  // How the scheduler judges its worker on each pass (W188): stalled, waiting for its usage limit, its limit lifted,
+  // or to relaunch after a failure Djinn does not repair by itself. Unset while the worker is well, and for a task
+  // stopped on request, failed for good, done or not started: those are never flagged.
+  TaskHealth health = 73;
+  // For an investigation or a mockup (TASK_KIND_INVESTIGATION, TASK_KIND_MOCKUP): its time limit, and when Djinn
+  // asked it to publish. Unset for any other task.
+  TaskInvestigation investigation = 74;
+  // With urgent: the task answers a request of the developer for quick feedback (a mockup, a prototype or a change they
+  // asked to see), not a repair (djinn task spawn --feedback). It is urgent work, merged like any; a repair of the wish
+  // goes before it, and one of each may be urgent at once.
+  bool feedback = 75;
+  // The blocking question its worker asked (djinn question ask --wait), by identifier, while the task waits WAITING on
+  // it: the answer, the developer's or the lead's, continues the task on its session with the decision, once a slot is
+  // free. Empty otherwise.
+  string wait_question_id = 77;
+  // What holds the planned task that waits (wait_reason), as the scheduler's pass judged it: room on the machine (a
+  // slot, its load or memory, a write scope), its integration branch's push checks, a dependency, a usage limit, the
+  // network, or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
+  // reason's text. Unspecified while the scheduler has not judged it yet, and once it starts.
+  TaskHold hold = 78;
+  // The path of the task's scratch folder on disk (<data>/scratch/<project>/<task>), exported to its worker as
+  // DJINN_SCRATCH and cleaned with its worktree; empty when it has none or once cleaned.
+  string scratch = 79;
+}
+
+// TaskHold is what holds a planned task that waits (Task.hold).
+enum TaskHold {
+  // Not judged, or nothing holds it.
+  TASK_HOLD_UNSPECIFIED = 0;
+  // Room on the machine: no slot free, the machine under pressure, its memory short, a task that goes first, or,
+  // outside Git, a task that writes the same files.
+  TASK_HOLD_PLACE = 1;
+  // Its wish's integration branch: its push checks are red, or a merge of the branch is being repaired.
+  TASK_HOLD_PUSH = 2;
+  // A task it depends on: not done yet, failed, or its work not yet merged into the branch the task starts from.
+  TASK_HOLD_DEPENDENCY = 3;
+  // Its provider's usage limit, its own or another task's of the same provider.
+  TASK_HOLD_LIMIT = 4;
+  // The network: down, or back and resuming the work it stopped one task per pass.
+  TASK_HOLD_NETWORK = 5;
+  // A blocking question that a task it depends on waits on: its answer continues that task.
+  TASK_HOLD_QUESTION = 6;
+  // Its wish is paused or granted.
+  TASK_HOLD_WISH = 7;
+}
+
+// TaskHealth is how the scheduler judges a work task's worker (W188). It changes only when its state does: each change
+// into a flagged state (STALLED, RETRIABLE) tells the lead once, with the command that relaunches the task (djinn task
+// continue), and shows a mark beside the worker in the window.
+message TaskHealth {
+  // Where it stands.
+  HealthState state = 1;
+  // Why, in a few words: "silent 12 min, CPU 1%", "claude ended before the end of its turn".
+  string reason = 2 [(buf.validate.field).string.max_len = 512];
+  // When it came to this state.
+  google.protobuf.Timestamp since = 3;
+  // For a task stopped by its usage limit: a fingerprint of the account its agent was signed in with when the limit
+  // stopped it, a hash, never the account's name. Another fingerprint later says the account changed: the limit no
+  // longer holds. Empty when the agent tells no account.
+  string account = 4 [(buf.validate.field).string.max_len = 64];
+}
+
+// HealthState is the class the scheduler gives a work task's worker (W188).
+enum HealthState {
+  // Not judged: the worker is well (events lately, or a command at work with CPU, or a gate), or the task was stopped
+  // on request, failed for good, is done or has not started. Never flagged.
+  HEALTH_STATE_UNSPECIFIED = 0;
+  // Running, but silent and idle: no event and almost no CPU for a while (StallSilence; StallAfterTurn after its turn's
+  // result, when it may wait for its background work). Flagged: djinn task continue ends it and continues it on its
+  // session.
+  HEALTH_STATE_STALLED = 1;
+  // Stopped by its provider's usage limit, which has not lifted yet: Djinn resumes it at the reset.
+  HEALTH_STATE_LIMITED = 2;
+  // Waiting to resume after its usage limit, which lifted: its reset time passed, or its agent's account changed.
+  // Djinn resumes it by itself and tells the lead once; not flagged.
+  HEALTH_STATE_LIMIT_LIFTED = 3;
+  // Failed or cut short for a reason a new turn may get past (a usage limit since lifted, a restart of Djinn, a crash
+  // of its agent or its stream), and Djinn does not resume it by itself. Flagged: djinn task continue relaunches it.
+  HEALTH_STATE_RETRIABLE = 4;
 }
 
 // TaskBabysit is the pull or merge request a watcher babysits.
@@ -1006,6 +1470,10 @@ message TaskBabysit {
   string done_when = 4;
   // The task that opened it, by code (W5); empty for one found open for the wish's branch.
   string opened_by = 5;
+  // When the watcher printed its done line (done_when): the request is merged, for the babysit skills Djinn knows.
+  // Unset while it watches, or when its command ended without it. A question asleep until the request is merged wakes
+  // on it (SLEEP_KIND_MERGED).
+  google.protobuf.Timestamp done_time = 6;
 }
 
 // TaskRefusals are the calls a worker's permissions refused in a run: what the lead hears when it ends, to decide
@@ -1023,7 +1491,7 @@ message TaskRun {
   google.protobuf.Timestamp start_time = 1;
   // When this run ended; unset while running.
   google.protobuf.Timestamp end_time = 2;
-  // Why this run ended: done, limit, restart, pause, preemption, interrupted, etc.
+  // Why this run ended: done, limit, network, restart, pause, preemption, interrupted, etc.
   string reason = 3;
 }
 
@@ -1070,6 +1538,9 @@ message TaskCorrection {
   IntegrationFailure failure = 1;
   // Which attempt it is, from 1, for this failure: past the project's correction_attempts, Djinn asks the person.
   int32 attempt = 2;
+  // The lead spawned it to repair the red push checks (spawn --repair, or a title or prompt that names them), and
+  // Djinn took it as their correction instead of starting one of its own (W272): one repair per red.
+  bool adopted = 3;
 }
 
 // IntegrationFailure is a batch's merge or tests that failed, as a correction worker starts from it.
@@ -1094,6 +1565,10 @@ message IntegrationFailure {
   // For a merge of the project's main branch into the integration branch, main's commit merged: no task's work is in
   // it, and the correction's success records main as merged.
   string main_sha = 9;
+  // For a red check, or a setup that failed, the file that keeps its whole output (CheckRun.output_file), and the
+  // tests or specs its output names as failing: what the correction reads first.
+  string output_file = 10;
+  repeated string failed = 11;
 }
 
 // TaskIntegration is where a task's finished work stands on its way into its wish's integration branch (T07). When a
@@ -1124,6 +1599,13 @@ message TaskIntegration {
   // For UNCOMMITTED, the review worker that commits the work left in its worktree, or did: for COMMITTED, the work
   // went in with it ("uncommitted: reviewed by W5").
   string reviewed_by = 10;
+  // For PENDING, its work merges in a batch of its own, once the batch of the others is in: its branch conflicted in a
+  // batch, or the correction of a red batch it was in failed and Djinn merges that batch's work one branch at a time to
+  // find what breaks the checks.
+  bool alone = 11;
+  // For INTEGRATING, the commit check that runs on the batch's merge, by name (lint, test), through the gate of its
+  // name, since update_time, its wait for the gate included; empty while Djinn merges or makes the worktree ready.
+  string check = 12;
 }
 
 // IntegrationState is where a task's finished work stands on its way into its wish's integration branch.
@@ -1203,12 +1685,140 @@ enum TaskKind {
   // (Task.part_of); it depends on other tasks like work does. It is done when marked done (djinn task done) or when
   // its plan file says so (djinn plan sync); it never waits for the person.
   TASK_KIND_AZIMA = 2;
+  // An ifrit (the djinn of fire of the tales, who serves within call): a worker that stays lit while the developer is
+  // there (T51). Between two messages its process waits on its input, spending nothing; it keeps its gates and its
+  // serves. Djinn puts it out once the developer leaves Djinn alone (Task.ifrit), and a message lights it again, in
+  // the same session and worktree. Done, its work integrates like any task's.
+  TASK_KIND_IFRIT = 3;
+  // An investigation: a short study or audit the lead launches to align with the developer fast, which ends in a
+  // tilasm and a question. A worker in a worktree of its project, in Git: it reads everything, runs commands and
+  // tests, and writes tilasms, blocks and questions, but Djinn never merges its commits (no integration, said in its
+  // ENDED line). A prototype, which runs code the developer judges, is urgent work for feedback instead
+  // (Task.feedback); a mockup that only shows is TASK_KIND_MOCKUP. Served first: before its wish's planned work, and given a slot even on a
+  // full machine (the slot of a work task it pauses, as an investigator does), at most a few at once on the machine
+  // (dispatch.InvestigationCap); never held by its integration branch's red push checks. Short: at its time limit or
+  // its budget (Task.investigation), Djinn asks it to publish what it has, then stops it if it goes on.
+  TASK_KIND_INVESTIGATION = 4;
+  // A mockup: framed like an investigation (served first, its time limit and budget in Task.investigation, its
+  // commits never merged), its work is a tilasm: it writes mockup files in its worktree and puts them as a version of
+  // a tilasm, then revises the question it iterates on (Task.question). It changes no code of its project, so none of
+  // the holds of the other workers' state apply to it (dispatch.ChangesNoCode): its wish's red push checks, a merge in
+  // conflict or its repair, a write scope. Djinn starts one when the developer answers the option of a question whose
+  // plan is a mockup (kind: mockup), within its rounds (Round ROUND_KIND_ITERATE); the lead spawns one with --kind
+  // mockup. Unlike an investigation it may be marked urgent, for the developer's feedback.
+  TASK_KIND_MOCKUP = 5;
+}
+
+// TaskInvestigation is what bounds an investigation (TASK_KIND_INVESTIGATION). Its budget is Task.max_budget_usd.
+message TaskInvestigation {
+  // Its time limit in minutes of work (its runs, as the Lamplighter counts them), as spawned (--minutes); 0 for
+  // Djinn's default (harness.DefaultInvestigationMinutes).
+  uint32 minutes = 1;
+  // When Djinn last asked it to publish what it has (a tilasm, a question) and end, at its time limit or its budget;
+  // unset before. Past a grace from then, the Lamplighter stops it. A run started again (a restart of Djinn, a
+  // continue) past its limit is asked again at once, and has the grace again.
+  google.protobuf.Timestamp publish_time = 2;
+  // Why it was asked: "time limit 25m", "budget $10.00".
+  string publish_why = 3;
+}
+
+// TaskIfrit is where an ifrit stands (TASK_KIND_IFRIT).
+message TaskIfrit {
+  // Working on a turn, listening between two, or out.
+  IfritState state = 1;
+  // When Djinn puts it out if the developer does nothing in Djinn till then: pushed back by each of their actions.
+  // Unset while out.
+  google.protobuf.Timestamp out_time = 2;
+  // When Djinn warns that it goes out soon, before out_time. Unset while out, and before a warning is due.
+  google.protobuf.Timestamp warn_time = 3;
+  // Minutes without the developer before it goes out, 5 to 240, as spawned (--idle-minutes); 0 for this machine's
+  // default: djinn up --ifrit-idle, else the window's settings, else 30.
+  uint32 idle_minutes = 4;
+  // The processes it runs through Djinn (djinn serve run): kept while it is out, to start them again when it is lit
+  // again.
+  repeated Serve serves = 5;
+  // The first lines of its last answer, as its last turn ended; empty before one has.
+  string reply = 6;
+  // How long it listened between its turns, over all its runs, the listening under way aside: the Lamplighter's
+  // duration budget (Task.runs) counts its turns only.
+  google.protobuf.Duration listened = 7;
+}
+
+// IfritState is where an ifrit stands between the developer's messages.
+enum IfritState {
+  // Not set: not lit yet, or its run ended.
+  IFRIT_STATE_UNSPECIFIED = 0;
+  // A turn of its model runs: it takes a slot, like any worker.
+  IFRIT_STATE_WORKING = 1;
+  // Its turn ended and its process waits on its input: no slot, no token. A message starts a turn.
+  IFRIT_STATE_LISTENING = 2;
+  // Put out (the developer left, or Djinn restarted): its gates, slot and serves given back, its worktree and session
+  // kept. A message lights it again.
+  IFRIT_STATE_OUT = 3;
+}
+
+// Serve is a process an ifrit runs through Djinn (djinn serve run): a dev server, a stack. Djinn starts it in a
+// process group of its own, writes its output to a log, finds the ports it listens on, and stops it when the ifrit
+// goes out, ends or stops.
+message Serve {
+  // Its name in the ifrit, like front or back: unique among its serves, case ignored.
+  string name = 1 [(buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"];
+  // The command, run through the shell.
+  string command = 2 [(buf.validate.field).string.max_len = 4096];
+  // The folder it runs in: the ifrit's worktree, unless given.
+  string directory = 3 [(buf.validate.field).string.max_len = 4096];
+  // The gate it holds for as long as it runs; empty for none.
+  string gate = 4 [(buf.validate.field).string.max_len = 40];
+  // The command that stops what lives outside its process group, like containers: run first when it stops.
+  string stop = 5 [(buf.validate.field).string.max_len = 4096];
+  // Its process, while it runs; 0 otherwise.
+  int32 pid = 6;
+  // Where it stands.
+  ServeState state = 7;
+  // When it last started.
+  google.protobuf.Timestamp start_time = 8;
+  // The ports it listens on, found or declared.
+  repeated Port ports = 9;
+  // It starts again when its ifrit is lit again: set as it starts, kept while its ifrit is out, cleared once djinn
+  // serve stop stopped it.
+  bool relight = 10;
+}
+
+// ServeState is where a serve stands.
+enum ServeState {
+  // Not set.
+  SERVE_STATE_UNSPECIFIED = 0;
+  // Started: its process lives, and the ports it declares do not answer yet.
+  SERVE_STATE_STARTING = 1;
+  // Its process lives, and every port it declares answers.
+  SERVE_STATE_RUNNING = 2;
+  // Stopped by Djinn or by its ifrit: its ifrit went out, ended or stopped, or djinn serve stop.
+  SERVE_STATE_STOPPED = 3;
+  // Its process ended by itself.
+  SERVE_STATE_EXITED = 4;
+}
+
+// Port is a port a serve listens on, shown as a link (http://localhost:5173/).
+message Port {
+  // The port number.
+  uint32 number = 1 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 65535
+  }];
+  // Its name, like front or api, as declared; empty for a port found.
+  string label = 2 [(buf.validate.field).string.max_len = 40];
+  // The address it listens on: 127.0.0.1, ::1, 0.0.0.0 or ::.
+  string address = 3 [(buf.validate.field).string.max_len = 64];
+  // Declared with --port (one Docker publishes, which no process of the serve holds), not found.
+  bool declared = 4;
+  // It answered at the last check.
+  bool open = 5;
 }
 
 // Azima is where an azima stands, computed on every read from the tasks of its wish; but for what Djinn records of its
 // branch under the per-azima push strategy (branch once cut, base_branch, cut_from, main) and of its pull request.
 message Azima {
-  // Open, in progress, awaiting its proof, or done.
+  // Open, in progress, watching, awaiting its proof, or done.
   AzimaState state = 1;
   // Every task it depends on is done: its work may go.
   bool ready = 2;
@@ -1239,6 +1849,24 @@ message Azima {
   // name. In a project whose settings name no check, Djinn merges the azima's work into it untested, as into a wish's
   // own branch; never into a branch Djinn named.
   bool named = 12;
+  // All its work is in the project's main branch: Djinn computes it (AzimaMerged), clears it as soon as a work task is
+  // added to the azima, and sets it again once that work is in main too. Unset otherwise.
+  AzimaMerged merged = 13;
+}
+
+// AzimaMerged says how Djinn found an azima's work all in its project's main branch, the branch it lands in: its pull
+// or merge request merged, as the watcher that babysits it printed its done line, or as Djinn read it on the forge,
+// after every work task part of it ended; or every commit of its branch and of its done work tasks reachable from the
+// remote's main, fetched. Only once every work task part of it is finished, one at least done.
+message AzimaMerged {
+  // When Djinn found it.
+  google.protobuf.Timestamp time = 1;
+  // The pull or merge request whose merge brought it: its web address. Empty when found by its commits.
+  string request_url = 2;
+  // The commit of main that holds every commit of the azima, when found by its commits.
+  string main_sha = 3;
+  // Main, as the person names it: main, master.
+  string main_branch = 4;
 }
 
 // AzimaState is where an azima stands.
@@ -1258,6 +1886,10 @@ enum AzimaState {
   AZIMA_STATE_AWAITING_PROOF = 4;
   // A draft azima: not formalized yet, has a description but no parts spawned into it yet, and not counted in wish progress.
   AZIMA_STATE_DRAFT = 5;
+  // Its only live work is a watcher (Provider.PROVIDER_WATCH, such as the babysit of its pull or merge request): no work
+  // task part of it, nor of its azimas, runs, waits or is left to merge, and a watcher part of it, or of an azima part of
+  // it, runs. Like in progress, it is not done: what depends on it still waits. A watcher never holds its push (W58).
+  AZIMA_STATE_WATCHING = 6;
 }
 
 // AzimaPrState is where a pull request for an azima stands.
@@ -1325,7 +1957,8 @@ message Closure {
   // Why, in a few words; may be empty.
   string note = 3;
   // The task that continues this one, by code (W57): a fork of its session, spawned once it was cut short, failed or
-  // stopped. The scheduler follows it: a task that depends on this one waits for the fork.
+  // stopped; or the question worker Djinn started again in its place after it failed on a refused call (W96). The
+  // scheduler follows it: a task that depends on this one waits for the fork.
   string continued_in = 4;
 }
 
@@ -1403,6 +2036,19 @@ message TaskEvent {
   google.protobuf.Timestamp create_time = 8;
 }
 
+// GateWait is what a task's gate events add up to, kept beside the task: Djinn counts each gate event as it writes
+// it, so a task's waiting_gate reads this, never the task's events, after a start as before it. A task from before it
+// has none: its gate events are counted once, at its first read, and kept. Apart from the task, as the copy of its
+// task a run holds would write over it.
+message GateWait {
+  // The task's identifier.
+  string id = 1;
+  // By gate, when the task asked it and has not taken it yet.
+  map<string, google.protobuf.Timestamp> asked = 2;
+  // The time between each gate asked and taken.
+  google.protobuf.Duration waited = 3;
+}
+
 // Choice is an answer to a question: YES for a question without options, or the letter of an option.
 enum Choice {
   // No choice.
@@ -1477,6 +2123,117 @@ message Question {
   // The move Djinn asked for, set only when Djinn asks the question itself: Djinn acts on the answer by it alone,
   // never by the words of the question. Empty on a worker's or the lead's move question, whose answer is only noted.
   DjinnMove djinn_move = 21;
+  // The task it is about, by identifier, when the lead asks about a worker's work (djinn question ask --about W12):
+  // the window shows it with that task, an ifrit's band first. Empty for a question about no task in particular.
+  string about_task_id = 22;
+  // When the developer put it off for later (djinn question later, the window's Later): the window and the brief list
+  // the open questions by the later of create_time and this time, so it goes below those asked before it was put off,
+  // and stays there; a question asked after still comes below it. Unset: its place is when it was asked.
+  google.protobuf.Timestamp later_time = 23;
+  // The task each option launches once the developer picks it, set by the asker (djinn question ask --plan-file):
+  // at most one per option. An answer without a note launches it at once when it comes after no task and blocks
+  // none; otherwise the lead reads the plan with the answer and launches it, as it is or edited (djinn question
+  // launch). An option without a plan is the lead's to turn into tasks.
+  repeated PlannedTask plans = 24;
+  // What it sleeps until, set by the asker or the developer (djinn question sleep, ask or revise with --sleep-until; the
+  // window's Sleep): while it sleeps, it is out of the open questions of the window, the bar and the brief, which count
+  // it apart. The scheduler's pass checks its conditions; once they all hold it wakes (QuestionSleep.wake_time): the
+  // lead hears of it to check its facts still hold and revise it, and it shows at the top of its wish's open questions.
+  // Unset: it never slept.
+  QuestionSleep sleep = 25;
+  // Its worker waits for the answer (djinn question ask --wait): once its turn ends, its task waits WAITING on it
+  // (Task.wait_question_id), and the answer continues it with the decision. A question without it does not block its
+  // worker: answered while the worker runs, the decision is sent to it; after, the lead hears of it.
+  bool wait = 26;
+}
+
+// QuestionSleep is what a question sleeps until, and when it woke.
+message QuestionSleep {
+  // The conditions, each typed: the question wakes once all of them hold.
+  repeated SleepCondition conditions = 1;
+  // When it was put to sleep.
+  google.protobuf.Timestamp create_time = 2;
+  // When it woke: its conditions held at a pass of the scheduler, or it was woken by hand (by_hand). Unset while it
+  // sleeps.
+  google.protobuf.Timestamp wake_time = 3;
+  // It was woken by hand (djinn question sleep --wake, the window's Wake), before its conditions held.
+  bool by_hand = 4;
+}
+
+// SleepCondition is one condition an asleep question waits for.
+message SleepCondition {
+  // What it waits for.
+  SleepKind kind = 1;
+  // For a task or a request named by a task: the task, by identifier.
+  string task_id = 2;
+  // That task's code, as the window and the brief name it: W12.
+  string code = 3;
+  // For a request named by its web address: the address.
+  string url = 4;
+  // For a time: when.
+  google.protobuf.Timestamp time = 5;
+}
+
+// SleepKind is what a condition of an asleep question waits for.
+enum SleepKind {
+  // Not set.
+  SLEEP_KIND_UNSPECIFIED = 0;
+  // A task over: done, stopped, cancelled or deleted; an azima closed (done).
+  SLEEP_KIND_TASK = 1;
+  // A pull or merge request merged, as Djinn knows it: the watcher that babysits it printed its done line
+  // (TaskBabysit.done_time), or the pull request of an azima is merged. Named by the watcher, by the task that opened
+  // it, by the azima, or by its web address.
+  SLEEP_KIND_MERGED = 2;
+  // A time come.
+  SLEEP_KIND_TIME = 3;
+}
+
+// PlannedTask is the task an option of a question launches: the fields of djinn task spawn, in the question's wish,
+// its decision the question. The tasks it names are kept by identifier.
+message PlannedTask {
+  // The option it is planned for: its letter, or yes on a question without options.
+  Choice option = 1;
+  // What the task does, in a sentence.
+  string title = 2;
+  // What to ask the worker; the title when empty.
+  string prompt = 3;
+  // The project to work in; the wish's own when empty.
+  string project_id = 4;
+  // Kind of agent; the project's when not set.
+  Provider provider = 5;
+  // Model of the agent; the provider's when empty.
+  string model = 6;
+  // The azima the task belongs to.
+  string part_of = 7;
+  // The tasks that come before it.
+  repeated string after = 8;
+  // The planned tasks that come after it: each waits for it once it is launched.
+  repeated string blocks = 9;
+  // The tilasms given to its worker as context.
+  repeated string tilasm = 10;
+  // What the task is; work when not set.
+  TaskKind kind = 11;
+  // The tasks of after and blocks as they stood when it was planned: the lead's revision says what changed since.
+  repeated PlannedDependency dependencies = 12;
+  // The task launched from it, by Djinn on the answer or by the lead; empty until then. The plan is then the task
+  // as it was launched.
+  string task_id = 13;
+  // For a mockup plan (kind mockup): how many versions of its tilasm the developer reviews from the question, the
+  // first one included; 0 for 3. Answering the option starts an iteration while the question is at an earlier one;
+  // at the last, the answer goes to the lead, who reads the versions and asks again.
+  uint32 rounds = 14;
+}
+
+// PlannedDependency is a task a planned task comes after or blocks, as it stood when the task was planned.
+message PlannedDependency {
+  // The task.
+  string task_id = 1;
+  // Its code then, like W12.
+  string code = 2;
+  // Its status then.
+  TaskStatus status = 3;
+  // Its title then.
+  string title = 4;
 }
 
 // DjinnMove is a move Djinn asked the developer for on its own move question, recorded when Djinn asks it.
@@ -1577,8 +2334,16 @@ message Round {
   repeated string options = 6;
   // For a revision, the recommendation before it.
   string recommendation = 7;
-  // For a revision, the task whose worker revised it; empty when the lead did.
+  // For a revision, the task whose worker revised it; empty when the lead did. For an iteration, the mockup task that
+  // took it on; empty while none did, the lead told instead.
   string task_id = 8;
+  // For an iteration, the option whose mockup plan it follows.
+  Choice option = 9;
+  // For an iteration, the tilasm it iterates on, and the version the developer saw.
+  string tilasm_id = 10;
+  int32 version = 11;
+  // For an iteration started by sending comments on the tilasm, the number of that send; 0 for an answer.
+  int32 send = 12;
 }
 
 // What a round is.
@@ -1589,6 +2354,10 @@ enum RoundKind {
   ROUND_KIND_ENLIGHTEN = 1;
   // The lead revised the question after investigating.
   ROUND_KIND_REVISE = 2;
+  // The developer answered an option whose plan is a mockup (PlannedTask.kind TASK_KIND_MOCKUP), within its rounds, or
+  // sent comments to iterate on the tilasm such a question links: no answer is stored, a mockup task puts the
+  // tilasm's next version with the note and the comments, then revises the question, which waits for it meanwhile.
+  ROUND_KIND_ITERATE = 3;
 }
 
 // A mark the developer puts on a question: read, or approved as it is. The lead reads the marks in the wish's brief
@@ -1631,7 +2400,7 @@ message Answer {
 // The withdrawal of an open question: closed without an answer, not a decision.
 message Withdrawal {
   // Why the question was withdrawn.
-  string note = 1 [(buf.validate.field).string.max_len = 2000];
+  string note = 1 [(buf.validate.field).string.max_len = 8000];
   // When the question was withdrawn.
   google.protobuf.Timestamp create_time = 2;
   // Who withdrew: the developer, the lead, or a worker (task_id).
@@ -1668,6 +2437,13 @@ service QuestionService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // One question as it stands now: its text, context, options and recommendation, its answer and note, or its
+  // withdrawal; of its rounds, who asked to investigate and why, without what each revision replaced. Reads one
+  // decision's note without listing every question of a wish.
+  rpc Get(QuestionServiceGetRequest) returns (QuestionServiceGetResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Ask to investigate an open question before deciding: it waits for the lead, who finds out more and revises it.
   rpc Enlighten(QuestionServiceEnlightenRequest) returns (QuestionServiceEnlightenResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -1689,13 +2465,85 @@ service QuestionService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Put an open question off for later: it goes below the open questions asked before now, in the window and the
+  // brief, and keeps that place. With clear, it goes back to its place, by when it was asked.
+  rpc Later(QuestionServiceLaterRequest) returns (QuestionServiceLaterResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Put an open question to sleep until typed conditions hold: tasks over, requests merged, a time. It leaves the open
+  // questions until the scheduler finds them all holding; then it wakes, the lead checks it, and it shows at the top.
+  // With wake, it wakes now.
+  rpc Sleep(QuestionServiceSleepRequest) returns (QuestionServiceSleepResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Launch the task the chosen option of an answered question planned, as it is or with the flags given in place of
+  // its own: what djinn task spawn takes, the question its decision. Djinn launches it by itself on an answer without
+  // a note when it comes after no task and blocks none; otherwise the lead does, once it has read the answer. A plan
+  // that no longer holds (its azima closed, a task it comes after cancelled, one it blocks started) is refused, why
+  // said, until the flags change what fails.
+  rpc Launch(QuestionServiceLaunchRequest) returns (QuestionServiceLaunchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+}
+
+message QuestionServiceLaunchRequest {
+  // The question, answered: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What the task does, in place of the plan's title.
+  string title = 3 [(buf.validate.field).string.max_len = 500];
+  // What to ask the worker, in place of the plan's prompt.
+  string prompt = 4 [(buf.validate.field).string.max_len = 200000];
+  // The project to work in, in place of the plan's; given empty (--project-id ""), the wish's own.
+  optional string project_id = 5 [(buf.validate.field).string.pattern = "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$"];
+  // Kind of agent, in place of the plan's.
+  Provider provider = 6 [(buf.validate.field).enum.defined_only = true];
+  // Model of the agent, in place of the plan's; given empty (--model ""), the provider's.
+  optional string model = 7 [(buf.validate.field).string.max_len = 200];
+  // The azima the task belongs to, by code (T07) or identifier, in place of the plan's; given empty (--part-of ""),
+  // none.
+  optional string part_of = 8 [(buf.validate.field).string.max_len = 64];
+  // What comes before the task, by code or identifier, in place of what the plan says: repeat it, or separate them
+  // with commas. Given empty (--after ""), nothing.
+  repeated string after = 9 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // What comes after the task, planned tasks by code or identifier, in place of what the plan says. Given empty
+  // (--blocks ""), nothing.
+  repeated string blocks = 10 [
+    (buf.validate.field).repeated.max_items = 100,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // The tilasms given to the worker, by code (L01) or identifier, in place of the plan's. Given empty (--tilasm ""),
+  // none.
+  repeated string tilasm = 11 [
+    (buf.validate.field).repeated.max_items = 20,
+    (buf.validate.field).repeated.items.string.max_len = 1000
+  ];
+  // What the task is, in place of the plan's kind.
+  TaskKind kind = 12 [(buf.validate.field).enum.defined_only = true];
+}
+
+message QuestionServiceLaunchResponse {
+  // The task launched.
+  Task task = 1;
+  // The question, its plan now the task launched.
+  Question question = 2;
 }
 
 message QuestionServiceEnlightenRequest {
   // The question: its code, like Q03, or its identifier.
   QuestionRef question = 1 [(buf.validate.field).required = true];
   // What to dig into before deciding.
-  string note = 2 [(buf.validate.field).string.max_len = 2000];
+  string note = 2 [(buf.validate.field).string.max_len = 8000];
   // Wish of the question, needed only when its code exists in several wishes.
   string wish_id = 3 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
@@ -1737,10 +2585,33 @@ message QuestionServiceReviseRequest {
   // File holding what is at stake now, in Markdown, read in place of context; a relative path starts from the current
   // directory.
   string context_file = 8 [(buf.validate.field).string.max_len = 4096];
+  // The task of the wish the question is about now, by code (W12) or identifier; the former one when not given, none
+  // when given empty (--about "").
+  optional string about = 9 [(buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$"];
+  // The task an option launches now, in the text of a plan file (see djinn question ask --plan): it replaces that
+  // option's plan; one that says its option alone removes it. The options it does not name keep theirs.
+  repeated string plan = 10 [
+    (buf.validate.field).repeated.max_items = 4,
+    (buf.validate.field).repeated.items.string.max_len = 210000
+  ];
+  // A file holding the task an option launches now, read in place of --plan; a relative path starts from the current
+  // directory.
+  repeated string plan_file = 11 [
+    (buf.validate.field).repeated.max_items = 4,
+    (buf.validate.field).repeated.items.string.max_len = 4096
+  ];
+  // Give back the question's earlier versions too: its rounds, each with what the question said before it. Not set:
+  // the question as it stands now, its current version only.
+  bool history = 12;
+  // Put it to sleep, revised, until these conditions hold (see djinn question sleep --until), in place of any it had.
+  repeated string sleep_until = 13 [
+    (buf.validate.field).repeated.max_items = 16,
+    (buf.validate.field).repeated.items.string.max_len = 2048
+  ];
 }
 
 message QuestionServiceReviseResponse {
-  // The question, revised.
+  // The question, revised: its current version, and its rounds only when asked with history.
   Question question = 1;
   // How its context breaks the shape a question reads in at a glance (every command in one code block at the top,
   // short Markdown), a line each; none when it keeps it. The question is stored as given: revise it.
@@ -1785,6 +2656,36 @@ message QuestionServiceAskRequest {
   // A move only the developer can make: push a tag, open or merge a PR, start a release, check on a Mac or Windows,
   // grant a right, install and restart.
   bool move = 9;
+  // The task of the wish the question is about, by code (W12) or identifier, when you ask about a worker's work: the
+  // window shows it with that task, an ifrit's first.
+  string about = 10 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+  ];
+  // The task an option launches once picked, one per option, in the text of a plan file: header lines "key: value",
+  // named as djinn task spawn's flags (option, title, project-id, provider, model, part-of, after, blocks, tilasm,
+  // kind), then a blank line and the prompt. "option: B" names its option; a question without options needs none.
+  // An answer without a note launches it at once when it has no after and no blocks; otherwise the lead launches it.
+  repeated string plan = 11 [
+    (buf.validate.field).repeated.max_items = 4,
+    (buf.validate.field).repeated.items.string.max_len = 210000
+  ];
+  // A file holding the task an option launches, read in place of --plan, one per option; a relative path starts from
+  // the current directory.
+  repeated string plan_file = 12 [
+    (buf.validate.field).repeated.max_items = 4,
+    (buf.validate.field).repeated.items.string.max_len = 4096
+  ];
+  // Ask it asleep, until these conditions hold (see djinn question sleep --until): it shows once they all do.
+  repeated string sleep_until = 13 [
+    (buf.validate.field).repeated.max_items = 16,
+    (buf.validate.field).repeated.items.string.max_len = 2048
+  ];
+  // A worker only, about its own task: wait for the answer. Commit what does not depend on it, then end your turn:
+  // Djinn puts your task WAITING on the question, frees its slot and keeps its worktree, branch and session; the answer
+  // continues it with "Decision Qnn: ...", once a slot is free. One blocking question at a time, two per task; three
+  // that do not block.
+  bool wait = 14;
 }
 
 message QuestionServiceAskResponse {
@@ -1805,7 +2706,7 @@ message QuestionServiceAnswerRequest {
     (buf.validate.field).enum.defined_only = true
   ];
   // Why this choice, or what to do with it.
-  string note = 3 [(buf.validate.field).string.max_len = 2000];
+  string note = 3 [(buf.validate.field).string.max_len = 8000];
   // Wish of the question, needed only when its code exists in several wishes.
   string wish_id = 4 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
@@ -1829,7 +2730,8 @@ message QuestionServiceAnswerRequest {
 }
 
 message QuestionServiceAnswerResponse {
-  // The question, now a decision.
+  // The question, now a decision; still open, with an iteration as its last round, when the answer chose an option
+  // whose plan is a mockup within its rounds (ROUND_KIND_ITERATE): the round names the mockup task Djinn started.
   Question question = 1;
 }
 
@@ -1861,6 +2763,21 @@ message QuestionServiceListResponse {
   int32 total = 3;
 }
 
+message QuestionServiceGetRequest {
+  // The question: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message QuestionServiceGetResponse {
+  // The question, its current version only.
+  Question question = 1;
+}
+
 message QuestionServiceMoveRequest {
   // The question to move: its code, like Q03, or its identifier.
   QuestionRef question = 1 [(buf.validate.field).required = true];
@@ -1886,7 +2803,7 @@ message QuestionServiceWithdrawRequest {
   // The question to withdraw: its code, like Q03, or its identifier.
   QuestionRef question = 1 [(buf.validate.field).required = true];
   // Why the question was withdrawn.
-  string note = 2 [(buf.validate.field).string.max_len = 2000];
+  string note = 2 [(buf.validate.field).string.max_len = 8000];
   // Wish of the question, needed only when its code exists in several wishes.
   string wish_id = 3 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
@@ -1910,6 +2827,48 @@ message QuestionServiceWithdrawRequest {
 
 message QuestionServiceWithdrawResponse {
   // The question, withdrawn.
+  Question question = 1;
+}
+
+message QuestionServiceLaterRequest {
+  // The question to put off: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Take the date off instead: the question goes back to its place, by when it was asked.
+  bool clear = 3;
+}
+
+message QuestionServiceLaterResponse {
+  // The question, put off or back in its place.
+  Question question = 1;
+}
+
+message QuestionServiceSleepRequest {
+  // The question to put to sleep: its code, like Q03, or its identifier.
+  QuestionRef question = 1 [(buf.validate.field).required = true];
+  // Wish of the question, needed only when its code exists in several wishes.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What it sleeps until, a condition each, all to hold, in place of any it had; commas separate several in one
+  // value. A task of the wish, W12: done, stopped or cancelled (an azima: closed). merged:W45: the pull or merge
+  // request W45 babysits, or the one W45 opened, or azima W45's, merged; a request's web address says the same. A
+  // time: 2026-10-20, 2026-10-20T09:00 (this machine's time), an RFC 3339 time, or a delay from now, like 3d or 2h30m.
+  repeated string until = 3 [
+    (buf.validate.field).repeated.max_items = 16,
+    (buf.validate.field).repeated.items.string.max_len = 2048
+  ];
+  // Wake it now instead: it shows at the top of its wish's open questions, and the lead is told.
+  bool wake = 4;
+}
+
+message QuestionServiceSleepResponse {
+  // The question, asleep or awake.
   Question question = 1;
 }
 
@@ -1946,17 +2905,46 @@ service ProjectService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Show or change the watcher commands you allow in a project for yourself, besides those its
-  // .agents/permissions.txtpb lists: kept in your own settings file, never in the repository.
+  // Show or change the watcher commands (--watch), or an ifrit's serve commands (--serve), you allow in a project for
+  // yourself, besides those its .agents/permissions.txtpb lists: kept in your own settings file, never in the
+  // repository.
   rpc Allow(ProjectServiceAllowRequest) returns (ProjectServiceAllowResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Forget the sync of a branch with nothing to push, such as a done azima's whose work landed in main: the project's
+  // syncs leave it out until it gets a new commit. Nothing is deleted, locally or on the remote.
+  rpc ForgetSync(ProjectServiceForgetSyncRequest) returns (ProjectServiceForgetSyncResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Pull a branch Djinn pushes that is behind its remote: fetch it, then bring it up to the remote's, a fast-forward
+  // only, your clean checkout of it following. Refused, saying why, when it has diverged from the remote's, when your
+  // checkout of it has changes not committed, or while work merges into it. Nothing is ever forced.
+  rpc Pull(ProjectServicePullRequest) returns (ProjectServicePullResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // List the local branches of a project's repository a wish's work may land in, the latest commit first: those
-  // Djinn made for its tasks' worktrees left out.
+  // Djinn made for its tasks' worktrees left out. With --reference, those the reference branch may name.
   rpc Branches(ProjectServiceBranchesRequest) returns (ProjectServiceBranchesResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Choose the project's reference branch for yourself: the branch Djinn keeps the wishes up to date with (merge_main),
+  // that pull requests aim at and that tells whether a branch landed. Written as main_branch in your own settings
+  // file, never in the repository: it wins over the team's .agents/settings.txtpb, where a team that follows another
+  // branch names it for everyone. Refused for a branch the repository does not hold, on its remote when it has one.
+  rpc SetBranch(ProjectServiceSetBranchRequest) returns (ProjectServiceSetBranchResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Mark seen the changes of the project's configuration on its reference branch that ask for your look (a
+  // permission, a wish template, a babysit, the command of a source plugged in here): its gear no longer lights for
+  // them. They are applied already; djinn project show lists the journal of changes.
+  rpc Acknowledge(ProjectServiceAcknowledgeRequest) returns (ProjectServiceAcknowledgeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
 }
 
@@ -1999,17 +2987,32 @@ message ProjectServiceShowResponse {
   string repository_file = 3;
   // Your own file, in Djinn's data folder. It wins over the team's, setting by setting.
   string developer_file = 4;
-  // Why a file could not be read: its settings are not shown, and the project's tasks do not spawn until it is
-  // fixed.
-  repeated string problems = 5;
+  // What Djinn finds in the project's configuration, things to fix first, then information: drawn from its settings
+  // files, its permissions, its skills (their wish template, inbox source and babysit), its setup's last run, its
+  // reference branch and the sources this machine has not decided on. A settings file Djinn cannot read shows none
+  // of its settings, and the project's tasks do not spawn until it is fixed. A skill whose front matter breaks the
+  // YAML outside its metadata is an information: Djinn reads its metadata apart, and names the lines at fault.
+  repeated ProjectNotice notices = 11;
+  // The project's reference branch; unset for a project outside Git, without a folder on this machine, or whose
+  // repository holds no branch Djinn could take for it.
+  ProjectReference reference = 12;
+  // How Djinn watches the configuration on the reference branch; unset before its first look, and for a project
+  // outside Git or without a remote.
+  ConfigWatch watch = 13;
+  // The journal of configuration changes on the reference branch, the newest first, the last 20.
+  repeated ConfigChange changes = 14;
   // The command that makes a fresh worktree ready, and the checks Djinn runs before it commits and pushes, as the
   // files resolve them. Their last runs are the project's check_runs.
   string setup = 6;
   repeated ProjectCheck checks = 7;
-  // Warnings when reading the settings, e.g. unknown fields that a newer Djinn knows.
-  repeated string warnings = 8;
   // The watcher commands you allow in the project for yourself (djinn project allow --watch), from your own file.
   repeated string watch_commands = 9;
+  // The serve commands you allow in the project for yourself (djinn project allow --serve), from your own file.
+  repeated string serve_commands = 10;
+
+  // The free-text problems and warnings, which notices replaced.
+  reserved 5, 8;
+  reserved "problems", "warnings";
 }
 
 message ProjectServicePushRequest {
@@ -2078,13 +3081,19 @@ message ProjectServiceAllowRequest {
     (buf.validate.field).string.max_len = 100
   ];
   // A command a watcher may run in the project, or its start: a command that is it, or starts with it before a space,
-  // runs. Not set: show the commands you allow.
+  // runs. Neither this nor --serve: show the commands you allow.
   optional string watch = 2 [
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 500
   ];
   // Take the command back instead of allowing it.
   bool revoke = 3;
+  // A command an ifrit's serve may run in the project (djinn serve run), or its start, as --watch is for a watcher;
+  // not with --watch.
+  optional string serve = 4 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 500
+  ];
 }
 
 message ProjectServiceAllowResponse {
@@ -2092,6 +3101,53 @@ message ProjectServiceAllowResponse {
   repeated string watch_commands = 1;
   // Your settings file, in Djinn's data folder.
   string developer_file = 2;
+  // The serve commands you allow in the project, from your own settings file.
+  repeated string serve_commands = 3;
+}
+
+message ProjectServiceForgetSyncRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The branch, among the project's syncs (Project.syncs).
+  string branch = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 255
+  ];
+}
+
+message ProjectServiceForgetSyncResponse {}
+
+message ProjectServicePullRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // Only this branch, among the project's syncs (Project.syncs); a refusal is then an error. Empty: every one of them
+  // behind its remote, each refusal said in its pull.
+  optional string branch = 2 [(buf.validate.field).string.max_len = 255];
+}
+
+message ProjectServicePullResponse {
+  // Each branch Djinn tried to bring up to its remote's, in the order of the project's syncs.
+  repeated BranchPull pulls = 1;
+}
+
+// BranchPull is how a pull left one branch.
+message BranchPull {
+  // The branch, as the project's syncs name it.
+  string branch = 1;
+  // The remote's branch it was compared with, <remote>/<name>.
+  string remote = 2;
+  // The commit the branch was on before, when it moved.
+  string old_sha = 3;
+  // The commit it is on now, the remote's, when it moved; empty when it did not.
+  string sha = 4;
+  // Why it was left as it is: it diverged from the remote's, or your checkout of it has changes not committed.
+  string refused = 5;
 }
 
 message ProjectServiceBranchesRequest {
@@ -2100,13 +3156,65 @@ message ProjectServiceBranchesRequest {
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 100
   ];
+  // The branches the reference branch may name instead: the remote's, as this copy last fetched them, without the
+  // remote's name; the local ones in a repository without a remote.
+  bool reference = 2;
 }
 
 message ProjectServiceBranchesResponse {
-  // The branches, without refs/heads/, the latest commit first; empty for a project outside Git.
+  // The branches, without refs/heads/ (or the remote's name), the latest commit first; empty for a project outside
+  // Git.
   repeated string branches = 1;
-  // The branch the project's checkout is on; empty when it is on none.
+  // The branch the project's checkout is on; empty when it is on none. Djinn takes nothing from it (W227): it is
+  // shown, never a default.
   string checked_out = 2;
+  // The project's reference branch, as Djinn names it: a wish that records no integration branch lands there, and a
+  // new branch made for one starts from it. Empty when Djinn finds none.
+  string reference = 3;
+}
+
+message ProjectServiceSetBranchRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The branch, without the remote's name: dev. Not with --unset.
+  string branch = 2 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._/-]*$"
+  ];
+  // Take your choice back: the team's file names the reference branch again, else Djinn finds it (the remote's
+  // default branch, else main, else master).
+  bool unset = 3;
+}
+
+message ProjectServiceAcknowledgeRequest {
+  // The project, by name (case ignored) or identifier.
+  string project = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 100
+  ];
+  // The change, by its identifier or the start of its commit (7 characters at least); empty: every change that
+  // asks.
+  string change = 2 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.max_len = 64,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9-]*$"
+  ];
+}
+
+message ProjectServiceAcknowledgeResponse {
+  // The changes marked seen now.
+  repeated ConfigChange changes = 1;
+}
+
+message ProjectServiceSetBranchResponse {
+  // The reference branch now, as Djinn finds it; unset when it finds none.
+  ProjectReference reference = 1;
+  // Your settings file, in Djinn's data folder.
+  string developer_file = 2;
 }
 
 // Skills: what a project's agents know how to do, one folder each in the Agent Skills format (a SKILL.md, maybe
@@ -2265,6 +3373,37 @@ message InboxSource {
   bool plugged = 6;
   // Why it cannot be used; empty when it can.
   string error = 7;
+  // What it reads, in a sentence: its SKILL.md's metadata.djinn.source.summary, else the skill's description.
+  string summary = 8;
+  // Its last run on this machine; unset before its first, and once it is unplugged.
+  SourceRun last_run = 9;
+  // You said no to it on this machine (djinn inbox unplug): it runs nothing, and its project no longer asks whether
+  // to plug it in.
+  bool declined = 10;
+}
+
+// The last run of an inbox source on this machine. It lives in Djinn's data, never in a repository; unplugging the
+// source forgets it.
+message SourceRun {
+  option (djinn.v1.unique) = {fields: ["project_id", "skill"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project that holds the skill.
+  string project_id = 2;
+  // The skill's folder name.
+  string skill = 3;
+  // When its command last ended, or could not start.
+  google.protobuf.Timestamp end_time = 4;
+  // How many items that run printed, those the inbox had already included.
+  int32 items = 5;
+  // Why that run failed: its exit code and the last lines of its error output, or why its command could not start.
+  // Empty when it went well.
+  string error = 6;
+  // How many runs failed in a row, that one included; 0 when it went well.
+  int32 failures = 7;
+  // When the first of those failed runs ended; unset when the last run went well.
+  google.protobuf.Timestamp failing_since = 8;
 }
 
 // A source plugged in on this machine. It lives in Djinn's data, never in a repository: a clone of a project whose
@@ -2279,6 +3418,21 @@ message PluggedSource {
   // The skill's folder name.
   string skill = 3;
   // When it was plugged in.
+  google.protobuf.Timestamp create_time = 4;
+}
+
+// A source you said no to on this machine, by unplugging it, plugged in or not: its project no longer asks whether to
+// plug it in. It lives in Djinn's data, never in a repository; plugging the source in again forgets it.
+message DeclinedSource {
+  option (djinn.v1.unique) = {fields: ["project_id", "skill"]};
+
+  // Identifier, a UUIDv7.
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // The project that holds the skill.
+  string project_id = 2;
+  // The skill's folder name.
+  string skill = 3;
+  // When you said no.
   google.protobuf.Timestamp create_time = 4;
 }
 
@@ -2308,12 +3462,14 @@ service InboxService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
-  // Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool.
+  // Plug a source in, on this machine: its command runs from now on, every few minutes, logged in by its own tool. A
+  // no you said to it is forgotten.
   rpc Plug(InboxServicePlugRequest) returns (InboxServicePlugResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Unplug a source, on this machine: its command stops and runs no more. Its items stay.
+  // Unplug a source, on this machine, or say no to one never plugged in: its command stops and runs no more, and its
+  // project no longer asks whether to plug it in. Its items stay.
   rpc Unplug(InboxServiceUnplugRequest) returns (InboxServiceUnplugResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_DELETE;
@@ -2411,7 +3567,7 @@ service WishService {
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // List the wishes: the active ones by rank, the first has priority; then the paused ones and the granted ones,
-  // the most recent last.
+  // each in its own order (djinn wish reorder), the one paused or granted last first.
   rpc List(WishServiceListRequest) returns (WishServiceListResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -2442,6 +3598,25 @@ service WishService {
   }
   // Rename a wish: what you wish, in a sentence, in place of what it had.
   rpc Rename(WishServiceRenameRequest) returns (WishServiceRenameResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Set a wish's icon in the window's menu, in place of what it had: a name of the bank (djinn wish icons) that says
+  // its subject. An empty name takes it back to its mark.
+  rpc Icon(WishServiceIconRequest) returns (WishServiceIconResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // List the bank of wish icons a wish's icon is chosen from, family by family: each name with its words in English
+  // and in French. --search keeps the icons whose name, family or words hold every word given, in either language.
+  rpc Icons(WishServiceIconsRequest) returns (WishServiceIconsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Add a project to a wish, by its name or identifier: the wish then works in it as in the projects it was made
+  // with. Its tasks may spawn there, and its finished work goes to the branch the project's checkout is on, as when a
+  // wish is made. A project already in the wish, or unknown, is refused. Removing a project is not possible.
+  rpc AddProject(WishServiceAddProjectRequest) returns (WishServiceAddProjectResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -2476,12 +3651,6 @@ service WishService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Show or change whether a wish is the principal wish. When set, this wish's lead is the principal lead; when unset,
-  // the active wish with the lowest rank is principal.
-  rpc Principal(WishServicePrincipalRequest) returns (WishServicePrincipalResponse) {
-    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
-    option (djinn.v1.writes) = WRITES_CHANGE;
-  }
   // Grant a wish: you say it is done. Djinn never grants a wish itself; it proposes it once the wish is ready (every
   // task finished, no question open), and you may grant it before.
   rpc Grant(WishServiceGrantRequest) returns (WishServiceGrantResponse) {
@@ -2510,6 +3679,12 @@ service WishService {
   // Move a wish to another rank: --to 1 gives it priority over the others. A wish that is not active becomes active
   // there, the third place at most, and the wish it pushes past the third place is paused.
   rpc Move(WishServiceMoveRequest) returns (WishServiceMoveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Move a paused or granted wish to another place in the list of the wishes of its state: --to 1 puts it first. It
+  // stays paused or granted: djinn wish move makes it active.
+  rpc Reorder(WishServiceReorderRequest) returns (WishServiceReorderResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -2623,7 +3798,7 @@ enum Change {
   CHANGE_PROJECT = 5;
   // The inbox: an item came, or was routed or dismissed; a source was plugged in or unplugged, or a project added.
   CHANGE_INBOX = 6;
-  // Its tilasms: one put, restored or imported.
+  // Its tilasms: one put, restored or imported, or a comment on one written or sent.
   CHANGE_TILASM = 7;
   // The machine operating load notch changed.
   CHANGE_LOAD = 8;
@@ -2741,27 +3916,6 @@ message WishServicePushStrategyResponse {
   SettingSource source = 2;
 }
 
-message WishServicePrincipalRequest {
-  // The wish.
-  string wish_id = 1 [
-    (buf.validate.field).required = true,
-    (buf.validate.field).string.uuid = true
-  ];
-  // Whether this wish is the principal wish. Unset: show whether this wish is principal.
-  // Setting principal = true marks this wish as principal and clears the principal flag on any other wish.
-  // Setting principal = false unmarks this wish so that the principal defaults to rank 1.
-  optional bool principal = 2;
-}
-
-message WishServicePrincipalResponse {
-  // Whether this wish is currently the principal wish (either explicitly set or by rank 1).
-  bool principal = 1;
-  // Whether this wish was explicitly marked as principal by the developer.
-  bool explicit = 2;
-  // The ID of the current principal wish across all wishes.
-  string principal_wish_id = 3;
-}
-
 message WishServiceGrantRequest {
   // Numbers 2 and 3 carried the project and the right when this method gave rights, now Allow.
   reserved 2, 3;
@@ -2863,6 +4017,21 @@ message WishServiceMoveResponse {
   repeated Wish wishes = 1;
   // The wish pushed past the third place, paused.
   repeated Wish paused = 2;
+}
+
+message WishServiceReorderRequest {
+  // The wish, paused or granted.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Its new place in the list of the wishes of its state, from 1 for the first; beyond the last, it goes last.
+  int32 to = 2 [(buf.validate.field).int32.gte = 1];
+}
+
+message WishServiceReorderResponse {
+  // The wishes of its state, paused or granted, in their new order.
+  repeated Wish wishes = 1;
 }
 
 message WishServiceMakeRequest {
@@ -2989,6 +4158,62 @@ message WishServiceRenameResponse {
   Wish wish = 1;
 }
 
+message WishServiceIconRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The icon's name in the bank, like lamp or wifi-off; empty takes the wish back to its mark.
+  string name = 2 [(buf.validate.field).string.max_len = 64];
+}
+
+message WishServiceIconResponse {
+  // The wish, with its icon.
+  Wish wish = 1;
+}
+
+message WishServiceIconsRequest {
+  // Words to look for, in English or in French, like "theme" or "export": the icons that hold all of them. Empty
+  // lists the whole bank.
+  string search = 1 [(buf.validate.field).string.max_len = 200];
+}
+
+message WishServiceIconsResponse {
+  // The icons found, in the bank's order.
+  repeated WishIcon icons = 1;
+}
+
+// WishIcon is an icon of the bank a wish's icon is chosen from.
+message WishIcon {
+  // Its name, which Wish.icon takes.
+  string name = 1;
+  // Its family: Screen, Data, Network, Security, People, Build, World, Nature, Things, Writing, Value or Tales.
+  string family = 2;
+  // The words a search reads in English.
+  string words = 3;
+  // The words a search reads in French.
+  string words_fr = 4;
+}
+
+message WishServiceAddProjectRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // The project to add, by name (case ignored) or identifier.
+  string project_id = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 100
+  ];
+}
+
+message WishServiceAddProjectResponse {
+  // The wish, with the project added.
+  Wish wish = 1;
+}
+
 message WishServiceBriefRequest {
   // The wish.
   string wish_id = 1 [
@@ -3063,6 +4288,8 @@ message WishExport {
   repeated Command commands = 9;
   // The tilasms of the wish. An export to a file carries the files of every version; a snapshot, only the manifests.
   repeated TilasmExport tilasms = 10;
+  // The batches of the driven lead about this wish, oldest first.
+  repeated LeadBatch lead_batches = 11;
 }
 
 // ProjectRef names a project without its folder, so that another machine finds its own copy.
@@ -3106,7 +4333,9 @@ service LeadService {
   // agent from the brief the same way: a claude one becomes the lead, a codex one once djinn lead set gives its
   // session, and an antigravity one leaves the record as it is. While the lead's terminal runs a program, nothing
   // starts, and the note says so. A lead never starts in the home folder: a session recorded there starts a new lead
-  // the same way, and with no project nothing starts, the error says to create one. Starts djinn if it is not running.
+  // the same way, and with no project nothing starts, the error says to create one. While Djinn drives the lead, no
+  // terminal opens: the events that wait after a failed batch go to a new session at once, and the note says how the
+  // lead runs. Starts djinn if it is not running.
   rpc Resume(LeadServiceResumeRequest) returns (LeadServiceResumeResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -3117,46 +4346,125 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
-  // The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line.
+  // The brief for the lead: every active wish at once, rules once, paused and granted wishes in one line; at its end,
+  // a line per active wish again, for an agent whose tool keeps only the end of a long output. With --wishes, where
+  // the wishes stand only.
   rpc Brief(LeadServiceBriefRequest) returns (LeadServiceBriefResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // The lead's notes: how to lead, learnt from past wishes, one note per file of lead/notes in Djinn's repository,
   // built into djinn and read only. Without a name, the index: a line per note, its name and what it is about (the
-  // brief holds the same); with one, that note whole. A lead reads a note before it acts in its area; to add or fix
+  // brief holds the same); with one, that note whole; with several (a,b) or --all, each whole, in one call. A lead
+  // reads a note before it acts in its area; to add or fix
   // one, a lead that may change Djinn spawns a task that edits lead/notes.
   rpc Notes(LeadServiceNotesRequest) returns (LeadServiceNotesResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
-  // Wait for the events the lead must act on, and print them as one digest: a line per event (its code, its kind, a
-  // few words; djinn task watch and djinn wish brief have the details) and the cursor to pass next. It blocks until
+  // Wait for the events the lead must act on, and print them as one digest: a line per event (its code and its wish,
+  // its kind, a few words), under it the final note of a task or the note of an answer, whole up to a few screens
+  // (djinn lead event prints it all), then the wishes' identifiers and the cursor to pass next. It blocks until
   // an event waits that this session has not acknowledged, then lets the events settle for 2 seconds of quiet (10 at
   // most) so that a burst, like an integration pass merging several tasks, comes as one digest; then it returns.
   // Called again with --after the cursor, it acknowledges every event up to it for this session, then waits for the
   // next ones: an event never acknowledged (the lead crashed, its session was lost) comes back on the next watch, at
   // least once, never lost. While a watch of the lead's session waits, Djinn types nothing in the lead's terminal;
   // without one, it types one short line, "Djinn: N events waiting, run djinn lead watch". The lead runs it as a
-  // command its agent wakes it up for when it ends (djinn lead brief says how, for each agent).
+  // command its agent wakes it up for when it ends (djinn lead brief says how, for each agent). Refused while Djinn
+  // drives the lead: Djinn hands each batch to a session of its own.
   rpc Watch(LeadServiceWatchRequest) returns (LeadServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // One of the lead's events whole, waiting or acknowledged within the week: its line uncut, the note of the task or
+  // the answer it is about, and its detail. A digest names it with the event's identifier when it cuts a note.
+  rpc Event(LeadServiceEventRequest) returns (LeadServiceEventResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Write to the lead in its terminal, as if you typed it there, then Enter: your own words, not an event of its
   // queue. The text waits while something is being typed there or a choice is on screen, then goes; texts arrive in
   // the order written. About a wish, it starts with "About wish <title> (<id>):". The lead must run in its terminal:
-  // djinn lead resume starts it. A worker cannot call it, and djinn mcp has no tool for it.
+  // djinn lead resume starts it. While Djinn drives the lead, the text is an event of its queue instead, whole: the
+  // next batch's session reads it, and a text written while a batch runs waits for the next one. A worker cannot
+  // call it, and djinn mcp has no tool for it.
   rpc Tell(LeadServiceTellRequest) returns (LeadServiceTellResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
     option (djinn.v1.command_line_only) = true;
+  }
+  // Answer the developer in the window, in a bubble held to the Lamp pill: a short reply to a message from the
+  // window, or, with --decided, a decision the lead took alone that the developer would want to know. Puts a block of
+  // kind "reply" (or "decided") on the wish, from the lead, at most 600 characters; for a longer answer, write a
+  // report block and name it here. A worker cannot call it.
+  rpc Say(LeadServiceSayRequest) returns (LeadServiceSayResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // The lead's journal while Djinn drives it: a paragraph per batch, the latest last, saying who led it (agent, model,
+  // session), the events it took, the commands it ran, the text that ended its turn and what it cost. Each batch's
+  // prompt carries the latest entries of its wishes; this prints them for the developer.
+  rpc Journal(LeadServiceJournalRequest) returns (LeadServiceJournalResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // The sessions of the lead Djinn drives: a line per batch, the latest last, with its local time, state, cost,
+  // session, transcript path and count of failed tool calls. Permitted to workers, read only.
+  rpc Sessions(LeadServiceSessionsRequest) returns (LeadServiceSessionsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // The conversation of one batch of the lead Djinn drives, read from its transcript: each tool call, its truncated
+  // result with errors marked, and the assistant's text; with --resume, the command to fork the session in plan mode
+  // without touching the batch. Takes a batch or session identifier, or a prefix of one. Permitted to workers, read
+  // only.
+  rpc Show(LeadServiceShowRequest) returns (LeadServiceShowResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Move the lead Djinn drives to another agent, model or account: the next batch starts there, with the lead's
+  // journal, and the lead stays there until moved again. The whole seat is given: an empty model is the agent's
+  // default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
+  // batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
+  rpc Move(LeadServiceMoveRequest) returns (LeadServiceMoveResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // The accounts of the agents on this machine, the seat of the lead, and for each account the command that signs
+  // it in, once, in its own folder.
+  rpc Accounts(LeadServiceAccountsRequest) returns (LeadServiceAccountsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
+  // unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
+  rpc AddAccount(LeadServiceAddAccountRequest) returns (LeadServiceAddAccountResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
+  // while the lead runs on it.
+  rpc RemoveAccount(LeadServiceRemoveAccountRequest) returns (LeadServiceRemoveAccountResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
   }
   // Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
   // would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
   // none; the same choice is answered once. The window's only: an agent never answers its own approval.
   rpc Choose(LeadServiceChooseRequest) returns (LeadServiceChooseResponse) {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Read the global Summoning Circle: one row per kind of model-calling worker across all projects.
+  rpc GetCircle(LeadServiceGetCircleRequest) returns (LeadServiceGetCircleResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Set one row of the global Summoning Circle (lead, investigation, mockup, ifrit, work, correction, review, or
+  // question). For every kind except lead, an empty model means "Same as lead".
+  rpc SetCircle(LeadServiceSetCircleRequest) returns (LeadServiceSetCircleResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
 }
@@ -3229,8 +4537,22 @@ message LeadServiceGetResponse {
   // started. Never stored.
   LeadExit exit = 3;
   // Why the last LeadService.Resume could not start the lead, as it answered: kept until one starts or attaches to
-  // it. Never stored.
+  // it. While Djinn drives the lead, why its last batch failed twice, until a batch ends its turn. Never stored.
   string start_error = 4;
+  // Djinn drives the lead (decision Q31): a fresh headless session per batch of events, no terminal.
+  bool driven = 5;
+  // The batch that runs, or else the last one, while Djinn drives the lead.
+  LeadBatch batch = 6;
+  // Where the lead Djinn drives runs: its agent, its model, its account.
+  LeadSeat seat = 7;
+  // The accounts of the agents on this machine.
+  repeated Account accounts = 8;
+  // The usage limit the driven lead hit, and where it may move; unset once a batch ends its turn, or it moves.
+  LeadLimit limit = 9;
+  // The global Summoning Circle: one row per kind of model-calling worker across all projects.
+  repeated WorkerSeat circle = 10;
+  // The latest batches of the driven lead's journal, oldest first.
+  repeated LeadBatch journal = 11;
 }
 
 // LeadExit is how the program of the lead's terminal ended.
@@ -3264,6 +4586,19 @@ message LeadServiceWatchResponse {
   string text = 1;
 }
 
+message LeadServiceEventRequest {
+  // The event, by identifier: the digest prints it.
+  string id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message LeadServiceEventResponse {
+  // The event whole: its kind and code, its wish, its line, its note and its detail.
+  string text = 1;
+}
+
 message LeadServiceTellRequest {
   // What to say to the lead. Line breaks stay line breaks for an agent that takes a paste.
   string text = 1 [
@@ -3283,6 +4618,228 @@ message LeadServiceTellResponse {
   bool waiting = 1;
 }
 
+message LeadServiceSayRequest {
+  // The wish the reply or decision is about.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+  // What to show in the window's bubble, at most 600 characters; for a longer answer, write a report block and name it
+  // here.
+  string text = 2 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.max_len = 20000
+  ];
+  // Mark this as a decision the lead took alone, instead of a reply to a message from the window.
+  bool decided = 3;
+}
+
+message LeadServiceSayResponse {
+  // The block added to the wish.
+  Block block = 1;
+}
+
+message LeadServiceJournalRequest {
+  // Only the batches about this wish.
+  string wish_id = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // How many batches, the latest; 10 by default.
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+}
+
+message LeadServiceJournalResponse {
+  // The journal, in Markdown: a paragraph per batch, the latest last.
+  string text = 1;
+  // The batches of the journal, oldest first.
+  repeated LeadBatch batches = 2;
+}
+
+// LeadSession is one batch's session of the lead Djinn drives, with its transcript on disk.
+message LeadSession {
+  // The batch.
+  LeadBatch batch = 1;
+  // Path of the agent's transcript file on disk, or "not supported" for an agent whose transcripts Djinn does not read.
+  string transcript_path = 2;
+  // How many tool calls failed in the transcript.
+  int32 error_count = 3;
+}
+
+message LeadServiceSessionsRequest {
+  // Only the batches about this wish.
+  string wish_id = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // How many batches, the latest; 20 by default.
+  int32 limit = 2 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 200
+  }];
+}
+
+message LeadServiceSessionsResponse {
+  // The sessions, a line per batch, the latest last: local time, state, cost, session, error count and transcript path.
+  string text = 1;
+  // The sessions, oldest first, with --json.
+  repeated LeadSession sessions = 2 [(djinn.v1.json_only) = true];
+}
+
+message LeadServiceShowRequest {
+  // Batch or session identifier, or a prefix of one.
+  string id = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+  ];
+  // Print the command that resumes a copy of the session in the lead's folder in plan mode (--fork-session
+  // --permission-mode plan).
+  bool resume = 2;
+}
+
+message LeadServiceShowResponse {
+  // The readable conversation, and with --resume the safe command to fork it in plan mode.
+  string text = 1;
+  // The batch, with --json.
+  LeadBatch batch = 2 [(djinn.v1.json_only) = true];
+  // Path of the transcript file on disk, with --json.
+  string transcript_path = 3 [(djinn.v1.json_only) = true];
+  // How many tool calls failed in the transcript, with --json.
+  int32 error_count = 4 [(djinn.v1.json_only) = true];
+  // The safe command to fork the session in plan mode, when --resume is set, with --json.
+  string resume_command = 5 [(djinn.v1.json_only) = true];
+}
+
+message LeadServiceMoveRequest {
+  // The agent: claude or codex; unset for the current one.
+  Provider provider = 1 [(buf.validate.field).enum.defined_only = true];
+  // The model; empty for the agent's default.
+  string model = 2 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+  ];
+  // The account, by its name (djinn lead accounts); empty for the agent's own sign-in.
+  string account = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
+}
+
+message LeadServiceMoveResponse {
+  // The seat, as it now is.
+  LeadSeat seat = 1;
+  // What changes, in a line: where the next batch runs.
+  string note = 2;
+}
+
+message CircleModel {
+  // The canonical model ID accepted by the provider CLI (e.g. "claude-sonnet-5-5", "gemini-4-argon-high").
+  string id = 1;
+  // The display label shown in the Summoning Circle (e.g. "Claude Sonnet 5.5", "Gemini 4 Argon (High)").
+  string label = 2;
+  // The provider that runs this model.
+  Provider provider = 3;
+}
+
+message CircleProvider {
+  // The provider agent (Claude, Codex, Antigravity).
+  Provider provider = 1;
+  // True when the provider CLI is installed and signed in on this machine.
+  bool signed_in = 2;
+  // The terminal command to sign in when signed_in is false (e.g. "claude auth login", "codex login", "agy").
+  string login_command = 3;
+  // True when the lead row can run on this provider in the current lead mode.
+  bool lead_supported = 4;
+  // Why the lead row cannot run on this provider when lead_supported is false.
+  string lead_unavailable_reason = 5;
+}
+
+message LeadServiceGetCircleRequest {}
+
+message LeadServiceGetCircleResponse {
+  // One row per kind of model-calling worker in the Summoning Circle, in order:
+  // lead, investigation, mockup, ifrit, work, correction, review, question.
+  repeated WorkerSeat rows = 1;
+  // Models available to the Summoning Circle, from the agent CLI where it can tell or the shared price table.
+  repeated CircleModel models = 2;
+  // Provider sign-in status and lead capability on this machine.
+  repeated CircleProvider providers = 3;
+}
+
+message LeadServiceSetCircleRequest {
+  // The kind of worker whose row to set.
+  WorkerKind kind = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // The model ID (e.g. "claude-sonnet-5-5", "gemini-4-argon-high"), or empty for "Same as lead".
+  string model = 2 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]-]*$"
+  ];
+  // Optional provider when the model is not in the standard catalog; inferred from model when omitted.
+  Provider provider = 3 [(buf.validate.field).enum.defined_only = true];
+}
+
+message LeadServiceSetCircleResponse {
+  // All rows of the Summoning Circle after the update.
+  repeated WorkerSeat rows = 1;
+  // Models available to the Summoning Circle.
+  repeated CircleModel models = 2;
+  // Provider sign-in status and lead capability on this machine.
+  repeated CircleProvider providers = 3;
+}
+
+message LeadServiceAccountsRequest {}
+
+message LeadServiceAccountsResponse {
+  // The accounts, and the lead's seat, in Markdown: a line per account, its folder and the command that signs it in.
+  string text = 1;
+  // The accounts, with --json: the text says them.
+  repeated Account accounts = 2 [(djinn.v1.json_only) = true];
+  // The lead's seat, with --json.
+  LeadSeat seat = 3 [(djinn.v1.json_only) = true];
+}
+
+message LeadServiceAddAccountRequest {
+  // Its name: lowercase letters, digits and dashes, such as work.
+  string name = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
+  // Its agent: claude or codex.
+  Provider provider = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // What the window calls it; its name by default.
+  string label = 3 [(buf.validate.field).string.max_len = 80];
+  // The agent's folder for it, made if missing; ~/.claude-<name> or ~/.codex-<name> by default. Never Djinn's data
+  // folder, nor the agent's default folder.
+  string config_directory = 4 [(buf.validate.field).string.max_len = 4096];
+}
+
+message LeadServiceAddAccountResponse {
+  // The account.
+  Account account = 1;
+  // The command that signs it in, to run once in a terminal.
+  string login_command = 2;
+}
+
+message LeadServiceRemoveAccountRequest {
+  // Its name.
+  string name = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
+}
+
+message LeadServiceRemoveAccountResponse {}
+
 message LeadServiceChooseRequest {
   // The option picked, from 1.
   int32 option = 1 [(buf.validate.field).int32 = {
@@ -3298,7 +4855,11 @@ message LeadServiceChooseRequest {
 
 message LeadServiceChooseResponse {}
 
-message LeadServiceBriefRequest {}
+message LeadServiceBriefRequest {
+  // Only where the wishes stand: each active wish, then the paused and granted ones in a line each, without Djinn's
+  // rules nor the projects'. Short enough that no agent's tool cuts it.
+  bool wishes = 1;
+}
 
 message LeadServiceBriefResponse {
   // The brief, in Markdown.
@@ -3306,11 +4867,14 @@ message LeadServiceBriefResponse {
 }
 
 message LeadServiceNotesRequest {
-  // A note's name, as the index lists it: that note whole. Empty: the index.
+  // A note's name, as the index lists it: that note whole. Several, separated by commas (a,b): each of them whole,
+  // in one call. Empty: the index.
   string name = 1 [
     (djinn.v1.positional) = true,
-    (buf.validate.field).string.max_len = 100
+    (buf.validate.field).string.max_len = 2000
   ];
+  // Every note whole, in one call.
+  bool all = 2;
 }
 
 message LeadServiceNotesResponse {
@@ -3546,6 +5110,15 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // The files the open work of a wish touches, and where tasks touch the same ones: what the lead reads before it
+  // spawns, to bundle or order work on the same files instead of running it side by side. A running, paused, waiting
+  // or cut short task, or a done one not merged yet, touches what its worktree changed from its base (its merge-base
+  // with the branch it merges into, untracked files included); a planned one, its write scopes, or paths unknown.
+  // Generated files are left out of the overlaps: Djinn makes them again on a conflict.
+  rpc Overlaps(TaskServiceOverlapsRequest) returns (TaskServiceOverlapsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // Show a task.
   rpc Get(TaskServiceGetRequest) returns (TaskServiceGetResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -3553,6 +5126,7 @@ service TaskService {
   }
   // File diff of a task against its base: with no file given, the files changed and their counts; with a file, the
   // unified diff of that file with syntax tokens, by chunks of 2 000 lines at most: --offset asks for the next one.
+  // --uncommitted shows what the task's worktree holds not committed instead.
   rpc Diff(TaskServiceDiffRequest) returns (TaskServiceDiffResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -3582,11 +5156,12 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // Follow a task's events as they come, from the first one or after a position; ends with the task.
+  // Follow a task's events as they come, from the first one or after a position; ends with the task. With --last, its
+  // last events only, at once: it returns without following a task that runs or waits, unless --follow.
   rpc Watch(TaskServiceWatchRequest) returns (stream TaskServiceWatchResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
   }
-  // Remove the worktree of a finished task. Its branch stays.
+  // Remove the worktree and scratch folder of a finished task. Its branch stays.
   rpc Clean(TaskServiceCleanRequest) returns (TaskServiceCleanResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_DELETE;
@@ -3632,8 +5207,9 @@ service TaskService {
   }
   // Continue a task no worker runs (done, failed, stopped, cut short) where it stopped: a new turn of its own
   // session, in its own worktree and branch, with the prompt. It goes back to the scheduler, like a planned task.
-  // Refused while it runs, when its worktree is gone, or when its agent cannot resume a session. To start another
-  // task from its context, fork it instead (djinn task spawn --fork).
+  // Refused while it runs, but for a worker the scheduler flagged stalled (Task.health): that one is ended and
+  // continued on its session, as the Lamplighter wakes one. Refused when its worktree is gone, or when its agent cannot
+  // resume a session. To start another task from its context, fork it instead (djinn task spawn --fork).
   rpc Continue(TaskServiceContinueRequest) returns (TaskServiceContinueResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -3648,7 +5224,7 @@ service TaskService {
   // or paused task may change its title only; a finished task (done, failed, stopped, cut short) may change title,
   // provider, model, prompt (for its next continue), azima, and integration (none clears it, pending puts its work back in
   // line), never its dependencies once it ran. An azima changes its title, whatever its state, written back to its plan
-  // file's heading when it has one; or its branch, alone.
+  // file's heading when it has one; or its branch, alone; or its rank among the wish's azimas, alone.
   rpc Update(TaskServiceUpdateRequest) returns (TaskServiceUpdateResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
@@ -3669,6 +5245,14 @@ service TaskService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Rank an azima among the azimas of its wish: first (--top), or just before or after another one (--before T46,
+  // --after T46). Djinn starts the waiting work of the first azimas first, within the wish's own rank among the wishes,
+  // and the gates serve it first after Djinn's merges and pushes. A new azima goes last; djinn task update --rank gives
+  // a place by number.
+  rpc Rank(TaskServiceRankRequest) returns (TaskServiceRankResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Comment on a line or range of lines of a task's diff: stored on the task with its file, line range, commit, and
   // excerpt. While the task's worker runs, the comment is sent to it as an instruction (djinn task send); otherwise it
   // waits for TaskService.TurnComments.
@@ -3680,6 +5264,14 @@ service TaskService {
   // it can be continued (djinn task continue), or spawns a correction task in its azima whose prompt quotes each
   // comment with its code excerpt. Each comment then records the task it went to.
   rpc TurnComments(TaskServiceTurnCommentsRequest) returns (TaskServiceTurnCommentsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Change provider and model for every open task that calls a model (work, investigations, mockups, ifrits,
+  // corrections, reviews, enlighten workers) and for the Summoning Circle defaults of future spawns, scoped to a wish
+  // (--wish-id), a project (--project-id), or all. Watchers and finished tasks are skipped. Dry run by default; pass
+  // --yes to apply. Running tasks change at their next start, or right away with --now.
+  rpc UpdateModels(TaskServiceUpdateModelsRequest) returns (TaskServiceUpdateModelsResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -3707,7 +5299,10 @@ message TaskServiceSpawnRequest {
   // Kind of agent; by default claude.
   Provider provider = 5 [(buf.validate.field).enum.defined_only = true];
   // Model of the agent; by default the provider's.
-  string model = 6 [(buf.validate.field).string.max_len = 200];
+  string model = 6 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+  ];
   // Most the worker may spend, in US dollars, when the provider can enforce it.
   double max_budget_usd = 7 [(buf.validate.field).double.gte = 0];
   // Same as after, the name it had: kept so that what spawns with --depends-on still works.
@@ -3744,7 +5339,10 @@ message TaskServiceSpawnRequest {
   // waits for with after.
   string part_of = 15 [(buf.validate.field).string.max_len = 64];
   // What the task is; by default work, for a worker. azima makes an azima (T1, T2…): no worker, no prompt, never
-  // scheduled; work is spawned part of it.
+  // scheduled; work is spawned part of it. ifrit makes an ifrit: an agent that stays lit while you are there, to
+  // iterate with you through the lead (djinn task send), in a project. investigation makes a short study or audit that
+  // ends in a tilasm and a question, served first, its commits never merged (--minutes, --max-budget-usd). mockup
+  // makes a mockup task, framed like an investigation, that puts a tilasm's next version.
   TaskKind kind = 16 [(buf.validate.field).enum.defined_only = true];
   // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
   // Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
@@ -3777,6 +5375,44 @@ message TaskServiceSpawnRequest {
   // command, its restart and its done line come from the skill, the prompt and the provider need not be given. The
   // request is found as it starts: the one a task of after opened, else the one open for the wish's branch.
   bool babysit = 22;
+  // For an ifrit (--kind ifrit): minutes without you in Djinn before Djinn puts it out, 5 to 240, as when you go and
+  // test for an hour. By default this machine's: djinn up --ifrit-idle, else the window's settings, else 30.
+  uint32 idle_minutes = 23 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).uint32 = {
+      gte: 5
+      lte: 240
+    }
+  ];
+  // Mark the task urgent, to unblock the wish (a repair of its red integration branch, a task a chain waits for): it
+  // goes before the wish's other planned tasks, takes a slot even on a full machine, and starts while the push checks
+  // are red. One urgent repair per wish at a time: refused, naming it, while another is to run or runs.
+  bool urgent = 24;
+  // For an investigation or a mockup (--kind investigation, --kind mockup): its time limit in minutes of work, 5 to
+  // 240; by default 25. At it, Djinn asks it to publish what it has; its budget is --max-budget-usd, by default 10.
+  uint32 minutes = 25 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).uint32 = {
+      gte: 5
+      lte: 240
+    }
+  ];
+  // Mark the task urgent for the developer's quick feedback (a prototype or a change they asked to see): urgent work
+  // as --urgent makes it, merged like any, after the wish's urgent repair; a mockup (--kind mockup) so marked goes
+  // first too, never merged. One urgent feedback task per wish at a time, beside one repair.
+  bool feedback = 26;
+  // The task repairs the red push checks of the wish's integration branch in its project: Djinn takes it as their
+  // correction, starts no correction of its own while it runs, and lets it start while the push is held. A title or
+  // a prompt that names the red push checks (the failed commit with them) does the same without the flag. Refused
+  // when the push checks are not red, and, naming it, while another correction of the same red runs: one repair per
+  // red per wish.
+  bool repair = 27;
+  // For a mockup (--kind mockup): the open question of the wish it iterates on, by code (Q61): it puts the next
+  // version of the tilasm the question links, then revises it, and the lead hears what it did when it ends.
+  string question = 28 [(buf.validate.field).string.max_len = 64];
+  // File holding what to ask the worker, in Markdown, read in place of --prompt; a relative path starts from the
+  // current directory.
+  string prompt_file = 29 [(buf.validate.field).string.max_len = 4096];
 }
 
 message TaskServiceSpawnResponse {
@@ -3807,6 +5443,26 @@ message TaskServiceListRequest {
   string page_token = 4 [(buf.validate.field).string.max_len = 500];
   // Only the failed tasks that wait for the lead.
   bool failed = 5;
+  // Each task in a few fields: its code, title, status, kind, azima, what it waits for, its times and its urgent mark;
+  // no prompt, no runs, no resources. Where the tasks stand, in a few lines each.
+  bool short = 6;
+  // Only the tasks the lists of what runs read: every task not done nor cancelled (running, paused, stopped, cut
+  // short, planned, waiting, failed), the azimas, and the done work still on its way into its branch (merging, waiting
+  // to merge, its merge failed or its work left not committed). Few, whatever the wish's size: the window reads them
+  // with the first page, so that a wish's glance shows its waiting work from the start.
+  bool live = 7;
+  // Only the open work: what runs and what comes, without the past. Running, paused, resuming, waiting for an answer,
+  // cut short, and planned (pending) tasks; done, failed, stopped and cancelled ones are left out. With --short, where
+  // the wish stands before a spawn.
+  bool open = 8;
+  // Only the tasks in these states: --status running --status pending. With --open, the tasks both keep.
+  repeated TaskStatus status = 9 [
+    (buf.validate.field).repeated.max_items = 10,
+    (buf.validate.field).repeated.items.enum = {
+      defined_only: true
+      not_in: [0]
+    }
+  ];
 }
 
 message TaskServiceListResponse {
@@ -3816,6 +5472,65 @@ message TaskServiceListResponse {
   string next_page_token = 2;
   // Total number of tasks matching the request.
   int32 total = 3;
+}
+
+message TaskServiceOverlapsRequest {
+  // The wish.
+  string wish_id = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message TaskServiceOverlapsResponse {
+  // The open work and its files, then the overlaps, in a few lines.
+  string text = 1;
+  // Each open task of the wish in a project, and the paths it touches.
+  repeated TaskFiles tasks = 2 [(djinn.v1.json_only) = true];
+  // Each pair of open tasks that touch the same paths.
+  repeated TaskOverlap overlaps = 3 [(djinn.v1.json_only) = true];
+}
+
+// TaskFilesSource says where the paths an open task touches come from.
+enum TaskFilesSource {
+  // Not set.
+  TASK_FILES_SOURCE_UNSPECIFIED = 0;
+  // Its worktree's or its branch's diff against its base: the task ran.
+  TASK_FILES_SOURCE_DIFF = 1;
+  // The write scopes it was given: planned.
+  TASK_FILES_SOURCE_WRITE_SCOPES = 2;
+  // Nothing tells: planned without write scopes, or its worktree and branch are gone.
+  TASK_FILES_SOURCE_UNKNOWN = 3;
+}
+
+// TaskFiles is an open task and the paths it touches, as TaskService.Overlaps reads them.
+message TaskFiles {
+  // The task.
+  string task_id = 1;
+  // Its code, W12.
+  string code = 2;
+  // What it does.
+  string title = 3;
+  // Where it stands.
+  TaskStatus status = 4;
+  // Its project.
+  string project_id = 5;
+  // Where its paths come from.
+  TaskFilesSource source = 6;
+  // The files it changed, generated files left out, or the scopes it writes; relative to the repository's root.
+  repeated string paths = 7;
+  // The commit its diff starts from, for a diff.
+  string base = 8;
+}
+
+// TaskOverlap is two open tasks of a project that touch the same paths.
+message TaskOverlap {
+  // The two tasks, by identifier: the one made first, first.
+  repeated string task_ids = 1;
+  // Their codes, in the same order.
+  repeated string codes = 2;
+  // The paths both touch: a file, or a write scope that holds the other's files.
+  repeated string paths = 3;
 }
 
 message TaskServiceGetRequest {
@@ -3980,6 +5695,9 @@ message TaskServiceDiffRequest {
     gte: 0
     lte: 2000
   }];
+  // Show what the task's worktree holds not committed instead of its committed work: the changes to tracked files,
+  // staged or not, and the untracked files, against the worktree's HEAD, the project's .gitignore applying.
+  bool uncommitted = 6;
 }
 
 message TaskServiceDiffResponse {
@@ -3989,8 +5707,10 @@ message TaskServiceDiffResponse {
   TaskFileDiff file = 2;
   // Base commit or ref used for comparison.
   string base = 3;
-  // Head commit or ref used for comparison.
+  // Head commit or ref used for comparison; empty for uncommitted, which compares base with the worktree's files.
   string head = 4;
+  // For uncommitted: the task has no worktree, never made or removed once its work merged, so nothing to show.
+  bool no_worktree = 5;
 }
 
 message TaskServiceStopRequest {
@@ -4007,15 +5727,20 @@ message TaskServiceStopResponse {
 }
 
 message TaskServiceSendRequest {
-  // The task, running.
+  // The task, running: its code (W1) or its identifier.
   string task_id = 1 [
     (buf.validate.field).required = true,
-    (buf.validate.field).string.uuid = true
+    (buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
   ];
   // The message, as the worker reads it.
   string text = 2 [
     (buf.validate.field).required = true,
     (buf.validate.field).string.max_len = 20000
+  ];
+  // Wish the task belongs to, when given by code and the code is in several wishes.
+  string wish_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
   ];
 }
 
@@ -4064,15 +5789,29 @@ message TaskServiceStartResponse {
 }
 
 message TaskServiceWatchRequest {
-  // The task.
+  // The task: its code (W1) or its identifier.
   string task_id = 1 [
     (buf.validate.field).required = true,
-    (buf.validate.field).string.uuid = true
+    (buf.validate.field).string.pattern = "^([Ww][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
   ];
   // Only the events after this position, to resume where a reader left off.
   int64 after_seq = 2 [(buf.validate.field).int64.gte = 0];
   // Also send each event's raw line from the provider.
   bool raw = 3;
+  // Only the last events already stored, this many (a task that ended: its final note is among them), then return
+  // at once, whether the task runs, waits or ended. Not set: from the first one, or after after_seq, following the
+  // task until it ends.
+  int32 last = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
+  // With --last, follow the task after its last events, until it ends, as a watch without --last does.
+  bool follow = 5;
+  // Wish the task belongs to, when given by code and the code is in several wishes.
+  string wish_id = 6 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
 }
 
 message TaskServiceWatchResponse {
@@ -4243,7 +5982,10 @@ message TaskServiceUpdateRequest {
     not_in: [0, 5]
   }];
   // Model of the agent; empty for the provider's default.
-  optional string model = 5 [(buf.validate.field).string.max_len = 200];
+  optional string model = 5 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+  ];
   // The azima the task belongs to: its code (T07) or its identifier. Empty: the task is part of no azima.
   optional string part_of = 6 [(buf.validate.field).string.max_len = 64];
   // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
@@ -4280,6 +6022,17 @@ message TaskServiceUpdateRequest {
     min_len: 1
     max_len: 250
   }];
+  // Mark the task urgent, a repair (as djinn task spawn --urgent), or no longer with --urgent=false, which takes either
+  // mark off. A task planned, waiting, paused or running takes it. Refused on an azima, a watcher, an investigation, a
+  // task that has ended, and while another task of the wish is an urgent repair, which the refusal names.
+  optional bool urgent = 14;
+  // An azima's place among the azimas of its wish, from 1 for the first; beyond the last, it goes last (djinn task rank
+  // places it before or after another). Goes alone; refused on a work task.
+  optional int32 rank = 15 [(buf.validate.field).int32.gte = 1];
+  // Mark the task urgent for the developer's quick feedback (as djinn task spawn --feedback), or no longer with
+  // --feedback=false, which leaves a repair's mark. Refused as --urgent is, while another task of the wish is urgent for
+  // feedback; an urgent repair of the wish does not refuse it.
+  optional bool feedback = 16;
 }
 
 message TaskServiceUpdateResponse {
@@ -4331,6 +6084,32 @@ message TaskServiceMoveRequest {
 message TaskServiceMoveResponse {
   // The azima moved, in its new wish.
   Task task = 1;
+}
+
+message TaskServiceRankRequest {
+  // The azima to rank: its code (T07) or identifier.
+  string azima = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 64
+  ];
+  // Its wish, when the azima is given by a code that several wishes have. Not set: the code's azima in the first
+  // active wish that has one.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Rank it first among the azimas of its wish. One of --top, --before and --after.
+  optional bool top = 3;
+  // Rank it just before another azima of the wish, by code (T46) or identifier.
+  string before = 4 [(buf.validate.field).string.max_len = 64];
+  // Rank it just after another azima of the wish, by code (T46) or identifier.
+  string after = 5 [(buf.validate.field).string.max_len = 64];
+}
+
+message TaskServiceRankResponse {
+  // The azimas of the wish in their new order, the first first.
+  repeated Task azimas = 1;
 }
 
 message TaskServiceCommentRequest {
@@ -4389,6 +6168,176 @@ message TaskServiceTurnCommentsResponse {
   Task task = 1;
   // Whether the task was continued in place (true) or a correction task was spawned (false).
   bool continued = 2;
+}
+
+message TaskServiceUpdateModelsRequest {
+  // Kind of agent; when omitted, inferred from --model.
+  Provider provider = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [5]
+  }];
+  // Model of the agent; when omitted or empty, the provider's default model.
+  optional string model = 2 [
+    (buf.validate.field).string.max_len = 200,
+    (buf.validate.field).string.pattern = "^[A-Za-z0-9._:@/\\[\\]() -]*$"
+  ];
+  // Only the open tasks of this wish.
+  string wish_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Only the open tasks of this project (and of wishes in this project).
+  string project_id = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Apply the change; by default false (dry run that previews what would change).
+  bool yes = 5;
+  // Restart running tasks right away on the new provider and model instead of waiting for their next start.
+  bool now = 6;
+}
+
+message TaskServiceUpdateModelsResponse {
+  // Human-readable summary of the dry run or applied change.
+  string text = 1;
+  // True when yes was not passed and nothing was modified.
+  bool dry_run = 2;
+  // Target provider resolved from the request.
+  Provider provider = 3;
+  // Target model resolved from the request.
+  string model = 4;
+  // Open model-calling tasks changed (or that would change in a dry run).
+  repeated Task tasks = 5;
+  // Open tasks in scope that were skipped (such as watchers).
+  repeated Task skipped = 6;
+  // Worker seats of the Summoning Circle updated (or that would be updated) for future spawns.
+  repeated WorkerSeat circle = 7;
+}
+
+// The processes an ifrit runs through Djinn, rather than in the background of its shell: a dev server, a stack. Djinn
+// starts each in the ifrit's worktree, in a process group of its own, writes its output to a log, shows the ports it
+// listens on as links, and stops it when the ifrit goes out, ends or stops; it starts them again when the ifrit is lit
+// again. Only an ifrit runs one.
+service ServeService {
+  // Start a serve: the command returns once its process lives, and once each port it declares answers. A serve of the
+  // same name is stopped first. Like a watcher's, its command must be allowed by the project or the wish's allowance.
+  rpc Run(ServeServiceRunRequest) returns (ServeServiceRunResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // List an ifrit's serves: their ports, their state.
+  rpc List(ServeServiceListRequest) returns (ServeServiceListResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Stop a serve: its stop command first, then its process group. It stays in the ifrit's serves, stopped, and does not
+  // start again when the ifrit is lit again.
+  rpc Stop(ServeServiceStopRequest) returns (ServeServiceStopResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Print the end of what a serve wrote, its output and its errors together.
+  rpc Logs(ServeServiceLogsRequest) returns (ServeServiceLogsResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message ServeServiceRunRequest {
+  // Its name, like front or back.
+  string name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // The command, run through the shell: quote it whole, like "npm run dev".
+  string command = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.max_len = 4096
+  ];
+  // The ifrit; by default $DJINN_TASK_ID, which Djinn sets for every worker.
+  string task_id = 3 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+  // The folder it runs in; by default the ifrit's worktree.
+  string directory = 4 [(buf.validate.field).string.max_len = 4096];
+  // A gate it holds for as long as it runs, like stack: others wait for it until the ifrit goes out or ends.
+  string gate = 5 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // A port it listens on, with its name: 8080=api. Repeat it for each. Djinn finds the ports its processes hold by
+  // itself; declare one that Docker publishes, which none of them does.
+  repeated string port = 6 [
+    (buf.validate.field).repeated.max_items = 20,
+    (buf.validate.field).repeated.items.string.pattern = "^[0-9]{1,5}(=[A-Za-z0-9_-]{1,40})?$"
+  ];
+  // The command that stops what lives outside its processes, like containers: run first when it stops, for a minute
+  // at most.
+  string stop = 7 [(buf.validate.field).string.max_len = 4096];
+}
+
+message ServeServiceRunResponse {
+  // The serve, started.
+  Serve serve = 1;
+}
+
+message ServeServiceListRequest {
+  // The ifrit; by default $DJINN_TASK_ID, which Djinn sets for every worker.
+  string task_id = 1 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+}
+
+message ServeServiceListResponse {
+  // Its serves, in the order they were first started.
+  repeated Serve serves = 1;
+}
+
+message ServeServiceStopRequest {
+  // Its name.
+  string name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // The ifrit; by default $DJINN_TASK_ID, which Djinn sets for every worker.
+  string task_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+}
+
+message ServeServiceStopResponse {
+  // The serve, stopped.
+  Serve serve = 1;
+}
+
+message ServeServiceLogsRequest {
+  // Its name.
+  string name = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+  ];
+  // The ifrit; by default $DJINN_TASK_ID, which Djinn sets for every worker.
+  string task_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true,
+    (djinn.v1.env) = "DJINN_TASK_ID"
+  ];
+  // How many of its last lines; by default 100.
+  int32 last = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 10000
+  }];
+}
+
+message ServeServiceLogsResponse {
+  // Its last lines, oldest first.
+  repeated string lines = 1;
 }
 
 // The plan of a wish as a graph of azimas: tasks of kind AZIMA that no worker runs, which work is part of. The store

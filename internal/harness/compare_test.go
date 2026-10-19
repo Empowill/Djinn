@@ -12,13 +12,14 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// TestCompareWithTheRunningDjinn: a build is named by the branch and wish it comes from, and compared with the commit
+// TestCompare: a build is named by the branch and wish it comes from, and compared with the commit
 // the running Djinn was built from: the tasks merged since, by code and title, the commits it adds, and those it lacks
 // when it comes from another branch (W468: feat/clement-port's build, installed over a Djinn of feat/wails-go). A build
 // of another branch that holds the running commit carries the running line on (W527: the wish moved its integration
 // to feat/robustness, cut at feat/wails-go's tip); a parallel one does not.
-func TestCompareWithTheRunningDjinn(t *testing.T) {
+func TestCompare(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	ctx := t.Context()
 	project, err := store.Get[*planv1.Project](ctx, in.db, in.projectID)

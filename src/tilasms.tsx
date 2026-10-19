@@ -1,26 +1,83 @@
-// The Tilasms tab of a wish: the material that explains it (T25), a folder with an index.html kept in Djinn's data
-// folder. A row per tilasm, by code: its title, who made it, when, what it cites. One opens in a frame of its own,
-// served by Djinn at /tilasm/<id>/ with a policy of its own (internal/plan/tilasm_files.go): its scripts run, it reaches
-// no network and nothing of Djinn. A search finds words in the titles and the text, within the wish; "talisman" finds
-// them all. A row's history restores an earlier version; its export writes a .zip to the Downloads folder. A folder or
-// a .zip dropped on the tab becomes a tilasm, or the new version of the one a .zip exported.
+// The Tilasms tab of a wish: the material that explains it (T25), an .html file or a folder with an index.html kept in
+// Djinn's data folder. A regular card list in a single left column, newest first: its title, who made it, when, what it
+// cites. One opens in a frame of its own, served by Djinn at /tilasm/<id>/ with a policy of its own
+// (internal/plan/tilasm_files.go): its scripts run, it reaches no network and nothing of Djinn. A search finds words in
+// the titles and the text, within the wish; "talisman" finds them all. A row's history restores an earlier version; its
+// export writes a .zip to the Downloads folder. An .html file, a folder or a .zip dropped on the tab or chosen in the
+// drop zone becomes a tilasm, or the new version of the one a .zip exported. The open one goes full size: its frame
+// covers the main shell, the side panel beside it; leaving puts the tab back as it was, the frame never reloaded. The
+// same frame opens over any view, full size, as a link in a question asks (tilasm-over.tsx). Beside the frame in the
+// tab, full size and over a view too, the developer's draft comments on it (tilasm-comments.tsx): counted on its head,
+// on its row and on the tab. A passage selected in the frame is commented from a button over it, its drafts highlighted in the page
+// (tilasm-passages.tsx); Aim mode comments an element, and numbered dots in a margin beside the frame stand at the
+// height of each anchor (tilasm-margin.tsx). A new version places the anchors again: the window writes where each
+// stands, found, changed or lost, and a toast counts them. A version a task linked to comments put says so on its
+// head: v4 by W62, for C1, C3. A row publishes its tilasm on claude.ai, and links it once published (tilasm-publish.tsx).
 import {
+  Crosshair,
   Download,
   FolderInput,
   History,
+  Maximize2,
+  MessageSquare,
+  Minimize2,
   RotateCcw,
   Search,
   X,
 } from "lucide-react";
-import { type DragEvent, useEffect, useState } from "react";
+import { type DragEvent, useEffect, useRef, useState } from "react";
 
 import { Change, type Task } from "../gen/ts/plan/v1/plan_pb";
-import type { Tilasm } from "../gen/ts/plan/v1/tilasm_pb";
+import {
+  AnchorStatus,
+  SendChoice,
+  type Tilasm,
+  type TilasmComment,
+  type TilasmHold,
+  type TilasmSendRead,
+  type TilasmSends,
+} from "../gen/ts/plan/v1/tilasm_pb";
+import { type Pick, marksOf } from "./data/bridge";
 import { message } from "./data/client";
+import {
+  cards,
+  draftCounts,
+  draftsOn,
+  placeCounts,
+  placesToWrite,
+  sentOn,
+  versionFor,
+} from "./data/comments";
+import { later } from "./data/decisions";
 import { useClients, useStore } from "./data/djinn";
+import { compareCodes } from "./data/flight";
 import { when } from "./data/format";
-import { type DropEntry, TooLarge, entriesOf, readDrop } from "./data/tilasms";
+import {
+  type DropEntry,
+  TooLarge,
+  entriesFromFiles,
+  entriesOf,
+  readDrop,
+} from "./data/tilasms";
+import { useFullSize } from "./full-size";
+import type { ReadState } from "./data/store";
 import { t } from "./i18n";
+import { EmptyState } from "./empty-art";
+import { ReadingLine } from "./reading-line";
+import {
+  type CommentWrites,
+  CommentsColumn,
+  DraftDot,
+} from "./tilasm-comments";
+import { AimBox, Margin, useAim, usePlaced } from "./tilasm-margin";
+import { CommentPick, usePassages } from "./tilasm-passages";
+import {
+  ArtifactState,
+  PublishButton,
+  PublishConfirm,
+  needsConfirm,
+  useCanPublish,
+} from "./tilasm-publish";
 import { memory } from "./usage";
 
 import "./tilasms.css";
@@ -30,11 +87,31 @@ export const tilasmAddress = (id: string) => `/tilasm/${id}/`;
 
 const latest = (tilasm: Tilasm) => tilasm.versions.at(-1)?.number ?? 0;
 
+const tilasmTime = (tilasm: Tilasm) => {
+  const last = tilasm.versions.at(-1)?.createTime;
+  if (tilasm.updateTime && last)
+    return later(tilasm.updateTime, last) <= 0 ? tilasm.updateTime : last;
+  return tilasm.updateTime ?? last ?? tilasm.createTime;
+};
+
+// newestTilasm orders tilasms from the most recent to the oldest.
+export const newestTilasm = (a: Tilasm, b: Tilasm): number =>
+  later(tilasmTime(a), tilasmTime(b)) ||
+  later(a.createTime, b.createTime) ||
+  compareCodes(b.code, a.code);
+
 export function TilasmsTab({
   wishId,
   opening,
   tilasms,
+  drafts = [],
+  holds = [],
+  sent = [],
+  reads = [],
+  sends = [],
   tasks,
+  readState = "ready",
+  onRetry,
   onToast,
 }: {
   wishId: string;
@@ -42,7 +119,19 @@ export function TilasmsTab({
   opening?: { tilasmId: string };
   // The wish's tilasms, by code.
   tilasms: readonly Tilasm[];
+  // The developer's draft comments on them.
+  drafts?: readonly TilasmComment[];
+  // Why some take no send for now, as the server computes it.
+  holds?: readonly TilasmHold[];
+  // The comments sent on them, with the Djinn's replies.
+  sent?: readonly TilasmComment[];
+  // The sends on them the Djinn read.
+  reads?: readonly TilasmSendRead[];
+  // What Iterate and Launch do on each tilasm linked to an open question.
+  sends?: readonly TilasmSends[];
   tasks: readonly Task[];
+  readState?: ReadState;
+  onRetry?: () => void;
   onToast: (text: string) => void;
 }) {
   const clients = useClients();
@@ -56,6 +145,10 @@ export function TilasmsTab({
   }, [opening]);
   const [history, setHistory] = useState("");
   const [busy, setBusy] = useState(false);
+  const canPublish = useCanPublish();
+  // The tilasm whose first publish waits for the developer's go-ahead, and the one being published.
+  const [confirming, setConfirming] = useState("");
+  const [publishing, setPublishing] = useState("");
   useEffect(() => {
     if (!search.trim()) return setFound(null);
     let live = true;
@@ -87,9 +180,36 @@ export function TilasmsTab({
   const ref = (tilasm: Tilasm) => ({
     ref: { case: "id" as const, value: tilasm.id },
   });
+  const comments = useCommentWrites(wishId, onToast);
+  const publish = (tilasm: Tilasm, confirmed: boolean) => {
+    setConfirming("");
+    setPublishing(tilasm.id);
+    void run(async () => {
+      if (confirmed)
+        await clients.tilasms.confirmPublish({ tilasmId: tilasm.id });
+      const res = await clients.tilasms.publish({ tilasm: ref(tilasm) });
+      return res.leftOut.length > 0
+        ? t("tilasms.published_left", {
+            code: tilasm.code,
+            count: res.leftOut.length,
+            files: res.leftOut.join(", "),
+          })
+        : t("tilasms.published", { code: tilasm.code });
+    }).finally(() => setPublishing(""));
+  };
   return (
     <TilasmList
       tilasms={found ?? tilasms}
+      drafts={drafts}
+      holds={holds}
+      sent={sent}
+      reads={reads}
+      sends={sends}
+      tasks={tasks}
+      readState={readState}
+      onRetry={onRetry}
+      comments={comments}
+      onCommentError={(error) => onToast(message(error))}
       count={tilasms.length}
       codes={new Map(tasks.map((task) => [task.id, task.code]))}
       search={search}
@@ -114,6 +234,16 @@ export function TilasmsTab({
           return t("tilasms.exported", { file: res.file });
         })
       }
+      canPublish={canPublish}
+      confirming={confirming}
+      publishing={publishing}
+      onPublish={(tilasm) =>
+        needsConfirm(tilasm)
+          ? setConfirming(confirming === tilasm.id ? "" : tilasm.id)
+          : publish(tilasm, false)
+      }
+      onConfirm={(tilasm) => publish(tilasm, true)}
+      onCancelPublish={() => setConfirming("")}
       busy={busy}
       onDrop={(entries) => {
         setBusy(true);
@@ -136,9 +266,92 @@ export function TilasmsTab({
   );
 }
 
+// useCommentWrites is what writes the developer's comments on a wish's tilasms, in the Tilasms tab and over a view;
+// onToast tells what a send did, and what a new version found again of the comments.
+export function useCommentWrites(
+  wishId: string,
+  onToast: (text: string) => void,
+): CommentWrites {
+  const clients = useClients();
+  const store = useStore();
+  // Each write reads the drafts again before it resolves: the card shows what was stored, never what it held before.
+  const reread = () => store.changed(wishId, [Change.TILASM]);
+  return {
+    put: async (tilasmId, text, id, anchor) => {
+      await clients.tilasms.putComment({ tilasmId, id, text, anchor });
+      await reread();
+    },
+    place: async (tilasm, version, places) => {
+      await clients.tilasms.placeComments({
+        tilasmId: tilasm.id,
+        version,
+        places,
+      });
+      await reread();
+      onToast(placedText(tilasm.code, version, places));
+    },
+    remove: async (comment) => {
+      const res = await clients.tilasms.deleteComment({ id: comment.id });
+      await reread();
+      return res.comment ?? comment;
+    },
+    putBack: async (comment) => {
+      await clients.tilasms.putComment({
+        tilasmId: comment.tilasmId,
+        deleted: comment,
+      });
+      await reread();
+    },
+    send: async (tilasmId, choice, text) => {
+      const res = await clients.tilasms.sendComments({
+        tilasmId,
+        choice,
+        text,
+      });
+      await reread();
+      const send = res.send?.number ?? 0;
+      onToast(
+        res.iterate
+          ? t("tilasms.sent_mockup", { send })
+          : res.answered
+            ? t("tilasms.sent_answered", { question: res.answered })
+            : choice === SendChoice.ITERATE
+              ? t("tilasms.sent_iterate", { send })
+              : t("tilasms.sent_launch", { send }),
+      );
+    },
+  };
+}
+
+// placedText is the toast that counts what a version found again of the comments placed in it: 3 found again, 1
+// changed, 1 detached.
+export function placedText(
+  code: string,
+  version: number,
+  places: readonly { status: AnchorStatus }[],
+): string {
+  const n = placeCounts(places);
+  const counts = [
+    n.found > 0 && t("tilasms.placed_found", { count: n.found }),
+    n.changed > 0 && t("tilasms.placed_changed", { count: n.changed }),
+    n.lost > 0 && t("tilasms.placed_lost", { count: n.lost }),
+  ].filter(Boolean);
+  return t("tilasms.placed", { code, version, counts: counts.join(", ") });
+}
+
 // TilasmList is the tab as it shows, from what it is given.
 export function TilasmList({
   tilasms,
+  drafts = [],
+  holds = [],
+  sent = [],
+  reads = [],
+  sends = [],
+  tasks = [],
+  readState = "ready",
+  onRetry,
+  comments,
+  onCommentError = () => {},
   count,
   codes,
   search,
@@ -149,11 +362,34 @@ export function TilasmList({
   onHistory,
   onRestore,
   onExport,
+  canPublish = false,
+  confirming = "",
+  publishing = "",
+  onPublish = () => {},
+  onConfirm = () => {},
+  onCancelPublish = () => {},
   busy = false,
   onDrop,
 }: {
   // What shows: the wish's tilasms, or those the search found.
   tilasms: readonly Tilasm[];
+  // The developer's draft comments on the wish's tilasms.
+  drafts?: readonly TilasmComment[];
+  // Why some take no send for now.
+  holds?: readonly TilasmHold[];
+  // The comments sent on them, with the Djinn's replies.
+  sent?: readonly TilasmComment[];
+  // The sends on them the Djinn read.
+  reads?: readonly TilasmSendRead[];
+  // What Iterate and Launch do on each tilasm linked to an open question.
+  sends?: readonly TilasmSends[];
+  // The wish's tasks: those the Djinn's replies name, with their state.
+  tasks?: readonly Task[];
+  readState?: ReadState;
+  onRetry?: () => void;
+  // What writes them; without it, the open tilasm shows no comments.
+  comments?: CommentWrites;
+  onCommentError?: (error: unknown) => void;
   // How many the wish has.
   count: number;
   // The codes of the wish's tasks and azimas, by id: what a tilasm cites.
@@ -169,16 +405,30 @@ export function TilasmList({
   onHistory: (id: string) => void;
   onRestore: (tilasm: Tilasm, version: number) => void;
   onExport: (tilasm: Tilasm) => void;
+  // This machine publishes tilasms on claude.ai.
+  canPublish?: boolean;
+  // The tilasm whose first publish asks the developer, and the one being published.
+  confirming?: string;
+  publishing?: string;
+  // Publishes a tilasm, or asks first; the developer confirms, or cancels.
+  onPublish?: (tilasm: Tilasm) => void;
+  onConfirm?: (tilasm: Tilasm) => void;
+  onCancelPublish?: () => void;
   // A drop is being put.
   busy?: boolean;
   onDrop: (entries: DropEntry[]) => void;
 }) {
   const [over, setOver] = useState(false);
+  // The tilasm shown full size: the open one, until it is left or closed.
+  const [fullId, setFullId] = useState("");
+  const full = open !== undefined && fullId === open.id;
   const dragging = (event: DragEvent) => {
     if (!event.dataTransfer?.types.includes("Files")) return;
     event.preventDefault();
     setOver(true);
   };
+  const sorted = [...tilasms].sort(newestTilasm);
+  const counts = draftCounts(drafts);
   return (
     <div
       role="tabpanel"
@@ -208,47 +458,66 @@ export function TilasmList({
             onChange={(event) => onSearch(event.target.value)}
           />
         </label>
-        <span className="tilasm-drop">
-          <FolderInput size={13} />
-          {busy ? t("tilasms.putting") : t("tilasms.drop")}
-        </span>
+        <label className={`tilasm-drop ${over ? "dropping" : ""}`}>
+          <FolderInput size={14} />
+          <span>{busy ? t("tilasms.putting") : t("tilasms.drop")}</span>
+          <input
+            type="file"
+            accept=".html,.htm,.zip,text/html,application/zip"
+            disabled={busy}
+            aria-label={t("tilasms.drop")}
+            onChange={(event) => {
+              const entries = entriesFromFiles(event.target.files);
+              event.target.value = "";
+              if (entries.length) onDrop(entries);
+            }}
+          />
+        </label>
       </div>
       {open && (
-        <section className="tilasm-view" aria-label={open.title}>
-          <div className="tilasm-view-head">
-            <span className="tilasm-code">{open.code}</span>
-            <strong>{open.title}</strong>
-            <span className="muted-text">
-              {t("tilasms.version", { version: latest(open) })}
-            </span>
-            <button
-              type="button"
-              className="icon-button"
-              title={t("tilasms.close")}
-              aria-label={t("tilasms.close")}
-              onClick={() => onOpen("")}
-            >
-              <X size={14} />
-            </button>
-          </div>
-          {/* Scripts only: an opaque origin, never Djinn's; the server's policy refuses the network. */}
-          <iframe
-            key={`${open.id}-${latest(open)}`}
-            className="tilasm-frame"
-            title={`${open.code} · ${open.title}`}
-            src={tilasmAddress(open.id)}
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-          />
-        </section>
+        <TilasmFrame
+          tilasm={open}
+          full={full}
+          onFull={(on) => setFullId(on ? open.id : "")}
+          onClose={() => {
+            setFullId("");
+            onOpen("");
+          }}
+          drafts={draftsOn(drafts, open.id)}
+          sent={sentOn(sent, open.id)}
+          reads={reads}
+          tasks={tasks}
+          hold={holds.find((h) => h.tilasmId === open.id)}
+          sends={sends.find((s) => s.tilasmId === open.id)}
+          comments={comments}
+          onCommentError={onCommentError}
+        />
       )}
       {count === 0 ? (
-        <p className="muted-text">{t("tilasms.none")}</p>
-      ) : tilasms.length === 0 ? (
-        <p className="muted-text">{t("tilasms.none_found", { search })}</p>
+        readState !== "ready" ? (
+          <ReadingLine
+            kind="tilasms"
+            state={readState}
+            size="card-r"
+            onRetry={onRetry}
+          />
+        ) : (
+          <EmptyState
+            art="tilasms"
+            after={
+              <p className="empty-state-text">{t("tilasms.none_command")}</p>
+            }
+          >
+            {t("tilasms.none")}
+          </EmptyState>
+        )
+      ) : sorted.length === 0 ? (
+        <EmptyState art="nomatch" small>
+          {t("tilasms.none_found", { search })}
+        </EmptyState>
       ) : (
         <ul className="tilasm-list" aria-label={t("tabs.tilasms")}>
-          {tilasms.map((tilasm) => (
+          {sorted.map((tilasm) => (
             <li
               key={tilasm.id}
               id={`tilasm-${tilasm.id}`}
@@ -265,7 +534,7 @@ export function TilasmList({
                   {tilasm.title}
                 </button>
                 <span className="tilasm-meta">
-                  {tilasm.author} · {when(tilasm.updateTime)}
+                  {tilasm.author} · {when(tilasmTime(tilasm))}
                 </span>
                 {tilasm.cites.length > 0 && (
                   <span className="tilasm-cites">
@@ -277,7 +546,20 @@ export function TilasmList({
                     ))}
                   </span>
                 )}
+                <ArtifactState
+                  tilasm={tilasm}
+                  publishing={publishing === tilasm.id}
+                />
                 <span className="tilasm-actions">
+                  {(counts.get(tilasm.id) ?? 0) > 0 && (
+                    <DraftDot count={counts.get(tilasm.id) ?? 0} />
+                  )}
+                  <PublishButton
+                    tilasm={tilasm}
+                    canPublish={canPublish}
+                    publishing={publishing === tilasm.id}
+                    onPublish={onPublish}
+                  />
                   <button
                     type="button"
                     className="icon-button"
@@ -299,6 +581,13 @@ export function TilasmList({
                   </button>
                 </span>
               </div>
+              {confirming === tilasm.id && (
+                <PublishConfirm
+                  tilasm={tilasm}
+                  onConfirm={() => onConfirm(tilasm)}
+                  onCancel={onCancelPublish}
+                />
+              )}
               {history === tilasm.id && (
                 <ol className="tilasm-history" reversed>
                   {[...tilasm.versions].reverse().map((v) => (
@@ -332,5 +621,295 @@ export function TilasmList({
         </ul>
       )}
     </div>
+  );
+}
+
+// TilasmFrame is a tilasm in its frame. In the Tilasms tab, under its head, in the page, it goes full size and back;
+// over a view, as a link in a question opens it (tilasm-over.tsx), it is full size from the start, with no head, and
+// leaving it closes it; it is commented there as in the tab, from the buttons it has full size.
+export function TilasmFrame({
+  tilasm,
+  full,
+  onFull,
+  onClose,
+  over = false,
+  drafts = [],
+  sent = [],
+  reads = [],
+  tasks = [],
+  hold,
+  sends,
+  comments,
+  onCommentError = () => {},
+}: {
+  tilasm: Tilasm;
+  // Full size: the frame covers the main shell. Over a view, it always is.
+  full: boolean;
+  onFull: (full: boolean) => void;
+  onClose: () => void;
+  // Opened over a view: full size, and its button closes it.
+  over?: boolean;
+  // The developer's drafts on it, in the order written.
+  drafts?: readonly TilasmComment[];
+  // The comments sent on it, with the Djinn's replies, in the order written.
+  sent?: readonly TilasmComment[];
+  // The sends the Djinn read: the cards of their comments say so.
+  reads?: readonly TilasmSendRead[];
+  // The wish's tasks: those a reply names, with their state, and the one that put the latest version.
+  tasks?: readonly Task[];
+  // Why it takes no send for now; none: it does.
+  hold?: TilasmHold;
+  // What Iterate and Launch do on this tilasm, as the server computes it.
+  sends?: TilasmSends;
+  // What writes them: the Comments column shows beside the frame, on demand; without it, none.
+  comments?: CommentWrites;
+  onCommentError?: (error: unknown) => void;
+}) {
+  const [commenting, setCommenting] = useState(false);
+  const enabled = comments !== undefined;
+  const column = enabled && commenting;
+  const frame = useRef<HTMLIFrameElement>(null);
+  const version = latest(tilasm);
+  // Its comments in the page, drafts and sent alike: highlighted, placed again in a new version, dotted in the margin.
+  const all = cards(drafts, sent);
+  // What the developer asked to comment, until the column takes it; what the card being written is on, highlighted.
+  const [ask, setAsk] = useState<Pick>();
+  const [writing, setWriting] = useState<Pick>();
+  // The card open from its dot, and the detached draft waiting for a passage or an element to be on.
+  const [active, setActive] = useState("");
+  const [reattaching, setReattaching] = useState("");
+  const [aiming, setAiming] = useState(false);
+  const picked = (pick: Pick) => {
+    const draft = drafts.find((c) => c.id === reattaching);
+    setReattaching("");
+    if (draft && comments) {
+      // Reattached: on the version shown, where it is found.
+      comments
+        .put(tilasm.id, draft.text, draft.id, {
+          ...pick,
+          status: AnchorStatus.FOUND,
+          statusVersion: version,
+        })
+        .catch(onCommentError);
+      return;
+    }
+    setCommenting(true);
+    setAsk(pick);
+  };
+  const passages = usePassages(
+    frame,
+    enabled,
+    marksOf(all, writing, active),
+    version,
+    picked,
+  );
+  const hover = useAim(frame, enabled, aiming, setAiming, picked);
+  const placed = usePlaced(frame, enabled, version);
+  // Placed in a later version than they were written on: where each stands is written once, for the cards and the lead.
+  const toWrite = enabled ? placesToWrite(all, placed, version) : [];
+  const writeKey = toWrite.length > 0 ? JSON.stringify(toWrite) : "";
+  const placing = useRef({ comments, onCommentError, tilasm });
+  placing.current = { comments, onCommentError, tilasm };
+  useEffect(() => {
+    if (!writeKey) return;
+    const {
+      comments: writes,
+      onCommentError: failed,
+      tilasm: placed,
+    } = placing.current;
+    writes
+      ?.place(
+        placed,
+        version,
+        JSON.parse(writeKey) as ReturnType<typeof placesToWrite>,
+      )
+      .catch(failed);
+  }, [writeKey, version]);
+  const reveal = (id: string) =>
+    frame.current?.contentWindow?.postMessage(
+      { djinn: "tilasm", type: "reveal", id },
+      "*",
+    );
+  // The version a task linked to comments put: v4 by W62, for C1, C3.
+  const from = enabled ? versionFor(tilasm, sent, tasks) : undefined;
+  const fromVars = from && {
+    version,
+    task: from.task,
+    comments: from.comments.join(", "),
+  };
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const dotted =
+    enabled &&
+    all.some((c) => c.anchor?.exact || c.anchor?.path || c.anchor?.elementId);
+  const enter = useRef<HTMLButtonElement>(null);
+  const leave = useRef<HTMLButtonElement>(null);
+  useFullSize(
+    full || over,
+    frame,
+    enter,
+    leave,
+    over ? onClose : () => onFull(false),
+  );
+  const aim = (className: string) =>
+    enabled && (
+      <button
+        type="button"
+        className={`${className ? "icon-button" : "text-button"} tilasm-aim${className ? ` ${className}` : ""}`}
+        aria-pressed={aiming}
+        title={t("tilasms.aim_title")}
+        aria-label={className ? t("tilasms.aim") : undefined}
+        aria-keyshortcuts="Escape"
+        data-full-keep={className ? "" : undefined}
+        onClick={() => setAiming(!aiming)}
+      >
+        <Crosshair size={13} aria-hidden="true" />
+        {!className && t("tilasms.aim")}
+      </button>
+    );
+  const toggle = (className: string) =>
+    enabled && (
+      <button
+        type="button"
+        className={`icon-button tilasm-comments-toggle${className ? ` ${className}` : ""}`}
+        aria-pressed={commenting}
+        title={`${t("tilasms.comments")} · ${t("tilasms.drafts", { count: drafts.length })}`}
+        aria-label={`${t("tilasms.comments")} · ${t("tilasms.drafts", { count: drafts.length })}`}
+        data-full-keep={className ? "" : undefined}
+        onClick={() => setCommenting(!commenting)}
+      >
+        <MessageSquare size={14} aria-hidden="true" />
+        <span className={drafts.length > 0 ? "draft-count" : undefined}>
+          {drafts.length}
+        </span>
+      </button>
+    );
+  return (
+    <section
+      className={`tilasm-view${over ? " over full-over" : full ? " full" : ""}${column ? " commenting" : ""}${dotted ? " dotted" : ""}`}
+      aria-label={tilasm.title}
+    >
+      {!over && (
+        <div className="tilasm-view-head">
+          <span className="tilasm-code">{tilasm.code}</span>
+          <strong>{tilasm.title}</strong>
+          <span
+            className="muted-text"
+            title={fromVars && t("tilasms.version_for_title", fromVars)}
+          >
+            {fromVars
+              ? t("tilasms.version_for", fromVars)
+              : t("tilasms.version", { version: latest(tilasm) })}
+          </span>
+          <button
+            ref={enter}
+            type="button"
+            className="text-button tilasm-full-enter"
+            onClick={() => onFull(true)}
+          >
+            <Maximize2 size={13} aria-hidden="true" />
+            {t("tilasms.full")}
+          </button>
+          {aim("")}
+          {toggle("")}
+          <button
+            type="button"
+            className="icon-button"
+            title={t("tilasms.close")}
+            aria-label={t("tilasms.close")}
+            onClick={onClose}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {/* Scripts only: an opaque origin, never Djinn's; the server's policy refuses the network. Full size changes
+          the section's class only, never the frame's place in the page: a frame moved elsewhere would load again. */}
+      <iframe
+        key={`${tilasm.id}-${latest(tilasm)}`}
+        ref={frame}
+        className="tilasm-frame"
+        title={`${tilasm.code} · ${tilasm.title}`}
+        src={tilasmAddress(tilasm.id)}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+      />
+      {/* The room the frame leaves in the page, full size: what it covers keeps its place and its scroll. It shows
+          by the same class that takes the frame out, so the page never lays out without both. Over a view, the frame
+          takes no room. */}
+      {!over && <div className="tilasm-frame-room" />}
+      {dotted && (
+        <Margin
+          comments={all}
+          placed={placed}
+          active={active}
+          onDot={(id) => {
+            setCommenting(true);
+            setActive(id);
+          }}
+        />
+      )}
+      {column && (
+        <CommentsColumn
+          key={tilasm.id}
+          tilasmId={tilasm.id}
+          code={tilasm.code}
+          version={latest(tilasm)}
+          drafts={drafts}
+          sent={sent}
+          reads={reads}
+          tasks={taskById}
+          origin={over && fromVars ? t("tilasms.version_for", fromVars) : ""}
+          hold={hold}
+          sends={sends}
+          writes={comments}
+          onError={onCommentError}
+          onClose={() => setCommenting(false)}
+          ask={ask}
+          onAsked={() => setAsk(undefined)}
+          onWriting={setWriting}
+          placed={placed}
+          active={active}
+          onActive={(id) => {
+            setActive(id);
+            reveal(id);
+          }}
+          reattaching={reattaching}
+          onReattach={setReattaching}
+        />
+      )}
+      {passages.selected && (
+        <CommentPick
+          frame={frame}
+          at={passages.selected.at}
+          label={
+            reattaching
+              ? t("tilasms.reattach_pick", {
+                  code: drafts.find((c) => c.id === reattaching)?.code ?? "",
+                })
+              : undefined
+          }
+          onPick={passages.pick}
+        />
+      )}
+      {hover && <AimBox frame={frame} at={hover} />}
+      {full && aim("tilasm-full-aim")}
+      {full && toggle("tilasm-full-comments")}
+      {(full || over) && (
+        <button
+          ref={leave}
+          type="button"
+          className="icon-button tilasm-full-leave"
+          aria-label={over ? t("tilasms.close") : t("tilasms.full_leave")}
+          aria-keyshortcuts="Escape"
+          onClick={over ? onClose : () => onFull(false)}
+        >
+          {over ? (
+            <X size={14} aria-hidden="true" />
+          ) : (
+            <Minimize2 size={14} aria-hidden="true" />
+          )}
+        </button>
+      )}
+    </section>
   );
 }

@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 
 	"connectrpc.com/connect"
@@ -15,7 +16,7 @@ import (
 )
 
 // Cancel cancels a task: stops its worker if running or paused, records who cancelled it,
-// removes its worktree while keeping the branch, and drops its work from integration.
+// removes its worktree and scratch folder while keeping the branch, and drops its work from integration.
 // Refused on a task done or cancelled already, and on an azima.
 func (h *Harness) Cancel(ctx context.Context, procedure string, req *planv1.TaskServiceCancelRequest) (*planv1.Task, error) {
 	id := req.GetTaskId()
@@ -47,9 +48,9 @@ func (h *Harness) Cancel(ctx context.Context, procedure string, req *planv1.Task
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
 
-	task, err = store.Get[*planv1.Task](ctx, h.store, id)
+	task, _, err = h.taskAndRun(ctx, id)
 	if err != nil {
-		return nil, plan.Status(err)
+		return nil, err
 	}
 	switch task.GetStatus() {
 	case planv1.TaskStatus_TASK_STATUS_DONE:
@@ -64,6 +65,10 @@ func (h *Harness) Cancel(ctx context.Context, procedure string, req *planv1.Task
 			_ = removeWorktree(ctx, project.GetDirectory(), task.GetWorktree(), true)
 		}
 		task.Worktree = ""
+	}
+	if task.GetScratch() != "" {
+		_ = os.RemoveAll(task.GetScratch())
+		task.Scratch = ""
 	}
 
 	by := req.GetBy()

@@ -18,6 +18,7 @@ import (
 // keeps its branch, and never queues its work for merging.
 func TestCancelRunning(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	task := in.mustSpawn(t, in.wishID, "Running Task", "wait", nil)
 	id := task.GetId()
@@ -87,65 +88,28 @@ func TestCancelRunning(t *testing.T) {
 	}
 }
 
-// TestCancelPending: cancelling a pending task records cancellation and leaves it cancelled.
-func TestCancelPending(t *testing.T) {
-	testx.Portable(t)
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
-	wishID, _ := e.wish(t, gitRepo(t))
-
-	task := e.mustSpawn(t, wishID, "Pending Task", "text hello", &planv1.TaskServiceSpawnRequest{Later: true})
-	if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
-		t.Fatalf("want pending, got %v", task.GetStatus())
-	}
-
-	res, err := e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
-		TaskId: task.GetId(),
-		Note:   "cancelled while pending",
-		By:     planv1.Closer_CLOSER_DEVELOPER,
-	}))
-	if err != nil {
-		t.Fatalf("cancel pending task: %v", err)
-	}
-
-	got := e.get(t, task.GetId())
-	if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_CANCELLED {
-		t.Fatalf("status = %v, want CANCELLED", got.GetStatus())
-	}
-	if c := got.GetCancelled(); c == nil || c.GetActor() != planv1.Closer_CLOSER_DEVELOPER || c.GetNote() != "cancelled while pending" {
-		t.Errorf("cancelled = %v", c)
-	}
-	if res.Msg.GetTask().GetCancelled() == nil {
-		t.Errorf("response task has no cancelled info")
-	}
-
-	// Let scheduler pass: task stays cancelled.
-	e.h.wake()
-	time.Sleep(50 * time.Millisecond)
-	if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_CANCELLED {
-		t.Errorf("status after wake = %v, want CANCELLED", got.GetStatus())
-	}
-}
-
 // TestCancelReleasesDependent: cancelling a dependency releases its dependents,
 // and puts an event on each dependent naming the cancelled dependency.
 func TestCancelReleasesDependent(t *testing.T) {
 	testx.Portable(t)
-	in := integrating(t)
+	t.Parallel()
+	e := up(t, t.TempDir())
+	wishID, _ := e.wish(t, nativeFolder(t))
 
-	a := in.mustSpawn(t, in.wishID, "Task A", "wait", nil)
-	b := in.mustSpawn(t, in.wishID, "Task B", "text hello from B", &planv1.TaskServiceSpawnRequest{
+	a := e.mustSpawn(t, wishID, "Task A", "wait", nil)
+	b := e.mustSpawn(t, wishID, "Task B", "text hello from B", &planv1.TaskServiceSpawnRequest{
 		DependsOn: []string{a.GetCode()},
 	})
 
 	waitFor(t, "A running", func() bool {
-		return in.get(t, a.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
+		return e.get(t, a.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING
 	})
-	bTask := in.get(t, b.GetId())
+	bTask := e.get(t, b.GetId())
 	if bTask.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
 		t.Fatalf("B status = %v; want PENDING", bTask.GetStatus())
 	}
 
-	_, err := in.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
+	_, err := e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
 		TaskId: a.GetId(),
 		Note:   "abandoned A",
 	}))
@@ -155,7 +119,7 @@ func TestCancelReleasesDependent(t *testing.T) {
 
 	// Check event on B naming cancelled dependency.
 	wantText := fmt.Sprintf("dependency %s was cancelled", a.GetCode())
-	events, err := store.List[*planv1.TaskEvent](t.Context(), in.db, store.Where{"task_id": b.GetId()})
+	events, err := store.List[*planv1.TaskEvent](t.Context(), e.db, store.Where{"task_id": b.GetId()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,14 +136,15 @@ func TestCancelReleasesDependent(t *testing.T) {
 
 	// B unblocks and finishes done.
 	waitFor(t, "B done", func() bool {
-		return in.get(t, b.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
+		return e.get(t, b.GetId()).GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE
 	})
 }
 
-// TestCancelCorrectionReleasingHeldPush: cancelling a push correction worker releases
-// the held push, so push checks run and push proceeds when green.
+// TestCancelCorrectionReleasingHeldPush: cancelling a push correction worker releases the held push, so, the branch
+// fixed by hand meanwhile, push checks run and push proceeds when green.
 func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 	testx.Portable(t)
+	t.Parallel()
 	in := integrating(t)
 	in.checking(t, "checks { name: \"lint\" command: \"lint\" when: CHECK_WHEN_COMMIT }\n"+
 		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -222,6 +187,7 @@ func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 	in.mu.Lock()
 	in.testCode = 0
 	in.mu.Unlock()
+	in.handCommit(t) // The developer fixed it, and cancelled the correction.
 
 	in.pass(t, time.Second)
 	tip := in.tip(t)
@@ -233,95 +199,115 @@ func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 	}
 }
 
-// TestCancelRefusals: cancel is refused on a task done, cancelled already, or on an azima;
-// and djinn task done is refused on a cancelled task.
-func TestCancelRefusals(t *testing.T) {
+// TestCancelPendingAndRefusals: cancelling a pending task records cancellation and leaves it cancelled; cancel is
+// refused on a task done, cancelled already, or on an azima; djinn task done is refused on a cancelled task; and an
+// azima is done without its cancelled parts.
+func TestCancelPendingAndRefusals(t *testing.T) {
 	testx.Portable(t)
-	e := up(t, t.TempDir())
-	wishID, _ := e.wish(t, gitRepo(t))
+	t.Parallel()
+	lim := &limit{slots: 0}
+	e := up(t, t.TempDir(), WithCapacity(lim.capacity))
+	wishID, _ := e.wish(t, nativeFolder(t))
 
-	// Azima refusal.
-	azima := e.azima(t, wishID, "An Azima")
-	_, err := e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
-		TaskId: azima.GetId(),
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cannot cancel an azima") {
-		t.Errorf("cancel azima error: %v", err)
-	}
+	t.Run("pending", func(t *testing.T) {
+		task := e.mustSpawn(t, wishID, "Pending Task", "text hello", &planv1.TaskServiceSpawnRequest{Later: true})
+		if task.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING {
+			t.Fatalf("want pending, got %v", task.GetStatus())
+		}
+		res, err := e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
+			TaskId: task.GetId(),
+			Note:   "cancelled while pending",
+			By:     planv1.Closer_CLOSER_DEVELOPER,
+		}))
+		if err != nil {
+			t.Fatalf("cancel pending task: %v", err)
+		}
+		got := e.get(t, task.GetId())
+		if got.GetStatus() != planv1.TaskStatus_TASK_STATUS_CANCELLED {
+			t.Fatalf("status = %v, want CANCELLED", got.GetStatus())
+		}
+		if c := got.GetCancelled(); c == nil || c.GetActor() != planv1.Closer_CLOSER_DEVELOPER || c.GetNote() != "cancelled while pending" {
+			t.Errorf("cancelled = %v", c)
+		}
+		if res.Msg.GetTask().GetCancelled() == nil {
+			t.Errorf("response task has no cancelled info")
+		}
+		e.h.schedule(t.Context())
+		if got := e.get(t, task.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_CANCELLED {
+			t.Errorf("status after wake = %v, want CANCELLED", got.GetStatus())
+		}
+	})
 
-	// Done task refusal.
-	doneTask := e.ended(t, e.mustSpawn(t, wishID, "Done Task", "text ok", nil).GetId())
-	_, err = e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
-		TaskId: doneTask.GetId(),
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "done already") {
-		t.Errorf("cancel done error: %v", err)
-	}
+	t.Run("refusals", func(t *testing.T) {
+		lim.set(1, "")
+		azima := e.azima(t, wishID, "An Azima")
+		_, err := e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
+			TaskId: azima.GetId(),
+		}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cannot cancel an azima") {
+			t.Errorf("cancel azima error: %v", err)
+		}
 
-	// Cancelled task refusal.
-	toCancel := e.ended(t, e.mustSpawn(t, wishID, "To Cancel", "fail broke", nil).GetId())
-	_, err = e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
-		TaskId: toCancel.GetId(),
-	}))
-	if err != nil {
-		t.Fatalf("first cancel: %v", err)
-	}
-	_, err = e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
-		TaskId: toCancel.GetId(),
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cancelled already") {
-		t.Errorf("cancel cancelled error: %v", err)
-	}
+		doneTask := e.ended(t, e.mustSpawn(t, wishID, "Done Task", "text ok", nil).GetId())
+		_, err = e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
+			TaskId: doneTask.GetId(),
+		}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "done already") {
+			t.Errorf("cancel done error: %v", err)
+		}
 
-	// Done on a cancelled task refusal.
-	_, err = e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
-		TaskId: toCancel.GetId(),
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cancelled already") {
-		t.Errorf("done on cancelled error: %v", err)
-	}
-}
+		toCancel := e.ended(t, e.mustSpawn(t, wishID, "To Cancel", "fail broke", nil).GetId())
+		_, err = e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
+			TaskId: toCancel.GetId(),
+		}))
+		if err != nil {
+			t.Fatalf("first cancel: %v", err)
+		}
+		_, err = e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
+			TaskId: toCancel.GetId(),
+		}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cancelled already") {
+			t.Errorf("cancel cancelled error: %v", err)
+		}
 
-// TestCancelAzimaDoneWithoutCancelledParts: an azima is done without its cancelled parts.
-func TestCancelAzimaDoneWithoutCancelledParts(t *testing.T) {
-	testx.Portable(t)
-	e := up(t, t.TempDir(), WithCapacity((&limit{slots: 0}).capacity))
-	wishID, _ := e.wish(t, gitRepo(t))
+		_, err = e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+			TaskId: toCancel.GetId(),
+		}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cancelled already") {
+			t.Errorf("done on cancelled error: %v", err)
+		}
+	})
 
-	azima := e.azima(t, wishID, "Feature Goal")
-	p1 := e.mustSpawn(t, wishID, "Part 1", "text part 1", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: azima.GetCode()})
-	p2 := e.mustSpawn(t, wishID, "Part 2", "text part 2", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: azima.GetCode()})
+	t.Run("azima_done_without_cancelled_parts", func(t *testing.T) {
+		lim.set(0, "")
+		azima := e.azima(t, wishID, "Feature Goal")
+		p1 := e.mustSpawn(t, wishID, "Part 1", "text part 1", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: azima.GetCode()})
+		p2 := e.mustSpawn(t, wishID, "Part 2", "text part 2", &planv1.TaskServiceSpawnRequest{Later: true, PartOf: azima.GetCode()})
 
-	// Mark p1 done.
-	if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: p1.GetId()})); err != nil {
-		t.Fatal(err)
-	}
-
-	// Marking azima done while p2 is pending fails.
-	_, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
-		TaskId: azima.GetId(),
-	}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "has parts still to finish") {
-		t.Fatalf("marking azima done with unfinished part: %v", err)
-	}
-
-	// Cancel p2.
-	_, err = e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
-		TaskId: p2.GetId(),
-		Note:   "not needed",
-	}))
-	if err != nil {
-		t.Fatalf("cancel p2: %v", err)
-	}
-
-	// Now azima can be marked done without its cancelled parts.
-	_, err = e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
-		TaskId: azima.GetId(),
-	}))
-	if err != nil {
-		t.Fatalf("marking azima done with cancelled part: %v", err)
-	}
-	if got := e.get(t, azima.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
-		t.Errorf("azima status = %v, want DONE", got.GetStatus())
-	}
+		if _, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{TaskId: p1.GetId()})); err != nil {
+			t.Fatal(err)
+		}
+		_, err := e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+			TaskId: azima.GetId(),
+		}))
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "has parts still to finish") {
+			t.Fatalf("marking azima done with unfinished part: %v", err)
+		}
+		_, err = e.tasks.Cancel(t.Context(), connect.NewRequest(&planv1.TaskServiceCancelRequest{
+			TaskId: p2.GetId(),
+			Note:   "not needed",
+		}))
+		if err != nil {
+			t.Fatalf("cancel p2: %v", err)
+		}
+		_, err = e.tasks.Done(t.Context(), connect.NewRequest(&planv1.TaskServiceDoneRequest{
+			TaskId: azima.GetId(),
+		}))
+		if err != nil {
+			t.Fatalf("marking azima done with cancelled part: %v", err)
+		}
+		if got := e.get(t, azima.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_DONE {
+			t.Errorf("azima status = %v, want DONE", got.GetStatus())
+		}
+	})
 }

@@ -4,6 +4,7 @@ package harness
 
 import (
 	"errors"
+	"os/exec"
 	"syscall"
 )
 
@@ -14,3 +15,9 @@ func dieWithParent(*syscall.SysProcAttr) {}
 func procStart(int) (string, error) {
 	return "", errors.New("process start times are not read on this system")
 }
+
+// procsOf finds no process here: what a worker left outside its group is not found.
+func procsOf(string, int, string) []identity { return nil }
+
+// holdExit is false here.
+func holdExit(*exec.Cmd) bool { return false }

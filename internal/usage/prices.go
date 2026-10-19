@@ -21,8 +21,9 @@ var defaultPricesYAML []byte
 // DefaultLocalPath is the documented path where a user can place an override prices.yaml file.
 const DefaultLocalPath = ".config/djinn/prices.yaml"
 
-// ModelPrice contains token pricing per million tokens in USD and its public citation.
+// ModelPrice contains token pricing per million tokens in USD, its display label, and its public citation.
 type ModelPrice struct {
+	Label      string  `yaml:"label"`
 	Input      float64 `yaml:"input"`
 	Output     float64 `yaml:"output"`
 	CacheRead  float64 `yaml:"cache_read"`
@@ -32,11 +33,12 @@ type ModelPrice struct {
 	Date       string  `yaml:"date"`
 }
 
-// PriceTable is the set of known model prices at a given date.
+// PriceTable is the set of known model prices and labels at a given date.
 type PriceTable struct {
 	Date     string                `yaml:"date"`
 	Currency string                `yaml:"currency"`
 	Models   map[string]ModelPrice `yaml:"models"`
+	Order    []string              `yaml:"-"`
 }
 
 var (
@@ -80,7 +82,77 @@ func LoadTable(overridePath ...string) (*PriceTable, error) {
 	if err := yaml.Unmarshal(data, &table); err != nil {
 		return nil, fmt.Errorf("parse price table: %w", err)
 	}
+	table.Order = extractModelOrder(data)
 	return &table, nil
+}
+
+// extractModelOrder reads the YAML document's models mapping key order so Catalog() is deterministic.
+func extractModelOrder(data []byte) []string {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil || len(doc.Content) == 0 {
+		return nil
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == "models" && root.Content[i+1].Kind == yaml.MappingNode {
+			modelsNode := root.Content[i+1]
+			order := make([]string, 0, len(modelsNode.Content)/2)
+			for j := 0; j+1 < len(modelsNode.Content); j += 2 {
+				order = append(order, modelsNode.Content[j].Value)
+			}
+			return order
+		}
+	}
+	return nil
+}
+
+// ProviderForModel returns the provider for a canonical model ID prefix.
+func ProviderForModel(model string) planv1.Provider {
+	m := strings.ToLower(strings.TrimSpace(model))
+	switch {
+	case strings.HasPrefix(m, "claude-"):
+		return planv1.Provider_PROVIDER_CLAUDE
+	case strings.HasPrefix(m, "gemini-"):
+		return planv1.Provider_PROVIDER_ANTIGRAVITY
+	case strings.HasPrefix(m, "gpt-"), strings.HasPrefix(m, "o1"), strings.HasPrefix(m, "o3"), strings.HasPrefix(m, "o4"):
+		return planv1.Provider_PROVIDER_CODEX
+	default:
+		return planv1.Provider_PROVIDER_UNSPECIFIED
+	}
+}
+
+// Catalog returns all models in the price table in YAML declaration order with their canonical ID, label, and provider.
+func (t *PriceTable) Catalog() []*planv1.CircleModel {
+	if t == nil {
+		return nil
+	}
+	keys := t.Order
+	if len(keys) == 0 {
+		keys = make([]string, 0, len(t.Models))
+		for k := range t.Models {
+			keys = append(keys, k)
+		}
+	}
+	out := make([]*planv1.CircleModel, 0, len(keys))
+	for _, id := range keys {
+		entry, ok := t.Models[id]
+		if !ok {
+			continue
+		}
+		label := entry.Label
+		if label == "" {
+			label = id
+		}
+		out = append(out, &planv1.CircleModel{
+			Id:       id,
+			Label:    label,
+			Provider: ProviderForModel(id),
+		})
+	}
+	return out
 }
 
 // ResolveModel maps a requested or stream-reported model and provider to a canonical entry in the table.
@@ -112,14 +184,22 @@ func (t *PriceTable) ResolveModel(model string, provider planv1.Provider) string
 
 	// Check common aliases
 	switch m {
+	case "fable", "claude-fable", "claude fable 5.1":
+		return "claude-fable-5-1"
 	case "sonnet", "claude-sonnet":
 		return "claude-sonnet-5-5"
 	case "opus", "claude-opus":
 		return "claude-opus-5-5"
 	case "haiku", "claude-haiku":
 		return "claude-haiku-5-5"
-	case "flash", "gemini-flash":
+	case "argon", "gemini-argon", "gemini-4-argon", "gemini 4 argon", "gemini 4 argon (high)":
+		return "gemini-4-argon-high"
+	case "gemini 4 argon (medium)":
+		return "gemini-4-argon-medium"
+	case "flash", "gemini-flash", "gemini-3.8-flash", "gemini 3.8 flash", "gemini 3.8 flash (high)":
 		return "gemini-3.8-flash-high"
+	case "gemini 3.8 flash (medium)":
+		return "gemini-3.8-flash-medium"
 	case "codex":
 		return "gpt-5.3-codex"
 	}

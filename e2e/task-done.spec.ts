@@ -2,7 +2,7 @@
 // interrupted task, imported with its wish, leaves what moves or waits and tops the finished tasks, saying who closed
 // it and why; a cancelled task wears its own badge, which says on hover who cancelled it and why. Every run makes
 // fresh identifiers, so --repeat-each works on the same djinn.
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -253,16 +253,15 @@ test("a task done with refused calls, in a wish with no project, shows a plain d
     await expect(page.locator(".review-head .eyebrow")).toHaveText(
       "No project",
     );
-    // No question, so no count of them; no grant while the lead has not decided; and nothing of the refused calls
-    // waits for you.
+    // No question, so no count of them; on the Wish tab, the closure card names the refused-call hold when no task is open.
     await expect(page.locator(".review-pills")).not.toContainText("to decide");
-    await expect(
-      page.getByRole("button", { name: "My wish is granted" }),
-    ).toHaveCount(0);
-    await expect(page.locator("body")).not.toContainText(
-      /refused|with problems/,
+    await expect(page.locator("#action-center .plan-line")).toHaveCount(0);
+    await expect(page.locator(".wish-grant.state-held")).toContainText(
+      "Work finished · 1 hold to clear",
     );
-    await expect(page.locator(".action-center .plan-line")).toHaveCount(0);
+    await expect(page.locator(".wish-grant.state-held")).toContainText(
+      "done · 6 refused calls",
+    );
 
     // In the Tasks tab, it is finished work: a plain Done, folded under Finished, with nothing to mark done.
     const tasksTab = page.getByRole("tab", { name: /^Tasks/ });
@@ -289,8 +288,10 @@ test("a task done with refused calls, in a wish with no project, shows a plain d
     expect(listed[0]?.status).toBe("TASK_STATUS_DONE");
     expect(listed[0]?.closed?.actor).toBe("CLOSER_LEAD");
 
-    // The lead decided: Djinn proposes the grant.
+    // The lead decided: the hold clears and Djinn proposes the ready grant.
     await page.getByRole("tab", { name: /^Wish/ }).click();
+    await expect(page.locator(".wish-grant.state-held")).toHaveCount(0);
+    await expect(page.locator(".wish-grant")).toContainText("READY");
     await expect(
       page.getByRole("button", { name: "My wish is granted" }),
     ).toBeVisible();

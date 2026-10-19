@@ -21,7 +21,16 @@ doc.
 
 Djinn builds the folder into its binary (`go:embed`): at run time the notes are read only. The brief gives every lead
 the index, a line per note with its name and description, never the notes themselves; `djinn lead notes` prints the
-index, and `djinn lead notes <name>` one note, which a lead opens before it acts in that note's area. A lead that may
+index, `djinn lead notes <name>` one note, which a lead opens before it acts in that note's area, and `djinn lead notes
+a,b` or `djinn lead notes --all` several in one command. A lead that may
 change Djinn adds or fixes a note by spawning a task that edits this folder; nothing writes here at run time.
 
 The pitfalls of the codebase, for workers, are not lead notes.
+
+## The Djinn's tones
+
+[`tones/`](tones) holds the two tones of the Djinn (decision Q36), one line per file: `light.md` the solar Djinn,
+`dark.md` the mocking demon of the lamp. Each batch of the driven lead carries the tone of the theme the window shows;
+the rule that bounds both (only the tone changes, never the facts) is in the driven lead's rules
+(`internal/plan/drive.go`). Edit a tone in its line; a test keeps each one line and short, since every batch pays for
+it.

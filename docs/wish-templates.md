@@ -22,7 +22,13 @@ lines: nothing to code per template.
 ## Declare one
 
 In the skill's `SKILL.md`, under `metadata.djinn.wish` (Agent Skills lets a skill hold extra metadata; other tools
-ignore Djinn's key):
+ignore Djinn's key). Djinn reads the skills on the project's reference branch, at the last fetch, like the rest of its
+configuration ([team settings](team-settings.md#where-djinn-reads-it)): a skill counts once pushed and fetched. Djinn
+fetches that branch every 5 minutes and tells each change of a skill in the project's journal of changes; a wish template
+or a babysit new or changed waits for your look, the project's gear red, until you mark it seen (`djinn project
+acknowledge <project>`): choosing a template starts its watcher, and a babysit runs on each pull request a task opens. A
+new inbox source asks through its own line, until you plug it in or say no; the command of a source you plugged in that
+changes waits for your look too, since it runs another command on your machine.
 
 ```yaml
 ---
@@ -213,14 +219,24 @@ turns the automatic watcher off; `--babysit` still works.
 A merge request assigned to you, a mention in a thread: a skill may also declare a **source**, a command that prints
 what comes from outside. Djinn runs it, and each item it prints becomes a card in the inbox, at the top of the flying
 carpet, with the route Djinn proposes, as for a request handed over: a wish to file it in, or a new one, from the
-skill's template when the item matches it. Nothing is made until you click; "Dismiss" sets an item aside.
+skill's template when the item matches it. The card says what Djinn will do with the recommended choice (a template
+with a watcher: a wish whose watcher starts at once), and under each choice what it changes. Nothing is made until you
+click; "Dismiss", the last choice, sets an item aside. The inbox shows only what waits for you: empty, it is hidden.
 
 **A source runs only once you plug it in, on your machine.** Declaring one in a skill runs nothing: a clone of the
-repository polls no forge by itself. The empty inbox lists the sources your projects' skills declare, each with its
-command and a "Plug in" button ("Unplug" once plugged in); `djinn inbox sources`, `djinn inbox plug <source>` and
-`djinn inbox unplug <source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or
+repository polls no forge by itself. Each project's panel lists the sources its skills declare ("Inbox sources", on
+this machine), each with its summary, its last run, its command and a "Plug in" button ("Unplug" once plugged in),
+what the button does written under it; `djinn inbox sources`, `djinn inbox plug <source>` and `djinn inbox unplug
+<source>` do the same. A source is named `<project>/<skill>`, the project that holds the skill, or
 by its skill alone when one project holds it. Whether it is plugged in lives in Djinn's data on this machine, never in
-the repository. Unplugged, its command stops; the items it brought stay.
+the repository. Unplugged, its command stops; the items it brought stay. Unplugging a source never plugged in says no to
+it: a source neither plugged in nor said no to is a thing to fix of its project (`djinn project show`), until you
+decide; plugging it in forgets the no. A skill whose `metadata` is not YAML, or whose `metadata.djinn` Djinn cannot
+read, is no source: its project's notices name it, in the project's panel and in `djinn project show`, and Djinn
+ignores its template, source and babysit until it is fixed. One plugged in before it broke stays listed with why, so
+that it can be unplugged: the inbox shows it as a failing source. Another key of the front matter that breaks the
+YAML, like `argument-hint: [a] [b]` (Claude Code reads it anyway), is only an information in the same places, with its
+line: Djinn reads `metadata` apart from it. Quoting the value fixes it.
 
 ```yaml
 ---
@@ -237,6 +253,7 @@ metadata:
     source:
       watch: "sh .agents/skills/babysit-mr/assigned.sh"
       every: 10m
+      summary: "The merge requests of this project assigned to you, read with glab."
 ---
 ```
 
@@ -245,9 +262,12 @@ metadata:
   (`.agents/permissions.txtpb`), it must be one of them.
 - `every`: the least time between two starts of the command, 5 minutes by default, 1 minute at least. A command that
   waits on its own (a stream) runs as long as it likes; when it exits, Djinn starts it again `every` after its start.
+- `summary`: what it reads, in a sentence, for the person who decides whether to plug it in: whose requests, where,
+  read with which tool. Without one, Djinn says the skill's `description`.
 
-**What it prints.** One item per paragraph: lines separated by an empty line, or by a second of silence. Write each
-item as a request you would hand over, its link on a line: the template's `match` then reads it as it reads a request.
+**What it prints.** One item per paragraph of its output: lines separated by an empty line, or by a second of
+silence. Its error output makes no item: it says why a run failed. Write each item as a request you would hand over,
+its link on a line: the template's `match` then reads it as it reads a request.
 For the merge requests assigned to you, `assigned.sh` could be:
 
 ```sh
@@ -259,6 +279,15 @@ It may print every item each time: Djinn keeps the first link of an item (else i
 same one twice, whether it waits, was routed or was dismissed, nor one whose link a wish already holds in its title or
 its blocks.
 
+**What Djinn keeps of each run.** On this machine, for each source plugged in: when its command last ended, how many
+items that run printed (those the inbox had already included), and, when it failed, why (its exit code and the last
+lines of its error output, or why it could not start: a command the project's permissions do not list), how many runs
+failed in a row and since when. A run that goes well clears the failure. `djinn inbox sources` shows it, under
+`last_run`, beside the source's `summary`; unplugging the source forgets it. While a source plugged in fails, the inbox
+shows a card "Djinn's configuration": the error, since when and how many runs, what Djinn does meanwhile (it runs it
+again every `every`), and two choices, fixing the cause on this machine (recommended: the first run that goes well
+takes the card away) or unplugging it. The side panel counts it with the items.
+
 **What Djinn never does.** It never writes to the source: the command's input is closed, and no answer runs a command.
 It never comments, reacts, marks as read nor replies on your behalf. It stores no token: the command logs in by its own
 tool (`glab auth login`, `gh auth login`, a Slack or Notion command line). It runs the sources of the skills your
@@ -266,22 +295,26 @@ projects hold or summon, and no other: one skill summoned by several projects ru
 
 From the command line: `djinn inbox list` (`--all` for the routed and dismissed ones), `djinn inbox route <item>
 <letter>`, `djinn inbox dismiss <item>`, `djinn inbox sources`, `djinn inbox plug <source>`, `djinn inbox unplug
-<source>`. `djinn skill list` shows each source's command, or why it cannot be used.
+<source>`. `djinn inbox sources` says what each source reads and how its last run went. `djinn skill list` shows each
+source's command, or why it cannot be used.
 
 Djinn's own `babysit-pr` declares one, `sh .agents/skills/babysit-pr/inbox.sh`: the open pull requests of the
 repository assigned to you (`Babysit PR #12: …`, which proposes the skill's wish) or that request your review, each
-with its link, read with `gh pr list`. Unplugged until you plug it in: `djinn inbox plug babysit-pr`.
+with its link, read with `gh pr list`; its `summary` says so. Unplugged until you plug it in: `djinn inbox plug
+babysit-pr`. `babysit-mr` declares no source.
 
 Babysitting: `TestReadBabysit`, `TestProjectBabysit`, `TestFillBabysit`, `TestBabysitSettings`
-(`internal/plan`), `TestBabysitWhatATaskOpens`, `TestBabysitTheTaskBranch`, `TestBabysitOffOrUndeclared`,
-`TestBabysitByHand` (`internal/harness/babysit_test.go`: a fake `gh` and `glab`, no network).
+(`internal/plan`), `TestBabysit` (`internal/harness/babysit_test.go`: a fake `gh` and `glab`,
+no network).
 
 Tests: `TestReadTemplate`, `TestFillQuotes`, `TestDoneLine`, `TestRouteTemplate`, `TestTemplateWish`,
 `TestTemplateWithoutWatchers`, `TestSkillListTemplate` (`internal/plan/templates_test.go`), `TestWatcherDoneLine`,
-`TestWatcherFinishes` (`internal/harness/watch_test.go`), `TestBabysitMRReadsOnly`
+`TestWatcherFinishes` (`internal/harness/watch_test.go`), `TestWatch_BabysitMR`
 (`internal/harness/babysit_mr_test.go`: babysit-mr's template and watcher, a fake `glab` on the `PATH`),
-`TestBabysitPRSpeaksOnlyForTheLead` (`internal/harness/babysit_pr_test.go`: what babysit-pr's watcher says, and does not
-say again after a restart, a fake `gh` on the `PATH`), and `e2e/wish-template.spec.ts` (a fake watcher). The
-inbox: `TestReadSource`, `TestSources`, `TestOwnSource`, `TestInbox`, `TestItemKey` (`internal/plan/inbox_test.go`),
-`TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceUnplugged` (`internal/harness/watch_source_test.go`),
-`TestInboxPlug` (`cmd/djinn/inbox_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from the inbox).
+`TestWatch_BabysitPR` (`internal/harness/babysit_pr_test.go`: what babysit-pr's watcher says, and does not
+say again after a restart, a fake `gh` on the `PATH`), and `e2e/inbox.spec.ts` (a fake watcher). The
+inbox: `TestReadSource`, `TestSources`, `TestKeepSourceRun`, `TestOwnSource`, `TestInbox`, `TestItemKey`
+(`internal/plan/inbox_test.go`), `TestSourceReadsOnly`, `TestSourceRefused`, `TestSourceFails`, `TestSourceUnplugged`
+(`internal/harness/watch_source_test.go`),
+`TestRunUp`, its case of an inbox source (`cmd/djinn/up_test.go`), and `e2e/inbox.spec.ts` (a fake source, plugged in from its project's panel, and a failing one, unplugged from its
+card).

@@ -22,6 +22,7 @@ const {
   AzimaState,
   azimaGroups,
   loose,
+  movingTasks,
   azimasDone,
   workCount,
   workDoneCount,
@@ -30,7 +31,7 @@ const {
   `export { createStore } from "@/src/data/store.ts";
 export { createClients } from "@/src/data/client.ts";
 export { createRouterTransport } from "@connectrpc/connect";
-export { azimaGroups, loose, azimasDone, workCount, workDoneCount } from "@/src/data/flight.ts";
+export { azimaGroups, loose, movingTasks, azimasDone, workCount, workDoneCount } from "@/src/data/flight.ts";
 export * from "@/gen/ts/plan/v1/plan_pb.ts";`,
 );
 
@@ -79,6 +80,13 @@ function server(data) {
       list: (req) => {
         count("tasks");
         if (data.listTasks) return data.listTasks(req);
+        if (req.live) {
+          const live = data.tasks.filter(
+            (t) =>
+              t.status !== TaskStatus.DONE && t.status !== TaskStatus.CANCELLED,
+          );
+          return { tasks: live, total: live.length, nextPageToken: "" };
+        }
         return {
           tasks: data.tasks,
           total: data.tasksTotal ?? data.tasks.length,
@@ -301,18 +309,26 @@ test("a task card closed frees its events, and opened again reads them again", a
   again();
 });
 
-test("reading a task's prompt gets the task alone without following its events", async () => {
+// W7 saw "[unknown] Failed to fetch" thrown at the page: Chromium cuts every request in flight when Docker adds a
+// network interface, and the prompt's read was left to fail (W249).
+test("reading a task's prompt gets the task alone, read again when the network cut it, then kept", async () => {
   const data = sample();
+  let fail = 1;
+  data.getTask = (req) => {
+    if (fail-- > 0) throw new Error("Failed to fetch");
+    return { task: data.tasks.find((t) => t.id === req.taskId) };
+  };
   const { clients, reads } = server(data);
   const store = createStore(clients, 10);
-  const prompt = await store.readPrompt(taskId);
-  assert.equal(prompt, "Polish the brass with care");
-  assert.equal(reads.taskGet, 1);
+  // The cut read throws nothing at the page: it gives no prompt, and is made again.
+  assert.equal(await store.readPrompt(taskId), "");
+  const state = await until(store, (s) => !!s.prompts[taskId]);
+  assert.equal(state.prompts[taskId], "Polish the brass with care");
+  assert.equal(reads.taskGet, 2);
   assert.equal(reads.events, undefined);
   // A second read takes the prompt from the store's cache.
-  const cached = await store.readPrompt(taskId);
-  assert.equal(cached, "Polish the brass with care");
-  assert.equal(reads.taskGet, 1);
+  assert.equal(await store.readPrompt(taskId), "Polish the brass with care");
+  assert.equal(reads.taskGet, 2);
 });
 
 test("opening a wish does not follow its tasks' events until follow is requested", async () => {
@@ -548,6 +564,7 @@ test("loadMore fetches the next page and merges items", async () => {
   const task2 = { id: `${taskId}2`, wishId, code: "T02", title: "Task 2" };
   let asked = 0;
   data.listTasks = (req) => {
+    if (req.live) return { tasks: [], total: 0, nextPageToken: "" };
     if (req.pageToken === "token-p2") {
       asked = req.pageSize;
       return {
@@ -577,12 +594,13 @@ test("loadMore fetches the next page and merges items", async () => {
   assert.equal(state1.tasks[0].id, task1.id);
   assert.equal(state1.tasksTotal, 2);
   assert.equal(state1.tasksNextToken, "token-p2");
-  assert.equal(reads.tasks, 1);
+  // The first page, and the live tasks past it (W219): none here.
+  assert.equal(reads.tasks, 2);
 
   // The tree of the Tasks tab reads the rest by pages of the most tasks a page holds.
   await store.loadMore(wishId, Change.TASK, 200);
   const state2 = store.getState().details[wishId];
-  assert.equal(reads.tasks, 2);
+  assert.equal(reads.tasks, 3);
   assert.equal(asked, 200);
   assert.equal(state2.tasks.length, 2);
   assert.deepEqual(
@@ -594,7 +612,7 @@ test("loadMore fetches the next page and merges items", async () => {
 
   // Calling loadMore when nextToken is empty does nothing
   await store.loadMore(wishId, Change.TASK);
-  assert.equal(reads.tasks, 2);
+  assert.equal(reads.tasks, 3);
 
   stop();
 });
@@ -812,7 +830,7 @@ test("incremental updates refresh derived views: azima groups, loose tasks, depe
     tasks: [w1, w2],
   };
 
-  const { clients, watch } = server(data);
+  const { clients, reads, watch } = server(data);
   const store = createStore(clients, 10);
   const stop = store.start();
   watch.push({ wishId: "", changes: everything });
@@ -820,11 +838,16 @@ test("incremental updates refresh derived views: azima groups, loose tasks, depe
 
   store.open(wish1, [Change.TASK]);
   await until(store, (s) => s.details[wish1]?.loadedKinds.has(Change.TASK));
+  const initialTaskReads = reads.tasks;
 
   let tasks = store.getState().details[wish1].tasks;
   assert.equal(tasks.length, 2);
   assert.deepEqual(
     loose(tasks).map((t) => t.id),
+    [w1.id, w2.id],
+  );
+  assert.deepEqual(
+    movingTasks(tasks).map((t) => t.id),
     [w1.id, w2.id],
   );
   assert.equal(azimaGroups(tasks).length, 0);
@@ -876,6 +899,10 @@ test("incremental updates refresh derived views: azima groups, loose tasks, depe
     loose(tasks).map((t) => t.id),
     [w2.id],
   );
+  assert.deepEqual(
+    movingTasks(tasks).map((t) => t.id),
+    [w2.id],
+  );
   assert.equal(azimaGroups(tasks).length, 1);
   assert.equal(azimaGroups(tasks)[0].parts.length, 1);
   assert.equal(azimaGroups(tasks)[0].parts[0].id, w1.id);
@@ -917,6 +944,7 @@ test("incremental updates refresh derived views: azima groups, loose tasks, depe
     azimaGroups(tasks)[0].azima.description,
     "A detailed azima description",
   );
+  assert.equal(reads.tasks, initialTaskReads);
 
   stop();
 });
@@ -1454,6 +1482,84 @@ test("a watch back after djinn restarted reads the open questions again: one rev
   assert.ok(reads.questions > before);
 });
 
+// W219: on arriving on a wish, its glance showed the running workers (the watch brings them as they change) but not the
+// waiting ones past the first page of its tasks, until the Tasks tab read further. The first read brings the live
+// tasks too, whatever page they sit on, and a read again goes no further than the pages read.
+test("the first read of a wish's tasks brings its waiting work past the first page", async () => {
+  const data = sample();
+  const old = [
+    {
+      id: "t1",
+      wishId,
+      code: "W1",
+      title: "Old work",
+      status: TaskStatus.DONE,
+    },
+    {
+      id: "t2",
+      wishId,
+      code: "W2",
+      title: "Old work",
+      status: TaskStatus.DONE,
+    },
+  ];
+  const later = {
+    id: "t3",
+    wishId,
+    code: "W3",
+    title: "Merged",
+    status: TaskStatus.DONE,
+  };
+  const waiting = {
+    id: "t4",
+    wishId,
+    code: "W4",
+    title: "Waits on W5",
+    status: TaskStatus.PENDING,
+    dependsOn: ["t5"],
+  };
+  const running = {
+    id: "t5",
+    wishId,
+    code: "W5",
+    title: "Runs",
+    status: TaskStatus.RUNNING,
+  };
+  const asked = [];
+  data.listTasks = (req) => {
+    asked.push(req.live ? "live" : req.pageToken || "first");
+    if (req.live)
+      return { tasks: [waiting, running], total: 2, nextPageToken: "" };
+    return req.pageToken
+      ? { tasks: [later, waiting, running], total: 5, nextPageToken: "" }
+      : { tasks: old, total: 5, nextPageToken: "p2" };
+  };
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId, [Change.TASK]);
+  const state = await until(store, (s) =>
+    s.details[wishId]?.loadedKinds.has(Change.TASK),
+  );
+  assert.deepEqual(
+    state.details[wishId].tasks.map((t) => t.code),
+    ["W1", "W2", "W4", "W5"],
+  );
+  assert.equal(state.details[wishId].tasksNextToken, "p2");
+  // Read again: the live ones are not a reason to read every page.
+  await store.changed(wishId, [Change.TASK]);
+  stop();
+  assert.deepEqual(asked, ["first", "live", "first", "live"]);
+  // The Tasks tab reads further, and the tasks keep their order.
+  await store.loadMore(wishId, Change.TASK);
+  assert.deepEqual(
+    store.getState().details[wishId].tasks.map((t) => t.code),
+    ["W1", "W2", "W3", "W4", "W5"],
+  );
+});
+
 // Incident Q274, second case: after a restart the window kept W544, the enlighten task of Q254, running, and Q254
 // under investigation; W544 had ended, and Q254 was answered. W544 sat past the first page of the wish's tasks: the
 // read after the watch came back went no further than that page.
@@ -1471,9 +1577,15 @@ test("an enlighten task that ended while djinn was away shows ended after the wa
     status: TaskStatus.RUNNING,
   };
   data.listTasks = (req) =>
-    req.pageToken
-      ? { tasks: [w544], total: 3, nextPageToken: "" }
-      : { tasks: old, total: 3, nextPageToken: "p2" };
+    req.live
+      ? {
+          tasks: w544.status === TaskStatus.RUNNING ? [w544] : [],
+          total: 1,
+          nextPageToken: "",
+        }
+      : req.pageToken
+        ? { tasks: [w544], total: 3, nextPageToken: "" }
+        : { tasks: old, total: 3, nextPageToken: "p2" };
   const { store, stop, watch, reads } = await investigated(data);
   await store.loadMore(wishId, Change.TASK);
   const status = (s) =>
@@ -1497,4 +1609,507 @@ test("an enlighten task that ended while djinn was away shows ended after the wa
   stop();
   assert.ok(reads.tasks > before);
   assert.equal(state.details[wishId].tasks.length, 3);
+});
+
+test("updating a planned task's prompt, title, provider, model and dependencies shows in the open wish at once without reload", async () => {
+  const data = sample();
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.loaded);
+
+  // Even when readPrompt cached the initial prompt, subsequent updates replace it at once.
+  assert.equal(await store.readPrompt(taskId), "Polish the brass with care");
+  assert.equal(store.getState().prompts[taskId], "Polish the brass with care");
+
+  // 1. Prompt-only update streamed in changed.tasks.
+  const promptOnly = {
+    ...data.tasks[0],
+    prompt: "Polish only the spout first",
+  };
+  data.tasks = [promptOnly];
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: { tasks: [promptOnly] },
+  });
+  let state = await until(
+    store,
+    (s) =>
+      s.details[wishId]?.tasks[0]?.prompt === "Polish only the spout first",
+  );
+  assert.equal(state.prompts[taskId], "Polish only the spout first");
+
+  // 2. Single-task update of all fields streamed directly in changed.tasks by WishService.Watch.
+  const streamed = {
+    ...promptOnly,
+    title: "Burnish the lamp",
+    prompt: "Burnish the brass until it shines",
+    provider: 4,
+    model: "gemini-3.8-flash-high",
+    dependsOn: ["t0"],
+  };
+  data.tasks = [streamed];
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: { tasks: [streamed] },
+  });
+  state = await until(
+    store,
+    (s) =>
+      s.details[wishId]?.tasks[0]?.prompt ===
+      "Burnish the brass until it shines",
+  );
+  assert.equal(state.details[wishId].tasks[0].title, "Burnish the lamp");
+  assert.equal(state.details[wishId].tasks[0].provider, 4);
+  assert.equal(state.details[wishId].tasks[0].model, "gemini-3.8-flash-high");
+  assert.deepEqual(state.details[wishId].tasks[0].dependsOn, ["t0"]);
+  assert.equal(state.prompts[taskId], "Burnish the brass until it shines");
+
+  // 3. Bulk update (> 20 tasks, like 26 prompts rewritten at once) where WishService.Watch sends Change.TASK
+  // without changed.tasks and the store re-lists the wish's tasks.
+  const relisted = {
+    ...streamed,
+    title: "Rewrite all twenty-six prompts",
+    prompt: "Twenty-six prompts rewritten at once",
+    provider: 1,
+    model: "claude-opus-4-7",
+    dependsOn: [],
+  };
+  data.tasks = [relisted];
+  watch.push({ wishId, changes: [Change.TASK] });
+  state = await until(
+    store,
+    (s) =>
+      s.details[wishId]?.tasks[0]?.prompt ===
+      "Twenty-six prompts rewritten at once",
+  );
+  assert.equal(
+    state.details[wishId].tasks[0].title,
+    "Rewrite all twenty-six prompts",
+  );
+  assert.equal(state.details[wishId].tasks[0].provider, 1);
+  assert.equal(state.details[wishId].tasks[0].model, "claude-opus-4-7");
+  assert.deepEqual(state.details[wishId].tasks[0].dependsOn, []);
+  assert.equal(state.prompts[taskId], "Twenty-six prompts rewritten at once");
+
+  // 4. Following the task's event stream (TaskService.Watch) also updates the cached prompt to the latest PROMPT event.
+  data.events = [
+    { seq: 1n, kind: 1, text: "Old event prompt" },
+    { seq: 2n, kind: 1, text: "Latest event prompt" },
+  ];
+  const release = store.follow(taskId);
+  state = await until(
+    store,
+    (s) => s.prompts[taskId] === "Latest event prompt",
+  );
+  assert.equal(state.prompts[taskId], "Latest event prompt");
+  release();
+  stop();
+});
+
+test("answering open questions past two full pages of decided questions keeps each answer and updates the remaining open questions", async () => {
+  const data = sample();
+  const decided = Array.from({ length: 100 }, (_, i) => ({
+    id: `01a11800-0000-0000-0000-${String(i + 1).padStart(12, "0")}`,
+    wishId,
+    code: `Q${String(i + 1).padStart(2, "0")}`,
+    text: `Decided question ${i + 1}?`,
+    options: ["Yes", "No"],
+    answer: { choice: 1, note: "yes" },
+  }));
+  const q101 = {
+    id: "01a11800-0000-0000-0000-000000000101",
+    wishId,
+    code: "Q101",
+    text: "Can wait question 101?",
+    options: ["Option A", "Option B"],
+  };
+  const q102 = {
+    id: "01a11800-0000-0000-0000-000000000102",
+    wishId,
+    code: "Q102",
+    text: "Blocking question 102?",
+    options: ["Proceed", "Stop"],
+  };
+  data.listQuestions = (req) => {
+    const all = [...decided, q101, q102];
+    if (req.open) {
+      const openList = all.filter((q) => !q.answer);
+      return { questions: openList, total: openList.length, nextPageToken: "" };
+    }
+    if (!req.pageToken) {
+      return {
+        questions: decided.slice(0, 50),
+        total: 102,
+        nextPageToken: "token-p2",
+      };
+    }
+    if (req.pageToken === "token-p2") {
+      return {
+        questions: decided.slice(50, 100),
+        total: 102,
+        nextPageToken: "token-p3",
+      };
+    }
+    return {
+      questions: [q101, q102],
+      total: 102,
+      nextPageToken: "",
+    };
+  };
+
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.QUESTION]);
+  await until(
+    store,
+    (s) =>
+      s.details[wishId]?.questions.some((q) => q.code === "Q101") &&
+      s.details[wishId]?.questions.some((q) => q.code === "Q102"),
+  );
+
+  // Answer Q101 on page 3: putQuestion + changed(QUESTION, WISH) reads up to the furthest known question (page 3),
+  // keeping Q101 decided with its note and Q102 open.
+  q101.answer = { choice: 2, note: "Option B chosen" };
+  store.putQuestion({ ...q101 });
+  await store.changed(wishId, [Change.QUESTION, Change.WISH]);
+
+  let questions = store.getState().details[wishId].questions;
+  const shown101 = questions.find((q) => q.code === "Q101");
+  const shown102 = questions.find((q) => q.code === "Q102");
+  assert.equal(shown101?.answer?.choice, 2);
+  assert.equal(shown101?.answer?.note, "Option B chosen");
+  assert.equal(shown102?.answer, undefined);
+  assert.equal(questions.filter((q) => !q.answer).length, 1);
+
+  // Answer Q102 on page 3: both Q101 and Q102 remain in the store as decided, with 0 open questions left.
+  q102.answer = { choice: 1, note: "Proceed now" };
+  store.putQuestion({ ...q102 });
+  await store.changed(wishId, [Change.QUESTION, Change.WISH]);
+
+  questions = store.getState().details[wishId].questions;
+  stop();
+  assert.equal(
+    questions.find((q) => q.code === "Q101")?.answer?.note,
+    "Option B chosen",
+  );
+  assert.equal(
+    questions.find((q) => q.code === "Q102")?.answer?.note,
+    "Proceed now",
+  );
+  assert.equal(questions.filter((q) => !q.answer).length, 0);
+});
+
+test("a wish view with a followed running task keeps at most 2 concurrent long-lived streams", async () => {
+  const data = sample();
+  data.running = true;
+  const watch = channel();
+  let activeStreams = 0;
+  let peakStreams = 0;
+  const activeByPath = new Map();
+
+  const trackStream = async function* (path, inner) {
+    activeStreams++;
+    activeByPath.set(path, (activeByPath.get(path) ?? 0) + 1);
+    if (activeStreams > peakStreams) peakStreams = activeStreams;
+    try {
+      yield* inner;
+    } finally {
+      activeStreams--;
+      const next = (activeByPath.get(path) ?? 1) - 1;
+      if (next <= 0) activeByPath.delete(path);
+      else activeByPath.set(path, next);
+    }
+  };
+
+  const transport = createRouterTransport(({ service }) => {
+    service(WishService, {
+      list: () => ({ wishes: data.wishes }),
+      watch: () =>
+        trackStream("/djinn.plan.v1.WishService/Watch", watch.stream()),
+    });
+    service(ProjectService, {
+      list: () => ({ projects: data.projects }),
+    });
+    service(LeadService, {
+      get: () => ({ lead: data.lead }),
+    });
+    service(TaskService, {
+      list: () => ({
+        tasks: data.tasks,
+        total: data.tasks.length,
+        nextPageToken: "",
+      }),
+      get: (req) => ({ task: data.tasks.find((t) => t.id === req.taskId) }),
+      watch: (req) =>
+        trackStream(
+          "/djinn.plan.v1.TaskService/Watch",
+          (async function* () {
+            for (const event of data.events.filter((e) => e.seq > req.afterSeq))
+              yield { event };
+            await new Promise(() => {});
+          })(),
+        ),
+    });
+    service(QuestionService, {
+      list: () => ({
+        questions: data.questions,
+        total: data.questions.length,
+        nextPageToken: "",
+      }),
+    });
+    service(BlockService, {
+      list: () => ({
+        blocks: data.blocks,
+        total: data.blocks.length,
+        nextPageToken: "",
+      }),
+    });
+    service(InboxService, {
+      list: () => ({ items: data.inbox }),
+      sources: () => ({ sources: data.sources }),
+    });
+  });
+
+  const store = createStore(createClients(transport), 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId);
+  await until(store, (s) => s.details[wishId]?.loaded);
+
+  const release = store.follow(taskId);
+  await until(store, (s) => (s.events[taskId]?.length ?? 0) === 2);
+
+  assert.equal(activeStreams, 2);
+  assert.ok(
+    peakStreams <= 4,
+    `peak concurrent streams ${peakStreams} exceeded 4`,
+  );
+  assert.equal(activeByPath.get("/djinn.plan.v1.WishService/Watch"), 1);
+  assert.equal(activeByPath.get("/djinn.plan.v1.TaskService/Watch"), 1);
+  assert.equal(activeByPath.get("/djinn.ui.v1.UiService/WatchShow") ?? 0, 0);
+  assert.equal(activeByPath.get("/djinn.ui.v1.UiService/WatchUpdate") ?? 0, 0);
+  assert.equal(activeByPath.get("/djinn.load.v1.LoadService/Watch") ?? 0, 0);
+
+  release();
+  stop();
+});
+
+test("each kind publishes as soon as its read answers without waiting for slower kinds", async () => {
+  const data = sample();
+  let releaseTasks;
+  data.listTasks = () =>
+    new Promise((r) => (releaseTasks = r)).then(() => ({
+      tasks: data.tasks,
+      total: data.tasks.length,
+      nextPageToken: "",
+    }));
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  assert.equal(store.getState().everLive, false);
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  assert.equal(store.getState().everLive, true);
+  assert.equal(store.readState("wishes"), "ready");
+  assert.equal(store.readState("projects"), "ready");
+
+  store.open(wishId);
+  // Questions and blocks answer immediately while tasks are still in flight.
+  const partial = await until(
+    store,
+    (s) =>
+      s.details[wishId]?.loadedKinds.has(Change.QUESTION) &&
+      s.details[wishId]?.loadedKinds.has(Change.BLOCK),
+  );
+  assert.equal(partial.details[wishId].questions[0].text, "Oil?");
+  assert.equal(partial.details[wishId].blocks[0].content, "A wick.");
+  assert.equal(store.readState(Change.QUESTION, wishId), "ready");
+  assert.equal(store.readState(Change.BLOCK, wishId), "ready");
+  assert.equal(store.readState(Change.TASK, wishId), "reading");
+  assert.equal(partial.details[wishId].loaded, false);
+
+  releaseTasks();
+  const full = await until(store, (s) => s.details[wishId]?.loaded);
+  assert.equal(full.details[wishId].tasks[0].title, "Polish");
+  assert.equal(store.readState(Change.TASK, wishId), "ready");
+  stop();
+});
+
+test("concurrent open and loadKinds while a read is in flight do not schedule duplicate reads", async () => {
+  const data = sample();
+  let releaseTasks;
+  data.listTasks = () =>
+    new Promise((r) => (releaseTasks = r)).then(() => ({
+      tasks: data.tasks,
+      total: data.tasks.length,
+      nextPageToken: "",
+    }));
+  const { clients, reads, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.QUESTION, Change.TASK, Change.BLOCK]);
+  store.open(wishId);
+  void store.loadKinds(wishId, [Change.TASK]);
+  await until(store, (s) =>
+    s.details[wishId]?.loadedKinds.has(Change.QUESTION),
+  );
+  assert.equal(reads.tasks, 1, "tasks read issued only once while in flight");
+  releaseTasks();
+  await until(store, (s) => s.details[wishId]?.loaded);
+  assert.equal(reads.tasks, 1);
+  stop();
+});
+
+test("readState transitions from reading to slow and ready, and failed to reading on retryRead", async () => {
+  const data = sample();
+  let shouldFail = false;
+  let releaseTasks;
+  data.listTasks = () => {
+    if (shouldFail) throw new Error("disk busy");
+    return new Promise((r) => (releaseTasks = r)).then(() => ({
+      tasks: data.tasks,
+      total: data.tasks.length,
+      nextPageToken: "",
+    }));
+  };
+  const { clients, watch } = server(data);
+  // retry = 5000ms so automatic retry doesn't fire before retryRead, slowMs = 30ms.
+  const store = createStore(clients, 5_000, 10, 5_000, 5_000, 30);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+
+  store.open(wishId, [Change.TASK]);
+  assert.equal(store.readState(Change.TASK, wishId), "reading");
+  await until(store, () => store.readState(Change.TASK, wishId) === "slow");
+  assert.equal(store.readState(Change.TASK), "slow");
+  releaseTasks();
+  await until(store, () => store.readState(Change.TASK, wishId) === "ready");
+  assert.equal(store.readState(Change.TASK), "ready");
+
+  // Now test failure on a second wish and retryRead.
+  const wish2 = "01a11833-a440-7479-a067-52615c91da72";
+  shouldFail = true;
+  store.open(wish2, [Change.QUESTION]);
+  data.listQuestions = () => {
+    if (shouldFail) throw new Error("network glitch");
+    return { questions: data.questions, total: 1, nextPageToken: "" };
+  };
+  await until(
+    store,
+    () => store.readState(Change.QUESTION, wish2) === "failed",
+  );
+  shouldFail = false;
+  store.retryRead(Change.QUESTION, wish2);
+  await until(store, () => store.readState(Change.QUESTION, wish2) === "ready");
+  stop();
+});
+
+test("an in-flight task list read does not overwrite a newer watch update that arrived meanwhile", async () => {
+  const data = sample();
+  const { clients, watch } = server(data);
+  const store = createStore(clients, 10);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId, [Change.TASK]);
+  await until(store, (s) => s.details[wishId]?.loadedKinds.has(Change.TASK));
+
+  const staleTasks = data.tasks.map((t) => ({ ...t }));
+  let releaseTasks;
+  data.listTasks = () =>
+    new Promise((r) => (releaseTasks = r)).then(() => ({
+      tasks: staleTasks,
+      total: staleTasks.length,
+      nextPageToken: "",
+    }));
+
+  const reading = store.changed(wishId, [Change.TASK]);
+  await new Promise((r) => setTimeout(r, 20));
+
+  const finished = { ...data.tasks[0], status: 4, lastLine: "Done" };
+  watch.push({
+    wishId,
+    changes: [Change.TASK],
+    changed: carried({ tasks: [finished] }),
+  });
+  await until(
+    store,
+    (s) =>
+      s.details[wishId]?.tasks.find((t) => t.id === finished.id)?.status === 4,
+  );
+
+  releaseTasks();
+  await reading;
+  stop();
+  const after = store
+    .getState()
+    .details[wishId]?.tasks.find((t) => t.id === finished.id);
+  assert.equal(after?.status, 4);
+  assert.equal(after?.lastLine, "Done");
+});
+
+test("changed() resolves as soon as the read it started completes, without waiting for the throttle when its own watch event arrives in flight", async () => {
+  const data = sample();
+  const { clients, watch } = server(data);
+  // Use a 5s throttle so waiting for the throttled second read would time out or fail the elapsed check.
+  const store = createStore(clients, 10, 5_000);
+  const stop = store.start();
+  watch.push({ wishId: "", changes: everything });
+  await until(store, (s) => s.loaded);
+  store.open(wishId, [Change.QUESTION]);
+  await until(store, (s) =>
+    s.details[wishId]?.loadedKinds.has(Change.QUESTION),
+  );
+
+  let releaseQuestions;
+  let questionReads = 0;
+  data.listQuestions = () => {
+    questionReads++;
+    const updated = [
+      ...data.questions,
+      { id: "q2", wishId, code: "Q02", text: "Wick?" },
+    ];
+    if (questionReads === 1) {
+      return new Promise((r) => (releaseQuestions = r)).then(() => ({
+        questions: updated,
+        total: updated.length,
+        nextPageToken: "",
+      }));
+    }
+    return { questions: updated, total: updated.length, nextPageToken: "" };
+  };
+
+  const startedAt = Date.now();
+  const changedPromise = store.changed(wishId, [Change.QUESTION]);
+  await new Promise((r) => setTimeout(r, 15));
+
+  // While the first read of QUESTION is in flight, the server's WatchChanges SSE event for that write arrives.
+  watch.push({ wishId, changes: [Change.QUESTION] });
+  await new Promise((r) => setTimeout(r, 10));
+
+  releaseQuestions();
+  await changedPromise;
+  const elapsed = Date.now() - startedAt;
+  assert.ok(
+    elapsed < 1_000,
+    `changed() resolved in ${elapsed}ms without waiting for the 5000ms throttle`,
+  );
+  assert.equal(store.getState().details[wishId]?.questions.length, 2);
+  assert.equal(store.getState().details[wishId]?.questions[1].code, "Q02");
+  stop();
 });

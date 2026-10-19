@@ -8,6 +8,7 @@ import (
 )
 
 func TestPaginate(t *testing.T) {
+	t.Parallel()
 	items := make([]int, 125)
 	for i := range items {
 		items[i] = i
@@ -81,9 +82,11 @@ func TestPaginate(t *testing.T) {
 		base64.RawURLEncoding.EncodeToString([]byte("-10")),
 	}
 	for _, tok := range invalidTokens {
-		_, _, _, err := Paginate(items, 50, tok)
-		if connect.CodeOf(err) != connect.CodeInvalidArgument {
-			t.Errorf("token %q: want CodeInvalidArgument, got %v", tok, err)
-		}
+		t.Run(tok, func(t *testing.T) {
+			_, _, _, err := Paginate(items, 50, tok)
+			if connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Errorf("token %q: want CodeInvalidArgument, got %v", tok, err)
+			}
+		})
 	}
 }

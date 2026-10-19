@@ -77,9 +77,9 @@ type updater struct {
 	version  string // version of the running binary
 	ui       *ui.Service
 	terms    *terminal.Manager
-	leads    *leadNote // where the note of the restart goes
-	stop     func()    // stops djinn up
-	releases source    // where a newer release comes from; nil for a development build
+	leads    *leadNote    // where the note of the restart goes
+	stop     func(string) // stops djinn up, for a source (stop.go)
+	releases source       // where a newer release comes from; nil for a development build
 	// fit says what a release found means for a Djinn built from a checkout (harness.Release); nil for another one.
 	fit func(ctx context.Context, tag string) (harness.ReleaseFit, error)
 	// describe names the newer Djinn of a version as a build (harness.DescribeVersion): nil when no project holds its
@@ -99,7 +99,7 @@ type updater struct {
 
 // newUpdater returns the updater of a djinn of version. A development build never updates: workers rebuild it all the
 // time, and it is not the Djinn in use.
-func newUpdater(version string, svc *ui.Service, terms *terminal.Manager, leads *leadNote, stop func()) (*updater, error) {
+func newUpdater(version string, svc *ui.Service, terms *terminal.Manager, leads *leadNote, stop func(string)) (*updater, error) {
 	if version == "dev" {
 		return nil, nil
 	}
@@ -301,9 +301,9 @@ func binaryVersion(ctx context.Context, exe string) (string, error) {
 	return fields[1], nil
 }
 
-// restart notes the running terminals, then stops djinn up, which starts the newer binary once everything is closed.
-// It is ui.Service.Restart.
-func (u *updater) restart() (string, int, error) {
+// restart notes the running terminals, then stops djinn up, which starts the newer binary once everything is closed;
+// by names who asked (ui.StopBy). It is ui.Service.Restart.
+func (u *updater) restart(by string) (string, int, error) {
 	ctx := context.Background()
 	version := u.check(ctx)
 	if version == "" && u.offered() {
@@ -327,11 +327,11 @@ func (u *updater) restart() (string, int, error) {
 		return "", 0, fmt.Errorf("note the terminals: %w", err)
 	}
 	u.restarting = true
-	logx.L().Info("restart asked", "from", u.version, "to", version, "terminals", len(note.Terminals))
+	logx.L().Info("restart asked", "from", u.version, "to", version, "terminals", len(note.Terminals), "by", by)
 	go func() {
 		defer logx.Crash("restart")
 		time.Sleep(restartDelay)
-		u.stop()
+		u.stop(restartStop + by)
 	}()
 	return version, len(note.Terminals), nil
 }
@@ -393,7 +393,8 @@ func (u *updater) Restarting() bool {
 // A note from a Djinn of one lead per wish names its leads' terminals lead-<wish id>: the first that runs session,
 // the lead's recorded session (any when none is), comes back as the lead's terminal; the others do not, and
 // resumeLead resumes the lead's session after: never a lead under another name, nor two terminals on a session.
-func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, session string, say io.Writer) []string {
+// While Djinn drives the lead (driven), the lead's terminal does not run again: no lead lives in a terminal.
+func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, session string, driven bool, say io.Writer) []string {
 	path := filepath.Join(home, RestartFile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -416,6 +417,11 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, sess
 	shown, dropped := "", 0
 	lead := slices.ContainsFunc(note.Terminals, func(t restartTerminal) bool { return t.Name == plan.LeadTerminal })
 	for _, t := range note.Terminals {
+		if driven && (t.Name == plan.LeadTerminal || strings.HasPrefix(t.Name, "lead-")) {
+			fmt.Fprintf(say, "djinn: %s does not run again: Djinn drives the lead, a session per batch of its events\n", t.Name)
+			dropped++
+			continue
+		}
 		if strings.HasPrefix(t.Name, "lead-") {
 			if lead || session != "" && !strings.Contains(strings.Join(t.Command, " "), session) {
 				fmt.Fprintf(say, "djinn: %s, a wish's lead, does not run again: Djinn has one lead now, in the %q terminal\n",
@@ -446,10 +452,7 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, sess
 			shown = t.Name
 		}
 	}
-	switch {
-	case shown != "" && shown == note.ShowTerminal:
-		svc.Present(note.ShowWish, shown)
-	case shown != "":
+	if shown != "" || note.ShowWish != "" {
 		svc.Present(note.ShowWish, shown)
 	}
 	if note.Version == "" {

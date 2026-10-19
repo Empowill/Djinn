@@ -103,6 +103,47 @@ func catalog() []catalogCase {
 					t.Errorf("session = %q", ev.SessionID)
 				}
 			}},
+		{provider: "claude", fixture: "lead-comments",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, _ string) {
+				// The lead's batch on a send of comments: a reply per comment, its cost as claude counts it.
+				replies := 0
+				for _, ev := range events {
+					if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_TOOL_CALL && strings.Contains(ev.Text, "djinn tilasm reply L01 C") {
+						replies++
+					}
+				}
+				if replies != 4 {
+					t.Errorf("%d replies, want 4", replies)
+				}
+				if u := event(t, events, "USAGE").Usage; u.GetCostUsd() != 0.6187598000000001 {
+					t.Errorf("usage = %v", u)
+				}
+			}},
+		{provider: "claude", fixture: "lead-batch",
+			spec: Spec{SystemPrompt: "# Leading in Djinn", MaxTurns: 60, WriteDirs: []string{"/d/lead"}, ReadDirs: []string{"/d"},
+				Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}, Mode: djinnv1.Mode_MODE_LISTED}},
+			want: []string{"STATUS", "TOOL_CALL", "STATUS", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, args, _ string) {
+				// The driven lead's session: its rules in the system prompt file, its turns capped, its folder writable.
+				_, file, _ := strings.Cut(args, "--append-system-prompt-file\n")
+				file, _, _ = strings.Cut(file, "\n--exclude-dynamic-system-prompt-sections")
+				if b, err := os.ReadFile(file); err != nil || string(b) != "# Leading in Djinn" {
+					t.Errorf("system prompt file %q = %q, %v", file, b, err)
+				}
+				for _, want := range []string{"--max-turns\n60", `"Write(//d/lead/**)"`, `"Read(//d/**)"`, `"Bash(djinn *)"`} {
+					if !strings.Contains(args, want) {
+						t.Errorf("args lack %q: %q", want, args)
+					}
+				}
+				if strings.Contains(args, `"Write"`) {
+					t.Errorf("a deny of every edit would win over the lead's folder: %q", args)
+				}
+				if u := event(t, events, "USAGE").Usage; u.GetCostUsd() != 0.1599468 || u.GetCacheReadTokens() != 47074 ||
+					u.GetCacheWriteTokens() != 18102 {
+					t.Errorf("usage = %v", u)
+				}
+			}},
 		{provider: "claude", fixture: "session-limit", want: []string{"STATUS", "STATUS", "STATUS", "TEXT", "ERROR", "USAGE"},
 			err: "You've hit your session limit · resets 7:20am (Europe/Paris)",
 			check: func(t *testing.T, events []Event, _, _ string) {
@@ -196,7 +237,7 @@ func catalog() []catalogCase {
 					t.Errorf("text = %q", got)
 				}
 				u := event(t, events, "USAGE").Usage
-				if u.GetInputTokens() != 30384 || u.GetOutputTokens() != 9 || u.GetCostUsd() != 0 {
+				if u.GetInputTokens() != 30384 || u.GetOutputTokens() != 9 || u.GetCostUsd() < 0.02282 || u.GetCostUsd() > 0.02283 {
 					t.Errorf("usage = %v", u)
 				}
 				if args != "--input-format\nstream-json\n--output-format\nstream-json" {
@@ -284,7 +325,7 @@ func catalog() []catalogCase {
 		// A worker with permissions commits in a linked worktree, its repository outside agy's workspace: Djinn's agy
 		// project grants the folders and the commands (real run, agy 1.3.3).
 		{provider: "antigravity", fixture: "commit",
-			spec: Spec{Permissions: &djinnv1.Permissions{Edit: true, Commands: []string{"git add", "git commit"}, DeniedCommands: []string{"git push"}}},
+			spec: Spec{SystemPrompt: "# Leading in Djinn", Permissions: &djinnv1.Permissions{Edit: true, Commands: []string{"git add", "git commit"}, DeniedCommands: []string{"git push"}}},
 			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT",
 				"TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
 			check: func(t *testing.T, events []Event, args, _ string) {
@@ -306,6 +347,10 @@ func catalog() []catalogCase {
 					t.Fatalf("project %s: %v", b, err)
 				}
 				g := f.PermissionGrants.PermissionGrants
+				workDir := strings.TrimSuffix(strings.TrimPrefix(g.Allow[0], "write_file("), ")")
+				if rules, err := os.ReadFile(filepath.Join(workDir, agyRulesFile)); err != nil || string(rules) != "# Leading in Djinn" {
+					t.Errorf("GEMINI.md in %s = %q, %v", workDir, rules, err)
+				}
 				home, _ := os.UserHomeDir()
 				if !slices.Contains(g.Allow, "command(git commit)") ||
 					!slices.ContainsFunc(g.Allow, func(s string) bool { return strings.HasPrefix(s, "write_file(") }) ||
@@ -429,6 +474,60 @@ func catalog() []catalogCase {
 				}
 				if n := strings.Count(input, agyContinuePrompt); n != 1 {
 					t.Errorf("continuations in input = %d, want 1; input = %q", n, input)
+				}
+			}},
+		// W308's lines (agy 1.4.1, W360): a tool error that is no denial goes back to the model, and the turn goes on.
+		{provider: "antigravity", fixture: "tool-error",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, input string) {
+				if got := texts(events, "TOOL_RESULT"); len(got) != 3 || !strings.HasSuffix(got[1], "brief_test.go: no such file or directory") {
+					t.Errorf("results = %q", got)
+				}
+				if strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("Djinn continued a turn that went on: %q", input)
+				}
+			}},
+		// "task-" in a branch name is no background task: the process that then ends mid-turn fails it.
+		{provider: "antigravity", fixture: "task-in-branch", end: "exit:1", want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "ERROR"},
+			exit: 1, err: "agy ended before the end of its turn",
+			check: func(t *testing.T, events []Event, _, _ string) {
+				if got := texts(events, "TOOL_RESULT"); len(got) != 1 || !strings.Contains(got[0], "-task-of-8e0eb518") {
+					t.Errorf("results = %q", got)
+				}
+			}},
+		// A background command is a tool step ACTIVE until it ends; the steps held meanwhile, then the system message
+		// of its end, which says nothing.
+		{provider: "antigravity", fixture: "background-task",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT", "TOOL_CALL", "TOOL_RESULT",
+				"TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, _ string) {
+				if got := texts(events, "TOOL_RESULT"); !strings.HasPrefix(got[0], "ok  \tgithub.com/empowill/djinn/internal/dispatch") ||
+					!strings.HasPrefix(got[3], "Task: a7b0d8e7-4941-4195-bd26-dbf86d65ef8d/task-19\nStatus: RUNNING") {
+					t.Errorf("results = %q", got)
+				}
+			}},
+		{provider: "antigravity", fixture: "command-runs", end: "exit:1", want: []string{"STATUS", "TOOL_CALL", "ERROR"},
+			exit: 1, err: "agy ended before the end of its turn"},
+		// agy's own retry of an idle model call: an error_message step, without text; the turn goes on.
+		{provider: "antigravity", fixture: "error-message", want: []string{"STATUS", "OTHER", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+			check: func(t *testing.T, events []Event, _, input string) {
+				if got := texts(events, "OTHER"); !slices.Equal(got, []string{"step error_message DONE"}) {
+					t.Errorf("others = %q", got)
+				}
+				if strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("Djinn continued a turn agy retried by itself: %q", input)
+				}
+			}},
+		// W409's closing 429: without committed work in the folder, it is a limit error and never retried on stdin.
+		{provider: "antigravity", fixture: "w409-closing-429", end: "eof:3",
+			want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TEXT", "ERROR", "USAGE"},
+			exit: 3, err: "RESOURCE_EXHAUSTED (code 429): TPM quota exhausted",
+			check: func(t *testing.T, events []Event, _, input string) {
+				if strings.Contains(input, agyContinuePrompt) {
+					t.Errorf("Djinn continued a 429 quota error on stdin: %q", input)
+				}
+				if l, ok := limitIn(event(t, events, "ERROR").Text, time.Time{}); !ok || !l.PerMinute {
+					t.Errorf("limit not parsed as per-minute on closing 429 without committed work: %+v, %v", l, ok)
 				}
 			}},
 
@@ -659,6 +758,10 @@ func TestProviderArgs(t *testing.T) {
 		{Spec{}, []string{"--input-format", "stream-json", "--output-format", "stream-json"}, false},
 		{Spec{Model: "gemini-3.8-flash-medium", Resume: "c1"},
 			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--conversation", "c1", "--model", "gemini-3.8-flash-medium"}, false},
+		{Spec{Model: "argon"},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-4-argon-high"}, false},
+		{Spec{Model: "flash"},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--model", "gemini-3.8-flash-high"}, false},
 		{Spec{ReadOnly: true}, nil, true},
 		{Spec{Resume: "c1", Fork: true}, nil, true},
 		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Mode: djinnv1.Mode_MODE_AUTO}},
@@ -666,6 +769,8 @@ func TestProviderArgs(t *testing.T) {
 				"--project", agyProjectID("/w")}, false},
 		{Spec{Dir: "/w", Permissions: &djinnv1.Permissions{Edit: true, Network: true}},
 			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--project", agyProjectID("/w")}, false},
+		{Spec{Dir: "/d/lead", WriteDirs: []string{"/d/lead"}, Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}}},
+			[]string{"--input-format", "stream-json", "--output-format", "stream-json", "--mode", "accept-edits", "--project", agyProjectID("/d/lead")}, false},
 		{Spec{Permissions: &djinnv1.Permissions{Commands: []string{"git status"}}}, nil, true},
 	}
 	for _, tt := range agy {
@@ -716,6 +821,19 @@ func TestProviderArgs(t *testing.T) {
 	if b, _ := json.Marshal(turn); !strings.Contains(string(b), `"approvalPolicy":"on-request","approvalsReviewer":"auto_review"`) ||
 		!strings.Contains(string(b), `"sandboxPolicy":{"excludeSlashTmp":false,"excludeTmpdirEnvVar":false,"networkAccess":true,"type":"workspaceWrite","writableRoots":[]}`) {
 		t.Errorf("an auto turn with edit and network: %s", b)
+	}
+	// The driven lead (W132): its rules are codex's developer instructions, and its folders to write in, without edit,
+	// open the workspace-write sandbox on them alone.
+	lead := Spec{Dir: "/home/d/lead", SystemPrompt: "The driven lead's rules", WriteDirs: []string{"/home/d/lead", "/home/d/plans"},
+		Permissions: &djinnv1.Permissions{Commands: []string{"djinn"}}}
+	if _, params := (Codex{}).threadRequest(lead); params["developerInstructions"] != "The driven lead's rules" ||
+		params["sandbox"] != "workspace-write" || params["approvalPolicy"] != "untrusted" {
+		t.Errorf("the lead's thread: %v", params)
+	}
+	turn = (Codex{}).turnParams(lead, "th", "hi")
+	if b, _ := json.Marshal(turn); !strings.Contains(string(b), `"type":"workspaceWrite","writableRoots":["/home/d/plans"]`) ||
+		!strings.Contains(string(b), `"networkAccess":false`) {
+		t.Errorf("the lead's turn: %s", b)
 	}
 	turn = (Codex{}).turnParams(Spec{Dir: "/w", Permissions: &djinnv1.Permissions{}}, "th", "hi")
 	if b, _ := json.Marshal(turn); !strings.Contains(string(b), `"approvalPolicy":"untrusted"`) ||
@@ -800,5 +918,35 @@ func TestSpawnOutsideProject(t *testing.T) {
 	events := e.watch(t.Context(), t, task.GetId(), 0)
 	if !strings.Contains(events[1].GetText(), "read-only: outside any project") {
 		t.Errorf("start = %q", events[1].GetText())
+	}
+}
+
+func TestClaudeThinkingTokens(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		line string
+		want int64
+	}{
+		{
+			name: "modelUsage thinkingTokens",
+			line: `{"type":"result","subtype":"success","total_cost_usd":0.12,"usage":{"input_tokens":100,"output_tokens":50},"modelUsage":{"claude-opus-5-6":{"inputTokens":100,"outputTokens":50,"thinkingTokens":340},"claude-haiku-5-5":{"inputTokens":20,"outputTokens":10,"thinkingTokens":60}}}`,
+			want: 400,
+		},
+		{
+			name: "top-level thinking_tokens fallback",
+			line: `{"type":"result","subtype":"success","total_cost_usd":0.05,"usage":{"input_tokens":100,"output_tokens":50,"thinking_tokens":250}}`,
+			want: 250,
+		},
+		{
+			name: "output_tokens_details thinking_tokens fallback",
+			line: `{"type":"result","subtype":"success","total_cost_usd":0.05,"usage":{"input_tokens":100,"output_tokens":50,"output_tokens_details":{"thinking_tokens":175}}}`,
+			want: 175,
+		},
+	} {
+		evs, res := parseClaude(tc.line)
+		if res == nil || len(evs) != 1 || evs[0].Usage.GetThinkingTokens() != tc.want {
+			t.Errorf("%s: usage = %v, want thinking_tokens = %d", tc.name, evs, tc.want)
+		}
 	}
 }

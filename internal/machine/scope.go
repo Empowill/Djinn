@@ -65,6 +65,25 @@ func (s *Scopes) NewWithMemory(name string, memory uint64) Scope {
 	return sc
 }
 
+// Plain is the scope of a command Djinn runs itself (a push check, under its gate), name its gate: djinn-gate-<name>,
+// with no cap, so that the Djinn line counts all it uses, the processes that end first too.
+func (s *Scopes) Plain(name string) Scope {
+	unit := scopeUnit("gate-"+name, uuid.NewString()[:8])
+	sc := Scope{Unit: unit, Prefix: []string{"systemd-run", "--user", "--scope", "--quiet", "--collect", "--unit=" + unit, "--"}}
+	if s.slice != "" {
+		sc.Cgroup = path.Join(cgroupRoot, s.slice, unit)
+	}
+	return sc
+}
+
+// Slice is the cgroup folder that holds the scopes, under /sys/fs/cgroup; "" when unknown.
+func (s *Scopes) Slice() string {
+	if s == nil || s.slice == "" {
+		return ""
+	}
+	return path.Join(cgroupRoot, s.slice)
+}
+
 // scopeUnit names the scope of a worker: djinn-<name>-<uuid8>.scope, the name kept to what a unit name holds.
 func scopeUnit(name, uuid8 string) string {
 	name = strings.Map(func(r rune) rune {
