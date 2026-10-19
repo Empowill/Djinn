@@ -121,7 +121,8 @@ watcher reads none.
 - **Pause the worker** holds it, **Resume the worker** lets it go on.
 - **Stop the worker** ends it.
 - In **What runs**, each watcher of a wish has its line on top: what it said last and since when, and the
-  request it watches, its number a link that opens it in your browser.
+  request it watches (its own babysit link, its azima's request, or the request its command or title names on the
+  project's forge), its number a link that opens it in your browser.
 - An azima whose only live work is a watcher, the babysit of its pull request for instance, is **Watching**: not
   done, and what comes after it still waits.
 
