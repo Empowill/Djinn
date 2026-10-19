@@ -153,49 +153,37 @@ another.
 
 ## The Djinn
 
-Djinn has a single lead for all active wishes, the Djinn: an agent session that talks with you, splits wishes into tasks, asks
-the questions and keeps the plans true. It drives Djinn with the `djinn` command.
+Djinn has a single lead for all active wishes, the Djinn: an agent that talks with you, splits wishes into tasks, asks
+the questions and keeps the plans true. It drives Djinn with the `djinn` command. The app is Djinn, its lead is the
+Djinn; the workers are its hands.
 
-The app is Djinn, its lead is the Djinn; the workers are its hands. **Talk to the Djinn**, at the top of a wish, opens
-the Djinn in the terminal of the window and focuses it on that wish; at the top of the flying carpet, it opens it on no wish:
+By default (`"leadDriven"` unset or `true` in `settings.json`), Djinn drives the lead without a terminal: when events
+wait (a task ended or failed, a merge, an answer, a message, a restart), Djinn starts a fresh headless session on the
+seat you chose (Claude Code by default, or Codex, with its model and account), hands it the events, the wish briefs and
+the journal of recent batches, and lets it go when its turn ends. Beside **Talk to the Djinn**, the window shows the
+running batch (since when, events, cost) and the count of past batches in the journal; a wish's **History** tab shows
+the batches that touched that wish alongside its commands, and `djinn lead journal` prints them in the terminal. The
+arrow beside **Talk to the Djinn**, or `djinn lead move`, moves the lead to another agent, model or account for the
+next batch; when it hits its subscription's limit, the attention bar offers each other agent or account in one click.
+In a wish, the pill **Write to the Djinn** at the bottom sends your words whole to the next batch about that wish, and
+on the flying carpet about no wish (Cmd/Ctrl+I opens it; Enter sends, Shift+Enter breaks the line, Escape, a click or
+the focus elsewhere folds it and keeps the draft), or `djinn lead tell "…"` from a terminal.
 
-- the Djinn has a session: Djinn resumes it (`claude --resume …` or `codex resume …`) in the folder it was recorded
-  in, or shows it if it runs, and types a short line focusing on the wish;
-- it has none: the Djinn starts anew on Claude Code in your first project, never in your home folder. With no project at all,
-  nothing starts: create one first.
+With `"leadDriven": false` in `settings.json`, the Djinn runs in the terminal of the window instead: **Talk to the
+Djinn** opens it and focuses it on that wish (or on no wish from the flying carpet), resuming its recorded session or
+starting anew on Claude Code in your first project. Every new terminal session starts by running `djinn brief`; when its
+agent asks for your approval in the terminal (a command to run, a folder to trust), the bar of what waits for you shows
+it first with its options as buttons. From a terminal, `djinn lead resume` does what **Talk to the Djinn** does, and
+`djinn lead set <session-id> --directory <folder>` records a session you started yourself. When the terminal Djinn
+could not start or its program ended, a small dot on **Talk to the Djinn** gives the error or exit code, and at every
+start the terminal Djinn comes back on its session. Upgrading from a running terminal lead to the default driven lead
+drops the `"lead"` terminal cleanly, preserves the wish shown in the window, loses no waiting event, and starts the
+journal.
 
-The arrow beside **Talk to the Djinn**, **Choose the agent**, starts the Djinn on another agent found on this machine: Claude Code,
-Codex or Antigravity. An agent that is not installed shows greyed, saying so; the recorded one is checked, and picking
-it resumes the Djinn, focused on this wish. Starting the Djinn on another provider replaces its session.
-
-Every new session of the Djinn, on any agent, starts by running `djinn brief`: every active wish at once (each wish's title, description,
-open questions, what runs and waits, its azimas), then Djinn's rules and the projects' (`AGENTS.md`, `CLAUDE.md`,
-`CONTRIBUTING.md`). `djinn wish brief <wish-id>` gives one wish's detail. No model writes it.
-
-The Djinn talks to you only in the window: everything it has to tell you, a report or "done as you asked" included,
-is a question in the wish concerned, often a yes/no acknowledgement with "OK, nothing to do" as an option, and it
-withdraws one as soon as a task or Djinn does what it asked. When it does not fully understand an answer, it asks
-again before starting any work. It writes nothing for you in its terminal; a line you type there is answered in the
-window.
-
-From a terminal, `djinn lead resume` does what **Talk to the Djinn** does, and starts Djinn if it does not run;
-`djinn lead resume --provider codex` picks the agent. `djinn lead set <session-id> --directory <folder>`
-records a session you started yourself. `djinn lead tell "…"` writes to the running Djinn as if you typed it in its
-terminal, line breaks kept (`--wish-id <wish-id>` says which wish it is about); it waits while you type there or a
-choice is on screen. In a wish, the pill **Write to the Djinn** at the bottom does the same about that wish, and
-on the flying carpet about no wish (Cmd/Ctrl+I opens it; Enter sends, Shift+Enter breaks the line, Escape, a click or the focus elsewhere folds it and keeps the draft).
-
-When the agent behind the Djinn asks for your approval in its terminal (a command to run, a folder to trust), the bar of what
-waits for you shows it first, in the flying carpet and in every wish, with its options as buttons, and a notification
-says so. A button answers in the terminal as its keys would, only while the terminal still shows that very choice: a
-different command needs a new click.
-
-When the Djinn could not start, from **Talk to the Djinn** or as the app starts, or its program ended (it failed at once, or you quit
-it), a small dot on **Talk to the Djinn** says so, in every wish and on the flying carpet: its tooltip gives the error or the exit code. The Djinn's tab keeps its last output, and
-reopening it starts nothing. Only **Talk to the Djinn**, or `djinn lead resume`, starts it again; the dot goes once it runs.
-
-At every start, the Djinn comes back, in its terminal. The first start after an update from a version that had
-one lead per wish keeps the lead of the first active wish as the Djinn.
+The Djinn talks to you only in the window: everything it has to tell you, a report or "done as you asked" included, is
+a question in the wish concerned or a reply in the bubble held to **Write to the Djinn**, and it withdraws a question as
+soon as a task or Djinn does what it asked. When it does not fully understand an answer, it asks again before starting
+any work.
 
 ## The flying carpet
 
@@ -425,22 +413,21 @@ of its context. A check, a measure, a log or a CI result is never asked of you: 
 
 Your answer goes to the Djinn and the workers. An answered question is a decision. When the Djinn planned the
 task an option launches, picking that option without a note launches it at once; a note goes to the Djinn first,
-which adjusts the task to it before launching. From a terminal,
-`djinn question answer <question> <choice>` answers a question; the Djinn's terminal is marked with `$DJINN_LEAD`,
-so an answer typed by the Djinn is attributed to it without echoing back to its own terminal, whereas an answer
-typed in a plain shell is attributed to the developer and reaches the Djinn. When a question is answered in
-any wish, the answer is queued for the Djinn, which waits on `djinn lead watch`: nothing is typed in its
-terminal while its watch runs, so nothing lands in your prompt box; without a watch, Djinn types one short line,
-"Djinn: N events waiting, run djinn lead watch". If the Djinn does not run, the question is marked **Waiting for the Djinn** until
-the Djinn acknowledges it; the next `djinn up` queues it for the Djinn. While Djinn drives the lead
-(`"leadDriven": true` in `settings.json`), there is no terminal and no watch: the answer goes to the next batch's
-session, whole; beside **Talk to the Djinn**, the window shows the running batch (since when, events, cost) and the
-journal of past batches (with retries when a batch fails), the wish's **History** tab shows the batches that touched
-that wish alongside its commands, and `djinn lead journal` prints them in the terminal. The lead runs on the agent, model and account
-you choose, from the arrow beside **Talk to the Djinn** or with `djinn lead move`, until you move it; when it hits its
-subscription's limit, the attention bar offers each other agent or account in one click, and Djinn moves it nowhere by
-itself. An account is a folder of the agent's own where it keeps its login (`djinn lead add-account`, then its
-sign-in once): see [the lead's seat and the accounts](providers.md#the-leads-seat-and-the-accounts).
+which adjusts the task to it before launching. From a terminal, `djinn question answer <question> <choice>` answers a
+question; a session of the Djinn is marked with `$DJINN_LEAD`, so an answer run by the Djinn is attributed to it
+without echoing back to itself, whereas an answer typed in a plain shell is attributed to the developer and reaches the
+Djinn. By default (`"leadDriven"` unset or `true` in `settings.json`), there is no lead terminal and no watch: the
+answer goes to the next batch's session, whole; beside **Talk to the Djinn**, the window shows the running batch (since
+when, events, cost) and the journal of past batches (with retries when a batch fails), the wish's **History** tab shows
+the batches that touched that wish alongside its commands, and `djinn lead journal` prints them in the terminal. The
+lead runs on the agent, model and account you choose, from the arrow beside **Talk to the Djinn** or with `djinn lead
+move`, until you move it; when it hits its subscription's limit, the attention bar offers each other agent or account
+in one click, and Djinn moves it nowhere by itself. An account is a folder of the agent's own where it keeps its login
+(`djinn lead add-account`, then its sign-in once): see [the lead's seat and the
+accounts](providers.md#the-leads-seat-and-the-accounts). When `"leadDriven": false` is set in `settings.json`, the
+answer is queued for the terminal Djinn on `djinn lead watch` (or Djinn types one short line in its terminal if no
+watch runs), and if the terminal Djinn does not run, the question is marked **Waiting for the Djinn** until it
+acknowledges it.
 
 An open question can be moved to another wish (`djinn question move <question> --wish <wish>`), with `--follow` to
 bring tasks following this decision along with it. A question no longer relevant can be withdrawn without an answer

@@ -78,6 +78,7 @@ func TestLeadNote(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	home := t.TempDir()
+	terminalLead(t, home)
 	bin, count := fakeClaude(t)
 	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
 	folder, err := filepath.EvalSymlinks(t.TempDir())

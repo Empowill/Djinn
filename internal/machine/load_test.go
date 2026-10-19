@@ -140,7 +140,7 @@ func TestReadIfritIdle(t *testing.T) {
 	}
 }
 
-// TestReadLeadDriven: whether Djinn drives the lead, false when settings.json does not say.
+// TestReadLeadDriven: whether Djinn drives the lead, true unless settings.json says false.
 func TestReadLeadDriven(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -149,10 +149,12 @@ func TestReadLeadDriven(t *testing.T) {
 		settings string
 		want     bool
 	}{
-		{name: "no home", noHome: true},
-		{name: "missing file"},
-		{name: "broken file", settings: `{"leadDriven":`},
-		{name: "saved", settings: `{"leadDriven":true}`, want: true},
+		{name: "no home", noHome: true, want: true},
+		{name: "missing file", want: true},
+		{name: "broken file", settings: `{"leadDriven":`, want: true},
+		{name: "unset", settings: `{}`, want: true},
+		{name: "saved true", settings: `{"leadDriven":true}`, want: true},
+		{name: "saved false", settings: `{"leadDriven":false}`, want: false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

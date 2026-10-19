@@ -7,7 +7,13 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { dropLead, leadFolder, leadRows, setLead } from "./lead";
+import {
+  dropLead,
+  dropTerminalLead,
+  leadFolder,
+  leadRows,
+  setLead,
+} from "./lead";
 import { portable } from "./portable";
 
 const binary = path.resolve(
@@ -73,6 +79,7 @@ test("the description under the title edits in place, as djinn wish describe", a
 
 test.describe("Lead of another agent", () => {
   test.skip(process.platform === "win32", "the fake agents are shell scripts");
+  test.beforeEach(dropTerminalLead);
   test.afterEach(dropLead);
 
   test("the arrow beside Lead starts an Antigravity lead, which becomes the lead", async ({

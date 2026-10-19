@@ -199,6 +199,7 @@ func startInstalled(t *testing.T, djinnPath string, env []string) (<-chan struct
 func updateInstalled(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
+	terminalLead(t, home)
 	bin, _ := fakeClaude(t)
 	env := environ(home, bin, "DJINN_TEST_COUNT="+filepath.Join(t.TempDir(), "starts"))
 	folder, err := filepath.EvalSymlinks(t.TempDir())

@@ -221,6 +221,9 @@ func (w *Wishes) remindLead(after time.Duration) {
 // checkLead types the line that says events wait, unless a watch waits for them, one returned within the grace,
 // or the line was typed already since the lead last watched, less than timing.retype ago.
 func (w *Wishes) checkLead() {
+	if w.drive() != nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	lead, err := store.Get[*planv1.Lead](ctx, w.Store, "lead")

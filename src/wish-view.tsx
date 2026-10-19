@@ -886,7 +886,10 @@ export function WishView({
     (id: string) => show("tasks", id),
     [show],
   );
-  const checkNoLead = useCallback(() => noLead(leadRecord), [leadRecord]);
+  const checkNoLead = useCallback(
+    () => noLead(leadRecord, leadDrive),
+    [leadRecord, leadDrive],
+  );
   const handleDecisionsMore = useCallback(() => {
     if (store) {
       void store.loadMore(wish.id, Change.QUESTION);
@@ -1477,7 +1480,7 @@ export function WishView({
                 <QuestionColumn
                   groups={questionGroup}
                   land={land}
-                  noLead={noLead(leadRecord)}
+                  noLead={noLead(leadRecord, leadDrive)}
                   readState={questionsState}
                   wishCode={wish.title}
                   eyePerch
@@ -1550,7 +1553,9 @@ export function WishView({
       </div>
       <LeadMessage
         wishId={wish.id}
-        stopped={!leadRecord || !!leadTrouble(leadExit, leadStartError)}
+        stopped={
+          !leadDrive && (!leadRecord || !!leadTrouble(leadExit, leadStartError))
+        }
         onResume={() => resumeLead()}
       />
     </div>
@@ -1608,6 +1613,7 @@ export const InvestigatingSection = memo(function InvestigatingSection({
   onWithdraw?: (question: Question) => void;
 }) {
   const lead = useData((s) => s.lead);
+  const leadDrive = useData((s) => s.leadDrive);
   return (
     <section
       className="wish-section investigating-section"
@@ -1626,7 +1632,7 @@ export const InvestigatingSection = memo(function InvestigatingSection({
           question={item}
           blocking={blocking}
           report={report}
-          noLead={noLead(lead)}
+          noLead={noLead(lead, leadDrive)}
           origin={origin ? wishOrigin(wish) : undefined}
           onAnswer={onAnswer}
           onMove={onMove}
@@ -1711,8 +1717,9 @@ function Journal({
   const detail = useData((s) => s.details[wish.id]);
   useEffect(() => {
     let current = true;
+    const ctrl = new AbortController();
     clients.wishes
-      .snapshot({ wishId: wish.id })
+      .snapshot({ wishId: wish.id }, { signal: ctrl.signal })
       .then((res) => {
         if (!current) return;
         setExp(res.export);
@@ -1722,10 +1729,11 @@ function Journal({
         onCount?.(cmds + batches);
       })
       .catch((err) => {
-        if (current) setError(message(err));
+        if (current && !ctrl.signal.aborted) setError(message(err));
       });
     return () => {
       current = false;
+      ctrl.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps, @eslint-react/exhaustive-deps -- onCount is a stable callback from WishView
   }, [clients, wish, detail]);

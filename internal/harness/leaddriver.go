@@ -111,7 +111,7 @@ func (d *LeadDriver) Run(ctx context.Context) {
 			wait(ctx, 5*time.Second)
 			continue
 		}
-		if held != "" && events[len(events)-1].GetId() <= held {
+		if d.Wishes.Drive() == nil || (held != "" && events[len(events)-1].GetId() <= held) {
 			select {
 			case <-ctx.Done():
 				return

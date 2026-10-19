@@ -161,10 +161,10 @@ export type Settings = Message<"ui.v1.Settings"> & {
   ifritIdleMinutes?: number | undefined;
 
   /**
-   * Djinn drives the lead (decision Q31): a fresh headless session for each batch of the lead's events and of what
-   * you write to the Djinn, with the rules, the events whole, the briefs of their wishes and the lead's journal in
-   * its prompt; no terminal, no djinn lead watch. Unset or false: the lead runs in its terminal, as before, until the
-   * driven lead is proven. djinn up reads it as it starts.
+   * Djinn drives the lead (decision Q31, Q51): a fresh headless session for each batch of the lead's events and of
+   * what you write to the Djinn, with the rules, the events whole, the briefs of their wishes and the lead's journal in
+   * its prompt; no terminal, no djinn lead watch. Unset or true: Djinn drives the lead. False: the lead runs in its
+   * terminal. djinn up reads it as it starts.
    *
    * @generated from field: optional bool lead_driven = 4;
    */

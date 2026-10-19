@@ -90,11 +90,25 @@ func environ(home, bin string, extra ...string) []string {
 			env = append(env, kv)
 		}
 	}
+	if bin != "" {
+		claude := filepath.Join(bin, "claude")
+		if _, err := os.Stat(claude); os.IsNotExist(err) {
+			_ = os.WriteFile(claude, []byte(fakeClaudeScript), 0o755)
+		}
+	}
 	env = append(env, "DJINN_TEST_MAIN=1", "DJINN_QUESTION_WORKERS=off", "SHELL=/bin/sh", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if home != "" {
 		env = append(env, "DJINN_HOME="+home)
 	}
 	return append(env, extra...)
+}
+
+// terminalLead sets leadDriven: false in home's settings.json so that djinn up runs the lead in its terminal.
+func terminalLead(t *testing.T, home string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"leadDriven": false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // buffer is an output read while the process writes it.
@@ -201,14 +215,37 @@ func stopStarted(t *testing.T, home, stderr string) {
 	})
 }
 
+const fakeClaudeScript = `#!/bin/sh
+args=""
+headless=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --allowedTools|--project) shift 2 ;;
+    -p) headless=1; args="${args:+$args }$1"; shift ;;
+    *) args="${args:+$args }$1"; shift ;;
+  esac
+done
+if [ "$headless" = 1 ]; then
+  read -r _
+  printf '%s\n' \
+    '{"type":"assistant","message":{"id":"m1","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"Handled the batch."}],"usage":{"input_tokens":10,"output_tokens":5}}}' \
+    '{"type":"result","subtype":"success","is_error":false,"result":"Handled the batch.","total_cost_usd":0.01,"usage":{"input_tokens":10,"output_tokens":5}}'
+  exit 0
+fi
+echo "fake-claude $args in $(pwd)"
+if [ -n "$DJINN_TEST_COUNT" ]; then
+  echo start >> "$DJINN_TEST_COUNT"
+fi
+exec cat
+`
+
 // fakeClaude writes a claude command in a new folder that says how it was called and where, counts its starts in
-// the file count, then waits for its terminal to hang up.
+// the file count, then waits for its terminal to hang up; with -p, it answers one driven batch and exits.
 func fakeClaude(t *testing.T) (bin, count string) {
 	t.Helper()
 	bin = t.TempDir()
 	count = filepath.Join(t.TempDir(), "starts")
-	script := "#!/bin/sh\nargs=\"\"\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    --allowedTools|--project) shift 2 ;;\n    *) args=\"${args:+$args }$1\"; shift ;;\n  esac\ndone\necho \"fake-claude $args in $(pwd)\"\necho start >> \"$DJINN_TEST_COUNT\"\nexec cat\n"
-	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(fakeClaudeScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return bin, count
@@ -386,6 +423,7 @@ func upDevelopmentBuildKeepsItsOwnData(t *testing.T) {
 func upLeadResume(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
+	terminalLead(t, home)
 	bin, count := fakeClaude(t)
 	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
 	folder, err := filepath.EvalSymlinks(t.TempDir())
@@ -478,6 +516,7 @@ func upLeadResume(t *testing.T) {
 func upExitedCodexLeadIsRetainedUntilExplicitResume(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
+	terminalLead(t, home)
 	bin := t.TempDir()
 	count := filepath.Join(t.TempDir(), "starts")
 	fails := filepath.Join(t.TempDir(), "fails")
@@ -586,6 +625,7 @@ exec cat
 func upLeadStartFailureAtStartShows(t *testing.T) {
 	ctx := t.Context()
 	home := t.TempDir()
+	terminalLead(t, home)
 	bin, count := fakeClaude(t)
 	env := environ(home, bin, "DJINN_TEST_COUNT="+count)
 	folder, err := filepath.EvalSymlinks(t.TempDir())

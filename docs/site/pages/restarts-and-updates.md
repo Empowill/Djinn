@@ -21,7 +21,7 @@ and in the projects' worktrees instead, and takes each worker back where it was.
 | A paused wish's workers | Still paused: they resume once the wish is active again. |
 | A worker you paused | Resumed at the next start. |
 | A worker you stopped, or stopped for its budget | Stays stopped. |
-| The Djinn | Back in its terminal at every start, on its session. |
+| The Djinn | Its journal and waiting events kept; the next batch starts with the restart in its events (or back in its terminal on its session when the lead driven setting is false). |
 | A lit [ifrit](#ifrit) | Out: a message lights it again. |
 | Investigations you asked for | Picked up again. |
 
@@ -39,7 +39,8 @@ A restart cuts what was running at that moment, and Djinn takes each piece back:
 - **A merge in progress** goes back to waiting, and Djinn integrates the work again.
 - **A push in progress** is cut and starts again; one waiting for your go still waits for it.
 - **Changes to a repository** get a few seconds to finish before Djinn stops, so that none is left half written.
-- **The Djinn's turn** is cut; it resumes on its session and finds the restart in its events.
+- **The Djinn's turn** is cut; the next batch starts with the waiting events and the restart in its events (or it
+  resumes on its session in its terminal when the lead driven setting is false).
 
 After a restart, the Djinn is told in one line what happened: how many workers were interrupted, which ones Djinn
 resumed and which ones are yours to decide, the watchers resumed, what the stop cut.
@@ -60,14 +61,17 @@ start.
 
 ## The Djinn and the terminals
 
-The Djinn comes back at every start, in its terminal, on its session, however Djinn stopped. The other terminals
-depend on how:
+By default, Djinn drives the Djinn without a terminal: its journal is kept in Djinn's data folder, and any event waiting
+at the stop is taken by the first batch after the restart. Upgrading from a running terminal lead switches cleanly: the
+lead's terminal is dropped, the window shows again the wish it showed, no waiting event is lost, and the journal starts.
+When the lead driven setting is set to false, the Djinn comes back in its terminal on its session at every start. The
+other terminals depend on how Djinn stopped:
 
 - **After an update**, every terminal comes back, on the same sessions, and the window shows again the wish it showed.
   Those that could not start again are listed in the banner, **These terminals did not start again:**, until you
   dismiss it.
-- **After a crash**, the Djinn's terminal comes back.
-- **After you quit**, only the Djinn comes back.
+- **After a crash**, the Djinn's terminal comes back when the lead runs in a terminal.
+- **After you quit**, only the Djinn's terminal comes back when the lead runs in a terminal.
 
 The terminals that install or sign in an agent never come back.
 

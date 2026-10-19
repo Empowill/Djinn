@@ -76,9 +76,14 @@ func DriveLead(s *store.Store, changed func()) *LeadDrive {
 	return drive
 }
 
-// drive is the lead Djinn drives on w's store; nil when its lead runs in a terminal.
+// Drive is the lead Djinn drives on w's store; nil when its lead runs in a terminal.
+func (w *Wishes) Drive() *LeadDrive { return w.drive() }
+
 func (w *Wishes) drive() *LeadDrive {
 	if w == nil || w.Store == nil {
+		return nil
+	}
+	if s := readSettings(w.home()); s.LeadDriven != nil && !s.GetLeadDriven() {
 		return nil
 	}
 	d, ok := leadDrives.Load(w.Store)
@@ -465,12 +470,7 @@ func activeWishesLines(ctx context.Context, r store.Reader, b *strings.Builder) 
 // apart from its message, the same text each time, so that its cache serves the next session. A change here is a new
 // DrivenRulesVersion.
 func DrivenRules(projects []*planv1.Project, home string) string {
-	return "# Leading in Djinn: the driven lead, rules " + DrivenRulesVersion + "\n\n" +
-		"Djinn holds the active wishes and their plans: tasks, questions, decisions and blocks. You lead them: you " +
-		"split the work into tasks for workers, talk with the developer through questions, and keep the plans true, " +
-		"with the `djinn` command, never in its data folder.\n\n" +
-		leadRules(projects, home, true) + "\n" +
-		leadCommandsBrief(true) + notesBrief()
+	return leadRules(projects, home, true)
 }
 
 // tellDriven queues what the developer writes to the Djinn as an event of the lead's queue: the next batch takes it.

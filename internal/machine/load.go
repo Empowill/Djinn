@@ -81,18 +81,21 @@ func ReadIfritIdle(home string) uint32 {
 }
 
 // ReadLeadDriven tells whether settings.json in home says that Djinn drives the lead (ui.v1.Settings.lead_driven,
-// decision Q31): false when the file does not say, or cannot be read.
+// decision Q31, Q51): true unless the file says false.
 func ReadLeadDriven(home string) bool {
 	if home == "" {
-		return false
+		return true
 	}
 	data, err := os.ReadFile(filepath.Join(home, settingsFile))
 	if err != nil {
-		return false
+		return true
 	}
 	var settings uiv1.Settings
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(data, &settings); err != nil {
-		return false
+		return true
+	}
+	if settings.LeadDriven == nil {
+		return true
 	}
 	return settings.GetLeadDriven()
 }

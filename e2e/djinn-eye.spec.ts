@@ -3,21 +3,17 @@
 // its first question: the eye opens in the seal and flies to it. It follows the focus to the next question on a curve
 // that can be followed, to a tab, to Write to the Djinn's field, where it waits while the developer types; with the focus
 // on nothing that has a place, it listens on Write to the Djinn. Both themes; with less motion asked, it fades from one
-// place to the next. A recorded lead, never started, keeps it awake: no agent runs.
+// place to the next. The driven lead keeps it awake by default.
 // Run alone with: go tool task e2e -- e2e/djinn-eye.spec.ts
 import { expect, type Page, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-import { dropLead, leadFolder, setLead } from "./lead";
-
 const binary = path.resolve(
   __dirname,
   "../bin/djinn-e2e" + (process.platform === "win32" ? ".exe" : ""),
 );
-// Not the session of another spec: one session runs in one terminal.
-const session = "3b7e1f20-5c4d-4e8a-9f60-7a2b1c3d4e5f";
 
 function djinn(...args: string[]): string {
   return execFileSync(binary, args, {
@@ -135,8 +131,6 @@ function pauseOthers() {
     djinn("wish", "pause", w.id);
 }
 
-test.afterEach(dropLead);
-
 test("a click on a wish focuses its first question, and the eye goes with the focus: down the column, to a tab, to the field you type in", async ({
   page,
 }) => {
@@ -147,7 +141,6 @@ test("a click on a wish focuses its first question, and the eye goes with the fo
   const title = `Eye ${randomUUID().slice(0, 8)}`;
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
     .id as string;
-  setLead(session, leadFolder("eye-"));
   const ask = (text: string, ...more: string[]) =>
     JSON.parse(
       djinn(
@@ -288,7 +281,6 @@ test("a click on a wish with no question opens its first tab, and the eye listen
   const title = `Eye none ${randomUUID().slice(0, 8)}`;
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
     .id as string;
-  setLead(session, leadFolder("eye-"));
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(process.env.DJINN_URL!);
   await page.evaluate(() => {
@@ -348,7 +340,6 @@ test(
     const title = `Eye budget ${randomUUID().slice(0, 8)}`;
     const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
       .id as string;
-    setLead(session, leadFolder("eye-"));
     const ask = (text: string, ...more: string[]) =>
       JSON.parse(
         djinn(
@@ -404,7 +395,6 @@ test("when the Djinn speaks, the eye comes to its socket and the bubble queues r
   const title = `Eye speaks ${randomUUID().slice(0, 8)}`;
   const wishId = JSON.parse(djinn("wish", "make", title, "--json")).wish
     .id as string;
-  setLead(session, leadFolder("eye-"));
   const qId = JSON.parse(
     djinn(
       "question",

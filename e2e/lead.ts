@@ -64,9 +64,40 @@ export function leadRows(
     .filter({ hasText: text });
 }
 
-// dropLead hangs up the lead's terminal and waits for it to end, then leaves a lead recorded in a folder gone: no
-// later spec reopens it. Djinn keeps no command to forget its lead.
+function writeLeadDriven(driven?: boolean) {
+  const file = path.join(process.env.DJINN_E2E_HOME!, "settings.json");
+  let settings: Record<string, unknown>;
+  try {
+    settings = JSON.parse(fs.readFileSync(file, "utf8")) as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    settings = {};
+  }
+  if (driven === undefined) delete settings.leadDriven;
+  else settings.leadDriven = driven;
+  fs.writeFileSync(file, `${JSON.stringify(settings, null, 2)}\n`);
+}
+
+// useTerminalLead sets leadDriven: false in settings.json so specs that test the terminal lead fallback run it.
+export function useTerminalLead() {
+  writeLeadDriven(false);
+}
+
+// leadJournal returns the batches recorded in the driven lead's journal (for wishId when given).
+export function leadJournal(
+  wishId?: string,
+): { id: string; state: string; events?: string[]; note?: string }[] {
+  const args = ["lead", "journal", "--json"];
+  if (wishId) args.push("--wish-id", wishId);
+  return JSON.parse(djinn(...args)).batches ?? [];
+}
+
+// dropLead hangs up the lead's terminal and waits for it to end, leaves a lead recorded in a folder gone, drains
+// waiting events, and restores the default driven lead setting.
 export async function dropLead() {
+  writeLeadDriven(false);
   const deadline = Date.now() + 10_000;
   for (;;) {
     const lead = (await runningTerminals()).filter((t) => t.name === "lead");
@@ -79,6 +110,13 @@ export async function dropLead() {
   setLead(goneSession, gone);
   fs.rmSync(gone, { recursive: true, force: true });
   drainLead(goneSession);
+  writeLeadDriven(undefined);
+}
+
+// dropTerminalLead cleans up the lead and switches settings.json to leadDriven: false for terminal-lead specs.
+export async function dropTerminalLead() {
+  await dropLead();
+  useTerminalLead();
 }
 
 const goneSession = "00000000-0000-4000-8000-000000000000";

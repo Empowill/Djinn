@@ -368,8 +368,9 @@ func runUp(args []string) (restart bool, err error) {
 	// The lead a wish kept, before the one lead, is the lead from now on.
 	lead := carryLead(ctx, db, os.Stderr)
 	// After an update, the terminals that ran before it run again; after a crash, the leads.
-	// The lead Djinn drives (decision Q31) runs in no terminal: a session per batch of its events, once the services
-	// run. Until it is proven, it is a setting (ui.v1.Settings.lead_driven); the lead runs in its terminal otherwise.
+	// The lead Djinn drives (decision Q31, Q51) runs in no terminal: a session per batch of its events, once the
+	// services run. It is the default (ui.v1.Settings.lead_driven); "leadDriven": false in settings.json runs the lead in
+	// its terminal instead.
 	driven := machine.ReadLeadDriven(home)
 	uiSvc.SetNotResumed(resumeTerminals(home, terminals, uiSvc, lead.GetSessionId(), driven, os.Stderr))
 	// Then the lead, unless a lead came back already.

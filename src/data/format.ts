@@ -458,9 +458,9 @@ export function hasLead(lead?: Lead | null): boolean {
 }
 
 // noLead tells whether Djinn has no lead session: djinn tells no lead its answers, they wait in the wish's brief
-// (plan.ErrNoLead).
-export function noLead(lead?: Lead | null): boolean {
-  return !hasLead(lead);
+// (plan.ErrNoLead). When Djinn drives the lead (driven is truthy), a session runs for each batch.
+export function noLead(lead?: Lead | null, driven?: unknown): boolean {
+  return !driven && !hasLead(lead);
 }
 
 export function wishStateText(wish: Wish): string {

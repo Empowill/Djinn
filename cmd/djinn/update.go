@@ -452,10 +452,7 @@ func resumeTerminals(home string, terms *terminal.Manager, svc *ui.Service, sess
 			shown = t.Name
 		}
 	}
-	switch {
-	case shown != "" && shown == note.ShowTerminal:
-		svc.Present(note.ShowWish, shown)
-	case shown != "":
+	if shown != "" || note.ShowWish != "" {
 		svc.Present(note.ShowWish, shown)
 	}
 	if note.Version == "" {

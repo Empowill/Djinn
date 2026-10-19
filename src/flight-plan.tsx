@@ -633,7 +633,10 @@ export function FlightPlan({
     ({ wish }: { wish: Wish }) => wishOrigin(wish),
     [],
   );
-  const checkDecisionNoLead = useCallback(() => noLead(lead), [lead]);
+  const checkDecisionNoLead = useCallback(
+    () => noLead(lead, leadDrive),
+    [lead, leadDrive],
+  );
   // resumeLead resumes the Djinn, or starts one of another agent, on no wish; what Djinn says of it shows as a toast.
   const resumeLead = (provider?: Provider) => {
     let note = "";
@@ -782,7 +785,7 @@ export function FlightPlan({
                     groups={questionsByWish}
                     headings
                     onOpenWish={onOpen}
-                    noLead={noLead(lead)}
+                    noLead={noLead(lead, leadDrive)}
                     readState={questionsState}
                     wishCode={slowQuestionWish}
                     eyePerch
@@ -933,7 +936,10 @@ export function FlightPlan({
           onWithdraw={withdraw}
         />
       )}
-      <LeadMessage stopped={!lead || !!trouble} onResume={() => resumeLead()} />
+      <LeadMessage
+        stopped={!leadDrive && (!lead || !!trouble)}
+        onResume={() => resumeLead()}
+      />
     </div>
   );
 }

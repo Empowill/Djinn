@@ -476,10 +476,10 @@ type Settings struct {
 	// Minutes without you in Djinn before Djinn puts an ifrit out, 5 to 240: your pace on this machine. Unset: 30.
 	// djinn up --ifrit-idle, and an ifrit's own (djinn task spawn --idle-minutes), come first.
 	IfritIdleMinutes *uint32 `protobuf:"varint,3,opt,name=ifrit_idle_minutes,json=ifritIdleMinutes,proto3,oneof" json:"ifrit_idle_minutes,omitempty"`
-	// Djinn drives the lead (decision Q31): a fresh headless session for each batch of the lead's events and of what
-	// you write to the Djinn, with the rules, the events whole, the briefs of their wishes and the lead's journal in
-	// its prompt; no terminal, no djinn lead watch. Unset or false: the lead runs in its terminal, as before, until the
-	// driven lead is proven. djinn up reads it as it starts.
+	// Djinn drives the lead (decision Q31, Q51): a fresh headless session for each batch of the lead's events and of
+	// what you write to the Djinn, with the rules, the events whole, the briefs of their wishes and the lead's journal in
+	// its prompt; no terminal, no djinn lead watch. Unset or true: Djinn drives the lead. False: the lead runs in its
+	// terminal. djinn up reads it as it starts.
 	LeadDriven *bool `protobuf:"varint,4,opt,name=lead_driven,json=leadDriven,proto3,oneof" json:"lead_driven,omitempty"`
 	// The accounts of the agents on this machine, each a folder of the agent's own where it keeps its login (djinn lead
 	// add-account). No token: the login stays the agent's.
