@@ -24,9 +24,11 @@ import (
 	"sync"
 	"time"
 
+	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // GB is a gigabyte, as the disk thresholds count.
@@ -48,6 +50,10 @@ const (
 	diskPollEvery = 30 * time.Second
 	// diskMeasureTimeout bounds the measure of the biggest folders, a walk of each.
 	diskMeasureTimeout = 2 * time.Minute
+	// diskFoldersEvery is how long Djinn keeps the measured folder sizes for the hourglass panel before walking again.
+	diskFoldersEvery = 5 * time.Minute
+	// diskFoldersWait is how long DiskFolders waits on a measurement so fast folders come back on the first read.
+	diskFoldersWait = 150 * time.Millisecond
 )
 
 // errDiskFull ends a push whose checks wait for space: it goes again once space comes back, never held red.
@@ -77,12 +83,15 @@ type disk struct {
 	poll     time.Duration
 	folders  func(cache string) []string
 
-	mu       sync.Mutex
-	trimming bool
-	trimmed  time.Time // when the last trim started; zero: none yet
-	full     bool      // under guard.Full: the push checks wait
-	since    time.Time // when it went under
-	wg       sync.WaitGroup
+	mu         sync.Mutex
+	trimming   bool
+	trimmed    time.Time // when the last trim started; zero: none yet
+	full       bool      // under guard.Full: the push checks wait
+	since      time.Time // when it went under
+	measuring  bool
+	measuredAt time.Time
+	measured   []*machinev1.DiskFolder
+	wg         sync.WaitGroup
 }
 
 // diskSpace is the free space of the folders Djinn watches, read at once.
@@ -183,6 +192,9 @@ func (h *Harness) diskTrim(s diskSpace) {
 		entries, freed, err := trimGoCache(h.ctx, s.cache, now.Add(-goCacheUnused))
 		d.mu.Lock()
 		d.trimming = false
+		if freed > 0 {
+			d.measuredAt = time.Time{}
+		}
 		d.mu.Unlock()
 		args := []any{"cache", s.cache, "free before", s.cacheFree, "entries", entries, "freed", freed,
 			"took", time.Since(start).Round(time.Millisecond)}
@@ -274,6 +286,113 @@ func gbText(bytes uint64) string {
 	return fmt.Sprintf("%.0f GB", gb)
 }
 
+// DiskFolders returns the main folders Djinn knows on disk, biggest first, with their size in bytes. It measures them
+// on the server at most once per diskFoldersEvery, without blocking the caller when a large cache takes longer.
+func (h *Harness) DiskFolders() []*machinev1.DiskFolder {
+	d := &h.disk
+	now := h.now()
+	d.mu.Lock()
+	fresh := !d.measuredAt.IsZero() && now.Sub(d.measuredAt) < diskFoldersEvery
+	if fresh || d.measuring || h.ctx.Err() != nil {
+		out := slices.Clone(d.measured)
+		d.mu.Unlock()
+		return out
+	}
+	first := len(d.measured) == 0
+	d.measuring = true
+	done := make(chan struct{})
+	d.wg.Add(1)
+	d.mu.Unlock()
+
+	go func() {
+		defer logx.Crash("disk folders")
+		defer d.wg.Done()
+		defer close(done)
+		ctx, cancel := context.WithTimeout(h.ctx, diskMeasureTimeout)
+		defer cancel()
+		var cache string
+		if d.cacheDir != nil {
+			cache = d.cacheDir()
+		} else if d.guard.Free != nil {
+			cache = d.cache.find(ctx, h.now())
+		}
+		dirs := h.diskFolders(ctx, cache)
+		var onUpdate func([]folderSize)
+		if first {
+			onUpdate = func(partial []folderSize) {
+				d.mu.Lock()
+				d.measured = toDiskFolders(partial)
+				d.mu.Unlock()
+			}
+		}
+		biggest := measureFolders(ctx, dirs, onUpdate)
+		d.mu.Lock()
+		d.measured = toDiskFolders(biggest)
+		d.measuring = false
+		if h.ctx.Err() == nil {
+			d.measuredAt = h.now()
+		}
+		d.mu.Unlock()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(diskFoldersWait):
+	case <-h.ctx.Done():
+	}
+	d.mu.Lock()
+	out := slices.Clone(d.measured)
+	d.mu.Unlock()
+	return out
+}
+
+func toDiskFolders(sizes []folderSize) []*machinev1.DiskFolder {
+	out := make([]*machinev1.DiskFolder, len(sizes))
+	for i, s := range sizes {
+		out[i] = &machinev1.DiskFolder{Path: s.dir, SizeBytes: s.bytes}
+	}
+	return out
+}
+
+// diskFolders are the main folders the hourglass Disk tab lists: Djinn's data folder, each project's worktrees and
+// node_modules, Djinn's logs and tilasms, the Go build cache, the npm and Playwright caches, the temporary folder.
+func (h *Harness) diskFolders(ctx context.Context, cache string) []string {
+	var raw []string
+	if h.home != "" {
+		if projects, err := filepath.Glob(filepath.Join(h.home, "projects", "*", "worktrees")); err == nil {
+			raw = append(raw, projects...)
+		}
+		raw = append(raw, filepath.Join(h.home, "logs"), filepath.Join(h.home, "tilasms"), h.home)
+	}
+	if h.store != nil {
+		if projects, err := store.List[*planv1.Project](ctx, h.store, nil); err == nil {
+			for _, p := range projects {
+				if dir := p.GetDirectory(); dir != "" {
+					raw = append(raw, filepath.Join(dir, "node_modules"))
+				}
+			}
+		}
+	}
+	if h.disk.folders != nil {
+		raw = append(raw, h.disk.folders(cache)...)
+	} else if h.disk.guard.Free != nil || h.disk.cacheDir != nil {
+		raw = append(raw, h.knownFolders(cache)...)
+	}
+	seen := make(map[string]bool, len(raw))
+	var dirs []string
+	for _, dir := range raw {
+		if dir == "" {
+			continue
+		}
+		clean := filepath.Clean(dir)
+		if !seen[clean] {
+			seen[clean] = true
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
+}
+
 // knownFolders are the folders that fill a disk Djinn works on: the Go build cache, each project's worktrees, Djinn's
 // scratch folders, logs and tilasms, the npm and Playwright caches, the temporary folder.
 func (h *Harness) knownFolders(cache string) []string {
@@ -302,27 +421,71 @@ type folderSize struct {
 // biggestFolders measures dirs and returns the n biggest, biggest first; a folder missing, empty or unread is left
 // out. A folder inside another one measured is measured on its own too.
 func biggestFolders(ctx context.Context, dirs []string, n int) []folderSize {
-	var sizes []folderSize
-	for _, dir := range dirs {
+	sizes := measureFolders(ctx, dirs, nil)
+	if n > 0 && n < len(sizes) {
+		return sizes[:n]
+	}
+	return sizes
+}
+
+func isSubfolder(child, parent string) bool {
+	c, p := filepath.Clean(child), filepath.Clean(parent)
+	return len(c) > len(p) && strings.HasPrefix(c, p+string(filepath.Separator))
+}
+
+func measureFolders(ctx context.Context, dirs []string, onUpdate func([]folderSize)) []folderSize {
+	walk := slices.Clone(dirs)
+	for i := 0; i < len(walk); i++ {
+		for j := i + 1; j < len(walk); j++ {
+			if isSubfolder(walk[j], walk[i]) {
+				sub := walk[j]
+				copy(walk[i+1:j+1], walk[i:j])
+				walk[i] = sub
+			}
+		}
+	}
+	known := make(map[string]uint64, len(walk))
+	for _, dir := range walk {
+		cleanRoot := filepath.Clean(dir)
 		var total uint64
-		_ = filepath.WalkDir(dir, func(_ string, e fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if err != nil || e.IsDir() {
+			if err != nil {
 				return nil //nolint:nilerr // A folder it cannot read is left out of its size.
+			}
+			if e.IsDir() {
+				if clean := filepath.Clean(path); clean != cleanRoot {
+					if sub, ok := known[clean]; ok {
+						total += sub
+						return filepath.SkipDir
+					}
+				}
+				return nil
 			}
 			if info, err := e.Info(); err == nil && info.Mode().IsRegular() {
 				total += uint64(info.Size())
 			}
 			return nil
 		})
-		if total > 0 {
+		known[cleanRoot] = total
+		if total > 0 && onUpdate != nil {
+			onUpdate(sortedFolderSizes(dirs, known))
+		}
+	}
+	return sortedFolderSizes(dirs, known)
+}
+
+func sortedFolderSizes(dirs []string, known map[string]uint64) []folderSize {
+	var sizes []folderSize
+	for _, dir := range dirs {
+		if total := known[filepath.Clean(dir)]; total > 0 {
 			sizes = append(sizes, folderSize{dir: dir, bytes: total})
 		}
 	}
 	slices.SortStableFunc(sizes, func(a, b folderSize) int { return cmp.Compare(b.bytes, a.bytes) })
-	return sizes[:min(n, len(sizes))]
+	return sizes
 }
 
 // trimGoCache deletes the entries of the Go build cache at dir unused since cutoff, and says how many files it

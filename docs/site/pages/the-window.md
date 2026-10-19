@@ -224,15 +224,17 @@ window reads them about once a minute, and catches up as it shows.
 
 ## The Hourglass
 
-**Hourglass**, Ctrl+2, is where the live metrics are, as time goes by: what the machine and its workers use, minute by
-minute, and where the time of the commands goes. Pick the time shown, from 10 minutes to 7 days.
+**Hourglass**, Ctrl+2, is where the live metrics are, as time goes by: the machine total stays at the top, with the
+time range from 10 minutes to 7 days, above three tabs.
 
-- **The machine.** Its CPU and memory: the whole machine, Djinn with everything it started, and Djinn alone, with the
-  load limit and the gates held.
-- **Workers running.** A row per worker: its project, model, time, turns, cost, gate, and its own CPU and memory
-  graphs. Its eye opens the task in its wish.
-- **Where the time goes.** The commands by project and by gate: how often they ran, how long, how long they waited for
-  their gate.
+- **Resources.** A heatmap on top (one cell per running worker, coloured by CPU or memory, its code on hover), then
+  the running workers grouped by wish, watchers last in each group: each worker's project, model, time, turns, cost,
+  gate, and its own CPU and memory graphs. Its eye opens the task in its wish.
+- **Gates.** The CPU and memory of the whole machine (one under the other: the whole machine, Djinn with everything it
+  started, and Djinn alone, with the load limit), then the gates held over time and the commands grouped by project and
+  by gate.
+- **Disk.** The main folders that use the disk (Djinn's data, worktrees per project, the Go build cache, node_modules,
+  and caches), biggest first, with their size, measured by the server.
 
 A running task's card links to its row, **Live in the Hourglass**. The page reads its figures only while it shows:
 leave it, or fold its panel, and the reads stop. See [Machine and load](#machine-and-load).

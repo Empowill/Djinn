@@ -25,18 +25,21 @@ const resourceTask = {
 };
 
 test("the resources panel: the machine's charts, each worker's title line in full with its facts and charts, the commands of the active wishes' projects grouped under their gates", () => {
-  const html = s.renderToStaticMarkup(
-    h(s.ConsumptionPanel, {
-      initialData: resourceData(),
-      initialCommands: resourceCommands,
-      tasks: new Map([["task-w1", resourceTask]]),
-      projects: [
-        { id: "p1", name: "djinn" },
-        { id: "p2", name: "old-project" },
-      ],
-      projectIds: new Set(["p1"]),
-    }),
-  );
+  const props = {
+    initialData: resourceData(),
+    initialCommands: resourceCommands,
+    tasks: new Map([["task-w1", resourceTask]]),
+    projects: [
+      { id: "p1", name: "djinn" },
+      { id: "p2", name: "old-project" },
+    ],
+    projectIds: new Set(["p1"]),
+  };
+  const html =
+    s.renderToStaticMarkup(h(s.ConsumptionPanel, props)) +
+    s.renderToStaticMarkup(
+      h(s.ConsumptionPanel, { ...props, initialTab: "gates" }),
+    );
 
   // The header: the ranges, up to a week, the one shown pressed.
   assert.match(html, /class="consumption-panel-heading">Resource consumption</);

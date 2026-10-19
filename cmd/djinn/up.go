@@ -511,6 +511,7 @@ func runUp(args []string) (restart bool, err error) {
 		machine.WithSeriesWorkers(workers.RunsSeries),
 		machine.WithSeriesIntervals(gates.Intervals),
 		machine.WithNetwork(workers.NetworkDownSince),
+		machine.WithDiskFolders(workers.DiskFolders),
 	)
 	svc[machinePrefix] = machineHandler
 	gatePrefix, gateHandler := gate.Handler(gates)
