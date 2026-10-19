@@ -83,11 +83,19 @@ export function keepPlace(scroller: HTMLElement): () => void {
   let scroll = 0;
   // The scroll this script set last: its own scroll event is not the reader's.
   let wrote = -1;
+  let frame = 0;
   const mark = () => {
+    frame = 0;
     marks = pick(scroller);
     scroll = scroller.scrollTop;
+    wrote = scroller.scrollTop;
   };
   const hold = () => {
+    if (frame || Math.abs(scroller.scrollTop - wrote) >= 1) {
+      if (frame) cancelAnimationFrame(frame);
+      mark();
+      return;
+    }
     const anchor = marks.find((m) => inFlow(m.el));
     if (!anchor) return mark();
     const target = scroll + layoutTop(anchor.el) - anchor.top;
@@ -96,7 +104,6 @@ export function keepPlace(scroller: HTMLElement): () => void {
       wrote = scroller.scrollTop;
     }
   };
-  let frame = 0;
   const onScroll = () => {
     if (Math.abs(scroller.scrollTop - wrote) < 1) return;
     cancelAnimationFrame(frame);
