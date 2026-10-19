@@ -54,7 +54,13 @@ import {
   useTaskEvents,
   useTaskPrompt,
 } from "./data/djinn";
-import { canUrge, isInvestigation, isMerge, isUrgent } from "./data/flight";
+import {
+  canUrge,
+  isInvestigation,
+  isMerge,
+  isMockup,
+  isUrgent,
+} from "./data/flight";
 import {
   ifritGates,
   ifritLinks,
@@ -371,6 +377,7 @@ export const WishTask = memo(function WishTask({
             {isMerge(task) && <MergeLabel task={task} codes={codes} />}
             {isUrgent(task) && <UrgentLabel feedback={task.feedback} />}
             {isInvestigation(task) && <InvestigationLabel />}
+            {isMockup(task) && <MockupLabel />}
             <span className="agent-code">{task.code}</span>
             <HealthMark task={task} />
             {/* Cut to the room left: the whole title shows on hover. */}
@@ -711,6 +718,15 @@ export function InvestigationLabel() {
       title={t("task.investigation_detail")}
     >
       {t("task.investigation")}
+    </span>
+  );
+}
+
+// MockupLabel marks a mockup task in the list, the tree and the glance: a design worker in a tilasm, never merged.
+export function MockupLabel() {
+  return (
+    <span className="mockup-label" title={t("task.mockup_detail")}>
+      {t("task.mockup")}
     </span>
   );
 }

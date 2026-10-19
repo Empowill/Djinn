@@ -18,7 +18,7 @@ import { X } from "lucide-react";
 
 import type { Project, Task } from "../gen/ts/plan/v1/plan_pb";
 import { useTaskPrompt } from "./data/djinn";
-import { isInvestigation, isMerge, isUrgent } from "./data/flight";
+import { isInvestigation, isMerge, isMockup, isUrgent } from "./data/flight";
 import {
   cancelledText,
   fixerOf,
@@ -41,6 +41,7 @@ import {
   HealthMark,
   InvestigationLabel,
   MergeLabel,
+  MockupLabel,
   promptPreview,
   UrgentLabel,
 } from "./wish-task";
@@ -438,6 +439,7 @@ const TreeRow = memo(function TreeRow({
         {isMerge(task) && <MergeLabel task={task} codes={codes} />}
         {isUrgent(task) && <UrgentLabel feedback={task.feedback} />}
         {isInvestigation(task) && <InvestigationLabel />}
+        {isMockup(task) && <MockupLabel />}
         <span className="agent-code">{task.code}</span>
         <HealthMark task={task} />
         <span className="tree-title">{task.title}</span>

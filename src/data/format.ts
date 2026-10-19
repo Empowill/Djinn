@@ -527,6 +527,7 @@ export function taskStatusText(
 ): string {
   if (watcherRuns(task)) return t("task.status_watching");
   if (ifritLit(task) || ifritOut(task)) return ifritWord(task);
+  if (mockupRuns(task)) return t("task.status_mockup");
   if (investigatorRuns(task)) return t("task.status_investigating");
   if (ownLimitWait(task)) return t("task.status_limit");
   if (task.status === TaskStatus.INTERRUPTED && forkedAs)
@@ -624,6 +625,7 @@ export type Tone =
   | "running"
   | "waiting"
   | "investigating"
+  | "mockup"
   | "planned"
   | "failed"
   // A merge that failed and that a correction task fixes: Djinn handles it, nothing to do (fixerOf).
@@ -648,7 +650,8 @@ export type Tone =
 // taskTone is a task's state in that language. A task Djinn resumes runs; one waiting for its provider's limit to
 // reset holds still, as a paused one; one cut short and resumed as another task (forkedAs) is stopped, no alarm.
 // None of them is the person's move. A running watcher has its own tone: it sleeps until its command prints. An
-// investigator at work is violet, as Enlighten me that started it (investigatorRuns), not blue as the work. A merge
+// investigator at work is violet, as Enlighten me that started it (investigatorRuns), and a mockup worker at work is
+// pink (--k-mock, mockupRuns), not blue as the work. A merge
 // that failed is red, unless a correction task fixes it while it works (fixedBy, fixerOf): orange, Djinn handles it.
 export function taskTone(
   task: Pick<Task, "status" | "resumeAfter"> &
@@ -676,6 +679,7 @@ export function taskTone(
   switch (status) {
     case TaskStatus.RUNNING:
     case TaskStatus.RESUMING:
+      if (task.kind === TaskKind.MOCKUP) return "mockup";
       return task.role === TaskRole.INVESTIGATOR ? "investigating" : "running";
     case TaskStatus.DONE:
       switch (task.integration?.state) {
@@ -722,6 +726,13 @@ export function investigatorRuns(
   return (
     task.role === TaskRole.INVESTIGATOR && task.status === TaskStatus.RUNNING
   );
+}
+
+// mockupRuns tells whether the task is a mockup worker at work (TaskKind.MOCKUP).
+export function mockupRuns(
+  task: Pick<Task, "status"> & Partial<Pick<Task, "kind">>,
+): boolean {
+  return task.kind === TaskKind.MOCKUP && task.status === TaskStatus.RUNNING;
 }
 
 // isTaskMerging tells whether a done task's work is merging: waiting for its batch, or in it. It shows blue, as work
@@ -792,6 +803,7 @@ export function fixerOf<T extends Fixable>(
 export interface Running {
   running: number;
   investigating: number;
+  mockup: number;
   watching: number;
   merging: number;
   fixing: number;
@@ -856,13 +868,15 @@ export function runningOf(
   );
   const watching = live.filter(watcherRuns).length;
   const investigating = live.filter(investigatorRuns).length;
+  const mockup = live.filter(mockupRuns).length;
   const merging = tasks.filter(isTaskMerging).length;
   const fixing = tasks.filter(
     (task) => mergeFailed(task) && fixerOf(task, tasks),
   ).length;
   return {
-    running: live.length - watching - investigating,
+    running: live.length - watching - investigating - mockup,
     investigating,
+    mockup,
     watching,
     merging,
     fixing,
@@ -1322,6 +1336,7 @@ export function wishTone(
   watching = 0,
   investigating = 0,
   ifrits = 0,
+  mockup = 0,
 ): Tone {
   if (wish.state === WishState.GRANTED) return "done";
   if (wish.state === WishState.PAUSED) return "paused";
@@ -1329,6 +1344,7 @@ export function wishTone(
   if (questions > 0 || wish.ready) return "waiting";
   if (running > 0) return "running";
   if (investigating > 0) return "investigating";
+  if (mockup > 0) return "mockup";
   if (watching > 0) return "watching";
   return "planned";
 }

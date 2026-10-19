@@ -582,6 +582,17 @@ html[data-motion="reduced"]
   line-height: 1rem;
   white-space: nowrap;
 }
+/* A mockup (a design task in a tilasm, never merged): a compact label in the mockup's pink (--k-mock). */
+.mockup-label {
+  flex-shrink: 0;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  color: var(--k-mock);
+  font-size: var(--font-size-body, 0.75rem);
+  line-height: 1rem;
+  white-space: nowrap;
+}
 /* An urgent task (the lead's, to unblock the wish, or for quick feedback): a compact label like a merge's. */
 .urgent-label {
   flex-shrink: 0;

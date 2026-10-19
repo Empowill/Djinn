@@ -99,6 +99,9 @@ html[data-theme="light"] {
 .tone-investigating {
   --tone: var(--st-investigating);
 }
+.tone-mockup {
+  --tone: var(--k-mock);
+}
 .tone-planned {
   --tone: var(--st-planned);
 }
@@ -712,9 +715,10 @@ html[data-theme="light"] {
 .glance-row.plan .glance-title {
   color: var(--muted);
 }
-/* An urgent task's label, or an investigation's, before its title, as in the tasks view. */
+/* An urgent task's label, an investigation's, or a mockup's, before its title, as in the tasks view. */
 .glance-title > .urgent-label,
-.glance-title > .investigation-label {
+.glance-title > .investigation-label,
+.glance-title > .mockup-label {
   display: inline-block;
   margin-right: 0.375rem;
 }
@@ -751,6 +755,10 @@ html[data-theme="light"] {
   background: var(--st-investigating);
   color: var(--st-investigating);
 }
+.glance-dot.mockup {
+  background: var(--k-mock);
+  color: var(--k-mock);
+}
 .glance-dot.wait {
   border: 1.5px solid var(--st-running);
 }
@@ -769,7 +777,8 @@ html[data-theme="light"] {
 }
 /* A worker at work breathes: a ring that widens and fades, still for whoever asks for less motion. */
 .glance-row .glance-dot.run::after,
-.glance-row .glance-dot.investigate::after {
+.glance-row .glance-dot.investigate::after,
+.glance-row .glance-dot.mockup::after {
   content: "";
   position: absolute;
   inset: -0.25rem;

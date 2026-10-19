@@ -283,9 +283,8 @@ export function WishView({
     detail.blocks,
     decisionItems.length,
   ]);
-  const { running, investigating, watching, merging, fixing } = runningOf(
-    detail.tasks,
-  );
+  const { running, investigating, mockup, watching, merging, fixing } =
+    runningOf(detail.tasks);
   // Its lit ifrits, the latest activity first, and those put out: each shows by the wish's title, flame and word.
   const ifrits = useMemo(
     () => litIfrits(detail.tasks.map((item) => ({ wish, item }))),
@@ -309,6 +308,7 @@ export function WishView({
       ifrits.length +
       running +
       investigating +
+      mockup +
       watching +
       merging +
       fixing ===
@@ -968,6 +968,7 @@ export function WishView({
     watching,
     investigating,
     ifrits.length,
+    mockup,
   );
 
   return (
@@ -1079,7 +1080,7 @@ export function WishView({
         <DeleteWish
           wish={wish}
           tasks={detail.tasks.length}
-          running={running + watching + ifrits.length}
+          running={running + investigating + mockup + watching + ifrits.length}
           onClose={() => setDeleting(false)}
           onDelete={() => {
             setDeleting(false);
@@ -1205,6 +1206,15 @@ export function WishView({
                     })}
                   >
                     {t("pill.investigating")}
+                  </CountPill>
+                )}
+                {mockup > 0 && (
+                  <CountPill
+                    tone="mockup"
+                    count={mockup}
+                    label={t("plan.mockup_detail", { count: mockup })}
+                  >
+                    {t("pill.mockup")}
                   </CountPill>
                 )}
                 {running > 0 && (

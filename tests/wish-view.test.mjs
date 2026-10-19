@@ -462,6 +462,114 @@ test("an investigator at work shows violet, apart from the running workers, wher
   assert.doesNotMatch(only.plan, /glance-dot run/);
 });
 
+test("a mockup worker at work shows in the mockup colour, apart from the running workers, everywhere workers are coloured (W447)", async () => {
+  const wishId = "01a153e3-c576-71cb-b57a-6e5142110b4b";
+  const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);
+  const worker = {
+    id: "w1",
+    wishId,
+    code: "W1",
+    title: "Pour",
+    status: s.TaskStatus.RUNNING,
+    dependsOn: [],
+    createTime: at(1),
+    startTime: at(2),
+  };
+  const mockup = {
+    id: "w444",
+    wishId,
+    code: "W444",
+    title: "L25: mockup v2",
+    status: s.TaskStatus.RUNNING,
+    kind: s.TaskKind.MOCKUP,
+    question: "Q25",
+    dependsOn: [],
+    createTime: at(3),
+    startTime: at(4),
+  };
+  const both = [worker, mockup];
+  const alone = [mockup];
+  const pill = (tone, label) =>
+    new RegExp(`count-pill tone-${tone}" title="${label}"`);
+  const sign = (tone, label) =>
+    new RegExp(
+      `wish-sign tone-${tone}" title="${label}"[^>]*><span class="wish-sign-dot">`,
+    );
+  const mockupDetail = "1 mockup: a worker makes a mockup in a tilasm, for you";
+
+  // Unfolded and folded left sidebar: counts and dots show tone-mockup apart from tone-running.
+  const side = sidebar(lamp, both);
+  assert.match(side, sign("running", "1 running"));
+  assert.match(side, sign("mockup", mockupDetail));
+  assert.ok(
+    side.indexOf("wish-sign tone-running") <
+      side.indexOf("wish-sign tone-mockup"),
+  );
+  const sideFolded = sidebar(lamp, both, true);
+  assert.match(sideFolded, /wish-act tone-running/);
+  assert.match(sideFolded, /wish-act tone-mockup/);
+  const sideAlone = sidebar(lamp, alone);
+  assert.match(sideAlone, sign("mockup", mockupDetail));
+  assert.doesNotMatch(sideAlone, /tone-running/);
+  const sideAloneFolded = sidebar(lamp, alone, true);
+  assert.match(sideAloneFolded, /wish-act tone-mockup/);
+  assert.doesNotMatch(sideAloneFolded, /wish-act tone-running/);
+
+  // Task row: tone-mockup, status Mockup, and MockupLabel.
+  const row = (task) =>
+    s.renderToStaticMarkup(
+      h(s.WishTask, { task, codes: new Map(), onStop() {} }),
+    );
+  assert.match(row(mockup), /wish-task tone-mockup/);
+  assert.match(row(mockup), /<span>Mockup<\/span>/);
+  assert.match(row(mockup), /class="mockup-label"/);
+
+  // Wish header and glance: count pill, status badge when alone, glance count and dot.
+  const now = await page(lamp, both);
+  assert.match(now.view, pill("running", "1 running"));
+  assert.match(now.view, pill("mockup", mockupDetail));
+  assert.match(now.plan, /glance-count">1 running · 1 mockup</);
+  assert.match(now.plan, /glance-dot mockup/);
+  const only = await page(lamp, alone);
+  assert.doesNotMatch(only.view, /count-pill tone-running/);
+  assert.match(only.view, pill("mockup", mockupDetail));
+  assert.match(only.plan, /glance-count">1 mockup</);
+  assert.doesNotMatch(only.plan, /glance-dot run/);
+
+  // Tilasm comments drawer: a reply citing the running mockup worker renders its badge in tone-mockup.
+  const drawer = s.renderToStaticMarkup(
+    h(s.CommentsColumn, {
+      drafts: [],
+      sent: [
+        {
+          id: "c1",
+          tilasmId: "l25",
+          code: "C1",
+          text: "Align the header",
+          state: 2,
+          reply: {
+            author: "lead",
+            text: "W444 iterates on it.",
+            taskIds: ["w444"],
+          },
+        },
+      ],
+      reads: [],
+      tasks: new Map([["w444", mockup]]),
+      placed: [],
+      active: "",
+      reattaching: "",
+      onActive() {},
+      onReattach() {},
+      onWriting() {},
+      onClose() {},
+      onError() {},
+    }),
+  );
+  assert.match(drawer, /status-badge tone-mockup/);
+  assert.match(drawer, /<span>Mockup<\/span>/);
+});
+
 test("a failed merge an agent fixes shows orange, naming its correction, everywhere; red once no correction runs", async () => {
   const wishId = "01a13c45-f3a8-7295-855a-73c0445d7c88";
   const lamp = wish(wishId, "Ship the lamp", s.WishState.ACTIVE, 1);

@@ -380,6 +380,7 @@ test("work that merges counts as running: a worker at work, not a watcher", () =
     {
       running: 1,
       investigating: 0,
+      mockup: 0,
       watching: 1,
       merging: 2,
       fixing: 0,
@@ -645,6 +646,7 @@ test("a failed merge is being fixed while its correction works, failed when none
     {
       running: 1,
       investigating: 0,
+      mockup: 0,
       watching: 0,
       merging: 0,
       fixing: 1,
@@ -900,6 +902,7 @@ test("an investigator at work has its own tone and count, apart from the running
     {
       running: 1,
       investigating: 2,
+      mockup: 0,
       watching: 1,
       merging: 0,
       fixing: 0,
@@ -907,6 +910,47 @@ test("an investigator at work has its own tone and count, apart from the running
       paused: 0,
     },
   );
+});
+
+test("a mockup worker at work has its own pink tone and count, apart from the running workers (W447)", () => {
+  const S = f.TaskStatus;
+  const K = f.TaskKind;
+  const mockup = (status) => ({
+    status,
+    kind: K.MOCKUP,
+    question: "Q25",
+  });
+  assert.equal(f.isMockup(mockup(S.RUNNING)), true);
+  assert.equal(f.isMockup({ status: S.RUNNING, kind: K.WORK }), false);
+  assert.equal(f.taskTone(mockup(S.RUNNING)), "mockup");
+  assert.equal(f.taskStatusText(mockup(S.RUNNING)), "Mockup");
+  assert.equal(f.taskTone(mockup(S.RESUMING)), "mockup");
+  assert.equal(
+    f.taskTone({ ...mockup(S.RESUMING), resumeAfter: at(100) }),
+    "paused",
+  );
+  assert.equal(f.taskTone(mockup(S.DONE)), "done");
+  assert.equal(f.taskStatusText(mockup(S.DONE)), "Done");
+  assert.deepEqual(
+    f.runningOf([
+      { status: S.RUNNING },
+      mockup(S.RUNNING),
+      mockup(S.DONE),
+      { status: S.RUNNING, provider: f.Provider.WATCH },
+    ]),
+    {
+      running: 1,
+      investigating: 0,
+      mockup: 1,
+      watching: 1,
+      merging: 0,
+      fixing: 0,
+      ifrits: 0,
+      paused: 0,
+    },
+  );
+  const w = { state: f.WishState.ACTIVE, ready: false };
+  assert.equal(f.wishTone(w, 0, 0, 0, 0, 0, 1), "mockup");
 });
 
 test("a done task derives its badge text and tone from its integration state", () => {
@@ -1350,6 +1394,7 @@ test("an ifrit lit, at work, warned or out: its tone, its word, and its count ap
   assert.deepEqual(f.runningOf([working, lit, out, { status: S.RUNNING }]), {
     running: 1,
     investigating: 0,
+    mockup: 0,
     watching: 0,
     merging: 0,
     fixing: 0,

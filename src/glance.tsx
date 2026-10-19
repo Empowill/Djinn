@@ -43,6 +43,7 @@ import {
   compareWorkers,
   isAzima,
   isInvestigation,
+  isMockup,
   isUrgent,
 } from "./data/flight";
 import {
@@ -62,17 +63,19 @@ import { type TextKey, language, t } from "./i18n";
 import { Link, linkLabel } from "./link";
 import { ReadingLine } from "./reading-line";
 import { ToneIcon } from "./status";
-import { InvestigationLabel, UrgentLabel } from "./wish-task";
+import { InvestigationLabel, MockupLabel, UrgentLabel } from "./wish-task";
 
-// A worker's state in the glance: at work (blue, or a lit ifrit's flame), investigating (violet), paused (its worker
-// stopped, its work kept: workerPhase), waiting on a task, or planned.
-export type GlanceState = "run" | "investigate" | "paused" | "wait" | "plan";
+// A worker's state in the glance: at work (blue, or a lit ifrit's flame), investigating (violet), making a mockup
+// (pink), paused (its worker stopped, its work kept: workerPhase), waiting on a task, or planned.
+export type GlanceState =
+  "run" | "investigate" | "mockup" | "paused" | "wait" | "plan";
 
-// glanceRank is the one order of the glance's workers, whatever their kind (work, investigation, investigator, ifrit,
-// repair): what is in progress on top, then what is paused, then what waits on a task, then what is planned.
+// glanceRank is the one order of the glance's workers, whatever their kind (work, investigation, investigator, mockup,
+// ifrit, repair): what is in progress on top, then what is paused, then what waits on a task, then what is planned.
 const glanceRank: Record<GlanceState, number> = {
   run: 0,
   investigate: 0,
+  mockup: 0,
   paused: 1,
   wait: 2,
   plan: 3,
@@ -222,13 +225,14 @@ export function glanceOf(
     (task.dependsOn ?? [])
       .map(byId)
       .filter((dep): dep is Task => !!dep && holds(dep));
-  // A worker's state: at work (an investigator investigates), paused, or to come, waiting on a task or planned.
+  // A worker's state: at work (an investigator investigates, a mockup worker makes a mockup), paused, or to come,
+  // waiting on a task or planned.
   const stateOf = (task: Task): GlanceState => {
     switch (phase(task)) {
       case "run":
-        return task.role === TaskRole.INVESTIGATOR && !ifritLit(task)
-          ? "investigate"
-          : "run";
+        if (ifritLit(task)) return "run";
+        if (isMockup(task)) return "mockup";
+        return task.role === TaskRole.INVESTIGATOR ? "investigate" : "run";
       case "paused":
         return "paused";
       default:
@@ -247,7 +251,7 @@ export function glanceOf(
     repairs.push({
       task,
       kind,
-      state: state === "investigate" ? "run" : state,
+      state: state === "investigate" || state === "mockup" ? "run" : state,
       of: (task.review?.taskIds ?? task.correction?.failure?.taskIds ?? [])
         .map((id) => byId(id)?.code)
         .filter((code): code is string => !!code),
@@ -437,6 +441,7 @@ export function glanceCounts(glance: WishGlance): string {
   const investigating = glance.rows.filter(
     (r) => r.state === "investigate",
   ).length;
+  const mockup = glance.rows.filter((r) => r.state === "mockup").length;
   const paused =
     glance.rows.filter((r) => r.state === "paused").length +
     glance.watchers.filter((r) => r.state === "paused").length;
@@ -455,6 +460,7 @@ export function glanceCounts(glance: WishGlance): string {
   if (running) parts.push(t("plan.running", { count: running }));
   if (investigating)
     parts.push(t("plan.investigating", { count: investigating }));
+  if (mockup) parts.push(t("plan.mockup", { count: mockup }));
   if (paused) parts.push(t("glance.paused", { count: paused }));
   if (later) parts.push(t("glance.coming", { count: later }));
   if (watching) parts.push(t("plan.watching", { count: watching }));
@@ -469,6 +475,7 @@ export function glanceCounts(glance: WishGlance): string {
 const stateWords: Record<GlanceState, () => string> = {
   run: () => t("task.status_running"),
   investigate: () => t("task.status_investigating"),
+  mockup: () => t("task.status_mockup"),
   paused: () => t("task.status_paused"),
   wait: () => t("glance.waits"),
   plan: () => t("task.status_pending"),
@@ -477,6 +484,7 @@ const stateWords: Record<GlanceState, () => string> = {
 const legendKeys: Record<GlanceState, TextKey> = {
   run: "glance.legend_run",
   investigate: "glance.legend_investigate",
+  mockup: "glance.legend_mockup",
   paused: "glance.legend_paused",
   wait: "glance.legend_wait",
   plan: "glance.legend_plan",
@@ -645,12 +653,13 @@ function Line({
   );
 }
 
-// Labels are a task's labels, as the tasks view shows them: urgent (or for quick feedback), an investigation.
+// Labels are a task's labels, as the tasks view shows them: urgent (or for quick feedback), an investigation, a mockup.
 function Labels({ task }: { task: Task }) {
   return (
     <>
       {isUrgent(task) && <UrgentLabel feedback={task.feedback} />}
       {isInvestigation(task) && <InvestigationLabel />}
+      {isMockup(task) && <MockupLabel />}
     </>
   );
 }
@@ -694,7 +703,7 @@ function Row({
               : t("glance.waits_on", { code: after })}
           </span>
         )}
-        {investigator && task.question && (
+        {(investigator || isMockup(task)) && task.question && (
           <span className="glance-after">
             {t("glance.investigates", { question: task.question })}
           </span>
@@ -1301,7 +1310,16 @@ export function Glance({
         ))}
         {present.size > 0 && (
           <p className="glance-legend">
-            {(["run", "investigate", "paused", "wait", "plan"] as const)
+            {(
+              [
+                "run",
+                "investigate",
+                "mockup",
+                "paused",
+                "wait",
+                "plan",
+              ] as const
+            )
               .filter((state) => present.has(state))
               .map((state) => (
                 <span key={state}>
