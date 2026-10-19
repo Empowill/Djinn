@@ -551,17 +551,29 @@ func lookProgram(name, path string) (string, error) {
 func runProviderCmd(ctx context.Context, command string, args []string, userHome, path string, extraEnv []string, out *bytes.Buffer) error {
 	ctx, cancel := context.WithTimeout(ctx, circleStatusTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, command, args...)
-	cmd.WaitDelay = time.Second
-	cmd.Env = append(os.Environ(), "PATH="+path, "NO_COLOR=1")
+	env := append(os.Environ(), "PATH="+path, "NO_COLOR=1")
 	if userHome != "" {
-		cmd.Env = append(cmd.Env, "HOME="+userHome, "USERPROFILE="+userHome)
+		env = append(env, "HOME="+userHome, "USERPROFILE="+userHome)
 	}
-	cmd.Env = append(cmd.Env, extraEnv...)
-	if out != nil {
-		cmd.Stdout = out
+	env = append(env, extraEnv...)
+	var err error
+	for range 20 {
+		if out != nil {
+			out.Reset()
+		}
+		cmd := exec.CommandContext(ctx, command, args...)
+		cmd.WaitDelay = time.Second
+		cmd.Env = env
+		if out != nil {
+			cmd.Stdout = out
+		}
+		err = cmd.Run()
+		if err == nil || !strings.Contains(err.Error(), "text file busy") || ctx.Err() != nil {
+			return err
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	return cmd.Run()
+	return err
 }
 
 func isProviderSignedIn(ctx context.Context, p planv1.Provider, djinnHome, userHome, path string) bool {
@@ -643,6 +655,7 @@ func parseAgyModels(raw string, table *usage.PriceTable) []*planv1.CircleModel {
 	var out []*planv1.CircleModel
 	seen := make(map[string]bool)
 	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimRight(line, "\r")
 		if idx := strings.LastIndexByte(line, '\r'); idx >= 0 {
 			line = line[idx+1:]
 		}
