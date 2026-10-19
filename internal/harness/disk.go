@@ -86,10 +86,12 @@ type disk struct {
 	guard DiskGuard
 	cache goCache
 	// What tests set: the Go build cache in place of go env GOCACHE (cacheDir), how often the free space is read
-	// while the disk is almost full (poll; 0: diskPollEvery), the folders measured in place of knownFolders'.
+	// while the disk is almost full (poll; 0: diskPollEvery), the folders measured in place of knownFolders', how long
+	// a read waits on a measurement (wait; 0: diskFoldersWait).
 	cacheDir func() string
 	poll     time.Duration
 	folders  func(cache string) []string
+	wait     time.Duration
 
 	mu              sync.Mutex
 	trimming        bool
@@ -349,7 +351,7 @@ func (h *Harness) DiskFolders() []*machinev1.DiskFolder {
 
 	select {
 	case <-done:
-	case <-time.After(diskFoldersWait):
+	case <-time.After(cmp.Or(d.wait, diskFoldersWait)):
 	case <-h.ctx.Done():
 	}
 	d.mu.Lock()
@@ -418,7 +420,7 @@ func (h *Harness) DiskItems() []*machinev1.DiskItem {
 
 	select {
 	case <-done:
-	case <-time.After(diskFoldersWait):
+	case <-time.After(cmp.Or(d.wait, diskFoldersWait)):
 	case <-h.ctx.Done():
 	}
 	d.mu.Lock()

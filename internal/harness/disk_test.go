@@ -39,6 +39,7 @@ func withDiskTest(cache string, poll time.Duration) Option {
 	return func(h *Harness) {
 		h.disk.cacheDir = func() string { return cache }
 		h.disk.poll = poll
+		h.disk.wait = 5 * time.Second // A slow disk's first walk comes back whole, never in part (W492).
 		h.disk.folders = func(cache string) []string {
 			return slices.DeleteFunc(h.knownFolders(cache), func(dir string) bool {
 				return dir != cache && !strings.HasPrefix(dir, h.home)
@@ -354,8 +355,9 @@ func TestDiskFolders(t *testing.T) {
 	t.Parallel()
 	start := time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC)
 	clock := &fakeClock{at: start}
-	cache, projDir := t.TempDir(), folder(t)
-	e := up(t, t.TempDir(), WithClock(clock.now), withDiskTest(cache, 0))
+	// Each path as the walk spells it: no symlink (macOS /var) nor short name (Windows RUNNER~1).
+	cache, projDir := folder(t), folder(t)
+	e := up(t, folder(t), WithClock(clock.now), withDiskTest(cache, 0))
 	_, projectID := e.wish(t, projDir)
 
 	worktrees := filepath.Join(e.h.home, "projects", projectID, "worktrees")

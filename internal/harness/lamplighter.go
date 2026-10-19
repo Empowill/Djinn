@@ -101,7 +101,6 @@ func (h *Harness) lamplighter(ctx context.Context, tasks []*planv1.Task) (anyLos
 				logx.L().Info("lamplighter restarts a lost watcher", "task", t.GetCode())
 				h.restartLostWatcher(ctx, t)
 			} else {
-				logx.L().Info("lamplighter ends a lost task", "task", t.GetCode())
 				h.endLostProcess(ctx, t)
 			}
 			anyLost = true
@@ -289,11 +288,29 @@ func markWoken(t *planv1.Task, why string, end *timestamppb.Timestamp) {
 	}
 }
 
-// endLostProcess ends a task whose status is RUNNING but that the harness has no run for (a lost process).
+// endLostProcess ends a task whose status is RUNNING but that the harness has no run for (a lost process). Read
+// again first: a worker that ended since the pass listed it wrote its end, and forgot its run, after (W492).
 func (h *Harness) endLostProcess(ctx context.Context, t *planv1.Task) {
+	code := t.GetCode()
+	t, err := store.Get[*planv1.Task](ctx, h.store, t.GetId())
+	if err != nil {
+		if ctx.Err() == nil {
+			logx.L().Error("end a lost task", "loop", "lamplighter", "task", code, "err", err)
+		}
+		return
+	}
+	if t.GetStatus() != planv1.TaskStatus_TASK_STATUS_RUNNING {
+		return
+	}
+	h.mu.Lock()
+	_, runs := h.runs[t.GetId()]
+	h.mu.Unlock()
+	if runs {
+		return
+	}
+	logx.L().Info("lamplighter ends a lost task", "task", code)
 	now := h.now()
 	nowPb := timestamppb.New(now)
-	t = proto.CloneOf(t)
 	t.EndTime = nowPb
 	if canWake(t) {
 		markWoken(t, whyLost, nowPb)

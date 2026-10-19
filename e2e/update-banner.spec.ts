@@ -244,7 +244,8 @@ test("an install that never answers ends at its deadline, as Djinn says it", asy
   await expect(part.locator(".update-banner-actions")).toContainText(
     "Installing…",
   );
-  expect(asked).toBe(1);
+  // The banner says it installs before its request reaches the route: wait for it (W487).
+  await expect.poll(() => asked).toBe(1);
   // Djinn says it builds, and which step runs.
   now = 1;
   await expect(part.locator(".update-banner-actions")).toContainText(
