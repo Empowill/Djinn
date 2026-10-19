@@ -131,18 +131,17 @@ func (p *Publisher) initTools(ctx context.Context, command string, env []string)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	defer func() {
-		cancel()
-		_ = cmd.Wait()
-	}()
 	lines := bufio.NewScanner(out)
 	lines.Buffer(make([]byte, 64<<10), 16<<20)
 	for lines.Scan() {
 		var ev artifactEvent
 		if json.Unmarshal(lines.Bytes(), &ev) == nil && ev.Type == "system" && ev.Subtype == "init" {
+			cancel() // Cut before the call reaches the model.
+			_ = cmd.Wait()
 			return ev.Tools, nil
 		}
 	}
+	_ = cmd.Wait() // Its stderr is whole once it ended.
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("claude gave no init event in %s", artifactCheckTimeout)
 	}
