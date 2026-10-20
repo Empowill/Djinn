@@ -461,13 +461,15 @@ func (h *Harness) correctPush(
 	h.askPushHeld(ctx, wish, project, branch, f, attempts, unstarted, committed)
 }
 
-// asksPushOf tells whether the question id asks about a push of branch: its text names it (pushBranch), or it is gone.
+// asksPushOf tells whether the question id asks about a push of branch: its text names it first, in either form
+// pushBranch writes, or it is gone. A commit's title or git's refusal, further on, may name another branch's push (W62).
 func (h *Harness) asksPushOf(ctx context.Context, id, branch string) bool {
 	q, err := store.Get[*planv1.Question](ctx, h.store, id)
 	if err != nil {
 		return true // withdrawPushQuestion lets go of it.
 	}
-	return strings.HasPrefix(q.GetText(), "Push "+branch+" to ") || strings.Contains(q.GetText(), " push of "+branch+": ")
+	remote, refused, ok := strings.Cut(q.GetText(), " refused the push of ") // A remote's name has no space.
+	return strings.HasPrefix(q.GetText(), "Push "+branch+" to ") || ok && !strings.Contains(remote, " ") && strings.HasPrefix(refused, branch+": ")
 }
 
 // withdrawPushQuestion withdraws id, the question the push of the wish wishID in the project projectID waits on, with
