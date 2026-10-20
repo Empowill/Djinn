@@ -811,7 +811,7 @@ func movingBrief(
 	for _, t := range exp.GetTasks() {
 		codes[t.GetId()] = t.GetCode()
 	}
-	heldPushesBrief(&b, wish, exp, codes, false)
+	heldPushesBrief(&b, wish, exp, codes)
 	var tilasms []*planv1.Tilasm
 	for _, t := range exp.GetTilasms() {
 		tilasms = append(tilasms, t.GetTilasm())
@@ -994,27 +994,23 @@ func MergedText(t *planv1.Task) string {
 }
 
 // heldPushesBrief writes a line to b for each branch of wish whose push checks hold its push, in a project of exp,
-// with the correction that repairs them (codes gives the tasks' codes), unless the developer said to push it without
-// them and unchecked is false. Each branch keeps its hold (W37): with more than one, the line names its branch.
-func heldPushesBrief(b *strings.Builder, wish *planv1.Wish, exp *planv1.WishExport, codes map[string]string, unchecked bool) {
+// with the correction that repairs them (codes gives the tasks' codes). Each branch keeps its hold (W37): with more
+// than one, the line names its branch.
+func heldPushesBrief(b *strings.Builder, wish *planv1.Wish, exp *planv1.WishExport, codes map[string]string) {
 	for _, push := range wish.GetPushes() {
 		holds := PushHolds(push)
 		for _, p := range holds {
-			held := p.GetHeld()
-			if held == "" || p.GetUnchecked() && !unchecked {
-				continue
-			}
 			var proj string
 			if len(exp.GetProjects()) > 1 {
 				for _, pr := range exp.GetProjects() {
-					if pr.GetId() == p.GetProjectId() {
+					if pr.GetId() == push.GetProjectId() {
 						proj = " in " + pr.GetName()
 						break
 					}
 				}
 			}
-			if branch := p.GetHeldBranch(); len(holds) > 1 && branch != "" {
-				proj = " of " + branch + proj
+			if len(holds) > 1 {
+				proj = " of " + p.Branch + proj
 			}
 			corr := ""
 			if cID := p.GetCorrectedBy(); cID != "" {
@@ -1022,7 +1018,7 @@ func heldPushesBrief(b *strings.Builder, wish *planv1.Wish, exp *planv1.WishExpo
 					corr = fmt.Sprintf(", corrected by %s", code)
 				}
 			}
-			fmt.Fprintf(b, "- Push held%s: %s%s.\n", proj, held, corr)
+			fmt.Fprintf(b, "- Push held%s: %s%s.\n", proj, p.GetHeld(), corr)
 		}
 	}
 }
@@ -1601,7 +1597,7 @@ func activeWishBrief(b *strings.Builder, exp *planv1.WishExport, rank int32, rea
 	for _, t := range exp.GetTasks() {
 		codes[t.GetId()] = t.GetCode()
 	}
-	heldPushesBrief(b, wish, exp, codes, true)
+	heldPushesBrief(b, wish, exp, codes)
 	var tilasms []*planv1.Tilasm
 	for _, t := range exp.GetTilasms() {
 		tilasms = append(tilasms, t.GetTilasm())

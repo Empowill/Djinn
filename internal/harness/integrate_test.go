@@ -1062,7 +1062,7 @@ func TestPushRepair_AzimaBranch(t *testing.T) {
 		t1 := in.azima(t, in.wishID, "Bounded Loop")
 		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
 		in.pass(t, 0)
-		if state := in.pushState(t); state.GetHeld() == "" || state.GetRun().GetBranch() != b1 {
+		if state := in.pushState(t); in.holdOn(t, b1) == nil || state.GetRun().GetBranch() != b1 {
 			t.Fatalf("the push %v; want the push checks of %s red", state, b1)
 		}
 		return bare, main, b1
@@ -1097,11 +1097,11 @@ func TestPushRepair_AzimaBranch(t *testing.T) {
 		t.Parallel()
 		in := integrating(t)
 		bare, main, b1 := redOnAzima(t, in, 1)
-		state := in.pushState(t)
-		if state.GetCorrectedBy() == "" {
-			t.Fatalf("the push %v; want a correction", state)
+		hold := in.holdOn(t, b1)
+		if hold.GetCorrectedBy() == "" {
+			t.Fatalf("the hold %v; want a correction", hold)
 		}
-		c := in.ended(t, state.GetCorrectedBy())
+		c := in.ended(t, hold.GetCorrectedBy())
 		if c.GetPartOf() == "" || in.get(t, c.GetPartOf()).GetCode() != "T1" {
 			t.Errorf("%s part of %q; want T1, whose branch it repairs", c.GetCode(), c.GetPartOf())
 		}
@@ -1152,7 +1152,7 @@ func TestPushRepair_SecondAzima(t *testing.T) {
 		b1, b2 = azimaBranchName(t1), azimaBranchName(t2)
 		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
 		in.pass(t, 0)
-		if state := in.pushState(t); state.GetLast().GetBranch() != b1 || state.GetHeld() != "" {
+		if state := in.pushState(t); state.GetLast().GetBranch() != b1 || len(state.GetHolds()) > 0 {
 			t.Fatalf("the push %v; want %s pushed green", state, b1)
 		}
 		in.mu.Lock()
@@ -1160,9 +1160,9 @@ func TestPushRepair_SecondAzima(t *testing.T) {
 		in.mu.Unlock()
 		in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
 		in.pass(t, time.Second)
-		state := in.pushState(t)
-		if !strings.HasSuffix(state.GetHeld(), "; left to the lead") || state.GetLast().GetBranch() != b1 ||
-			state.GetFailedSha() != in.git(t, in.repo, "rev-parse", "refs/heads/"+b2) {
+		state, hold := in.pushState(t), in.holdOn(t, b2)
+		if !strings.HasSuffix(hold.GetHeld(), "; left to the lead") || state.GetLast().GetBranch() != b1 ||
+			hold.GetFailedSha() != in.git(t, in.repo, "rev-parse", "refs/heads/"+b2) {
 			t.Fatalf("the push %v; want %s held, left to the lead, %s pushed last", state, b2, b1)
 		}
 		return bare, b1, b2
@@ -1207,7 +1207,7 @@ func TestPushRepair_SecondAzima(t *testing.T) {
 		if !strings.HasPrefix(res.Msg.GetNote(), want) {
 			t.Errorf("spawn note %q; want it to start %q", res.Msg.GetNote(), want)
 		}
-		waitFor(t, "the push to name the repair", func() bool { return in.pushState(t).GetCorrectedBy() == c.GetId() })
+		waitFor(t, "the push to name the repair", func() bool { return in.holdOn(t, b2).GetCorrectedBy() == c.GetId() })
 		waitFor(t, "the repair to record its note", func() bool { return hasText(in.events(t, c), want) })
 		repairs(t, in, bare, b1, b2, c)
 	})
@@ -1239,9 +1239,9 @@ func TestPushHold_OtherAzimaGreen(t *testing.T) {
 	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
 	in.pass(t, time.Second)
 	red := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
-	held := in.pushState(t)
+	held := in.holdOn(t, b2)
 	if !strings.HasSuffix(held.GetHeld(), "; left to the lead") || held.GetFailedSha() != red {
-		t.Fatalf("the push %v; want %s held at %s, left to the lead", held, b2, short8(red))
+		t.Fatalf("the hold %v; want %s held at %s, left to the lead", held, b2, short8(red))
 	}
 
 	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
@@ -1250,9 +1250,8 @@ func TestPushHold_OtherAzimaGreen(t *testing.T) {
 	if got := in.git(t, bare, "rev-parse", "refs/heads/"+b1); got != tip {
 		t.Fatalf("origin's %s at %s, want %s pushed green", b1, got, tip)
 	}
-	state := in.pushState(t)
-	if state.GetHeld() != held.GetHeld() || state.GetFailedSha() != red || state.GetFailure().GetBase() != red {
-		t.Errorf("after the push of %s, the push %v; want %s still held as %q", b1, state, b2, held.GetHeld())
+	if hold := in.holdOn(t, b2); hold.GetHeld() != held.GetHeld() || hold.GetFailedSha() != red || hold.GetFailure().GetBase() != red {
+		t.Errorf("after the push of %s, the hold of %s %v; want it still held as %q", b1, b2, hold, held.GetHeld())
 	}
 	in.ran()
 	in.pass(t, time.Second)
@@ -1294,7 +1293,7 @@ func TestPushHold_PerAzima(t *testing.T) {
 	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
 	in.pass(t, time.Second)
 	red2 := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
-	holds := heldBranches(in.pushState(t))
+	holds := in.pushState(t).GetHolds()
 	if h := holds[b2]; !strings.HasSuffix(h.GetHeld(), "; left to the lead") || h.GetFailedSha() != red2 {
 		t.Fatalf("the holds %v; want %s held at %s, left to the lead", holds, b2, short8(red2))
 	}
@@ -1303,7 +1302,7 @@ func TestPushHold_PerAzima(t *testing.T) {
 	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
 	in.pass(t, time.Second)
 	red1 := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
-	holds = heldBranches(in.pushState(t))
+	holds = in.pushState(t).GetHolds()
 	if h := holds[b1]; !strings.HasSuffix(h.GetHeld(), "; left to the lead") || h.GetFailedSha() != red1 {
 		t.Fatalf("the holds %v; want %s held at %s, left to the lead", holds, b1, short8(red1))
 	}
@@ -1317,13 +1316,9 @@ func TestPushHold_PerAzima(t *testing.T) {
 	if got := in.git(t, bare, "rev-parse", "refs/heads/"+b1); got != tip {
 		t.Fatalf("origin's %s at %s, want %s pushed green", b1, got, tip)
 	}
-	state := in.pushState(t)
-	holds = heldBranches(state)
+	holds = in.pushState(t).GetHolds()
 	if _, ok := holds[b1]; ok || len(holds) != 1 || holds[b2].GetHeld() != held2 || holds[b2].GetFailedSha() != red2 {
 		t.Errorf("after the green push of %s, the holds %v; want %s alone held, as %q", b1, holds, b2, held2)
-	}
-	if state.GetHeld() != held2 || state.GetHeldBranch() != b2 {
-		t.Errorf("the push shows %q held on %q; want the hold of %s, %q", state.GetHeld(), state.GetHeldBranch(), b2, held2)
 	}
 	in.ran()
 	in.pass(t, time.Second)
@@ -1345,8 +1340,8 @@ func TestPushHold_PerAzimaQuestion(t *testing.T) {
 
 	// heldThenAsked holds T2's branch, red on W2's work and left to the lead, then has Djinn ask about a push of
 	// T1's, green with W3's work: in ask mode, or refused by the remote, which has a commit T1's branch lacks. It
-	// returns the remote, T1's branch, the question and the hold of T2's branch then.
-	heldThenAsked := func(t *testing.T, in *integration, refused bool) (bare, b1 string, q *planv1.Question, held2 *planv1.WishPush) {
+	// returns the remote, T1's and T2's branches, the question and the hold of T2's branch then.
+	heldThenAsked := func(t *testing.T, in *integration, refused bool) (bare, b1, b2 string, q *planv1.Question, held2 *planv1.PushHold) {
 		t.Helper()
 		in.checking(t, "correction_attempts: 0\n"+lintAtCommit+
 			"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
@@ -1360,12 +1355,12 @@ func TestPushHold_PerAzimaQuestion(t *testing.T) {
 		bare = in.remote(t)
 		in.setAzimaStrategy(t)
 		t1, t2 := in.azima(t, in.wishID, "Bounded Loop"), in.azima(t, in.wishID, "Second Part")
-		b1, b2 := azimaBranchName(t1), azimaBranchName(t2)
+		b1, b2 = azimaBranchName(t1), azimaBranchName(t2)
 		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
 		in.pass(t, 0)
 		in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
 		in.pass(t, time.Second)
-		held2 = heldBranches(in.pushState(t))[b2]
+		held2 = in.holdOn(t, b2)
 		if !strings.HasSuffix(held2.GetHeld(), "; left to the lead") || held2.GetHeldRuns() != 1 {
 			t.Fatalf("the hold of %s %v; want held once, left to the lead", b2, held2)
 		}
@@ -1390,18 +1385,13 @@ func TestPushHold_PerAzimaQuestion(t *testing.T) {
 		if !strings.HasPrefix(q.GetText(), want) {
 			t.Fatalf("the question %q; want it to start %q", q.GetText(), want)
 		}
-		return bare, b1, q, held2
+		return bare, b1, b2, q, held2
 	}
-	// keeps checks that the hold of T2's branch is still held2, and that no correction started.
-	keeps := func(t *testing.T, in *integration, held2 *planv1.WishPush) {
+	// keeps checks that the hold of T2's branch, b2, is still held2, and that no correction started.
+	keeps := func(t *testing.T, in *integration, b2 string, held2 *planv1.PushHold) {
 		t.Helper()
-		b2 := held2.GetHeldBranch()
-		hold := func(p *planv1.WishPush) *planv1.WishPush { // Its hold alone, without the push's own fields.
-			return &planv1.WishPush{Held: p.GetHeld(), HeldRuns: p.GetHeldRuns(), CorrectedBy: p.GetCorrectedBy(),
-				Attempts: p.GetAttempts(), FailedSha: p.GetFailedSha(), Failure: p.GetFailure()}
-		}
-		if got := heldBranches(in.pushState(t))[b2]; !proto.Equal(hold(got), hold(held2)) {
-			t.Errorf("the hold of %s %v; want it as it was, %v", b2, hold(got), hold(held2))
+		if got := in.holdOn(t, b2); !proto.Equal(got, held2) {
+			t.Errorf("the hold of %s %v; want it as it was, %v", b2, got, held2)
 		}
 		tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
 		if err != nil {
@@ -1415,47 +1405,46 @@ func TestPushHold_PerAzimaQuestion(t *testing.T) {
 	t.Run("push it", func(t *testing.T) {
 		t.Parallel()
 		in := integrating(t)
-		bare, b1, q, held2 := heldThenAsked(t, in, false)
+		bare, b1, b2, q, held2 := heldThenAsked(t, in, false)
 		if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn pushes at the integration's next pass" {
 			t.Errorf("what Djinn did: %q", did)
 		}
-		keeps(t, in, held2)
+		keeps(t, in, b2, held2)
 		in.pass(t, time.Second)
 		if got, tip := in.git(t, bare, "rev-parse", "refs/heads/"+b1), in.git(t, in.repo, "rev-parse", "refs/heads/"+b1); got != tip {
 			t.Errorf("origin's %s at %s; want %s pushed", b1, got, tip)
 		}
-		if got := commitOf(t.Context(), bare, "refs/heads/"+held2.GetHeldBranch()); got != "" {
-			t.Errorf("origin's %s at %s: pushed while its push checks are red", held2.GetHeldBranch(), got)
+		if got := commitOf(t.Context(), bare, "refs/heads/"+b2); got != "" {
+			t.Errorf("origin's %s at %s: pushed while its push checks are red", b2, got)
 		}
-		keeps(t, in, held2)
+		keeps(t, in, b2, held2)
 	})
 
 	t.Run("not now", func(t *testing.T) {
 		t.Parallel()
 		in := integrating(t)
-		_, _, q, held2 := heldThenAsked(t, in, false)
+		_, _, b2, q, held2 := heldThenAsked(t, in, false)
 		if did := in.answer(t, q, planv1.Choice_CHOICE_B); did != "Djinn waits for the next push due" {
 			t.Errorf("what Djinn did: %q", did)
 		}
-		keeps(t, in, held2)
+		keeps(t, in, b2, held2)
 	})
 
 	t.Run("push again", func(t *testing.T) {
 		t.Parallel()
 		in := integrating(t)
-		_, _, q, held2 := heldThenAsked(t, in, true)
+		_, _, b2, q, held2 := heldThenAsked(t, in, true)
 		if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn pushes at the integration's next pass" {
 			t.Errorf("what Djinn did: %q", did)
 		}
-		keeps(t, in, held2)
+		keeps(t, in, b2, held2)
 	})
 }
 
-// TestPushHold_PerAzimaOtherQuestion (W61, W62): under the per-azima strategy, Djinn asks about a push of an azima's
-// branch, green, in each form it asks it: in ask mode ("Push X to …"), or once the remote refused it ("… refused the
-// push of X: …"). The person pushes the first azima's branch by hand, and its push checks are red, then corrected or
-// left to the lead. A question about the second azima's branch stays open, and the push still waits on it, even when a
-// commit it brings names the first branch's push in the other form; one about the first azima's branch is withdrawn.
+// TestPushHold_PerAzimaOtherQuestion (W61, W63): under the per-azima strategy, Djinn asks about a push of an azima's
+// branch, green, in ask mode or once the remote refused it, and records the branch it asks about. The person pushes the
+// first azima's branch by hand, and its push checks are red, then corrected or left to the lead. A question about the
+// second azima's branch stays open, and the push still waits on it; one about the first azima's branch is withdrawn.
 func TestPushHold_PerAzimaOtherQuestion(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -1463,10 +1452,8 @@ func TestPushHold_PerAzimaOtherQuestion(t *testing.T) {
 		name    string
 		refused bool // The remote refused the push, else Djinn asks in ask mode.
 		first   bool // The question is about the first azima's branch, pushed red.
-		title   bool // The commit the question brings, its title in the question, names the first branch's push.
 	}{
 		{name: "asked"},
-		{name: "asked, a title names the other push", title: true},
 		{name: "refused", refused: true},
 		{name: "asked about the red branch", first: true},
 		{name: "refused about the red branch", refused: true, first: true},
@@ -1492,10 +1479,6 @@ func TestPushHold_PerAzimaOtherQuestion(t *testing.T) {
 				if c.first {
 					asked, about = t1, b1
 				}
-				title := "Work of W2"
-				if c.title {
-					title = "Keep the push of " + b1 + ": one hold per branch"
-				}
 				want := "Push " + about + " to origin?"
 				if c.refused {
 					// Pushed once; then someone else pushes to origin's branch, which Djinn cannot fetch: git refuses
@@ -1513,13 +1496,14 @@ func TestPushHold_PerAzimaOtherQuestion(t *testing.T) {
 				})); err != nil {
 					t.Fatal(err)
 				}
-				in.finished(t, "W2", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) {
-					task.PartOf, task.Title = asked.GetId(), title
-				})
+				in.finished(t, "W2", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) { task.PartOf = asked.GetId() })
 				in.pass(t, time.Second)
 				q := in.pushQuestion(t)
-				if !strings.HasPrefix(q.GetText(), want) || !c.refused && !strings.Contains(q.GetText(), title) {
+				if !strings.HasPrefix(q.GetText(), want) {
 					t.Fatalf("the question %q; want it to start %q", q.GetText(), want)
+				}
+				if got := in.pushState(t).GetQuestionBranch(); got != about {
+					t.Fatalf("the question %s is about %q; want %s", q.GetCode(), got, about)
 				}
 
 				in.finished(t, "W3", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
@@ -1527,7 +1511,7 @@ func TestPushHold_PerAzimaOtherQuestion(t *testing.T) {
 				if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, b1); err == nil || !strings.Contains(err.Error(), "held") {
 					t.Fatalf("the push of %s: %v; want it held", b1, err)
 				}
-				if !plan.PushHeld(heldBranches(in.pushState(t))[b1]) {
+				if !plan.PushHeld(in.pushState(t).GetHolds()[b1]) {
 					t.Fatalf("the push of %s %v; want it held", b1, in.pushState(t))
 				}
 				got, err := store.Get[*planv1.Question](t.Context(), in.db, q.GetId())
@@ -1547,13 +1531,4 @@ func TestPushHold_PerAzimaOtherQuestion(t *testing.T) {
 			})
 		}
 	}
-}
-
-// heldBranches are the holds of p by branch, each as its branch sees it (plan.PushHolds).
-func heldBranches(p *planv1.WishPush) map[string]*planv1.WishPush {
-	out := map[string]*planv1.WishPush{}
-	for _, h := range plan.PushHolds(p) {
-		out[h.GetHeldBranch()] = h
-	}
-	return out
 }

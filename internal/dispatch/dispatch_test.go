@@ -20,7 +20,9 @@ func investigationCase(now time.Time, made ...func() *planv1.Task) ([]*planv1.Ta
 	wish := &planv1.Wish{
 		Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE,
 		IntegrationBranches: []*planv1.IntegrationBranch{{ProjectId: "p", Branch: "feat/qol"}},
-		Pushes:              []*planv1.WishPush{{ProjectId: "p", Held: "at 0f2e0240, test: exit status 1", FailedSha: "0f2e02401234"}},
+		Pushes: []*planv1.WishPush{{ProjectId: "p", Holds: map[string]*planv1.PushHold{
+			"feat/qol": {Held: "at 0f2e0240, test: exit status 1", FailedSha: "0f2e02401234"},
+		}}},
 	}
 	running := &planv1.Task{Id: "running", WishId: "w", ProjectId: "p", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
 		Scheduled: true, CreateTime: timestamppb.New(now.Add(-3 * time.Hour))}
@@ -1311,10 +1313,10 @@ func TestPass(t *testing.T) {
 		wish := &planv1.Wish{
 			Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE,
 			IntegrationBranches: []*planv1.IntegrationBranch{{ProjectId: "p", Branch: "feat/qol"}},
-			Pushes: []*planv1.WishPush{{
-				ProjectId: "p", Held: "at 0f2e0240, test: exit status 1; left to the lead", FailedSha: "0f2e02401234", Attempts: 2,
+			Pushes: []*planv1.WishPush{{ProjectId: "p", Holds: map[string]*planv1.PushHold{"feat/qol": {
+				Held: "at 0f2e0240, test: exit status 1; left to the lead", FailedSha: "0f2e02401234", Attempts: 2,
 				Failure: &planv1.IntegrationFailure{Reason: "test: exit status 1", Base: "0f2e02401234"},
-			}},
+			}}}},
 		}
 		work := &planv1.Task{Id: "work", WishId: "w", ProjectId: "p", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true}
 		repair := &planv1.Task{Id: "repair", WishId: "w", ProjectId: "p", Code: "W2", Status: planv1.TaskStatus_TASK_STATUS_PENDING,
@@ -1336,7 +1338,9 @@ func TestPass(t *testing.T) {
 		wish := &planv1.Wish{
 			Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE,
 			IntegrationBranches: []*planv1.IntegrationBranch{{ProjectId: "p", Branch: "feat/qol"}},
-			Pushes:              []*planv1.WishPush{{ProjectId: "p", Held: "at 0f2e0240, test: exit status 1", FailedSha: "0f2e02401234"}},
+			Pushes: []*planv1.WishPush{{ProjectId: "p", Holds: map[string]*planv1.PushHold{
+				"feat/qol": {Held: "at 0f2e0240, test: exit status 1", FailedSha: "0f2e02401234"},
+			}}},
 		}
 		now := time.Date(2026, 10, 17, 11, 0, 0, 0, time.UTC)
 		task := func(id string, age time.Duration) *planv1.Task {
@@ -1777,13 +1781,15 @@ func TestHeld(t *testing.T) {
 			Pushes: []*planv1.WishPush{
 				{
 					ProjectId: "p1",
-					Held:      "at 12345678, test: exit status 1",
-					FailedSha: "1234567890abcdef",
-					Failure: &planv1.IntegrationFailure{
-						Reason: "test: exit status 1",
-						Base:   "1234567890abcdef",
-					},
-					CorrectedBy: "corr-push",
+					Holds: map[string]*planv1.PushHold{"feat/wails-go": {
+						Held:      "at 12345678, test: exit status 1",
+						FailedSha: "1234567890abcdef",
+						Failure: &planv1.IntegrationFailure{
+							Reason: "test: exit status 1",
+							Base:   "1234567890abcdef",
+						},
+						CorrectedBy: "corr-push",
+					}},
 				},
 			},
 		}
@@ -1842,11 +1848,11 @@ func TestHeld(t *testing.T) {
 			t.Errorf("otherProjTask: Blocker = (%q, %q); want empty", why, failed)
 		}
 
-		// Unchecked push lifts gate; the corrections, still to run, repair the branch and hold its new work (W233)
-		wish.Pushes[0].Unchecked = true
+		// The hold lifted lifts the gate; the corrections, still to run, repair the branch and hold its new work (W233)
+		wish.Pushes[0].Holds = nil
 		sit = New(tasks, []*planv1.Wish{wish}, git, nil)
 		if why, _ := sit.Blocker(workTask); why != "waits for W2 to repair feat/wails-go" {
-			t.Errorf("unchecked push, corrections planned: Blocker = %q; want it held by W2", why)
+			t.Errorf("hold lifted, corrections planned: Blocker = %q; want it held by W2", why)
 		}
 		for _, c := range []*planv1.Task{pushCorr, otherCorr} {
 			c.Status = planv1.TaskStatus_TASK_STATUS_DONE
@@ -1854,21 +1860,11 @@ func TestHeld(t *testing.T) {
 		}
 		sit = New(tasks, []*planv1.Wish{wish}, git, nil)
 		if why, failed := sit.Blocker(workTask); why != "" || failed != "" {
-			t.Errorf("unchecked push: Blocker = (%q, %q); want empty", why, failed)
-		}
-
-		// Held cleared lifts gate
-		wish.Pushes[0].Unchecked = false
-		wish.Pushes[0].Held = ""
-		sit = New(tasks, []*planv1.Wish{wish}, git, nil)
-		if why, failed := sit.Blocker(workTask); why != "" || failed != "" {
-			t.Errorf("cleared push: Blocker = (%q, %q); want empty", why, failed)
+			t.Errorf("hold lifted: Blocker = (%q, %q); want empty", why, failed)
 		}
 
 		// Fallback parsing from Held string when Failure is nil
-		wish.Pushes[0].Held = "at abcdef12, lint: failed"
-		wish.Pushes[0].Failure = nil
-		wish.Pushes[0].FailedSha = ""
+		wish.Pushes[0].Holds = map[string]*planv1.PushHold{"feat/wails-go": {Held: "at abcdef12, lint: failed"}}
 		sit = New(tasks, []*planv1.Wish{wish}, git, nil)
 		wantWhyFallback := "waits for feat/wails-go to be green again (push checks red at abcdef12: lint)"
 		if why, failed := sit.Blocker(workTask); why != wantWhyFallback || failed != "" {
@@ -1884,8 +1880,9 @@ func TestHeld(t *testing.T) {
 		wish := &planv1.Wish{
 			Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE,
 			IntegrationBranches: []*planv1.IntegrationBranch{{ProjectId: "p", Branch: "feat/qol"}},
-			Pushes: []*planv1.WishPush{{ProjectId: "p", Held: "at d88c0ef3, test: exit status 1", FailedSha: "d88c0ef31234",
-				CorrectedBy: "repair"}},
+			Pushes: []*planv1.WishPush{{ProjectId: "p", Holds: map[string]*planv1.PushHold{
+				"feat/qol": {Held: "at d88c0ef3, test: exit status 1", FailedSha: "d88c0ef31234", CorrectedBy: "repair"},
+			}}},
 		}
 		task := func(id string, status planv1.TaskStatus) *planv1.Task {
 			return &planv1.Task{Id: id, WishId: "w", ProjectId: "p", Code: id, Status: status, Scheduled: true}
@@ -1903,7 +1900,7 @@ func TestHeld(t *testing.T) {
 		git := map[string]bool{"p": true}
 		for _, held := range []bool{true, false} {
 			if !held {
-				wish.Pushes[0].Unchecked = true // The correction alone holds the branch now.
+				wish.Pushes[0].Holds = nil // The correction alone holds the branch now.
 			}
 			sit := New(tasks, []*planv1.Wish{wish}, git, &Machine{Slots: 8, Rule: "test"})
 			for _, tk := range []*planv1.Task{resumed, watcher, resumedWatcher} {
@@ -1938,7 +1935,9 @@ func TestHeld(t *testing.T) {
 		t.Parallel()
 		now := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
 		wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1,
-			Pushes: []*planv1.WishPush{{ProjectId: "held", Held: "at 12345678, test: exit status 1", FailedSha: "1234567890abcdef"}}}
+			Pushes: []*planv1.WishPush{{ProjectId: "held", Holds: map[string]*planv1.PushHold{
+				"feat/held": {Held: "at 12345678, test: exit status 1", FailedSha: "1234567890abcdef"},
+			}}}}
 		task := func(id string, p planv1.Provider) *planv1.Task {
 			return &planv1.Task{Id: id, WishId: "w", Code: id, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,
 				Provider: p, CreateTime: timestamppb.New(now.Add(-time.Hour))}
@@ -2000,7 +1999,9 @@ func TestHeld(t *testing.T) {
 		t.Parallel()
 		now := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
 		wish := &planv1.Wish{Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE, Rank: 1,
-			Pushes: []*planv1.WishPush{{ProjectId: "held", Held: "at 12345678, test: exit status 1", FailedSha: "1234567890abcdef"}}}
+			Pushes: []*planv1.WishPush{{ProjectId: "held", Holds: map[string]*planv1.PushHold{
+				"feat/held": {Held: "at 12345678, test: exit status 1", FailedSha: "1234567890abcdef"},
+			}}}}
 		paused := &planv1.Wish{Id: "p", State: planv1.WishState_WISH_STATE_PAUSED}
 		task := func(id string, edit func(*planv1.Task)) *planv1.Task {
 			t := &planv1.Task{Id: id, WishId: "w", Code: id, Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true,

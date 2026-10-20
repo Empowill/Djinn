@@ -340,7 +340,7 @@ func (h *Harness) isPRWorthy(ctx context.Context, wish *planv1.Wish, project *pl
 		return "", "", false
 	}
 	p := pushState(wish, project.GetId())
-	if p != nil && (p.GetQuestionId() != "" || p.GetHeld() != "" || p.GetRefused() != "") {
+	if p != nil && (p.GetQuestionId() != "" || len(plan.PushHolds(p)) > 0 || p.GetRefused() != "") {
 		return "", "", false
 	}
 	if sha == "" {

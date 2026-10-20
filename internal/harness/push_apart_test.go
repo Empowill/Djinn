@@ -163,7 +163,7 @@ func TestPushApart(t *testing.T) {
 		if cut != 1 || in.remoteTip(t, bare) != old || len(in.pushes(t)) != 0 {
 			t.Fatalf("test commands cut %d, origin at %s, pushes %v; want the one cut, nothing pushed", cut, in.remoteTip(t, bare), in.pushes(t))
 		}
-		if state := in.pushState(t); state.GetHeld() != "" || state.GetRun() != nil {
+		if state, hold := in.pushState(t), in.hold(t); hold.GetHeld() != "" || state.GetRun() != nil {
 			t.Errorf("push state %v; want not held, no run shown", state)
 		}
 		if got := in.checkRuns(t); slices.ContainsFunc(got, func(r string) bool { return strings.HasPrefix(r, "test ") }) {

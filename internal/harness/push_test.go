@@ -79,6 +79,22 @@ func (in *integration) pushState(t *testing.T) *planv1.WishPush {
 	return pushState(wish, in.projectID)
 }
 
+// hold is the hold of the wish's integration branch on its red push checks; nil when none.
+func (in *integration) hold(t *testing.T) *planv1.PushHold {
+	t.Helper()
+	return in.holdOn(t, in.branch)
+}
+
+// holdOn is the hold of branch, the wish's integration branch or an azima's, on its red push checks; nil when none.
+func (in *integration) holdOn(t *testing.T, branch string) *planv1.PushHold {
+	t.Helper()
+	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return holdOf(wish, in.projectID, branch)
+}
+
 // pushQuestion is the open question Djinn asked about the push.
 func (in *integration) pushQuestion(t *testing.T) *planv1.Question {
 	t.Helper()
@@ -116,25 +132,12 @@ func (in *integration) attachPushQuestion(t *testing.T) *planv1.Question {
 			p = &planv1.WishPush{ProjectId: in.projectID}
 			wish.Pushes = append(wish.Pushes, p)
 		}
-		p.QuestionId = q.GetId()
+		p.QuestionId, p.QuestionBranch = q.GetId(), in.branch
 		return tx.Put(wish)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	return q
-}
-
-// approveUnchecked records an approval to push without the push checks, once, as an answer before W59 left it: no
-// answer asks for it since.
-func (in *integration) approveUnchecked(t *testing.T) {
-	t.Helper()
-	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
-		return editPush(t.Context(), tx, in.wishID, in.projectID, func(p *planv1.WishPush) { p.Approved, p.Unchecked = true, true })
-	}); err != nil {
-		t.Fatal(err)
-	}
-	in.h.notify()
-	in.h.kickIntegrate()
 }
 
 // repairByLead spawns the lead's repair of the red push checks, title, and gives it once ended.

@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -43,7 +44,7 @@ func TestSpawn_PushRepair(t *testing.T) {
 		// Red once while work runs: Djinn waits for the next work before it corrects.
 		tip := in.tip(t)
 		in.redAgain(t, tip)
-		if state := in.pushState(t); state.GetHeld() == "" || state.GetCorrectedBy() != "" || len(in.corrections(t)) != 0 {
+		if state := in.hold(t); state.GetHeld() == "" || state.GetCorrectedBy() != "" || len(in.corrections(t)) != 0 {
 			t.Fatalf("the push %v, corrections %d; want held, none yet", state, len(in.corrections(t)))
 		}
 
@@ -63,12 +64,12 @@ func TestSpawn_PushRepair(t *testing.T) {
 			t.Errorf("spawn note %q; want it to start %q", res.Msg.GetNote(), wantNote)
 		}
 		repair = in.until(t, repair.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
-		waitFor(t, "the push to name the repair", func() bool { return in.pushState(t).GetCorrectedBy() == repair.GetId() })
+		waitFor(t, "the push to name the repair", func() bool { return in.hold(t).GetCorrectedBy() == repair.GetId() })
 		waitFor(t, "the repair to record its note", func() bool { return hasText(in.events(t, repair), wantNote) })
 
 		// Red again: Djinn starts no correction of its own beside the lead's.
 		in.redAgain(t, tip)
-		if cs := in.corrections(t); len(cs) != 1 || cs[0].GetId() != repair.GetId() || in.pushState(t).GetCorrectedBy() != repair.GetId() {
+		if cs := in.corrections(t); len(cs) != 1 || cs[0].GetId() != repair.GetId() || in.hold(t).GetCorrectedBy() != repair.GetId() {
 			t.Fatalf("corrections %v, the push %v; want the lead's repair alone", codes(cs), in.pushState(t))
 		}
 
@@ -101,7 +102,7 @@ func TestSpawn_PushRepair(t *testing.T) {
 		in.mu.Unlock()
 		waitFor(t, "the push", func() bool {
 			in.pass(t, time.Second)
-			return in.pushState(t).GetHeld() == "" && in.remoteTip(t, bare) == in.tip(t)
+			return in.hold(t).GetHeld() == "" && in.remoteTip(t, bare) == in.tip(t)
 		})
 		if got, _ := in.integration(t, in.get(t, repair.GetId())); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
 			t.Errorf("the repair's integration %v; want committed", got)
@@ -130,10 +131,15 @@ func TestSpawn_PushRepair(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := &planv1.IntegrationFailure{State: planv1.IntegrationState_INTEGRATION_STATE_RED, Base: head, Reason: "test: exit status 1"}
+		wish, err := store.Get[*planv1.Wish](t.Context(), e.db, wishID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		branch := plan.IntegrationBranchOf(wish, projectID)
 		err = e.db.Tx(t.Context(), func(tx *store.Tx) error {
-			return editPush(t.Context(), tx, wishID, projectID, func(p *planv1.WishPush) {
-				p.Held, p.FailedSha, p.Failure = "at "+short8(head)+", test: exit status 1", head, f
-			})
+			return editPush(t.Context(), tx, wishID, projectID, editHold(branch, func(hold *planv1.PushHold) {
+				hold.Held, hold.FailedSha, hold.Failure = "at "+short8(head)+", test: exit status 1", head, f
+			}))
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -145,7 +151,9 @@ func TestSpawn_PushRepair(t *testing.T) {
 			t.Fatal(err)
 		}
 		err = e.db.Tx(t.Context(), func(tx *store.Tx) error {
-			return editPush(t.Context(), tx, wishID, projectID, func(p *planv1.WishPush) { p.CorrectedBy, p.Attempts = djinns.GetId(), 1 })
+			return editPush(t.Context(), tx, wishID, projectID, editHold(branch, func(hold *planv1.PushHold) {
+				hold.CorrectedBy, hold.Attempts = djinns.GetId(), 1
+			}))
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -164,7 +172,7 @@ func TestSpawn_PushRepair(t *testing.T) {
 // TestAimsAtPushChecks: what names the red push checks a task repairs, from the tasks of 17/10/2026.
 func TestAimsAtPushChecks(t *testing.T) {
 	t.Parallel()
-	p := &planv1.WishPush{Held: "at 76e975e2, test: go tool task test exited 201", FailedSha: "76e975e2aa11",
+	p := &planv1.PushHold{Held: "at 76e975e2, test: go tool task test exited 201", FailedSha: "76e975e2aa11",
 		Failure: &planv1.IntegrationFailure{Base: "76e975e2aa11"}}
 	for _, c := range []struct {
 		name, title, prompt string

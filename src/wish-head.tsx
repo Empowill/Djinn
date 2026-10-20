@@ -739,8 +739,12 @@ export function LastPushes({
         const push = pushes.find((p) => p.projectId === id);
         const onDemand = project?.push === ProjectPush.ON_DEMAND;
         const last = push?.last;
-        const held = Boolean(push?.held && !push?.unchecked);
-        if (!last && !push?.refused && !held && !onDemand) return null;
+        // Each branch whose push checks are red keeps its hold (W37), its title naming the branch once there are
+        // several.
+        const holds = Object.entries(push?.holds ?? {}).sort(([a], [b]) =>
+          a.localeCompare(b),
+        );
+        if (!last && !push?.refused && !holds.length && !onDemand) return null;
         const name =
           projects.length > 1 ? (project?.name ?? push?.projectId) : undefined;
         return (
@@ -762,24 +766,26 @@ export function LastPushes({
                 {t("wish.push_refused")}
               </span>
             )}
-            {push?.held && !push?.unchecked && (
+            {holds.map(([branch, hold]) => (
               <span
+                key={branch}
                 className="wish-push-refused"
                 title={[
-                  push.held,
-                  push.failure?.command ? `$ ${push.failure.command}` : "",
-                  push.failure?.output,
+                  holds.length > 1 ? branch : "",
+                  hold.held,
+                  hold.failure?.command ? `$ ${hold.failure.command}` : "",
+                  hold.failure?.output,
                 ]
                   .filter(Boolean)
                   .join("\n\n")}
               >
-                {push.correctedBy
+                {hold.correctedBy
                   ? t("wish.push_held_corrected", {
-                      task: codes?.get(push.correctedBy) ?? push.correctedBy,
+                      task: codes?.get(hold.correctedBy) ?? hold.correctedBy,
                     })
                   : t("wish.push_held")}
               </span>
-            )}
+            ))}
             {onDemand && (
               <span className="wish-push-on-demand">
                 {t("wish.push_on_demand")}
