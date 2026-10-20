@@ -939,8 +939,11 @@ func (m *Monitor) BarSlots(n djinnv1.LoadNotch) int {
 // bar shows these, so that what it says a notch runs is what the scheduler lets run there (W577). djinn up --workers
 // holds for every notch.
 func (m *Monitor) NotchSlots() []NotchSlots {
-	s := m.Snapshot()
-	current := m.Policy()
+	return notchSlots(m.Policy(), m.Snapshot())
+}
+
+// notchSlots is what each manual notch lets run on the machine s, the policy current's djinn up --workers holding.
+func notchSlots(current Policy, s Snapshot) []NotchSlots {
 	out := make([]NotchSlots, 0, len(ManualNotches))
 	for _, n := range ManualNotches {
 		p := NotchPolicy(n)
@@ -953,7 +956,11 @@ func (m *Monitor) NotchSlots() []NotchSlots {
 
 // Available is the memory available to new programs now, in bytes; 0 when unknown.
 func (m *Monitor) Available() uint64 {
-	s := m.Snapshot()
+	return m.Snapshot().available()
+}
+
+// available is the memory available to new programs on the machine s, in bytes; 0 when unknown.
+func (s Snapshot) available() uint64 {
 	if s.MemoryTotal == 0 {
 		return 0
 	}
