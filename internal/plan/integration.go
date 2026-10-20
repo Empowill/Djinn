@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/proto"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/gitx"
@@ -111,98 +110,43 @@ func PushStateOf(wish *planv1.Wish, projectID string) *planv1.WishPush {
 	return nil
 }
 
-// PushHeld tells whether the fields of p keep a hold: the push checks of the branch held last are red (W37).
-func PushHeld(p *planv1.WishPush) bool { return p.GetHeld() != "" || p.GetHeldRuns() > 0 }
+// PushHeld tells whether hold, a branch's (WishPush.holds), holds its push: its push checks are red.
+func PushHeld(hold *planv1.PushHold) bool { return hold.GetHeld() != "" || hold.GetHeldRuns() > 0 }
 
-// pushHold is the hold the fields of p keep, as WishPush.holds keeps it; nil when they keep none.
-func pushHold(p *planv1.WishPush) *planv1.PushHold {
-	if !PushHeld(p) {
-		return nil
-	}
-	return &planv1.PushHold{
-		Held: p.GetHeld(), HeldRuns: p.GetHeldRuns(), CorrectedBy: p.GetCorrectedBy(), Attempts: p.GetAttempts(),
-		FailedSha: p.GetFailedSha(), Failure: p.GetFailure(),
-	}
+// BranchHold is the hold of branch's push in a WishPush (WishPush.holds).
+type BranchHold struct {
+	Branch string
+	*planv1.PushHold
 }
 
-// setPushHold puts hold, a branch's, in the fields of p; nil clears them.
-func setPushHold(p *planv1.WishPush, hold *planv1.PushHold) {
-	p.Held, p.HeldRuns, p.CorrectedBy = hold.GetHeld(), hold.GetHeldRuns(), hold.GetCorrectedBy()
-	p.Attempts, p.FailedSha, p.Failure = hold.GetAttempts(), hold.GetFailedSha(), hold.GetFailure()
-}
-
-// PushFor is p as branch sees it: the hold of branch in its fields, with the push's own (the last push, the question,
-// the run), and no other branch's hold (W37). The fields of p keep the hold of current, its held_branch or, in a hold
-// recorded before W35, the branch the harness finds; WishPush.holds keeps the others. nil when p is.
-func PushFor(p *planv1.WishPush, branch, current string) *planv1.WishPush {
-	if p == nil {
-		return nil
-	}
-	v := proto.CloneOf(p)
-	v.Holds, v.HeldBranch = nil, ""
-	if current != branch {
-		setPushHold(v, proto.CloneOf(p.GetHolds()[branch]))
-	}
-	if PushHeld(v) {
-		v.HeldBranch = branch
-	}
-	return v
-}
-
-// PushHolds are p as each branch it holds sees it (PushFor): the branch held last first, then the others by name
-// (W37). The first one's held_branch is empty in a hold recorded before W35.
-func PushHolds(p *planv1.WishPush) []*planv1.WishPush {
-	var out []*planv1.WishPush
-	if PushHeld(p) {
-		out = append(out, PushFor(p, p.GetHeldBranch(), p.GetHeldBranch()))
-	}
+// PushHolds are the holds of p, by branch name: each branch keeps its own (W37).
+func PushHolds(p *planv1.WishPush) []BranchHold {
+	var out []BranchHold
 	for _, b := range slices.Sorted(maps.Keys(p.GetHolds())) {
-		if b != p.GetHeldBranch() || !PushHeld(p) {
-			out = append(out, PushFor(p, b, p.GetHeldBranch()))
+		if hold := p.GetHolds()[b]; PushHeld(hold) {
+			out = append(out, BranchHold{Branch: b, PushHold: hold})
 		}
 	}
 	return out
 }
 
-// FocusPushHold makes the fields of p keep the hold of branch, to act on it: the hold they kept, current's (as
-// PushFor), goes aside in WishPush.holds, and the one of branch, if aside, comes back from there (W37).
-func FocusPushHold(p *planv1.WishPush, branch, current string) {
-	current = cmp.Or(p.GetHeldBranch(), current)
-	if current == branch {
-		if PushHeld(p) {
-			p.HeldBranch = branch
-		}
-		return
+// HoldIn is the hold of branch in p, to edit: a new one when it has none, which SettlePushHolds drops again unless
+// the edit holds the push.
+func HoldIn(p *planv1.WishPush, branch string) *planv1.PushHold {
+	if p.Holds == nil {
+		p.Holds = map[string]*planv1.PushHold{}
 	}
-	if hold := pushHold(p); hold != nil {
-		if p.Holds == nil {
-			p.Holds = map[string]*planv1.PushHold{}
-		}
-		p.Holds[current] = hold
+	hold := p.Holds[branch]
+	if hold == nil {
+		hold = &planv1.PushHold{}
+		p.Holds[branch] = hold
 	}
-	setPushHold(p, p.GetHolds()[branch])
-	delete(p.Holds, branch)
-	p.HeldBranch = branch
-	if len(p.Holds) == 0 {
-		p.Holds = nil
-	}
+	return hold
 }
 
-// SettlePushHolds keeps the holds of p in shape after an edit: once its fields keep none, the hold of another branch
-// takes their place, the first by name; with none left, held_branch is empty (W37).
+// SettlePushHolds keeps the holds of p in shape after an edit: a hold that holds nothing more goes.
 func SettlePushHolds(p *planv1.WishPush) {
-	if PushHeld(p) {
-		return
-	}
-	p.HeldBranch = ""
-	if len(p.GetHolds()) == 0 {
-		p.Holds = nil
-		return
-	}
-	b := slices.Sorted(maps.Keys(p.GetHolds()))[0]
-	setPushHold(p, p.GetHolds()[b])
-	delete(p.Holds, b)
-	p.HeldBranch = b
+	maps.DeleteFunc(p.Holds, func(_ string, hold *planv1.PushHold) bool { return !PushHeld(hold) })
 	if len(p.Holds) == 0 {
 		p.Holds = nil
 	}

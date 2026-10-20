@@ -83,7 +83,7 @@ func TestIntegrateLane(t *testing.T) {
 	for range 2 {
 		in.h.holdPush(t.Context(), wish, project, []*planv1.Task{w3}, in.branch, tip, "test", "test: test exited 1", "", nil)
 	}
-	if state := in.pushState(t); state.GetHeld() == "" || state.GetCorrectedBy() != "" {
+	if state := in.hold(t); state.GetHeld() == "" || state.GetCorrectedBy() != "" {
 		t.Errorf("the push %v; want held, no correction while %s repairs", state, w2.GetCode())
 	}
 	if _, texts := in.integration(t, w3); !slices.Contains(texts,
@@ -389,7 +389,7 @@ func TestRepairOf(t *testing.T) {
 		})
 		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
 		in.pass(t, 0)
-		state := in.pushState(t)
+		state := in.hold(t)
 		if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
 			t.Fatalf("the push %v; want held, corrected", state)
 		}
@@ -415,7 +415,7 @@ func TestRepairOf(t *testing.T) {
 		if got := in.states(t, fix, w9); got != fix.GetCode()+" COMMITTED, W9 COMMITTED" {
 			t.Errorf("after the repair: %s", got)
 		}
-		if s := in.pushState(t); s.GetHeld() != "" || in.remoteTip(t, bare) == "" {
+		if s := in.hold(t); s.GetHeld() != "" || in.remoteTip(t, bare) == "" {
 			t.Errorf("the push %v", s)
 		}
 	})

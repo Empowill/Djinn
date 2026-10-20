@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"cmp"
 	"context"
 	"strings"
 
@@ -106,19 +105,17 @@ func (h *Harness) syncPush(ctx context.Context, sync *planv1.ProjectSync, wish *
 	if run.GetBranch() != sync.GetBranch() {
 		return
 	}
-	// The hold of the branch, kept aside while another's is in the push's fields (W37). A hold recorded before W35
-	// names no branch: the run held names it (heldBranch).
-	state = plan.PushFor(state, run.GetBranch(), cmp.Or(state.GetHeldBranch(), run.GetBranch()))
+	hold := state.GetHolds()[run.GetBranch()] // Its own hold, not another branch's (W37).
 	switch run.GetStage() {
 	case planv1.PushStage_PUSH_STAGE_CHECKING, planv1.PushStage_PUSH_STAGE_PUSHING:
 		if !h.pushRunning(wish.GetId(), projectID, run.GetBranch()) {
 			return // Djinn stopped during it.
 		}
 	case planv1.PushStage_PUSH_STAGE_HELD:
-		if state.GetHeld() == "" {
+		if !plan.PushHeld(hold) {
 			return // The hold lifted since.
 		}
-		if id := state.GetCorrectedBy(); id != "" {
+		if id := hold.GetCorrectedBy(); id != "" {
 			if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
 				sync.Correction = c.GetCode()
 			}

@@ -461,11 +461,16 @@ test("the glance shows the merges in progress, the queue, a held push and the re
     pushes: [
       {
         projectId: "p1",
-        held: "test: go tool task test exited 1",
-        correctedBy: id("W12"),
-        failure: {
-          command: "go tool task test",
-          output: "ok  pkg/a\n--- FAIL: TestLogin\n--- FAIL: TestLogout\nFAIL",
+        holds: {
+          "feat/qol": {
+            held: "test: go tool task test exited 1",
+            correctedBy: id("W12"),
+            failure: {
+              command: "go tool task test",
+              output:
+                "ok  pkg/a\n--- FAIL: TestLogin\n--- FAIL: TestLogout\nFAIL",
+            },
+          },
         },
         run: { branch: "feat/qol", stage: s.PushStage.HELD, note: "test" },
       },

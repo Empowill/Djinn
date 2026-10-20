@@ -707,7 +707,7 @@ func (s *Situation) integrationBranch(d *planv1.Task) string {
 func short8(sha string) string { return sha[:min(8, len(sha))] }
 
 // pushCheckHeld extracts the short sha and check name for a held push.
-func pushCheckHeld(p *planv1.WishPush) (sha, check string) {
+func pushCheckHeld(p *planv1.PushHold) (sha, check string) {
 	if f := p.GetFailure(); f != nil {
 		sha = short8(cmp.Or(p.GetFailedSha(), f.GetBase()))
 		check, _, _ = strings.Cut(f.GetReason(), ":")
@@ -756,11 +756,11 @@ func (s *Situation) pushHeld(t *planv1.Task) string {
 	if wish == nil || t.GetProjectId() == "" {
 		return ""
 	}
-	// Each branch held keeps its hold (W37): the correction of any of them goes on; the branch held last says why.
-	if holds := plan.PushHolds(plan.PushStateOf(wish, t.GetProjectId())); len(holds) > 0 && holds[0].GetHeld() != "" &&
-		!holds[0].GetUnchecked() && !slices.ContainsFunc(holds, func(p *planv1.WishPush) bool { return p.GetCorrectedBy() == t.GetId() }) {
-		sha, check := pushCheckHeld(holds[0])
-		return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", s.integrationBranch(t), sha, check)
+	// Each branch held keeps its hold (W37): the correction of any of them goes on; the first by name says why.
+	if holds := plan.PushHolds(plan.PushStateOf(wish, t.GetProjectId())); len(holds) > 0 &&
+		!slices.ContainsFunc(holds, func(p plan.BranchHold) bool { return p.GetCorrectedBy() == t.GetId() }) {
+		sha, check := pushCheckHeld(holds[0].PushHold)
+		return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", holds[0].Branch, sha, check)
 	}
 	for _, c := range s.tasks {
 		if c.GetWishId() == t.GetWishId() && strings.EqualFold(c.GetProjectId(), t.GetProjectId()) && repairing(c) {

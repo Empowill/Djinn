@@ -263,63 +263,45 @@ func TestBriefSaysWhereWorkLands(t *testing.T) {
 	}
 }
 
-// TestPushHolds (W37): each branch keeps its hold. Acting on a branch's hold puts it in the push's fields and sets the
-// other one aside; once it lifts, the one aside comes back; a hold recorded before, its branch named or not, reads as
-// it was, without migration.
+// TestPushHolds (W37): each branch keeps its hold, by name; an edit through HoldIn reaches one branch's only, and a
+// hold that holds nothing more goes (SettlePushHolds).
 func TestPushHolds(t *testing.T) {
 	t.Parallel()
 	branches := func(p *planv1.WishPush) []string {
 		var out []string
 		for _, h := range PushHolds(p) {
-			out = append(out, h.GetHeldBranch()+"="+h.GetHeld())
+			out = append(out, h.Branch+"="+h.GetHeld())
 		}
 		return out
 	}
-	for _, c := range []struct {
-		name string
-		p    *planv1.WishPush
-		want []string
-	}{
-		{"none", nil, nil},
-		{"lifted", &planv1.WishPush{ProjectId: "p"}, nil},
-		{"before W35", &planv1.WishPush{Held: "at 1", FailedSha: "1"}, []string{"=at 1"}},
-		{"W35", &planv1.WishPush{Held: "at 1", HeldBranch: "b1"}, []string{"b1=at 1"}},
-	} {
-		if got := branches(c.p); !slices.Equal(got, c.want) {
-			t.Errorf("%s: holds %v, want %v", c.name, got, c.want)
-		}
+	if got := branches(nil); got != nil {
+		t.Errorf("holds of no push %v; want none", got)
 	}
-
-	p := &planv1.WishPush{ProjectId: "p", Held: "at 2", HeldRuns: 2, CorrectedBy: "c2", Attempts: 1, FailedSha: "2", HeldBranch: "b2"}
-	FocusPushHold(p, "b1", "")
-	p.Held, p.HeldRuns, p.FailedSha = "at 1", p.GetHeldRuns()+1, "1"
+	p := &planv1.WishPush{ProjectId: "p", Holds: map[string]*planv1.PushHold{
+		"b2": {Held: "at 2", HeldRuns: 2, CorrectedBy: "c2", Attempts: 1, FailedSha: "2"},
+	}}
+	hold := HoldIn(p, "b1")
+	hold.Held, hold.HeldRuns, hold.FailedSha = "at 1", hold.GetHeldRuns()+1, "1"
 	SettlePushHolds(p)
 	if got, want := branches(p), []string{"b1=at 1", "b2=at 2"}; !slices.Equal(got, want) {
 		t.Fatalf("holds %v, want %v", got, want)
 	}
-	if p.GetHeldRuns() != 1 || p.GetCorrectedBy() != "" || p.GetAttempts() != 0 {
-		t.Errorf("b1's hold %v: it took b2's runs, correction or attempts", p)
+	if b1 := p.GetHolds()["b1"]; b1.GetHeldRuns() != 1 || b1.GetCorrectedBy() != "" || b1.GetAttempts() != 0 {
+		t.Errorf("b1's hold %v: it took b2's runs, correction or attempts", b1)
 	}
-	if b2 := PushFor(p, "b2", "b1"); b2.GetHeldRuns() != 2 || b2.GetCorrectedBy() != "c2" || b2.GetAttempts() != 1 || b2.GetFailedSha() != "2" {
+	if b2 := p.GetHolds()["b2"]; b2.GetHeldRuns() != 2 || b2.GetCorrectedBy() != "c2" || b2.GetAttempts() != 1 || b2.GetFailedSha() != "2" {
 		t.Errorf("b2's hold %v, want it whole", b2)
 	}
-	if PushHeld(PushFor(p, "b3", "b1")) {
-		t.Errorf("b3 is held: %v", PushFor(p, "b3", "b1"))
-	}
 
-	FocusPushHold(p, "b1", "")
-	p.Held, p.HeldRuns, p.FailedSha = "", 0, ""
+	HoldIn(p, "b3").CorrectedBy = "c3" // Holds nothing: goes.
+	hold.Held, hold.HeldRuns, hold.FailedSha = "", 0, ""
 	SettlePushHolds(p)
-	if got, want := branches(p), []string{"b2=at 2"}; !slices.Equal(got, want) || p.GetHolds() != nil || p.GetCorrectedBy() != "c2" {
-		t.Errorf("after b1's lifts, holds %v, the push %v; want %v in its fields", got, p, want)
+	if got, want := branches(p), []string{"b2=at 2"}; !slices.Equal(got, want) || len(p.GetHolds()) != 1 {
+		t.Errorf("after b1's lifts, holds %v (%v); want %v", got, p.GetHolds(), want)
 	}
-
-	// A hold recorded before W35 names no branch: the one the harness finds goes aside under its name.
-	old := &planv1.WishPush{Held: "at 2", FailedSha: "2"}
-	FocusPushHold(old, "b1", "b2")
-	old.Held = "at 1"
-	SettlePushHolds(old)
-	if got, want := branches(old), []string{"b1=at 1", "b2=at 2"}; !slices.Equal(got, want) {
-		t.Errorf("holds %v, want %v", got, want)
+	delete(p.Holds, "b2")
+	SettlePushHolds(p)
+	if p.Holds != nil {
+		t.Errorf("holds %v once none is left; want nil", p.Holds)
 	}
 }

@@ -90,7 +90,7 @@ func TestKeepCheckOutput(t *testing.T) {
 		if runs, _ := in.ran(); !slices.Contains(runs, "test") {
 			t.Fatalf("runs %q; want the push checks", runs)
 		}
-		state := in.pushState(t)
+		state := in.hold(t)
 		if state.GetHeldRuns() != 1 || state.GetCorrectedBy() != "" {
 			t.Fatalf("the push %v; want held once, no correction while other work runs", state)
 		}
@@ -119,7 +119,7 @@ func TestKeepCheckOutput(t *testing.T) {
 		if runs, _ := in.ran(); slices.Contains(runs, "test") {
 			t.Fatalf("runs %q; want the push checks not run again on a tree they were red on", runs)
 		}
-		state = in.pushState(t)
+		state = in.hold(t)
 		if state.GetCorrectedBy() == "" || state.GetAttempts() != 1 || state.GetHeldRuns() != 1 || state.GetFailedSha() != tip {
 			t.Fatalf("the push %v; want held, run once, corrected at once", state)
 		}

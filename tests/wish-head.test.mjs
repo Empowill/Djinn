@@ -237,22 +237,28 @@ test("the wish's head says where Djinn last pushed its integration branch, and a
   assert.doesNotMatch(two, /web/);
 });
 
-test("the wish's head says a push its checks hold, why on hover", () => {
-  const html = s.renderToStaticMarkup(
-    h(s.LastPushes, {
-      pushes: [
-        {
-          projectId: "p1",
-          refused: "",
-          held: "at 1a2b3c4d, test: go tool task test exited 1",
-        },
-      ],
-      projects: [{ id: "p1", name: "app" }],
-    }),
-  );
+test("the wish's head says a push its checks hold, why on hover, each branch's", () => {
+  const held = (holds) =>
+    s.renderToStaticMarkup(
+      h(s.LastPushes, {
+        pushes: [{ projectId: "p1", refused: "", holds }],
+        projects: [{ id: "p1", name: "app" }],
+      }),
+    );
   assert.match(
-    html,
+    held({
+      "feat/qol": { held: "at 1a2b3c4d, test: go tool task test exited 1" },
+    }),
     /<span class="wish-push-refused" title="at 1a2b3c4d, test: go tool task test exited 1">The push is held: its checks are red<\/span>/,
+  );
+  // Each branch held keeps its hold (W37): its title names its branch once there are several.
+  const two = held({
+    "djinn/T2-second": { held: "at 2b3c4d5e, lint: exited 1" },
+    "djinn/T1-first": { held: "at 1a2b3c4d, test: exited 1" },
+  });
+  assert.match(
+    two,
+    /title="djinn\/T1-first\n\nat 1a2b3c4d, test: exited 1">The push is held: its checks are red<\/span><span class="wish-push-refused" title="djinn\/T2-second\n\nat 2b3c4d5e, lint: exited 1">/,
   );
 });
 

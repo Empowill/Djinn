@@ -301,7 +301,7 @@ func (h *Harness) holdPush(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha, command, why, out string,
 	red *planv1.CheckRun,
 ) {
-	cur := h.pushOf(ctx, wish, project.GetDirectory(), project.GetId(), branch) // Its own hold (W37).
+	cur := holdOf(wish, project.GetId(), branch) // Its own hold (W37).
 	if h.pushHeldAlready(ctx, wish, project, branch, sha, cur) {
 		return
 	}
@@ -315,13 +315,12 @@ func (h *Harness) holdPush(
 		TaskIds: ids(committed),
 	}, red)
 	var runs int32
-	edit := h.holdEdit(ctx, wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
-		p.Held, p.HeldRuns, p.Approved, p.Unchecked = held, p.GetHeldRuns()+1, false, false
-		p.FailedSha, p.Failure = sha, f
-		runs = p.GetHeldRuns()
-	})
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
-		return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
+		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
+			hold := plan.HoldIn(p, branch)
+			hold.Held, hold.HeldRuns, hold.FailedSha, hold.Failure = held, hold.GetHeldRuns()+1, sha, f
+			runs, p.Approved = hold.GetHeldRuns(), false
+		})
 	})
 	if err != nil {
 		logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
@@ -351,13 +350,12 @@ func (h *Harness) holdSeen(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha string,
 	f *planv1.IntegrationFailure,
 ) {
-	cur := h.pushOf(ctx, wish, project.GetDirectory(), project.GetId(), branch) // Its own hold (W37).
+	cur := holdOf(wish, project.GetId(), branch) // Its own hold (W37).
 	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") {
 		// Theirs still, the tree unchanged: the tip is recorded, so the next pass does not look again (pushIfDue).
 		if cur.GetFailedSha() != sha {
-			edit := h.holdEdit(ctx, wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) { p.FailedSha = sha })
 			err := h.store.Tx(ctx, func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), editHold(branch, func(hold *planv1.PushHold) { hold.FailedSha = sha }))
 			})
 			if err != nil {
 				logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
@@ -382,12 +380,12 @@ func (h *Harness) holdSeen(
 	if len(committed) > 0 {
 		f.TaskIds = ids(committed)
 	}
-	edit := h.holdEdit(ctx, wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
-		p.Held, p.Approved, p.Unchecked = fmt.Sprintf("at %s, %s", short8(sha), headline(f.GetReason())), false, false
-		p.FailedSha, p.Failure = sha, f
-	})
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
+		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
+			hold := plan.HoldIn(p, branch)
+			hold.Held, hold.FailedSha, hold.Failure = fmt.Sprintf("at %s, %s", short8(sha), headline(f.GetReason())), sha, f
+			p.Approved = false
+		})
 	})
 	if err != nil {
 		logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
@@ -399,15 +397,15 @@ func (h *Harness) holdSeen(
 	h.correctPush(ctx, wish, project, committed, branch, sha, f, cur.GetAttempts(), tasks)
 }
 
-// pushHeldAlready tells whether the push of wish's branch in project, held as cur says, needs nothing more for push
-// checks red at sha: they were left to the lead at sha, or a correction runs. A push question of branch still open is
+// pushHeldAlready tells whether the push of wish's branch in project, its hold cur, needs nothing more for push checks
+// red at sha: they were left to the lead at sha, or a correction runs. A push question of branch still open is
 // withdrawn: no push is due while it stays open, so nobody would act on the hold. One about another branch's push, under
 // the per-azima strategy, stays (W61).
 func (h *Harness) pushHeldAlready(
-	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, sha string, cur *planv1.WishPush,
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, sha string, cur *planv1.PushHold,
 ) bool {
-	if id := cur.GetQuestionId(); id != "" && h.asksPushOf(ctx, id, branch) {
-		h.withdrawPushQuestion(ctx, wish.GetId(), project.GetId(), id,
+	if p := pushState(wish, project.GetId()); p.GetQuestionId() != "" && p.GetQuestionBranch() == branch {
+		h.withdrawPushQuestion(ctx, wish.GetId(), project.GetId(), p.GetQuestionId(),
 			fmt.Sprintf("Djinn: the push checks of %s ran again at %s and are red; Djinn acts on them instead.", branch, short8(sha)))
 	}
 	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") && cur.GetFailedSha() == sha {
@@ -443,11 +441,10 @@ func (h *Harness) correctPush(
 	if int(attempts) < settings.CorrectionAttempts {
 		c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, attempts+1)
 		if err == nil {
-			edit := h.holdEdit(ctx, wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
-				p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = c.GetId(), attempts+1, sha, f
-			})
 			err = h.store.Tx(ctx, func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), editHold(branch, func(hold *planv1.PushHold) {
+					hold.CorrectedBy, hold.Attempts, hold.FailedSha, hold.Failure = c.GetId(), attempts+1, sha, f
+				}))
 			})
 			if err == nil {
 				h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s is held, corrected by %s", branch, c.GetCode()))
@@ -459,17 +456,6 @@ func (h *Harness) correctPush(
 		logx.L().Error("start a push correction", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
 	}
 	h.askPushHeld(ctx, wish, project, branch, f, attempts, unstarted, committed)
-}
-
-// asksPushOf tells whether the question id asks about a push of branch: its text names it first, in either form
-// pushBranch writes, or it is gone. A commit's title or git's refusal, further on, may name another branch's push (W62).
-func (h *Harness) asksPushOf(ctx context.Context, id, branch string) bool {
-	q, err := store.Get[*planv1.Question](ctx, h.store, id)
-	if err != nil {
-		return true // withdrawPushQuestion lets go of it.
-	}
-	remote, refused, ok := strings.Cut(q.GetText(), " refused the push of ") // A remote's name has no space.
-	return strings.HasPrefix(q.GetText(), "Push "+branch+" to ") || ok && !strings.Contains(remote, " ") && strings.HasPrefix(refused, branch+": ")
 }
 
 // withdrawPushQuestion withdraws id, the question the push of the wish wishID in the project projectID waits on, with
@@ -494,7 +480,7 @@ func (h *Harness) withdrawPushQuestion(ctx context.Context, wishID, projectID, i
 		}
 		return editPush(ctx, tx, wishID, projectID, func(p *planv1.WishPush) {
 			if p.QuestionId == id {
-				p.QuestionId, p.Approved = "", false
+				p.QuestionId, p.QuestionBranch, p.Approved = "", "", false
 			}
 		})
 	})
@@ -516,13 +502,13 @@ func (h *Harness) askPushHeld(
 	if sha, err := git(ctx, project.GetDirectory(), "rev-parse", "refs/heads/"+branch); err == nil && sha != "" {
 		tip = sha
 	}
-	edit := h.holdEdit(context.WithoutCancel(ctx), wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
-		p.Approved, p.CorrectedBy, p.Failure = false, "", f // A question still open is about another branch (W61).
-		p.Held = fmt.Sprintf("at %s, %s; left to the lead", short8(tip), headline(f.GetReason()))
-		p.FailedSha = tip
-	})
 	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-		return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
+		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
+			hold := plan.HoldIn(p, branch)
+			hold.CorrectedBy, hold.Failure, hold.FailedSha = "", f, tip
+			hold.Held = fmt.Sprintf("at %s, %s; left to the lead", short8(tip), headline(f.GetReason()))
+			p.Approved = false // A question still open is another branch's (pushHeldAlready): it stays (W61).
+		})
 	})
 	if err != nil {
 		logx.L().Error("leave the push checks to the lead", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)

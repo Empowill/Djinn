@@ -30,9 +30,9 @@ func (h *Harness) failed(
 	in *planv1.TaskIntegration, text string,
 ) {
 	for _, t := range batch {
-		if p := pushOfCorrection(wish, t.GetId()); p != nil {
+		if hold, _ := pushOfCorrection(wish, t.GetId()); hold.PushHold != nil {
 			h.settleIntegration(ctx, batch, in, text, nil)
-			h.pushCorrectionEnded(ctx, wish, project, settings, p, t, true)
+			h.pushCorrectionEnded(ctx, wish, project, hold, t, true)
 			return
 		}
 	}
@@ -384,11 +384,9 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 		if len(group) == 0 {
 			wish, err := store.Get[*planv1.Wish](ctx, h.store, c.GetWishId())
 			if err == nil {
-				if p := pushOfCorrection(wish, c.GetId()); p != nil {
-					project, err1 := store.Get[*planv1.Project](ctx, h.store, p.GetProjectId())
-					settings, err2 := plan.LoadSettings(h.home, project)
-					if err := errors.Join(err1, err2); err == nil {
-						h.pushCorrectionEnded(ctx, wish, project, settings, p, c, true)
+				if hold, projectID := pushOfCorrection(wish, c.GetId()); hold.PushHold != nil {
+					if project, err := store.Get[*planv1.Project](ctx, h.store, projectID); err == nil {
+						h.pushCorrectionEnded(ctx, wish, project, hold, c, true)
 					}
 				}
 			}
@@ -502,33 +500,30 @@ func tasksByID(ctx context.Context, r store.Reader, ids []string) ([]*planv1.Tas
 	return out, nil
 }
 
-// pushOfCorrection is the push taskID is the correction worker of, if any, as the branch it corrects sees it: each
-// branch keeps its hold (plan.PushHolds, W37).
-func pushOfCorrection(wish *planv1.Wish, taskID string) *planv1.WishPush {
+// pushOfCorrection is the hold taskID is the correction worker of, if any, with the project of its push: each branch
+// keeps its hold (plan.PushHolds, W37). Its PushHold is nil when none.
+func pushOfCorrection(wish *planv1.Wish, taskID string) (hold plan.BranchHold, projectID string) {
 	if wish == nil || taskID == "" {
-		return nil
+		return plan.BranchHold{}, ""
 	}
 	for _, p := range wish.GetPushes() {
 		for _, held := range plan.PushHolds(p) {
 			if held.GetCorrectedBy() == taskID {
-				return held
+				return held, p.GetProjectId()
 			}
 		}
 	}
-	return nil
+	return plan.BranchHold{}, ""
 }
 
-// pushCorrectionEnded handles a push correction worker that ended without being done (failed or stopped): it asks the person.
+// pushCorrectionEnded handles a push correction worker that ended without being done (failed or stopped), the
+// correction of hold: it asks the person.
 func (h *Harness) pushCorrectionEnded(
-	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, p *planv1.WishPush, c *planv1.Task, failed bool,
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, hold plan.BranchHold, c *planv1.Task, failed bool,
 ) {
-	f := p.GetFailure()
+	f := hold.GetFailure()
 	if f == nil && c.GetCorrection() != nil {
 		f = c.GetCorrection().GetFailure()
-	}
-	branch := p.GetHeldBranch() // The branch it corrects, not the last one pushed: another azima's maybe (W37).
-	if branch == "" {
-		branch = h.heldBranch(ctx, wish, project.GetDirectory(), project.GetId())
 	}
 	var committed []*planv1.Task
 	if f != nil && len(f.GetTaskIds()) > 0 {
@@ -549,10 +544,11 @@ func (h *Harness) pushCorrectionEnded(
 	var attempts int32
 	if c.GetCorrection() != nil {
 		attempts = c.GetCorrection().GetAttempt()
-	} else if p != nil {
-		attempts = p.GetAttempts()
+	} else {
+		attempts = hold.GetAttempts()
 	}
-	h.askPushHeld(ctx, wish, project, branch, f, attempts, nil, committed)
+	// The branch it corrects, not the last one pushed: another azima's maybe (W37).
+	h.askPushHeld(ctx, wish, project, hold.Branch, f, attempts, nil, committed)
 }
 
 // clearCorrectionLinks clears links pointing to taskID as corrected_by on any push,
@@ -565,11 +561,7 @@ func (h *Harness) clearCorrectionLinks(ctx context.Context, tx *store.Tx, wishID
 	if err == nil && wish != nil {
 		changed := false
 		for _, p := range wish.GetPushes() {
-			if p.GetCorrectedBy() == taskID {
-				p.CorrectedBy = ""
-				changed = true
-			}
-			for _, held := range p.GetHolds() { // Another branch's hold, kept aside (W37).
+			for _, held := range p.GetHolds() {
 				if held.GetCorrectedBy() == taskID {
 					held.CorrectedBy = ""
 					changed = true

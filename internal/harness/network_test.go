@@ -285,7 +285,7 @@ func TestIntegrate_NetworkPushChecks(t *testing.T) {
 		if runs, _ := in.ran(); !slices.Contains(runs, "test") {
 			t.Fatalf("runs %q; want the push checks", runs)
 		}
-		if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" || len(in.corrections(t)) != 0 {
+		if state := in.hold(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" || len(in.corrections(t)) != 0 {
 			t.Fatalf("push checks failed on the network: %v, %d corrections; want nothing held, no correction", state,
 				len(in.corrections(t)))
 		}
@@ -331,11 +331,11 @@ func TestIntegrate_NetworkPushChecks(t *testing.T) {
 		in.testCode, in.testOut = 1, networkOut
 		in.pushDueOnW3(t)
 		in.pass(t, 0)
-		if state := in.pushState(t); state.GetHeld() != "" || len(in.corrections(t)) != 0 {
+		if state := in.hold(t); state.GetHeld() != "" || len(in.corrections(t)) != 0 {
 			t.Fatalf("the first failure on the network: %v; want nothing held, no correction", state)
 		}
 		in.pass(t, time.Minute)
-		if state := in.pushState(t); state.GetHeld() == "" || state.GetCorrectedBy() == "" {
+		if state := in.hold(t); state.GetHeld() == "" || state.GetCorrectedBy() == "" {
 			t.Errorf("failed on the network again, the network up: %v; want held, corrected", state)
 		}
 		if runs, _ := in.ran(); !slices.Equal(slices.DeleteFunc(runs, func(r string) bool { return r != "test" }), []string{"test", "test"}) {

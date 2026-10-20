@@ -488,7 +488,9 @@ func TestBuildBrief(t *testing.T) {
 				CreateTime: timestamppb.Now()}}
 		},
 		wish: func(w *planv1.Wish, tasks []*planv1.Task) {
-			w.Pushes = []*planv1.WishPush{{ProjectId: w.GetProjectIds()[0], Held: "push checks failed: test exited 1", CorrectedBy: tasks[0].GetId()}}
+			w.Pushes = []*planv1.WishPush{{ProjectId: w.GetProjectIds()[0], Holds: map[string]*planv1.PushHold{
+				"feat/x": {Held: "push checks failed: test exited 1", CorrectedBy: tasks[0].GetId()},
+			}}}
 		},
 		want: []string{"- Push held in api: push checks failed: test exited 1, corrected by W10.\n"},
 	}, {
