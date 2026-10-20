@@ -165,8 +165,10 @@ exec cat
     const latencyMs = seenMs - emittedMs;
     console.log(`LEAD_CMD_TO_WINDOW_MS=${latencyMs}`);
     expect(latencyMs).toBeGreaterThanOrEqual(0);
-    // A shared CI runner (2 vCPU) took 2.5 s for the whole way (W487): its bar is looser.
-    expect(latencyMs).toBeLessThan(process.env.CI ? 5_000 : 2_000);
+    // A shared CI runner (2 vCPU) or testall running beside other suites took over 2 s: its bar is looser.
+    expect(latencyMs).toBeLessThan(
+      process.env.CI || process.env.DJINN_TEST_BESIDE ? 5_000 : 2_000,
+    );
 
     // While the batch runs, the first command is marked .now and the eye is in the thinking mood.
     await expect(lines.first()).toHaveClass(/now/);
