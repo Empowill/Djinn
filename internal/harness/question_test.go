@@ -654,7 +654,7 @@ func TestEnlighten(t *testing.T) {
 		e.ended(t, invs[0].GetId())
 	})
 
-	// Replays W19 of wish Will retour beta (16/10/2026): an investigator ended on refused djinn commands and did nothing;
+	// Replays another project (16/10/2026): an investigator, W19, ended on refused djinn commands and did nothing;
 	// Djinn started W20 in its place, which closes the failed one, continued in it; the retry is not started a third time;
 	// it leaves the lead's failed list once another one revised its question, and closes when the question is answered.
 	t.Run("failed_investigator_retry", func(t *testing.T) {

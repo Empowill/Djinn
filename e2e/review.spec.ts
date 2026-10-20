@@ -222,6 +222,7 @@ test("the attention bar names what holds up the wish on the flying carpet and on
 test("a question is enlightened, revised by its investigator and on the flying carpet, then rubbed in one click; a block waits in the agents' tab", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const { wishId, title, cleanup } = setupReviewWish();

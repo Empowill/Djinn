@@ -9,7 +9,7 @@ A task that ends done while its worker's final note says it waits ("I wait for t
 background (a benchmark, a build, a monitor watching a job). The task ends with that turn: what the run gave is lost,
 and so is the worktree it wrote to, which Djinn removes once the task is done.
 
-**Why:** 16/10/2026, wish Will retour beta, W31: the worker started a paid benchmark as a Claude Code background task
+**Why:** 16/10/2026, in a wish of another project: a worker started a paid benchmark as a Claude Code background task
 with a monitor, then ended its turn saying "I wait for the rest". Ten minutes later Claude Code logged "Background
 tasks still running 10m after the last turn (monitor ...); stopping them", the task ended done, Djinn removed its
 worktree: 11.60 USD spent for nothing. W80 fixed both sides: Claude workers run with

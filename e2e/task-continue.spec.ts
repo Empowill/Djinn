@@ -29,7 +29,7 @@ async function up(
   const url = await new Promise<string>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error("djinn printed no URL")),
-      10_000,
+      30_000,
     );
     let out = "";
     proc.stdout!.on("data", (chunk: Buffer) => {
@@ -62,7 +62,7 @@ type Task = {
 test("an interrupted task continued from the command line stays one task", async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-continue-"));

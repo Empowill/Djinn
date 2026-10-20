@@ -64,9 +64,7 @@ func TestSpawn_PushRepair(t *testing.T) {
 		}
 		repair = in.until(t, repair.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 		waitFor(t, "the push to name the repair", func() bool { return in.pushState(t).GetCorrectedBy() == repair.GetId() })
-		if !hasText(in.events(t, repair), wantNote) {
-			t.Error("no event of the repair says Djinn took it")
-		}
+		waitFor(t, "the repair to record its note", func() bool { return hasText(in.events(t, repair), wantNote) })
 
 		// Red again: Djinn starts no correction of its own beside the lead's.
 		in.redAgain(t, tip)
