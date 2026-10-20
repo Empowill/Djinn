@@ -1,0 +1,10 @@
+# After the migration: no branch to hold, the hold gone; the question withdrawn.
+project_id: "@project@"
+last {
+  branch: "main"
+  old_sha: "5e1c0a3b9d7f2e4a6c8b0d1f3e5a7c9b1d3f5a7c"
+  new_sha: "7a9c1e3f5b7d9f1a3c5e7a9c1e3f5b7d9f1a3c5e"
+  count: 2
+  push_time { seconds: 1700000000 }
+}
+forgotten { key: "djinn/T9-no-ref" value: "9f1e2d3c" }

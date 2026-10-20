@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -153,7 +154,9 @@ const (
 // wrote it, marshalled with that build's schema (gen.go there), are read by the store's own path at a start of Djinn,
 // and Recover leaves each as its .want.txtpb says: every hold on its branch, the push question about the integration
 // branch or, per azima, withdrawn; in a project gone from the store, which leaves the wish no integration branch there,
-// the hold gone, never under a branch named "", and the question withdrawn (W66). A second start changes nothing.
+// the hold gone, never under a branch named "", and the question withdrawn (W66); so too in a project still in the
+// store where Djinn finds no reference branch, the wish recording no integration branch there. A second start changes
+// nothing.
 func TestMigratePushes_OldStore(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -163,10 +166,12 @@ func TestMigratePushes_OldStore(t *testing.T) {
 		perAzima  bool
 		tips      map[string]string // The commit each azima's branch is at, by the azima's title: red or moved.
 		gone      bool              // Whether the push's project is gone from the store: no integration branch there.
+		noRef     bool              // Whether the push's project has no reference branch: no integration branch there.
 		withdrawn bool              // Whether the push question is withdrawn.
 	}{
 		{fixture: "v0.2.0/wish"},
 		{fixture: "v0.2.0/wish-gone", gone: true, withdrawn: true},
+		{fixture: "v0.2.0/no-ref-branch", noRef: true, withdrawn: true},
 		{fixture: "v0.2.0/wish-unheld"},
 		{fixture: "v0.2.0/azima-run", perAzima: true},
 		{fixture: "v0.2.0/azima-tip", perAzima: true, tips: map[string]string{"first": "moved", "second": "red"}, withdrawn: true},
@@ -213,6 +218,23 @@ func TestMigratePushes_OldStore(t *testing.T) {
 			if c.gone {
 				project = store.NewID()
 			}
+			if c.noRef {
+				// The repository's one branch is neither main nor master, and no remote names one; the wish, made
+				// when it was master, records it no more.
+				if _, err := git(t.Context(), in.repo, "branch", "-m", "work"); err != nil {
+					t.Fatal(err)
+				}
+				if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+					wish, err := store.Get[*planv1.Wish](t.Context(), tx, in.wishID)
+					if err != nil {
+						return err
+					}
+					wish.IntegrationBranches = nil
+					return errors.Join(tx.Journal(actorLocal, "test/no-ref", wish), tx.Put(wish))
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			in.storeOldPush(t, old, project)
 
 			in.restart(t)
@@ -224,6 +246,16 @@ func TestMigratePushes_OldStore(t *testing.T) {
 			wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if c.noRef {
+				p, err := store.Get[*planv1.Project](t.Context(), in.db, project)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ref, _ := plan.ReferenceName(t.Context(), in.home, p); ref != "" || plan.IntegrationBranchOf(wish, project) != "" {
+					t.Fatalf("the project's reference branch is %q, the wish's integration branch %q; want none",
+						ref, plan.IntegrationBranchOf(wish, project))
+				}
 			}
 			if got := pushState(wish, project); !proto.Equal(got, want) {
 				t.Errorf("the push after the migration:\n%v\nunknown fields %q\nwant:\n%v", prototext.Format(got),
