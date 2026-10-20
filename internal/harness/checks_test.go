@@ -516,17 +516,12 @@ func TestHoldPush(t *testing.T) {
 			t.Errorf("W2's events %q lack left to the lead", texts)
 		}
 
-		// Answering Choice A retries with a new correction worker W4.
+		// The lead tries again: its repair, W4, makes them pass.
 		in.mu.Lock()
 		in.testCode = 0
 		in.mu.Unlock()
-		q := in.attachPushQuestion(t)
-		if did := in.answer(t, q, planv1.Choice_CHOICE_A); !strings.HasPrefix(did, "Djinn started W4:") {
-			t.Errorf("what Djinn did: %q", did)
-		}
-		w4 := in.ended(t, in.pushState(t).GetCorrectedBy())
-		if w4.GetCode() != "W4" {
-			t.Errorf("retried worker code %s; want W4", w4.GetCode())
+		if w4 := in.repairByLead(t, "Make the tests pass"); w4.GetCode() != "W4" || w4.GetCorrection() == nil {
+			t.Errorf("the lead's repair %s, correction %v; want W4, a correction", w4.GetCode(), w4.GetCorrection())
 		}
 		in.pass(t, time.Second)
 		if got, tip := in.remoteTip(t, bare), in.tip(t); got != tip {
@@ -537,6 +532,7 @@ func TestHoldPush(t *testing.T) {
 		}
 	})
 
+	// An approval to push without the push checks, recorded before W59, pushes once without them.
 	t.Run("push without checks", func(t *testing.T) {
 		t.Parallel()
 		in := integrating(t)
@@ -559,10 +555,7 @@ func TestHoldPush(t *testing.T) {
 		if state := in.pushState(t); state.GetHeldRuns() != 1 || state.GetQuestionId() != "" || !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
 			t.Fatalf("no work left: the push %v; want left to the lead at once", state)
 		}
-		q := in.attachPushQuestion(t)
-		if did := in.answer(t, q, planv1.Choice_CHOICE_C); did != "Djinn pushes at the integration's next pass, without the push checks" {
-			t.Errorf("what Djinn did: %q", did)
-		}
+		in.approveUnchecked(t)
 		in.pass(t, time.Second)
 		tip := in.tip(t)
 		if got := in.remoteTip(t, bare); got != tip {
@@ -970,17 +963,10 @@ func TestPushHeldBlockReason(t *testing.T) {
 		if !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
 			t.Fatalf("push held %q; want suffix '; left to the lead'", state.GetHeld())
 		}
-		q := in.attachPushQuestion(t)
-
 		in.mu.Lock()
 		in.testCode = 0
 		in.mu.Unlock()
-		in.answer(t, q, planv1.Choice_CHOICE_A)
-
-		wRetry := in.ended(t, in.pushState(t).GetCorrectedBy())
-		if wRetry == nil {
-			t.Fatal("expected retried correction worker")
-		}
+		in.repairByLead(t, "Make the tests pass")
 
 		in.pass(t, time.Second)
 		tip := in.tip(t)
@@ -1104,7 +1090,7 @@ func TestPushHeldBlockReason(t *testing.T) {
 			t.Fatalf("W2 before answer = %v; want pending waiting to be green again", w2)
 		}
 
-		in.answer(t, in.attachPushQuestion(t), planv1.Choice_CHOICE_C)
+		in.approveUnchecked(t) // As recorded before W59.
 
 		w2 = in.until(t, w2.GetId(), waking(in.h, isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING)))
 		in.release(t, w2.GetId())
@@ -1118,7 +1104,7 @@ func TestPushHeldBlockReason(t *testing.T) {
 
 		_, texts := in.integration(t, w1)
 		foundTell := slices.ContainsFunc(texts, func(txt string) bool {
-			return strings.Contains(txt, "without push checks")
+			return strings.Contains(txt, "without the push checks")
 		})
 		if !foundTell {
 			t.Errorf("W1 events %v did not mention pushing without push checks", texts)

@@ -121,8 +121,7 @@ func (h *Harness) pushRepairOf(p *planv1.WishPush, reds []*planv1.WishPush, wish
 
 // claimRepair makes task, which req spawns from outside Djinn in project, the correction of wish's red push checks
 // when it repairs them (req.repair, or aimsAtPushChecks), and refuses it, naming the one that runs, while another
-// correction repairs the same red. tasks are every task, as the spawn read them. While Djinn asks the person about the
-// push, the task stays plain work: their answer says what repairs it.
+// correction repairs the same red. tasks are every task, as the spawn read them.
 func (h *Harness) claimRepair(req *planv1.TaskServiceSpawnRequest, wish *planv1.Wish, project *planv1.Project, task *planv1.Task,
 	tasks []*planv1.Task,
 ) error {
@@ -152,9 +151,6 @@ func (h *Harness) claimRepair(req *planv1.TaskServiceSpawnRequest, wish *planv1.
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"%s already repairs the push checks of %s (red %s): one repair per red; follow it (djinn task watch %s --last 5), "+
 				"or stop it before you spawn another (djinn task stop %s)", c.GetCode(), branch, p.GetHeld(), c.GetId(), c.GetId()))
-	}
-	if p.GetQuestionId() != "" {
-		return nil
 	}
 	task.Correction = &planv1.TaskCorrection{Failure: proto.CloneOf(p.GetFailure()), Attempt: p.GetAttempts() + 1, Adopted: true}
 	if task.GetPartOf() == "" {

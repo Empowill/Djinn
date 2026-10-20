@@ -509,9 +509,6 @@ func pushOfCorrection(wish *planv1.Wish, taskID string) *planv1.WishPush {
 		return nil
 	}
 	for _, p := range wish.GetPushes() {
-		if p.GetQuestionId() != "" {
-			continue
-		}
 		for _, held := range plan.PushHolds(p) {
 			if held.GetCorrectedBy() == taskID {
 				return held
