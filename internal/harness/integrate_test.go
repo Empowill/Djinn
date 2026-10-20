@@ -1291,3 +1291,83 @@ func TestPushHold_OtherAzimaGreen(t *testing.T) {
 		t.Errorf("runs %v: the push checks of %s ran again on the tree they were red on", runs, b2)
 	}
 }
+
+// TestPushHold_PerAzima (W37): the push checks of the second azima's branch hold its push, left to the lead; then
+// those of the first one's go red in turn, left to the lead too. Each branch keeps its own hold: the hold was one per
+// wish and project, and the first branch's took the place of the second's, which then pushed red, or ran its checks
+// again on the very tree they were red on. The first branch, repaired, pushes green and lifts its own hold only.
+func TestPushHold_PerAzima(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	in := integrating(t)
+	in.checking(t, "correction_attempts: 0\n"+lintAtCommit+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	// The tests fail while b.txt is there, on T2's branch; and on T1's while c.txt is there without its fix, d.txt.
+	in.verdict = func(dir string) (string, int) {
+		has := func(name string) bool {
+			_, err := os.Stat(filepath.Join(dir, "src", name))
+			return err == nil
+		}
+		if has("b.txt") || has("c.txt") && !has("d.txt") {
+			return "--- FAIL: TestE2E", 1
+		}
+		return "", 0
+	}
+	bare := in.remote(t)
+	in.setAzimaStrategy(t)
+	t1, t2 := in.azima(t, in.wishID, "Bounded Loop"), in.azima(t, in.wishID, "Second Part")
+	b1, b2 := azimaBranchName(t1), azimaBranchName(t2)
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	in.pass(t, 0)
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
+	in.pass(t, time.Second)
+	red2 := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
+	holds := heldBranches(in.pushState(t))
+	if h := holds[b2]; !strings.HasSuffix(h.GetHeld(), "; left to the lead") || h.GetFailedSha() != red2 {
+		t.Fatalf("the holds %v; want %s held at %s, left to the lead", holds, b2, short8(red2))
+	}
+	held2 := holds[b2].GetHeld()
+
+	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	in.pass(t, time.Second)
+	red1 := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
+	holds = heldBranches(in.pushState(t))
+	if h := holds[b1]; !strings.HasSuffix(h.GetHeld(), "; left to the lead") || h.GetFailedSha() != red1 {
+		t.Fatalf("the holds %v; want %s held at %s, left to the lead", holds, b1, short8(red1))
+	}
+	if h := holds[b2]; h.GetHeld() != held2 || h.GetFailedSha() != red2 || h.GetFailure().GetBase() != red2 {
+		t.Fatalf("the holds %v; want %s still held as %q: the hold of %s took its place", holds, b2, held2, b1)
+	}
+
+	in.finished(t, "W4", map[string]string{"app/src/d.txt": "d\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	in.pass(t, time.Second)
+	tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
+	if got := in.git(t, bare, "rev-parse", "refs/heads/"+b1); got != tip {
+		t.Fatalf("origin's %s at %s, want %s pushed green", b1, got, tip)
+	}
+	state := in.pushState(t)
+	holds = heldBranches(state)
+	if _, ok := holds[b1]; ok || len(holds) != 1 || holds[b2].GetHeld() != held2 || holds[b2].GetFailedSha() != red2 {
+		t.Errorf("after the green push of %s, the holds %v; want %s alone held, as %q", b1, holds, b2, held2)
+	}
+	if state.GetHeld() != held2 || state.GetHeldBranch() != b2 {
+		t.Errorf("the push shows %q held on %q; want the hold of %s, %q", state.GetHeld(), state.GetHeldBranch(), b2, held2)
+	}
+	in.ran()
+	in.pass(t, time.Second)
+	if got := commitOf(t.Context(), bare, "refs/heads/"+b2); got != "" {
+		t.Errorf("origin's %s at %s: pushed while its push checks are red", b2, got)
+	}
+	if runs, _ := in.ran(); slices.Contains(runs, "test") {
+		t.Errorf("runs %v: the push checks of %s ran again on the tree they were red on", runs, b2)
+	}
+}
+
+// heldBranches are the holds of p by branch, each as its branch sees it (plan.PushHolds).
+func heldBranches(p *planv1.WishPush) map[string]*planv1.WishPush {
+	out := map[string]*planv1.WishPush{}
+	for _, h := range plan.PushHolds(p) {
+		out[h.GetHeldBranch()] = h
+	}
+	return out
+}
