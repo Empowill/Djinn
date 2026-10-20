@@ -400,12 +400,13 @@ func (h *Harness) holdSeen(
 }
 
 // pushHeldAlready tells whether the push of wish's branch in project, held as cur says, needs nothing more for push
-// checks red at sha: they were left to the lead at sha, or a correction runs. A push question still open is withdrawn:
-// no push is due while it stays open, so nobody would act on the hold.
+// checks red at sha: they were left to the lead at sha, or a correction runs. A push question of branch still open is
+// withdrawn: no push is due while it stays open, so nobody would act on the hold. One about another branch's push, under
+// the per-azima strategy, stays (W61).
 func (h *Harness) pushHeldAlready(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, sha string, cur *planv1.WishPush,
 ) bool {
-	if id := cur.GetQuestionId(); id != "" {
+	if id := cur.GetQuestionId(); id != "" && h.asksPushOf(ctx, id, branch) {
 		h.withdrawPushQuestion(ctx, wish.GetId(), project.GetId(), id,
 			fmt.Sprintf("Djinn: the push checks of %s ran again at %s and are red; Djinn acts on them instead.", branch, short8(sha)))
 	}
@@ -460,6 +461,15 @@ func (h *Harness) correctPush(
 	h.askPushHeld(ctx, wish, project, branch, f, attempts, unstarted, committed)
 }
 
+// asksPushOf tells whether the question id asks about a push of branch: its text names it (pushBranch), or it is gone.
+func (h *Harness) asksPushOf(ctx context.Context, id, branch string) bool {
+	q, err := store.Get[*planv1.Question](ctx, h.store, id)
+	if err != nil {
+		return true // withdrawPushQuestion lets go of it.
+	}
+	return strings.HasPrefix(q.GetText(), "Push "+branch+" to ") || strings.Contains(q.GetText(), " push of "+branch+": ")
+}
+
 // withdrawPushQuestion withdraws id, the question the push of the wish wishID in the project projectID waits on, with
 // note, and lets go of it.
 func (h *Harness) withdrawPushQuestion(ctx context.Context, wishID, projectID, id, note string) {
@@ -505,7 +515,7 @@ func (h *Harness) askPushHeld(
 		tip = sha
 	}
 	edit := h.holdEdit(context.WithoutCancel(ctx), wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
-		p.QuestionId, p.Approved, p.CorrectedBy, p.Failure = "", false, "", f
+		p.Approved, p.CorrectedBy, p.Failure = false, "", f // A question still open is about another branch (W61).
 		p.Held = fmt.Sprintf("at %s, %s; left to the lead", short8(tip), headline(f.GetReason()))
 		p.FailedSha = tip
 	})

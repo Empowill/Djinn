@@ -180,7 +180,9 @@ still held shows there. Until 20/10/2026 a wish had one hold per project: a seco
 place of the first one's hold, and counted its runs on top of the first one's. Your answer to a push question,
 **Push it**, **Not now** or **Push again**, touches no hold: Djinn asks it only past green push checks. Until 21/10/2026
 it read the hold shown at the top as the question's: **Push it** on one azima's branch started a correction of another
-one's, held and left to the Djinn, and did not push the branch asked about.
+one's, held and left to the Djinn, and did not push the branch asked about. A push question about one azima's branch
+stays open when another one's push checks go red, pushed by hand; only its own branch going red withdraws it. Until
+21/10/2026 any red withdrew it, and Djinn asked it again at the next push due.
 
 **One repair per red.** A task the Djinn spawns to repair the red push checks, flagged as a repair or naming them in its
 title or its instructions with the commit they failed at, becomes their correction: Djinn starts none of its own while

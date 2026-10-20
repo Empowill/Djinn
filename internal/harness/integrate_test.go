@@ -1451,6 +1451,64 @@ func TestPushHold_PerAzimaQuestion(t *testing.T) {
 	})
 }
 
+// TestPushHold_PerAzimaOtherQuestion (W61): under the per-azima strategy, Djinn asks about a push of the second azima's
+// branch, green; the person pushes the first one's by hand, and its push checks are red, then corrected or left to the
+// lead. The question about the second branch stays open, and the push still waits on it: the red checks of another
+// branch withdrew it.
+func TestPushHold_PerAzimaOtherQuestion(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	for _, attempts := range []int{0, 1} {
+		t.Run(fmt.Sprintf("%d correction attempts", attempts), func(t *testing.T) {
+			t.Parallel()
+			in := integrating(t)
+			in.checking(t, fmt.Sprintf("correction_attempts: %d\n", attempts)+lintAtCommit+
+				"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+			// The tests fail while a.txt is there: on T1's branch, never on T2's.
+			in.verdict = func(dir string) (string, int) {
+				if _, err := os.Stat(filepath.Join(dir, "src", "a.txt")); err == nil {
+					return "--- FAIL: TestE2E", 1
+				}
+				return "", 0
+			}
+			in.remote(t)
+			in.setAzimaStrategy(t)
+			if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+				WishId: in.wishID, PushMode: planv1.PushMode_PUSH_MODE_ASK,
+			})); err != nil {
+				t.Fatal(err)
+			}
+			t1, t2 := in.azima(t, in.wishID, "Bounded Loop"), in.azima(t, in.wishID, "Second Part")
+			b1, b2 := azimaBranchName(t1), azimaBranchName(t2)
+			in.finished(t, "W1", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
+			in.pass(t, time.Second)
+			q := in.pushQuestion(t)
+			if want := "Push " + b2 + " to origin?"; !strings.HasPrefix(q.GetText(), want) {
+				t.Fatalf("the question %q; want it to start %q", q.GetText(), want)
+			}
+
+			in.finished(t, "W2", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+			in.pass(t, time.Second)
+			if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, b1); err == nil || !strings.Contains(err.Error(), "held") {
+				t.Fatalf("the push of %s: %v; want it held", b1, err)
+			}
+			if !plan.PushHeld(heldBranches(in.pushState(t))[b1]) {
+				t.Fatalf("the push of %s %v; want it held", b1, in.pushState(t))
+			}
+			got, err := store.Get[*planv1.Question](t.Context(), in.db, q.GetId())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.GetWithdrawal() != nil {
+				t.Errorf("%s withdrawn: %q; want it open, about %s", got.GetCode(), got.GetWithdrawal().GetNote(), b2)
+			}
+			if id := in.pushState(t).GetQuestionId(); id != q.GetId() {
+				t.Errorf("the push waits on the question %q; want %s's, %s", id, b2, q.GetId())
+			}
+		})
+	}
+}
+
 // heldBranches are the holds of p by branch, each as its branch sees it (plan.PushHolds).
 func heldBranches(p *planv1.WishPush) map[string]*planv1.WishPush {
 	out := map[string]*planv1.WishPush{}
