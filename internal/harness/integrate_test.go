@@ -1451,61 +1451,101 @@ func TestPushHold_PerAzimaQuestion(t *testing.T) {
 	})
 }
 
-// TestPushHold_PerAzimaOtherQuestion (W61): under the per-azima strategy, Djinn asks about a push of the second azima's
-// branch, green; the person pushes the first one's by hand, and its push checks are red, then corrected or left to the
-// lead. The question about the second branch stays open, and the push still waits on it: the red checks of another
-// branch withdrew it.
+// TestPushHold_PerAzimaOtherQuestion (W61, W62): under the per-azima strategy, Djinn asks about a push of an azima's
+// branch, green, in each form it asks it: in ask mode ("Push X to …"), or once the remote refused it ("… refused the
+// push of X: …"). The person pushes the first azima's branch by hand, and its push checks are red, then corrected or
+// left to the lead. A question about the second azima's branch stays open, and the push still waits on it, even when a
+// commit it brings names the first branch's push in the other form; one about the first azima's branch is withdrawn.
 func TestPushHold_PerAzimaOtherQuestion(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
-	for _, attempts := range []int{0, 1} {
-		t.Run(fmt.Sprintf("%d correction attempts", attempts), func(t *testing.T) {
-			t.Parallel()
-			in := integrating(t)
-			in.checking(t, fmt.Sprintf("correction_attempts: %d\n", attempts)+lintAtCommit+
-				"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
-			// The tests fail while a.txt is there: on T1's branch, never on T2's.
-			in.verdict = func(dir string) (string, int) {
-				if _, err := os.Stat(filepath.Join(dir, "src", "a.txt")); err == nil {
-					return "--- FAIL: TestE2E", 1
+	for _, c := range []struct {
+		name    string
+		refused bool // The remote refused the push, else Djinn asks in ask mode.
+		first   bool // The question is about the first azima's branch, pushed red.
+		title   bool // The commit the question brings, its title in the question, names the first branch's push.
+	}{
+		{name: "asked"},
+		{name: "asked, a title names the other push", title: true},
+		{name: "refused", refused: true},
+		{name: "asked about the red branch", first: true},
+		{name: "refused about the red branch", refused: true, first: true},
+	} {
+		for _, attempts := range []int{0, 1} {
+			t.Run(fmt.Sprintf("%s, %d correction attempts", c.name, attempts), func(t *testing.T) {
+				t.Parallel()
+				in := integrating(t)
+				in.checking(t, fmt.Sprintf("correction_attempts: %d\n", attempts)+lintAtCommit+
+					"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+				// The tests fail while a.txt is there: on T1's branch once W3 is in, never on T2's.
+				in.verdict = func(dir string) (string, int) {
+					if _, err := os.Stat(filepath.Join(dir, "src", "a.txt")); err == nil {
+						return "--- FAIL: TestE2E", 1
+					}
+					return "", 0
 				}
-				return "", 0
-			}
-			in.remote(t)
-			in.setAzimaStrategy(t)
-			if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
-				WishId: in.wishID, PushMode: planv1.PushMode_PUSH_MODE_ASK,
-			})); err != nil {
-				t.Fatal(err)
-			}
-			t1, t2 := in.azima(t, in.wishID, "Bounded Loop"), in.azima(t, in.wishID, "Second Part")
-			b1, b2 := azimaBranchName(t1), azimaBranchName(t2)
-			in.finished(t, "W1", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
-			in.pass(t, time.Second)
-			q := in.pushQuestion(t)
-			if want := "Push " + b2 + " to origin?"; !strings.HasPrefix(q.GetText(), want) {
-				t.Fatalf("the question %q; want it to start %q", q.GetText(), want)
-			}
+				bare := in.remote(t)
+				in.setAzimaStrategy(t)
+				t1, t2 := in.azima(t, in.wishID, "Bounded Loop"), in.azima(t, in.wishID, "Second Part")
+				b1, b2 := azimaBranchName(t1), azimaBranchName(t2)
+				asked, about := t2, b2
+				if c.first {
+					asked, about = t1, b1
+				}
+				title := "Work of W2"
+				if c.title {
+					title = "Keep the push of " + b1 + ": one hold per branch"
+				}
+				want := "Push " + about + " to origin?"
+				if c.refused {
+					// Pushed once; then someone else pushes to origin's branch, which Djinn cannot fetch: git refuses
+					// the next push.
+					in.finished(t, "W1", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = asked.GetId() })
+					in.pass(t, time.Second)
+					tip := in.git(t, bare, "rev-parse", "refs/heads/"+about)
+					theirs := in.git(t, bare, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit-tree", "-p", tip, "-m", "Theirs", tip+"^{tree}")
+					in.git(t, bare, "update-ref", "refs/heads/"+about, theirs)
+					in.git(t, in.repo, "remote", "set-url", "--push", "origin", bare)
+					in.git(t, in.repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
+					want = "origin refused the push of " + about + ": "
+				} else if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+					WishId: in.wishID, PushMode: planv1.PushMode_PUSH_MODE_ASK,
+				})); err != nil {
+					t.Fatal(err)
+				}
+				in.finished(t, "W2", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) {
+					task.PartOf, task.Title = asked.GetId(), title
+				})
+				in.pass(t, time.Second)
+				q := in.pushQuestion(t)
+				if !strings.HasPrefix(q.GetText(), want) || !c.refused && !strings.Contains(q.GetText(), title) {
+					t.Fatalf("the question %q; want it to start %q", q.GetText(), want)
+				}
 
-			in.finished(t, "W2", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
-			in.pass(t, time.Second)
-			if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, b1); err == nil || !strings.Contains(err.Error(), "held") {
-				t.Fatalf("the push of %s: %v; want it held", b1, err)
-			}
-			if !plan.PushHeld(heldBranches(in.pushState(t))[b1]) {
-				t.Fatalf("the push of %s %v; want it held", b1, in.pushState(t))
-			}
-			got, err := store.Get[*planv1.Question](t.Context(), in.db, q.GetId())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.GetWithdrawal() != nil {
-				t.Errorf("%s withdrawn: %q; want it open, about %s", got.GetCode(), got.GetWithdrawal().GetNote(), b2)
-			}
-			if id := in.pushState(t).GetQuestionId(); id != q.GetId() {
-				t.Errorf("the push waits on the question %q; want %s's, %s", id, b2, q.GetId())
-			}
-		})
+				in.finished(t, "W3", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+				in.pass(t, time.Second)
+				if _, err := in.h.Push(t.Context(), in.wishID, in.projectID, b1); err == nil || !strings.Contains(err.Error(), "held") {
+					t.Fatalf("the push of %s: %v; want it held", b1, err)
+				}
+				if !plan.PushHeld(heldBranches(in.pushState(t))[b1]) {
+					t.Fatalf("the push of %s %v; want it held", b1, in.pushState(t))
+				}
+				got, err := store.Get[*planv1.Question](t.Context(), in.db, q.GetId())
+				if err != nil {
+					t.Fatal(err)
+				}
+				id := in.pushState(t).GetQuestionId()
+				switch {
+				case c.first && (got.GetWithdrawal() == nil || id == q.GetId()):
+					t.Errorf("%s withdrawal %v, the push waits on %q; want it withdrawn and let go: it is about %s, red", got.GetCode(),
+						got.GetWithdrawal(), id, b1)
+				case !c.first && got.GetWithdrawal() != nil:
+					t.Errorf("%s withdrawn: %q; want it open, about %s", got.GetCode(), got.GetWithdrawal().GetNote(), b2)
+				case !c.first && id != q.GetId():
+					t.Errorf("the push waits on the question %q; want %s's, %s", id, b2, q.GetId())
+				}
+			})
+		}
 	}
 }
 

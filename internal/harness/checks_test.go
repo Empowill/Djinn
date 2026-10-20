@@ -739,6 +739,51 @@ func TestHoldPush(t *testing.T) {
 	})
 }
 
+// TestAsksPushOf (W62): each text Djinn writes for a push question (push.go: "Push X to …" in ask mode, "… refused
+// the push of X: …" once the remote refused it) names its branch for asksPushOf, and only it: not a branch it is a
+// prefix of, by its code (T1, T10) or by a slash, and not a branch named in a commit's title or in git's refusal.
+func TestAsksPushOf(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	in := integrating(t)
+	for i, c := range []struct {
+		text, branch string
+		want         bool
+	}{
+		{"Push djinn/T1-loop to origin? (1 commit: Work of W1)", "djinn/T1-loop", true},
+		{"Push djinn/T1-loop to ? (1 commit: Work of W1)", "djinn/T1-loop", true}, // No remote named.
+		{"origin refused the push of djinn/T1-loop: its branch has commits that this one does not. Djinn never forces a push: what should it do?", "djinn/T1-loop", true},
+
+		{"Push djinn/T10 to origin? (1 commit: Work of W1)", "djinn/T1", false},
+		{"Push djinn/T1 to origin? (1 commit: Work of W1)", "djinn/T10", false},
+		{"Push djinn/T1/part to origin? (1 commit: Work of W1)", "djinn/T1", false},
+		{"Push djinn/T1 to origin? (1 commit: Work of W1)", "djinn", false},
+		{"origin refused the push of djinn/T10: hook declined. Djinn never forces a push: what should it do?", "djinn/T1", false},
+		{"origin refused the push of djinn/T1/part: hook declined. Djinn never forces a push: what should it do?", "djinn/T1", false},
+
+		{"Push djinn/T2 to origin? (2 commits: Keep the push of djinn/T1: one hold per branch, Work of W2)", "djinn/T1", false},
+		{"Push djinn/T2 to origin? (1 commit: origin refused the push of djinn/T1: say it)", "djinn/T1", false},
+		{"origin refused the push of djinn/T2: hook declined the push of djinn/T1: frozen. Djinn never forces a push: what should it do?", "djinn/T1", false},
+		{"Is the push of djinn/T1: ready?", "djinn/T1", false},
+	} {
+		q := &planv1.Question{Id: store.NewID(), WishId: in.wishID, Code: fmt.Sprintf("Q%02d", i+1), Text: c.text, CreateTime: timestamppb.Now()}
+		if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+			if err := tx.Journal(actorLocal, "test/question", q); err != nil {
+				return err
+			}
+			return tx.Put(q)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if got := in.h.asksPushOf(t.Context(), q.GetId(), c.branch); got != c.want {
+			t.Errorf("asksPushOf(%q, %s) = %v; want %v", c.text, c.branch, got, c.want)
+		}
+	}
+	if !in.h.asksPushOf(t.Context(), store.NewID(), "djinn/T1") {
+		t.Error("asksPushOf of a question gone = false; want true: Djinn lets go of it")
+	}
+}
+
 // TestClearPushCorrection: a push held with a correction whose integration record was cleared or whose task was
 // cancelled clears its link, runs its checks again on the next pass, and pushes when green.
 func TestClearPushCorrection(t *testing.T) {
