@@ -163,9 +163,9 @@ the code does not say by itself; remove one when a change makes it false.
 ## End-to-end specs
 
 - **A worker's specs share one djinn.** `e2e/global-setup.ts` starts one `djinn up --browser` per Playwright worker
-  (three on a developer's machine, two on CI, W306); the specs spread over the workers, so which specs share a djinn,
-  and in which order, changes from one run to the next. Specs leave wishes and terminals behind (W32). *Sign:* a spec
-  passes alone and fails in the full run, or in one run out of three. *Do:* the fixture of `e2e/test.ts` names the
+  (three on a developer's machine, two on CI, W306, one on CI's Windows, W36); the specs spread over the workers, so
+  which specs share a djinn, and in which order, changes from one run to the next. Specs leave wishes and terminals
+  behind (W32). *Sign:* a spec passes alone and fails in the full run, or in one run out of three. *Do:* the fixture of `e2e/test.ts` names the
   test that left an active wish or an open question: fix that one. Reproduce with the spec before it on one worker
   (`npx playwright test --config e2e/playwright.config.ts --workers 1 e2e/decision-log.spec.ts e2e/<spec>`), and
   make the spec create its own state (`djinn wish make --json` through `bin/djinn-e2e`) and delete it before it

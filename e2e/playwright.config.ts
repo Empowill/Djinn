@@ -19,8 +19,8 @@ process.env.DJINN_TEST_MACHINE = "calm";
 // One djinn per worker (global-setup.ts starts them, DJINN_URL_i and DJINN_E2E_HOME_i): a worker's specs share theirs,
 // and two workers never touch the same one. This file is loaded again in each worker process, where
 // TEST_PARALLEL_INDEX is its slot: the specs read DJINN_URL and DJINN_E2E_HOME as they run. Three workers on the
-// developer's machine (W246: the e2e from 19.2 to 6.3 min), two on CI's four-core runners; DJINN_E2E_WORKERS or
-// --workers moves it.
+// developer's machine (W246: the e2e from 19.2 to 6.3 min), two on CI's four-core runners, one on Windows (ci.yml,
+// W36); DJINN_E2E_WORKERS or --workers moves it.
 const slot = process.env.TEST_PARALLEL_INDEX;
 if (slot !== undefined && process.env[`DJINN_URL_${slot}`]) {
   process.env.DJINN_URL = process.env[`DJINN_URL_${slot}`];

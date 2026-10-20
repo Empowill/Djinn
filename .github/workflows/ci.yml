@@ -183,8 +183,12 @@ jobs:
       - run: go tool task test-go
       - if: ${{ !cancelled() }}
         run: go tool task test-ui
+      # One Playwright worker, one djinn: with two (W306), the runner stalled 10-36 s after task-continue.spec.ts
+      # restarted its own djinn, and the job took no less time (median 8.8 min on one, 9.1 on two; W36, tilasm L02).
       - if: ${{ !cancelled() }}
         run: go tool task e2e
+        env:
+          DJINN_E2E_WORKERS: "1"
       - name: Keep the traces and screenshots of the end-to-end tests that failed
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
