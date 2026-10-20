@@ -1,0 +1,23 @@
+# The parent of W63, the wish's strategy: the hold held last in the push's own fields, naming its branch (W35), two
+# others in holds (W37), and a push question open.
+question_id: "01a0f000-0000-7000-8000-000000000001"
+held: "at 0f2e0240, test: exit status 1; left to the lead"
+held_runs: 4
+corrected_by: "01a0f000-0000-7000-8000-0000000000c1"
+attempts: 2
+failed_sha: "0f2e02401234567890abcdef0123456789abcdef"
+failure { state: INTEGRATION_STATE_RED base: "0f2e02401234567890abcdef0123456789abcdef" reason: "test: exit status 1" }
+held_branch: "djinn/T2-second"
+holds {
+  key: "djinn/T3-third"
+  value { held: "at 3c4d5e6f, lint: exit status 2" held_runs: 1 failed_sha: "3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d" }
+}
+holds {
+  key: "djinn/T1-first"
+  value {
+    held: "at 1a2b3c4d, test: exit status 1"
+    held_runs: 2
+    attempts: 1
+    failure { state: INTEGRATION_STATE_RED base: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b" output_file: "checks/test.log" }
+  }
+}

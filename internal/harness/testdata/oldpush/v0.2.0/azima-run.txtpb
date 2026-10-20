@@ -1,0 +1,13 @@
+# v0.2.0, per azima: a hold seen on the same tree (held_runs 0, omitted), no branch named, the run held on an azima's
+# branch.
+held: "at 1fcf7b2f, lint: exit status 2"
+failed_sha: "1fcf7b2fdfb476421cd997101c9def78b189cf90"
+failure { state: INTEGRATION_STATE_RED base: "1fcf7b2fdfb476421cd997101c9def78b189cf90" reason: "lint: exit status 2" }
+run {
+  branch: "djinn/T1-first"
+  stage: PUSH_STAGE_HELD
+  check: "lint"
+  start_time { seconds: 1700000000 }
+  end_time { seconds: 1700000060 }
+  note: "lint: exit status 2"
+}

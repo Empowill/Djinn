@@ -1,0 +1,10 @@
+# After the migration: the hold on the wish's integration branch.
+project_id: "@project@"
+holds {
+  key: "@branch@"
+  value {
+    held: "at 0f2e0240, test: exit status 1"
+    held_runs: 1
+    failed_sha: "0f2e02401234567890abcdef0123456789abcdef"
+  }
+}

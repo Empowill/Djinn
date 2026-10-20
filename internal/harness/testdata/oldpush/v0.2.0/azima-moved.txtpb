@@ -1,0 +1,5 @@
+# v0.2.0, per azima: no branch named, no run; red at 1fcf7b2f, which the first azima's branch holds under a commit
+# of the developer's.
+held: "at 1fcf7b2f, test: exit status 1"
+held_runs: 3
+failure { state: INTEGRATION_STATE_RED base: "1fcf7b2fdfb476421cd997101c9def78b189cf90" reason: "test: exit status 1" }
