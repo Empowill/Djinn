@@ -34,14 +34,23 @@ You lead a wish made for one pull request, or a wish one of whose tasks opened i
     after a re-run, it is new. Check the commit: a failure of a commit you already pushed past is no news.
   - `all checks pass at <commit> (5)`: once per push, and again after a failure. Wait for it before you say the pull
     request is ready.
-  - `new comment by <login>`, then `latest comment, by <login>: <its first line>`: a new comment, or a review with a
-    body.
+  - Each new comment, in a paragraph of its own: its author and its link on the first line, then `> ` and its first
+    line, cut at 120 characters. Three sorts, all read:
+    - `new comment by <login>: <link>`: a comment of the conversation;
+    - `approved by <login>: <link>`, `changes requested by <login>: <link>`, `review by <login>: <link>`: a review,
+      approving, requesting changes, or commenting with a body;
+    - `new comment by <login> on <file>:<line>: <link>`: a comment on a line of the diff, a reply in its thread too.
+    A review without a body that only carries comments on lines says nothing of its own: its comments speak. A
+    review still pending, seen only by its author, says nothing. Each comment is said once, known by its link, even
+    after a restart. The developer's own comments are said too: the watcher cannot tell them from yours, which share
+    the same login.
   - `changes requested`: the review decision turned to `CHANGES_REQUESTED`.
   - `mergeable: CONFLICTING`: the pull request is no longer mergeable (`UNKNOWN`, GitHub still computing, says
     nothing).
   - `PR #12: gh failed, trying again: …`: a look failed (network, gh logged out); said once until a look succeeds.
   Pending checks and partial passes say nothing: no news is no failure yet. Its first look says what is already
-  there (failures, all passing, the latest comment, changes requested, a conflict).
+  there (failures, all passing, changes requested, a conflict), and of the comments only the latest one: read the
+  others yourself (step 1 below).
 - It keeps what it said in `$DJINN_HOME/watchers/<task>/babysit-pr-<pr>`, never in the repository: after a restart of
   Djinn, or of its command when it dies, it does not say it again; but for the checks, which its first look says
   again (what it printed as a Djinn hung reached no one). Djinn does not wake you when that is the last line it told
@@ -65,8 +74,9 @@ the wish goes on with its other work.
 
 ## Each time the watcher speaks
 
-1. Read what changed: `gh pr view <pr> --comments`, `gh pr checks <pr>`, and for a failed check
-   `gh run view <run-id> --log-failed`.
+1. Read what changed: the comment at its link, or all of them with `gh pr view <pr> --comments` (the conversation and
+   the reviews) and `gh api repos/{owner}/{repo}/pulls/<pr>/comments` (the comments on lines of the diff, which
+   `gh pr view` does not show); `gh pr checks <pr>`, and for a failed check `gh run view <run-id> --log-failed`.
 2. Decide what to do. A failed check, a review comment to address, a conflict with the base branch: each is a task
    for a worker (`djinn task spawn`), with the failing log or the comment in its prompt. Group what touches the same
    files into one task.
