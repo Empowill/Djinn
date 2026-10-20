@@ -1234,9 +1234,7 @@ func TestPushRepair_SecondAzima(t *testing.T) {
 			t.Errorf("spawn note %q; want it to start %q", res.Msg.GetNote(), want)
 		}
 		waitFor(t, "the push to name the repair", func() bool { return in.pushState(t).GetCorrectedBy() == c.GetId() })
-		if !hasText(in.events(t, c), want) {
-			t.Errorf("no event of %s says %q", c.GetCode(), want)
-		}
+		waitFor(t, "the repair to record its note", func() bool { return hasText(in.events(t, c), want) })
 		repairs(t, in, bare, b1, b2, c)
 	})
 }
