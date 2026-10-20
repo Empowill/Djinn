@@ -152,7 +152,8 @@ const (
 // TestMigratePushes_OldStore (W65): the pushes of testdata/oldpush, each as a store of v0.2.0 or of the parent of W63
 // wrote it, marshalled with that build's schema (gen.go there), are read by the store's own path at a start of Djinn,
 // and Recover leaves each as its .want.txtpb says: every hold on its branch, the push question about the integration
-// branch or, per azima, withdrawn. A second start changes nothing.
+// branch or, per azima, withdrawn; in a project gone from the store, which leaves the wish no integration branch there,
+// the hold gone, never under a branch named "", and the question withdrawn (W66). A second start changes nothing.
 func TestMigratePushes_OldStore(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -161,9 +162,11 @@ func TestMigratePushes_OldStore(t *testing.T) {
 		fixture   string // testdata/oldpush/<build>/<case>
 		perAzima  bool
 		tips      map[string]string // The commit each azima's branch is at, by the azima's title: red or moved.
+		gone      bool              // Whether the push's project is gone from the store: no integration branch there.
 		withdrawn bool              // Whether the push question is withdrawn.
 	}{
 		{fixture: "v0.2.0/wish"},
+		{fixture: "v0.2.0/wish-gone", gone: true, withdrawn: true},
 		{fixture: "v0.2.0/wish-unheld"},
 		{fixture: "v0.2.0/azima-run", perAzima: true},
 		{fixture: "v0.2.0/azima-tip", perAzima: true, tips: map[string]string{"first": "moved", "second": "red"}, withdrawn: true},
@@ -206,15 +209,23 @@ func TestMigratePushes_OldStore(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			in.storeOldPush(t, old)
+			project := in.projectID
+			if c.gone {
+				project = store.NewID()
+			}
+			in.storeOldPush(t, old, project)
 
 			in.restart(t)
 			want := &planv1.WishPush{}
-			r := strings.NewReplacer("@branch@", in.branch, "@project@", in.projectID)
+			r := strings.NewReplacer("@branch@", in.branch, "@project@", project)
 			if err := prototext.Unmarshal([]byte(r.Replace(string(wantText))), want); err != nil {
 				t.Fatal(err)
 			}
-			if got := in.pushState(t); !proto.Equal(got, want) {
+			wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := pushState(wish, project); !proto.Equal(got, want) {
 				t.Errorf("the push after the migration:\n%v\nunknown fields %q\nwant:\n%v", prototext.Format(got),
 					got.ProtoReflect().GetUnknown(), prototext.Format(want))
 			}
@@ -247,9 +258,9 @@ func TestMigratePushes_OldStore(t *testing.T) {
 }
 
 // storeOldPush stops Djinn and writes old, the bytes of a push as the store of an older build wrote them, as the one
-// push of the wish's row, with the project's id the fixture cannot know: a field appended, which protobuf reads as
-// set. The rest of the wish is this build's.
-func (in *integration) storeOldPush(t *testing.T, old []byte) {
+// push of the wish's row, with the id of its project, project, the fixture cannot know: a field appended, which
+// protobuf reads as set. The rest of the wish is this build's.
+func (in *integration) storeOldPush(t *testing.T, old []byte, project string) {
 	t.Helper()
 	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
 	if err != nil {
@@ -262,7 +273,7 @@ func (in *integration) storeOldPush(t *testing.T, old []byte) {
 	}
 	fields := func(m proto.Message) protoreflect.FieldDescriptors { return m.ProtoReflect().Descriptor().Fields() }
 	push := protowire.AppendTag(slices.Clone(old), fields(&planv1.WishPush{}).ByName("project_id").Number(), protowire.BytesType)
-	push = protowire.AppendString(push, in.projectID)
+	push = protowire.AppendString(push, project)
 	payload = protowire.AppendTag(payload, fields(wish).ByName("pushes").Number(), protowire.BytesType)
 	payload = protowire.AppendBytes(payload, push)
 	in.down()

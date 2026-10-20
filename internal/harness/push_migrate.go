@@ -94,7 +94,9 @@ func oldHold(p *planv1.WishPush) (hold *planv1.PushHold, branch string, found bo
 // migratePushes moves, in each wish of the store, the hold a push kept in its own fields before W63 into
 // WishPush.holds, on the branch it named or, before W35, the one heldBranchBefore finds; and gives a push question
 // asked before W63 its branch: the wish's integration branch, or under the per-azima strategy, whose push questions
-// name no branch Djinn can read, none: Djinn withdraws it, and asks again when the push is due. Each wish changed is
+// name no branch Djinn can read, none: Djinn withdraws it, and asks again when the push is due. A wish with no
+// integration branch in the push's project (the project gone from the store) pushes nothing there again: a hold found
+// no branch goes, as no push run would read or clear it, and the push question is withdrawn. Each wish changed is
 // journaled; a wish with nothing to move costs no read of its strategy.
 func (h *Harness) migratePushes(ctx context.Context) error {
 	wishes, err := store.List[*planv1.Wish](ctx, h.store, nil)
@@ -111,16 +113,18 @@ func (h *Harness) migratePushes(ctx context.Context) error {
 				if branch == "" {
 					branch = h.heldBranchBefore(ctx, wish, p, hold, strategy())
 				}
-				if p.Holds == nil {
-					p.Holds = map[string]*planv1.PushHold{}
+				if branch != "" {
+					if p.Holds == nil {
+						p.Holds = map[string]*planv1.PushHold{}
+					}
+					p.Holds[branch] = hold
 				}
-				p.Holds[branch] = hold
 			}
 			if p.GetQuestionId() != "" && p.GetQuestionBranch() == "" {
-				if strategy() {
+				if about := plan.IntegrationBranchOf(wish, p.GetProjectId()); strategy() || about == "" {
 					withdraw = append(withdraw, p)
 				} else {
-					p.QuestionBranch, changed = plan.IntegrationBranchOf(wish, p.GetProjectId()), true
+					p.QuestionBranch, changed = about, true
 				}
 			}
 		}
