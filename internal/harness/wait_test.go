@@ -74,9 +74,8 @@ func TestBlockingQuestionWaits(t *testing.T) {
 	if _, err := os.Stat(waiting.GetWorktree()); err != nil {
 		t.Errorf("its worktree is gone: %v", err)
 	}
-	if got := e.h.Running(); got != 0 {
-		t.Errorf("%d slots taken while it waits, want none", got)
-	}
+	// The task is written WAITING before its run lets go of its slot (forget): wait for the slot, not for the status.
+	settle(t, "its slot free while it waits", func() bool { return e.h.Running() == 0 })
 	if !hasText(e.storedEvents(t, w1.GetId()), "waiting: waiting for the answer to "+q.GetCode()+"; its slot is free") {
 		t.Errorf("events: %q", eventTexts(e.storedEvents(t, w1.GetId())))
 	}
