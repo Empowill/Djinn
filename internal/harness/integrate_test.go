@@ -1037,3 +1037,94 @@ func TestIntegratePass(t *testing.T) {
 		}
 	})
 }
+
+// TestPushRepair_AzimaBranch (W32): under the per-azima strategy, the repair of an azima branch's red push checks
+// merges into that branch, the base of its worktree, never into the wish's own branch. On 20/10/2026 W28 and W29,
+// repairs of djinn/T1-…, merged into main, bringing it the unreviewed work of PR #7 (L01).
+func TestPushRepair_AzimaBranch(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	// redOnAzima makes the push checks of T1's branch red on W1's work, attempts Djinn's corrections may take; it
+	// returns the remote, main's commit and T1's branch.
+	redOnAzima := func(t *testing.T, in *integration, attempts int) (bare, main, b1 string) {
+		t.Helper()
+		in.checking(t, fmt.Sprintf("correction_attempts: %d\n", attempts)+lintAtCommit+
+			"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+		in.testCode, in.testOut = 1, "--- FAIL: TestE2E"
+		in.correctWith(func(dir, _ string) string {
+			fixTests(t, dir, "Fix the e2e")
+			return "text push checks fixed"
+		})
+		bare = in.remote(t)
+		in.setAzimaStrategy(t)
+		main, b1 = in.tip(t), "djinn/T1-bounded-loop"
+		t1 := in.azima(t, in.wishID, "Bounded Loop")
+		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+		in.pass(t, 0)
+		if state := in.pushState(t); state.GetHeld() == "" || state.GetRun().GetBranch() != b1 {
+			t.Fatalf("the push %v; want the push checks of %s red", state, b1)
+		}
+		return bare, main, b1
+	}
+	// repairedInto checks that the work of c, the repair, went into b1, pushed green, and that main stayed at main.
+	repairedInto := func(t *testing.T, in *integration, bare, main, b1 string, c *planv1.Task) {
+		t.Helper()
+		in.mu.Lock()
+		in.testCode = 0
+		in.mu.Unlock()
+		in.pass(t, time.Second)
+		if got := in.get(t, c.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED ||
+			got.GetBranch() != b1 {
+			t.Fatalf("%s's work: %v; want committed into %s", c.GetCode(), got, b1)
+		}
+		tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
+		if !isAncestor(t.Context(), in.repo, c.GetBranch(), tip) {
+			t.Errorf("%s at %s lacks the repair %s", b1, tip, c.GetBranch())
+		}
+		if got := in.tip(t); got != main {
+			t.Errorf("%s moved to %s, want it at %s: the repair of %s merged into it", in.branch, got, main, b1)
+		}
+		if got := in.remoteTip(t, bare); got != main {
+			t.Errorf("origin's %s at %s, want %s", in.branch, got, main)
+		}
+		if got := in.git(t, bare, "rev-parse", "refs/heads/"+b1); got != tip {
+			t.Errorf("origin's %s at %s, want %s pushed once green", b1, got, tip)
+		}
+	}
+
+	t.Run("djinn's correction", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		bare, main, b1 := redOnAzima(t, in, 1)
+		state := in.pushState(t)
+		if state.GetCorrectedBy() == "" {
+			t.Fatalf("the push %v; want a correction", state)
+		}
+		c := in.ended(t, state.GetCorrectedBy())
+		if c.GetPartOf() == "" || in.get(t, c.GetPartOf()).GetCode() != "T1" {
+			t.Errorf("%s part of %q; want T1, whose branch it repairs", c.GetCode(), c.GetPartOf())
+		}
+		repairedInto(t, in, bare, main, b1, c)
+	})
+
+	t.Run("the lead's repair", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		bare, main, b1 := redOnAzima(t, in, 0)
+		res, err := in.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: in.wishID, ProjectId: in.projectID, Provider: planv1.Provider_PROVIDER_FAKE, Title: "Make the e2e pass", Repair: true,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := res.Msg.GetTask()
+		if !c.GetCorrection().GetAdopted() {
+			t.Fatalf("%s: correction %v; want adopted", c.GetCode(), c.GetCorrection())
+		}
+		if c.GetPartOf() == "" || in.get(t, c.GetPartOf()).GetCode() != "T1" {
+			t.Errorf("%s part of %q; want T1, whose branch it repairs", c.GetCode(), c.GetPartOf())
+		}
+		repairedInto(t, in, bare, main, b1, in.ended(t, c.GetId()))
+	})
+}

@@ -287,6 +287,7 @@ func (h *Harness) spawnPushCorrection(
 		WishId: wish.GetId(), ProjectId: project.GetId(),
 		Title:  mergeLine("push checks", failedChecks(f)),
 		Prompt: pushCorrectionPrompt(branch, f, settings, attempt),
+		PartOf: h.pushRepairAzima(ctx, wish, branch), // Its work merges into branch, the one it repairs.
 	}
 	made := &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}}
 	return h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, req, made)

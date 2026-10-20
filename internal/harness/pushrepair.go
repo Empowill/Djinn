@@ -111,6 +111,9 @@ func (h *Harness) claimRepair(req *planv1.TaskServiceSpawnRequest, wish *planv1.
 		return nil
 	}
 	task.Correction = &planv1.TaskCorrection{Failure: proto.CloneOf(p.GetFailure()), Attempt: p.GetAttempts() + 1, Adopted: true}
+	if run := p.GetRun(); task.GetPartOf() == "" && run.GetStage() == planv1.PushStage_PUSH_STAGE_HELD {
+		task.PartOf = h.pushRepairAzima(context.Background(), wish, run.GetBranch()) // As Djinn's own correction (W32).
+	}
 	return nil
 }
 
