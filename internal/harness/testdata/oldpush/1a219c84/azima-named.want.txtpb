@@ -1,0 +1,10 @@
+# After the migration: both holds on their branches, the question withdrawn.
+project_id: "@project@"
+holds {
+  key: "djinn/T1-first"
+  value { held: "at 985328cb, lint: exit status 2" held_runs: 2 failed_sha: "985328cbdb3eddf263adabbe64a64d1280bb5fad" }
+}
+holds {
+  key: "djinn/T2-second"
+  value { held: "at 1fcf7b2f, test: exit status 1" held_runs: 1 failed_sha: "1fcf7b2fdfb476421cd997101c9def78b189cf90" }
+}

@@ -168,6 +168,25 @@ it, the push stays held until that one's work is in (see
 the wish says **The push is held, corrected by W9**. Its work lands like any task's, and its success has the push checks
 run again.
 
+**Into the branch it repairs.** A correction's worktree starts from the branch whose push checks are red, and its work
+merges back into that very branch. Under the per-azima strategy, the correction of an azima's branch is part of that
+azima, the Djinn's repair too: it lands on the azima's branch, never on the wish's own branch nor on main. On 20/10/2026
+two repairs of an azima's branch merged into main, and brought it the azima's work, a pull request not reviewed yet.
+The branch is the one whose push is held, not the last one pushed, which may be another azima's: when the Djinn's repair
+is taken, its note names it. The hold, too, belongs to that branch: each branch keeps its own, with its own correction
+and its own attempts. Another azima's branch going red is held beside it, never in its place; another azima's branch
+pushing green leaves it held; only its repair or its own green push lifts it. The top of the wish shows each branch
+held, its branch named on hover once there are several, and the glance gives each one its line. Until 20/10/2026 a wish
+had one hold per project: a second azima's branch going red took the place of the first one's hold, and counted its
+runs on top of the first one's. Your answer to a push question, **Push it**, **Not now** or **Push again**, touches no
+hold: Djinn asks it only past green push checks. Until 21/10/2026 it read the hold shown at the top as the question's:
+**Push it** on one azima's branch started a correction of another one's, held and left to the Djinn, and did not push
+the branch asked about. A push question records the branch it asks about: it stays open when another azima's push
+checks go red, pushed by hand; only its own branch going red withdraws it. Until 21/10/2026 any red withdrew it, and
+Djinn asked it again at the next push due. Under the per-azima strategy, a push question still open from a version
+before 0.3.0 names no branch Djinn can rely on: the first start of 0.3.0 withdraws it, and Djinn asks it again when the
+push is due.
+
 **One repair per red.** A task the Djinn spawns to repair the red push checks, flagged as a repair or naming them in its
 title or its instructions with the commit they failed at, becomes their correction: Djinn starts none of its own while
 it runs, and the push waits for its work as for Djinn's own correction. While a correction of that red runs, Djinn's or

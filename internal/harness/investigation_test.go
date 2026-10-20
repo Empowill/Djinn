@@ -34,8 +34,10 @@ func (e *env) holdPush(t *testing.T, wishID, projectID string) {
 		if err != nil {
 			return err
 		}
-		w.Pushes = append(w.Pushes, &planv1.WishPush{ProjectId: projectID, Held: "at 0f2e0240, test: exit status 1",
-			FailedSha: "0f2e02401234", Failure: &planv1.IntegrationFailure{Reason: "test: exit status 1", Base: "0f2e02401234"}})
+		w.Pushes = append(w.Pushes, &planv1.WishPush{ProjectId: projectID, Holds: map[string]*planv1.PushHold{
+			plan.IntegrationBranchOf(w, projectID): {Held: "at 0f2e0240, test: exit status 1", FailedSha: "0f2e02401234",
+				Failure: &planv1.IntegrationFailure{Reason: "test: exit status 1", Base: "0f2e02401234"}},
+		}})
 		if err := tx.Journal(actorHarness, "test/hold", w); err != nil {
 			return err
 		}

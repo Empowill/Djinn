@@ -1559,7 +1559,7 @@ func integrationDir(home, projectID, wishID string) string {
 // at its root). Its caller holds the worktree alone (integrateMu, installMu): an index.lock there is a dead git's, taken
 // away (unlockWorktree), or every reset there would fail (W52). Once begun, it ends though djinn up stops.
 func integrationWorktree(ctx context.Context, repo, wt, old string) (string, string, error) {
-	prefix, err := git(ctx, repo, "rev-parse", "--show-prefix")
+	common, prefix, err := repoPlace(ctx, repo)
 	if err != nil {
 		return "", "", err
 	}
@@ -1588,13 +1588,13 @@ func integrationWorktree(ctx context.Context, repo, wt, old string) (string, str
 	if err := os.Remove(setupStamp(wt)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", "", err
 	}
-	if _, err := git(ctx, repo, "worktree", "prune"); err != nil {
+	if _, err := worktreeGit(ctx, common, repo, "prune"); err != nil {
 		return "", "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(wt), 0o700); err != nil {
 		return "", "", err
 	}
-	_, err = git(ctx, repo, "worktree", "add", "--quiet", "--detach", wt, old)
+	_, err = worktreeGit(ctx, common, repo, "add", "--quiet", "--detach", wt, old)
 	return dir, prefix, err
 }
 
@@ -2373,6 +2373,17 @@ func (h *Harness) targetBranch(
 		return "", err.Error(), false
 	}
 	return branch, "", true
+}
+
+// pushRepairAzima is the azima a correction of the red push checks of branch, in wish, is part of: the one whose branch
+// it is, when the wish pushes per azima, so that targetBranch merges the correction's work into the branch it repairs,
+// its worktree's base, never into the wish's own branch (W32: W28 and W29, repairs of djinn/T1-…, merged into main).
+// "" for the wish's own branch.
+func (h *Harness) pushRepairAzima(ctx context.Context, wish *planv1.Wish, branch string) string {
+	if branch == "" || !h.pushesPerAzima(ctx, h.store, wish) {
+		return ""
+	}
+	return azimaOwning(h.wishAzimas(ctx, wish), branch).GetId()
 }
 
 // azimaBranchName is the integration branch name of an azima: djinn/<code-slug> or djinn/<code>.

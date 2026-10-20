@@ -662,26 +662,38 @@ message WishPush {
   string refused = 4;
   // The person said to push (an answer to the question): Djinn pushes at its next pass, whatever the cadence.
   bool approved = 5;
-  // Why the project's push checks hold the push, at the branch's tip then; empty once they pass.
-  string held = 6;
-  // How many times in a row they ran red and held it. Push checks never run twice on the same tree: due again on it,
-  // or once no work is left to commit, Djinn starts a correction.
-  int32 held_runs = 7;
-  // The person said to push without the push checks: the next push skips them, once.
-  bool unchecked = 8;
-  // The correction worker that makes the push checks pass, while it works.
-  string corrected_by = 9;
-  // How many correction workers Djinn started for the push checks at failed_sha.
-  int32 attempts = 10;
-  // The integration branch's commit whose push checks Djinn gave up on once the correction attempts were spent.
-  string failed_sha = 11;
-  // The push checks failure that holds the push.
-  IntegrationFailure failure = 12;
+  // Until W63 the hold of the branch held last; Djinn moves one a store still keeps into holds as it starts.
+  reserved 6 to 12, 15;
+  reserved "held", "held_runs", "unchecked", "corrected_by", "attempts", "failed_sha", "failure", "held_branch";
   // The last push Djinn ran in this project, or runs now: its push checks, then git push.
   PushRun run = 13;
   // The branches whose sync the developer forgot (djinn project forget-sync), each with its tip then: Project.syncs
   // leaves a branch out while its tip stays there, and shows it again once it moves.
   map<string, string> forgotten = 14;
+  // The holds of the branches whose push checks are red, by branch: under the per-azima strategy each branch keeps
+  // its own, and only its own green push lifts it (W35, W37). Empty while no push checks are red.
+  map<string, PushHold> holds = 16;
+  // The branch whose push question_id asks about: only its own push checks going red withdraw the question (W61).
+  // Empty in a question asked before W63: Djinn finds the branch as it starts.
+  string question_branch = 17;
+}
+
+// PushHold is the hold of one branch's push on its red push checks (WishPush.holds): Djinn does not push the branch
+// until its push checks pass again.
+message PushHold {
+  // Why the push checks hold the push, at the branch's tip then.
+  string held = 1;
+  // How many times in a row they ran red and held it. Push checks never run twice on the same tree: due again on it,
+  // or once no work is left to commit, Djinn starts a correction.
+  int32 held_runs = 2;
+  // The correction worker that makes the push checks pass, while it works.
+  string corrected_by = 3;
+  // How many correction workers Djinn started for the push checks at failed_sha.
+  int32 attempts = 4;
+  // The branch's commit whose push checks Djinn gave up on once the correction attempts were spent.
+  string failed_sha = 5;
+  // The push checks failure that holds the push.
+  IntegrationFailure failure = 6;
 }
 
 // PushRun is a push Djinn runs, or ran, of one branch: what the window shows on its sync line, the same however it

@@ -79,6 +79,22 @@ func (in *integration) pushState(t *testing.T) *planv1.WishPush {
 	return pushState(wish, in.projectID)
 }
 
+// hold is the hold of the wish's integration branch on its red push checks; nil when none.
+func (in *integration) hold(t *testing.T) *planv1.PushHold {
+	t.Helper()
+	return in.holdOn(t, in.branch)
+}
+
+// holdOn is the hold of branch, the wish's integration branch or an azima's, on its red push checks; nil when none.
+func (in *integration) holdOn(t *testing.T, branch string) *planv1.PushHold {
+	t.Helper()
+	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return holdOf(wish, in.projectID, branch)
+}
+
 // pushQuestion is the open question Djinn asked about the push.
 func (in *integration) pushQuestion(t *testing.T) *planv1.Question {
 	t.Helper()
@@ -89,14 +105,15 @@ func (in *integration) pushQuestion(t *testing.T) *planv1.Question {
 	return q
 }
 
-// attachPushQuestion attaches a question to wish's push record to test answering it.
+// attachPushQuestion attaches a question to wish's push record, as ask mode asks it, to test answering it.
 func (in *integration) attachPushQuestion(t *testing.T) *planv1.Question {
 	t.Helper()
 	q := &planv1.Question{
 		Id:         store.NewID(),
 		WishId:     in.wishID,
 		Code:       "Q01",
-		Text:       "The push checks of " + in.branch + " stay red.",
+		Text:       "Push " + in.branch + " to origin?",
+		Options:    []string{pushOption, notNowOption},
 		CreateTime: timestamppb.Now(),
 	}
 	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
@@ -115,12 +132,24 @@ func (in *integration) attachPushQuestion(t *testing.T) *planv1.Question {
 			p = &planv1.WishPush{ProjectId: in.projectID}
 			wish.Pushes = append(wish.Pushes, p)
 		}
-		p.QuestionId = q.GetId()
+		p.QuestionId, p.QuestionBranch = q.GetId(), in.branch
 		return tx.Put(wish)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	return q
+}
+
+// repairByLead spawns the lead's repair of the red push checks, title, and gives it once ended.
+func (in *integration) repairByLead(t *testing.T, title string) *planv1.Task {
+	t.Helper()
+	res, err := in.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: in.wishID, ProjectId: in.projectID, Provider: planv1.Provider_PROVIDER_FAKE, Title: title, Repair: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return in.ended(t, res.Msg.GetTask().GetId())
 }
 
 // later moves the clock by d, without a pass.

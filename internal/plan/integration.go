@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -107,6 +108,48 @@ func PushStateOf(wish *planv1.Wish, projectID string) *planv1.WishPush {
 		}
 	}
 	return nil
+}
+
+// PushHeld tells whether hold, a branch's (WishPush.holds), holds its push: its push checks are red.
+func PushHeld(hold *planv1.PushHold) bool { return hold.GetHeld() != "" || hold.GetHeldRuns() > 0 }
+
+// BranchHold is the hold of branch's push in a WishPush (WishPush.holds).
+type BranchHold struct {
+	Branch string
+	*planv1.PushHold
+}
+
+// PushHolds are the holds of p, by branch name: each branch keeps its own (W37).
+func PushHolds(p *planv1.WishPush) []BranchHold {
+	var out []BranchHold
+	for _, b := range slices.Sorted(maps.Keys(p.GetHolds())) {
+		if hold := p.GetHolds()[b]; PushHeld(hold) {
+			out = append(out, BranchHold{Branch: b, PushHold: hold})
+		}
+	}
+	return out
+}
+
+// HoldIn is the hold of branch in p, to edit: a new one when it has none, which SettlePushHolds drops again unless
+// the edit holds the push.
+func HoldIn(p *planv1.WishPush, branch string) *planv1.PushHold {
+	if p.Holds == nil {
+		p.Holds = map[string]*planv1.PushHold{}
+	}
+	hold := p.Holds[branch]
+	if hold == nil {
+		hold = &planv1.PushHold{}
+		p.Holds[branch] = hold
+	}
+	return hold
+}
+
+// SettlePushHolds keeps the holds of p in shape after an edit: a hold that holds nothing more goes.
+func SettlePushHolds(p *planv1.WishPush) {
+	maps.DeleteFunc(p.Holds, func(_ string, hold *planv1.PushHold) bool { return !PushHeld(hold) })
+	if len(p.Holds) == 0 {
+		p.Holds = nil
+	}
 }
 
 // SetIntegrationBranch records branch as wish's integration branch in the project projectID, in place of the one it

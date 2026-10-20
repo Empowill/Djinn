@@ -262,3 +262,46 @@ func TestBriefSaysWhereWorkLands(t *testing.T) {
 		}
 	}
 }
+
+// TestPushHolds (W37): each branch keeps its hold, by name; an edit through HoldIn reaches one branch's only, and a
+// hold that holds nothing more goes (SettlePushHolds).
+func TestPushHolds(t *testing.T) {
+	t.Parallel()
+	branches := func(p *planv1.WishPush) []string {
+		var out []string
+		for _, h := range PushHolds(p) {
+			out = append(out, h.Branch+"="+h.GetHeld())
+		}
+		return out
+	}
+	if got := branches(nil); got != nil {
+		t.Errorf("holds of no push %v; want none", got)
+	}
+	p := &planv1.WishPush{ProjectId: "p", Holds: map[string]*planv1.PushHold{
+		"b2": {Held: "at 2", HeldRuns: 2, CorrectedBy: "c2", Attempts: 1, FailedSha: "2"},
+	}}
+	hold := HoldIn(p, "b1")
+	hold.Held, hold.HeldRuns, hold.FailedSha = "at 1", hold.GetHeldRuns()+1, "1"
+	SettlePushHolds(p)
+	if got, want := branches(p), []string{"b1=at 1", "b2=at 2"}; !slices.Equal(got, want) {
+		t.Fatalf("holds %v, want %v", got, want)
+	}
+	if b1 := p.GetHolds()["b1"]; b1.GetHeldRuns() != 1 || b1.GetCorrectedBy() != "" || b1.GetAttempts() != 0 {
+		t.Errorf("b1's hold %v: it took b2's runs, correction or attempts", b1)
+	}
+	if b2 := p.GetHolds()["b2"]; b2.GetHeldRuns() != 2 || b2.GetCorrectedBy() != "c2" || b2.GetAttempts() != 1 || b2.GetFailedSha() != "2" {
+		t.Errorf("b2's hold %v, want it whole", b2)
+	}
+
+	HoldIn(p, "b3").CorrectedBy = "c3" // Holds nothing: goes.
+	hold.Held, hold.HeldRuns, hold.FailedSha = "", 0, ""
+	SettlePushHolds(p)
+	if got, want := branches(p), []string{"b2=at 2"}; !slices.Equal(got, want) || len(p.GetHolds()) != 1 {
+		t.Errorf("after b1's lifts, holds %v (%v); want %v", got, p.GetHolds(), want)
+	}
+	delete(p.Holds, "b2")
+	SettlePushHolds(p)
+	if p.Holds != nil {
+		t.Errorf("holds %v once none is left; want nil", p.Holds)
+	}
+}

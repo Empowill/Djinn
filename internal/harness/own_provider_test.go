@@ -94,7 +94,7 @@ func TestPushCorrectionOnTheProjectsProvider(t *testing.T) {
 	})
 
 	in.pass(t, 0)
-	state := in.pushState(t)
+	state := in.hold(t)
 	if state.GetCorrectedBy() == "" {
 		t.Fatalf("the push %v; want corrected by a worker", state)
 	}

@@ -287,6 +287,7 @@ func (h *Harness) spawnPushCorrection(
 		WishId: wish.GetId(), ProjectId: project.GetId(),
 		Title:  mergeLine("push checks", failedChecks(f)),
 		Prompt: pushCorrectionPrompt(branch, f, settings, attempt),
+		PartOf: h.pushRepairAzima(ctx, wish, branch), // Its work merges into branch, the one it repairs.
 	}
 	made := &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}}
 	return h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, req, made)
@@ -300,7 +301,7 @@ func (h *Harness) holdPush(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha, command, why, out string,
 	red *planv1.CheckRun,
 ) {
-	cur := pushState(wish, project.GetId())
+	cur := holdOf(wish, project.GetId(), branch) // Its own hold (W37).
 	if h.pushHeldAlready(ctx, wish, project, branch, sha, cur) {
 		return
 	}
@@ -316,9 +317,9 @@ func (h *Harness) holdPush(
 	var runs int32
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-			p.Held, p.HeldRuns, p.Approved, p.Unchecked = held, p.GetHeldRuns()+1, false, false
-			p.FailedSha, p.Failure = sha, f
-			runs = p.GetHeldRuns()
+			hold := plan.HoldIn(p, branch)
+			hold.Held, hold.HeldRuns, hold.FailedSha, hold.Failure = held, hold.GetHeldRuns()+1, sha, f
+			runs, p.Approved = hold.GetHeldRuns(), false
 		})
 	})
 	if err != nil {
@@ -349,12 +350,12 @@ func (h *Harness) holdSeen(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha string,
 	f *planv1.IntegrationFailure,
 ) {
-	cur := pushState(wish, project.GetId())
+	cur := holdOf(wish, project.GetId(), branch) // Its own hold (W37).
 	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") {
 		// Theirs still, the tree unchanged: the tip is recorded, so the next pass does not look again (pushIfDue).
 		if cur.GetFailedSha() != sha {
 			err := h.store.Tx(ctx, func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) { p.FailedSha = sha })
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), editHold(branch, func(hold *planv1.PushHold) { hold.FailedSha = sha }))
 			})
 			if err != nil {
 				logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
@@ -381,8 +382,9 @@ func (h *Harness) holdSeen(
 	}
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-			p.Held, p.Approved, p.Unchecked = fmt.Sprintf("at %s, %s", short8(sha), headline(f.GetReason())), false, false
-			p.FailedSha, p.Failure = sha, f
+			hold := plan.HoldIn(p, branch)
+			hold.Held, hold.FailedSha, hold.Failure = fmt.Sprintf("at %s, %s", short8(sha), headline(f.GetReason())), sha, f
+			p.Approved = false
 		})
 	})
 	if err != nil {
@@ -395,19 +397,15 @@ func (h *Harness) holdSeen(
 	h.correctPush(ctx, wish, project, committed, branch, sha, f, cur.GetAttempts(), tasks)
 }
 
-// pushHeldAlready tells whether the push of wish's branch in project, held as cur says, needs nothing more for push
-// checks red at sha: Djinn asks the person about these very checks, they were left to the lead at sha, or a
-// correction runs. A question about other checks is withdrawn: nobody would act on the hold while it stays open.
+// pushHeldAlready tells whether the push of wish's branch in project, its hold cur, needs nothing more for push checks
+// red at sha: they were left to the lead at sha, or a correction runs. A push question of branch still open is
+// withdrawn: no push is due while it stays open, so nobody would act on the hold. One about another branch's push, under
+// the per-azima strategy, stays (W61).
 func (h *Harness) pushHeldAlready(
-	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, sha string, cur *planv1.WishPush,
+	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, sha string, cur *planv1.PushHold,
 ) bool {
-	if id := cur.GetQuestionId(); id != "" {
-		if cur.GetHeld() != "" && cur.GetFailedSha() == sha {
-			return true // The question is about these very checks: the answer says what Djinn does.
-		}
-		// Red at another commit than the one Djinn asked about: the question is stale. Djinn withdraws it and acts on
-		// these checks instead.
-		h.withdrawPushQuestion(ctx, wish.GetId(), project.GetId(), id,
+	if p := pushState(wish, project.GetId()); p.GetQuestionId() != "" && p.GetQuestionBranch() == branch {
+		h.withdrawPushQuestion(ctx, wish.GetId(), project.GetId(), p.GetQuestionId(),
 			fmt.Sprintf("Djinn: the push checks of %s ran again at %s and are red; Djinn acts on them instead.", branch, short8(sha)))
 	}
 	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") && cur.GetFailedSha() == sha {
@@ -444,9 +442,9 @@ func (h *Harness) correctPush(
 		c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, attempts+1)
 		if err == nil {
 			err = h.store.Tx(ctx, func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-					p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = c.GetId(), attempts+1, sha, f
-				})
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), editHold(branch, func(hold *planv1.PushHold) {
+					hold.CorrectedBy, hold.Attempts, hold.FailedSha, hold.Failure = c.GetId(), attempts+1, sha, f
+				}))
 			})
 			if err == nil {
 				h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s is held, corrected by %s", branch, c.GetCode()))
@@ -482,7 +480,7 @@ func (h *Harness) withdrawPushQuestion(ctx context.Context, wishID, projectID, i
 		}
 		return editPush(ctx, tx, wishID, projectID, func(p *planv1.WishPush) {
 			if p.QuestionId == id {
-				p.QuestionId, p.Approved = "", false
+				p.QuestionId, p.QuestionBranch, p.Approved = "", "", false
 			}
 		})
 	})
@@ -506,9 +504,10 @@ func (h *Harness) askPushHeld(
 	}
 	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-			p.QuestionId, p.Approved, p.CorrectedBy, p.Failure = "", false, "", f
-			p.Held = fmt.Sprintf("at %s, %s; left to the lead", short8(tip), headline(f.GetReason()))
-			p.FailedSha = tip
+			hold := plan.HoldIn(p, branch)
+			hold.CorrectedBy, hold.Failure, hold.FailedSha = "", f, tip
+			hold.Held = fmt.Sprintf("at %s, %s; left to the lead", short8(tip), headline(f.GetReason()))
+			p.Approved = false // A question still open is another branch's (pushHeldAlready): it stays (W61).
 		})
 	})
 	if err != nil {

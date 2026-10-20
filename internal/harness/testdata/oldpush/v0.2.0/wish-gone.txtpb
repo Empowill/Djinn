@@ -1,0 +1,26 @@
+# v0.2.0, the wish's strategy, its project gone from the store since: the hold in the push's own fields, no branch
+# named (before W35), and a push question open. The id of a project the store does not hold is added by the test.
+last {
+  branch: "main"
+  old_sha: "5e1c0a3b9d7f2e4a6c8b0d1f3e5a7c9b1d3f5a7c"
+  new_sha: "7a9c1e3f5b7d9f1a3c5e7a9c1e3f5b7d9f1a3c5e"
+  count: 2
+  push_time { seconds: 1700000000 }
+}
+question_id: "01a0f000-0000-7000-8000-000000000001"
+held: "at 0f2e0240, test: exit status 1"
+held_runs: 2
+unchecked: true
+corrected_by: "01a0f000-0000-7000-8000-0000000000c1"
+attempts: 1
+failed_sha: "0f2e02401234567890abcdef0123456789abcdef"
+failure {
+  state: INTEGRATION_STATE_RED
+  base: "0f2e02401234567890abcdef0123456789abcdef"
+  command: "test"
+  output: "--- FAIL: TestPush"
+  task_ids: "01a0f000-0000-7000-8000-0000000000a1"
+  reason: "test: exit status 1"
+  failed: "TestPush"
+}
+forgotten { key: "djinn/T9-gone" value: "9f1e2d3c" }

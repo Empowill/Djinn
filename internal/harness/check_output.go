@@ -195,12 +195,12 @@ func outputLines(f *planv1.IntegrationFailure) string {
 	return text
 }
 
-// seenRed is the failure that holds the push at state when its push checks ran red on the very tree of sha, the
-// branch's tip now, with a command they would run on it again (settings): they are not run on it twice; nil otherwise.
-// A check that could not run, or whose output was not kept, is no verdict on the tree: nil.
-func seenRed(ctx context.Context, repo string, state *planv1.WishPush, settings plan.Settings, sha string) *planv1.IntegrationFailure {
-	f := state.GetFailure()
-	if state.GetHeld() == "" || state.GetUnchecked() || f.GetState() != planv1.IntegrationState_INTEGRATION_STATE_RED ||
+// seenRed is the failure that holds the push of a branch, its hold, when its push checks ran red on the very tree of
+// sha, the branch's tip now, with a command they would run on it again (settings): they are not run on it twice; nil
+// otherwise. A check that could not run, or whose output was not kept, is no verdict on the tree: nil.
+func seenRed(ctx context.Context, repo string, hold *planv1.PushHold, settings plan.Settings, sha string) *planv1.IntegrationFailure {
+	f := hold.GetFailure()
+	if hold.GetHeld() == "" || f.GetState() != planv1.IntegrationState_INTEGRATION_STATE_RED ||
 		f.GetOutputFile() == "" || f.GetCommand() == "" || f.GetBase() == "" {
 		return nil
 	}

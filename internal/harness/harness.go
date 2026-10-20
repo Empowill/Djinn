@@ -392,10 +392,11 @@ func (h *Harness) Close() {
 // what resuming them needs (provider, session, worktree). Then every interrupted task Djinn may resume waits for the
 // scheduler to resume it (queueInterrupted). The lead's restart event names the workers the last djinn up left
 // running, and those it stopped as it ended, interrupted since it started (lastStart). First, the azimas stored as
-// work before tasks had kinds become azimas (migrateAzimas), and a task part of an azima that is gone becomes part of
-// none (ungroupOrphans). Before all, the processes the last djinn up started and left running are stopped
-// (children.sweep), so that no task resumes beside its old worker: the restart event names them; an ifrit's serves
-// they ran are stopped, their stop commands run (recoverServes).
+// work before tasks had kinds become azimas (migrateAzimas), a task part of an azima that is gone becomes part of
+// none (ungroupOrphans), and the push holds and questions stored before W63 take their shape now (migratePushes).
+// Before all, the processes the last djinn up started and left running are stopped (children.sweep), so that no task
+// resumes beside its old worker: the restart event names them; an ifrit's serves they ran are stopped, their stop
+// commands run (recoverServes).
 func (h *Harness) Recover(ctx context.Context) error {
 	orphans := h.children.sweep()
 	locked := h.unlockWorktrees(ctx) // No git of the last djinn up runs now, and none of this one yet.
@@ -416,6 +417,9 @@ func (h *Harness) Recover(ctx context.Context) error {
 		return err
 	}
 	if err := h.ungroupOrphans(ctx, tasks); err != nil {
+		return err
+	}
+	if err := h.migratePushes(ctx); err != nil {
 		return err
 	}
 	integrating := h.recoverIntegrations(ctx, tasks)

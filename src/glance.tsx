@@ -36,8 +36,8 @@ import {
   type Task,
   TaskRole,
   TaskStatus,
+  type PushHold,
   type Wish,
-  type WishPush,
 } from "../gen/ts/plan/v1/plan_pb";
 import { type ReadState, useDjinn, useOptionalData } from "./data/djinn";
 import {
@@ -149,7 +149,9 @@ export type MergeRow =
       kind: "held";
       projectId: string;
       branch: string;
-      push: WishPush;
+      hold: PushHold;
+      // The output of its red push checks, else the note of the run held.
+      output: string;
       // The tests its output names as failed.
       tests: string[];
       // The correction worker that makes the push checks pass, while it works.
@@ -325,7 +327,12 @@ export function glanceOf(
 // repairKind says what a task repairs, for a repair worker; undefined for any other.
 function repairKind(task: Task, wish?: Wish): RepairKind | undefined {
   if (task.review) return "review";
-  if (wish?.pushes.some((p) => p.correctedBy === task.id)) return "push";
+  if (
+    wish?.pushes.some((p) =>
+      Object.values(p.holds ?? {}).some((h) => h.correctedBy === task.id),
+    )
+  )
+    return "push";
   if (
     task.correction?.failure?.mainSha ||
     wish?.mains.some((m) => m.correctedBy === task.id)
@@ -367,7 +374,9 @@ function mergesOf(tasks: readonly Task[], wish?: Wish): MergeRow[] {
       wish?.integrationBranches.find((b) => b.projectId === push.projectId)
         ?.branch ||
       "";
-    if (run?.stage === PushStage.CHECKING || run?.stage === PushStage.PUSHING)
+    const pushing =
+      run?.stage === PushStage.CHECKING || run?.stage === PushStage.PUSHING;
+    if (pushing && run)
       rows.push({
         kind: "pushing",
         projectId: push.projectId,
@@ -375,15 +384,23 @@ function mergesOf(tasks: readonly Task[], wish?: Wish): MergeRow[] {
         check: run.stage === PushStage.CHECKING ? run.check : "",
         since: run.startTime,
       });
-    else if (push.held && !push.unchecked)
+    // Each branch whose push checks are red keeps its hold (W37); one that pushes again shows its push instead.
+    for (const [held, hold] of Object.entries(push.holds ?? {}).sort(
+      ([a], [b]) => a.localeCompare(b),
+    )) {
+      if (pushing && run?.branch === held) continue;
+      const output =
+        hold.failure?.output || (run?.branch === held ? run.note : "");
       rows.push({
         kind: "held",
         projectId: push.projectId,
-        branch,
-        push,
-        tests: failingTests(push.failure?.output || run?.note || ""),
-        by: tasks.find((x) => x.id === push.correctedBy),
+        branch: held,
+        hold,
+        output,
+        tests: failingTests(output),
+        by: tasks.find((x) => x.id === hold.correctedBy),
       });
+    }
   }
   const queued = done
     .filter((x) => x.integration?.state === IntegrationState.PENDING)
@@ -826,12 +843,12 @@ function MergeItem({
       );
     }
     case "held": {
-      const why = firstLine(row.push.held);
+      const why = firstLine(row.hold.held);
       const words = t("glance.push_held_of", { branch: row.branch });
       return (
         <Line
           className="glance-row glance-merge held"
-          title={`${words}\n${row.push.held}`}
+          title={`${words}\n${row.hold.held}`}
           onOpen={() => onOpenHeld(row)}
         >
           <Mark kind="held" state="held" label={t("glance.legend_held")} />
@@ -922,8 +939,7 @@ function HeldDialog({
   onOpenTask?: (task: Task) => void;
   onClose: () => void;
 }) {
-  const { push, by } = row;
-  const output = push.failure?.output || push.run?.note || "";
+  const { hold, output, by } = row;
   return (
     <ModalFrame
       title={t("glance.push_held_of", { branch: row.branch })}
@@ -932,11 +948,11 @@ function HeldDialog({
       wide
     >
       <div className="glance-held">
-        <p>{push.held}</p>
+        <p>{hold.held}</p>
         {row.tests.length > 0 && (
           <p>{t("glance.held_failed", { tests: row.tests.join(", ") })}</p>
         )}
-        {push.failure?.command && <code>$ {push.failure.command}</code>}
+        {hold.failure?.command && <code>$ {hold.failure.command}</code>}
         {output && <pre className="glance-output">{output}</pre>}
         {by && (
           <p>

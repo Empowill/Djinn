@@ -171,7 +171,7 @@ func TestSyncPush(t *testing.T) {
 				t.Errorf("the note %q lacks %q", p.GetNote(), want)
 			}
 		}
-		state := in.pushState(t)
+		state := in.hold(t)
 		if state.GetCorrectedBy() == "" {
 			t.Fatalf("no correction started: %v", state)
 		}

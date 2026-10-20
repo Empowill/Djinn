@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -33,11 +34,16 @@ var repairWords = regexp.MustCompile(`(?i)\b(red|fail(s|ed|ing|ure)?|repair(s|ed
 // names the push checks and their failure ("Repair feat/qol: push checks red at 76e975e2"), or its title or its prompt
 // names the push checks and the commit they failed at ("feat/qol's push checks are red at 76e975e2"). A prompt that
 // names the push checks alone (a worker told not to run them) repairs nothing.
-func aimsAtPushChecks(title, prompt string, p *planv1.WishPush) bool {
-	title, prompt = strings.ToLower(title), strings.ToLower(prompt)
-	if strings.Contains(title, "push check") && repairWords.MatchString(title) {
+func aimsAtPushChecks(title, prompt string, p *planv1.PushHold) bool {
+	if t := strings.ToLower(title); strings.Contains(t, "push check") && repairWords.MatchString(t) {
 		return true
 	}
+	return namesRed(title, prompt, p)
+}
+
+// namesRed tells whether title or prompt names the push checks p holds red and the commit they failed at.
+func namesRed(title, prompt string, p *planv1.PushHold) bool {
+	title, prompt = strings.ToLower(title), strings.ToLower(prompt)
 	for _, sha := range []string{p.GetFailedSha(), p.GetFailure().GetBase()} {
 		if len(sha) < 8 {
 			continue
@@ -52,24 +58,60 @@ func aimsAtPushChecks(title, prompt string, p *planv1.WishPush) bool {
 	return false
 }
 
-// redPush is the push of wish's integration branch in projectID while its push checks are red; nil when they are not.
-func redPush(wish *planv1.Wish, projectID string) *planv1.WishPush {
-	p := pushState(wish, projectID)
-	if p.GetHeld() == "" || p.GetFailure() == nil || p.GetUnchecked() {
-		return nil
-	}
-	return p
+// redPushes are the holds of the branches whose push checks are red, in the push of wish in projectID, by branch name
+// (plan.PushHolds): each branch keeps its hold (W37). None when no push checks hold it.
+func redPushes(wish *planv1.Wish, projectID string) []plan.BranchHold {
+	return slices.DeleteFunc(plan.PushHolds(pushState(wish, projectID)), func(p plan.BranchHold) bool {
+		return p.GetHeld() == "" || p.GetFailure() == nil
+	})
 }
 
-// pushRepairOf is the correction among tasks that repairs the red push checks p holds in the wish wishID and the
-// project projectID: the one the push names, or a repair Djinn took that the push does not name yet (adoptRepair
-// runs once the spawn is written); nil when none runs, waits to, or waits for its work to merge.
-func (h *Harness) pushRepairOf(p *planv1.WishPush, wishID, projectID string, tasks []*planv1.Task) *planv1.Task {
+// heldFor is the hold among holds (redPushes) that c, a correction, repairs: the one it corrects, else the one red at
+// the commit its failure names, else the one hold there is; with no PushHold when none.
+func heldFor(holds []plan.BranchHold, c *planv1.Task) plan.BranchHold {
+	if i := slices.IndexFunc(holds, func(p plan.BranchHold) bool { return p.GetCorrectedBy() == c.GetId() }); i >= 0 {
+		return holds[i]
+	}
+	if base := c.GetCorrection().GetFailure().GetBase(); base != "" {
+		if i := slices.IndexFunc(holds, func(p plan.BranchHold) bool {
+			return p.GetFailure().GetBase() == base || p.GetFailedSha() == base
+		}); i >= 0 {
+			return holds[i]
+		}
+	}
+	if len(holds) == 1 {
+		return holds[0]
+	}
+	return plan.BranchHold{}
+}
+
+// repairedHold is the hold among reds (redPushes) that task, which req spawns among tasks, repairs: the one whose
+// commit it names, else the one of its azima's branch, else the first by name.
+func repairedHold(req *planv1.TaskServiceSpawnRequest, task *planv1.Task, reds []plan.BranchHold, tasks []*planv1.Task) plan.BranchHold {
+	if i := slices.IndexFunc(reds, func(p plan.BranchHold) bool { return namesRed(req.GetTitle(), req.GetPrompt(), p.PushHold) }); i >= 0 {
+		return reds[i]
+	}
+	if id := task.GetPartOf(); id != "" {
+		if i := slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == id }); i >= 0 {
+			branch := azimaBranchName(tasks[i])
+			if j := slices.IndexFunc(reds, func(p plan.BranchHold) bool { return p.Branch == branch }); j >= 0 {
+				return reds[j]
+			}
+		}
+	}
+	return reds[0]
+}
+
+// pushRepairOf is the correction among tasks that repairs the red push checks p, one of reds (redPushes), holds in
+// the wish wishID and the project projectID: the one the hold names, or a repair Djinn took for it that the hold does
+// not name yet (adoptRepair runs once the spawn is written); nil when none runs, waits to, or waits for its work to
+// merge. Another branch's repair does not repair it (W37).
+func (h *Harness) pushRepairOf(p plan.BranchHold, reds []plan.BranchHold, wishID, projectID string, tasks []*planv1.Task) *planv1.Task {
 	for _, t := range tasks {
 		if t.GetWishId() != wishID || t.GetProjectId() != projectID || t.GetCorrection() == nil {
 			continue
 		}
-		if (t.GetId() == p.GetCorrectedBy() || t.GetCorrection().GetAdopted()) && !h.correctionOver(t) {
+		if (t.GetId() == p.GetCorrectedBy() || t.GetCorrection().GetAdopted() && heldFor(reds, t) == p) && !h.correctionOver(t) {
 			return t
 		}
 	}
@@ -78,8 +120,7 @@ func (h *Harness) pushRepairOf(p *planv1.WishPush, wishID, projectID string, tas
 
 // claimRepair makes task, which req spawns from outside Djinn in project, the correction of wish's red push checks
 // when it repairs them (req.repair, or aimsAtPushChecks), and refuses it, naming the one that runs, while another
-// correction repairs the same red. tasks are every task, as the spawn read them. While Djinn asks the person about the
-// push, the task stays plain work: their answer says what repairs it.
+// correction repairs the same red. tasks are every task, as the spawn read them.
 func (h *Harness) claimRepair(req *planv1.TaskServiceSpawnRequest, wish *planv1.Wish, project *planv1.Project, task *planv1.Task,
 	tasks []*planv1.Task,
 ) error {
@@ -91,26 +132,29 @@ func (h *Harness) claimRepair(req *planv1.TaskServiceSpawnRequest, wish *planv1.
 		return nil
 	}
 	branch := plan.IntegrationBranchOf(wish, project.GetId())
-	p := redPush(wish, project.GetId())
-	if p == nil {
+	reds := redPushes(wish, project.GetId())
+	if len(reds) == 0 {
 		if req.GetRepair() {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 				"the push checks of %s are not red: nothing to repair; spawn it without --repair", branch))
 		}
 		return nil
 	}
-	if !req.GetRepair() && !aimsAtPushChecks(req.GetTitle(), req.GetPrompt(), p) {
+	p := repairedHold(req, task, reds, tasks)
+	if !req.GetRepair() && !aimsAtPushChecks(req.GetTitle(), req.GetPrompt(), p.PushHold) {
 		return nil
 	}
-	if c := h.pushRepairOf(p, wish.GetId(), project.GetId(), tasks); c != nil {
+	ctx := context.Background()
+	branch = p.Branch
+	if c := h.pushRepairOf(p, reds, wish.GetId(), project.GetId(), tasks); c != nil {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"%s already repairs the push checks of %s (red %s): one repair per red; follow it (djinn task watch %s --last 5), "+
 				"or stop it before you spawn another (djinn task stop %s)", c.GetCode(), branch, p.GetHeld(), c.GetId(), c.GetId()))
 	}
-	if p.GetQuestionId() != "" {
-		return nil
-	}
 	task.Correction = &planv1.TaskCorrection{Failure: proto.CloneOf(p.GetFailure()), Attempt: p.GetAttempts() + 1, Adopted: true}
+	if task.GetPartOf() == "" {
+		task.PartOf = h.pushRepairAzima(ctx, wish, branch) // As Djinn's own correction (W32).
+	}
 	return nil
 }
 
@@ -124,12 +168,12 @@ func (h *Harness) adoptRepair(ctx context.Context, c *planv1.Task) {
 		logx.L().Error("adopt a repair", "loop", "push", "task", c.GetCode(), "err", err)
 		return
 	}
-	branch := plan.IntegrationBranchOf(wish, c.GetProjectId())
+	branch := repairedBranch(wish, c)
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		return editPush(ctx, tx, wish.GetId(), c.GetProjectId(), func(p *planv1.WishPush) {
-			p.CorrectedBy, p.Attempts = c.GetId(), c.GetCorrection().GetAttempt()
-			p.Held = strings.TrimSuffix(p.GetHeld(), "; left to the lead")
-		})
+		return editPush(ctx, tx, wish.GetId(), c.GetProjectId(), editHold(branch, func(hold *planv1.PushHold) {
+			hold.CorrectedBy, hold.Attempts = c.GetId(), c.GetCorrection().GetAttempt()
+			hold.Held = strings.TrimSuffix(hold.GetHeld(), "; left to the lead")
+		}))
 	})
 	if err != nil {
 		logx.L().Error("adopt a repair", "loop", "push", "task", c.GetCode(), "wish", wish.GetId(), "err", err)
@@ -159,5 +203,15 @@ func (h *Harness) spawnRepairNote(ctx context.Context, t *planv1.Task) string {
 	if err != nil {
 		return ""
 	}
-	return repairNote(t, plan.IntegrationBranchOf(wish, t.GetProjectId()))
+	return repairNote(t, repairedBranch(wish, t))
+}
+
+// repairedBranch is the branch whose red push checks c, a repair Djinn took in wish, repairs: an azima's under the
+// per-azima strategy, not the wish's own (W33), and among the branches held, the one whose red it took (W37); the
+// wish's integration branch once none holds it.
+func repairedBranch(wish *planv1.Wish, c *planv1.Task) string {
+	if p := heldFor(redPushes(wish, c.GetProjectId()), c); p.PushHold != nil {
+		return p.Branch
+	}
+	return plan.IntegrationBranchOf(wish, c.GetProjectId())
 }

@@ -161,7 +161,7 @@ func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 	if got := in.remoteTip(t, bare); got != old {
 		t.Fatalf("pushed red: origin at %s", got)
 	}
-	state := in.pushState(t)
+	state := in.hold(t)
 	if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
 		t.Fatalf("the push %v; want held and corrected by a worker", state)
 	}
@@ -180,7 +180,7 @@ func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 		t.Errorf("cancelled task status: %v", res.Msg.GetTask().GetStatus())
 	}
 
-	if got := in.pushState(t).GetCorrectedBy(); got != "" {
+	if got := in.hold(t).GetCorrectedBy(); got != "" {
 		t.Errorf("after cancelling correction worker, push corrected_by = %q; want empty", got)
 	}
 
@@ -194,7 +194,7 @@ func TestCancelCorrectionReleasingHeldPush(t *testing.T) {
 	if got := in.remoteTip(t, bare); got != tip {
 		t.Fatalf("push checks passed, not pushed: origin at %s, want %s", got, tip)
 	}
-	if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+	if state := in.hold(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
 		t.Errorf("after push succeeded, push state: %v", state)
 	}
 }

@@ -147,7 +147,7 @@ func (in *integration) leftToTheLead(t *testing.T) (bare, old string) {
 	azima := in.azima(t, in.wishID, "Letters")
 	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
 	in.pass(t, 0)
-	if state := in.pushState(t); !strings.HasSuffix(state.GetHeld(), "; left to the lead") || state.GetFailedSha() != in.tip(t) {
+	if state := in.hold(t); !strings.HasSuffix(state.GetHeld(), "; left to the lead") || state.GetFailedSha() != in.tip(t) {
 		t.Fatalf("the push %v; want held, left to the lead at the branch's tip", state)
 	}
 	return bare, old
@@ -464,7 +464,7 @@ func TestHoldPush(t *testing.T) {
 		if !slices.Contains(gates, "test -") || slices.Contains(gates, "lint -") {
 			t.Errorf("gates %q; want the push check test through its gate, the commit check lint not again", gates)
 		}
-		state := in.pushState(t)
+		state := in.hold(t)
 		if !strings.Contains(state.GetHeld(), "test: test exited 1") || state.GetHeldRuns() != 1 {
 			t.Fatalf("the push %v; want held once, W1 and W2 merged as one batch", state)
 		}
@@ -494,7 +494,7 @@ func TestHoldPush(t *testing.T) {
 
 		// While W3 runs, a second pass does not spawn another correction worker.
 		in.pass(t, 0)
-		if got := in.pushState(t).GetCorrectedBy(); got != w3ID {
+		if got := in.hold(t).GetCorrectedBy(); got != w3ID {
 			t.Errorf("second pass while running changed correction worker to %s; want %s", got, w3ID)
 		}
 
@@ -505,78 +505,29 @@ func TestHoldPush(t *testing.T) {
 		in.ended(t, w3ID)
 		in.pass(t, time.Second)
 
-		state = in.pushState(t)
-		if state.GetQuestionId() != "" {
-			t.Fatalf("push question %s; want none (left to the lead)", state.GetQuestionId())
+		if id := in.pushState(t).GetQuestionId(); id != "" {
+			t.Fatalf("push question %s; want none (left to the lead)", id)
 		}
-		if !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
-			t.Fatalf("push held %q; want suffix '; left to the lead'", state.GetHeld())
+		if !strings.HasSuffix(in.hold(t).GetHeld(), "; left to the lead") {
+			t.Fatalf("push held %q; want suffix '; left to the lead'", in.hold(t).GetHeld())
 		}
 		if _, texts := in.integration(t, w2); !slices.Contains(texts, "the push checks of "+in.branch+" stay red; left to the lead") {
 			t.Errorf("W2's events %q lack left to the lead", texts)
 		}
 
-		// Answering Choice A retries with a new correction worker W4.
+		// The lead tries again: its repair, W4, makes them pass.
 		in.mu.Lock()
 		in.testCode = 0
 		in.mu.Unlock()
-		q := in.attachPushQuestion(t)
-		if did := in.answer(t, q, planv1.Choice_CHOICE_A); !strings.HasPrefix(did, "Djinn started W4:") {
-			t.Errorf("what Djinn did: %q", did)
-		}
-		w4 := in.ended(t, in.pushState(t).GetCorrectedBy())
-		if w4.GetCode() != "W4" {
-			t.Errorf("retried worker code %s; want W4", w4.GetCode())
+		if w4 := in.repairByLead(t, "Make the tests pass"); w4.GetCode() != "W4" || w4.GetCorrection() == nil {
+			t.Errorf("the lead's repair %s, correction %v; want W4, a correction", w4.GetCode(), w4.GetCorrection())
 		}
 		in.pass(t, time.Second)
 		if got, tip := in.remoteTip(t, bare), in.tip(t); got != tip {
 			t.Fatalf("checked again green, not pushed: origin at %s, the branch at %s", got, tip)
 		}
-		if state := in.pushState(t); state.GetHeld() != "" || state.GetHeldRuns() != 0 || state.GetQuestionId() != "" {
+		if state, hold := in.pushState(t), in.hold(t); hold.GetHeld() != "" || hold.GetHeldRuns() != 0 || state.GetQuestionId() != "" {
 			t.Errorf("the push still held: %v", state)
-		}
-	})
-
-	t.Run("push without checks", func(t *testing.T) {
-		t.Parallel()
-		in := integrating(t)
-		in.checking(t, "correction_attempts: 0\n"+
-			"checks { name: \"lint\" command: \"lint\" when: [CHECK_WHEN_COMMIT, CHECK_WHEN_PUSH] }\n"+
-			"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
-		in.testCode = 1
-		bare := in.remote(t)
-		old := in.tip(t)
-		azima := in.azima(t, in.wishID, "Letters")
-		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
-
-		in.pass(t, 0)
-		if runs, _ := in.ran(); !slices.Equal(runs, []string{"lint", "test"}) {
-			t.Errorf("runs %q; want lint at the commit, then test before the push, lint not again", runs)
-		}
-		if got := in.remoteTip(t, bare); got != old {
-			t.Fatalf("pushed red: origin at %s", got)
-		}
-		if state := in.pushState(t); state.GetHeldRuns() != 1 || state.GetQuestionId() != "" || !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
-			t.Fatalf("no work left: the push %v; want left to the lead at once", state)
-		}
-		q := in.attachPushQuestion(t)
-		if did := in.answer(t, q, planv1.Choice_CHOICE_C); did != "Djinn pushes at the integration's next pass, without the push checks" {
-			t.Errorf("what Djinn did: %q", did)
-		}
-		in.pass(t, time.Second)
-		tip := in.tip(t)
-		if got := in.remoteTip(t, bare); got != tip {
-			t.Fatalf("not pushed without the checks: origin at %s", got)
-		}
-		if runs, _ := in.ran(); slices.Contains(runs, "test") {
-			t.Errorf("the push checks ran again: %q", runs)
-		}
-		text := "pushed " + in.branch + " to origin as " + tip[:8] + ", 1 commit (you said to push it; without the push checks, as you said)"
-		if _, texts := in.integration(t, w1); !slices.Contains(texts, text) {
-			t.Errorf("W1's events %q lack %q", texts, text)
-		}
-		if state := in.pushState(t); state.GetHeld() != "" || state.GetUnchecked() {
-			t.Errorf("after the push: %v", state)
 		}
 	})
 
@@ -604,7 +555,7 @@ func TestHoldPush(t *testing.T) {
 		if got := in.remoteTip(t, bare); got != old {
 			t.Fatalf("pushed red: origin at %s", got)
 		}
-		w2ID := in.pushState(t).GetCorrectedBy()
+		w2ID := in.hold(t).GetCorrectedBy()
 		if w2ID == "" {
 			t.Fatalf("the push %v; want corrected by a worker", in.pushState(t))
 		}
@@ -614,7 +565,7 @@ func TestHoldPush(t *testing.T) {
 		}
 		in.pass(t, time.Second)
 		state := in.pushState(t)
-		if state.GetQuestionId() != "" || strings.HasSuffix(state.GetHeld(), "; left to the lead") || state.GetCorrectedBy() != w2ID {
+		if state.GetQuestionId() != "" || strings.HasSuffix(in.hold(t).GetHeld(), "; left to the lead") || in.hold(t).GetCorrectedBy() != w2ID {
 			t.Fatalf("just after the stop, the push %v; want still held, corrected by the stopped worker, nobody asked", state)
 		}
 
@@ -632,7 +583,7 @@ func TestHoldPush(t *testing.T) {
 		if got := in.remoteTip(t, bare); got != tip {
 			t.Fatalf("correction committed, push checks green, not pushed: origin at %s, the branch at %s; push %v", got, tip, in.pushState(t))
 		}
-		if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" || state.GetQuestionId() != "" {
+		if state, hold := in.pushState(t), in.hold(t); hold.GetHeld() != "" || hold.GetCorrectedBy() != "" || state.GetQuestionId() != "" {
 			t.Errorf("after the push, the push still held: %v", state)
 		}
 		if qs := in.questions(t); len(qs) != 0 {
@@ -667,7 +618,7 @@ func TestHoldPush(t *testing.T) {
 		if got := in.remoteTip(t, bare); got != tip {
 			t.Fatalf("question withdrawn, branch green: not pushed: origin at %s, the branch at %s; the push %v", got, tip, in.pushState(t))
 		}
-		if state := in.pushState(t); state.GetHeld() != "" || state.GetQuestionId() != "" {
+		if state, hold := in.pushState(t), in.hold(t); hold.GetHeld() != "" || state.GetQuestionId() != "" {
 			t.Errorf("after the push, the push still held: %v", state)
 		}
 	})
@@ -688,7 +639,7 @@ func TestHoldPush(t *testing.T) {
 			t.Errorf("runs %q; want the push checks on the branch pushed by hand", runs)
 		}
 		state := in.pushState(t)
-		if state.GetHeld() != "" || state.GetFailedSha() != "" || state.GetLast().GetNewSha() != tip {
+		if in.hold(t).GetHeld() != "" || in.hold(t).GetFailedSha() != "" || state.GetLast().GetNewSha() != tip {
 			t.Fatalf("the push %v; want no longer held, last pushed at %s", state, tip)
 		}
 		if pushes := in.pushes(t); len(pushes) != 1 || pushes[0].GetNewSha() != tip {
@@ -717,13 +668,13 @@ func TestHoldPush(t *testing.T) {
 		})
 
 		in.pass(t, 0)
-		w2ID := in.pushState(t).GetCorrectedBy()
+		w2ID := in.hold(t).GetCorrectedBy()
 		if _, err := in.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: w2ID, Text: "wake"})); err != nil {
 			t.Fatal(err)
 		}
 		w2 := in.ended(t, w2ID)
 		in.pass(t, time.Second)
-		if state := in.pushState(t); state.GetCorrectedBy() != "" || state.GetAttempts() != 1 {
+		if state := in.hold(t); state.GetCorrectedBy() != "" || state.GetAttempts() != 1 {
 			t.Fatalf("after %s failed, the push %v; want one attempt spent, no correction running", w2.GetCode(), state)
 		}
 		q := in.attachPushQuestion(t)
@@ -733,7 +684,7 @@ func TestHoldPush(t *testing.T) {
 			t.Fatal("pushed with its push checks red")
 		}
 		state := in.pushState(t)
-		if state.GetQuestionId() != "" || state.GetFailedSha() != tip || state.GetCorrectedBy() == "" || state.GetAttempts() != 2 {
+		if state.GetQuestionId() != "" || in.hold(t).GetFailedSha() != tip || in.hold(t).GetCorrectedBy() == "" || in.hold(t).GetAttempts() != 2 {
 			t.Fatalf("red again at %s, the push %v; want the stale question let go, a second correction at the new tip", short8(tip), state)
 		}
 		got, err := store.Get[*planv1.Question](t.Context(), in.db, q.GetId())
@@ -767,7 +718,7 @@ func TestClearPushCorrection(t *testing.T) {
 		if got := in.remoteTip(t, bare); got != old {
 			t.Fatalf("pushed red: origin at %s", got)
 		}
-		state := in.pushState(t)
+		state := in.hold(t)
 		if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
 			t.Fatalf("the push %v; want held and corrected by a worker", state)
 		}
@@ -786,7 +737,7 @@ func TestClearPushCorrection(t *testing.T) {
 		})); err != nil {
 			t.Fatal(err)
 		}
-		if got := in.pushState(t).GetCorrectedBy(); got != "" {
+		if got := in.hold(t).GetCorrectedBy(); got != "" {
 			t.Errorf("after clearing record, corrected_by = %q; want empty", got)
 		}
 
@@ -795,7 +746,7 @@ func TestClearPushCorrection(t *testing.T) {
 		if got := in.remoteTip(t, bare); got != tip {
 			t.Fatalf("push checks passed, not pushed: origin at %s, want %s", got, tip)
 		}
-		if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		if state := in.hold(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
 			t.Errorf("after push succeeded, push state: %v", state)
 		}
 	})
@@ -815,7 +766,7 @@ func TestClearPushCorrection(t *testing.T) {
 		if got := in.remoteTip(t, bare); got != old {
 			t.Fatalf("pushed red: origin at %s", got)
 		}
-		state := in.pushState(t)
+		state := in.hold(t)
 		if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
 			t.Fatalf("the push %v; want held and corrected by a worker", state)
 		}
@@ -846,15 +797,14 @@ func TestClearPushCorrection(t *testing.T) {
 		if got := in.remoteTip(t, bare); got != tip {
 			t.Fatalf("push checks passed, not pushed: origin at %s, want %s", got, tip)
 		}
-		if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		if state := in.hold(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
 			t.Errorf("after push succeeded, push state: %v", state)
 		}
 	})
 }
 
 // TestPushHeldBlockReason: while push checks are red, planned work tasks wait for the branch to be green again,
-// while already-committed tasks stay COMMITTED; once corrected or approved unchecked, waiting tasks start from the
-// green head.
+// while already-committed tasks stay COMMITTED; once corrected, waiting tasks start from the green head.
 func TestPushHeldBlockReason(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -906,7 +856,7 @@ func TestPushHeldBlockReason(t *testing.T) {
 		w2 = in.until(t, w2.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING))
 		close(wait)
 		in.h.waitPushes()
-		if state := in.pushState(t); state.GetHeldRuns() != 1 || state.GetCorrectedBy() != "" {
+		if state := in.hold(t); state.GetHeldRuns() != 1 || state.GetCorrectedBy() != "" {
 			t.Fatalf("push state %v; want held once, no correction while W2 runs", state)
 		}
 		in.mu.Lock()
@@ -925,7 +875,7 @@ func TestPushHeldBlockReason(t *testing.T) {
 			t.Fatalf("W1 integration after push check fail = %v; want COMMITTED with no CorrectedBy", w1In)
 		}
 
-		state := in.pushState(t)
+		state := in.hold(t)
 		if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
 			t.Fatalf("push state %v; want held and corrected by worker", state)
 		}
@@ -963,31 +913,23 @@ func TestPushHeldBlockReason(t *testing.T) {
 			t.Errorf("W3 integration = %v; want CONFLICT", w3In)
 		}
 
-		state = in.pushState(t)
-		if state.GetQuestionId() != "" {
-			t.Fatalf("push question %s; want none (left to the lead)", state.GetQuestionId())
+		if id := in.pushState(t).GetQuestionId(); id != "" {
+			t.Fatalf("push question %s; want none (left to the lead)", id)
 		}
-		if !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
-			t.Fatalf("push held %q; want suffix '; left to the lead'", state.GetHeld())
+		if !strings.HasSuffix(in.hold(t).GetHeld(), "; left to the lead") {
+			t.Fatalf("push held %q; want suffix '; left to the lead'", in.hold(t).GetHeld())
 		}
-		q := in.attachPushQuestion(t)
-
 		in.mu.Lock()
 		in.testCode = 0
 		in.mu.Unlock()
-		in.answer(t, q, planv1.Choice_CHOICE_A)
-
-		wRetry := in.ended(t, in.pushState(t).GetCorrectedBy())
-		if wRetry == nil {
-			t.Fatal("expected retried correction worker")
-		}
+		in.repairByLead(t, "Make the tests pass")
 
 		in.pass(t, time.Second)
 		tip := in.tip(t)
 		if got := in.remoteTip(t, bare); got != tip {
 			t.Fatalf("push did not succeed after correction: remote at %s, want %s", got, tip)
 		}
-		if state := in.pushState(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
+		if state := in.hold(t); state.GetHeld() != "" || state.GetCorrectedBy() != "" {
 			t.Errorf("after push, pushState = %v; want cleared", state)
 		}
 
@@ -1036,7 +978,7 @@ func TestPushHeldBlockReason(t *testing.T) {
 		})
 
 		in.pass(t, 0)
-		state := in.pushState(t)
+		state := in.hold(t)
 		if state.GetHeld() == "" || state.GetCorrectedBy() == "" {
 			t.Fatalf("push state %v; want held and corrected", state)
 		}
@@ -1061,7 +1003,7 @@ func TestPushHeldBlockReason(t *testing.T) {
 		if got := in.remoteTip(t, bare); got != tip {
 			t.Fatalf("remote at %s, want tip %s", got, tip)
 		}
-		if s := in.pushState(t); s.GetHeld() != "" {
+		if s := in.hold(t); s.GetHeld() != "" {
 			t.Fatalf("push state still held: %v", s)
 		}
 
@@ -1076,52 +1018,6 @@ func TestPushHeldBlockReason(t *testing.T) {
 
 		if got := in.states(t, w1, w2); !strings.Contains(got, "W1 COMMITTED") || !strings.Contains(got, "COMMITTED") {
 			t.Errorf("states = %s; want COMMITTED", got)
-		}
-	})
-
-	t.Run("lifts when approved unchecked", func(t *testing.T) {
-		t.Parallel()
-		in := integrating(t)
-		in.checking(t, "correction_attempts: 0\n"+
-			lintAtCommit+
-			"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
-		in.testCode = 1
-		bare := in.remote(t)
-		azima := in.azima(t, in.wishID, "Feature")
-
-		w1 := in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) {
-			task.PartOf = azima.GetId()
-		})
-
-		in.pass(t, 0)
-		if state := in.pushState(t); state.GetQuestionId() != "" || !strings.HasSuffix(state.GetHeld(), "; left to the lead") {
-			t.Fatalf("the push %v; want held, left to the lead, no question", state)
-		}
-
-		w2 := in.mustSpawn(t, in.wishID, "W2 Work", "wait\ntext w2", nil)
-		w2 = in.get(t, w2.GetId())
-		if w2.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !strings.Contains(w2.GetWaitReason(), "to be green again") {
-			t.Fatalf("W2 before answer = %v; want pending waiting to be green again", w2)
-		}
-
-		in.answer(t, in.attachPushQuestion(t), planv1.Choice_CHOICE_C)
-
-		w2 = in.until(t, w2.GetId(), waking(in.h, isStatus(planv1.TaskStatus_TASK_STATUS_RUNNING)))
-		in.release(t, w2.GetId())
-		in.ended(t, w2.GetId())
-
-		in.pass(t, time.Second)
-		tip := in.tip(t)
-		if got := in.remoteTip(t, bare); got != tip {
-			t.Fatalf("remote at %s, want %s", got, tip)
-		}
-
-		_, texts := in.integration(t, w1)
-		foundTell := slices.ContainsFunc(texts, func(txt string) bool {
-			return strings.Contains(txt, "without push checks")
-		})
-		if !foundTell {
-			t.Errorf("W1 events %v did not mention pushing without push checks", texts)
 		}
 	})
 }

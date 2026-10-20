@@ -303,7 +303,7 @@ func TestDiskFullPushChecksWait(t *testing.T) {
 	if runs, _ := in.ran(); slices.Contains(runs, "test") {
 		t.Errorf("runs %q with the disk almost full; want no push checks", runs)
 	}
-	if state := in.pushState(t); state.GetHeld() != "" || len(in.corrections(t)) != 0 || in.remoteTip(t, bare) != old {
+	if state := in.hold(t); state.GetHeld() != "" || len(in.corrections(t)) != 0 || in.remoteTip(t, bare) != old {
 		t.Fatalf("push checks waiting for space: %v, %d corrections; want nothing held, no correction, nothing pushed",
 			state, len(in.corrections(t)))
 	}
@@ -333,7 +333,7 @@ func TestDiskFilledDuringPushChecks(t *testing.T) {
 	in.testCode, in.testOut = 1, "go: writing stat cache: write /home/u/.cache/go-build/ab/x-d: no space left on device"
 	in.afterTest = func() { disk.set(2 * GB) }
 	in.pass(t, 0)
-	if state := in.pushState(t); state.GetHeld() != "" || len(in.corrections(t)) != 0 {
+	if state := in.hold(t); state.GetHeld() != "" || len(in.corrections(t)) != 0 {
 		t.Fatalf("push checks out of space: %v, %d corrections; want nothing held, no correction", state, len(in.corrections(t)))
 	}
 	_, texts := in.integration(t, w3)

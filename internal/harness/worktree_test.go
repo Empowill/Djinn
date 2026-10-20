@@ -1,11 +1,14 @@
 package harness
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestBranchName(t *testing.T) {
@@ -119,5 +122,56 @@ func TestWorktree(t *testing.T) {
 	}
 	if out, _ := git(t.Context(), repo, "worktree", "list", "--porcelain"); strings.Contains(out, byHand) {
 		t.Errorf("git still lists the worktree: %s", out)
+	}
+}
+
+// TestWorktreeAddBesidePrune adds worktrees while git worktree prune runs over and over in the same repository, from
+// another folder of it: no add fails, for a prune never deletes the folder of an add not finished (W53). Without the
+// lock, the adds take half a second and some fail; with it, each waits behind the prunes, a git each: the adds stop at
+// a budget, or a machine slow to start a process (Windows) takes a minute.
+func TestWorktreeAddBesidePrune(t *testing.T) {
+	t.Parallel()
+	const pruners, adders, adds, budget = 8, 4, 30, 2 * time.Second
+	repo := gitRepo(t)
+	home := t.TempDir()
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, pruners+adders*adds)
+	for range pruners {
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				if err := removeWorktree(t.Context(), filepath.Join(repo, "app"), worktreeDir(home, "p1", "gone"), true); err != nil {
+					errs <- fmt.Errorf("prune: %w", err)
+					return
+				}
+			}
+		})
+	}
+	var added sync.WaitGroup
+	deadline := time.Now().Add(budget)
+	for w := range adders {
+		added.Go(func() {
+			for i := range adds {
+				if i > 0 && time.Now().After(deadline) {
+					return
+				}
+				id := fmt.Sprintf("t%d-%d", w, i)
+				if _, err := addWorktreeFrom(t.Context(), repo, worktreeDir(home, "p1", id), "w-"+id, "HEAD"); err != nil {
+					errs <- fmt.Errorf("add %s: %w", id, err)
+				}
+			}
+		})
+	}
+	added.Wait()
+	close(stop)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }

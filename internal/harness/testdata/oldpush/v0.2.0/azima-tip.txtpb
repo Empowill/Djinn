@@ -1,0 +1,7 @@
+# v0.2.0, per azima: no branch named, no run; the push checks were red at 1fcf7b2f, the tip of the second azima's
+# branch, which the first's holds under another commit; a push question open.
+question_id: "01a0f000-0000-7000-8000-000000000001"
+held: "at 1fcf7b2f, test: exit status 1"
+held_runs: 1
+failed_sha: "1fcf7b2fdfb476421cd997101c9def78b189cf90"
+failure { state: INTEGRATION_STATE_RED base: "1fcf7b2fdfb476421cd997101c9def78b189cf90" reason: "test: exit status 1" }

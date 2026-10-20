@@ -1,0 +1,18 @@
+# After the migration: the hold on the branch the run held.
+project_id: "@project@"
+run {
+  branch: "djinn/T1-first"
+  stage: PUSH_STAGE_HELD
+  check: "lint"
+  start_time { seconds: 1700000000 }
+  end_time { seconds: 1700000060 }
+  note: "lint: exit status 2"
+}
+holds {
+  key: "djinn/T1-first"
+  value {
+    held: "at 1fcf7b2f, lint: exit status 2"
+    failed_sha: "1fcf7b2fdfb476421cd997101c9def78b189cf90"
+    failure { state: INTEGRATION_STATE_RED base: "1fcf7b2fdfb476421cd997101c9def78b189cf90" reason: "lint: exit status 2" }
+  }
+}

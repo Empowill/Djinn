@@ -1,0 +1,4 @@
+# After the migration: no hold, unchecked gone, the question about the integration branch.
+project_id: "@project@"
+question_id: "01a0f000-0000-7000-8000-000000000001"
+question_branch: "@branch@"

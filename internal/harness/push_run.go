@@ -105,16 +105,17 @@ func (h *Harness) syncPush(ctx context.Context, sync *planv1.ProjectSync, wish *
 	if run.GetBranch() != sync.GetBranch() {
 		return
 	}
+	hold := state.GetHolds()[run.GetBranch()] // Its own hold, not another branch's (W37).
 	switch run.GetStage() {
 	case planv1.PushStage_PUSH_STAGE_CHECKING, planv1.PushStage_PUSH_STAGE_PUSHING:
 		if !h.pushRunning(wish.GetId(), projectID, run.GetBranch()) {
 			return // Djinn stopped during it.
 		}
 	case planv1.PushStage_PUSH_STAGE_HELD:
-		if state.GetHeld() == "" {
+		if !plan.PushHeld(hold) {
 			return // The hold lifted since.
 		}
-		if id := state.GetCorrectedBy(); id != "" {
+		if id := hold.GetCorrectedBy(); id != "" {
 			if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
 				sync.Correction = c.GetCode()
 			}
