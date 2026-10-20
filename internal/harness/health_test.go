@@ -222,6 +222,45 @@ func TestHealthLimitReset(t *testing.T) {
 	}
 }
 
+// TestHealthLimitResetMidPass: the limit's reset passes while a scheduler pass runs, after the pass judged the task
+// limited (W19). The pass keeps the time it read at its start: the task waits on, and the next pass sees the limit
+// lift, tells the lead and resumes it. The account read, inside the judging, moves the clock.
+func TestHealthLimitResetMidPass(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	clock := &fakeClock{at: time.Date(2026, 10, 17, 4, 28, 30, 0, time.UTC)}
+	var mu sync.Mutex
+	var reset time.Time
+	account := func(context.Context, planv1.Provider) string {
+		mu.Lock()
+		defer mu.Unlock()
+		if !reset.IsZero() && clock.now().Before(reset) {
+			clock.set(reset.Add(time.Second))
+		}
+		return "a1"
+	}
+	e := up(t, t.TempDir(), WithClock(clock.now), WithAccount(account))
+	queue := &leadQueue{}
+	e.h.NotifyLead(queue.notify)
+	wishID, _ := e.wish(t, nativeFolder(t))
+	task := e.spawn(t, wishID, sessionLimit)
+	got := e.until(t, task.GetId(), hasHealth(planv1.HealthState_HEALTH_STATE_LIMITED))
+	mu.Lock()
+	reset = got.GetResumeAfter().AsTime()
+	// A second before the reset, and more than accountEvery after the last read: the next pass reads the account.
+	clock.set(reset.Add(-time.Second))
+	mu.Unlock()
+	e.h.Wake()
+	e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	e.passes(2)
+	events := healthEvents(queue)
+	want := "Djinn: " + task.GetCode() + ": the usage limit that stopped it lifted (reset at " + ClockText(reset, reset) +
+		"); Djinn resumes it by itself."
+	if len(events) != 1 || events[0].GetText() != want {
+		t.Errorf("health events %v, want one %q", events, want)
+	}
+}
+
 // accounts plays the account an agent is signed in with.
 type accounts struct {
 	mu   sync.Mutex

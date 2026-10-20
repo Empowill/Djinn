@@ -1415,7 +1415,7 @@ func (h *Harness) launch(
 					_ = os.RemoveAll(skillsDir)
 					task.Branch, task.Worktree = "", ""
 					h.forgetWithoutWake(r)
-					h.setWaiting(ctx, task, depWhy, false, false, planv1.TaskHold_TASK_HOLD_DEPENDENCY)
+					h.setWaiting(ctx, task, h.now(), depWhy, false, false, planv1.TaskHold_TASK_HOLD_DEPENDENCY)
 					return store.Get[*planv1.Task](ctx, h.store, task.GetId())
 				}
 				dir, err = addWorktreeFrom(ctx, project.GetDirectory(), task.GetWorktree(), task.GetBranch(), sha)
