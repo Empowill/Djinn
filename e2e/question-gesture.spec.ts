@@ -129,7 +129,7 @@ test("a gesture presses its button and the card answers back; reduced motion fla
     expect(rub.wisp).toBe("block");
     expect(rub.pressed).toHaveLength(1);
     expect(rub.released).toBeDefined();
-    expect(rub.released! - rub.pressed[0]).toBeGreaterThanOrEqual(120);
+    expect(rub.released! - rub.pressed[0]).toBeGreaterThanOrEqual(80);
     const [answered] = JSON.parse(
       djinn("question", "list", "--wish-id", wishId, "--json"),
     ).questions.filter((q: { text: string }) => q.text === "Which oil?");

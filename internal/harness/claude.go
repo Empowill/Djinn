@@ -209,7 +209,7 @@ func (c Claude) Start(ctx context.Context, spec Spec) (Worker, error) {
 
 // claudeBackgroundWait lets claude -p wait for its background work after its last turn, however long (W80): by
 // default it stops a Monitor watch, a background subagent or workflow still running 10 minutes after the result, and
-// the task ended done lost a paid run its worker watched (W31 of wish Will retour beta). The task's life bounds the
+// the task ended done lost a paid run its worker watched (16/10/2026, another project). The task's life bounds the
 // wait instead: a stopped or ended task stops everything its worker started (stopLeft). Claude Code v2.1.182 or
 // later reads it (code.claude.com/docs/en/env-vars.md, headless.md "Background tasks at exit").
 const claudeBackgroundWait = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0"
