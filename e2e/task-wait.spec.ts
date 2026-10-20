@@ -22,6 +22,9 @@ function djinn(...args: string[]): string {
 test("a held task that starts loses its wait line, and its page shows the wait as past", async ({
   page,
 }) => {
+  // A Windows runner stalls 25 to 50 s, browser, djinn and disk at once, beside task-continue.spec.ts (W34: 8 runs of
+  // 31): the default 30 s ran out before the first task ended. The waits below follow states, not times.
+  test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   // Three wishes at a time: the earlier specs' wishes make way.
@@ -71,11 +74,11 @@ test("a held task that starts loses its wait line, and its page shows the wait a
     const waitNote = card.locator(".wish-task-note", {
       hasText: `waits for ${first.code} (running)`,
     });
-    await expect(waitNote).toBeVisible();
+    await expect(waitNote).toBeVisible({ timeout: 20_000 });
 
     // The first ends; the second starts, and its card no longer says it waits.
     djinn("task", "send", first.id, "done");
-    await expect(badge).toHaveText("Running", { timeout: 20_000 });
+    await expect(badge).toHaveText("Running", { timeout: 40_000 });
     await expect(waitNote).toHaveCount(0);
 
     await card.getByRole("button", { name: /Go second/ }).click();
