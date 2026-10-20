@@ -400,17 +400,12 @@ func (h *Harness) holdSeen(
 }
 
 // pushHeldAlready tells whether the push of wish's branch in project, held as cur says, needs nothing more for push
-// checks red at sha: Djinn asks the person about these very checks, they were left to the lead at sha, or a
-// correction runs. A question about other checks is withdrawn: nobody would act on the hold while it stays open.
+// checks red at sha: they were left to the lead at sha, or a correction runs. A push question still open is withdrawn:
+// no push is due while it stays open, so nobody would act on the hold.
 func (h *Harness) pushHeldAlready(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, branch, sha string, cur *planv1.WishPush,
 ) bool {
 	if id := cur.GetQuestionId(); id != "" {
-		if cur.GetHeld() != "" && cur.GetFailedSha() == sha {
-			return true // The question is about these very checks: the answer says what Djinn does.
-		}
-		// Red at another commit than the one Djinn asked about: the question is stale. Djinn withdraws it and acts on
-		// these checks instead.
 		h.withdrawPushQuestion(ctx, wish.GetId(), project.GetId(), id,
 			fmt.Sprintf("Djinn: the push checks of %s ran again at %s and are red; Djinn acts on them instead.", branch, short8(sha)))
 	}

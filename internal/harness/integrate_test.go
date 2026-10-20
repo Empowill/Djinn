@@ -1130,9 +1130,8 @@ func TestPushRepair_AzimaBranch(t *testing.T) {
 }
 
 // TestPushRepair_SecondAzima (W33): two azimas push, the push checks of the second one's branch hold its push, left
-// to the lead. Its repair, the one Djinn starts on "try again" or the lead's it takes, aims at that branch, not at the
-// first azima's, pushed last: the try again started from the branch of the last push (WishPush.last), and the note of
-// a repair Djinn took named the wish's own branch.
+// to the lead. The lead's repair, which Djinn takes, aims at that branch, not at the first azima's, pushed last: its
+// note named the wish's own branch.
 func TestPushRepair_SecondAzima(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -1191,31 +1190,6 @@ func TestPushRepair_SecondAzima(t *testing.T) {
 		if got := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1); got != b1Tip {
 			t.Errorf("%s moved to %s, want it at %s: the repair of %s merged into it", b1, got, b1Tip, b2)
 		}
-	}
-
-	for _, forgotten := range []bool{false, true} {
-		name := "try again"
-		if forgotten {
-			name += ", the held run forgotten" // Another branch's push ran since, and cleared its own run.
-		}
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			in := integrating(t)
-			bare, b1, b2 := heldOnSecond(t, in)
-			if forgotten {
-				if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
-					return editPush(t.Context(), tx, in.wishID, in.projectID, func(p *planv1.WishPush) { p.Run = nil })
-				}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			in.answer(t, in.attachPushQuestion(t), planv1.Choice_CHOICE_A)
-			c := in.get(t, in.pushState(t).GetCorrectedBy())
-			if !strings.Contains(c.GetPrompt(), b2) || strings.Contains(c.GetPrompt(), b1) {
-				t.Errorf("%s's prompt names %s? %q; want %s's", c.GetCode(), b1, c.GetPrompt(), b2)
-			}
-			repairs(t, in, bare, b1, b2, c)
-		})
 	}
 
 	t.Run("the lead's repair", func(t *testing.T) {
@@ -1359,6 +1333,122 @@ func TestPushHold_PerAzima(t *testing.T) {
 	if runs, _ := in.ran(); slices.Contains(runs, "test") {
 		t.Errorf("runs %v: the push checks of %s ran again on the tree they were red on", runs, b2)
 	}
+}
+
+// TestPushHold_PerAzimaQuestion (W59): the push checks of the second azima's branch hold its push, left to the lead;
+// Djinn asks about a push of the first one's, green: in ask mode, or once the remote refused it. The answer acts on
+// that push only: it read the hold of the branch held last as the question's, so "Push it" or "Push again" started a
+// correction of the second branch and dropped its "left to the lead", and "Not now" reset its held runs.
+func TestPushHold_PerAzimaQuestion(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	// heldThenAsked holds T2's branch, red on W2's work and left to the lead, then has Djinn ask about a push of
+	// T1's, green with W3's work: in ask mode, or refused by the remote, which has a commit T1's branch lacks. It
+	// returns the remote, T1's branch, the question and the hold of T2's branch then.
+	heldThenAsked := func(t *testing.T, in *integration, refused bool) (bare, b1 string, q *planv1.Question, held2 *planv1.WishPush) {
+		t.Helper()
+		in.checking(t, "correction_attempts: 0\n"+lintAtCommit+
+			"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+		// The tests fail while b.txt is there: on T2's branch, never on T1's.
+		in.verdict = func(dir string) (string, int) {
+			if _, err := os.Stat(filepath.Join(dir, "src", "b.txt")); err == nil {
+				return "--- FAIL: TestE2E", 1
+			}
+			return "", 0
+		}
+		bare = in.remote(t)
+		in.setAzimaStrategy(t)
+		t1, t2 := in.azima(t, in.wishID, "Bounded Loop"), in.azima(t, in.wishID, "Second Part")
+		b1, b2 := azimaBranchName(t1), azimaBranchName(t2)
+		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+		in.pass(t, 0)
+		in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
+		in.pass(t, time.Second)
+		held2 = heldBranches(in.pushState(t))[b2]
+		if !strings.HasSuffix(held2.GetHeld(), "; left to the lead") || held2.GetHeldRuns() != 1 {
+			t.Fatalf("the hold of %s %v; want held once, left to the lead", b2, held2)
+		}
+
+		want := "Push " + b1 + " to origin?"
+		if refused {
+			// Someone else pushed to origin's b1 meanwhile; Djinn cannot fetch it, and git refuses the push.
+			tip := in.git(t, bare, "rev-parse", "refs/heads/"+b1)
+			theirs := in.git(t, bare, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit-tree", "-p", tip, "-m", "Theirs", tip+"^{tree}")
+			in.git(t, bare, "update-ref", "refs/heads/"+b1, theirs)
+			in.git(t, in.repo, "remote", "set-url", "--push", "origin", bare)
+			in.git(t, in.repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
+			want = "origin refused the push of " + b1 + ": "
+		} else if _, err := in.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+			WishId: in.wishID, PushMode: planv1.PushMode_PUSH_MODE_ASK,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+		in.pass(t, time.Second)
+		q = in.pushQuestion(t)
+		if !strings.HasPrefix(q.GetText(), want) {
+			t.Fatalf("the question %q; want it to start %q", q.GetText(), want)
+		}
+		return bare, b1, q, held2
+	}
+	// keeps checks that the hold of T2's branch is still held2, and that no correction started.
+	keeps := func(t *testing.T, in *integration, held2 *planv1.WishPush) {
+		t.Helper()
+		b2 := held2.GetHeldBranch()
+		hold := func(p *planv1.WishPush) *planv1.WishPush { // Its hold alone, without the push's own fields.
+			return &planv1.WishPush{Held: p.GetHeld(), HeldRuns: p.GetHeldRuns(), CorrectedBy: p.GetCorrectedBy(),
+				Attempts: p.GetAttempts(), FailedSha: p.GetFailedSha(), Failure: p.GetFailure()}
+		}
+		if got := heldBranches(in.pushState(t))[b2]; !proto.Equal(hold(got), hold(held2)) {
+			t.Errorf("the hold of %s %v; want it as it was, %v", b2, hold(got), hold(held2))
+		}
+		tasks, err := store.List[*planv1.Task](t.Context(), in.db, store.Where{"wish_id": in.wishID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i := slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetCorrection() != nil }); i >= 0 {
+			t.Errorf("%s corrects the push checks; want no correction: they are left to the lead", tasks[i].GetCode())
+		}
+	}
+
+	t.Run("push it", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		bare, b1, q, held2 := heldThenAsked(t, in, false)
+		if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn pushes at the integration's next pass" {
+			t.Errorf("what Djinn did: %q", did)
+		}
+		keeps(t, in, held2)
+		in.pass(t, time.Second)
+		if got, tip := in.git(t, bare, "rev-parse", "refs/heads/"+b1), in.git(t, in.repo, "rev-parse", "refs/heads/"+b1); got != tip {
+			t.Errorf("origin's %s at %s; want %s pushed", b1, got, tip)
+		}
+		if got := commitOf(t.Context(), bare, "refs/heads/"+held2.GetHeldBranch()); got != "" {
+			t.Errorf("origin's %s at %s: pushed while its push checks are red", held2.GetHeldBranch(), got)
+		}
+		keeps(t, in, held2)
+	})
+
+	t.Run("not now", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		_, _, q, held2 := heldThenAsked(t, in, false)
+		if did := in.answer(t, q, planv1.Choice_CHOICE_B); did != "Djinn waits for the next push due" {
+			t.Errorf("what Djinn did: %q", did)
+		}
+		keeps(t, in, held2)
+	})
+
+	t.Run("push again", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		_, _, q, held2 := heldThenAsked(t, in, true)
+		if did := in.answer(t, q, planv1.Choice_CHOICE_A); did != "Djinn pushes at the integration's next pass" {
+			t.Errorf("what Djinn did: %q", did)
+		}
+		keeps(t, in, held2)
+	})
 }
 
 // heldBranches are the holds of p by branch, each as its branch sees it (plan.PushHolds).

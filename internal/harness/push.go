@@ -1281,10 +1281,10 @@ func editPush(ctx context.Context, tx *store.Tx, wishID, projectID string, edit 
 	return tx.Change(&planv1.ProjectSync{WishId: wishID})
 }
 
-// answerPush takes the person's answer to a question Djinn asked about a push: A pushes at the integration's next
-// pass, B waits for the next push due; once the push checks stay red, A starts a new correction worker, B leaves it
-// to the person, C pushes without the push checks. It tells whether q was such a question, and what Djinn does, for
-// the lead.
+// answerPush takes the person's answer to a question Djinn asked about a push, in ask mode or once the remote refused
+// one: A pushes at the integration's next pass, B waits for the next push due. Djinn asks it only past green push
+// checks: the answer touches no hold, its branch's or another azima's (W59); red push checks go to the lead. It tells
+// whether q was such a question, and what Djinn does, for the lead.
 func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, bool) {
 	wish, err := store.Get[*planv1.Wish](ctx, h.store, q.GetWishId())
 	if err != nil {
@@ -1295,76 +1295,7 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 		return "", false
 	}
 	p := wish.GetPushes()[i]
-	choice, held := q.GetAnswer().GetChoice(), p.GetHeld() != ""
-	if held {
-		projectID := p.GetProjectId()
-		project, err1 := store.Get[*planv1.Project](ctx, h.store, projectID)
-		// The branch held, not the last one pushed: per azima, that may be another azima's (W33).
-		branch := h.heldBranch(ctx, wish, project.GetDirectory(), projectID)
-		f := p.GetFailure()
-		var committed []*planv1.Task
-		if f != nil && len(f.GetTaskIds()) > 0 {
-			committed, _ = tasksByID(ctx, h.store, f.GetTaskIds())
-		}
-		switch choice {
-		case planv1.Choice_CHOICE_A:
-			settings, err2 := plan.LoadSettings(h.home, project)
-			if err := errors.Join(err1, err2); err != nil {
-				logx.L().Error("read the project", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID, "err", err)
-				return "Djinn could not try again: " + err.Error(), true
-			}
-			settings.CorrectionAttempts = max(settings.CorrectionAttempts, 1)
-			c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, 1)
-			if err != nil {
-				logx.L().Error("start a push correction", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID,
-					"branch", branch, "err", err)
-				return "Djinn could not start a correction worker: " + err.Error(), true
-			}
-			err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), projectID, func(p *planv1.WishPush) {
-					p.QuestionId, p.CorrectedBy, p.Attempts, p.Approved = "", c.GetId(), 1, false
-					p.Held = strings.TrimSuffix(p.Held, "; left to the lead")
-					p.FailedSha = ""
-				})
-			})
-			if err != nil {
-				logx.L().Error("record the push answer", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID, "err", err)
-				return "Djinn could not take the answer: " + err.Error(), true
-			}
-			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you said to try again (%s); Djinn started %s", q.GetCode(), c.GetCode()))
-			h.notify()
-			return didStart(c), true
-		case planv1.Choice_CHOICE_B:
-			err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), projectID, func(p *planv1.WishPush) {
-					p.QuestionId, p.CorrectedBy, p.HeldRuns, p.Approved = "", "", 0, false
-				})
-			})
-			if err != nil {
-				logx.L().Error("record the push answer", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID, "err", err)
-				return "Djinn could not take the answer: " + err.Error(), true
-			}
-			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you take it (%s); the push of %s stays held until you make its checks pass", q.GetCode(), branch))
-			h.notify()
-			return fmt.Sprintf("Djinn leaves the push checks of %s to the developer", branch), true
-		case planv1.Choice_CHOICE_C:
-			err = h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), projectID, func(p *planv1.WishPush) {
-					p.QuestionId, p.Approved, p.Unchecked = "", true, true
-				})
-			})
-			if err != nil {
-				logx.L().Error("record the push answer", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID, "err", err)
-				return "Djinn could not take the answer: " + err.Error(), true
-			}
-			h.pushSteps(ctx, committed, fmt.Sprintf("integration: you chose to push %s without push checks (%s)", branch, q.GetCode()))
-			h.notify()
-			h.kickIntegrate()
-			return "Djinn pushes at the integration's next pass, without the push checks", true
-		}
-		return "", true
-	}
-	push := choice == planv1.Choice_CHOICE_A
+	push := q.GetAnswer().GetChoice() == planv1.Choice_CHOICE_A
 	ctx = context.WithoutCancel(ctx)
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), p.GetProjectId(), func(p *planv1.WishPush) {

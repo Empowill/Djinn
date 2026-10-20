@@ -89,14 +89,15 @@ func (in *integration) pushQuestion(t *testing.T) *planv1.Question {
 	return q
 }
 
-// attachPushQuestion attaches a question to wish's push record to test answering it.
+// attachPushQuestion attaches a question to wish's push record, as ask mode asks it, to test answering it.
 func (in *integration) attachPushQuestion(t *testing.T) *planv1.Question {
 	t.Helper()
 	q := &planv1.Question{
 		Id:         store.NewID(),
 		WishId:     in.wishID,
 		Code:       "Q01",
-		Text:       "The push checks of " + in.branch + " stay red.",
+		Text:       "Push " + in.branch + " to origin?",
+		Options:    []string{pushOption, notNowOption},
 		CreateTime: timestamppb.Now(),
 	}
 	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
@@ -121,6 +122,31 @@ func (in *integration) attachPushQuestion(t *testing.T) *planv1.Question {
 		t.Fatal(err)
 	}
 	return q
+}
+
+// approveUnchecked records an approval to push without the push checks, once, as an answer before W59 left it: no
+// answer asks for it since.
+func (in *integration) approveUnchecked(t *testing.T) {
+	t.Helper()
+	if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+		return editPush(t.Context(), tx, in.wishID, in.projectID, func(p *planv1.WishPush) { p.Approved, p.Unchecked = true, true })
+	}); err != nil {
+		t.Fatal(err)
+	}
+	in.h.notify()
+	in.h.kickIntegrate()
+}
+
+// repairByLead spawns the lead's repair of the red push checks, title, and gives it once ended.
+func (in *integration) repairByLead(t *testing.T, title string) *planv1.Task {
+	t.Helper()
+	res, err := in.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+		WishId: in.wishID, ProjectId: in.projectID, Provider: planv1.Provider_PROVIDER_FAKE, Title: title, Repair: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return in.ended(t, res.Msg.GetTask().GetId())
 }
 
 // later moves the clock by d, without a pass.
