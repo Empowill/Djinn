@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -621,6 +622,69 @@ func TestLoadService_LateBeat(t *testing.T) {
 	s.applyNotch(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
 	if got := m.Policy().Notch; got != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
 		t.Errorf("policy %v after the late beat, want the Set's LOAD_NOTCH_HIGH", got)
+	}
+}
+
+// TestLoadService_TwoSets: of two Sets at once, the scheduler and the windows get the last one last: a Set made while
+// the first one sends its policy waits for it, and the policy the scheduler runs is the one the bar shows (W41).
+func TestLoadService_TwoSets(t *testing.T) {
+	t.Parallel()
+	m := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), func() (Snapshot, error) {
+		return slotMachines[3], nil
+	})
+	var mu sync.Mutex
+	var sent []djinnv1.LoadNotch
+	var cast djinnv1.LoadNotch
+	var s *loadService
+	second := make(chan struct{})
+	// An atomic, not a sync.Once: the second Set's call would wait in Once.Do for the first one to end.
+	var first atomic.Bool
+	setPolicy := func(p Policy) {
+		if first.CompareAndSwap(false, true) {
+			go func() {
+				defer close(second)
+				if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+					Notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+				})); err != nil {
+					t.Errorf("Set Medium: %v", err)
+				}
+			}()
+			// The second Set ends here when nothing holds it back; once held, the first one goes on without it.
+			select {
+			case <-second:
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		mu.Lock()
+		sent = append(sent, p.Notch)
+		mu.Unlock()
+	}
+	broadcast := func(n djinnv1.LoadNotch) {
+		mu.Lock()
+		cast = n
+		mu.Unlock()
+	}
+	_, s = serveLoad(t, t.TempDir(), m, setPolicy, broadcast, nil, WithLoadTickInterval(0))
+	if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	<-second
+	mu.Lock()
+	defer mu.Unlock()
+	want := []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_HIGH, djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM}
+	if !slices.Equal(sent, want) {
+		t.Errorf("scheduler got %v, want %v", sent, want)
+	}
+	if cast != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("windows got %v last, want LOAD_NOTCH_MEDIUM", cast)
+	}
+	if got := m.Policy().Notch; got != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("monitor runs %v, want LOAD_NOTCH_MEDIUM", got)
+	}
+	if got := ReadNotch(s.home); got != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("saved notch %v, want LOAD_NOTCH_MEDIUM", got)
 	}
 }
 
