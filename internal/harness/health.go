@@ -75,11 +75,10 @@ type accountSeen struct {
 
 // account is the fingerprint of provider's account, read again when the last reading is older than accountEvery or
 // than since. Empty without an AccountFunc, or when the agent tells none. The caller holds h.sched.
-func (h *Harness) account(ctx context.Context, provider planv1.Provider, since time.Time) string {
+func (h *Harness) account(ctx context.Context, provider planv1.Provider, since, now time.Time) string {
 	if h.accountOf == nil {
 		return ""
 	}
-	now := h.now()
 	if seen, ok := h.accounts[provider]; ok && now.Sub(seen.at) < accountEvery && !seen.at.Before(since) {
 		return seen.fingerprint
 	}
@@ -104,9 +103,8 @@ func judged(t *planv1.Task) bool {
 }
 
 // judge gives each work task its health on a pass, and tells the leads what changed. The caller holds h.sched; tasks
-// are the pass's, changed in place so that what the pass writes next keeps the health.
-func (h *Harness) judge(ctx context.Context, tasks []*planv1.Task) {
-	now := h.now()
+// are the pass's, changed in place so that what the pass writes next keeps the health; now is the pass's time.
+func (h *Harness) judge(ctx context.Context, tasks []*planv1.Task, now time.Time) {
 	var lifted []*planv1.Task
 	for i, t := range tasks {
 		if !judged(t) {
@@ -186,7 +184,7 @@ func (h *Harness) limitHealth(ctx context.Context, t *planv1.Task, now, reset ti
 	}
 	was := t.GetHealth()
 	stopped := endOf(t, now)
-	account := h.account(ctx, t.GetProvider(), stopped)
+	account := h.account(ctx, t.GetProvider(), stopped, now)
 	if was.GetState() == planv1.HealthState_HEALTH_STATE_LIMITED && was.GetAccount() != "" {
 		if account != "" && account != was.GetAccount() {
 			return &planv1.TaskHealth{State: planv1.HealthState_HEALTH_STATE_LIMIT_LIFTED, Reason: "its account changed"}, true

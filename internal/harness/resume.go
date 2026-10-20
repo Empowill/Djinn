@@ -258,7 +258,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	}
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		if _, err := plan.LoadSettings(h.home, project); err != nil {
-			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false, false, 0)
+			h.setWaiting(ctx, t, h.now(), fmt.Sprintf("settings unreadable: %v", err), false, false, 0)
 			return nil
 		}
 	}
