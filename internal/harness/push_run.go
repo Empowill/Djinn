@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"cmp"
 	"context"
 	"strings"
 
@@ -105,6 +106,9 @@ func (h *Harness) syncPush(ctx context.Context, sync *planv1.ProjectSync, wish *
 	if run.GetBranch() != sync.GetBranch() {
 		return
 	}
+	// The hold of the branch, kept aside while another's is in the push's fields (W37). A hold recorded before W35
+	// names no branch: the run held names it (heldBranch).
+	state = plan.PushFor(state, run.GetBranch(), cmp.Or(state.GetHeldBranch(), run.GetBranch()))
 	switch run.GetStage() {
 	case planv1.PushStage_PUSH_STAGE_CHECKING, planv1.PushStage_PUSH_STAGE_PUSHING:
 		if !h.pushRunning(wish.GetId(), projectID, run.GetBranch()) {

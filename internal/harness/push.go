@@ -75,7 +75,8 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 		h.pushAzimaBranchesIfDue(ctx, wish, project, settings)
 		return
 	}
-	state := pushState(wish, project.GetId())
+	branch := plan.IntegrationBranchOf(wish, project.GetId())
+	state := h.pushOf(ctx, wish, project.GetDirectory(), project.GetId(), branch)
 	switch {
 	case state.GetQuestionId() != "":
 		return // Djinn asked: the answer says when.
@@ -83,7 +84,6 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 		return // The person said to push: pushApproved pushes, at the end of this pass.
 	}
 	if strings.HasSuffix(state.GetHeld(), "; left to the lead") {
-		branch := plan.IntegrationBranchOf(wish, project.GetId())
 		if sha, err := git(ctx, project.GetDirectory(), "rev-parse", "refs/heads/"+branch); err == nil && sha == state.GetFailedSha() {
 			return // Left to the lead; the branch has not moved.
 		}
@@ -92,10 +92,11 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
 			return // The correction worker is running; push checks run after it is committed.
 		}
+		forget := h.holdEdit(ctx, wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
+			p.CorrectedBy = ""
+		})
 		err := h.store.Tx(ctx, func(tx *store.Tx) error {
-			return editPush(ctx, tx, wishID, project.GetId(), func(p *planv1.WishPush) {
-				p.CorrectedBy = ""
-			})
+			return editPush(ctx, tx, wishID, project.GetId(), forget)
 		})
 		if err != nil {
 			logx.L().Error("forget the push correction", "loop", "push", "wish", wishID, "project", project.GetId(), "err", err)
@@ -115,11 +116,10 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 		switch {
 		case len(committed) > 0:
 			why = "push checks corrected"
-		case movedSince(ctx, project.GetDirectory(), plan.IntegrationBranchOf(wish, project.GetId()), state.GetFailedSha()):
+		case movedSince(ctx, project.GetDirectory(), branch, state.GetFailedSha()):
 			why = "its branch moved since its push checks were red"
 		}
 	}
-	branch := plan.IntegrationBranchOf(wish, project.GetId())
 	if why == "" {
 		h.forgetPushWait(wishID, project.GetId(), branch)
 		return
@@ -134,13 +134,41 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 }
 
 // holdsPush tells whether the red push checks of branch hold the push of wish in the project projectID, at repo. Only
-// a green push of that branch lifts the hold: another one's, an azima's, leaves it (W35).
+// a green push of that branch lifts the hold: another one's, an azima's, leaves it (W35), and keeps its own (W37).
 func (h *Harness) holdsPush(ctx context.Context, wish *planv1.Wish, repo, projectID, branch string) bool {
-	p := pushState(wish, projectID)
-	return (p.GetHeld() != "" || p.GetHeldRuns() > 0) && h.heldBranch(ctx, wish, repo, projectID) == branch
+	return plan.PushHeld(h.pushOf(ctx, wish, repo, projectID, branch))
 }
 
-// liftHold lifts the hold of p, the push of a wish in a project: the push checks of the branch held pass.
+// pushOf is the push of wish in the project projectID, at repo, as branch sees it: its own hold, with the push's own
+// fields (plan.PushFor). Each branch keeps its hold (W37).
+func (h *Harness) pushOf(ctx context.Context, wish *planv1.Wish, repo, projectID, branch string) *planv1.WishPush {
+	return plan.PushFor(pushState(wish, projectID), branch, h.keptBranch(ctx, wish, repo, projectID))
+}
+
+// holdEdit is edit, made on the hold of branch in the push of wish in the project projectID, at repo, that editPush
+// runs: the push's fields keep it then, the one they kept going aside (plan.FocusPushHold, W37). It finds the branch
+// they keep now, with git for a hold recorded before W35: call it out of the transaction.
+func (h *Harness) holdEdit(
+	ctx context.Context, wish *planv1.Wish, repo, projectID, branch string, edit func(*planv1.WishPush),
+) func(*planv1.WishPush) {
+	current := h.keptBranch(ctx, wish, repo, projectID)
+	return func(p *planv1.WishPush) {
+		plan.FocusPushHold(p, branch, current)
+		edit(p)
+	}
+}
+
+// keptBranch is the branch whose hold the fields of the push of wish in the project projectID keep, at repo
+// (heldBranch); "" when they keep none.
+func (h *Harness) keptBranch(ctx context.Context, wish *planv1.Wish, repo, projectID string) string {
+	if !plan.PushHeld(pushState(wish, projectID)) {
+		return ""
+	}
+	return h.heldBranch(ctx, wish, repo, projectID)
+}
+
+// liftHold lifts the hold of p, the push of a wish in a project: the push checks of the branch held pass. Another
+// branch's hold, kept aside, takes its place (plan.SettlePushHolds).
 func liftHold(p *planv1.WishPush) {
 	p.Held, p.HeldRuns, p.HeldBranch = "", 0, ""
 	p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = "", 0, "", nil
@@ -361,7 +389,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	}
 	doing := "the push of " + branch + " to " + remote
 	h.setDoing(doing)
-	state := pushState(wish, project.GetId())
+	state := h.pushOf(ctx, wish, repo, project.GetId(), branch) // Its own hold, not another branch's (W37).
 	unchecked := approved && state.GetUnchecked()
 	// A branch its remote holds already, pushed by hand while its push checks held it, is checked all the same: green,
 	// Djinn records it as pushed, and the hold lifts. Another branch held, an azima's, does not make it due (W35).
@@ -464,8 +492,9 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 			run.set(ctx, planv1.PushStage_PUSH_STAGE_HELD, "", heldNote(held, out))
 			return nil, fmt.Errorf("the push is held: its checks are red (%s)", held)
 		case h.holdsPush(ctx, wish, repo, project.GetId(), branch):
+			lift := h.holdEdit(ctx, wish, repo, project.GetId(), branch, liftHold)
 			err := h.store.Tx(ctx, func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), project.GetId(), liftHold)
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), lift)
 			})
 			if err != nil {
 				logx.L().Error("lift the push hold", "loop", "push", "wish", wish.GetId(), "project", project.GetId(),
@@ -525,7 +554,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		WishId: wish.GetId(), ProjectId: project.GetId(), Branch: branch, Remote: remote, OldSha: old, NewSha: sha,
 		Count: int32(count), Commits: titles, TaskIds: ids(committed), PushTime: timestamppb.New(h.now()),
 	}
-	lift := h.holdsPush(ctx, wish, repo, project.GetId(), branch)
+	lift, lifted := h.holdsPush(ctx, wish, repo, project.GetId(), branch), h.holdEdit(ctx, wish, repo, project.GetId(), branch, liftHold)
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(actorHarness, methodPush, record); err != nil {
 			return err
@@ -533,7 +562,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 			p.Last, p.QuestionId, p.Refused, p.Approved, p.Unchecked = record, "", "", false, false
 			if lift {
-				liftHold(p)
+				lifted(p)
 			}
 			p.Run = run.ended(planv1.PushStage_PUSH_STAGE_PUSHED, "")
 		})
@@ -598,7 +627,7 @@ func (h *Harness) pushedByHand(
 			record.Commits = strings.Split(out, "\n")
 		}
 	}
-	lift := h.holdsPush(ctx, wish, repo, project.GetId(), branch)
+	lift, lifted := h.holdsPush(ctx, wish, repo, project.GetId(), branch), h.holdEdit(ctx, wish, repo, project.GetId(), branch, liftHold)
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(actorHarness, methodPush, record); err != nil {
 			return err
@@ -606,7 +635,7 @@ func (h *Harness) pushedByHand(
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 			p.Last, p.QuestionId, p.Refused, p.Approved, p.Unchecked = record, "", "", false, false
 			if lift {
-				liftHold(p)
+				lifted(p)
 			}
 		})
 	})
@@ -765,26 +794,37 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 	case state.GetApproved():
 		return
 	}
-	if id := state.GetCorrectedBy(); id != "" {
-		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
-			return
-		}
-		err := h.store.Tx(ctx, func(tx *store.Tx) error {
-			return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-				p.CorrectedBy = ""
-			})
-		})
-		if err != nil {
-			logx.L().Error("forget the push correction", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "err", err)
-		}
-		state.CorrectedBy = ""
-	}
 	tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wish.GetId()})
 	if err != nil {
 		logx.L().Error("read the tasks", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "err", err)
 		return
 	}
 	repo := project.GetDirectory()
+	// stateOf is the push as branch sees it, with its own hold (W37); waits while the correction of its push checks
+	// runs: they run again once its work is in. Another branch's correction holds it no more.
+	stateOf := func(branch string) (state *planv1.WishPush, waits bool) {
+		state = h.pushOf(ctx, wish, repo, project.GetId(), branch)
+		id := state.GetCorrectedBy()
+		if id == "" {
+			return state, false
+		}
+		if c, err := store.Get[*planv1.Task](ctx, h.store, id); err == nil && !h.correctionOver(c) {
+			return state, true
+		}
+		forget := h.holdEdit(ctx, wish, repo, project.GetId(), branch, func(p *planv1.WishPush) { p.CorrectedBy = "" })
+		err := h.store.Tx(ctx, func(tx *store.Tx) error {
+			return editPush(ctx, tx, wish.GetId(), project.GetId(), forget)
+		})
+		if err != nil {
+			logx.L().Error("forget the push correction", "loop", "push", "wish", wish.GetId(), "project", project.GetId(),
+				"branch", branch, "err", err)
+		}
+		if cur, err := store.Get[*planv1.Wish](ctx, h.store, wish.GetId()); err == nil {
+			wish = cur
+		}
+		state.CorrectedBy = ""
+		return state, false
+	}
 	every := time.Duration(wish.GetPushAfterMinutes()) * time.Minute
 	pushAfterEvery := cmp.Or(every, DefaultPushAfter)
 	pushAfterTasks := int(cmp.Or(wish.GetPushAfterTasks(), DefaultPushTasks))
@@ -796,7 +836,8 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		if commitOf(ctx, repo, "refs/heads/"+branch) == "" || azima.GetStatus() == planv1.TaskStatus_TASK_STATUS_DONE {
 			continue
 		}
-		if strings.HasSuffix(state.GetHeld(), "; left to the lead") && state.GetFailedSha() == commitOf(ctx, repo, "refs/heads/"+branch) {
+		state, waits := stateOf(branch)
+		if waits || strings.HasSuffix(state.GetHeld(), "; left to the lead") && state.GetFailedSha() == commitOf(ctx, repo, "refs/heads/"+branch) {
 			continue
 		}
 		since := h.lastBranchPush(ctx, repo, wish, state, branch)
@@ -817,7 +858,8 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 	// An azima that adopted the wish's branch pushed it above.
 	wishBranch := plan.IntegrationBranchOf(wish, project.GetId())
 	if commitOf(ctx, repo, "refs/heads/"+wishBranch) != "" && azimaOwning(azimas, wishBranch) == nil {
-		if strings.HasSuffix(state.GetHeld(), "; left to the lead") && state.GetFailedSha() == commitOf(ctx, repo, "refs/heads/"+wishBranch) {
+		state, waits := stateOf(wishBranch)
+		if waits || strings.HasSuffix(state.GetHeld(), "; left to the lead") && state.GetFailedSha() == commitOf(ctx, repo, "refs/heads/"+wishBranch) {
 			return
 		}
 		since := h.lastBranchPush(ctx, repo, wish, state, wishBranch)
@@ -1224,6 +1266,7 @@ func editPush(ctx context.Context, tx *store.Tx, wishID, projectID string, edit 
 	}
 	before := proto.CloneOf(p)
 	edit(p)
+	plan.SettlePushHolds(p)
 	if proto.Equal(before, p) {
 		return nil
 	}

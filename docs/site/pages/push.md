@@ -174,7 +174,11 @@ azima, the Djinn's repair too: it lands on the azima's branch, never on the wish
 two repairs of an azima's branch merged into main, and brought it the azima's work, a pull request not reviewed yet.
 The branch is the one whose push is held, not the last one pushed, which may be another azima's: a correction you ask
 to try again aims at it, and when the Djinn takes a repair of yours, its note names it. The hold, too, belongs to that
-branch: only its repair or its own green push lifts it, and another azima's branch pushing green leaves it held.
+branch: each branch keeps its own, with its own correction and its own attempts. Another azima's branch going red is
+held beside it, never in its place; another azima's branch pushing green leaves it held; only its repair or its own
+green push lifts it. The top of the wish shows the hold Djinn acted on last, and once that one lifts, another branch's
+still held shows there. Until 20/10/2026 a wish had one hold per project: a second azima's branch going red took the
+place of the first one's hold, and counted its runs on top of the first one's.
 
 **One repair per red.** A task the Djinn spawns to repair the red push checks, flagged as a repair or naming them in its
 title or its instructions with the commit they failed at, becomes their correction: Djinn starts none of its own while
