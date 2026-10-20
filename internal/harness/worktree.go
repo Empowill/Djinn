@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	"github.com/empowill/djinn/internal/gitx"
@@ -135,10 +136,35 @@ func checkIdentity(ctx context.Context, dir string) error {
 	return err
 }
 
+// worktreeLocks holds one lock per repository, by the absolute path of its common git folder: every git worktree add
+// and git worktree prune of Djinn takes it, for a prune deletes the folder under .git/worktrees of a worktree an add
+// has begun but not finished, and the add then fails on its locked file (W53).
+var worktreeLocks sync.Map // common git folder -> *sync.Mutex
+
+// worktreeGit runs git worktree args in dir, a folder of the repository whose common git folder is common, holding
+// that repository's worktree lock for the git alone.
+func worktreeGit(ctx context.Context, common, dir string, args ...string) (string, error) {
+	mu, _ := worktreeLocks.LoadOrStore(common, new(sync.Mutex))
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+	return git(ctx, dir, append([]string{"worktree"}, args...)...)
+}
+
+// repoPlace reads, in one git, the absolute path of the common git folder of the repository holding dir, the key of
+// its worktree lock, and dir's folder within it ("app/"; "" at its root).
+func repoPlace(ctx context.Context, dir string) (common, prefix string, err error) {
+	out, err := gitRaw(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir", "--show-prefix")
+	if err != nil {
+		return "", "", err
+	}
+	common, prefix, _ = strings.Cut(out, "\n")
+	return strings.TrimSpace(common), strings.TrimSpace(prefix), nil
+}
+
 // addWorktreeFrom creates the worktree path of the repository holding dir, on a new branch from the commit from. It
 // returns the folder the worker runs in: the project's own folder within the worktree.
 func addWorktreeFrom(ctx context.Context, dir, path, branch, from string) (string, error) {
-	prefix, err := git(ctx, dir, "rev-parse", "--show-prefix")
+	common, prefix, err := repoPlace(ctx, dir)
 	if err != nil {
 		return "", err
 	}
@@ -147,7 +173,7 @@ func addWorktreeFrom(ctx context.Context, dir, path, branch, from string) (strin
 	}
 	keep, done := gitx.Uncut(ctx) // A worktree begun is made whole though djinn up stops (W52).
 	defer done()
-	if _, err := git(keep, dir, "worktree", "add", "--quiet", "-b", branch, path, from); err != nil {
+	if _, err := worktreeGit(keep, common, dir, "add", "--quiet", "-b", branch, path, from); err != nil {
 		return "", err
 	}
 	return filepath.Join(path, filepath.FromSlash(prefix)), nil
@@ -171,7 +197,7 @@ func reviewWorktree(ctx context.Context, dir, path string) (string, error) {
 // the failure's base, and returns the project's folder within it. For a conflict, the branch that conflicted is merged
 // there again, its conflicts left for the worker.
 func correctionWorktree(ctx context.Context, dir, path, branch string, f *planv1.IntegrationFailure) (string, error) {
-	prefix, err := git(ctx, dir, "rev-parse", "--show-prefix")
+	common, prefix, err := repoPlace(ctx, dir)
 	if err != nil {
 		return "", err
 	}
@@ -180,7 +206,7 @@ func correctionWorktree(ctx context.Context, dir, path, branch string, f *planv1
 	}
 	keep, done := gitx.Uncut(ctx) // The worktree and its merge are made whole though djinn up stops (W52).
 	defer done()
-	if _, err := git(keep, dir, "worktree", "add", "--quiet", "-b", branch, path, f.GetBase()); err != nil {
+	if _, err := worktreeGit(keep, common, dir, "add", "--quiet", "-b", branch, path, f.GetBase()); err != nil {
 		return "", err
 	}
 	if b := f.GetMergeBranch(); b != "" {
@@ -239,7 +265,11 @@ func (h *Harness) startPoint(ctx context.Context, project *planv1.Project, from 
 func removeWorktree(ctx context.Context, dir, path string, force bool) error {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		forgetAgyProject(path)
-		_, err := git(ctx, dir, "worktree", "prune")
+		common, _, err := repoPlace(ctx, dir)
+		if err != nil {
+			return err
+		}
+		_, err = worktreeGit(ctx, common, dir, "prune")
 		return err
 	}
 	args := []string{"worktree", "remove"}
