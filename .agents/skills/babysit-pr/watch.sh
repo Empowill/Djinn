@@ -5,7 +5,9 @@
 #     a new push or a re-run;
 #   - all checks passing, at the head commit, once per push, and again after a failure: the lead waits for it before
 #     merging;
-#   - a new comment, or a review with a body: the latest one;
+#   - each new comment, one paragraph each, with its author, its link and its first line: a comment of the
+#     conversation, a review (approved, changes requested, or commented with a body), a comment on a line of the diff;
+#     never twice the same, known by its link. Its first look says only the latest one there;
 #   - a review decision that turns to CHANGES_REQUESTED;
 #   - the pull request no longer mergeable (CONFLICTING; UNKNOWN is GitHub still computing, and says nothing);
 #   - MERGED, then it exits; CLOSED, without a merge, then it exits.
@@ -28,6 +30,30 @@ pr=${1:?usage: watch.sh <pr> [seconds] [looks]}
 prs=$(printf '%s' "$pr" | tr ',' ' ')
 every=${2:-60}
 looks=${3:-0}
+# The comments of the pull request: of its conversation, its reviews, and theirs on lines of the diff.
+query='query($owner: String!, $repo: String!, $pr: Int!) {
+	repository(owner: $owner, name: $repo) {
+		pullRequest(number: $pr) {
+			comments(last: 100) { nodes { url createdAt body author { login } } }
+			reviews(last: 100) { nodes { url state submittedAt body author { login }
+				comments(first: 100) { nodes { url body path line originalLine author { login } } } } }
+		}
+	}
+}'
+notes_jq='def who: .author.login // "ghost";
+	def first_line: .body | gsub("\r"; "") | [splits("\n")]
+		| map(select(test("\\S") and (test("^\\s*```") | not))) | (first // "") | .[0:120];
+	.data.repository.pullRequest as $pr
+	| [($pr.comments.nodes[] | {at: .createdAt, url, what: "new comment by \(who)", text: first_line}),
+	   ($pr.reviews.nodes[] | select(.state != "PENDING")
+	    | (select(.body != "" or .state == "APPROVED" or .state == "CHANGES_REQUESTED")
+	       | {at: .submittedAt, url, text: first_line,
+	          what: "\({APPROVED: "approved", CHANGES_REQUESTED: "changes requested"}[.state] // "review") by \(who)"}),
+	      (.submittedAt as $at | .comments.nodes[]
+	       | {at: $at, url, text: first_line,
+	          what: "new comment by \(who) on \(.path)\(.line // .originalLine | if . then ":\(.)" else "" end)"}))]
+	| sort_by(.at)[]
+	| [.url, .what, .text] | join("\u001f")'
 tab=$(printf '\t')
 us=$(printf '\037')
 nl='
@@ -49,16 +75,16 @@ trap 'exit 143' TERM
 trap 'exit 130' INT
 
 # What it already said: the head commit it saw, the failed checks it named for it (one per line), whether it said
-# they all pass, the latest comment it showed (its time and author), the last review decision and mergeable state,
-# and whether it said gh failed.
-head="" failed="" green="" comment="" review="" mergeable="" broken="" saved=""
+# they all pass, the comments it read (their links, one per line) and whether it read them once, the last review
+# decision and mergeable state, and whether it said gh failed.
+head="" failed="" green="" seen="" notes="" review="" mergeable="" broken="" saved=""
 # The pull requests it read since it started: the first look that reads one says its checks again.
 looked=""
 
 load_state() {
 	curr=$1
 	state=$state_dir/babysit-pr-$curr
-	head="" failed="" green="" comment="" review="" mergeable="" broken="" saved=""
+	head="" failed="" green="" seen="" notes="" review="" mergeable="" broken="" saved=""
 	if [ -f "$state" ]; then
 		while IFS= read -r line; do
 			value=${line#*"$tab"}
@@ -66,7 +92,8 @@ load_state() {
 			"head$tab"*) head=$value ;;
 			"failed$tab"*) failed=${failed:+$failed$nl}$value ;;
 			"green$tab"*) green=$value ;;
-			"comment$tab"*) comment=$value ;;
+			"seen$tab"*) seen=${seen:+$seen$nl}$value ;;
+			"notes$tab"*) notes=$value ;;
 			"review$tab"*) review=$value ;;
 			"mergeable$tab"*) mergeable=$value ;;
 			"broken$tab"*) broken=$value ;;
@@ -78,12 +105,17 @@ load_state() {
 save_state() {
 	curr=$1
 	state=$state_dir/babysit-pr-$curr
-	data="head$tab$head${nl}green$tab$green${nl}comment$tab$comment${nl}review$tab$review${nl}mergeable$tab$mergeable"
+	data="head$tab$head${nl}green$tab$green${nl}notes$tab$notes${nl}review$tab$review${nl}mergeable$tab$mergeable"
 	data="$data${nl}broken$tab$broken$nl"
 	while IFS= read -r name; do
 		[ -n "$name" ] && data="${data}failed$tab$name$nl"
 	done <<EOF
 $failed
+EOF
+	while IFS= read -r url; do
+		[ -n "$url" ] && data="${data}seen$tab$url$nl"
+	done <<EOF
+$seen
 EOF
 	if [ "$data" != "$saved" ]; then
 		printf '%s' "$data" >"$state.new" && mv "$state.new" "$state" && saved=$data
@@ -93,12 +125,12 @@ EOF
 look() {
 	curr=$1
 	load_state "$curr"
-	if ! view=$(gh pr view "$curr" --json state,mergeable,reviewDecision,headRefOid,comments,reviews --jq '
-		((.comments + (.reviews | map(select(.body != "")))) | sort_by(.createdAt // .submittedAt) | last) as $latest
-		| [.state, .mergeable, (.reviewDecision // ""), .headRefOid,
-		   (if $latest == null then "" else "\($latest.createdAt // $latest.submittedAt) \($latest.author.login)" end),
-		   (if $latest == null then "" else "\($latest.author.login): \($latest.body | split("\n")[0])" end)]
-		| join("\u001f")' 2>"$errors"); then
+	# The comments, one line each in the order they showed: link, what it is, first line. A review's comments on the
+	# diff show with it, at its time; a review still pending shows to its author only, and is not said.
+	if ! view=$(gh pr view "$curr" --json state,mergeable,reviewDecision,headRefOid --jq '
+		[.state, .mergeable, (.reviewDecision // ""), .headRefOid] | join("\u001f")' 2>"$errors") ||
+		! now_notes=$(gh api graphql -F owner='{owner}' -F repo='{repo}' -F pr="$curr" -f query="$query" \
+			--jq "$notes_jq" 2>"$errors"); then
 		if [ "$broken" != yes ]; then
 			IFS= read -r why <"$errors" || :
 			printf '%s\n\n' "PR #$curr: gh failed, trying again: ${why:-}"
@@ -132,8 +164,8 @@ look() {
 		return 1
 		;;
 	esac
-	now_mergeable=${2:-} now_review=${3:-} now_head=${4:-} latest=${5:-} text=${6:-}
-	news="" more=""
+	now_mergeable=${2:-} now_review=${3:-} now_head=${4:-}
+	news="" more="" said=""
 	if [ "$now_head" != "$head" ]; then
 		# A new push: its checks start over.
 		head=$now_head failed="" green=""
@@ -193,16 +225,33 @@ EOF
 		mergeable=$now_mergeable
 		;;
 	esac
-	# A comment newer than the last one shown: its time first, so that the latest sorts last.
-	if [ -n "$latest" ] && [ "$latest" != "$comment" ] && awk -v a="$latest" -v b="$comment" 'BEGIN { exit !(a > b) }'; then
-		news="$news · new comment by ${text%%:*}"
-		more="$more${nl}latest comment, by $text"
-		comment=$latest
-	fi
+	# Each comment not read yet, known by its link, a paragraph of its own: its link on the first line, so that two
+	# comments by one author never read as the same news. The first look says only the latest one.
+	while IFS= read -r line; do
+		[ -n "$line" ] || continue
+		url=${line%%"$us"*}
+		rest=${line#*"$us"}
+		case "$nl$seen$nl" in
+		*"$nl$url$nl"*) continue ;;
+		esac
+		seen=${seen:+$seen$nl}$url
+		paragraph="PR #$curr · ${rest%%"$us"*}: $url"
+		excerpt=${rest#*"$us"}
+		[ -n "$excerpt" ] && paragraph="$paragraph$nl> $excerpt"
+		if [ "$notes" = yes ]; then
+			said="$said$paragraph$nl$nl"
+		else
+			said="$paragraph$nl$nl"
+		fi
+	done <<EOF
+$now_notes
+EOF
+	notes=yes
 
 	if [ -n "$news" ]; then
 		printf '%s\n\n' "PR #$curr$news$more"
 	fi
+	printf '%s' "$said"
 	save_state "$curr"
 	return 0
 }
