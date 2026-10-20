@@ -459,15 +459,6 @@ func writeQuestionHistory(b *strings.Builder, q *planv1.Question) {
 // files with its own tools. Workers that took a refused form for a refused Bash gave up without doing anything.
 // contextFile is the file it writes the context of its revision in, when its agent may write there; "" otherwise.
 func questionAccess(contextFile string) string {
-	context := "- Pass the context with `--context \"…\"`, between double quotes like the other values.\n"
-	if contextFile != "" {
-		// Claude Code refuses a newline followed by # inside a quoted argument, whatever its allow rules say: W80 of
-		// wish Dew 13 oct, an investigator, could not revise Q32 with a # comment above each command (W153).
-		context = "- Write the context in a file, never in `--context`: Claude Code refuses a quoted argument where a " +
-			"line starts with `#`, however indented, whatever Djinn allows, and the shape above puts a `# …` comment " +
-			"above each command. Write the whole context with your Write tool in `" + contextFile + "`, the one file " +
-			"you may write, then pass `--context-file \"" + contextFile + "\"`; write it again before each revision.\n"
-	}
 	return "## How to work within your access\n\n" +
 		"You read files, search the web and fetch pages, and run djinn's inspection/revision commands (`djinn wish brief`, " +
 		"`djinn task list`, `djinn task get`, `djinn question list`, `djinn block list`, `djinn tilasm list`, " +
@@ -480,9 +471,43 @@ func questionAccess(contextFile string) string {
 		"and WebFetch, or search_web and read_url_content), never with cat, grep, sed, head, find or curl in Bash.\n" +
 		"- Write the values of `--title`, `--prompt`, `--recommendation`, `--options`… between double quotes, with no " +
 		"backtick nor `$` inside: there they would run a command, and the call is refused. Write an inner double " +
-		"quote `\\\"`.\n" + context +
+		"quote `\\\"`.\n" + contextRule(contextFile) +
 		"- A refused call means that this form of the command is refused, not that Bash is: run the djinn command again, " +
 		"alone and plain. Never end on a refusal: a question worker that did nothing after one has failed.\n\n"
+}
+
+// contextRule is the line of a question worker's prompt that says how it passes its context: in contextFile, which
+// it writes, when its agent may write there; with --context otherwise.
+func contextRule(contextFile string) string {
+	if contextFile == "" {
+		return "- Pass the context with `--context \"…\"`, between double quotes like the other values.\n"
+	}
+	// Claude Code refuses a newline followed by # inside a quoted argument, whatever its allow rules say: W80 of
+	// wish Dew 13 oct, an investigator, could not revise Q32 with a # comment above each command (W153).
+	return "- Write the context in a file, never in `--context`: Claude Code refuses a quoted argument where a " +
+		"line starts with `#`, however indented, whatever Djinn allows, and the shape above puts a `# …` comment " +
+		"above each command. Write the whole context with your Write tool in `" + contextFile + "`, the one file " +
+		"you may write, then pass `--context-file \"" + contextFile + "\"`; write it again before each revision.\n"
+}
+
+// reviseCall is the revision an investigator of question code in wish makes, as its prompt says it: with the
+// context it wrote in contextFile, or with --context when contextFile is "".
+func reviseCall(code, wish, contextFile string) string {
+	if contextFile == "" {
+		return fmt.Sprintf("`djinn question revise %s --wish-id %s --context \"…\" --recommendation \"…\"`", code, wish)
+	}
+	return fmt.Sprintf("write the context in `%s`, then `djinn question revise %s --wish-id %s --context-file "+
+		"\"%s\" --recommendation \"…\"`", contextFile, code, wish, contextFile)
+}
+
+// withContextFile is the prompt of the investigator t, written for an agent that may not write (no context file),
+// for one that writes its context in contextFile: Claude, when it takes the place of an agent that could not start.
+// Claude refuses the inline --context of a question's shape: W18 and W19 of wish Will 20 oct, on Claude after
+// Antigravity could not run read-only, could not revise Q06 (W5).
+func withContextFile(prompt string, t *planv1.Task, contextFile string) string {
+	code, wish := t.GetQuestion(), t.GetWishId()
+	prompt = strings.Replace(prompt, reviseCall(code, wish, ""), reviseCall(code, wish, contextFile), 1)
+	return strings.Replace(prompt, contextRule(""), contextRule(contextFile), 1)
 }
 
 // retryText tells the worker that starts again in the place of before, which gave up after a refusal, what was
@@ -501,11 +526,6 @@ func retryText(before *planv1.Task) string {
 // its agent may write there (questionContextFile); "" otherwise.
 func investigatorPrompt(q *planv1.Question, note, retry, brief, contextFile string, tasks ...*planv1.Task) (title, prompt string) {
 	code, wish := q.GetCode(), q.GetWishId()
-	revise := fmt.Sprintf("`djinn question revise %s --wish-id %s --context \"…\" --recommendation \"…\"`", code, wish)
-	if contextFile != "" {
-		revise = fmt.Sprintf("write the context in `%s`, then `djinn question revise %s --wish-id %s --context-file "+
-			"\"%s\" --recommendation \"…\"`", contextFile, code, wish, contextFile)
-	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are a question worker of Djinn. Before answering %s in wish %s, the developer wants to know "+
 		"more. Your one job: find out, then revise the question so that it waits for the developer again. You write "+
@@ -536,7 +556,7 @@ func investigatorPrompt(q *planv1.Question, note, retry, brief, contextFile stri
 		"it once made. Set `--before \"…\"` only when the answer is needed before something, `--before \"\"` when "+
 		"it can wait: never to get it seen.\n"+
 		"4. Revise it once, at the end, even if you found little: the question waits for you until you do.\n"+
-		"5. End with one line: what you found.\n\n", code, wish, q.GetText(), revise)
+		"5. End with one line: what you found.\n\n", code, wish, q.GetText(), reviseCall(code, wish, contextFile))
 	b.WriteString("## The shape of the context\n\n" + plan.QuestionShape + " Rewrite the former context into this " +
 		"shape even where you found nothing new.\n\n")
 	b.WriteString(questionAccess(contextFile) + retry + "## Where the wish stands\n\n" + brief)

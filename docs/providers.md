@@ -126,14 +126,19 @@ command must be allowed: `djinn task list … | grep …` is refused whole. Its 
 in its own Bash call, files read with Read, Grep and Glob, the web searched with its web tools, and a refusal is of
 that form, not of Bash. One that ends without doing anything after a refusal fails, and Djinn starts it again once
 (`internal/harness/question.go`). Claude Code also refuses, whatever its allow rules, a quoted argument where a
-line starts with `#`, indented or not (its "newline-hash" check, 2.1.300 to 2.1.302 at least): the shape of a
+line starts with `#`, indented or not (its "newline-hash" check, 2.1.300 to 2.1.304 at least): the shape of a
 question puts a `# …` comment above each command, and W80 of wish Dew 13 oct could not revise Q32 (W153). So a Claude
 question worker writes in one folder, its own under Djinn's data folder (`tasks/<id>`, `Spec.WriteDirs`, translated to
 `Edit(//…/**)` and `Write(//…/**)` with the edit denials dropped; `dontAsk` refuses a write anywhere else), and its
 prompt says to write the context whole in `context.md` there, then revise with `--context-file`. Verified on
 2026-10-17 with claude 2.1.302 in `dontAsk`: the write and the revision run, the inline `--context` form is refused,
 a write in the project or beside the folder is refused. A Codex question worker gets no such folder (`writesDirs`):
-Codex's workspace-write sandbox would open its workspace, the project, with it; it revises with `--context`.
+Codex's workspace-write sandbox would open its workspace, the project, with it; it revises with `--context`. A
+question worker that Claude runs in the place of an agent that could not start (Antigravity cannot run read-only) gets
+the folder too, and its prompt, written for that agent, the context file's lines in place of `--context`
+(`withContextFile`): W18 and W19 of wish Will 20 oct, on Claude after Antigravity, had neither and saw every revision
+of Q06 refused (W5). Verified on 2026-10-20 with claude 2.1.304 in `dontAsk`: a quoted line that starts with `#` is
+refused, a `#` after a command on its line passes, `--context-file` passes.
 
 **What counts as agent configuration** (rule 4), at the root of the project's folder, file names compared without
 regard to case: for every agent, `AGENTS.md` and an `.agents` folder; for Claude, `CLAUDE.md`, `CLAUDE.local.md`,
