@@ -56,12 +56,16 @@ const exportOf = (wishId: string, title: string, ids: string[]) => {
       pushes: [
         {
           project_id: randomUUID(),
-          held: "test: go tool task test exited 1",
-          failure: {
-            state: "INTEGRATION_STATE_RED",
-            command: "go tool task test",
-            output:
-              "ok  \tlamp/oil\n--- FAIL: TestLogin (0.02s)\nFAIL\tlamp/wick",
+          holds: {
+            "feat/lamp": {
+              held: "test: go tool task test exited 1",
+              failure: {
+                state: "INTEGRATION_STATE_RED",
+                command: "go tool task test",
+                output:
+                  "ok  \tlamp/oil\n--- FAIL: TestLogin (0.02s)\nFAIL\tlamp/wick",
+              },
+            },
           },
           run: {
             branch: "feat/lamp",
