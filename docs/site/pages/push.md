@@ -168,6 +168,11 @@ it, the push stays held until that one's work is in (see
 the wish says **The push is held, corrected by W9**. Its work lands like any task's, and its success has the push checks
 run again.
 
+**Into the branch it repairs.** A correction's worktree starts from the branch whose push checks are red, and its work
+merges back into that very branch. Under the per-azima strategy, the correction of an azima's branch is part of that
+azima, the Djinn's repair too: it lands on the azima's branch, never on the wish's own branch nor on main. On 20/10/2026
+two repairs of an azima's branch merged into main, and brought it the azima's work, a pull request not reviewed yet.
+
 **One repair per red.** A task the Djinn spawns to repair the red push checks, flagged as a repair or naming them in its
 title or its instructions with the commit they failed at, becomes their correction: Djinn starts none of its own while
 it runs, and the push waits for its work as for Djinn's own correction. While a correction of that red runs, Djinn's or

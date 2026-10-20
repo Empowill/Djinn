@@ -2375,6 +2375,17 @@ func (h *Harness) targetBranch(
 	return branch, "", true
 }
 
+// pushRepairAzima is the azima a correction of the red push checks of branch, in wish, is part of: the one whose branch
+// it is, when the wish pushes per azima, so that targetBranch merges the correction's work into the branch it repairs,
+// its worktree's base, never into the wish's own branch (W32: W28 and W29, repairs of djinn/T1-…, merged into main).
+// "" for the wish's own branch.
+func (h *Harness) pushRepairAzima(ctx context.Context, wish *planv1.Wish, branch string) string {
+	if branch == "" || !h.pushesPerAzima(ctx, h.store, wish) {
+		return ""
+	}
+	return azimaOwning(h.wishAzimas(ctx, wish), branch).GetId()
+}
+
 // azimaBranchName is the integration branch name of an azima: djinn/<code-slug> or djinn/<code>.
 func azimaBranchName(a *planv1.Task) string {
 	return plan.AzimaBranchName(a)
