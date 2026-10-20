@@ -1128,3 +1128,115 @@ func TestPushRepair_AzimaBranch(t *testing.T) {
 		repairedInto(t, in, bare, main, b1, in.ended(t, c.GetId()))
 	})
 }
+
+// TestPushRepair_SecondAzima (W33): two azimas push, the push checks of the second one's branch hold its push, left
+// to the lead. Its repair, the one Djinn starts on "try again" or the lead's it takes, aims at that branch, not at the
+// first azima's, pushed last: the try again started from the branch of the last push (WishPush.last), and the note of
+// a repair Djinn took named the wish's own branch.
+func TestPushRepair_SecondAzima(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	// heldOnSecond pushes T1's branch green with W1's work, then holds the push of T2's branch, red on W2's work and
+	// left to the lead; it returns the remote and the two branches.
+	heldOnSecond := func(t *testing.T, in *integration) (bare, b1, b2 string) {
+		t.Helper()
+		in.checking(t, "correction_attempts: 0\n"+lintAtCommit+
+			"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+		in.correctWith(func(dir, _ string) string {
+			fixTests(t, dir, "Fix the e2e")
+			return "text push checks fixed"
+		})
+		bare = in.remote(t)
+		in.setAzimaStrategy(t)
+		t1, t2 := in.azima(t, in.wishID, "Bounded Loop"), in.azima(t, in.wishID, "Second Part")
+		b1, b2 = azimaBranchName(t1), azimaBranchName(t2)
+		in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+		in.pass(t, 0)
+		if state := in.pushState(t); state.GetLast().GetBranch() != b1 || state.GetHeld() != "" {
+			t.Fatalf("the push %v; want %s pushed green", state, b1)
+		}
+		in.mu.Lock()
+		in.testCode, in.testOut = 1, "--- FAIL: TestE2E"
+		in.mu.Unlock()
+		in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
+		in.pass(t, time.Second)
+		state := in.pushState(t)
+		if !strings.HasSuffix(state.GetHeld(), "; left to the lead") || state.GetLast().GetBranch() != b1 ||
+			state.GetFailedSha() != in.git(t, in.repo, "rev-parse", "refs/heads/"+b2) {
+			t.Fatalf("the push %v; want %s held, left to the lead, %s pushed last", state, b2, b1)
+		}
+		return bare, b1, b2
+	}
+	// repairs checks that c, part of T2, goes into b2, pushed green, and leaves b1 where origin has it.
+	repairs := func(t *testing.T, in *integration, bare, b1, b2 string, c *planv1.Task) {
+		t.Helper()
+		if c.GetPartOf() == "" || in.get(t, c.GetPartOf()).GetCode() != "T2" {
+			t.Errorf("%s part of %q; want T2, whose branch is held", c.GetCode(), c.GetPartOf())
+		}
+		b1Tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
+		in.mu.Lock()
+		in.testCode = 0
+		in.mu.Unlock()
+		in.ended(t, c.GetId())
+		in.pass(t, time.Second)
+		if got := in.get(t, c.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED ||
+			got.GetBranch() != b2 {
+			t.Fatalf("%s's work: %v; want committed into %s", c.GetCode(), got, b2)
+		}
+		tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
+		if got := in.git(t, bare, "rev-parse", "refs/heads/"+b2); got != tip {
+			t.Errorf("origin's %s at %s, want %s pushed once green", b2, got, tip)
+		}
+		if got := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1); got != b1Tip {
+			t.Errorf("%s moved to %s, want it at %s: the repair of %s merged into it", b1, got, b1Tip, b2)
+		}
+	}
+
+	for _, forgotten := range []bool{false, true} {
+		name := "try again"
+		if forgotten {
+			name += ", the held run forgotten" // Another branch's push ran since, and cleared its own run.
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			in := integrating(t)
+			bare, b1, b2 := heldOnSecond(t, in)
+			if forgotten {
+				if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+					return editPush(t.Context(), tx, in.wishID, in.projectID, func(p *planv1.WishPush) { p.Run = nil })
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			in.answer(t, in.attachPushQuestion(t), planv1.Choice_CHOICE_A)
+			c := in.get(t, in.pushState(t).GetCorrectedBy())
+			if !strings.Contains(c.GetPrompt(), b2) || strings.Contains(c.GetPrompt(), b1) {
+				t.Errorf("%s's prompt names %s? %q; want %s's", c.GetCode(), b1, c.GetPrompt(), b2)
+			}
+			repairs(t, in, bare, b1, b2, c)
+		})
+	}
+
+	t.Run("the lead's repair", func(t *testing.T) {
+		t.Parallel()
+		in := integrating(t)
+		bare, b1, b2 := heldOnSecond(t, in)
+		res, err := in.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
+			WishId: in.wishID, ProjectId: in.projectID, Provider: planv1.Provider_PROVIDER_FAKE, Title: "Make the e2e pass", Repair: true,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := res.Msg.GetTask()
+		want := "Djinn takes " + c.GetCode() + " as the correction of the red push checks of " + b2 + ":"
+		if !strings.HasPrefix(res.Msg.GetNote(), want) {
+			t.Errorf("spawn note %q; want it to start %q", res.Msg.GetNote(), want)
+		}
+		waitFor(t, "the push to name the repair", func() bool { return in.pushState(t).GetCorrectedBy() == c.GetId() })
+		if !hasText(in.events(t, c), want) {
+			t.Errorf("no event of %s says %q", c.GetCode(), want)
+		}
+		repairs(t, in, bare, b1, b2, c)
+	})
+}
