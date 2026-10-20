@@ -1559,7 +1559,7 @@ func integrationDir(home, projectID, wishID string) string {
 // at its root). Its caller holds the worktree alone (integrateMu, installMu): an index.lock there is a dead git's, taken
 // away (unlockWorktree), or every reset there would fail (W52). Once begun, it ends though djinn up stops.
 func integrationWorktree(ctx context.Context, repo, wt, old string) (string, string, error) {
-	prefix, err := git(ctx, repo, "rev-parse", "--show-prefix")
+	common, prefix, err := repoPlace(ctx, repo)
 	if err != nil {
 		return "", "", err
 	}
@@ -1588,13 +1588,13 @@ func integrationWorktree(ctx context.Context, repo, wt, old string) (string, str
 	if err := os.Remove(setupStamp(wt)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", "", err
 	}
-	if _, err := git(ctx, repo, "worktree", "prune"); err != nil {
+	if _, err := worktreeGit(ctx, common, repo, "prune"); err != nil {
 		return "", "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(wt), 0o700); err != nil {
 		return "", "", err
 	}
-	_, err = git(ctx, repo, "worktree", "add", "--quiet", "--detach", wt, old)
+	_, err = worktreeGit(ctx, common, repo, "add", "--quiet", "--detach", wt, old)
 	return dir, prefix, err
 }
 
