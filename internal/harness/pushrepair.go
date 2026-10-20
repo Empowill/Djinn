@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -102,6 +103,8 @@ func (h *Harness) claimRepair(req *planv1.TaskServiceSpawnRequest, wish *planv1.
 	if !req.GetRepair() && !aimsAtPushChecks(req.GetTitle(), req.GetPrompt(), p) {
 		return nil
 	}
+	ctx := context.Background()
+	branch = h.heldBranch(ctx, wish, project.GetDirectory(), project.GetId())
 	if c := h.pushRepairOf(p, wish.GetId(), project.GetId(), tasks); c != nil {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"%s already repairs the push checks of %s (red %s): one repair per red; follow it (djinn task watch %s --last 5), "+
@@ -111,10 +114,48 @@ func (h *Harness) claimRepair(req *planv1.TaskServiceSpawnRequest, wish *planv1.
 		return nil
 	}
 	task.Correction = &planv1.TaskCorrection{Failure: proto.CloneOf(p.GetFailure()), Attempt: p.GetAttempts() + 1, Adopted: true}
-	if run := p.GetRun(); task.GetPartOf() == "" && run.GetStage() == planv1.PushStage_PUSH_STAGE_HELD {
-		task.PartOf = h.pushRepairAzima(context.Background(), wish, run.GetBranch()) // As Djinn's own correction (W32).
+	if task.GetPartOf() == "" {
+		task.PartOf = h.pushRepairAzima(ctx, wish, branch) // As Djinn's own correction (W32).
 	}
 	return nil
+}
+
+// heldBranch is the branch whose red push checks hold the push of wish in the project projectID, at repo: the one
+// its run held; else the wish's branch whose tip is, or holds, the commit they were red at, an azima's first; else the
+// wish's integration branch. Under the per-azima strategy it is not the last branch pushed: that may be another
+// azima's (W33).
+func (h *Harness) heldBranch(ctx context.Context, wish *planv1.Wish, repo, projectID string) string {
+	p := pushState(wish, projectID)
+	if run := p.GetRun(); run.GetStage() == planv1.PushStage_PUSH_STAGE_HELD && run.GetBranch() != "" {
+		return run.GetBranch()
+	}
+	branch := plan.IntegrationBranchOf(wish, projectID)
+	if !h.pushesPerAzima(ctx, h.store, wish) {
+		return branch
+	}
+	var branches []string
+	for _, a := range h.wishAzimas(ctx, wish) {
+		branches = append(branches, azimaBranchName(a))
+	}
+	branches = append(branches, branch)
+	tips := make([]string, len(branches))
+	for i, b := range branches {
+		tips[i] = commitOf(ctx, repo, "refs/heads/"+b)
+	}
+	red := slices.DeleteFunc([]string{p.GetFailedSha(), p.GetFailure().GetBase()}, func(sha string) bool { return sha == "" })
+	for _, sha := range red {
+		if i := slices.Index(tips, sha); i >= 0 {
+			return branches[i]
+		}
+	}
+	for i, tip := range tips { // The branch moved since: a commit of the developer's on it.
+		for _, sha := range red {
+			if tip != "" && isAncestor(ctx, repo, sha, tip) {
+				return branches[i]
+			}
+		}
+	}
+	return branch
 }
 
 // adoptRepair records c, a repair Djinn took as the correction of its wish's red push checks (claimRepair), on the
@@ -127,7 +168,7 @@ func (h *Harness) adoptRepair(ctx context.Context, c *planv1.Task) {
 		logx.L().Error("adopt a repair", "loop", "push", "task", c.GetCode(), "err", err)
 		return
 	}
-	branch := plan.IntegrationBranchOf(wish, c.GetProjectId())
+	branch := h.repairedBranch(ctx, wish, c.GetProjectId())
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), c.GetProjectId(), func(p *planv1.WishPush) {
 			p.CorrectedBy, p.Attempts = c.GetId(), c.GetCorrection().GetAttempt()
@@ -162,5 +203,15 @@ func (h *Harness) spawnRepairNote(ctx context.Context, t *planv1.Task) string {
 	if err != nil {
 		return ""
 	}
-	return repairNote(t, plan.IntegrationBranchOf(wish, t.GetProjectId()))
+	return repairNote(t, h.repairedBranch(ctx, wish, t.GetProjectId()))
+}
+
+// repairedBranch is the branch whose red push checks a repair Djinn took in wish, in the project projectID, repairs:
+// an azima's under the per-azima strategy, not the wish's own (W33).
+func (h *Harness) repairedBranch(ctx context.Context, wish *planv1.Wish, projectID string) string {
+	project, err := store.Get[*planv1.Project](ctx, h.store, projectID)
+	if err != nil {
+		return plan.IntegrationBranchOf(wish, projectID)
+	}
+	return h.heldBranch(ctx, wish, project.GetDirectory(), projectID)
 }

@@ -172,6 +172,8 @@ run again.
 merges back into that very branch. Under the per-azima strategy, the correction of an azima's branch is part of that
 azima, the Djinn's repair too: it lands on the azima's branch, never on the wish's own branch nor on main. On 20/10/2026
 two repairs of an azima's branch merged into main, and brought it the azima's work, a pull request not reviewed yet.
+The branch is the one whose push is held, not the last one pushed, which may be another azima's: a correction you ask
+to try again aims at it, and when the Djinn takes a repair of yours, its note names it.
 
 **One repair per red.** A task the Djinn spawns to repair the red push checks, flagged as a repair or naming them in its
 title or its instructions with the commit they failed at, becomes their correction: Djinn starts none of its own while

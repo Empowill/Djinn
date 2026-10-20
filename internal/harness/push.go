@@ -1240,10 +1240,9 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 	choice, held := q.GetAnswer().GetChoice(), p.GetHeld() != ""
 	if held {
 		projectID := p.GetProjectId()
-		branch := p.GetLast().GetBranch()
-		if branch == "" {
-			branch = plan.IntegrationBranchOf(wish, projectID)
-		}
+		project, err1 := store.Get[*planv1.Project](ctx, h.store, projectID)
+		// The branch held, not the last one pushed: per azima, that may be another azima's (W33).
+		branch := h.heldBranch(ctx, wish, project.GetDirectory(), projectID)
 		f := p.GetFailure()
 		var committed []*planv1.Task
 		if f != nil && len(f.GetTaskIds()) > 0 {
@@ -1251,7 +1250,6 @@ func (h *Harness) answerPush(ctx context.Context, q *planv1.Question) (string, b
 		}
 		switch choice {
 		case planv1.Choice_CHOICE_A:
-			project, err1 := store.Get[*planv1.Project](ctx, h.store, projectID)
 			settings, err2 := plan.LoadSettings(h.home, project)
 			if err := errors.Join(err1, err2); err != nil {
 				logx.L().Error("read the project", "loop", "push", "question", q.GetCode(), "wish", wish.GetId(), "project", projectID, "err", err)
