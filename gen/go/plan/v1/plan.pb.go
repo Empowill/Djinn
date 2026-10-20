@@ -4676,7 +4676,11 @@ type WishPush struct {
 	Run *PushRun `protobuf:"bytes,13,opt,name=run,proto3" json:"run,omitempty"`
 	// The branches whose sync the developer forgot (djinn project forget-sync), each with its tip then: Project.syncs
 	// leaves a branch out while its tip stays there, and shows it again once it moves.
-	Forgotten     map[string]string `protobuf:"bytes,14,rep,name=forgotten,proto3" json:"forgotten,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Forgotten map[string]string `protobuf:"bytes,14,rep,name=forgotten,proto3" json:"forgotten,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// The branch whose push checks hold the push, while held: only a push of that branch, green, lifts the hold, never
+	// another azima's (W35). Empty in a hold recorded before it: Djinn finds the branch from the run held or the commit
+	// the checks were red at.
+	HeldBranch    string `protobuf:"bytes,15,opt,name=held_branch,json=heldBranch,proto3" json:"held_branch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4807,6 +4811,13 @@ func (x *WishPush) GetForgotten() map[string]string {
 		return x.Forgotten
 	}
 	return nil
+}
+
+func (x *WishPush) GetHeldBranch() string {
+	if x != nil {
+		return x.HeldBranch
+	}
+	return ""
 }
 
 // PushRun is a push Djinn runs, or ran, of one branch: what the window shows on its sync line, the same however it
@@ -26926,7 +26937,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\rretired_codes\x18\x13 \x03(\tR\fretiredCodes\x12:\n" +
 	"\rpush_strategy\x18\x14 \x01(\x0e2\x15.plan.v1.PushStrategyR\fpushStrategy\x12\x14\n" +
 	"\x05place\x18\x16 \x01(\x05R\x05place\x12\x12\n" +
-	"\x04icon\x18\x17 \x01(\tR\x04iconJ\x04\b\x06\x10\aJ\x04\b\x15\x10\x16R\x04leadR\tprincipal\"\xb4\x04\n" +
+	"\x04icon\x18\x17 \x01(\tR\x04iconJ\x04\b\x06\x10\aJ\x04\b\x15\x10\x16R\x04leadR\tprincipal\"\xd5\x04\n" +
 	"\bWishPush\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12,\n" +
@@ -26945,7 +26956,9 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"failed_sha\x18\v \x01(\tR\tfailedSha\x125\n" +
 	"\afailure\x18\f \x01(\v2\x1b.plan.v1.IntegrationFailureR\afailure\x12\"\n" +
 	"\x03run\x18\r \x01(\v2\x10.plan.v1.PushRunR\x03run\x12>\n" +
-	"\tforgotten\x18\x0e \x03(\v2 .plan.v1.WishPush.ForgottenEntryR\tforgotten\x1a<\n" +
+	"\tforgotten\x18\x0e \x03(\v2 .plan.v1.WishPush.ForgottenEntryR\tforgotten\x12\x1f\n" +
+	"\vheld_branch\x18\x0f \x01(\tR\n" +
+	"heldBranch\x1a<\n" +
 	"\x0eForgottenEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe7\x01\n" +

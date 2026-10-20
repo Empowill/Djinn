@@ -121,11 +121,14 @@ func (h *Harness) claimRepair(req *planv1.TaskServiceSpawnRequest, wish *planv1.
 }
 
 // heldBranch is the branch whose red push checks hold the push of wish in the project projectID, at repo: the one
-// its run held; else the wish's branch whose tip is, or holds, the commit they were red at, an azima's first; else the
+// the hold names (W35); in a hold recorded before it, the one its run held; else the wish's branch whose tip is, or holds, the commit they were red at, an azima's first; else the
 // wish's integration branch. Under the per-azima strategy it is not the last branch pushed: that may be another
 // azima's (W33).
 func (h *Harness) heldBranch(ctx context.Context, wish *planv1.Wish, repo, projectID string) string {
 	p := pushState(wish, projectID)
+	if b := p.GetHeldBranch(); b != "" {
+		return b
+	}
 	if run := p.GetRun(); run.GetStage() == planv1.PushStage_PUSH_STAGE_HELD && run.GetBranch() != "" {
 		return run.GetBranch()
 	}

@@ -133,6 +133,19 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 	h.pushBranchApart(wish, project, branch, committed, why, false)
 }
 
+// holdsPush tells whether the red push checks of branch hold the push of wish in the project projectID, at repo. Only
+// a green push of that branch lifts the hold: another one's, an azima's, leaves it (W35).
+func (h *Harness) holdsPush(ctx context.Context, wish *planv1.Wish, repo, projectID, branch string) bool {
+	p := pushState(wish, projectID)
+	return (p.GetHeld() != "" || p.GetHeldRuns() > 0) && h.heldBranch(ctx, wish, repo, projectID) == branch
+}
+
+// liftHold lifts the hold of p, the push of a wish in a project: the push checks of the branch held pass.
+func liftHold(p *planv1.WishPush) {
+	p.Held, p.HeldRuns, p.HeldBranch = "", 0, ""
+	p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = "", 0, "", nil
+}
+
 // movedSince tells whether branch, in repo, is at another commit than sha, the one its push checks were red on.
 func movedSince(ctx context.Context, repo, branch, sha string) bool {
 	tip, err := git(ctx, repo, "rev-parse", "refs/heads/"+branch)
@@ -351,8 +364,8 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	state := pushState(wish, project.GetId())
 	unchecked := approved && state.GetUnchecked()
 	// A branch its remote holds already, pushed by hand while its push checks held it, is checked all the same: green,
-	// Djinn records it as pushed, and the hold lifts.
-	if ahead == 0 && (state.GetHeld() == "" || unchecked) {
+	// Djinn records it as pushed, and the hold lifts. Another branch held, an azima's, does not make it due (W35).
+	if ahead == 0 && (unchecked || !h.holdsPush(ctx, wish, repo, project.GetId(), branch)) {
 		h.clearApproved(ctx, wish.GetId(), project.GetId(), approved)
 		return nil, plan.ErrUpToDate
 	}
@@ -438,7 +451,7 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	pushing, done := h.pastTheQueue(pushing)
 	defer done()
 	if cur, err := store.Get[*planv1.Wish](ctx, h.store, wish.GetId()); err == nil {
-		wish, state = cur, pushState(cur, project.GetId()) // As it stands now, the checks run.
+		wish = cur // As it stands now, the checks run.
 	}
 	if !unchecked {
 		switch {
@@ -450,11 +463,9 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 			h.holdPush(ctx, wish, project, committed, branch, sha, cmd, held, out, red)
 			run.set(ctx, planv1.PushStage_PUSH_STAGE_HELD, "", heldNote(held, out))
 			return nil, fmt.Errorf("the push is held: its checks are red (%s)", held)
-		case state.GetHeld() != "" || state.GetHeldRuns() > 0:
+		case h.holdsPush(ctx, wish, repo, project.GetId(), branch):
 			err := h.store.Tx(ctx, func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-					p.Held, p.HeldRuns, p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = "", 0, "", 0, "", nil
-				})
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), liftHold)
 			})
 			if err != nil {
 				logx.L().Error("lift the push hold", "loop", "push", "wish", wish.GetId(), "project", project.GetId(),
@@ -514,14 +525,16 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 		WishId: wish.GetId(), ProjectId: project.GetId(), Branch: branch, Remote: remote, OldSha: old, NewSha: sha,
 		Count: int32(count), Commits: titles, TaskIds: ids(committed), PushTime: timestamppb.New(h.now()),
 	}
+	lift := h.holdsPush(ctx, wish, repo, project.GetId(), branch)
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(actorHarness, methodPush, record); err != nil {
 			return err
 		}
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-			p.Last, p.QuestionId, p.Refused, p.Approved = record, "", "", false
-			p.Held, p.HeldRuns, p.Unchecked = "", 0, false
-			p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = "", 0, "", nil
+			p.Last, p.QuestionId, p.Refused, p.Approved, p.Unchecked = record, "", "", false, false
+			if lift {
+				liftHold(p)
+			}
 			p.Run = run.ended(planv1.PushStage_PUSH_STAGE_PUSHED, "")
 		})
 	})
@@ -585,14 +598,16 @@ func (h *Harness) pushedByHand(
 			record.Commits = strings.Split(out, "\n")
 		}
 	}
+	lift := h.holdsPush(ctx, wish, repo, project.GetId(), branch)
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		if err := tx.Journal(actorHarness, methodPush, record); err != nil {
 			return err
 		}
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-			p.Last, p.QuestionId, p.Refused, p.Approved = record, "", "", false
-			p.Held, p.HeldRuns, p.Unchecked = "", 0, false
-			p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = "", 0, "", nil
+			p.Last, p.QuestionId, p.Refused, p.Approved, p.Unchecked = record, "", "", false, false
+			if lift {
+				liftHold(p)
+			}
 		})
 	})
 	if err != nil {

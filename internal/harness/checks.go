@@ -318,7 +318,7 @@ func (h *Harness) holdPush(
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 			p.Held, p.HeldRuns, p.Approved, p.Unchecked = held, p.GetHeldRuns()+1, false, false
-			p.FailedSha, p.Failure = sha, f
+			p.FailedSha, p.Failure, p.HeldBranch = sha, f, branch
 			runs = p.GetHeldRuns()
 		})
 	})
@@ -383,7 +383,7 @@ func (h *Harness) holdSeen(
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 			p.Held, p.Approved, p.Unchecked = fmt.Sprintf("at %s, %s", short8(sha), headline(f.GetReason())), false, false
-			p.FailedSha, p.Failure = sha, f
+			p.FailedSha, p.Failure, p.HeldBranch = sha, f, branch
 		})
 	})
 	if err != nil {
@@ -509,7 +509,7 @@ func (h *Harness) askPushHeld(
 		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
 			p.QuestionId, p.Approved, p.CorrectedBy, p.Failure = "", false, "", f
 			p.Held = fmt.Sprintf("at %s, %s; left to the lead", short8(tip), headline(f.GetReason()))
-			p.FailedSha = tip
+			p.FailedSha, p.HeldBranch = tip, branch
 		})
 	})
 	if err != nil {
