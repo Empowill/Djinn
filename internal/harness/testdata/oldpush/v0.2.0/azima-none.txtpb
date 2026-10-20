@@ -1,0 +1,4 @@
+# v0.2.0, per azima: no branch named, no run, red at a commit no branch of the wish holds.
+held: "at 0f2e0240, test: exit status 1"
+held_runs: 1
+failed_sha: "0f2e02401234567890abcdef0123456789abcdef"

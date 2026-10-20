@@ -1,10 +1,20 @@
 package harness
 
 import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
@@ -129,5 +139,165 @@ func TestMigratePushes(t *testing.T) {
 				t.Errorf("a second migration changed the push: %v; want %v", after, before)
 			}
 		})
+	}
+}
+
+// The commits the push checks of the fixtures of testdata/oldpush were red at, made in a test repository by a fixed
+// author at a fixed time (fixedCommits): their hashes are the ones the fixtures name.
+const (
+	redCommit   = "1fcf7b2fdfb476421cd997101c9def78b189cf90"
+	movedCommit = "985328cbdb3eddf263adabbe64a64d1280bb5fad" // A commit of the developer's on redCommit.
+)
+
+// TestMigratePushes_OldStore (W65): the pushes of testdata/oldpush, each as a store of v0.2.0 or of the parent of W63
+// wrote it, marshalled with that build's schema (gen.go there), are read by the store's own path at a start of Djinn,
+// and Recover leaves each as its .want.txtpb says: every hold on its branch, the push question about the integration
+// branch or, per azima, withdrawn. A second start changes nothing.
+func TestMigratePushes_OldStore(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	const question = "01a0f000-0000-7000-8000-000000000001" // The push question the fixtures name.
+	for _, c := range []struct {
+		fixture   string // testdata/oldpush/<build>/<case>
+		perAzima  bool
+		tips      map[string]string // The commit each azima's branch is at, by the azima's title: red or moved.
+		withdrawn bool              // Whether the push question is withdrawn.
+	}{
+		{fixture: "v0.2.0/wish"},
+		{fixture: "v0.2.0/wish-unheld"},
+		{fixture: "v0.2.0/azima-run", perAzima: true},
+		{fixture: "v0.2.0/azima-tip", perAzima: true, tips: map[string]string{"first": "moved", "second": "red"}, withdrawn: true},
+		{fixture: "v0.2.0/azima-moved", perAzima: true, tips: map[string]string{"first": "moved"}},
+		{fixture: "v0.2.0/azima-none", perAzima: true, tips: map[string]string{"first": "red", "second": "moved"}},
+		{fixture: "1a219c84/wish-named"},
+		{fixture: "1a219c84/azima-named", perAzima: true, withdrawn: true},
+		{fixture: "1a219c84/azima-holds", perAzima: true},
+	} {
+		t.Run(c.fixture, func(t *testing.T) {
+			t.Parallel()
+			old, err := os.ReadFile(filepath.Join("testdata", "oldpush", c.fixture+".binpb"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantText, err := os.ReadFile(filepath.Join("testdata", "oldpush", c.fixture+".want.txtpb"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			in := integrating(t)
+			if c.perAzima {
+				in.setAzimaStrategy(t)
+				fixedCommits(t, in.repo)
+				for i, title := range []string{"first", "second"} {
+					a := in.azima(t, in.wishID, title)
+					if name, want := azimaBranchName(a), fmt.Sprintf("djinn/T%d-%s", i+1, title); name != want {
+						t.Fatalf("the azima %s's branch is %s; the fixtures name %s", title, name, want)
+					}
+					if tip, ok := c.tips[title]; ok {
+						tip = map[string]string{"red": redCommit, "moved": movedCommit}[tip]
+						if _, err := git(t.Context(), in.repo, "update-ref", "refs/heads/"+azimaBranchName(a), tip); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
+			q := &planv1.Question{Id: question, WishId: in.wishID, Code: "Q1", Text: "Push it?", CreateTime: timestamppb.Now()}
+			if err := in.db.Tx(t.Context(), func(tx *store.Tx) error {
+				return errors.Join(tx.Journal(actorLocal, "test/old", q), tx.Put(q))
+			}); err != nil {
+				t.Fatal(err)
+			}
+			in.storeOldPush(t, old)
+
+			in.restart(t)
+			want := &planv1.WishPush{}
+			r := strings.NewReplacer("@branch@", in.branch, "@project@", in.projectID)
+			if err := prototext.Unmarshal([]byte(r.Replace(string(wantText))), want); err != nil {
+				t.Fatal(err)
+			}
+			if got := in.pushState(t); !proto.Equal(got, want) {
+				t.Errorf("the push after the migration:\n%v\nunknown fields %q\nwant:\n%v", prototext.Format(got),
+					got.ProtoReflect().GetUnknown(), prototext.Format(want))
+			}
+			asked, err := store.Get[*planv1.Question](t.Context(), in.db, question)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if withdrawn := asked.GetWithdrawal() != nil; withdrawn != c.withdrawn {
+				t.Errorf("%s withdrawn: %v; want %v", asked.GetCode(), withdrawn, c.withdrawn)
+			}
+
+			// Once moved, a second start finds nothing to move.
+			before, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in.restart(t)
+			after, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !proto.Equal(after, before) {
+				t.Errorf("a second start changed the wish's pushes: %v; want %v", after.GetPushes(), before.GetPushes())
+			}
+			if again, err := store.Get[*planv1.Question](t.Context(), in.db, question); err != nil || !proto.Equal(again, asked) {
+				t.Errorf("a second start changed %s: %v (%v); want %v", asked.GetCode(), again, err, asked)
+			}
+		})
+	}
+}
+
+// storeOldPush stops Djinn and writes old, the bytes of a push as the store of an older build wrote them, as the one
+// push of the wish's row, with the project's id the fixture cannot know: a field appended, which protobuf reads as
+// set. The rest of the wish is this build's.
+func (in *integration) storeOldPush(t *testing.T, old []byte) {
+	t.Helper()
+	wish, err := store.Get[*planv1.Wish](t.Context(), in.db, in.wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wish.Pushes = nil
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(wish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := func(m proto.Message) protoreflect.FieldDescriptors { return m.ProtoReflect().Descriptor().Fields() }
+	push := protowire.AppendTag(slices.Clone(old), fields(&planv1.WishPush{}).ByName("project_id").Number(), protowire.BytesType)
+	push = protowire.AppendString(push, in.projectID)
+	payload = protowire.AppendTag(payload, fields(wish).ByName("pushes").Number(), protowire.BytesType)
+	payload = protowire.AppendBytes(payload, push)
+	in.down()
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(in.home, store.File)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	res, err := db.ExecContext(t.Context(), `UPDATE wish SET payload = ? WHERE id = ?`, payload, in.wishID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		t.Fatalf("%d wish rows written (%v); want 1", n, err)
+	}
+}
+
+// fixedCommits makes redCommit and movedCommit in repo: empty trees, by a fixed author at a fixed time.
+func fixedCommits(t *testing.T, repo string) {
+	t.Helper()
+	gitAt := func(args ...string) string {
+		cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Djinn", "GIT_AUTHOR_EMAIL=djinn@example.com",
+			"GIT_AUTHOR_DATE=1700000000 +0000", "GIT_COMMITTER_NAME=Djinn", "GIT_COMMITTER_EMAIL=djinn@example.com",
+			"GIT_COMMITTER_DATE=1700000000 +0000")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	tree := gitAt("mktree")
+	red := gitAt("commit-tree", "--no-gpg-sign", "-m", "red", tree)
+	moved := gitAt("commit-tree", "--no-gpg-sign", "-p", red, "-m", "moved", tree)
+	if red != redCommit || moved != movedCommit {
+		t.Fatalf("the fixed commits are %s and %s; the fixtures name %s and %s", red, moved, redCommit, movedCommit)
 	}
 }

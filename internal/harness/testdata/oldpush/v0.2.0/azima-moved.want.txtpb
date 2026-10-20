@@ -1,0 +1,10 @@
+# After the migration: the hold on the branch that moved past 1fcf7b2f.
+project_id: "@project@"
+holds {
+  key: "djinn/T1-first"
+  value {
+    held: "at 1fcf7b2f, test: exit status 1"
+    held_runs: 3
+    failure { state: INTEGRATION_STATE_RED base: "1fcf7b2fdfb476421cd997101c9def78b189cf90" reason: "test: exit status 1" }
+  }
+}

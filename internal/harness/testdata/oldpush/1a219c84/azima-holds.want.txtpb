@@ -1,0 +1,6 @@
+# After the migration: unchanged.
+project_id: "@project@"
+holds {
+  key: "djinn/T1-first"
+  value { held: "at 985328cb, lint: exit status 2" held_runs: 1 }
+}

@@ -1,0 +1,11 @@
+# After the migration: the hold on the branch at 1fcf7b2f, not the one past it; the question withdrawn.
+project_id: "@project@"
+holds {
+  key: "djinn/T2-second"
+  value {
+    held: "at 1fcf7b2f, test: exit status 1"
+    held_runs: 1
+    failed_sha: "1fcf7b2fdfb476421cd997101c9def78b189cf90"
+    failure { state: INTEGRATION_STATE_RED base: "1fcf7b2fdfb476421cd997101c9def78b189cf90" reason: "test: exit status 1" }
+  }
+}
