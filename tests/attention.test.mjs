@@ -260,9 +260,9 @@ test("a line of the attention bar takes you to its target in another tab, a fold
 });
 
 test("a failed worker never waits for you: refused calls are the Djinn's (W96)", () => {
-  // W19 of wish Will retour beta (16/10/2026): an investigator failed on refused djinn commands, Djinn started W20 in
+  // Another project (16/10/2026): an investigator, W19, failed on refused djinn commands, Djinn started W20 in
   // its place, and W19 still showed at the top as waiting for you, with nothing you could do.
-  const w = wish("w1", "Will retour beta", s.WishState.ACTIVE, 1);
+  const w = wish("w1", "Polish the lamp", s.WishState.ACTIVE, 1);
   const w19 = {
     id: "t19",
     wishId: "w1",
