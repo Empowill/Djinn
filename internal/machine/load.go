@@ -335,55 +335,74 @@ func (s *loadService) notifyWatchers() {
 	}
 }
 
-func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchResponse {
-	resp := &djinnv1.LoadServiceWatchResponse{
-		Notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
-	}
+// setting is one reading of the load setting: the policy the scheduler runs, the machine it weighs and the auto mode's
+// state. A message is made of one reading, so that a Set between two readings never mixes two settings in it (a
+// notch Medium with the slots of High, W27).
+type setting struct {
+	policy            Policy
+	snap              Snapshot
+	effective, chosen djinnv1.LoadNotch
+	auto              bool
+	reason            *djinnv1.LoadAutoReason
+}
+
+// read reads the load setting once. The notch in effect is the policy's when the monitor has one: the notch the
+// slots are weighed with, which the auto mode's notch is a step ahead of while a Set applies it.
+func (s *loadService) read() setting {
+	r := setting{effective: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, chosen: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM}
 	if s.auto != nil {
-		resp.Notch = s.auto.Effective()
-		resp.Auto = s.auto.IsAuto()
-		resp.ChosenNotch = s.auto.Chosen()
-		resp.AutoReason = s.auto.Reason()
-	} else if s.monitor != nil {
-		policy := s.monitor.Policy()
-		if policy.Notch != djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
-			resp.Notch = policy.Notch
-			resp.ChosenNotch = policy.Notch
+		r.auto, r.chosen, r.effective, r.reason = s.auto.state()
+	}
+	if s.monitor != nil {
+		r.policy, r.snap = s.monitor.Policy(), s.monitor.Snapshot()
+		if n := r.policy.Notch; n != djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
+			r.effective = n
+			if s.auto == nil {
+				r.chosen = n
+			}
 		}
 	}
-	var policy Policy
+	return r
+}
+
+func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchResponse {
+	r := s.read()
+	resp := &djinnv1.LoadServiceWatchResponse{
+		Notch:       r.effective,
+		Auto:        r.auto,
+		ChosenNotch: r.chosen,
+		AutoReason:  r.reason,
+	}
 	if s.monitor != nil {
-		policy = s.monitor.Policy()
-		snap := s.monitor.Snapshot()
-		forecast := policy.WorkerForecast()
+		forecast := r.policy.WorkerForecast()
 		if s.workerForecast != nil {
 			if f := s.workerForecast(); f > 0 {
 				forecast = f
 			}
 		}
-		cpuSlots := policy.CPUSlots(snap)
-		memSlots := policy.MemorySlots(snap, forecast)
-		binding := policy.BindingResource(snap, forecast)
+		cpuSlots := r.policy.CPUSlots(r.snap)
+		memSlots := r.policy.MemorySlots(r.snap, forecast)
+		binding := r.policy.BindingResource(r.snap, forecast)
 		baseSlots := min(cpuSlots, memSlots)
 
-		resp.MemoryTotalBytes = s.monitor.Total()
-		resp.MemoryAvailableBytes = s.monitor.Available()
+		resp.MemoryTotalBytes = r.snap.MemoryTotal
+		resp.MemoryAvailableBytes = r.snap.available()
 		resp.WorkerForecastBytes = forecast
 		resp.BindingResource = binding
 		resp.CpuSlots = int32(cpuSlots)
 		resp.MemorySlots = int32(memSlots)
 		resp.BaseSlots = int32(baseSlots)
-		resp.WorkerPercentile = int32(policy.MemoryPercentile())
-		resp.WorkerEngagedAt = policy.EngagedAt()
+		resp.WorkerPercentile = int32(r.policy.MemoryPercentile())
+		resp.WorkerEngagedAt = r.policy.EngagedAt()
 	}
 	if s.workerMemory != nil {
-		engaged, actual, err := s.workerMemory(ctx, policy)
+		engaged, actual, err := s.workerMemory(ctx, r.policy)
 		if err == nil {
 			resp.EngagedMemoryBytes = engaged
 			resp.WorkerMemoryBytes = actual
 		}
 	}
-	w := s.workers()
+	w := s.workers(r)
 	resp.RunningWorkers, resp.PausedWorkers, resp.ForcedWorkers = w.running, w.paused, w.forced
 	resp.Slots, resp.NotchSlots, resp.LowerPauses = w.slots, w.notchSlots, w.lowerPauses
 	return resp
@@ -397,8 +416,8 @@ type workerCounts struct {
 	lowerPauses                    bool
 }
 
-// workers counts the workers as the scheduler does: the slots are the monitor's Capacity, the same reading.
-func (s *loadService) workers() workerCounts {
+// workers counts the workers as the scheduler does: the slots are the monitor's Capacity, weighed on the reading r.
+func (s *loadService) workers(r setting) workerCounts {
 	var w workerCounts
 	if s.runningWorkers != nil {
 		w.running = int32(s.runningWorkers())
@@ -413,9 +432,9 @@ func (s *loadService) workers() workerCounts {
 		w.lowerPauses = s.lowerPauses()
 	}
 	if s.monitor != nil {
-		slots, _, _ := s.monitor.Capacity()
+		slots, _ := r.policy.Slots(r.snap)
 		w.slots = int32(slots)
-		for _, n := range s.monitor.NotchSlots() {
+		for _, n := range notchSlots(r.policy, r.snap) {
 			w.notchSlots = append(w.notchSlots, &djinnv1.LoadNotchSlots{Notch: n.Notch, Slots: int32(n.Slots)})
 		}
 	}
@@ -425,52 +444,36 @@ func (s *loadService) workers() workerCounts {
 func (s *loadService) Get(
 	_ context.Context, _ *connect.Request[djinnv1.LoadServiceGetRequest],
 ) (*connect.Response[djinnv1.LoadServiceGetResponse], error) {
-	effective := djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
-	chosen := djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
-	isAuto := false
-	if s.auto != nil {
-		effective = s.auto.Effective()
-		isAuto = s.auto.IsAuto()
-		chosen = s.auto.Chosen()
-	} else if s.monitor != nil {
-		if n := s.monitor.Policy().Notch; n != djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
-			effective = n
-			chosen = n
-		}
-	}
+	r := s.read()
 	resp := &djinnv1.LoadServiceGetResponse{
-		Notch:       effective,
-		Auto:        isAuto,
-		ChosenNotch: chosen,
-	}
-	if s.auto != nil {
-		resp.AutoReason = s.auto.Reason()
+		Notch:       r.effective,
+		Auto:        r.auto,
+		ChosenNotch: r.chosen,
+		AutoReason:  r.reason,
 	}
 	if s.monitor != nil {
-		policy := s.monitor.Policy()
-		snap := s.monitor.Snapshot()
-		forecast := policy.WorkerForecast()
+		forecast := r.policy.WorkerForecast()
 		if s.workerForecast != nil {
 			if f := s.workerForecast(); f > 0 {
 				forecast = f
 			}
 		}
-		cpuSlots := policy.CPUSlots(snap)
-		memSlots := policy.MemorySlots(snap, forecast)
-		binding := policy.BindingResource(snap, forecast)
+		cpuSlots := r.policy.CPUSlots(r.snap)
+		memSlots := r.policy.MemorySlots(r.snap, forecast)
+		binding := r.policy.BindingResource(r.snap, forecast)
 		baseSlots := min(cpuSlots, memSlots)
 
-		resp.MemoryTotalBytes = s.monitor.Total()
-		resp.MemoryAvailableBytes = s.monitor.Available()
+		resp.MemoryTotalBytes = r.snap.MemoryTotal
+		resp.MemoryAvailableBytes = r.snap.available()
 		resp.WorkerForecastBytes = forecast
 		resp.BindingResource = binding
 		resp.CpuSlots = int32(cpuSlots)
 		resp.MemorySlots = int32(memSlots)
 		resp.BaseSlots = int32(baseSlots)
-		resp.WorkerPercentile = int32(policy.MemoryPercentile())
-		resp.WorkerEngagedAt = policy.EngagedAt()
+		resp.WorkerPercentile = int32(r.policy.MemoryPercentile())
+		resp.WorkerEngagedAt = r.policy.EngagedAt()
 	}
-	w := s.workers()
+	w := s.workers(r)
 	resp.RunningWorkers, resp.PausedWorkers, resp.ForcedWorkers = w.running, w.paused, w.forced
 	resp.Slots, resp.NotchSlots, resp.LowerPauses = w.slots, w.notchSlots, w.lowerPauses
 	return connect.NewResponse(resp), nil

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -485,6 +486,67 @@ func TestLoadService_Tick(t *testing.T) {
 	}
 }
 
+// TestLoadService_OneSetting: a Set in the middle of a message does not mix two settings in it: its notch and its
+// slots come from one reading, the one before the Set; the next message says the new setting (W27).
+func TestLoadService_OneSetting(t *testing.T) {
+	t.Parallel()
+	snap := slotMachines[3]
+	medium, high := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH)
+	ms, _ := medium.Slots(snap)
+	hs, _ := high.Slots(snap)
+	if ms == hs {
+		t.Fatalf("Medium and High run %d workers each on this machine: no mix to see", ms)
+	}
+	// reading is what one message says: its notch, its slots and its CPU slots.
+	type reading struct {
+		notch       djinnv1.LoadNotch
+		slots, cpus int32
+	}
+	cases := []struct {
+		name string
+		read func(s *loadService) reading
+	}{
+		{"watch", func(s *loadService) reading {
+			r := s.snapshot(t.Context())
+			return reading{r.GetNotch(), r.GetSlots(), r.GetCpuSlots()}
+		}},
+		{"get", func(s *loadService) reading {
+			r, err := s.Get(t.Context(), connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return reading{r.Msg.GetNotch(), r.Msg.GetSlots(), r.Msg.GetCpuSlots()}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			m := NewMonitor(medium, func() (Snapshot, error) { return snap, nil })
+			var s *loadService
+			var once sync.Once
+			// The workers are counted while the message is made: the setting moves to High then.
+			_, s = serveLoad(t, t.TempDir(), m, nil, nil, nil, WithLoadTickInterval(0), WithLoadRunningWorkers(func() int {
+				once.Do(func() {
+					if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+						Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+					})); err != nil {
+						t.Errorf("Set High: %v", err)
+					}
+				})
+				return 1
+			}))
+			for _, want := range []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, djinnv1.LoadNotch_LOAD_NOTCH_HIGH} {
+				got := c.read(s)
+				p := NotchPolicy(want)
+				slots, _ := p.Slots(snap)
+				if w := (reading{want, int32(slots), int32(p.CPUSlots(snap))}); got != w {
+					t.Errorf("message: got %+v, want %+v (the setting %v alone)", got, w, want)
+				}
+			}
+		})
+	}
+}
+
 // TestLoadService_Watch: the stream sends the state at once, then only what changed, at most once an interval; it
 // says the slots Get says. Not parallel: SetWatchInterval sets the interval of every stream.
 func TestLoadService_Watch(t *testing.T) {
@@ -562,14 +624,15 @@ func TestLoadService_Watch(t *testing.T) {
 			})); err != nil {
 				t.Fatalf("Set HIGH: %v", err)
 			}
-			var second *djinnv1.LoadServiceWatchResponse
-			select {
-			case second = <-recv:
-			case <-time.After(time.Second):
-				t.Fatal("timed out waiting for update after Set")
-			}
-			if second.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
-				t.Errorf("second notch: got %v, want HIGH", second.GetNotch())
+			// A tick's snapshot may have read the setting before the Set: its message still says Medium, the next High.
+			deadline := time.After(time.Second)
+			for high := false; !high; {
+				select {
+				case second := <-recv:
+					high = second.GetNotch() == djinnv1.LoadNotch_LOAD_NOTCH_HIGH
+				case <-deadline:
+					t.Fatal("timed out waiting for the notch High after Set")
+				}
 			}
 
 			// 4. Memory change detected on periodic tick
