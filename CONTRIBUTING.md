@@ -143,9 +143,9 @@ has set for those who work on it are in [`docs/pitfalls.md`](docs/pitfalls.md). 
   `e2e/baseline.json` similarly (update with `UPDATE_BASELINE=1`).
   - **One djinn per Playwright worker.** `e2e/global-setup.ts` starts as many `djinn up --browser` as workers, a
     data folder each; a worker's specs share theirs, in the order Playwright gives them. Three workers on a
-    developer's machine, two on CI (`DJINN_E2E_WORKERS` or `-- --workers N` moves it). A spec imports `test` and
-    `expect` from `e2e/test.ts`: its fixture fails a test that leaves an active wish it made or an open question it
-    asked, pausing or withdrawing them for the specs after. A spec makes its own state (`djinn wish make --json`
+    developer's machine, two on CI, one on CI's Windows (`DJINN_E2E_WORKERS` or `-- --workers N` moves it). A
+    spec imports `test` and `expect` from `e2e/test.ts`: its fixture fails a test that leaves an active wish it made
+    or an open question it asked, pausing or withdrawing them for the specs after. A spec makes its own state (`djinn wish make --json`
     through `bin/djinn-e2e`) and deletes or pauses it before it ends.
   - **Windows runs what targets the system.** Linux and macOS run every test; the Windows job sets
     `DJINN_TEST_SYSTEM_ONLY=1`, which skips the tests marked portable: `testx.Portable(t)` first in a Go test

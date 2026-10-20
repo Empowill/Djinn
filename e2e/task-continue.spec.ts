@@ -55,6 +55,19 @@ async function down(d: { proc: ChildProcess; exited: Promise<unknown> }) {
   await d.exited;
 }
 
+// keepLogs copies the logs of the spec's own djinn next to those of the suite's (global-setup.ts), which the job keeps
+// when it fails: on the Windows runner, the minute after this spec restarted its djinn stalled the whole runner, and
+// this djinn's log went with its temporary home (W36, tilasm L02).
+function keepLogs(home: string) {
+  const logs = path.join(home, "logs");
+  if (!fs.existsSync(logs)) return;
+  fs.cpSync(
+    logs,
+    path.resolve(__dirname, "../test-results/e2e/djinn-logs/task-continue"),
+    { recursive: true, force: true },
+  );
+}
+
 type Task = {
   id: string;
   code: string;
@@ -66,6 +79,8 @@ test("an interrupted task continued from the command line stays one task", async
   page,
 }) => {
   test.setTimeout(90_000);
+  const start = Date.now();
+  let failed = true;
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-continue-"));
@@ -164,8 +179,11 @@ test("an interrupted task continued from the command line stays one task", async
     ).tasks as Task[];
     expect(listed.map((t) => t.code)).toEqual(["T1", "W1"]);
     expect(errors).toEqual([]);
+    failed = false;
   } finally {
     await down(running);
+    // A run over 10 s is the stall, even green: it passes in a few seconds.
+    if (failed || Date.now() - start > 10_000) keepLogs(home);
     fs.rmSync(home, {
       recursive: true,
       force: true,
