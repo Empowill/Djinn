@@ -1240,3 +1240,54 @@ func TestPushRepair_SecondAzima(t *testing.T) {
 		repairs(t, in, bare, b1, b2, c)
 	})
 }
+
+// TestPushHold_OtherAzimaGreen (W35): two azimas push, the push checks of the second one's branch hold its push, left
+// to the lead; the first one's branch, its push checks green, pushes. That push keeps the second branch held: the
+// hold was one field per wish and project, and any green push lifted it, so the held branch pushed red at the next
+// pass, or its checks ran again on the very tree they were red on.
+func TestPushHold_OtherAzimaGreen(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	in := integrating(t)
+	in.checking(t, "correction_attempts: 0\n"+lintAtCommit+
+		"checks { name: \"test\" command: \"test\" when: CHECK_WHEN_PUSH }\n", map[string]int{"lint": 0})
+	// The tests fail while b.txt is there: on T2's branch, never on T1's.
+	in.verdict = func(dir string) (string, int) {
+		if _, err := os.Stat(filepath.Join(dir, "src", "b.txt")); err == nil {
+			return "--- FAIL: TestE2E", 1
+		}
+		return "", 0
+	}
+	bare := in.remote(t)
+	in.setAzimaStrategy(t)
+	t1, t2 := in.azima(t, in.wishID, "Bounded Loop"), in.azima(t, in.wishID, "Second Part")
+	b1, b2 := azimaBranchName(t1), azimaBranchName(t2)
+	in.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	in.pass(t, 0)
+	in.finished(t, "W2", map[string]string{"app/src/b.txt": "b\n"}, func(task *planv1.Task) { task.PartOf = t2.GetId() })
+	in.pass(t, time.Second)
+	red := in.git(t, in.repo, "rev-parse", "refs/heads/"+b2)
+	held := in.pushState(t)
+	if !strings.HasSuffix(held.GetHeld(), "; left to the lead") || held.GetFailedSha() != red {
+		t.Fatalf("the push %v; want %s held at %s, left to the lead", held, b2, short8(red))
+	}
+
+	in.finished(t, "W3", map[string]string{"app/src/c.txt": "c\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+	in.pass(t, time.Second)
+	tip := in.git(t, in.repo, "rev-parse", "refs/heads/"+b1)
+	if got := in.git(t, bare, "rev-parse", "refs/heads/"+b1); got != tip {
+		t.Fatalf("origin's %s at %s, want %s pushed green", b1, got, tip)
+	}
+	state := in.pushState(t)
+	if state.GetHeld() != held.GetHeld() || state.GetFailedSha() != red || state.GetFailure().GetBase() != red {
+		t.Errorf("after the push of %s, the push %v; want %s still held as %q", b1, state, b2, held.GetHeld())
+	}
+	in.ran()
+	in.pass(t, time.Second)
+	if got := commitOf(t.Context(), bare, "refs/heads/"+b2); got != "" {
+		t.Errorf("origin's %s at %s: pushed while its push checks are red", b2, got)
+	}
+	if runs, _ := in.ran(); slices.Contains(runs, "test") {
+		t.Errorf("runs %v: the push checks of %s ran again on the tree they were red on", runs, b2)
+	}
+}
