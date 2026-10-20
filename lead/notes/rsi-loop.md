@@ -54,8 +54,8 @@ Each QA cycle plays a user on 6 to 8 site requests with synthetic content (a blo
 languages; one theme to match from a description, one verbose request, one content tree that traps the template
 choice), runs the lint, renders the pages in a headless browser, scores them, keeps the rendered pages in its tilasm,
 which names the tested commit of the branch, and lists the defects by package. The lead spawns one correction per
-package hit, part of the azima, then the next QA cycle after them; the benchmark a decision of the wish forbids is never
-touched. At the end: a summary tilasm of the cycles and a question on what comes next.
+package hit, part of the azima, then the next QA cycle after them; the reference pages a decision of the wish freezes
+are never touched. At the end: a summary tilasm of the cycles and a question on what comes next.
 
 **How to apply:** when the developer asks for a loop, ask its limits, name its scope and its automatic check, put the
 three in a decision block, say with `--decided` what the loop will run, and spawn QA cycle 1. At each batch, read the
