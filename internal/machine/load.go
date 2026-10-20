@@ -276,6 +276,13 @@ type loadService struct {
 	tickInterval time.Duration
 	stopAuto     chan struct{}
 
+	// settingMu orders the changes of the load setting with its readings: a change moves the auto mode's state and the
+	// monitor's policy together under it, and read reads both under it, so that no message says the chosen notch of
+	// one setting with the notch in effect of another (W30).
+	settingMu sync.Mutex
+	// betweenReads, when set, runs in read between the auto mode's state and the policy: a test sets the notch there.
+	betweenReads func()
+
 	mu   sync.Mutex
 	subs map[chan struct{}]struct{}
 }
@@ -303,7 +310,21 @@ func (s *loadService) Tick() (bool, djinnv1.LoadNotch) {
 	return s.auto.Tick()
 }
 
+// applyNotch gives the monitor, the scheduler and the windows the policy of the notch in effect. The auto mode's notch
+// is read again under settingMu: a beat's notch a Set came after is not applied over it.
 func (s *loadService) applyNotch(effective djinnv1.LoadNotch) {
+	s.settingMu.Lock()
+	p, effective := s.policyLocked(effective)
+	s.settingMu.Unlock()
+	s.publish(p, effective)
+}
+
+// policyLocked sets the monitor's policy to the notch in effect, the auto mode's when there is one, and returns both;
+// settingMu held.
+func (s *loadService) policyLocked(effective djinnv1.LoadNotch) (Policy, djinnv1.LoadNotch) {
+	if s.auto != nil {
+		effective = s.auto.Effective()
+	}
 	p := NotchPolicy(effective)
 	if s.auto != nil && s.auto.IsAuto() {
 		p.Auto = true
@@ -316,6 +337,12 @@ func (s *loadService) applyNotch(effective djinnv1.LoadNotch) {
 		p.WorkerMemoryGuard = current.WorkerMemoryGuard
 		s.monitor.SetPolicy(p)
 	}
+	return p, effective
+}
+
+// publish gives the scheduler and the windows the policy p of the notch in effect, outside settingMu: they may read
+// the setting again.
+func (s *loadService) publish(p Policy, effective djinnv1.LoadNotch) {
 	if s.setPolicy != nil {
 		s.setPolicy(p)
 	}
@@ -346,15 +373,24 @@ type setting struct {
 	reason            *djinnv1.LoadAutoReason
 }
 
-// read reads the load setting once. The notch in effect is the policy's when the monitor has one: the notch the
-// slots are weighed with, which the auto mode's notch is a step ahead of while a Set applies it.
+// read reads the load setting once, the auto mode's state and the policy under settingMu. The notch in effect is the
+// policy's when the monitor has one: the notch the slots are weighed with, which the auto mode's notch is a step ahead
+// of while a beat steps it (Tick, then applyNotch).
 func (s *loadService) read() setting {
 	r := setting{effective: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, chosen: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM}
+	s.settingMu.Lock()
 	if s.auto != nil {
 		r.auto, r.chosen, r.effective, r.reason = s.auto.state()
 	}
+	if s.betweenReads != nil {
+		s.betweenReads()
+	}
 	if s.monitor != nil {
-		r.policy, r.snap = s.monitor.Policy(), s.monitor.Snapshot()
+		r.policy = s.monitor.Policy()
+	}
+	s.settingMu.Unlock()
+	if s.monitor != nil {
+		r.snap = s.monitor.Snapshot()
 		if n := r.policy.Notch; n != djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
 			r.effective = n
 			if s.auto == nil {
@@ -492,18 +528,17 @@ func (s *loadService) Set(
 	if err := WriteNotch(s.home, notch); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write load setting: %w", err))
 	}
-	effective := notch
+	effective, chosen := notch, notch
 	isAuto := false
+	s.settingMu.Lock()
 	if s.auto != nil {
-		effective, _ = s.auto.SetNotch(notch)
-		isAuto = s.auto.IsAuto()
+		s.auto.SetNotch(notch)
+		isAuto, chosen, effective, _ = s.auto.state()
 	}
-	s.applyNotch(effective)
+	p, _ := s.policyLocked(effective)
+	s.settingMu.Unlock()
+	s.publish(p, effective)
 	s.notifyWatchers()
-	chosen := effective
-	if s.auto != nil {
-		chosen = s.auto.Chosen()
-	}
 	return connect.NewResponse(&djinnv1.LoadServiceSetResponse{
 		Notch:       effective,
 		Auto:        isAuto,

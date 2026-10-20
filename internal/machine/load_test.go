@@ -547,6 +547,83 @@ func TestLoadService_OneSetting(t *testing.T) {
 	}
 }
 
+// TestLoadService_ChosenInEffect: a Set between the reading of the auto mode and that of the policy waits for the
+// message to be made: a manual notch's message says the same notch chosen and in effect, the old one, then the new one
+// (W30).
+func TestLoadService_ChosenInEffect(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		read func(s *loadService) (notch, chosen djinnv1.LoadNotch)
+	}{
+		{"watch", func(s *loadService) (djinnv1.LoadNotch, djinnv1.LoadNotch) {
+			r := s.snapshot(t.Context())
+			return r.GetNotch(), r.GetChosenNotch()
+		}},
+		{"get", func(s *loadService) (djinnv1.LoadNotch, djinnv1.LoadNotch) {
+			r, err := s.Get(t.Context(), connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return r.Msg.GetNotch(), r.Msg.GetChosenNotch()
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			m := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), func() (Snapshot, error) {
+				return slotMachines[3], nil
+			})
+			_, s := serveLoad(t, t.TempDir(), m, nil, nil, nil, WithLoadTickInterval(0))
+			set := make(chan struct{})
+			var once sync.Once
+			s.betweenReads = func() {
+				once.Do(func() {
+					go func() {
+						defer close(set)
+						if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+							Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+						})); err != nil {
+							t.Errorf("Set High: %v", err)
+						}
+					}()
+					// The Set ends here when nothing holds it back; once held, the message goes on without it.
+					select {
+					case <-set:
+					case <-time.After(100 * time.Millisecond):
+					}
+				})
+			}
+			for i, want := range []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, djinnv1.LoadNotch_LOAD_NOTCH_HIGH} {
+				notch, chosen := c.read(s)
+				if notch != want || chosen != want {
+					t.Errorf("message %d: notch %v, chosen %v; want %v for both", i, notch, chosen, want)
+				}
+				<-set
+			}
+		})
+	}
+}
+
+// TestLoadService_LateBeat: a beat's notch applied after a Set does not undo it: the policy stays the Set's (W30).
+func TestLoadService_LateBeat(t *testing.T) {
+	t.Parallel()
+	m := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), func() (Snapshot, error) {
+		return slotMachines[3], nil
+	})
+	_, s := serveLoad(t, t.TempDir(), m, nil, nil, nil, WithLoadTickInterval(0))
+	if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	// The beat stepped to Minimal before the Set, and applies it after.
+	s.applyNotch(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
+	if got := m.Policy().Notch; got != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+		t.Errorf("policy %v after the late beat, want the Set's LOAD_NOTCH_HIGH", got)
+	}
+}
+
 // TestLoadService_Watch: the stream sends the state at once, then only what changed, at most once an interval; it
 // says the slots Get says. Not parallel: SetWatchInterval sets the interval of every stream.
 func TestLoadService_Watch(t *testing.T) {
