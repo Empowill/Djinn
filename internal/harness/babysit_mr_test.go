@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
@@ -163,5 +164,94 @@ func TestWatch_BabysitMR(t *testing.T) {
 	}
 	if after := files(t, dir); !maps.Equal(after, before) {
 		t.Errorf("the project's folder changed: %v", after)
+	}
+}
+
+// TestWatch_BabysitMRGivenOnly: the watcher speaks of the merge requests it is given, a comma-separated list, and
+// exits once all are merged; never of another open one, though its branch is an azima's (djinn/...): that one has its
+// own watcher, as W8 settled for babysit-pr. Run in a repository with djinn/ branches while the forge lists a third
+// merge request on such a branch.
+func TestWatch_BabysitMRGivenOnly(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("the watcher is a POSIX shell script: on Windows the sh of Git for Windows runs it")
+	}
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("the fake glab filters with jq")
+	}
+	// A glab that records each call's first words, answers mr list from list.json and mr view <iid> from
+	// mr-<iid>-<n>.json (n is that merge request's look, the last file before it when there is none).
+	const listGlab = `#!/bin/sh
+printf '%s %s %s\n' "$1" "$2" "$3" >> "$GLAB_DATA/calls"
+command="$1 $2"
+iid=$3
+expr=""
+while [ $# -gt 0 ]; do
+	case $1 in
+	--jq) expr=$2; shift ;;
+	esac
+	shift
+done
+case $command in
+"mr list") file=$GLAB_DATA/list.json ;;
+"mr view")
+	n=$(grep -c "^mr view $iid\$" "$GLAB_DATA/calls")
+	while [ "$n" -gt 1 ] && [ ! -f "$GLAB_DATA/mr-$iid-$n.json" ]; do n=$((n - 1)); done
+	file=$GLAB_DATA/mr-$iid-$n.json
+	;;
+*) exit 1 ;;
+esac
+exec jq -r "$expr" "$file"
+`
+	script, err := filepath.Abs(filepath.Join("..", "..", ".agents", "skills", "babysit-mr", "watch.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := gitRepo(t)
+	for _, branch := range []string{"djinn/T1-one", "djinn/T2-two"} {
+		if _, err := git(t.Context(), repo, "branch", branch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin, data := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "glab"), []byte(listGlab), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"list.json": `[{"iid":101,"source_branch":"djinn/T1-one"},{"iid":102,"source_branch":"djinn/T2-two"},
+			{"iid":103,"source_branch":"djinn/T3-three"}]`,
+		// 101 is open on the first look and merged on the second; 102 is merged at once; 103 is never given.
+		"mr-101-1.json": `{"iid":101,"state":"opened","detailed_merge_status":"mergeable"}`,
+		"mr-101-2.json": `{"iid":101,"state":"merged","detailed_merge_status":"not_open"}`,
+		"mr-102-1.json": `{"iid":102,"state":"merged","detailed_merge_status":"not_open"}`,
+		"mr-103-1.json": `{"iid":103,"state":"merged","detailed_merge_status":"not_open"}`,
+	} {
+		if err := os.WriteFile(filepath.Join(data, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", script, "101,102", "0")
+	cmd.Dir = repo
+	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "GLAB_DATA="+data)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("watch.sh: %v\n%s", err, out)
+	}
+	want := "MR !101 · pipeline: none · merge status: mergeable · comments: 0\n\n" +
+		"MERGED: MR !102 is merged.\n\n" +
+		"MERGED: MR !101 is merged.\n\n"
+	if string(out) != want {
+		t.Errorf("output:\n%s\nwant only the merge requests given:\n%s", out, want)
+	}
+	b, err := os.ReadFile(filepath.Join(data, "calls"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls := strings.Split(strings.TrimSpace(string(b)), "\n"); !slices.Equal(calls,
+		[]string{"mr view 101", "mr view 102", "mr view 101"}) {
+		t.Errorf("glab calls:\n%s\nwant only views of 101 and 102", strings.Join(calls, "\n"))
 	}
 }

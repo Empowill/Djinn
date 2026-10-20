@@ -1486,6 +1486,16 @@ func (h *Harness) launch(
 			task.Provider = planv1.Provider_PROVIDER_CLAUDE
 			task.Model = plan.DefaultQuestionModel
 			spec.Model = plan.DefaultQuestionModel
+			// Its prompt was written for an agent without a folder to write in: Claude gets its folder, and writes
+			// its context there (W5).
+			dirs, dirErr := h.questionWriteDirs(task)
+			if dirErr != nil {
+				h.finish(r, Result{ExitCode: -1, Err: dirErr})
+				return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("task %s: %w", task.GetCode(), dirErr))
+			}
+			if spec.WriteDirs = dirs; len(dirs) > 0 {
+				spec.Prompt = withContextFile(spec.Prompt, task, questionContextFile(h.home, task.GetId()))
+			}
 			if errors.Is(err, ErrReadOnly) {
 				r.fallback = fmt.Sprintf("%s cannot run read-only: %s", short(origProvider), short(planv1.Provider_PROVIDER_CLAUDE))
 			} else {

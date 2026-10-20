@@ -1,11 +1,18 @@
 package plan_test
 
 import (
+	"os"
 	"testing"
 
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/testx"
 )
 
 func TestMain(m *testing.M) {
-	testx.Main(m)
+	removeFakes := plan.FakeClaudeMain()
+	cleanup := testx.Guard()
+	code := m.Run()
+	cleanup()
+	removeFakes()
+	os.Exit(code)
 }

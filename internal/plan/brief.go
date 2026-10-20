@@ -501,7 +501,8 @@ func leadCommandsBrief(driven bool) string {
 		"`djinn tilasm restore <code> <version>`; `djinn tilasm comments <code> --send <n>`, `djinn tilasm reply " +
 		"<code> <C> --text \"…\" --task W60`.\n" +
 		"- `djinn question enlighten <question>` is the developer's \"tell me more\": the question waits for a " +
-		"`djinn question revise <question> --context \"…\" --recommendation \"…\"`, by its question worker or by you; " +
+		"`djinn question revise <question> --context-file <file> --recommendation \"…\"`, by its question worker or by " +
+		"you, the context written in the file with your Write tool (inline, its `# …` lines get the call refused); " +
 		"`djinn question move <question> --wish <wish>` moves an open question to another wish (`--follow` moves tasks naming it as decision); " +
 		"`djinn question withdraw <question> --note \"…\"` closes it without an answer.\n" +
 		"- `djinn question sleep <question> --until W12,merged:W45,2026-10-20` puts a question to sleep until typed " +
