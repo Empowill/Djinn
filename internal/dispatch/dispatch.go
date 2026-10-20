@@ -756,8 +756,10 @@ func (s *Situation) pushHeld(t *planv1.Task) string {
 	if wish == nil || t.GetProjectId() == "" {
 		return ""
 	}
-	if p := plan.PushStateOf(wish, t.GetProjectId()); p != nil && p.GetHeld() != "" && !p.GetUnchecked() && p.GetCorrectedBy() != t.GetId() {
-		sha, check := pushCheckHeld(p)
+	// Each branch held keeps its hold (W37): the correction of any of them goes on; the branch held last says why.
+	if holds := plan.PushHolds(plan.PushStateOf(wish, t.GetProjectId())); len(holds) > 0 && holds[0].GetHeld() != "" &&
+		!holds[0].GetUnchecked() && !slices.ContainsFunc(holds, func(p *planv1.WishPush) bool { return p.GetCorrectedBy() == t.GetId() }) {
+		sha, check := pushCheckHeld(holds[0])
 		return fmt.Sprintf("waits for %s to be green again (push checks red at %s: %s)", s.integrationBranch(t), sha, check)
 	}
 	for _, c := range s.tasks {

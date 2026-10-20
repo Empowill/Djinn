@@ -280,6 +280,10 @@ type loadService struct {
 	// monitor's policy together under it, and read reads both under it, so that no message says the chosen notch of
 	// one setting with the notch in effect of another (W30).
 	settingMu sync.Mutex
+	// changeMu orders the changes of the load setting with what they send: a change holds it from its write to its
+	// last message to the scheduler and the windows, so that of two changes at once the scheduler gets the last one
+	// last (W41). The scheduler and the windows may read the setting under it, not change it.
+	changeMu sync.Mutex
 	// betweenReads, when set, runs in read between the auto mode's state and the policy: a test sets the notch there.
 	betweenReads func()
 
@@ -313,6 +317,8 @@ func (s *loadService) Tick() (bool, djinnv1.LoadNotch) {
 // applyNotch gives the monitor, the scheduler and the windows the policy of the notch in effect. The auto mode's notch
 // is read again under settingMu: a beat's notch a Set came after is not applied over it.
 func (s *loadService) applyNotch(effective djinnv1.LoadNotch) {
+	s.changeMu.Lock()
+	defer s.changeMu.Unlock()
 	s.settingMu.Lock()
 	p, effective := s.policyLocked(effective)
 	s.settingMu.Unlock()
@@ -341,7 +347,7 @@ func (s *loadService) policyLocked(effective djinnv1.LoadNotch) (Policy, djinnv1
 }
 
 // publish gives the scheduler and the windows the policy p of the notch in effect, outside settingMu: they may read
-// the setting again.
+// the setting again. changeMu held.
 func (s *loadService) publish(p Policy, effective djinnv1.LoadNotch) {
 	if s.setPolicy != nil {
 		s.setPolicy(p)
@@ -525,6 +531,8 @@ func (s *loadService) Set(
 	if notch == djinnv1.LoadNotch_LOAD_NOTCH_LIGHT {
 		notch = djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM
 	}
+	s.changeMu.Lock()
+	defer s.changeMu.Unlock()
 	if err := WriteNotch(s.home, notch); err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("write load setting: %w", err))
 	}

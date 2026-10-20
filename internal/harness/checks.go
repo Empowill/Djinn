@@ -287,6 +287,7 @@ func (h *Harness) spawnPushCorrection(
 		WishId: wish.GetId(), ProjectId: project.GetId(),
 		Title:  mergeLine("push checks", failedChecks(f)),
 		Prompt: pushCorrectionPrompt(branch, f, settings, attempt),
+		PartOf: h.pushRepairAzima(ctx, wish, branch), // Its work merges into branch, the one it repairs.
 	}
 	made := &planv1.Task{Correction: &planv1.TaskCorrection{Failure: proto.CloneOf(f), Attempt: attempt}}
 	return h.spawn(context.WithoutCancel(ctx), planv1connect.TaskServiceSpawnProcedure, req, made)
@@ -300,7 +301,7 @@ func (h *Harness) holdPush(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha, command, why, out string,
 	red *planv1.CheckRun,
 ) {
-	cur := pushState(wish, project.GetId())
+	cur := h.pushOf(ctx, wish, project.GetDirectory(), project.GetId(), branch) // Its own hold (W37).
 	if h.pushHeldAlready(ctx, wish, project, branch, sha, cur) {
 		return
 	}
@@ -314,12 +315,13 @@ func (h *Harness) holdPush(
 		TaskIds: ids(committed),
 	}, red)
 	var runs int32
+	edit := h.holdEdit(ctx, wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
+		p.Held, p.HeldRuns, p.Approved, p.Unchecked = held, p.GetHeldRuns()+1, false, false
+		p.FailedSha, p.Failure = sha, f
+		runs = p.GetHeldRuns()
+	})
 	err := h.store.Tx(ctx, func(tx *store.Tx) error {
-		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-			p.Held, p.HeldRuns, p.Approved, p.Unchecked = held, p.GetHeldRuns()+1, false, false
-			p.FailedSha, p.Failure = sha, f
-			runs = p.GetHeldRuns()
-		})
+		return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
 	})
 	if err != nil {
 		logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
@@ -349,12 +351,13 @@ func (h *Harness) holdSeen(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, committed []*planv1.Task, branch, sha string,
 	f *planv1.IntegrationFailure,
 ) {
-	cur := pushState(wish, project.GetId())
+	cur := h.pushOf(ctx, wish, project.GetDirectory(), project.GetId(), branch) // Its own hold (W37).
 	if strings.HasSuffix(cur.GetHeld(), "; left to the lead") {
 		// Theirs still, the tree unchanged: the tip is recorded, so the next pass does not look again (pushIfDue).
 		if cur.GetFailedSha() != sha {
+			edit := h.holdEdit(ctx, wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) { p.FailedSha = sha })
 			err := h.store.Tx(ctx, func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) { p.FailedSha = sha })
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
 			})
 			if err != nil {
 				logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
@@ -379,11 +382,12 @@ func (h *Harness) holdSeen(
 	if len(committed) > 0 {
 		f.TaskIds = ids(committed)
 	}
+	edit := h.holdEdit(ctx, wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
+		p.Held, p.Approved, p.Unchecked = fmt.Sprintf("at %s, %s", short8(sha), headline(f.GetReason())), false, false
+		p.FailedSha, p.Failure = sha, f
+	})
 	err = h.store.Tx(ctx, func(tx *store.Tx) error {
-		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-			p.Held, p.Approved, p.Unchecked = fmt.Sprintf("at %s, %s", short8(sha), headline(f.GetReason())), false, false
-			p.FailedSha, p.Failure = sha, f
-		})
+		return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
 	})
 	if err != nil {
 		logx.L().Error("hold the push", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)
@@ -443,10 +447,11 @@ func (h *Harness) correctPush(
 	if int(attempts) < settings.CorrectionAttempts {
 		c, err := h.spawnPushCorrection(ctx, wish, project, settings, branch, f, attempts+1)
 		if err == nil {
+			edit := h.holdEdit(ctx, wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
+				p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = c.GetId(), attempts+1, sha, f
+			})
 			err = h.store.Tx(ctx, func(tx *store.Tx) error {
-				return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-					p.CorrectedBy, p.Attempts, p.FailedSha, p.Failure = c.GetId(), attempts+1, sha, f
-				})
+				return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
 			})
 			if err == nil {
 				h.pushSteps(ctx, committed, fmt.Sprintf("integration: the push of %s is held, corrected by %s", branch, c.GetCode()))
@@ -504,12 +509,13 @@ func (h *Harness) askPushHeld(
 	if sha, err := git(ctx, project.GetDirectory(), "rev-parse", "refs/heads/"+branch); err == nil && sha != "" {
 		tip = sha
 	}
+	edit := h.holdEdit(context.WithoutCancel(ctx), wish, project.GetDirectory(), project.GetId(), branch, func(p *planv1.WishPush) {
+		p.QuestionId, p.Approved, p.CorrectedBy, p.Failure = "", false, "", f
+		p.Held = fmt.Sprintf("at %s, %s; left to the lead", short8(tip), headline(f.GetReason()))
+		p.FailedSha = tip
+	})
 	err := h.store.Tx(context.WithoutCancel(ctx), func(tx *store.Tx) error {
-		return editPush(ctx, tx, wish.GetId(), project.GetId(), func(p *planv1.WishPush) {
-			p.QuestionId, p.Approved, p.CorrectedBy, p.Failure = "", false, "", f
-			p.Held = fmt.Sprintf("at %s, %s; left to the lead", short8(tip), headline(f.GetReason()))
-			p.FailedSha = tip
-		})
+		return editPush(ctx, tx, wish.GetId(), project.GetId(), edit)
 	})
 	if err != nil {
 		logx.L().Error("leave the push checks to the lead", "loop", "push", "wish", wish.GetId(), "project", project.GetId(), "branch", branch, "err", err)

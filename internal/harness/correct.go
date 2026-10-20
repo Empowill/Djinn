@@ -342,8 +342,11 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 			}
 			wish, err := store.Get[*planv1.Wish](ctx, h.store, c.GetWishId())
 			if err == nil && wish != nil {
-				for _, p := range wish.GetPushes() {
-					if p.GetCorrectedBy() == c.GetId() {
+				for _, push := range wish.GetPushes() {
+					for _, p := range plan.PushHolds(push) { // Each branch's hold (W37).
+						if p.GetCorrectedBy() != c.GetId() {
+							continue
+						}
 						var committed []*planv1.Task
 						if f := p.GetFailure(); f != nil && len(f.GetTaskIds()) > 0 {
 							committed, _ = tasksByID(ctx, h.store, f.GetTaskIds())
@@ -381,14 +384,11 @@ func (h *Harness) correctionsEnded(ctx context.Context, tasks []*planv1.Task) {
 		if len(group) == 0 {
 			wish, err := store.Get[*planv1.Wish](ctx, h.store, c.GetWishId())
 			if err == nil {
-				i := slices.IndexFunc(wish.GetPushes(), func(p *planv1.WishPush) bool {
-					return p.GetCorrectedBy() == c.GetId() && p.GetQuestionId() == ""
-				})
-				if i >= 0 {
-					project, err1 := store.Get[*planv1.Project](ctx, h.store, wish.GetPushes()[i].GetProjectId())
+				if p := pushOfCorrection(wish, c.GetId()); p != nil {
+					project, err1 := store.Get[*planv1.Project](ctx, h.store, p.GetProjectId())
 					settings, err2 := plan.LoadSettings(h.home, project)
 					if err := errors.Join(err1, err2); err == nil {
-						h.pushCorrectionEnded(ctx, wish, project, settings, wish.GetPushes()[i], c, true)
+						h.pushCorrectionEnded(ctx, wish, project, settings, p, c, true)
 					}
 				}
 			}
@@ -502,14 +502,20 @@ func tasksByID(ctx context.Context, r store.Reader, ids []string) ([]*planv1.Tas
 	return out, nil
 }
 
-// pushOfCorrection is the push taskID is the correction worker of, if any.
+// pushOfCorrection is the push taskID is the correction worker of, if any, as the branch it corrects sees it: each
+// branch keeps its hold (plan.PushHolds, W37).
 func pushOfCorrection(wish *planv1.Wish, taskID string) *planv1.WishPush {
 	if wish == nil || taskID == "" {
 		return nil
 	}
 	for _, p := range wish.GetPushes() {
-		if p.GetCorrectedBy() == taskID && p.GetQuestionId() == "" {
-			return p
+		if p.GetQuestionId() != "" {
+			continue
+		}
+		for _, held := range plan.PushHolds(p) {
+			if held.GetCorrectedBy() == taskID {
+				return held
+			}
 		}
 	}
 	return nil
@@ -523,9 +529,9 @@ func (h *Harness) pushCorrectionEnded(
 	if f == nil && c.GetCorrection() != nil {
 		f = c.GetCorrection().GetFailure()
 	}
-	branch := p.GetLast().GetBranch()
+	branch := p.GetHeldBranch() // The branch it corrects, not the last one pushed: another azima's maybe (W37).
 	if branch == "" {
-		branch = plan.IntegrationBranchOf(wish, project.GetId())
+		branch = h.heldBranch(ctx, wish, project.GetDirectory(), project.GetId())
 	}
 	var committed []*planv1.Task
 	if f != nil && len(f.GetTaskIds()) > 0 {
@@ -565,6 +571,12 @@ func (h *Harness) clearCorrectionLinks(ctx context.Context, tx *store.Tx, wishID
 			if p.GetCorrectedBy() == taskID {
 				p.CorrectedBy = ""
 				changed = true
+			}
+			for _, held := range p.GetHolds() { // Another branch's hold, kept aside (W37).
+				if held.GetCorrectedBy() == taskID {
+					held.CorrectedBy = ""
+					changed = true
+				}
 			}
 		}
 		for _, m := range wish.GetMains() {
