@@ -16,9 +16,7 @@ func Read() (Snapshot, error) {
 		return s, err
 	}
 	s.MemoryTotal = total
-	if page, err := unix.SysctlUint32("hw.pagesize"); err == nil {
-		s.MemoryAvailable = pagesAvailable(uint64(page), total, unix.SysctlUint32)
-	}
+	s.MemoryAvailable = darwinAvailable(total, unix.SysctlUint32)
 	if level, err := unix.SysctlUint32("kern.memorystatus_vm_pressure_level"); err == nil {
 		s.MemoryLevel = int(level)
 	}
