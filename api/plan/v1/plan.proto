@@ -682,6 +682,31 @@ message WishPush {
   // The branches whose sync the developer forgot (djinn project forget-sync), each with its tip then: Project.syncs
   // leaves a branch out while its tip stays there, and shows it again once it moves.
   map<string, string> forgotten = 14;
+  // The branch whose push checks hold the push, while held: only a push of that branch, green, lifts the hold, never
+  // another azima's (W35). Empty in a hold recorded before it: Djinn finds the branch from the run held or the commit
+  // the checks were red at.
+  string held_branch = 15;
+  // The holds of the other branches whose push checks are red, by branch: under the per-azima strategy each branch
+  // keeps its own hold, and only its own green push lifts it (W37). The fields above keep the hold of the branch held
+  // last, the one acted on last; once it lifts, another one here takes their place. Empty in a push recorded before.
+  map<string, PushHold> holds = 16;
+}
+
+// PushHold is the hold of one branch's push on its red push checks, kept aside while another branch's is in the
+// WishPush fields of the same name (WishPush.holds).
+message PushHold {
+  // As WishPush.held.
+  string held = 1;
+  // As WishPush.held_runs.
+  int32 held_runs = 2;
+  // As WishPush.corrected_by.
+  string corrected_by = 3;
+  // As WishPush.attempts.
+  int32 attempts = 4;
+  // As WishPush.failed_sha.
+  string failed_sha = 5;
+  // As WishPush.failure.
+  IntegrationFailure failure = 6;
 }
 
 // PushRun is a push Djinn runs, or ran, of one branch: what the window shows on its sync line, the same however it
