@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -485,6 +487,207 @@ func TestLoadService_Tick(t *testing.T) {
 	}
 }
 
+// TestLoadService_OneSetting: a Set in the middle of a message does not mix two settings in it: its notch and its
+// slots come from one reading, the one before the Set; the next message says the new setting (W27).
+func TestLoadService_OneSetting(t *testing.T) {
+	t.Parallel()
+	snap := slotMachines[3]
+	medium, high := NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH)
+	ms, _ := medium.Slots(snap)
+	hs, _ := high.Slots(snap)
+	if ms == hs {
+		t.Fatalf("Medium and High run %d workers each on this machine: no mix to see", ms)
+	}
+	// reading is what one message says: its notch, its slots and its CPU slots.
+	type reading struct {
+		notch       djinnv1.LoadNotch
+		slots, cpus int32
+	}
+	cases := []struct {
+		name string
+		read func(s *loadService) reading
+	}{
+		{"watch", func(s *loadService) reading {
+			r := s.snapshot(t.Context())
+			return reading{r.GetNotch(), r.GetSlots(), r.GetCpuSlots()}
+		}},
+		{"get", func(s *loadService) reading {
+			r, err := s.Get(t.Context(), connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return reading{r.Msg.GetNotch(), r.Msg.GetSlots(), r.Msg.GetCpuSlots()}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			m := NewMonitor(medium, func() (Snapshot, error) { return snap, nil })
+			var s *loadService
+			var once sync.Once
+			// The workers are counted while the message is made: the setting moves to High then.
+			_, s = serveLoad(t, t.TempDir(), m, nil, nil, nil, WithLoadTickInterval(0), WithLoadRunningWorkers(func() int {
+				once.Do(func() {
+					if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+						Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+					})); err != nil {
+						t.Errorf("Set High: %v", err)
+					}
+				})
+				return 1
+			}))
+			for _, want := range []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, djinnv1.LoadNotch_LOAD_NOTCH_HIGH} {
+				got := c.read(s)
+				p := NotchPolicy(want)
+				slots, _ := p.Slots(snap)
+				if w := (reading{want, int32(slots), int32(p.CPUSlots(snap))}); got != w {
+					t.Errorf("message: got %+v, want %+v (the setting %v alone)", got, w, want)
+				}
+			}
+		})
+	}
+}
+
+// TestLoadService_ChosenInEffect: a Set between the reading of the auto mode and that of the policy waits for the
+// message to be made: a manual notch's message says the same notch chosen and in effect, the old one, then the new one
+// (W30).
+func TestLoadService_ChosenInEffect(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		read func(s *loadService) (notch, chosen djinnv1.LoadNotch)
+	}{
+		{"watch", func(s *loadService) (djinnv1.LoadNotch, djinnv1.LoadNotch) {
+			r := s.snapshot(t.Context())
+			return r.GetNotch(), r.GetChosenNotch()
+		}},
+		{"get", func(s *loadService) (djinnv1.LoadNotch, djinnv1.LoadNotch) {
+			r, err := s.Get(t.Context(), connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return r.Msg.GetNotch(), r.Msg.GetChosenNotch()
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			m := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), func() (Snapshot, error) {
+				return slotMachines[3], nil
+			})
+			_, s := serveLoad(t, t.TempDir(), m, nil, nil, nil, WithLoadTickInterval(0))
+			set := make(chan struct{})
+			var once sync.Once
+			s.betweenReads = func() {
+				once.Do(func() {
+					go func() {
+						defer close(set)
+						if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+							Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+						})); err != nil {
+							t.Errorf("Set High: %v", err)
+						}
+					}()
+					// The Set ends here when nothing holds it back; once held, the message goes on without it.
+					select {
+					case <-set:
+					case <-time.After(100 * time.Millisecond):
+					}
+				})
+			}
+			for i, want := range []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM, djinnv1.LoadNotch_LOAD_NOTCH_HIGH} {
+				notch, chosen := c.read(s)
+				if notch != want || chosen != want {
+					t.Errorf("message %d: notch %v, chosen %v; want %v for both", i, notch, chosen, want)
+				}
+				<-set
+			}
+		})
+	}
+}
+
+// TestLoadService_LateBeat: a beat's notch applied after a Set does not undo it: the policy stays the Set's (W30).
+func TestLoadService_LateBeat(t *testing.T) {
+	t.Parallel()
+	m := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), func() (Snapshot, error) {
+		return slotMachines[3], nil
+	})
+	_, s := serveLoad(t, t.TempDir(), m, nil, nil, nil, WithLoadTickInterval(0))
+	if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	// The beat stepped to Minimal before the Set, and applies it after.
+	s.applyNotch(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL)
+	if got := m.Policy().Notch; got != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
+		t.Errorf("policy %v after the late beat, want the Set's LOAD_NOTCH_HIGH", got)
+	}
+}
+
+// TestLoadService_TwoSets: of two Sets at once, the scheduler and the windows get the last one last: a Set made while
+// the first one sends its policy waits for it, and the policy the scheduler runs is the one the bar shows (W41).
+func TestLoadService_TwoSets(t *testing.T) {
+	t.Parallel()
+	m := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), func() (Snapshot, error) {
+		return slotMachines[3], nil
+	})
+	var mu sync.Mutex
+	var sent []djinnv1.LoadNotch
+	var cast djinnv1.LoadNotch
+	var s *loadService
+	second := make(chan struct{})
+	// An atomic, not a sync.Once: the second Set's call would wait in Once.Do for the first one to end.
+	var first atomic.Bool
+	setPolicy := func(p Policy) {
+		if first.CompareAndSwap(false, true) {
+			go func() {
+				defer close(second)
+				if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+					Notch: djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM,
+				})); err != nil {
+					t.Errorf("Set Medium: %v", err)
+				}
+			}()
+			// The second Set ends here when nothing holds it back; once held, the first one goes on without it.
+			select {
+			case <-second:
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		mu.Lock()
+		sent = append(sent, p.Notch)
+		mu.Unlock()
+	}
+	broadcast := func(n djinnv1.LoadNotch) {
+		mu.Lock()
+		cast = n
+		mu.Unlock()
+	}
+	_, s = serveLoad(t, t.TempDir(), m, setPolicy, broadcast, nil, WithLoadTickInterval(0))
+	if _, err := s.Set(t.Context(), connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+		Notch: djinnv1.LoadNotch_LOAD_NOTCH_HIGH,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	<-second
+	mu.Lock()
+	defer mu.Unlock()
+	want := []djinnv1.LoadNotch{djinnv1.LoadNotch_LOAD_NOTCH_HIGH, djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM}
+	if !slices.Equal(sent, want) {
+		t.Errorf("scheduler got %v, want %v", sent, want)
+	}
+	if cast != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("windows got %v last, want LOAD_NOTCH_MEDIUM", cast)
+	}
+	if got := m.Policy().Notch; got != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("monitor runs %v, want LOAD_NOTCH_MEDIUM", got)
+	}
+	if got := ReadNotch(s.home); got != djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM {
+		t.Errorf("saved notch %v, want LOAD_NOTCH_MEDIUM", got)
+	}
+}
+
 // TestLoadService_Watch: the stream sends the state at once, then only what changed, at most once an interval; it
 // says the slots Get says. Not parallel: SetWatchInterval sets the interval of every stream.
 func TestLoadService_Watch(t *testing.T) {
@@ -562,14 +765,15 @@ func TestLoadService_Watch(t *testing.T) {
 			})); err != nil {
 				t.Fatalf("Set HIGH: %v", err)
 			}
-			var second *djinnv1.LoadServiceWatchResponse
-			select {
-			case second = <-recv:
-			case <-time.After(time.Second):
-				t.Fatal("timed out waiting for update after Set")
-			}
-			if second.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_HIGH {
-				t.Errorf("second notch: got %v, want HIGH", second.GetNotch())
+			// A tick's snapshot may have read the setting before the Set: its message still says Medium, the next High.
+			deadline := time.After(time.Second)
+			for high := false; !high; {
+				select {
+				case second := <-recv:
+					high = second.GetNotch() == djinnv1.LoadNotch_LOAD_NOTCH_HIGH
+				case <-deadline:
+					t.Fatal("timed out waiting for the notch High after Set")
+				}
 			}
 
 			// 4. Memory change detected on periodic tick

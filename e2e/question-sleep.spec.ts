@@ -91,7 +91,9 @@ test("Later sends a question to the bottom and back; Sleep puts a question out o
   // Djinn keeps it: after a reload, and for the lead; a question asked after comes below it.
   djinn("question", "ask", "Which flame?", wishId);
   await page.reload();
-  await expect(codes).toHaveText(["Q02", "Q03", "Q01", "Q04"]);
+  await expect(codes).toHaveText(["Q02", "Q03", "Q01", "Q04"], {
+    timeout: 15_000,
+  });
   const briefLater = djinn("wish", "brief", wishId);
   const linesAt = [
     "**Q02** Which oil? (can wait)",
@@ -165,7 +167,9 @@ test("Later sends a question to the bottom and back; Sleep puts a question out o
     timeout: 20_000,
   });
   await page.reload();
-  await expect(codes).toHaveText(["Q01", "Q03", "Q02", "Q04"]);
+  await expect(codes).toHaveText(["Q01", "Q03", "Q02", "Q04"], {
+    timeout: 15_000,
+  });
   expect(djinn("wish", "brief", wishId)).toMatch(
     /\*\*Q03\*\* Which wick\? \(can wait\)\n {2}- Woke [^\n]*, after sleeping until /,
   );

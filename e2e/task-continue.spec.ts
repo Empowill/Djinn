@@ -27,10 +27,10 @@ async function up(
   });
   const exited = new Promise((resolve) => proc.once("exit", resolve));
   const url = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("djinn printed no URL")),
-      10_000,
-    );
+    const timer = setTimeout(() => {
+      proc.kill(process.platform === "win32" ? undefined : "SIGKILL");
+      reject(new Error("djinn printed no URL"));
+    }, 30_000);
     let out = "";
     proc.stdout!.on("data", (chunk: Buffer) => {
       out += chunk.toString();
@@ -40,7 +40,10 @@ async function up(
         resolve(match[0]);
       }
     });
-    proc.once("exit", (code) => reject(new Error(`djinn exited: ${code}`)));
+    proc.once("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`djinn exited: ${code}`));
+    });
   });
   return { url, proc, exited };
 }
@@ -50,6 +53,19 @@ async function down(d: { proc: ChildProcess; exited: Promise<unknown> }) {
   if (d.proc.exitCode !== null) return;
   d.proc.kill(process.platform === "win32" ? undefined : "SIGINT");
   await d.exited;
+}
+
+// keepLogs copies the logs of the spec's own djinn next to those of the suite's (global-setup.ts), which the job keeps
+// when it fails: on the Windows runner, the minute after this spec restarted its djinn stalled the whole runner, and
+// this djinn's log went with its temporary home (W36, tilasm L02).
+function keepLogs(home: string) {
+  const logs = path.join(home, "logs");
+  if (!fs.existsSync(logs)) return;
+  fs.cpSync(
+    logs,
+    path.resolve(__dirname, "../test-results/e2e/djinn-logs/task-continue"),
+    { recursive: true, force: true },
+  );
 }
 
 type Task = {
@@ -62,7 +78,9 @@ type Task = {
 test("an interrupted task continued from the command line stays one task", async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
+  const start = Date.now();
+  let failed = true;
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-continue-"));
@@ -161,8 +179,11 @@ test("an interrupted task continued from the command line stays one task", async
     ).tasks as Task[];
     expect(listed.map((t) => t.code)).toEqual(["T1", "W1"]);
     expect(errors).toEqual([]);
+    failed = false;
   } finally {
     await down(running);
+    // A run over 10 s is the stall, even green: it passes in a few seconds.
+    if (failed || Date.now() - start > 10_000) keepLogs(home);
     fs.rmSync(home, {
       recursive: true,
       force: true,
