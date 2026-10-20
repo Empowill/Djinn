@@ -591,7 +591,7 @@ for `harness.Quiet` (10 minutes), Djinn takes them as answered, says so in a `ST
 it exits, and the task stays `RUNNING` meanwhile. By default it stops a Monitor watch, a background subagent or a
 workflow still running 10 minutes after the last turn; a background command the worker started holds the run open
 until its own time limit (30 minutes, or the `timeout` the worker gives, 2 hours at most, with stream-json input).
-In W31 of wish Will retour beta the 10 minutes stopped a paid run a monitor watched, and the task ended done. Djinn
+In another project (16/10/2026) the 10 minutes stopped a paid run a monitor watched, and the task ended done. Djinn
 starts every Claude worker with `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, over the value of its own environment:
 claude waits however long, and the task's life bounds the wait, since a stopped or ended task stops everything its
 worker started (`stopLeft`; `TestClaudeWaitsForItsBackgroundWork`, `TestTaskEndStopsWhatItsWorkerStarted`). Every
