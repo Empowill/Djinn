@@ -327,8 +327,9 @@ the code does not say by itself; remove one when a change makes it false.
   `commandAllowed` says yes. A question's shape puts a `# …` comment above each command: W80 of wish Dew 13 oct could
   not revise Q32 (W153). *Do:* pass multi-line text through a file the agent writes (an investigator's
   `--context-file`, `questionContextFile`); try a rule for real with `claude -p --permission-mode dontAsk --settings
-  …`, a fake `djinn` first on `PATH`, a scratch folder and Haiku: under a cent. *Where:*
-  `internal/harness/question.go`, `internal/harness/question_context_test.go`.
+  …`, a fake `djinn` first on `PATH`, a scratch folder and Haiku: about a cent. A prompt written for another agent
+  keeps saying `--context` when Claude takes its place: the fallback from Antigravity rewrites it (`withContextFile`,
+  W5). *Where:* `internal/harness/question.go`, `internal/harness/question_context_test.go`.
 
 ## Store and sqlite
 

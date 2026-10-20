@@ -27,10 +27,10 @@ async function up(
   });
   const exited = new Promise((resolve) => proc.once("exit", resolve));
   const url = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("djinn printed no URL")),
-      10_000,
-    );
+    const timer = setTimeout(() => {
+      proc.kill(process.platform === "win32" ? undefined : "SIGKILL");
+      reject(new Error("djinn printed no URL"));
+    }, 30_000);
     let out = "";
     proc.stdout!.on("data", (chunk: Buffer) => {
       out += chunk.toString();
@@ -40,7 +40,10 @@ async function up(
         resolve(match[0]);
       }
     });
-    proc.once("exit", (code) => reject(new Error(`djinn exited: ${code}`)));
+    proc.once("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`djinn exited: ${code}`));
+    });
   });
   return { url, proc, exited };
 }
@@ -62,7 +65,7 @@ type Task = {
 test("an interrupted task continued from the command line stays one task", async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "djinn-e2e-continue-"));

@@ -4,8 +4,11 @@
 # status, comments), then the latest comment. It prints MERGED and exits once the merge request is merged, CLOSED
 # once it is closed without a merge. A failed look (no network, glab not logged in) prints once, then it tries again.
 #
-# Usage: watch.sh <mr> [seconds between two looks, 60 by default]. Needs glab 1.100 or later (its --jq), logged in,
-# run in a clone of the merge request's project.
+# It speaks only of the merge requests it is given, never of another open one: an azima's (a djinn/ branch) has its
+# own watcher, and a watcher that read them all spoke of a merge request it was not given (W15, as W8 for babysit-pr).
+#
+# Usage: watch.sh <mr>[,<mr>...] [seconds between two looks, 60 by default]. With several, it exits once all are
+# merged or closed. Needs glab 1.100 or later (its --jq), logged in, run in a clone of the merge request's project.
 set -u
 mr=${1:?usage: watch.sh <mr> [seconds]}
 mrs=$(printf '%s' "$mr" | tr ',' ' ')
@@ -75,27 +78,10 @@ $latest"
 	return 0
 }
 
-finished_mrs=""
 while :; do
-	if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-		if [ -n "$(git for-each-ref --format='%(refname:short)' refs/heads/djinn/ refs/remotes/*/djinn/ 2>/dev/null)" ]; then
-			azima_mrs=$(glab mr list --state opened --output json --jq '.[] | select(.source_branch | startswith("djinn/")) | .iid' 2>/dev/null || :)
-			for m in $azima_mrs; do
-				case " $mrs $finished_mrs " in
-				*" $m "*) ;;
-				*) mrs="${mrs:+$mrs }$m" ;;
-				esac
-			done
-		fi
-	fi
-
 	active_mrs=""
 	for m in $mrs; do
-		if look_mr "$m"; then
-			active_mrs="${active_mrs:+$active_mrs }$m"
-		else
-			finished_mrs="${finished_mrs:+$finished_mrs }$m"
-		fi
+		look_mr "$m" && active_mrs="${active_mrs:+$active_mrs }$m"
 	done
 	mrs=$active_mrs
 	if [ -z "$mrs" ]; then

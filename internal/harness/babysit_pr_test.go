@@ -19,8 +19,8 @@ import (
 
 // fakeGh is a gh for the tests: it records each call's first words in $GH_DATA/calls, and answers for the look it is
 // in, the number of pr view calls so far (n): it fails when $GH_DATA/fail-<n> exists, else answers pr view from
-// $GH_DATA/view-<n>.json and pr checks from $GH_DATA/checks-<n>.json (the last file before n when there is none),
-// through its --jq expression as gh does (strings raw). A jq takes tens of milliseconds to start: on a command's first
+// $GH_DATA/view-<n>.json, pr checks from $GH_DATA/checks-<n>.json and api graphql (the comments) from
+// $GH_DATA/notes-<n>.json (the last file before n when there is none; nothing when there is no file at all), through its --jq expression as gh does (strings raw). A jq takes tens of milliseconds to start: on a command's first
 // call, one jq filters all of its files, each output line after its file's name, and the answers are kept.
 const fakeGh = `#!/bin/sh
 printf '%s %s %s\n' "$1" "$2" "$3" >> "$GH_DATA/calls"
@@ -40,6 +40,7 @@ case $command in
 	name=view
 	;;
 "pr checks") name=checks ;;
+"api graphql") name=notes ;;
 *)
 	echo "fake gh: no $command" >&2
 	exit 1
@@ -49,6 +50,7 @@ while [ "$n" -gt 1 ] && [ ! -f "$GH_DATA/$name-$n.json" ]; do n=$((n - 1)); done
 answers=$GH_DATA/answers-$name
 if [ ! -d "$answers" ]; then
 	mkdir "$answers"
+	ls "$GH_DATA/$name"-*.json >/dev/null 2>&1 || exit 0
 	jq -r "($expr) | \"\(input_filename)\t\(.)\"" "$GH_DATA/$name"-*.json |
 		awk -F '\t' -v dir="$answers" '{ n = split($1, path, "/"); print substr($0, length($1) + 2) > (dir "/" path[n]) }'
 fi
@@ -70,9 +72,10 @@ func TestWatch_BabysitPR(t *testing.T) {
 	}
 
 	// Djinn's babysit-pr watcher prints a paragraph only for what needs the lead, each once, even across restarts: a
-	// check that newly fails (again after a new push), all checks passing after a push, a new comment or review,
-	// changes requested, a conflict, a failed look, the merge. Pending checks and partial passes print nothing. A
-	// restart says the checks again on its first look, which Djinn tells no lead when its task said it last.
+	// check that newly fails (again after a new push), all checks passing after a push, each new comment (of the
+	// conversation, a review, on a line of the diff) in a paragraph of its own, changes requested, a conflict, a failed
+	// look, the merge. Pending checks and partial passes print nothing. A restart says the checks again on its first
+	// look, which Djinn tells no lead when its task said it last; never a comment again.
 	t.Run("speaks only for the lead", func(t *testing.T) {
 		t.Parallel()
 		dir, bin, data, home := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
@@ -80,7 +83,12 @@ func TestWatch_BabysitPR(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		view := func(state, mergeable, decision, head string, notes ...string) string {
+		view := func(state, mergeable, decision, head string) string {
+			return fmt.Sprintf(`{"state":%q,"mergeable":%q,"reviewDecision":%q,"headRefOid":%q}`, state, mergeable, decision, head)
+		}
+		// notes answers the GraphQL query for the comments: those of the conversation and the reviews, as GitHub
+		// gives them, oldest first.
+		notes := func(notes ...string) string {
 			var comments, reviews []string
 			for _, n := range notes {
 				if strings.Contains(n, `"submittedAt"`) {
@@ -89,8 +97,24 @@ func TestWatch_BabysitPR(t *testing.T) {
 					comments = append(comments, n)
 				}
 			}
-			return fmt.Sprintf(`{"state":%q,"mergeable":%q,"reviewDecision":%q,"headRefOid":%q,"comments":[%s],"reviews":[%s]}`,
-				state, mergeable, decision, head, strings.Join(comments, ","), strings.Join(reviews, ","))
+			return fmt.Sprintf(`{"data":{"repository":{"pullRequest":{"comments":{"nodes":[%s]},"reviews":{"nodes":[%s]}}}}}`,
+				strings.Join(comments, ","), strings.Join(reviews, ","))
+		}
+		const pull = "https://github.com/o/r/pull/12#"
+		note := func(anchor, login, at, body string) string {
+			return fmt.Sprintf(`{"url":%q,"author":{"login":%q},"createdAt":%q,"body":%q}`, pull+anchor, login, at, body)
+		}
+		review := func(anchor, login, state, at, body string, lines ...string) string {
+			return fmt.Sprintf(`{"url":%q,"author":{"login":%q},"state":%q,"submittedAt":%q,"body":%q,"comments":{"nodes":[%s]}}`,
+				pull+anchor, login, state, at, body, strings.Join(lines, ","))
+		}
+		line := func(anchor, login, path string, line int, body string) string {
+			l := "null"
+			if line > 0 {
+				l = strconv.Itoa(line)
+			}
+			return fmt.Sprintf(`{"url":%q,"author":{"login":%q},"path":%q,"line":%s,"originalLine":7,"body":%q}`,
+				pull+anchor, login, path, l, body)
 		}
 		checks := func(buckets ...string) string {
 			var out []string
@@ -99,33 +123,43 @@ func TestWatch_BabysitPR(t *testing.T) {
 			}
 			return "[" + strings.Join(out, ",") + "]"
 		}
-		comment := `{"author":{"login":"a-reviewer"},"body":"Could this name say what it holds?\nIt reads as a verb.","createdAt":"2026-10-09T10:00:00Z"}`
-		approval := `{"author":{"login":"bob"},"body":"","state":"APPROVED","submittedAt":"2026-10-09T09:00:00Z"}`
-		changes := `{"author":{"login":"carol"},"body":"Please split this function.","state":"CHANGES_REQUESTED","submittedAt":"2026-10-09T11:00:00Z"}`
+		early := note("issuecomment-1", "dave", "2026-10-09T08:00:00Z", "Thanks!")
+		approval := review("pullrequestreview-2", "bob", "APPROVED", "2026-10-09T09:00:00Z", "")
+		comment := note("issuecomment-3", "a-reviewer", "2026-10-09T10:00:00Z", "\r\nCould this name say what it holds?\r\nIt reads as a verb.")
+		changes := review("pullrequestreview-4", "carol", "CHANGES_REQUESTED", "2026-10-09T11:00:00Z", "Please split this function.",
+			line("discussion_r5", "carol", "watch.sh", 12, "```suggestion\nheld := names\n```"))
+		pending := review("pullrequestreview-6", "carol", "PENDING", "", "", line("discussion_r7", "carol", "watch.sh", 3, "Draft."))
+		// PR #7, 20/10/2026: a comment on a line of the diff, alone in a review without a body, was never said.
+		onLine := review("pullrequestreview-8", "dave", "COMMENTED", "2026-10-09T12:00:00Z", "",
+			line("discussion_r9", "dave", "lead/notes/rsi-loop.md", 0, "This is too specific to another project."))
+		again := note("issuecomment-10", "a-reviewer", "2026-10-09T12:30:00Z", "Could this name say what it holds?")
 
 		// Each look's answers; a look without a file reads the last one before it.
 		for name, body := range map[string]string{
-			"view-1.json":   view("OPEN", "MERGEABLE", "REVIEW_REQUIRED", "a1", approval),
+			"view-1.json":   view("OPEN", "MERGEABLE", "REVIEW_REQUIRED", "a1"),
+			"notes-1.json":  notes(early, approval),
 			"checks-1.json": checks("pending", "pending", "pending"),
 			"checks-2.json": checks("pass", "pending", "pending"),
 			"checks-3.json": checks("fail", "pass", "pending"),
 			// 4, and 5 after a restart: the same failure.
-			"view-6.json":   view("OPEN", "MERGEABLE", "REVIEW_REQUIRED", "b2", approval), // a new push
+			"view-6.json":   view("OPEN", "MERGEABLE", "REVIEW_REQUIRED", "b2"), // a new push
 			"checks-6.json": checks("pending", "pending", "pending"),
 			"checks-7.json": checks("fail", "pending", "pass"), // the same check fails on it
-			"view-8.json":   view("OPEN", "MERGEABLE", "REVIEW_REQUIRED", "c3", approval),
+			"view-8.json":   view("OPEN", "MERGEABLE", "REVIEW_REQUIRED", "c3"),
 			"checks-8.json": checks("pass", "pending", "pass"),
 			"checks-9.json": checks("pass", "pass", "pass"),
 			// 10: the same.
-			"view-11.json": view("OPEN", "MERGEABLE", "REVIEW_REQUIRED", "c3", approval, comment),
-			"view-12.json": view("OPEN", "MERGEABLE", "CHANGES_REQUESTED", "c3", approval, comment, changes),
-			"view-13.json": view("OPEN", "UNKNOWN", "CHANGES_REQUESTED", "c3", approval, comment, changes),
-			"view-14.json": view("OPEN", "CONFLICTING", "CHANGES_REQUESTED", "c3", approval, comment, changes),
-			"fail-15":      "",
-			"fail-16":      "",
-			"fail-17":      "", // after a restart
+			"notes-11.json": notes(early, approval, comment),
+			"view-12.json":  view("OPEN", "MERGEABLE", "CHANGES_REQUESTED", "c3"),
+			"notes-12.json": notes(early, approval, comment, changes, pending),
+			"view-13.json":  view("OPEN", "UNKNOWN", "CHANGES_REQUESTED", "c3"),
+			"notes-13.json": notes(early, approval, comment, changes, pending, onLine, again),
+			"view-14.json":  view("OPEN", "CONFLICTING", "CHANGES_REQUESTED", "c3"),
+			"fail-15":       "",
+			"fail-16":       "",
+			"fail-17":       "", // after a restart
 			// 18: as 14.
-			"view-19.json": view("MERGED", "UNKNOWN", "CHANGES_REQUESTED", "c3", approval, comment, changes),
+			"view-19.json": view("MERGED", "UNKNOWN", "CHANGES_REQUESTED", "c3"),
 		} {
 			if err := os.WriteFile(filepath.Join(data, name), []byte(body), 0o600); err != nil {
 				t.Fatal(err)
@@ -161,13 +195,19 @@ func TestWatch_BabysitPR(t *testing.T) {
 			looks int
 			want  []string
 		}{
-			{4, []string{"PR #12 · checks failed at a1: lint"}},
+			// Its first look says the latest comment only.
+			{4, []string{"PR #12 · approved by bob: " + pull + "pullrequestreview-2", "PR #12 · checks failed at a1: lint"}},
 			// The restart says the checks again on look 5; look 7 says the new push's failure.
 			{4, []string{"PR #12 · checks failed at a1: lint", "PR #12 · checks failed at b2: lint"}},
+			// Each new comment once, in a paragraph of its own; a pending review's never.
 			{5, []string{
 				"PR #12 · all checks pass at c3 (3)",
-				"PR #12 · new comment by a-reviewer\nlatest comment, by a-reviewer: Could this name say what it holds?",
-				"PR #12 · changes requested · new comment by carol\nlatest comment, by carol: Please split this function.",
+				"PR #12 · new comment by a-reviewer: " + pull + "issuecomment-3\n> Could this name say what it holds?",
+				"PR #12 · changes requested",
+				"PR #12 · changes requested by carol: " + pull + "pullrequestreview-4\n> Please split this function.",
+				"PR #12 · new comment by carol on watch.sh:12: " + pull + "discussion_r5\n> held := names",
+				"PR #12 · new comment by dave on lead/notes/rsi-loop.md:7: " + pull + "discussion_r9\n> This is too specific to another project.",
+				"PR #12 · new comment by a-reviewer: " + pull + "issuecomment-10\n> Could this name say what it holds?",
 			}},
 			{3, []string{
 				"PR #12 · all checks pass at c3 (3) · mergeable: CONFLICTING",
@@ -186,7 +226,7 @@ func TestWatch_BabysitPR(t *testing.T) {
 			t.Fatal(err)
 		}
 		for call := range strings.Lines(string(b)) {
-			if call != "pr view 12\n" && call != "pr checks 12\n" {
+			if call != "pr view 12\n" && call != "pr checks 12\n" && call != "api graphql -F\n" {
 				t.Errorf("gh %q: the watcher only reads", call)
 			}
 		}
@@ -287,8 +327,10 @@ func TestWatch_BabysitPR(t *testing.T) {
 		}
 	})
 
-	// babysit-pr watcher watches every azima PR, speaking only when something needs the lead, and exits once all are merged.
-	t.Run("watches every azima pr", func(t *testing.T) {
+	// The watcher speaks of the pull requests it is given, a comma-separated list, and exits once all are merged; never
+	// of another open one, though its branch is an azima's (djinn/...): that one has its own watcher (W8: watch.sh 6
+	// spoke of PR #7).
+	t.Run("watches only the pull requests it is given", func(t *testing.T) {
 		t.Parallel()
 		const multiPRGh = `#!/bin/sh
 set -e
@@ -305,6 +347,7 @@ case $cmd in
 "pr view") file="$GH_DATA/view-$arg3.json" ;;
 "pr checks") file="$GH_DATA/checks-$arg3.json" ;;
 "pr list") file="$GH_DATA/list.json" ;;
+"api graphql") exit 0 ;;
 *) exit 1 ;;
 esac
 exec jq -r "$expr" "$file"
@@ -322,7 +365,9 @@ exec jq -r "$expr" "$file"
 		}
 
 		for name, body := range map[string]string{
-			"list.json":       `[{"number":101,"headRefName":"djinn/T1-one"},{"number":102,"headRefName":"djinn/T2-two"}]`,
+			"list.json":       `[{"number":101,"headRefName":"djinn/T1-one"},{"number":102,"headRefName":"djinn/T2-two"},{"number":103,"headRefName":"djinn/T3-three"}]`,
+			"view-103.json":   `{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":"","headRefOid":"c3","comments":[],"reviews":[]}`,
+			"checks-103.json": `[{"name":"lint","bucket":"pass"}]`,
 			"view-101.json":   `{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":"","headRefOid":"a1","comments":[],"reviews":[]}`,
 			"view-102.json":   `{"state":"OPEN","mergeable":"MERGEABLE","reviewDecision":"","headRefOid":"b2","comments":[],"reviews":[]}`,
 			"checks-101.json": `[{"name":"lint","bucket":"fail"},{"name":"test","bucket":"pass"}]`,
@@ -351,6 +396,9 @@ exec jq -r "$expr" "$file"
 		}
 		if !strings.Contains(outStr, "PR #102 · all checks pass at b2 (2)") {
 			t.Errorf("output missing PR 102 pass: %s", outStr)
+		}
+		if strings.Contains(outStr, "PR #103") {
+			t.Errorf("output speaks of PR 103, not given: %s", outStr)
 		}
 
 		// Next look: both PRs are merged.

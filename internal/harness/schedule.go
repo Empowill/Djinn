@@ -252,7 +252,9 @@ func planned(t *planv1.Task) bool { return dispatch.Planned(t) }
 
 // schedule makes one pass over the planned tasks, the first wish first: each one starts, waits with its reason,
 // or fails when a dependency failed. The rules are internal/dispatch's. The asleep questions whose conditions hold
-// wake first.
+// wake first. The pass reads the time once, before it judges the tasks: the judging, the decisions and the waits all
+// compare a usage limit's reset with it, so a reset that passes during the pass is seen by the next one, which tells
+// the lead it lifted (W19).
 func (h *Harness) schedule(ctx context.Context) {
 	logx.Lock(&h.sched, "scheduler")
 	defer h.sched.Unlock()
@@ -285,7 +287,8 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 	}
 	h.wakeQuestions(ctx, tasks)
-	h.judge(ctx, tasks)
+	now := h.now()
+	h.judge(ctx, tasks, now)
 	network := h.netPass(ctx, tasks) // Down, no worker starts; back, one a pass.
 	if !slices.ContainsFunc(tasks, planned) {
 		return
@@ -297,7 +300,7 @@ func (h *Harness) schedule(ctx context.Context) {
 		}
 		return
 	}
-	s.WithNetwork(network)
+	s.At(now).WithNetwork(network)
 	for _, d := range s.Pass() {
 		if h.ctx.Err() != nil {
 			return
@@ -317,7 +320,7 @@ func (h *Harness) schedule(ctx context.Context) {
 				}
 				continue
 			}
-			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room, d.Hold)
+			h.setWaiting(ctx, t, now, d.Why, d.Machine, d.Room, d.Hold)
 		case d.Why != "":
 			if isMemoryShort(d.Why) {
 				if code, err := h.interruptPausedForMemory(ctx, t); err == nil && code != "" {
@@ -335,7 +338,7 @@ func (h *Harness) schedule(ctx context.Context) {
 					continue
 				}
 			}
-			h.setWaiting(ctx, t, d.Why, d.Machine, d.Room, d.Hold)
+			h.setWaiting(ctx, t, now, d.Why, d.Machine, d.Room, d.Hold)
 		default:
 			if err := h.launchPlanned(ctx, t); err != nil {
 				logx.L().Error("start a planned task", "loop", "schedule", "task", t.GetCode(), "err", err)
@@ -519,11 +522,14 @@ func (h *Harness) GatesOutside(n func() (outside, merges int)) {
 }
 
 // setWaiting records why a planned task waits, whether for the machine alone, whether for room on it (behind a task
-// that goes first too), and what holds it, when one changed, with an event.
-func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, why string, machine, room bool, hold planv1.TaskHold) {
+// that goes first too), and what holds it, when one changed, with an event. A usage limit whose reset passed at now no
+// longer holds it: now is the scheduler pass's, the time it judged the task at.
+func (h *Harness) setWaiting(ctx context.Context, t *planv1.Task, now time.Time, why string, machine, room bool,
+	hold planv1.TaskHold,
+) {
 	why = networkWhy(t, grantedWhy(t, shelvedWhy(t, preemptedWaitReason(t, why))))
 	clearLimit := t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil &&
-		hold != planv1.TaskHold_TASK_HOLD_LIMIT && !t.GetResumeAfter().AsTime().After(h.now())
+		hold != planv1.TaskHold_TASK_HOLD_LIMIT && !t.GetResumeAfter().AsTime().After(now)
 	if t.GetWaitReason() == why && t.GetMachineWait() == machine && t.GetRoomWait() == room && t.GetHold() == hold && !clearLimit {
 		return
 	}
@@ -649,7 +655,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 	if project != nil && project.GetGit() && t.GetProvider() != planv1.Provider_PROVIDER_WATCH {
 		var err error
 		if settings, err = plan.LoadSettings(h.home, project); err != nil {
-			h.setWaiting(ctx, t, fmt.Sprintf("settings unreadable: %v", err), false, false, 0)
+			h.setWaiting(ctx, t, h.now(), fmt.Sprintf("settings unreadable: %v", err), false, false, 0)
 			return nil
 		}
 		if !questionWorker(t) && t.GetReview() == nil && t.GetCorrection().GetFailure() == nil && len(t.GetDependsOn()) > 0 {
@@ -657,7 +663,7 @@ func (h *Harness) launchPlannedWithPreemption(ctx context.Context, t *planv1.Tas
 				from := h.workerStartBranch(ctx, wish, project, settings, t)
 				if sha, shown, err := h.startPoint(ctx, project, from); err == nil {
 					if depWhy := h.dependenciesUnmergedIn(ctx, project.GetDirectory(), t, sha, cmp.Or(from, shown)); depWhy != "" {
-						h.setWaiting(ctx, t, depWhy, false, false, planv1.TaskHold_TASK_HOLD_DEPENDENCY)
+						h.setWaiting(ctx, t, h.now(), depWhy, false, false, planv1.TaskHold_TASK_HOLD_DEPENDENCY)
 						return nil
 					}
 				}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -162,6 +163,38 @@ func TestQuestionContextFile(t *testing.T) {
 		}
 	})
 
+	// W18 and W19 of wish Will 20 oct: the investigators of Q06, on Antigravity, which cannot run read-only, ran on
+	// Claude with the prompt written for Antigravity, no folder to write in, and saw each revision refused (W5).
+	t.Run("claude after antigravity", func(t *testing.T) {
+		t.Parallel()
+		home := t.TempDir()
+		probe := specProbe{make(chan Spec, 4)}
+		providers := testProviders()
+		providers[planv1.Provider_PROVIDER_CLAUDE] = probe
+		providers[planv1.Provider_PROVIDER_ANTIGRAVITY] = refusesReadOnly{}
+		e := upWith(t, home, providers, WithEnlightenWorkers())
+		wishID, _ := e.wish(t, fakeProject(t, "question_provider: PROVIDER_ANTIGRAVITY\n"))
+		q := e.asker(wishID)
+		asked := q.ask(t, "One-line why.")
+		q.enlighten(t, asked.GetCode(), "Is the variable still read?")
+		var spec Spec
+		select {
+		case spec = <-probe.specs:
+		case <-time.After(20 * time.Second):
+			t.Fatal("no investigator started")
+		}
+		inv := e.roles(t, wishID, planv1.TaskRole_TASK_ROLE_INVESTIGATOR)[0]
+		file := questionContextFile(home, inv.GetId())
+		if !slices.Equal(spec.WriteDirs, []string{filepath.Dir(file)}) {
+			t.Errorf("write folders %q, want %q", spec.WriteDirs, filepath.Dir(file))
+		}
+		revise := "`djinn question revise " + asked.GetCode() + " --wish-id " + wishID + " --context-file \"" + file + "\""
+		if !strings.Contains(spec.Prompt, revise) || !strings.Contains(spec.Prompt, contextRule(file)) ||
+			strings.Contains(spec.Prompt, "--context \"…\"") {
+			t.Errorf("prompt:\n%s\nwant %s and the rule of a context file, no --context", spec.Prompt, revise)
+		}
+	})
+
 	t.Run("codex", func(t *testing.T) {
 		t.Parallel()
 		home := t.TempDir()
@@ -186,4 +219,11 @@ func TestQuestionContextFile(t *testing.T) {
 			t.Errorf("sandbox %s, want no writing", sandbox)
 		}
 	})
+}
+
+// refusesReadOnly is an agent that cannot be kept from writing, as Antigravity: it never starts a question worker.
+type refusesReadOnly struct{}
+
+func (refusesReadOnly) Start(context.Context, Spec) (Worker, error) {
+	return nil, fmt.Errorf("agy cannot run without editing yet: %w", ErrReadOnly)
 }

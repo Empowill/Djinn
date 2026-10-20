@@ -179,6 +179,17 @@ func (c *AutoController) Reason() *djinnv1.LoadAutoReason {
 	return proto.CloneOf(c.reason)
 }
 
+// state is the auto mode's whole state, read at once: whether it is on, the chosen notch, the one in effect and why
+// (Reason).
+func (c *AutoController) state() (isAuto bool, chosen, effective djinnv1.LoadNotch, reason *djinnv1.LoadAutoReason) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.isAuto && c.reason != nil {
+		reason = proto.CloneOf(c.reason)
+	}
+	return c.isAuto, c.chosen, c.effective, reason
+}
+
 // SetNotch updates the notch setting. If notch is LOAD_NOTCH_AUTO, auto mode is enabled, from the notch in effect
 // held between Minimal and the chosen one, the next beat deciding; a manual notch (Minimal to Overclock) disables it
 // and becomes the chosen one.
