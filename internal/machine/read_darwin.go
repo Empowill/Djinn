@@ -17,15 +17,7 @@ func Read() (Snapshot, error) {
 	}
 	s.MemoryTotal = total
 	if page, err := unix.SysctlUint32("hw.pagesize"); err == nil {
-		// Free, speculative and purgeable pages: what a new program gets without paging. It leaves out the
-		// inactive pages, so it is low; the pressure level is what decides.
-		var pages uint64
-		for _, name := range []string{"vm.page_free_count", "vm.page_speculative_count", "vm.page_purgeable_count"} {
-			if n, err := unix.SysctlUint32(name); err == nil {
-				pages += uint64(n)
-			}
-		}
-		s.MemoryAvailable = pages * uint64(page)
+		s.MemoryAvailable = pagesAvailable(uint64(page), total, unix.SysctlUint32)
 	}
 	if level, err := unix.SysctlUint32("kern.memorystatus_vm_pressure_level"); err == nil {
 		s.MemoryLevel = int(level)
