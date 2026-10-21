@@ -855,6 +855,7 @@ type Monitor struct {
 	last    Snapshot
 	at      time.Time
 	workers func() uint64
+	peak    func() uint64
 }
 
 // NewMonitor is a monitor of this machine with the policy p. read, when not nil, replaces reading the machine: the
@@ -881,6 +882,30 @@ func (m *Monitor) SetWorkerMemory(resident func() uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.workers = resident
+}
+
+// SetWorkerPeak gives the typical measured peak memory of a worker, in bytes, 0 while none is measured: djinn up gives
+// the harness's (harness.Harness.WorkerPeak). The slots weigh it in place of the notch's WorkerPeak, so that the
+// scheduler, the load bar and djinn load get forecast a worker as its measures do. It must not call the monitor.
+func (m *Monitor) SetWorkerPeak(peak func() uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.peak = peak
+}
+
+// peaks is the typical measured peak of a worker as Policy.Slots takes it: none while none is measured, and the
+// notch's WorkerPeak holds.
+func (m *Monitor) peaks() []uint64 {
+	m.mu.Lock()
+	peak := m.peak
+	m.mu.Unlock()
+	if peak == nil {
+		return nil
+	}
+	if v := peak(); v > 0 {
+		return []uint64{v}
+	}
+	return nil
 }
 
 // Snapshot is the machine, read at most a second ago, with the resident memory of Djinn's running workers read now. A
@@ -919,12 +944,12 @@ func (m *Monitor) machine() (Snapshot, func() uint64) {
 	return s, m.workers
 }
 
-// Capacity is the most workers the machine runs at once and its rule, and why it is under pressure ("" when it is
-// not).
+// Capacity is the most workers the machine runs at once and its rule, a worker forecast at its measured peak
+// (SetWorkerPeak), and why it is under pressure ("" when it is not).
 func (m *Monitor) Capacity() (slots int, rule, pressure string) {
 	s := m.Snapshot()
 	p := m.Policy()
-	slots, rule = p.Slots(s)
+	slots, rule = p.Slots(s, m.peaks()...)
 	return slots, rule, p.Pressure(s)
 }
 
@@ -939,16 +964,17 @@ func (m *Monitor) BarSlots(n djinnv1.LoadNotch) int {
 // bar shows these, so that what it says a notch runs is what the scheduler lets run there (W577). djinn up --workers
 // holds for every notch.
 func (m *Monitor) NotchSlots() []NotchSlots {
-	return notchSlots(m.Policy(), m.Snapshot())
+	return notchSlots(m.Policy(), m.Snapshot(), m.peaks()...)
 }
 
-// notchSlots is what each manual notch lets run on the machine s, the policy current's djinn up --workers holding.
-func notchSlots(current Policy, s Snapshot) []NotchSlots {
+// notchSlots is what each manual notch lets run on the machine s, a worker at its measured peaks, the policy current's
+// djinn up --workers holding.
+func notchSlots(current Policy, s Snapshot, peaks ...uint64) []NotchSlots {
 	out := make([]NotchSlots, 0, len(ManualNotches))
 	for _, n := range ManualNotches {
 		p := NotchPolicy(n)
 		p.Workers, p.WorkerMemory = current.Workers, current.WorkerMemory
-		slots, _ := p.Slots(s)
+		slots, _ := p.Slots(s, peaks...)
 		out = append(out, NotchSlots{Notch: n, Slots: slots})
 	}
 	return out
