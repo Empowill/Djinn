@@ -297,6 +297,80 @@ func TestRestartResumesInOrder(t *testing.T) {
 	}
 }
 
+// TestRestartLeavesOutTheTimeDjinnWasDown (W73): a djinn up that did not stop cleanly left a worker running, last seen
+// 17 minutes into its run; Djinn is up again 3h48m after the run started. The run ends where the worker was last seen,
+// not at the restart: the resumed worker keeps what is left of its 2 h wall time budget, and the Lamplighter lets it
+// run until that is spent.
+func TestRestartLeavesOutTheTimeDjinnWasDown(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home)
+	wishID, projectID := e.wish(t, gitRepo(t))
+	e.down()
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Date(2026, 10, 21, 3, 16, 0, 0, time.UTC)
+	seen := started.Add(17 * time.Minute)
+	tk := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W89", Title: "W89", Scheduled: true,
+		Status: planv1.TaskStatus_TASK_STATUS_RUNNING, Provider: planv1.Provider_PROVIDER_FAKE, Worktree: t.TempDir(),
+		SessionId: "s-W89", CreateTime: timestamppb.New(started), StartTime: timestamppb.New(started),
+		FirstStartTime: timestamppb.New(started), Runs: []*planv1.TaskRun{{StartTime: timestamppb.New(started)}},
+		LastActivityTime: timestamppb.New(started.Add(10 * time.Minute)),
+		Resources:        &planv1.Resources{ReadTime: timestamppb.New(started.Add(15 * time.Minute))},
+	}
+	if err := db.Tx(t.Context(), func(tx *store.Tx) error {
+		if err := tx.Journal("test", "crash", tk); err != nil {
+			return err
+		}
+		if err := tx.Put(tk); err != nil {
+			return err
+		}
+		return putEvents(t.Context(), tx, newEventAt(tk.GetId(), Event{Kind: planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT,
+			Text: "wait"}, seen))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	restarted := started.Add(3*time.Hour + 48*time.Minute + 11*time.Second)
+	clock := &fakeClock{at: restarted}
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_FAKE] = corrector{work: func(string, string) string { return "wait" }} // Resumed, it works on.
+	e = upWith(t, home, providers, WithClock(clock.now), WithSilenceLimit(10*time.Hour), WithTaskMaxWallTime(2*time.Hour))
+	id := tk.GetId()
+	resumed := e.until(t, id, func(tk *planv1.Task) bool {
+		return tk.GetStatus() == planv1.TaskStatus_TASK_STATUS_RUNNING && len(tk.GetRuns()) == 2
+	})
+	cut := resumed.GetRuns()[0]
+	if !cut.GetEndTime().AsTime().Equal(seen) || cut.GetReason() != "interrupted" {
+		t.Errorf("run cut by the stop ended %v (%s), want %v (interrupted)", cut.GetEndTime().AsTime(), cut.GetReason(), seen)
+	}
+	stopping := func() bool {
+		e.h.mu.Lock()
+		defer e.h.mu.Unlock()
+		return e.h.runs[id].stopping
+	}
+	// 17 min before the stop, 1h42m since the restart: 1h59m of work.
+	e.h.lamplighter(t.Context(), []*planv1.Task{resumed})
+	clock.set(restarted.Add(time.Hour + 42*time.Minute))
+	e.h.lamplighter(t.Context(), []*planv1.Task{resumed})
+	if stopping() {
+		t.Fatal("stopped for its budget with the time Djinn was down counted as work")
+	}
+	// 2 min later, 2h01m of work: the budget still counts the runs.
+	clock.set(clock.now().Add(2 * time.Minute))
+	e.h.lamplighter(t.Context(), []*planv1.Task{resumed})
+	done := e.ended(t, id)
+	if done.GetStatus() != planv1.TaskStatus_TASK_STATUS_STOPPED ||
+		done.GetError() != "budget exceeded: wall time 2h1m0s (limit 2h0m0s)" {
+		t.Errorf("past its budget = %v %q, want STOPPED for its wall time", done.GetStatus(), done.GetError())
+	}
+}
+
 // TestRestartBeforeNewSpawn: a task spawned as a slot frees after a restart does not take it from a task Djinn
 // resumes: it waits, and starts once the resumed one is done.
 func TestRestartBeforeNewSpawn(t *testing.T) {

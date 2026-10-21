@@ -476,7 +476,7 @@ func (h *Harness) Recover(ctx context.Context) error {
 		if len(t.Runs) > 0 {
 			last := t.Runs[len(t.Runs)-1]
 			if last.EndTime == nil {
-				last.EndTime = nowPb
+				last.EndTime = timestamppb.New(h.lastSeen(ctx, t, last))
 				last.Reason = "interrupted"
 			}
 		}
@@ -506,6 +506,37 @@ func (h *Harness) Recover(ctx context.Context) error {
 	}
 	h.recoverOutrun(ctx, tasks)
 	return h.recoverAzimas(ctx, tasks)
+}
+
+// lastSeen is when the worker of t's run, left running by a djinn up that did not stop cleanly, was last seen at work:
+// the latest of the run's start, the task's last event, its last activity and its last resource reading (written at
+// least every minute it runs, measure.go), never past now. The run ends there, not at the restart: the time Djinn was
+// down is no work, and the task's wall time budget (taskWallTime) does not count it (W73: after a stop of three and a
+// half hours, two workers were stopped for their budget four seconds after they resumed).
+func (h *Harness) lastSeen(ctx context.Context, t *planv1.Task, run *planv1.TaskRun) time.Time {
+	now := h.now()
+	if run.GetStartTime() == nil {
+		return now
+	}
+	seen := run.GetStartTime().AsTime()
+	later := func(at *timestamppb.Timestamp) {
+		if at != nil && at.AsTime().After(seen) {
+			seen = at.AsTime()
+		}
+	}
+	later(t.GetLastActivityTime())
+	later(t.GetResources().GetReadTime())
+	err := store.Latest(ctx, h.store, store.Where{"task_id": t.GetId()}, func(e *planv1.TaskEvent) bool {
+		later(e.GetCreateTime())
+		return false
+	})
+	if err != nil {
+		logx.L().Warn("read a task's last event", "task", t.GetCode(), "err", err)
+	}
+	if seen.After(now) {
+		return now
+	}
+	return seen
 }
 
 // lastStart is when the last djinn up started: the time of its restart event, the latest one. Zero when none is left
