@@ -347,7 +347,7 @@ func (h *Harness) putOut(ctx context.Context, t *planv1.Task) error {
 	}
 	if len(t.Runs) > 0 {
 		if last := t.Runs[len(t.Runs)-1]; last.EndTime == nil {
-			last.EndTime, last.Reason = now, "interrupted"
+			last.EndTime, last.Reason = timestamppb.New(h.lastSeen(ctx, t, last)), "interrupted"
 		}
 	}
 	t.Status, t.Error, t.WaitReason, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_STOPPED, whyRestartOut, "", nil
