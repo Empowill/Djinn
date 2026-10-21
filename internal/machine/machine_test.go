@@ -910,24 +910,6 @@ func TestMonitor_Capacity(t *testing.T) {
 	if slots, _, pressure := m.Capacity(); slots != 1 || pressure == "" || pressure != m.Pressure() {
 		t.Errorf("slots %d, pressure %q (%q now)", slots, pressure, m.Pressure())
 	}
-
-	// A 16 GB Mac at Max, 3.47 GB available, its workers measured at 302 MiB: 1.32 GB beyond the reserve holds one
-	// worker at the notch's 1 GiB, two at the measure (302 + 256 MiB of margin).
-	mac := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX), func() (Snapshot, error) {
-		return Snapshot{Cores: 8, MemoryTotal: 16 * GiB, MemoryAvailable: 3466969088}, nil
-	})
-	mac.every = 0
-	if slots, rule, _ := mac.Capacity(); slots != 1 {
-		t.Errorf("unmeasured: %d slots, want 1 (%s)", slots, rule)
-	}
-	mac.SetWorkerPeak(func() uint64 { return 302 * MiB })
-	if slots, rule, _ := mac.Capacity(); slots != 2 {
-		t.Errorf("measured: %d slots, want 2 (%s)", slots, rule)
-	}
-	mac.SetWorkerPeak(func() uint64 { return 0 })
-	if slots, rule, _ := mac.Capacity(); slots != 1 {
-		t.Errorf("none measured yet: %d slots, want 1 (%s)", slots, rule)
-	}
 }
 
 // TestMonitor_NotchSlots: on every machine, with or without djinn up --workers, what the load bar says each notch runs

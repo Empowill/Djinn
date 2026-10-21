@@ -2451,38 +2451,6 @@ func TestTypicalForecast(t *testing.T) {
 	})
 }
 
-// TestTypicalPeak gives the measured typical peak without the margin, what machine.Policy.Slots takes as a peak, and 0
-// while no worker is measured: TypicalForecast is it plus the margin, or the notch's default.
-func TestTypicalPeak(t *testing.T) {
-	t.Parallel()
-	at := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
-	policy := machine.Policy{WorkerPeak: 2 * machine.GiB, WorkerMargin: 512 * machine.MiB}
-	done := &planv1.Task{
-		Id: "done", Status: planv1.TaskStatus_TASK_STATUS_DONE,
-		Provider: planv1.Provider_PROVIDER_ANTIGRAVITY, EndTime: timestamppb.New(at.Add(-time.Hour)),
-		Resources: &planv1.Resources{PeakMemoryBytes: 3 * machine.GiB, P95MemoryBytes: 2560 * machine.MiB},
-	}
-	cases := []struct {
-		name         string
-		tasks        []*planv1.Task
-		peak, wanted uint64
-	}{
-		{name: "measured", tasks: []*planv1.Task{done}, peak: 2560 * machine.MiB, wanted: 3072 * machine.MiB},
-		{name: "none measured", peak: 0, wanted: 2*machine.GiB + 512*machine.MiB},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			if got := TypicalPeak(c.tasks, policy); got != c.peak {
-				t.Errorf("TypicalPeak = %d, want %d", got, c.peak)
-			}
-			if got := TypicalForecast(c.tasks, policy); got != c.wanted {
-				t.Errorf("TypicalForecast = %d, want %d", got, c.wanted)
-			}
-		})
-	}
-}
-
 // TestInvestigationCap (W213): at most one investigation runs at once on a machine of three slots or fewer, two above;
 // the next one waits for the machine, saying so, whatever the free slots.
 func TestInvestigationCap(t *testing.T) {

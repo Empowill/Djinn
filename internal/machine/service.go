@@ -111,7 +111,7 @@ func (s *service) Show(
 ) (*connect.Response[machinev1.MachineServiceShowResponse], error) {
 	snap := s.m.Snapshot()
 	p := s.m.Policy()
-	slots, rule := p.Slots(snap, s.m.peaks()...)
+	slots, rule := p.Slots(snap)
 	out := &machinev1.Machine{
 		Os: snap.OS, Arch: snap.Arch, Cores: int32(snap.Cores), MemoryTotalBytes: snap.MemoryTotal,
 		MemoryAvailableBytes: snap.MemoryAvailable, Workers: int32(slots), WorkersRule: rule,

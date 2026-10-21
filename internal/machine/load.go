@@ -416,18 +416,15 @@ func (s *loadService) snapshot(ctx context.Context) *djinnv1.LoadServiceWatchRes
 		AutoReason:  r.reason,
 	}
 	if s.monitor != nil {
-		// The slots take the measured peak, which they add the margin to: the forecast, its margin in, would count it
-		// twice.
-		peaks := s.monitor.peaks()
-		forecast := r.policy.WorkerForecast(peaks...)
+		forecast := r.policy.WorkerForecast()
 		if s.workerForecast != nil {
 			if f := s.workerForecast(); f > 0 {
 				forecast = f
 			}
 		}
 		cpuSlots := r.policy.CPUSlots(r.snap)
-		memSlots := r.policy.MemorySlots(r.snap, peaks...)
-		binding := r.policy.BindingResource(r.snap, peaks...)
+		memSlots := r.policy.MemorySlots(r.snap, forecast)
+		binding := r.policy.BindingResource(r.snap, forecast)
 		baseSlots := min(cpuSlots, memSlots)
 
 		resp.MemoryTotalBytes = r.snap.MemoryTotal
@@ -477,10 +474,9 @@ func (s *loadService) workers(r setting) workerCounts {
 		w.lowerPauses = s.lowerPauses()
 	}
 	if s.monitor != nil {
-		peaks := s.monitor.peaks()
-		slots, _ := r.policy.Slots(r.snap, peaks...)
+		slots, _ := r.policy.Slots(r.snap)
 		w.slots = int32(slots)
-		for _, n := range notchSlots(r.policy, r.snap, peaks...) {
+		for _, n := range notchSlots(r.policy, r.snap) {
 			w.notchSlots = append(w.notchSlots, &djinnv1.LoadNotchSlots{Notch: n.Notch, Slots: int32(n.Slots)})
 		}
 	}
@@ -498,18 +494,15 @@ func (s *loadService) Get(
 		AutoReason:  r.reason,
 	}
 	if s.monitor != nil {
-		// The slots take the measured peak, which they add the margin to: the forecast, its margin in, would count it
-		// twice.
-		peaks := s.monitor.peaks()
-		forecast := r.policy.WorkerForecast(peaks...)
+		forecast := r.policy.WorkerForecast()
 		if s.workerForecast != nil {
 			if f := s.workerForecast(); f > 0 {
 				forecast = f
 			}
 		}
 		cpuSlots := r.policy.CPUSlots(r.snap)
-		memSlots := r.policy.MemorySlots(r.snap, peaks...)
-		binding := r.policy.BindingResource(r.snap, peaks...)
+		memSlots := r.policy.MemorySlots(r.snap, forecast)
+		binding := r.policy.BindingResource(r.snap, forecast)
 		baseSlots := min(cpuSlots, memSlots)
 
 		resp.MemoryTotalBytes = r.snap.MemoryTotal

@@ -286,20 +286,6 @@ func (h *Harness) WorkerForecast() uint64 {
 	return dispatch.TypicalForecast(tasks, p)
 }
 
-// WorkerPeak returns the typical peak memory of a worker across providers in use, at the notch's percentile, without
-// the margin (dispatch.TypicalPeak); 0 while none is measured. The machine's monitor weighs the slots with it
-// (machine.Monitor.SetWorkerPeak).
-func (h *Harness) WorkerPeak() uint64 {
-	if h.store == nil {
-		return 0
-	}
-	tasks, err := store.List[*planv1.Task](context.Background(), h.store, nil)
-	if err != nil {
-		return 0
-	}
-	return dispatch.TypicalPeak(tasks, h.Policy())
-}
-
 const maxWorkerSamples = 1440 // 120 minutes at 5s intervals
 
 type workerRing struct {
