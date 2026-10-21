@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0e0e10" />
+    <title>Djinn</title>
+    <meta name="djinn-entry-js" content="./assets/index-h_uA07O1.js"><script type="module" src="./assets/boot.js"></script>
+    <meta name="djinn-entry-css" content="./assets/index-CnddK1qm.css">
+    <meta http-equiv="Content-Security-Policy" content="default-src &#39;self&#39;; script-src &#39;self&#39;; style-src &#39;self&#39; &#39;unsafe-inline&#39;; img-src &#39;self&#39; data:; font-src &#39;self&#39;; connect-src &#39;self&#39;; frame-src &#39;self&#39;; object-src &#39;none&#39;; base-uri &#39;self&#39;; form-action &#39;none&#39;">
+  </head>
+  <body>
+        <style id="djinn-splash-style">
+      :root {
+        --splash-bg: #0e0e10;
+        --splash-surface: #151517;
+        --splash-text: #ececef;
+        --splash-muted: #9d9da5;
+        --splash-emerald: #10b981;
+        --splash-mint: #34d399;
+        --splash-flame: #f59e0b;
+        --splash-bright: #fbbf24;
+        --splash-core: #ffffff;
+        color-scheme: dark;
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme="dark"]) {
+          --splash-bg: #f5f2eb;
+          --splash-surface: #ede9df;
+          --splash-text: #1c1915;
+          --splash-muted: #686156;
+          --splash-flame: #d97706;
+          --splash-bright: #f59e0b;
+          color-scheme: light;
+        }
+      }
+      html[data-theme="light"] {
+        --splash-bg: #f5f2eb;
+        --splash-surface: #ede9df;
+        --splash-text: #1c1915;
+        --splash-muted: #686156;
+        --splash-flame: #d97706;
+        --splash-bright: #f59e0b;
+        color-scheme: light;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--splash-bg);
+        color: var(--splash-text);
+      }
+      #djinn-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.125rem;
+        background: var(--splash-bg);
+        color: var(--splash-muted);
+        font-family:
+          "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 0.8125rem;
+        letter-spacing: 0.01em;
+        pointer-events: none;
+        user-select: none;
+      }
+      #djinn-splash .splash-emblem {
+        position: relative;
+        width: 6.5rem;
+        height: 6.5rem;
+        display: grid;
+        place-items: center;
+      }
+      #djinn-splash .splash-seal,
+      #djinn-splash .splash-orbit svg {
+        width: 6.5rem;
+        height: 6.5rem;
+        display: block;
+      }
+      #djinn-splash .splash-orbit {
+        position: absolute;
+        inset: 0;
+        will-change: transform, opacity;
+      }
+      #djinn-splash .splash-orbit-a {
+        animation: djinn-splash-turn-a 7s linear infinite;
+      }
+      #djinn-splash .splash-orbit-b {
+        animation: djinn-splash-turn-b 9s ease-in-out infinite;
+      }
+      #djinn-splash .splash-line {
+        margin: 0;
+        color: var(--splash-muted);
+        font-weight: 500;
+      }
+      @keyframes djinn-splash-turn-a {
+        0% {
+          transform: rotate(0deg) scale(0.97);
+          opacity: 0.72;
+        }
+        50% {
+          transform: rotate(180deg) scale(1.03);
+          opacity: 1;
+        }
+        100% {
+          transform: rotate(360deg) scale(0.97);
+          opacity: 0.72;
+        }
+      }
+      @keyframes djinn-splash-turn-b {
+        0%,
+        100% {
+          transform: rotate(0deg) scale(1.02);
+          opacity: 0.48;
+        }
+        50% {
+          transform: rotate(-180deg) scale(0.95);
+          opacity: 0.9;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #djinn-splash .splash-orbit {
+          animation: none !important;
+        }
+      }
+      html[data-motion="reduced"] #djinn-splash .splash-orbit,
+      html[data-still] #djinn-splash .splash-orbit {
+        animation: none !important;
+        animation-play-state: paused !important;
+      }
+    </style>
+    <div id="djinn-splash" aria-hidden="true">
+      <div class="splash-emblem">
+        <div class="splash-orbit splash-orbit-a">
+          <svg viewBox="0 0 120 120" fill="none">
+            <path
+              d="M60 12 C84 12 103 29 106 52"
+              stroke="var(--splash-bright)"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-dasharray="4 8"
+              opacity="0.78"
+            />
+            <path
+              d="M60 108 C36 108 17 91 14 68"
+              stroke="var(--splash-mint)"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-dasharray="3 9"
+              opacity="0.65"
+            />
+            <path
+              d="M28 24 L29.4 27.6 L33 29 L29.4 30.4 L28 34 L26.6 30.4 L23 29 L26.6 27.6 Z"
+              fill="var(--splash-bright)"
+            />
+            <path
+              d="M93 84 L94.1 86.9 L97 88 L94.1 89.1 L93 92 L91.9 89.1 L89 88 L91.9 86.9 Z"
+              fill="var(--splash-mint)"
+            />
+          </svg>
+        </div>
+        <div class="splash-orbit splash-orbit-b">
+          <svg viewBox="0 0 120 120" fill="none">
+            <path
+              d="M22 44 C30 24 50 14 72 17"
+              stroke="var(--splash-flame)"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-dasharray="2 7"
+              opacity="0.7"
+            />
+            <path
+              d="M98 76 C90 96 70 106 48 103"
+              stroke="var(--splash-emerald)"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-dasharray="2 8"
+              opacity="0.6"
+            />
+            <path
+              d="M90 27 L91.2 30 L94.2 31.2 L91.2 32.4 L90 35.4 L88.8 32.4 L85.8 31.2 L88.8 30 Z"
+              fill="var(--splash-flame)"
+            />
+            <circle cx="24" cy="82" r="1.8" fill="var(--splash-bright)" />
+          </svg>
+        </div>
+        <svg class="splash-seal" viewBox="0 0 120 120" fill="none">
+          <polygon
+            points="60,17 72,29 89,29 89,46 101,58 89,70 89,87 72,87 60,99 48,87 31,87 31,70 19,58 31,46 31,29 48,29"
+            fill="var(--splash-surface)"
+            stroke="var(--splash-emerald)"
+            stroke-width="2.2"
+            stroke-linejoin="round"
+          />
+          <rect
+            x="40"
+            y="38"
+            width="40"
+            height="40"
+            rx="2"
+            transform="rotate(45 60 58)"
+            stroke="var(--splash-mint)"
+            stroke-width="1.3"
+            opacity="0.65"
+          />
+          <path
+            d="M60 34 C60 34 73 48 73 60 C73 67.5 67.2 73 60 73 C52.8 73 47 67.5 47 60 C47 52.8 53 45.5 53 45.5 C53 45.5 51.5 53 56.5 56 C55 48.5 60 34 60 34 Z"
+            fill="var(--splash-flame)"
+          />
+          <path
+            d="M60 44 C60 44 67.5 53 67.5 60.5 C67.5 65 64 68.5 60 68.5 C56 68.5 52.5 65 52.5 60.5 C52.5 55.5 60 44 60 44 Z"
+            fill="var(--splash-bright)"
+          />
+          <circle cx="60" cy="62" r="3" fill="var(--splash-core)" />
+          <path
+            d="M44 96 C46 91 52 89 60 89 C68 89 74 91 76 96 L83 94 C80 99 73 102 60 102 C47 102 40 99 37 94 Z"
+            stroke="var(--splash-flame)"
+            stroke-width="1.6"
+            stroke-linejoin="round"
+            opacity="0.85"
+          />
+          <path
+            d="M52 105 H68"
+            stroke="var(--splash-flame)"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            opacity="0.75"
+          />
+        </svg>
+      </div>
+      <p id="djinn-splash-text" class="splash-line">Djinn wakes…</p>
+    </div>
+
+    <div id="root"></div>
+  </body>
+</html>
