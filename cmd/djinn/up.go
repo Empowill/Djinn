@@ -269,6 +269,8 @@ func runUp(args []string) (restart bool, err error) {
 	workers := harness.New(db, home, harness.Providers(), opts...)
 	// What the workers hold is left out of the memory available: the memory Djinn may commit counts it back in.
 	monitor.SetWorkerMemory(workers.Resident)
+	// The slots forecast a worker at its measured peak, the notch's default only while none is measured.
+	monitor.SetWorkerPeak(workers.WorkerPeak)
 	defer down.Step("workers", workers.Close)
 	if err := workers.Recover(ctx); err != nil {
 		return false, err
