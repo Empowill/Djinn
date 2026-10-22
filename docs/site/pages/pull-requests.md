@@ -62,7 +62,9 @@ the wish's branch.
 Each change the watcher reports wakes the Djinn. What it reports is the project's skill's to say: a failed check, each
 new comment (of the conversation, a review, or on a line of the diff), changes requested, a conflict, the merge. The
 Djinn then does what that skill says: typically, spawn a task to fix the failed check, to make the change a reviewer
-asked for, or to settle the conflict, whose work Djinn merges and pushes, which updates the request. The watcher ends
+asked for, or to settle the conflict, whose work Djinn merges and pushes, which updates the request. The Djinn answers
+a reviewer's thread citing the commit that fixes it, and resolves the thread only once the request holds that commit:
+an auto-merge never takes a request whose threads are resolved but whose fixes are not there yet. The watcher ends
 when the skill says it is done, the request merged.
 
 A request is never watched twice: when one already is, the Djinn hears which watcher babysits it.
