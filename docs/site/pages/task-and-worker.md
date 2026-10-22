@@ -200,8 +200,9 @@ The window follows tasks; the Djinn makes them. Ask it in words, and it uses the
 ## Budgets
 
 Each task runs under limits: two hours of work in total across its runs, and five hundred model turns in a run, shown
-on its row against that limit. Past them it stops, and continuing it gives it five hundred turns again, not more time.
-A task may also get a spending cap, which only Claude enforces. A worker silent for fifteen minutes, with nothing
+on its row against that limit. The two hours count only the time its worker ran: not its waits, its pauses, nor the
+time Djinn was down between a stop and the restart that resumes it. Past them it stops, and continuing it gives it a
+new budget, two hours and five hundred turns. A task may also get a spending cap, which only Claude enforces. A worker silent for fifteen minutes, with nothing
 running, is woken and continued on its session; after three wakes in a row, its task fails, saying so. A paused worker
 is never silent: its time held still does not count, its silence starts again from zero once it goes on, and it
 reads then what was sent to it meanwhile.

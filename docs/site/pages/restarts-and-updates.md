@@ -105,6 +105,9 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
   deaths in a row fail it, and the Djinn hears why.
 - **A budget.** A task is stopped, "budget exceeded", past 2 hours of work in total across its runs (automatic resumes
   keep counting), or a worker past 500 model turns in one run. Continuing it gives it a new 2-hour and 500-turn budget.
+  Only the time a worker ran counts: the time it waited, held or paused does not, nor the time Djinn was down. A run
+  cut short by a Djinn that did not stop cleanly ends where its worker was last seen at work (its last event, or its
+  last reading of what it uses, taken every minute), not when Djinn starts again.
 
 Only the resumes after a usage limit count against a task, and those after a network error when no outage was
 confirmed: after three of them, it fails. A restart, a pause, a lost process or a confirmed network outage costs it
