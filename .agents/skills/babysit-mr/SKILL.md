@@ -41,7 +41,11 @@ the wish goes on with its other work.
    worker (`djinn task spawn`), with the failing log or the comment in its prompt. Group what touches the same files
    into one task.
 3. Review each worker's diff, then commit and push once for the round, as the project's rules say.
-4. Answer threads only with what was done, in the developer's name only if they asked you to.
+4. Answer threads only with what was done, in the developer's name only if they asked you to. A thread a commit
+   fixes waits for that commit on the merge request: once its head (`sha` in `glab mr view <mr> --output json`, after
+   `git fetch`) contains it (`git merge-base --is-ancestor <commit> <head>`), answer citing the commit, then resolve
+   the thread if it is yours to resolve; never before, or an auto-merge takes the request without the fix. A thread
+   answered with no fix may resolve at once.
 5. Nothing to do (a pipeline still running, an approval to wait for): wait for the next line. A thread that needs
    the developer is a question in the wish (`djinn question ask`); say nothing in your terminal.
 
