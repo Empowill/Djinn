@@ -112,7 +112,8 @@ func Uncut(ctx context.Context) (kept context.Context, done context.CancelFunc) 
 
 // FetchBranch fetches branch from remote into its remote-tracking ref, refs/remotes/<remote>/<branch>, with the
 // person's own credentials: what the remote holds of it now. It returns that commit; "" when the remote has no such
-// branch, its remote-tracking ref then left as it was; an error when the remote did not answer.
+// branch, its remote-tracking ref then deleted, as git fetch --prune would: a branch the remote deleted, a merged
+// request's, no longer shows as there (W81); an error when the remote did not answer.
 func FetchBranch(ctx context.Context, dir, remote, branch string) (string, error) {
 	ref := "refs/remotes/" + remote + "/" + branch
 	cmd, cancel := Command(ctx, dir, "fetch", "--no-tags", remote, "+refs/heads/"+branch+":"+ref)
@@ -121,6 +122,12 @@ func FetchBranch(ctx context.Context, dir, remote, branch string) (string, error
 	cancel()
 	if err != nil {
 		if strings.Contains(string(out), "couldn't find remote ref") {
+			prune, cancel := Command(ctx, dir, "update-ref", "-d", ref)
+			out, err := prune.CombinedOutput()
+			cancel()
+			if err != nil {
+				return "", fmt.Errorf("prune %s: %s", ref, cmp.Or(strings.TrimSpace(string(out)), err.Error()))
+			}
 			return "", nil
 		}
 		return "", fmt.Errorf("fetch %s from %s: %s", branch, remote, cmp.Or(strings.TrimSpace(string(out)), err.Error()))

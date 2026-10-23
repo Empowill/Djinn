@@ -133,6 +133,8 @@ remote's copy of that branch, then:
   it no more, as it would have to force the push. The work waits, saying the branch has diverged and how to align them
   by hand: merge the remote's commits into it, or reset it to the remote's if its own are not wanted. The Djinn hears
   it once. Once the branches agree, the work merges again.
+- **The remote deleted the branch**, a merged pull request's: Djinn forgets its copy of the remote's branch, as a fetch
+  that prunes would, and the projects list no longer compares the branch with a branch gone.
 
 Djinn never forces and never rebases. A remote that does not answer within half a minute holds no merge: Djinn then
 compares with the remote's copy as Git last fetched it.
