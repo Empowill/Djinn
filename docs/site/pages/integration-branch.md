@@ -133,6 +133,10 @@ remote's copy of that branch, then:
   it no more, as it would have to force the push. The work waits, saying the branch has diverged and how to align them
   by hand: merge the remote's commits into it, or reset it to the remote's if its own are not wanted. The Djinn hears
   it once. Once the branches agree, the work merges again.
+- **A task rewrote the branch**, a rebase in its own worktree pushed by force from there: the branch follows the commit
+  pushed, when that commit is the tip of the task's branch, the task held every commit of the branch before it rewrote
+  them, and no checkout has the branch. The Djinn hears each such move; the branch's history in Git keeps its former
+  commits. A commit the task never held, or a teammate's push by force, keeps the branch apart, as above.
 - **The remote deleted the branch**, a merged pull request's: Djinn forgets its copy of the remote's branch, as a fetch
   that prunes would, and the projects list no longer compares the branch with a branch gone.
 
