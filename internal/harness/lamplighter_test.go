@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -391,19 +392,13 @@ func TestLamplighter(t *testing.T) {
 						t.Errorf("error = %q, want budget exceeded", done.GetError())
 					}
 
-					e.h.batcher.Flush(t.Context())
-					toldMu.Lock()
-					found := false
-					for _, line := range told {
-						if strings.Contains(line, "budget exceeded") {
-							found = true
-							break
-						}
-					}
-					toldMu.Unlock()
-					if !found {
-						t.Errorf("lead not told of budget failure, got told: %v", told)
-					}
+					// The end is written before its line is queued for the lead (harness.go): wait for it.
+					waitFor(t, "the lead told of the budget failure", func() bool {
+						e.h.batcher.Flush(t.Context())
+						toldMu.Lock()
+						defer toldMu.Unlock()
+						return slices.ContainsFunc(told, func(line string) bool { return strings.Contains(line, "budget exceeded") })
+					})
 
 					// Continued by the lead (W282): opens a fresh 2 h wall-time budget.
 					if _, err := e.tasks.Continue(t.Context(), connect.NewRequest(&planv1.TaskServiceContinueRequest{TaskId: id})); err != nil {
@@ -481,19 +476,13 @@ func TestLamplighter(t *testing.T) {
 						t.Errorf("error = %q, want budget exceeded", done.GetError())
 					}
 
-					e.h.batcher.Flush(t.Context())
-					toldMu.Lock()
-					defer toldMu.Unlock()
-					found := false
-					for _, line := range told {
-						if strings.Contains(line, "budget exceeded") {
-							found = true
-							break
-						}
-					}
-					if !found {
-						t.Errorf("lead not told of budget failure, got told: %v", told)
-					}
+					// The end is written before its line is queued for the lead (harness.go): wait for it.
+					waitFor(t, "the lead told of the budget failure", func() bool {
+						e.h.batcher.Flush(t.Context())
+						toldMu.Lock()
+						defer toldMu.Unlock()
+						return slices.ContainsFunc(told, func(line string) bool { return strings.Contains(line, "budget exceeded") })
+					})
 				},
 			},
 			{
