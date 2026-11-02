@@ -56,6 +56,8 @@ var allowed = map[string]string{
 	"github.com/empowill/djinn/internal/harness TestAzimaFollowMainRebaseUnpushed":                  "runs multiple git passes and rebases against real git repos",
 	"github.com/empowill/djinn/internal/harness TestAzimaFollowMainRebaseUnpushedWithRemoteAskMode": "runs multiple git passes and rebases against real git repos",
 	"github.com/empowill/djinn/internal/harness TestAzimaDependentBranchStacked":                    "runs multiple git passes and branch stacking against real git repos",
+	"github.com/empowill/djinn/internal/harness TestPushHold_PerAzima":                              "runs merges, push checks and pushes of two azimas against real git repos: 6 s alone, 23 to 28 s on a loaded Mac",
+	"github.com/empowill/djinn/internal/harness TestPushHold_OtherAzimaGreen":                       "runs merges, push checks and pushes of two azimas against real git repos: 5 s alone, 18 to 25 s on a loaded Mac",
 }
 
 // event is a line of go test -json (go doc test2json).

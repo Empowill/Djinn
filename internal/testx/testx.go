@@ -55,6 +55,8 @@ var gitIdentityEnv = []string{"GIT_CONFIG_GLOBAL", "GIT_AUTHOR_NAME", "GIT_AUTHO
 // commits sets its own identity (git config user.name); Djinn's merges run in such repositories. The global config
 // is still read, through an include in a file of dir that GIT_CONFIG_GLOBAL names, for its other settings (the
 // Windows job's core.longpaths), and its user.name is emptied after it; a repository's own config comes after both.
+// A new repository's branch is git's default, master, whatever init.defaultBranch the developer set: a test that
+// makes a main branch next to it found it already there.
 func HideGitIdentity(dir string) error {
 	var includes []string
 	if g, ok := os.LookupEnv("GIT_CONFIG_GLOBAL"); ok {
@@ -71,7 +73,7 @@ func HideGitIdentity(dir string) error {
 	for _, path := range includes {
 		fmt.Fprintf(&b, "[include]\n\tpath = %s\n", strconv.Quote(filepath.ToSlash(path)))
 	}
-	b.WriteString("[user]\n\tname = \"\"\n\temail = \"\"\n")
+	b.WriteString("[user]\n\tname = \"\"\n\temail = \"\"\n[init]\n\tdefaultBranch = master\n")
 	global := filepath.Join(dir, "gitconfig")
 	if err := os.WriteFile(global, []byte(b.String()), 0o600); err != nil {
 		return err

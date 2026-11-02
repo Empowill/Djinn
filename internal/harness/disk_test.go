@@ -461,7 +461,9 @@ func TestDiskItems(t *testing.T) {
 	}
 	t.Setenv("PATH", bin)
 
-	e := up(t, t.TempDir(), WithClock(clock.now))
+	// The first read waits for the whole measure: under a loaded suite, 150 ms gave back only the first items.
+	wholeRead := func(h *Harness) { h.disk.wait = 5 * time.Second }
+	e := up(t, t.TempDir(), WithClock(clock.now), wholeRead)
 	got := e.h.DiskItems()
 	if len(got) != 11 {
 		t.Fatalf("DiskItems() count = %d (%v); want 11", len(got), got)

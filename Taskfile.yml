@@ -142,6 +142,8 @@ tasks:
     desc: Build the interface and djinn, then run the browser-mode smoke tests headless (e2e/)
     deps: [ui]
     cmds:
+      # The browser of this Playwright version, as CI installs it: nothing to do once there, a download on a new machine.
+      - npx playwright install chromium
       - npx vite build --config e2e/vite.config.ts --logLevel warn
       - go build -tags headless -ldflags "-X github.com/empowill/djinn/internal/ui.isTestBuild=true" -o bin/djinn-e2e{{exeExt}} ./cmd/djinn
       - npx playwright test --config e2e/playwright.config.ts {{.CLI_ARGS}}

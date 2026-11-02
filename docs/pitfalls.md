@@ -280,6 +280,16 @@ the code does not say by itself; remove one when a change makes it false.
   treatment in `aliases`). In e2e, never put a path in a CSS attribute selector: a Windows path's backslashes are CSS
   escapes (`\A` is a newline), it never matches; use `getByTitle(…, { exact: true })`. *Where:*
   `internal/plan/plan.go`, `internal/plan/exchange.go`.
+- **On macOS a login shell puts the system's folders first.** `/etc/profile` runs `path_helper`, which moves the PATH
+  it was given after `/etc/paths` and `/etc/paths.d` (Homebrew's `/opt/homebrew/bin`). A lead's terminal is a login
+  shell there (`terminal.Shell`): a test's fake claude, first on the PATH, lost to the developer's real one, whose
+  trust prompt the test waited on. *Sign:* a lead or terminal test shows Claude Code's "Accessing workspace" on a Mac
+  with claude installed. *Do:* a test build turns `terminal.LoginShell` off (`up.go`, `cmd/djinn` `TestMain`); a test
+  that needs no agent of the machine checks it is not found before it runs (`TestExtendPath`).
+- **The developer's git and home leak into a test.** `init.defaultBranch = main` made `git init` give a `main` a test
+  then created (`testx.HideGitIdentity` sets `master`, git's default, as CI has it); the e2e djinn wrote a shared
+  wish to `~/Downloads`, which macOS guards with a prompt at each new build (`global-setup.ts` gives it a home of its
+  own).
 
 ## Processes
 

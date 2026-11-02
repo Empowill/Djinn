@@ -54,9 +54,14 @@ async function startOne(slot: number): Promise<started> {
     gitconfig,
     "[core]\n\tautocrlf = false\n\tlongpaths = true\n",
   );
+  // A home folder of its own: a wish shared lands in its Downloads, never the developer's, where macOS asks the
+  // developer before each new build of djinn-e2e may write, and the spec waited for the answer.
+  const user = path.join(home, "user");
+  fs.mkdirSync(path.join(user, "Downloads"), { recursive: true });
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     GIT_CONFIG_GLOBAL: gitconfig,
+    ...(process.platform === "win32" ? {} : { HOME: user }),
   };
   for (const name of [
     "GIT_AUTHOR_NAME",

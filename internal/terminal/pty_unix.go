@@ -127,6 +127,10 @@ func (p *unixProc) signal(sig syscall.Signal) {
 
 func (p *unixProc) close() { p.once.Do(func() { p.master.Close() }) }
 
+// LoginShell starts Shell as a login shell, on macOS. The tests' djinn up turns it off: macOS's /etc/profile runs
+// path_helper, which puts the system's folders before the test's fake agents, and Homebrew's claude ran in their place.
+var LoginShell = runtime.GOOS == "darwin"
+
 // Shell is the user's shell, as a terminal application starts it: $SHELL, a login shell on macOS as Terminal does
 // (an app started from the Finder has a bare environment).
 func Shell() []string {
@@ -134,7 +138,7 @@ func Shell() []string {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	if runtime.GOOS == "darwin" {
+	if LoginShell {
 		return []string{shell, "-l"}
 	}
 	return []string{shell}
