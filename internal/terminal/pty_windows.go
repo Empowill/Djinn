@@ -324,6 +324,9 @@ func envName(kv string) string {
 	return kv
 }
 
+// LoginShell does nothing on Windows: its shells start with the user's environment (pty_unix.go).
+var LoginShell bool
+
 // Shell is PowerShell when found, else the command interpreter.
 func Shell() []string {
 	if _, err := exec.LookPath("powershell.exe"); err == nil {

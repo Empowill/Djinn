@@ -467,7 +467,10 @@ test("a question shows its options by letter and its recommendation; answered, w
   assert.match(answered, /Decision recorded/);
 });
 
-test("Enlighten me sends the answer's note in one click: no second field", async () => {
+test("Enlighten me sends the answer's note in one click: no second field", async (t) => {
+  // Its hint is the one off macOS, whatever machine runs the test.
+  globalThis.__DJINN_MAC__ = false;
+  t.after(() => delete globalThis.__DJINN_MAC__);
   const sent = [];
   const card = live(s.WishQuestion, {
     question: {

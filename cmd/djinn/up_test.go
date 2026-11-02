@@ -43,6 +43,7 @@ import (
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
+	"github.com/empowill/djinn/internal/terminal"
 	"github.com/empowill/djinn/internal/testx"
 )
 
@@ -63,6 +64,8 @@ func TestMain(m *testing.M) {
 		}
 		updatePoll, restartDelay = updatePollForTests, restartDelayForTests
 		extendPath = false
+		// A lead's shell keeps the PATH the test gave, its fake agents first (terminal.LoginShell).
+		terminal.LoginShell = false
 		// A djinn up of a test starts its workers whatever else the machine runs (machine.Calm).
 		readMachine = machine.Calm
 		// No test reaches the network: only a fake release, served by the test, is looked for.

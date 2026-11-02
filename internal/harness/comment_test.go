@@ -674,6 +674,14 @@ func TestCommentFile(t *testing.T) {
 			t.Errorf("commentFile(%q) = %q, want %q", c.file, got, c.want)
 		}
 	}
+	// Named through a symbolic link, as macOS's /var is /private/var: the worktree by one name, the file by the other.
+	target := t.TempDir()
+	link := filepath.Join(t.TempDir(), "var")
+	if err := os.Symlink(target, link); err != nil {
+		t.Logf("no symbolic link here: %v", err)
+	} else if got := commentFile(filepath.Join(target, "w2", "lamp.txt"), filepath.Join(link, "w2"), project); got != "lamp.txt" {
+		t.Errorf("commentFile through a link = %q, want lamp.txt", got)
+	}
 	// Outside both, nothing to make relative: the path stays whole, without its root.
 	outside := filepath.Join(t.TempDir(), "notes.md")
 	if got := commentFile(outside, worktree, project); got == "notes.md" || !strings.HasSuffix(got, "/notes.md") {

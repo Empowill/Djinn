@@ -53,19 +53,21 @@ test("Ctrl+1 shows the flying carpet and Ctrl+2 the Hourglass, by the key's plac
     "aria-keyshortcuts",
     /^(Control|Meta)\+2$/,
   );
+  // The page is Desktop Chrome's, a Windows one (playwright.config.ts): its modifier is Ctrl, on a Mac host too, where
+  // ControlOrMeta would press Cmd.
   // With no wish, the window opens at home; with some, on the flying carpet or a wish.
   const heading = page.locator(".hero h1");
 
-  await page.keyboard.press("ControlOrMeta+Digit2");
+  await page.keyboard.press("Control+Digit2");
   await expect(page.locator(".hourglass .hero h1")).toHaveText("Hourglass");
   await expect(glass).toHaveClass(/selected/);
-  await page.keyboard.press("ControlOrMeta+Digit1");
+  await page.keyboard.press("Control+Digit1");
   await expect(heading).toHaveText("Flying carpet");
   await expect(page.locator(".hourglass")).toHaveCount(0);
   // The numpad's 2 too; with Shift, the key types another sign, and nothing changes.
-  await page.keyboard.press("ControlOrMeta+Numpad2");
+  await page.keyboard.press("Control+Numpad2");
   await expect(heading).toHaveText("Hourglass");
-  await page.keyboard.press("ControlOrMeta+Shift+Digit1");
+  await page.keyboard.press("Control+Shift+Digit1");
   await page.waitForTimeout(300);
   await expect(heading).toHaveText("Hourglass");
 
@@ -78,7 +80,7 @@ test("Ctrl+1 shows the flying carpet and Ctrl+2 the Hourglass, by the key's plac
   const terminal = page.locator(".lead-terminal .xterm");
   await expect(terminal).toBeVisible();
   await terminal.click();
-  await page.keyboard.press("ControlOrMeta+Digit1");
+  await page.keyboard.press("Control+Digit1");
   await page.waitForTimeout(300);
   await expect(heading).toHaveText("Hourglass");
 
@@ -88,7 +90,7 @@ test("Ctrl+1 shows the flying carpet and Ctrl+2 the Hourglass, by the key's plac
     name: "What would you like to make happen?",
   });
   await expect(editor).toBeFocused();
-  await page.keyboard.press("ControlOrMeta+Digit1");
+  await page.keyboard.press("Control+Digit1");
   await expect(heading).toHaveText("Flying carpet");
   await expect(editor).toHaveCount(0);
   expect(errors).toEqual([]);
