@@ -107,11 +107,6 @@ func (s *Scopes) prefix(unit string, memory uint64) []string {
 	return append(p, "--")
 }
 
-// probe prints, from a scope started as a worker's would be, its cgroup, then its cpu.max and its memory.max, or
-// "none" for a file that does not exist: without the controller, systemd accepts the cap and silently holds nothing.
-const probe = `d="$(sed -n 's/^0:://p' /proc/self/cgroup)"; echo "$d"; ` +
-	`cat "/sys/fs/cgroup$d/cpu.max" 2>/dev/null || echo none; cat "/sys/fs/cgroup$d/memory.max" 2>/dev/null || echo none`
-
 // readProbe reads what the probe printed into s: the slice that holds the scopes, and the caps that hold, the others
 // set to 0. Each note says why a cap does not hold.
 func readProbe(out string, s *Scopes) (notes []string, err error) {
