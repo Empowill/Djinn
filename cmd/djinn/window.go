@@ -86,6 +86,9 @@ func openWindow(ctx context.Context, cfg windowConfig) error {
 		}
 		app.Quit()
 	}
+	if runtime.GOOS == "darwin" {
+		app.Menu.SetApplicationMenu(appMenu(quit))
+	}
 	var current atomic.Pointer[application.WebviewWindow]
 	show := func() {
 		window := current.Load()
@@ -112,10 +115,8 @@ func openWindow(ctx context.Context, cfg windowConfig) error {
 				TitleBar:                application.MacTitleBarHidden,
 				InvisibleTitleBarHeight: 6,
 			},
-			Linux: application.LinuxWindow{WebviewGpuPolicy: gpu},
-			KeyBindings: map[string]func(application.Window){
-				"CmdOrCtrl+q": func(application.Window) { quit(stopCtrlQ) },
-			},
+			Linux:       application.LinuxWindow{WebviewGpuPolicy: gpu},
+			KeyBindings: windowKeyBindings(runtime.GOOS, quit),
 		})
 		// No notification for the wish the window shows while it is in front: the developer sees it already.
 		window.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) { notices.Focus(true) })

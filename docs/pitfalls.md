@@ -347,6 +347,10 @@ the code does not say by itself; remove one when a change makes it false.
 
 ## The window
 
+- **A window key binding on macOS reads the key's place, not its letter.** Wails names a press there by the key code
+  of a US keyboard: on a French one, Cmd+A is the key in Q's place, and the window's `CmdOrCtrl+q` quit Djinn where a
+  field should select all (W2). *Do:* bind nothing in the window on macOS; put the shortcut in the application menu,
+  which AppKit matches on what the layout types. *Where:* `cmd/djinn/window_keys.go`.
 - **A Get read beside a Watch that sends only changes.** The server's stream sends what changed since its own last
   message, within a beat: a value set and set back inside the beat sends nothing. A Get answered meanwhile shows the
   value in between, and kept, it stays on screen: the load gauge showed minimal for good while the notch was medium
