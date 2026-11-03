@@ -321,8 +321,10 @@ acute accent; the numpad's 1 and 2 work too. They work in a text field, never in
 names its key as your keyboard writes it.
 
 On macOS, the **Djinn** menu holds **Hide Djinn** (Cmd+H), **Hide Others** (Cmd+Option+H) and **Quit Djinn**
-(Cmd+Q), beside the **Edit** menu (Select All with Cmd+A, Copy, Paste) and the **Window** menu (Minimize). The menu
-reads the keys as your keyboard writes them: on a French keyboard, Cmd+A selects all, it never quits.
+(Cmd+Q). Beside it, the **Edit** menu holds Undo (Cmd+Z), Redo (Cmd+Shift+Z), Cut, Copy, Paste, Paste and Match Style,
+Delete, **Select All** (Cmd+A) and Speech; the **Window** menu holds **Minimize** (Cmd+M), Zoom, Bring All to Front and
+the list of open windows. The menu reads the keys as your keyboard writes them: on a French keyboard, Cmd+A selects
+all, it never quits.
 
 The **global shortcut**, set in Connections & preferences, brings Djinn forward from any application.
 
