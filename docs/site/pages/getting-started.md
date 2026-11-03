@@ -13,7 +13,8 @@ On Linux without WebKitGTK, it installs a build that opens Djinn in your browser
 When it ends, it tells you how to start Djinn: type djinn up in a terminal. The window opens.
 
 > **Closing the window does not stop Djinn.** The Djinn and the workers go on behind it. To quit, choose Quit Djinn in
-> the tray menu, or press Ctrl+Q (Cmd+Q on macOS). Starting Djinn again while it runs brings its window to the front.
+> the tray menu, or press Ctrl+Q (on macOS, Quit Djinn in the Djinn menu, Cmd+Q). Starting Djinn again while it runs
+> brings its window to the front.
 
 ## 2. Let Djinn find your agents
 
