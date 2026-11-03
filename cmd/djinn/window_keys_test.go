@@ -1,3 +1,5 @@
+//go:build !headless && (cgo || windows)
+
 package main
 
 import (
