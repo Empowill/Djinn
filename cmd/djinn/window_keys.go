@@ -1,3 +1,5 @@
+//go:build !headless && (cgo || windows)
+
 package main
 
 import "github.com/wailsapp/wails/v3/pkg/application"
