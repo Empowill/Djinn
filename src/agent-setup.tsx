@@ -2,8 +2,19 @@
 // does on hover. Install and sign in run the agent's own command in a terminal of the panel, so nobody opens a
 // terminal of theirs; once the command ends, Djinn checks again. Shown in the settings, from the lead's menu, and by
 // itself when the window opens with no agent ready. Under each agent, its accounts: a sign-in each in a folder of the
-// agent's own, signed in once by the agent's own command, for the lead to move to; Djinn keeps no token.
-import { Download, LogIn, Plus, RefreshCw, Square, X } from "lucide-react";
+// agent's own, signed in once by the agent's own command, for the workers to run on and the lead to move to; Djinn
+// keeps no token, and shows none. Each sign-in, the agent's own or an account, pauses and resumes from its line, as
+// djinn lead pause-account does.
+import {
+  Download,
+  LogIn,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Square,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Provider } from "../gen/ts/plan/v1/plan_pb";
@@ -34,6 +45,36 @@ export interface Agents {
   checking: boolean;
   error: string;
   check: () => void;
+  // setPaused shows a pause Djinn kept, without checking the agents again: of the account called account, or with ""
+  // of the agent's own sign-in.
+  setPaused: (agentId: string, account: string, paused: boolean) => void;
+}
+
+// withPaused is env with the pause of a sign-in changed: the account called account of the agent agentId, or with ""
+// the agent's own.
+export function withPaused(
+  env: UiServiceGetEnvironmentResponse,
+  agentId: string,
+  account: string,
+  paused: boolean,
+): UiServiceGetEnvironmentResponse {
+  return {
+    ...env,
+    providers: env.providers.map((agent) =>
+      agent.id !== agentId
+        ? agent
+        : account
+          ? {
+              ...agent,
+              accounts: agent.accounts.map((setup) =>
+                setup.account?.name === account
+                  ? { ...setup, account: { ...setup.account, paused } }
+                  : setup,
+              ),
+            }
+          : { ...agent, paused },
+    ),
+  };
 }
 
 // useAgents checks the agents once mounted, and again on check. A check runs each agent's status command: it takes
@@ -62,8 +103,20 @@ export function useAgents(): Agents {
     check();
     return cancelPending;
   }, [cancelPending, check]);
-  return { env, checking, error, check };
+  const setPaused = useCallback(
+    (agentId: string, account: string, paused: boolean) =>
+      setEnv((env) => env && withPaused(env, agentId, account, paused)),
+    [],
+  );
+  return { env, checking, error, check, setPaused };
 }
+
+// agentProviders are the providers of the agents, by their identifier.
+const agentProviders: Record<string, Provider> = {
+  claude: Provider.CLAUDE,
+  codex: Provider.CODEX,
+  antigravity: Provider.ANTIGRAVITY,
+};
 
 // agentStates names where an agent stands, and the dot that shows it.
 const agentStates: Record<ProviderState, { label: TextKey; dot: string }> = {
@@ -116,7 +169,7 @@ function nextStep(
 
 // AgentSetupPanel lists the agents, one line each with its next step; that step runs below its line.
 export function AgentSetupPanel({ agents }: { agents: Agents }) {
-  const { env, checking, error, check } = agents;
+  const { env, checking, error, check, setPaused } = agents;
   const [step, setStep] = useState<Step>();
   const [running, setRunning] = useState(false);
   const run = (agentId: string, kind: Step["kind"], line: string) => {
@@ -153,6 +206,7 @@ export function AgentSetupPanel({ agents }: { agents: Agents }) {
             onRun={run}
             onEnded={ended}
             onChanged={check}
+            onPaused={setPaused}
           />
         ))}
         {env && <AddAccount onAdded={check} />}
@@ -179,6 +233,7 @@ function AgentRow({
   onRun,
   onEnded,
   onChanged,
+  onPaused,
 }: {
   agent: AgentEnvironment;
   checking: boolean;
@@ -187,7 +242,9 @@ function AgentRow({
   onRun: (agentId: string, kind: Step["kind"], line: string) => void;
   onEnded: () => void;
   onChanged: () => void;
+  onPaused: Agents["setPaused"];
 }) {
+  const [error, setError] = useState("");
   const state = agentStates[agent.state] ?? agentStates[ProviderState.UNKNOWN];
   const next = nextStep(agent);
   return (
@@ -204,6 +261,7 @@ function AgentRow({
           <h3>{agent.name}</h3>
           {agent.version && <span className="muted-text">{agent.version}</span>}
         </div>
+        {agent.paused && <PausedText />}
         <span className="status-text">
           <span className={`status-dot ${state.dot}`} />
           {t(state.label)}
@@ -224,7 +282,17 @@ function AgentRow({
             {next.kind === "install" ? t("agents.install") : t("agents.login")}
           </button>
         )}
+        {(agent.available || agent.paused) && (
+          <PauseButton
+            agentId={agent.id}
+            account=""
+            paused={agent.paused}
+            onPaused={onPaused}
+            onError={setError}
+          />
+        )}
       </div>
+      {error && <p role="alert">{error}</p>}
       {step?.agentId === agent.id && (
         <StepTerminal key={step.name} step={step} onEnded={onEnded} />
       )}
@@ -238,14 +306,15 @@ function AgentRow({
           onRun={onRun}
           onEnded={onEnded}
           onChanged={onChanged}
+          onPaused={onPaused}
         />
       ))}
     </>
   );
 }
 
-// AccountRow is an account of an agent: its label and folder, where it stands, its sign-in in its own folder, and a
-// button that forgets it, its folder left as it is.
+// AccountRow is an account of an agent: its label and folder, where it stands, its sign-in in its own folder, its
+// pause, and a button that forgets it, its folder left as it is.
 function AccountRow({
   agent,
   setup,
@@ -254,6 +323,7 @@ function AccountRow({
   onRun,
   onEnded,
   onChanged,
+  onPaused,
 }: {
   agent: AgentEnvironment;
   setup: AccountSetup;
@@ -262,6 +332,7 @@ function AccountRow({
   onRun: (agentId: string, kind: Step["kind"], line: string) => void;
   onEnded: () => void;
   onChanged: () => void;
+  onPaused: Agents["setPaused"];
 }) {
   const clients = useDjinn()?.clients;
   const [error, setError] = useState("");
@@ -292,6 +363,7 @@ function AccountRow({
           <h3>{account.label || account.name}</h3>
           <code>{account.configDirectory}</code>
         </div>
+        {account.paused && <PausedText />}
         <span className="status-text">
           <span className={`status-dot ${state.dot}`} />
           {t(state.label)}
@@ -308,6 +380,13 @@ function AccountRow({
             {t("agents.login")}
           </button>
         )}
+        <PauseButton
+          agentId={agent.id}
+          account={account.name}
+          paused={account.paused}
+          onPaused={onPaused}
+          onError={setError}
+        />
         <button
           type="button"
           className="button secondary small"
@@ -324,6 +403,67 @@ function AccountRow({
         <StepTerminal key={step.name} step={step} onEnded={onEnded} />
       )}
     </>
+  );
+}
+
+// PausedText says a sign-in is paused, beside where it stands.
+function PausedText() {
+  return (
+    <span className="status-text">
+      <span className="status-dot neutral" />
+      {t("agents.paused")}
+    </span>
+  );
+}
+
+// PauseButton pauses or resumes a sign-in of the agent agentId: the account called account, or with "" the agent's
+// own, the way djinn lead pause-account and resume-account do. Djinn keeps it in its settings; the line shows it at
+// once.
+function PauseButton({
+  agentId,
+  account,
+  paused,
+  onPaused,
+  onError,
+}: {
+  agentId: string;
+  account: string;
+  paused: boolean;
+  onPaused: Agents["setPaused"];
+  onError: (error: string) => void;
+}) {
+  const clients = useDjinn()?.clients;
+  const [sending, setSending] = useState(false);
+  const toggle = () => {
+    if (!clients) return;
+    const req = { name: account, provider: agentProviders[agentId] };
+    onError("");
+    setSending(true);
+    (paused ? clients.lead.resumeAccount(req) : clients.lead.pauseAccount(req))
+      .then(() => onPaused(agentId, account, !paused))
+      .catch((err) => onError(message(err)))
+      .finally(() => setSending(false));
+  };
+  const label = paused
+    ? account
+      ? t("agents.resume_account")
+      : t("agents.resume_own")
+    : account
+      ? t("agents.pause_account")
+      : t("agents.pause_own");
+  return (
+    <button
+      type="button"
+      className="button secondary small"
+      title={`${label}\n${paused ? t("agents.resume_detail") : t("agents.pause_detail")}`}
+      aria-label={label}
+      aria-pressed={paused}
+      disabled={sending}
+      onClick={toggle}
+    >
+      {paused ? <Play size={13} /> : <Pause size={13} />}
+      {paused ? t("agents.resume") : t("agents.pause")}
+    </button>
   );
 }
 

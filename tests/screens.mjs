@@ -13,6 +13,7 @@ export async function screens() {
     `export {
   createElement,
   act,
+  useState,
   __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE as reactInternals,
 } from "react";
 export { createRoot } from "react-dom/client";
@@ -41,7 +42,9 @@ export {
   promptPreview,
   isGreenWait,
   compactGreenWait,
+  taskAccount,
 } from "@/src/wish-task.tsx";
+export { AgentSetupPanel, withPaused } from "@/src/agent-setup.tsx";
 export {
   azimaTime,
   shortModel,

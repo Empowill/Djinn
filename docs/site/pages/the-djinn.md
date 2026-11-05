@@ -92,21 +92,26 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   limit shows first in the attention bar, with a button for each agent or account signed in on this machine. One
   click sends the waiting events there. Without a click, they wait for the limit to reset.
 - **Several subscriptions on one machine.** An account is a folder of the agent's own, beside its default one, where
-  it keeps its login: Claude Code's configuration folder, Codex's home. Name one in the agents' setup or with djinn
-  lead add-account, sign in there once with the agent's own command, in the panel's terminal; Djinn keeps no token,
-  only the folder. Antigravity has no such folder. djinn lead accounts lists them, djinn lead remove-account forgets
-  one and leaves its folder as it is.
+  it keeps its login: Claude Code's configuration folder, Codex's home. The agents' setup, in the settings or from
+  the Djinn's menu, lists each agent with its accounts under it. Its last line adds one: the agent, a name such as
+  work, a label such as Work, as djinn lead add-account takes them. Sign in there once with the agent's own command,
+  from the account's line, in the panel's terminal; Djinn keeps no token and shows none, only the folder. Antigravity
+  has no such folder. The cross on an account's line forgets it and leaves its folder as it is, as djinn lead
+  remove-account does; djinn lead accounts lists them.
 - **Every worker runs on one of them.** Each worker of an agent starts on its own sign-in, else on its accounts in the
   order you added them: the first neither paused nor limited, and the one it ran on before while that one is. Its
-  task names the account it runs on. A worker that hits a limit of its whole account moves at once to the next
-  sign-in free, its session copied into that account's folder, without spending one of its resumes; the account
-  stays limited until its reset, and the next workers start elsewhere. With no other sign-in free, the task waits
-  for the reset, and moves as soon as another one frees. A session on an account keeps the memory of the agent's own
-  folder.
-- **Pause an account.** djinn lead pause-account work keeps every new worker off it, and djinn lead pause-account
-  with the provider flag and no name pauses an agent's own sign-in (Antigravity's too): a worker running there
-  finishes its turn, the next ones go to another sign-in, and while each sign-in of an agent is paused its tasks
-  wait, saying so. djinn lead resume-account brings it back. A pause leaves the Djinn's own seat where you put it.
+  task's card names the account it runs on, or ran on last, by its label, beside its model; where an agent has
+  accounts, a task on the agent's own reads own sign-in. A worker that hits a limit of its whole account moves at
+  once to the next sign-in free, its session copied into that account's folder, without spending one of its resumes;
+  the account stays limited until its reset, and the next workers start elsewhere. With no other sign-in free, the
+  task waits for the reset, and moves as soon as another one frees. A session on an account keeps the memory of the
+  agent's own folder.
+- **Pause an account.** In the agents' setup, Pause on an account's line keeps every new worker off it, and Pause on
+  an agent's own line pauses its own sign-in (Antigravity's too); the line reads Paused until Resume brings it back.
+  From the command line, djinn lead pause-account work and djinn lead resume-account do the same, with the provider
+  flag and no name for an agent's own sign-in. A worker running there finishes its turn, the next ones go to another
+  sign-in, and while each sign-in of an agent is paused its tasks wait, saying so. A pause leaves the Djinn's own seat
+  where you put it.
 
 A batch costs about $0.16 to $0.22 on Opus 5.5, as Claude Code counts it, measured on 16/10/2026: about 18,600 tokens
 of rules, tools and system prompt read from the cache the last session wrote, and the batch's own message written to
