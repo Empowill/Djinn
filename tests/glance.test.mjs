@@ -291,11 +291,11 @@ test("the glance lists watchers on top, then every worker in one order by state:
     plan,
     /<li class="glance-item"><button type="button" class="glance-row plan" title="Planned · W4 Task W4"><span class="glance-dot plan"/,
   );
-  // The watchers, unfolded: what they said last, since when (12 minutes ago when the test started, a second more once
-  // it crossed one), and their request, a link out.
+  // The watchers, unfolded: what they said last, since when (12 minutes ago when the test started, a few seconds more
+  // once it crossed them), and their request, a link out.
   assert.match(
     plan,
-    /<li class="glance-item glance-watcher watch"><button type="button" class="glance-row watch watch" title="Watching · W7 Task W7"><span class="glance-eye tone-watching" role="img" aria-label="Watching"><svg[^>]*lucide-eye[\s\S]*?<span class="glance-code">W7<\/span><span class="glance-title"><span class="glance-watch-line">GREEN<\/span><span class="glance-since">12m(?:1s)?<\/span><\/span><\/button><a href="https:\/\/gitlab.com\/acme\/lamp\/-\/merge_requests\/3" class="glance-link" target="_blank" rel="noopener noreferrer">!3<svg[^>]*lucide-external-link/,
+    /<li class="glance-item glance-watcher watch"><button type="button" class="glance-row watch watch" title="Watching · W7 Task W7"><span class="glance-eye tone-watching" role="img" aria-label="Watching"><svg[^>]*lucide-eye[\s\S]*?<span class="glance-code">W7<\/span><span class="glance-title"><span class="glance-watch-line">GREEN<\/span><span class="glance-since">12m(?:\d+s)?<\/span><\/span><\/button><a href="https:\/\/gitlab.com\/acme\/lamp\/-\/merge_requests\/3" class="glance-link" target="_blank" rel="noopener noreferrer">!3<svg[^>]*lucide-external-link/,
   );
   assert.match(
     plan,

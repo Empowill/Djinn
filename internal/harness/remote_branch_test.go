@@ -137,6 +137,116 @@ func TestCatchUp(t *testing.T) {
 	})
 }
 
+// rebasedByTask names branch, on the remote, for an azima of r, merges W1's work into it and pushes it; then main moves
+// on and W2, part of the azima, rebases the branch on main in its own worktree, which pushes it by force, as in wish
+// Dew (tilasm L14). It returns the azima, the commit the branch was merged and pushed at, and the one pushed by force.
+func rebasedByTask(t *testing.T, r *requests, branch string) (azima *planv1.Task, merged, pushed string) {
+	t.Helper()
+	named := r.onRemote(t, r.fork, branch, "roles.txt")
+	r.git(t, r.repo, "branch", branch, named)
+	azima = r.azima(t, r.wishID, "Roles")
+	if _, err := r.nameBranch(t, azima.GetId(), branch); err != nil {
+		t.Fatal(err)
+	}
+	w1 := r.finished(t, "W1", map[string]string{"app/src/w1.txt": "w1\n"}, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	r.pass(t, 0)
+	if got := r.get(t, w1.GetId()).GetIntegration(); got.GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED || got.GetBranch() != branch {
+		t.Fatalf("W1's integration %v, want committed into %s", got, branch)
+	}
+	r.git(t, r.repo, "push", "--quiet", "origin", branch)
+	merged = r.git(t, r.repo, "rev-parse", "refs/heads/"+branch)
+
+	main := r.mainMoves(t)
+	w2 := r.finished(t, "W2", nil, func(task *planv1.Task) { task.PartOf = azima.GetId() })
+	wt := w2.GetWorktree()
+	r.git(t, wt, "reset", "--quiet", "--hard", merged) // W2 starts from the branch, as a worker does.
+	r.git(t, wt, "rebase", "--quiet", main)
+	writeFile(t, wt, "app/src/gen.txt", "regenerated\n")
+	commitAll(t, wt, "Regenerated after the rebase on main")
+	r.git(t, wt, "push", "--quiet", "--force", "origin", "HEAD:refs/heads/"+branch)
+	pushed = r.git(t, wt, "rev-parse", "HEAD")
+	if isAncestor(t.Context(), r.repo, merged, pushed) {
+		t.Fatalf("W2's push %s holds %s: no rewrite", pushed, merged)
+	}
+	return azima, merged, pushed
+}
+
+// TestFollowRewrite (W81, Q48): a branch Djinn pushes, rewritten by one of the wish's tasks in its own worktree and
+// pushed by force from there, follows the commit pushed, the lead told; once the remote deletes it, its merged
+// request's, a fetch forgets the remote's copy. A commit on the branch the task never held keeps them apart.
+func TestFollowRewrite(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+
+	t.Run("follows a task's rebase pushed by force", func(t *testing.T) {
+		t.Parallel()
+		r := withRequests(t)
+		var mu sync.Mutex
+		var told []string
+		r.h.NotifyLead(func(_ context.Context, ev *planv1.LeadEvent) error {
+			mu.Lock()
+			defer mu.Unlock()
+			told = append(told, ev.GetText())
+			return nil
+		})
+		const branch = "ET-3510-old-role-types"
+		_, merged, pushed := rebasedByTask(t, r, branch)
+
+		r.pass(t, 0)
+		if got := r.git(t, r.repo, "rev-parse", "refs/heads/"+branch); got != pushed {
+			t.Fatalf("%s at %s, want following W2's push %s", branch, got, pushed)
+		}
+		if got := r.git(t, r.repo, "reflog", "show", "--format=%H", "refs/heads/"+branch, "--"); !strings.Contains(got, merged) {
+			t.Errorf("the reflog of %s lacks its former tip %s: %q", branch, merged, got)
+		}
+		want := branch + " follows origin/" + branch + ", rewritten by W2 and pushed by force"
+		mu.Lock()
+		if n := len(slices.DeleteFunc(slices.Clone(told), func(s string) bool { return !strings.Contains(s, want) })); n != 1 {
+			t.Errorf("the lead was told %d times that %s: %q, want once", n, want, told)
+		}
+		if slices.ContainsFunc(told, func(s string) bool { return strings.Contains(s, "has diverged") }) {
+			t.Errorf("the lead was told the branch diverged: %q", told)
+		}
+		mu.Unlock()
+
+		// The request merges and the remote deletes its branch: the next fetch forgets origin's copy.
+		r.git(t, r.bare, "branch", "--quiet", "-D", branch)
+		if _, err := r.h.Pull(t.Context(), r.project(t), ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := git(t.Context(), r.repo, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch); err == nil {
+			t.Errorf("origin/%s still cached once the remote deleted it", branch)
+		}
+		if got := r.git(t, r.repo, "rev-parse", "refs/heads/"+branch); got != pushed {
+			t.Errorf("%s at %s once the remote deleted it, want left at %s", branch, got, pushed)
+		}
+	})
+
+	t.Run("a commit the task never held keeps them apart", func(t *testing.T) {
+		t.Parallel()
+		r := withRequests(t)
+		const branch = "ET-3510-old-role-types"
+		_, merged, _ := rebasedByTask(t, r, branch)
+
+		// A commit lands on the local branch after W2 started from it: the rewrite never held it.
+		r.git(t, r.repo, "switch", "--quiet", branch)
+		writeFile(t, r.repo, "app/src/late.txt", "late\n")
+		commitAll(t, r.repo, "Late")
+		late := r.git(t, r.repo, "rev-parse", "HEAD")
+		r.git(t, r.repo, "switch", "--quiet", r.branch)
+		if late == merged {
+			t.Fatal("no late commit")
+		}
+		want := branch + " has diverged from origin/" + branch
+		if _, err := r.h.Pull(t.Context(), r.project(t), branch); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("pull of %s: %v, want refused: %s", branch, err, want)
+		}
+		if got := r.git(t, r.repo, "rev-parse", "refs/heads/"+branch); got != late {
+			t.Errorf("%s moved to %s, want left at %s", branch, got, late)
+		}
+	})
+}
+
 // TestPull (W164): a branch Djinn pushes, behind the remote's, is pulled from the projects list, a fast-forward; one
 // checked out in the developer's own worktree with changes not committed is left as it is, by the pull and by the
 // merge of work into it, which waits and tells the lead; committed, both go on.

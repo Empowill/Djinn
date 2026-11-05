@@ -312,7 +312,8 @@ func TestUncut(t *testing.T) {
 }
 
 // TestFetchBranch: the branch the remote holds is fetched into its remote-tracking ref; a branch it lacks is "",
-// that ref left as it was; a remote that does not answer is an error that says which.
+// that ref deleted when it was cached, the remote having deleted it (W81); a remote that does not answer is an error
+// that says which.
 func TestFetchBranch(t *testing.T) {
 	remote := twoCommits(t)
 	if err := run(t, remote, "branch", "feat"); err != nil {
@@ -320,7 +321,10 @@ func TestFetchBranch(t *testing.T) {
 	}
 	tip := output(t, remote, "rev-parse", "HEAD")
 	clone := t.TempDir()
-	for _, args := range [][]string{{"init", "--quiet"}, {"remote", "add", "origin", remote}, {"remote", "add", "gone", filepath.Join(clone, "none")}} {
+	for _, args := range [][]string{
+		{"init", "--quiet"}, {"remote", "add", "origin", remote}, {"remote", "add", "gone", filepath.Join(clone, "none")},
+		{"fetch", "--quiet", "origin", "+refs/heads/feat:refs/remotes/origin/merged"}, // Cached, deleted since.
+	} {
 		if err := run(t, clone, args...); err != nil {
 			t.Fatal(err)
 		}
@@ -331,6 +335,7 @@ func TestFetchBranch(t *testing.T) {
 	}{
 		{name: "a branch the remote holds", remote: "origin", branch: "feat", want: tip},
 		{name: "a branch the remote lacks", remote: "origin", branch: "ghost"},
+		{name: "a branch the remote deleted", remote: "origin", branch: "merged"},
 		{name: "a remote that does not answer", remote: "gone", branch: "feat", wantErr: "fetch feat from gone: "},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

@@ -101,7 +101,8 @@ The line then reads as the branch now stands.
 A pull never merges, never rebases and never forces. Djinn refuses it, with a cross on the line and the reason on hover,
 when:
 
-- the branch **has diverged** from the remote's: each holds commits the other lacks; align them by hand;
+- the branch **has diverged** from the remote's: each holds commits the other lacks; align them by hand. A branch one of
+  the wish's tasks rewrote and pushed by force is no refusal: the pull brings it to the commit pushed;
 - **your checkout of the branch has changes not committed**: commit them or put them aside, then pull again;
 - **work is being merged into it**: pull once that merge has ended.
 
@@ -216,7 +217,8 @@ The top of the wish says **The remote refused the last push: Djinn asks you**, w
 
 When the remote's copy of the branch holds commits the local branch lacks, Djinn brings the branch up to it when it
 can, a fast-forward; when the two have diverged, Djinn neither pushes it nor merges more work into it until a person
-aligns them. See [When the remote moved on](#integration-branch-when-the-remote-moved-on).
+aligns them, unless one of the wish's tasks rewrote the branch and pushed it by force: the branch then follows it.
+See [When the remote moved on](#integration-branch-when-the-remote-moved-on).
 
 ## After a push
 

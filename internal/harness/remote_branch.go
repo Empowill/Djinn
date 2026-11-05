@@ -73,6 +73,13 @@ func (h *Harness) tellApart(ctx context.Context, wish *planv1.Wish, why string) 
 // checkout of it following (moveBranch). One that diverged, or whose checkout holds changes not committed, is left as
 // it is: Djinn merges nothing into it and tells the lead. The developer pulls one by hand the same way, from the
 // projects list or with djinn project pull.
+//
+// Rewritten by a task (W81, wish Dew, 23/10/2026: W131 rebased the branch of a merge request in its own worktree and it
+// was pushed by force; the local branch stayed at the work merged before, apart from the remote's for good): a branch
+// that diverged from the remote's follows it when the remote's commit is the tip of a task's branch of the wish, whose
+// history held the local branch's tip before the rewrite, as its reflog says, and no checkout has the branch. The task
+// rewrote every commit the local branch held, none of them lost: the branch's own reflog keeps its former tip. The lead
+// hears each such move. A commit the task never held, or a teammate's push by force, still keeps them apart (Q48).
 
 // catchUpFetchTimeout is how long the fetch before a merge may take: a remote that does not answer holds the
 // integration no longer, the branch then compared with the remote's as this repository last saw it.
@@ -80,18 +87,21 @@ const catchUpFetchTimeout = 30 * time.Second
 
 // pulled is how pullBranch left a branch: shown, the remote's branch, <remote>/<name>; the commits it moved from and to,
 // both "" when it did not move; why it could not be brought up to the remote's, "" when it holds every commit there;
-// held: the person's checkout of it, with changes not committed, held it.
+// held: the person's checkout of it, with changes not committed, held it; rewrittenBy: the code of the task whose
+// rewrite, pushed by force, it followed.
 type pulled struct {
-	shown, from, to, why string
-	held                 bool
+	shown, from, to, why, rewrittenBy string
+	held                              bool
 }
 
 // pullBranch brings branch of repo up to its remote's branch when it is behind it, a fast-forward only: fetched first
 // when fetch, else as this repository last saw it. A branch that diverged from the remote's, or whose checkout holds
-// changes not committed, is left as it is, why saying so; nothing is ever forced. The zero pulled when the repository
-// has no remote, the remote has no such branch, or the branch holds every commit of the remote's. An error when fetch
-// is asked and the remote did not answer, the branch then compared with the remote's as last seen.
-func pullBranch(ctx context.Context, repo, branch string, fetch bool) (pulled, error) {
+// changes not committed, is left as it is, why saying so; nothing is ever forced. One that diverged follows the
+// remote's when a task of tasks, the branches of the wish's tasks by their codes, read only then, rewrote it
+// (rewrittenBy). The zero pulled when the repository has no remote, the remote has no such branch, or the branch holds
+// every commit of the remote's. An error when fetch is asked and the remote did not answer, the branch then compared
+// with the remote's as last seen.
+func pullBranch(ctx context.Context, repo, branch string, fetch bool, tasks func() map[string]string) (pulled, error) {
 	var p pulled
 	var theirs string
 	var fetchErr error
@@ -108,6 +118,17 @@ func pullBranch(ctx context.Context, repo, branch string, fetch bool) (pulled, e
 		return p, fetchErr
 	}
 	if !isAncestor(ctx, repo, ours, theirs) {
+		if code := rewrittenBy(ctx, repo, branch, ours, theirs, tasks); code != "" {
+			if holder, err := checkoutOf(ctx, repo, branch); err == nil && holder == "" {
+				_, why, _ := moveBranch(ctx, repo, branch, ours, theirs, "djinn: follows "+p.shown+", rewritten by "+code)
+				if why == "" {
+					logx.L().Info("branch follows a task's rewrite", "branch", branch, "remote", p.shown, "task", code,
+						"from", short8(ours), "to", short8(theirs))
+					p.from, p.to, p.rewrittenBy = ours, theirs, code
+					return p, fetchErr
+				}
+			}
+		}
 		p.why = apartText(ctx, repo, branch, p.shown, ours, theirs)
 		return p, fetchErr
 	}
@@ -134,16 +155,76 @@ func pullBranch(ctx context.Context, repo, branch string, fetch bool) (pulled, e
 	return p, fetchErr
 }
 
+// rewrittenBy is the code of the task whose rewrite of branch theirs is: the tip of the task's branch, among tasks,
+// whose reflog holds a commit that has ours, branch's tip, in its history; "" when none is.
+func rewrittenBy(ctx context.Context, repo, branch, ours, theirs string, tasks func() map[string]string) string {
+	if tasks == nil {
+		return ""
+	}
+	out, err := git(ctx, repo, "for-each-ref", "--points-at", theirs, "--format=%(refname:short)", "refs/heads")
+	if err != nil || out == "" {
+		return ""
+	}
+	codes := tasks()
+	for _, b := range strings.Fields(out) {
+		code, ok := codes[b]
+		if !ok || b == branch {
+			continue
+		}
+		tips, err := git(ctx, repo, "reflog", "show", "--format=%H", "refs/heads/"+b, "--")
+		if err != nil || tips == "" {
+			continue
+		}
+		// None of ours's commits is left out of what the task's branch held, at one time or another.
+		held := strings.Fields(tips)
+		slices.Sort(held)
+		left, err := git(ctx, repo, append([]string{"rev-list", "--count", ours, "--not"}, slices.Compact(held)...)...)
+		if err == nil && left == "0" {
+			return code
+		}
+	}
+	return ""
+}
+
+// taskBranches is a pullBranch tasks: the branches of the tasks of the wish wishID, by their codes.
+func (h *Harness) taskBranches(ctx context.Context, wishID string) func() map[string]string {
+	return func() map[string]string {
+		tasks, err := store.List[*planv1.Task](ctx, h.store, store.Where{"wish_id": wishID})
+		if err != nil {
+			return nil
+		}
+		codes := map[string]string{}
+		for _, t := range tasks {
+			if t.GetBranch() != "" {
+				codes[t.GetBranch()] = t.GetCode()
+			}
+		}
+		return codes
+	}
+}
+
+// tellRewrite tells the lead of the wish wishID that branch followed the rewrite p says, pushed by force.
+func (h *Harness) tellRewrite(ctx context.Context, wishID, branch string, p pulled) {
+	if p.rewrittenBy == "" {
+		return
+	}
+	h.tellLead(ctx, planv1.LeadEventKind_LEAD_EVENT_KIND_MOVE, wishID, p.rewrittenBy, fmt.Sprintf(
+		"Djinn: %s follows %s, rewritten by %s and pushed by force: %s to %s; its reflog keeps the former commits.",
+		branch, p.shown, p.rewrittenBy, short8(p.from), short8(p.to)))
+}
+
 // catchUp brings branch, which Djinn is about to merge into for wish, up to its remote's (pullBranch), fetched first
 // when fetch, once a pass; and says why nothing may merge into it when it could not be: it diverged from the remote's,
 // or the person's checkout of it holds changes, the lead told once. Main too, when it is the branch work lands in.
 func (h *Harness) catchUp(ctx context.Context, wish *planv1.Wish, repo, branch string, fetch bool) string {
 	// While the network is down, the remote's branch as this repository last saw it (network.go).
-	p, err := pullBranch(ctx, repo, branch, fetch && !h.netHolds() && passMemoOf(ctx).fetchDue(repo, branch))
+	p, err := pullBranch(ctx, repo, branch, fetch && !h.netHolds() && passMemoOf(ctx).fetchDue(repo, branch),
+		h.taskBranches(ctx, wish.GetId()))
 	if err != nil {
 		logx.L().Warn("fetch before a merge", "branch", branch, "err", err)
 		h.netSign(planv1.Provider_PROVIDER_UNSPECIFIED, err.Error(), false)
 	}
+	h.tellRewrite(ctx, wish.GetId(), branch, p)
 	if p.why == "" {
 		return ""
 	}
@@ -179,9 +260,11 @@ func (h *Harness) Pull(ctx context.Context, project *planv1.Project, branch stri
 			pull.Refused = why + ": pull it once that merge has ended"
 		} else if _, _, err := fetchBranch(ctx, repo, sync.GetBranch()); err != nil {
 			pull.Refused = fmt.Sprintf("Djinn cannot tell where %s stands: %v", pull.GetRemote(), err)
-		} else if p, _ := pullBranch(ctx, repo, sync.GetBranch(), false); p.why == "" && p.to == "" && branch == "" {
+		} else if p, _ := pullBranch(ctx, repo, sync.GetBranch(), false, h.taskBranches(ctx, sync.GetWishId())); p.why == "" &&
+			p.to == "" && branch == "" {
 			continue // It holds every commit of the remote's: nothing to say.
 		} else {
+			h.tellRewrite(ctx, sync.GetWishId(), sync.GetBranch(), p)
 			pull.Remote = cmp.Or(p.shown, pull.GetRemote())
 			pull.OldSha, pull.Sha, pull.Refused = p.from, p.to, p.why
 		}
