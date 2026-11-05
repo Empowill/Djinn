@@ -210,6 +210,12 @@ const (
 	// LeadServiceRemoveAccountProcedure is the fully-qualified name of the LeadService's RemoveAccount
 	// RPC.
 	LeadServiceRemoveAccountProcedure = "/plan.v1.LeadService/RemoveAccount"
+	// LeadServicePauseAccountProcedure is the fully-qualified name of the LeadService's PauseAccount
+	// RPC.
+	LeadServicePauseAccountProcedure = "/plan.v1.LeadService/PauseAccount"
+	// LeadServiceResumeAccountProcedure is the fully-qualified name of the LeadService's ResumeAccount
+	// RPC.
+	LeadServiceResumeAccountProcedure = "/plan.v1.LeadService/ResumeAccount"
 	// LeadServiceChooseProcedure is the fully-qualified name of the LeadService's Choose RPC.
 	LeadServiceChooseProcedure = "/plan.v1.LeadService/Choose"
 	// LeadServiceGetCircleProcedure is the fully-qualified name of the LeadService's GetCircle RPC.
@@ -2336,6 +2342,14 @@ type LeadServiceClient interface {
 	// Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
 	// while the lead runs on it.
 	RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error)
+	// Pause an account, or with --provider and no name an agent's own sign-in: Djinn starts no worker on it. A worker
+	// that runs there finishes its turn; the tasks that start or resume next go to another sign-in of the agent neither
+	// paused nor limited; with each one paused, they wait. The lead's seat stays where the developer put it. Kept in
+	// settings.json.
+	PauseAccount(context.Context, *connect.Request[v1.LeadServicePauseAccountRequest]) (*connect.Response[v1.LeadServicePauseAccountResponse], error)
+	// Resume an account paused, or with --provider and no name an agent's own sign-in: workers start there again, and
+	// the tasks that waited for a sign-in of that agent start.
+	ResumeAccount(context.Context, *connect.Request[v1.LeadServiceResumeAccountRequest]) (*connect.Response[v1.LeadServiceResumeAccountResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
@@ -2462,6 +2476,18 @@ func NewLeadServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(leadServiceMethods.ByName("RemoveAccount")),
 			connect.WithClientOptions(opts...),
 		),
+		pauseAccount: connect.NewClient[v1.LeadServicePauseAccountRequest, v1.LeadServicePauseAccountResponse](
+			httpClient,
+			baseURL+LeadServicePauseAccountProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("PauseAccount")),
+			connect.WithClientOptions(opts...),
+		),
+		resumeAccount: connect.NewClient[v1.LeadServiceResumeAccountRequest, v1.LeadServiceResumeAccountResponse](
+			httpClient,
+			baseURL+LeadServiceResumeAccountProcedure,
+			connect.WithSchema(leadServiceMethods.ByName("ResumeAccount")),
+			connect.WithClientOptions(opts...),
+		),
 		choose: connect.NewClient[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse](
 			httpClient,
 			baseURL+LeadServiceChooseProcedure,
@@ -2502,6 +2528,8 @@ type leadServiceClient struct {
 	accounts      *connect.Client[v1.LeadServiceAccountsRequest, v1.LeadServiceAccountsResponse]
 	addAccount    *connect.Client[v1.LeadServiceAddAccountRequest, v1.LeadServiceAddAccountResponse]
 	removeAccount *connect.Client[v1.LeadServiceRemoveAccountRequest, v1.LeadServiceRemoveAccountResponse]
+	pauseAccount  *connect.Client[v1.LeadServicePauseAccountRequest, v1.LeadServicePauseAccountResponse]
+	resumeAccount *connect.Client[v1.LeadServiceResumeAccountRequest, v1.LeadServiceResumeAccountResponse]
 	choose        *connect.Client[v1.LeadServiceChooseRequest, v1.LeadServiceChooseResponse]
 	getCircle     *connect.Client[v1.LeadServiceGetCircleRequest, v1.LeadServiceGetCircleResponse]
 	setCircle     *connect.Client[v1.LeadServiceSetCircleRequest, v1.LeadServiceSetCircleResponse]
@@ -2585,6 +2613,16 @@ func (c *leadServiceClient) AddAccount(ctx context.Context, req *connect.Request
 // RemoveAccount calls plan.v1.LeadService.RemoveAccount.
 func (c *leadServiceClient) RemoveAccount(ctx context.Context, req *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error) {
 	return c.removeAccount.CallUnary(ctx, req)
+}
+
+// PauseAccount calls plan.v1.LeadService.PauseAccount.
+func (c *leadServiceClient) PauseAccount(ctx context.Context, req *connect.Request[v1.LeadServicePauseAccountRequest]) (*connect.Response[v1.LeadServicePauseAccountResponse], error) {
+	return c.pauseAccount.CallUnary(ctx, req)
+}
+
+// ResumeAccount calls plan.v1.LeadService.ResumeAccount.
+func (c *leadServiceClient) ResumeAccount(ctx context.Context, req *connect.Request[v1.LeadServiceResumeAccountRequest]) (*connect.Response[v1.LeadServiceResumeAccountResponse], error) {
+	return c.resumeAccount.CallUnary(ctx, req)
 }
 
 // Choose calls plan.v1.LeadService.Choose.
@@ -2682,6 +2720,14 @@ type LeadServiceHandler interface {
 	// Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
 	// while the lead runs on it.
 	RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error)
+	// Pause an account, or with --provider and no name an agent's own sign-in: Djinn starts no worker on it. A worker
+	// that runs there finishes its turn; the tasks that start or resume next go to another sign-in of the agent neither
+	// paused nor limited; with each one paused, they wait. The lead's seat stays where the developer put it. Kept in
+	// settings.json.
+	PauseAccount(context.Context, *connect.Request[v1.LeadServicePauseAccountRequest]) (*connect.Response[v1.LeadServicePauseAccountResponse], error)
+	// Resume an account paused, or with --provider and no name an agent's own sign-in: workers start there again, and
+	// the tasks that waited for a sign-in of that agent start.
+	ResumeAccount(context.Context, *connect.Request[v1.LeadServiceResumeAccountRequest]) (*connect.Response[v1.LeadServiceResumeAccountResponse], error)
 	// Pick an option of the choice the lead's agent shows in its terminal (LeadServiceGetResponse.prompt), as its keys
 	// would: the window's answer to an approval or a folder to trust. Refused when the screen shows another choice, or
 	// none; the same choice is answered once. The window's only: an agent never answers its own approval.
@@ -2804,6 +2850,18 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(leadServiceMethods.ByName("RemoveAccount")),
 		connect.WithHandlerOptions(opts...),
 	)
+	leadServicePauseAccountHandler := connect.NewUnaryHandler(
+		LeadServicePauseAccountProcedure,
+		svc.PauseAccount,
+		connect.WithSchema(leadServiceMethods.ByName("PauseAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
+	leadServiceResumeAccountHandler := connect.NewUnaryHandler(
+		LeadServiceResumeAccountProcedure,
+		svc.ResumeAccount,
+		connect.WithSchema(leadServiceMethods.ByName("ResumeAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
 	leadServiceChooseHandler := connect.NewUnaryHandler(
 		LeadServiceChooseProcedure,
 		svc.Choose,
@@ -2857,6 +2915,10 @@ func NewLeadServiceHandler(svc LeadServiceHandler, opts ...connect.HandlerOption
 			leadServiceAddAccountHandler.ServeHTTP(w, r)
 		case LeadServiceRemoveAccountProcedure:
 			leadServiceRemoveAccountHandler.ServeHTTP(w, r)
+		case LeadServicePauseAccountProcedure:
+			leadServicePauseAccountHandler.ServeHTTP(w, r)
+		case LeadServiceResumeAccountProcedure:
+			leadServiceResumeAccountHandler.ServeHTTP(w, r)
 		case LeadServiceChooseProcedure:
 			leadServiceChooseHandler.ServeHTTP(w, r)
 		case LeadServiceGetCircleProcedure:
@@ -2934,6 +2996,14 @@ func (UnimplementedLeadServiceHandler) AddAccount(context.Context, *connect.Requ
 
 func (UnimplementedLeadServiceHandler) RemoveAccount(context.Context, *connect.Request[v1.LeadServiceRemoveAccountRequest]) (*connect.Response[v1.LeadServiceRemoveAccountResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.RemoveAccount is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) PauseAccount(context.Context, *connect.Request[v1.LeadServicePauseAccountRequest]) (*connect.Response[v1.LeadServicePauseAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.PauseAccount is not implemented"))
+}
+
+func (UnimplementedLeadServiceHandler) ResumeAccount(context.Context, *connect.Request[v1.LeadServiceResumeAccountRequest]) (*connect.Response[v1.LeadServiceResumeAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("plan.v1.LeadService.ResumeAccount is not implemented"))
 }
 
 func (UnimplementedLeadServiceHandler) Choose(context.Context, *connect.Request[v1.LeadServiceChooseRequest]) (*connect.Response[v1.LeadServiceChooseResponse], error) {

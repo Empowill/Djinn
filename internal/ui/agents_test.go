@@ -318,7 +318,7 @@ func TestAccount(t *testing.T) {
 			bin := launchHome(t)
 			fake(t, bin, "claude", c.claude)
 			fake(t, bin, "agy", "exit 0\n")
-			if got := Account(context.Background(), c.provider); got != c.want {
+			if got := Account(context.Background(), c.provider, nil); got != c.want {
 				t.Errorf("Account(%v) = %q, want %q", c.provider, got, c.want)
 			}
 		})
