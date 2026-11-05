@@ -1,6 +1,6 @@
 ---
 name: djinn-pushes
-description: When Djinn pushes a branch by itself; in standard mode never ask the developer to push one; a task that waits for a push stays out of the azima
+description: When Djinn pushes a branch by itself, never the integration branch under the per-azima strategy; in standard mode never ask the developer to push one; a task that waits for a push stays out of the azima
 type: feedback
 ---
 
@@ -17,6 +17,10 @@ strategy each azima's own branch, by itself, within the minute of the merge that
    strategy into the branch of an azima not done, once that branch was pushed, makes it due with no task committed
    (Q243 and Q245 of the wish Dew 13 oct): its pull request's CI runs on main as it is. Such a branch left ahead of its remote, with no push check holding it, is a bug
    to report, not a move to ask for.
+
+Under the per-azima strategy, Djinn never pushes the wish's integration branch (main on djinn): a task part of no azima
+merges there and stays stuck, never pushed. So every task of such a project is part of an azima, and nobody pushes
+main: see [[never-push-main]].
 
 The push checks run first; red, they hold the push and Djinn starts a correction. A held push comes to you as an
 event (Decision Q196): you decide, the developer is not asked. A wish in ask mode has Djinn ask the push question
@@ -35,4 +39,4 @@ push. Spawn it when the merge request's watcher reports the new head, not before
 review dolmen !2990 again after W356 merged into it (fe7d0c65), held that push for its 20 minutes of watching, then
 ended with nothing done (05/11/2026).
 
-See also [[push-hold-deadlock]], [[no-obvious-questions]], [[blockers-as-questions]].
+See also [[never-push-main]], [[push-hold-deadlock]], [[no-obvious-questions]], [[blockers-as-questions]].
