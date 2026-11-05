@@ -22,7 +22,7 @@ where it pushes only when you ask.
 
 | Cadence | When Djinn pushes | When to choose it |
 | --- | --- | --- |
-| **Standard** | When an azima ends, or once three tasks are committed and more than an hour has passed since the last push. | Most projects: the remote follows the work without you thinking of it. |
+| **Standard** | When an azima ends, once three tasks are committed and more than an hour has passed since the last push, or, under the per-azima strategy, once main is merged into an open azima's pushed branch. | Most projects: the remote follows the work without you thinking of it. |
 | **On demand** | Only when you push. Djinn still merges each task's work into the branch, checked; it never pushes nor asks. | A branch you want to read before anyone sees it, a CI that costs, a remote you push to at set times. |
 
 **An azima ends** when it is done or to validate, every part of it committed. A [watcher](#watcher) part of it does not
@@ -31,6 +31,11 @@ count: one that babysits the azima's pull request runs until the merge, and does
 **Three tasks and an hour**: three tasks committed since the last push, and more than an hour since it, or since the
 wish was made before its first push. Djinn looks after each task's work is committed, and every minute. Paused and
 granted wishes are not pushed by the cadence.
+
+**Main merged into an azima's branch**: under the per-azima [push strategy](#push-strategy), when Djinn merges main
+into the branch of an azima not done, that its remote holds already, the branch is pushed as after a task's work, no
+task needed: its pull request's CI then runs on main as it is. A branch never pushed waits for its work. In a wish set
+to ask first, Djinn asks the same push question; on demand, nothing is pushed.
 
 **Merged safely first.** A push that is due waits while finished work is still in line for the branch, being merged,
 while a correction repairs it, or while a review worker commits what a task left not committed: no push check runs
