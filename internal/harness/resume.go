@@ -41,6 +41,8 @@ const (
 	preemptLine   = "Djinn interrupted your worker to make room for an investigator; your worktree is as you left it. Continue your task."
 	accountLine   = "Djinn moved you to another account of your agent: the one you ran on hit its usage limit or was paused. " +
 		"Your worktree is as you left it. Continue your task."
+	newSessionLine = "Djinn could not resume your earlier session: you start a new one on the same task. " +
+		"Your worktree is as you left it. Continue your task."
 )
 
 // Why a task waits to be resumed, as its wait reason and its events say.
@@ -53,7 +55,12 @@ const (
 	byPreempt    = "after making room"
 	byLost       = "after its process was lost" // a watcher's (restartLostWatcher)
 	byAccount    = "on another sign-in"         // its own hit its usage limit or was paused (account.go)
+	byNewSession = "on a new session"           // its session was not found where it resumed (sessionLost)
 )
+
+// whySessionLost begins what a task waits for whose worker could not resume its session: it starts a new one, told
+// what came before (relay.go).
+const whySessionLost = "its session was not found"
 
 // whyAccountMoved begins what a task waits for that moves to another sign-in, the one it ran on held by a limit.
 const whyAccountMoved = "resumes on "
@@ -311,6 +318,8 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		by = byLost
 	case strings.HasPrefix(t.GetWaitReason(), whyNetworkDown):
 		by = byNetwork
+	case strings.HasPrefix(t.GetWaitReason(), whySessionLost):
+		by = byNewSession
 	}
 	if _, moves := h.accountMoves(t); moves && (by == byLimit || by == byRestart) {
 		by = byAccount // Its sign-in limited or paused: another takes it, before its own limit resets.
@@ -328,7 +337,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		if end := t.GetEndTime(); end == nil || !h.netCut(end.AsTime()) {
 			t.Resumes++ // No outage confirmed when it was cut: a resume spent, as for a limit; an outage costs none.
 		}
-	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byLost, byAccount:
+	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byLost, byAccount, byNewSession:
 		// No resume spent.
 	}
 	t.EndTime = nil
@@ -521,6 +530,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		line = networkLine
 	case byAccount:
 		line = accountLine
+	case byNewSession:
+		line = newSessionLine
 	}
 	model := t.GetModel()
 	if foreignModel(t.GetProvider(), model) && !r.watcher {
@@ -545,6 +556,12 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		spec.Resume = ""
 		spec.Prompt = briefed(r, prompt, readOnly)
 		how = fmt.Sprintf(", provider changed: %s → %s, starts from its first prompt", short(priorProvider), short(t.GetProvider()))
+	case by == byNewSession:
+		// Its session was not found where it resumed: a new one, on its first prompt and what came after it.
+		// A session id of its own: the old one may be in the sign-in's folder still, and claude refuses to reuse it.
+		spec.Resume, spec.TaskID = "", store.NewID()
+		spec.Prompt = briefed(r, prompt, readOnly) + "\n\n" + h.relay(h.ctx, t.GetId()) + "\n\n" + line
+		how = ", on a new session: its own was not found, told what came before"
 	case by == byContinue && spec.Resume == "":
 		return errors.New("its session cannot be resumed")
 	case by == byEnvReplay:
@@ -564,9 +581,9 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		}
 	}
 	if spec.Resume != "" && by != byAnswer {
-		// Should its session not follow it to another sign-in (start), it starts again on its first prompt.
+		// Should its session not follow it to another sign-in (start), it starts again on its first prompt and a relay.
 		if first, err := firstPrompt(h.store, t.GetId()); err == nil {
-			r.fresh = briefed(r, first, readOnly)
+			r.fresh = briefed(r, first, readOnly) + "\n\n" + h.relay(h.ctx, t.GetId())
 		}
 	}
 	// What was sent to its last worker and never read: told with its prompt, received once it says something.

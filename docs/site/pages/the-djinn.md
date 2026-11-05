@@ -113,6 +113,15 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   the account stays limited until its reset, and the next workers start elsewhere. With no other sign-in free, the
   task waits for the reset, and moves as soon as another one frees. A session on an account keeps the memory of the
   agent's own folder.
+- **A task takes its session along.** Claude Code keeps a session in the folder of the sign-in it ran on. A task
+  resumed on the same sign-in, continued or past a limit, resumes its session there. Moved to another sign-in, its
+  session goes first into that account's folder: its transcript, and beside it the transcripts of its subagents and
+  its tool results, the newer copy winning when the task ran there before; never a login, a token or a setting. The
+  worker then resumes it, and its event reads its session copied there. When the copy cannot be made, or Claude Code
+  does not find the session where it resumes, the task fails nothing: its worker starts at once a new session, without
+  spending a resume, on its first prompt and a relay of what came before, the prompts it was given after it and the
+  last messages its workers wrote, and is told to read its worktree's history; its event says it starts a new
+  session. The prompt cache does not follow an account: the first turn on the other one reads the whole context again.
 - **Pause an account.** In the agents' setup, Pause on an account's line keeps every new worker off it, and Pause on
   an agent's own line pauses its own sign-in (Antigravity's too); the line reads Paused until Resume brings it back.
   From the command line, djinn lead pause-account work and djinn lead resume-account do the same, with the provider

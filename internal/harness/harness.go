@@ -278,6 +278,7 @@ type run struct {
 	failure        string          // the last error the current worker said: it never ends done
 	limit          *Limit          // the usage limit the current worker said it hit: it wins over failure
 	fresh          string          // the prompt a resumed worker starts on when its session cannot follow it to another sign-in
+	resumed        string          // the Claude Code session the current worker resumes (--resume); not found, sessionLost
 	refused        string          // the last call its permissions refused, as the worker said it (question.go)
 	refusals       *denials        // the calls its permissions refused in this run (refusals.go)
 	envReplayed    bool            // a tool call/result already triggered replay of env failures
@@ -1612,6 +1613,10 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.mu.Lock()
 	r.startTime = now
 	r.lastActivity = now
+	r.resumed = ""
+	if !spec.Fork && agentOf(t) == planv1.Provider_PROVIDER_CLAUDE {
+		r.resumed = spec.Resume
+	}
 	r.resultAt, r.silentWhy, r.silentNote = time.Time{}, "", false
 	r.code = t.GetCode()
 	r.listenSince, r.listened = time.Time{}, t.GetIfrit().GetListened().AsDuration()
@@ -2351,6 +2356,9 @@ func (h *Harness) end(r *run, res Result) {
 		h.networkCut(r, t, streamIdleEnd)
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
+		h.sessionLost(r, t)
+	}
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		if cause, isEnv := classifyFailure(r, t, res); isEnv {
 			t.EnvCause = cause
 			t.EnvBuild = h.version
@@ -2398,7 +2406,8 @@ func (h *Harness) end(r *run, res Result) {
 		text = "resuming: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it once the network is back"
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil:
 		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
-	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && strings.Contains(t.GetWaitReason(), whyAccountMoved):
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING &&
+		(strings.Contains(t.GetWaitReason(), whyAccountMoved) || strings.HasPrefix(t.GetWaitReason(), whySessionLost)):
 		text = "resuming: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it now"
 	case t.GetError() != "":
 		text += ": " + t.GetError()
