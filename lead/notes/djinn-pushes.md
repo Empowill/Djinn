@@ -1,6 +1,6 @@
 ---
 name: djinn-pushes
-description: When Djinn pushes a branch by itself; in standard mode never ask the developer to push one
+description: When Djinn pushes a branch by itself; in standard mode never ask the developer to push one; a task that waits for a push stays out of the azima
 type: feedback
 ---
 
@@ -28,5 +28,11 @@ babysat never ended, so its corrections waited for the cadence, and a push looke
 **How to apply:** never ask the developer to push a branch Djinn pushes in standard mode, nor to check that it was
 pushed: Djinn does it within the minute, or tells you why it holds. Ask only in on-demand mode, or for what Djinn never
 pushes (a tag, a release).
+
+A task that waits for the push (ask a review bot to review again, answer review threads on the new head) is never part
+of the azima it waits on: an open part holds the azima, so its push waits for the task, and the task waits for the
+push. Spawn it when the merge request's watcher reports the new head, not before. W359, part of T30 to have CodeRabbit
+review dolmen !2990 again after W356 merged into it (fe7d0c65), held that push for its 20 minutes of watching, then
+ended with nothing done (05/11/2026).
 
 See also [[push-hold-deadlock]], [[no-obvious-questions]], [[blockers-as-questions]].
