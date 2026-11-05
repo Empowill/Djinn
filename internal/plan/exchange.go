@@ -305,15 +305,14 @@ func commands(ctx context.Context, r store.Reader, exp *planv1.WishExport) ([]*p
 			} else {
 				legacy = append(legacy, command)
 			}
-		} else {
-			out = append(out, command)
 		}
+		// Each command keeps its place in the journal: two commands of the same instant (a coarse clock, Windows's)
+		// stay in the order they were made once sorted by time.
+		out = append(out, command)
 		return false
 	})
 	if made != nil {
-		out = append(out, made)
-	} else {
-		out = append(out, legacy...)
+		out = slices.DeleteFunc(out, func(c *planv1.Command) bool { return slices.Contains(legacy, c) })
 	}
 	slices.SortStableFunc(out, func(a, b *planv1.Command) int { return a.GetAt().AsTime().Compare(b.GetAt().AsTime()) })
 	return out, errors.Join(err, failed)

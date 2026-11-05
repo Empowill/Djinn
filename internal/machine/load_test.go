@@ -287,6 +287,31 @@ func TestLoadService_Get(t *testing.T) {
 				t.Errorf("the notch in effect shows %d, runs %d", want[djinnv1.LoadNotch_LOAD_NOTCH_HIGH], g.GetSlots())
 			}
 		}},
+		{"measured peak", func(t *testing.T) {
+			// The forecast shown holds the margin; the memory slots add it once, as the scheduler does (Capacity).
+			m := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX), func() (Snapshot, error) {
+				return Snapshot{Cores: 8, MemoryTotal: 16 * GiB, MemoryAvailable: 3466969088}, nil
+			})
+			m.every = 0
+			m.SetWorkerPeak(func() uint64 { return 302 * MiB })
+			client, _ := serveLoad(t, t.TempDir(), m, nil, nil, nil, WithLoadTickInterval(0),
+				WithLoadWorkerForecast(func() uint64 { return 558 * MiB }))
+			set := connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX})
+			if _, err := client.Set(t.Context(), set); err != nil {
+				t.Fatal(err)
+			}
+			got, err := client.Get(t.Context(), connect.NewRequest(&djinnv1.LoadServiceGetRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			g := got.Msg
+			scheduled, _, _ := m.Capacity()
+			if g.GetWorkerForecastBytes() != 558*MiB || g.GetMemorySlots() != 2 || g.GetSlots() != 2 ||
+				int(g.GetSlots()) != scheduled {
+				t.Errorf("Get: forecast %d, memory slots %d, slots %d; the scheduler runs %d", g.GetWorkerForecastBytes(),
+					g.GetMemorySlots(), g.GetSlots(), scheduled)
+			}
+		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
