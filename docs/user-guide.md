@@ -323,8 +323,10 @@ when you choose.
 branch when the wish was made, whatever your copy has checked out: the chip beside the push strategy names it (with the project, when the wish has several),
 and a click on it changes it to another local branch or to a new one made from it (`djinn wish set-integration <wish>
 --branch feat/x`, `--create-branch` for a new one), refused while a merge into it runs. Per azima, each azima's work
-lands in main through its own branch and pull request, which its card shows once opened, and work of no azima in the wish's
-integration branch; `djinn wish brief` and `djinn brief` say it in a line for each wish.
+lands in main through its own branch and pull request, which its card shows once opened; work spawned with no azima gets an
+azima of its own, made for it with its title, since Djinn never pushes the wish's integration branch per azima (a watcher,
+an investigation or a mockup, which merge nothing, stay of none); `djinn wish brief` and `djinn brief` say it in a line
+for each wish.
 
 An azima's branch works like a wish's integration branch. Djinn cuts it from main when the azima is made (an azima made
 before its wish was switched gets its branch when its first part starts), and records it on the azima: its card, opened,

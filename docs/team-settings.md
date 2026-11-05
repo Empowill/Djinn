@@ -388,7 +388,7 @@ its changes not committed (W227). By push strategy:
 | --- | --- |
 | Per wish | The wish's integration branch, the reference branch unless you named another |
 | Per azima, part of an azima | The azima's branch, cut from the remote's reference branch when the azima is made (or its first part starts) |
-| Per azima, part of no azima | The wish's integration branch, as per wish: the branch that work lands in |
+| Per azima, part of no azima | The wish's integration branch, as per wish: a correction of work of no azima merged before; work spawned with no azima gets an azima of its own |
 
 The branch's local tip, unless the remote's copy holds commits it lacks and nothing of its own: the remote's then, as
 `from origin/main at 1a2b3c4d` says. A wish that records no integration branch starts from the reference branch. The
@@ -451,8 +451,8 @@ Each wish can override this strategy: `djinn wish push-strategy <wish> [--strate
 A wish created without a value takes the project's default, and a project without a value defaults to `wish`.
 To protect work already merged, switching push strategy is refused when it would strand merged work: to per azima, when
 the work of an azima is merged into a branch (the wish's integration branch) that is not that azima's own; to per wish,
-when work is merged into an azima's branch that is not the wish's integration branch. Work of no azima stays in the
-wish's integration branch either way. The refusal names the work and the branch it lives on, and how to keep it there.
+when work is merged into an azima's branch that is not the wish's integration branch. Work of no azima merged before
+stays in the wish's integration branch either way. The refusal names the work and the branch it lives on, and how to keep it there.
 
 Per azima, each azima has a branch of its own, `djinn/<code>-<slug of its title>` (`djinn/T07-the-orchestrator`),
 which works like a wish's integration branch:
@@ -463,8 +463,13 @@ which works like a wish's integration branch:
   commit it was cut from (`djinn task get <azima> --json`: `azima.branch`, `azima.base_branch`, `azima.cut_from`); a
   title changed later keeps the branch's name. It is never cut again while it exists, and never rebased; deleted, it is
   never made again by itself (a done azima, below).
-- **Its work merges into it** as a wish's does ([integration](#integration)); work of no azima goes to the wish's
-  integration branch.
+- **Its work merges into it** as a wish's does ([integration](#integration)).
+- **Work spawned with no azima gets an azima of its own** (`djinn task spawn` without `--part-of`), made for it with its
+  title, its branch cut from main before its worker starts: Djinn never pushes the wish's integration branch per azima,
+  so work merged there would live only in your copy. Work spawned before, or moved out of its azima, gets one when
+  Djinn merges it. A watcher, an investigation or a mockup merges nothing and stays of no azima; a correction or a
+  review merges where the work it corrects or reviews does. Work of no azima that waits for work of an azima, or that
+  such work waits for (`--after`, `--blocks`), is refused: spawn it `--part-of` that azima.
 - **It keeps up with main** by the same `merge_main` rules ([keeping up with main](#keeping-up-with-main)), where it
   stands recorded on the azima (`azima.main`).
 - **It lands in main.** Once its parts are committed and its branch pushed, Djinn proposes its pull request to main;
@@ -523,7 +528,7 @@ djinn wish push-strategy <wish> --strategy azima
 
 Nothing is cut again or moved: the azima's work keeps merging into `ET-1234-the-fix`, main is merged into it by the
 same rules, it is pushed as before, and the merge request already open on it is the azima's. While the azima's branch is
-the wish's integration branch, work of no azima goes there too.
+the wish's integration branch, a correction of work of no azima merged before goes there too.
 
 Once Djinn has pushed in a project whose settings name an `install` command, the window proposes, as for a new
 version, to install it and restart on it, with what changed (each task with the last paragraph its worker wrote folded
