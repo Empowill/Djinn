@@ -44,7 +44,12 @@ export {
   compactGreenWait,
   taskAccount,
 } from "@/src/wish-task.tsx";
-export { AgentSetupPanel, withPaused } from "@/src/agent-setup.tsx";
+export {
+  AgentSetupPanel,
+  usageOf,
+  useAgents,
+  withPaused,
+} from "@/src/agent-setup.tsx";
 export {
   azimaTime,
   shortModel,
@@ -149,7 +154,7 @@ export {
   pageShortcut,
 } from "@/src/page-keys.ts";
 export { PageHeaderAction } from "@/src/page-header.tsx";
-export { InstallStep } from "@/gen/ts/ui/v1/ui_pb.ts";
+export { InstallStep, UiService } from "@/gen/ts/ui/v1/ui_pb.ts";
 export {
   memory,
   resourcesDetail,

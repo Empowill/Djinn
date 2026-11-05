@@ -100,19 +100,31 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   remove-account does; djinn lead accounts lists them.
 - **Every worker runs on one of them.** Each new task of an agent starts on the sign-in whose week resets first,
   among those neither paused nor limited that have quota left (under 95 % of their 5 hours and of their week): what
-  is left of a week is lost at its reset, so the week that ends first is spent first. A task that ran stays on the
-  sign-in it ran on while that one is free and has quota left. When Djinn knows no quota, it takes the agent's own
-  sign-in, else its accounts in the order you added them, the first neither paused nor limited. Its task's card names
+  is left of a week is lost at its reset, so the week that ends first is spent first. Two weeks that end within an
+  hour of each other go to the one with more left to lose. A task that ran stays on the sign-in it ran on while that
+  one is free and has quota left: its session is there. When Djinn knows no quota, it takes the agent's own sign-in,
+  else its accounts in the order you added them, the first neither paused nor limited; when each one free is out of
+  quota, the first free in that order too, since a quota spent does not hold a task back alone. Its task's card names
   the account it runs on, or ran on last, by its label, beside its model; where an agent has accounts, a task on the
   agent's own reads own sign-in.
 - **Djinn knows each quota.** Every 5 minutes, for an agent with accounts, Djinn asks Claude Code the usage of each
   sign-in without a model turn, and each worker tells its own at each of its turns; a reading older than 15 minutes
   counts as unknown. djinn lead accounts shows, for each sign-in, its 5 hours and its week used, when the week
-  resets, when it was read, and which one the next task takes. A worker that hits a limit of its whole account moves at
-  once to the next sign-in free, its session copied into that account's folder, without spending one of its resumes;
-  the account stays limited until its reset, and the next workers start elsewhere. With no other sign-in free, the
-  task waits for the reset, and moves as soon as another one frees. A session on an account keeps the memory of the
-  agent's own folder.
+  resets, when it was read, and which one the next task takes.
+- **The window shows each one.** In the agents' setup, under each sign-in's line, a second line says where it
+  stands: Active (signed in, workers may start there), Paused, or Limited until its reset. Then its week: a gauge of
+  the share used, the share in words, and when the week ends; its 5 hours used; and Next task here on the sign-in a
+  new task of the agent would take now. Hovered, the line tells when Djinn read it, by its probe or from a worker
+  running there. A gauge past 95 % fills in a brighter tone: no new task starts there until its week resets. Quota
+  not read yet waits for the first probe, within a minute of an account added; Quota could not be read says the probe
+  failed, why on hover (signed out, no answer). The panel reads them again every minute while it is open, and at
+  once after a pause. Every sign-in of an agent with accounts has this line; an agent without one shows it once a
+  worker told its quota, or while it is paused. Djinn reads the quota of Claude Code only: a Codex account's line says
+  its state alone.
+- **A limit moves the task.** A worker that hits a limit of its whole account moves at once to another sign-in, chosen
+  the same way, its session copied into that account's folder, without spending one of its resumes. The account stays
+  limited until its reset, and the next workers start elsewhere. With no other sign-in free, the task waits for the
+  reset, and moves as soon as another one frees. A session on an account keeps the memory of the agent's own folder.
 - **A task takes its session along.** Claude Code keeps a session in the folder of the sign-in it ran on. A task
   resumed on the same sign-in, continued or past a limit, resumes its session there. Moved to another sign-in, its
   session goes first into that account's folder: its transcript, and beside it the transcripts of its subagents and
@@ -123,7 +135,8 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   last messages its workers wrote, and is told to read its worktree's history; its event says it starts a new
   session. The prompt cache does not follow an account: the first turn on the other one reads the whole context again.
 - **Pause an account.** In the agents' setup, Pause on an account's line keeps every new worker off it, and Pause on
-  an agent's own line pauses its own sign-in (Antigravity's too); the line reads Paused until Resume brings it back.
+  an agent's own line pauses its own sign-in (Antigravity's too); the line under it reads Paused until Resume brings
+  it back. A pause wins over a limit: a sign-in both paused and limited reads Paused.
   From the command line, djinn lead pause-account work and djinn lead resume-account do the same, with the provider
   flag and no name for an agent's own sign-in. A worker running there finishes its turn, the next ones go to another
   sign-in, and while each sign-in of an agent is paused its tasks wait, saying so. A pause leaves the Djinn's own seat
