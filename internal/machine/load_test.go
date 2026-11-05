@@ -791,17 +791,35 @@ func TestLoadService_Watch(t *testing.T) {
 			}
 
 			// 5. Rate limiting: rapid changes within interval are throttled
-			t0 := time.Now()
-			_, _ = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_LIGHT}))
-			_, _ = client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{Notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX}))
-			var fourth *djinnv1.LoadServiceWatchResponse
-			select {
-			case fourth = <-recv:
-			case <-time.After(time.Second):
-				t.Fatal("timed out waiting for fourth message")
+			if _, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+				Notch: djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL,
+			})); err != nil {
+				t.Fatalf("Set MINIMAL: %v", err)
 			}
-			if fourth.GetNotch() == djinnv1.LoadNotch_LOAD_NOTCH_UNSPECIFIED {
-				t.Error("fourth notch unspecified")
+			var fourth *djinnv1.LoadServiceWatchResponse
+			deadline = time.After(time.Second)
+			for minimal := false; !minimal; {
+				select {
+				case fourth = <-recv:
+					minimal = fourth.GetNotch() == djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL
+				case <-deadline:
+					t.Fatal("timed out waiting for the notch Minimal after Set")
+				}
+			}
+			t0 := time.Now()
+			if _, err := client.Set(ctx, connect.NewRequest(&djinnv1.LoadServiceSetRequest{
+				Notch: djinnv1.LoadNotch_LOAD_NOTCH_MAX,
+			})); err != nil {
+				t.Fatalf("Set MAX: %v", err)
+			}
+			var fifth *djinnv1.LoadServiceWatchResponse
+			select {
+			case fifth = <-recv:
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for fifth message")
+			}
+			if fifth.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
+				t.Errorf("fifth notch: got %v, want MAX", fifth.GetNotch())
 			}
 			if elapsed := time.Since(t0); elapsed < 20*time.Millisecond {
 				t.Errorf("update arrived too fast (%v), expected rate limit around 30ms", elapsed)

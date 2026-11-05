@@ -81,11 +81,15 @@ the wish goes on with its other work.
    for a worker (`djinn task spawn`), with the failing log or the comment in its prompt. Group what touches the same
    files into one task.
 3. Review each worker's diff, then commit and push once for the round, as the project's rules say.
-4. Answer review comments only with what was done, in the developer's name only if they asked you to.
+4. Answer review comments only with what was done, in the developer's name only if they asked you to. A thread a
+   commit fixes waits for that commit on the pull request: once its head (`gh pr view <pr> --json headRefOid`, after
+   `git fetch`) contains it (`git merge-base --is-ancestor <commit> <head>`), answer citing the commit, then resolve
+   the thread if it is yours to resolve; never before, or an auto-merge takes the request without the fix. A thread
+   answered with no fix may resolve at once.
 5. Nothing to do (`all checks pass` while a review is awaited): wait for the next line. A comment that needs the
    developer is a question in the wish (`djinn question ask`); say nothing in your terminal. Never poll the checks yourself: the watcher speaks when they fail or all pass.
 
 ## Never
 
-- Merge, close, or approve the pull request; force-push over someone else's commits.
+- Merge, close, or approve the pull request; resolve someone else's thread; force-push over someone else's commits.
 - Work on another request here: hand it over with `djinn wish route`.
