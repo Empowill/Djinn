@@ -1041,9 +1041,12 @@ check; it never reads nor stores a token.
 
 **The workers' accounts (T33).** Every worker of an agent runs on one of its *sign-ins*: its own (the default folder),
 then its accounts in the order they were added (`plan.SignIns`). One function picks it at each start of a worker,
-launch or resume (`harness.AccountPolicy`, `FirstFree` by default; a policy on each account's quota, Q258 B, takes its
-place): the sign-in the task ran on while it is free, else the first free one, free meaning neither paused nor held by
-a limit. The account goes in the worker's environment (`plan.AccountEnv`, `harness.go` `start`) and on its task
+launch or resume (`harness.AccountPolicy`, `EarliestWeek` by default, decision Q258 B, `quota.go`), free meaning
+neither paused nor held by a limit: a task that ran stays on its sign-in while it is free and not known to be out of
+quota; a new one goes to the free sign-in whose week resets first among those with quota left (both windows under
+95 %), two weeks within an hour of each other going to the one with more left; with no quota known, `FirstFree`, the
+simple overflow: the first free sign-in in that order. With every free sign-in out of quota, `FirstFree` too: a quota
+spent does not hold a task back, as a limit does not (W409). The account goes in the worker's environment (`plan.AccountEnv`, `harness.go` `start`) and on its task
 (`Task.account`, each `TaskRun.account`); a Claude session on an account gets `autoMemoryDirectory` in its
 `--settings`, the own folder's `projects/<repository>/memory`, so that every account shares one memory.
 
@@ -1062,6 +1065,24 @@ a limit. The account goes in the worker's environment (`plan.AccountEnv`, `harne
   the folder it ran in to the new one, so that `--resume` finds it; without it (Codex, or no transcript), the worker
   starts a new session on its first prompt and the line that says why. **Not verified with two real accounts**: that
   Claude Code resumes a copied transcript on another login, and that the prompt cache is lost (assumed).
+- **The quota of each sign-in.** Two sources, the latest reading winning, kept in memory (`Harness.quota`): a probe,
+  every 5 minutes and at start, for an agent with accounts, of each sign-in not read by a worker since
+  (`UsageProber`, `Claude.Usage`: `claude -p --input-format stream-json --output-format stream-json --verbose
+  --no-session-persistence --strict-mcp-config --disable-slash-commands`, stdin one control request
+  `{"type":"control_request","request_id":"djinn-usage","request":{"subtype":"get_usage"}}`, in the account's folder);
+  and each claude worker's `rate_limit_event`, whose `unifiedWindows` (`five_hour`, `seven_day`: utilization 0 to 1,
+  `resetsAt` in Unix seconds) come at every turn (an `allowed` one makes an event of no kind that is not written).
+  get_usage answers `rate_limits.five_hour|seven_day.{utilization (percent), resets_at (RFC 3339)}`, and
+  `rate_limits_available: false` in a folder signed in to nothing; undocumented, tried on claude 2.1.316 (W374, W380),
+  as T3 Code does. A reading older than 15 minutes counts as unknown. `LeadService.Accounts` gives them
+  (`AccountUsage`, `djinn lead accounts`, its `usage` with `--json`), with the probe's last failure and the sign-in
+  the next task takes.
+- **What the probe costs (W380, 05/11/2026, claude 2.1.316, a Team subscription).** No model turn, no cost
+  (`total_cost_usd` 0, `total_api_duration_ms` 0). 6 to 8 s each on a calm machine, 9 to 36 s at a load of 21 to 29
+  (Djinn's flags or none alike); 16 to 19 s each for 8 at once, all answered, the 5 hours' use unchanged by them: no
+  request limit seen at that rate. A folder signed in to nothing answers in 0.75 s: the time is the sign-in's and the
+  usage request's, not claude's start. Its weight in a request limit is not told by Anthropic: none seen. At one probe per sign-in every 5 minutes, two accounts and the own sign-in make 36 starts of
+  claude an hour, fewer while their workers tell their quota.
 - **Held in memory.** The limits held are read again at each pass from the tasks that wait for one: after a restart, a
   limit no task waits for any more is forgotten, and the first worker to hit it again moves. The account fingerprint
   (`TaskHealth.account`) is read in the task's own account folder.

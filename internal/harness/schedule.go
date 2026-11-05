@@ -158,6 +158,7 @@ func (h *Harness) Schedule() {
 		h.loopDone = make(chan struct{})
 		h.watchSleepers()
 		go h.loop()
+		h.watchQuotas()
 	})
 }
 

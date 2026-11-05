@@ -19,8 +19,8 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// TestFirstFree: the policy by default keeps a task on the sign-in it ran on while that one is free, else takes the
-// first free one in the developer's order, and none when each is paused or limited.
+// TestFirstFree: the simple overflow, EarliestWeek's without a quota known, keeps a task on the sign-in it ran on while
+// that one is free, else takes the first free one in the developer's order, and none when each is paused or limited.
 func TestFirstFree(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)

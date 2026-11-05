@@ -210,8 +210,11 @@ func catalog() []catalogCase {
 			}},
 		{provider: "claude", fixture: "max-turns", want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "ERROR", "USAGE"},
 			err: "error_max_turns"},
-		{provider: "claude", fixture: "success-haiku", want: []string{"STATUS", "TOOL_CALL", "TOOL_RESULT", "TEXT", "USAGE"},
+		{provider: "claude", fixture: "success-haiku", want: []string{"STATUS", "TOOL_CALL", "UNSPECIFIED", "TOOL_RESULT", "TEXT", "USAGE"},
 			check: func(t *testing.T, events []Event, _, _ string) {
+				if q := event(t, events, "UNSPECIFIED").Quota; q == nil || q.SevenDay.Used != .14 {
+					t.Errorf("the rate_limit_event's quota = %+v", q)
+				}
 				u := event(t, events, "USAGE").Usage
 				if u.GetInputTokens() != 4 || u.GetOutputTokens() != 526 || u.GetCacheReadTokens() != 22943 || u.GetCacheWriteTokens() != 27155 {
 					t.Errorf("usage = %v", u)

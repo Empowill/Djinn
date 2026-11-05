@@ -146,9 +146,12 @@ type Harness struct {
 	accounts  map[accountKey]accountSeen // each sign-in's account, as last read
 
 	// The sign-ins the workers run on (account.go).
-	accountPolicy AccountPolicy            // nil: FirstFree
-	accountMu     sync.Mutex               // guards accountLimits
+	accountPolicy AccountPolicy            // nil: EarliestWeek
+	accountMu     sync.Mutex               // guards accountLimits and quota
 	accountLimits map[accountKey]heldLimit // the usage limits that hold a sign-in
+
+	// Each sign-in's usage limits, as the probe and the workers tell them (quota.go): guarded by accountMu.
+	quota quotas
 
 	// The network, as Djinn knows it (network.go).
 	net network
@@ -390,6 +393,7 @@ func (h *Harness) Close() {
 	h.babysitting.Wait()
 	h.net.wg.Wait()
 	h.disk.wg.Wait()
+	h.quota.wg.Wait()
 	h.children.close() // What the workers left running stops with them.
 	h.writeCuts()
 }
@@ -1859,8 +1863,15 @@ func (h *Harness) drain(r *run) Result {
 	}
 }
 
-// record writes an event of the worker, with the task when the event changes it.
+// record writes an event of the worker, with the task when the event changes it. The quota of its sign-in it tells is
+// kept (quota.go), and an event of no kind that only tells it is not written.
 func (h *Harness) record(r *run, ev Event) {
+	if ev.Quota != nil {
+		h.noteQuota(agentOf(r.task), r.task.GetAccount(), *ev.Quota)
+		if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_UNSPECIFIED {
+			return
+		}
+	}
 	changed := false
 	if ev.Model != "" {
 		if r.requestedModel != "" && isModelAlias(r.requestedModel) {

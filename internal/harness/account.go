@@ -3,7 +3,8 @@ package harness
 // The accounts the workers run on (T33). Every worker of an agent runs on one of its sign-ins (plan.SignIns): its own,
 // the agent's default folder, then its accounts in the order the developer added them, each a folder of the agent's
 // own signed in once (djinn lead add-account). An AccountPolicy picks one at each start of a worker, among those
-// neither paused (djinn lead pause-account) nor limited: the one the task ran on before while it may, else the first.
+// neither paused (djinn lead pause-account) nor limited: the one the task ran on before while it may, else for a new
+// task the one whose week resets first among those with quota left (EarliestWeek, quota.go), else the first.
 // The account goes in the worker's environment (plan.AccountEnv) and on its task (Task.account, TaskRun.account).
 //
 // A usage limit of the whole account is held per sign-in: the one a worker hit holds its sign-in until it resets, and
@@ -36,6 +37,8 @@ type AccountOption struct {
 	LimitedUntil time.Time
 	// Limit names that limit: "the account's session limit".
 	Limit string
+	// Quota is its usage limits as Djinn last read them (quota.go); nil when never read.
+	Quota *Quota
 }
 
 // Free tells whether a worker may start on o at now: not paused, and no limit known to hold it.
@@ -55,10 +58,10 @@ type AccountChoice struct {
 }
 
 // AccountPolicy picks the sign-in a worker starts on, by its name ("" for the agent's own); ok is false when none may
-// take it. It is the one place that decides: a policy that reads each account's quota replaces FirstFree.
+// take it. It is the one place that decides: EarliestWeek by default, which reads each sign-in's quota (quota.go).
 type AccountPolicy func(c AccountChoice) (name string, ok bool)
 
-// FirstFree is the policy by default: the sign-in the task ran on, while it is free (its session and its prompt cache
+// FirstFree is the simple overflow, EarliestWeek's without a quota known: the sign-in the task ran on, while it is free (its session and its prompt cache
 // stay there), else the first free one in the developer's order. With none free but some not paused, the same among
 // those: a limit learnt from a worker's message does not hold a task back alone (W409). None when each is paused.
 func FirstFree(c AccountChoice) (string, bool) {
@@ -82,7 +85,7 @@ func FirstFree(c AccountChoice) (string, bool) {
 	return "", false
 }
 
-// WithAccountPolicy sets how a worker's sign-in is picked; FirstFree by default.
+// WithAccountPolicy sets how a worker's sign-in is picked; EarliestWeek by default.
 func WithAccountPolicy(p AccountPolicy) Option { return func(h *Harness) { h.accountPolicy = p } }
 
 // accountKey names a sign-in: its agent, and its account's name ("" for the agent's own).
@@ -162,8 +165,12 @@ func (h *Harness) accountOptions(provider planv1.Provider) []AccountOption {
 	defer h.accountMu.Unlock()
 	out := make([]AccountOption, len(signIns))
 	for i, s := range signIns {
-		l := h.accountLimits[accountKey{provider, s.Name}]
+		k := accountKey{provider, s.Name}
+		l := h.accountLimits[k]
 		out[i] = AccountOption{SignIn: s, LimitedUntil: l.until, Limit: l.what}
+		if q, ok := h.quotaOf(k); ok {
+			out[i].Quota = copyQuota(q)
+		}
 	}
 	return out
 }
@@ -172,7 +179,7 @@ func (h *Harness) accountOptions(provider planv1.Provider) []AccountOption {
 func (h *Harness) choose(t *planv1.Task, options []AccountOption, now time.Time) (string, bool) {
 	policy := h.accountPolicy
 	if policy == nil {
-		policy = FirstFree
+		policy = EarliestWeek
 	}
 	return policy(AccountChoice{Provider: agentOf(t), Options: options, Current: t.GetAccount(), Ran: len(t.GetRuns()) > 0, Now: now})
 }
