@@ -1,12 +1,18 @@
 ---
 name: never-push-main
-description: Never push main, not Djinn, not a worker, not asked of the lead, even with an admin token; under the per-azima strategy every djinn task is part of an azima
+description: Never push a project's protected branch (main on djinn; which branches are protected varies per project), not Djinn, not a worker, not asked of the lead, even with an admin token; per azima every djinn task is part of an azima
 type: feedback
 ---
 
-Main reaches GitHub only through a merged pull request. Nobody pushes it: not Djinn, not a worker, not the lead, and
-you never ask for it, not even with an admin token. The branch protection does not stop an admin, and the local token
-is one: a push to main would pass, not be refused.
+A protected branch reaches its forge only through a merged pull or merge request. Nobody pushes it: not Djinn, not a
+worker, not the lead, and you never ask for it, not even with an admin token. The branch protection does not stop an
+admin, and the local token is one: a push would pass, not be refused.
+
+Which branches are protected is set per project, on its forge, and varies: often the reference branch (`main_branch`),
+sometimes release or environment branches too, sometimes none. Do not assume it is main: read the forge (on GitHub,
+`gh api repos/{owner}/{repo}/branches --jq '.[] | select(.protected) | .name'`; on GitLab, `glab api
+projects/:id/protected_branches`). On djinn (Empowill/Djinn on GitHub), main is the only protected branch (read on
+05/11/2026).
 
 Under the per-azima strategy, Djinn pushes only the azimas' branches (`djinn/Tnn-...`), never the wish's integration
 branch, which is main on djinn. A task part of no azima merges into that branch and its commits stay there, never
