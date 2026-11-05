@@ -160,6 +160,11 @@ func TestWatchParagraphs(t *testing.T) {
 			`"CI" first="CI" wake=true`,
 			`"CI\nmerged" first="CI" wake=true`,
 		}
+		// The output and the error output are two pipes, each read apart: on a loaded machine the line of the second
+		// can come first, 10 ms later or not (macOS CI, W409). Either order is one paragraph, led by its first line.
+		if len(got) > 0 && got[0] == `"job lint\nCI red on !12" first="job lint" wake=true` {
+			got[0] = want[0]
+		}
 		if !slices.Equal(got, want) {
 			t.Errorf("paragraphs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 		}
