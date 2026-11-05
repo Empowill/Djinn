@@ -721,7 +721,8 @@ func TestLoadService_Watch(t *testing.T) {
 		run  func(t *testing.T)
 	}{
 		{"stream", func(t *testing.T) {
-			restore := SetWatchInterval(30 * time.Millisecond)
+			const interval = 120 * time.Millisecond
+			restore := SetWatchInterval(interval)
 			t.Cleanup(restore)
 			monitor := NewMonitor(NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM), func() (Snapshot, error) {
 				return Snapshot{
@@ -780,7 +781,7 @@ func TestLoadService_Watch(t *testing.T) {
 			select {
 			case msg := <-recv:
 				t.Fatalf("unexpected message without changes: %v", msg)
-			case <-time.After(80 * time.Millisecond):
+			case <-time.After(2*interval + 20*time.Millisecond):
 				// Expected: nothing sent
 			}
 
@@ -846,8 +847,8 @@ func TestLoadService_Watch(t *testing.T) {
 			if fifth.GetNotch() != djinnv1.LoadNotch_LOAD_NOTCH_MAX {
 				t.Errorf("fifth notch: got %v, want MAX", fifth.GetNotch())
 			}
-			if elapsed := time.Since(t0); elapsed < 20*time.Millisecond {
-				t.Errorf("update arrived too fast (%v), expected rate limit around 30ms", elapsed)
+			if elapsed := time.Since(t0); elapsed < interval/2 {
+				t.Errorf("update arrived too fast (%v), expected rate limit around %v", elapsed, interval)
 			}
 
 			// 6. Context cancellation ends stream
