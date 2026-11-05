@@ -98,10 +98,17 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   from the account's line, in the panel's terminal; Djinn keeps no token and shows none, only the folder. Antigravity
   has no such folder. The cross on an account's line forgets it and leaves its folder as it is, as djinn lead
   remove-account does; djinn lead accounts lists them.
-- **Every worker runs on one of them.** Each worker of an agent starts on its own sign-in, else on its accounts in the
-  order you added them: the first neither paused nor limited, and the one it ran on before while that one is. Its
-  task's card names the account it runs on, or ran on last, by its label, beside its model; where an agent has
-  accounts, a task on the agent's own reads own sign-in. A worker that hits a limit of its whole account moves at
+- **Every worker runs on one of them.** Each new task of an agent starts on the sign-in whose week resets first,
+  among those neither paused nor limited that have quota left (under 95 % of their 5 hours and of their week): what
+  is left of a week is lost at its reset, so the week that ends first is spent first. A task that ran stays on the
+  sign-in it ran on while that one is free and has quota left. When Djinn knows no quota, it takes the agent's own
+  sign-in, else its accounts in the order you added them, the first neither paused nor limited. Its task's card names
+  the account it runs on, or ran on last, by its label, beside its model; where an agent has accounts, a task on the
+  agent's own reads own sign-in.
+- **Djinn knows each quota.** Every 5 minutes, for an agent with accounts, Djinn asks Claude Code the usage of each
+  sign-in without a model turn, and each worker tells its own at each of its turns; a reading older than 15 minutes
+  counts as unknown. djinn lead accounts shows, for each sign-in, its 5 hours and its week used, when the week
+  resets, when it was read, and which one the next task takes. A worker that hits a limit of its whole account moves at
   once to the next sign-in free, its session copied into that account's folder, without spending one of its resumes;
   the account stays limited until its reset, and the next workers start elsewhere. With no other sign-in free, the
   task waits for the reset, and moves as soon as another one frees. A session on an account keeps the memory of the

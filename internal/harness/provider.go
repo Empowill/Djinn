@@ -201,6 +201,9 @@ type Event struct {
 	Spent float64
 	// ToolError is set on a tool result whose call failed or was refused by its provider.
 	ToolError bool
+	// Quota is the usage of the worker's sign-in, when its agent tells it (claude's rate_limit_event, each turn): an
+	// event of no kind that carries it alone is not written (quota.go).
+	Quota *Quota
 }
 
 // Result is how a worker ended.

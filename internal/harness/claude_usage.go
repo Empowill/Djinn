@@ -1,0 +1,175 @@
+package harness
+
+// The usage probe of Claude Code (quota.go): claude -p in stream-json answers a get_usage control request with the
+// sign-in's usage limits, without a model turn and at no cost. Undocumented: tried on claude 2.1.316 (W374, W380),
+// as T3 Code does (apps/server/src/provider/claudeUsageLimits.ts). Djinn reads the 5-hour and the weekly windows
+// only; the rest of the answer (extra usage, behaviours, an email) is never kept nor logged.
+
+import (
+	"bufio"
+	"bytes"
+	"cmp"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+)
+
+// claudeUsageRequest is the control request that asks claude for its sign-in's usage.
+const claudeUsageRequest = `{"type":"control_request","request_id":"djinn-usage","request":{"subtype":"get_usage"}}`
+
+// claudeUsageArgs start claude to answer control requests: no session kept, no MCP server, no slash command.
+var claudeUsageArgs = []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+	"--no-session-persistence", "--strict-mcp-config", "--disable-slash-commands"}
+
+// errNoUsage is a sign-in that tells no usage limits: signed out, or on an API key.
+var errNoUsage = errors.New("no usage limits told: signed out, or on an API key")
+
+// Usage implements UsageProber: one claude process, in the folder env names, asked once.
+func (c Claude) Usage(ctx context.Context, env []string) (Quota, error) {
+	command := c.Command
+	if command == "" {
+		command = "claude"
+	}
+	cmd := exec.CommandContext(ctx, command, claudeUsageArgs...)
+	cmd.Dir = os.TempDir() // No project: its settings and instructions are not read.
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdin = strings.NewReader(claudeUsageRequest + "\n")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	cmd.WaitDelay = 2 * time.Second
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return Quota{}, err
+	}
+	if err := cmd.Start(); err != nil {
+		return Quota{}, err
+	}
+	q, found, perr := Quota{}, false, error(nil)
+	scan := bufio.NewScanner(out)
+	scan.Buffer(make([]byte, 64*1024), 4<<20)
+	for scan.Scan() {
+		line := scan.Bytes()
+		if !bytes.Contains(line, []byte(`"control_response"`)) {
+			continue
+		}
+		if q, perr = parseClaudeUsage(line); !errors.Is(perr, errOtherResponse) {
+			found = true
+			break
+		}
+	}
+	_ = cmd.Process.Kill() // It answered, or said all it would.
+	werr := cmd.Wait()
+	switch {
+	case found:
+		return q, perr
+	case ctx.Err() != nil:
+		return Quota{}, fmt.Errorf("no answer: %w", ctx.Err())
+	}
+	why := strings.TrimSpace(stderr.String())
+	if i := strings.LastIndexByte(why, '\n'); i >= 0 {
+		why = why[i+1:]
+	}
+	return Quota{}, fmt.Errorf("claude ended without its usage: %s", clipRunes(cmp.Or(why, fmt.Sprint(werr)), 200))
+}
+
+// errOtherResponse is a control response to another request than Djinn's.
+var errOtherResponse = errors.New("another control response")
+
+// claudeUsageWindow is a window of get_usage's rate_limits: utilization in percent, resets_at in RFC 3339.
+type claudeUsageWindow struct {
+	Utilization *float64 `json:"utilization"`
+	ResetsAt    *string  `json:"resets_at"`
+}
+
+// parseClaudeUsage reads claude's answer to claudeUsageRequest: its 5-hour and weekly windows.
+func parseClaudeUsage(line []byte) (Quota, error) {
+	var m struct {
+		Type     string `json:"type"`
+		Response struct {
+			Subtype   string `json:"subtype"`
+			RequestID string `json:"request_id"`
+			Error     string `json:"error"`
+			Response  *struct {
+				RateLimitsAvailable bool `json:"rate_limits_available"`
+				RateLimits          *struct {
+					FiveHour *claudeUsageWindow `json:"five_hour"`
+					SevenDay *claudeUsageWindow `json:"seven_day"`
+				} `json:"rate_limits"`
+			} `json:"response"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(line, &m); err != nil {
+		return Quota{}, fmt.Errorf("read claude's usage: %w", err)
+	}
+	r := m.Response
+	if m.Type != "control_response" || r.RequestID != "djinn-usage" {
+		return Quota{}, errOtherResponse
+	}
+	if r.Subtype != "success" {
+		return Quota{}, fmt.Errorf("claude refused the usage request: %s", clipRunes(cmp.Or(r.Error, r.Subtype), 200))
+	}
+	if r.Response == nil || !r.Response.RateLimitsAvailable || r.Response.RateLimits == nil {
+		return Quota{}, errNoUsage
+	}
+	five, err := r.Response.RateLimits.FiveHour.window()
+	if err != nil {
+		return Quota{}, err
+	}
+	week, err := r.Response.RateLimits.SevenDay.window()
+	if err != nil {
+		return Quota{}, err
+	}
+	if five == nil && week == nil {
+		return Quota{}, errNoUsage
+	}
+	return Quota{FiveHour: five, SevenDay: week, Source: planv1.UsageSource_USAGE_SOURCE_PROBE}, nil
+}
+
+// window is w as Djinn keeps it; nil when not told.
+func (w *claudeUsageWindow) window() (*UsageWindow, error) {
+	if w == nil || w.Utilization == nil {
+		return nil, nil
+	}
+	out := &UsageWindow{Used: *w.Utilization / 100}
+	if w.ResetsAt != nil && *w.ResetsAt != "" {
+		t, err := time.Parse(time.RFC3339Nano, *w.ResetsAt)
+		if err != nil {
+			return nil, fmt.Errorf("read claude's usage reset: %w", err)
+		}
+		out.ResetsAt = t
+	}
+	return out, nil
+}
+
+// claudeWindows are the unifiedWindows of a rate_limit_event: utilization from 0 to 1, resetsAt in Unix seconds.
+type claudeWindows map[string]struct {
+	Utilization *float64 `json:"utilization"`
+	ResetsAt    int64    `json:"resetsAt"`
+}
+
+// quota is the sign-in's quota a worker's rate_limit_event tells; nil when it tells no window.
+func (ws claudeWindows) quota() *Quota {
+	window := func(name string) *UsageWindow {
+		w, ok := ws[name]
+		if !ok || w.Utilization == nil {
+			return nil
+		}
+		out := &UsageWindow{Used: *w.Utilization}
+		if w.ResetsAt > 0 {
+			out.ResetsAt = time.Unix(w.ResetsAt, 0)
+		}
+		return out
+	}
+	q := Quota{FiveHour: window("five_hour"), SevenDay: window("seven_day"), Source: planv1.UsageSource_USAGE_SOURCE_WORKER}
+	if q.FiveHour == nil && q.SevenDay == nil {
+		return nil
+	}
+	return &q
+}
