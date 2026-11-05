@@ -612,7 +612,10 @@ type Provider struct {
 	// The command line that signs the agent in, from its official documentation.
 	LoginCommand string `protobuf:"bytes,8,opt,name=login_command,json=loginCommand,proto3" json:"login_command,omitempty"`
 	// The agent's accounts on this machine beside its default sign-in, each checked in its own folder.
-	Accounts      []*AccountSetup `protobuf:"bytes,9,rep,name=accounts,proto3" json:"accounts,omitempty"`
+	Accounts []*AccountSetup `protobuf:"bytes,9,rep,name=accounts,proto3" json:"accounts,omitempty"`
+	// Its own sign-in (its default folder, no account) is paused: Djinn starts no worker there (Settings.paused_sign_ins,
+	// djinn lead pause-account --provider). An account's pause is its own (Account.paused).
+	Paused        bool `protobuf:"varint,10,opt,name=paused,proto3" json:"paused,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -708,6 +711,13 @@ func (x *Provider) GetAccounts() []*AccountSetup {
 		return x.Accounts
 	}
 	return nil
+}
+
+func (x *Provider) GetPaused() bool {
+	if x != nil {
+		return x.Paused
+	}
+	return false
 }
 
 // AccountSetup is where an account of an agent stands, and how to sign it in.
@@ -2543,7 +2553,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\t_shortcutB\a\n" +
 	"\x05_loadB\x15\n" +
 	"\x13_ifrit_idle_minutesB\x0e\n" +
-	"\f_lead_driven\"\xab\x02\n" +
+	"\f_lead_driven\"\xc3\x02\n" +
 	"\bProvider\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -2553,7 +2563,9 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\aversion\x18\x06 \x01(\tR\aversion\x12'\n" +
 	"\x0finstall_command\x18\a \x01(\tR\x0einstallCommand\x12#\n" +
 	"\rlogin_command\x18\b \x01(\tR\floginCommand\x12/\n" +
-	"\baccounts\x18\t \x03(\v2\x13.ui.v1.AccountSetupR\baccounts\"\x8b\x01\n" +
+	"\baccounts\x18\t \x03(\v2\x13.ui.v1.AccountSetupR\baccounts\x12\x16\n" +
+	"\x06paused\x18\n" +
+	" \x01(\bR\x06paused\"\x8b\x01\n" +
 	"\fAccountSetup\x12*\n" +
 	"\aaccount\x18\x01 \x01(\v2\x10.plan.v1.AccountR\aaccount\x12*\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x14.ui.v1.ProviderStateR\x05state\x12#\n" +

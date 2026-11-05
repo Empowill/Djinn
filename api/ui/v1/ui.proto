@@ -187,6 +187,9 @@ message Provider {
   string login_command = 8;
   // The agent's accounts on this machine beside its default sign-in, each checked in its own folder.
   repeated AccountSetup accounts = 9;
+  // Its own sign-in (its default folder, no account) is paused: Djinn starts no worker there (Settings.paused_sign_ins,
+  // djinn lead pause-account --provider). An account's pause is its own (Account.paused).
+  bool paused = 10;
 }
 
 // AccountSetup is where an account of an agent stands, and how to sign it in.
