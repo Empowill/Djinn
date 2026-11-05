@@ -206,7 +206,7 @@ func TestAccountLimitMoves(t *testing.T) {
 	if got := configDir(moved); got != perso {
 		t.Errorf("moved to %q, want %q", got, perso)
 	}
-	if !strings.Contains(moved.Prompt, accountLine) || moved.Resume != "" {
+	if !strings.Contains(moved.Prompt, accountLine) || !strings.Contains(moved.Prompt, relayHead) || moved.Resume != "" {
 		t.Errorf("moved worker told %q", moved.Prompt)
 	}
 	done := e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
@@ -280,7 +280,8 @@ func TestAccountWaitsThenMoves(t *testing.T) {
 }
 
 // TestMoveSession: a session moving to another account is copied into that account's folder, under the project's
-// folder name, so that --resume finds it there; one already there is kept; none found, it cannot move.
+// folder name, so that --resume finds it there, with the folder of its subagents and tool results; one already there
+// is kept unless the one found is newer; none found, it cannot move.
 func TestMoveSession(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
@@ -308,6 +309,52 @@ func TestMoveSession(t *testing.T) {
 	}
 	if h.moveSession(planv1.Provider_PROVIDER_CLAUDE, "s2", dir, "work", accounts[1]) {
 		t.Error("a session never written moved")
+	}
+
+	// Back on work after a while on perso: the newer copy wins, with its folder; a link in it stays behind.
+	moved := filepath.Join(perso, "projects", slug, "s1.jsonl")
+	later := time.Now().Add(time.Hour)
+	if err := os.WriteFile(moved, []byte(`{"type":"user"}`+"\n"+`{"type":"assistant"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(moved, later, later); err != nil {
+		t.Fatal(err)
+	}
+	results := filepath.Join(perso, "projects", slug, "s1", "subagents")
+	if err := os.MkdirAll(results, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(results, "agent-a.jsonl"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(home, "settings.json"), filepath.Join(results, "out")); err != nil {
+		t.Log("no link here:", err) // Windows without the right to make one.
+	}
+	if !h.moveSession(planv1.Provider_PROVIDER_CLAUDE, "s1", dir, "perso", accounts[0]) {
+		t.Fatal("the session did not move back")
+	}
+	if b, _ := os.ReadFile(src); !strings.Contains(string(b), "assistant") {
+		t.Errorf("work kept its older copy: %q", b)
+	}
+	back := filepath.Join(work, "projects", slug, "s1", "subagents")
+	if _, err := os.Stat(filepath.Join(back, "agent-a.jsonl")); err != nil {
+		t.Errorf("subagents not copied: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(back, "out")); err == nil {
+		t.Error("a link was copied")
+	}
+	// An older copy elsewhere never replaces the newer one there.
+	if err := os.WriteFile(moved, []byte("stale\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(moved, later.Add(-2*time.Hour), later.Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if !h.moveSession(planv1.Provider_PROVIDER_CLAUDE, "s1", dir, "perso", accounts[0]) {
+		t.Fatal("the session there was not kept")
+	}
+	if b, _ := os.ReadFile(src); string(b) == "stale\n" {
+		t.Error("an older copy replaced the newer one")
 	}
 	if h.moveSession(planv1.Provider_PROVIDER_CODEX, "s1", dir, "work", accounts[1]) {
 		t.Error("a Codex session moved: Djinn copies Claude Code's only")

@@ -9,16 +9,19 @@ package harness
 //
 // A usage limit of the whole account is held per sign-in: the one a worker hit holds its sign-in until it resets, and
 // the task moves at once to another sign-in free (limited), its session copied into that account's folder when it can
-// be. A task that waits for its own account's limit moves as soon as another sign-in is free. A limit alone never
-// holds a task back, as Djinn learns it from one worker's message (W409): with every sign-in not paused limited, a
-// new task starts on the first, and waits for its own reset if the limit stops it too. Only a pause holds: a task
-// whose agent has every sign-in paused waits, saying so. The limits are held in memory, and read again at each pass
-// from the tasks that wait for one: after a restart, a limit no task waits for any more is forgotten, and the first
-// worker to hit it again moves. Djinn never reads, writes nor logs a token: it names folders.
+// be, else on a new session told what came before (relay.go). A task that waits for its own account's limit moves as
+// soon as another sign-in is free. A limit alone never holds a task back, as Djinn learns it from one worker's message
+// (W409): with every sign-in not paused limited, a new task starts on the first, and waits for its own reset if the
+// limit stops it too. Only a pause holds: a task whose agent has every sign-in paused waits, saying so. The limits are
+// held in memory, and read again at each pass from the tasks that wait for one: after a restart, a limit no task
+// waits for any more is forgotten, and the first worker to hit it again moves. Djinn never reads, writes nor logs a
+// token: it names folders.
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -292,12 +295,15 @@ func (h *Harness) signInFolder(name string) string {
 	return plan.FindAccount(plan.ReadAccounts(h.home), name).GetConfigDirectory()
 }
 
-// moveSession copies the transcript of Claude Code's session in dir into the folder of account (nil for the agent's
-// own sign-in), from the folder of the sign-in prior, else of any other, so that --resume finds it there; false when
-// it cannot (no transcript found, another agent), and the worker starts a new session. A transcript already there is
-// kept.
+// moveSession copies the session of Claude Code in dir into the folder of account (nil for the agent's own sign-in),
+// from the folder of the sign-in prior first, else of any other, so that --resume finds it there: its transcript, and
+// the folder beside it that holds its subagents and its tool results. Nothing else moves: no token, no setting. A
+// copy already there is kept unless the one found is newer (the task ran there before, then elsewhere). False when it
+// cannot (no transcript found, its copy failed, another agent): the worker starts a new session, told what came
+// before (relay.go).
 func (h *Harness) moveSession(provider planv1.Provider, session, dir, prior string, account *planv1.Account) bool {
-	if cmp.Or(provider, planv1.Provider_PROVIDER_CLAUDE) != planv1.Provider_PROVIDER_CLAUDE || session == "" {
+	if cmp.Or(provider, planv1.Provider_PROVIDER_CLAUDE) != planv1.Provider_PROVIDER_CLAUDE || session == "" ||
+		filepath.Base(session) != session {
 		return false
 	}
 	dst := account.GetConfigDirectory()
@@ -310,9 +316,6 @@ func (h *Harness) moveSession(provider planv1.Provider, session, dir, prior stri
 	name := session + ".jsonl"
 	slug := plan.ClaudeProjectSlug(dir)
 	target := filepath.Join(dst, "projects", slug, name)
-	if _, err := os.Stat(target); err == nil {
-		return true
-	}
 	folders := []string{h.signInFolder(prior)}
 	for _, o := range h.accountOptions(planv1.Provider_PROVIDER_CLAUDE) {
 		folders = append(folders, h.signInFolder(o.Name))
@@ -331,18 +334,53 @@ func (h *Harness) moveSession(provider planv1.Provider, session, dir, prior stri
 			break
 		}
 	}
+	there, errThere := os.Stat(target)
 	if source == "" {
-		return false
+		return errThere == nil
 	}
-	data, err := os.ReadFile(source)
-	if err == nil {
-		if err = os.MkdirAll(filepath.Dir(target), 0o700); err == nil {
-			err = fsx.WriteAtomic(target, data, 0o600)
-		}
+	if from, err := os.Stat(source); errThere == nil && (err != nil || !from.ModTime().After(there.ModTime())) {
+		return true
 	}
-	if err != nil {
+	if err := copySessionFile(source, target); err != nil {
+		// An older copy there would resume without what came since: a new session, told it, is better.
 		logx.L().Warn("copy a session to another sign-in", "session", session, "err", err)
 		return false
 	}
+	if err := copySessionFolder(strings.TrimSuffix(source, ".jsonl"), strings.TrimSuffix(target, ".jsonl")); err != nil {
+		// The transcript is there: it resumes; its tool results name their files in the folder they were written in.
+		logx.L().Warn("copy a session's folder to another sign-in", "session", session, "err", err)
+	}
 	return true
+}
+
+// copySessionFile copies the regular file src to dst, its folder made, readable by its owner alone.
+func copySessionFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	return fsx.WriteAtomic(dst, data, 0o600)
+}
+
+// copySessionFolder copies the regular files under the session's folder src (subagents/, tool-results/) to dst,
+// replacing those there; none when src is not a folder. A link is left behind: it could lead out of the session.
+func copySessionFolder(src, dst string) error {
+	if info, err := os.Lstat(src); errors.Is(err, fs.ErrNotExist) || err == nil && !info.IsDir() {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		return copySessionFile(path, filepath.Join(dst, rel))
+	})
 }

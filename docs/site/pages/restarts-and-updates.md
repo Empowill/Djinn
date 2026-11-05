@@ -90,7 +90,7 @@ A few things stop a worker without a restart, and Djinn handles them the same wa
   account meanwhile and Djinn sees it within a minute: the tasks the limit stopped resume at once. Either way, the
   Djinn hears once which tasks resume. With several accounts named, a limit of the whole account moves the worker at
   once to the next account neither paused nor limited instead, and a task waiting for its reset moves as soon as one
-  frees (the Djinn's seat and its accounts).
+  frees, its session copied there, or on a new session told what came before (the Djinn's seat and its accounts).
 - **A silent worker.** The Lamplighter, Djinn's watchdog, wakes a worker that printed nothing for 15 minutes with no
   process busy and no gate held or awaited, or whose process is lost: it ends it and continues it on its session. After
   three wakes in a row the task fails, saying so, and the Djinn is told.
