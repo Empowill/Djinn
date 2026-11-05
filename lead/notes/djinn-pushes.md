@@ -1,6 +1,6 @@
 ---
 name: djinn-pushes
-description: When Djinn pushes a branch by itself; in standard mode never ask the developer to push one
+description: When Djinn pushes a branch by itself; in standard mode never ask the developer to push one; per azima, work spawned with no azima gets an azima of its own
 type: feedback
 ---
 
@@ -17,6 +17,15 @@ strategy each azima's own branch, by itself, within the minute of the merge that
    strategy into the branch of an azima not done, once that branch was pushed, makes it due with no task committed
    (Q243 and Q245 of the wish Dew 13 oct): its pull request's CI runs on main as it is. Such a branch left ahead of its remote, with no push check holding it, is a bug
    to report, not a move to ask for.
+
+Under the per-azima strategy, Djinn pushes only the azimas' own branches (`djinn/Tnn-...`), never the wish's integration
+branch, which on djinn is main itself. So work spawned part of no azima gets an azima of its own, made for it with the
+task's title (decision Q268 B, W401): its branch is cut from main before the worker starts, then pushed and proposed as
+a pull request like any azima. Work part of no azima from before is given one when Djinn merges it. Watchers,
+investigations and mockups merge nothing and stay out. Still spawn work `--part-of` the azima it belongs to: an azima
+per task is a pull request per task, and a task `--after` work of another azima is refused (no azima waits for
+another). A commit found on the wish's integration branch all the same is a bug: carry it into an azima's pull request
+at once, then report it to the developer.
 
 The push checks run first; red, they hold the push and Djinn starts a correction. A held push comes to you as an
 event (Decision Q196): you decide, the developer is not asked. A wish in ask mode has Djinn ask the push question

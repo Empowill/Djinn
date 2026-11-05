@@ -11052,7 +11052,8 @@ export type TaskServiceSpawnRequest = Message<"plan.v1.TaskServiceSpawnRequest">
 
   /**
    * The azima the task belongs to: its code (T07) or its identifier. A grouping, never a wait: say what the task
-   * waits for with after.
+   * waits for with after. In a wish that pushes per azima, work given none gets an azima of its own, made for it with
+   * its title, whose branch is pushed: a watcher, an investigation or a mockup, which merge nothing, stay of none.
    *
    * @generated from field: string part_of = 15;
    */

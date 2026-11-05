@@ -2347,9 +2347,10 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 
 // targetBranch determines the branch to merge the batch into:
 // When the push strategy is azima, each azima gets its own integration branch (djinn/<azima code>-<slug of title>),
-// cut from main if it does not exist yet (azimaBranch). A task with no azima goes to the wish's own integration branch.
-// In per-wish mode, it returns the wish's integration branch as today. Work held out of its azima's branch, the azima
-// done or its branch deleted, gets that branch and why it waits (azimaBranchFor).
+// cut from main if it does not exist yet (azimaBranch). Work of no azima is made part of an azima made for it first
+// (adoptOrphan): only a correction or a review of no azima goes to the wish's own integration branch. In per-wish mode,
+// it returns the wish's integration branch as today. Work held out of its azima's branch, the azima done or its branch
+// deleted, gets that branch and why it waits (azimaBranchFor).
 func (h *Harness) targetBranch(
 	ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, batch []*planv1.Task,
 ) (branch, why string, ok bool) {
@@ -2361,6 +2362,11 @@ func (h *Harness) targetBranch(
 	azima, err := h.taskAzima(ctx, batch[0])
 	if err != nil {
 		return "", "find azima: " + err.Error(), false
+	}
+	if azima == nil {
+		if azima, err = h.adoptOrphan(ctx, wish, project, batch[0]); err != nil {
+			return "", "make an azima for work of no azima: " + err.Error(), false
+		}
 	}
 	if azima == nil {
 		b, why := h.integrationBranch(ctx, wish, project)
@@ -2561,9 +2567,10 @@ func (h *Harness) fetchReference(ctx context.Context, repo string, settings plan
 
 // workerStartBranch is the branch a worker starts from, the one its work lands in (startPoint reads it): per wish, the
 // wish's integration branch; per azima, the branch of the task's azima, cut from the reference branch when its first
-// part starts if it was not when the azima was made, and for work of no azima the wish's integration branch, the
-// reference branch unless the developer named another. "" for a wish that records none: the reference branch then.
-// Never the branch the developer's copy has checked out (W227).
+// part starts if it was not when the azima was made, and for a task of no azima the wish's integration branch, the
+// reference branch unless the developer named another: work spawned since gets an azima of its own (own_azima.go),
+// so only a correction or a review of no azima, or work spawned before, starts there. "" for a wish that records none:
+// the reference branch then. Never the branch the developer's copy has checked out (W227).
 func (h *Harness) workerStartBranch(ctx context.Context, wish *planv1.Wish, project *planv1.Project, settings plan.Settings, t *planv1.Task) string {
 	strat, _ := plan.ResolveWishPushStrategy(wish, settings)
 	if strat != planv1.PushStrategy_PUSH_STRATEGY_AZIMA {
