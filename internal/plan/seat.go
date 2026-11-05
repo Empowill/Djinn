@@ -1104,10 +1104,72 @@ func (s *LeadService) Accounts(
 			paused, a.GetConfigDirectory(), AccountLogin(a, runtime.GOOS))
 	}
 	if len(accounts) > 0 {
-		b.WriteString("\nEach worker runs on its agent's own sign-in, else on its accounts in this order: the first neither " +
-			"paused nor limited, the same as before while it may.\n")
+		b.WriteString("\nEach new worker runs on the sign-in of its agent whose week resets first, among those neither " +
+			"paused nor limited with quota left (under 95 % of their 5 hours and of their week); without a quota read, on " +
+			"its own sign-in, else on its accounts in this order. A task that ran stays where it ran while it may.\n")
 	}
-	return connect.NewResponse(&planv1.LeadServiceAccountsResponse{Text: b.String(), Accounts: accounts, Seat: seat}), nil
+	var usage []*planv1.AccountUsage
+	if s.Usage != nil {
+		usage = s.Usage()
+	}
+	if len(usage) > 0 {
+		b.WriteString("\nUsage of each sign-in, as last read:\n")
+		for _, u := range usage {
+			fmt.Fprintf(&b, "- %s\n", UsageText(u))
+		}
+	}
+	return connect.NewResponse(&planv1.LeadServiceAccountsResponse{Text: b.String(), Accounts: accounts, Seat: seat,
+		Usage: usage}), nil
+}
+
+// UsageText says a sign-in's usage in a line: "work (claude): 5 h 44 %, week 27 % (resets Wed 11 Nov 11:00), read at
+// 06:10 by the probe; next".
+func UsageText(u *planv1.AccountUsage) string {
+	who := u.GetAccount()
+	if who == "" {
+		who = agentNames[u.GetProvider()] + "'s own sign-in"
+	} else {
+		who += " (" + agentNames[u.GetProvider()] + ")"
+	}
+	var parts []string
+	if w := u.GetFiveHour(); w != nil {
+		parts = append(parts, fmt.Sprintf("5 h %.0f %%", w.GetUsedPercent()))
+	}
+	if w := u.GetSevenDay(); w != nil {
+		week := fmt.Sprintf("week %.0f %%", w.GetUsedPercent())
+		if w.GetResetsTime() != nil {
+			week += " (resets " + w.GetResetsTime().AsTime().Local().Format("Mon 2 Jan 15:04") + ")"
+		}
+		parts = append(parts, week)
+	}
+	text := who + ": " + strings.Join(parts, ", ")
+	if len(parts) == 0 {
+		text = who + ": not read"
+	}
+	if u.GetReadTime() != nil {
+		by := "a worker"
+		if u.GetSource() == planv1.UsageSource_USAGE_SOURCE_PROBE {
+			by = "the probe"
+		}
+		text += ", read at " + u.GetReadTime().AsTime().Local().Format("15:04") + " by " + by
+	}
+	var notes []string
+	if u.GetProbeError() != "" {
+		notes = append(notes, "probe failed: "+u.GetProbeError())
+	}
+	if u.GetPaused() {
+		notes = append(notes, "paused")
+	}
+	if u.GetLimitedUntil() != nil {
+		notes = append(notes, "limited until "+u.GetLimitedUntil().AsTime().Local().Format("Mon 2 Jan 15:04"))
+	}
+	if u.GetNext() {
+		notes = append(notes, "next")
+	}
+	if len(notes) > 0 {
+		text += "; " + strings.Join(notes, "; ")
+	}
+	return text
 }
 
 // accountLabel is what the window calls a: its label, else its name.

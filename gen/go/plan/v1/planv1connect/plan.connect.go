@@ -2333,8 +2333,8 @@ type LeadServiceClient interface {
 	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
 	// batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
 	Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error)
-	// The accounts of the agents on this machine, the seat of the lead, and for each account the command that signs
-	// it in, once, in its own folder.
+	// The accounts of the agents on this machine, the seat of the lead, for each account the command that signs it in,
+	// once, in its own folder, and the usage limits of each sign-in as Djinn last read them.
 	Accounts(context.Context, *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error)
 	// Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
 	// unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
@@ -2711,8 +2711,8 @@ type LeadServiceHandler interface {
 	// default, an empty account its own sign-in; without --provider, the current agent. Events that wait after a failed
 	// batch or a limit go to the new seat at once. Antigravity cannot lead yet. Kept in settings.json, on this machine.
 	Move(context.Context, *connect.Request[v1.LeadServiceMoveRequest]) (*connect.Response[v1.LeadServiceMoveResponse], error)
-	// The accounts of the agents on this machine, the seat of the lead, and for each account the command that signs
-	// it in, once, in its own folder.
+	// The accounts of the agents on this machine, the seat of the lead, for each account the command that signs it in,
+	// once, in its own folder, and the usage limits of each sign-in as Djinn last read them.
 	Accounts(context.Context, *connect.Request[v1.LeadServiceAccountsRequest]) (*connect.Response[v1.LeadServiceAccountsResponse], error)
 	// Name an account of an agent: a folder of its own where it keeps its login, ~/.claude-<name> or ~/.codex-<name>
 	// unless given. Djinn makes the folder and prints the command that signs in there; the login stays the agent's.
