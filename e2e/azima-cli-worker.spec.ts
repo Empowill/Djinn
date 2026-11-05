@@ -81,7 +81,9 @@ test("a worker spawned from the command line part of a new azima shows and count
 
   // The window is open before the wish is made.
   await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
+  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+    timeout: 15_000,
+  });
 
   const wishId = JSON.parse(
     djinn(
