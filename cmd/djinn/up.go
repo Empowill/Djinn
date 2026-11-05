@@ -206,6 +206,10 @@ func runUp(args []string) (restart bool, err error) {
 	policy.Workers = maxWorkers
 	policy.WorkerMemory = uint64(workerMemory) << 20
 	policy.WorkerMemoryGuard = workerMemoryGuard
+	if ui.StampedTestBuild() {
+		// The e2e suite's djinn: its shells keep the PATH the suite gave, the fake agents first (terminal.LoginShell).
+		terminal.LoginShell = false
+	}
 	calm := ui.StampedTestBuild() && os.Getenv("DJINN_TEST_MACHINE") == "calm"
 	read := readMachine
 	switch {

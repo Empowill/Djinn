@@ -283,6 +283,8 @@ test("the Grimoire's navigation is in the language asked", async ({ page }) => {
 test("the Grimoire opens from the menu as a page of the window, not a modal, in its theme and language, and a scroll keeps it loaded", async ({
   page,
 }) => {
+  // Some 60 steps through a frame, 3 s alone: on a Mac under the whole suite, its browser stalled 22 s on one of them.
+  test.setTimeout(60_000);
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto(djinnURL());
   // The settings lead to it no more: the side panel's Grimoire does, just under the Hourglass.

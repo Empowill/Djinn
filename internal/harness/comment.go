@@ -114,23 +114,39 @@ func (h *Harness) Comment(ctx context.Context, procedure string, req *planv1.Tas
 
 // commentFile is the file a comment is on, relative to the repository's root. The command line makes a relative path
 // absolute, from the folder it runs in: a path inside the task's worktree or its project's folder comes back relative
-// to it.
+// to it, even through a symbolic link: on macOS, the command line's folder is /private/var/..., the worktree Djinn
+// made /var/....
 func commentFile(file string, roots ...string) string {
 	if file == "" {
 		return ""
 	}
 	if filepath.IsAbs(file) {
+		resolved := realPath(file)
+	roots:
 		for _, root := range roots {
 			if root == "" {
 				continue
 			}
-			if rel, err := filepath.Rel(root, file); err == nil && rel != "." && filepath.IsLocal(rel) {
-				file = rel
-				break
+			for _, pair := range [][2]string{{root, file}, {realPath(root), resolved}} {
+				if rel, err := filepath.Rel(pair[0], pair[1]); err == nil && rel != "." && filepath.IsLocal(rel) {
+					file = rel
+					break roots
+				}
 			}
 		}
 	}
 	return strings.TrimPrefix(filepath.ToSlash(filepath.Clean(file)), "/")
+}
+
+// realPath is path with the symbolic links of its existing part resolved.
+func realPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	if dir := filepath.Dir(path); dir != path {
+		return filepath.Join(realPath(dir), filepath.Base(path))
+	}
+	return path
 }
 
 // formatCommentInstruction formats a diff comment as an instruction for a running worker.

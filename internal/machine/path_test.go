@@ -77,8 +77,9 @@ func TestExtendPath(t *testing.T) {
 			}
 			home := bare(t)
 			ExtendPath() // djinn up starts
-			if _, err := exec.LookPath("claude"); err == nil {
-				t.Fatal("claude found before its install: the test reproduces nothing")
+			if got, err := exec.LookPath("claude"); err == nil {
+				// A Mac with claude from Homebrew: that one keeps its place, first, and no install can show.
+				t.Skipf("claude found before its install, at %s: the test reproduces nothing", got)
 			}
 			bin := filepath.Join(home, ".local", "bin")
 			fakeAgent(t, bin, "claude") // the installer runs in the panel's terminal

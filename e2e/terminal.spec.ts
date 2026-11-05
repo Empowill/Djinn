@@ -66,9 +66,9 @@ test("the terminal shows at the bottom and runs a command", async ({
   // Pinned at the bottom of the window.
   const box = (await terminal.boundingBox())!;
   expect(box.y + box.height).toBeCloseTo(1000, -1);
-  // $SHELL, which global-setup.ts sets; a login shell on macOS, as Terminal starts it (terminal.Shell).
+  // $SHELL, which global-setup.ts sets; never a login shell in a test build, even on macOS (terminal.LoginShell).
   await expect(terminal.locator(".lead-terminal-command").first()).toHaveText(
-    process.platform === "darwin" ? "/bin/sh -l" : "/bin/sh",
+    "/bin/sh",
   );
   // The quotes keep the echoed command line from matching.
   await typeLine(page, "echo hel''lo");
