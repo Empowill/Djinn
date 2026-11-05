@@ -24,8 +24,10 @@ task's title (decision Q268 B, W401): its branch is cut from main before the wor
 a pull request like any azima. Work part of no azima from before is given one when Djinn merges it. Watchers,
 investigations and mockups merge nothing and stay out. Still spawn work `--part-of` the azima it belongs to: an azima
 per task is a pull request per task, and a task `--after` work of another azima is refused (no azima waits for
-another). A commit found on the wish's integration branch all the same is a bug: carry it into an azima's pull request
-at once, then report it to the developer.
+another). Work whose worker started from an azima's branch, or from the head of a pull request an azima carries, joins
+that azima when Djinn merges it, and the azima made for it is closed (W412, after W355 put a merge request into main).
+A commit found on the wish's integration branch all the same is a bug: carry it into an azima's pull request at once,
+then report it to the developer.
 
 The push checks run first; red, they hold the push and Djinn starts a correction. A held push comes to you as an
 event (Decision Q196): you decide, the developer is not asked. A wish in ask mode has Djinn ask the push question

@@ -64,6 +64,11 @@ djinn/T07-the-orchestrator.
   branch per azima, so work merged there would stay in your copy. Work spawned before, or moved out of its azima, gets
   one when Djinn merges it. A watcher, an investigation or a mockup merges nothing and stays of no azima. Work of no
   azima that waits for work of an azima, or that work waits for, is refused: spawn it part of that azima.
+- **Work that started from an azima's branch lands there.** When the worker of a task of no azima, or of the azima made
+  for it, checks out an azima's branch, or the head of the pull request an azima carries, and commits on it, Djinn
+  finds it when it merges the work: the task becomes part of that azima and its work lands on that azima's branch, never
+  in main, nor in an azima of its own that would carry the whole request a second time. The azima made for it, left
+  with no other work, is closed.
 - **It keeps up with main**, by the same rules as a wish's branch.
 - **It is pushed** by the project's cadence: under Standard, at the latest when the azima ends, and each time main is
   merged into it once it was pushed. Its card shows the branch's line when it
