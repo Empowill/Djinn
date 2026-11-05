@@ -13,6 +13,10 @@ strategy each azima's own branch, by itself, within the minute of the merge that
    its watcher runs and no work part of it is left: not done, what depends on it still waits.
 2. **The cadence:** three tasks committed since the last push and more than an hour since it (a wish sets its own,
    `push_after_tasks` and `push_after_minutes`).
+3. **Main merged into a pushed branch:** main merged into the wish's integration branch, or under the per-azima
+   strategy into the branch of an azima not done, once that branch was pushed, makes it due with no task committed
+   (Q243 and Q245 of the wish Dew 13 oct): its pull request's CI runs on main as it is. Such a branch left ahead of its remote, with no push check holding it, is a bug
+   to report, not a move to ask for.
 
 The push checks run first; red, they hold the push and Djinn starts a correction. A held push comes to you as an
 event (Decision Q196): you decide, the developer is not asked. A wish in ask mode has Djinn ask the push question
