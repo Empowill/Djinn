@@ -4,7 +4,8 @@
 // itself when the window opens with no agent ready. Under each agent, its accounts: a sign-in each in a folder of the
 // agent's own, signed in once by the agent's own command, for the workers to run on and the lead to move to; Djinn
 // keeps no token, and shows none. Each sign-in, the agent's own or an account, pauses and resumes from its line, as
-// djinn lead pause-account does.
+// djinn lead pause-account does. Under each sign-in, its usage as djinn lead accounts says it: active, paused or
+// limited, its week's gauge and when the week ends, its 5 hours, and whether the next task starts there.
 import {
   Download,
   LogIn,
@@ -17,7 +18,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Provider } from "../gen/ts/plan/v1/plan_pb";
+import {
+  type AccountUsage,
+  Provider,
+  UsageSource,
+  type UsageWindow,
+} from "../gen/ts/plan/v1/plan_pb";
 import {
   type AccountSetup,
   type Provider as AgentEnvironment,
@@ -27,8 +33,13 @@ import {
 import { message } from "./data/client";
 import { useDjinn } from "./data/djinn";
 import { ModalFrame } from "./frame";
-import { type TextKey, t } from "./i18n";
+import { type TextKey, language, t } from "./i18n";
 import { type TerminalStatus, fitSafely, mountTerminal } from "./lead-terminal";
+import { keepLive } from "./stillness";
+
+// USAGE_EVERY is how often the open panel reads the sign-ins' usage again: Djinn's probe reads each every 5 minutes,
+// and a worker at each of its turns.
+const USAGE_EVERY = 60_000;
 
 // needsSetup tells an agent that cannot run as it is: not installed, or not signed in. One whose sign-in is unknown
 // may well be ready: it is not held back.
@@ -48,6 +59,8 @@ export interface Agents {
   // setPaused shows a pause Djinn kept, without checking the agents again: of the account called account, or with ""
   // of the agent's own sign-in.
   setPaused: (agentId: string, account: string, paused: boolean) => void;
+  // The usage of each sign-in Djinn read or tried to (LeadService.Accounts); undefined until it answers.
+  usage?: readonly AccountUsage[];
 }
 
 // withPaused is env with the pause of a sign-in changed: the account called account of the agent agentId, or with ""
@@ -78,13 +91,24 @@ export function withPaused(
 }
 
 // useAgents checks the agents once mounted, and again on check. A check runs each agent's status command: it takes
-// up to a few seconds.
+// up to a few seconds. The sign-ins' usage is read with each check, after each pause, and every USAGE_EVERY while
+// mounted: a read of what Djinn keeps, which costs no model turn.
 export function useAgents(): Agents {
   const clients = useDjinn()?.clients;
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
+  const [usage, setUsage] = useState<readonly AccountUsage[]>();
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
   const asked = useRef(0);
+  const read = useRef(0);
+  const readUsage = useCallback(() => {
+    if (!clients) return;
+    const n = ++read.current;
+    clients.lead
+      .accounts({})
+      .then((res) => n === read.current && setUsage(res.usage))
+      .catch(() => undefined); // The gauges keep the last reading; the next one comes within USAGE_EVERY.
+  }, [clients]);
   const check = useCallback(() => {
     if (!clients) return;
     const n = ++asked.current;
@@ -95,21 +119,41 @@ export function useAgents(): Agents {
       .then((res) => n === asked.current && setEnv(res))
       .catch((err) => n === asked.current && setError(message(err)))
       .finally(() => n === asked.current && setChecking(false));
-  }, [clients]);
+    readUsage();
+  }, [clients, readUsage]);
   const cancelPending = useCallback(() => {
     asked.current++; // Unmounted: what comes back is dropped.
+    read.current++;
   }, []);
   useEffect(() => {
     check();
     return cancelPending;
   }, [cancelPending, check]);
+  useEffect(() => keepLive(readUsage, USAGE_EVERY), [readUsage]);
   const setPaused = useCallback(
-    (agentId: string, account: string, paused: boolean) =>
-      setEnv((env) => env && withPaused(env, agentId, account, paused)),
-    [],
+    (agentId: string, account: string, paused: boolean) => {
+      setEnv((env) => env && withPaused(env, agentId, account, paused));
+      readUsage(); // The next task's sign-in may change.
+    },
+    [readUsage],
   );
-  return { env, checking, error, check, setPaused };
+  return { env, checking, error, check, setPaused, usage };
 }
+
+// usageOf is what Djinn last read of a sign-in's usage: the account called account of the agent agentId, or with ""
+// the agent's own; undefined when it read nothing there.
+export function usageOf(
+  usage: readonly AccountUsage[] | undefined,
+  agentId: string,
+  account: string,
+): AccountUsage | undefined {
+  const provider = agentProviders[agentId];
+  return usage?.find((u) => u.provider === provider && u.account === account);
+}
+
+// quotaTold names the agents whose quota Djinn reads: Claude Code's probe (get_usage) and its workers' streams. The
+// others' sign-ins show their state alone.
+const quotaTold = new Set(["claude"]);
 
 // agentProviders are the providers of the agents, by their identifier.
 const agentProviders: Record<string, Provider> = {
@@ -169,7 +213,7 @@ function nextStep(
 
 // AgentSetupPanel lists the agents, one line each with its next step; that step runs below its line.
 export function AgentSetupPanel({ agents }: { agents: Agents }) {
-  const { env, checking, error, check, setPaused } = agents;
+  const { env, checking, error, check, setPaused, usage } = agents;
   const [step, setStep] = useState<Step>();
   const [running, setRunning] = useState(false);
   const run = (agentId: string, kind: Step["kind"], line: string) => {
@@ -207,6 +251,7 @@ export function AgentSetupPanel({ agents }: { agents: Agents }) {
             onEnded={ended}
             onChanged={check}
             onPaused={setPaused}
+            usage={usage}
           />
         ))}
         {env && <AddAccount onAdded={check} />}
@@ -234,6 +279,7 @@ function AgentRow({
   onEnded,
   onChanged,
   onPaused,
+  usage,
 }: {
   agent: AgentEnvironment;
   checking: boolean;
@@ -243,6 +289,7 @@ function AgentRow({
   onEnded: () => void;
   onChanged: () => void;
   onPaused: Agents["setPaused"];
+  usage: Agents["usage"];
 }) {
   const [error, setError] = useState("");
   const state = agentStates[agent.state] ?? agentStates[ProviderState.UNKNOWN];
@@ -261,7 +308,6 @@ function AgentRow({
           <h3>{agent.name}</h3>
           {agent.version && <span className="muted-text">{agent.version}</span>}
         </div>
-        {agent.paused && <PausedText />}
         <span className="status-text">
           <span className={`status-dot ${state.dot}`} />
           {t(state.label)}
@@ -292,6 +338,16 @@ function AgentRow({
           />
         )}
       </div>
+      {(agent.available || agent.paused) && (
+        <SignInUsage
+          id={agent.id}
+          paused={agent.paused}
+          signedIn={agent.state === ProviderState.READY}
+          withAccounts={agent.accounts.length > 0}
+          reads={quotaTold.has(agent.id)}
+          usage={usageOf(usage, agent.id, "")}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
       {step?.agentId === agent.id && (
         <StepTerminal key={step.name} step={step} onEnded={onEnded} />
@@ -307,6 +363,7 @@ function AgentRow({
           onEnded={onEnded}
           onChanged={onChanged}
           onPaused={onPaused}
+          usage={usageOf(usage, agent.id, setup.account?.name ?? "")}
         />
       ))}
     </>
@@ -314,7 +371,7 @@ function AgentRow({
 }
 
 // AccountRow is an account of an agent: its label and folder, where it stands, its sign-in in its own folder, its
-// pause, and a button that forgets it, its folder left as it is.
+// pause, a button that forgets it, its folder left as it is, and below its usage.
 function AccountRow({
   agent,
   setup,
@@ -324,6 +381,7 @@ function AccountRow({
   onEnded,
   onChanged,
   onPaused,
+  usage,
 }: {
   agent: AgentEnvironment;
   setup: AccountSetup;
@@ -333,6 +391,7 @@ function AccountRow({
   onEnded: () => void;
   onChanged: () => void;
   onPaused: Agents["setPaused"];
+  usage?: AccountUsage;
 }) {
   const clients = useDjinn()?.clients;
   const [error, setError] = useState("");
@@ -363,7 +422,6 @@ function AccountRow({
           <h3>{account.label || account.name}</h3>
           <code>{account.configDirectory}</code>
         </div>
-        {account.paused && <PausedText />}
         <span className="status-text">
           <span className={`status-dot ${state.dot}`} />
           {t(state.label)}
@@ -398,6 +456,14 @@ function AccountRow({
           <X size={13} />
         </button>
       </div>
+      <SignInUsage
+        id={id}
+        paused={account.paused}
+        signedIn={setup.state === ProviderState.READY}
+        withAccounts
+        reads={quotaTold.has(agent.id)}
+        usage={usage}
+      />
       {error && <p role="alert">{error}</p>}
       {step?.agentId === id && (
         <StepTerminal key={step.name} step={step} onEnded={onEnded} />
@@ -406,14 +472,145 @@ function AccountRow({
   );
 }
 
-// PausedText says a sign-in is paused, beside where it stands.
-function PausedText() {
+// SignInUsage is the line under a sign-in's: its state, and what Djinn last read of its quota. The state is paused
+// (no worker starts there), limited until a reset (a worker hit the limit of the whole account), or active (signed in,
+// workers may start there). Then the week's gauge, how much of it is used and when it ends, the 5 hours used, and
+// whether the next task of the agent starts there; hovered, when and where Djinn read them. Shown for a sign-in paused
+// or with a reading, and for every sign-in of an agent with accounts, where the choice between them shows. reads
+// tells an agent whose quota Djinn reads: only its sign-ins say their quota is not read yet.
+function SignInUsage({
+  id,
+  paused,
+  signedIn,
+  withAccounts,
+  reads,
+  usage,
+}: {
+  id: string;
+  paused: boolean;
+  signedIn: boolean;
+  withAccounts: boolean;
+  reads: boolean;
+  usage?: AccountUsage;
+}) {
+  if (!paused && !usage && !withAccounts) return null;
+  const limited = usage?.limitedUntil && timestampDate(usage.limitedUntil);
+  const state = paused
+    ? { dot: "neutral", label: t("agents.paused"), state: "paused" }
+    : limited
+      ? {
+          dot: "blocked",
+          label: t("agents.state_limited", { time: when(limited) }),
+          state: "limited",
+        }
+      : signedIn
+        ? { dot: "green", label: t("agents.state_active"), state: "active" }
+        : undefined;
+  const week = usage?.sevenDay;
+  const fiveHour = usage?.fiveHour;
+  const read = usage?.readTime && timestampDate(usage.readTime);
   return (
-    <span className="status-text">
-      <span className="status-dot neutral" />
-      {t("agents.paused")}
+    <div
+      className="sign-in-usage"
+      data-usage={id}
+      data-state={state?.state}
+      title={
+        read
+          ? t(
+              usage?.source === UsageSource.PROBE
+                ? "agents.usage_read_probe"
+                : "agents.usage_read_worker",
+              { time: clockOf(read) },
+            )
+          : undefined
+      }
+    >
+      {state && (
+        <span className="status-text">
+          <span className={`status-dot ${state.dot}`} />
+          {state.label}
+        </span>
+      )}
+      {week && <WeekGauge week={week} />}
+      {fiveHour && (
+        <span className="muted-text">
+          {t("agents.five_hour", { percent: percent(fiveHour) })}
+        </span>
+      )}
+      {!week && !fiveHour && (reads || usage) && (
+        <span className="muted-text" title={usage?.probeError || undefined}>
+          {usage?.probeError
+            ? t("agents.usage_failed")
+            : t("agents.usage_unread")}
+        </span>
+      )}
+      {usage?.next && (
+        <span
+          className="badge sign-in-next"
+          title={t("agents.usage_next_detail")}
+        >
+          {t("agents.usage_next")}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// WeekGauge is a sign-in's week: a gauge of the share used, the share in words, and when the week ends. Full past
+// 95 %, where Djinn starts no new task there.
+function WeekGauge({ week }: { week: UsageWindow }) {
+  const used = percent(week);
+  const ends = week.resetsTime && timestampDate(week.resetsTime);
+  return (
+    <span className="usage-week">
+      <span className="muted-text">{t("agents.week")}</span>
+      <span
+        className={`usage-gauge${week.usedPercent >= 95 ? " full" : ""}`}
+        role="meter"
+        aria-label={t("agents.week_used")}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={used}
+      >
+        <span style={{ width: `${Math.min(100, Math.max(0, used))}%` }} />
+      </span>
+      <span className="usage-percent">{used} %</span>
+      {ends && (
+        <span className="muted-text">
+          {t("agents.week_ends", { time: when(ends) })}
+        </span>
+      )}
     </span>
   );
+}
+
+// percent is a window's share used, in whole percent.
+function percent(window: UsageWindow): number {
+  return Math.round(window.usedPercent);
+}
+
+// timestampDate is a proto timestamp as a date.
+function timestampDate(ts: { seconds: bigint; nanos: number }): Date {
+  return new Date(Number(ts.seconds) * 1000 + Math.floor(ts.nanos / 1e6));
+}
+
+// when is a date within the week to come, in the window's language: its day, its date and its time.
+function when(date: Date): string {
+  return date.toLocaleString(language, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// clockOf is a date's hour and minute, in the window's language.
+function clockOf(date: Date): string {
+  return date.toLocaleTimeString(language, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 // PauseButton pauses or resumes a sign-in of the agent agentId: the account called account, or with "" the agent's

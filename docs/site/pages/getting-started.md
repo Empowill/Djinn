@@ -26,7 +26,9 @@ version, and whether it is signed in. Where one is missing or signed out, a butt
 the agent's own command in a terminal of the panel, where you answer if it asks, and Djinn checks again once it ends.
 The panel opens by itself when the window starts with no agent ready.
 
-One agent is enough to begin.
+One agent is enough to begin. With two subscriptions of the same agent, add the second as an account on the panel's
+last line: Djinn then spreads the workers between them by their weekly quota, and each line shows its gauge (see
+[the Djinn](#the-djinn)).
 
 ## 3. Add your first project
 
