@@ -2347,8 +2347,10 @@ func (h *Harness) computedMovesPass(ctx context.Context) {
 
 // targetBranch determines the branch to merge the batch into:
 // When the push strategy is azima, each azima gets its own integration branch (djinn/<azima code>-<slug of title>),
-// cut from main if it does not exist yet (azimaBranch). Work of no azima is made part of an azima made for it first
-// (adoptOrphan): only a correction or a review of no azima goes to the wish's own integration branch. In per-wish mode,
+// cut from main if it does not exist yet (azimaBranch). Work of no azima, or of the azima made for it, whose branch
+// started from another azima's branch is made part of that azima first (joinStart); other work of no azima is made
+// part of an azima made for it (adoptOrphan): only a correction or a review of no azima goes to the wish's own
+// integration branch. In per-wish mode,
 // it returns the wish's integration branch as today. Work held out of its azima's branch, the azima done or its branch
 // deleted, gets that branch and why it waits (azimaBranchFor).
 func (h *Harness) targetBranch(
@@ -2362,6 +2364,11 @@ func (h *Harness) targetBranch(
 	azima, err := h.taskAzima(ctx, batch[0])
 	if err != nil {
 		return "", "find azima: " + err.Error(), false
+	}
+	if started, err := h.joinStart(ctx, wish, project, settings, batch[0], azima); err != nil {
+		return "", "join the azima its branch started from: " + err.Error(), false
+	} else if started != nil {
+		azima = started
 	}
 	if azima == nil {
 		if azima, err = h.adoptOrphan(ctx, wish, project, batch[0]); err != nil {

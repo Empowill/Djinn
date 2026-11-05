@@ -470,6 +470,11 @@ which works like a wish's integration branch:
   Djinn merges it. A watcher, an investigation or a mockup merges nothing and stays of no azima; a correction or a
   review merges where the work it corrects or reviews does. Work of no azima that waits for work of an azima, or that
   such work waits for (`--after`, `--blocks`), is refused: spawn it `--part-of` that azima.
+- **Work that started from an azima's branch joins that azima.** When Djinn merges work of no azima, or of the azima
+  made for it, whose branch holds commits of an azima's branch, local or the remote's (the head of its pull request),
+  that main lacks, the task becomes part of that azima (`part_of`) and its work merges into that azima's branch; of
+  several such azimas, the one whose branch holds most of those commits. The azima made for it, left with no other
+  part, is closed. Never main, nor a branch cut from main that would carry another azima's request.
 - **It keeps up with main** by the same `merge_main` rules ([keeping up with main](#keeping-up-with-main)), where it
   stands recorded on the azima (`azima.main`).
 - **It lands in main.** Once its parts are committed and its branch pushed, Djinn proposes its pull request to main;
