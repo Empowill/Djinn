@@ -47,6 +47,9 @@ type Spec struct {
 	// Fork starts a new session from a copy of Resume instead of continuing it: a task spawned with --fork or
 	// --from-lead. Claude names the new session after the task; Codex forks the thread; Antigravity refuses.
 	Fork bool
+	// MemoryDir, when set, is the auto memory folder of the agent's own sign-in that a worker on an account keeps,
+	// rather than its account's empty one: Claude's autoMemoryDirectory. Other agents ignore it.
+	MemoryDir string
 	// Env holds variables added to the environment Djinn passes on to the worker. Djinn never reads the
 	// environment it passes, nor records it.
 	Env []string

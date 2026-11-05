@@ -6,6 +6,7 @@ package harness
 // resumes; one resumed maxResumes times on usage limits without finishing fails, saying so.
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -38,6 +39,8 @@ const (
 	limitLine     = "Your provider's usage limit stopped you; it has reset. Your worktree is as you left it. Continue your task."
 	envReplayLine = "Djinn replays this task after an environment failure. Continue your task."
 	preemptLine   = "Djinn interrupted your worker to make room for an investigator; your worktree is as you left it. Continue your task."
+	accountLine   = "Djinn moved you to another account of your agent: the one you ran on hit its usage limit or was paused. " +
+		"Your worktree is as you left it. Continue your task."
 )
 
 // Why a task waits to be resumed, as its wait reason and its events say.
@@ -49,7 +52,11 @@ const (
 	byEnvReplay  = "replaying environment failure"
 	byPreempt    = "after making room"
 	byLost       = "after its process was lost" // a watcher's (restartLostWatcher)
+	byAccount    = "on another sign-in"         // its own hit its usage limit or was paused (account.go)
 )
+
+// whyAccountMoved begins what a task waits for that moves to another sign-in, the one it ran on held by a limit.
+const whyAccountMoved = "resumes on "
 
 // whyLost is why a task waits whose process was lost: the Lamplighter found it running without a run.
 const whyLost = "lost process"
@@ -176,8 +183,10 @@ func exhausted(last string) string {
 }
 
 // limited turns the failure of a worker its provider's usage limit stopped into a wait: the task resumes once the
-// limit resets, when its message says when, else after a backoff. A task resumed maxResumes times stays failed,
-// saying so. Another failure is left as it is. The caller is end, which owns the run's task.
+// limit resets, when its message says when, else after a backoff. The limit holds the sign-in the worker ran on
+// (account.go): when another sign-in of its agent is free, the task resumes there at once instead, spending no
+// resume. A task resumed maxResumes times stays failed, saying so. Another failure is left as it is. The caller is
+// end, which owns the run's task.
 func (h *Harness) limited(r *run, t *planv1.Task) {
 	now := h.now()
 	l, ok := limitIn(t.GetError(), now)
@@ -187,6 +196,7 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 		if r.limit.Model != "" {
 			l.Model = r.limit.Model
 		}
+		l.Family = cmp.Or(r.limit.Family, l.Family)
 		switch {
 		case !r.limit.Until.IsZero():
 			l.Until = r.limit.Until
@@ -208,6 +218,19 @@ func (h *Harness) limited(r *run, t *planv1.Task) {
 		return
 	}
 	h.clearRateHits(t.GetId())
+	if withAccounts(t.GetProvider()) && accountWide(l) {
+		until := l.Until
+		if !until.After(now) {
+			until = now.Add(limitBackoff(t.GetResumes()))
+		}
+		h.holdAccount(t.GetProvider(), t.GetAccount(), until, l.What)
+		if to, moves := h.accountMoves(t); moves {
+			t.Status, t.Error, t.ResumeAfter, t.Hold = planv1.TaskStatus_TASK_STATUS_RESUMING, "", nil, 0
+			t.WaitReason = fmt.Sprintf("%s hit %s: %s%s", accountText(t.GetAccount()), l.What, whyAccountMoved, accountText(to))
+			logx.L().Info("task moves to another sign-in", "task", t.GetCode(), "why", t.WaitReason)
+			return
+		}
+	}
 	if t.GetResumes() >= maxResumes {
 		t.Error = exhausted(t.GetError())
 		return
@@ -289,6 +312,9 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 	case strings.HasPrefix(t.GetWaitReason(), whyNetworkDown):
 		by = byNetwork
 	}
+	if _, moves := h.accountMoves(t); moves && (by == byLimit || by == byRestart) {
+		by = byAccount // Its sign-in limited or paused: another takes it, before its own limit resets.
+	}
 	// Running from now on, as its worker starts: never waiting again without a reason.
 	t.Status, t.WaitReason, t.MachineWait, t.RoomWait, t.Hold, t.ResumeAfter = planv1.TaskStatus_TASK_STATUS_RUNNING, "", false, false, 0, nil
 	switch by {
@@ -302,7 +328,7 @@ func (h *Harness) relaunch(ctx context.Context, t *planv1.Task, preemptedCode ..
 		if end := t.GetEndTime(); end == nil || !h.netCut(end.AsTime()) {
 			t.Resumes++ // No outage confirmed when it was cut: a resume spent, as for a limit; an outage costs none.
 		}
-	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byLost:
+	case byWish, byAnswer, byEnvReplay, byRestart, byPreempt, byLost, byAccount:
 		// No resume spent.
 	}
 	t.EndTime = nil
@@ -493,6 +519,8 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		line = preemptLine
 	case byNetwork:
 		line = networkLine
+	case byAccount:
+		line = accountLine
 	}
 	model := t.GetModel()
 	if foreignModel(t.GetProvider(), model) && !r.watcher {
@@ -533,6 +561,12 @@ func (h *Harness) resumeWorker(r *run, provider Provider, project *planv1.Projec
 		spec.Resume, spec.Prompt, how = "", briefed(r, prompt, readOnly)+"\n\n"+line, ", from its first prompt"
 		if by == byAnswer {
 			spec.Prompt = line // It holds the first prompt already.
+		}
+	}
+	if spec.Resume != "" && by != byAnswer {
+		// Should its session not follow it to another sign-in (start), it starts again on its first prompt.
+		if first, err := firstPrompt(h.store, t.GetId()); err == nil {
+			r.fresh = briefed(r, first, readOnly)
 		}
 	}
 	// What was sent to its last worker and never read: told with its prompt, received once it says something.

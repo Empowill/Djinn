@@ -57,6 +57,11 @@ func (c Claude) args(spec Spec) []string {
 		args = append(args, "--restricted", "--tools", claudeReadTools, "--permission-mode", "plan", "--strict-mcp-config")
 	} else {
 		settings := map[string]any{"pluginConfigs": claudeAgentsMd}
+		if spec.MemoryDir != "" {
+			// A session on an account keeps the memory of the agent's own folder (code.claude.com/docs/en/memory:
+			// autoMemoryDirectory, read from --settings too).
+			settings["autoMemoryDirectory"] = spec.MemoryDir
+		}
 		if p := spec.Permissions; p != nil {
 			perms := claudePermissions(p)
 			if len(spec.WriteDirs) > 0 {
@@ -437,7 +442,7 @@ func readClaude(raw string) ([]Event, *turnEnd, string) {
 		ev := add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
 		if info.Status == "rejected" {
 			// The account's limit is reached: the turn fails next, and the task waits for the reset.
-			ev.Limit = &Limit{What: limitWhat(info.RateLimitType)}
+			ev.Limit = &Limit{What: limitWhat(info.RateLimitType), Family: limitFamily(info.RateLimitType)}
 			if info.ResetsAt > 0 {
 				ev.Limit.Until = time.Unix(info.ResetsAt, 0)
 			}

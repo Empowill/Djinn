@@ -428,7 +428,9 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 		_, err := git(ctx, dir, "merge-base", "--is-ancestor", a, b)
 		return err == nil
 	}
-	sit := dispatch.New(tasks, wishes, projectGit, m).At(h.now()).WithNetwork(h.netView())
+	now := h.now()
+	h.seedAccountLimits(tasks, now)
+	sit := dispatch.New(tasks, wishes, projectGit, m).At(now).WithNetwork(h.netView()).WithAccounts(h.accountWaits(now))
 	sit.WithAncestry(branchHead, isAncestor)
 	sit.WithQuestions(func(id string) string {
 		q, err := store.Get[*planv1.Question](ctx, h.store, id)

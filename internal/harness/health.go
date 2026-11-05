@@ -60,8 +60,9 @@ const accountEvery = time.Minute
 const methodHealth = "harness/health"
 
 // AccountFunc tells which account provider's agent is signed in with on this machine, as a fingerprint that never
-// holds the account's name; empty when it cannot tell. djinn up gives ui.Account.
-type AccountFunc func(ctx context.Context, provider planv1.Provider) string
+// holds the account's name; empty when it cannot tell. env is what a sign-in adds to the agent's environment
+// (plan.AccountEnv): nil for its own folder. djinn up gives ui.Account.
+type AccountFunc func(ctx context.Context, provider planv1.Provider, env []string) string
 
 // WithAccount lets the scheduler see an agent's account change while a task waits for that agent's usage limit: the
 // limit no longer holds, and the task resumes at once.
@@ -73,22 +74,32 @@ type accountSeen struct {
 	at          time.Time
 }
 
-// account is the fingerprint of provider's account, read again when the last reading is older than accountEvery or
-// than since. Empty without an AccountFunc, or when the agent tells none. The caller holds h.sched.
-func (h *Harness) account(ctx context.Context, provider planv1.Provider, since, now time.Time) string {
+// account is the fingerprint of the account t's agent is signed in with on t's sign-in (Task.account), read again
+// when the last reading is older than accountEvery or than since. Empty without an AccountFunc, or when the agent
+// tells none. The caller holds h.sched.
+func (h *Harness) account(ctx context.Context, t *planv1.Task, since, now time.Time) string {
 	if h.accountOf == nil {
 		return ""
 	}
-	if seen, ok := h.accounts[provider]; ok && now.Sub(seen.at) < accountEvery && !seen.at.Before(since) {
+	key := accountKey{agentOf(t), t.GetAccount()}
+	if seen, ok := h.accounts[key]; ok && now.Sub(seen.at) < accountEvery && !seen.at.Before(since) {
 		return seen.fingerprint
+	}
+	var env []string
+	if key.name != "" {
+		a := plan.FindAccount(plan.ReadAccounts(h.home), key.name)
+		if a == nil {
+			return "" // Forgotten since: its folder is no longer Djinn's to read.
+		}
+		env = plan.AccountEnv(a)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	fingerprint := h.accountOf(ctx, provider)
+	fingerprint := h.accountOf(ctx, key.provider, env)
 	if h.accounts == nil {
-		h.accounts = map[planv1.Provider]accountSeen{}
+		h.accounts = map[accountKey]accountSeen{}
 	}
-	h.accounts[provider] = accountSeen{fingerprint: fingerprint, at: now}
+	h.accounts[key] = accountSeen{fingerprint: fingerprint, at: now}
 	return fingerprint
 }
 
@@ -184,9 +195,10 @@ func (h *Harness) limitHealth(ctx context.Context, t *planv1.Task, now, reset ti
 	}
 	was := t.GetHealth()
 	stopped := endOf(t, now)
-	account := h.account(ctx, t.GetProvider(), stopped, now)
+	account := h.account(ctx, t, stopped, now)
 	if was.GetState() == planv1.HealthState_HEALTH_STATE_LIMITED && was.GetAccount() != "" {
 		if account != "" && account != was.GetAccount() {
+			h.liftAccount(t.GetProvider(), t.GetAccount())
 			return &planv1.TaskHealth{State: planv1.HealthState_HEALTH_STATE_LIMIT_LIFTED, Reason: "its account changed"}, true
 		}
 		account = was.GetAccount()

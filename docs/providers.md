@@ -1039,6 +1039,33 @@ runs on it). The window's agents setup shows each account under its agent, where
 terminal of the panel. Djinn passes the folder's variable to the sessions it starts on the account and to the status
 check; it never reads nor stores a token.
 
+**The workers' accounts (T33).** Every worker of an agent runs on one of its *sign-ins*: its own (the default folder),
+then its accounts in the order they were added (`plan.SignIns`). One function picks it at each start of a worker,
+launch or resume (`harness.AccountPolicy`, `FirstFree` by default; a policy on each account's quota, Q258 B, takes its
+place): the sign-in the task ran on while it is free, else the first free one, free meaning neither paused nor held by
+a limit. The account goes in the worker's environment (`plan.AccountEnv`, `harness.go` `start`) and on its task
+(`Task.account`, each `TaskRun.account`); a Claude session on an account gets `autoMemoryDirectory` in its
+`--settings`, the own folder's `projects/<repository>/memory`, so that every account shares one memory.
+
+- **Pause.** `djinn lead pause-account work`, or `djinn lead pause-account --provider antigravity` for an agent's own
+  sign-in (`Account.paused`, `Settings.paused_sign_ins`), keeps new workers off it; `djinn lead resume-account` brings
+  it back. A running worker finishes its turn. While every sign-in of an agent is paused, its tasks wait (hold
+  `LIMIT`, "waits for a claude sign-in: its own is paused; work is paused"). The lead's seat never moves (Q31).
+- **A limit is held per sign-in.** A limit of the whole account (not per-minute, naming no model nor family such as
+  Claude's `seven_day_opus`) holds the sign-in a worker hit it on until its reset (or the backoff). When another
+  sign-in is free, the task resumes there at once, spending no resume, its wait reason "the account work hit the
+  account's session limit: resumes on the account perso"; the start event says "moved from the account work to the
+  account perso". A task waiting for its own account's reset moves as soon as another sign-in frees. A limit alone
+  never holds a task back (W409): with every sign-in not paused limited, a new task starts on the first and waits for
+  its own reset if the limit stops it too.
+- **The session follows.** On a move, Djinn copies the session's transcript (`projects/<folder>/<session>.jsonl`) from
+  the folder it ran in to the new one, so that `--resume` finds it; without it (Codex, or no transcript), the worker
+  starts a new session on its first prompt and the line that says why. **Not verified with two real accounts**: that
+  Claude Code resumes a copied transcript on another login, and that the prompt cache is lost (assumed).
+- **Held in memory.** The limits held are read again at each pass from the tasks that wait for one: after a restart, a
+  limit no task waits for any more is forgotten, and the first worker to hit it again moves. The account fingerprint
+  (`TaskHealth.account`) is read in the task's own account folder.
+
 | Agent       | Variable            | What it moves, by its documentation (read 17/10/2026)                                                                                                                                                                                                                                     | Sign in, status                                                       |
 | ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | Claude Code | `CLAUDE_CONFIG_DIR` | "Each directory has its own settings, session history, and claude.ai login or API key" (`code.claude.com/docs/en/authentication`, Log in with multiple accounts); on Linux its `.credentials.json`, on macOS a Keychain entry keyed to the folder                                          | `claude auth login`; `claude auth status` exits 0 signed in, 1 not    |
