@@ -2,8 +2,9 @@ package harness
 
 // The usage probe of Claude Code (quota.go): claude -p in stream-json answers a get_usage control request with the
 // sign-in's usage limits, without a model turn and at no cost. Undocumented: tried on claude 2.1.316 (W374, W380),
-// as T3 Code does (apps/server/src/provider/claudeUsageLimits.ts). Djinn reads the 5-hour and the weekly windows
-// only; the rest of the answer (extra usage, behaviours, an email) is never kept nor logged.
+// as T3 Code does (apps/server/src/provider/claudeUsageLimits.ts). Djinn reads the 5-hour and the weekly windows, and
+// whether the sign-in may spend extra credits past them; the rest of the answer (the credits spent and their limit,
+// behaviours, an email) is never kept nor logged.
 
 import (
 	"bufio"
@@ -101,6 +102,8 @@ func parseClaudeUsage(line []byte) (Quota, error) {
 				RateLimits          *struct {
 					FiveHour *claudeUsageWindow `json:"five_hour"`
 					SevenDay *claudeUsageWindow `json:"seven_day"`
+					// ExtraUsage tells whether the sign-in may spend extra credits past its windows.
+					ExtraUsage *claudeExtraUsage `json:"extra_usage"`
 				} `json:"rate_limits"`
 			} `json:"response"`
 		} `json:"response"`
@@ -129,7 +132,35 @@ func parseClaudeUsage(line []byte) (Quota, error) {
 	if five == nil && week == nil {
 		return Quota{}, errNoUsage
 	}
-	return Quota{FiveHour: five, SevenDay: week, Source: planv1.UsageSource_USAGE_SOURCE_PROBE}, nil
+	return Quota{FiveHour: five, SevenDay: week, Source: planv1.UsageSource_USAGE_SOURCE_PROBE,
+		Extra: r.Response.RateLimits.ExtraUsage.usable()}, nil
+}
+
+// claudeExtraUsage is get_usage's extra_usage: whether the sign-in may spend extra credits past its limits.
+type claudeExtraUsage struct {
+	IsEnabled         bool    `json:"is_enabled"`
+	UserDisabled      bool    `json:"user_disabled"`
+	SpendLimitReached bool    `json:"spend_limit_reached"`
+	DisabledReason    *string `json:"disabled_reason"`
+}
+
+// usable tells whether e lets the sign-in spend extra credits now; nil when not told.
+func (e *claudeExtraUsage) usable() *bool {
+	if e == nil {
+		return nil
+	}
+	yes := e.IsEnabled && !e.UserDisabled && !e.SpendLimitReached && (e.DisabledReason == nil || *e.DisabledReason == "")
+	return &yes
+}
+
+// overageUsable tells whether a rate_limit_event's overageStatus lets the sign-in spend extra credits: allowed, or
+// allowed with a warning; nil when not told.
+func overageUsable(status string) *bool {
+	if status == "" {
+		return nil
+	}
+	yes := strings.HasPrefix(status, "allowed")
+	return &yes
 }
 
 // window is w as Djinn keeps it; nil when not told.

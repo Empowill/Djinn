@@ -1,11 +1,13 @@
 package harness
 
 // The accounts the workers run on (T33). Every worker of an agent runs on one of its sign-ins (plan.SignIns): its own,
-// the agent's default folder, then its accounts in the order the developer added them, each a folder of the agent's
-// own signed in once (djinn lead add-account). An AccountPolicy picks one at each start of a worker, among those
-// neither paused (djinn lead pause-account) nor limited: the one the task ran on before while it may, else for a new
-// task the one whose week resets first among those with quota left (EarliestWeek, quota.go), else the first.
-// The account goes in the worker's environment (plan.AccountEnv) and on its task (Task.account, TaskRun.account).
+// the agent's default folder, or one of its accounts, each a folder of the agent's own signed in once (djinn lead
+// add-account), in the developer's order of priority (plan.AccountOrder, decision Q295 B). An AccountPolicy picks one
+// at each start of a worker: the one the task ran on before while it may, else the first in the order neither paused
+// (djinn lead pause-account), limited, nor known out of quota (FirstInOrder, quota.go); with none such, the worker
+// starts past its limits, in overflow, on the first that may spend extra credits. The lead follows the same policy
+// before each batch unless it is pinned (L2, leaddriver.go). The account goes in the worker's environment
+// (plan.AccountEnv) and on its task (Task.account, TaskRun.account).
 //
 // A usage limit of the whole account is held per sign-in: the one a worker hit holds its sign-in until it resets, and
 // the task moves at once to another sign-in free (limited), its session copied into that account's folder when it can
@@ -51,7 +53,7 @@ func (o AccountOption) Free(now time.Time) bool { return !o.Paused && !o.Limited
 type AccountChoice struct {
 	// Provider is the worker's agent.
 	Provider planv1.Provider
-	// Options are its sign-ins in the developer's order: its own first, then its accounts as added.
+	// Options are its sign-ins in the developer's order of priority (plan.AccountOrder).
 	Options []AccountOption
 	// Current is the account the task ran on last, by name ("" for the agent's own sign-in); Ran tells it ran.
 	Current string
@@ -60,35 +62,20 @@ type AccountChoice struct {
 	Now time.Time
 }
 
-// AccountPolicy picks the sign-in a worker starts on, by its name ("" for the agent's own); ok is false when none may
-// take it. It is the one place that decides: EarliestWeek by default, which reads each sign-in's quota (quota.go).
-type AccountPolicy func(c AccountChoice) (name string, ok bool)
-
-// FirstFree is the simple overflow, EarliestWeek's without a quota known: the sign-in the task ran on, while it is free (its session and its prompt cache
-// stay there), else the first free one in the developer's order. With none free but some not paused, the same among
-// those: a limit learnt from a worker's message does not hold a task back alone (W409). None when each is paused.
-func FirstFree(c AccountChoice) (string, bool) {
-	for _, usable := range []func(AccountOption) bool{
-		func(o AccountOption) bool { return o.Free(c.Now) },
-		func(o AccountOption) bool { return !o.Paused },
-	} {
-		if c.Ran {
-			for _, o := range c.Options {
-				if o.Name == c.Current && usable(o) {
-					return o.Name, true
-				}
-			}
-		}
-		for _, o := range c.Options {
-			if usable(o) {
-				return o.Name, true
-			}
-		}
-	}
-	return "", false
+// AccountPick is the sign-in an AccountPolicy picks.
+type AccountPick struct {
+	// Name is its account's name; "" for the agent's own sign-in.
+	Name string
+	// Overflow: each sign-in of the agent is full, limited or paused; the session starts past its limits, where the
+	// account may spend extra credits, and waits for the reset if the agent refuses.
+	Overflow bool
 }
 
-// WithAccountPolicy sets how a worker's sign-in is picked; EarliestWeek by default.
+// AccountPolicy picks the sign-in a worker starts on; ok is false when none may take it. It is the one place that
+// decides: FirstInOrder by default, which reads each sign-in's quota (quota.go).
+type AccountPolicy func(c AccountChoice) (pick AccountPick, ok bool)
+
+// WithAccountPolicy sets how a worker's sign-in is picked; FirstInOrder by default.
 func WithAccountPolicy(p AccountPolicy) Option { return func(h *Harness) { h.accountPolicy = p } }
 
 // accountKey names a sign-in: its agent, and its account's name ("" for the agent's own).
@@ -179,32 +166,32 @@ func (h *Harness) accountOptions(provider planv1.Provider) []AccountOption {
 }
 
 // choose asks the policy for t's sign-in among options at now.
-func (h *Harness) choose(t *planv1.Task, options []AccountOption, now time.Time) (string, bool) {
+func (h *Harness) choose(t *planv1.Task, options []AccountOption, now time.Time) (AccountPick, bool) {
 	policy := h.accountPolicy
 	if policy == nil {
-		policy = EarliestWeek
+		policy = FirstInOrder
 	}
 	return policy(AccountChoice{Provider: agentOf(t), Options: options, Current: t.GetAccount(), Ran: len(t.GetRuns()) > 0, Now: now})
 }
 
-// accountFor is the sign-in t's next worker starts on, by its account's name ("" for the agent's own), and that
-// account (nil for the agent's own); an error says why none may take it.
-func (h *Harness) accountFor(t *planv1.Task) (string, *planv1.Account, error) {
+// accountFor is the sign-in t's next worker starts on, and its account (nil for the agent's own); an error says why
+// none may take it.
+func (h *Harness) accountFor(t *planv1.Task) (AccountPick, *planv1.Account, error) {
 	if !withAccounts(t.GetProvider()) {
-		return "", nil, nil
+		return AccountPick{}, nil, nil
 	}
 	now := h.now()
 	options := h.accountOptions(t.GetProvider())
-	name, ok := h.choose(t, options, now)
+	pick, ok := h.choose(t, options, now)
 	if !ok {
-		return "", nil, fmt.Errorf("%s: resume one (djinn lead resume-account) or wait", noSignInWhy(agentOf(t), options, now))
+		return pick, nil, fmt.Errorf("%s: resume one (djinn lead resume-account) or wait", noSignInWhy(agentOf(t), options, now))
 	}
 	for _, o := range options {
-		if o.Name == name {
-			return name, o.Account, nil
+		if o.Name == pick.Name {
+			return pick, o.Account, nil
 		}
 	}
-	return name, nil, nil
+	return pick, nil, nil
 }
 
 // accountMoves tells whether t's next worker moves to another sign-in than the one it ran on, and to which.
@@ -212,8 +199,24 @@ func (h *Harness) accountMoves(t *planv1.Task) (string, bool) {
 	if len(t.GetRuns()) == 0 {
 		return "", false
 	}
-	name, _, err := h.accountFor(t)
-	return name, err == nil && name != t.GetAccount()
+	pick, _, err := h.accountFor(t)
+	return pick.Name, err == nil && pick.Name != t.GetAccount()
+}
+
+// Overflowing tells whether the worker of the task taskID runs now past the limits of its sign-in
+// (AccountPick.Overflow), on extra credits if its account allows them: what the window shows beside its account.
+func (h *Harness) Overflowing(taskID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	r := h.runs[taskID]
+	return r != nil && r.worker != nil && r.overflow
+}
+
+// overflowText says in a worker's start event that it starts past its limits: "in overflow: every sign-in of claude
+// is full, limited or paused; it spends extra credits if the account allows them, else waits for the reset".
+func overflowText(provider planv1.Provider) string {
+	return fmt.Sprintf("in overflow: every sign-in of %s is full, limited or paused; it spends extra credits if the "+
+		"account allows them, else waits for the reset", short(provider))
 }
 
 // accountWaits is the scheduler's view of the sign-ins (dispatch.Situation.WithAccounts), for one pass: why no
@@ -231,11 +234,11 @@ func (h *Harness) accountWaits(now time.Time) func(t *planv1.Task) (string, bool
 			o = h.accountOptions(p)
 			options[p] = o
 		}
-		name, ok := h.choose(t, o, now)
+		pick, ok := h.choose(t, o, now)
 		if !ok {
 			return noSignInWhy(p, o, now), false
 		}
-		return "", len(t.GetRuns()) > 0 && name != t.GetAccount()
+		return "", len(t.GetRuns()) > 0 && pick.Name != t.GetAccount()
 	}
 }
 
@@ -383,4 +386,48 @@ func copySessionFolder(src, dst string) error {
 		}
 		return copySessionFile(path, filepath.Join(dst, rel))
 	})
+}
+
+// pickLead is the sign-in the next batch of a lead on provider's agent starts on, by the account policy as for a new
+// worker (L2): the pick, its account (nil for the agent's own sign-in), and whether a limit is known to hold it; why
+// none may take it when ok is false (each is paused).
+func (h *Harness) pickLead(provider planv1.Provider) (pick AccountPick, account *planv1.Account, held bool, why string, ok bool) {
+	provider = cmp.Or(provider, planv1.Provider_PROVIDER_CLAUDE)
+	now := h.now()
+	options := h.accountOptions(provider)
+	pick, ok = h.choose(&planv1.Task{Provider: provider}, options, now)
+	if !ok {
+		return pick, nil, false, noSignInWhy(provider, options, now), false
+	}
+	for _, o := range options {
+		if o.Name == pick.Name {
+			return pick, o.Account, o.LimitedUntil.After(now), "", true
+		}
+	}
+	return pick, nil, false, "", true
+}
+
+// holdLead holds the sign-in name of provider's agent that the lead hit l on, for every worker as for the lead, when l
+// holds the whole account: until it resets, else for plan.LimitWait.
+func (h *Harness) holdLead(provider planv1.Provider, name string, l Limit) {
+	if !accountWide(l) {
+		return
+	}
+	until := l.Until
+	if !until.After(h.now()) {
+		until = h.now().Add(plan.LimitWait)
+	}
+	h.holdAccount(provider, name, until, l.What)
+}
+
+// freesAt is when the first sign-in of provider's agent that a limit holds, not paused, frees; zero when none is held.
+func (h *Harness) freesAt(provider planv1.Provider) time.Time {
+	now := h.now()
+	var first time.Time
+	for _, o := range h.accountOptions(provider) {
+		if !o.Paused && o.LimitedUntil.After(now) && (first.IsZero() || o.LimitedUntil.Before(first)) {
+			first = o.LimitedUntil
+		}
+	}
+	return first
 }

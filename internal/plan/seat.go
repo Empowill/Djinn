@@ -421,6 +421,8 @@ func FindAccount(accounts []*planv1.Account, name string) *planv1.Account {
 // SignIn is a sign-in of an agent a worker may run on: the agent's own (its default folder, no account) or one of its
 // accounts.
 type SignIn struct {
+	// Provider is its agent.
+	Provider planv1.Provider
 	// Name is the account's name; "" for the agent's own sign-in.
 	Name string
 	// Account is the account; nil for the agent's own sign-in.
@@ -429,18 +431,21 @@ type SignIn struct {
 	Paused bool
 }
 
-// SignIns are the sign-ins of provider's agent a worker may run on, in the order Djinn tries them: its own, then its
-// accounts in the order they were added, each with its pause; from settings.json in home.
+// SignIns are the sign-ins of provider's agent a worker may run on, in the order Djinn tries them: the developer's
+// (AccountOrder), by default its own then its accounts in the order they were added, each with its pause; from
+// settings.json in home.
 func SignIns(home string, provider planv1.Provider) []SignIn {
 	if provider == planv1.Provider_PROVIDER_UNSPECIFIED {
 		provider = planv1.Provider_PROVIDER_CLAUDE
 	}
-	settings := readSettings(home)
-	out := []SignIn{{Paused: slices.Contains(settings.GetPausedSignIns(), provider)}}
-	for _, a := range settings.GetAccounts() {
-		if a.GetProvider() == provider {
-			out = append(out, SignIn{Name: a.GetName(), Account: a, Paused: a.GetPaused()})
+	var out []SignIn
+	for _, s := range AccountOrder(home) {
+		if s.Provider == provider {
+			out = append(out, s)
 		}
+	}
+	if len(out) == 0 {
+		out = []SignIn{{Provider: provider}} // An agent without a sign-in of its own: the fake one, a watcher.
 	}
 	return out
 }
@@ -882,7 +887,8 @@ func (d *LeadDrive) SetLimit(l *planv1.LeadLimit, why string) {
 }
 
 // Move implements LeadService.Move: the seat is written to settings.json, the command to the journal. The waiting
-// events, if a batch failed or hit a limit, go to the new seat at once.
+// events, if a batch failed or hit a limit, go to the new seat at once. A move to an account pins the lead there, as
+// the developer chose it; a move without one lets each batch follow the order of the sign-ins of its agent (L2).
 func (s *LeadService) Move(
 	ctx context.Context, req *connect.Request[planv1.LeadServiceMoveRequest],
 ) (*connect.Response[planv1.LeadServiceMoveResponse], error) {
@@ -911,6 +917,8 @@ func (s *LeadService) Move(
 	err := write(ctx, s.Wishes.Store, req.Spec(), m, func(*store.Tx) error {
 		return changeSettings(home, func(settings *uiv1.Settings) error {
 			settings.Lead = seat
+			pinned := seat.GetAccount() != ""
+			settings.LeadPinned = &pinned
 			if len(settings.Circle) > 0 {
 				settings.Circle = setCircleRowSlice(settings.Circle, &planv1.WorkerSeat{
 					Kind:     planv1.WorkerKind_WORKER_KIND_LEAD,
@@ -924,16 +932,19 @@ func (s *LeadService) Move(
 	if err != nil {
 		return nil, err
 	}
-	note := "The next batch of the lead runs on " + SeatText(seat, accounts) + ", with the lead's journal; the lead " +
-		"stays there until you move it."
+	stays := "the lead stays there until you move it."
+	if seat.GetAccount() == "" {
+		stays = "each batch starts on the first free sign-in of " + agentNames[seat.GetProvider()] +
+			" in the order of the accounts."
+	}
+	note := "The next batch of the lead runs on " + SeatText(seat, accounts) + ", with the lead's journal; " + stays
 	if d := s.Wishes.drive(); d == nil {
 		note = "Djinn does not drive the lead on this machine (settings.json, lead_driven): the lead runs on " +
 			SeatText(seat, accounts) + " once it does."
 	} else if d.Failure() != "" || d.LeadLimit() != nil {
 		d.SetLimit(nil, "")
 		d.askRetry()
-		note = "The events that wait go to " + SeatText(seat, accounts) + " now, with the lead's journal; the lead " +
-			"stays there until you move it."
+		note = "The events that wait go to " + SeatText(seat, accounts) + " now, with the lead's journal; " + stays
 	}
 	s.Wishes.ChangeLead()
 	return connect.NewResponse(&planv1.LeadServiceMoveResponse{Seat: seat, Note: note}), nil
@@ -1086,7 +1097,12 @@ func (s *LeadService) Accounts(
 	home := s.Wishes.home()
 	accounts, seat := ReadAccounts(home), ReadLeadSeat(home)
 	var b strings.Builder
-	fmt.Fprintf(&b, "The lead runs on %s.\n\n", SeatText(seat, accounts))
+	if LeadPinned(home) {
+		fmt.Fprintf(&b, "The lead runs on %s, pinned there.\n\n", SeatText(seat, accounts))
+	} else {
+		fmt.Fprintf(&b, "The lead runs on %s, each batch on the first free sign-in of its agent in the order.\n\n",
+			SeatText(&planv1.LeadSeat{Provider: seat.GetProvider(), Model: seat.GetModel()}, accounts))
+	}
 	if len(accounts) == 0 {
 		b.WriteString("No account: each agent runs on its own sign-in. djinn lead add-account <name> --provider " +
 			"claude names one, in a folder of its own.\n")
@@ -1104,9 +1120,18 @@ func (s *LeadService) Accounts(
 			paused, a.GetConfigDirectory(), AccountLogin(a, runtime.GOOS))
 	}
 	if len(accounts) > 0 {
-		b.WriteString("\nEach new worker runs on the sign-in of its agent whose week resets first, among those neither " +
-			"paused nor limited with quota left (under 95 % of their 5 hours and of their week); without a quota read, on " +
-			"its own sign-in, else on its accounts in this order. A task that ran stays where it ran while it may.\n")
+		b.WriteString("\nEach new worker, and each batch of the lead unless it is pinned, runs on the first sign-in of " +
+			"its agent in the order of priority that is neither paused, limited nor known past 95 % of its 5 hours or " +
+			"its week (a quota never read holds none back). A task that ran stays where it ran while it may. With each " +
+			"one full, limited or paused, it starts past its limits on the first that may spend extra credits, if Djinn " +
+			"knows it, else on the first not paused, and waits for the reset if the agent refuses.\n\nThe order:\n")
+		for i, si := range AccountOrder(home) {
+			who := agentNames[si.Provider] + "'s own sign-in"
+			if si.Account != nil {
+				who = si.Name + " (" + accountLabel(si.Account) + ", " + agentNames[si.Provider] + ")"
+			}
+			fmt.Fprintf(&b, "%d. %s\n", i+1, who)
+		}
 	}
 	var usage []*planv1.AccountUsage
 	if s.Usage != nil {
@@ -1258,14 +1283,20 @@ func (s *LeadService) RemoveAccount(
 	err := write(ctx, s.Wishes.Store, req.Spec(), req.Msg, func(*store.Tx) error {
 		return changeSettings(home, func(settings *uiv1.Settings) error {
 			if settings.GetLead().GetAccount() == name {
-				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-					"the lead runs on the account %s: move it first (djinn lead move)", name))
+				if settings.GetLeadPinned() {
+					return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+						"the lead is pinned on the account %s: move it first (djinn lead move)", name))
+				}
+				settings.Lead.Account = "" // It followed the order: it goes on doing so.
 			}
 			n := len(settings.Accounts)
 			settings.Accounts = slices.DeleteFunc(settings.Accounts, func(a *planv1.Account) bool { return a.GetName() == name })
 			if len(settings.Accounts) == n {
 				return connect.NewError(connect.CodeNotFound, fmt.Errorf("no account is called %s", name))
 			}
+			settings.AccountOrder = slices.DeleteFunc(settings.AccountOrder, func(r *uiv1.SignInRef) bool {
+				return r.GetAccount() == name
+			})
 			return nil
 		})
 	})
