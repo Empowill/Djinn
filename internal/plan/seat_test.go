@@ -4,11 +4,49 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+
+	"buf.build/go/protovalidate"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/locales"
 )
+
+// The example of an account's name the window shows, in every language, passes the server's validation of
+// LeadService.AddAccount, and the names the window refuses fail it: the window reads that rule from the proto
+// (src/agent-setup.tsx), and the documentation's example is one of them.
+func TestAccountNameExample(t *testing.T) {
+	t.Parallel()
+	valid := func(name string) error {
+		return protovalidate.Validate(&planv1.LeadServiceAddAccountRequest{Name: name, Provider: planv1.Provider_PROVIDER_CLAUDE})
+	}
+	for _, lang := range locales.Languages() {
+		example := locales.T(lang, "agents.account_name_example", nil)
+		if example == "agents.account_name_example" {
+			t.Fatalf("%s: no example of an account's name", lang)
+		}
+		if err := valid(example); err != nil {
+			t.Errorf("%s: the example %q fails the validation: %v", lang, example, err)
+		}
+		for _, key := range []string{"agents.account_name", "agents.account_name_format"} {
+			if text := locales.T(lang, key, map[string]string{"example": example}); !strings.Contains(text, example) {
+				t.Errorf("%s: %s does not show the example: %q", lang, key, text)
+			}
+		}
+	}
+	for _, name := range []string{"work", "pro", "claude-2", strings.Repeat("a", 32)} {
+		if err := valid(name); err != nil {
+			t.Errorf("%q: %v, want valid", name, err)
+		}
+	}
+	for _, name := range []string{"", "Work", "compte pro", "me@example.com", "-pro", "\u00e9t\u00e9", strings.Repeat("a", 33)} {
+		if err := valid(name); err == nil {
+			t.Errorf("%q passed the validation", name)
+		}
+	}
+}
 
 // An account's sign-in command and environment name its folder, for each agent and shell; Antigravity has none.
 func TestAccountLoginAndEnv(t *testing.T) {

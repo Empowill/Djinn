@@ -97,7 +97,8 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   work, a label such as Work, as djinn lead add-account takes them. Sign in there once with the agent's own command,
   from the account's line, in the panel's terminal; Djinn keeps no token and shows none, only the folder. Antigravity
   has no such folder. The cross on an account's line forgets it and leaves its folder as it is, as djinn lead
-  remove-account does; djinn lead accounts lists them.
+  remove-account does; djinn lead accounts lists them. Step by step, with the format of the name and the common
+  errors: [Configure several Claude accounts](#several-claude-accounts).
 - **Every worker runs on one of them.** Each new task of an agent starts on the sign-in whose week resets first,
   among those neither paused nor limited that have quota left (under 95 % of their 5 hours and of their week): what
   is left of a week is lost at its reset, so the week that ends first is spent first. Two weeks that end within an
@@ -248,3 +249,4 @@ template. See [Skills and templates](#skills-and-templates).
 - [Lead notes](#lead-notes): what the Djinn has learnt from past wishes.
 - [Restarts and updates](#restarts-and-updates): how the Djinn comes back after a restart.
 - [Usage and cost](#usage-and-cost): what the Djinn and its workers cost.
+- [Configure several Claude accounts](#several-claude-accounts): a second subscription, step by step.

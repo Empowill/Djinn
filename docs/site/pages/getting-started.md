@@ -27,8 +27,8 @@ the agent's own command in a terminal of the panel, where you answer if it asks,
 The panel opens by itself when the window starts with no agent ready.
 
 One agent is enough to begin. With two subscriptions of the same agent, add the second as an account on the panel's
-last line: Djinn then spreads the workers between them by their weekly quota, and each line shows its gauge (see
-[the Djinn](#the-djinn)).
+last line: Djinn then spreads the workers between them by their weekly quota, and each line shows its gauge. The steps,
+the format of each field and the common errors: [Configure several Claude accounts](#several-claude-accounts).
 
 ## 3. Add your first project
 

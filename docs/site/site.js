@@ -125,6 +125,7 @@
     rights: ["shield", "run"],
     "machine-and-load": ["gauge", "run"],
     "usage-and-cost": ["coins", "run"],
+    "several-claude-accounts": ["gauge", "run"],
     sharing: ["globe", "mock"],
     "restarts-and-updates": ["refresh-cw", "run"],
     commands: ["terminal", "run"],

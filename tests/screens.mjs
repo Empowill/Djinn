@@ -46,6 +46,8 @@ export {
 } from "@/src/wish-task.tsx";
 export {
   AgentSetupPanel,
+  accountNamePattern,
+  accountNameValid,
   usageOf,
   useAgents,
   withPaused,

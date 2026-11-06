@@ -16,10 +16,13 @@ import {
   Square,
   X,
 } from "lucide-react";
+import { getOption } from "@bufbuild/protobuf";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { field as validation } from "../gen/ts/buf/validate/validate_pb";
 import {
   type AccountUsage,
+  LeadServiceAddAccountRequestSchema,
   Provider,
   UsageSource,
   type UsageWindow,
@@ -664,16 +667,47 @@ function PauseButton({
   );
 }
 
+// accountNamePattern is the rule of an account's name, read from the proto's validation of
+// LeadServiceAddAccountRequest.name: the window checks the name the server checks, by the same expression.
+export const accountNamePattern = new RegExp(
+  (() => {
+    const rules = getOption(
+      LeadServiceAddAccountRequestSchema.field.name,
+      validation,
+    );
+    return rules.type.case === "string" ? (rules.type.value.pattern ?? "") : "";
+  })(),
+);
+
+// accountNameValid says whether name, trimmed as it is sent, passes that rule.
+export function accountNameValid(name: string): boolean {
+  return accountNamePattern.test(name.trim());
+}
+
+// accountNameExample is the name the window offers as an example, in the reader's language: a name the rule accepts.
+export function accountNameExample(): string {
+  return t("agents.account_name_example");
+}
+
 // AddAccount names an account of Claude Code or Codex: Djinn makes its folder, beside the agent's own, and the
-// account's line offers its sign-in.
+// account's line offers its sign-in. A name the rule refuses says the rule under the line, with an example that passes
+// it, and the browser's own bubble says the same instead of its bare "match the requested format".
 function AddAccount({ onAdded }: { onAdded: () => void }) {
   const clients = useDjinn()?.clients;
   const [provider, setProvider] = useState(Provider.CLAUDE);
   const [name, setName] = useState("");
   const [label, setLabel] = useState("");
   const [error, setError] = useState("");
+  const nameInput = useRef<HTMLInputElement>(null);
+  const example = accountNameExample();
+  const format = t("agents.account_name_format", { example });
+  const invalid = name.trim() !== "" && !accountNameValid(name);
+  useEffect(() => {
+    nameInput.current?.setCustomValidity?.(invalid ? format : "");
+  }, [invalid, format]);
   const add = () => {
     setError("");
+    if (!accountNameValid(name)) return;
     clients?.lead
       .addAccount({ name: name.trim(), provider, label: label.trim() })
       .then(() => {
@@ -703,10 +737,12 @@ function AddAccount({ onAdded }: { onAdded: () => void }) {
           <option value={Provider.CODEX}>Codex</option>
         </select>
         <input
-          aria-label={t("agents.account_name")}
-          placeholder={t("agents.account_name")}
+          ref={nameInput}
+          aria-label={t("agents.account_name", { example })}
+          placeholder={t("agents.account_name", { example })}
+          title={format}
+          aria-invalid={invalid}
           value={name}
-          pattern="[a-z0-9][a-z0-9\-]{0,31}"
           required
           onChange={(event) => setName(event.target.value)}
         />
@@ -721,7 +757,7 @@ function AddAccount({ onAdded }: { onAdded: () => void }) {
           {t("agents.account_add")}
         </button>
       </form>
-      {error && <p role="alert">{error}</p>}
+      {(invalid || error) && <p role="alert">{invalid ? format : error}</p>}
     </>
   );
 }
