@@ -52,6 +52,8 @@ export {
   usageOf,
   useAgents,
   withPaused,
+  withUnlimited,
+  unlimitedFor,
 } from "@/src/agent-setup.tsx";
 export {
   azimaTime,

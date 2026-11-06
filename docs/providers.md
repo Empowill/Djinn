@@ -1064,9 +1064,23 @@ unknown sign-in or one named twice; `djinn lead order --sign-in claude/work --si
 a sign-in as `agent` or `agent/name`) writes it, and the accounts screen sends it whole after each drag or Alt+Up and
 Alt+Down (`src/sign-in-order.tsx`); `LeadService.Accounts` gives it back (`order`, with `pinned`). The order never changes a
 worker's agent. One function picks the sign-in at each start of a worker, launch or resume (`harness.AccountPolicy`,
-`FirstInOrder` by default, `quota.go`; it replaced Q258 B's week that resets first): a task that ran stays on its
-sign-in while it is free (neither paused nor held by a limit) and not known out of quota (either window at 95 % or
-more); otherwise the first such sign-in in the order. A quota never read, or older than 15 minutes, holds none back.
+`ByMode` by default, `quota.go`), in the mode the developer chose (decision Q339 C, `Settings.account_mode`,
+`djinn lead account-mode dynamic|manual`, `LeadService.AccountMode`): a task that ran stays on its sign-in while it is
+free (neither paused nor held by a limit) and not known out of quota (either window at 95 % or more). Otherwise, in
+the **dynamic** mode, by default (`Dynamic`, decision Q258 B), among the free sign-ins with quota left, the one whose
+week resets first, two within an hour going to the least used; then the first free one whose quota is unknown; then
+the first free *pseudo-unlimited* one; each group in the order. In the **manual** mode (`FirstInOrder`, decision Q295
+B), the first such sign-in in the order. A quota never read, or older than 15 minutes, holds none back.
+
+**Pseudo-unlimited sign-ins.** A sign-in that gives no quota at all (`AccountOption.Unlimited`, `AccountUsage.unlimited`):
+its agent tells none (no `UsageProber`: Codex, Antigravity), or a reading told no window: claude answers `get_usage`
+with `rate_limits_available: false` while `claude auth status` exits 0 (an API key; signed out, the same answer is a
+probe failure, `claude_usage.go`). A failing probe alone never makes a Claude sign-in unlimited: its quota is only
+unknown. In the dynamic mode it goes after the sign-ins with a quota, and a forced one's quota never holds it back.
+`djinn lead unlimited claude/work forced|limited|auto` (`LeadService.Unlimited`, `Settings.unlimited_forced` and
+`unlimited_unforced`) corrects the detection either way; `AccountUsage.unlimited_detected` and `unlimited_setting`
+let the accounts screen show Unlimited (auto) or Unlimited (forced), and its switch write auto when it agrees with the
+detection.
 
 **Overflow (decision L2 of 06/11/2026).** With every sign-in of the agent full, limited or paused, the task does not
 only wait for a reset: it starts *in overflow* (`AccountPick.Overflow`) on the sign-in not paused that may spend extra

@@ -1,0 +1,2 @@
+# claude 2.1.316's answer to get_usage with no rate limits: signed out, or on an API key (claude auth status tells).
+{"type":"control_response","response":{"subtype":"success","request_id":"djinn-usage","response":{"session":{"total_cost_usd":0},"subscription_type":null,"rate_limits_available":false,"rate_limits":null,"behaviors":null}}}

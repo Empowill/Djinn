@@ -68,6 +68,10 @@ func (c Claude) Usage(ctx context.Context, env []string) (Quota, error) {
 	_ = cmd.Process.Kill() // It answered, or said all it would.
 	werr := cmd.Wait()
 	switch {
+	case found && errors.Is(perr, errNoUsage) && claudeSignedIn(ctx, command, env):
+		// Signed in, and no window told: an API key. A reading with no window, that makes the sign-in
+		// pseudo-unlimited (quota.go); signed out, it stays a failure, and its quota only unknown.
+		return Quota{Source: planv1.UsageSource_USAGE_SOURCE_PROBE}, nil
 	case found:
 		return q, perr
 	case ctx.Err() != nil:
@@ -78,6 +82,16 @@ func (c Claude) Usage(ctx context.Context, env []string) (Quota, error) {
 		why = why[i+1:]
 	}
 	return Quota{}, fmt.Errorf("claude ended without its usage: %s", clipRunes(cmp.Or(why, fmt.Sprint(werr)), 200))
+}
+
+// claudeSignedIn tells whether claude auth status, in the folder env names, says it is signed in (exit 0). Djinn
+// never reads what it prints.
+func claudeSignedIn(ctx context.Context, command string, env []string) bool {
+	cmd := exec.CommandContext(ctx, command, "auth", "status")
+	cmd.Dir = os.TempDir()
+	cmd.Env = append(os.Environ(), env...)
+	cmd.WaitDelay = 2 * time.Second
+	return cmd.Run() == nil
 }
 
 // errOtherResponse is a control response to another request than Djinn's.

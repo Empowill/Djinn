@@ -9,7 +9,10 @@
 // limited, its week's and its 5 hours' gauges and when each ends, whether the order skips it, whether the next task
 // starts there, whether the Djinn runs there, the workers and waiting tasks there (in the Circle), and whether a
 // session runs there in overflow. Above the list, the Djinn's account: following the order,
-// or pinned on one sign-in (djinn lead pin, --unpin).
+// or pinned on one sign-in (djinn lead pin, --unpin). At the right of the list's title, the mode that picks a sign-in
+// (decision Q339 C, djinn lead account-mode): dynamic, by default, the week that ends soonest first and the
+// pseudo-unlimited ones last; manual, the order alone. On each line, its switch Unlimited (djinn lead unlimited), and
+// when it is on, whether Djinn detected it (auto) or the developer forced it.
 import {
   Download,
   LogIn,
@@ -31,10 +34,12 @@ import {
 
 import { field as validation } from "../gen/ts/buf/validate/validate_pb";
 import {
+  AccountMode,
   type AccountUsage,
   LeadServiceAddAccountRequestSchema,
   type LeadSeat,
   Provider,
+  UnlimitedSetting,
   UsageSource,
   type UsageWindow,
 } from "../gen/ts/plan/v1/plan_pb";
@@ -86,6 +91,13 @@ export interface Agents {
   pinned?: boolean;
   // pin pins the Djinn on an account of its agent, "" for its own sign-in; undefined takes the pin off (LeadService.Pin).
   pin?: (account: string | undefined) => void;
+  // How a sign-in is picked (LeadService.Accounts): dynamic, by default, or manual; setMode writes it
+  // (LeadService.AccountMode), shown at once.
+  mode?: AccountMode;
+  setMode?: (mode: AccountMode) => void;
+  // setUnlimited writes the developer's word on whether a sign-in (claude, claude/work) is pseudo-unlimited
+  // (LeadService.Unlimited), shown at once.
+  setUnlimited?: (signIn: string, unlimited: UnlimitedSetting) => void;
 }
 
 // withPaused is env with the pause of a sign-in changed: the account called account of the agent agentId, or with ""
@@ -124,6 +136,7 @@ export function useAgents(): Agents {
   const [usage, setUsage] = useState<readonly AccountUsage[]>();
   const [shownOrder, setShownOrder] = useState<readonly string[]>();
   const [lead, setLead] = useState<{ seat?: LeadSeat; pinned: boolean }>();
+  const [shownMode, setShownMode] = useState<AccountMode>();
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
   const asked = useRef(0);
@@ -138,6 +151,7 @@ export function useAgents(): Agents {
         setUsage(res.usage);
         setShownOrder(res.order);
         setLead({ seat: res.seat, pinned: res.pinned });
+        setShownMode(res.mode);
       })
       .catch(() => undefined); // The gauges keep the last reading; the next one comes within USAGE_EVERY.
   }, [clients]);
@@ -193,6 +207,30 @@ export function useAgents(): Agents {
     },
     [clients, readUsage],
   );
+  const setMode = useCallback(
+    (next: AccountMode) => {
+      if (!clients) return;
+      setShownMode(next);
+      setError("");
+      clients.lead
+        .accountMode({ mode: next })
+        .catch((err) => setError(message(err)))
+        .finally(readUsage); // The next task's sign-in may change.
+    },
+    [clients, readUsage],
+  );
+  const setUnlimited = useCallback(
+    (signIn: string, unlimited: UnlimitedSetting) => {
+      if (!clients) return;
+      setUsage((usage) => withUnlimited(usage, signIn, unlimited));
+      setError("");
+      clients.lead
+        .unlimited({ signIn, unlimited })
+        .catch((err) => setError(message(err)))
+        .finally(readUsage);
+    },
+    [clients, readUsage],
+  );
   return {
     env,
     checking,
@@ -205,6 +243,9 @@ export function useAgents(): Agents {
     seat: lead?.seat,
     pinned: lead?.pinned,
     pin,
+    mode: shownMode,
+    setMode,
+    setUnlimited,
   };
 }
 
@@ -217,6 +258,40 @@ export function usageOf(
 ): AccountUsage | undefined {
   const provider = agentProviders[agentId];
   return usage?.find((u) => u.provider === provider && u.account === account);
+}
+
+// withUnlimited is usage with the developer's word on a sign-in (claude, claude/work) changed, as Djinn will say it
+// back: forced on or off, or auto, where Djinn's detection decides. A sign-in Djinn said nothing of gets a line.
+export function withUnlimited(
+  usage: readonly AccountUsage[] | undefined,
+  signIn: string,
+  set: UnlimitedSetting,
+): readonly AccountUsage[] {
+  const [agentId, account = ""] = signIn.split("/");
+  const provider = agentProviders[agentId];
+  const old = usageOf(usage, agentId, account);
+  const detected = old?.unlimitedDetected ?? false;
+  const changed = {
+    ...(old ?? { provider, account }),
+    unlimitedSetting: set,
+    unlimitedDetected: detected,
+    unlimited:
+      set === UnlimitedSetting.FORCED ||
+      (set !== UnlimitedSetting.LIMITED && detected),
+  } as AccountUsage;
+  return old
+    ? (usage ?? []).map((u) => (u === old ? changed : u))
+    : [...(usage ?? []), changed];
+}
+
+// unlimitedFor is the word that turns a sign-in's Unlimited on or off: auto when Djinn detects it so already, else
+// forced or limited.
+export function unlimitedFor(
+  usage: AccountUsage | undefined,
+  on: boolean,
+): UnlimitedSetting {
+  if (on === (usage?.unlimitedDetected ?? false)) return UnlimitedSetting.AUTO;
+  return on ? UnlimitedSetting.FORCED : UnlimitedSetting.LIMITED;
 }
 
 // SignInLoad is what runs on a sign-in now: the workers running there, and the tasks waiting there for its limit to
@@ -336,13 +411,10 @@ export function signInLines(
 export function AgentSetupPanel({
   agents,
   load,
-  mode,
 }: {
   agents: Agents;
   // What runs on each sign-in now, from the tasks the window reads: its workers and the tasks waiting to start there.
   load?: (provider: Provider, account: string) => SignInLoad | undefined;
-  // The choice of how a sign-in is picked, at the right of the accounts' title: none yet, the order alone decides.
-  mode?: ReactNode;
 }) {
   const { env, checking, error, check, setPaused, usage } = agents;
   const [step, setStep] = useState<Step>();
@@ -416,9 +488,20 @@ export function AgentSetupPanel({
         >
           <div className="sign-in-head">
             <h3 className="sign-in-title">{t("agents.order_title")}</h3>
-            {mode}
+            {agents.setMode && (
+              <ModeSwitch
+                mode={agents.mode ?? AccountMode.DYNAMIC}
+                onMode={agents.setMode}
+              />
+            )}
           </div>
-          <p className="agent-setup-intro">{t("agents.order_detail")}</p>
+          <p className="agent-setup-intro">
+            {t(
+              agents.mode === AccountMode.MANUAL
+                ? "agents.order_detail"
+                : "agents.order_detail_dynamic",
+            )}
+          </p>
           {agents.seat && agents.pin && (
             <LeadPin
               seat={agents.seat}
@@ -444,6 +527,7 @@ export function AgentSetupPanel({
                     onEnded={ended}
                     onChanged={check}
                     onPaused={setPaused}
+                    onUnlimited={agents.setUnlimited}
                     usage={usageOf(usage, line.agent.id, account)}
                     busyHere={load?.(agentProviders[line.agent.id], account)}
                     lead={
@@ -458,6 +542,44 @@ export function AgentSetupPanel({
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+// ModeSwitch is how a sign-in is picked, as djinn lead account-mode sets it: dynamic, the week that ends soonest first
+// and the pseudo-unlimited ones last; manual, the order alone.
+function ModeSwitch({
+  mode,
+  onMode,
+}: {
+  mode: AccountMode;
+  onMode: (mode: AccountMode) => void;
+}) {
+  const manual = mode === AccountMode.MANUAL;
+  return (
+    <div
+      className="segmented-switch"
+      role="group"
+      aria-label={t("agents.mode_label")}
+    >
+      <button
+        type="button"
+        className={manual ? "" : "active"}
+        aria-pressed={!manual}
+        title={t("agents.mode_dynamic_detail")}
+        onClick={() => onMode(AccountMode.DYNAMIC)}
+      >
+        {t("agents.mode_dynamic")}
+      </button>
+      <button
+        type="button"
+        className={manual ? "active" : ""}
+        aria-pressed={manual}
+        title={t("agents.mode_manual_detail")}
+        onClick={() => onMode(AccountMode.MANUAL)}
+      >
+        {t("agents.mode_manual")}
+      </button>
     </div>
   );
 }
@@ -575,6 +697,7 @@ function SignInRow({
   onEnded,
   onChanged,
   onPaused,
+  onUnlimited,
   usage,
   lead,
   busyHere,
@@ -587,6 +710,7 @@ function SignInRow({
   onEnded: () => void;
   onChanged: () => void;
   onPaused: Agents["setPaused"];
+  onUnlimited?: Agents["setUnlimited"];
   usage?: AccountUsage;
   lead: boolean;
   busyHere?: SignInLoad;
@@ -663,6 +787,18 @@ function SignInRow({
             {t("agents.waiting_here", { count: busyHere.waiting })}
           </span>
         ) : null}
+        {usage?.unlimited && (
+          <span
+            className="badge sign-in-unlimited"
+            title={t("agents.unlimited_detail")}
+          >
+            {t(
+              usage.unlimitedSetting === UnlimitedSetting.FORCED
+                ? "agents.unlimited_forced"
+                : "agents.unlimited_auto",
+            )}
+          </span>
+        )}
         {usage?.overflowing && (
           <span
             className="badge sign-in-overflow"
@@ -685,6 +821,26 @@ function SignInRow({
           >
             <LogIn size={13} />
             {t("agents.login")}
+          </button>
+        )}
+        {onUnlimited && (
+          <button
+            type="button"
+            role="switch"
+            className="sign-in-unlimited-switch"
+            aria-checked={usage?.unlimited ?? false}
+            aria-label={t("agents.unlimited_switch", {
+              name: account ? account.label || account.name : agent.name,
+            })}
+            title={t("agents.unlimited_switch_detail")}
+            onClick={() =>
+              onUnlimited(id, unlimitedFor(usage, !(usage?.unlimited ?? false)))
+            }
+          >
+            <span className={`toggle${usage?.unlimited ? " on" : ""}`}>
+              <span />
+            </span>
+            {t("agents.unlimited")}
           </button>
         )}
         <PauseButton
@@ -791,7 +947,10 @@ function SignInUsage({
       )}
       {week && <WeekGauge week={week} />}
       {fiveHour && <FiveHourGauge window={fiveHour} />}
-      {!week && !fiveHour && (reads || usage) && (
+      {!week && !fiveHour && usage?.unlimited && (
+        <span className="muted-text">{t("agents.usage_unlimited")}</span>
+      )}
+      {!week && !fiveHour && !usage?.unlimited && (reads || usage) && (
         <span className="muted-text" title={usage?.probeError || undefined}>
           {usage?.probeError
             ? t("agents.usage_failed")

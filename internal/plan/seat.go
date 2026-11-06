@@ -429,6 +429,9 @@ type SignIn struct {
 	Account *planv1.Account
 	// Paused: Djinn starts no worker on it (djinn lead pause-account).
 	Paused bool
+	// Unlimited is the developer's word on whether it is pseudo-unlimited (djinn lead unlimited): auto, forced or
+	// limited; unspecified is auto.
+	Unlimited planv1.UnlimitedSetting
 }
 
 // SignIns are the sign-ins of provider's agent a worker may run on, in the order Djinn tries them: the developer's
@@ -1119,9 +1122,17 @@ func (s *LeadService) Accounts(
 		fmt.Fprintf(&b, "- **%s** (%s, %s%s): %s\n  Sign in once: `%s`\n", a.GetName(), accountLabel(a), agentNames[a.GetProvider()],
 			paused, a.GetConfigDirectory(), AccountLogin(a, runtime.GOOS))
 	}
+	mode := AccountModeOf(home)
 	if len(accounts) > 0 {
-		b.WriteString("\nEach new worker, and each batch of the lead unless it is pinned, runs on the first sign-in of " +
-			"its agent in the order of priority that is neither paused, limited nor known past 95 % of its 5 hours or " +
+		if mode == planv1.AccountMode_ACCOUNT_MODE_MANUAL {
+			b.WriteString("\nManual mode (djinn lead account-mode): each new worker, and each batch of the lead unless " +
+				"it is pinned, runs on the first sign-in of its agent in the order of priority")
+		} else {
+			b.WriteString("\nDynamic mode (djinn lead account-mode): each new worker, and each batch of the lead unless " +
+				"it is pinned, runs on the sign-in of its agent whose week ends soonest, then on one whose quota is not " +
+				"known, then on a pseudo-unlimited one (djinn lead unlimited), each in the order of priority, among those")
+		}
+		b.WriteString(" that are neither paused, limited nor known past 95 % of its 5 hours or " +
 			"its week (a quota never read holds none back). A task that ran stays where it ran while it may. With each " +
 			"one full, limited or paused, it starts past its limits on the first that may spend extra credits, if Djinn " +
 			"knows it, else on the first not paused, and waits for the reset if the agent refuses.\n\nThe order:\n")
@@ -1143,7 +1154,7 @@ func (s *LeadService) Accounts(
 		}
 	}
 	res := &planv1.LeadServiceAccountsResponse{Text: b.String(), Accounts: accounts, Seat: seat, Usage: usage,
-		Pinned: LeadPinned(home)}
+		Pinned: LeadPinned(home), Mode: mode}
 	for _, si := range AccountOrder(home) {
 		res.Order = append(res.Order, SignInWord(si))
 	}
@@ -1210,6 +1221,14 @@ func UsageText(u *planv1.AccountUsage) string {
 	}
 	if u.GetOverflowing() {
 		notes = append(notes, "in overflow: a session runs past its limits, on extra credits if the account allows them")
+	}
+	switch {
+	case u.GetUnlimited() && u.GetUnlimitedSetting() == planv1.UnlimitedSetting_UNLIMITED_SETTING_FORCED:
+		notes = append(notes, "unlimited (forced)")
+	case u.GetUnlimited():
+		notes = append(notes, "unlimited (auto)")
+	case u.GetUnlimitedSetting() == planv1.UnlimitedSetting_UNLIMITED_SETTING_LIMITED:
+		notes = append(notes, "counted with a quota (forced)")
 	}
 	if u.GetNext() {
 		notes = append(notes, "next")
@@ -1317,9 +1336,10 @@ func (s *LeadService) RemoveAccount(
 			if len(settings.Accounts) == n {
 				return connect.NewError(connect.CodeNotFound, fmt.Errorf("no account is called %s", name))
 			}
-			settings.AccountOrder = slices.DeleteFunc(settings.AccountOrder, func(r *uiv1.SignInRef) bool {
-				return r.GetAccount() == name
-			})
+			named := func(r *uiv1.SignInRef) bool { return r.GetAccount() == name }
+			settings.AccountOrder = slices.DeleteFunc(settings.AccountOrder, named)
+			settings.UnlimitedForced = slices.DeleteFunc(settings.UnlimitedForced, named)
+			settings.UnlimitedUnforced = slices.DeleteFunc(settings.UnlimitedUnforced, named)
 			return nil
 		})
 	})

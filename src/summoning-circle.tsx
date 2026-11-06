@@ -368,8 +368,6 @@ export function SummoningCircle({
             <h1>{t("summoning.title")}</h1>
             <p>{t("summoning.page_detail")}</p>
           </header>
-          {/* Its mode prop, at the right of the accounts' title, is the place of the choice of how a sign-in is
-              picked (a dynamic mode by default, to come); none yet: the order alone decides. */}
           <AgentSetupPanel agents={agents} load={loadAt} />
           <h3 className="summoning-section-title">
             {t("summoning.models_title")}

@@ -5,10 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
@@ -94,6 +97,178 @@ func TestFirstInOrder(t *testing.T) {
 	}
 }
 
+// TestDynamic: in the dynamic mode, by default (decision Q339 C), a new task goes to the free sign-in with quota left
+// whose week resets first, two within an hour to the least used; then to the first whose quota is unknown; then to
+// the first pseudo-unlimited one, detected or forced; a task that ran stays where it ran while it may. With none,
+// overflow as in the manual mode.
+func TestDynamic(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	own := AccountOption{}
+	work := AccountOption{SignIn: plan.SignIn{Name: "work"}}
+	perso := AccountOption{SignIn: plan.SignIn{Name: "perso"}}
+	key := AccountOption{SignIn: plan.SignIn{Name: "key"}, Unlimited: true, Detected: true}
+	week := func(o AccountOption, used float64, in time.Duration) AccountOption {
+		o.Quota = &Quota{Read: now, SevenDay: &UsageWindow{Used: used, ResetsAt: now.Add(in)},
+			FiveHour: &UsageWindow{Used: .1, ResetsAt: now.Add(2 * time.Hour)}}
+		return o
+	}
+	forced := func(o AccountOption) AccountOption { o.Unlimited = true; return o }
+	paused := func(o AccountOption) AccountOption { o.Paused = true; return o }
+	for _, c := range []struct {
+		name     string
+		options  []AccountOption
+		current  string
+		ran      bool
+		want     string
+		overflow bool
+	}{
+		{"the soonest week first", []AccountOption{week(work, .2, 6*day), week(own, .8, day), week(perso, .1, 3*day)}, "", false, "", false},
+		{"within an hour: the least used", []AccountOption{week(work, .6, day), week(perso, .3, day+30*time.Minute)}, "", false, "perso", false},
+		{"a full week skipped", []AccountOption{week(work, .97, time.Hour), week(own, .5, 5*day)}, "", false, "", false},
+		{"a known quota before an unknown one", []AccountOption{perso, week(work, .5, 6*day)}, "", false, "work", false},
+		{"unknown before unlimited", []AccountOption{key, perso}, "", false, "perso", false},
+		{"detected unlimited last", []AccountOption{key, week(work, .5, 6*day)}, "", false, "work", false},
+		{"forced unlimited last", []AccountOption{forced(week(own, .1, time.Hour)), week(work, .5, 6*day)}, "", false, "work", false},
+		{"forced unlimited, full: not held back", []AccountOption{forced(week(own, .99, time.Hour)), week(work, .97, day)}, "", false, "", false},
+		{"unlimited when the others are full", []AccountOption{week(work, .97, day), key}, "", false, "key", false},
+		{"a paused unlimited one skipped", []AccountOption{paused(key), week(work, .97, day)}, "", false, "work", true},
+		{"a task that ran stays", []AccountOption{week(own, .1, time.Hour), week(work, .5, 6*day)}, "work", true, "work", false},
+		{"a task that ran on an unlimited one stays", []AccountOption{week(own, .1, time.Hour), key}, "key", true, "key", false},
+		{"a task that ran, full: the soonest week", []AccountOption{week(own, .1, 2*day), week(work, .97, day), week(perso, .1, time.Hour)}, "work", true, "perso", false},
+	} {
+		got, ok := Dynamic(AccountChoice{Provider: planv1.Provider_PROVIDER_CLAUDE, Options: c.options, Current: c.current, Ran: c.ran, Now: now})
+		if got.Name != c.want || got.Overflow != c.overflow || !ok {
+			t.Errorf("%s: %+v, %v; want %q, overflow %v", c.name, got, ok, c.want, c.overflow)
+		}
+		if got2, _ := ByMode(AccountChoice{Options: c.options, Current: c.current, Ran: c.ran, Now: now}); got2 != got {
+			t.Errorf("%s: ByMode with no mode %+v, want Dynamic's %+v", c.name, got2, got)
+		}
+	}
+	// The manual mode is FirstInOrder, unchanged: the order, whatever the weeks, and an unlimited one at its rank.
+	manual := []AccountOption{key, week(work, .2, 6*day), week(own, .1, time.Hour)}
+	if got, _ := ByMode(AccountChoice{Options: manual, Now: now, Mode: planv1.AccountMode_ACCOUNT_MODE_MANUAL}); got.Name != "key" {
+		t.Errorf("manual: %+v, want key, the first", got)
+	}
+	if got, _ := ByMode(AccountChoice{Options: manual[1:], Now: now, Mode: planv1.AccountMode_ACCOUNT_MODE_MANUAL}); got.Name != "work" {
+		t.Errorf("manual: %+v, want work, the first", got)
+	}
+}
+
+// TestUnlimitedDetected: a sign-in is pseudo-unlimited when its agent tells no quota (Codex) or a reading told no
+// window (a Claude API key); a Claude sign-in whose probe failed, or never read, is not; the developer's word forces
+// it either way; the mode in settings.json reaches the policy; and the usage marks each.
+func TestUnlimitedDetected(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	signIns(t, home, &uiv1.Settings{Accounts: []*planv1.Account{
+		{Name: "key", Provider: planv1.Provider_PROVIDER_CLAUDE, ConfigDirectory: filepath.Join(home, "key")},
+		{Name: "failed", Provider: planv1.Provider_PROVIDER_CLAUDE, ConfigDirectory: filepath.Join(home, "failed")},
+		{Name: "max", Provider: planv1.Provider_PROVIDER_CLAUDE, ConfigDirectory: filepath.Join(home, "max")},
+		{Name: "team", Provider: planv1.Provider_PROVIDER_CODEX, ConfigDirectory: filepath.Join(home, "team")},
+	}})
+	providers := testProviders()
+	providers[planv1.Provider_PROVIDER_CLAUDE] = &usageProbe{signInProbe: &signInProbe{}, asked: map[string]int{}}
+	h := &Harness{home: home, providers: providers, runs: map[string]*run{}}
+	now := time.Now()
+	h.clock = func() time.Time { return now }
+	h.noteQuota(planv1.Provider_PROVIDER_CLAUDE, "key", Quota{Read: now, Source: planv1.UsageSource_USAGE_SOURCE_PROBE})
+	h.noteQuota(planv1.Provider_PROVIDER_CLAUDE, "max", Quota{Read: now, SevenDay: &UsageWindow{Used: .5, ResetsAt: now.Add(48 * time.Hour)}})
+	h.quota.failed = map[accountKey]probeFailure{{planv1.Provider_PROVIDER_CLAUDE, "failed"}: {why: errNoUsage.Error(), at: now}}
+	unlimited := func(provider planv1.Provider) map[string]bool {
+		out := map[string]bool{}
+		for _, o := range h.accountOptions(provider) {
+			out[o.Name] = o.Unlimited
+		}
+		return out
+	}
+	if got := unlimited(planv1.Provider_PROVIDER_CLAUDE); got["key"] != true || got["failed"] || got["max"] || got[""] {
+		t.Errorf("claude detected %v: key alone", got)
+	}
+	if got := unlimited(planv1.Provider_PROVIDER_CODEX); !got[""] || !got["team"] {
+		t.Errorf("codex detected %v: each", got)
+	}
+	// Dynamic by default: max, the only one with a known quota, before own and failed (unknown), before key.
+	if pick, _, _ := h.accountFor(&planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE}); pick.Name != "max" {
+		t.Errorf("dynamic pick %q, want max", pick.Name)
+	}
+	ref := func(provider planv1.Provider, name string) *uiv1.SignInRef {
+		return &uiv1.SignInRef{Provider: provider, Account: name}
+	}
+	for _, w := range []struct {
+		ref *uiv1.SignInRef
+		set planv1.UnlimitedSetting
+	}{
+		{ref(planv1.Provider_PROVIDER_CLAUDE, "key"), planv1.UnlimitedSetting_UNLIMITED_SETTING_LIMITED},
+		{ref(planv1.Provider_PROVIDER_CLAUDE, "max"), planv1.UnlimitedSetting_UNLIMITED_SETTING_FORCED},
+		{ref(planv1.Provider_PROVIDER_CODEX, "team"), planv1.UnlimitedSetting_UNLIMITED_SETTING_LIMITED},
+	} {
+		if err := plan.WriteUnlimited(home, w.ref, w.set); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := unlimited(planv1.Provider_PROVIDER_CLAUDE); got["key"] || !got["max"] {
+		t.Errorf("claude forced %v: key limited, max unlimited", got)
+	}
+	if got := unlimited(planv1.Provider_PROVIDER_CODEX); !got[""] || got["team"] {
+		t.Errorf("codex forced %v: team limited", got)
+	}
+	// max forced unlimited goes last: the first unknown in the order, own, goes first.
+	if pick, _, _ := h.accountFor(&planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE}); pick.Name != "" {
+		t.Errorf("forced pick %q, want the own sign-in", pick.Name)
+	}
+	var maxed *planv1.AccountUsage
+	for _, u := range h.Usage() {
+		if u.GetAccount() == "max" {
+			maxed = u
+		}
+	}
+	if !maxed.GetUnlimited() || maxed.GetUnlimitedDetected() || maxed.GetUnlimitedSetting() != planv1.UnlimitedSetting_UNLIMITED_SETTING_FORCED {
+		t.Errorf("max usage = %v: unlimited, forced", maxed)
+	}
+	// Back to auto: the detection decides again.
+	if err := plan.WriteUnlimited(home, ref(planv1.Provider_PROVIDER_CLAUDE, "key"), planv1.UnlimitedSetting_UNLIMITED_SETTING_AUTO); err != nil {
+		t.Fatal(err)
+	}
+	if got := unlimited(planv1.Provider_PROVIDER_CLAUDE); !got["key"] {
+		t.Errorf("claude auto %v: key detected again", got)
+	}
+	// The manual mode: the first in the order, own.
+	if err := plan.WriteUnlimited(home, ref(planv1.Provider_PROVIDER_CLAUDE, "max"), planv1.UnlimitedSetting_UNLIMITED_SETTING_AUTO); err != nil {
+		t.Fatal(err)
+	}
+	setMode(t, home, planv1.AccountMode_ACCOUNT_MODE_MANUAL)
+	if pick, _, _ := h.accountFor(&planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE}); pick.Name != "" {
+		t.Errorf("manual pick %q, want the own sign-in, the first", pick.Name)
+	}
+	setMode(t, home, planv1.AccountMode_ACCOUNT_MODE_DYNAMIC)
+	if pick, _, _ := h.accountFor(&planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE}); pick.Name != "max" {
+		t.Errorf("dynamic pick %q, want max", pick.Name)
+	}
+}
+
+// setMode writes the account mode to settings.json in home, as LeadService.AccountMode does.
+func setMode(t *testing.T, home string, mode planv1.AccountMode) {
+	t.Helper()
+	path := filepath.Join(home, "settings.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings uiv1.Settings
+	if err := protojson.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	settings.AccountMode = mode
+	if data, err = protojson.Marshal(&settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestParseClaudeUsage reads claude's answer to get_usage: a real one, a signed-out folder, a refusal, another
 // request's answer.
 func TestParseClaudeUsage(t *testing.T) {
@@ -156,6 +331,17 @@ func TestClaudeUsageProbe(t *testing.T) {
 	if _, err := (Claude{Command: os.Args[0]}).Usage(t.Context(), env); err == nil ||
 		!strings.Contains(err.Error(), "claude ended without its usage") {
 		t.Errorf("silent: %v", err)
+	}
+
+	// No window told: signed in (claude auth status exits 0), an API key, a reading with no window; signed out, the
+	// probe fails, and the sign-in is not pseudo-unlimited.
+	env, _, _ = fake{provider: "claude", fixture: "usage/get-usage-no-window", end: "eof"}.env(t)
+	if q, err := (Claude{Command: os.Args[0]}).Usage(t.Context(), env); err != nil || q.FiveHour != nil || q.SevenDay != nil {
+		t.Errorf("an API key: %+v, %v; want a reading with no window", q, err)
+	}
+	env, _, _ = fake{provider: "claude", fixture: "usage/get-usage-no-window", end: "eof:1"}.env(t)
+	if _, err := (Claude{Command: os.Args[0]}).Usage(t.Context(), env); !errors.Is(err, errNoUsage) {
+		t.Errorf("signed out: %v, want errNoUsage", err)
 	}
 }
 
@@ -233,7 +419,7 @@ func TestQuotaChoosesAccount(t *testing.T) {
 	wishID, _ := e.wish(t, nativeFolder(t))
 	var usage []*planv1.AccountUsage
 	deadline := time.Now().Add(10 * time.Second)
-	for usage = e.h.Usage(); len(usage) < 3; usage = e.h.Usage() {
+	for usage = withQuota(e.h.Usage()); len(usage) < 3; usage = withQuota(e.h.Usage()) {
 		if time.Now().After(deadline) {
 			t.Fatalf("usage read: %v", usage)
 		}
@@ -277,7 +463,7 @@ func TestWorkerTellsQuota(t *testing.T) {
 	task := e.spawnClaude(t, wishID)
 	e.until(t, task.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
 	// The fixture's windows reset in October 2026: as Djinn says them now, none is used.
-	usage := e.h.Usage()
+	usage := withQuota(e.h.Usage())
 	if len(usage) != 1 || usage[0].GetAccount() != "" || usage[0].GetSource() != planv1.UsageSource_USAGE_SOURCE_WORKER ||
 		usage[0].GetSevenDay() == nil || usage[0].GetNext() {
 		t.Errorf("usage = %v", usage)
@@ -319,9 +505,17 @@ func TestUsageOverflowing(t *testing.T) {
 		shown: &planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE}}
 	h.runs["under"] = &run{worker: runningWorker{}, shown: &planv1.Task{Provider: planv1.Provider_PROVIDER_CODEX}}
 	h.runs["ended"] = &run{overflow: true, shown: &planv1.Task{Provider: planv1.Provider_PROVIDER_ANTIGRAVITY}}
-	usage := h.Usage()
+	usage := withQuota(h.Usage())
 	if len(usage) != 1 || usage[0].GetProvider() != planv1.Provider_PROVIDER_CLAUDE || usage[0].GetAccount() != "" ||
 		!usage[0].GetOverflowing() {
 		t.Errorf("usage = %v, want claude's own sign-in overflowing alone", usage)
 	}
+}
+
+// withQuota is usage without the sign-ins it names only for being pseudo-unlimited (an agent that tells no quota): those
+// with a reading, a probe tried, or a session in overflow.
+func withQuota(usage []*planv1.AccountUsage) []*planv1.AccountUsage {
+	return slices.DeleteFunc(usage, func(u *planv1.AccountUsage) bool {
+		return u.GetReadTime() == nil && u.GetProbeError() == "" && !u.GetOverflowing()
+	})
 }
