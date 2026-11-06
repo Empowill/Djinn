@@ -121,7 +121,7 @@ export function useAgents(): Agents {
   const clients = useDjinn()?.clients;
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
   const [usage, setUsage] = useState<readonly AccountUsage[]>();
-  const [order, setOrderShown] = useState<readonly string[]>();
+  const [shownOrder, setShownOrder] = useState<readonly string[]>();
   const [lead, setLead] = useState<{ seat?: LeadSeat; pinned: boolean }>();
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
@@ -135,7 +135,7 @@ export function useAgents(): Agents {
       .then((res) => {
         if (n !== read.current) return;
         setUsage(res.usage);
-        setOrderShown(res.order);
+        setShownOrder(res.order);
         setLead({ seat: res.seat, pinned: res.pinned });
       })
       .catch(() => undefined); // The gauges keep the last reading; the next one comes within USAGE_EVERY.
@@ -171,7 +171,7 @@ export function useAgents(): Agents {
   const setOrder = useCallback(
     (next: string[]) => {
       if (!clients) return;
-      setOrderShown(next); // Shown at once; what Djinn wrote comes back with the usage.
+      setShownOrder(next); // Shown at once; what Djinn wrote comes back with the usage.
       setError("");
       clients.lead
         .order({ signIn: next })
@@ -199,7 +199,7 @@ export function useAgents(): Agents {
     check,
     setPaused,
     usage,
-    order,
+    order: shownOrder,
     setOrder,
     seat: lead?.seat,
     pinned: lead?.pinned,
