@@ -457,6 +457,10 @@ message ProjectSettings {
       }
     }
   }];
+  // On a GitLab project, the push of an azima's branch that a merge request follows (its parts all committed, no
+  // request open on it yet) goes with the push option ci.skip: the request's pipeline runs the CI on that commit, and
+  // no branch pipeline runs it twice (Q331). Once a request is open, pushes go as any. false turns it off. Not set: on.
+  optional bool ci_skip_before_request = 30;
 }
 
 // MergeMain is when Djinn merges a project's main branch into a wish's integration branch.

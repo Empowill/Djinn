@@ -75,6 +75,9 @@ func TestReadSettings(t *testing.T) {
 		}{
 			{"babysit: false\n", func(s *planv1.ProjectSettings) bool { return s.Babysit != nil && !s.GetBabysit() }},
 			{"install_builds: false\n", func(s *planv1.ProjectSettings) bool { return s.InstallBuilds != nil && !s.GetInstallBuilds() }},
+			{"ci_skip_before_request: false\n", func(s *planv1.ProjectSettings) bool {
+				return s.CiSkipBeforeRequest != nil && !s.GetCiSkipBeforeRequest()
+			}},
 			// Install questions read in lowercase too.
 			{"install_questions: when_needed\n", func(s *planv1.ProjectSettings) bool {
 				return s.GetInstallQuestions() == planv1.InstallQuestions_INSTALL_QUESTIONS_WHEN_NEEDED
@@ -394,6 +397,7 @@ func TestResolveSettings(t *testing.T) {
 			got.WatchCommands, got.WatchCommandsFrom = nil, 0
 			got.ServeCommands, got.ServeCommandsFrom = nil, 0
 			got.InstallBuilds, got.InstallBuildsFrom = false, 0
+			got.CISkipBeforeRequest, got.CISkipBeforeRequestFrom = false, 0
 			if !reflect.DeepEqual(got, c.want) {
 				t.Errorf("%s: %+v; want %+v", c.name, got, c.want)
 			}
@@ -440,6 +444,18 @@ func TestResolveSettings(t *testing.T) {
 				{"the repository turns it off", &planv1.ProjectSettings{InstallBuilds: proto.Bool(false)}, nil, "false", repo},
 				{"the developer turns it on again", &planv1.ProjectSettings{InstallBuilds: proto.Bool(false)},
 					&planv1.ProjectSettings{InstallBuilds: proto.Bool(true)}, "true", dev},
+			},
+		},
+		{
+			row: "ci_skip_before_request",
+			value: func(s Settings) (string, planv1.SettingSource) {
+				return strconv.FormatBool(s.CISkipBeforeRequest), s.CISkipBeforeRequestFrom
+			},
+			steps: []step{
+				{"neither file", nil, nil, "true", def},
+				{"the repository turns it off", &planv1.ProjectSettings{CiSkipBeforeRequest: proto.Bool(false)}, nil, "false", repo},
+				{"the developer turns it on again", &planv1.ProjectSettings{CiSkipBeforeRequest: proto.Bool(false)},
+					&planv1.ProjectSettings{CiSkipBeforeRequest: proto.Bool(true)}, "true", dev},
 			},
 		},
 		{
@@ -830,7 +846,7 @@ func TestProjectShow(t *testing.T) {
 		t.Errorf("files = %s, %s, %v; want %s, %s", res.GetRepositoryFile(), res.GetDeveloperFile(), res.GetNotices(), repoFile, devFile)
 	}
 	if got, want := rows(res), "provider=claude DEFAULT, model= DEFAULT, max_budget_usd= DEFAULT, branch={code}-{slug}-{uuid8} DEFAULT, "+
-		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
+		"generated= DEFAULT, generate= DEFAULT, setup= DEFAULT, checks= DEFAULT, test_one= DEFAULT, correction_attempts=2 DEFAULT, install= DEFAULT, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, ci_skip_before_request=true DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("no file: %s; want %s", got, want)
 	}
 	var question []string
@@ -849,7 +865,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(show()), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=me/{slug}-{uuid8} DEVELOPER, generated=gen/**,docs/schema.json REPOSITORY, generate=go tool task gen REPOSITORY, "+
 		"setup= DEFAULT, checks=test: go tool task test-go (commit) DEVELOPER, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, ci_skip_before_request=true DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("both files: %s; want %s", got, want)
 	}
 	if p, m, ok := ResolveWorkerSeat(home, planv1.WorkerKind_WORKER_KIND_WORK); !ok || p != planv1.Provider_PROVIDER_CLAUDE || m != "claude-sonnet-5-5" {
@@ -862,7 +878,7 @@ func TestProjectShow(t *testing.T) {
 	if got, want := rows(res), "provider=claude REPOSITORY, model=opus REPOSITORY, max_budget_usd=3 REPOSITORY, "+
 		"branch=djinn/{code}-{uuid8} REPOSITORY, generated=gen/**,docs/schema.json REPOSITORY, "+
 		"generate=go tool task gen REPOSITORY, setup= DEFAULT, checks=test: go tool task test (commit) REPOSITORY, test_one= DEFAULT, correction_attempts=3 REPOSITORY, "+
-		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
+		"install=go tool task install REPOSITORY, install_questions=always DEFAULT, install_builds=true DEFAULT, push=standard DEFAULT, push_strategy=wish DEFAULT, ci_skip_before_request=true DEFAULT, babysit=true DEFAULT, watch_commands= DEFAULT, serve_commands= DEFAULT"; got != want {
 		t.Errorf("a malformed developer file: %s; want %s", got, want)
 	}
 	if n := res.GetNotices(); len(n) != 1 || n[0].GetKind() != planv1.ProjectNoticeKind_PROJECT_NOTICE_KIND_TO_FIX ||
