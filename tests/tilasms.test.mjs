@@ -1021,6 +1021,114 @@ test("the comments column gives the open creation form its own class and disable
   }
 });
 
+// W567: the column kept the card's text in its state, and rendered whole at each key. The editor holds it now: a key
+// renders the editor alone, once Save turns on, and the column hears the text on Save.
+test("a key typed in a comment renders nothing of the column; the card keeps it on another passage and saves it", async () => {
+  const container = setupMockDom();
+  const proto = Object.getPrototypeOf(container);
+  proto.focus = proto.focus ?? function () {};
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const text = (node) =>
+    node.childNodes.length > 0
+      ? node.childNodes.map(text).join("")
+      : (node.nodeValue ?? node.textContent ?? "");
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const l01 = "01a1223a-ae45-728f-8c37-c005eee91edb";
+  const put = [];
+  const writes = {
+    put: async (tilasmId, body, id, anchor) => {
+      put.push([tilasmId, body, id, anchor?.exact]);
+    },
+    remove: async () => {},
+    send: async () => {},
+  };
+  const passage = (exact, start) => ({
+    page: "index.html",
+    exact,
+    prefix: "",
+    suffix: "",
+    start,
+    end: start + exact.length,
+    label: "",
+  });
+  let renders = 0;
+  const column = (ask) =>
+    h(
+      s.Profiler,
+      { id: "column", onRender: () => renders++ },
+      h(s.CommentsColumn, {
+        tilasmId: l01,
+        drafts: [],
+        writes,
+        ask,
+        onClose() {},
+        onError: (err) => assert.fail(err),
+      }),
+    );
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () => root.render(column(passage("two seconds", 40))));
+    await settle();
+    const box = below(container).find(
+      (el) =>
+        el.nodeName === "TEXTAREA" &&
+        el.attributes["aria-label"] === "Your comment on the passage",
+    );
+    assert.ok(box, "the passage asked for opens a card");
+    // Typed as the browser does: the box holds the text, then React hears the change.
+    const type = (value) =>
+      s.act(() => {
+        box.value = value;
+        props(box).onChange({ target: box });
+      });
+    await type("S");
+    await settle();
+    const before = renders;
+    for (const value of ["Sa", "Say", "Say where", "Say where it comes from."])
+      await type(value);
+    await settle();
+    assert.equal(renders, before, "the keys after the first render nothing");
+
+    // Another passage takes the card, with what is typed.
+    await s.act(async () => root.render(column(passage("one line", 80))));
+    await settle();
+    const now = below(container).find((el) => el.nodeName === "TEXTAREA");
+    assert.equal(now, box, "the card stays");
+    assert.equal(box.value, "Say where it comes from.");
+    await s.act(async () =>
+      props(box).onKeyDown({
+        key: "Enter",
+        ctrlKey: true,
+        preventDefault() {},
+      }),
+    );
+    await settle();
+    assert.deepEqual(put, [
+      [l01, "Say where it comes from.", undefined, "one line"],
+    ]);
+    assert.ok(
+      !below(container).some((el) => text(el) === "Save"),
+      "saved, the card closes",
+    );
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});
+
 test("a row publishes its tilasm on claude.ai when the machine can, asks first the first time, and links it once published", () => {
   const two = [
     {

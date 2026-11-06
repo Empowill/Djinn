@@ -63,11 +63,11 @@ import {
 import { type Theme, chosenTheme, setTheme as applyTheme } from "./theme";
 import { type Presence, presences } from "./data/eye";
 import { setPresence, usePresence } from "./djinn-eye";
-import { WishComposer } from "./wish-composer";
+import { PromptShape, promptShape, WishComposer } from "./wish-composer";
 import { WishDropdown } from "./wish-dropdown";
 import { leadTrouble } from "./wish-head";
 import { WishSmoke } from "./wish-smoke";
-import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
+import { MAX_PROMPT_CHARACTERS } from "./wish-composer-markdown";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { WorkspaceAction } from "./workspace-action";
 import { noShape, TextField, useTyped } from "./text-field";
@@ -109,9 +109,11 @@ export function MakeWish({
   const storeLeadStartError = useOptionalData((s) => s.leadStartError, "");
   const storeLoaded = useOptionalData((s) => s.loaded, true);
   const full = active >= MAX_ACTIVE;
-  const [prompt, setPrompt] = useState("");
-  const [hasText, setHasText] = useState(false);
-  const overLimit = useMemo(() => promptTooLong(prompt), [prompt]);
+  // The request is the field's own (W567): a key renders the page only when its shape changes, blank, to send, or
+  // too long; submit reads the text now.
+  const typed = useTyped(promptShape);
+  const overLimit = typed.shown === PromptShape.TOO_LONG;
+  const sendable = typed.shown === PromptShape.TEXT;
   const [allowance, setAllowance] = useState(Allowance.NONE);
   const [chosen, setChosen] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -214,13 +216,7 @@ export function MakeWish({
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (
-      submitting.current ||
-      leadStopped ||
-      !hasText ||
-      !prompt.trim() ||
-      overLimit
-    )
+    if (submitting.current || leadStopped || !sendable || !typed.read().trim())
       return;
     submitting.current = true;
     submissionFocus.current =
@@ -232,7 +228,7 @@ export function MakeWish({
     setError("");
     try {
       const res = await clients!.wishes.make({
-        prompt: prompt.trim(),
+        prompt: typed.read().trim(),
         projectIds: selected,
         paused: full,
       });
@@ -486,10 +482,9 @@ export function MakeWish({
                   describedBy={overLimit ? `${promptId}-limit` : undefined}
                   disabled={busy}
                   invalid={overLimit}
-                  onChange={(markdown, hasText) => {
-                    setPrompt(markdown);
-                    setHasText(hasText);
-                  }}
+                  text={typed.text}
+                  onText={typed.type}
+                  empty={typed.shown === PromptShape.EMPTY}
                 />
                 {overLimit && (
                   <p
@@ -517,13 +512,7 @@ export function MakeWish({
                 <TooltipButton
                   type="submit"
                   className="button accent workspace-action-control"
-                  disabled={
-                    busy ||
-                    leadStopped ||
-                    !hasText ||
-                    !prompt.trim() ||
-                    overLimit
-                  }
+                  disabled={busy || leadStopped || !sendable}
                   label={submitLabel}
                   tooltip={submitLabel}
                   shortcut={submitShortcut.label}

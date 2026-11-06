@@ -119,6 +119,7 @@ export {
   sleepTasks,
   sleepUntil,
 } from "@/src/wish-dialogs.tsx";
+export { PromptShape, promptShape } from "@/src/wish-composer.tsx";
 export {
   BranchChoice,
   ConfigChanges,
