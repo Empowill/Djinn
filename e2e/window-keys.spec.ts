@@ -1,7 +1,7 @@
 // The window's moves by the keyboard (W491, src/window-keys.ts, src/view-history.ts): Alt+Left and Alt+Right go back and
 // forward in the views, a wish's tab, another wish, a tilasm opened over the page, as in Chrome; Ctrl+Up and Ctrl+Down
 // go to the wish above or below in the side panel, the granted ones skipped; none of them takes a key from a text
-// field. The questions' own keys are in question-column.spec.ts and question-shortcuts.spec.ts.
+// field. With the focus in a tilasm's frame, its bridge tells the window back and forward (W527). The questions' own keys are in question-column.spec.ts and question-shortcuts.spec.ts.
 import { expect, test } from "./test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -50,7 +50,7 @@ test("Alt+arrows go back and forward in the views, Ctrl+Up and Ctrl+Down through
   try {
     fs.writeFileSync(
       path.join(dir, "index.html"),
-      "<!doctype html><html><head><title>The lamp's keys</title></head><body><h1>The lamp's keys</h1></body></html>",
+      "<!doctype html><html><head><title>The lamp's keys</title></head><body><h1>The lamp's keys</h1><input aria-label=\"Brass or iron\"></body></html>",
     );
     const tilasm = JSON.parse(
       djinn("tilasm", "put", dir, "--wish", firstId, "--json"),
@@ -137,6 +137,22 @@ test("Alt+arrows go back and forward in the views, Ctrl+Up and Ctrl+Down through
     await shown("main");
     await page.keyboard.press("Alt+ArrowRight");
     await expect(over.locator("iframe.tilasm-frame")).toBeVisible();
+    // The focus in the tilasm's page: its bridge tells the window back and forward, but a key in its text field stays
+    // the field's.
+    const inFrame = over.frameLocator("iframe.tilasm-frame");
+    await inFrame.locator("h1").click();
+    await page.keyboard.press("Alt+ArrowLeft");
+    await expect(over).toHaveCount(0);
+    await page.keyboard.press("Alt+ArrowRight");
+    await expect(over.locator("iframe.tilasm-frame")).toBeVisible();
+    const field = inFrame.getByLabel("Brass or iron");
+    await field.click();
+    await page.keyboard.type("Iron");
+    await page.keyboard.press("Alt+ArrowLeft");
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue("Iron");
+    await expect(over.locator("iframe.tilasm-frame")).toBeVisible();
+    await inFrame.locator("h1").click();
     await page.keyboard.press("Alt+ArrowLeft");
     await expect(over).toHaveCount(0);
 
