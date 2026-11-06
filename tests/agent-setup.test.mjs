@@ -2,6 +2,9 @@
 // and the line that adds one. Run with `go tool task test-ui`.
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { screens, setupMockDom } from "./screens.mjs";
 
@@ -385,17 +388,30 @@ test("the panel adds an account the way the command line does, and pauses and re
         target: { value: String(s.Provider.CODEX) },
       }),
     );
+    // A name the rule refuses says the rule, with the example, and sends nothing.
+    await s.act(async () =>
+      props(byLabel("Name, such as work")).onChange({
+        target: { value: "Work" },
+      }),
+    );
+    const form = below(container).find((el) => el.nodeName === "FORM");
+    const alert = () =>
+      below(container).find((el) => el.attributes?.role === "alert");
+    assert.match(alert()?.textContent ?? "", /lowercase.*such as work\./);
+    await s.act(async () => props(form).onSubmit({ preventDefault() {} }));
+    await settle();
+    assert.equal(calls.at(-1)[0], "resume", "a refused name sends nothing");
     await s.act(async () =>
       props(byLabel("Name, such as work")).onChange({
         target: { value: " gpt " },
       }),
     );
+    assert.equal(alert(), undefined, "the name is trimmed as it is sent");
     await s.act(async () =>
-      props(byLabel("Label, such as Work")).onChange({
+      props(byLabel("Label, any text, such as Work")).onChange({
         target: { value: "GPT" },
       }),
     );
-    const form = below(container).find((el) => el.nodeName === "FORM");
     await s.act(async () => props(form).onSubmit({ preventDefault() {} }));
     await settle();
     assert.deepEqual(calls.at(-1), ["add", "gpt", s.Provider.CODEX, "GPT"]);
@@ -406,6 +422,34 @@ test("the panel adds an account the way the command line does, and pauses and re
     for (const handle of process._getActiveHandles())
       if (handle?.constructor?.name === "MessagePort") handle.unref();
   }
+});
+
+// The example the window shows for an account's name passes the rule it checks, in every language, and that rule is
+// the proto's: the server refuses what the window refuses (TestAccountNameExample checks the server's side).
+test("the example of an account's name passes the rule the window and the server check", () => {
+  assert.equal(s.accountNamePattern.source, "^[a-z0-9][a-z0-9-]{0,31}$");
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+  for (const lang of ["en", "fr"]) {
+    const texts = JSON.parse(
+      fs.readFileSync(path.join(dir, "locales", `${lang}.json`), "utf8"),
+    );
+    const example = texts["agents.account_name_example"];
+    assert.ok(s.accountNameValid(example), `${lang}: ${example}`);
+    assert.match(texts["agents.account_name"], /\{example\}/, lang);
+    assert.match(texts["agents.account_name_format"], /\{example\}/, lang);
+  }
+  for (const name of ["work", "pro", "claude-2", " work ", "a".repeat(32)])
+    assert.ok(s.accountNameValid(name), name);
+  for (const name of [
+    "Work",
+    "Travail",
+    "compte pro",
+    "toussaint@empowill.com",
+    "-pro",
+    "\u00e9t\u00e9",
+    "a".repeat(33),
+  ])
+    assert.ok(!s.accountNameValid(name), name);
 });
 
 test("the panel reads each sign-in's usage from the lead's service with the agents, and again after a pause", async () => {
