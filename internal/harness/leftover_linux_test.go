@@ -20,11 +20,16 @@ import (
 
 // leftoverClaude is a claude that starts two long jobs before it plays the fake provider, as an agent's shell does: a
 // job in the background, in its process group (a dev server started with &), and a daemon, in a session of its own
-// (what setsid or a double fork leave). Each writes its PID to a file of $DJINN_LEFT once it runs; the job writes its
-// environment first, to job.env.
+// (what setsid or a double fork leave). Each writes its /proc stat line, its PID and start time, to a file of
+// $DJINN_LEFT once it runs; the job writes its environment first, to job.env. A done or failed task ends as soon as the
+// fake starts and stops them: the fake starts once both have written theirs (W434).
 const leftoverClaude = `#!/bin/sh
-sh -c 'env > "$0.env" && echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$DJINN_LEFT/job" </dev/null >/dev/null 2>&1 &
-setsid sh -c 'echo $$ > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$DJINN_LEFT/daemon" </dev/null >/dev/null 2>&1 &
+sh -c 'env > "$0.env" && cat /proc/$$/stat > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$DJINN_LEFT/job" </dev/null >/dev/null 2>&1 &
+setsid sh -c 'cat /proc/$$/stat > "$0.new" && mv "$0.new" "$0" && exec sleep 600' "$DJINN_LEFT/daemon" </dev/null >/dev/null 2>&1 &
+i=0
+while [ ! -e "$DJINN_LEFT/job" ] || [ ! -e "$DJINN_LEFT/daemon" ]; do
+	i=$((i + 1)); [ "$i" -lt 1000 ] || break; sleep 0.01
+done
 exec "$DJINN_FAKE_BIN" "$@"
 `
 
@@ -115,8 +120,9 @@ func TestTaskEndStopsWhatItsWorkerStarted(t *testing.T) {
 	}
 }
 
-// leftoverPID waits for the PID leftoverClaude writes to dir/name, and returns the identity of that process; it kills
-// it as the test ends.
+// leftoverPID waits for the stat line leftoverClaude writes to dir/name, and returns the identity of that process; it
+// kills it as the test ends. The identity comes from the line, not from /proc: a done or failed task may have stopped
+// the process already (W434).
 func leftoverPID(t *testing.T, dir, name string) identity {
 	t.Helper()
 	var id identity
@@ -125,13 +131,19 @@ func leftoverPID(t *testing.T, dir, name string) identity {
 		if err != nil {
 			return false
 		}
-		pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
-		if err != nil {
+		// "PID (comm) state ...": the start time is the 20th field past the command name, as procStat reads it.
+		s := string(b)
+		open, end := strings.IndexByte(s, ' '), strings.LastIndexByte(s, ')')
+		if open < 0 || end < open {
 			return false
 		}
-		id.pid = pid
-		id.start, err = procStart(pid)
-		return err == nil
+		pid, err := strconv.Atoi(s[:open])
+		f := strings.Fields(s[end+1:])
+		if err != nil || len(f) < 20 {
+			return false
+		}
+		id = identity{pid: pid, start: bootID() + ":" + f[19]}
+		return true
 	})
 	t.Cleanup(func() {
 		if same(id) {
