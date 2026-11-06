@@ -208,7 +208,8 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     await page.locator(".mission-scroll").evaluate((el) => el.scrollTo(0, 0));
     await shoot(page, "wide");
 
-    // Space and Page Down scroll the long question: the arrows stay with the questions.
+    // Space and Page Down scroll the long question: the arrows stay with the questions. The focus that comes to it
+    // rests on its option selected (W491), where Space scrolls too.
     await oil.focus();
     const scroller = page.locator(".mission-scroll");
     const top = () => scroller.evaluate((el) => el.scrollTop);
@@ -223,7 +224,9 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     // Down and up, across the wishes, stopping at both ends; the question reached opens and takes the focus.
     await page.locator(".mission-scroll").evaluate((el) => el.scrollTo(0, 0));
     await open(order[0]);
-    await expect(row(order[0])).toBeFocused();
+    await expect(row(order[0]).and(page.locator(":focus-within"))).toHaveCount(
+      1,
+    );
     // The question that has the focus shows a gold ring, it alone; the hover over a closed one draws none.
     const ring = (text: string) =>
       row(text).evaluate((el) => getComputedStyle(el).outlineStyle);
@@ -240,28 +243,37 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     await row(order[1]).hover();
     expect(await ring(order[1])).toBe("none");
     expect(await ring(order[2])).toBe("none");
+    // W491: Right and Left go to the next and previous question, Up and Down are the options'.
     for (const text of order.slice(1)) {
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowRight");
       await expect(row(text)).toHaveClass(/current/);
-      await expect(row(text)).toBeFocused();
+      await expect(row(text).and(page.locator(":focus-within"))).toHaveCount(1);
       for (const other of order)
         expect(await ring(other)).toBe(other === text ? "solid" : "none");
     }
-    await page.keyboard.press("ArrowDown");
-    await expect(row(order[2])).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(row(order[2]).and(page.locator(":focus-within"))).toHaveCount(
+      1,
+    );
     await page.keyboard.press("Home");
-    await expect(row(order[0])).toBeFocused();
-    await page.keyboard.press("ArrowUp");
-    await expect(row(order[0])).toBeFocused();
+    await expect(row(order[0]).and(page.locator(":focus-within"))).toHaveCount(
+      1,
+    );
+    await page.keyboard.press("ArrowLeft");
+    await expect(row(order[0]).and(page.locator(":focus-within"))).toHaveCount(
+      1,
+    );
     await page.keyboard.press("End");
-    await expect(row(order[2])).toBeFocused();
+    await expect(row(order[2]).and(page.locator(":focus-within"))).toHaveCount(
+      1,
+    );
     // The page shows the question by its title.
     await expect(row(order[2]).locator(".question-row-title")).toBeInViewport();
 
     // Where to buy the oil: no recommendation, the lamp waits for a pick; a letter or a digit picks.
     const buy = row("Where to buy the oil?");
     await open("Where to buy the oil?");
-    await expect(buy).toBeFocused();
+    await expect(buy.and(page.locator(":focus-within"))).toHaveCount(1);
     const rub = buy.getByRole("button", { name: "To the lead" });
     const option = (name: string) => buy.getByRole("button", { name });
     await expect(rub).toBeDisabled();
@@ -278,7 +290,7 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     await expect(note).toBeFocused();
     await page.keyboard.type("Fresh.");
     await page.keyboard.press("Escape");
-    await expect(buy).toBeFocused();
+    await expect(buy.and(page.locator(":focus-within"))).toHaveCount(1);
     await expect(note).toHaveValue("Fresh.");
     await page.keyboard.press("Escape");
     await expect(option("Shop")).toHaveAttribute("aria-pressed", "false");
@@ -290,7 +302,9 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     ).toBe(true);
     // Down comes back to the first.
     await page.keyboard.press("ArrowDown");
-    await expect(row(order[0])).toBeFocused();
+    await expect(row(order[0]).and(page.locator(":focus-within"))).toHaveCount(
+      1,
+    );
     await expect(row(order[0])).toHaveClass(/current/);
 
     // Answered from the column, by the keys: the note sends it, the one above opens and takes the focus.
@@ -311,7 +325,7 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
     const left = order.filter((text) => text !== "Where to buy the oil?");
     const heir = left[at] ?? left[at - 1];
     await expect(row(heir)).toHaveClass(/current/);
-    await expect(row(heir)).toBeFocused();
+    await expect(row(heir).and(page.locator(":focus-within"))).toHaveCount(1);
 
     // The glance on the right (Decision Q08): each wish under its title, nothing running here. It stays in sight
     // while the long question scrolls by.
@@ -381,20 +395,30 @@ test("the questions column: grouped by wish, arrows across the groups, letters, 
       ),
     ).toBe(true);
     await page.keyboard.press("ArrowDown");
-    await expect(rows.first()).toBeFocused();
+    await expect(rows.first().and(page.locator(":focus-within"))).toHaveCount(
+      1,
+    );
     await expect(rows.first()).toHaveCSS("outline-style", "solid");
     await expect(row("Which wick?")).toHaveClass(/closed/);
-    await page.keyboard.press("ArrowDown");
-    await expect(row("Which wick?")).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(
+      row("Which wick?").and(page.locator(":focus-within")),
+    ).toHaveCount(1);
     await expect(row("Which wick?")).toHaveClass(/current/);
     // From a button of the page, not a field, Up gives the focus back to the open question first.
     await page.locator(".attention-bar button").first().focus();
     await page.keyboard.press("ArrowUp");
-    await expect(row("Which wick?")).toBeFocused();
-    await page.keyboard.press("ArrowUp");
-    await expect(rows.first()).toBeFocused();
-    await page.keyboard.press("ArrowDown");
-    await expect(row("Which wick?")).toBeFocused();
+    await expect(
+      row("Which wick?").and(page.locator(":focus-within")),
+    ).toHaveCount(1);
+    await page.keyboard.press("ArrowLeft");
+    await expect(rows.first().and(page.locator(":focus-within"))).toHaveCount(
+      1,
+    );
+    await page.keyboard.press("ArrowRight");
+    await expect(
+      row("Which wick?").and(page.locator(":focus-within")),
+    ).toHaveCount(1);
     await page.locator(".mission-scroll").evaluate((el) => el.scrollTo(0, 0));
     await shoot(page, "wish");
 
@@ -484,7 +508,9 @@ for (const engine of ["native", "script"] as const)
         });
       const onTop = async (text: string) => {
         await expect(row(text)).toHaveClass(/current/);
-        await expect(row(text)).toBeFocused();
+        await expect(row(text).and(page.locator(":focus-within"))).toHaveCount(
+          1,
+        );
         const at = await offset(text);
         expect(at, `${text}'s title below the top`).toBeGreaterThanOrEqual(0);
         expect(at, `${text}'s title at the top`).toBeLessThan(40);
@@ -497,11 +523,11 @@ for (const engine of ["native", "script"] as const)
       await onTop("Which oil?");
       // Read into its middle, then Down: Which wick? reads from its title, not from where the page was.
       await scrollBy(700);
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowRight");
       await onTop("Which wick?");
       // At the end of Which wick?, Up: Which oil? again from its title.
       await scrollBy(1500);
-      await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("ArrowLeft");
       await onTop("Which oil?");
       // In its middle, a click on the closed Which wick? below.
       await scrollBy(900);

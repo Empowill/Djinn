@@ -81,6 +81,7 @@ import {
   WaitingTasks,
   wishOrigin,
 } from "./wish-view";
+import { usePlace } from "./view-history";
 
 const noTasks: readonly Task[] = [];
 
@@ -260,6 +261,8 @@ export function FlightPlan({
     setView(to);
     setFocus(id);
   }, []);
+  // Its tab is a layer of the window's history of views (view-history.ts): going back shows it again.
+  usePlace("tab", view, (to) => show((to ?? "main") as View));
   // What the plan's tabs show of the bar's lines: the open questions, the waiting workers and the grants in the
   // first tab, the answered questions in the decisions.
   const shown = useMemo(

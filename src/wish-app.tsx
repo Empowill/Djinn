@@ -58,6 +58,14 @@ import { DjinnEye } from "./djinn-eye";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
 import { CARPET_DIGIT, HOURGLASS_DIGIT, pageDigit } from "./page-keys";
+import { usePlace, viewHistory } from "./view-history";
+import {
+  historyStep,
+  nextWish,
+  typingIn,
+  wishOrder,
+  wishStep,
+} from "./window-keys";
 import { hideSplash } from "./splash";
 import "./wish.css";
 import "./review.css";
@@ -299,6 +307,65 @@ export function WishApp() {
     }
   }, [loaded, projectsState, wishesState]);
   const shownId = wish?.id ?? "";
+  // The page shown is the first layer of the window's history of views (view-history.ts): going back to it shows it
+  // again, as the side panel does, without landing on its questions.
+  usePlace(
+    "page",
+    settling
+      ? undefined
+      : plan
+        ? PLAN
+        : hourglass
+          ? HOURGLASS
+          : grimoire
+            ? GRIMOIRE
+            : wish?.id,
+    (page) => {
+      if (page) setSelected(page);
+    },
+  );
+  // A wish shown by the keyboard as by a click in the side panel: its first tab, its first question with the focus.
+  const openWish = useCallback((id: string) => {
+    setSelected(id);
+    setModal(null);
+    setOpening(undefined);
+    setReaching(undefined);
+    setLanding({ wishId: id });
+  }, []);
+  // Alt+Left and Alt+Right (on macOS Cmd+[ and Cmd+], Cmd+Left and Cmd+Right) go back and forward in the views, as in
+  // Chrome; Ctrl+Up and Ctrl+Down to the wish above or below in the side panel, the granted ones skipped
+  // (window-keys.ts). Never from a text field or the terminal, nor over a dialog.
+  const moves = useRef({ wishes, shownId });
+  moves.current = { wishes, shownId };
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        modal !== null ||
+        making ||
+        typingIn(event.target) ||
+        document.querySelector(".modal-backdrop")
+      )
+        return;
+      const back = historyStep(event);
+      if (back) {
+        // Nothing before or after: the key still does nothing else (a browser would leave the page).
+        event.preventDefault();
+        if (back < 0) viewHistory.back();
+        else viewHistory.forward();
+        return;
+      }
+      const step = wishStep(event);
+      if (!step) return;
+      event.preventDefault();
+      const { wishes, shownId } = moves.current;
+      const to = nextWish(wishOrder(wishes), shownId, step);
+      if (to) openWish(to);
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, [making, modal, openWish]);
   const newWishShortcut = platformShortcut("N");
   const sidebarShortcut = platformShortcut("\\");
   // djinn sends no notification for the wish shown while the window is in front; the theme shown, the system's
@@ -461,13 +528,7 @@ export function WishApp() {
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
-            onSelectWish={(id) => {
-              setSelected(id);
-              setModal(null);
-              setOpening(undefined);
-              setReaching(undefined);
-              setLanding({ wishId: id });
-            }}
+            onSelectWish={openWish}
             onSelectProject={setProjectId}
             onMove={move}
             onReorder={reorder}
