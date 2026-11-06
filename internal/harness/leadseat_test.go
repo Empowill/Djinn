@@ -204,6 +204,68 @@ func TestLeadOverflow(t *testing.T) {
 	if n := len(s.agent.all()); n != 2 || !slices.Equal(overflowing, []bool{true, true}) {
 		t.Errorf("%d sessions, overflowing %v: want 2, both past their limits", n, overflowing)
 	}
+	if batches := s.batches(t); len(batches) != 2 || !batches[0].GetOverflow() || !batches[1].GetOverflow() {
+		t.Errorf("journal: %v, want each batch marked in overflow", batches)
+	}
+}
+
+// TestLeadPinAndUnpin: djinn lead pin keeps each batch of the lead on the sign-in named, whatever the order; --unpin
+// takes the pin off, and the next batch starts again on the first free sign-in of its agent in the order (Q317).
+func TestLeadPinAndUnpin(t *testing.T) {
+	t.Parallel()
+	h := &Harness{}
+	s := driveSeats(t, func(int) ([]Event, error) { return leadTurn("djinn brief", "Took the batch over"), nil },
+		nil, nil, followOrder(h))
+	work := s.addAccount(t, "work", planv1.Provider_PROVIDER_CLAUDE)
+	perso := s.addAccount(t, "perso", planv1.Provider_PROVIDER_CLAUDE)
+	s.writeOrder(t, "work", "", "perso")
+	pin := func(account string, unpin bool) *planv1.LeadServicePinResponse {
+		t.Helper()
+		res, err := s.lead.Pin(t.Context(), connect.NewRequest(&planv1.LeadServicePinRequest{Account: account, Unpin: unpin}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+
+	if res := pin("perso", false); !res.GetPinned() || res.GetSeat().GetAccount() != "perso" || !plan.LeadPinned(s.home) {
+		t.Errorf("pinned on perso: %v", res)
+	}
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W2", "W2 ended")
+	if got := configDir(s.started(t, 0)); got != perso.GetConfigDirectory() {
+		t.Errorf("pinned on perso: on %q, want perso's, whatever the order", got)
+	}
+	waitFor(t, "the batch done", func() bool { return len(s.waiting(t)) == 0 })
+
+	res := pin("", true)
+	if res.GetPinned() || res.GetSeat().GetAccount() != "" || plan.LeadPinned(s.home) ||
+		!strings.Contains(res.GetNote(), "follows the order again") {
+		t.Errorf("unpinned: %v", res)
+	}
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W3", "W3 ended")
+	if got := configDir(s.started(t, 1)); got != work.GetConfigDirectory() {
+		t.Errorf("unpinned: on %q, want work's, the first in the order", got)
+	}
+	waitFor(t, "the batch done", func() bool { return len(s.waiting(t)) == 0 })
+
+	if res := pin("", false); !res.GetPinned() || res.GetSeat().GetAccount() != "" {
+		t.Errorf("pinned on its own sign-in: %v", res)
+	}
+	s.notify(t, planv1.LeadEventKind_LEAD_EVENT_KIND_ENDED, "W4", "W4 ended")
+	if got := configDir(s.started(t, 2)); got != "" {
+		t.Errorf("pinned on claude's own sign-in: on %q, want its default folder", got)
+	}
+
+	for _, bad := range []*planv1.LeadServicePinRequest{{Account: "work", Unpin: true}, {Account: "nobody"}} {
+		if _, err := s.lead.Pin(t.Context(), connect.NewRequest(bad)); err == nil {
+			t.Errorf("pin %v accepted", bad)
+		}
+	}
+	s.addAccount(t, "gpt", planv1.Provider_PROVIDER_CODEX)
+	if _, err := s.lead.Pin(t.Context(), connect.NewRequest(&planv1.LeadServicePinRequest{Account: "gpt"})); err == nil ||
+		!strings.Contains(err.Error(), "djinn lead move --provider codex --account gpt") {
+		t.Errorf("pin on codex's account while claude leads: %v", err)
+	}
 }
 
 // TestLeadSeat tests moving the lead between providers, models, and accounts, and handling account limits.

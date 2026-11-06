@@ -8,11 +8,17 @@ package plan
 // each agent's own sign-in, then its accounts as added.
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
+	"strings"
+
+	"connectrpc.com/connect"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // signInAgents are the agents with a sign-in of their own, in the order by default.
@@ -121,4 +127,119 @@ func PinLead(home string, pinned bool) error {
 		settings.LeadPinned = &pinned
 		return nil
 	})
+}
+
+// SignInWord names s as djinn lead order takes it: its agent (claude) for its own sign-in, agent/name (claude/work)
+// for one of its accounts.
+func SignInWord(s SignIn) string {
+	if s.Name == "" {
+		return providerWord(s.Provider)
+	}
+	return providerWord(s.Provider) + "/" + s.Name
+}
+
+// parseSignIn is the sign-in word names (SignInWord), as account_order keeps it.
+func parseSignIn(word string) (*uiv1.SignInRef, error) {
+	agent, name, _ := strings.Cut(word, "/")
+	p, ok := planv1.Provider_value["PROVIDER_"+strings.ToUpper(agent)]
+	if !ok || !slices.Contains(signInAgents, planv1.Provider(p)) {
+		return nil, fmt.Errorf("%q names no agent: claude, codex or antigravity, then /name for an account", word)
+	}
+	return &uiv1.SignInRef{Provider: planv1.Provider(p), Account: name}, nil
+}
+
+// signInLine names s in a line of the order: "the account work (Work subscription) of Claude Code".
+func signInLine(s SignIn) string {
+	if s.Account == nil {
+		return agentNames[s.Provider] + "'s own sign-in"
+	}
+	return s.Name + " (" + accountLabel(s.Account) + ", " + agentNames[s.Provider] + ")"
+}
+
+// Order implements LeadService.Order: the whole order of the sign-ins, written to settings.json, then said back.
+func (s *LeadService) Order(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceOrderRequest],
+) (*connect.Response[planv1.LeadServiceOrderResponse], error) {
+	refs := make([]*uiv1.SignInRef, 0, len(req.Msg.GetSignIn()))
+	for _, word := range req.Msg.GetSignIn() {
+		ref, err := parseSignIn(word)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		refs = append(refs, ref)
+	}
+	var written []SignIn
+	err := write(ctx, s.Wishes.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+		var err error
+		written, err = WriteAccountOrder(s.Wishes.home(), refs)
+		if err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	res := &planv1.LeadServiceOrderResponse{}
+	var b strings.Builder
+	b.WriteString("The order of the sign-ins, from the highest priority: each new worker, and each batch of the lead " +
+		"unless it is pinned, starts on the first free one of its agent.\n")
+	for i, si := range written {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, signInLine(si))
+		res.SignIn = append(res.SignIn, SignInWord(si))
+	}
+	res.Text = b.String()
+	s.Wishes.ChangeLead()
+	return connect.NewResponse(res), nil
+}
+
+// Pin implements LeadService.Pin: the lead pinned on a sign-in of its agent, or with unpin following the order again;
+// the events that wait after a failed batch or a limit go to its next batch at once.
+func (s *LeadService) Pin(
+	ctx context.Context, req *connect.Request[planv1.LeadServicePinRequest],
+) (*connect.Response[planv1.LeadServicePinResponse], error) {
+	home := s.Wishes.home()
+	name, unpin := req.Msg.GetAccount(), req.Msg.GetUnpin()
+	if unpin && name != "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(
+			"--unpin takes no account: the lead follows the order of the sign-ins of its agent again"))
+	}
+	accounts := ReadAccounts(home)
+	seat := ReadLeadSeat(home)
+	if name != "" {
+		a := FindAccount(accounts, name)
+		switch {
+		case a == nil:
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf(
+				"no account is called %s: djinn lead accounts lists them", name))
+		case a.GetProvider() != seat.GetProvider():
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+				"the account %s is %s's, and the lead runs %s: djinn lead move --provider %s --account %s moves it there",
+				name, agentNames[a.GetProvider()], agentNames[seat.GetProvider()], providerWord(a.GetProvider()), name))
+		}
+	}
+	seat.Account = name // Unpinned, the order picks each batch's: the seat names none.
+	pinned := !unpin
+	err := write(ctx, s.Wishes.Store, req.Spec(), req.Msg, func(*store.Tx) error {
+		return changeSettings(home, func(settings *uiv1.Settings) error {
+			settings.Lead, settings.LeadPinned = seat, &pinned
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	note := "The lead is pinned on " + SeatText(seat, accounts) + ": each batch starts there whatever the order, " +
+		"until you unpin it (djinn lead pin --unpin)."
+	if unpin {
+		note = "The lead follows the order again: each batch starts on the first free sign-in of " +
+			agentNames[seat.GetProvider()] + " in the order of the accounts."
+	}
+	if d := s.Wishes.drive(); d != nil && (d.Failure() != "" || d.LeadLimit() != nil) {
+		d.SetLimit(nil, "")
+		d.askRetry()
+		note += " The events that wait go to its next batch now."
+	}
+	s.Wishes.ChangeLead()
+	return connect.NewResponse(&planv1.LeadServicePinResponse{Seat: seat, Pinned: pinned, Note: note}), nil
 }

@@ -302,6 +302,14 @@ func (h *Harness) Usage() []*planv1.AccountUsage {
 		return nil
 	}
 	now := h.now()
+	overflowing := map[accountKey]bool{} // The sign-ins a worker runs on now past their limits (Overflowing).
+	h.mu.Lock()
+	for _, r := range h.runs {
+		if r.worker != nil && r.overflow && r.shown != nil {
+			overflowing[accountKey{agentOf(r.shown), r.shown.GetAccount()}] = true
+		}
+	}
+	h.mu.Unlock()
 	var out []*planv1.AccountUsage
 	for _, provider := range []planv1.Provider{planv1.Provider_PROVIDER_CLAUDE, planv1.Provider_PROVIDER_CODEX,
 		planv1.Provider_PROVIDER_ANTIGRAVITY} {
@@ -311,11 +319,11 @@ func (h *Harness) Usage() []*planv1.AccountUsage {
 		for _, o := range options {
 			k := accountKey{provider, o.Name}
 			failed, tried := h.quota.failed[k]
-			if o.Quota == nil && !tried {
+			if o.Quota == nil && !tried && !overflowing[k] {
 				continue
 			}
 			u := &planv1.AccountUsage{Provider: provider, Account: o.Name, ProbeError: failed.why, Paused: o.Paused,
-				Next: ok && o.Name == next.Name && len(options) > 1}
+				Next: ok && o.Name == next.Name && len(options) > 1, Overflowing: overflowing[k]}
 			if !o.LimitedUntil.IsZero() && o.LimitedUntil.After(now) {
 				u.LimitedUntil = timestamppb.New(o.LimitedUntil)
 			}
