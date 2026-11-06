@@ -320,6 +320,10 @@ func TestLeadWatchFallbackLine(t *testing.T) {
 	t.Run("a watch that returns at once promises none", func(t *testing.T) {
 		t.Parallel()
 		w, s, leads := leadWatchFixture(t, planv1.Provider_PROVIDER_CODEX)
+		// A grace far above the remind: a line held for the grace stays told apart from one typed at once, however
+		// slow the machine (the Windows runner took 240 ms for a remind of 50 ms).
+		grace := time.Second
+		w.leadWatch().timing.grace = grace
 		notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, "W1", "Djinn: W1 merged")
 		if said := waitSaid(leads, 1); len(said) != 1 {
 			t.Fatalf("typed %q", said)
@@ -329,7 +333,7 @@ func TestLeadWatchFallbackLine(t *testing.T) {
 		// The lead watched: the next event gets its line, at once, without a grace.
 		start := time.Now()
 		notify(t, w, planv1.LeadEventKind_LEAD_EVENT_KIND_MERGED, "W2", "Djinn: W2 merged")
-		if said := waitSaid(leads, 2); len(said) != 2 || time.Since(start) > quick.grace {
+		if said := waitSaid(leads, 2); len(said) != 2 || time.Since(start) >= grace {
 			t.Errorf("typed %q after %s", said, time.Since(start))
 		}
 	})
