@@ -188,6 +188,25 @@ func List[T proto.Message](ctx context.Context, r Reader, where Where) ([]T, err
 	return out, err
 }
 
+// Each is List for a type known at run time only: it calls f on the entities of type mt that match where, oldest
+// first, until f returns false.
+func Each(ctx context.Context, r Reader, mt protoreflect.MessageType, where Where, f func(proto.Message) bool) error {
+	return list(ctx, r, mt, where, "id", f)
+}
+
+// Indexed names the fields of md that a Where may hold, id first: its table's columns.
+func Indexed(r Reader, md protoreflect.MessageDescriptor) ([]string, error) {
+	t, err := r.table(md)
+	if err != nil {
+		return nil, err
+	}
+	names := []string{"id"}
+	for _, fd := range t.columns {
+		names = append(names, string(fd.Name()))
+	}
+	return names, nil
+}
+
 // After narrows a ListAfter to the entities whose indexed integer field Field is past From, and whose payload holds
 // each of Contains: a filter on the encoded bytes that skips decoding the others, which the caller checks again
 // once decoded, as an entity may hold the bytes elsewhere.
