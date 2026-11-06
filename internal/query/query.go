@@ -65,17 +65,21 @@ type Collection struct {
 	Source Source
 	// Defaults are the refs a query without selects reads: every ref of the schema when empty.
 	Defaults []string
+	// Derived are the refs it computes in Go, besides its fields' (TaskRefs, QuestionRefs).
+	Derived []Derived
 }
 
 // Catalog holds the collections a query reads, one per message type: a jump reads its target by its type.
 type Catalog struct {
-	byName map[string]Collection
-	byType map[protoreflect.FullName]Source
+	byName  map[string]Collection
+	byType  map[protoreflect.FullName]Source
+	derived map[protoreflect.FullName]map[string]Derived
 }
 
 // NewCatalog checks the collections: a name and a type each once, and default refs that compile.
 func NewCatalog(collections ...Collection) (*Catalog, error) {
-	c := &Catalog{byName: map[string]Collection{}, byType: map[protoreflect.FullName]Source{}}
+	c := &Catalog{byName: map[string]Collection{}, byType: map[protoreflect.FullName]Source{},
+		derived: map[protoreflect.FullName]map[string]Derived{}}
 	for _, col := range collections {
 		if col.Name == "" || col.Source == nil {
 			return nil, fmt.Errorf("a collection needs a name and a source")
@@ -89,6 +93,18 @@ func NewCatalog(collections ...Collection) (*Catalog, error) {
 		}
 		c.byName[col.Name] = col
 		c.byType[name] = col.Source
+		for _, d := range col.Derived {
+			if err := d.check(col.Source.Descriptor()); err != nil {
+				return nil, fmt.Errorf("collection %s: %w", col.Name, err)
+			}
+			if _, ok := c.derived[name][d.Ref]; ok {
+				return nil, fmt.Errorf("collection %s: derived ref %q twice", col.Name, d.Ref)
+			}
+			if c.derived[name] == nil {
+				c.derived[name] = map[string]Derived{}
+			}
+			c.derived[name][d.Ref] = d
+		}
 	}
 	for _, col := range collections {
 		comp := &compiler{cat: c, targets: map[protoreflect.FullName]map[string]protoreflect.Message{}}
@@ -101,13 +117,21 @@ func NewCatalog(collections ...Collection) (*Catalog, error) {
 	return c, nil
 }
 
-// Schema gives the refs of a collection: its own, without jumps.
+// Schema gives the refs of a collection: its own, without jumps, then its derived ones.
 func (c *Catalog) Schema(name string) ([]Column, error) {
 	col, ok := c.byName[name]
 	if !ok {
 		return nil, fmt.Errorf("%w: no collection %s", ErrInvalid, name)
 	}
-	return Schema(col.Source.Descriptor()), nil
+	return c.schema(col), nil
+}
+
+func (c *Catalog) schema(col Collection) []Column {
+	out := Schema(col.Source.Descriptor())
+	for _, d := range col.Derived {
+		out = append(out, d.column())
+	}
+	return out
 }
 
 // Query asks a collection for a table.
@@ -122,6 +146,9 @@ type Query struct {
 	Selects []string
 	// Limit keeps the first rows only, when above 0.
 	Limit int
+	// Aggregation, when set, makes the table a row per group, its columns the groups' and the measures': it
+	// selects them, and the sorts name them.
+	Aggregation *Aggregation
 }
 
 // Sort orders rows by a ref, which cannot be a list.
@@ -135,7 +162,7 @@ type Table struct {
 	Columns []Column
 	// Rows hold a value per column, nil when absent.
 	Rows [][]any
-	// Total counts the rows before the limit.
+	// Total counts the rows before the limit: the groups when aggregated.
 	Total int
 }
 
@@ -151,36 +178,53 @@ func (c *Catalog) Run(ctx context.Context, q Query) (*Table, error) {
 	md := col.Source.Descriptor()
 	comp := &compiler{cat: c, targets: map[protoreflect.FullName]map[string]protoreflect.Message{}}
 
-	selects := q.Selects
-	if len(selects) == 0 {
-		selects = col.Defaults
-	}
-	if len(selects) == 0 {
-		for _, s := range Schema(md) {
-			selects = append(selects, s.Ref)
-		}
-	}
-	var cols []compiled
-	for _, ref := range selects {
-		if slices.ContainsFunc(cols, func(r compiled) bool { return r.col.Ref == ref }) {
-			return nil, fmt.Errorf("%w: ref %q selected twice", ErrInvalid, ref)
-		}
-		r, err := comp.ref(md, ref)
-		if err != nil {
-			return nil, err
-		}
-		cols = append(cols, r)
-	}
-	var sorts []compiled
+	var (
+		cols  []compiled
+		ag    *aggregator
+		sorts []compiled
+		desc  []bool
+	)
 	for _, s := range q.Sorts {
-		r, err := comp.ref(md, s.Ref)
-		if err != nil {
+		desc = append(desc, s.Desc)
+	}
+	if q.Aggregation != nil {
+		if len(q.Selects) > 0 {
+			return nil, fmt.Errorf("%w: an aggregation selects its groups and measures", ErrInvalid)
+		}
+		var err error
+		if ag, err = comp.aggregation(md, *q.Aggregation); err != nil {
 			return nil, err
 		}
-		if r.col.List {
-			return nil, fmt.Errorf("%w: ref %q: a list does not sort", ErrInvalid, s.Ref)
+	} else {
+		selects := q.Selects
+		if len(selects) == 0 {
+			selects = col.Defaults
 		}
-		sorts = append(sorts, r)
+		if len(selects) == 0 {
+			for _, s := range c.schema(col) {
+				selects = append(selects, s.Ref)
+			}
+		}
+		for _, ref := range selects {
+			if slices.ContainsFunc(cols, func(r compiled) bool { return r.col.Ref == ref }) {
+				return nil, fmt.Errorf("%w: ref %q selected twice", ErrInvalid, ref)
+			}
+			r, err := comp.ref(md, ref)
+			if err != nil {
+				return nil, err
+			}
+			cols = append(cols, r)
+		}
+		for _, s := range q.Sorts {
+			r, err := comp.ref(md, s.Ref)
+			if err != nil {
+				return nil, err
+			}
+			if r.col.List {
+				return nil, fmt.Errorf("%w: ref %q: a list does not sort", ErrInvalid, s.Ref)
+			}
+			sorts = append(sorts, r)
+		}
 	}
 	var preds []pred
 	for _, f := range q.Filters {
@@ -192,6 +236,20 @@ func (c *Catalog) Run(ctx context.Context, q Query) (*Table, error) {
 			return nil, err
 		}
 		preds = append(preds, p)
+	}
+	// An aggregated table sorts by its columns: a group's or a measure's name.
+	var sortAt []int
+	if ag != nil {
+		for _, s := range q.Sorts {
+			i := slices.IndexFunc(ag.columns, func(c Column) bool { return c.Ref == s.Ref })
+			if i < 0 {
+				return nil, fmt.Errorf("%w: sort %q: the aggregation has no such column", ErrInvalid, s.Ref)
+			}
+			if ag.columns[i].List {
+				return nil, fmt.Errorf("%w: ref %q: a list does not sort", ErrInvalid, s.Ref)
+			}
+			sortAt = append(sortAt, i)
+		}
 	}
 
 	for name := range comp.targets {
@@ -212,12 +270,7 @@ func (c *Catalog) Run(ctx context.Context, q Query) (*Table, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load %s: %w", q.Collection, err)
 	}
-
-	type row struct {
-		m    protoreflect.Message
-		keys []any
-	}
-	rows := make([]row, 0, len(msgs))
+	kept := make([]protoreflect.Message, 0, len(msgs))
 next:
 	for _, msg := range msgs {
 		m := msg.ProtoReflect()
@@ -226,33 +279,50 @@ next:
 				continue next
 			}
 		}
+		kept = append(kept, m)
+	}
+
+	if ag != nil {
+		rows := ag.run(kept)
+		if len(sortAt) > 0 {
+			sortCols := make([]Column, len(sortAt))
+			for i, at := range sortAt {
+				sortCols[i] = ag.columns[at]
+			}
+			keys := func(row []any) []any {
+				out := make([]any, len(sortAt))
+				for i, at := range sortAt {
+					out[i] = row[at]
+				}
+				return out
+			}
+			slices.SortStableFunc(rows, func(a, b []any) int { return order(sortCols, desc, keys(a), keys(b)) })
+		}
+		t := &Table{Columns: ag.columns, Total: len(rows)}
+		if q.Limit > 0 {
+			rows = rows[:min(q.Limit, len(rows))]
+		}
+		t.Rows = rows
+		return t, nil
+	}
+
+	type row struct {
+		m    protoreflect.Message
+		keys []any
+	}
+	rows := make([]row, 0, len(kept))
+	for _, m := range kept {
 		r := row{m: m}
 		for _, s := range sorts {
 			r.keys = append(r.keys, s.get(m))
 		}
 		rows = append(rows, r)
 	}
-	slices.SortStableFunc(rows, func(a, b row) int {
-		for i, s := range sorts {
-			x, y := a.keys[i], b.keys[i]
-			switch {
-			case x == nil && y == nil:
-				continue
-			case x == nil:
-				return 1
-			case y == nil:
-				return -1
-			}
-			c := compare(s.col, x, y)
-			if q.Sorts[i].Desc {
-				c = -c
-			}
-			if c != 0 {
-				return c
-			}
-		}
-		return 0
-	})
+	sortCols := make([]Column, len(sorts))
+	for i, s := range sorts {
+		sortCols[i] = s.col
+	}
+	slices.SortStableFunc(rows, func(a, b row) int { return order(sortCols, desc, a.keys, b.keys) })
 
 	t := &Table{Total: len(rows)}
 	if q.Limit > 0 {
@@ -270,6 +340,30 @@ next:
 		t.Rows = append(t.Rows, values)
 	}
 	return t, nil
+}
+
+// order compares two rows by their keys, one per column, descending where desc says (none when nil): a null comes
+// last either way.
+func order(cols []Column, desc []bool, a, b []any) int {
+	for i := range min(len(a), len(cols)) {
+		x, y := a[i], b[i]
+		switch {
+		case x == nil && y == nil:
+			continue
+		case x == nil:
+			return 1
+		case y == nil:
+			return -1
+		}
+		c := compare(cols[i], x, y)
+		if desc != nil && desc[i] {
+			c = -c
+		}
+		if c != 0 {
+			return c
+		}
+	}
+	return 0
 }
 
 // pushdown gives the source the equalities on its indexed fields among the filters at the root, which all hold for

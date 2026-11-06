@@ -1,7 +1,9 @@
 // Package query reads a collection of stored messages by refs, as a table: the columns a query selects, its rows
 // filtered and sorted. A ref names a field by its path in the message (usage.cost_usd) and may cross to another
 // collection through a field that holds an id (wish_id->title), as its (djinn.v1.ref) option declares. The schema
-// comes from the descriptor: a column's type never depends on the values a row holds.
+// comes from the descriptor: a column's type never depends on the values a row holds. A collection adds refs computed
+// in Go (prompt::size), and a query may aggregate its rows: groups by refs, a time truncated to its day, week or month,
+// and measures named ref::fn (running::median).
 //
 // The store keeps each entity as a protobuf payload, its *_id fields aside as columns: an equality on one of them
 // narrows the rows SQLite reads, and everything else runs in Go, on the decoded messages.
@@ -64,11 +66,20 @@ type Column struct {
 	Type Type
 	// List is a repeated field: its value is a []any of Type, nil when empty.
 	List bool
-	// Field is the field read last, past the jumps: its descriptor holds its comment, its enum, its options.
+	// Field is the field read last, past the jumps: its descriptor holds its comment, its enum, its options. It is
+	// nil for a derived ref, and for a count of rows.
 	Field protoreflect.FieldDescriptor
 	// Jump is the full name of the message whose id the field holds, by its (djinn.v1.ref) option: the ref
 	// Ref+"->"+r reads r there.
 	Jump protoreflect.FullName
+	// Doc says what a derived ref is.
+	Doc string
+
+	// In an aggregated table, Of is the ref a group or a measure reads ("" for a count of rows), Fn the measure's
+	// function, and Granularity the period a group of times truncates them to.
+	Of          string
+	Fn          Fn
+	Granularity Granularity
 }
 
 // maxDepth bounds how deep Schema walks nested messages.
