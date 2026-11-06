@@ -122,6 +122,51 @@ func TestList(t *testing.T) {
 	})
 }
 
+func TestEach(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	s := open(t)
+	a := &planv1.Project{Id: NewID(), Name: "a", Directory: "/a"}
+	b := &planv1.Project{Id: NewID(), Name: "b", Directory: "/b"}
+	if err := put(ctx, s, a, b); err != nil {
+		t.Fatal(err)
+	}
+	mt := a.ProtoReflect().Type()
+	names := func(where Where, n int) []string {
+		var out []string
+		err := Each(ctx, s, mt, where, func(m proto.Message) bool {
+			out = append(out, m.(*planv1.Project).GetName())
+			return len(out) < n
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if got := names(nil, 9); !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("Each all = %v; want a, b", got)
+	}
+	if got := names(Where{"name": "B"}, 9); !slices.Equal(got, []string{"b"}) {
+		t.Errorf("Each where name B = %v; want b", got)
+	}
+	if got := names(nil, 1); !slices.Equal(got, []string{"a"}) {
+		t.Errorf("Each stopped after one = %v; want a", got)
+	}
+}
+
+func TestIndexed(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	got, err := Indexed(s, (&planv1.Question{}).ProtoReflect().Descriptor())
+	if err != nil || got[0] != "id" || !slices.Contains(got, "wish_id") || !slices.Contains(got, "code") ||
+		slices.Contains(got, "text") {
+		t.Errorf("Indexed(Question) = %v, %v; want id, the *_id fields and code, never text", got, err)
+	}
+	if _, err := Indexed(s, (&planv1.Task{}).ProtoReflect().Descriptor()); err == nil {
+		t.Error("Indexed of a type the store does not hold: no error")
+	}
+}
+
 func TestListAfter(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

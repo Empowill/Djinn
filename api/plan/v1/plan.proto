@@ -1254,9 +1254,9 @@ message Task {
   // Identifier, a UUIDv7.
   string id = 1 [(buf.validate.field).string.uuid = true];
   // Wish the task belongs to.
-  string wish_id = 2;
+  string wish_id = 2 [(djinn.v1.ref) = "plan.v1.Wish"];
   // Project the task works in; empty for a task outside any project, which only reads.
-  string project_id = 3;
+  string project_id = 3 [(djinn.v1.ref) = "plan.v1.Project"];
   // Short code to dictate, like W2, unique within the wish.
   string code = 4;
   // What the task does.
@@ -1288,7 +1288,7 @@ message Task {
   TaskAccess access = 17;
   // The question asking the developer whether the worker may edit the project's files, for a task whose access
   // is, or was, ASKING.
-  string edit_question_id = 18;
+  string edit_question_id = 18 [(djinn.v1.ref) = "plan.v1.Question"];
   // Model of the agent, as spawned; empty for the provider's default. A worker started again keeps it.
   string model = 19;
   // Most the task may spend, in US dollars, over all its runs; 0 for no cap.
@@ -1321,7 +1321,7 @@ message Task {
   bool restart = 29;
   // The first line of the last paragraph a watcher's command printed, as its wish's lead was told. Empty for an
   // agent.
-  string last_line = 30;
+  string last_line = 30 [(djinn.v1.query) = QUERY_HIDDEN];
   // When a watcher's first line last changed (last_line): since when the state it says holds, GREEN since 10:42. Unset
   // for an agent.
   google.protobuf.Timestamp last_line_time = 76;
@@ -1342,7 +1342,7 @@ message Task {
   // The azima the task is part of (an azima of its wish), by identifier; empty for none. A grouping, never a
   // wait: only depends_on makes a task wait. The tasks of a wish, through depends_on and part_of together, form a
   // graph without cycle.
-  string part_of = 36;
+  string part_of = 36 [(djinn.v1.ref) = "plan.v1.Task"];
   // For an azima read from a plan file (djinn plan sync): the file, as its project names it
   // ("plan/8e8d3d76-orchestrator.md"), and its phase there ("2", "later"). Empty for an azima of no file.
   string plan_file = 37;
@@ -1373,7 +1373,7 @@ message Task {
   // reviews. It works in that task's worktree, on its branch, and its branch integrates like any task's.
   TaskReview review = 46;
   // What the task was asked to do, from its latest prompt: computed on every read, never stored.
-  string prompt = 47;
+  string prompt = 47 [(djinn.v1.query) = QUERY_HIDDEN];
   // Provider the task ran with before it was changed (TaskService.Update); empty if never changed.
   Provider prior_provider = 48;
   // For an azima: its description, read from its plan file's body or set when spawned or edited with djinn task describe.
@@ -1454,7 +1454,7 @@ message Task {
   // The blocking question its worker asked (djinn question ask --wait), by identifier, while the task waits WAITING on
   // it: the answer, the developer's or the lead's, continues the task on its session with the decision, once a slot is
   // free. Empty otherwise.
-  string wait_question_id = 77;
+  string wait_question_id = 77 [(djinn.v1.ref) = "plan.v1.Question"];
   // What holds the planned task that waits (wait_reason), as the scheduler's pass judged it: room on the machine (a
   // slot, its load or memory, a write scope), its integration branch's push checks, a dependency, a usage limit, the
   // network, or a dependency's blocking question. The window counts a wish's waiting workers by it, never by the
@@ -2150,7 +2150,7 @@ message Question {
   // Short code to dictate, like Q03, unique within the wish and never reused.
   string code = 2;
   // Wish the question belongs to.
-  string wish_id = 3;
+  string wish_id = 3 [(djinn.v1.ref) = "plan.v1.Wish"];
   // The question itself.
   string text = 4;
   // Options offered, answered by their letter: A for the first one, then B, C and D.
@@ -2160,7 +2160,7 @@ message Question {
   // The answer; a question that has one is a decision.
   Answer answer = 7;
   // What is at stake, in Markdown: what the answer changes, what each option costs.
-  string context = 8;
+  string context = 8 [(djinn.v1.query) = QUERY_HIDDEN];
   // The option the asker recommends, and why, in Markdown. Starting with its letter (B: …) lets the developer
   // approve it in one click.
   string recommendation = 9;
@@ -2181,7 +2181,7 @@ message Question {
   // Empty: a default by kind.
   string icon = 15 [(buf.validate.field).string.max_len = 16];
   // The task whose worker asked it; empty when the lead did.
-  string task_id = 16;
+  string task_id = 16 [(djinn.v1.ref) = "plan.v1.Task"];
   // What the answer is needed before, in a few words, set by the asker (djinn question ask --before "before the
   // merge"): the question waits for the developer, orange, under those words. Empty: it can wait. A question a waiting
   // task needs is blocking whatever this says: Djinn computes that from the tasks.
@@ -2198,7 +2198,7 @@ message Question {
   DjinnMove djinn_move = 21;
   // The task it is about, by identifier, when the lead asks about a worker's work (djinn question ask --about W12):
   // the window shows it with that task, an ifrit's band first. Empty for a question about no task in particular.
-  string about_task_id = 22;
+  string about_task_id = 22 [(djinn.v1.ref) = "plan.v1.Task"];
   // When the developer put it off for later (djinn question later, the window's Later): the window and the brief list
   // the open questions by the later of create_time and this time, so it goes below those asked before it was put off,
   // and stays there; a question asked after still comes below it. Unset: its place is when it was asked.

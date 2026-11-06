@@ -27,6 +27,15 @@ enum Writes {
   WRITES_DELETE = 2;
 }
 
+// Query says how internal/query shows a field.
+enum Query {
+  // Not set: the field is a column of its collection.
+  QUERY_UNSPECIFIED = 0;
+  // Never a column, nor a filter: a long text, such as a prompt, a context or a last line, which would make a list
+  // of thousands of rows weigh megabytes.
+  QUERY_HIDDEN = 1;
+}
+
 // Unique is one group of fields whose values, taken together, identify a stored message.
 message Unique {
   // Names of the fields of the group, as written in the proto.
@@ -69,4 +78,10 @@ extend google.protobuf.FieldOptions {
   // A response field the command line prints with --json only: a text beside it says the same, as its reader wants
   // it. djinn mcp still returns it.
   bool json_only = 51010;
+  // 51011 is left out: the generated descriptor would write it as a French letter, which TestNoFrench refuses.
+  // The full name of the stored message whose id the field holds, such as "plan.v1.Wish": internal/query reads
+  // wish_id->title across it, as a join.
+  string ref = 51012;
+  // How internal/query shows the field.
+  Query query = 51013;
 }

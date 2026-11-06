@@ -27630,12 +27630,12 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x11cache_read_tokens\x18\x03 \x01(\x03R\x0fcacheReadTokens\x12,\n" +
 	"\x12cache_write_tokens\x18\x04 \x01(\x03R\x10cacheWriteTokens\x12\x19\n" +
 	"\bcost_usd\x18\x05 \x01(\x01R\acostUsd\x12'\n" +
-	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xff\x18\n" +
+	"\x0fthinking_tokens\x18\x06 \x01(\x03R\x0ethinkingTokens\"\xf0\x19\n" +
 	"\x04Task\x12\x18\n" +
-	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x17\n" +
-	"\awish_id\x18\x02 \x01(\tR\x06wishId\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12)\n" +
+	"\awish_id\x18\x02 \x01(\tB\x10\xa2\xf4\x18\fplan.v1.WishR\x06wishId\x122\n" +
 	"\n" +
-	"project_id\x18\x03 \x01(\tR\tprojectId\x12\x12\n" +
+	"project_id\x18\x03 \x01(\tB\x13\xa2\xf4\x18\x0fplan.v1.ProjectR\tprojectId\x12\x12\n" +
 	"\x04code\x18\x04 \x01(\tR\x04code\x12\x14\n" +
 	"\x05title\x18\x05 \x01(\tR\x05title\x12+\n" +
 	"\x06status\x18\x06 \x01(\x0e2\x13.plan.v1.TaskStatusR\x06status\x12-\n" +
@@ -27653,8 +27653,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
 	"start_time\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x125\n" +
 	"\bend_time\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x12+\n" +
-	"\x06access\x18\x11 \x01(\x0e2\x13.plan.v1.TaskAccessR\x06access\x12(\n" +
-	"\x10edit_question_id\x18\x12 \x01(\tR\x0eeditQuestionId\x12\x14\n" +
+	"\x06access\x18\x11 \x01(\x0e2\x13.plan.v1.TaskAccessR\x06access\x12>\n" +
+	"\x10edit_question_id\x18\x12 \x01(\tB\x14\xa2\xf4\x18\x10plan.v1.QuestionR\x0eeditQuestionId\x12\x14\n" +
 	"\x05model\x18\x13 \x01(\tR\x05model\x12$\n" +
 	"\x0emax_budget_usd\x18\x14 \x01(\x01R\fmaxBudgetUsd\x12\x1d\n" +
 	"\n" +
@@ -27667,8 +27667,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\afork_of\x18\x1a \x01(\tR\x06forkOf\x12=\n" +
 	"\fresume_after\x18\x1b \x01(\v2\x1a.google.protobuf.TimestampR\vresumeAfter\x12\x18\n" +
 	"\aresumes\x18\x1c \x01(\x05R\aresumes\x12\x18\n" +
-	"\arestart\x18\x1d \x01(\bR\arestart\x12\x1b\n" +
-	"\tlast_line\x18\x1e \x01(\tR\blastLine\x12@\n" +
+	"\arestart\x18\x1d \x01(\bR\arestart\x12!\n" +
+	"\tlast_line\x18\x1e \x01(\tB\x04\xa8\xf4\x18\x01R\blastLine\x12@\n" +
 	"\x0elast_line_time\x18L \x01(\v2\x1a.google.protobuf.TimestampR\flastLineTime\x12(\n" +
 	"\x06closed\x18\x1f \x01(\v2\x10.plan.v1.ClosureR\x06closed\x12\x1e\n" +
 	"\n" +
@@ -27676,8 +27676,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"continuing\x12#\n" +
 	"\bdecision\x18! \x01(\tB\a\xbaH\x04r\x02\x18@R\bdecision\x120\n" +
 	"\tresources\x18\" \x01(\v2\x12.plan.v1.ResourcesR\tresources\x12%\n" +
-	"\x04kind\x18# \x01(\x0e2\x11.plan.v1.TaskKindR\x04kind\x12\x17\n" +
-	"\apart_of\x18$ \x01(\tR\x06partOf\x12\x1b\n" +
+	"\x04kind\x18# \x01(\x0e2\x11.plan.v1.TaskKindR\x04kind\x12)\n" +
+	"\apart_of\x18$ \x01(\tB\x10\xa2\xf4\x18\fplan.v1.TaskR\x06partOf\x12\x1b\n" +
 	"\tplan_file\x18% \x01(\tR\bplanFile\x12\x14\n" +
 	"\x05phase\x18& \x01(\tR\x05phase\x12$\n" +
 	"\x05azima\x18' \x01(\v2\x0e.plan.v1.AzimaR\x05azima\x12:\n" +
@@ -27690,8 +27690,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"proofNeeds\x12%\n" +
 	"\x04role\x18, \x01(\x0e2\x11.plan.v1.TaskRoleR\x04role\x12#\n" +
 	"\bquestion\x18- \x01(\tB\a\xbaH\x04r\x02\x18@R\bquestion\x12+\n" +
-	"\x06review\x18. \x01(\v2\x13.plan.v1.TaskReviewR\x06review\x12\x16\n" +
-	"\x06prompt\x18/ \x01(\tR\x06prompt\x128\n" +
+	"\x06review\x18. \x01(\v2\x13.plan.v1.TaskReviewR\x06review\x12\x1c\n" +
+	"\x06prompt\x18/ \x01(\tB\x04\xa8\xf4\x18\x01R\x06prompt\x128\n" +
 	"\x0eprior_provider\x180 \x01(\x0e2\x11.plan.v1.ProviderR\rpriorProvider\x12 \n" +
 	"\vdescription\x181 \x01(\tR\vdescription\x12\x14\n" +
 	"\x05draft\x182 \x01(\bR\x05draft\x12\x1f\n" +
@@ -27720,8 +27720,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\troom_wait\x18H \x01(\bR\broomWait\x12+\n" +
 	"\x06health\x18I \x01(\v2\x13.plan.v1.TaskHealthR\x06health\x12@\n" +
 	"\rinvestigation\x18J \x01(\v2\x1a.plan.v1.TaskInvestigationR\rinvestigation\x12\x1a\n" +
-	"\bfeedback\x18K \x01(\bR\bfeedback\x12(\n" +
-	"\x10wait_question_id\x18M \x01(\tR\x0ewaitQuestionId\x12%\n" +
+	"\bfeedback\x18K \x01(\bR\bfeedback\x12>\n" +
+	"\x10wait_question_id\x18M \x01(\tB\x14\xa2\xf4\x18\x10plan.v1.QuestionR\x0ewaitQuestionId\x12%\n" +
 	"\x04hold\x18N \x01(\x0e2\x11.plan.v1.TaskHoldR\x04hold\x12\x18\n" +
 	"\ascratch\x18O \x01(\tR\ascratch\x12=\n" +
 	"\aaccount\x18P \x01(\tB#\xbaH \xd8\x01\x01r\x1b2\x19^[a-z0-9][a-z0-9-]{0,31}$R\aaccount:\x13\xd2\xf3\x18\x0f\n" +
@@ -27923,17 +27923,17 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\n" +
 	"AskedEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x120\n" +
-	"\x05value\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x05value:\x028\x01\"\xa4\a\n" +
+	"\x05value\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x05value:\x028\x01\"\xe0\a\n" +
 	"\bQuestion\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x12\n" +
-	"\x04code\x18\x02 \x01(\tR\x04code\x12\x17\n" +
-	"\awish_id\x18\x03 \x01(\tR\x06wishId\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12)\n" +
+	"\awish_id\x18\x03 \x01(\tB\x10\xa2\xf4\x18\fplan.v1.WishR\x06wishId\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x12\x18\n" +
 	"\aoptions\x18\x05 \x03(\tR\aoptions\x12;\n" +
 	"\vcreate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12'\n" +
-	"\x06answer\x18\a \x01(\v2\x0f.plan.v1.AnswerR\x06answer\x12\x18\n" +
-	"\acontext\x18\b \x01(\tR\acontext\x12&\n" +
+	"\x06answer\x18\a \x01(\v2\x0f.plan.v1.AnswerR\x06answer\x12\x1e\n" +
+	"\acontext\x18\b \x01(\tB\x04\xa8\xf4\x18\x01R\acontext\x12&\n" +
 	"\x0erecommendation\x18\t \x01(\tR\x0erecommendation\x12#\n" +
 	"\x05marks\x18\n" +
 	" \x03(\v2\r.plan.v1.MarkR\x05marks\x12&\n" +
@@ -27941,8 +27941,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\brevision\x18\f \x01(\x05R\brevision\x12$\n" +
 	"\x05route\x18\r \x01(\v2\x0e.plan.v1.RouteR\x05route\x12\x14\n" +
 	"\x05grant\x18\x0e \x01(\bR\x05grant\x12\x1b\n" +
-	"\x04icon\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\x12\x17\n" +
-	"\atask_id\x18\x10 \x01(\tR\x06taskId\x12\x1f\n" +
+	"\x04icon\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18\x10R\x04icon\x12)\n" +
+	"\atask_id\x18\x10 \x01(\tB\x10\xa2\xf4\x18\fplan.v1.TaskR\x06taskId\x12\x1f\n" +
 	"\x06before\x18\x11 \x01(\tB\a\xbaH\x04r\x02\x18dR\x06before\x12\x12\n" +
 	"\x04move\x18\x12 \x01(\bR\x04move\x123\n" +
 	"\n" +
@@ -27950,8 +27950,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"withdrawal\x12!\n" +
 	"\fwaiting_lead\x18\x14 \x01(\bR\vwaitingLead\x121\n" +
 	"\n" +
-	"djinn_move\x18\x15 \x01(\v2\x12.plan.v1.DjinnMoveR\tdjinnMove\x12\"\n" +
-	"\rabout_task_id\x18\x16 \x01(\tR\vaboutTaskId\x129\n" +
+	"djinn_move\x18\x15 \x01(\v2\x12.plan.v1.DjinnMoveR\tdjinnMove\x124\n" +
+	"\rabout_task_id\x18\x16 \x01(\tB\x10\xa2\xf4\x18\fplan.v1.TaskR\vaboutTaskId\x129\n" +
 	"\n" +
 	"later_time\x18\x17 \x01(\v2\x1a.google.protobuf.TimestampR\tlaterTime\x12*\n" +
 	"\x05plans\x18\x18 \x03(\v2\x14.plan.v1.PlannedTaskR\x05plans\x12,\n" +
