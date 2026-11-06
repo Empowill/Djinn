@@ -101,8 +101,8 @@ func startsFrom(t *testing.T, in *integration, task *planv1.Task, want, shown st
 // TestWorkersNeverStartFromTheCopy: whatever the developer's copy has checked out, and its changes not committed, a
 // worker starts from the commit its push strategy names (W227): per wish, from the wish's integration branch, by
 // default the reference branch, origin's main fetched first; per azima, an azima's part from the azima's branch, cut
-// from origin's main; work of no azima from the wish's integration branch, the reference branch by default. The
-// copy's HEAD, branch and files end as they were.
+// from origin's main; work of no azima from the branch of the azima made for it, cut from origin's main too (Q268 B).
+// The copy's HEAD, branch and files end as they were.
 func TestWorkersNeverStartFromTheCopy(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -139,6 +139,7 @@ func TestWorkersNeverStartFromTheCopy(t *testing.T) {
 	})
 	t.Run("work of no azima", func(t *testing.T) {
 		task := in.mustSpawn(t, azimaWishID, "Loose", "wait\ndone", &planv1.TaskServiceSpawnRequest{})
-		startsFrom(t, in, task, ahead, "origin/"+in.branch, before)
+		azima := in.get(t, task.GetPartOf())
+		startsFrom(t, in, task, ahead, "djinn/"+azima.GetCode()+"-loose", before)
 	})
 }
