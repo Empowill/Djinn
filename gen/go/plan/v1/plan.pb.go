@@ -4101,8 +4101,12 @@ type ProjectSettings struct {
 	// from their own file only (djinn project allow --serve), like watch_commands; the project's denied_commands still
 	// win. Not set: none.
 	ServeCommands []string `protobuf:"bytes,29,rep,name=serve_commands,json=serveCommands,proto3" json:"serve_commands,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// On a GitLab project, the push of an azima's branch that a merge request follows (its parts all committed, no
+	// request open on it yet) goes with the push option ci.skip: the request's pipeline runs the CI on that commit, and
+	// no branch pipeline runs it twice (Q331). Once a request is open, pushes go as any. false turns it off. Not set: on.
+	CiSkipBeforeRequest *bool `protobuf:"varint,30,opt,name=ci_skip_before_request,json=ciSkipBeforeRequest,proto3,oneof" json:"ci_skip_before_request,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ProjectSettings) Reset() {
@@ -4322,6 +4326,13 @@ func (x *ProjectSettings) GetServeCommands() []string {
 		return x.ServeCommands
 	}
 	return nil
+}
+
+func (x *ProjectSettings) GetCiSkipBeforeRequest() bool {
+	if x != nil && x.CiSkipBeforeRequest != nil {
+		return *x.CiSkipBeforeRequest
+	}
+	return false
 }
 
 // ProjectCheck is a command Djinn runs on a project's work: checks { name: "lint" command: "go tool task lint" when:
@@ -27355,7 +27366,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x14\n" +
 	"\x05skill\x18\x02 \x01(\tR\x05skill\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\xad\x10\n" +
+	"createTime\"\x82\x11\n" +
 	"\x0fProjectSettings\x12@\n" +
 	"\bprovider\x18\x01 \x01(\x0e2\x11.plan.v1.ProviderB\f\xbaH\t\x82\x01\x06\x10\x01 \x00 \x05H\x00R\bprovider\x88\x01\x01\x12=\n" +
 	"\x05model\x18\x02 \x01(\tB\"\xbaH\x1fr\x1d\x18\xc8\x012\x18^[A-Za-z0-9._:@/\\[\\]-]*$H\x01R\x05model\x88\x01\x01\x12B\n" +
@@ -27392,7 +27403,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\ababysit\x18\x1a \x01(\bH\x15R\ababysit\x88\x01\x01\x128\n" +
 	"\x0ewatch_commands\x18\x1b \x03(\tB\x11\xbaH\x0e\x92\x01\v\x102\"\ar\x05\x10\x01\x18\xf4\x03R\rwatchCommands\x12*\n" +
 	"\x0einstall_builds\x18\x1c \x01(\bH\x16R\rinstallBuilds\x88\x01\x01\x128\n" +
-	"\x0eserve_commands\x18\x1d \x03(\tB\x11\xbaH\x0e\x92\x01\v\x102\"\ar\x05\x10\x01\x18\xf4\x03R\rserveCommandsB\v\n" +
+	"\x0eserve_commands\x18\x1d \x03(\tB\x11\xbaH\x0e\x92\x01\v\x102\"\ar\x05\x10\x01\x18\xf4\x03R\rserveCommands\x128\n" +
+	"\x16ci_skip_before_request\x18\x1e \x01(\bH\x17R\x13ciSkipBeforeRequest\x88\x01\x01B\v\n" +
 	"\t_providerB\b\n" +
 	"\x06_modelB\x11\n" +
 	"\x0f_max_budget_usdB\t\n" +
@@ -27417,7 +27429,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x12_install_questionsB\n" +
 	"\n" +
 	"\b_babysitB\x11\n" +
-	"\x0f_install_buildsJ\x04\b\n" +
+	"\x0f_install_buildsB\x19\n" +
+	"\x17_ci_skip_before_requestJ\x04\b\n" +
 	"\x10\vJ\x04\b\x15\x10\x16R\x10question_workersR\x0eanswer_workers\"\xad\x01\n" +
 	"\fProjectCheck\x12:\n" +
 	"\x04name\x18\x01 \x01(\tB&\xbaH#r!\x10\x01\x18(2\x1b^[A-Za-z0-9][A-Za-z0-9_-]*$R\x04name\x12$\n" +

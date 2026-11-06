@@ -418,6 +418,10 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 			"Djinn runs them again once space comes back, with no correction", branch, short8(sha)))
 		return nil, errDiskFull
 	}
+	var options []string // Asked of the forge before the merges wait: glab may take its time.
+	if held == "" && seen == nil && ahead > 0 && h.skipsBranchCI(ctx, wish, project, branch) {
+		options = []string{ciSkip} // Its merge request's pipeline runs the CI on it (ci_skip.go).
+	}
 	// What the checks found is acted on with no merge landing meanwhile: the branch still at sha, or the checks moot;
 	// a correction of red checks starting only when none repairs the branch (Q39).
 	logx.Lock(&h.integrateMu, "integration")
@@ -496,7 +500,11 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	}
 	run.set(ctx, planv1.PushStage_PUSH_STAGE_PUSHING, "", "")
 	h.setDoing(doing)
-	old, out, err := gitPush(pushing, repo, remote, sha, target)
+	old, out, err := gitPush(pushing, repo, remote, sha, target, options...)
+	if err != nil && len(options) > 0 && pushOptionsRefused(out) && pushing.Err() == nil {
+		options = nil
+		old, out, err = gitPush(pushing, repo, remote, sha, target)
+	}
 	if pushing.Err() != nil {
 		h.cut(doing)
 		run.clear(ctx)
@@ -540,8 +548,12 @@ func (h *Harness) pushBranch(ctx context.Context, wish *planv1.Wish, project *pl
 	if err != nil {
 		return nil, err
 	}
-	h.pushSteps(ctx, committed, fmt.Sprintf("integration: pushed %s to %s as %s, %s (%s)", branch, remote, short8(sha),
-		commitsText(count, nil), why))
+	skipped := ""
+	if len(options) > 0 {
+		skipped = "; with " + ciSkip + ": no branch pipeline, its merge request's runs the CI"
+	}
+	h.pushSteps(ctx, committed, fmt.Sprintf("integration: pushed %s to %s as %s, %s (%s)%s", branch, remote, short8(sha),
+		commitsText(count, nil), why, skipped))
 	unlock()
 	h.notify()
 	h.kickConfig() // the push may have moved the reference branch
@@ -1423,13 +1435,17 @@ func unpushed(ctx context.Context, repo, tip, remote string) (titles []string, c
 }
 
 // gitPush pushes src, a commit or a ref, to the branch target on remote from repo, never forcing, with the person's own
-// credentials and without ever prompting for them. It returns the commit the remote's branch was at ("" for a new
-// branch), and what git said.
-func gitPush(ctx context.Context, repo, remote, src, target string) (old, out string, err error) {
+// credentials and without ever prompting for them, each of options as a push option (-o). It returns the commit the
+// remote's branch was at ("" for a new branch), and what git said.
+func gitPush(ctx context.Context, repo, remote, src, target string, options ...string) (old, out string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
 	ref := src + ":refs/heads/" + target
-	cmd, cancelPush := gitx.Command(ctx, repo, "push", "--porcelain", remote, ref)
+	args := []string{"push", "--porcelain"}
+	for _, o := range options {
+		args = append(args, "-o", o)
+	}
+	cmd, cancelPush := gitx.Command(ctx, repo, append(args, remote, ref)...)
 	defer cancelPush()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr

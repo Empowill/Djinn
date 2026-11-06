@@ -127,6 +127,23 @@ repository with no remote, or with several and none of them chosen, is not pushe
 Djinn runs Git in your repository, with your own credentials, your SSH agent or your credential helper. It never
 prompts for them: a push that would wait for a password typed by hand fails.
 
+### One pipeline per commit on GitLab
+
+On GitLab, a branch pushed before its merge request opens runs a branch pipeline, and the request, opened a minute
+later, runs its own on the same commit: the CI runs twice, and nothing stops the first. Over a week of one project,
+sixty commits ran both. So under the per-azima [push strategy](#push-strategy), the push that ends an azima, once every
+part of it is committed, goes with GitLab's push option **ci.skip** while no merge request is open on its branch and
+Djinn proposes one, or waits for your answer to its proposal: no branch pipeline starts, and the request's pipeline is
+the one CI run of that commit. The tasks' events say it: *pushed djinn/T07-invoice-pdf to origin …; with ci.skip: no
+branch pipeline, its merge request's runs the CI*.
+
+Every other push goes as any: one while the azima's parts still run, one of a wish's own branch, one past your **Not
+yet**, one to a forge that is not GitLab, and every push once the request is open, whose pipeline then runs on it. When
+GitLab's command line cannot say whether a request is open, the push goes as any too: a second pipeline costs less than
+none. Until the request opens, the commit pushed with ci.skip has no CI: a request that fails to open leaves it without
+one. The project setting **ci_skip_before_request**, false, turns this off: see
+[Project and settings](#project-and-settings).
+
 Each push is in the wish's journal, and the top of the wish shows the last one: **Pushed feat/invoice-pdf to origin, 3
 commits, 2 hours ago**, with the commits on hover.
 

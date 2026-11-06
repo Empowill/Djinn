@@ -80,6 +80,7 @@ Djinn, wait for your look (see the `change` topic below).
 | `install_builds` | For the project a Djinn built from a checkout comes from: a build Djinn pushes of the running Djinn's line, past the push checks, installs by itself; the restart stays your click: see [integration](#integration). `false`: it is only offered. | on |
 | `push`           | When Djinn pushes the integration branch: `PROJECT_PUSH_STANDARD` (today's cadence: at an azima's end or 3 tasks and an hour), `PROJECT_PUSH_ON_DEMAND` (never pushes by itself, only the developer's push does). | `PROJECT_PUSH_STANDARD` |
 | `push_strategy`  | The branch strategy for integration and push: `PUSH_STRATEGY_WISH` (today's behavior: one integration branch per wish and project), `PUSH_STRATEGY_AZIMA` (one branch per azima, `djinn/<code>-<slug>`, cut from main and landing in main). | `PUSH_STRATEGY_WISH` |
+| `ci_skip_before_request` | On a GitLab project, per azima: the push that ends an azima, its merge request not open yet, goes with `-o ci.skip`, so the request's pipeline is the one CI run of that commit: see the Push chapter of the documentation site. `false`: every push starts a branch pipeline. | on |
 | `babysit`        | `false`: a pull or merge request a task opens is not watched by itself: see [babysitting](wish-templates.md#babysitting-what-a-task-opens). `djinn task spawn --babysit` still works. | on, when a skill of the project declares one |
 
 A watcher (`--provider watch`) runs a command: no setting above applies to it, and none can make one. One more is
