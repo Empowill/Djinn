@@ -1669,7 +1669,9 @@
   "wish.bilan_cost_sub.one": "Coût cumulé des {count} run worker",
   "wish.bilan_cost_sub.other": "Coût cumulé des {count} runs workers",
   "wish.bilan_quote_dark": "« Le pacte est soldé et les clés sont sous scellés. Je rentre dans le laiton ; évite de frotter la lampe pour une virgule. »",
-  "wish.bilan_quote_light": "« Votre souhait est accompli de bout en bout. La lampe veille au repos, prête pour votre prochain appel. »"
+  "wish.bilan_quote_light": "« Votre souhait est accompli de bout en bout. La lampe veille au repos, prête pour votre prochain appel. »",
+  "charts.log_scale": "{label}, échelle log",
+  "charts.others": "Autres"
 }
 
 
