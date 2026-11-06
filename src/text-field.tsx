@@ -49,9 +49,8 @@ function grow(textarea: HTMLTextAreaElement) {
   textarea.style.overflowY = full > height ? "auto" : "hidden";
 }
 
-// useGrowSoon gives a function that fits the textarea at the next frame, once for all the keys that came before it:
-// a key forces no layout of the page, under load the keys that arrive together cost one (W472). A text that grew and
-// still fits, or that scrolls already, keeps its height: the frame's own layout is then the only one.
+// useGrowSoon gives functions to fit the textarea: soon at the next frame (for keys, debouncing forced layouts),
+// and fit now (when text is written from code, so it fits immediately without waiting for a frame).
 function useGrowSoon(box: RefObject<HTMLTextAreaElement | null>) {
   const frame = useRef(0);
   const length = useRef(0);
@@ -62,7 +61,17 @@ function useGrowSoon(box: RefObject<HTMLTextAreaElement | null>) {
     },
     [],
   );
-  return useCallback(() => {
+  const fit = useCallback(() => {
+    if (frame.current) {
+      window.cancelAnimationFrame(frame.current);
+      frame.current = 0;
+    }
+    const textarea = box.current;
+    if (!textarea) return;
+    length.current = textarea.value.length;
+    grow(textarea);
+  }, [box]);
+  const soon = useCallback(() => {
     if (frame.current) return;
     frame.current = window.requestAnimationFrame(() => {
       frame.current = 0;
@@ -79,6 +88,7 @@ function useGrowSoon(box: RefObject<HTMLTextAreaElement | null>) {
       grow(textarea);
     });
   }, [box]);
+  return { soon, fit };
 }
 
 // useGrowTextarea fits a textarea now, when key changes, and when the window or its text size changes; nothing while
@@ -251,14 +261,14 @@ export function TextField({
   ...rest
 }: TextFieldProps) {
   const field = useRef<HTMLTextAreaElement>(null);
-  const growSoon = useGrowSoon(field);
+  const { soon: growSoon, fit: fitNow } = useGrowSoon(field);
   const { count, change } = useField(
     field,
     text,
     onText,
     fieldRef,
     maxLength,
-    grows ? growSoon : undefined,
+    grows ? fitNow : undefined,
   );
   useGrowTextarea(field, fitKey, grows && fit);
   return (
