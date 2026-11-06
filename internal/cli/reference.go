@@ -109,7 +109,10 @@ func methodCommand(md protoreflect.MethodDescriptor) Command {
 		}
 	}
 	if scoped(in) {
-		c.Flags = append(c.Flags, Param{Name: "--wish-id", Type: "string", Expect: "a UUID", Help: scopeHelp})
+		c.Flags = append(c.Flags, Param{Name: "--wish-id", Type: "string", Expect: wishExpect, Help: scopeHelp})
+	}
+	if promptFlag(in) != nil {
+		c.Flags = append(c.Flags, Param{Name: "--prompt-file", Type: "file", Help: promptFileHelp})
 	}
 	if len(c.Flags) > 0 {
 		c.Usage += " [flags]"

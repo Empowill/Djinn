@@ -235,7 +235,8 @@ export const env: GenExtension<FieldOptions, string> = /*@__PURE__*/
   extDesc(file_djinn_v1_options, 7);
 
 /**
- * Keep a singular field positional when it becomes optional, preserving an existing command's arguments.
+ * Keep a singular field positional when it becomes optional, preserving an existing command's arguments. Such a
+ * field answers to its flag too: djinn wish add-project <wish> djinn, or --project-id djinn.
  *
  * @generated from extension: bool positional = 51009;
  */

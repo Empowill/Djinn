@@ -17,9 +17,10 @@ import (
 	djinnv1 "github.com/empowill/djinn/gen/go/djinn/v1"
 )
 
-// The command line takes a project by its name and a task by its code where a request wants an identifier: it looks
-// them up on the server before it sends the request (resolve). A wish is --wish-id or --wish, whichever the request
-// spells. A refusal that carries a djinn.v1.Retry prints the command again with each value that fits (retried).
+// The command line takes a project by its name, a wish by its title and a task by its code where a request wants an
+// identifier: it looks them up on the server before it sends the request (resolve). A wish is --wish-id or --wish,
+// whichever the request spells. A refusal that carries a djinn.v1.Retry prints the command again with each value
+// that fits (retried); the command line's own refusals carry one too (refusal).
 
 var (
 	uuidPattern     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -29,6 +30,9 @@ var (
 // scopeHelp is the help of --wish-id on a command whose request has no wish: the command line's own flag.
 const scopeHelp = "Wish the task belongs to, when given by code and the code is in several wishes: the command line " +
 	"looks the task up in it."
+
+// wishExpect is what a field naming a wish accepts (wishRef).
+const wishExpect = "a wish's UUID, its title, or the start of only one title"
 
 // projectField tells whether fd names projects by identifier (project_id, project_ids): the command line takes a
 // project's name there too.
@@ -61,6 +65,23 @@ func isWishField(fd protoreflect.FieldDescriptor) bool {
 		!fd.IsList() && rules(fd).GetString().GetUuid()
 }
 
+// wishRef tells whether fd names wishes by UUID, as wish, wish_id or wish_ids: the command line takes a wish's title
+// there too.
+func wishRef(fd protoreflect.FieldDescriptor) bool {
+	switch fd.Name() {
+	case "wish", "wish_id", "wish_ids":
+	default:
+		return false
+	}
+	if fd.Kind() != protoreflect.StringKind || fd.IsMap() {
+		return false
+	}
+	if fd.IsList() {
+		return rules(fd).GetRepeated().GetItems().GetString().GetUuid()
+	}
+	return rules(fd).GetString().GetUuid()
+}
+
 // scoped tells whether the command of md takes --wish-id of its own: its request has a task the command line looks
 // up by code, and no wish to look it up in.
 func scoped(md protoreflect.MessageDescriptor) bool {
@@ -84,10 +105,57 @@ type line struct {
 	wish string
 }
 
-// resolve turns, in req, a project's name into its identifier and a task's code into its identifier, asking the
-// server of cfg; wish is the wish of the command line's own --wish-id. It calls the server only when a value needs it.
+// resolve turns, in req, a project's name, a wish's title and a task's code into their identifiers, asking the server
+// of cfg; wish is the wish of the command line's own --wish-id, a UUID or a title. It calls the server only when a
+// value needs it: the wishes first, a task by code is looked up in its wish.
 func resolve(ctx context.Context, cfg Config, req *dynamicpb.Message, wish string) error {
 	md := req.Descriptor()
+	var titles []wishTitle
+	titled := func(fd protoreflect.FieldDescriptor, flag, s string) (string, error) {
+		if s == "" || uuidPattern.MatchString(s) {
+			return s, nil
+		}
+		if titles == nil {
+			var err error
+			if titles, err = wishTitles(ctx, cfg); err != nil {
+				return "", fmt.Errorf("%s %s: read the wishes to find it: %w", flag, s, err)
+			}
+		}
+		return wishTitled(titles, fd, flag, s)
+	}
+	for _, fd := range byNumber(md) {
+		if !wishRef(fd) {
+			continue
+		}
+		if !fd.IsList() {
+			id, err := titled(fd, label(fd), req.Get(fd).String())
+			if err != nil {
+				return err
+			}
+			if id != "" {
+				req.Set(fd, protoreflect.ValueOfString(id))
+			}
+			continue
+		}
+		if !req.Has(fd) {
+			continue
+		}
+		list := req.Mutable(fd).List()
+		for i := range list.Len() {
+			id, err := titled(fd, label(fd), list.Get(i).String())
+			if err != nil {
+				return err
+			}
+			list.Set(i, protoreflect.ValueOfString(id))
+		}
+	}
+	if wish != "" {
+		id, err := titled(nil, "--wish-id", wish)
+		if err != nil {
+			return err
+		}
+		wish = id
+	}
 	if fd := wishField(md); fd != nil && wish == "" && uuidPattern.MatchString(req.Get(fd).String()) {
 		wish = req.Get(fd).String()
 	}
@@ -135,6 +203,85 @@ func resolve(ctx context.Context, cfg Config, req *dynamicpb.Message, wish strin
 	}
 	return nil
 }
+
+// wishTitle is a wish as resolve looks it up by title.
+type wishTitle struct {
+	id, title string
+	granted   bool
+}
+
+// wishTitles are the wishes of the server of cfg, in the server's order.
+func wishTitles(ctx context.Context, cfg Config) ([]wishTitle, error) {
+	res, err := callMethod(ctx, cfg, "plan.v1.WishService.List", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []wishTitle
+	list := res.Get(res.Descriptor().Fields().ByName("wishes")).List()
+	for i := range list.Len() {
+		w := list.Get(i).Message()
+		fields := w.Descriptor().Fields()
+		state := w.Get(fields.ByName("state")).Enum()
+		out = append(out, wishTitle{
+			id:      w.Get(fields.ByName("id")).String(),
+			title:   w.Get(fields.ByName("title")).String(),
+			granted: fields.ByName("state").Enum().Values().ByNumber(state).Name() == "WISH_STATE_GRANTED",
+		})
+	}
+	return out, nil
+}
+
+// wishTitled is the identifier of the wish titled s, case and outer spaces ignored, else of the only one whose title
+// starts so; among several, the only one not granted. Several left is a refusal that gives each one (refusal), for
+// the field fd of the request, or the command line's own --wish-id when fd is nil; none, one that says so.
+func wishTitled(wishes []wishTitle, fd protoreflect.FieldDescriptor, flag, s string) (string, error) {
+	want := strings.ToLower(strings.TrimSpace(s))
+	pick := func(match func(title string) bool) []wishTitle {
+		var found, open []wishTitle
+		for _, w := range wishes {
+			if match(strings.ToLower(strings.TrimSpace(w.title))) {
+				found = append(found, w)
+				if !w.granted {
+					open = append(open, w)
+				}
+			}
+		}
+		if len(found) > 1 && len(open) > 0 {
+			return open
+		}
+		return found
+	}
+	found := pick(func(title string) bool { return title == want })
+	if len(found) == 0 {
+		found = pick(func(title string) bool { return want != "" && strings.HasPrefix(title, want) })
+	}
+	switch len(found) {
+	case 1:
+		return found[0].id, nil
+	case 0:
+		return "", fmt.Errorf("%s: no wish is titled %q, nor starts so; expected %s (djinn wish list shows them)",
+			flag, s, wishExpect)
+	}
+	field := "wish_id"
+	if fd != nil {
+		field = string(fd.Name())
+	}
+	r := &djinnv1.Retry{Field: field}
+	for _, w := range found {
+		r.Values = append(r.Values, &djinnv1.RetryValue{Value: w.id, Label: w.title})
+	}
+	return "", &refusal{fmt.Errorf("%s: %d wishes are titled %q or start so: give one by its UUID", flag, len(found), s), r}
+}
+
+// refusal is a refusal of the command line itself that says what fits, as a server's djinn.v1.Retry does.
+type refusal struct {
+	err   error
+	retry *djinnv1.Retry
+}
+
+func (r *refusal) Error() string { return r.err.Error() }
+
+func (r *refusal) Unwrap() error { return r.err }
 
 // projectNames are the projects of the server of cfg: identifier by lowercase name, and the names in their order.
 func projectNames(ctx context.Context, cfg Config) (map[string]string, []string, error) {
@@ -201,8 +348,12 @@ func callMethod(ctx context.Context, cfg Config, name string, fields map[string]
 	return call(ctx, cfg, md, req)
 }
 
-// retryOf is the djinn.v1.Retry an error of the server carries; nil when it has none.
+// retryOf is the djinn.v1.Retry an error of the server, or a refusal of the command line, carries; nil when it has
+// none.
 func retryOf(err error) *djinnv1.Retry {
+	if rf := (*refusal)(nil); errors.As(err, &rf) {
+		return rf.retry
+	}
 	var cerr *connect.Error
 	if !errors.As(err, &cerr) {
 		return nil

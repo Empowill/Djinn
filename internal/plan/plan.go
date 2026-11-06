@@ -1488,8 +1488,16 @@ func (q *Questions) Answer(
 var errSameAnswer = errors.New("the question has this answer already")
 
 // find resolves a reference to a question: its id, or its code within wishID, or within every wish when the code
-// is used by one only.
+// is used by one only, or by one open question only (W481: the lead types Q05 for the one it waits on).
 func find(ctx context.Context, tx store.Reader, ref *planv1.QuestionRef, wishID string) (*planv1.Question, error) {
+	return findAmong(ctx, tx, ref, wishID, openQuestion)
+}
+
+// findAmong is find, a code in several wishes taken for the only question of them that fits: open for find, answered
+// for djinn question launch.
+func findAmong(
+	ctx context.Context, tx store.Reader, ref *planv1.QuestionRef, wishID string, fits func(*planv1.Question) bool,
+) (*planv1.Question, error) {
 	if id := ref.GetId(); id != "" {
 		return store.Get[*planv1.Question](ctx, tx, id)
 	}
@@ -1506,6 +1514,9 @@ func find(ctx context.Context, tx store.Reader, ref *planv1.QuestionRef, wishID 
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no question %s", ref.GetCode()))
 	case 1:
 		return found[0], nil
+	}
+	if fitting := slices.DeleteFunc(slices.Clone(found), func(q *planv1.Question) bool { return !fits(q) }); len(fitting) == 1 {
+		return fitting[0], nil
 	}
 	return nil, Retry(connect.CodeFailedPrecondition, fmt.Errorf(
 		"%d wishes have a question %s: give its identifier, or the wish with --wish-id", len(found), ref.GetCode()),

@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -31,12 +32,14 @@ func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message
 	return l.req, err
 }
 
-// parseLine reads a command line as parse does, and the command line's own --wish-id of a scoped request.
+// parseLine reads a command line as parse does, the command line's own --wish-id of a scoped request, and its own
+// --prompt-file of a request that takes a prompt but no file of it (promptFlag).
 func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 	msg := dynamicpb.NewMessage(md)
 	l := line{req: msg}
 	pos := positionals(md)
 	next, onlyPositional := 0, false
+	promptFile := ""
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if !onlyPositional && arg == "--" {
@@ -44,6 +47,9 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 			continue
 		}
 		if onlyPositional || !strings.HasPrefix(arg, "--") {
+			for next < len(pos) && msg.Has(pos[next]) {
+				next++ // Given by its flag already (an optional positional).
+			}
 			if next == len(pos) {
 				return line{}, fmt.Errorf("unexpected argument %q", arg)
 			}
@@ -55,8 +61,10 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 		}
 		name, value, hasValue := strings.Cut(arg[2:], "=")
 		fd := flag(md, name)
-		if fd == nil && (name == "wish-id" || name == "wish") && scoped(md) {
-			// The command line's own flag: the wish a task given by code is looked up in.
+		own := (name == "wish-id" || name == "wish") && scoped(md) || name == "prompt-file" && promptFlag(md) != nil
+		if fd == nil && own {
+			// The command line's own flags: the wish a task given by code is looked up in (its UUID or its title,
+			// resolve reads it), the file a prompt is read from.
 			if !hasValue {
 				if i+1 == len(args) {
 					return line{}, fmt.Errorf("--%s needs a value", name)
@@ -64,10 +72,11 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 				i++
 				value = args[i]
 			}
-			if !uuidPattern.MatchString(value) {
-				return line{}, fmt.Errorf("--%s: %q is not a wish's UUID; expected a UUID", name, value)
+			if name == "prompt-file" {
+				promptFile = value
+			} else {
+				l.wish = value
 			}
-			l.wish = value
 			continue
 		}
 		if fd == nil {
@@ -87,7 +96,40 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 			return line{}, fmt.Errorf("%s: %w", label(fd), err)
 		}
 	}
+	if promptFile != "" {
+		if err := readPrompt(msg, promptFlag(md), promptFile); err != nil {
+			return line{}, err
+		}
+	}
 	return l, nil
+}
+
+// promptFileHelp is the help of the command line's own --prompt-file.
+const promptFileHelp = "File holding what to ask the worker, in Markdown, read in place of --prompt by the command line; " +
+	"a relative path starts from the current directory."
+
+// promptFlag is the prompt field of md when the command line reads it from a file of its own flag --prompt-file: a
+// singular string prompt, beside no prompt_file the server reads (djinn task spawn has one). nil otherwise.
+func promptFlag(md protoreflect.MessageDescriptor) protoreflect.FieldDescriptor {
+	fd := md.Fields().ByName("prompt")
+	if fd == nil || fd.Kind() != protoreflect.StringKind || fd.IsList() || md.Fields().ByName("prompt_file") != nil {
+		return nil
+	}
+	return fd
+}
+
+// readPrompt sets the prompt fd of msg from the file at path, its last line breaks cut, as djinn task spawn
+// --prompt-file reads it on the server; refused beside --prompt.
+func readPrompt(msg *dynamicpb.Message, fd protoreflect.FieldDescriptor, path string) error {
+	if msg.Has(fd) {
+		return errors.New("give --prompt or --prompt-file, not both")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("--prompt-file: %w", err)
+	}
+	msg.Set(fd, protoreflect.ValueOfString(strings.TrimRight(string(data), "\r\n")))
+	return nil
 }
 
 // format is the inverse of parse: the arguments that build msg.
@@ -179,11 +221,12 @@ func rules(fd protoreflect.FieldDescriptor) *validate.FieldRules {
 	return r
 }
 
-// flag is the field of md the flag --name sets; a wish's flag answers to its other spelling too (wishAlias), when it
+// flag is the field of md the flag --name sets: a field not positional, or one only marked so (an optional
+// positional, which answers to its flag too); a wish's flag answers to its other spelling too (wishAlias), when it
 // names the wish by UUID (isWishField).
 func flag(md protoreflect.MessageDescriptor, name string) protoreflect.FieldDescriptor {
 	for _, fd := range byNumber(md) {
-		if !positional(fd) && kebab(string(fd.Name())) == name {
+		if !required(fd) && kebab(string(fd.Name())) == name {
 			return fd
 		}
 	}
@@ -468,6 +511,8 @@ func expect(fd protoreflect.FieldDescriptor) string {
 		return "a project's name or UUID"
 	case taskField(fd):
 		return "a task's code (W12, T07) or UUID"
+	case wishRef(fd):
+		return wishExpect
 	}
 	if od := ref(fd); od != nil {
 		var alts []string

@@ -69,7 +69,9 @@ by `"CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID ANTIGRAVITY_CONVERSATION_ID"`, the v
 
 A field marked `(djinn.v1.positional) = true` keeps its positional spelling even when validation allows
 it to be omitted; the help displays it in brackets. For example, `djinn wish make "Short title"` keeps its
-existing spelling, while `djinn wish make --prompt "The complete request"` creates a wish whose lead will write the title. MCP and
+existing spelling, while `djinn wish make --prompt "The complete request"` creates a wish whose lead will write the title.
+Such a field answers to its flag too: `djinn wish add-project <wish> djinn` and `djinn wish add-project <wish>
+--project-id djinn` are the same call (W481). A required field is positional only. MCP and
 OpenAPI mark only fields whose validation requires a value as required; positional spelling alone does not.
 
 The `oneof` rule is how a question is named by its code or its identifier: `QuestionRef` has `code` (pattern
@@ -83,6 +85,22 @@ asks `djinn task get` for it, in the wish of the request, else in the wish its o
 of such a command; its request has no wish), else in every wish. A wish's flag answers to both spellings: `--wish-id`
 where the request names it `wish`, `--wish` where it names it `wish_id`, when that field is the wish the request acts
 in (a UUID), never a destination such as `djinn task move --wish`.
+
+A field `wish`, `wish_id` or `wish_ids` that wants a UUID, positional or a flag, and the command line's own `--wish-id`,
+take a wish's title too (W481): its exact title, case and outer spaces ignored, else the start of only one title; among
+several, the only one not granted. The command line lists the wishes and sends the identifier. A start that several
+titles share is refused with the command again for each wish, as a server's refusal gives it (below); a title no wish
+has is refused, naming what is expected.
+
+**A prompt from a file** (W481). A request with a `prompt` but no `prompt_file` (`djinn task update`, `djinn question
+launch`, `djinn task continue`, `djinn wish make`) takes the command line's own `--prompt-file <path>`: the command
+line reads the file, its last line breaks cut, and sends its text as the prompt; beside `--prompt` it is refused.
+`djinn task spawn` has a `prompt_file` the server reads, the same way. The lead writes a prompt of several lines with
+its Write tool and passes the file: a `#` line inside `--prompt` is refused by Claude Code's shell guard.
+
+**A question code in several wishes** is, on the server, the only open question of them that has it (W481): the lead
+types `Q05` for the one it waits on. `djinn question launch` takes the only answered one instead. When none or several
+fit, the refusal gives the command again with `--wish-id` for each wish.
 
 **A refusal says what fits.** The server puts a `djinn.v1.Retry` (a field, and the values that fit it, each with a
 label) as a detail of an error: a spawn that names no project in a wish of several, a code in several wishes. The
