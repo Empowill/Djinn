@@ -70,6 +70,7 @@ import { WishSmoke } from "./wish-smoke";
 import { MAX_PROMPT_CHARACTERS, promptTooLong } from "./wish-composer-markdown";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { WorkspaceAction } from "./workspace-action";
+import { noShape, TextField, useTyped } from "./text-field";
 
 // MakeWish sends the complete request. Naming the wish belongs to the server and its lead. With three wishes active,
 // it is made paused, as the lamp would refuse a fourth. The rights chosen are given once it is made (WishService.Allow,
@@ -1061,7 +1062,7 @@ export function WithdrawQuestionDialog({
   onClose: () => void;
   onWithdraw: (wishId: string, id: string, note: string) => Promise<unknown>;
 }) {
-  const [note, setNote] = useState("");
+  const typed = useTyped(noShape);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -1069,7 +1070,7 @@ export function WithdrawQuestionDialog({
     event.preventDefault();
     setBusy(true);
     try {
-      await onWithdraw(currentWishId, question.id, note.trim());
+      await onWithdraw(currentWishId, question.id, typed.read().trim());
       onClose();
     } catch (err) {
       setError(message(err));
@@ -1087,12 +1088,13 @@ export function WithdrawQuestionDialog({
       <form className="form-fields" onSubmit={(e) => void submit(e)}>
         <label>
           <span>{t("question.withdraw_note")}</span>
-          <textarea
+          <TextField
             autoFocus
             rows={3}
             maxLength={NOTE_MAX}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
+            grow={false}
+            text={typed.text}
+            onText={typed.type}
             placeholder={t("question.withdraw_note_placeholder")}
             disabled={busy}
           />

@@ -833,7 +833,7 @@ test("the tilasm comments foot sends Iterate or Launch in one click in its kind 
   assert.doesNotMatch(leadHtml, /tilasm-send-confirm/);
   assert.match(
     leadHtml,
-    /<textarea rows="2" maxLength="8000" aria-label="A comment on the whole tilasm, sent with the others"/,
+    /<textarea rows="2" aria-label="A comment on the whole tilasm, sent with the others"[^>]*maxLength="8000"/,
   );
   assert.match(
     leadHtml,
@@ -872,10 +872,7 @@ test("the tilasm comments foot sends Iterate or Launch in one click in its kind 
     mockHtml,
     /<button type="button" class="button accent small kind-work" title="Starts the work task \(Build the answer buttons\) on Proposal A of Q25, with your comments\."><svg[^>]*lucide-hammer[\s\S]*?>Launch<\/button>/,
   );
-  mockFoot.one("textarea").onChange({
-    target: { value: "Keep 4.5:1 contrast" },
-    currentTarget: { style: {}, scrollHeight: 48 },
-  });
+  mockFoot.one(s.TextField).onText("Keep 4.5:1 contrast");
   mockFoot.one("kind-work").onClick();
   await mockFoot.settle();
   assert.deepEqual(sent.at(-1), [s.SendChoice.LAUNCH, "Keep 4.5:1 contrast"]);

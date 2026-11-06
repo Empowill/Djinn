@@ -53,9 +53,8 @@ import {
 import { NOTE_MAX, taskStatusText, taskTone, when } from "./data/format";
 import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
-import { useGrowTextarea } from "./lead-message";
 import { StatusBadge } from "./status";
-import { NoteCounter } from "./wish-question";
+import { hasText, TextField, useTyped } from "./text-field";
 
 // What the column asks of the store; each resolves once the drafts shown are read again.
 export interface CommentWrites {
@@ -562,12 +561,11 @@ export function SendBar({
   send: (choice: SendChoice, text: string) => Promise<void>;
   onError: (error: unknown) => void;
 }) {
-  const [text, setText] = useState("");
+  // The text is the field's own: a key renders the bar only when it starts or stops holding something (W526).
+  const typed = useTyped(hasText);
   const [sent, setSent] = useState("");
   const [busy, setBusy] = useState(false);
-  const area = useRef<HTMLTextAreaElement>(null);
-  useGrowTextarea(area, text);
-  const foot = sendFoot(drafts, text, hold);
+  const foot = sendFoot(drafts, typed.shown ? "text" : "", hold);
   const mockIterate = Boolean(sends?.iterateOption);
   const iterateTitle = mockIterate
     ? t("tilasms.iterate_mockup_title", {
@@ -588,9 +586,9 @@ export function SendBar({
     if (!allowed || busy) return;
     const count = foot.count;
     setBusy(true);
-    send(choice, text)
+    send(choice, typed.read())
       .then(() => {
-        setText("");
+        typed.set("");
         setSent(
           choice === SendChoice.ITERATE
             ? sends?.iterateOption
@@ -612,17 +610,15 @@ export function SendBar({
     <div className="tilasm-send">
       {statusLine && <p className="tilasm-send-hold">{statusLine}</p>}
       <div className="note-field">
-        <textarea
-          ref={area}
-          value={text}
+        <TextField
+          text={typed.text}
+          onText={typed.type}
           rows={2}
           maxLength={NOTE_MAX}
           aria-label={t("tilasms.send_text")}
           placeholder={t("tilasms.send_placeholder")}
           disabled={busy || foot.greyed}
-          onChange={(event) => setText(event.target.value)}
         />
-        <NoteCounter length={text.length} />
       </div>
       <div className="tilasm-send-buttons">
         <button
@@ -673,7 +669,6 @@ function CommentEditor({
   onCancel: () => void;
 }) {
   const area = useRef<HTMLTextAreaElement>(null);
-  useGrowTextarea(area, text);
   useEffect(() => {
     const el = area.current;
     if (!el) return;
@@ -690,15 +685,15 @@ function CommentEditor({
   return (
     <div className="tilasm-comment-editor">
       <div className="note-field">
-        <textarea
-          ref={area}
-          value={text}
+        <TextField
+          fieldRef={area}
+          text={text}
+          onText={onType}
           rows={3}
           maxLength={NOTE_MAX}
           aria-label={label}
           aria-keyshortcuts="Control+Enter Escape"
           disabled={busy}
-          onChange={(event) => onType(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
@@ -710,7 +705,6 @@ function CommentEditor({
             }
           }}
         />
-        <NoteCounter length={text.length} />
       </div>
       <div className="tilasm-comment-editor-foot">
         <span className="muted-text">{t("tilasms.comment_keys")}</span>

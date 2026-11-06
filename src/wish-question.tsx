@@ -93,7 +93,7 @@ import { questionPerch } from "./data/eye";
 import { EyePerch } from "./djinn-eye";
 import { t } from "./i18n";
 import { CommandText } from "./copy-command";
-import { useGrowTextarea } from "./lead-message";
+import { TextField, useTyped } from "./text-field";
 import { MoveLink } from "./link";
 import { FoldedMarkdown, MarkdownBody } from "./markdown-body";
 import { StatusBadge } from "./status";
@@ -191,7 +191,9 @@ export const WishQuestion = memo(function WishQuestion({
   // option named, nothing is selected: rubbing the lamp waits for your pick.
   const [picked, setPicked] = useState<Choice>();
   const choice = picked ?? (q.options.length ? recommended : Choice.YES);
-  const [note, setNote] = useState("");
+  // The note is the field's own: a key renders the card only when it turns the plan over to the lead (W526).
+  const typed = useTyped(noteShape);
+  const note = typed.text;
   const [sending, setSending] = useState(false);
   const [unpicked, setUnpicked] = useState(false);
   // The gesture the card plays, and whether its button is still down. It lasts while its answer leaves, the chosen
@@ -224,10 +226,11 @@ export const WishQuestion = memo(function WishQuestion({
   const row = !!onSelect && !answered && !withdrawn;
   const card = useRef<HTMLElement>(null);
   const noteField = useRef<HTMLTextAreaElement>(null);
-  useGrowTextarea(noteField, note);
+  // The plan reads only whether the note holds something.
+  const noted = typed.shown ? "noted" : "";
   const outcome = useMemo(
-    () => (choice !== undefined ? answerOutcome(q, choice, note) : undefined),
-    [q, choice, note],
+    () => (choice !== undefined ? answerOutcome(q, choice, noted) : undefined),
+    [q, choice, noted],
   );
   const kind = outcome?.kind ?? "lead";
   const isMock = kind === "mock";
@@ -271,14 +274,14 @@ export const WishQuestion = memo(function WishQuestion({
       setUnpicked(true);
       return;
     }
-    void play("rub", () => onAnswer(choice, note.trim(), q));
+    void play("rub", () => onAnswer(choice, typed.read().trim(), q));
   };
 
   const triggerEnlighten = () => {
     if (sending || !onEnlighten || digging || isMock) return;
     void play("enlighten", async () => {
-      await onEnlighten(note.trim(), q);
-      setNote("");
+      await onEnlighten(typed.read().trim(), q);
+      typed.set("");
     });
   };
 
@@ -518,7 +521,7 @@ export const WishQuestion = memo(function WishQuestion({
       {q.options.map((option, index) => {
         const optChoice = choiceOf(index);
         const selected = choice === optChoice;
-        const optOutcome = answerOutcome(q, optChoice, note);
+        const optOutcome = answerOutcome(q, optChoice, noted);
         const pick = () => {
           setPicked(optChoice);
           setUnpicked(false);
@@ -572,10 +575,10 @@ export const WishQuestion = memo(function WishQuestion({
       {q.options.length === 0 && (
         <PlanLine question={q} plan={planOf(q, Choice.YES)} />
       )}
-      <textarea
-        ref={noteField}
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
+      <TextField
+        fieldRef={noteField}
+        text={note}
+        onText={typed.type}
         onKeyDown={handleTextareaKeyDown}
         placeholder={
           q.options.length
@@ -586,7 +589,6 @@ export const WishQuestion = memo(function WishQuestion({
         maxLength={NOTE_MAX}
         aria-label={t("question.note_label")}
       />
-      <NoteCounter length={note.length} />
       {(unpicked || noLead) && (
         <p
           className={`question-hint${unpicked ? " unpicked" : ""}`}
@@ -911,21 +913,8 @@ function outcomeTitle(o: AnswerOutcome): string {
   return t("question.outcome_lead");
 }
 
-// NoteCounter shows a character count from 80 % of the limit (6400 / 8000), warming at 95 % (7600 / 8000).
-export function NoteCounter({
-  length,
-  max = NOTE_MAX,
-}: {
-  length: number;
-  max?: number;
-}) {
-  if (length < max * 0.8) return null;
-  return (
-    <span className={`note-count${length >= max * 0.95 ? " near" : ""}`}>
-      {length} / {max}
-    </span>
-  );
-}
+// noteShape is what the card shows of its note: whether it holds something, which turns the plan over to the lead.
+const noteShape = (text: string) => text.trim() !== "";
 
 // PlanLine is the task an option launches once picked, on one tinted line: its verb (Builds, Mockup, Investigates)
 // and title, cut short when long, then the azima it belongs to, whole, by its code and title once the wish's tasks

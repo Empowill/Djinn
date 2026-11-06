@@ -302,6 +302,14 @@ Djinn restarts; the next start draws on the graphics card again. A window whose 
 only told: quit Djinn and start it again. At every start, djinn.log also follows the page's loading, and the page's
 console goes where Djinn's output goes. On macOS and Windows, the window is not watched.
 
+## Text fields
+
+Every field you write free text in behaves the same: **Write to the Djinn**, a question's note, the last word of a
+tilasm's comments, a comment on a diff, a note to withdraw a question or to mark a task done, an instruction to a running
+worker. A key you type stays in the field: the page around it draws nothing again, so typing stays fluent on a long wish
+and under load. The page changes only when what it shows depends on your text, as the send button that your first
+letter enables. A note keeps up to 8000 characters; its count shows from 6400, and turns warm from 7600.
+
 ## Keys
 
 | Keys | What they do |
