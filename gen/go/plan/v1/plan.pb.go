@@ -22731,7 +22731,8 @@ type TaskServiceSpawnRequest struct {
 	// decision log links to the task, and the task to its decision.
 	Decision string `protobuf:"bytes,14,opt,name=decision,proto3" json:"decision,omitempty"`
 	// The azima the task belongs to: its code (T07) or its identifier. A grouping, never a wait: say what the task
-	// waits for with after.
+	// waits for with after. In a wish that pushes per azima, work given none gets an azima of its own, made for it with
+	// its title, whose branch is pushed: a watcher, an investigation or a mockup, which merge nothing, stay of none.
 	PartOf string `protobuf:"bytes,15,opt,name=part_of,json=partOf,proto3" json:"part_of,omitempty"`
 	// What the task is; by default work, for a worker. azima makes an azima (T1, T2…): no worker, no prompt, never
 	// scheduled; work is spawned part of it. ifrit makes an ifrit: an agent that stays lit while you are there, to

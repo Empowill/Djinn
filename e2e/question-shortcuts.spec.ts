@@ -33,7 +33,10 @@ test("question card keyboard shortcuts: letters, 1-4, Shift+Enter, Enter, Ctrl+S
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   await page.goto(process.env.DJINN_URL!);
-  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible();
+  // A loaded machine starves the page's first script: its first call came 5.6 s after load (W440).
+  await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+    timeout: 15_000,
+  });
 
   // Three wishes at a time: the earlier specs' wishes make way.
   const listed = JSON.parse(djinn("wish", "list", "--json")).wishes ?? [];
