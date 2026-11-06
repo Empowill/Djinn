@@ -41,7 +41,6 @@ import {
   type AnchorKind,
   NEW,
   anchorKind,
-  canSave,
   cardState,
   cards,
   column,
@@ -220,22 +219,22 @@ export function CommentsColumn({
       .catch(onError)
       .finally(() => setBusy(false));
   };
-  const save = () => {
-    if (!canSave(state) || busy) return;
+  // The editor gives its text as typed: a key renders not the column (W567).
+  const save = (text: string) => {
+    if (!state.editing || !hasText(text) || busy) return;
     const editing = state.editing;
     const id = editing === NEW ? undefined : editing;
     act(async () => {
-      await writes.put(tilasmId, state.text, id, state.anchor);
+      await writes.put(tilasmId, text, id, state.anchor);
       dispatch({ type: "saved", editing });
     });
   };
-  const editor = (label: string) => (
+  const editor = (label: string, focus?: string) => (
     <CommentEditor
       label={label}
       text={state.text}
+      focus={focus}
       busy={busy}
-      canSave={canSave(state)}
-      onType={(text) => dispatch({ type: "type", text })}
       onSave={save}
       onCancel={() => dispatch({ type: "cancel" })}
     />
@@ -402,11 +401,8 @@ export function CommentsColumn({
         <ol className="tilasm-comment-list">
           {groups.attached.map(card)}
           {state.editing === NEW && (
-            // A new passage or element asked for focuses the card again.
-            <li
-              key={`new-${newKey(state.anchor)}`}
-              className="tilasm-comment-new"
-            >
+            // The card stays as it takes another passage or element, with what is typed; it is focused again.
+            <li key="new" className="tilasm-comment-new">
               <div className="tilasm-comment-head">
                 <span className="tilasm-comment-anchor">
                   {state.anchor
@@ -426,6 +422,7 @@ export function CommentsColumn({
                   : isPassage(state.anchor)
                     ? t("tilasms.comment_label_passage")
                     : t("tilasms.comment_label_element"),
+                newKey(state.anchor),
               )}
             </li>
           )}
@@ -650,25 +647,28 @@ export function SendBar({
   );
 }
 
-// CommentEditor is a card being written: its text, focused, saved by Ctrl+Enter, given up by Escape.
+// CommentEditor is a card being written: its text, focused, saved by Ctrl+Enter, given up by Escape. It holds what is
+// typed (W567): a key renders the editor alone, and only when Save turns on or off; the column hears the text on Save.
 function CommentEditor({
   label,
   text,
+  focus,
   busy,
-  canSave,
-  onType,
   onSave,
   onCancel,
 }: {
   label: string;
+  // The text the card opens with.
   text: string;
+  // Focused again when it changes: a new card that takes another passage or element.
+  focus?: string;
   busy: boolean;
-  canSave: boolean;
-  onType: (text: string) => void;
-  onSave: () => void;
+  onSave: (text: string) => void;
   onCancel: () => void;
 }) {
   const area = useRef<HTMLTextAreaElement>(null);
+  const typed = useTyped(hasText, text);
+  const save = () => onSave(typed.read());
   useEffect(() => {
     const el = area.current;
     if (!el) return;
@@ -681,14 +681,14 @@ function CommentEditor({
     const view = body.getBoundingClientRect();
     if (at.bottom > view.bottom) body.scrollTop += at.bottom - view.bottom;
     else if (at.top < view.top) body.scrollTop -= view.top - at.top;
-  }, []);
+  }, [focus]);
   return (
     <div className="tilasm-comment-editor">
       <div className="note-field">
         <TextField
           fieldRef={area}
-          text={text}
-          onText={onType}
+          text={typed.text}
+          onText={typed.type}
           rows={3}
           maxLength={NOTE_MAX}
           aria-label={label}
@@ -697,7 +697,7 @@ function CommentEditor({
           onKeyDown={(event) => {
             if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
-              onSave();
+              save();
             } else if (event.key === "Escape") {
               // Escape gives up the card, and only the card: full size stays.
               event.preventDefault();
@@ -719,8 +719,8 @@ function CommentEditor({
         <button
           type="button"
           className="button accent small"
-          disabled={busy || !canSave}
-          onClick={onSave}
+          disabled={busy || !typed.shown}
+          onClick={save}
         >
           {t("tilasms.comment_save")}
         </button>

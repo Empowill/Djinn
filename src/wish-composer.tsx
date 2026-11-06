@@ -1,6 +1,8 @@
 import { memo, useEffect, useRef, useState } from "react";
 
 import { t } from "./i18n";
+import { TextField } from "./text-field";
+import { promptTooLong } from "./wish-composer-markdown";
 
 const PLACEHOLDER_KEYS = [
   "make.placeholder_build",
@@ -164,39 +166,51 @@ const AnimatedPlaceholder = memo(function AnimatedPlaceholder({
   );
 });
 
+// PromptShape is what the new wish shows of its request (W567): a key renders the page only when it changes.
+export const PromptShape = { EMPTY: 0, TEXT: 1, TOO_LONG: 2 } as const;
+export type PromptShape = (typeof PromptShape)[keyof typeof PromptShape];
+
+// promptShape is a request's shape: blank (spaces and format marks only), something to send, or over the API's limit.
+export const promptShape = (text: string): PromptShape =>
+  promptTooLong(text)
+    ? PromptShape.TOO_LONG
+    : text.replace(/[\s\p{Cf}]/gu, "")
+      ? PromptShape.TEXT
+      : PromptShape.EMPTY;
+
 // The request is deliberately a native textarea: it keeps the browser's caret, selection, undo stack and paste
 // behavior while sending plain Markdown-compatible text to the API. Formatting controls are intentionally absent.
+// It is a TextField (W567): the text is the browser's own, its owner keeps it in useTyped and renders on its shape.
 export function WishComposer({
   id,
   describedBy,
   disabled,
   invalid = false,
-  onChange,
+  text,
+  onText,
+  empty,
 }: {
   id: string;
   describedBy?: string;
   disabled: boolean;
   invalid?: boolean;
-  onChange: (markdown: string, hasText: boolean) => void;
+  // The text the owner holds, written into the field when it changes.
+  text: string;
+  onText: (text: string) => void;
+  // Nothing typed yet: the placeholder plays.
+  empty: boolean;
 }) {
-  const [empty, setEmpty] = useState(true);
-
-  const update = (value: string) => {
-    const hasText = Boolean(value.replace(/[\s\p{Cf}]/gu, ""));
-    setEmpty(!hasText);
-    onChange(value, hasText);
-  };
-
   return (
     <div
       className={`wish-composer ${disabled ? "is-disabled" : ""}`}
       data-empty={empty}
     >
       <AnimatedPlaceholder empty={empty} />
-      <textarea
+      <TextField
         id={id}
         name="prompt"
         rows={8}
+        grow={false}
         aria-multiline="true"
         aria-required="true"
         aria-disabled={disabled}
@@ -206,7 +220,8 @@ export function WishComposer({
         disabled={disabled}
         className="wish-composer-input"
         placeholder=""
-        onChange={(event) => update(event.target.value)}
+        text={text}
+        onText={onText}
       />
     </div>
   );
