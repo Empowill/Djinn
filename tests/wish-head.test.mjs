@@ -497,6 +497,12 @@ test("while Djinn drives the lead, its menu moves it to another agent, account o
     markup,
     /<input placeholder="The agent&#x27;s default" aria-label="Model" value="claude-opus-5-5"\/>/,
   );
+  // Its seats alone: the accounts, their order and their gauges live in the Summoning Circle (W540).
+  const withSetup = s.renderToStaticMarkup(
+    h(s.LeadMenu, { agents, drive, onPick() {}, onMove() {}, onSetup() {} }),
+  );
+  assert.doesNotMatch(withSetup, /Set up the agents/);
+  assert.doesNotMatch(withSetup, /sign-in-grip|usage-gauge/);
   // The seat's name, as the attention bar says it.
   assert.equal(
     s.seatName({ provider: s.Provider.CODEX, account: "gpt" }, accounts),

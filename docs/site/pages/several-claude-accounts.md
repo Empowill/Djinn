@@ -13,9 +13,10 @@ keeps that account's login. Djinn makes the folder and runs the sign-in; it keep
 
 ## Add the account, step by step
 
-1. Open the agents' setup: **Connections & preferences** at the bottom of the side panel, or **Set up the agents** at
-   the end of the menu of the Djinn's seat, the chip at the top of a wish.
-2. On the panel's last line, the one that starts with a plus, choose **Claude Code** in the first list.
+1. Open the **Summoning Circle**, below the Grimoire in the side panel: a page of the window, with the agents at the
+   top, then Accounts · order of priority. **Connections & preferences**, at the bottom of the side panel, shows the
+   same agents and accounts.
+2. On the last line of the accounts, the one that starts with a plus, choose **Claude Code** in the first list.
 3. Type the account's **name**, such as work: lowercase letters, digits and dashes (the format is below).
 4. Type a **label** if you want one, such as Work account: any text. The window shows it instead of the name.
 5. Click **Add**. Djinn makes the folder: in your home folder, a hidden folder named .claude- followed by the name
@@ -63,9 +64,13 @@ agent and the label; djinn lead accounts lists the accounts.
 - **A limit moves the task.** A worker that hits the limit of its account moves at once to another sign-in, its session
   copied into that account's folder. The account stays limited until its reset; with no other sign-in free, the task
   waits for the reset.
-- **The window shows it.** Under each sign-in's line: Active, Paused or Limited until its reset, the week's gauge and
-  when the week ends, its 5 hours used, and Next task here on the sign-in a new task would take now. A task's card
-  names the account it runs on by its label.
+- **The window shows it.** In the Summoning Circle, each sign-in's line names its agent and carries Next Claude Code
+  task here on the sign-in a new task of the agent would take now, a crown where the Djinn runs, how many workers run
+  there and how many tasks wait there for its limit to lift. Under it: Active, Paused or Limited until its reset; the
+  week's gauge and when the week ends; the 5 hours' gauge against their limit, with the hour the session ends and the
+  time left until then (ends at 14:20, in 1 h 12); and, for a sign-in the order passes over, skipped until its reset
+  or skipped while paused. A gauge past 95 % fills in a brighter tone. A task's card names the account it runs on by
+  its label.
 
 More on the rules, the quota probe and the sessions that follow a task: [the Djinn](#the-djinn).
 

@@ -25,9 +25,10 @@ The Djinn and the workers run the agents you already have, as you installed and 
 **Connections & preferences** (bottom of the side panel) shows, one line per agent, whether Djinn finds it, its
 version, and whether it is signed in (`claude auth status`, `codex login status`; Antigravity has no such command, so
 its sign-in shows as unknown), with a button to install it or sign it in. The button runs the agent's own command in a
-terminal of the panel, where you answer if it asks; once it ends, Djinn checks again. The same panel opens from the
-menu of the Djinn's seat, at the top of a wish (**Set up the agents**; the arrow beside **Talk to the Djinn** when the
-Djinn runs in its terminal), and by itself when the window opens with no agent ready. The agents are looked
+terminal of the panel, where you answer if it asks; once it ends, Djinn checks again. The same agents, and their
+accounts in their order of priority, head the **Summoning Circle** page (below the Grimoire in the side panel, or
+**Set up the agents** in the menu beside **Talk to the Djinn** when the Djinn runs in its terminal); the panel opens by
+itself when the window opens with no agent ready. Driven, the menu of the Djinn's seat keeps its seats alone. The agents are looked
 for where the Djinn and the workers find them: Djinn's PATH, your login shell's, and the installers' folders. Djinn asks for no API key,
 and stores none: the account each agent signs in with pays for it.
 

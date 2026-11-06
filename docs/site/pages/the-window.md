@@ -83,8 +83,14 @@ corners, and back. On the rail, never on a background:
 
 ### The Summoning Circle
 
-The **Summoning Circle**, below the Grimoire in the side panel, chooses for each kind of worker which model answers the
-call across all projects: **Djinn (lead)** first, then **Investigation**, **Mockup**, **Ifrit**, **Work**, **Merge
+The **Summoning Circle**, below the Grimoire in the side panel, is a page of the window, like the Grimoire: who works,
+on which account, with which model. At the top, the agents: each one's version, where it stands, and the button that
+installs it or signs it in, its terminal opening below its line; **Check again** runs their status commands again.
+Then **Accounts · order of priority**: every sign-in of every agent in one list, from the first taken to the last,
+each with its rank and grip (drag it, or Alt+Up and Alt+Down), its pause, its gauges for the week and the 5 hours with
+when each ends, the workers and the waiting tasks on it, where the next task of its agent starts and where the Djinn
+runs; [several Claude accounts](#several-claude-accounts) tells it line by line. Then the models: it chooses for each
+kind of worker which model answers the call across all projects: **Djinn (lead)** first, then **Investigation**, **Mockup**, **Ifrit**, **Work**, **Merge
 correction**, **Merge review**, and **Question investigator**. Each dropdown lists only models from providers installed
 and signed in on this machine (unsigned providers appear greyed out with their sign-in command), taking Antigravity's
 models from the agent itself and Claude and Codex models from Djinn's shared price table, shown once by human-readable

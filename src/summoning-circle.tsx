@@ -1,21 +1,35 @@
-// The Summoning Circle (W383, W400, W417): one row per kind of worker, global to Djinn (every project).
+// The Summoning Circle (W383, W400, W417, W540): a page of the window, like the Grimoire, that says who works, on which
+// account, with which model (tilasm L49 v2 mockup A). First the agents, each with its next step (agent-setup.tsx);
+// then every sign-in of every agent in the order of priority, ranked by drag and drop or Alt+Arrow, each with its
+// gauges, its state, the workers and the tasks waiting there, and where the Djinn runs; then one row per kind of
+// worker, global to Djinn (every project); last, the change of the open tasks' models at once.
 // Models come from the server (live agent discovery + shared internal/usage/prices.yaml table), never a hand-written UI list.
-// Providers not signed in on this machine show greyed with their sign-in command and are never offered as choices.
-import { useEffect, useMemo, useState } from "react";
+// Providers not signed in on this machine are never offered as choices: their rows say how to sign them in.
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   Change,
   Provider,
+  type Task,
+  TaskKind,
+  TaskStatus,
   type TaskServiceUpdateModelsResponse,
   WorkerKind,
   type WorkerSeat,
 } from "../gen/ts/plan/v1/plan_pb";
+import {
+  AgentSetupPanel,
+  type Agents,
+  type SignInLoad,
+  useAgents,
+} from "./agent-setup";
 import { message } from "./data/client";
-import { useDjinn } from "./data/djinn";
+import { useDjinn, useOptionalData } from "./data/djinn";
 import { defaultModel } from "./data/format";
 import { catalogFromPriceTable } from "./data/prices";
-import { ModalFrame } from "./frame";
 import { type TextKey, t } from "./i18n";
+import { OperatingLoad } from "./operating-load";
+import { PageHeader } from "./page-header";
 import "./project-panel.css";
 
 export interface CircleModel {
@@ -202,12 +216,37 @@ function modelsForRow(
   );
 }
 
+// CIRCLE is the page of the window that shows the Summoning Circle, as the side panel's entry and the lead's menu ask.
+// A wish's id is a UUID: never this.
+export const CIRCLE = "circle";
+
+// loadOf counts what runs on each sign-in, by its agent and account ("" for the agent's own): the workers running
+// there, and the tasks stopped by its limit that wait to start again. A watcher or an azima runs no agent of its own.
+export function loadOf(tasks: readonly Task[]): Map<string, SignInLoad> {
+  const out = new Map<string, SignInLoad>();
+  for (const task of tasks) {
+    if (task.provider === Provider.WATCH || task.kind === TaskKind.AZIMA)
+      continue;
+    const running = task.status === TaskStatus.RUNNING;
+    if (!running && task.status !== TaskStatus.RESUMING) continue;
+    const provider =
+      task.provider === Provider.UNSPECIFIED ? Provider.CLAUDE : task.provider;
+    const key = `${provider}/${task.account}`;
+    const load = out.get(key) ?? { workers: 0, waiting: 0 };
+    if (running) load.workers++;
+    else load.waiting++;
+    out.set(key, load);
+  }
+  return out;
+}
+
 export function SummoningCircle({
   initialRows,
   initialModels,
   initialProviders,
+  initialAgents,
+  initialTasks,
   onChoose,
-  onClose,
 }: {
   initialRows?: WorkerSeat[];
   initialModels?: readonly CircleModel[];
@@ -217,9 +256,27 @@ export function SummoningCircle({
     provider: Provider;
     model: string;
   }) => Promise<WorkerSeat[]>;
-  onClose: () => void;
+  // The agents and their sign-ins, and the tasks, as a test gives them; else read from Djinn.
+  initialAgents?: Agents;
+  initialTasks?: readonly Task[];
 }) {
   const djinn = useDjinn();
+  const liveAgents = useAgents();
+  const agents = initialAgents ?? liveAgents;
+  // The tasks of the active wishes, which the window reads while it is open (wish-app.tsx).
+  const details = useOptionalData((s) => s.details, undefined);
+  const load = useMemo(
+    () =>
+      loadOf(
+        initialTasks ??
+          Object.values(details ?? {}).flatMap((d) => d?.tasks ?? []),
+      ),
+    [details, initialTasks],
+  );
+  const loadAt = useCallback(
+    (provider: Provider, account: string) => load.get(`${provider}/${account}`),
+    [load],
+  );
   const [rows, setRows] = useState<WorkerSeat[]>(initialRows ?? []);
   const [models, setModels] = useState<readonly CircleModel[]>(
     () => initialModels ?? catalogFromPriceTable(),
@@ -301,149 +358,141 @@ export function SummoningCircle({
   };
 
   return (
-    <ModalFrame
-      eyebrow={t("summoning.eyebrow")}
-      title={t("summoning.title")}
-      onClose={onClose}
-      wide
-    >
-      <p className="panel-lead">
-        {t("summoning.subtitle")}. {t("summoning.detail")}
-      </p>
-      <div className="summoning-providers">
-        {providers.map((p) => {
-          const name = providerName(p.provider);
-          if (p.signedIn) {
-            return (
-              <span key={p.provider} className="summoning-provider signed-in">
-                {name}
-              </span>
-            );
-          }
-          return (
-            <span
-              key={p.provider}
-              className="summoning-provider unsigned"
-              title={`${t("summoning.sign_in_with")} ${p.loginCommand}`}
-            >
-              {name} · {t("summoning.sign_in_with")}{" "}
-              <code>{p.loginCommand}</code>
-            </span>
-          );
-        })}
-      </div>
-      {error && (
-        <p className="field-error" role="alert">
-          {error}
-        </p>
-      )}
-      <section className="config-box summoning-list">
-        {CIRCLE_ROWS.map((spec) => {
-          const seat = rows.find((r) => r.kind === spec.kind);
-          const isLead = spec.kind === WorkerKind.LEAD;
-          const options = modelsForRow(spec, models, providers);
-          const rawModel = isLead
-            ? seat?.model || defaultModel(seat?.provider || Provider.CLAUDE)
-            : seat && seat.provider !== Provider.UNSPECIFIED
-              ? seat.model || defaultModel(seat.provider)
-              : "";
-          const canonical = canonicalModelId(rawModel);
-          const value = isLead
-            ? options.some((m) => m.id === canonical)
-              ? canonical
-              : (options[0]?.id ?? canonical)
-            : options.some((m) => m.id === canonical)
-              ? canonical
-              : "";
-          const unsignedForRow = providers.filter(
-            (p) => spec.providers.includes(p.provider) && !p.signedIn,
-          );
-          const leadUnavailableForRow = isLead
-            ? providers.filter(
-                (p) =>
-                  spec.providers.includes(p.provider) &&
-                  p.signedIn &&
-                  !p.leadSupported,
-              )
-            : [];
-          const label = t(spec.labelKey);
-          const detail = t(spec.detailKey);
-          return (
-            <div className="setting-row summoning-row" key={spec.key}>
-              <div>
-                <strong>{label}</strong>
-                <p>{detail}</p>
-                {leadUnavailableForRow.length > 0 && (
-                  <div className="summoning-row-notes">
+    <div className="wish-view summoning-page">
+      <PageHeader middle={<OperatingLoad />}>
+        <strong>{t("summoning.title")}</strong>
+      </PageHeader>
+      <div className="mission-scroll">
+        <div className="summoning-content">
+          <header className="summoning-head">
+            <h1>{t("summoning.title")}</h1>
+            <p>{t("summoning.page_detail")}</p>
+          </header>
+          {/* Its mode prop, at the right of the accounts' title, is the place of the choice of how a sign-in is
+              picked (a dynamic mode by default, to come); none yet: the order alone decides. */}
+          <AgentSetupPanel agents={agents} load={loadAt} />
+          <h3 className="summoning-section-title">
+            {t("summoning.models_title")}
+          </h3>
+          <p className="agent-setup-intro">{t("summoning.detail")}</p>
+          {error && (
+            <p className="field-error" role="alert">
+              {error}
+            </p>
+          )}
+          <section className="config-box summoning-list">
+            {CIRCLE_ROWS.map((spec) => {
+              const seat = rows.find((r) => r.kind === spec.kind);
+              const isLead = spec.kind === WorkerKind.LEAD;
+              const options = modelsForRow(spec, models, providers);
+              const rawModel = isLead
+                ? seat?.model || defaultModel(seat?.provider || Provider.CLAUDE)
+                : seat && seat.provider !== Provider.UNSPECIFIED
+                  ? seat.model || defaultModel(seat.provider)
+                  : "";
+              const canonical = canonicalModelId(rawModel);
+              const value = isLead
+                ? options.some((m) => m.id === canonical)
+                  ? canonical
+                  : (options[0]?.id ?? canonical)
+                : options.some((m) => m.id === canonical)
+                  ? canonical
+                  : "";
+              const unsignedForRow = providers.filter(
+                (p) => spec.providers.includes(p.provider) && !p.signedIn,
+              );
+              const leadUnavailableForRow = isLead
+                ? providers.filter(
+                    (p) =>
+                      spec.providers.includes(p.provider) &&
+                      p.signedIn &&
+                      !p.leadSupported,
+                  )
+                : [];
+              const label = t(spec.labelKey);
+              const detail = t(spec.detailKey);
+              return (
+                <div className="setting-row summoning-row" key={spec.key}>
+                  <div>
+                    <strong>{label}</strong>
+                    <p>{detail}</p>
+                    {leadUnavailableForRow.length > 0 && (
+                      <div className="summoning-row-notes">
+                        {leadUnavailableForRow.map((p) => (
+                          <span
+                            key={p.provider}
+                            className="summoning-provider unsigned lead-unavailable"
+                            title={p.leadUnavailableReason}
+                          >
+                            {providerName(p.provider)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <select
+                    className="summoning-select"
+                    aria-label={label}
+                    value={value}
+                    disabled={
+                      busy || !loaded || (isLead && options.length === 0)
+                    }
+                    onChange={(e) => apply(spec, e.target.value, options)}
+                  >
+                    {!isLead && (
+                      <option value="">{t("summoning.same_as_lead")}</option>
+                    )}
+                    {options.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
                     {leadUnavailableForRow.map((p) => (
-                      <span
-                        key={p.provider}
-                        className="summoning-provider unsigned lead-unavailable"
+                      <option
+                        key={`lead-unavail-${p.provider}`}
+                        disabled
                         title={p.leadUnavailableReason}
                       >
-                        {providerName(p.provider)}
-                      </span>
+                        {t("summoning.lead_unavailable_option", {
+                          provider: providerName(p.provider),
+                          reason: p.leadUnavailableReason || "",
+                        })}
+                      </option>
                     ))}
-                  </div>
-                )}
-              </div>
-              <select
-                className="summoning-select"
-                aria-label={label}
-                value={value}
-                disabled={busy || !loaded || (isLead && options.length === 0)}
-                onChange={(e) => apply(spec, e.target.value, options)}
-              >
-                {!isLead && (
-                  <option value="">{t("summoning.same_as_lead")}</option>
-                )}
-                {options.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-                {leadUnavailableForRow.map((p) => (
-                  <option
-                    key={`lead-unavail-${p.provider}`}
-                    disabled
-                    title={p.leadUnavailableReason}
-                  >
-                    {t("summoning.lead_unavailable_option", {
-                      provider: providerName(p.provider),
-                      reason: p.leadUnavailableReason || "",
-                    })}
-                  </option>
-                ))}
-                {unsignedForRow.map((p) => (
-                  <option
-                    key={`unsigned-${p.provider}`}
-                    disabled
-                    title={`${t("summoning.sign_in_with")} ${p.loginCommand}`}
-                  >
-                    {t("summoning.sign_in_option", {
-                      provider: providerName(p.provider),
-                      command: p.loginCommand,
-                    })}
-                  </option>
-                ))}
-              </select>
-            </div>
-          );
-        })}
-      </section>
-      <section className="config-box summoning-bulk">
-        <UpdateModelsSection
-          models={selectableModels}
-          onApplied={(res) => {
-            if (res.circle.length > 0) {
-              setRows((prev) =>
-                prev.map((r) => res.circle.find((c) => c.kind === r.kind) ?? r),
+                    {unsignedForRow.map((p) => (
+                      <option
+                        key={`unsigned-${p.provider}`}
+                        disabled
+                        title={`${t("summoning.sign_in_with")} ${p.loginCommand}`}
+                      >
+                        {t("summoning.sign_in_option", {
+                          provider: providerName(p.provider),
+                          command: p.loginCommand,
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               );
-            }
-          }}
-        />
-      </section>
-    </ModalFrame>
+            })}
+          </section>
+          <section className="config-box summoning-bulk">
+            <UpdateModelsSection
+              models={selectableModels}
+              onApplied={(res) => {
+                if (res.circle.length > 0) {
+                  setRows((prev) =>
+                    prev.map(
+                      (r) => res.circle.find((c) => c.kind === r.kind) ?? r,
+                    ),
+                  );
+                }
+              }}
+            />
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }
 

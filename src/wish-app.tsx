@@ -42,7 +42,7 @@ import { EmptyState } from "./empty-art";
 import { platformShortcut, TooltipButton } from "./tooltip";
 import { useInboxCount } from "./inbox";
 import { ProjectPanel } from "./project-panel";
-import { SummoningCircle } from "./summoning-circle";
+import { CIRCLE, SummoningCircle } from "./summoning-circle";
 import { AddProject, MakeWish, Settings } from "./wish-dialogs";
 import { Docs, GRIMOIRE } from "./docs";
 import { WishSidebar } from "./wish-sidebar";
@@ -62,7 +62,7 @@ import { hideSplash } from "./splash";
 import "./wish.css";
 import "./review.css";
 
-type Modal = "make" | "project" | "settings" | "agents" | "summoning" | null;
+type Modal = "make" | "project" | "settings" | "agents" | null;
 
 // What the window shows instead of a wish: the flying carpet of the active wishes. A wish's id is a UUID: never this.
 export const PLAN = "plan";
@@ -134,8 +134,8 @@ export function WishApp() {
     const timer = window.setTimeout(() => setGlide(0), 400);
     return () => window.clearTimeout(timer);
   }, [glide]);
-  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN), the Hourglass (HOURGLASS) or the
-  // Grimoire (GRIMOIRE), by the side panel or by the keyboard (PAGES).
+  // showPage shows a page of the window instead of a wish: the flying carpet (PLAN), the Hourglass (HOURGLASS), the
+  // Grimoire (GRIMOIRE) or the Summoning Circle (CIRCLE), by the side panel or by the keyboard (PAGES).
   const showPage = useCallback((page: string) => {
     setSelected(page);
     setModal(null);
@@ -269,14 +269,16 @@ export function WishApp() {
   const pendingWish = justMade?.id === selected ? justMade : undefined;
   const hourglass = !chosen && !pendingWish && selected === HOURGLASS;
   const grimoire = !chosen && !pendingWish && selected === GRIMOIRE;
+  const circle = !chosen && !pendingWish && selected === CIRCLE;
   const plan =
     !hourglass &&
     !grimoire &&
+    !circle &&
     !chosen &&
     !pendingWish &&
     (selected === PLAN || active.length > 0);
   const wish =
-    plan || hourglass || grimoire
+    plan || hourglass || grimoire || circle
       ? undefined
       : (chosen ?? pendingWish ?? wishes[0]);
   // Until the wishes are read, no page is chosen: the home page would show, then give way to the flying carpet or a wish
@@ -457,7 +459,8 @@ export function WishApp() {
             onSelectHourglass={() => showPage(HOURGLASS)}
             grimoireSelected={grimoire}
             onSelectGrimoire={() => showPage(GRIMOIRE)}
-            onOpenSummoningCircle={() => setModal("summoning")}
+            summoningSelected={circle}
+            onOpenSummoningCircle={() => showPage(CIRCLE)}
             selectedWishId={wish?.id ?? ""}
             selectedProjectId={projectId}
             collapsed={collapsed}
@@ -537,13 +540,15 @@ export function WishApp() {
               />
             ) : grimoire ? (
               <Docs />
+            ) : circle ? (
+              <SummoningCircle />
             ) : plan ? (
               <FlightPlan
                 wishes={active}
                 onOpen={setSelected}
                 onOpenProject={setProjectId}
                 onToast={setToast}
-                onSetupAgents={() => setModal("agents")}
+                onSetupAgents={() => showPage(CIRCLE)}
               />
             ) : wish ? (
               <WishView
@@ -553,7 +558,7 @@ export function WishApp() {
                 reaching={reaching?.wishId === wish.id ? reaching : undefined}
                 landing={landing?.wishId === wish.id ? landing : undefined}
                 onToast={setToast}
-                onSetupAgents={() => setModal("agents")}
+                onSetupAgents={() => showPage(CIRCLE)}
               />
             ) : (
               <HomePlaceholder
@@ -579,9 +584,6 @@ export function WishApp() {
         )}
         {modal === "settings" && <Settings onClose={() => setModal(null)} />}
         {modal === "agents" && <AgentSetup onClose={() => setModal(null)} />}
-        {modal === "summoning" && (
-          <SummoningCircle onClose={() => setModal(null)} />
-        )}
         {project && modal !== "make" && (
           <ProjectPanel
             project={project}

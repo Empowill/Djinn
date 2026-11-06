@@ -1342,9 +1342,19 @@ html[data-theme="light"] .wordmark-period {
 .sign-in-section {
   margin-top: 1.5rem;
 }
+.sign-in-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.375rem;
+}
 .sign-in-title {
   font-size: 0.8125rem;
-  margin-bottom: 0.375rem;
+}
+/* What the order skips (a paused or limited sign-in) reads apart from the gauges, after them. */
+.sign-in-usage .sign-in-skipped {
+  font-style: italic;
 }
 .sign-in-order {
   position: relative;

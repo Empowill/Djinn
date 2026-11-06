@@ -111,6 +111,7 @@ export function WishSidebar({
   onSelectHourglass,
   grimoireSelected = false,
   onSelectGrimoire,
+  summoningSelected = false,
   onOpenSummoningCircle,
   selectedWishId,
   selectedProjectId,
@@ -140,7 +141,8 @@ export function WishSidebar({
   // The Grimoire, the documentation, shows.
   grimoireSelected?: boolean;
   onSelectGrimoire?: () => void;
-  // Opens the Summoning Circle: the default agent and model per project.
+  // Shows the Summoning Circle page, marked while shown: the agents, their accounts in order, a model per kind of worker.
+  summoningSelected?: boolean;
   onOpenSummoningCircle?: () => void;
   selectedWishId: string;
   selectedProjectId: string;
@@ -748,7 +750,11 @@ export function WishSidebar({
       )}
       {onOpenSummoningCircle && (
         <button
-          className="nav-item summoning-nav"
+          className={
+            summoningSelected
+              ? "nav-item summoning-nav selected"
+              : "nav-item summoning-nav"
+          }
           onClick={onOpenSummoningCircle}
           title={t("summoning.subtitle")}
           aria-label={t("sidebar.summoning_circle")}
