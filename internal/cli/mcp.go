@@ -346,10 +346,12 @@ func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, 
 	req, err := request(md.Input(), args)
 	if err == nil {
 		fromEnv(req, s.cfg.getenv())
-		err = check(req, func(fd protoreflect.FieldDescriptor) string { return string(fd.Name()) })
+		if err = resolve(ctx, s.cfg, req, ""); err == nil {
+			err = check(req, func(fd protoreflect.FieldDescriptor) string { return string(fd.Name()) })
+		}
 	}
 	if err != nil {
-		return "", err
+		return "", mcpRetried(err)
 	}
 	cfg, err := autostart(ctx, s.cfg, md)
 	if err != nil {
@@ -357,7 +359,7 @@ func (s *mcpServer) call(ctx context.Context, md protoreflect.MethodDescriptor, 
 	}
 	res, err := call(ctx, cfg, md, req)
 	if err != nil {
-		return "", err
+		return "", mcpRetried(err)
 	}
 	return indentedJSON(res)
 }

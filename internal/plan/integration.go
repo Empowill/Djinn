@@ -442,8 +442,9 @@ func integrationChange(
 	ids := wish.GetProjectIds()
 	switch {
 	case id == "" && len(ids) != 1:
-		return "", false, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-			"the wish has %d projects: name one with --project-id", len(ids)))
+		values := ProjectValues(ctx, r, ids)
+		return "", false, Retry(connect.CodeInvalidArgument, fmt.Errorf(
+			"the wish has %d projects: name one with --project-id (%s)", len(ids), ValueNames(values)), "project_id", values...)
 	case id == "":
 		id = ids[0]
 	}

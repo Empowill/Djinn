@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file djinn/v1/options.proto.
  */
 export const file_djinn_v1_options: GenFile = /*@__PURE__*/
-  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJKlgKClZpc2liaWxpdHkSGgoWVklTSUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEVZJU0lCSUxJVFlfUFVCTElDEAESFwoTVklTSUJJTElUWV9JTlRFUk5BTBACKkYKBldyaXRlcxIWChJXUklURVNfVU5TUEVDSUZJRUQQABIRCg1XUklURVNfQ0hBTkdFEAESEQoNV1JJVEVTX0RFTEVURRACOlYKCnZpc2liaWxpdHkSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi5jgMgASgOMhQuZGppbm4udjEuVmlzaWJpbGl0eVIKdmlzaWJpbGl0eTo+CglhdXRvc3RhcnQSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi7jgMgASgIUglhdXRvc3RhcnQ6SgoGd3JpdGVzEh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYvI4DIAEoDjIQLmRqaW5uLnYxLldyaXRlc1IGd3JpdGVzOkMKDG1ldGhvZF9hbGlhcxIeLmdvb2dsZS5wcm90b2J1Zi5NZXRob2RPcHRpb25zGL+OAyADKAlSC21ldGhvZEFsaWFzOkwKEWNvbW1hbmRfbGluZV9vbmx5Eh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYwI4DIAEoCFIPY29tbWFuZExpbmVPbmx5OjcKBWFsaWFzEh8uZ29vZ2xlLnByb3RvYnVmLlNlcnZpY2VPcHRpb25zGL2OAyADKAlSBWFsaWFzOksKBnVuaXF1ZRIfLmdvb2dsZS5wcm90b2J1Zi5NZXNzYWdlT3B0aW9ucxi6jgMgAygLMhAuZGppbm4udjEuVW5pcXVlUgZ1bmlxdWU6MQoDZW52Eh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxi+jgMgASgJUgNlbnY6PwoKcG9zaXRpb25hbBIdLmdvb2dsZS5wcm90b2J1Zi5GaWVsZE9wdGlvbnMYwY4DIAEoCFIKcG9zaXRpb25hbDo8Cglqc29uX29ubHkSHS5nb29nbGUucHJvdG9idWYuRmllbGRPcHRpb25zGMKOAyABKAhSCGpzb25Pbmx5QpABCgxjb20uZGppbm4udjFCDE9wdGlvbnNQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9kamlubi92MTtkamlubnYxogIDRFhYqgIIRGppbm4uVjHKAghEamlublxWMeICFERqaW5uXFYxXEdQQk1ldGFkYXRh6gIJRGppbm46OlYxYgZwcm90bzM", [file_google_protobuf_descriptor]);
+  fileDesc("ChZkamlubi92MS9vcHRpb25zLnByb3RvEghkamlubi52MSIYCgZVbmlxdWUSDgoGZmllbGRzGAEgAygJIjwKBVJldHJ5Eg0KBWZpZWxkGAEgASgJEiQKBnZhbHVlcxgCIAMoCzIULmRqaW5uLnYxLlJldHJ5VmFsdWUiKgoKUmV0cnlWYWx1ZRINCgV2YWx1ZRgBIAEoCRINCgVsYWJlbBgCIAEoCSpYCgpWaXNpYmlsaXR5EhoKFlZJU0lCSUxJVFlfVU5TUEVDSUZJRUQQABIVChFWSVNJQklMSVRZX1BVQkxJQxABEhcKE1ZJU0lCSUxJVFlfSU5URVJOQUwQAipGCgZXcml0ZXMSFgoSV1JJVEVTX1VOU1BFQ0lGSUVEEAASEQoNV1JJVEVTX0NIQU5HRRABEhEKDVdSSVRFU19ERUxFVEUQAjpWCgp2aXNpYmlsaXR5Eh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYuY4DIAEoDjIULmRqaW5uLnYxLlZpc2liaWxpdHlSCnZpc2liaWxpdHk6PgoJYXV0b3N0YXJ0Eh4uZ29vZ2xlLnByb3RvYnVmLk1ldGhvZE9wdGlvbnMYu44DIAEoCFIJYXV0b3N0YXJ0OkoKBndyaXRlcxIeLmdvb2dsZS5wcm90b2J1Zi5NZXRob2RPcHRpb25zGLyOAyABKA4yEC5kamlubi52MS5Xcml0ZXNSBndyaXRlczpDCgxtZXRob2RfYWxpYXMSHi5nb29nbGUucHJvdG9idWYuTWV0aG9kT3B0aW9ucxi/jgMgAygJUgttZXRob2RBbGlhczpMChFjb21tYW5kX2xpbmVfb25seRIeLmdvb2dsZS5wcm90b2J1Zi5NZXRob2RPcHRpb25zGMCOAyABKAhSD2NvbW1hbmRMaW5lT25seTo3CgVhbGlhcxIfLmdvb2dsZS5wcm90b2J1Zi5TZXJ2aWNlT3B0aW9ucxi9jgMgAygJUgVhbGlhczpLCgZ1bmlxdWUSHy5nb29nbGUucHJvdG9idWYuTWVzc2FnZU9wdGlvbnMYuo4DIAMoCzIQLmRqaW5uLnYxLlVuaXF1ZVIGdW5pcXVlOjEKA2VudhIdLmdvb2dsZS5wcm90b2J1Zi5GaWVsZE9wdGlvbnMYvo4DIAEoCVIDZW52Oj8KCnBvc2l0aW9uYWwSHS5nb29nbGUucHJvdG9idWYuRmllbGRPcHRpb25zGMGOAyABKAhSCnBvc2l0aW9uYWw6PAoJanNvbl9vbmx5Eh0uZ29vZ2xlLnByb3RvYnVmLkZpZWxkT3B0aW9ucxjCjgMgASgIUghqc29uT25seUKQAQoMY29tLmRqaW5uLnYxQgxPcHRpb25zUHJvdG9QAVoxZ2l0aHViLmNvbS9lbXBvd2lsbC9kamlubi9nZW4vZ28vZGppbm4vdjE7ZGppbm52MaICA0RYWKoCCERqaW5uLlYxygIIRGppbm5cVjHiAhREamlublxWMVxHUEJNZXRhZGF0YeoCCURqaW5uOjpWMWIGcHJvdG8z", [file_google_protobuf_descriptor]);
 
 /**
  * Unique is one group of fields whose values, taken together, identify a stored message.
@@ -36,6 +36,64 @@ export type Unique = Message<"djinn.v1.Unique"> & {
  */
 export const UniqueSchema: GenMessage<Unique> = /*@__PURE__*/
   messageDesc(file_djinn_v1_options, 0);
+
+/**
+ * What a refused call takes to pass: one field of the request and the values that fit it. The server puts it as a
+ * detail of the error; the command line prints the command again with each value, ready to run, and djinn mcp names
+ * the field and the values.
+ *
+ * @generated from message djinn.v1.Retry
+ */
+export type Retry = Message<"djinn.v1.Retry"> & {
+  /**
+   * The request's field to set, by its name in the proto (project_id, wish_id, wish).
+   *
+   * @generated from field: string field = 1;
+   */
+  field: string;
+
+  /**
+   * The values that fit, best first.
+   *
+   * @generated from field: repeated djinn.v1.RetryValue values = 2;
+   */
+  values: RetryValue[];
+};
+
+/**
+ * Describes the message djinn.v1.Retry.
+ * Use `create(RetrySchema)` to create a new message.
+ */
+export const RetrySchema: GenMessage<Retry> = /*@__PURE__*/
+  messageDesc(file_djinn_v1_options, 1);
+
+/**
+ * One value of a Retry.
+ *
+ * @generated from message djinn.v1.RetryValue
+ */
+export type RetryValue = Message<"djinn.v1.RetryValue"> & {
+  /**
+   * What to give the field, as the command line takes it: a project's name, a wish's identifier.
+   *
+   * @generated from field: string value = 1;
+   */
+  value: string;
+
+  /**
+   * What the value is, in a few words: a wish's title.
+   *
+   * @generated from field: string label = 2;
+   */
+  label: string;
+};
+
+/**
+ * Describes the message djinn.v1.RetryValue.
+ * Use `create(RetryValueSchema)` to create a new message.
+ */
+export const RetryValueSchema: GenMessage<RetryValue> = /*@__PURE__*/
+  messageDesc(file_djinn_v1_options, 2);
 
 /**
  * Visibility says who may call a method.

@@ -187,7 +187,7 @@ C3 on an element, figure: The path of a notice, following up C2
 C10 on an element, #digest-table, page other.html, gone from version 2
   And the window?
 
-3 without a reply. Reply to each: djinn tilasm reply L01 <C> --text "…" [--task W60]
+3 without a reply. Reply to each: djinn tilasm reply L01 <C> --wish ` + wish + ` --text "…" [--task W60]
 `
 		if all.GetText() != want {
 			t.Errorf("text:\n%s\nwant:\n%s", all.GetText(), want)

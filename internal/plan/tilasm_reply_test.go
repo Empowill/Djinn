@@ -77,7 +77,7 @@ func TestTilasmReply(t *testing.T) {
 	}
 	for _, want := range []string{
 		"  Reply from lead, tasks W60 T61: W60 says it in the next version.\n",
-		"\n1 without a reply. Reply to each: djinn tilasm reply L01 <C> --text \"…\" [--task W60]\n",
+		"\n1 without a reply. Reply to each: djinn tilasm reply L01 <C> --wish " + f.wish + " --text \"…\" [--task W60]\n",
 	} {
 		if !strings.Contains(read.Msg.GetText(), want) {
 			t.Errorf("djinn tilasm comments lacks %q:\n%s", want, read.Msg.GetText())
@@ -150,7 +150,8 @@ func TestBriefUnansweredComments(t *testing.T) {
 			t.Errorf("the brief names a draft:\n%s", b)
 		}
 	}
-	line("\n- L01: 2 comments sent, 2 without a reply (C1, C2): reply to each, `djinn tilasm reply L01 <C> --text \"…\"`.\n")
+	line("\n- L01: 2 comments sent, 2 without a reply (C1, C2): reply to each, `djinn tilasm reply L01 <C> --wish " + f.wish +
+		" --text \"…\"`.\n")
 	if _, err := f.reply(t, &planv1.TilasmServiceReplyRequest{Comment: "C2", Text: "Said."}); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestBriefUnansweredComments(t *testing.T) {
 
 	rules := StableBrief(home, nil)
 	for _, want := range []string{
-		"Then reply to every comment, `djinn tilasm reply L01 C3 --text \"…\" --task W60`", "*Launch*: turn the comments into the planned work",
+		"Then reply to every comment, `djinn tilasm reply L01 C3 --wish <wish> --text \"…\" --task W60`", "*Launch*: turn the comments into the planned work",
 		"*Iterate*: a task that puts the tilasm's next version", "never a guess", "`djinn tilasm comments <code> --send <n>`",
 	} {
 		if !strings.Contains(rules, want) {

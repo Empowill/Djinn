@@ -103,6 +103,23 @@ func (q *Questions) Enlighten(
 	return connect.NewResponse(&planv1.QuestionServiceEnlightenResponse{Question: question}), nil
 }
 
+// readContextFile is the context a question's request gives by file (--context-file), read on this machine: the
+// journal keeps the text, not where it was read. context is the one given inline, refused beside a file.
+func readContextFile(context, path string) (string, error) {
+	if context != "" {
+		return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("give context or context_file, not both"))
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read context_file: %w", err))
+	}
+	text := strings.TrimRight(string(data), "\r\n")
+	if len(text) > 20000 {
+		return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("context_file exceeds 20000 bytes (%d)", len(text)))
+	}
+	return text, nil
+}
+
 // Revise changes an open question after investigating: what is given replaces the question's own, which the round
 // keeps.
 func (q *Questions) Revise(
@@ -110,18 +127,9 @@ func (q *Questions) Revise(
 ) (*connect.Response[planv1.QuestionServiceReviseResponse], error) {
 	m := req.Msg
 	if path := m.GetContextFile(); path != "" {
-		if m.GetContext() != "" {
-			return nil, connect.NewError(connect.CodeInvalidArgument,
-				fmt.Errorf("give context or context_file, not both"))
-		}
-		data, err := os.ReadFile(path)
+		text, err := readContextFile(m.GetContext(), path)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("read context_file: %w", err))
-		}
-		text := strings.TrimRight(string(data), "\r\n")
-		if len(text) > 20000 {
-			return nil, connect.NewError(connect.CodeInvalidArgument,
-				fmt.Errorf("context_file exceeds 20000 bytes (%d)", len(text)))
+			return nil, err
 		}
 		m = proto.CloneOf(m)
 		m.Context, m.ContextFile = text, ""

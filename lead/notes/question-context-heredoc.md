@@ -24,9 +24,8 @@ and a mangled one misleads them.
   in a folder it may write in), then `djinn question revise <question> --wish-id <wish> --context-file context.md`,
   the other values (`--recommendation`, `--options`) between double quotes, with no backtick nor `$`. Write the file
   again before each revision.
-- Ask: `djinn question ask` takes no `--context-file` yet. Ask with a context whose lines never start with `#`: put
-  each command's comment at the end of its line (`git switch x  # prints …`), or ask with the why, facts and options,
-  then revise at once through a file to add the code block.
+- Ask: the same way, `djinn question ask "<question>" <wish> --context-file context.md` (W474; before it, 293 asks of
+  the lead were refused with "unknown flag --context-file" in four days).
 - Never write the file with a shell heredoc nor `echo >`: the Write tool needs no approval.
 - A refused revision is this form refused, not Bash: run it again through the file, never give up on it.
 - Investigators on Claude get their own folder and a prompt that says the same; one that starts on Claude after

@@ -109,6 +109,23 @@ func (f tasks) Get(_ context.Context, req *connect.Request[planv1.TaskServiceGet
 	}}), nil
 }
 
+// Spawn refuses a task that names no project, as a wish of two projects does, with what fits: api and web.
+func (f tasks) Spawn(_ context.Context, req *connect.Request[planv1.TaskServiceSpawnRequest]) (*connect.Response[planv1.TaskServiceSpawnResponse], error) {
+	f.record(req.Msg)
+	if req.Msg.GetProjectId() == "" {
+		cerr := connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("the wish has 2 projects: name one with --project-id"))
+		detail, err := connect.NewErrorDetail(&djinnv1.Retry{Field: "project_id", Values: []*djinnv1.RetryValue{{Value: "api"}, {Value: "web"}}})
+		if err != nil {
+			return nil, err
+		}
+		cerr.AddDetail(detail)
+		return nil, cerr
+	}
+	return connect.NewResponse(&planv1.TaskServiceSpawnResponse{Task: &planv1.Task{
+		Id: taskID, WishId: req.Msg.GetWishId(), ProjectId: req.Msg.GetProjectId(), Code: "W5", Title: req.Msg.GetTitle(),
+	}}), nil
+}
+
 func (f tasks) List(_ context.Context, req *connect.Request[planv1.TaskServiceListRequest]) (*connect.Response[planv1.TaskServiceListResponse], error) {
 	f.record(req.Msg)
 	return connect.NewResponse(&planv1.TaskServiceListResponse{Tasks: []*planv1.Task{
@@ -215,7 +232,7 @@ func (f wishes) AddProject(_ context.Context, req *connect.Request[planv1.WishSe
 	f.record(req.Msg)
 	switch req.Msg.GetProjectId() {
 	case "api", projectID:
-	case "web":
+	case "web", wishID: // The command line gives web by the identifier djinn project list shows.
 		return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf(`project web is already in wish %q`, "Ship it"))
 	default:
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s: djinn project list shows them", req.Msg.GetProjectId()))
@@ -341,7 +358,8 @@ func TestRun(t *testing.T) {
 		{name: "wish push strategy set", args: []string{"wish", "push-strategy", wishID, "--strategy", "azima"}, wantOut: "strategy: azima\nsource: wish\n", wantCalled: true},
 		{name: "wish add project by name", args: []string{"wish", "add-project", wishID, "--project-id", "api"}, wantOut: "project_ids:\n  - " + taskID + "\n  - " + projectID + "\n", wantCalled: true},
 		{name: "wish add project already in", args: []string{"wish", "add-project", wishID, "--project-id", "web"}, wantCode: 1, wantErr: `already_exists: project web is already in wish "Ship it"`, wantCalled: true},
-		{name: "wish add project unknown", args: []string{"wish", "add-project", wishID, "--project-id", "ghost"}, wantCode: 1, wantErr: "not_found: no project ghost", wantCalled: true},
+		{name: "wish add project unknown", args: []string{"wish", "add-project", wishID, "--project-id", "ghost"}, wantCode: 2,
+			wantErr: "--project-id: no project is named ghost; expected one of api, web, or a project's UUID", wantCalled: true},
 		{name: "wish add project without one", args: []string{"wish", "add-project", wishID}, wantCode: 2, wantErr: "--project-id: "},
 		{name: "task update integration none", args: []string{"task", "update", taskID, "--integration", "none"}, wantCalled: true},
 		{name: "task update integration invalid", args: []string{"task", "update", taskID, "--integration", "other"}, wantCode: 2, wantErr: "--integration: must be in list [none, pending]"},

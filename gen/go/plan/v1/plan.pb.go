@@ -11525,7 +11525,10 @@ type QuestionServiceAskRequest struct {
 	// Djinn puts your task WAITING on the question, frees its slot and keeps its worktree, branch and session; the answer
 	// continues it with "Decision Qnn: ...", once a slot is free. One blocking question at a time, two per task; three
 	// that do not block.
-	Wait          bool `protobuf:"varint,14,opt,name=wait,proto3" json:"wait,omitempty"`
+	Wait bool `protobuf:"varint,14,opt,name=wait,proto3" json:"wait,omitempty"`
+	// File holding what is at stake, in Markdown, read in place of --context; a relative path starts from the current
+	// directory.
+	ContextFile   string `protobuf:"bytes,15,opt,name=context_file,json=contextFile,proto3" json:"context_file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -11656,6 +11659,13 @@ func (x *QuestionServiceAskRequest) GetWait() bool {
 		return x.Wait
 	}
 	return false
+}
+
+func (x *QuestionServiceAskRequest) GetContextFile() string {
+	if x != nil {
+		return x.ContextFile
+	}
+	return ""
 }
 
 type QuestionServiceAskResponse struct {
@@ -22429,8 +22439,9 @@ type TaskServiceSpawnRequest struct {
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	// What the task does, in a sentence.
 	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	// Project to work in; by default the wish's project, when it has only one. For a wish without any project, the
-	// task runs outside any project: read-only, in an empty folder of its own.
+	// Project to work in, by its name or identifier; by default the project of the azima part_of names, else the wish's
+	// project when it has only one. Refused in a wish of several projects that names none, with the command again for
+	// each. For a wish without any project, the task runs outside any project: read-only, in an empty folder of its own.
 	ProjectId string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// What to ask the worker; by default the title.
 	Prompt string `protobuf:"bytes,4,opt,name=prompt,proto3" json:"prompt,omitempty"`
@@ -23274,8 +23285,10 @@ func (x *TaskOverlap) GetPaths() []string {
 
 type TaskServiceGetRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The task.
-	TaskId        string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// The task: its code (W1, T07) or its identifier.
+	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// Wish the task belongs to, when given by code and the code is in several wishes.
+	WishId        string `protobuf:"bytes,2,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -23313,6 +23326,13 @@ func (*TaskServiceGetRequest) Descriptor() ([]byte, []int) {
 func (x *TaskServiceGetRequest) GetTaskId() string {
 	if x != nil {
 		return x.TaskId
+	}
+	return ""
+}
+
+func (x *TaskServiceGetRequest) GetWishId() string {
+	if x != nil {
+		return x.WishId
 	}
 	return ""
 }
@@ -28103,7 +28123,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x06_about\"j\n" +
 	"\x1dQuestionServiceReviseResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
-	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\x87\x05\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xb4\x05\n" +
 	"\x19QuestionServiceAskRequest\x12\x1f\n" +
 	"\x04text\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\x18\xd0\x0fR\x04text\x12(\n" +
 	"\aoptions\x18\x02 \x03(\tB\x0e\xbaH\v\x92\x01\b\x10\x04\"\x04r\x02\x10\x01R\aoptions\x12$\n" +
@@ -28121,7 +28141,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\tplan_file\x18\f \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x04\"\x05r\x03\x18\x80 R\bplanFile\x120\n" +
 	"\vsleep_until\x18\r \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x10\"\x05r\x03\x18\x80\x10R\n" +
 	"sleepUntil\x12\x12\n" +
-	"\x04wait\x18\x0e \x01(\bR\x04wait\"g\n" +
+	"\x04wait\x18\x0e \x01(\bR\x04wait\x12+\n" +
+	"\fcontext_file\x18\x0f \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vcontextFile\"g\n" +
 	"\x1aQuestionServiceAskResponse\x12-\n" +
 	"\bquestion\x18\x01 \x01(\v2\x11.plan.v1.QuestionR\bquestion\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"\xde\x02\n" +
@@ -28927,9 +28948,10 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vTaskOverlap\x12\x19\n" +
 	"\btask_ids\x18\x01 \x03(\tR\ataskIds\x12\x14\n" +
 	"\x05codes\x18\x02 \x03(\tR\x05codes\x12\x14\n" +
-	"\x05paths\x18\x03 \x03(\tR\x05paths\"=\n" +
-	"\x15TaskServiceGetRequest\x12$\n" +
-	"\atask_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06taskId\";\n" +
+	"\x05paths\x18\x03 \x03(\tR\x05paths\"\xc3\x01\n" +
+	"\x15TaskServiceGetRequest\x12\x83\x01\n" +
+	"\atask_id\x18\x01 \x01(\tBj\xbaHg\xc8\x01\x01rb2`^([WwTt][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$R\x06taskId\x12$\n" +
+	"\awish_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\";\n" +
 	"\x16TaskServiceGetResponse\x12!\n" +
 	"\x04task\x18\x01 \x01(\v2\r.plan.v1.TaskR\x04task\";\n" +
 	"\tDiffToken\x12\x12\n" +

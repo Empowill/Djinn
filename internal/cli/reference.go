@@ -108,6 +108,9 @@ func methodCommand(md protoreflect.MethodDescriptor) Command {
 			c.Flags = append(c.Flags, param(fd))
 		}
 	}
+	if scoped(in) {
+		c.Flags = append(c.Flags, Param{Name: "--wish-id", Type: "string", Expect: "a UUID", Help: scopeHelp})
+	}
 	if len(c.Flags) > 0 {
 		c.Usage += " [flags]"
 	}

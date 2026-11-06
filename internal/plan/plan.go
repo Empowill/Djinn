@@ -1251,6 +1251,14 @@ func (q *Questions) Ask(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceAskRequest],
 ) (*connect.Response[planv1.QuestionServiceAskResponse], error) {
 	m := req.Msg
+	if path := m.GetContextFile(); path != "" {
+		text, err := readContextFile(m.GetContext(), path)
+		if err != nil {
+			return nil, err
+		}
+		m = proto.CloneOf(m)
+		m.Context, m.ContextFile = text, ""
+	}
 	if len(m.GetPlanFile()) > 0 {
 		// The journal keeps the plans' texts, not where they were read.
 		plans, err := readPlans(m.GetPlan(), m.GetPlanFile())
@@ -1262,7 +1270,7 @@ func (q *Questions) Ask(
 	}
 	question := &planv1.Question{
 		Id: store.NewID(), WishId: req.Msg.GetWishId(), Text: req.Msg.GetText(), Options: req.Msg.GetOptions(),
-		Context: req.Msg.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
+		Context: m.GetContext(), Recommendation: req.Msg.GetRecommendation(), CreateTime: timestamppb.Now(),
 		Icon: req.Msg.GetIcon(), TaskId: req.Msg.GetTaskId(), Before: strings.TrimSpace(req.Msg.GetBefore()),
 		Move: req.Msg.GetMove(), Wait: req.Msg.GetWait(),
 	}
@@ -1499,8 +1507,9 @@ func find(ctx context.Context, tx store.Reader, ref *planv1.QuestionRef, wishID 
 	case 1:
 		return found[0], nil
 	}
-	return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
-		"%d wishes have a question %s: give its identifier, or the wish with --wish-id", len(found), ref.GetCode()))
+	return nil, Retry(connect.CodeFailedPrecondition, fmt.Errorf(
+		"%d wishes have a question %s: give its identifier, or the wish with --wish-id", len(found), ref.GetCode()),
+		"wish_id", WishValues(ctx, tx, wishesOf(found))...)
 }
 
 // resolve checks that choice answers question, and returns the choice to keep: yes without options, or the letter
