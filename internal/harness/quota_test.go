@@ -289,7 +289,7 @@ func TestParseClaudeUsage(t *testing.T) {
 	if q, err := parseClaudeUsage([]byte(spent)); err != nil || q.Extra == nil || *q.Extra {
 		t.Errorf("extra credits spent: %+v, %v", q.Extra, err)
 	}
-	// Seen on claude 2.1.316 in a folder signed in to nothing.
+	// Seen on claude 2.1.316 in a folder signed in to nothing, and the same on an API key or a subscription's token.
 	signedOut := `{"type":"control_response","response":{"subtype":"success","request_id":"djinn-usage","response":{"session":{"total_cost_usd":0},"subscription_type":null,"rate_limits_available":false,"rate_limits":null,"behaviors":null}}}`
 	if _, err := parseClaudeUsage([]byte(signedOut)); !errors.Is(err, errNoUsage) {
 		t.Errorf("signed out: %v, want errNoUsage", err)
@@ -333,15 +333,25 @@ func TestClaudeUsageProbe(t *testing.T) {
 		t.Errorf("silent: %v", err)
 	}
 
-	// No window told: signed in (claude auth status exits 0), an API key, a reading with no window; signed out, the
-	// probe fails, and the sign-in is not pseudo-unlimited.
-	env, _, _ = fake{provider: "claude", fixture: "usage/get-usage-no-window", end: "eof"}.env(t)
-	if q, err := (Claude{Command: os.Args[0]}).Usage(t.Context(), env); err != nil || q.FiveHour != nil || q.SevenDay != nil {
-		t.Errorf("an API key: %+v, %v; want a reading with no window", q, err)
-	}
-	env, _, _ = fake{provider: "claude", fixture: "usage/get-usage-no-window", end: "eof:1"}.env(t)
-	if _, err := (Claude{Command: os.Args[0]}).Usage(t.Context(), env); !errors.Is(err, errNoUsage) {
-		t.Errorf("signed out: %v, want errNoUsage", err)
+	// No window told: on an API key (claude auth status's authMethod), a reading with no window; signed out, or a
+	// subscription's token (auth status exits 0 there too), the probe fails, and the sign-in is not pseudo-unlimited.
+	for _, c := range []struct {
+		auth, end string
+		unlimited bool
+	}{
+		{"usage/auth-status-api-key", "eof", true},
+		{"usage/auth-status-oauth-token", "eof", false},
+		{"usage/auth-status-signed-out", "eof:1", false},
+		{"", "eof", false}, // An older claude that prints nothing it can read.
+	} {
+		env, _, _ = fake{provider: "claude", fixture: "usage/get-usage-no-window", end: c.end, auth: c.auth}.env(t)
+		q, err := Claude{Command: os.Args[0]}.Usage(t.Context(), env)
+		switch {
+		case c.unlimited && (err != nil || q.FiveHour != nil || q.SevenDay != nil):
+			t.Errorf("%s: %+v, %v; want a reading with no window", c.auth, q, err)
+		case !c.unlimited && !errors.Is(err, errNoUsage):
+			t.Errorf("%s: %v, want errNoUsage", c.auth, err)
+		}
 	}
 }
 

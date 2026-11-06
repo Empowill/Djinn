@@ -58,8 +58,8 @@ agent and the label; djinn lead accounts lists the accounts.
   --sign-in claude.
 - **Unlimited sign-ins go last.** A sign-in that gives no quota at all is unlimited: Codex, which tells Djinn none, or
   a Claude Code account on an API key, signed in yet with no window in its answer. Its line reads Unlimited (auto). A
-  probe that fails is not enough: a Claude Code account Djinn cannot read, signed out or silent, only has a quota not
-  read. The Unlimited switch on each line corrects Djinn either way: on, the line reads Unlimited (forced), and its quota
+  probe that fails is not enough: a Claude Code account Djinn cannot read, signed out, silent, or a subscription with
+  no window in its answer, only has a quota not read. The Unlimited switch on each line corrects Djinn either way: on, the line reads Unlimited (forced), and its quota
   never holds it back in the dynamic mode; off, it counts as a sign-in with a quota. Switched back to what Djinn
   detects, the line follows the detection again. From the command line: djinn lead unlimited claude/work forced, then
   limited or auto.
@@ -110,7 +110,7 @@ More on the rules, the quota probe and the sessions that follow a task: [the Dji
 | Both sign-ins show the same week | The account signed in to the first subscription | Forget the account, add one with another name, and check the browser page shows the second subscription before you accept |
 | Quota not read yet | Djinn has not read it since the account was added | Wait a minute: the panel reads it again every minute while it is open |
 | Quota could not be read | The probe failed: the account is signed out, or Claude Code did not answer; the hover says which | Sign in again if it is signed out |
-| A Claude Code account on an API key reads Quota could not be read | Djinn did not tell it from a signed-out account | Turn on its Unlimited switch: it goes after the others in the dynamic mode |
+| A Claude Code account on an API key reads Quota could not be read | Djinn did not tell it from a signed-out account or a subscription: an older Claude Code, or a key set in a way it does not name | Turn on its Unlimited switch: it goes after the others in the dynamic mode |
 | An account goes first though another one's week ends sooner | The mode is Manual order, or the other one is unlimited, paused, limited or past 95 % | Switch to Dynamic, or check the other line |
 
 ## Read next

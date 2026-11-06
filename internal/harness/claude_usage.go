@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,8 +30,9 @@ const claudeUsageRequest = `{"type":"control_request","request_id":"djinn-usage"
 var claudeUsageArgs = []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 	"--no-session-persistence", "--strict-mcp-config", "--disable-slash-commands"}
 
-// errNoUsage is a sign-in that tells no usage limits: signed out, or on an API key.
-var errNoUsage = errors.New("no usage limits told: signed out, or on an API key")
+// errNoUsage is a sign-in that tells no usage limits: signed out, on an API key, or a subscription claude could not
+// read.
+var errNoUsage = errors.New("no usage limits told: signed out, on an API key, or a subscription not read")
 
 // Usage implements UsageProber: one claude process, in the folder env names, asked once.
 func (c Claude) Usage(ctx context.Context, env []string) (Quota, error) {
@@ -68,9 +70,10 @@ func (c Claude) Usage(ctx context.Context, env []string) (Quota, error) {
 	_ = cmd.Process.Kill() // It answered, or said all it would.
 	werr := cmd.Wait()
 	switch {
-	case found && errors.Is(perr, errNoUsage) && claudeSignedIn(ctx, command, env):
-		// Signed in, and no window told: an API key. A reading with no window, that makes the sign-in
-		// pseudo-unlimited (quota.go); signed out, it stays a failure, and its quota only unknown.
+	case found && errors.Is(perr, errNoUsage) && claudeOnAPIKey(ctx, command, env):
+		// No window told, on an API key: a reading with no window, that makes the sign-in pseudo-unlimited
+		// (quota.go). Signed out, or a subscription whose usage claude could not read, it stays a failure, and its
+		// quota only unknown.
 		return Quota{Source: planv1.UsageSource_USAGE_SOURCE_PROBE}, nil
 	case found:
 		return q, perr
@@ -84,14 +87,31 @@ func (c Claude) Usage(ctx context.Context, env []string) (Quota, error) {
 	return Quota{}, fmt.Errorf("claude ended without its usage: %s", clipRunes(cmp.Or(why, fmt.Sprint(werr)), 200))
 }
 
-// claudeSignedIn tells whether claude auth status, in the folder env names, says it is signed in (exit 0). Djinn
-// never reads what it prints.
-func claudeSignedIn(ctx context.Context, command string, env []string) bool {
-	cmd := exec.CommandContext(ctx, command, "auth", "status")
+// claudePayPerUse are the authMethod values of claude auth status that bill each request, with no usage limit to
+// tell: an API key (ANTHROPIC_API_KEY, a Console sign-in), one given by apiKeyHelper, or a third-party provider
+// (Bedrock, Vertex, Foundry). A subscription (claude.ai, oauth_token) is not one, even when get_usage tells no window.
+var claudePayPerUse = []string{"api_key", "api_key_helper", "third_party"}
+
+// claudeOnAPIKey tells whether claude auth status, in the folder env names, says it is signed in on a pay-per-use
+// key (claudePayPerUse). Its exit status alone does not tell: it exits 0 on a subscription too, and does not check
+// the key. Djinn reads only loggedIn and authMethod of what it prints, never its email or organization.
+func claudeOnAPIKey(ctx context.Context, command string, env []string) bool {
+	cmd := exec.CommandContext(ctx, command, "auth", "status", "--json")
 	cmd.Dir = os.TempDir()
 	cmd.Env = append(os.Environ(), env...)
 	cmd.WaitDelay = 2 * time.Second
-	return cmd.Run() == nil
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	var status struct {
+		LoggedIn   bool   `json:"loggedIn"`
+		AuthMethod string `json:"authMethod"`
+	}
+	if json.Unmarshal(out, &status) != nil {
+		return false
+	}
+	return status.LoggedIn && slices.Contains(claudePayPerUse, status.AuthMethod)
 }
 
 // errOtherResponse is a control response to another request than Djinn's.
