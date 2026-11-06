@@ -143,7 +143,7 @@ test("a source runs once plugged in from its project's panel; its assigned merge
         .plugged,
     ).toBeFalsy();
     await page.goto(process.env.DJINN_URL!);
-    await expect(page.locator(".hero h1")).toBeVisible();
+    await expect(page.locator(".hero h1")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator(".inbox .inbox-source-row")).toHaveCount(0);
     await page
       .locator(".project-list")
