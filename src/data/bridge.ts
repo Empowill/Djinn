@@ -56,14 +56,18 @@ export interface Placed {
   now?: string;
 }
 
+// The keys the frame tells the window.
+export type FrameKey = "comment" | "escape" | "back" | "forward";
+const FRAME_KEYS: readonly string[] = ["comment", "escape", "back", "forward"];
+
 export type FromFrame =
   // The bridge runs in the page loaded: it waits for the anchors.
   | { type: "ready"; page: string }
   // The passage selected, or null once the selection is gone.
   | { type: "selection"; passage: Passage; at: Place }
   | { type: "selection"; passage: null }
-  // Ctrl+Alt+M, pressed in the frame; Escape, in Aim mode.
-  | { type: "key"; name: "comment" | "escape" }
+  // Ctrl+Alt+M, pressed in the frame; Escape, in Aim mode; back and forward in the window's views (W527).
+  | { type: "key"; name: FrameKey }
   // In Aim mode, the block under the mouse, null for none; then the one clicked, which ends Aim mode in the frame.
   | { type: "element"; hover: Place | null }
   | { type: "element"; element: ElementPick; at: Place }
@@ -102,8 +106,8 @@ export function fromFrame(data: unknown): FromFrame | null {
     case "ready":
       return text(m.page, MAX.page) ? { type: "ready", page: m.page } : null;
     case "key":
-      return m.name === "comment" || m.name === "escape"
-        ? { type: "key", name: m.name }
+      return typeof m.name === "string" && FRAME_KEYS.includes(m.name)
+        ? { type: "key", name: m.name as FrameKey }
         : null;
     case "selection": {
       if (m.passage === null) return { type: "selection", passage: null };
