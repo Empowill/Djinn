@@ -1,6 +1,7 @@
 // Keyboard shortcuts on a question of the questions column (question-column.tsx):
-// - A letter (A, B, C…) or a digit (1–4) picks an option when focus is on the question and not in the note; the
-//   arrows go to the other questions (question-column.spec.ts).
+// - A letter (A, B, C…) or a digit (1–4) picks an option when focus is on the question and not in the note; Up and
+//   Down pick the option above or below and stop at either end, Left and Right go to the other questions
+//   (question-column.spec.ts); E writes the note (W491).
 // - Shift+Enter inserts a new line in the note field.
 // - Enter in the note rubs the lamp and answers; Enter alone elsewhere on the card answers nothing (W574).
 // - Ctrl+Enter (Cmd+Enter on macOS) rubs the lamp from anywhere on the card.
@@ -126,10 +127,42 @@ test("question card keyboard shortcuts: letters, 1-4, Shift+Enter, Enter, Ctrl+S
     await page.keyboard.press("C");
     await expect(electric).toHaveAttribute("aria-pressed", "true");
 
-    // The arrows are the column's: with one question, nothing moves and the pick stays.
+    // W491: Up and Down pick the option above or below, which takes the focus, and stop at either end; Left and Right
+    // are the column's: with one question, nothing moves and the pick stays.
     await page.keyboard.press("ArrowUp");
+    await expect(diesel).toHaveAttribute("aria-pressed", "true");
+    await expect(diesel).toBeFocused();
+    await page.keyboard.press("ArrowDown");
     await expect(electric).toHaveAttribute("aria-pressed", "true");
-    await expect(card1).toBeFocused();
+    await expect(electric).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(electric).toHaveAttribute("aria-pressed", "true");
+    await expect(electric).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowLeft");
+    await expect(electric).toHaveAttribute("aria-pressed", "true");
+    await expect(electric).toBeFocused();
+    // E writes the note; in the note, E and the arrows type and move the caret, nothing else; Escape gives the focus
+    // back to the option selected.
+    const note = card1.getByLabel("Note with the answer");
+    await page.keyboard.press("e");
+    await expect(note).toBeFocused();
+    await page.keyboard.type("Wee");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Alt+ArrowLeft");
+    await expect(note).toBeFocused();
+    await expect(note).toHaveValue("Wee");
+    await expect(electric).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(electric).toBeFocused();
+    // Enter on the option selected writes the note too, and picks nothing else.
+    await page.keyboard.press("Enter");
+    await expect(note).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(electric).toBeFocused();
+    await note.fill("");
+    await electric.focus();
 
     await page.keyboard.press("b");
     await expect(diesel).toHaveAttribute("aria-pressed", "true");

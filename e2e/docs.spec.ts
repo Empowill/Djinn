@@ -79,8 +79,19 @@ test("the Grimoire opens on its splash, then its book and its concepts", async (
   await expect(nav.getByRole("link", { name: "Introduction" })).toBeVisible();
   await expect(nav.locator("a .nav-icon svg")).toHaveCount(36);
   await expect(page.locator("#words .card.word .word-icon svg")).toHaveCount(
-    20,
+    21,
   );
+  // The keyboard shortcuts' card (W491): every key of the window, the history's and the wishes' among them.
+  const keys = page.locator("#word-shortcuts");
+  await expect(keys.getByRole("heading", { level: 3 })).toHaveText(
+    "Keyboard shortcuts",
+  );
+  await expect(
+    keys.locator("dt", { hasText: "Alt+Left, Alt+Right" }),
+  ).toHaveCount(1);
+  await expect(
+    keys.locator("dt", { hasText: "Ctrl+Up, Ctrl+Down" }),
+  ).toHaveCount(1);
   await expect(
     page.locator("#word-questions .chip.kind-work").first(),
   ).toBeVisible();
