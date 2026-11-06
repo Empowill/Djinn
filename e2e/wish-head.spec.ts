@@ -538,8 +538,13 @@ test("driven, no Talk to the Djinn: the seat's chip opens the seats, and Retry o
     const menu = actions.getByRole("menu", { name: "Choose the agent" });
     await expect(menu).toBeVisible();
     await expect(
-      menu.getByRole("menuitem", { name: /Claude.*The Djinn runs here/ }),
+      menu.getByRole("menuitem", {
+        name: /Follows the order.*The Djinn follows the order/,
+      }),
     ).toHaveAttribute("aria-current", "true");
+    await expect(
+      menu.getByRole("menuitem", { name: /Claude.*Pins the Djinn here/ }),
+    ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
 
