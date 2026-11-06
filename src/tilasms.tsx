@@ -79,6 +79,7 @@ import {
   useCanPublish,
 } from "./tilasm-publish";
 import { memory } from "./usage";
+import { usePlace } from "./view-history";
 
 import "./tilasms.css";
 
@@ -143,6 +144,8 @@ export function TilasmsTab({
   useEffect(() => {
     if (opening) setOpenId(opening.tilasmId);
   }, [opening]);
+  // The tilasm open is a layer of the window's history of views (view-history.ts): going back opens or closes it again.
+  usePlace("tilasm", openId, (id) => setOpenId(id ?? ""));
   const [history, setHistory] = useState("");
   const [busy, setBusy] = useState(false);
   const canPublish = useCanPublish();

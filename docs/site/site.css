@@ -1393,6 +1393,38 @@ html[data-theme="light"] .theme-toggle .moon {
   order: 20;
 }
 
+/* The keyboard shortcuts: every key of the window, the whole width, last; the keys on the left, what they do beside. */
+#word-shortcuts {
+  grid-column: 1 / -1;
+  order: 21;
+}
+.keys {
+  display: grid;
+  grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+  gap: 0.3rem 1.2rem;
+  margin: 0.8rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.keys dt {
+  color: var(--n-f6);
+  font-weight: 600;
+}
+.keys dd {
+  margin: 0;
+  color: var(--muted);
+}
+.keys .keys-group {
+  grid-column: 1 / -1;
+  margin-top: 0.6rem;
+  color: var(--tone, var(--sand));
+  font-family: var(--serif);
+  font-size: 0.98rem;
+}
+.keys .keys-group:first-child {
+  margin-top: 0;
+}
+
 .word h3 {
   font-family: var(--serif);
   font-size: 1.28rem;
@@ -2359,6 +2391,12 @@ td.status-cell .status-dot {
 }
 
 @media (max-width: 820px) {
+  .keys {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .keys dd {
+    margin-bottom: 0.3rem;
+  }
   .book {
     grid-template-columns: minmax(0, 1fr);
   }

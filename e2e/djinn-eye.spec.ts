@@ -170,7 +170,7 @@ test("a click on a wish focuses its first question, and the eye goes with the fo
       "true",
     );
     // The first question of the column has the focus at once, and the eye leaves the seal for its margin, reading it.
-    await expect(page.locator(`#question-${wick}`)).toBeFocused();
+    await expect(page.locator(`#question-${wick}:focus-within`)).toHaveCount(1);
     const eye = perchOf(page, wick);
     await expect(eye).toBeVisible({ timeout: 10_000 });
     await expect(eye).toHaveAttribute("data-mood", "reading");
@@ -182,11 +182,11 @@ test("a click on a wish focuses its first question, and the eye goes with the fo
     expect(box!.x + box!.width).toBeLessThanOrEqual(row!.x);
     await page.screenshot({ path: "test-results/e2e/djinn-eye-landed.png" });
 
-    // ↓ moves the focus to the next question: the eye follows, on a curve.
+    // → moves the focus to the next question (W491: ↓ is the options'): the eye follows, on a curve.
     const sampled = follow(page, 2_600);
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
     const air = flown(await sampled);
-    await expect(page.locator(`#question-${oil}`)).toBeFocused();
+    await expect(page.locator(`#question-${oil}:focus-within`)).toHaveCount(1);
     // Down the column it bows into the margin on its left, and lands by the question that has the focus.
     const from = air[0];
     const to = air.at(-1)!;
@@ -219,7 +219,7 @@ test("a click on a wish focuses its first question, and the eye goes with the fo
       "aria-selected",
       "true",
     );
-    await expect(page.locator(`#question-${wick}`)).toBeFocused();
+    await expect(page.locator(`#question-${wick}:focus-within`)).toHaveCount(1);
     await expect(page.locator(`#question-${wick}`)).toHaveClass(/current/);
     await expect(perchOf(page, wick)).toBeVisible({ timeout: 5_000 });
 
@@ -365,14 +365,16 @@ test(
 
       await page.goto(process.env.DJINN_URL!);
       await page.locator(".wish-nav").filter({ hasText: title }).click();
-      await expect(page.locator(`#question-${wick}`)).toBeFocused();
+      await expect(page.locator(`#question-${wick}:focus-within`)).toHaveCount(
+        1,
+      );
       await expect(perchOf(page, wick)).toBeVisible({ timeout: 10_000 });
 
       let best = 0;
       for (let i = 0; i < 6 && best <= 8; i++) {
         const next = i % 2 === 0 ? oil : wick;
         const sampled = follow(page, 2_600);
-        await page.keyboard.press(i % 2 === 0 ? "ArrowDown" : "ArrowUp");
+        await page.keyboard.press(i % 2 === 0 ? "ArrowRight" : "ArrowLeft");
         const { samples } = await sampled;
         await expect(perchOf(page, next)).toBeVisible({ timeout: 5_000 });
         best = Math.max(best, samples.filter((s) => s.flying).length);
@@ -420,7 +422,7 @@ test("when the Djinn speaks, the eye comes to its socket and the bubble queues r
       [wishId],
     );
     await page.locator(".wish-nav").filter({ hasText: title }).click();
-    await expect(page.locator(`#question-${qId}`)).toBeFocused();
+    await expect(page.locator(`#question-${qId}:focus-within`)).toHaveCount(1);
     await expect(perchOf(page, qId)).toBeVisible({ timeout: 10_000 });
 
     // WorkspaceAction keeps a fixed 22px radius folded and expanded.
