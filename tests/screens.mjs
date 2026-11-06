@@ -23,7 +23,14 @@ export { createRouterTransport } from "@connectrpc/connect";
 export { createDjinn, DjinnProvider } from "@/src/data/djinn.tsx";
 export { ProjectGear, WishSidebar } from "@/src/wish-sidebar.tsx";
 export { SyncLine, SyncLines, syncTitle } from "@/src/project-sync.tsx";
-export { WishQuestion, NoteCounter } from "@/src/wish-question.tsx";
+export { WishQuestion } from "@/src/wish-question.tsx";
+export {
+  NoteCounter,
+  TextField,
+  TextLine,
+  hasText,
+  useTyped,
+} from "@/src/text-field.tsx";
 export {
   AsleepQuestions,
   QuestionColumn,

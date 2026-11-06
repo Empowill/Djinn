@@ -104,6 +104,7 @@ import {
   TaskUsage,
   usageDetail,
 } from "./usage";
+import { hasText, noShape, TextLine, useTyped } from "./text-field";
 
 const eventIcons: Partial<Record<TaskEventKind, typeof FileText>> = {
   [TaskEventKind.PROMPT]: MessageSquare,
@@ -919,14 +920,14 @@ function DoneBox({
   onDone: (note: string) => Promise<unknown>;
   onCancel: () => void;
 }) {
-  const [note, setNote] = useState("");
+  const typed = useTyped(noShape);
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (busy) return;
     setBusy(true);
     try {
-      await onDone(note.trim());
+      await onDone(typed.read().trim());
     } catch {
       // The toast says why.
       setBusy(false);
@@ -934,9 +935,9 @@ function DoneBox({
   };
   return (
     <form className="wish-task-send wish-task-done" onSubmit={submit}>
-      <input
-        value={note}
-        onChange={(event) => setNote(event.target.value)}
+      <TextLine
+        text={typed.text}
+        onText={typed.type}
         placeholder={t("task.done_note")}
         aria-label={t("task.done_note")}
         disabled={busy}
@@ -1194,16 +1195,17 @@ function SendBox({
   onSend: (text: string) => Promise<unknown>;
   label?: string;
 }) {
-  const [text, setText] = useState("");
+  // The text is the field's own: a key renders the box only when it starts or stops holding something (W526).
+  const typed = useTyped(hasText);
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const message = text.trim();
+    const message = typed.read().trim();
     if (!message || busy) return;
     setBusy(true);
     try {
       await onSend(message);
-      setText("");
+      typed.set("");
     } catch {
       // The toast says why.
     } finally {
@@ -1212,9 +1214,9 @@ function SendBox({
   };
   return (
     <form className="wish-task-send" onSubmit={submit}>
-      <input
-        value={text}
-        onChange={(event) => setText(event.target.value)}
+      <TextLine
+        text={typed.text}
+        onText={typed.type}
         placeholder={label}
         aria-label={label}
         disabled={busy}
@@ -1222,7 +1224,7 @@ function SendBox({
       <button
         className="icon-button"
         type="submit"
-        disabled={busy || !text.trim()}
+        disabled={busy || !typed.shown}
         title={t("task.message_send")}
         aria-label={t("task.message_send")}
       >

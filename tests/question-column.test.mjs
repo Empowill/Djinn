@@ -280,7 +280,7 @@ test("an open question of the column: letters and digits pick, Enter goes to the
   assert.deepEqual(answered, []);
   // Escape in the note gives the focus back to the question.
   let back = false;
-  card.one("textarea").onKeyDown({
+  card.one(s.TextField).onKeyDown({
     key: "Escape",
     preventDefault: () => {
       back = true;
@@ -297,8 +297,8 @@ test("an open question of the column: letters and digits pick, Enter goes to the
   await card.settle();
   assert.deepEqual(answered, [{ choice: s.Choice.A, note: "" }]);
   press("c");
-  card.one("textarea").onChange({ target: { value: "Pressed today" } });
-  card.one("textarea").onKeyDown({ key: "Enter", preventDefault() {} });
+  card.one(s.TextField).onText("Pressed today");
+  card.one(s.TextField).onKeyDown({ key: "Enter", preventDefault() {} });
   await card.settle();
   assert.deepEqual(answered[1], { choice: s.Choice.C, note: "Pressed today" });
 
