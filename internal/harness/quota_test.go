@@ -17,10 +17,12 @@ import (
 	"github.com/empowill/djinn/internal/testx"
 )
 
-// TestEarliestWeek: a new task goes to the free sign-in whose week resets first among those with quota left; one out
-// of quota (95 % of its 5 hours or of its week), paused or limited is skipped; a task that ran stays where it ran
-// while it may; without a fresh quota the policy is the simple overflow, FirstFree.
-func TestEarliestWeek(t *testing.T) {
+// TestFirstInOrder: a new task goes to the first sign-in in the developer's order that is free and not known out of
+// quota (95 % of its 5 hours or of its week); a quota never read holds none back; a task that ran stays where it ran
+// while it may. With none such, the task starts in overflow: on the first sign-in that may spend extra credits, else
+// the first whose extra credits are unknown, else the first not paused, a limited one last (W409); none when each is
+// paused.
+func TestFirstInOrder(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
 	day := 24 * time.Hour
@@ -33,6 +35,17 @@ func TestEarliestWeek(t *testing.T) {
 			FiveHour: &UsageWindow{Used: session, ResetsAt: now.Add(2 * time.Hour)}}
 		return o
 	}
+	full := func(o AccountOption) AccountOption { return week(o, .97, day, .5) }
+	// extra says whether o may spend extra credits, read at.
+	extra := func(o AccountOption, yes bool, at time.Time) AccountOption {
+		if o.Quota == nil {
+			o.Quota = &Quota{}
+		}
+		q := *o.Quota
+		q.Extra, q.Read = &yes, at
+		o.Quota = &q
+		return o
+	}
 	read := func(o AccountOption, at time.Time) AccountOption {
 		q := *o.Quota
 		q.Read = at
@@ -42,36 +55,41 @@ func TestEarliestWeek(t *testing.T) {
 	paused := func(o AccountOption) AccountOption { o.Paused = true; return o }
 	limited := func(o AccountOption) AccountOption { o.LimitedUntil = now.Add(time.Hour); return o }
 	for _, c := range []struct {
-		name    string
-		options []AccountOption
-		current string
-		ran     bool
-		want    string
-		ok      bool
+		name     string
+		options  []AccountOption
+		current  string
+		ran      bool
+		want     string
+		overflow bool
+		ok       bool
 	}{
-		{"both agree: the week that ends first", []AccountOption{week(own, .6, day, .1), week(work, .2, 5*day, .1)}, "", false, "", true},
-		{"the least used ends first: it goes first", []AccountOption{week(own, .8, 6*day, .1), week(work, .3, 10*time.Hour, .1)}, "", false, "work", true},
-		{"out of quota for the week: skipped", []AccountOption{week(own, .5, 3*day, .1), week(work, .96, day, .1)}, "", false, "", true},
-		{"out of quota for 5 hours: skipped", []AccountOption{week(own, .5, 3*day, .1), week(work, .2, day, .95)}, "", false, "", true},
-		{"a week past counts as new", []AccountOption{week(own, .5, 3*day, .1), week(work, .99, -time.Minute, .1)}, "", false, "", true},
-		{"paused: skipped", []AccountOption{week(own, .5, 3*day, .1), paused(week(work, .2, day, .1))}, "", false, "", true},
-		{"limited: skipped", []AccountOption{week(own, .5, 3*day, .1), limited(week(work, .2, day, .1))}, "", false, "", true},
-		{"two weeks within an hour: more left first", []AccountOption{week(own, .7, day, .1), week(work, .4, day+30*time.Minute, .1)}, "", false, "work", true},
-		{"a week not started ends last", []AccountOption{week(own, 0, 0, 0), week(work, .4, 2*day, .1)}, "", false, "work", true},
-		{"a known quota before an unknown one", []AccountOption{own, week(work, .4, 6*day, .1)}, "", false, "work", true},
-		{"the probe silent: the first free", []AccountOption{own, work, perso}, "", false, "", true},
-		{"the probe silent, its own paused: the next", []AccountOption{paused(own), work, perso}, "", false, "work", true},
-		{"a stale quota is unknown", []AccountOption{own, read(week(work, .4, day, .1), now.Add(-quotaStale-time.Minute))}, "", false, "", true},
-		{"a task that ran stays", []AccountOption{week(own, .2, day, .1), week(work, .6, 6*day, .1)}, "work", true, "work", true},
-		{"a task that ran stays, its quota unknown", []AccountOption{week(own, .2, day, .1), work}, "work", true, "work", true},
-		{"a task that ran, out of quota: moves", []AccountOption{week(own, .2, day, .1), week(work, .97, 6*day, .1)}, "work", true, "", true},
-		{"each out of quota: the first, as FirstFree", []AccountOption{week(own, .97, day, .1), week(work, .99, 2*day, .1)}, "", false, "", true},
-		{"each out of quota: the one it ran on", []AccountOption{week(own, .97, day, .1), week(work, .99, 2*day, .1)}, "work", true, "work", true},
-		{"each paused: none", []AccountOption{paused(week(own, .1, day, .1)), paused(work)}, "", false, "", false},
+		{"the order, whatever the weeks", []AccountOption{week(work, .8, 6*day, .1), week(own, .1, time.Hour, .1)}, "", false, "work", false, true},
+		{"the first, its quota never read", []AccountOption{perso, week(own, .1, day, .1)}, "", false, "perso", false, true},
+		{"out of quota for the week: skipped", []AccountOption{week(work, .96, day, .1), week(own, .5, 3*day, .1)}, "", false, "", false, true},
+		{"out of quota for 5 hours: skipped", []AccountOption{week(work, .2, day, .95), week(own, .5, 3*day, .1)}, "", false, "", false, true},
+		{"a week past counts as new", []AccountOption{week(work, .99, -time.Minute, .1), own}, "", false, "work", false, true},
+		{"paused: skipped", []AccountOption{paused(work), own}, "", false, "", false, true},
+		{"limited: skipped", []AccountOption{limited(week(work, .2, day, .1)), own}, "", false, "", false, true},
+		{"a stale quota is unknown", []AccountOption{read(full(work), now.Add(-quotaStale-time.Minute)), own}, "", false, "work", false, true},
+		{"a task that ran stays", []AccountOption{own, week(work, .6, 6*day, .1)}, "work", true, "work", false, true},
+		{"a task that ran, out of quota: the first free", []AccountOption{own, full(work)}, "work", true, "", false, true},
+		{"a task that ran, limited: the first free", []AccountOption{limited(own), work, perso}, "", true, "work", false, true},
+		{"a forgotten account: the first free", []AccountOption{paused(own), work}, "gone", true, "work", false, true},
+		{"each full: the first with extra credits", []AccountOption{full(own), extra(full(work), false, now), extra(full(perso), true, now)}, "", false, "perso", true, true},
+		{"each full, extra credits unknown: the first", []AccountOption{full(own), extra(full(work), false, now), full(perso)}, "", false, "", true, true},
+		{"each full, no extra credits: the first", []AccountOption{extra(full(own), false, now), extra(full(work), false, now)}, "", false, "", true, true},
+		{"extra credits unknown before none", []AccountOption{extra(full(own), false, now), full(work)}, "", false, "work", true, true},
+		{"each full: the one it ran on, with extra credits", []AccountOption{extra(full(own), true, now), extra(full(work), true, now)}, "work", true, "work", true, true},
+		{"each full: extra credits before the one it ran on", []AccountOption{extra(full(own), true, now), extra(full(work), false, now)}, "work", true, "", true, true},
+		{"full or paused: the one not paused", []AccountOption{paused(own), full(work)}, "", false, "work", true, true},
+		{"a free one full before a limited one", []AccountOption{limited(own), extra(full(work), false, now)}, "", false, "work", true, true},
+		{"each limited: the one it ran on (W409)", []AccountOption{limited(own), limited(work)}, "work", true, "work", true, true},
+		{"each limited, a new task: the first", []AccountOption{limited(own), limited(extra(work, true, now))}, "", false, "", true, true},
+		{"each paused: none", []AccountOption{paused(week(own, .1, day, .1)), paused(work)}, "work", true, "", false, false},
 	} {
-		got, ok := EarliestWeek(AccountChoice{Provider: planv1.Provider_PROVIDER_CLAUDE, Options: c.options, Current: c.current, Ran: c.ran, Now: now})
-		if got != c.want || ok != c.ok {
-			t.Errorf("%s: %q, %v; want %q, %v", c.name, got, ok, c.want, c.ok)
+		got, ok := FirstInOrder(AccountChoice{Provider: planv1.Provider_PROVIDER_CLAUDE, Options: c.options, Current: c.current, Ran: c.ran, Now: now})
+		if got.Name != c.want || got.Overflow != c.overflow || ok != c.ok {
+			t.Errorf("%s: %+v, %v; want %q, overflow %v, %v", c.name, got, ok, c.want, c.overflow, c.ok)
 		}
 	}
 }
@@ -88,8 +106,13 @@ func TestParseClaudeUsage(t *testing.T) {
 	five, week := q.FiveHour, q.SevenDay
 	if five == nil || week == nil || five.Used != .44 || week.Used != .27 ||
 		!five.ResetsAt.Equal(time.Date(2026, 11, 5, 9, 40, 0, 140285000, time.UTC)) ||
-		!week.ResetsAt.Equal(time.Date(2026, 11, 11, 11, 0, 0, 140303000, time.UTC)) || q.Source != planv1.UsageSource_USAGE_SOURCE_PROBE {
+		!week.ResetsAt.Equal(time.Date(2026, 11, 11, 11, 0, 0, 140303000, time.UTC)) || q.Source != planv1.UsageSource_USAGE_SOURCE_PROBE ||
+		q.Extra == nil || !*q.Extra {
 		t.Errorf("quota = %+v, %+v, %+v", q, five, week)
+	}
+	spent := strings.Replace(lines[0], `"spend_limit_reached":false`, `"spend_limit_reached":true`, 1)
+	if q, err := parseClaudeUsage([]byte(spent)); err != nil || q.Extra == nil || *q.Extra {
+		t.Errorf("extra credits spent: %+v, %v", q.Extra, err)
 	}
 	// Seen on claude 2.1.316 in a folder signed in to nothing.
 	signedOut := `{"type":"control_response","response":{"subtype":"success","request_id":"djinn-usage","response":{"session":{"total_cost_usd":0},"subscription_type":null,"rate_limits_available":false,"rate_limits":null,"behaviors":null}}}`
@@ -105,7 +128,7 @@ func TestParseClaudeUsage(t *testing.T) {
 		t.Errorf("another request: %v", err)
 	}
 	notStarted := `{"type":"control_response","response":{"subtype":"success","request_id":"djinn-usage","response":{"rate_limits_available":true,"rate_limits":{"five_hour":{"utilization":0,"resets_at":null},"seven_day":{"utilization":3,"resets_at":"2026-11-11T11:00:00+00:00"}}}}}`
-	if q, err := parseClaudeUsage([]byte(notStarted)); err != nil || !q.FiveHour.ResetsAt.IsZero() || q.SevenDay.Used != .03 {
+	if q, err := parseClaudeUsage([]byte(notStarted)); err != nil || !q.FiveHour.ResetsAt.IsZero() || q.SevenDay.Used != .03 || q.Extra != nil {
 		t.Errorf("a window not started: %+v, %v", q, err)
 	}
 }
@@ -146,7 +169,7 @@ func TestParseClaudeWindows(t *testing.T) {
 	}
 	q := evs[0].Quota
 	if q.FiveHour.Used != .58 || q.SevenDay.Used != .14 || !q.SevenDay.ResetsAt.Equal(time.Unix(1791975600, 0)) ||
-		q.Source != planv1.UsageSource_USAGE_SOURCE_WORKER {
+		q.Source != planv1.UsageSource_USAGE_SOURCE_WORKER || q.Extra != nil {
 		t.Errorf("quota = %+v, %+v, %+v", q, q.FiveHour, q.SevenDay)
 	}
 	lines := fixtureLines(t, filepath.Join("testdata", "claude", "session-limit.jsonl"))
@@ -154,6 +177,12 @@ func TestParseClaudeWindows(t *testing.T) {
 	if len(evs) != 1 || evs[0].Kind != planv1.TaskEventKind_TASK_EVENT_KIND_STATUS || evs[0].Limit == nil ||
 		evs[0].Quota == nil || evs[0].Quota.FiveHour.Used != 1 || evs[0].Quota.SevenDay.Used != .32 {
 		t.Errorf("rejected: %+v", evs)
+	} else if x := evs[0].Quota.Extra; x == nil || *x {
+		t.Errorf("rejected: extra credits %v, want none (overageStatus rejected)", x)
+	}
+	evs, _ = parseClaude(`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","overageStatus":"allowed","isUsingOverage":true,"unifiedWindows":{"five_hour":{"utilization":1,"resetsAt":1791418800}}}}`)
+	if len(evs) != 1 || evs[0].Quota == nil || evs[0].Quota.Extra == nil || !*evs[0].Quota.Extra {
+		t.Errorf("on extra credits: %+v", evs)
 	}
 }
 
@@ -178,7 +207,8 @@ func (p *usageProbe) Usage(_ context.Context, env []string) (Quota, error) {
 }
 
 // TestQuotaChoosesAccount: with two accounts, the probe reads each sign-in at Djinn's start; a new task starts on the
-// account whose week resets first, the own sign-in's probe failure is shown, and LeadService's usage says it all.
+// first account in the developer's order with quota left, the own sign-in's probe failure is shown, and LeadService's
+// usage says it all, in that order.
 func TestQuotaChoosesAccount(t *testing.T) {
 	testx.Portable(t)
 	t.Parallel()
@@ -187,11 +217,15 @@ func TestQuotaChoosesAccount(t *testing.T) {
 	signIns(t, home, &uiv1.Settings{Accounts: []*planv1.Account{
 		{Name: "work", Provider: planv1.Provider_PROVIDER_CLAUDE, ConfigDirectory: workDir},
 		{Name: "perso", Provider: planv1.Provider_PROVIDER_CLAUDE, ConfigDirectory: persoDir},
+	}, AccountOrder: []*uiv1.SignInRef{
+		{Provider: planv1.Provider_PROVIDER_CODEX},
+		{Provider: planv1.Provider_PROVIDER_CLAUDE, Account: "work"},
+		{Provider: planv1.Provider_PROVIDER_CLAUDE, Account: "perso"},
 	}})
 	now := time.Now()
 	probe := &usageProbe{signInProbe: &signInProbe{}, asked: map[string]int{}, quotas: map[string]Quota{
-		workDir:  {SevenDay: &UsageWindow{Used: .8, ResetsAt: now.Add(6 * 24 * time.Hour)}},
-		persoDir: {SevenDay: &UsageWindow{Used: .3, ResetsAt: now.Add(10 * time.Hour)}},
+		workDir:  {SevenDay: &UsageWindow{Used: .97, ResetsAt: now.Add(10 * time.Hour)}},
+		persoDir: {SevenDay: &UsageWindow{Used: .3, ResetsAt: now.Add(6 * 24 * time.Hour)}},
 	}}
 	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = probe
@@ -205,11 +239,11 @@ func TestQuotaChoosesAccount(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	own, work, perso := usage[0], usage[1], usage[2]
-	if own.GetAccount() != "" || own.GetProbeError() != errNoUsage.Error() || own.GetReadTime() != nil {
+	work, perso, own := usage[0], usage[1], usage[2]
+	if own.GetAccount() != "" || own.GetProbeError() != errNoUsage.Error() || own.GetReadTime() != nil || own.GetNext() {
 		t.Errorf("own = %v", own)
 	}
-	if work.GetAccount() != "work" || work.GetSevenDay().GetUsedPercent() != 80 || work.GetSource() != planv1.UsageSource_USAGE_SOURCE_PROBE || work.GetNext() {
+	if work.GetAccount() != "work" || work.GetSevenDay().GetUsedPercent() != 97 || work.GetSource() != planv1.UsageSource_USAGE_SOURCE_PROBE || work.GetNext() {
 		t.Errorf("work = %v", work)
 	}
 	if perso.GetAccount() != "perso" || !perso.GetNext() || perso.GetSevenDay().GetResetsTime() == nil {

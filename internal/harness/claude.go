@@ -373,6 +373,8 @@ type claudeMessage struct {
 		Status        string `json:"status"`
 		RateLimitType string `json:"rateLimitType"`
 		ResetsAt      int64  `json:"resetsAt"`
+		// OverageStatus tells whether the sign-in may spend extra credits past its limits: allowed or rejected.
+		OverageStatus string `json:"overageStatus"`
 		// UnifiedWindows are the sign-in's 5-hour and weekly windows, said on every turn (claude 2.1.293 and later).
 		UnifiedWindows claudeWindows `json:"unifiedWindows"`
 	} `json:"rate_limit_info"`
@@ -436,6 +438,9 @@ func readClaude(raw string) ([]Event, *turnEnd, string) {
 			return nil, nil, message
 		}
 		quota := info.UnifiedWindows.quota()
+		if quota != nil {
+			quota.Extra = overageUsable(info.OverageStatus)
+		}
 		if info.Status == "allowed" {
 			if quota == nil {
 				return nil, nil, message // Said on every turn while under the limit.

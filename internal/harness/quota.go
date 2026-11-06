@@ -1,21 +1,23 @@
 package harness
 
-// The quota of each sign-in (T33, decision Q258 B). Djinn knows the usage limits of every sign-in of an agent that
+// The quota of each sign-in (T33). Djinn knows the usage limits of every sign-in of an agent that
 // tells them: the 5-hour session and the week, how much of each is used and when it resets. Two sources say them:
 // a probe that asks the agent without a model turn (Claude Code's get_usage control request, every quotaEvery, for
 // an agent with accounts only), and the stream of each worker running on the sign-in (claude's rate_limit_event, at
-// each turn). The latest reading wins.
+// each turn). The latest reading wins. Both tell, too, whether the sign-in may spend extra credits past its limits.
 //
-// EarliestWeek, the policy by default, gives a new task the sign-in whose week resets first among those with quota
-// left: what is left of a week is lost at its reset, so the week that ends first is spent first (L43, reading 1). A
-// task that ran keeps its sign-in while that one is free and has quota left (its session and its prompt cache stay
-// there). Without a fresh reading of any sign-in (the probe silent, no worker running), it is FirstFree, the simple
-// overflow.
+// FirstInOrder, the policy by default (decision Q295 B, which replaced Q258 B's week that resets first), gives a new
+// task the first sign-in in the developer's order that is free and not known out of quota; a quota never read holds
+// none back. A task that ran keeps its sign-in while that one may (its session and its prompt cache stay there). With
+// none such, the task starts in overflow (decision L2 of 06/11): on the first sign-in not paused that may spend extra
+// credits, as Djinn last read it, else on the first whose extra credits are unknown, else on the first not paused; if
+// the agent refuses, the worker hits the limit, which holds that sign-in, and the task waits for the reset as before.
 
 import (
 	"cmp"
 	"context"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -37,10 +39,6 @@ const quotaStale = 3 * quotaEvery
 
 // quotaFull is the share of a window past which a sign-in has no quota left for a new task: the tilasm's 95 %.
 const quotaFull = 0.95
-
-// quotaTie is how close two weeks' resets are for the policy to take them as one: the one with more left to lose
-// goes first.
-const quotaTie = time.Hour
 
 // usageTimeout bounds one usage probe: a start of the agent and one request, measured at 6 to 36 seconds, the most
 // under a heavy load (W380).
@@ -70,6 +68,9 @@ type Quota struct {
 	Read time.Time
 	// Source is where it was read.
 	Source planv1.UsageSource
+	// Extra tells whether the sign-in may spend extra credits past its limits (get_usage's extra_usage, a worker's
+	// overageStatus); nil when not told.
+	Extra *bool
 }
 
 // UsageProber is an agent that tells a sign-in's usage limits without a model turn. env is what the sign-in adds to
@@ -103,6 +104,9 @@ func (h *Harness) noteQuota(provider planv1.Provider, name string, q Quota) {
 		h.quota.known = map[accountKey]Quota{}
 	}
 	if old, ok := h.quota.known[k]; !ok || !q.Read.Before(old.Read) {
+		if q.Extra == nil && ok {
+			q.Extra = old.Extra // A worker's turn under its limits does not say it: what the last reading said holds.
+		}
 		h.quota.known[k] = q
 	}
 	if q.Source == planv1.UsageSource_USAGE_SOURCE_PROBE {
@@ -126,58 +130,82 @@ func (o AccountOption) room(now time.Time) (known, left bool) {
 	return true, q.FiveHour.used(now) < quotaFull && q.SevenDay.used(now) < quotaFull
 }
 
-// weekEnd is when o's week resets, for the policy: a week not started, or past, ends last.
-func (o AccountOption) weekEnd(now time.Time) time.Time {
-	if end := o.Quota.SevenDay.ResetsAt; end.After(now) {
-		return end
+// extra tells whether o may spend extra credits past its limits, as Djinn read it at most quotaStale ago: known, and
+// yes or no.
+func (o AccountOption) extra(now time.Time) (known, yes bool) {
+	q := o.Quota
+	if q == nil || q.Extra == nil || now.Sub(q.Read) > quotaStale {
+		return false, false
 	}
-	return time.Unix(1<<62, 0)
+	return true, *q.Extra
 }
 
-// EarliestWeek is the policy by default (Q258 B). A task that ran stays on its sign-in while it is free and not known
-// to be out of quota. Otherwise, among the free sign-ins with quota left, the one whose week resets first; two weeks
-// that reset within quotaTie of each other go to the one with more left to lose, then the developer's order. With
-// none known, the first free sign-in whose quota is unknown, in the developer's order. With each free one out of
-// quota, or none free, FirstFree: a quota spent does not hold a task back alone, as a limit does not (W409).
-func EarliestWeek(c AccountChoice) (string, bool) {
+// open tells whether a worker may start on o at now within its limits: free, and not known out of quota.
+func (o AccountOption) open(now time.Time) bool {
+	if !o.Free(now) {
+		return false
+	}
+	known, left := o.room(now)
+	return !known || left
+}
+
+// overflowRank ranks o for a session that starts past its limits, the lowest first: one that may spend extra credits,
+// one whose extra credits are unknown, one that may not, then one a limit holds (a worker hit it: the agent refused it
+// already, but a limit learnt from a message does not hold a task back alone, W409); -1 when paused.
+func (o AccountOption) overflowRank(now time.Time) int {
+	switch known, yes := o.extra(now); {
+	case o.Paused:
+		return -1
+	case !o.Free(now):
+		return 3
+	case known && yes:
+		return 0
+	case !known:
+		return 1
+	}
+	return 2
+}
+
+// FirstInOrder is the policy by default (decision Q295 B). A task that ran stays on its sign-in while it is free and
+// not known to be out of quota. Otherwise the first such sign-in in the developer's order. With none, the task starts
+// in overflow (Overflow), on the sign-in of the lowest overflowRank, the one it ran on first, then the first in the
+// order. None when each is paused.
+func FirstInOrder(c AccountChoice) (AccountPick, bool) {
 	now := c.Now
 	if c.Ran {
 		for _, o := range c.Options {
-			if o.Name != c.Current || !o.Free(now) {
-				continue
-			}
-			if known, left := o.room(now); !known || left {
-				return o.Name, true
+			if o.Name == c.Current && o.open(now) {
+				return AccountPick{Name: o.Name}, true
 			}
 		}
 	}
-	var withRoom, unknown []AccountOption
 	for _, o := range c.Options {
-		if !o.Free(now) {
-			continue
-		}
-		switch known, left := o.room(now); {
-		case !known:
-			unknown = append(unknown, o)
-		case left:
-			withRoom = append(withRoom, o)
+		if o.open(now) {
+			return AccountPick{Name: o.Name}, true
 		}
 	}
-	if len(withRoom) > 0 {
-		best := withRoom[0]
-		for _, o := range withRoom[1:] {
-			a, b := o.weekEnd(now), best.weekEnd(now)
-			d := a.Sub(b)
-			if d < -quotaTie || d.Abs() <= quotaTie && o.Quota.SevenDay.used(now) < best.Quota.SevenDay.used(now) {
-				best = o
+	best := -1
+	for _, o := range c.Options {
+		if r := o.overflowRank(now); r >= 0 && (best < 0 || r < best) {
+			best = r
+		}
+	}
+	if best < 0 {
+		return AccountPick{}, false
+	}
+	if c.Ran {
+		for _, o := range c.Options {
+			if o.Name == c.Current && o.overflowRank(now) == best {
+				return AccountPick{Name: o.Name, Overflow: true}, true
 			}
 		}
-		return best.Name, true
 	}
-	if len(unknown) > 0 {
-		return unknown[0].Name, true
+	for _, o := range c.Options {
+		if o.overflowRank(now) == best {
+			return AccountPick{Name: o.Name, Overflow: true}, true
+		}
 	}
-	return FirstFree(c)
+	return AccountPick{}, false
 }
 
 // watchQuotas starts the probe: each sign-in of an agent that tells its usage limits, for an agent with accounts,
@@ -268,7 +296,7 @@ func (h *Harness) probe(ctx context.Context, prober UsageProber, k accountKey, e
 }
 
 // Usage is what Djinn knows of each sign-in's usage limits, for LeadService.Accounts: every sign-in of an agent whose
-// quota Djinn read or tried to, in the developer's order, the one a new task would start on now marked next.
+// quota Djinn read or tried to, in the developer's order of priority, the one a new task would start on now marked next.
 func (h *Harness) Usage() []*planv1.AccountUsage {
 	if h.home == "" {
 		return nil
@@ -287,7 +315,7 @@ func (h *Harness) Usage() []*planv1.AccountUsage {
 				continue
 			}
 			u := &planv1.AccountUsage{Provider: provider, Account: o.Name, ProbeError: failed.why, Paused: o.Paused,
-				Next: ok && o.Name == next && len(options) > 1}
+				Next: ok && o.Name == next.Name && len(options) > 1}
 			if !o.LimitedUntil.IsZero() && o.LimitedUntil.After(now) {
 				u.LimitedUntil = timestamppb.New(o.LimitedUntil)
 			}
@@ -299,6 +327,11 @@ func (h *Harness) Usage() []*planv1.AccountUsage {
 		}
 		h.accountMu.Unlock()
 	}
+	order := plan.AccountOrder(h.home)
+	rank := func(u *planv1.AccountUsage) int {
+		return slices.IndexFunc(order, func(s plan.SignIn) bool { return s.Provider == u.GetProvider() && s.Name == u.GetAccount() })
+	}
+	slices.SortStableFunc(out, func(a, b *planv1.AccountUsage) int { return cmp.Compare(rank(a), rank(b)) })
 	return out
 }
 

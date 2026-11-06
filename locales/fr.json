@@ -28,7 +28,7 @@
   "agents.week_ends": "se termine {time}",
   "agents.five_hour": "5 h {percent} %",
   "agents.usage_next": "Prochaine tâche ici",
-  "agents.usage_next_detail": "Une nouvelle tâche de cet agent démarre maintenant sur cette connexion : sa semaine se termine la première parmi celles ni en pause ni limitées qui ont encore du quota.",
+  "agents.usage_next_detail": "Une nouvelle tâche de cet agent démarre maintenant sur cette connexion : la première dans l'ordre des comptes, ni en pause, ni limitée, ni à court de quota.",
   "agents.usage_unread": "Quota pas encore lu",
   "agents.usage_failed": "Quota illisible",
   "agents.usage_read_probe": "Lu à {time} par la sonde de Djinn, sans tour de modèle",

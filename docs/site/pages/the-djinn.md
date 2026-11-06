@@ -87,10 +87,14 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   chip at the top of a wish or of the flying carpet names it ("Claude Code · opus 5.5"); its menu lists each agent on
   its own sign-in, then on each of its accounts, and the model:
   one click moves the Djinn there, and the command line does the same. The next batch starts there with the lead's
-  journal, and the Djinn stays there until you move it again.
-- **A limit is your call.** When the Djinn hits its subscription's limit, Djinn does not move it by itself: the
-  limit shows first in the attention bar, with a button for each agent or account signed in on this machine. One
-  click sends the waiting events there. Without a click, they wait for the limit to reset.
+  journal. Moved to an account, the Djinn is pinned there until you move it again. Moved to an agent alone, each of
+  its batches follows the order of the accounts, as a new task does: the first sign-in of its agent neither paused,
+  limited nor out of quota, its agent and model kept.
+- **A limit moves the Djinn along the order.** When the Djinn hits its subscription's limit, that account stays
+  limited for every worker too, and the batch goes on at once on the next free sign-in of its agent in the order. With
+  none left, or pinned, the limit shows first in the attention bar, with a button for each agent or account signed in
+  on this machine. One click sends the waiting events there. Without a click, they wait for the first limit of its
+  agent to reset.
 - **Several subscriptions on one machine.** An account is a folder of the agent's own, beside its default one, where
   it keeps its login: Claude Code's configuration folder, Codex's home. The agents' setup, in the settings or from
   the Djinn's menu, lists each agent with its accounts under it. Its last line adds one: the agent, a name such as
@@ -99,13 +103,17 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   has no such folder. The cross on an account's line forgets it and leaves its folder as it is, as djinn lead
   remove-account does; djinn lead accounts lists them. Step by step, with the format of the name and the common
   errors: [Configure several Claude accounts](#several-claude-accounts).
-- **Every worker runs on one of them.** Each new task of an agent starts on the sign-in whose week resets first,
-  among those neither paused nor limited that have quota left (under 95 % of their 5 hours and of their week): what
-  is left of a week is lost at its reset, so the week that ends first is spent first. Two weeks that end within an
-  hour of each other go to the one with more left to lose. A task that ran stays on the sign-in it ran on while that
-  one is free and has quota left: its session is there. When Djinn knows no quota, it takes the agent's own sign-in,
-  else its accounts in the order you added them, the first neither paused nor limited; when each one free is out of
-  quota, the first free in that order too, since a quota spent does not hold a task back alone. Its task's card names
+- **The accounts have an order.** One list ranks the sign-ins of every agent, its own and its accounts, from the
+  highest priority to the lowest. Until you change it, each agent's own sign-in comes first, then its accounts in the
+  order you added them; an account added later goes to the bottom. The order never changes a task's agent: a Claude
+  task reads the Claude rows only. Reordering them in the window comes in a later version.
+- **Every worker runs on one of them.** Each new task of an agent starts on the first sign-in of its agent in the
+  order that is neither paused, limited nor known past 95 % of its 5 hours or of its week; a quota never read holds
+  none back. A task that ran stays on the sign-in it ran on while that one may: its session is there.
+- **When each one is full, the task overflows.** With every sign-in of its agent full, limited or paused, a task does
+  not only wait for a reset: it starts past its limits on the first sign-in that may spend extra credits, when Djinn
+  knows it, else on the first one not paused. Its start in the task's history says it runs in overflow. If the agent
+  refuses, the task moves to the next sign-in not limited, or waits for the reset as before. Its task's card names
   the account it runs on, or ran on last, by its label, beside its model; where an agent has accounts, a task on the
   agent's own reads own sign-in.
 - **Djinn knows each quota.** Every 5 minutes, for an agent with accounts, Djinn asks Claude Code the usage of each
