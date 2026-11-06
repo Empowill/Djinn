@@ -130,10 +130,11 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   sign-in without a model turn, and each worker tells its own at each of its turns; a reading older than 15 minutes
   counts as unknown. djinn lead accounts shows, for each sign-in, its 5 hours and its week used, when the week
   resets, when it was read, and which one the next task takes.
-- **The window shows each one.** In the agents' setup, under each sign-in's line, a second line says where it
+- **The window shows each one.** In the Summoning Circle, under each sign-in's line, a second line says where it
   stands: Active (signed in, workers may start there), Paused, or Limited until its reset. Then its week: a gauge of
-  the share used, the share in words, and when the week ends; its 5 hours used; and Next task here on the sign-in a
-  new task of the agent would take now. Hovered, the line tells when Djinn read it, by its probe or from a worker
+  the share used, the share in words, and when the week ends; its 5 hours, a gauge of the share used against their
+  limit, with the hour the session ends and the time left until then; and Next task here, with the agent's name, on
+  the sign-in a new task of the agent would take now. Hovered, the line tells when Djinn read it, by its probe or from a worker
   running there. A gauge past 95 % fills in a brighter tone: no new task starts there until its week resets. Quota
   not read yet waits for the first probe, within a minute of an account added; Quota could not be read says the probe
   failed, why on hover (signed out, no answer). The panel reads them again every minute while it is open, and at

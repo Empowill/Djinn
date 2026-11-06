@@ -173,7 +173,10 @@ test("each sign-in shows its state, active, paused or limited, its week's gauge,
         usedPercent: 27.4,
         resetsTime: timestamp(new Date(now + 30 * hour)),
       },
-      fiveHour: { usedPercent: 44 },
+      fiveHour: {
+        usedPercent: 44,
+        resetsTime: timestamp(new Date(now + 2.5 * hour + 30_000)),
+      },
       readTime: timestamp(new Date(now)),
       source: s.UsageSource.PROBE,
       probeError: "",
@@ -214,9 +217,18 @@ test("each sign-in shows its state, active, paused or limited, its week's gauge,
     /<span class="usage-gauge" role="meter" aria-label="Share of the week used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="27"><span style="width:27%"><\/span><\/span><span class="usage-percent">27 %<\/span>/,
   );
   assert.match(own, /ends [^<]+/);
-  assert.match(own, /5 h 44 %/);
+  // Its 5 hours against their limit: a gauge at 44 %, the hour the session ends and the time left until then.
+  assert.match(
+    own,
+    /<span class="usage-week usage-five-hour"><span class="muted-text">5 h<\/span><span class="usage-gauge" role="meter" aria-label="Share of the 5-hour session used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="44"><span style="width:44%"><\/span><\/span><span class="usage-percent">44 %<\/span><span class="muted-text">ends at [^<]+, in 2 h 31<\/span>/,
+  );
   assert.match(own, /title="Read at [^"]+ by Djinn&#x27;s probe/);
-  assert.match(own, />Next task here</);
+  assert.doesNotMatch(own, /skipped/);
+  // The next task of its agent starts there: said on its line, with the agent's name.
+  assert.match(
+    line(html, "data-own", "claude"),
+    />Next Claude Code task here</,
+  );
 
   // work: limited until its reset, its week full past 95 %.
   const work = usageLine(html, "claude/work");
@@ -226,8 +238,14 @@ test("each sign-in shows its state, active, paused or limited, its week's gauge,
     /<span class="status-dot blocked"><\/span>Limited until [^<]+<\/span>/,
   );
   assert.match(work, /class="usage-gauge full"/);
+  // Its 5 hours used up, their end not told: a full gauge, no end; the order skips it until its limit lifts.
+  assert.match(
+    work,
+    /aria-valuenow="100"><span style="width:100%"><\/span><\/span><span class="usage-percent">100 %<\/span><\/span>/,
+  );
+  assert.match(work, /skipped until [^<]+</);
   assert.match(work, /title="Read at [^"]+ from a worker running here"/);
-  assert.doesNotMatch(work, /Next task here/);
+  assert.doesNotMatch(line(html, "data-account", "work"), /Next/);
 
   // home: active, its quota not read, the probe's failure on hover.
   const home = usageLine(html, "claude/home");
@@ -242,6 +260,7 @@ test("each sign-in shows its state, active, paused or limited, its week's gauge,
   usage[1] = { ...usage[1], limitedUntil: undefined };
   const again = panel(env, usage);
   assert.match(usageLine(again, "claude/home"), /data-state="paused"/);
+  assert.match(usageLine(again, "claude/home"), />skipped while paused</);
   assert.doesNotMatch(usageLine(again, "claude/home"), /Limited/);
   assert.doesNotMatch(usageLine(again, "claude/work"), /data-state=/);
   assert.match(usageLine(again, "claude/work"), /usage-gauge full/);

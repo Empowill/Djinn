@@ -48,6 +48,7 @@ export {
   AgentSetupPanel,
   accountNamePattern,
   accountNameValid,
+  timeLeft,
   usageOf,
   useAgents,
   withPaused,
@@ -128,6 +129,7 @@ export {
   SummoningCircle,
   UpdateModelsSection,
   canonicalModelId,
+  loadOf,
 } from "@/src/summoning-circle.tsx";
 export {
   LastPushes,

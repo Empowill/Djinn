@@ -394,7 +394,8 @@ export function LeadButton({
   loadAgents: () => Promise<Agent[]>;
   onLead: () => void;
   onPick: (provider: Provider) => void;
-  // Opens the setup of the agents: install one, sign it in.
+  // Shows the Summoning Circle, where the agents are set up and their accounts ordered; not offered while Djinn drives
+  // the lead, whose menu keeps its seats alone.
   onSetup?: () => void;
   // While Djinn drives the lead, the seat's chip replaces Lead, and its menu moves it to another agent, model or
   // account (onMove), or pins it on a sign-in of its agent, or lets it follow the order (onPin).
@@ -568,7 +569,8 @@ export function LeadButton({
 
 // LeadMenu lists the agents a lead may run, those missing from this machine disabled, saying why; the recorded
 // lead's is marked, and picking it resumes that lead, focused on the wish. While Djinn drives the lead, it lists the
-// seats instead (SeatItems): one click moves the lead there. Last, the way to set the agents up.
+// seats instead (SeatItems), and them alone: one click moves the lead there; the accounts, their order and their
+// gauges live in the Summoning Circle. Not driven, last, the way to the Circle, where the agents are set up.
 export function LeadMenu({
   agents: found,
   recorded,
@@ -598,14 +600,6 @@ export function LeadMenu({
     return (
       <div className="lead-menu" role="menu" aria-label={t("wish.lead_agents")}>
         <SeatItems found={found} drive={drive} onMove={onMove} onPin={onPin} />
-        {onSetup && (
-          <button role="menuitem" className="lead-agent" onClick={onSetup}>
-            <span className="lead-agent-name">
-              <Settings2 size={13} aria-hidden="true" />
-              {t("agents.title")}
-            </span>
-          </button>
-        )}
       </div>
     );
   return (
