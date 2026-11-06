@@ -201,3 +201,35 @@ test("TextField fits a bordered field with its borders, and a key that still fit
     await m.end();
   }
 });
+
+// When an owner writes text into the field (cleared once sent, or loaded from a draft), the field fits immediately,
+// without waiting for the next frame (W550: prevents a flash of tall empty box and flakiness on send).
+test("TextField fits immediately when its owner writes its text, without waiting for a frame", async () => {
+  const m = await mount(s.TextField);
+  let height = "";
+  Object.defineProperty(m.el.style, "height", {
+    get: () => height,
+    set: (v) => {
+      height = v;
+    },
+  });
+  let scrollHeight = 80;
+  Object.defineProperty(m.el, "scrollHeight", { get: () => scrollHeight });
+  try {
+    const frame = () => s.act(() => new Promise((r) => setTimeout(r, 5)));
+    await m.type("multiline");
+    await frame();
+    assert.equal(height, "80px");
+    // Owner clears the text (e.g. sent)
+    scrollHeight = 30;
+    await s.act(() => m.seen.typed.set(""));
+    assert.equal(m.el.value, "");
+    assert.equal(
+      height,
+      "30px",
+      "fitted immediately without waiting for a frame",
+    );
+  } finally {
+    await m.end();
+  }
+});
