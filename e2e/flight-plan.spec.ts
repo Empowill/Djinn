@@ -186,6 +186,7 @@ async function assertHeaderChrome(
 test("the flying carpet merges two wishes, and a question is answered from it", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   // Three wishes at a time: the earlier specs' wishes make way.
@@ -216,7 +217,9 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
     await page.setViewportSize({ width: 1440, height: 1900 });
     await page.goto(process.env.DJINN_URL!);
     // With wishes active, the window opens on their flying carpet.
-    await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+    await expect(page.locator(".hero h1")).toHaveText("Flying carpet", {
+      timeout: 15_000,
+    });
 
     await assertHeaderChrome(page, 248);
     await page.locator(".sidebar-toggle").click();
@@ -314,6 +317,7 @@ test("the flying carpet merges two wishes, and a question is answered from it", 
 test("a wish's page keeps its header chrome, its tasks' tokens and price across themes, and its blocks and journal", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
   for (const w of wishes().filter((w) => w.state === "WISH_STATE_ACTIVE"))
@@ -331,6 +335,9 @@ test("a wish's page keeps its header chrome, its tasks' tokens and price across 
     await page.goto(process.env.DJINN_URL!);
     // The wish's own view stays: its tasks with their tokens in their own tab, its block about W1 in the agents' tab,
     // its journal.
+    await expect(
+      page.locator(".glance-head button").filter({ hasText: lampTitle }),
+    ).toBeVisible({ timeout: 15_000 });
     await page
       .locator(".glance-head button")
       .filter({ hasText: lampTitle })

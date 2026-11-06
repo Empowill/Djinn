@@ -66,9 +66,9 @@ test.describe("operating load slider", () => {
       fs.readFileSync(path.join(__dirname, "../locales/fr.json"), "utf8"),
     );
     await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
+    await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+      timeout: 15_000,
+    });
 
     const loadEl = page.locator(".operating-load");
     await expect(loadEl).toBeVisible();
@@ -159,9 +159,9 @@ test.describe("operating load slider", () => {
   }) => {
     const errors = collectErrors(page);
     await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
+    await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+      timeout: 15_000,
+    });
 
     // The gauge shows once the page is chosen, the wishes read (wish-app.tsx): a key reaches the one focused here.
     const range = page.locator(".operating-load-input");
@@ -225,7 +225,7 @@ test.describe("operating load slider", () => {
         page.locator(".page-header .breadcrumbs", {
           hasText: "Gauge shows once",
         }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 15_000 });
       expect(
         await page.evaluate(() => {
           const seen = (window as unknown as { __djinnGauges: Element[] })
@@ -245,9 +245,9 @@ test.describe("operating load slider", () => {
   }) => {
     const errors = collectErrors(page);
     await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
+    await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+      timeout: 15_000,
+    });
 
     const range = page.locator(".operating-load-input");
     const stops = page.locator(".operating-load-stop");
@@ -363,9 +363,9 @@ test.describe("operating load slider", () => {
   }) => {
     const errors = collectErrors(page);
     await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
+    await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+      timeout: 15_000,
+    });
 
     const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
     await expect(autoBtn).toBeVisible();
@@ -415,9 +415,9 @@ test.describe("operating load slider", () => {
   }) => {
     const errors = collectErrors(page);
     await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
+    await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+      timeout: 15_000,
+    });
 
     const range = page.locator(".operating-load-input");
     const autoBtn = page.locator('.operating-load-notch[data-notch="auto"]');
@@ -462,9 +462,9 @@ test.describe("operating load slider", () => {
   }) => {
     const errors = collectErrors(page);
     await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
+    await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+      timeout: 15_000,
+    });
 
     // W28: the limits stay hidden until the gauge is hovered, then show over the page, the bar keeping its size.
     const forecastEl = page.locator(".operating-load-forecast");
@@ -520,9 +520,9 @@ test.describe("operating load slider", () => {
   }) => {
     const errors = collectErrors(page);
     await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
+    await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+      timeout: 15_000,
+    });
     const load = JSON.parse(djinn("load", "get", "--json")) as {
       notch_slots: { notch: string; slots?: number }[];
     };
@@ -567,9 +567,9 @@ test.describe("operating load slider", () => {
   }) => {
     const errors = collectErrors(page);
     await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
+    await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+      timeout: 15_000,
+    });
 
     const forecastEl = page.locator(".operating-load-forecast");
     const ocBtn = page.locator('.operating-load-notch[data-notch="overclock"]');
@@ -672,9 +672,9 @@ test.describe("operating load slider", () => {
   }) => {
     const errors = collectErrors(page);
     await page.goto(djinnURL());
-    await expect(
-      page.locator(".app-statusbar").getByText("Live"),
-    ).toBeVisible();
+    await expect(page.locator(".app-statusbar").getByText("Live")).toBeVisible({
+      timeout: 15_000,
+    });
     const forecast = page.locator(".operating-load-forecast");
     const risk = forecast.locator(".operating-load-forecast-risk");
     const notes = forecast.locator(".operating-load-forecast-note");

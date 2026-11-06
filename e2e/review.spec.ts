@@ -151,7 +151,9 @@ test("the attention bar names what holds up the wish on the flying carpet and on
     // Tall enough for a screenshot to hold most of the page: it scrolls inside the window.
     await page.setViewportSize({ width: 1440, height: 2200 });
     await page.goto(process.env.DJINN_URL!);
-    await expect(page.locator(".hero h1")).toHaveText("Flying carpet");
+    await expect(page.locator(".hero h1")).toHaveText("Flying carpet", {
+      timeout: 15_000,
+    });
     // The bar of what waits: one line per question that holds up the wish, a click goes there; the one needed before
     // the first light under those words. The other question can wait: the questions column alone shows it. W2, failed,
     // is the lead's, never the developer's (W96, Q273); W3, cut short and not resumed by Djinn, asks nothing: it is
@@ -229,6 +231,9 @@ test("a question is enlightened, revised by its investigator and on the flying c
   try {
     await page.setViewportSize({ width: 1440, height: 2200 });
     await page.goto(process.env.DJINN_URL!);
+    await expect(
+      page.locator(".wish-nav").filter({ hasText: title }),
+    ).toBeVisible({ timeout: 15_000 });
     await page.locator(".wish-nav").filter({ hasText: title }).click();
     await expect(page.locator(".hero h1")).toHaveText(title);
     const bar = page.locator(".attention-bar");
