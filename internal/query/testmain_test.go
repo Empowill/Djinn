@@ -30,11 +30,13 @@ var day0 = time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
 
 // frozen is the frozen set: one project, two wishes, four tasks, two questions.
 //
-//	T1 W1 of "Stats", DONE, WORK, CLAUDE, cost 1.5, ran 90 min, merged; prompt and last line hidden
+//	T1 W1 of "Stats", DONE, WORK, CLAUDE, cost 1.5, ran 90 min, merged 10 s after its end; prompt (13 letters) and
+//	   last line hidden
 //	T2 W2 of "Stats", RUNNING, cost 0 (a usage with no cost yet), part of T1, waits on Q1, depends on T1
 //	T3 W1 of "Docs", no status, no usage, no project, urgent
 //	T4 W3 of "Stats", FAILED, cost 0.25, its wish_id names no wish
-//	Q1 of "Stats", asked by T2, answered A; Q2 of "Docs", asked by the lead, its context hidden
+//	Q1 of "Stats", asked by T2, answered A an hour later with a note; Q2 of "Docs", asked by the lead, not answered;
+//	   both contexts (6 letters) hidden
 func frozen() []proto.Message {
 	stats, docs := id(2), id(3)
 	t1, t2 := id(4), id(5)
@@ -50,7 +52,8 @@ func frozen() []proto.Message {
 			Provider: planv1.Provider_PROVIDER_CLAUDE, Usage: &planv1.Usage{CostUsd: 1.5, InputTokens: 100},
 			CreateTime: timestamppb.New(day0), EndTime: timestamppb.New(day0.Add(2 * time.Hour)),
 			Running: durationpb.New(90 * time.Minute), Prompt: "secret prompt", LastLine: "secret line",
-			Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED},
+			Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
+				UpdateTime: timestamppb.New(day0.Add(2*time.Hour + 10*time.Second))},
 		},
 		&planv1.Task{
 			Id: t2, WishId: stats, ProjectId: id(1), Code: "W2", Title: "Aggregates",
@@ -69,8 +72,9 @@ func frozen() []proto.Message {
 		},
 		&planv1.Question{Id: id(8), Code: "Q1", WishId: stats, TaskId: t2, Text: "Which chart?", Context: "hidden",
 			CreateTime: timestamppb.New(day0.Add(25 * time.Hour)),
-			Answer:     &planv1.Answer{Choice: planv1.Choice_CHOICE_A, CreateTime: timestamppb.New(day0.Add(26 * time.Hour))}},
-		&planv1.Question{Id: id(9), Code: "Q2", WishId: docs, Text: "Which page?",
+			Answer: &planv1.Answer{Choice: planv1.Choice_CHOICE_A, Note: "bars, please",
+				CreateTime: timestamppb.New(day0.Add(26 * time.Hour))}},
+		&planv1.Question{Id: id(9), Code: "Q2", WishId: docs, Text: "Which page?", Context: "secret",
 			CreateTime: timestamppb.New(day0.Add(50 * time.Hour))},
 	}
 }
@@ -115,7 +119,8 @@ func (s *spy) Load(ctx context.Context, where map[string]string) ([]proto.Messag
 	return s.Source.Load(ctx, where)
 }
 
-// catalog is the catalog of the frozen set: TASKS, behind a spy, QUESTIONS, WISHES and PROJECTS.
+// catalog is the catalog of the frozen set: TASKS, behind a spy, QUESTIONS, WISHES and PROJECTS, the first two with
+// their derived refs.
 func catalog(t *testing.T) (*Catalog, *spy) {
 	t.Helper()
 	s := openFrozen(t)
@@ -129,8 +134,8 @@ func catalog(t *testing.T) (*Catalog, *spy) {
 	}
 	tasks := &spy{Source: src(&planv1.Task{})}
 	c, err := NewCatalog(
-		Collection{Name: "TASKS", Source: tasks, Defaults: []string{"code", "title", "status"}},
-		Collection{Name: "QUESTIONS", Source: src(&planv1.Question{})},
+		Collection{Name: "TASKS", Source: tasks, Defaults: []string{"code", "title", "status"}, Derived: TaskRefs},
+		Collection{Name: "QUESTIONS", Source: src(&planv1.Question{}), Derived: QuestionRefs},
 		Collection{Name: "WISHES", Source: src(&planv1.Wish{})},
 		Collection{Name: "PROJECTS", Source: src(&planv1.Project{})},
 	)

@@ -31,6 +31,10 @@ type compiler struct {
 // another collection, -> and a ref of that collection.
 func (c *compiler) ref(md protoreflect.MessageDescriptor, ref string) (compiled, error) {
 	head, rest, crosses := strings.Cut(ref, "->")
+	if d, ok := c.cat.derived[md.FullName()][head]; ok && !crosses {
+		get := d.get
+		return compiled{col: d.column(), get: func(m protoreflect.Message) any { return get(m.Interface()) }}, nil
+	}
 	col, get, err := path(md, head, crosses)
 	if err != nil {
 		return compiled{}, fmt.Errorf("%w: ref %q: %w", ErrInvalid, ref, err)
