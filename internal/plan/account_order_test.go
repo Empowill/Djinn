@@ -180,3 +180,79 @@ func TestLeadOverflowing(t *testing.T) {
 		}
 	}
 }
+
+// TestLeadServiceAccountMode: djinn lead account-mode writes the mode, dynamic by default, and djinn lead accounts
+// says it; djinn lead unlimited writes the developer's word on a sign-in, read back on its SignIn, auto taking it off;
+// an unknown sign-in is refused; forgetting an account forgets its word.
+func TestLeadServiceAccountMode(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st, err := store.Open(ctx, "", Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	svc := &LeadService{Wishes: &Wishes{Store: st, Home: t.TempDir()}, UserHome: t.TempDir()}
+	home := svc.Wishes.home()
+	if err := changeSettings(home, func(s *uiv1.Settings) error {
+		s.Accounts = []*planv1.Account{{Name: "work", Provider: planv1.Provider_PROVIDER_CLAUDE}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := AccountModeOf(home); got != planv1.AccountMode_ACCOUNT_MODE_DYNAMIC {
+		t.Errorf("mode by default %v, want dynamic", got)
+	}
+	if _, err := svc.AccountMode(ctx, connect.NewRequest(&planv1.LeadServiceAccountModeRequest{Mode: planv1.AccountMode_ACCOUNT_MODE_MANUAL})); err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := svc.Accounts(ctx, connect.NewRequest(&planv1.LeadServiceAccountsRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accounts.Msg.GetMode() != planv1.AccountMode_ACCOUNT_MODE_MANUAL || !strings.Contains(accounts.Msg.GetText(), "Manual mode") {
+		t.Errorf("accounts: mode %v, text:\n%s", accounts.Msg.GetMode(), accounts.Msg.GetText())
+	}
+
+	setting := func(provider planv1.Provider, name string) planv1.UnlimitedSetting {
+		for _, s := range SignIns(home, provider) {
+			if s.Name == name {
+				return s.Unlimited
+			}
+		}
+		return -1
+	}
+	for _, c := range []struct {
+		signIn string
+		set    planv1.UnlimitedSetting
+	}{
+		{"claude/work", planv1.UnlimitedSetting_UNLIMITED_SETTING_FORCED},
+		{"codex", planv1.UnlimitedSetting_UNLIMITED_SETTING_LIMITED},
+	} {
+		if _, err := svc.Unlimited(ctx, connect.NewRequest(&planv1.LeadServiceUnlimitedRequest{SignIn: c.signIn, Unlimited: c.set})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := setting(planv1.Provider_PROVIDER_CLAUDE, "work"); got != planv1.UnlimitedSetting_UNLIMITED_SETTING_FORCED {
+		t.Errorf("work: %v, want forced", got)
+	}
+	if got := setting(planv1.Provider_PROVIDER_CODEX, ""); got != planv1.UnlimitedSetting_UNLIMITED_SETTING_LIMITED {
+		t.Errorf("codex: %v, want limited", got)
+	}
+	if _, err := svc.Unlimited(ctx, connect.NewRequest(&planv1.LeadServiceUnlimitedRequest{SignIn: "codex", Unlimited: planv1.UnlimitedSetting_UNLIMITED_SETTING_AUTO})); err != nil {
+		t.Fatal(err)
+	}
+	if got := setting(planv1.Provider_PROVIDER_CODEX, ""); got != planv1.UnlimitedSetting_UNLIMITED_SETTING_UNSPECIFIED {
+		t.Errorf("codex back to auto: %v", got)
+	}
+	_, err = svc.Unlimited(ctx, connect.NewRequest(&planv1.LeadServiceUnlimitedRequest{SignIn: "claude/nobody", Unlimited: planv1.UnlimitedSetting_UNLIMITED_SETTING_FORCED}))
+	if ce := new(connect.Error); !errors.As(err, &ce) || ce.Code() != connect.CodeInvalidArgument {
+		t.Errorf("unknown sign-in: %v, want invalid_argument", err)
+	}
+	if _, err := svc.RemoveAccount(ctx, connect.NewRequest(&planv1.LeadServiceRemoveAccountRequest{Name: "work"})); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSettings(home).GetUnlimitedForced(); len(got) != 0 {
+		t.Errorf("forced after forgetting work: %v", got)
+	}
+}

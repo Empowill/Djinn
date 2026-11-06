@@ -501,9 +501,16 @@ type Settings struct {
 	// The lead stays on the account of its seat (lead.account, "" for its agent's own sign-in) whatever the order: the
 	// developer pinned it there (djinn lead move with an account). Unset or false: each batch of the lead starts on the
 	// first free sign-in of its agent in account_order, as a worker does (L2).
-	LeadPinned    *bool `protobuf:"varint,11,opt,name=lead_pinned,json=leadPinned,proto3,oneof" json:"lead_pinned,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	LeadPinned *bool `protobuf:"varint,11,opt,name=lead_pinned,json=leadPinned,proto3,oneof" json:"lead_pinned,omitempty"`
+	// How a sign-in is picked among the free ones of its agent (djinn lead account-mode, decision Q339 C). Unset:
+	// dynamic.
+	AccountMode v11.AccountMode `protobuf:"varint,12,opt,name=account_mode,json=accountMode,proto3,enum=plan.v1.AccountMode" json:"account_mode,omitempty"`
+	// The sign-ins the developer forced pseudo-unlimited (djinn lead unlimited ... forced), whatever Djinn detects.
+	UnlimitedForced []*SignInRef `protobuf:"bytes,13,rep,name=unlimited_forced,json=unlimitedForced,proto3" json:"unlimited_forced,omitempty"`
+	// The sign-ins the developer forced to count with a quota (djinn lead unlimited ... limited), whatever Djinn detects.
+	UnlimitedUnforced []*SignInRef `protobuf:"bytes,14,rep,name=unlimited_unforced,json=unlimitedUnforced,proto3" json:"unlimited_unforced,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -611,6 +618,27 @@ func (x *Settings) GetLeadPinned() bool {
 		return *x.LeadPinned
 	}
 	return false
+}
+
+func (x *Settings) GetAccountMode() v11.AccountMode {
+	if x != nil {
+		return x.AccountMode
+	}
+	return v11.AccountMode(0)
+}
+
+func (x *Settings) GetUnlimitedForced() []*SignInRef {
+	if x != nil {
+		return x.UnlimitedForced
+	}
+	return nil
+}
+
+func (x *Settings) GetUnlimitedUnforced() []*SignInRef {
+	if x != nil {
+		return x.UnlimitedUnforced
+	}
+	return nil
 }
 
 // SignInRef names a sign-in of an agent: its own (no account) or one of its accounts.
@@ -2613,7 +2641,7 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\x05chord\x18\x01 \x01(\tR\x05chord\x12#\n" +
 	"\rdefault_chord\x18\x02 \x01(\tR\fdefaultChord\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x18\n" +
-	"\aproblem\x18\x04 \x01(\tR\aproblem\"\xd9\x04\n" +
+	"\aproblem\x18\x04 \x01(\tR\aproblem\"\x90\x06\n" +
 	"\bSettings\x12\x1f\n" +
 	"\bshortcut\x18\x01 \x01(\tH\x00R\bshortcut\x88\x01\x01\x12,\n" +
 	"\x04load\x18\x02 \x01(\x0e2\x13.djinn.v1.LoadNotchH\x01R\x04load\x88\x01\x01\x12=\n" +
@@ -2630,7 +2658,10 @@ const file_ui_v1_ui_proto_rawDesc = "" +
 	"\raccount_order\x18\n" +
 	" \x03(\v2\x10.ui.v1.SignInRefR\faccountOrder\x12$\n" +
 	"\vlead_pinned\x18\v \x01(\bH\x04R\n" +
-	"leadPinned\x88\x01\x01B\v\n" +
+	"leadPinned\x88\x01\x01\x127\n" +
+	"\faccount_mode\x18\f \x01(\x0e2\x14.plan.v1.AccountModeR\vaccountMode\x12;\n" +
+	"\x10unlimited_forced\x18\r \x03(\v2\x10.ui.v1.SignInRefR\x0funlimitedForced\x12?\n" +
+	"\x12unlimited_unforced\x18\x0e \x03(\v2\x10.ui.v1.SignInRefR\x11unlimitedUnforcedB\v\n" +
 	"\t_shortcutB\a\n" +
 	"\x05_loadB\x15\n" +
 	"\x13_ifrit_idle_minutesB\x0e\n" +
@@ -2865,7 +2896,8 @@ var file_ui_v1_ui_proto_goTypes = []any{
 	(*v11.LeadSeat)(nil),                              // 44: plan.v1.LeadSeat
 	(*v11.WorkerSeat)(nil),                            // 45: plan.v1.WorkerSeat
 	(v11.Provider)(0),                                 // 46: plan.v1.Provider
-	(*v1.LoadServiceWatchResponse)(nil),               // 47: djinn.v1.LoadServiceWatchResponse
+	(v11.AccountMode)(0),                              // 47: plan.v1.AccountMode
+	(*v1.LoadServiceWatchResponse)(nil),               // 48: djinn.v1.LoadServiceWatchResponse
 }
 var file_ui_v1_ui_proto_depIdxs = []int32{
 	9,  // 0: ui.v1.UiServiceGetEnvironmentResponse.providers:type_name -> ui.v1.Provider
@@ -2877,58 +2909,61 @@ var file_ui_v1_ui_proto_depIdxs = []int32{
 	45, // 6: ui.v1.Settings.circle:type_name -> plan.v1.WorkerSeat
 	46, // 7: ui.v1.Settings.paused_sign_ins:type_name -> plan.v1.Provider
 	8,  // 8: ui.v1.Settings.account_order:type_name -> ui.v1.SignInRef
-	46, // 9: ui.v1.SignInRef.provider:type_name -> plan.v1.Provider
-	1,  // 10: ui.v1.Provider.state:type_name -> ui.v1.ProviderState
-	10, // 11: ui.v1.Provider.accounts:type_name -> ui.v1.AccountSetup
-	43, // 12: ui.v1.AccountSetup.account:type_name -> plan.v1.Account
-	1,  // 13: ui.v1.AccountSetup.state:type_name -> ui.v1.ProviderState
-	6,  // 14: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
-	29, // 15: ui.v1.UiServiceWatchUpdateResponse.builds:type_name -> ui.v1.Build
-	27, // 16: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
-	29, // 17: ui.v1.UiServiceWatchUpdateResponse.ready_build:type_name -> ui.v1.Build
-	22, // 18: ui.v1.UiServiceWatchResponse.show:type_name -> ui.v1.UiServiceWatchShowResponse
-	24, // 19: ui.v1.UiServiceWatchResponse.update:type_name -> ui.v1.UiServiceWatchUpdateResponse
-	47, // 20: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
-	2,  // 21: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
-	28, // 22: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
-	3,  // 23: ui.v1.UiServiceGetNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
-	3,  // 24: ui.v1.UiServiceRequestNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
-	0,  // 25: ui.v1.UiServiceViewRequest.theme:type_name -> ui.v1.ShownTheme
-	4,  // 26: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
-	11, // 27: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
-	13, // 28: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
-	15, // 29: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
-	17, // 30: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
-	19, // 31: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
-	21, // 32: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
-	23, // 33: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
-	25, // 34: ui.v1.UiService.Watch:input_type -> ui.v1.UiServiceWatchRequest
-	30, // 35: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
-	32, // 36: ui.v1.UiService.GetNotifications:input_type -> ui.v1.UiServiceGetNotificationsRequest
-	34, // 37: ui.v1.UiService.RequestNotifications:input_type -> ui.v1.UiServiceRequestNotificationsRequest
-	36, // 38: ui.v1.UiService.OpenNotificationSettings:input_type -> ui.v1.UiServiceOpenNotificationSettingsRequest
-	38, // 39: ui.v1.UiService.View:input_type -> ui.v1.UiServiceViewRequest
-	40, // 40: ui.v1.UiService.Touch:input_type -> ui.v1.UiServiceTouchRequest
-	5,  // 41: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
-	12, // 42: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
-	14, // 43: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
-	16, // 44: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
-	18, // 45: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
-	20, // 46: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
-	22, // 47: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
-	24, // 48: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
-	26, // 49: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
-	31, // 50: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
-	33, // 51: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
-	35, // 52: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
-	37, // 53: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
-	39, // 54: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
-	41, // 55: ui.v1.UiService.Touch:output_type -> ui.v1.UiServiceTouchResponse
-	41, // [41:56] is the sub-list for method output_type
-	26, // [26:41] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	47, // 9: ui.v1.Settings.account_mode:type_name -> plan.v1.AccountMode
+	8,  // 10: ui.v1.Settings.unlimited_forced:type_name -> ui.v1.SignInRef
+	8,  // 11: ui.v1.Settings.unlimited_unforced:type_name -> ui.v1.SignInRef
+	46, // 12: ui.v1.SignInRef.provider:type_name -> plan.v1.Provider
+	1,  // 13: ui.v1.Provider.state:type_name -> ui.v1.ProviderState
+	10, // 14: ui.v1.Provider.accounts:type_name -> ui.v1.AccountSetup
+	43, // 15: ui.v1.AccountSetup.account:type_name -> plan.v1.Account
+	1,  // 16: ui.v1.AccountSetup.state:type_name -> ui.v1.ProviderState
+	6,  // 17: ui.v1.UiServiceSetShortcutResponse.shortcut:type_name -> ui.v1.Shortcut
+	29, // 18: ui.v1.UiServiceWatchUpdateResponse.builds:type_name -> ui.v1.Build
+	27, // 19: ui.v1.UiServiceWatchUpdateResponse.installing:type_name -> ui.v1.Installing
+	29, // 20: ui.v1.UiServiceWatchUpdateResponse.ready_build:type_name -> ui.v1.Build
+	22, // 21: ui.v1.UiServiceWatchResponse.show:type_name -> ui.v1.UiServiceWatchShowResponse
+	24, // 22: ui.v1.UiServiceWatchResponse.update:type_name -> ui.v1.UiServiceWatchUpdateResponse
+	48, // 23: ui.v1.UiServiceWatchResponse.load:type_name -> djinn.v1.LoadServiceWatchResponse
+	2,  // 24: ui.v1.Installing.step:type_name -> ui.v1.InstallStep
+	28, // 25: ui.v1.Build.summaries:type_name -> ui.v1.TaskSummary
+	3,  // 26: ui.v1.UiServiceGetNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
+	3,  // 27: ui.v1.UiServiceRequestNotificationsResponse.access:type_name -> ui.v1.NotificationAccess
+	0,  // 28: ui.v1.UiServiceViewRequest.theme:type_name -> ui.v1.ShownTheme
+	4,  // 29: ui.v1.UiService.GetEnvironment:input_type -> ui.v1.UiServiceGetEnvironmentRequest
+	11, // 30: ui.v1.UiService.ChooseDirectory:input_type -> ui.v1.UiServiceChooseDirectoryRequest
+	13, // 31: ui.v1.UiService.OpenExternal:input_type -> ui.v1.UiServiceOpenExternalRequest
+	15, // 32: ui.v1.UiService.SetShortcut:input_type -> ui.v1.UiServiceSetShortcutRequest
+	17, // 33: ui.v1.UiService.Show:input_type -> ui.v1.UiServiceShowRequest
+	19, // 34: ui.v1.UiService.OpenLink:input_type -> ui.v1.UiServiceOpenLinkRequest
+	21, // 35: ui.v1.UiService.WatchShow:input_type -> ui.v1.UiServiceWatchShowRequest
+	23, // 36: ui.v1.UiService.WatchUpdate:input_type -> ui.v1.UiServiceWatchUpdateRequest
+	25, // 37: ui.v1.UiService.Watch:input_type -> ui.v1.UiServiceWatchRequest
+	30, // 38: ui.v1.UiService.Update:input_type -> ui.v1.UiServiceUpdateRequest
+	32, // 39: ui.v1.UiService.GetNotifications:input_type -> ui.v1.UiServiceGetNotificationsRequest
+	34, // 40: ui.v1.UiService.RequestNotifications:input_type -> ui.v1.UiServiceRequestNotificationsRequest
+	36, // 41: ui.v1.UiService.OpenNotificationSettings:input_type -> ui.v1.UiServiceOpenNotificationSettingsRequest
+	38, // 42: ui.v1.UiService.View:input_type -> ui.v1.UiServiceViewRequest
+	40, // 43: ui.v1.UiService.Touch:input_type -> ui.v1.UiServiceTouchRequest
+	5,  // 44: ui.v1.UiService.GetEnvironment:output_type -> ui.v1.UiServiceGetEnvironmentResponse
+	12, // 45: ui.v1.UiService.ChooseDirectory:output_type -> ui.v1.UiServiceChooseDirectoryResponse
+	14, // 46: ui.v1.UiService.OpenExternal:output_type -> ui.v1.UiServiceOpenExternalResponse
+	16, // 47: ui.v1.UiService.SetShortcut:output_type -> ui.v1.UiServiceSetShortcutResponse
+	18, // 48: ui.v1.UiService.Show:output_type -> ui.v1.UiServiceShowResponse
+	20, // 49: ui.v1.UiService.OpenLink:output_type -> ui.v1.UiServiceOpenLinkResponse
+	22, // 50: ui.v1.UiService.WatchShow:output_type -> ui.v1.UiServiceWatchShowResponse
+	24, // 51: ui.v1.UiService.WatchUpdate:output_type -> ui.v1.UiServiceWatchUpdateResponse
+	26, // 52: ui.v1.UiService.Watch:output_type -> ui.v1.UiServiceWatchResponse
+	31, // 53: ui.v1.UiService.Update:output_type -> ui.v1.UiServiceUpdateResponse
+	33, // 54: ui.v1.UiService.GetNotifications:output_type -> ui.v1.UiServiceGetNotificationsResponse
+	35, // 55: ui.v1.UiService.RequestNotifications:output_type -> ui.v1.UiServiceRequestNotificationsResponse
+	37, // 56: ui.v1.UiService.OpenNotificationSettings:output_type -> ui.v1.UiServiceOpenNotificationSettingsResponse
+	39, // 57: ui.v1.UiService.View:output_type -> ui.v1.UiServiceViewResponse
+	41, // 58: ui.v1.UiService.Touch:output_type -> ui.v1.UiServiceTouchResponse
+	44, // [44:59] is the sub-list for method output_type
+	29, // [29:44] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_ui_v1_ui_proto_init() }

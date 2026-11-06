@@ -86,7 +86,7 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
 - **Where it runs.** The Djinn runs on a seat you choose: an agent (Claude Code, Codex or Antigravity), a model, an account. The
   chip at the top of a wish or of the flying carpet names it ("Claude Code · Work · opus 5.5", with "in overflow" while
   its batch runs past its limits). Its menu starts with **Follows the order**, marked while the Djinn follows it: each
-  batch then starts on the first sign-in of its agent neither paused, limited nor out of quota, as a new task does,
+  batch then starts on the sign-in of its agent the mode picks (dynamic or manual order), as a new task does,
   its agent and model kept. Then each sign-in of its agent: one click pins the Djinn there, whatever the order, until
   you click Follows the order again, which takes the pin off. Then the other agents, on their own sign-in and on each
   account, and the model: one click moves the Djinn there. The command line does the same: djinn lead pin work pins

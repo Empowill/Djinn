@@ -146,7 +146,7 @@ type Harness struct {
 	accounts  map[accountKey]accountSeen // each sign-in's account, as last read
 
 	// The sign-ins the workers run on (account.go).
-	accountPolicy AccountPolicy            // nil: EarliestWeek
+	accountPolicy AccountPolicy            // nil: ByMode
 	accountMu     sync.Mutex               // guards accountLimits and quota
 	accountLimits map[accountKey]heldLimit // the usage limits that hold a sign-in
 

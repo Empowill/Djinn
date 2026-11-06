@@ -162,6 +162,13 @@ message Settings {
   // developer pinned it there (djinn lead move with an account). Unset or false: each batch of the lead starts on the
   // first free sign-in of its agent in account_order, as a worker does (L2).
   optional bool lead_pinned = 11;
+  // How a sign-in is picked among the free ones of its agent (djinn lead account-mode, decision Q339 C). Unset:
+  // dynamic.
+  plan.v1.AccountMode account_mode = 12;
+  // The sign-ins the developer forced pseudo-unlimited (djinn lead unlimited ... forced), whatever Djinn detects.
+  repeated SignInRef unlimited_forced = 13;
+  // The sign-ins the developer forced to count with a quota (djinn lead unlimited ... limited), whatever Djinn detects.
+  repeated SignInRef unlimited_unforced = 14;
 }
 
 // SignInRef names a sign-in of an agent: its own (no account) or one of its accounts.

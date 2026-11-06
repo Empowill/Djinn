@@ -33,7 +33,7 @@ import (
 //	DJINN_FAKE_END       what it does once the fixture is played: eof (wait until its input is closed, exit 0),
 //	                     eof:N (the same, exit N), exit:N (exit N at once), hang (ignore SIGTERM, never end),
 //	                     wait (wait until it is stopped), tick (write "tick N" to the error output every 20 ms
-//	                     until it is stopped)
+//	                     until it is stopped); claude auth status exits at once with its N, 0 by default
 //
 // claude and antigravity read one message before the first line and after each result line. codex answers
 // JSON-RPC: an answer line of the fixture (id and result or error) gets the id of the client's next request, and
@@ -87,6 +87,12 @@ func fakePrefix(record string) int {
 }
 
 func fakeProvider(provider string) int {
+	if slices.Equal(os.Args[1:], []string{"auth", "status"}) {
+		// claude auth status: signed in (0), or with DJINN_FAKE_END eof:N, N; it reads no input.
+		_, code, _ := strings.Cut(os.Getenv("DJINN_FAKE_END"), ":")
+		n, _ := strconv.Atoi(code)
+		return n
+	}
 	if os.Getenv("DJINN_FAKE_END") == "hang" {
 		// From the start: a SIGTERM sent once the first line is read must not end it.
 		signal.Ignore(syscall.SIGTERM)

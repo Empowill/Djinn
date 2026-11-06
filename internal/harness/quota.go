@@ -6,12 +6,21 @@ package harness
 // an agent with accounts only), and the stream of each worker running on the sign-in (claude's rate_limit_event, at
 // each turn). The latest reading wins. Both tell, too, whether the sign-in may spend extra credits past its limits.
 //
-// FirstInOrder, the policy by default (decision Q295 B, which replaced Q258 B's week that resets first), gives a new
-// task the first sign-in in the developer's order that is free and not known out of quota; a quota never read holds
-// none back. A task that ran keeps its sign-in while that one may (its session and its prompt cache stay there). With
-// none such, the task starts in overflow (decision L2 of 06/11): on the first sign-in not paused that may spend extra
-// credits, as Djinn last read it, else on the first whose extra credits are unknown, else on the first not paused; if
-// the agent refuses, the worker hits the limit, which holds that sign-in, and the task waits for the reset as before.
+// Two modes pick a sign-in (decision Q339 C, Settings.account_mode). Dynamic, by default: among the free sign-ins of
+// the agent with quota left, the one whose week resets first (decision Q258 B: what is left of a week is lost at its
+// reset), two weeks within quotaTie going to the least used; then those whose quota is not known; then the
+// pseudo-unlimited ones; each group in the developer's order. Manual, FirstInOrder (decision Q295 B): the first in the
+// developer's order that is free and not known out of quota; a quota never read holds none back. Either way, a task
+// that ran keeps its sign-in while that one may (its session and its prompt cache stay there), and with none such the
+// task starts in overflow (decision L2 of 06/11): on the first sign-in not paused that may spend extra credits, as
+// Djinn last read it, else on the first whose extra credits are unknown, else on the first not paused; if the agent
+// refuses, the worker hits the limit, which holds that sign-in, and the task waits for the reset as before.
+//
+// A pseudo-unlimited sign-in (AccountOption.Unlimited) is one that gives no quota at all: its agent tells none (no
+// UsageProber: Codex, Antigravity), or Djinn read it and it told no window (a Claude sign-in on an API key: the probe
+// answers with no window while claude auth status says it is signed in, claude_usage.go). A probe that fails, or a
+// Claude sign-in never read, is not: its quota is only unknown. The developer corrects the detection either way
+// (djinn lead unlimited, Settings.unlimited_forced and unlimited_unforced).
 
 import (
 	"cmp"
@@ -39,6 +48,9 @@ const quotaStale = 3 * quotaEvery
 
 // quotaFull is the share of a window past which a sign-in has no quota left for a new task: the tilasm's 95 %.
 const quotaFull = 0.95
+
+// quotaTie is how close two weeks' resets are for the dynamic mode to take them as one: the least used goes first.
+const quotaTie = time.Hour
 
 // usageTimeout bounds one usage probe: a start of the agent and one request, measured at 6 to 36 seconds, the most
 // under a heavy load (W380).
@@ -149,6 +161,14 @@ func (o AccountOption) open(now time.Time) bool {
 	return !known || left
 }
 
+// weekEnd is when o's week resets, for the dynamic mode: a week not started, or past, ends last.
+func (o AccountOption) weekEnd(now time.Time) time.Time {
+	if end := o.Quota.SevenDay.ResetsAt; end.After(now) {
+		return end
+	}
+	return time.Unix(1<<62, 0)
+}
+
 // overflowRank ranks o for a session that starts past its limits, the lowest first: one that may spend extra credits,
 // one whose extra credits are unknown, one that may not, then one a limit holds (a worker hit it: the agent refused it
 // already, but a limit learnt from a message does not hold a task back alone, W409); -1 when paused.
@@ -184,6 +204,70 @@ func FirstInOrder(c AccountChoice) (AccountPick, bool) {
 			return AccountPick{Name: o.Name}, true
 		}
 	}
+	return overflow(c)
+}
+
+// Dynamic is the policy by default (decision Q339 C). A task that ran stays on its sign-in while it is free and not
+// known out of quota, or pseudo-unlimited. Otherwise, among the free sign-ins of the agent with quota left, the one
+// whose week resets first, two within quotaTie of each other going to the least used; then the first free one whose
+// quota is unknown; then the first free pseudo-unlimited one; each in the developer's order. With none, the task
+// starts in overflow, as with FirstInOrder.
+func Dynamic(c AccountChoice) (AccountPick, bool) {
+	now := c.Now
+	open := func(o AccountOption) bool { return o.Free(now) && (o.Unlimited || o.open(now)) }
+	if c.Ran {
+		for _, o := range c.Options {
+			if o.Name == c.Current && open(o) {
+				return AccountPick{Name: o.Name}, true
+			}
+		}
+	}
+	var best, unknown, unlimited *AccountOption
+	for i := range c.Options {
+		o := &c.Options[i]
+		if !open(*o) {
+			continue
+		}
+		known, _ := o.room(now)
+		switch {
+		case o.Unlimited:
+			if unlimited == nil {
+				unlimited = o
+			}
+		case !known:
+			if unknown == nil {
+				unknown = o
+			}
+		case best == nil:
+			best = o
+		default:
+			d := o.weekEnd(now).Sub(best.weekEnd(now))
+			if d < -quotaTie || d.Abs() <= quotaTie && o.Quota.SevenDay.used(now) < best.Quota.SevenDay.used(now) {
+				best = o
+			}
+		}
+	}
+	for _, o := range []*AccountOption{best, unknown, unlimited} {
+		if o != nil {
+			return AccountPick{Name: o.Name}, true
+		}
+	}
+	return overflow(c)
+}
+
+// ByMode is the policy of the mode the developer chose (AccountChoice.Mode): Dynamic by default, FirstInOrder in the
+// manual mode.
+func ByMode(c AccountChoice) (AccountPick, bool) {
+	if c.Mode == planv1.AccountMode_ACCOUNT_MODE_MANUAL {
+		return FirstInOrder(c)
+	}
+	return Dynamic(c)
+}
+
+// overflow is the sign-in of a task that starts past its limits, each sign-in of its agent full, limited or paused:
+// the one of the lowest overflowRank, the one it ran on first, then the first in the order. None when each is paused.
+func overflow(c AccountChoice) (AccountPick, bool) {
+	now := c.Now
 	best := -1
 	for _, o := range c.Options {
 		if r := o.overflowRank(now); r >= 0 && (best < 0 || r < best) {
@@ -319,11 +403,13 @@ func (h *Harness) Usage() []*planv1.AccountUsage {
 		for _, o := range options {
 			k := accountKey{provider, o.Name}
 			failed, tried := h.quota.failed[k]
-			if o.Quota == nil && !tried && !overflowing[k] {
-				continue
+			if o.Quota == nil && !tried && !overflowing[k] && !o.Unlimited &&
+				o.SignIn.Unlimited == planv1.UnlimitedSetting_UNLIMITED_SETTING_UNSPECIFIED {
+				continue // Nothing to say: no reading, and neither unlimited nor a word of the developer's.
 			}
 			u := &planv1.AccountUsage{Provider: provider, Account: o.Name, ProbeError: failed.why, Paused: o.Paused,
-				Next: ok && o.Name == next.Name && len(options) > 1, Overflowing: overflowing[k]}
+				Next: ok && o.Name == next.Name && len(options) > 1, Overflowing: overflowing[k],
+				Unlimited: o.Unlimited, UnlimitedDetected: o.Detected, UnlimitedSetting: o.SignIn.Unlimited}
 			if !o.LimitedUntil.IsZero() && o.LimitedUntil.After(now) {
 				u.LimitedUntil = timestamppb.New(o.LimitedUntil)
 			}

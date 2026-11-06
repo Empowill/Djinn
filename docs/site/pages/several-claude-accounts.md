@@ -44,13 +44,27 @@ agent and the label; djinn lead accounts lists the accounts.
 
 ## How Djinn shares the workers
 
-- **Your order decides.** Each new task of Claude Code starts on the first sign-in in the order of priority neither
-  paused, limited nor past 95 % of its 5 hours or of its week. Under Accounts · order of priority, each line shows its
-  rank and a grip: drag a line up or down, or focus its grip and press Alt+Up or Alt+Down. The new order counts at
-  once for the next task; nothing that runs stops. A week that ends soon with quota left is not spent first by itself:
-  put that account at the top. From the command line: djinn lead order --sign-in claude/work --sign-in claude.
-- **The Djinn follows the same order.** Unless you pin it, each batch of the Djinn starts on the first free sign-in
-  of its agent. **The Djinn's account**, above the list, pins it on one sign-in whatever the order, or, with Follows
+- **Two modes pick the sign-in.** At the right of Accounts · order of priority, a switch chooses how Djinn picks,
+  among the sign-ins of the agent neither paused, limited nor past 95 % of its 5 hours or of its week:
+  - **Dynamic**, the mode by default: the sign-in whose week ends soonest goes first, since what is left of a week is
+    lost at its reset; two weeks that end within an hour go to the least used. Then the sign-ins whose quota Djinn has
+    not read, then the unlimited ones, each group in your order.
+  - **Manual order**: the first in your order, whatever the weeks. A week that ends soon with quota left is not spent
+    first by itself: put that account at the top.
+
+  Under the switch, each line shows its rank and a grip: drag a line up or down, or focus its grip and press Alt+Up or
+  Alt+Down. In the dynamic mode, the order breaks ties. A change counts at once for the next task; nothing that runs
+  stops. From the command line: djinn lead account-mode dynamic, or manual, and djinn lead order --sign-in claude/work
+  --sign-in claude.
+- **Unlimited sign-ins go last.** A sign-in that gives no quota at all is unlimited: Codex, which tells Djinn none, or
+  a Claude Code account on an API key, signed in yet with no window in its answer. Its line reads Unlimited (auto). A
+  probe that fails is not enough: a Claude Code account Djinn cannot read, signed out or silent, only has a quota not
+  read. The Unlimited switch on each line corrects Djinn either way: on, the line reads Unlimited (forced), and its quota
+  never holds it back in the dynamic mode; off, it counts as a sign-in with a quota. Switched back to what Djinn
+  detects, the line follows the detection again. From the command line: djinn lead unlimited claude/work forced, then
+  limited or auto.
+- **The Djinn follows the same rule.** Unless you pin it, each batch of the Djinn starts on the sign-in of its agent
+  that the mode picks for a new task. **The Djinn's account**, above the list, pins it on one sign-in whatever the order, or, with Follows
   the order, takes the pin off; the menu of the Djinn's chip offers the same, and djinn lead pin work, then djinn lead
   pin --unpin, do it from the command line. A crown marks where the Djinn runs.
 - **When every sign-in is full, Djinn overflows.** It starts the task on the first sign-in that may spend extra
@@ -96,6 +110,8 @@ More on the rules, the quota probe and the sessions that follow a task: [the Dji
 | Both sign-ins show the same week | The account signed in to the first subscription | Forget the account, add one with another name, and check the browser page shows the second subscription before you accept |
 | Quota not read yet | Djinn has not read it since the account was added | Wait a minute: the panel reads it again every minute while it is open |
 | Quota could not be read | The probe failed: the account is signed out, or Claude Code did not answer; the hover says which | Sign in again if it is signed out |
+| A Claude Code account on an API key reads Quota could not be read | Djinn did not tell it from a signed-out account | Turn on its Unlimited switch: it goes after the others in the dynamic mode |
+| An account goes first though another one's week ends sooner | The mode is Manual order, or the other one is unlimited, paused, limited or past 95 % | Switch to Dynamic, or check the other line |
 
 ## Read next
 

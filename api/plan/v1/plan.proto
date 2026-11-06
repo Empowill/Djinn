@@ -1031,6 +1031,14 @@ message AccountUsage {
   // A worker, or the lead Djinn drives, runs there now past its limits, in overflow: each sign-in of the agent was
   // full, limited or paused when it started, and it spends extra credits if the account allows them.
   bool overflowing = 11;
+  // Pseudo-unlimited: in the dynamic mode, the order takes it after the sign-ins of its agent that tell a quota
+  // (Settings.account_mode). Detected (unlimited_detected) unless the developer forced it (unlimited_setting).
+  bool unlimited = 12;
+  // Djinn found it gives no quota at all: its agent tells none (Codex, Antigravity), or a Claude sign-in signed in
+  // answers the probe with no window (an API key). A failing probe alone never counts.
+  bool unlimited_detected = 13;
+  // The developer's override of the detection (djinn lead unlimited); unset or auto: the detection decides.
+  UnlimitedSetting unlimited_setting = 14;
 }
 
 // UsageWindow is one window of a sign-in's usage limit.
@@ -4573,6 +4581,23 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_INTERNAL;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
+  // Choose how each new worker, and each batch of the lead unless it is pinned, picks its sign-in among the free ones
+  // of its agent. dynamic, by default: the one whose week ends soonest goes first (within an hour, the least used),
+  // then those whose quota is not known, then the pseudo-unlimited ones (djinn lead unlimited), each group in the
+  // order. manual: the first in the order (djinn lead order). Either way, a task that ran stays on its sign-in while it
+  // may. Nothing stops nor moves: the mode counts at each next start. Kept in settings.json, on this machine.
+  rpc AccountMode(LeadServiceAccountModeRequest) returns (LeadServiceAccountModeResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Correct whether a sign-in counts as pseudo-unlimited, a sign-in a word as djinn lead order takes it (claude,
+  // claude/work): forced, it goes after the sign-ins of its agent with a quota in the dynamic mode, and its quota never
+  // holds it back; limited, it counts as one with a quota even when Djinn reads none; auto, Djinn's detection decides
+  // (an agent that tells no quota, as Codex, or a Claude sign-in on an API key). Kept in settings.json.
+  rpc Unlimited(LeadServiceUnlimitedRequest) returns (LeadServiceUnlimitedResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
   // Read the global Summoning Circle: one row per kind of model-calling worker across all projects.
   rpc GetCircle(LeadServiceGetCircleRequest) returns (LeadServiceGetCircleResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
@@ -4931,6 +4956,8 @@ message LeadServiceAccountsResponse {
   repeated string order = 5 [(djinn.v1.json_only) = true];
   // The lead stays on its seat's account whatever the order (djinn lead pin), with --json: the text says it.
   bool pinned = 6 [(djinn.v1.json_only) = true];
+  // How a sign-in is picked (djinn lead account-mode), with --json: the text says it.
+  AccountMode mode = 7 [(djinn.v1.json_only) = true];
 }
 
 message LeadServiceOrderRequest {
@@ -6578,4 +6605,63 @@ message PlanServiceSyncResponse {
   // The files whose status says not done while every box of their Done-when section is checked: their azimas count
   // as done. Set their status to done.
   repeated string all_checked = 5;
+}
+
+// AccountMode is how a new worker, and a batch of the lead that is not pinned, picks its sign-in among the free ones
+// of its agent (decision Q339 C).
+enum AccountMode {
+  // Not set: dynamic.
+  ACCOUNT_MODE_UNSPECIFIED = 0;
+  // The sign-in whose week ends soonest first (decision Q258 B): what is left of a week is lost at its reset. Then
+  // those whose quota Djinn does not know, then the pseudo-unlimited ones, each group in the order.
+  ACCOUNT_MODE_DYNAMIC = 1;
+  // The first in the order of priority (decision Q295 B).
+  ACCOUNT_MODE_MANUAL = 2;
+}
+
+// UnlimitedSetting is the developer's word on whether a sign-in is pseudo-unlimited.
+enum UnlimitedSetting {
+  // Not set: auto.
+  UNLIMITED_SETTING_UNSPECIFIED = 0;
+  // Djinn's detection decides: no quota told at all.
+  UNLIMITED_SETTING_AUTO = 1;
+  // Pseudo-unlimited, whatever Djinn reads.
+  UNLIMITED_SETTING_FORCED = 2;
+  // Counted with a quota, even when Djinn reads none.
+  UNLIMITED_SETTING_LIMITED = 3;
+}
+
+message LeadServiceAccountModeRequest {
+  // dynamic or manual.
+  AccountMode mode = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum.defined_only = true
+  ];
+}
+
+message LeadServiceAccountModeResponse {
+  // The mode, as written.
+  AccountMode mode = 1;
+  // What changes, in a line.
+  string note = 2;
+}
+
+message LeadServiceUnlimitedRequest {
+  // The sign-in: an agent (claude, codex, antigravity) for its own, agent/name for one of its accounts.
+  string sign_in = 1 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^(claude|codex|antigravity)(/[a-z0-9][a-z0-9-]{0,31})?$"
+  ];
+  // auto, forced or limited.
+  UnlimitedSetting unlimited = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).enum.defined_only = true
+  ];
+}
+
+message LeadServiceUnlimitedResponse {
+  // The setting, as written.
+  UnlimitedSetting unlimited = 1;
+  // What changes, in a line.
+  string note = 2;
 }

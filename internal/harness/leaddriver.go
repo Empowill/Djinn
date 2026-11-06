@@ -49,7 +49,7 @@ const (
 // Each batch runs where the developer seated the lead (plan.ReadLeadSeat, W132): an agent and a model, read as the
 // batch starts, so that a move takes effect at the next batch. Its sign-in follows the order of the accounts (L2,
 // decision of 06/11 that revised Q31): before each batch, the account policy picks the sign-in of its agent as for a
-// new worker (FirstInOrder), never another agent nor another model; a limit the lead hits holds that sign-in for
+// new worker (ByMode: dynamic or manual), never another agent nor another model; a limit the lead hits holds that sign-in for
 // every worker too, and the batch goes on at once on the next free one, if any. Pinned on an account
 // (plan.LeadPinned), it stays there, as the developer chose. A batch with no sign-in to go on is not tried again:
 // Djinn tells the developer and offers the other seats of this machine in one click; its events wait for a move, for

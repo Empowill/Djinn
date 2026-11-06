@@ -813,3 +813,172 @@ test("the screen ranks the sign-ins by keyboard and by drag and drop, writes the
       if (handle?.constructor?.name === "MessagePort") handle.unref();
   }
 });
+
+test("each sign-in says whether it is unlimited, detected or forced, and its switch says what it would write", () => {
+  const usage = [
+    {
+      provider: s.Provider.CLAUDE,
+      account: "home",
+      unlimited: true,
+      unlimitedDetected: true,
+    },
+    {
+      provider: s.Provider.CLAUDE,
+      account: "work",
+      unlimited: true,
+      unlimitedDetected: false,
+      unlimitedSetting: s.UnlimitedSetting.FORCED,
+    },
+  ];
+  const html = s.renderToStaticMarkup(
+    h(s.AgentSetupPanel, {
+      agents: {
+        env: environment(),
+        checking: false,
+        error: "",
+        check() {},
+        setPaused() {},
+        usage,
+        setUnlimited() {},
+        setMode() {},
+      },
+    }),
+  );
+  assert.match(line(html, "data-account", "home"), /Unlimited \(auto\)/);
+  assert.match(line(html, "data-account", "work"), /Unlimited \(forced\)/);
+  assert.doesNotMatch(line(html, "data-own", "claude"), /Unlimited \(/);
+  assert.match(usageLine(html, "claude/home"), /No quota: unlimited/);
+  assert.match(
+    line(html, "data-account", "home"),
+    /role="switch"[^>]*aria-checked="true"[^>]*aria-label="home is unlimited"/,
+  );
+  assert.match(
+    line(html, "data-own", "claude"),
+    /role="switch"[^>]*aria-checked="false"/,
+  );
+  // Dynamic by default: its button pressed, and the detail says the week that ends soonest goes first.
+  assert.match(
+    html,
+    /<button type="button" class="active" aria-pressed="true"[^>]*>Dynamic<\/button>/,
+  );
+  assert.match(html, /the one whose week ends soonest takes each new task/);
+
+  // Turning it off where Djinn detects it writes limited; back on, auto; on where it detects none, forced.
+  assert.equal(s.unlimitedFor(usage[0], false), s.UnlimitedSetting.LIMITED);
+  assert.equal(s.unlimitedFor(usage[0], true), s.UnlimitedSetting.AUTO);
+  assert.equal(s.unlimitedFor(usage[1], false), s.UnlimitedSetting.AUTO);
+  assert.equal(s.unlimitedFor(undefined, true), s.UnlimitedSetting.FORCED);
+  // Shown at once: a sign-in Djinn said nothing of gets its line.
+  const shown = s.withUnlimited(usage, "codex", s.UnlimitedSetting.FORCED);
+  assert.equal(shown.length, 3);
+  assert.equal(shown[2].provider, s.Provider.CODEX);
+  assert.equal(shown[2].unlimited, true);
+  const off = s.withUnlimited(usage, "claude/home", s.UnlimitedSetting.LIMITED);
+  assert.equal(off[0].unlimited, false);
+  assert.equal(off[1], usage[1]);
+});
+
+test("the screen switches the mode and a sign-in's Unlimited through the lead's service", async () => {
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  const settle = async () => {
+    for (let i = 0; i < 4; i++)
+      await s.act(() => new Promise((r) => setTimeout(r, 0)));
+  };
+  const byLabel = (label) =>
+    below(container).find((el) => el.attributes?.["aria-label"] === label);
+  const button = (text) =>
+    below(container).find(
+      (el) => el.tagName === "BUTTON" && el.textContent === text,
+    );
+  let mode = s.AccountMode.DYNAMIC;
+  let homeSetting = s.UnlimitedSetting.UNSPECIFIED;
+  const calls = [];
+  const transport = s.createRouterTransport(({ service }) => {
+    service(s.UiService, { getEnvironment: () => environment() });
+    service(s.LeadService, {
+      accounts: () => ({
+        order: ["claude", "claude/work", "claude/home", "codex", "antigravity"],
+        mode,
+        usage: [
+          {
+            provider: s.Provider.CLAUDE,
+            account: "home",
+            unlimitedDetected: false,
+            unlimitedSetting: homeSetting,
+            unlimited: homeSetting === s.UnlimitedSetting.FORCED,
+          },
+        ],
+      }),
+      accountMode: (req) => {
+        calls.push(["mode", req.mode]);
+        mode = req.mode;
+        return { mode, note: "" };
+      },
+      unlimited: (req) => {
+        calls.push(["unlimited", req.signIn, req.unlimited]);
+        homeSetting = req.unlimited;
+        return { unlimited: req.unlimited, note: "" };
+      },
+    });
+  });
+  const djinn = s.createDjinn(transport, 10);
+  function Panel() {
+    return h(s.AgentSetupPanel, { agents: s.useAgents() });
+  }
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () => {
+      root.render(h(s.DjinnProvider, { djinn }, h(Panel)));
+    });
+    await settle();
+    assert.equal(button("Dynamic").attributes["aria-pressed"], "true");
+
+    // Manual order: written, and shown pressed.
+    await s.act(async () => props(button("Manual order")).onClick());
+    await settle();
+    assert.deepEqual(calls, [["mode", s.AccountMode.MANUAL]]);
+    assert.equal(button("Manual order").attributes["aria-pressed"], "true");
+    assert.equal(button("Dynamic").attributes["aria-pressed"], "false");
+
+    // home's switch, off and not detected: on forces it.
+    const sw = byLabel("home is unlimited");
+    assert.equal(sw.attributes["aria-checked"], "false");
+    await s.act(async () => props(sw).onClick());
+    await settle();
+    assert.deepEqual(calls.at(-1), [
+      "unlimited",
+      "claude/home",
+      s.UnlimitedSetting.FORCED,
+    ]);
+    assert.equal(
+      byLabel("home is unlimited").attributes["aria-checked"],
+      "true",
+    );
+    // Off again: back to auto, Djinn's detection, which finds none.
+    await s.act(async () => props(byLabel("home is unlimited")).onClick());
+    await settle();
+    assert.deepEqual(calls.at(-1), [
+      "unlimited",
+      "claude/home",
+      s.UnlimitedSetting.AUTO,
+    ]);
+    assert.equal(
+      byLabel("home is unlimited").attributes["aria-checked"],
+      "false",
+    );
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
+});

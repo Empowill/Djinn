@@ -3,8 +3,9 @@ package harness
 // The accounts the workers run on (T33). Every worker of an agent runs on one of its sign-ins (plan.SignIns): its own,
 // the agent's default folder, or one of its accounts, each a folder of the agent's own signed in once (djinn lead
 // add-account), in the developer's order of priority (plan.AccountOrder, decision Q295 B). An AccountPolicy picks one
-// at each start of a worker: the one the task ran on before while it may, else the first in the order neither paused
-// (djinn lead pause-account), limited, nor known out of quota (FirstInOrder, quota.go); with none such, the worker
+// at each start of a worker: the one the task ran on before while it may, else, among those neither paused (djinn
+// lead pause-account), limited, nor known out of quota, the one whose week ends soonest in the dynamic mode, by
+// default, or the first in the order in the manual mode (ByMode, quota.go); with none such, the worker
 // starts past its limits, in overflow, on the first that may spend extra credits. The lead follows the same policy
 // before each batch unless it is pinned (L2, leaddriver.go). The account goes in the worker's environment
 // (plan.AccountEnv) and on its task (Task.account, TaskRun.account).
@@ -44,6 +45,10 @@ type AccountOption struct {
 	Limit string
 	// Quota is its usage limits as Djinn last read them (quota.go); nil when never read.
 	Quota *Quota
+	// Unlimited: pseudo-unlimited, the dynamic mode takes it after the sign-ins with a quota and its quota never holds
+	// it back there; Detected tells Djinn found it gives no quota at all (quota.go), which the developer's word
+	// (SignIn.Unlimited) overrides either way.
+	Unlimited, Detected bool
 }
 
 // Free tells whether a worker may start on o at now: not paused, and no limit known to hold it.
@@ -60,6 +65,8 @@ type AccountChoice struct {
 	Ran     bool
 	// Now is the time of the choice.
 	Now time.Time
+	// Mode is how the developer chose a sign-in be picked: dynamic, by default, or manual (ByMode).
+	Mode planv1.AccountMode
 }
 
 // AccountPick is the sign-in an AccountPolicy picks.
@@ -72,10 +79,10 @@ type AccountPick struct {
 }
 
 // AccountPolicy picks the sign-in a worker starts on; ok is false when none may take it. It is the one place that
-// decides: FirstInOrder by default, which reads each sign-in's quota (quota.go).
+// decides: ByMode by default, which reads each sign-in's quota (quota.go).
 type AccountPolicy func(c AccountChoice) (pick AccountPick, ok bool)
 
-// WithAccountPolicy sets how a worker's sign-in is picked; FirstInOrder by default.
+// WithAccountPolicy sets how a worker's sign-in is picked; ByMode by default.
 func WithAccountPolicy(p AccountPolicy) Option { return func(h *Harness) { h.accountPolicy = p } }
 
 // accountKey names a sign-in: its agent, and its account's name ("" for the agent's own).
@@ -158,8 +165,21 @@ func (h *Harness) accountOptions(provider planv1.Provider) []AccountOption {
 		k := accountKey{provider, s.Name}
 		l := h.accountLimits[k]
 		out[i] = AccountOption{SignIn: s, LimitedUntil: l.until, Limit: l.what}
-		if q, ok := h.quotaOf(k); ok {
+		q, read := h.quotaOf(k)
+		if read {
 			out[i].Quota = copyQuota(q)
+		}
+		// No quota at all: a reading with no window, or with none, an agent that tells none. A failed probe is no
+		// reading: a Claude sign-in whose probe fails is not unlimited, its quota only unknown.
+		_, tells := h.providers[provider].(UsageProber)
+		out[i].Detected = !read && !tells || read && q.FiveHour == nil && q.SevenDay == nil
+		switch s.Unlimited {
+		case planv1.UnlimitedSetting_UNLIMITED_SETTING_FORCED:
+			out[i].Unlimited = true
+		case planv1.UnlimitedSetting_UNLIMITED_SETTING_LIMITED:
+			out[i].Unlimited = false
+		default:
+			out[i].Unlimited = out[i].Detected
 		}
 	}
 	return out
@@ -169,9 +189,14 @@ func (h *Harness) accountOptions(provider planv1.Provider) []AccountOption {
 func (h *Harness) choose(t *planv1.Task, options []AccountOption, now time.Time) (AccountPick, bool) {
 	policy := h.accountPolicy
 	if policy == nil {
-		policy = FirstInOrder
+		policy = ByMode
 	}
-	return policy(AccountChoice{Provider: agentOf(t), Options: options, Current: t.GetAccount(), Ran: len(t.GetRuns()) > 0, Now: now})
+	mode := planv1.AccountMode_ACCOUNT_MODE_DYNAMIC
+	if h.home != "" {
+		mode = plan.AccountModeOf(h.home)
+	}
+	return policy(AccountChoice{Provider: agentOf(t), Options: options, Current: t.GetAccount(), Ran: len(t.GetRuns()) > 0,
+		Now: now, Mode: mode})
 }
 
 // accountFor is the sign-in t's next worker starts on, and its account (nil for the agent's own); an error says why
