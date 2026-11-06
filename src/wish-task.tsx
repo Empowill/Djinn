@@ -36,6 +36,7 @@ import {
 } from "react";
 
 import {
+  type Account,
   Closer,
   HealthState,
   IntegrationState,
@@ -44,6 +45,7 @@ import {
   type Task,
   type TaskEvent,
   TaskEventKind,
+  TaskKind,
   TaskStatus,
 } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
@@ -132,6 +134,38 @@ export function agentOf(task: Task): string {
   const name = agentNames[task.provider] ?? "claude";
   return task.model ? `${name} · ${task.model}` : name;
 }
+
+// taskAccount names the sign-in a task's worker runs on, or ran on last, for its card: an account by its label, else
+// its name; its agent's own sign-in only once the task ran, and only when that agent has accounts here (accounts, the
+// machine's), where it tells one from the other. None for a watcher or an azima, which run no agent of theirs.
+export function taskAccount(
+  task: Task,
+  accounts: readonly Account[],
+): { label: string; title: string } | null {
+  if (task.provider === Provider.WATCH || task.kind === TaskKind.AZIMA)
+    return null;
+  if (task.account) {
+    const account = accounts.find((a) => a.name === task.account);
+    const label = account?.label || task.account;
+    return {
+      label,
+      title: t("task.account", {
+        account: label === task.account ? label : `${label} (${task.account})`,
+      }),
+    };
+  }
+  const provider =
+    task.provider === Provider.UNSPECIFIED ? Provider.CLAUDE : task.provider;
+  if (!task.startTime || !accounts.some((a) => a.provider === provider))
+    return null;
+  return {
+    label: t("task.own_sign_in"),
+    title: t("task.own_sign_in_detail"),
+  };
+}
+
+// noAccounts stands for the accounts while the window knows none.
+const noAccounts: Account[] = [];
 
 // promptPreview returns the first few lines of a prompt, trimmed and truncated with an ellipsis if long.
 export function promptPreview(
@@ -303,6 +337,11 @@ export const WishTask = memo(function WishTask({
       ?.scrollIntoView({ block: "center" });
   }, [focused, task.id]);
   const watcher = task.provider === Provider.WATCH;
+  // The accounts of this machine, as the lead's read gives them.
+  const account = taskAccount(
+    task,
+    useOptionalData((s) => s.leadDrive?.accounts ?? noAccounts, noAccounts),
+  );
   const holdable =
     !!onHold &&
     (task.status === TaskStatus.RUNNING || task.status === TaskStatus.PAUSED);
@@ -408,6 +447,11 @@ export const WishTask = memo(function WishTask({
                   </span>
                 ) : null;
               })()}
+              {account && (
+                <span className="task-account" title={account.title}>
+                  {account.label}
+                </span>
+              )}
               {time.text && (
                 <span className="task-time" title={time.title}>
                   {time.text}

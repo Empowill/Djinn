@@ -77,7 +77,7 @@ test("the Grimoire opens on its splash, then its book and its concepts", async (
   // Each concept link in the menu and each card in #words carries its inline SVG icon, and worker chips carry their kind tone.
   const nav = page.getByRole("navigation", { name: "Grimoire" });
   await expect(nav.getByRole("link", { name: "Introduction" })).toBeVisible();
-  await expect(nav.locator("a .nav-icon svg")).toHaveCount(35);
+  await expect(nav.locator("a .nav-icon svg")).toHaveCount(36);
   await expect(page.locator("#words .card.word .word-icon svg")).toHaveCount(
     20,
   );

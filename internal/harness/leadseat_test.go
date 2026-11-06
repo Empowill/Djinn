@@ -246,4 +246,58 @@ func TestLeadSeat(t *testing.T) {
 			t.Errorf("Accounts = %v", res.Msg)
 		}
 	})
+
+	// The developer pauses an account and an agent's own sign-in, then resumes them (T33): the workers' sign-ins
+	// follow, the lead's seat stays.
+	t.Run("pause", func(t *testing.T) {
+		t.Parallel()
+		s := driveSeats(t, func(int) ([]Event, error) { return nil, nil }, nil, nil)
+		s.addAccount(t, "work", planv1.Provider_PROVIDER_CLAUDE)
+		s.move(t, planv1.Provider_PROVIDER_CLAUDE, "", "work")
+		paused, err := s.lead.PauseAccount(t.Context(), connect.NewRequest(&planv1.LeadServicePauseAccountRequest{Name: "work"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(paused.Msg.GetNote(), "The account work (Claude Code) paused: no worker starts there") {
+			t.Errorf("pause note = %q", paused.Msg.GetNote())
+		}
+		if _, err := s.lead.PauseAccount(t.Context(), connect.NewRequest(&planv1.LeadServicePauseAccountRequest{
+			Provider: planv1.Provider_PROVIDER_ANTIGRAVITY,
+		})); err != nil {
+			t.Fatal(err)
+		}
+		agy := plan.SignIns(s.home, planv1.Provider_PROVIDER_ANTIGRAVITY)
+		claude := plan.SignIns(s.home, planv1.Provider_PROVIDER_CLAUDE)
+		if len(agy) != 1 || !agy[0].Paused || len(claude) != 2 || claude[0].Paused || claude[1].Name != "work" || !claude[1].Paused {
+			t.Errorf("sign-ins: antigravity %v, claude %v", agy, claude)
+		}
+		if seat := plan.ReadLeadSeat(s.home); seat.GetAccount() != "work" {
+			t.Errorf("the lead moved to %v", seat)
+		}
+		res, err := s.lead.Accounts(t.Context(), connect.NewRequest(&planv1.LeadServiceAccountsRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"Antigravity's own sign-in is paused", "Claude Code, paused)"} {
+			if !strings.Contains(res.Msg.GetText(), want) {
+				t.Errorf("Accounts text lacks %q:\n%s", want, res.Msg.GetText())
+			}
+		}
+		for _, req := range []*planv1.LeadServicePauseAccountRequest{
+			{}, {Name: "nobody"}, {Name: "work", Provider: planv1.Provider_PROVIDER_CODEX}, {Provider: planv1.Provider_PROVIDER_FAKE},
+		} {
+			if _, err := s.lead.PauseAccount(t.Context(), connect.NewRequest(req)); err == nil {
+				t.Errorf("PauseAccount(%v) passed", req)
+			}
+		}
+		for _, req := range []*planv1.LeadServiceResumeAccountRequest{{Name: "work"}, {Provider: planv1.Provider_PROVIDER_ANTIGRAVITY}} {
+			if _, err := s.lead.ResumeAccount(t.Context(), connect.NewRequest(req)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		agy, claude = plan.SignIns(s.home, planv1.Provider_PROVIDER_ANTIGRAVITY), plan.SignIns(s.home, planv1.Provider_PROVIDER_CLAUDE)
+		if agy[0].Paused || claude[1].Paused {
+			t.Errorf("still paused: antigravity %v, claude %v", agy, claude)
+		}
+	})
 }

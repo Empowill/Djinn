@@ -1,0 +1,3 @@
+# Case: claude ends without answering the get_usage control request (an older version, or a crash): Djinn's probe
+# says so, and the policy falls back to the simple overflow.
+{"type":"system","subtype":"init","session_id":"01a1aa2b-0000-7000-8000-000000000000","model":"claude-opus-5-5"}

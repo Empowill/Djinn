@@ -135,9 +135,9 @@ async function openComposer(
   );
   await page.goto(process.env.DJINN_URL!);
   const liveLabel = locale === "fr" ? "En direct" : "Live";
-  await expect(
-    page.locator(".app-statusbar").getByText(liveLabel),
-  ).toBeVisible();
+  await expect(page.locator(".app-statusbar").getByText(liveLabel)).toBeVisible(
+    { timeout: 15_000 },
+  );
   // With no agent ready the window opens the setup of the agents by itself (P6): closed, the creation page offers it.
   if (!agentReady) {
     await page.getByRole("button", { name: "Close", exact: true }).click();

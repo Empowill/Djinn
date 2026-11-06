@@ -135,6 +135,8 @@ type LeadService struct {
 	Wishes   *Wishes
 	UserHome string
 	Path     string
+	// Usage is what Djinn knows of each sign-in's usage limits (harness.Usage); nil where djinn up runs no workers.
+	Usage func() []*planv1.AccountUsage
 }
 
 func (s *LeadService) Set(

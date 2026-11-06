@@ -1039,6 +1039,54 @@ runs on it). The window's agents setup shows each account under its agent, where
 terminal of the panel. Djinn passes the folder's variable to the sessions it starts on the account and to the status
 check; it never reads nor stores a token.
 
+**The workers' accounts (T33).** Every worker of an agent runs on one of its *sign-ins*: its own (the default folder),
+then its accounts in the order they were added (`plan.SignIns`). One function picks it at each start of a worker,
+launch or resume (`harness.AccountPolicy`, `EarliestWeek` by default, decision Q258 B, `quota.go`), free meaning
+neither paused nor held by a limit: a task that ran stays on its sign-in while it is free and not known to be out of
+quota; a new one goes to the free sign-in whose week resets first among those with quota left (both windows under
+95 %), two weeks within an hour of each other going to the one with more left; with no quota known, `FirstFree`, the
+simple overflow: the first free sign-in in that order. With every free sign-in out of quota, `FirstFree` too: a quota
+spent does not hold a task back, as a limit does not (W409). The account goes in the worker's environment (`plan.AccountEnv`, `harness.go` `start`) and on its task
+(`Task.account`, each `TaskRun.account`); a Claude session on an account gets `autoMemoryDirectory` in its
+`--settings`, the own folder's `projects/<repository>/memory`, so that every account shares one memory.
+
+- **Pause.** `djinn lead pause-account work`, or `djinn lead pause-account --provider antigravity` for an agent's own
+  sign-in (`Account.paused`, `Settings.paused_sign_ins`), keeps new workers off it; `djinn lead resume-account` brings
+  it back. A running worker finishes its turn. While every sign-in of an agent is paused, its tasks wait (hold
+  `LIMIT`, "waits for a claude sign-in: its own is paused; work is paused"). The lead's seat never moves (Q31).
+- **A limit is held per sign-in.** A limit of the whole account (not per-minute, naming no model nor family such as
+  Claude's `seven_day_opus`) holds the sign-in a worker hit it on until its reset (or the backoff). When another
+  sign-in is free, the task resumes there at once, spending no resume, its wait reason "the account work hit the
+  account's session limit: resumes on the account perso"; the start event says "moved from the account work to the
+  account perso". A task waiting for its own account's reset moves as soon as another sign-in frees. A limit alone
+  never holds a task back (W409): with every sign-in not paused limited, a new task starts on the first and waits for
+  its own reset if the limit stops it too.
+- **The session follows.** On a move, Djinn copies the session's transcript (`projects/<folder>/<session>.jsonl`) from
+  the folder it ran in to the new one, so that `--resume` finds it; without it (Codex, or no transcript), the worker
+  starts a new session on its first prompt and the line that says why. **Not verified with two real accounts**: that
+  Claude Code resumes a copied transcript on another login, and that the prompt cache is lost (assumed).
+- **The quota of each sign-in.** Two sources, the latest reading winning, kept in memory (`Harness.quota`): a probe,
+  every 5 minutes and at start, for an agent with accounts, of each sign-in not read by a worker since
+  (`UsageProber`, `Claude.Usage`: `claude -p --input-format stream-json --output-format stream-json --verbose
+  --no-session-persistence --strict-mcp-config --disable-slash-commands`, stdin one control request
+  `{"type":"control_request","request_id":"djinn-usage","request":{"subtype":"get_usage"}}`, in the account's folder);
+  and each claude worker's `rate_limit_event`, whose `unifiedWindows` (`five_hour`, `seven_day`: utilization 0 to 1,
+  `resetsAt` in Unix seconds) come at every turn (an `allowed` one makes an event of no kind that is not written).
+  get_usage answers `rate_limits.five_hour|seven_day.{utilization (percent), resets_at (RFC 3339)}`, and
+  `rate_limits_available: false` in a folder signed in to nothing; undocumented, tried on claude 2.1.316 (W374, W380),
+  as T3 Code does. A reading older than 15 minutes counts as unknown. `LeadService.Accounts` gives them
+  (`AccountUsage`, `djinn lead accounts`, its `usage` with `--json`), with the probe's last failure and the sign-in
+  the next task takes.
+- **What the probe costs (W380, 05/11/2026, claude 2.1.316, a Team subscription).** No model turn, no cost
+  (`total_cost_usd` 0, `total_api_duration_ms` 0). 6 to 8 s each on a calm machine, 9 to 36 s at a load of 21 to 29
+  (Djinn's flags or none alike); 16 to 19 s each for 8 at once, all answered, the 5 hours' use unchanged by them: no
+  request limit seen at that rate. A folder signed in to nothing answers in 0.75 s: the time is the sign-in's and the
+  usage request's, not claude's start. Its weight in a request limit is not told by Anthropic: none seen. At one probe per sign-in every 5 minutes, two accounts and the own sign-in make 36 starts of
+  claude an hour, fewer while their workers tell their quota.
+- **Held in memory.** The limits held are read again at each pass from the tasks that wait for one: after a restart, a
+  limit no task waits for any more is forgotten, and the first worker to hit it again moves. The account fingerprint
+  (`TaskHealth.account`) is read in the task's own account folder.
+
 | Agent       | Variable            | What it moves, by its documentation (read 17/10/2026)                                                                                                                                                                                                                                     | Sign in, status                                                       |
 | ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | Claude Code | `CLAUDE_CONFIG_DIR` | "Each directory has its own settings, session history, and claude.ai login or API key" (`code.claude.com/docs/en/authentication`, Log in with multiple accounts); on Linux its `.credentials.json`, on macOS a Keychain entry keyed to the folder                                          | `claude auth login`; `claude auth status` exits 0 signed in, 1 not    |

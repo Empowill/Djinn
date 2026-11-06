@@ -92,9 +92,56 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   limit shows first in the attention bar, with a button for each agent or account signed in on this machine. One
   click sends the waiting events there. Without a click, they wait for the limit to reset.
 - **Several subscriptions on one machine.** An account is a folder of the agent's own, beside its default one, where
-  it keeps its login: Claude Code's configuration folder, Codex's home. Name one in the agents' setup or with the
-  command line, sign in there once with the agent's own command, in the panel's terminal; Djinn keeps no token, only
-  the folder. Antigravity has no such folder.
+  it keeps its login: Claude Code's configuration folder, Codex's home. The agents' setup, in the settings or from
+  the Djinn's menu, lists each agent with its accounts under it. Its last line adds one: the agent, a name such as
+  work, a label such as Work, as djinn lead add-account takes them. Sign in there once with the agent's own command,
+  from the account's line, in the panel's terminal; Djinn keeps no token and shows none, only the folder. Antigravity
+  has no such folder. The cross on an account's line forgets it and leaves its folder as it is, as djinn lead
+  remove-account does; djinn lead accounts lists them. Step by step, with the format of the name and the common
+  errors: [Configure several Claude accounts](#several-claude-accounts).
+- **Every worker runs on one of them.** Each new task of an agent starts on the sign-in whose week resets first,
+  among those neither paused nor limited that have quota left (under 95 % of their 5 hours and of their week): what
+  is left of a week is lost at its reset, so the week that ends first is spent first. Two weeks that end within an
+  hour of each other go to the one with more left to lose. A task that ran stays on the sign-in it ran on while that
+  one is free and has quota left: its session is there. When Djinn knows no quota, it takes the agent's own sign-in,
+  else its accounts in the order you added them, the first neither paused nor limited; when each one free is out of
+  quota, the first free in that order too, since a quota spent does not hold a task back alone. Its task's card names
+  the account it runs on, or ran on last, by its label, beside its model; where an agent has accounts, a task on the
+  agent's own reads own sign-in.
+- **Djinn knows each quota.** Every 5 minutes, for an agent with accounts, Djinn asks Claude Code the usage of each
+  sign-in without a model turn, and each worker tells its own at each of its turns; a reading older than 15 minutes
+  counts as unknown. djinn lead accounts shows, for each sign-in, its 5 hours and its week used, when the week
+  resets, when it was read, and which one the next task takes.
+- **The window shows each one.** In the agents' setup, under each sign-in's line, a second line says where it
+  stands: Active (signed in, workers may start there), Paused, or Limited until its reset. Then its week: a gauge of
+  the share used, the share in words, and when the week ends; its 5 hours used; and Next task here on the sign-in a
+  new task of the agent would take now. Hovered, the line tells when Djinn read it, by its probe or from a worker
+  running there. A gauge past 95 % fills in a brighter tone: no new task starts there until its week resets. Quota
+  not read yet waits for the first probe, within a minute of an account added; Quota could not be read says the probe
+  failed, why on hover (signed out, no answer). The panel reads them again every minute while it is open, and at
+  once after a pause. Every sign-in of an agent with accounts has this line; an agent without one shows it once a
+  worker told its quota, or while it is paused. Djinn reads the quota of Claude Code only: a Codex account's line says
+  its state alone.
+- **A limit moves the task.** A worker that hits a limit of its whole account moves at once to another sign-in, chosen
+  the same way, its session copied into that account's folder, without spending one of its resumes. The account stays
+  limited until its reset, and the next workers start elsewhere. With no other sign-in free, the task waits for the
+  reset, and moves as soon as another one frees. A session on an account keeps the memory of the agent's own folder.
+- **A task takes its session along.** Claude Code keeps a session in the folder of the sign-in it ran on. A task
+  resumed on the same sign-in, continued or past a limit, resumes its session there. Moved to another sign-in, its
+  session goes first into that account's folder: its transcript, and beside it the transcripts of its subagents and
+  its tool results, the newer copy winning when the task ran there before; never a login, a token or a setting. The
+  worker then resumes it, and its event reads its session copied there. When the copy cannot be made, or Claude Code
+  does not find the session where it resumes, the task fails nothing: its worker starts at once a new session, without
+  spending a resume, on its first prompt and a relay of what came before, the prompts it was given after it and the
+  last messages its workers wrote, and is told to read its worktree's history; its event says it starts a new
+  session. The prompt cache does not follow an account: the first turn on the other one reads the whole context again.
+- **Pause an account.** In the agents' setup, Pause on an account's line keeps every new worker off it, and Pause on
+  an agent's own line pauses its own sign-in (Antigravity's too); the line under it reads Paused until Resume brings
+  it back. A pause wins over a limit: a sign-in both paused and limited reads Paused.
+  From the command line, djinn lead pause-account work and djinn lead resume-account do the same, with the provider
+  flag and no name for an agent's own sign-in. A worker running there finishes its turn, the next ones go to another
+  sign-in, and while each sign-in of an agent is paused its tasks wait, saying so. A pause leaves the Djinn's own seat
+  where you put it.
 
 A batch costs about $0.16 to $0.22 on Opus 5.5, as Claude Code counts it, measured on 16/10/2026: about 18,600 tokens
 of rules, tools and system prompt read from the cache the last session wrote, and the batch's own message written to
@@ -202,3 +249,4 @@ template. See [Skills and templates](#skills-and-templates).
 - [Lead notes](#lead-notes): what the Djinn has learnt from past wishes.
 - [Restarts and updates](#restarts-and-updates): how the Djinn comes back after a restart.
 - [Usage and cost](#usage-and-cost): what the Djinn and its workers cost.
+- [Configure several Claude accounts](#several-claude-accounts): a second subscription, step by step.

@@ -418,6 +418,47 @@ func FindAccount(accounts []*planv1.Account, name string) *planv1.Account {
 	return nil
 }
 
+// SignIn is a sign-in of an agent a worker may run on: the agent's own (its default folder, no account) or one of its
+// accounts.
+type SignIn struct {
+	// Name is the account's name; "" for the agent's own sign-in.
+	Name string
+	// Account is the account; nil for the agent's own sign-in.
+	Account *planv1.Account
+	// Paused: Djinn starts no worker on it (djinn lead pause-account).
+	Paused bool
+}
+
+// SignIns are the sign-ins of provider's agent a worker may run on, in the order Djinn tries them: its own, then its
+// accounts in the order they were added, each with its pause; from settings.json in home.
+func SignIns(home string, provider planv1.Provider) []SignIn {
+	if provider == planv1.Provider_PROVIDER_UNSPECIFIED {
+		provider = planv1.Provider_PROVIDER_CLAUDE
+	}
+	settings := readSettings(home)
+	out := []SignIn{{Paused: slices.Contains(settings.GetPausedSignIns(), provider)}}
+	for _, a := range settings.GetAccounts() {
+		if a.GetProvider() == provider {
+			out = append(out, SignIn{Name: a.GetName(), Account: a, Paused: a.GetPaused()})
+		}
+	}
+	return out
+}
+
+// OwnFolder is the folder of provider's own sign-in, where its agent keeps its login and sessions without an account:
+// for Claude Code CLAUDE_CONFIG_DIR as Djinn was started with, else ~/.claude; "" for an agent without one.
+func OwnFolder(provider planv1.Provider, userHome string) string {
+	if v := accountVars[provider]; v != "" {
+		if dir := os.Getenv(v); dir != "" && filepath.IsAbs(dir) {
+			return filepath.Clean(dir)
+		}
+	}
+	if d := accountDefaults[provider]; d != "" && userHome != "" {
+		return filepath.Join(userHome, d)
+	}
+	return ""
+}
+
 // accountVars are the variables that point each agent to a folder of its own, by its documentation: Claude Code's
 // "Each directory has its own settings, session history, and claude.ai login or API key"
 // (code.claude.com/docs/en/authentication), Codex's "Codex stores its local state under CODEX_HOME" with its
@@ -1050,11 +1091,85 @@ func (s *LeadService) Accounts(
 		b.WriteString("No account: each agent runs on its own sign-in. djinn lead add-account <name> --provider " +
 			"claude names one, in a folder of its own.\n")
 	}
-	for _, a := range accounts {
-		fmt.Fprintf(&b, "- **%s** (%s, %s): %s\n  Sign in once: `%s`\n", a.GetName(), accountLabel(a), agentNames[a.GetProvider()],
-			a.GetConfigDirectory(), AccountLogin(a, runtime.GOOS))
+	for _, p := range readSettings(home).GetPausedSignIns() {
+		fmt.Fprintf(&b, "%s's own sign-in is paused: no worker starts there (djinn lead resume-account --provider %s).\n\n",
+			agentNames[p], providerWord(p))
 	}
-	return connect.NewResponse(&planv1.LeadServiceAccountsResponse{Text: b.String(), Accounts: accounts, Seat: seat}), nil
+	for _, a := range accounts {
+		paused := ""
+		if a.GetPaused() {
+			paused = ", paused"
+		}
+		fmt.Fprintf(&b, "- **%s** (%s, %s%s): %s\n  Sign in once: `%s`\n", a.GetName(), accountLabel(a), agentNames[a.GetProvider()],
+			paused, a.GetConfigDirectory(), AccountLogin(a, runtime.GOOS))
+	}
+	if len(accounts) > 0 {
+		b.WriteString("\nEach new worker runs on the sign-in of its agent whose week resets first, among those neither " +
+			"paused nor limited with quota left (under 95 % of their 5 hours and of their week); without a quota read, on " +
+			"its own sign-in, else on its accounts in this order. A task that ran stays where it ran while it may.\n")
+	}
+	var usage []*planv1.AccountUsage
+	if s.Usage != nil {
+		usage = s.Usage()
+	}
+	if len(usage) > 0 {
+		b.WriteString("\nUsage of each sign-in, as last read:\n")
+		for _, u := range usage {
+			fmt.Fprintf(&b, "- %s\n", UsageText(u))
+		}
+	}
+	return connect.NewResponse(&planv1.LeadServiceAccountsResponse{Text: b.String(), Accounts: accounts, Seat: seat,
+		Usage: usage}), nil
+}
+
+// UsageText says a sign-in's usage in a line: "work (claude): 5 h 44 %, week 27 % (resets Wed 11 Nov 11:00), read at
+// 06:10 by the probe; next".
+func UsageText(u *planv1.AccountUsage) string {
+	who := u.GetAccount()
+	if who == "" {
+		who = agentNames[u.GetProvider()] + "'s own sign-in"
+	} else {
+		who += " (" + agentNames[u.GetProvider()] + ")"
+	}
+	var parts []string
+	if w := u.GetFiveHour(); w != nil {
+		parts = append(parts, fmt.Sprintf("5 h %.0f %%", w.GetUsedPercent()))
+	}
+	if w := u.GetSevenDay(); w != nil {
+		week := fmt.Sprintf("week %.0f %%", w.GetUsedPercent())
+		if w.GetResetsTime() != nil {
+			week += " (resets " + w.GetResetsTime().AsTime().Local().Format("Mon 2 Jan 15:04") + ")"
+		}
+		parts = append(parts, week)
+	}
+	text := who + ": " + strings.Join(parts, ", ")
+	if len(parts) == 0 {
+		text = who + ": not read"
+	}
+	if u.GetReadTime() != nil {
+		by := "a worker"
+		if u.GetSource() == planv1.UsageSource_USAGE_SOURCE_PROBE {
+			by = "the probe"
+		}
+		text += ", read at " + u.GetReadTime().AsTime().Local().Format("15:04") + " by " + by
+	}
+	var notes []string
+	if u.GetProbeError() != "" {
+		notes = append(notes, "probe failed: "+u.GetProbeError())
+	}
+	if u.GetPaused() {
+		notes = append(notes, "paused")
+	}
+	if u.GetLimitedUntil() != nil {
+		notes = append(notes, "limited until "+u.GetLimitedUntil().AsTime().Local().Format("Mon 2 Jan 15:04"))
+	}
+	if u.GetNext() {
+		notes = append(notes, "next")
+	}
+	if len(notes) > 0 {
+		text += "; " + strings.Join(notes, "; ")
+	}
+	return text
 }
 
 // accountLabel is what the window calls a: its label, else its name.
@@ -1164,3 +1279,70 @@ func (s *LeadService) RemoveAccount(
 // LimitWait is how long the events of a lead that hit a limit wait before the same seat tries again, when the agent
 // did not say when the limit resets.
 const LimitWait = 15 * time.Minute
+
+// PauseAccount implements LeadService.PauseAccount.
+func (s *LeadService) PauseAccount(
+	ctx context.Context, req *connect.Request[planv1.LeadServicePauseAccountRequest],
+) (*connect.Response[planv1.LeadServicePauseAccountResponse], error) {
+	note, err := s.setPaused(ctx, req.Spec(), req.Msg, req.Msg.GetName(), req.Msg.GetProvider(), true)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.LeadServicePauseAccountResponse{Note: note}), nil
+}
+
+// ResumeAccount implements LeadService.ResumeAccount.
+func (s *LeadService) ResumeAccount(
+	ctx context.Context, req *connect.Request[planv1.LeadServiceResumeAccountRequest],
+) (*connect.Response[planv1.LeadServiceResumeAccountResponse], error) {
+	note, err := s.setPaused(ctx, req.Spec(), req.Msg, req.Msg.GetName(), req.Msg.GetProvider(), false)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&planv1.LeadServiceResumeAccountResponse{Note: note}), nil
+}
+
+// setPaused pauses or resumes the account called name, or without a name the own sign-in of provider's agent, in
+// settings.json, and says what changes in a line.
+func (s *LeadService) setPaused(ctx context.Context, spec connect.Spec, msg proto.Message, name string,
+	provider planv1.Provider, paused bool,
+) (string, error) {
+	home := s.Wishes.home()
+	verb := "resumed: workers start there again"
+	if paused {
+		verb = "paused: no worker starts there; the next ones run on another sign-in of the agent, or wait for one"
+	}
+	var note string
+	err := write(ctx, s.Wishes.Store, spec, msg, func(*store.Tx) error {
+		return changeSettings(home, func(settings *uiv1.Settings) error {
+			if name == "" {
+				if accountDefaults[provider] == "" {
+					return connect.NewError(connect.CodeInvalidArgument, errors.New(
+						"give an account's name, or --provider claude, codex or antigravity for an agent's own sign-in"))
+				}
+				settings.PausedSignIns = slices.DeleteFunc(settings.PausedSignIns, func(p planv1.Provider) bool { return p == provider })
+				if paused {
+					settings.PausedSignIns = append(settings.PausedSignIns, provider)
+				}
+				note = fmt.Sprintf("%s's own sign-in %s.", agentNames[provider], verb)
+				return nil
+			}
+			a := FindAccount(settings.GetAccounts(), name)
+			if a == nil {
+				return connect.NewError(connect.CodeNotFound, fmt.Errorf("no account is called %s", name))
+			}
+			if provider != planv1.Provider_PROVIDER_UNSPECIFIED && provider != a.GetProvider() {
+				return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("the account %s is %s's, not %s's",
+					name, agentNames[a.GetProvider()], agentNames[provider]))
+			}
+			a.Paused = paused
+			note = fmt.Sprintf("The account %s (%s) %s.", name, agentNames[a.GetProvider()], verb)
+			return nil
+		})
+	})
+	if err != nil {
+		return "", err
+	}
+	s.Wishes.ChangeLead()
+	return note, nil
+}
