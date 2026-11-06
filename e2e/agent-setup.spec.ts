@@ -72,6 +72,9 @@ async function simulate(page: Page, states: States) {
 
 const row = (page: Page, id: string) =>
   page.locator(`.provider-setting[data-agent="${id}"]`);
+// own is the line of an agent's own sign-in, in the order of the accounts: where it pauses.
+const own = (page: Page, id: string) =>
+  page.locator(`.provider-setting[data-own="${id}"]`);
 
 test("with no agent ready, the setup opens by itself, installs an agent and checks it again", async ({
   page,
@@ -110,8 +113,10 @@ test("with no agent ready, the setup opens by itself, installs an agent and chec
   await expect(claude.getByText("Ready", { exact: true })).toBeVisible();
   await expect(claude.getByRole("button", { name: "Install" })).toHaveCount(0);
   await expect(claude.getByRole("button", { name: "Sign in" })).toHaveCount(0);
-  await expect(claude.getByRole("button", { name: /Pause/ })).toBeVisible();
-  await expect(claude.getByRole("button")).toHaveCount(1);
+  await expect(claude.getByRole("button")).toHaveCount(0);
+  await expect(
+    own(page, "claude").getByRole("button", { name: /Pause/ }),
+  ).toBeVisible();
   await expect(panel.getByText(/No agent is ready/)).toHaveCount(0);
 
   await panel.getByRole("button", { name: "Close" }).last().click();
@@ -142,10 +147,10 @@ test("the settings show the setup of the agents", async ({ page }) => {
   await expect(
     row(page, "claude").getByRole("button", { name: "Sign in" }),
   ).toHaveCount(0);
+  await expect(row(page, "claude").getByRole("button")).toHaveCount(0);
   await expect(
-    row(page, "claude").getByRole("button", { name: /Pause/ }),
+    own(page, "claude").getByRole("button", { name: /Pause/ }),
   ).toBeVisible();
-  await expect(row(page, "claude").getByRole("button")).toHaveCount(1);
   // Sign-in unknown: signing in stays offered, never pushed.
   const login = row(page, "codex").getByRole("button", { name: "Sign in" });
   await expect(login).toHaveClass(/secondary/);

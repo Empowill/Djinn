@@ -1,7 +1,7 @@
 # Configure several Claude accounts
 
-With two Claude subscriptions on one machine, Djinn runs its workers on both, and spends first the week that ends
-first. Each extra subscription is an account: a folder of Claude Code's own, beside its default one, where Claude Code
+With two Claude subscriptions on one machine, Djinn runs its workers on both, in the order of priority you give
+them. Each extra subscription is an account: a folder of Claude Code's own, beside its default one, where Claude Code
 keeps that account's login. Djinn makes the folder and runs the sign-in; it keeps no token and shows none.
 
 ## Before you start
@@ -19,7 +19,8 @@ keeps that account's login. Djinn makes the folder and runs the sign-in; it keep
 3. Type the account's **name**, such as work: lowercase letters, digits and dashes (the format is below).
 4. Type a **label** if you want one, such as Work account: any text. The window shows it instead of the name.
 5. Click **Add**. Djinn makes the folder: in your home folder, a hidden folder named .claude- followed by the name
-   (for work, .claude-work beside .claude). The account's line appears under Claude Code, and reads Not signed in.
+   (for work, .claude-work beside .claude). The account's line appears at the bottom of the order, and reads Not
+   signed in.
 6. Click **Sign in** on the account's line. The panel's terminal runs Claude Code's own sign-in in that folder, and a
    page may open in your browser. Check that the page shows the second subscription before you accept: a browser
    already signed in to the first one signs that one in again.
@@ -42,15 +43,23 @@ agent and the label; djinn lead accounts lists the accounts.
 
 ## How Djinn shares the workers
 
-- **The week that ends first is spent first.** Each new task of Claude Code starts on the sign-in whose week resets
-  first, among those neither paused nor limited that have quota left: under 95 % of their 5 hours and of their week.
-  What is left of a week is lost at its reset. Two weeks that end within an hour of each other go to the one with more
-  left to lose.
+- **Your order decides.** Each new task of Claude Code starts on the first sign-in in the order of priority neither
+  paused, limited nor past 95 % of its 5 hours or of its week. Under Accounts · order of priority, each line shows its
+  rank and a grip: drag a line up or down, or focus its grip and press Alt+Up or Alt+Down. The new order counts at
+  once for the next task; nothing that runs stops. A week that ends soon with quota left is not spent first by itself:
+  put that account at the top. From the command line: djinn lead order --sign-in claude/work --sign-in claude.
+- **The Djinn follows the same order.** Unless you pin it, each batch of the Djinn starts on the first free sign-in
+  of its agent. **The Djinn's account**, above the list, pins it on one sign-in whatever the order, or, with Follows
+  the order, takes the pin off; the menu of the Djinn's chip offers the same, and djinn lead pin work, then djinn lead
+  pin --unpin, do it from the command line. A crown marks where the Djinn runs.
+- **When every sign-in is full, Djinn overflows.** It starts the task on the first sign-in that may spend extra
+  credits, if Claude Code told it, and that line reads In overflow while a session runs there past its limits. If the
+  account refuses, the task waits for the reset.
 - **A task stays where it ran.** A task that ran on a sign-in goes back to it while that one is free and has quota
   left: its session is there.
 - **Djinn reads each quota.** Every 5 minutes, Djinn asks Claude Code the usage of each sign-in, without a model turn;
-  each worker also tells its own at each of its turns. A reading older than 15 minutes counts as unknown. When Djinn
-  knows no quota, it takes the agent's own sign-in, then the accounts in the order you added them.
+  each worker also tells its own at each of its turns. A reading older than 15 minutes counts as unknown, and an
+  unknown quota holds no sign-in back: it is taken at its rank.
 - **A limit moves the task.** A worker that hits the limit of its account moves at once to another sign-in, its session
   copied into that account's folder. The account stays limited until its reset; with no other sign-in free, the task
   waits for the reset.

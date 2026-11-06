@@ -1016,7 +1016,12 @@ each batch starts on the sign-in of its agent that the account policy picks for 
 the first in the developer's order neither paused, limited nor known out of quota, else in overflow. It keeps its agent
 and its model; only the sign-in follows (`LeadDriver.place`, `Harness.pickLead`). A move to an account pins the lead
 there (`ui.v1.Settings.lead_pinned`, `plan.PinLead`): it stays on that account, paused or limited, as the developer
-chose; a move without an account lets it follow the order again. A limit the lead hits holds its sign-in for every
+chose; a move without an account lets it follow the order again. `djinn lead pin [account]` (`LeadService.Pin`) pins
+it on a sign-in of its agent without moving it (no account: its agent's own sign-in), and `djinn lead pin --unpin`
+takes the pin off (Q317): the next batch starts again on the first free sign-in in the order; the window's lead menu
+(Follows the order, then each sign-in of its agent) and the accounts screen (The Djinn's account) call it.
+`LeadService.Get` says `pinned`, and the chip names the account of the last batch while the lead follows the order. A
+limit the lead hits holds its sign-in for every
 worker too (`Harness.holdLead`), and its stream's quota counts as a worker's (`noteQuota`).
 
 **Which agents may lead.** Claude: its rules in `--append-system-prompt-file` (W131). Codex: its rules as the thread's
@@ -1055,7 +1060,9 @@ or one of its accounts, in the developer's order of priority (decision Q295 B): 
 (`ui.v1.Settings.account_order`, `plan.AccountOrder`) ranks the sign-ins of every agent from the highest priority to
 the lowest; a sign-in it does not name (none written yet, an account added since) comes after, in the order by default:
 each agent's own, then its accounts as added. `plan.WriteAccountOrder` writes the whole list at once, refusing an
-unknown sign-in or one named twice; the window's drag and its RPC come in a later task. The order never changes a
+unknown sign-in or one named twice; `djinn lead order --sign-in claude/work --sign-in claude …` (`LeadService.Order`,
+a sign-in as `agent` or `agent/name`) writes it, and the accounts screen sends it whole after each drag or Alt+Up and
+Alt+Down (`src/sign-in-order.tsx`); `LeadService.Accounts` gives it back (`order`, with `pinned`). The order never changes a
 worker's agent. One function picks the sign-in at each start of a worker, launch or resume (`harness.AccountPolicy`,
 `FirstInOrder` by default, `quota.go`; it replaced Q258 B's week that resets first): a task that ran stays on its
 sign-in while it is free (neither paused nor held by a limit) and not known out of quota (either window at 95 % or
@@ -1068,8 +1075,9 @@ one a limit holds (W409: a limit learnt from a message does not hold a task back
 the first in the order. If the agent refuses, the worker hits the limit, which holds that sign-in: the task moves to
 the next one not held, or waits for its reset as before. The start event says "in overflow: every sign-in of claude is
 full, limited or paused; it spends extra credits if the account allows them, else waits for the reset", and
-`Harness.Overflowing` (a running worker) and `LeadDriver.Overflowing` (the lead's running session) tell it for the
-window; no proto field carries it yet. The account goes in the worker's environment (`plan.AccountEnv`, `harness.go` `start`) and on its task
+`Harness.Overflowing` (a running worker) and `LeadDriver.Overflowing` (the lead's running session) tell it:
+`AccountUsage.overflowing` marks the sign-in where a worker, or the lead's running batch (`LeadBatch.overflow`), runs
+past its limits, and the accounts screen reads In overflow there. The account goes in the worker's environment (`plan.AccountEnv`, `harness.go` `start`) and on its task
 (`Task.account`, each `TaskRun.account`); a Claude session on an account gets `autoMemoryDirectory` in its
 `--settings`, the own folder's `projects/<repository>/memory`, so that every account shares one memory.
 
