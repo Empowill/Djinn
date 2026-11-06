@@ -261,8 +261,8 @@ func mockupPrompt(
 		"never merges your commits.\n"+
 		"3. Put the folder as the mockup's next version: %s; its link stays the same.\n", put)
 	if tilasm != nil {
-		fmt.Fprintf(&b, "4. Reply to each comment sent: `djinn tilasm reply %s <comment> --text \"…\"`: what you "+
-			"changed, or why not.\n", tilasm.GetCode())
+		fmt.Fprintf(&b, "4. Reply to each comment sent: `djinn tilasm reply %s <comment> --wish %s --text \"…\"`: what "+
+			"you changed, or why not.\n", tilasm.GetCode(), wish)
 	} else {
 		b.WriteString("4. Link the new tilasm from the question's context (`djinn://tilasm/<id>`).\n")
 	}

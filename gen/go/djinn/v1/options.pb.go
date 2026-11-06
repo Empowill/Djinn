@@ -178,6 +178,118 @@ func (x *Unique) GetFields() []string {
 	return nil
 }
 
+// What a refused call takes to pass: one field of the request and the values that fit it. The server puts it as a
+// detail of the error; the command line prints the command again with each value, ready to run, and djinn mcp names
+// the field and the values.
+type Retry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The request's field to set, by its name in the proto (project_id, wish_id, wish).
+	Field string `protobuf:"bytes,1,opt,name=field,proto3" json:"field,omitempty"`
+	// The values that fit, best first.
+	Values        []*RetryValue `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Retry) Reset() {
+	*x = Retry{}
+	mi := &file_djinn_v1_options_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Retry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Retry) ProtoMessage() {}
+
+func (x *Retry) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_options_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Retry.ProtoReflect.Descriptor instead.
+func (*Retry) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_options_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Retry) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *Retry) GetValues() []*RetryValue {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+// One value of a Retry.
+type RetryValue struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What to give the field, as the command line takes it: a project's name, a wish's identifier.
+	Value string `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	// What the value is, in a few words: a wish's title.
+	Label         string `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetryValue) Reset() {
+	*x = RetryValue{}
+	mi := &file_djinn_v1_options_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetryValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetryValue) ProtoMessage() {}
+
+func (x *RetryValue) ProtoReflect() protoreflect.Message {
+	mi := &file_djinn_v1_options_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetryValue.ProtoReflect.Descriptor instead.
+func (*RetryValue) Descriptor() ([]byte, []int) {
+	return file_djinn_v1_options_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *RetryValue) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *RetryValue) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
 var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
@@ -329,7 +441,14 @@ const file_djinn_v1_options_proto_rawDesc = "" +
 	"\n" +
 	"\x16djinn/v1/options.proto\x12\bdjinn.v1\x1a google/protobuf/descriptor.proto\" \n" +
 	"\x06Unique\x12\x16\n" +
-	"\x06fields\x18\x01 \x03(\tR\x06fields*X\n" +
+	"\x06fields\x18\x01 \x03(\tR\x06fields\"K\n" +
+	"\x05Retry\x12\x14\n" +
+	"\x05field\x18\x01 \x01(\tR\x05field\x12,\n" +
+	"\x06values\x18\x02 \x03(\v2\x14.djinn.v1.RetryValueR\x06values\"8\n" +
+	"\n" +
+	"RetryValue\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label*X\n" +
 	"\n" +
 	"Visibility\x12\x1a\n" +
 	"\x16VISIBILITY_UNSPECIFIED\x10\x00\x12\x15\n" +
@@ -368,35 +487,38 @@ func file_djinn_v1_options_proto_rawDescGZIP() []byte {
 }
 
 var file_djinn_v1_options_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_djinn_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_djinn_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_djinn_v1_options_proto_goTypes = []any{
 	(Visibility)(0),                     // 0: djinn.v1.Visibility
 	(Writes)(0),                         // 1: djinn.v1.Writes
 	(*Unique)(nil),                      // 2: djinn.v1.Unique
-	(*descriptorpb.MethodOptions)(nil),  // 3: google.protobuf.MethodOptions
-	(*descriptorpb.ServiceOptions)(nil), // 4: google.protobuf.ServiceOptions
-	(*descriptorpb.MessageOptions)(nil), // 5: google.protobuf.MessageOptions
-	(*descriptorpb.FieldOptions)(nil),   // 6: google.protobuf.FieldOptions
+	(*Retry)(nil),                       // 3: djinn.v1.Retry
+	(*RetryValue)(nil),                  // 4: djinn.v1.RetryValue
+	(*descriptorpb.MethodOptions)(nil),  // 5: google.protobuf.MethodOptions
+	(*descriptorpb.ServiceOptions)(nil), // 6: google.protobuf.ServiceOptions
+	(*descriptorpb.MessageOptions)(nil), // 7: google.protobuf.MessageOptions
+	(*descriptorpb.FieldOptions)(nil),   // 8: google.protobuf.FieldOptions
 }
 var file_djinn_v1_options_proto_depIdxs = []int32{
-	3,  // 0: djinn.v1.visibility:extendee -> google.protobuf.MethodOptions
-	3,  // 1: djinn.v1.autostart:extendee -> google.protobuf.MethodOptions
-	3,  // 2: djinn.v1.writes:extendee -> google.protobuf.MethodOptions
-	3,  // 3: djinn.v1.method_alias:extendee -> google.protobuf.MethodOptions
-	3,  // 4: djinn.v1.command_line_only:extendee -> google.protobuf.MethodOptions
-	4,  // 5: djinn.v1.alias:extendee -> google.protobuf.ServiceOptions
-	5,  // 6: djinn.v1.unique:extendee -> google.protobuf.MessageOptions
-	6,  // 7: djinn.v1.env:extendee -> google.protobuf.FieldOptions
-	6,  // 8: djinn.v1.positional:extendee -> google.protobuf.FieldOptions
-	6,  // 9: djinn.v1.json_only:extendee -> google.protobuf.FieldOptions
-	0,  // 10: djinn.v1.visibility:type_name -> djinn.v1.Visibility
-	1,  // 11: djinn.v1.writes:type_name -> djinn.v1.Writes
-	2,  // 12: djinn.v1.unique:type_name -> djinn.v1.Unique
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	10, // [10:13] is the sub-list for extension type_name
-	0,  // [0:10] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	4,  // 0: djinn.v1.Retry.values:type_name -> djinn.v1.RetryValue
+	5,  // 1: djinn.v1.visibility:extendee -> google.protobuf.MethodOptions
+	5,  // 2: djinn.v1.autostart:extendee -> google.protobuf.MethodOptions
+	5,  // 3: djinn.v1.writes:extendee -> google.protobuf.MethodOptions
+	5,  // 4: djinn.v1.method_alias:extendee -> google.protobuf.MethodOptions
+	5,  // 5: djinn.v1.command_line_only:extendee -> google.protobuf.MethodOptions
+	6,  // 6: djinn.v1.alias:extendee -> google.protobuf.ServiceOptions
+	7,  // 7: djinn.v1.unique:extendee -> google.protobuf.MessageOptions
+	8,  // 8: djinn.v1.env:extendee -> google.protobuf.FieldOptions
+	8,  // 9: djinn.v1.positional:extendee -> google.protobuf.FieldOptions
+	8,  // 10: djinn.v1.json_only:extendee -> google.protobuf.FieldOptions
+	0,  // 11: djinn.v1.visibility:type_name -> djinn.v1.Visibility
+	1,  // 12: djinn.v1.writes:type_name -> djinn.v1.Writes
+	2,  // 13: djinn.v1.unique:type_name -> djinn.v1.Unique
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	11, // [11:14] is the sub-list for extension type_name
+	1,  // [1:11] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_djinn_v1_options_proto_init() }
@@ -410,7 +532,7 @@ func file_djinn_v1_options_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_options_proto_rawDesc), len(file_djinn_v1_options_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   1,
+			NumMessages:   3,
 			NumExtensions: 10,
 			NumServices:   0,
 		},

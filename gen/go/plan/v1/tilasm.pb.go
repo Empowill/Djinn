@@ -1918,7 +1918,8 @@ type TilasmServiceReplyRequest struct {
 	Text string `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
 	// A task made of the comment, by code (W60) or identifier; repeat it for each.
 	Task []string `protobuf:"bytes,4,rep,name=task,proto3" json:"task,omitempty"`
-	// The wish, when a code is given and several wishes have it.
+	// The wish, when a code is given and several wishes have it; a worker's own by default. A worker replies on the
+	// tilasms of its own wish only, signed with its task's code.
 	Wish string `protobuf:"bytes,5,opt,name=wish,proto3" json:"wish,omitempty"`
 	// Who replies: your task's code (W12) for a worker; lead by default.
 	Author        string `protobuf:"bytes,6,opt,name=author,proto3" json:"author,omitempty"`

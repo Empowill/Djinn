@@ -2759,6 +2759,9 @@ message QuestionServiceAskRequest {
   // continues it with "Decision Qnn: ...", once a slot is free. One blocking question at a time, two per task; three
   // that do not block.
   bool wait = 14;
+  // File holding what is at stake, in Markdown, read in place of --context; a relative path starts from the current
+  // directory.
+  string context_file = 15 [(buf.validate.field).string.max_len = 4096];
 }
 
 message QuestionServiceAskResponse {
@@ -5410,8 +5413,9 @@ message TaskServiceSpawnRequest {
     (buf.validate.field).string.min_len = 1,
     (buf.validate.field).string.max_len = 500
   ];
-  // Project to work in; by default the wish's project, when it has only one. For a wish without any project, the
-  // task runs outside any project: read-only, in an empty folder of its own.
+  // Project to work in, by its name or identifier; by default the project of the azima part_of names, else the wish's
+  // project when it has only one. Refused in a wish of several projects that names none, with the command again for
+  // each. For a wish without any project, the task runs outside any project: read-only, in an empty folder of its own.
   string project_id = 3 [
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
@@ -5656,9 +5660,14 @@ message TaskOverlap {
 }
 
 message TaskServiceGetRequest {
-  // The task.
+  // The task: its code (W1, T07) or its identifier.
   string task_id = 1 [
     (buf.validate.field).required = true,
+    (buf.validate.field).string.pattern = "^([WwTt][0-9]{1,4}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+  ];
+  // Wish the task belongs to, when given by code and the code is in several wishes.
+  string wish_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.uuid = true
   ];
 }

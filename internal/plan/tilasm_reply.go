@@ -48,8 +48,15 @@ func (t *Tilasms) Reply(
 		if err != nil {
 			return err
 		}
+		author := m.GetAuthor()
+		if caller := CallerFromContext(ctx); author == "" && caller != nil {
+			// A worker signs with its task's code.
+			if task, err := store.Get[*planv1.Task](ctx, tx, caller.TaskID); err == nil {
+				author = task.GetCode()
+			}
+		}
 		comment.Reply = &planv1.CommentReply{
-			Text: m.GetText(), Author: cmp.Or(m.GetAuthor(), defaultAuthor), CreateTime: timestamppb.Now(), TaskIds: tasks,
+			Text: m.GetText(), Author: cmp.Or(author, defaultAuthor), CreateTime: timestamppb.Now(), TaskIds: tasks,
 		}
 		if err := tx.Put(comment); err != nil {
 			return err

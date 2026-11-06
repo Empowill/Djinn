@@ -27,7 +27,14 @@ const (
 // parse builds the request md from the arguments of a command line: the required fields are positional, in
 // field-number order, and the other fields are --kebab-case flags.
 func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message, error) {
+	l, err := parseLine(md, args)
+	return l.req, err
+}
+
+// parseLine reads a command line as parse does, and the command line's own --wish-id of a scoped request.
+func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 	msg := dynamicpb.NewMessage(md)
+	l := line{req: msg}
 	pos := positionals(md)
 	next, onlyPositional := 0, false
 	for i := 0; i < len(args); i++ {
@@ -38,34 +45,49 @@ func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message
 		}
 		if onlyPositional || !strings.HasPrefix(arg, "--") {
 			if next == len(pos) {
-				return nil, fmt.Errorf("unexpected argument %q", arg)
+				return line{}, fmt.Errorf("unexpected argument %q", arg)
 			}
 			if err := set(msg, pos[next], arg); err != nil {
-				return nil, fmt.Errorf("%s: %w", label(pos[next]), err)
+				return line{}, fmt.Errorf("%s: %w", label(pos[next]), err)
 			}
 			next++
 			continue
 		}
 		name, value, hasValue := strings.Cut(arg[2:], "=")
 		fd := flag(md, name)
+		if fd == nil && (name == "wish-id" || name == "wish") && scoped(md) {
+			// The command line's own flag: the wish a task given by code is looked up in.
+			if !hasValue {
+				if i+1 == len(args) {
+					return line{}, fmt.Errorf("--%s needs a value", name)
+				}
+				i++
+				value = args[i]
+			}
+			if !uuidPattern.MatchString(value) {
+				return line{}, fmt.Errorf("--%s: %q is not a wish's UUID; expected a UUID", name, value)
+			}
+			l.wish = value
+			continue
+		}
 		if fd == nil {
-			return nil, fmt.Errorf("unknown flag --%s", name)
+			return line{}, fmt.Errorf("unknown flag --%s", name)
 		}
 		if fd.Kind() == protoreflect.BoolKind && !fd.IsList() && !hasValue {
 			value, hasValue = "true", true
 		}
 		if !hasValue {
 			if i+1 == len(args) {
-				return nil, fmt.Errorf("%s needs a value", label(fd))
+				return line{}, fmt.Errorf("%s needs a value", label(fd))
 			}
 			i++
 			value = args[i]
 		}
 		if err := set(msg, fd, value); err != nil {
-			return nil, fmt.Errorf("%s: %w", label(fd), err)
+			return line{}, fmt.Errorf("%s: %w", label(fd), err)
 		}
 	}
-	return msg, nil
+	return l, nil
 }
 
 // format is the inverse of parse: the arguments that build msg.
@@ -157,10 +179,19 @@ func rules(fd protoreflect.FieldDescriptor) *validate.FieldRules {
 	return r
 }
 
+// flag is the field of md the flag --name sets; a wish's flag answers to its other spelling too (wishAlias), when it
+// names the wish by UUID (isWishField).
 func flag(md protoreflect.MessageDescriptor, name string) protoreflect.FieldDescriptor {
 	for _, fd := range byNumber(md) {
 		if !positional(fd) && kebab(string(fd.Name())) == name {
 			return fd
+		}
+	}
+	if alias := wishAlias(name); alias != "" {
+		for _, fd := range byNumber(md) {
+			if !positional(fd) && kebab(string(fd.Name())) == alias && isWishField(fd) {
+				return fd
+			}
 		}
 	}
 	return nil
@@ -432,6 +463,12 @@ func text(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 
 // expect says what a field accepts, for help and errors.
 func expect(fd protoreflect.FieldDescriptor) string {
+	switch {
+	case projectField(fd):
+		return "a project's name or UUID"
+	case taskField(fd):
+		return "a task's code (W12, T07) or UUID"
+	}
 	if od := ref(fd); od != nil {
 		var alts []string
 		for i := range od.Fields().Len() {

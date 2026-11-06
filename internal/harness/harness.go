@@ -907,7 +907,7 @@ func (h *Harness) spawn(
 	if err != nil {
 		return nil, plan.Status(err)
 	}
-	project, err := pickProject(ctx, h.store, wish, req.GetProjectId())
+	project, err := pickProject(ctx, h.store, wish, req.GetProjectId(), req.GetPartOf())
 	if err != nil {
 		return nil, plan.Status(err)
 	}
@@ -1777,17 +1777,28 @@ func editQuestion(t *planv1.Task, project *planv1.Project) *planv1.Question {
 	}
 }
 
-// pickProject is the project a task of wish works in: id, or the wish's only project; none for a wish without
-// any project.
-func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id string) (*planv1.Project, error) {
+// pickProject is the project a task of wish works in: id, else the project of the azima partOf names when it has
+// one, else the wish's only project; none for a wish without any project. A refusal names the wish's projects, which
+// the command line offers as the corrected commands.
+func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id, partOf string) (*planv1.Project, error) {
 	ids := wish.GetProjectIds()
+	if id == "" && len(ids) > 1 && partOf != "" {
+		// What resolveAzima refuses is said again where the part is placed.
+		if azimaID, err := resolveAzima(ctx, tx, wish.GetId(), partOf); err == nil {
+			if azima, err := store.Get[*planv1.Task](ctx, tx, azimaID); err == nil && slices.Contains(ids, azima.GetProjectId()) {
+				id = azima.GetProjectId()
+			}
+		}
+	}
 	if id == "" {
 		if len(ids) == 0 {
 			return nil, nil
 		}
 		if len(ids) != 1 {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-				"the wish has %d projects: name one with --project-id", len(ids)))
+			values := plan.ProjectValues(ctx, tx, ids)
+			return nil, plan.Retry(connect.CodeInvalidArgument, fmt.Errorf(
+				"the wish has %d projects: name one with --project-id (%s), or give --part-of an azima of one",
+				len(ids), plan.ValueNames(values)), "project_id", values...)
 		}
 		id = ids[0]
 	}
@@ -1796,8 +1807,10 @@ func pickProject(ctx context.Context, tx store.Reader, wish *planv1.Wish, id str
 		return nil, err
 	}
 	if len(ids) > 0 && !slices.ContainsFunc(ids, func(s string) bool { return s == project.GetId() }) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
-			"project %s is not one of the wish's projects", project.GetName()))
+		values := plan.ProjectValues(ctx, tx, ids)
+		return nil, plan.Retry(connect.CodeInvalidArgument, fmt.Errorf(
+			"project %s is not one of the wish's projects (%s): add it first with djinn wish add-project %s --project-id %s, or name one of them",
+			project.GetName(), plan.ValueNames(values), wish.GetId(), project.GetName()), "project_id", values...)
 	}
 	return project, nil
 }

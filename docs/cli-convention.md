@@ -76,6 +76,27 @@ The `oneof` rule is how a question is named by its code or its identifier: `Ques
 `^Q[0-9]{2,3}$`) then `id` (a UUID), so `Q03` lands in `code` and a UUID in `id`. An input no member accepts
 is an error that gives each member's reason.
 
+**Names and codes where an identifier is wanted** (W474). A field `project_id` or `project_ids` takes a project's name
+too (case ignored, or the only name it starts): the command line lists the projects and sends the identifier. A field
+`task_id` that wants a UUID, and takes no environment variable, takes a task's code too (`W12`, `T07`): the command line
+asks `djinn task get` for it, in the wish of the request, else in the wish its own `--wish-id` names (shown in the help
+of such a command; its request has no wish), else in every wish. A wish's flag answers to both spellings: `--wish-id`
+where the request names it `wish`, `--wish` where it names it `wish_id`, when that field is the wish the request acts
+in (a UUID), never a destination such as `djinn task move --wish`.
+
+**A refusal says what fits.** The server puts a `djinn.v1.Retry` (a field, and the values that fit it, each with a
+label) as a detail of an error: a spawn that names no project in a wish of several, a code in several wishes. The
+command line prints the command again with each value, ready to run, a text longer than 200 characters or of several
+lines cut to `…`; `djinn mcp` adds a line that names the field and the values:
+
+```
+$ djinn tilasm comments L01 --send 1
+error: failed_precondition: 2 wishes have a tilasm L01: give its identifier, or the wish with --wish
+  run it again with what fits:
+  djinn tilasm comments L01 --wish 01a1… --send 1  # Dew
+  djinn tilasm comments L01 --wish 01a1… --send 1  # Other
+```
+
 `--` ends the flags: what follows is positional, even when it starts with `--`. The zero value of an enum
 (`*_UNSPECIFIED`) cannot be typed. Maps, `bytes` and other nested messages are not supported; a test fails if a
 public method needs one.
