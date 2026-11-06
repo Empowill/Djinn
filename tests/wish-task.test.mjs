@@ -1017,3 +1017,87 @@ test("a merge git refuses for want of an identity waits, the git config to run s
   );
   assert.ok(head.includes(`The merge of main waits: ${said}`), head);
 });
+
+test("a task's card names the account its worker runs on, by its label; its agent's own sign-in only beside accounts (T33)", () => {
+  const accounts = [
+    { name: "work", provider: s.Provider.CLAUDE, label: "Work" },
+    { name: "spare", provider: s.Provider.CLAUDE, label: "" },
+  ];
+  const started = { seconds: 1n, nanos: 0 };
+  const task = (extra) => ({
+    id: "t1",
+    code: "W1",
+    title: "Trim the wick",
+    status: s.TaskStatus.RUNNING,
+    provider: s.Provider.CLAUDE,
+    model: "claude-sonnet-5-5",
+    ...extra,
+  });
+  assert.deepEqual(s.taskAccount(task({ account: "work" }), accounts), {
+    label: "Work",
+    title: "The account its worker runs on, or ran on last: Work (work)",
+  });
+  assert.deepEqual(s.taskAccount(task({ account: "spare" }), accounts), {
+    label: "spare",
+    title: "The account its worker runs on, or ran on last: spare",
+  });
+  // An account the window does not know yet still shows, by its name.
+  assert.equal(s.taskAccount(task({ account: "gone" }), []).label, "gone");
+  // The agent's own sign-in, once the task ran, beside accounts of the same agent; an agent stored before providers
+  // is Claude.
+  assert.deepEqual(
+    s.taskAccount(
+      task({ startTime: started, provider: s.Provider.UNSPECIFIED }),
+      accounts,
+    ),
+    {
+      label: "own sign-in",
+      title:
+        "Its worker runs, or ran last, on its agent's own sign-in, not on an account",
+    },
+  );
+  assert.equal(
+    s.taskAccount(task({ startTime: started }), []),
+    null,
+    "no account: nothing to tell apart",
+  );
+  assert.equal(
+    s.taskAccount(
+      task({ startTime: started, provider: s.Provider.CODEX }),
+      accounts,
+    ),
+    null,
+    "Codex has no account here",
+  );
+  assert.equal(
+    s.taskAccount(task({ status: s.TaskStatus.PENDING }), accounts),
+    null,
+    "never ran",
+  );
+  assert.equal(
+    s.taskAccount(
+      task({ provider: s.Provider.WATCH, account: "work" }),
+      accounts,
+    ),
+    null,
+  );
+  assert.equal(
+    s.taskAccount(task({ kind: s.TaskKind.AZIMA, account: "work" }), accounts),
+    null,
+  );
+
+  // On the card, after its model.
+  const card = s.renderToStaticMarkup(
+    h(s.WishTask, { task: task({ account: "work" }), onStop() {} }),
+  );
+  assert.match(
+    card,
+    /<span class="task-model" title="claude-sonnet-5-5">sonnet 5\.5<\/span><span class="task-account" title="The account its worker runs on, or ran on last: work">work<\/span>/,
+  );
+  assert.doesNotMatch(
+    s.renderToStaticMarkup(
+      h(s.WishTask, { task: task({ startTime: started }), onStop() {} }),
+    ),
+    /task-account/,
+  );
+});

@@ -81,6 +81,7 @@ type options struct {
 	clock           func() time.Time
 	ifritWaits      IfritWaits
 	overlaps        Overlaps
+	usage           func() []*planv1.AccountUsage
 	publisher       *Publisher
 }
 
@@ -162,6 +163,11 @@ func WithIfritWaits(waits IfritWaits) Option {
 	return func(o *options) { o.ifritWaits = waits }
 }
 
+// WithUsage gives LeadService.Accounts the usage limits of each sign-in, as the workers' harness knows them.
+func WithUsage(usage func() []*planv1.AccountUsage) Option {
+	return func(o *options) { o.usage = usage }
+}
+
 // WithOverlaps gives a wish's brief its Overlaps section: the open tasks that touch the same files.
 func WithOverlaps(overlaps Overlaps) Option {
 	return func(o *options) { o.overlaps = overlaps }
@@ -218,7 +224,7 @@ func Handlers(s *store.Store, opts ...Option) map[string]http.Handler {
 	out[p] = h
 	p, h = planv1connect.NewInboxServiceHandler(&Inbox{Wishes: wishes}, opt)
 	out[p] = h
-	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes}, opt)
+	p, h = planv1connect.NewLeadServiceHandler(&LeadService{Wishes: wishes, Usage: o.usage}, opt)
 	out[p] = h
 	tilasms := &Tilasms{Store: s, Home: o.home, Show: o.show, URL: o.url, Marks: marks, Wake: wishes.Queued, Questions: questions,
 		Publisher: o.publisher}

@@ -190,7 +190,7 @@ func fakeStream(provider string, lines []string, next func() (map[string]any, bo
 			return false
 		}
 		if provider == "claude" {
-			return msg["type"] == "user"
+			return msg["type"] == "user" || msg["type"] == "control_request" // A control request: the usage probe.
 		}
 		m, _ := msg["message"].(map[string]any)
 		return msg["event"] == "user" && m["content"] != nil

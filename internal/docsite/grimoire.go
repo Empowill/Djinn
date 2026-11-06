@@ -105,6 +105,7 @@ var Nav = []Group{
 		{"rights", "docs.page_rights"},
 		{"machine-and-load", "docs.page_machine_and_load"},
 		{"usage-and-cost", "docs.page_usage_and_cost"},
+		{"several-claude-accounts", "docs.page_several_claude_accounts"},
 		{"sharing", "docs.page_sharing"},
 		{"restarts-and-updates", "docs.page_restarts_and_updates"},
 	}},

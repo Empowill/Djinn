@@ -57,6 +57,11 @@ func (c Claude) args(spec Spec) []string {
 		args = append(args, "--restricted", "--tools", claudeReadTools, "--permission-mode", "plan", "--strict-mcp-config")
 	} else {
 		settings := map[string]any{"pluginConfigs": claudeAgentsMd}
+		if spec.MemoryDir != "" {
+			// A session on an account keeps the memory of the agent's own folder (code.claude.com/docs/en/memory:
+			// autoMemoryDirectory, read from --settings too).
+			settings["autoMemoryDirectory"] = spec.MemoryDir
+		}
 		if p := spec.Permissions; p != nil {
 			perms := claudePermissions(p)
 			if len(spec.WriteDirs) > 0 {
@@ -246,13 +251,14 @@ func (p *claudeParser) stdout(raw string) ([]Event, *turnEnd) {
 		if message != "" && message != p.message {
 			p.message, p.turns, p.counted = message, p.turns+1, true
 		}
-		// A line of withheld thinking says nothing: the next event says the turn.
-		if p.counted && len(events) > 0 {
-			events[0].Turns, p.counted = p.turns, false
+		// A line of withheld thinking says nothing: the next event written says the turn (a quota alone is not).
+		first := slices.IndexFunc(events, func(ev Event) bool { return ev.Kind != planv1.TaskEventKind_TASK_EVENT_KIND_UNSPECIFIED })
+		if p.counted && first >= 0 {
+			events[first].Turns, p.counted = p.turns, false
 		}
 		p.estimate(raw)
-		if p.unsaid && len(events) > 0 {
-			events[0].Spent, p.unsaid = p.spent, false
+		if p.unsaid && first >= 0 {
+			events[first].Spent, p.unsaid = p.spent, false
 		}
 		for _, ev := range events {
 			switch ev.Kind {
@@ -367,6 +373,8 @@ type claudeMessage struct {
 		Status        string `json:"status"`
 		RateLimitType string `json:"rateLimitType"`
 		ResetsAt      int64  `json:"resetsAt"`
+		// UnifiedWindows are the sign-in's 5-hour and weekly windows, said on every turn (claude 2.1.293 and later).
+		UnifiedWindows claudeWindows `json:"unifiedWindows"`
 	} `json:"rate_limit_info"`
 }
 
@@ -424,8 +432,15 @@ func readClaude(raw string) ([]Event, *turnEnd, string) {
 		}
 	case "rate_limit_event":
 		info := m.RateLimitInfo
-		if info == nil || info.Status == "allowed" {
-			return nil, nil, message // Said on every turn while under the limit.
+		if info == nil {
+			return nil, nil, message
+		}
+		quota := info.UnifiedWindows.quota()
+		if info.Status == "allowed" {
+			if quota == nil {
+				return nil, nil, message // Said on every turn while under the limit.
+			}
+			return []Event{{Raw: raw, Quota: quota}}, nil, message // The sign-in's quota alone: not written.
 		}
 		text := "rate limit " + info.Status
 		if info.RateLimitType != "" {
@@ -435,9 +450,10 @@ func readClaude(raw string) ([]Event, *turnEnd, string) {
 			text += ", resets at " + time.Unix(info.ResetsAt, 0).UTC().Format(time.RFC3339)
 		}
 		ev := add(planv1.TaskEventKind_TASK_EVENT_KIND_STATUS, text)
+		ev.Quota = quota
 		if info.Status == "rejected" {
 			// The account's limit is reached: the turn fails next, and the task waits for the reset.
-			ev.Limit = &Limit{What: limitWhat(info.RateLimitType)}
+			ev.Limit = &Limit{What: limitWhat(info.RateLimitType), Family: limitFamily(info.RateLimitType)}
 			if info.ResetsAt > 0 {
 				ev.Limit.Until = time.Unix(info.ResetsAt, 0)
 			}

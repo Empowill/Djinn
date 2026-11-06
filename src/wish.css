@@ -747,6 +747,10 @@ html[data-motion="reduced"]
   flex-shrink: 0;
   color: var(--st-investigating);
 }
+/* The sign-in its worker runs on: an account, or its agent's own beside accounts. */
+.task-account {
+  flex-shrink: 0;
+}
 .wish-task-note {
   margin: 0;
   padding: 0 0.875rem 0.6875rem 2.125rem;

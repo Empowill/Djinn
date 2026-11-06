@@ -980,6 +980,9 @@ message LeadBatch {
 // its configuration, its sessions and its login (Claude Code's CLAUDE_CONFIG_DIR, Codex's CODEX_HOME). The developer
 // signs in there once, with the agent's own command; Djinn names the folder and passes it to the sessions it starts,
 // and never reads nor stores a token. Kept in settings.json of Djinn's data folder: never a secret, never shared.
+// Every worker of the agent runs on one of its sign-ins, its own first and then its accounts in the order they were
+// added: the first neither paused nor known to be limited, and the one it ran on before while that one is. A limit of
+// the whole account that a worker hits moves its task at once to another sign-in free.
 message Account {
   // How the commands name it: lowercase letters, digits and dashes, such as work.
   string name = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"];
@@ -989,6 +992,55 @@ message Account {
   string label = 3;
   // The agent's folder for it, absolute: ~/.claude-<name> or ~/.codex-<name> unless given.
   string config_directory = 4;
+  // Paused: Djinn starts no worker on it (djinn lead pause-account), and the tasks that ran on it move to another
+  // sign-in of the agent, or wait while each one is paused. The lead's seat stays where the developer put it.
+  bool paused = 5;
+}
+
+// AccountUsage is what Djinn knows of the usage limits of one sign-in of an agent: its own (no account) or an
+// account. Two sources tell it, the latest reading winning: a probe that asks the agent without a model turn (Claude
+// Code's get_usage, every 5 minutes, for an agent with accounts), and each worker running there, at each turn (claude's
+// rate_limit_event). A new task starts on the sign-in whose week resets first among those free with quota left
+// (decision Q258 B); a task that ran stays on its own while it is free and has quota left.
+message AccountUsage {
+  // The agent.
+  Provider provider = 1;
+  // The account, by its name (Account.name); empty for the agent's own sign-in.
+  string account = 2;
+  // The 5-hour session's window; unset when not told.
+  UsageWindow five_hour = 3;
+  // The week's window; unset when not told.
+  UsageWindow seven_day = 4;
+  // When Djinn read them; unset when it never did. Older than 15 minutes, the choice of a sign-in ignores them.
+  google.protobuf.Timestamp read_time = 5;
+  // Where Djinn read them.
+  UsageSource source = 6;
+  // Why the last probe failed, when it did and none succeeded since: signed out, no answer.
+  string probe_error = 7;
+  // Paused: no worker starts there (Account.paused, Settings.paused_sign_ins).
+  bool paused = 8;
+  // Until when a limit a worker hit holds it; unset when none does.
+  google.protobuf.Timestamp limited_until = 9;
+  // The sign-in a new task of the agent would start on now, with more than one to choose from.
+  bool next = 10;
+}
+
+// UsageWindow is one window of a sign-in's usage limit.
+message UsageWindow {
+  // How much of it is used, in percent from 0 to 100; 0 once it reset.
+  double used_percent = 1;
+  // When it starts again; unset when not told, or past.
+  google.protobuf.Timestamp resets_time = 2;
+}
+
+// UsageSource is where Djinn read a sign-in's usage limits.
+enum UsageSource {
+  // Not read.
+  USAGE_SOURCE_UNSPECIFIED = 0;
+  // The probe: the agent asked without a model turn.
+  USAGE_SOURCE_PROBE = 1;
+  // A worker's stream, at one of its turns.
+  USAGE_SOURCE_WORKER = 2;
 }
 
 // WorkerKind is a kind of model-calling worker in the Summoning Circle.
@@ -1411,6 +1463,13 @@ message Task {
   // The path of the task's scratch folder on disk (<data>/scratch/<project>/<task>), exported to its worker as
   // DJINN_SCRATCH and cleaned with its worktree; empty when it has none or once cleaned.
   string scratch = 79;
+  // The account its worker runs on, or ran on last, by its name (Account.name); empty for the agent's own sign-in.
+  // Chosen at each start of a worker among the agent's sign-ins neither paused nor limited: the same as before while
+  // it may, another one when its own hit its limit or was paused.
+  string account = 80 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
 }
 
 // TaskHold is what holds a planned task that waits (Task.hold).
@@ -1505,6 +1564,8 @@ message TaskRun {
   google.protobuf.Timestamp end_time = 2;
   // Why this run ended: done, limit, network, restart, pause, preemption, interrupted, etc.
   string reason = 3;
+  // The account it ran on, by its name (Account.name); empty for the agent's own sign-in.
+  string account = 4;
 }
 
 // A comment on a line or range of lines in a task's diff.
@@ -4443,8 +4504,8 @@ service LeadService {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
-  // The accounts of the agents on this machine, the seat of the lead, and for each account the command that signs
-  // it in, once, in its own folder.
+  // The accounts of the agents on this machine, the seat of the lead, for each account the command that signs it in,
+  // once, in its own folder, and the usage limits of each sign-in as Djinn last read them.
   rpc Accounts(LeadServiceAccountsRequest) returns (LeadServiceAccountsResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -4458,6 +4519,20 @@ service LeadService {
   // Forget an account: Djinn no longer names it, and leaves its folder, and the login in it, as they are. Refused
   // while the lead runs on it.
   rpc RemoveAccount(LeadServiceRemoveAccountRequest) returns (LeadServiceRemoveAccountResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Pause an account, or with --provider and no name an agent's own sign-in: Djinn starts no worker on it. A worker
+  // that runs there finishes its turn; the tasks that start or resume next go to another sign-in of the agent neither
+  // paused nor limited; with each one paused, they wait. The lead's seat stays where the developer put it. Kept in
+  // settings.json.
+  rpc PauseAccount(LeadServicePauseAccountRequest) returns (LeadServicePauseAccountResponse) {
+    option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
+    option (djinn.v1.writes) = WRITES_CHANGE;
+  }
+  // Resume an account paused, or with --provider and no name an agent's own sign-in: workers start there again, and
+  // the tasks that waited for a sign-in of that agent start.
+  rpc ResumeAccount(LeadServiceResumeAccountRequest) returns (LeadServiceResumeAccountResponse) {
     option (djinn.v1.visibility) = VISIBILITY_PUBLIC;
     option (djinn.v1.writes) = WRITES_CHANGE;
   }
@@ -4815,6 +4890,9 @@ message LeadServiceAccountsResponse {
   repeated Account accounts = 2 [(djinn.v1.json_only) = true];
   // The lead's seat, with --json.
   LeadSeat seat = 3 [(djinn.v1.json_only) = true];
+  // The usage limits of each sign-in Djinn read or tried to, in the order the workers take them, with --json: the
+  // text says them.
+  repeated AccountUsage usage = 4 [(djinn.v1.json_only) = true];
 }
 
 message LeadServiceAddAccountRequest {
@@ -4851,6 +4929,38 @@ message LeadServiceRemoveAccountRequest {
 }
 
 message LeadServiceRemoveAccountResponse {}
+
+message LeadServicePauseAccountRequest {
+  // The account, by its name; empty for the own sign-in of the agent --provider names.
+  string name = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
+  // The agent whose own sign-in is paused, without a name: claude, codex or antigravity.
+  Provider provider = 2 [(buf.validate.field).enum.defined_only = true];
+}
+
+message LeadServicePauseAccountResponse {
+  // What changes, in a line.
+  string note = 1;
+}
+
+message LeadServiceResumeAccountRequest {
+  // The account, by its name; empty for the own sign-in of the agent --provider names.
+  string name = 1 [
+    (djinn.v1.positional) = true,
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
+  ];
+  // The agent whose own sign-in is resumed, without a name: claude, codex or antigravity.
+  Provider provider = 2 [(buf.validate.field).enum.defined_only = true];
+}
+
+message LeadServiceResumeAccountResponse {
+  // What changes, in a line.
+  string note = 1;
+}
 
 message LeadServiceChooseRequest {
   // The option picked, from 1.

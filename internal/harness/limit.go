@@ -21,6 +21,26 @@ type Limit struct {
 	// PerMinute is true for a short per-minute rate or token bucket (TPM/RPM, HTTP 429) that refills within a minute
 	// or two rather than a multi-hour session or daily quota.
 	PerMinute bool
+	// Family is the family of models the limit is for ("opus", from Claude's seven_day_opus), "" for one of the whole
+	// account: such a limit holds no sign-in (account.go), a worker on another model may still run there.
+	Family string
+}
+
+// limitFamilyRe finds the family of models a limit is for, in its kind or its message.
+var limitFamilyRe = regexp.MustCompile(`(?i)\b(?:[a-z_]*_)?(opus|sonnet|haiku|fable)\b`)
+
+// limitFamily is the family of models text says a limit is for, lowercase; "" when it names none.
+func limitFamily(text string) string {
+	if m := limitFamilyRe.FindStringSubmatch(text); m != nil {
+		return strings.ToLower(m[1])
+	}
+	return ""
+}
+
+// accountWide tells whether l holds the whole sign-in it was hit on: an account's limit for every model, not a
+// per-minute bucket.
+func accountWide(l Limit) bool {
+	return !l.PerMinute && l.Model == "" && l.Family == ""
 }
 
 // multiHourQuotaRe matches quota messages that name a multi-hour or multi-day window rather than a per-minute bucket.
@@ -161,7 +181,7 @@ func limitIn(reason string, now time.Time) (Limit, bool) {
 		if k.re.MatchString(reason) {
 			until := resetIn(reason, now)
 			perMin := k.perMinute && until.IsZero() && !multiHourQuotaRe.MatchString(reason)
-			return Limit{What: k.what, Model: LimitModel(reason), Until: until, PerMinute: perMin}, true
+			return Limit{What: k.what, Model: LimitModel(reason), Until: until, PerMinute: perMin, Family: limitFamily(reason)}, true
 		}
 	}
 	return Limit{}, false

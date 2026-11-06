@@ -744,7 +744,7 @@ func (s *LeadService) claudeTranscriptPath(b *planv1.LeadBatch) string {
 	}
 	configDir := s.claudeConfigDir(b)
 	leadDir := LeadFolder(s.Wishes.home())
-	expected := filepath.Join(configDir, "projects", claudeProjectSlug(leadDir), sessionID+".jsonl")
+	expected := filepath.Join(configDir, "projects", ClaudeProjectSlug(leadDir), sessionID+".jsonl")
 	if _, err := os.Stat(expected); err == nil {
 		return expected
 	}
@@ -754,8 +754,8 @@ func (s *LeadService) claudeTranscriptPath(b *planv1.LeadBatch) string {
 	return expected
 }
 
-// claudeProjectSlug turns a working directory path into Claude Code's project folder name under projects/.
-func claudeProjectSlug(dir string) string {
+// ClaudeProjectSlug turns a working directory path into Claude Code's project folder name under projects/.
+func ClaudeProjectSlug(dir string) string {
 	var b strings.Builder
 	for _, r := range filepath.Clean(dir) {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
