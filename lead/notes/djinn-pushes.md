@@ -1,6 +1,6 @@
 ---
 name: djinn-pushes
-description: When Djinn pushes a branch by itself; in standard mode never ask the developer to push one; per azima, work spawned with no azima gets an azima of its own
+description: In standard mode Djinn pushes by itself, never ask the developer to push; per azima it pushes only the azimas' branches, and work spawned with no azima gets an azima of its own; spawn a task that needs a push only once the push is done
 type: feedback
 ---
 
@@ -27,7 +27,7 @@ per task is a pull request per task, and a task `--after` work of another azima 
 another). Work whose worker started from an azima's branch, or from the head of a pull request an azima carries, joins
 that azima when Djinn merges it, and the azima made for it is closed (W412, after W355 put a merge request into main).
 A commit found on the wish's integration branch all the same is a bug: carry it into an azima's pull request at once,
-then report it to the developer.
+then report it to the developer: see [[never-push-main]].
 
 The push checks run first; red, they hold the push and Djinn starts a correction. A held push comes to you as an
 event (Decision Q196): you decide, the developer is not asked. A wish in ask mode has Djinn ask the push question
@@ -40,4 +40,12 @@ babysat never ended, so its corrections waited for the cadence, and a push looke
 pushed: Djinn does it within the minute, or tells you why it holds. Ask only in on-demand mode, or for what Djinn never
 pushes (a tag, a release).
 
-See also [[push-hold-deadlock]], [[no-obvious-questions]], [[blockers-as-questions]].
+A task that needs a push done before it can start (ask a review bot to review the pushed head again, answer review
+threads citing a pushed commit) is spawned only once that push is done: when the pull request's watcher reports the
+new head, not before. Spawned earlier, part of the azima whose push it waits for, it deadlocks: an open part holds the
+azima's push, so the push waits for the task, and the task waits for the push. Spawned after the push, it is part of
+that azima like any task. W359, part of T30 to have CodeRabbit review dolmen !2990 again after W356 merged into it
+(fe7d0c65), was spawned before the push: it held that push for its 20 minutes of watching, then ended with nothing
+done (05/11/2026).
+
+See also [[never-push-main]], [[push-hold-deadlock]], [[no-obvious-questions]], [[blockers-as-questions]].

@@ -1272,9 +1272,19 @@ func WorkerMemory(tasks []*planv1.Task, p machine.Policy, at ...time.Time) (enga
 // TypicalForecast returns the measured forecast per worker of the providers in use (or all measured providers), at
 // the notch's percentile (machine.Policy.Percentile), or p.WorkerForecast() when none is measured.
 func TypicalForecast(tasks []*planv1.Task, p machine.Policy) uint64 {
+	if peak := TypicalPeak(tasks, p); peak > 0 {
+		return peak + p.WorkerMargin
+	}
+	return p.WorkerForecast()
+}
+
+// TypicalPeak returns the highest typical peak memory of a worker of the providers in use (or all measured
+// providers), at the notch's percentile (machine.Policy.Percentile), without the margin: what machine.Policy.Slots
+// takes as a peak. 0 when none is measured.
+func TypicalPeak(tasks []*planv1.Task, p machine.Policy) uint64 {
 	peaks := ProviderMemory(tasks, p.MemoryPercentile())
 	if len(peaks) == 0 {
-		return p.WorkerForecast()
+		return 0
 	}
 	inUse := make(map[string]bool)
 	for _, t := range tasks {
@@ -1285,11 +1295,7 @@ func TypicalForecast(tasks []*planv1.Task, p machine.Policy) uint64 {
 	var highest uint64
 	for prov := range inUse {
 		if provPeaks, ok := peaks[prov]; ok && len(provPeaks) > 0 {
-			typical, _ := p.Typical(provPeaks)
-			forecast := typical + p.WorkerMargin
-			if forecast > highest {
-				highest = forecast
-			}
+			highest = max(highest, typicalOf(p, provPeaks))
 		}
 	}
 	if highest > 0 {
@@ -1297,17 +1303,20 @@ func TypicalForecast(tasks []*planv1.Task, p machine.Policy) uint64 {
 	}
 	for _, provPeaks := range peaks {
 		if len(provPeaks) > 0 {
-			typical, _ := p.Typical(provPeaks)
-			forecast := typical + p.WorkerMargin
-			if forecast > highest {
-				highest = forecast
-			}
+			highest = max(highest, typicalOf(p, provPeaks))
 		}
 	}
-	if highest > 0 {
-		return highest
+	return highest
+}
+
+// typicalOf is the typical of peaks (machine.Policy.Typical), 0 when none of them is measured: Typical gives the
+// default WorkerPeak then, which is no measure.
+func typicalOf(p machine.Policy, peaks []uint64) uint64 {
+	typical, n := p.Typical(peaks)
+	if n == 0 {
+		return 0
 	}
-	return p.WorkerForecast()
+	return typical
 }
 
 // typical is the typical memory of a worker of the provider at the notch's percentile, and how many measured workers
