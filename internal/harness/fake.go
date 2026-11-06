@@ -123,13 +123,6 @@ func (w *fakeWorker) Resume() error {
 	return nil
 }
 
-func (w *fakeWorker) SetPriority(low bool) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.lowPriority = low
-	return nil
-}
-
 func (w *fakeWorker) IsLowPriority() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()

@@ -39,19 +39,6 @@ func lowCommand(path string, args []string) (string, []string, bool) { return pa
 // applyPriority is a no-op on Windows: the priority class is set at process creation via CreationFlags.
 func applyPriority(cmd *exec.Cmd, lowPriority bool) {}
 
-// setPriority sets CPU priority class on the running process.
-func setPriority(p *process, low bool) error {
-	if p.cmd.Process == nil {
-		return errors.New("the process has not started")
-	}
-	h, err := windows.OpenProcess(windows.PROCESS_SET_INFORMATION, false, uint32(p.cmd.Process.Pid))
-	if err != nil {
-		return err
-	}
-	defer windows.CloseHandle(h)
-	return windows.SetPriorityClass(h, workerClass(low))
-}
-
 // jobs are the job objects of the processes that run, each nested in Djinn's (startGuard): what a process starts once
 // it is in its job joins it.
 var jobs = struct {

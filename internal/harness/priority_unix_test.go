@@ -70,6 +70,18 @@ func readProcStatNice(pid int) (int, error) {
 	return strconv.Atoi(fields[16])
 }
 
+// ownLevel is the nice level of the calling process, as fakePriorityArg prints it.
+func ownLevel() string {
+	nice, err := niceOf(0)
+	if err != nil {
+		return err.Error()
+	}
+	return strconv.Itoa(nice)
+}
+
+// wantLevel is wantNice as ownLevel prints it.
+func wantLevel(t *testing.T, low bool) string { return strconv.Itoa(wantNice(t, low)) }
+
 func checkWorkerPriority(t *testing.T, what string, pid int, low bool) {
 	t.Helper()
 	want := wantNice(t, low)
@@ -150,15 +162,16 @@ func TestWorkerPriorityUnderNice(t *testing.T) {
 	if err != nil {
 		t.Skipf("no nice command to start the test process under: %v", err)
 	}
-	tests := []string{"TestWorkerPriority", "TestWorkerPriorityPolicyChange",
-		"TestWorkerChildPriorityInheritanceUnix", "TestProcessUnixSetPriorityTree"}
+	tests := []string{"TestWorkerPriority", "TestWorkerPriorityAnyNotch", "TestCheckPriority",
+		"TestWorkerChildPriorityInheritanceUnix"}
 	cmd := exec.CommandContext(t.Context(), nice, "-n", "5", os.Args[0],
 		"-test.run", "^("+strings.Join(tests, "|")+")$", "-test.count=1", "-test.v")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("the priority tests fail under nice -n 5: %v\n%s", err, out)
 	}
-	for _, name := range []string{"TestWorkerPriority/normal_priority", "TestWorkerPriorityPolicyChange"} {
+	for _, name := range []string{"TestWorkerPriority/normal_priority", "TestWorkerPriorityAnyNotch",
+		"TestCheckPriority/install_by_the_developer"} {
 		if !strings.Contains(string(out), "--- PASS: "+name+" ") {
 			t.Errorf("%s did not pass under nice -n 5:\n%s", name, out)
 		}

@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,9 +15,8 @@ import (
 	"github.com/empowill/djinn/internal/machine"
 )
 
-// TestWorkerPriority verifies that workers run at low OS priority under minimal and light
-// operating load notches, and at Djinn's own priority level under normal notches (decision Q68).
-// It is a system test that must run under DJINN_TEST_SYSTEM_ONLY=1 (omits testx.Portable).
+// TestWorkerPriority verifies that a worker started with Spec.LowPriority runs at low OS priority, and at Djinn's own
+// priority level without it. It is a system test that must run under DJINN_TEST_SYSTEM_ONLY=1 (omits testx.Portable).
 func TestWorkerPriority(t *testing.T) {
 	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "success", end: "wait"}.env(t)
@@ -86,9 +86,10 @@ func (p *priorityHookProvider) pidOf(taskID string) int {
 	return p.started[taskID]
 }
 
-// TestWorkerPriorityPolicyChange verifies that changing the operating load notch
-// dynamically updates the OS priority for workers launched subsequently (decision Q68).
-func TestWorkerPriorityPolicyChange(t *testing.T) {
+// TestWorkerPriorityAnyNotch verifies that Djinn starts every worker at low CPU priority, below the window, at any
+// operating load notch, the highest too: the notch sets only how many run (Q298, L50). A change of notch reaches the
+// next worker. Two workers, not one per notch: each costs a start of the test binary, slow on Windows.
+func TestWorkerPriorityAnyNotch(t *testing.T) {
 	t.Parallel()
 	env, _, _ := fake{provider: "claude", fixture: "success", end: "wait"}.env(t)
 
@@ -97,12 +98,10 @@ func TestWorkerPriorityPolicyChange(t *testing.T) {
 	providers := testProviders()
 	providers[planv1.Provider_PROVIDER_CLAUDE] = hook
 
-	// Start harness with normal operating load (MEDIUM notch).
-	initialPolicy := machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MEDIUM)
-	e := upWith(t, t.TempDir(), providers, WithPolicy(initialPolicy))
+	e := upWith(t, t.TempDir(), providers, WithPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH)))
 	wishID, _ := e.wish(t, nativeFolder(t))
 
-	spawnAndCheck := func(title string, low bool) int {
+	spawnAndCheck := func(title string) {
 		res, err := e.tasks.Spawn(t.Context(), connect.NewRequest(&planv1.TaskServiceSpawnRequest{
 			WishId: wishID, Title: title, Prompt: "do work", Provider: planv1.Provider_PROVIDER_CLAUDE,
 		}))
@@ -111,28 +110,49 @@ func TestWorkerPriorityPolicyChange(t *testing.T) {
 		}
 		id := res.Msg.GetTask().GetId()
 		waitFor(t, title+" PID", func() bool { return hook.pidOf(id) > 0 })
-		pid := hook.pidOf(id)
-
-		checkWorkerPriority(t, title, pid, low)
+		checkWorkerPriority(t, title, hook.pidOf(id), true)
 
 		// Stop the task to free worker slots.
 		if _, err := e.tasks.Stop(t.Context(), connect.NewRequest(&planv1.TaskServiceStopRequest{TaskId: id})); err != nil {
 			t.Fatalf("stop %q: %v", title, err)
 		}
 		e.ended(t, id)
-		return pid
 	}
 
-	// Each notch's priority is machine.TestLowPriority's: here, a change of notch reaches the next worker, both ways.
-	// Three workers, not one per notch: each costs a start of the test binary, slow on Windows.
-	// 1. Initial MEDIUM notch: low priority.
-	spawnAndCheck("Worker 1 Medium", true)
+	spawnAndCheck("Worker 1 High")
+	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_OVERCLOCK))
+	spawnAndCheck("Worker 2 Overclock")
+}
 
-	// 2. Change policy to HIGH notch: standard priority (Djinn's own priority level).
-	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_HIGH))
-	spawnAndCheck("Worker 2 High", false)
+// fakePriorityArg, as the test binary's first argument, makes it print its own CPU priority level (ownLevel) and exit.
+const fakePriorityArg = "djinn-fake-priority"
 
-	// 3. Change policy to MINIMAL notch: low priority again.
-	e.h.SetPolicy(machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MINIMAL))
-	spawnAndCheck("Worker 3 Minimal", true)
+// TestCheckPriority verifies that a command Djinn runs on a project's work, a commit or push check, the setup, a
+// generation, or an install Djinn starts by itself, runs at a low-priority worker's CPU priority whatever the notch,
+// below the window (Q298, L50); an install the developer asked for runs at Djinn's own, as it is waited for.
+func TestCheckPriority(t *testing.T) {
+	t.Parallel()
+	h, p := &Harness{}, machine.NotchPolicy(djinnv1.LoadNotch_LOAD_NOTCH_MAX)
+	h.policy.Store(&p)
+	installing := context.WithValue(t.Context(), installingKey{}, true)
+	for _, c := range []struct {
+		name string
+		ctx  context.Context
+		low  bool
+	}{
+		{"check", t.Context(), true},
+		{"install by Djinn", InstallWith(installing, nil, true), true},
+		{"install by the developer", InstallWith(installing, nil, false), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			out, code, err := h.command(c.ctx, "test", "", os.Args[0]+" "+fakePriorityArg, t.TempDir())
+			if err != nil || code != 0 {
+				t.Fatalf("command: exit %d, %v: %s", code, err, out)
+			}
+			if got, want := strings.TrimSpace(out), wantLevel(t, c.low); got != want {
+				t.Errorf("the command ran at priority %s, want %s", got, want)
+			}
+		})
+	}
 }

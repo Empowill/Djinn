@@ -179,8 +179,6 @@ func (w *streamWorker) hold(paused bool) {
 	}
 }
 
-func (w *streamWorker) SetPriority(low bool) error { return w.p.SetPriority(low) }
-
 func (w *streamWorker) Stop() {
 	w.stopped.Store(true)
 	w.p.Stop()
