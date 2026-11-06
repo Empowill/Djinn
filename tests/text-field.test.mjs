@@ -160,3 +160,44 @@ test("keepPlace hears no change inside data-anchor-skip: a note's count moves no
   assert.ok(reads > 0, "a change around it is");
   stop();
 });
+
+// A border-box field fitted to its scrollHeight alone was clipped by its borders: never fitting, it was fitted again
+// at each frame of typing, a forced layout and a style mutation a key (W526, a question's note in L55's probe).
+test("TextField fits a bordered field with its borders, and a key that still fits writes no height", async () => {
+  const m = await mount(s.TextField);
+  const before = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({
+    maxHeight: "none",
+    boxSizing: "border-box",
+    borderTopWidth: "1px",
+    borderBottomWidth: "1px",
+  });
+  try {
+    let writes = 0;
+    let height = "";
+    Object.defineProperty(m.el.style, "height", {
+      get: () => height,
+      set: (v) => {
+        writes++;
+        height = v;
+      },
+    });
+    Object.defineProperty(m.el, "scrollHeight", { get: () => 40 });
+    Object.defineProperty(m.el, "clientHeight", {
+      get: () => (Number.parseFloat(height) || 0) - 2,
+    });
+    const frame = () => s.act(() => new Promise((r) => setTimeout(r, 5)));
+    await m.type("");
+    await frame();
+    assert.equal(height, "42px", "its text and its two borders");
+    writes = 0;
+    for (const value of ["a", "ab", "abc"]) {
+      await m.type(value);
+      await frame();
+    }
+    assert.equal(writes, 0, "longer and still fitting: no height written");
+  } finally {
+    globalThis.getComputedStyle = before;
+    await m.end();
+  }
+});

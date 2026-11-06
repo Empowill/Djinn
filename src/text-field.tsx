@@ -30,12 +30,20 @@ import { onTextSize } from "./text-size";
 function grow(textarea: HTMLTextAreaElement) {
   textarea.style.height = "auto";
   textarea.style.overflowY = "hidden";
-  const maxHeight =
+  const style =
     typeof window !== "undefined" &&
     typeof window.getComputedStyle === "function"
-      ? Number.parseFloat(window.getComputedStyle(textarea).maxHeight)
-      : Number.NaN;
-  const full = textarea.scrollHeight;
+      ? window.getComputedStyle(textarea)
+      : undefined;
+  const maxHeight = Number.parseFloat(style?.maxHeight ?? "");
+  // A border-box height holds the borders: without them the text was clipped by their width, and the field, never
+  // fitting its text, was fitted again at each frame of typing (W526, a question's note).
+  const borders =
+    style?.boxSizing === "border-box"
+      ? (Number.parseFloat(style.borderTopWidth) || 0) +
+        (Number.parseFloat(style.borderBottomWidth) || 0)
+      : 0;
+  const full = textarea.scrollHeight + borders;
   const height = Number.isFinite(maxHeight) ? Math.min(full, maxHeight) : full;
   textarea.style.height = `${height}px`;
   textarea.style.overflowY = full > height ? "auto" : "hidden";
