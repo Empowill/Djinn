@@ -1,11 +1,14 @@
-// The setup of the agents: one line per agent, where it stands, and one button for its next step, which says what it
-// does on hover. Install and sign in run the agent's own command in a terminal of the panel, so nobody opens a
-// terminal of theirs; once the command ends, Djinn checks again. Shown in the settings, from the lead's menu, and by
-// itself when the window opens with no agent ready. Under each agent, its accounts: a sign-in each in a folder of the
-// agent's own, signed in once by the agent's own command, for the workers to run on and the lead to move to; Djinn
-// keeps no token, and shows none. Each sign-in, the agent's own or an account, pauses and resumes from its line, as
-// djinn lead pause-account does. Under each sign-in, its usage as djinn lead accounts says it: active, paused or
-// limited, its week's gauge and when the week ends, its 5 hours, and whether the next task starts there.
+// The setup of the agents, and the accounts screen: one line per agent, where it stands, and one button for its next
+// step, which says what it does on hover. Install and sign in run the agent's own command in a terminal of the panel,
+// so nobody opens a terminal of theirs; once the command ends, Djinn checks again. Shown in the settings, from the
+// lead's menu, and by itself when the window opens with no agent ready. Then every sign-in of every agent in one list,
+// the developer's order of priority (decision Q295 B, tilasm L49 v2 mockup A), ranked by drag and drop or Alt+Arrow
+// (sign-in-order.tsx, djinn lead order): the agent's own and its accounts, a sign-in each in a folder of the agent's
+// own, signed in once by the agent's own command; Djinn keeps no token, and shows none. Each pauses and resumes from
+// its line, as djinn lead pause-account does; under each, its usage as djinn lead accounts says it: active, paused or
+// limited, its week's gauge and when the week ends, its 5 hours, whether the next task starts there, whether the Djinn
+// runs there and whether a session runs there in overflow. Above the list, the Djinn's account: following the order,
+// or pinned on one sign-in (djinn lead pin, --unpin).
 import {
   Download,
   LogIn,
@@ -17,12 +20,19 @@ import {
   X,
 } from "lucide-react";
 import { getOption } from "@bufbuild/protobuf";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { field as validation } from "../gen/ts/buf/validate/validate_pb";
 import {
   type AccountUsage,
   LeadServiceAddAccountRequestSchema,
+  type LeadSeat,
   Provider,
   UsageSource,
   type UsageWindow,
@@ -34,10 +44,11 @@ import {
   type UiServiceGetEnvironmentResponse,
 } from "../gen/ts/ui/v1/ui_pb";
 import { message } from "./data/client";
-import { useDjinn } from "./data/djinn";
+import { useDjinn, useOptionalData } from "./data/djinn";
 import { ModalFrame } from "./frame";
 import { type TextKey, language, t } from "./i18n";
 import { type TerminalStatus, fitSafely, mountTerminal } from "./lead-terminal";
+import { type Ranked, RankedSignIns, reordered } from "./sign-in-order";
 import { keepLive } from "./stillness";
 
 // USAGE_EVERY is how often the open panel reads the sign-ins' usage again: Djinn's probe reads each every 5 minutes,
@@ -64,6 +75,16 @@ export interface Agents {
   setPaused: (agentId: string, account: string, paused: boolean) => void;
   // The usage of each sign-in Djinn read or tried to (LeadService.Accounts); undefined until it answers.
   usage?: readonly AccountUsage[];
+  // Every sign-in in the developer's order, as djinn lead order takes them (claude, claude/work); undefined until
+  // LeadService.Accounts answers.
+  order?: readonly string[];
+  // setOrder writes the whole order (LeadService.Order), shown at once.
+  setOrder?: (order: string[]) => void;
+  // The Djinn's seat, and whether it is pinned on its account (LeadService.Accounts).
+  seat?: LeadSeat;
+  pinned?: boolean;
+  // pin pins the Djinn on an account of its agent, "" for its own sign-in; undefined takes the pin off (LeadService.Pin).
+  pin?: (account: string | undefined) => void;
 }
 
 // withPaused is env with the pause of a sign-in changed: the account called account of the agent agentId, or with ""
@@ -100,6 +121,8 @@ export function useAgents(): Agents {
   const clients = useDjinn()?.clients;
   const [env, setEnv] = useState<UiServiceGetEnvironmentResponse>();
   const [usage, setUsage] = useState<readonly AccountUsage[]>();
+  const [shownOrder, setShownOrder] = useState<readonly string[]>();
+  const [lead, setLead] = useState<{ seat?: LeadSeat; pinned: boolean }>();
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
   const asked = useRef(0);
@@ -109,7 +132,12 @@ export function useAgents(): Agents {
     const n = ++read.current;
     clients.lead
       .accounts({})
-      .then((res) => n === read.current && setUsage(res.usage))
+      .then((res) => {
+        if (n !== read.current) return;
+        setUsage(res.usage);
+        setShownOrder(res.order);
+        setLead({ seat: res.seat, pinned: res.pinned });
+      })
       .catch(() => undefined); // The gauges keep the last reading; the next one comes within USAGE_EVERY.
   }, [clients]);
   const check = useCallback(() => {
@@ -140,7 +168,43 @@ export function useAgents(): Agents {
     },
     [readUsage],
   );
-  return { env, checking, error, check, setPaused, usage };
+  const setOrder = useCallback(
+    (next: string[]) => {
+      if (!clients) return;
+      setShownOrder(next); // Shown at once; what Djinn wrote comes back with the usage.
+      setError("");
+      clients.lead
+        .order({ signIn: next })
+        .catch((err) => setError(message(err)))
+        .finally(readUsage); // The next task's sign-in may change.
+    },
+    [clients, readUsage],
+  );
+  const pin = useCallback(
+    (account: string | undefined) => {
+      if (!clients) return;
+      setLead((lead) => lead && { ...lead, pinned: account !== undefined });
+      setError("");
+      clients.lead
+        .pin({ account: account ?? "", unpin: account === undefined })
+        .catch((err) => setError(message(err)))
+        .finally(readUsage);
+    },
+    [clients, readUsage],
+  );
+  return {
+    env,
+    checking,
+    error,
+    check,
+    setPaused,
+    usage,
+    order: shownOrder,
+    setOrder,
+    seat: lead?.seat,
+    pinned: lead?.pinned,
+    pin,
+  };
 }
 
 // usageOf is what Djinn last read of a sign-in's usage: the account called account of the agent agentId, or with ""
@@ -214,7 +278,53 @@ function nextStep(
   return undefined;
 }
 
-// AgentSetupPanel lists the agents, one line each with its next step; that step runs below its line.
+// agentGlyph is the sign an agent's lines carry.
+function agentGlyph(id: string): string {
+  return id === "codex" ? "⬡" : id === "antigravity" ? "◆" : "✳";
+}
+
+// A sign-in on the accounts screen: the agent's own (no setup), or one of its accounts.
+interface SignInLine extends Ranked {
+  agent: AgentEnvironment;
+  setup?: AccountSetup;
+}
+
+// signInLines are the sign-ins the screen shows, in the developer's order (Agents.order), the ones it does not name
+// after, in the order by default: each agent's own, then its accounts as added. An agent's own sign-in shows once the
+// agent is installed, or while it is paused. whole is every sign-in of the order, shown or not, for a move to write.
+export function signInLines(
+  env: UiServiceGetEnvironmentResponse,
+  order: readonly string[] | undefined,
+): { lines: SignInLine[]; whole: string[] } {
+  const known: SignInLine[] = [];
+  for (const agent of env.providers) {
+    if (agent.available || agent.paused)
+      known.push({
+        key: agent.id,
+        name: `${agent.name} · ${t("agents.own_sign_in")}`,
+        agent,
+      });
+    for (const setup of agent.accounts)
+      if (setup.account)
+        known.push({
+          key: `${agent.id}/${setup.account.name}`,
+          name: setup.account.label || setup.account.name,
+          agent,
+          setup,
+        });
+  }
+  const whole = [...(order ?? [])];
+  for (const line of known) if (!whole.includes(line.key)) whole.push(line.key);
+  const lines = whole
+    .map((key) => known.find((line) => line.key === key))
+    .filter((line): line is SignInLine => line !== undefined);
+  return { lines, whole };
+}
+
+// AgentSetupPanel lists the agents, one line each with its next step, which runs below its line; then every sign-in of
+// every agent in the order of priority, ranked by drag and drop or Alt+Arrow, each with its pause, its usage, where the
+// Djinn runs and whether a session runs there in overflow; the Djinn's account, following the order or pinned; and the
+// line that adds an account, at the bottom of the order.
 export function AgentSetupPanel({ agents }: { agents: Agents }) {
   const { env, checking, error, check, setPaused, usage } = agents;
   const [step, setStep] = useState<Step>();
@@ -232,7 +342,23 @@ export function AgentSetupPanel({ agents }: { agents: Agents }) {
     setRunning(false);
     check();
   }, [check]);
+  const drive = useOptionalData((s) => s.leadDrive, undefined);
   const none = env !== undefined && env.providers.every(needsSetup);
+  const { lines, whole } = env
+    ? signInLines(env, agents.order)
+    : { lines: [], whole: [] };
+  // Where the Djinn runs: its batch's sign-in, the running one or else the last; with none yet, where it is pinned.
+  const lead = drive?.batch
+    ? {
+        provider: drive.batch.provider || Provider.CLAUDE,
+        account: drive.batch.account,
+      }
+    : agents.pinned && agents.seat
+      ? {
+          provider: agents.seat.provider || Provider.CLAUDE,
+          account: agents.seat.account,
+        }
+      : undefined;
   return (
     <div className="agent-setup">
       {none && <p className="agent-setup-intro">{t("agents.intro_none")}</p>}
@@ -252,12 +378,8 @@ export function AgentSetupPanel({ agents }: { agents: Agents }) {
             step={step}
             onRun={run}
             onEnded={ended}
-            onChanged={check}
-            onPaused={setPaused}
-            usage={usage}
           />
         ))}
-        {env && <AddAccount onAdded={check} />}
       </div>
       <button
         type="button"
@@ -269,10 +391,99 @@ export function AgentSetupPanel({ agents }: { agents: Agents }) {
         <RefreshCw size={13} />
         {checking ? t("agents.checking") : t("agents.check")}
       </button>
+      {env && (
+        <section
+          className="sign-in-section"
+          aria-label={t("agents.order_title")}
+        >
+          <h3 className="sign-in-title">{t("agents.order_title")}</h3>
+          <p className="agent-setup-intro">{t("agents.order_detail")}</p>
+          {agents.seat && agents.pin && (
+            <LeadPin
+              seat={agents.seat}
+              pinned={agents.pinned ?? false}
+              lines={lines}
+              onPin={agents.pin}
+            />
+          )}
+          <div className="provider-settings">
+            <RankedSignIns
+              items={lines}
+              onOrder={(shown) => agents.setOrder?.(reordered(whole, shown))}
+              render={(item, grip) => {
+                const line = item as SignInLine;
+                const account = line.setup?.account?.name ?? "";
+                return (
+                  <SignInRow
+                    line={line}
+                    grip={grip}
+                    busy={running || checking}
+                    step={step}
+                    onRun={run}
+                    onEnded={ended}
+                    onChanged={check}
+                    onPaused={setPaused}
+                    usage={usageOf(usage, line.agent.id, account)}
+                    lead={
+                      lead?.provider === agentProviders[line.agent.id] &&
+                      lead.account === account
+                    }
+                  />
+                );
+              }}
+            />
+            <AddAccount onAdded={check} />
+          </div>
+        </section>
+      )}
     </div>
   );
 }
 
+// LeadPin is the Djinn's account: following the order, or pinned on one sign-in of its agent, as djinn lead pin and
+// djinn lead pin --unpin set it. Choosing Follows the order takes the pin off.
+function LeadPin({
+  seat,
+  pinned,
+  lines,
+  onPin,
+}: {
+  seat: LeadSeat;
+  pinned: boolean;
+  lines: readonly SignInLine[];
+  onPin: NonNullable<Agents["pin"]>;
+}) {
+  const provider = seat.provider || Provider.CLAUDE;
+  const own = lines.filter(
+    (line) => agentProviders[line.agent.id] === provider,
+  );
+  const value = pinned ? `pin:${seat.account}` : "follow";
+  return (
+    <label className="lead-pin" title={t("agents.lead_account_detail")}>
+      <span>♛ {t("agents.lead_account")}</span>
+      <select
+        aria-label={t("agents.lead_account")}
+        value={value}
+        onChange={(event) => {
+          const next = event.target.value;
+          onPin(next === "follow" ? undefined : next.slice("pin:".length));
+        }}
+      >
+        <option value="follow">{t("agents.lead_follows")}</option>
+        {own.map((line) => (
+          <option
+            key={line.key}
+            value={`pin:${line.setup?.account?.name ?? ""}`}
+          >
+            {t("agents.lead_pinned_on", { sign_in: line.name })}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// AgentRow is an agent: its name and version, where it stands, and the button of its next step, which runs below.
 function AgentRow({
   agent,
   checking,
@@ -280,9 +491,6 @@ function AgentRow({
   step,
   onRun,
   onEnded,
-  onChanged,
-  onPaused,
-  usage,
 }: {
   agent: AgentEnvironment;
   checking: boolean;
@@ -290,11 +498,7 @@ function AgentRow({
   step?: Step;
   onRun: (agentId: string, kind: Step["kind"], line: string) => void;
   onEnded: () => void;
-  onChanged: () => void;
-  onPaused: Agents["setPaused"];
-  usage: Agents["usage"];
 }) {
-  const [error, setError] = useState("");
   const state = agentStates[agent.state] ?? agentStates[ProviderState.UNKNOWN];
   const next = nextStep(agent);
   return (
@@ -304,9 +508,7 @@ function AgentRow({
         data-agent={agent.id}
         title={agent.available ? agent.command : undefined}
       >
-        <span className="provider-glyph">
-          {agent.id === "codex" ? "⬡" : agent.id === "antigravity" ? "◆" : "✳"}
-        </span>
+        <span className="provider-glyph">{agentGlyph(agent.id)}</span>
         <div>
           <h3>{agent.name}</h3>
           {agent.version && <span className="muted-text">{agent.version}</span>}
@@ -331,53 +533,20 @@ function AgentRow({
             {next.kind === "install" ? t("agents.install") : t("agents.login")}
           </button>
         )}
-        {(agent.available || agent.paused) && (
-          <PauseButton
-            agentId={agent.id}
-            account=""
-            paused={agent.paused}
-            onPaused={onPaused}
-            onError={setError}
-          />
-        )}
       </div>
-      {(agent.available || agent.paused) && (
-        <SignInUsage
-          id={agent.id}
-          paused={agent.paused}
-          signedIn={agent.state === ProviderState.READY}
-          withAccounts={agent.accounts.length > 0}
-          reads={quotaTold.has(agent.id)}
-          usage={usageOf(usage, agent.id, "")}
-        />
-      )}
-      {error && <p role="alert">{error}</p>}
       {step?.agentId === agent.id && (
         <StepTerminal key={step.name} step={step} onEnded={onEnded} />
       )}
-      {agent.accounts.map((setup) => (
-        <AccountRow
-          key={setup.account?.name}
-          agent={agent}
-          setup={setup}
-          busy={busy || checking}
-          step={step}
-          onRun={onRun}
-          onEnded={onEnded}
-          onChanged={onChanged}
-          onPaused={onPaused}
-          usage={usageOf(usage, agent.id, setup.account?.name ?? "")}
-        />
-      ))}
     </>
   );
 }
 
-// AccountRow is an account of an agent: its label and folder, where it stands, its sign-in in its own folder, its
-// pause, a button that forgets it, its folder left as it is, and below its usage.
-function AccountRow({
-  agent,
-  setup,
+// SignInRow is a sign-in in the order: its grip and rank, its agent, its name, and for an account its folder, where it
+// stands, its sign-in in its own folder and a button that forgets it, its folder left as it is; for each, its pause,
+// whether the Djinn runs there, whether a session runs there in overflow, and below its usage.
+function SignInRow({
+  line,
+  grip,
   busy,
   step,
   onRun,
@@ -385,9 +554,10 @@ function AccountRow({
   onChanged,
   onPaused,
   usage,
+  lead,
 }: {
-  agent: AgentEnvironment;
-  setup: AccountSetup;
+  line: SignInLine;
+  grip: ReactNode;
   busy: boolean;
   step?: Step;
   onRun: (agentId: string, kind: Step["kind"], line: string) => void;
@@ -395,18 +565,24 @@ function AccountRow({
   onChanged: () => void;
   onPaused: Agents["setPaused"];
   usage?: AccountUsage;
+  lead: boolean;
 }) {
   const clients = useDjinn()?.clients;
   const [error, setError] = useState("");
-  const account = setup.account;
-  if (!account) return null;
-  const id = `${agent.id}/${account.name}`;
-  const state = agentStates[setup.state] ?? agentStates[ProviderState.UNKNOWN];
+  const { agent, setup } = line;
+  const account = setup?.account;
+  const id = account ? `${agent.id}/${account.name}` : agent.id;
+  const state =
+    agentStates[setup ? setup.state : agent.state] ??
+    agentStates[ProviderState.UNKNOWN];
   const signIn =
+    setup !== undefined &&
     agent.available &&
     setup.state !== ProviderState.READY &&
     Boolean(setup.loginCommand);
+  const paused = account ? account.paused : agent.paused;
   const forget = () => {
+    if (!account) return;
     setError("");
     clients?.lead
       .removeAccount({ name: account.name })
@@ -416,15 +592,40 @@ function AccountRow({
   return (
     <>
       <div
-        className="provider-setting provider-account"
-        data-account={account.name}
-        title={account.configDirectory}
+        className="provider-setting sign-in-line"
+        {...(account
+          ? { "data-account": account.name }
+          : { "data-own": agent.id })}
+        title={account?.configDirectory}
       >
-        <span className="provider-glyph">↳</span>
+        {grip}
+        <span className="provider-glyph" title={agent.name}>
+          {agentGlyph(agent.id)}
+        </span>
         <div>
-          <h3>{account.label || account.name}</h3>
-          <code>{account.configDirectory}</code>
+          <h3>{account ? account.label || account.name : agent.name}</h3>
+          {account ? (
+            <code>{account.configDirectory}</code>
+          ) : (
+            <span className="muted-text">{t("agents.own_sign_in")}</span>
+          )}
         </div>
+        {lead && (
+          <span
+            className="badge sign-in-lead"
+            title={t("agents.lead_here_detail")}
+          >
+            ♛ {t("agents.lead_here")}
+          </span>
+        )}
+        {usage?.overflowing && (
+          <span
+            className="badge sign-in-overflow"
+            title={t("agents.overflowing_detail")}
+          >
+            {t("agents.overflowing")}
+          </span>
+        )}
         <span className="status-text">
           <span className={`status-dot ${state.dot}`} />
           {t(state.label)}
@@ -443,32 +644,34 @@ function AccountRow({
         )}
         <PauseButton
           agentId={agent.id}
-          account={account.name}
-          paused={account.paused}
+          account={account?.name ?? ""}
+          paused={paused}
           onPaused={onPaused}
           onError={setError}
         />
-        <button
-          type="button"
-          className="button secondary small"
-          title={t("agents.account_forget_detail")}
-          aria-label={t("agents.account_forget")}
-          disabled={busy}
-          onClick={forget}
-        >
-          <X size={13} />
-        </button>
+        {account && (
+          <button
+            type="button"
+            className="button secondary small"
+            title={t("agents.account_forget_detail")}
+            aria-label={t("agents.account_forget")}
+            disabled={busy}
+            onClick={forget}
+          >
+            <X size={13} />
+          </button>
+        )}
       </div>
       <SignInUsage
         id={id}
-        paused={account.paused}
-        signedIn={setup.state === ProviderState.READY}
-        withAccounts
+        paused={paused}
+        signedIn={(setup ? setup.state : agent.state) === ProviderState.READY}
+        withAccounts={account !== undefined || agent.accounts.length > 0}
         reads={quotaTold.has(agent.id)}
         usage={usage}
       />
       {error && <p role="alert">{error}</p>}
-      {step?.agentId === id && (
+      {account && step?.agentId === id && (
         <StepTerminal key={step.name} step={step} onEnded={onEnded} />
       )}
     </>

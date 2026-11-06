@@ -84,12 +84,14 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   it stays there and its events wait: the next event, or **Retry** at the end of its red line in the **Lead** journal,
   starts a session for them.
 - **Where it runs.** The Djinn runs on a seat you choose: an agent (Claude Code, Codex or Antigravity), a model, an account. The
-  chip at the top of a wish or of the flying carpet names it ("Claude Code · opus 5.5"); its menu lists each agent on
-  its own sign-in, then on each of its accounts, and the model:
-  one click moves the Djinn there, and the command line does the same. The next batch starts there with the lead's
-  journal. Moved to an account, the Djinn is pinned there until you move it again. Moved to an agent alone, each of
-  its batches follows the order of the accounts, as a new task does: the first sign-in of its agent neither paused,
-  limited nor out of quota, its agent and model kept.
+  chip at the top of a wish or of the flying carpet names it ("Claude Code · Work · opus 5.5", with "in overflow" while
+  its batch runs past its limits). Its menu starts with **Follows the order**, marked while the Djinn follows it: each
+  batch then starts on the first sign-in of its agent neither paused, limited nor out of quota, as a new task does,
+  its agent and model kept. Then each sign-in of its agent: one click pins the Djinn there, whatever the order, until
+  you click Follows the order again, which takes the pin off. Then the other agents, on their own sign-in and on each
+  account, and the model: one click moves the Djinn there. The command line does the same: djinn lead pin work pins
+  it, djinn lead pin with no name pins it on its agent's own sign-in, djinn lead pin --unpin takes the pin off, and
+  djinn lead move moves it (to an account, it pins it there). The next batch starts there with the lead's journal.
 - **A limit moves the Djinn along the order.** When the Djinn hits its subscription's limit, that account stays
   limited for every worker too, and the batch goes on at once on the next free sign-in of its agent in the order. With
   none left, or pinned, the limit shows first in the attention bar, with a button for each agent or account signed in
@@ -97,7 +99,8 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
   agent to reset.
 - **Several subscriptions on one machine.** An account is a folder of the agent's own, beside its default one, where
   it keeps its login: Claude Code's configuration folder, Codex's home. The agents' setup, in the settings or from
-  the Djinn's menu, lists each agent with its accounts under it. Its last line adds one: the agent, a name such as
+  the Djinn's menu, lists each agent, then the accounts screen: every sign-in in the order of priority. Its last line
+  adds one: the agent, a name such as
   work, a label such as Work, as djinn lead add-account takes them. Sign in there once with the agent's own command,
   from the account's line, in the panel's terminal; Djinn keeps no token and shows none, only the folder. Antigravity
   has no such folder. The cross on an account's line forgets it and leaves its folder as it is, as djinn lead
@@ -106,13 +109,20 @@ By default, Djinn drives the lead itself (decisions Q31, Q51), and no terminal r
 - **The accounts have an order.** One list ranks the sign-ins of every agent, its own and its accounts, from the
   highest priority to the lowest. Until you change it, each agent's own sign-in comes first, then its accounts in the
   order you added them; an account added later goes to the bottom. The order never changes a task's agent: a Claude
-  task reads the Claude rows only. Reordering them in the window comes in a later version.
+  task reads the Claude rows only. In the accounts screen, each line carries its rank and a grip: drag it up or down,
+  or focus the grip and press Alt+Up or Alt+Down; the screen says the new rank, and Djinn writes the whole order at
+  once. Nothing stops: the order counts at each next start of a worker and each next batch of the Djinn. From the
+  command line, djinn lead order takes the whole order, a --sign-in each (claude for an agent's own sign-in,
+  claude/work for its account work); djinn lead accounts prints it. Above the list, **The Djinn's account** says
+  whether the Djinn follows the order or is pinned on one sign-in; choosing Follows the order takes the pin off. A
+  crown marks the sign-in where the Djinn runs, or ran last.
 - **Every worker runs on one of them.** Each new task of an agent starts on the first sign-in of its agent in the
   order that is neither paused, limited nor known past 95 % of its 5 hours or of its week; a quota never read holds
   none back. A task that ran stays on the sign-in it ran on while that one may: its session is there.
 - **When each one is full, the task overflows.** With every sign-in of its agent full, limited or paused, a task does
   not only wait for a reset: it starts past its limits on the first sign-in that may spend extra credits, when Djinn
-  knows it, else on the first one not paused. Its start in the task's history says it runs in overflow. If the agent
+  knows it, else on the first one not paused. Its start in the task's history says it runs in overflow, and its line
+  in the accounts screen reads In overflow while a worker or the Djinn runs there past its limits. If the agent
   refuses, the task moves to the next sign-in not limited, or waits for the reset as before. Its task's card names
   the account it runs on, or ran on last, by its label, beside its model; where an agent has accounts, a task on the
   agent's own reads own sign-in.

@@ -1126,16 +1126,15 @@ func (s *LeadService) Accounts(
 			"one full, limited or paused, it starts past its limits on the first that may spend extra credits, if Djinn " +
 			"knows it, else on the first not paused, and waits for the reset if the agent refuses.\n\nThe order:\n")
 		for i, si := range AccountOrder(home) {
-			who := agentNames[si.Provider] + "'s own sign-in"
-			if si.Account != nil {
-				who = si.Name + " (" + accountLabel(si.Account) + ", " + agentNames[si.Provider] + ")"
-			}
-			fmt.Fprintf(&b, "%d. %s\n", i+1, who)
+			fmt.Fprintf(&b, "%d. %s\n", i+1, signInLine(si))
 		}
 	}
 	var usage []*planv1.AccountUsage
 	if s.Usage != nil {
 		usage = s.Usage()
+	}
+	if d := s.Wishes.drive(); d != nil {
+		usage = leadOverflowing(usage, d.Batch())
 	}
 	if len(usage) > 0 {
 		b.WriteString("\nUsage of each sign-in, as last read:\n")
@@ -1143,8 +1142,29 @@ func (s *LeadService) Accounts(
 			fmt.Fprintf(&b, "- %s\n", UsageText(u))
 		}
 	}
-	return connect.NewResponse(&planv1.LeadServiceAccountsResponse{Text: b.String(), Accounts: accounts, Seat: seat,
-		Usage: usage}), nil
+	res := &planv1.LeadServiceAccountsResponse{Text: b.String(), Accounts: accounts, Seat: seat, Usage: usage,
+		Pinned: LeadPinned(home)}
+	for _, si := range AccountOrder(home) {
+		res.Order = append(res.Order, SignInWord(si))
+	}
+	return connect.NewResponse(res), nil
+}
+
+// leadOverflowing is usage with the sign-in of the lead's batch marked overflowing while that batch runs past its
+// limits (LeadBatch.overflow), a line added for it when Djinn read nothing there.
+func leadOverflowing(usage []*planv1.AccountUsage, batch *planv1.LeadBatch) []*planv1.AccountUsage {
+	if !batch.GetOverflow() || batch.GetEndTime() != nil ||
+		batch.GetState() != planv1.LeadBatchState_LEAD_BATCH_STATE_RUNNING {
+		return usage
+	}
+	provider := cmp.Or(batch.GetProvider(), planv1.Provider_PROVIDER_CLAUDE)
+	for _, u := range usage {
+		if u.GetProvider() == provider && u.GetAccount() == batch.GetAccount() {
+			u.Overflowing = true
+			return usage
+		}
+	}
+	return append(usage, &planv1.AccountUsage{Provider: provider, Account: batch.GetAccount(), Overflowing: true})
 }
 
 // UsageText says a sign-in's usage in a line: "work (claude): 5 h 44 %, week 27 % (resets Wed 11 Nov 11:00), read at
@@ -1187,6 +1207,9 @@ func UsageText(u *planv1.AccountUsage) string {
 	}
 	if u.GetLimitedUntil() != nil {
 		notes = append(notes, "limited until "+u.GetLimitedUntil().AsTime().Local().Format("Mon 2 Jan 15:04"))
+	}
+	if u.GetOverflowing() {
+		notes = append(notes, "in overflow: a session runs past its limits, on extra credits if the account allows them")
 	}
 	if u.GetNext() {
 		notes = append(notes, "next")

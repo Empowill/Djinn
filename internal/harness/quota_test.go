@@ -298,3 +298,30 @@ func TestWorkerTellsQuota(t *testing.T) {
 		}
 	}
 }
+
+// runningWorker is a worker that runs until the test ends: it says nothing.
+type runningWorker struct{}
+
+func (runningWorker) Events() <-chan Event { return nil }
+func (runningWorker) Send(string) error    { return ErrClosed }
+func (runningWorker) Stop()                {}
+func (runningWorker) Wait() Result         { return Result{} }
+
+// TestUsageOverflowing: the sign-in a worker runs on past its limits says so in the usage the accounts screen reads,
+// even with no quota read there; one that runs under its limits, or ended, marks none.
+func TestUsageOverflowing(t *testing.T) {
+	t.Parallel()
+	h := &Harness{home: t.TempDir(), runs: map[string]*run{}}
+	if err := plan.PinLead(h.home, false); err != nil { // settings.json exists, as on a machine set up.
+		t.Fatal(err)
+	}
+	h.runs["over"] = &run{worker: runningWorker{}, overflow: true,
+		shown: &planv1.Task{Provider: planv1.Provider_PROVIDER_CLAUDE}}
+	h.runs["under"] = &run{worker: runningWorker{}, shown: &planv1.Task{Provider: planv1.Provider_PROVIDER_CODEX}}
+	h.runs["ended"] = &run{overflow: true, shown: &planv1.Task{Provider: planv1.Provider_PROVIDER_ANTIGRAVITY}}
+	usage := h.Usage()
+	if len(usage) != 1 || usage[0].GetProvider() != planv1.Provider_PROVIDER_CLAUDE || usage[0].GetAccount() != "" ||
+		!usage[0].GetOverflowing() {
+		t.Errorf("usage = %v, want claude's own sign-in overflowing alone", usage)
+	}
+}

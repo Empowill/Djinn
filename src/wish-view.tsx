@@ -163,6 +163,7 @@ import {
   WishTitle,
   leadTrouble,
   recordedAgent,
+  type PinChoice,
   type SeatChoice,
 } from "./wish-head";
 import { LeadMessage } from "./lead-message";
@@ -1010,6 +1011,18 @@ export function WishView({
       () => note,
     );
   };
+  // pinLead pins the lead Djinn drives on a sign-in of its agent, or lets it follow the order of the accounts again;
+  // what Djinn says of it shows as a toast.
+  const pinLead = (pin: PinChoice) => {
+    let note = "";
+    return act(
+      async () => {
+        ({ note } = await clients.lead.pin(pin));
+      },
+      [Change.WISH],
+      () => note,
+    );
+  };
   const attention = attentionOf(
     [...open, ...waitingLead],
     waiting,
@@ -1103,6 +1116,7 @@ export function WishView({
               onSetup={onSetupAgents}
               drive={leadDrive}
               onMove={(seat) => quiet(moveLead(seat))}
+              onPin={(pin) => quiet(pinLead(pin))}
             />
             <PageHeaderAction
               label={t("app.share")}

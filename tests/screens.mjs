@@ -101,6 +101,7 @@ export {
 } from "@/src/data/flight.ts";
 export { AzimaCard, azimaFinished, DraftAzimaCard } from "@/src/azima.tsx";
 export { RankedAzimaList } from "@/src/azima-rank.tsx";
+export { RankedSignIns, moved, reordered } from "@/src/sign-in-order.tsx";
 export {
   FolderField,
   MakeWish,
@@ -463,7 +464,9 @@ export function setupMockDom() {
     get children() {
       return this.childNodes.filter((c) => c.nodeType === 1);
     }
+    // A node already in the tree moves, as in a browser: React moves a keyed line by inserting it again.
     appendChild(child) {
+      child.parentNode?.removeChild(child);
       child.parentNode = this;
       this.childNodes.push(child);
       return child;
@@ -477,6 +480,7 @@ export function setupMockDom() {
       return child;
     }
     insertBefore(child, before) {
+      child.parentNode?.removeChild(child);
       child.parentNode = this;
       const idx = this.childNodes.indexOf(before);
       if (idx !== -1) this.childNodes.splice(idx, 0, child);

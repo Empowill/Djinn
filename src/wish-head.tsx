@@ -52,17 +52,23 @@ const agents: [string, Provider][] = [
 ];
 
 // The lead Djinn drives, for the lead's menu: where it runs, the accounts of this machine it may move to, its
-// running or failed batch, and its journal of past batches.
+// running or failed batch, its journal of past batches, and whether it is pinned on its seat's account (else each
+// batch follows the order of the accounts).
 export interface LeadDrive {
   seat?: LeadSeat;
   accounts: Account[];
   batch?: LeadBatch;
   journal?: LeadBatch[];
+  pinned?: boolean;
 }
 
 // A seat the lead may move to: its agent, model and account; an empty model is the agent's default, an empty account
 // its own sign-in.
 export type SeatChoice = { provider: Provider; model: string; account: string };
+
+// A pin of the lead on a sign-in of its agent (LeadService.Pin): an account, "" for its own sign-in; unpin takes the
+// pin off, and each batch follows the order of the accounts again.
+export type PinChoice = { account: string; unpin: boolean };
 
 // agentNamed is the name of an agent the window shows, by its kind.
 const agentNamed: Partial<Record<Provider, string>> = {
@@ -89,20 +95,23 @@ export function seatName(
     : agent;
 }
 
-// seatLabel names where the lead Djinn drives runs, for its chip: the agent, its account, then the model it was set
-// to, else the one its last batch ran on that agent; no model when it runs the agent's default.
+// seatLabel names where the lead Djinn drives runs, for its chip: the agent, its account (pinned, the seat's; following
+// the order, the one its last batch ran on that agent), then the model it was set to, else the one its last batch ran
+// on that agent; no model when it runs the agent's default. A batch running past its limits says it is in overflow.
 export function seatLabel(drive: LeadDrive): string {
   const provider = drive.seat?.provider || Provider.CLAUDE;
   const last = drive.batch;
-  const model =
-    drive.seat?.model ||
-    ((last?.provider || Provider.CLAUDE) === provider ? last?.model : "") ||
-    "";
-  const seat = seatName(
-    { provider, account: drive.seat?.account ?? "" },
-    drive.accounts,
-  );
-  return model ? `${seat} · ${shortModel(model)}` : seat;
+  const onAgent = (last?.provider || Provider.CLAUDE) === provider;
+  const model = drive.seat?.model || (onAgent ? last?.model : "") || "";
+  const account =
+    drive.pinned === false
+      ? (onAgent && last?.account) || ""
+      : (drive.seat?.account ?? "");
+  const seat = seatName({ provider, account }, drive.accounts);
+  const label = model ? `${seat} · ${shortModel(model)}` : seat;
+  return last?.overflow && last.state === LeadBatchState.RUNNING
+    ? `${label} · ${t("wish.lead_overflow")}`
+    : label;
 }
 
 // recordedAgent is the agent of the wish's recorded lead; none without a session, except Antigravity. A lead stored without one ran Claude.
@@ -371,6 +380,7 @@ export function LeadButton({
   onSetup,
   drive,
   onMove,
+  onPin,
 }: {
   recorded?: Provider;
   agents?: Agent[];
@@ -387,9 +397,10 @@ export function LeadButton({
   // Opens the setup of the agents: install one, sign it in.
   onSetup?: () => void;
   // While Djinn drives the lead, the seat's chip replaces Lead, and its menu moves it to another agent, model or
-  // account (onMove).
+  // account (onMove), or pins it on a sign-in of its agent, or lets it follow the order (onPin).
   drive?: LeadDrive;
   onMove?: (seat: SeatChoice) => void;
+  onPin?: (pin: PinChoice) => void;
 }) {
   const [open, setOpen] = useState(startOpen);
   const [journalShown, setJournalShown] = useState(startJournalOpen);
@@ -466,6 +477,13 @@ export function LeadButton({
         ((seat) => {
           setOpen(false);
           onMove(seat);
+        })
+      }
+      onPin={
+        onPin &&
+        ((pin) => {
+          setOpen(false);
+          onPin(pin);
         })
       }
     />
@@ -559,6 +577,7 @@ export function LeadMenu({
   onSetup,
   drive,
   onMove,
+  onPin,
 }: {
   agents?: Agent[];
   recorded?: Provider;
@@ -567,6 +586,7 @@ export function LeadMenu({
   onSetup?: () => void;
   drive?: LeadDrive;
   onMove?: (seat: SeatChoice) => void;
+  onPin?: (pin: PinChoice) => void;
 }) {
   if (!found)
     return (
@@ -577,7 +597,7 @@ export function LeadMenu({
   if (drive && onMove)
     return (
       <div className="lead-menu" role="menu" aria-label={t("wish.lead_agents")}>
-        <SeatItems found={found} drive={drive} onMove={onMove} />
+        <SeatItems found={found} drive={drive} onMove={onMove} onPin={onPin} />
         {onSetup && (
           <button role="menuitem" className="lead-agent" onClick={onSetup}>
             <span className="lead-agent-name">
@@ -633,27 +653,55 @@ export function LeadMenu({
 
 // SeatItems are the seats of the lead Djinn drives: each agent on its own sign-in, then on each of its accounts; the
 // one it runs on is marked, Antigravity and a missing agent disabled, saying why. A click moves the lead there, its
-// model kept on the same agent. Last, the model, for the agent it runs on: Enter moves it to that model.
+// model kept on the same agent. With onPin, its account follows the order of the accounts first (Follows the order,
+// marked unless it is pinned), and a click on a sign-in of its own agent pins it there (LeadService.Pin); the other
+// agents still move it. Last, the model, for the agent it runs on: Enter moves it to that model.
 function SeatItems({
   found,
   drive,
   onMove,
+  onPin,
 }: {
   found: Agent[];
   drive: LeadDrive;
   onMove: (seat: SeatChoice) => void;
+  onPin?: (pin: PinChoice) => void;
 }) {
   const current = drive.seat?.provider || Provider.CLAUDE;
   const [model, setModel] = useState(drive.seat?.model ?? "");
+  const follows = onPin !== undefined && !drive.pinned;
   return (
     <>
+      {onPin && (
+        <button
+          role="menuitem"
+          className={follows ? "lead-agent current" : "lead-agent"}
+          aria-current={follows || undefined}
+          onClick={() => onPin({ account: "", unpin: true })}
+        >
+          <span className="lead-agent-name">
+            {t("wish.lead_follows")}
+            {follows && <Check size={13} aria-hidden="true" />}
+          </span>
+          <span className="lead-agent-detail">
+            {follows
+              ? t("wish.lead_follows_current")
+              : t("wish.lead_follows_detail", {
+                  agent: agentNamed[current] ?? "Claude Code",
+                })}
+          </span>
+        </button>
+      )}
       {agents.map(([id, provider]) => {
         const agent = found.find((a) => a.id === id);
         if (!agent) return null;
         const accounts = drive.accounts.filter((a) => a.provider === provider);
         return ["", ...accounts.map((a) => a.name)].map((account) => {
+          const pins = onPin !== undefined && provider === current;
           const here =
-            provider === current && account === (drive.seat?.account ?? "");
+            provider === current &&
+            account === (drive.seat?.account ?? "") &&
+            !follows;
           const leads = provider !== Provider.ANTIGRAVITY;
           return (
             <button
@@ -663,11 +711,14 @@ function SeatItems({
               disabled={!agent.available || !leads}
               aria-current={here || undefined}
               onClick={() =>
-                onMove({
-                  provider,
-                  account,
-                  model: provider === current ? (drive.seat?.model ?? "") : "",
-                })
+                pins
+                  ? onPin({ account, unpin: false })
+                  : onMove({
+                      provider,
+                      account,
+                      model:
+                        provider === current ? (drive.seat?.model ?? "") : "",
+                    })
               }
             >
               <span className="lead-agent-name">
@@ -681,11 +732,17 @@ function SeatItems({
                   ? t("wish.lead_missing", { command: agent.command })
                   : !leads
                     ? t("wish.lead_cannot_lead")
-                    : here
-                      ? drive.seat?.model
-                        ? t("wish.lead_seat_model", { model: drive.seat.model })
-                        : t("wish.lead_seat_current")
-                      : t("wish.lead_seat_move")}
+                    : here && pins
+                      ? t("wish.lead_pinned_here")
+                      : here
+                        ? drive.seat?.model
+                          ? t("wish.lead_seat_model", {
+                              model: drive.seat.model,
+                            })
+                          : t("wish.lead_seat_current")
+                        : pins
+                          ? t("wish.lead_pin")
+                          : t("wish.lead_seat_move")}
               </span>
             </button>
           );

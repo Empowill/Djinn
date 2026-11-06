@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { screens } from "./screens.mjs";
+import { screens, setupMockDom } from "./screens.mjs";
 
 const { s, h, live } = await screens();
 
@@ -544,7 +544,7 @@ test("driven, Lead has no Talk to the Djinn: a chip names the seat, its menu mov
   assert.doesNotMatch(markup, /split-button|lead-dot/);
   assert.match(
     markup,
-    /<div class="lead-seat-wrap"><button class="button secondary small lead-seat" aria-label="The Djinn runs on Claude Code · opus 5\.5: move it" title="Move the Djinn to another agent, model or account: [^"]*" aria-haspopup="menu" aria-expanded="false"><span>Claude Code · opus 5\.5<\/span><svg/,
+    /<div class="lead-seat-wrap"><button class="button secondary small lead-seat" aria-label="The Djinn runs on Claude Code · opus 5\.5: move it" title="Move the Djinn to another agent or model, pin it on an account, or let it follow the order of the accounts" aria-haspopup="menu" aria-expanded="false"><span>Claude Code · opus 5\.5<\/span><svg/,
   );
 
   // The seat's model, else the one its last batch ran on that agent, else none: the agent's default.
@@ -565,6 +565,128 @@ test("driven, Lead has no Talk to the Djinn: a chip names the seat, its menu mov
     "Codex",
   );
   assert.equal(s.seatLabel({ accounts: [] }), "Claude Code");
+  // Following the order, the chip names the account its batch runs on, and says when it runs past its limits.
+  assert.equal(
+    s.seatLabel({
+      seat: { provider: s.Provider.CLAUDE, model: "", account: "" },
+      pinned: false,
+      accounts,
+      batch: {
+        provider: s.Provider.CLAUDE,
+        model: "claude-opus-5-5",
+        account: "work",
+        overflow: true,
+        state: s.LeadBatchState.RUNNING,
+      },
+    }),
+    "Claude Code · Work · opus 5.5 · in overflow",
+  );
+});
+
+test("the Djinn's menu offers Follows the order first, pins it on a sign-in of its agent, and still moves it to another agent", async () => {
+  const agents = [
+    { id: "claude", name: "Claude", available: true, command: "claude" },
+    { id: "codex", name: "Codex", available: true, command: "codex" },
+  ];
+  const accounts = [
+    { name: "work", provider: s.Provider.CLAUDE, label: "Work" },
+    { name: "gpt", provider: s.Provider.CODEX, label: "" },
+  ];
+  const seat = { provider: s.Provider.CLAUDE, model: "", account: "work" };
+  const menu = (pinned) =>
+    s.renderToStaticMarkup(
+      h(s.LeadMenu, {
+        agents,
+        drive: { seat, accounts, pinned },
+        onPick() {},
+        onMove() {},
+        onPin() {},
+      }),
+    );
+  // Following the order: Follows the order is marked, first; each sign-in of Claude pins it there.
+  const follows = menu(false);
+  assert.match(
+    follows,
+    /^<div class="lead-menu" role="menu" aria-label="[^"]+"><button role="menuitem" class="lead-agent current" aria-current="true"><span class="lead-agent-name">Follows the order<svg[^]*?The Djinn follows the order of the accounts<\/span>/,
+  );
+  assert.match(
+    follows,
+    /<span class="lead-agent-name">Claude · Work<\/span><span class="lead-agent-detail">Pins the Djinn here: each batch starts here, whatever the order<\/span>/,
+  );
+  assert.match(
+    follows,
+    /<span class="lead-agent-name">Codex · gpt<\/span><span class="lead-agent-detail">Moves the Djinn here/,
+  );
+  // Pinned on work: work is marked, Follows the order takes the pin off.
+  const pinned = menu(true);
+  assert.match(
+    pinned,
+    /<button role="menuitem" class="lead-agent"><span class="lead-agent-name">Follows the order<\/span><span class="lead-agent-detail">Each batch starts on the first free sign-in of Claude Code in the order of the accounts<\/span>/,
+  );
+  assert.match(
+    pinned,
+    /class="lead-agent current" aria-current="true"><span class="lead-agent-name">Claude · Work<svg[^]*?The Djinn is pinned here<\/span>/,
+  );
+
+  // A click on Follows the order unpins, on Claude's own sign-in pins there, on Codex moves.
+  const container = setupMockDom();
+  const below = (el, out = []) => {
+    for (const child of el.childNodes) {
+      out.push(child);
+      below(child, out);
+    }
+    return out;
+  };
+  const props = (el) =>
+    el[Object.keys(el).find((k) => k.startsWith("__reactProps$"))];
+  // The text of a node: its text nodes', or what React set whole.
+  const text = (el) =>
+    el.nodeType === 3
+      ? (el.nodeValue ?? "")
+      : el.childNodes.length
+        ? el.childNodes.map(text).join("")
+        : (el.textContent ?? "");
+  const item = (name) =>
+    below(container).find(
+      (el) =>
+        el.attributes?.role === "menuitem" &&
+        below(el).some(
+          (c) =>
+            String(c.attributes?.class ?? "") === "lead-agent-name" &&
+            text(c) === name,
+        ),
+    );
+  const pins = [];
+  const moves = [];
+  const root = s.createRoot(container);
+  try {
+    await s.act(async () =>
+      root.render(
+        h(s.LeadMenu, {
+          agents,
+          drive: { seat, accounts, pinned: true },
+          onPick() {},
+          onMove: (to) => moves.push(to),
+          onPin: (pin) => pins.push(pin),
+        }),
+      ),
+    );
+    props(item("Follows the order")).onClick();
+    props(item("Claude")).onClick();
+    props(item("Codex")).onClick();
+    assert.deepEqual(pins, [
+      { account: "", unpin: true },
+      { account: "", unpin: false },
+    ]);
+    assert.deepEqual(moves, [
+      { provider: s.Provider.CODEX, account: "", model: "" },
+    ]);
+  } finally {
+    s.act(() => root.unmount());
+    await new Promise((r) => setTimeout(r, 30));
+    for (const handle of process._getActiveHandles())
+      if (handle?.constructor?.name === "MessagePort") handle.unref();
+  }
 });
 
 test("next to Lead, Djinn shows the running batch (since when, events, cost) and a failed batch's retry", () => {

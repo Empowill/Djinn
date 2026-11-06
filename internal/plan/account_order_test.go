@@ -1,26 +1,26 @@
 package plan
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
 	uiv1 "github.com/empowill/djinn/gen/go/ui/v1"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // orderText names each sign-in of order: "claude", "claude/work".
 func orderText(order []SignIn) []string {
 	var out []string
 	for _, s := range order {
-		name := providerWord(s.Provider)
-		if s.Name != "" {
-			name += "/" + s.Name
-		}
-		out = append(out, name)
+		out = append(out, SignInWord(s))
 	}
 	return out
 }
@@ -94,5 +94,89 @@ func TestAccountOrder(t *testing.T) {
 	}
 	if got := orderText(AccountOrder(home)); got[0] != "claude/perso" {
 		t.Errorf("a refused order changed it: %v", got)
+	}
+}
+
+// TestLeadServiceOrder: djinn lead order writes the whole order, a sign-in left out after the ones named, and says it
+// back; djinn lead accounts gives it, with the lead's pin; an unknown sign-in is refused, the order left as it was.
+func TestLeadServiceOrder(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	st, err := store.Open(ctx, "", Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	svc := &LeadService{Wishes: &Wishes{Store: st, Home: t.TempDir()}, UserHome: t.TempDir()}
+	home := svc.Wishes.home()
+	if err := changeSettings(home, func(s *uiv1.Settings) error {
+		s.Accounts = []*planv1.Account{
+			{Name: "work", Provider: planv1.Provider_PROVIDER_CLAUDE, Label: "Work"},
+			{Name: "gpt", Provider: planv1.Provider_PROVIDER_CODEX},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := svc.Order(ctx, connect.NewRequest(&planv1.LeadServiceOrderRequest{SignIn: []string{"claude/work", "codex", "claude"}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"claude/work", "codex", "claude", "codex/gpt", "antigravity"}
+	if got := res.Msg.GetSignIn(); !slices.Equal(got, want) {
+		t.Errorf("order written = %v, want %v", got, want)
+	}
+	if text := res.Msg.GetText(); !strings.Contains(text, "1. work (Work, Claude Code)\n2. Codex's own sign-in\n") {
+		t.Errorf("text:\n%s", text)
+	}
+
+	for _, bad := range [][]string{{"claude/nobody"}, {"codex/work"}, {"claude", "claude"}} {
+		_, err := svc.Order(ctx, connect.NewRequest(&planv1.LeadServiceOrderRequest{SignIn: bad}))
+		if ce := new(connect.Error); !errors.As(err, &ce) || ce.Code() != connect.CodeInvalidArgument {
+			t.Errorf("order %v: %v, want invalid_argument", bad, err)
+		}
+	}
+
+	accounts, err := svc.Accounts(ctx, connect.NewRequest(&planv1.LeadServiceAccountsRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := accounts.Msg.GetOrder(); !slices.Equal(got, want) || accounts.Msg.GetPinned() {
+		t.Errorf("accounts: order %v, pinned %v; want %v, not pinned", got, accounts.Msg.GetPinned(), want)
+	}
+	if err := PinLead(home, true); err != nil {
+		t.Fatal(err)
+	}
+	if accounts, err = svc.Accounts(ctx, connect.NewRequest(&planv1.LeadServiceAccountsRequest{})); err != nil ||
+		!accounts.Msg.GetPinned() {
+		t.Errorf("accounts once pinned: %v, %v", accounts.Msg.GetPinned(), err)
+	}
+}
+
+// TestLeadOverflowing: while the lead's batch runs past its limits, its sign-in's usage says so, with a line of its
+// own when Djinn read nothing there; a batch that ended, or that runs under its limits, marks none.
+func TestLeadOverflowing(t *testing.T) {
+	t.Parallel()
+	read := []*planv1.AccountUsage{{Provider: planv1.Provider_PROVIDER_CLAUDE, Account: "work"}}
+	running := &planv1.LeadBatch{Account: "work", Overflow: true, State: planv1.LeadBatchState_LEAD_BATCH_STATE_RUNNING}
+	if got := leadOverflowing(read, running); len(got) != 1 || !got[0].GetOverflowing() {
+		t.Errorf("work in overflow: %v", got)
+	}
+	if !strings.Contains(UsageText(read[0]), "in overflow") {
+		t.Errorf("line: %q", UsageText(read[0]))
+	}
+	own := &planv1.LeadBatch{Overflow: true, State: planv1.LeadBatchState_LEAD_BATCH_STATE_RUNNING}
+	if got := leadOverflowing(nil, own); len(got) != 1 || got[0].GetAccount() != "" || !got[0].GetOverflowing() ||
+		got[0].GetProvider() != planv1.Provider_PROVIDER_CLAUDE {
+		t.Errorf("own sign-in in overflow, nothing read: %v", got)
+	}
+	for _, b := range []*planv1.LeadBatch{
+		{Account: "work", Overflow: true, State: planv1.LeadBatchState_LEAD_BATCH_STATE_DONE},
+		{Account: "work", State: planv1.LeadBatchState_LEAD_BATCH_STATE_RUNNING},
+	} {
+		if got := leadOverflowing(nil, b); len(got) != 0 {
+			t.Errorf("batch %v: %v", b, got)
+		}
 	}
 }
