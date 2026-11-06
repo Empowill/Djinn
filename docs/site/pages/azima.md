@@ -124,7 +124,8 @@ djinn/T07-the-orchestrator):
   Djinn asks you, as a move, whether to open it, and opens it as a draft when you say yes. The card shows **PR
   proposed**, **PR open** or **PR merged**, with a link to the request. You merge it on the forge; once it is merged,
   Djinn marks the azima done.
-- Djinn pushes the branch by itself under the standard cadence, at the azima's end or after three tasks and an hour;
+- Djinn pushes the branch by itself under the standard cadence, at the azima's end, after three tasks and an hour, or
+  once main is merged into it after its first push;
   on demand, a push button beside the branch pushes it when it is ahead of its remote.
 - A project whose branches follow a convention, a ticket's key for instance, can give an azima a branch name of its
   own; a branch that exists already is adopted as it is.

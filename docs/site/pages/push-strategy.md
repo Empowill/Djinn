@@ -61,7 +61,8 @@ djinn/T07-the-orchestrator.
 - **Its work merges into it**, checked, as into a wish's integration branch. The work of a task part of no azima goes to
   the wish's integration branch.
 - **It keeps up with main**, by the same rules as a wish's branch.
-- **It is pushed** by the project's cadence: under Standard, at the latest when the azima ends. Its card shows the branch's line when it
+- **It is pushed** by the project's cadence: under Standard, at the latest when the azima ends, and each time main is
+  merged into it once it was pushed. Its card shows the branch's line when it
   differs from the remote, with its push button, and **Pushed** when it does not.
 - **It lands in main** through its own pull request. Once the azima is done and main holds every commit of its branch,
   its card says **Landed in main**, even when the remote's copy of the branch lags behind: nothing waits for a push. The

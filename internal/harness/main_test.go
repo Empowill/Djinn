@@ -273,6 +273,71 @@ func TestMergeMain(t *testing.T) {
 		}
 	})
 
+	// Q245: main merged into the wish's integration branch, pushed already, makes its push due though no task was
+	// committed since, as for an azima's branch (Q243): its pull request's checks run on main as it is. Pushed by itself
+	// in auto mode; asked in ask mode. A branch never pushed waits for its work; one whose remote holds the merge already
+	// is not pushed again.
+	t.Run("main merged pushes the wish's branch", func(t *testing.T) {
+		t.Parallel()
+		for _, ask := range []bool{false, true} {
+			t.Run(map[bool]string{false: "auto", true: "ask"}[ask], func(t *testing.T) {
+				t.Parallel()
+				u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+				if ask {
+					if _, err := u.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+						WishId: u.wishID, PushMode: planv1.PushMode_PUSH_MODE_ASK,
+					})); err != nil {
+						t.Fatal(err)
+					}
+				}
+				first := u.onMain(t, "Fix the login", map[string]string{"app/src/login.txt": "fixed\n"})
+				u.pass(t, 0)
+				u.pass(t, 0)
+				if !u.holds(t, first) {
+					t.Fatalf("main not merged: %v", u.merges(t))
+				}
+				if got := u.git(t, u.other, "ls-remote", "origin", "refs/heads/"+u.branch); got != "" || len(u.pushes(t)) != 0 ||
+					u.pushState(t).GetQuestionId() != "" {
+					t.Fatalf("never pushed, main merged: origin's %s %q, pushes %v, push state %v; want nothing",
+						u.branch, got, u.pushes(t), u.pushState(t))
+				}
+
+				u.git(t, u.repo, "push", "--quiet", "origin", u.branch) // The person pushes it once.
+				pushed := u.tip(t)
+				u.pass(t, time.Minute) // The remote holds the merge: nothing to push.
+				if len(u.pushes(t)) != 0 || u.pushState(t).GetQuestionId() != "" {
+					t.Fatalf("remote holds the merge: pushes %v, push state %v; want none", u.pushes(t), u.pushState(t))
+				}
+
+				fix := u.onMain(t, "Fix the page", map[string]string{"app/src/page.txt": "fixed\n"})
+				u.pass(t, 2*time.Hour) // The next look at main merges it.
+				u.pass(t, 0)
+				tip := u.tip(t)
+				if !u.holds(t, fix) || tip == pushed {
+					t.Fatalf("%s at %s does not hold main's %s", u.branch, tip, fix)
+				}
+				remote := strings.Fields(u.git(t, u.other, "ls-remote", "origin", "refs/heads/"+u.branch))[0]
+				if ask {
+					q := u.pushQuestion(t)
+					if remote != pushed || len(u.pushes(t)) != 0 || q.GetText() != "Push "+u.branch+" to origin? (merges only)" ||
+						!strings.HasPrefix(q.GetContext(), "**Why now.** Origin/"+u.main+" merged into it.") {
+						t.Errorf("ask mode: origin's %s at %s, pushes %v, question %q, %q; want at %s, none, asked why",
+							u.branch, remote, u.pushes(t), q.GetText(), q.GetContext(), pushed)
+					}
+					return
+				}
+				all := u.pushes(t)
+				if remote != tip || len(all) != 1 || all[0].GetBranch() != u.branch || len(all[0].GetTaskIds()) > 0 {
+					t.Fatalf("origin's %s at %s, pushes %v; want one, of %s at %s", u.branch, remote, all, u.branch, tip)
+				}
+				u.pass(t, 2*time.Hour) // Main still: nothing more to push.
+				if got := len(u.pushes(t)); got != 1 {
+					t.Errorf("%d pushes after a quiet pass; want 1", got)
+				}
+			})
+		}
+	})
+
 	// main conflicting in code with the integration branch leaves the branch as it was and starts a correction worker
 	// by itself, on the merge of main under way, never a rebase; its work integrates like any task's, and its success
 	// records main as merged, settled by it.
