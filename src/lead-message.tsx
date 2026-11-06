@@ -9,6 +9,7 @@ import { Check, Clock, MessageSquare, Send, Terminal, X } from "lucide-react";
 import {
   type KeyboardEvent,
   type RefObject,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -41,6 +42,54 @@ import "./instruction.css";
 const emptyDetails: Record<string, WishDetail> = {};
 const emptyBlocks: readonly Block[] = [];
 
+// grow fits a textarea to its text, up to its CSS max-height, then lets it scroll inside: one forced layout, the
+// text's height read once.
+function grow(textarea: HTMLTextAreaElement) {
+  textarea.style.height = "auto";
+  textarea.style.overflowY = "hidden";
+  const maxHeight =
+    typeof window !== "undefined" &&
+    typeof window.getComputedStyle === "function"
+      ? Number.parseFloat(window.getComputedStyle(textarea).maxHeight)
+      : Number.NaN;
+  const full = textarea.scrollHeight;
+  const height = Number.isFinite(maxHeight) ? Math.min(full, maxHeight) : full;
+  textarea.style.height = `${height}px`;
+  textarea.style.overflowY = full > height ? "auto" : "hidden";
+}
+
+// useGrowSoon gives a function that fits the textarea at the next frame, once for all the keys that came before it:
+// a key forces no layout of the page, under load the keys that arrive together cost one (W472). A text that grew and
+// still fits, or that scrolls already, keeps its height: the frame's own layout is then the only one.
+function useGrowSoon(box: RefObject<HTMLTextAreaElement | null>) {
+  const frame = useRef(0);
+  const length = useRef(0);
+  useEffect(
+    () => () => {
+      if (frame.current) window.cancelAnimationFrame(frame.current);
+      frame.current = 0;
+    },
+    [],
+  );
+  return useCallback(() => {
+    if (frame.current) return;
+    frame.current = window.requestAnimationFrame(() => {
+      frame.current = 0;
+      const textarea = box.current;
+      if (!textarea) return;
+      const longer = textarea.value.length > length.current;
+      length.current = textarea.value.length;
+      if (
+        longer &&
+        (textarea.style.overflowY === "auto" ||
+          textarea.scrollHeight <= textarea.clientHeight)
+      )
+        return;
+      grow(textarea);
+    });
+  }, [box]);
+}
+
 // Auto-grows a textarea up to its CSS max-height, then scrolls inside.
 export function useGrowTextarea(
   box: RefObject<HTMLTextAreaElement | null>,
@@ -52,21 +101,7 @@ export function useGrowTextarea(
     const textarea = box.current;
     if (!textarea) return;
 
-    const resize = () => {
-      textarea.style.height = "auto";
-      textarea.style.overflowY = "hidden";
-      const maxHeight =
-        typeof window !== "undefined" &&
-        typeof window.getComputedStyle === "function"
-          ? Number.parseFloat(window.getComputedStyle(textarea).maxHeight)
-          : Number.NaN;
-      const height = Number.isFinite(maxHeight)
-        ? Math.min(textarea.scrollHeight, maxHeight)
-        : textarea.scrollHeight;
-      textarea.style.height = `${height}px`;
-      textarea.style.overflowY =
-        textarea.scrollHeight > height ? "auto" : "hidden";
-    };
+    const resize = () => grow(textarea);
     resize();
     const stopTextSize = onTextSize(resize);
     window.addEventListener("resize", resize);
@@ -161,7 +196,17 @@ export function LeadMessage({
     );
     return () => window.cancelAnimationFrame(frame);
   }, [open, wishId, id]);
-  useGrowTextarea(box, state.text, open);
+  // The box is not controlled: a key goes to the draft (draft.type), which renders nothing (W472, L50: under load each
+  // render and layout of a key cost 3 to 5 times their time). It is fitted when it opens, on another wish, and at the
+  // frame after keys; a text the draft changes itself (cleared once sent) is written in it here.
+  useGrowTextarea(box, wishId, open);
+  const growSoon = useGrowSoon(box);
+  useLayoutEffect(() => {
+    const textarea = box.current;
+    if (!textarea || textarea.value === state.text) return;
+    textarea.value = state.text;
+    growSoon();
+  }, [state.text, growSoon]);
   useEffect(() => {
     const keys = (event: globalThis.KeyboardEvent) => {
       if (
@@ -372,17 +417,15 @@ export function LeadMessage({
                   {placeholder}
                 </label>
                 <textarea
+                  key={wishId}
                   id={`${id}-input`}
                   ref={box}
                   rows={1}
-                  value={state.text}
-                  onChange={(event) =>
-                    draft.set({
-                      text: event.target.value,
-                      error: "",
-                      notice: "",
-                    })
-                  }
+                  defaultValue={state.text}
+                  onChange={(event) => {
+                    draft.type(event.target.value);
+                    growSoon();
+                  }}
                   onKeyDown={keys}
                   placeholder={placeholder}
                   aria-invalid={!!state.error}

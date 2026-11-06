@@ -37,6 +37,17 @@ export function createDraft() {
       state = { ...state, ...patch };
       listeners.forEach((listener) => listener());
     },
+    // type keeps a keystroke's text: no listener hears it, so typing renders nothing, unless what the pill shows
+    // around the text changes (an error or a notice it clears, the send button that the first or last letter
+    // enables). The snapshot is replaced all the same: a render for any other reason reads the text as typed.
+    type(text: string) {
+      const shown =
+        state.error !== "" ||
+        state.notice !== "" ||
+        !state.text.trim() !== !text.trim();
+      if (shown) this.set({ text, error: "", notice: "" });
+      else state = { ...state, text };
+    },
     // begin locks the draft and gives the text to send, trimmed; nothing while a send runs or for a blank text.
     begin() {
       const text = state.text.trim();

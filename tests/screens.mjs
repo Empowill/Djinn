@@ -13,6 +13,7 @@ export async function screens() {
     `export {
   createElement,
   act,
+  Profiler,
   useState,
   __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE as reactInternals,
 } from "react";
@@ -67,6 +68,7 @@ export {
   NOTE_MAX,
 } from "@/src/data/format.ts";
 export { FlightPlan } from "@/src/flight-plan.tsx";
+export { LeadMessage } from "@/src/lead-message.tsx";
 export {
   Glance,
   LeadSideLog,
