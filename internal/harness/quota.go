@@ -18,8 +18,9 @@ package harness
 //
 // A pseudo-unlimited sign-in (AccountOption.Unlimited) is one that gives no quota at all: its agent tells none (no
 // UsageProber: Codex, Antigravity), or Djinn read it and it told no window (a Claude sign-in on an API key: the probe
-// answers with no window while claude auth status says it is signed in, claude_usage.go). A probe that fails, or a
-// Claude sign-in never read, is not: its quota is only unknown. The developer corrects the detection either way
+// answers with no window while claude auth status says it is signed in on a pay-per-use key, claude_usage.go). A
+// probe that fails, a Claude subscription that tells no window, or a Claude sign-in never read, is not: its quota is
+// only unknown. The developer corrects the detection either way
 // (djinn lead unlimited, Settings.unlimited_forced and unlimited_unforced).
 
 import (
