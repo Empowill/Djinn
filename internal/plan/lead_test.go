@@ -741,7 +741,7 @@ func TestLeadSessionsAndShow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	slug := claudeProjectSlug(LeadFolder(home))
+	slug := ClaudeProjectSlug(LeadFolder(home))
 
 	// Write transcript for batch 1 (default Claude config dir) and batch 2 (account "work").
 	sess1 := "01a153e0-4a20-7e9a-b323-9e4890f738d1"

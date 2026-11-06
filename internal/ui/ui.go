@@ -307,6 +307,11 @@ func (s *Service) GetEnvironment(
 		} else {
 			res.Providers = checkAgents(ctx, launchPath(), accounts)
 		}
+		for _, p := range res.Providers {
+			if signIns := plan.SignIns(s.Home, agentProviders[p.GetId()]); len(signIns) > 0 {
+				p.Paused = signIns[0].Paused
+			}
+		}
 	} else {
 		for _, p := range providers {
 			command, err := exec.LookPath(p.program)

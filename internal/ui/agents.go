@@ -186,8 +186,9 @@ func run(ctx context.Context, command string, args []string, path string, env []
 // what its status command prints of it (claude auth status: its email, organization and way of signing in, as JSON;
 // codex login status: its line), hashed at once. Empty when the agent documents no status command, is missing or
 // signed out. Djinn keeps the fingerprint alone, never the account's name: the scheduler compares two of them to see
-// that the account changed while a task waits for the usage limit of the one before (harness.WithAccount).
-func Account(ctx context.Context, provider planv1.Provider) string {
+// that the account changed while a task waits for the usage limit of the one before (harness.WithAccount). env is
+// what an account adds to the agent's environment (plan.AccountEnv), to read its folder; nil for the agent's own.
+func Account(ctx context.Context, provider planv1.Provider, env []string) string {
 	for _, a := range agents {
 		if agentProviders[a.id] != provider || a.status == nil {
 			continue
@@ -198,7 +199,7 @@ func Account(ctx context.Context, provider planv1.Provider) string {
 			return ""
 		}
 		var out bytes.Buffer
-		if run(ctx, command, a.status, path, nil, &out) != nil {
+		if run(ctx, command, a.status, path, env, &out) != nil {
 			return "" // Signed out, or no answer.
 		}
 		return accountFingerprint(out.Bytes())

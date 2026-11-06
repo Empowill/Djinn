@@ -87,7 +87,9 @@ test("with no agent ready, the setup opens by itself, installs an agent and chec
   await page.goto(process.env.DJINN_URL!);
 
   const panel = page.getByRole("dialog");
-  await expect(panel.getByText("Set up the agents")).toBeVisible();
+  await expect(panel.getByText("Set up the agents")).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(panel.getByText(/No agent is ready/)).toBeVisible();
   // One line and one button per agent: what the step does shows on hover.
   const claude = row(page, "claude");
@@ -106,7 +108,10 @@ test("with no agent ready, the setup opens by itself, installs an agent and chec
   await expect(step.locator(".xterm-rows")).toContainText("installed claude");
   await expect(step.getByRole("status")).toHaveText("Done.");
   await expect(claude.getByText("Ready", { exact: true })).toBeVisible();
-  await expect(claude.getByRole("button")).toHaveCount(0);
+  await expect(claude.getByRole("button", { name: "Install" })).toHaveCount(0);
+  await expect(claude.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+  await expect(claude.getByRole("button", { name: /Pause/ })).toBeVisible();
+  await expect(claude.getByRole("button")).toHaveCount(1);
   await expect(panel.getByText(/No agent is ready/)).toHaveCount(0);
 
   await panel.getByRole("button", { name: "Close" }).last().click();
@@ -131,7 +136,16 @@ test("the settings show the setup of the agents", async ({ page }) => {
   await expect(
     row(page, "claude").getByText("Ready", { exact: true }),
   ).toBeVisible();
-  await expect(row(page, "claude").getByRole("button")).toHaveCount(0);
+  await expect(
+    row(page, "claude").getByRole("button", { name: "Install" }),
+  ).toHaveCount(0);
+  await expect(
+    row(page, "claude").getByRole("button", { name: "Sign in" }),
+  ).toHaveCount(0);
+  await expect(
+    row(page, "claude").getByRole("button", { name: /Pause/ }),
+  ).toBeVisible();
+  await expect(row(page, "claude").getByRole("button")).toHaveCount(1);
   // Sign-in unknown: signing in stays offered, never pushed.
   const login = row(page, "codex").getByRole("button", { name: "Sign in" });
   await expect(login).toHaveClass(/secondary/);

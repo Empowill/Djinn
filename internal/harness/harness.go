@@ -142,8 +142,16 @@ type Harness struct {
 	mergedLooks      map[string]time.Time  // by repository, when Djinn last fetched main to find azimas merged into it (merged.go), guarded by mu
 
 	// The workers' health (health.go), judged by the scheduler's pass: guarded by sched.
-	accountOf AccountFunc                     // nil: no agent's account is read
-	accounts  map[planv1.Provider]accountSeen // each agent's account, as last read
+	accountOf AccountFunc                // nil: no agent's account is read
+	accounts  map[accountKey]accountSeen // each sign-in's account, as last read
+
+	// The sign-ins the workers run on (account.go).
+	accountPolicy AccountPolicy            // nil: EarliestWeek
+	accountMu     sync.Mutex               // guards accountLimits and quota
+	accountLimits map[accountKey]heldLimit // the usage limits that hold a sign-in
+
+	// Each sign-in's usage limits, as the probe and the workers tell them (quota.go): guarded by accountMu.
+	quota quotas
 
 	// The network, as Djinn knows it (network.go).
 	net network
@@ -269,6 +277,8 @@ type run struct {
 	fallback       string          // why the worker fell back to another provider, for its start event
 	failure        string          // the last error the current worker said: it never ends done
 	limit          *Limit          // the usage limit the current worker said it hit: it wins over failure
+	fresh          string          // the prompt a resumed worker starts on when its session cannot follow it to another sign-in
+	resumed        string          // the Claude Code session the current worker resumes (--resume); not found, sessionLost
 	refused        string          // the last call its permissions refused, as the worker said it (question.go)
 	refusals       *denials        // the calls its permissions refused in this run (refusals.go)
 	envReplayed    bool            // a tool call/result already triggered replay of env failures
@@ -384,6 +394,7 @@ func (h *Harness) Close() {
 	h.babysitting.Wait()
 	h.net.wg.Wait()
 	h.disk.wg.Wait()
+	h.quota.wg.Wait()
 	h.children.close() // What the workers left running stops with them.
 	h.writeCuts()
 }
@@ -1583,6 +1594,35 @@ func (h *Harness) launch(
 // starts its worker with spec. On an error the task is left to the caller to end.
 func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error {
 	t := r.task
+	// The sign-in its worker runs on (account.go): the one it ran on while it may, else another.
+	prior, ran := t.GetAccount(), len(t.GetRuns()) > 0
+	name, account, err := h.accountFor(t)
+	if err != nil {
+		return err
+	}
+	t.Account = name
+	if name != "" && (!ran || name == prior) {
+		text += ", on " + accountText(name)
+	}
+	if ran && name != prior {
+		text += ", moved from " + accountText(prior) + " to " + accountText(name)
+		if spec.Resume != "" {
+			if h.moveSession(t.GetProvider(), spec.Resume, spec.Dir, prior, account) {
+				text += ", its session copied there"
+			} else {
+				spec.Resume, spec.Fork = "", false
+				if r.fresh != "" {
+					spec.Prompt = r.fresh + "\n\n" + spec.Prompt
+				}
+				text += ", on a new session"
+			}
+		}
+	} else if spec.Fork && spec.Resume != "" {
+		h.moveSession(t.GetProvider(), spec.Resume, spec.Dir, "", account) // The session forked may be another sign-in's.
+	}
+	if account != nil && agentOf(t) == planv1.Provider_PROVIDER_CLAUDE && !spec.ReadOnly {
+		spec.MemoryDir = h.memoryDir(spec.Dir)
+	}
 	now := h.now()
 	nowPb := timestamppb.New(now)
 	if t.FirstStartTime == nil {
@@ -1594,6 +1634,10 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	h.mu.Lock()
 	r.startTime = now
 	r.lastActivity = now
+	r.resumed = ""
+	if !spec.Fork && agentOf(t) == planv1.Provider_PROVIDER_CLAUDE {
+		r.resumed = spec.Resume
+	}
 	r.resultAt, r.silentWhy, r.silentNote = time.Time{}, "", false
 	r.code = t.GetCode()
 	r.listenSince, r.listened = time.Time{}, t.GetIfrit().GetListened().AsDuration()
@@ -1622,6 +1666,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 	}
 	t.Runs = append(t.Runs, &planv1.TaskRun{
 		StartTime: nowPb,
+		Account:   name,
 	})
 	r.failure, r.limit = "", nil
 	r.answered, r.closingFailed = false, false
@@ -1663,6 +1708,7 @@ func (h *Harness) start(r *run, provider Provider, spec Spec, text string) error
 		"DJINN_WISH_ID=" + t.GetWishId(),
 		"DJINN_WORKER_TOKEN=" + r.token,
 	}, guard...)
+	spec.Env = append(spec.Env, plan.AccountEnv(account)...)
 	if t.GetScratch() != "" {
 		spec.Env = append(spec.Env, "DJINN_SCRATCH="+t.GetScratch())
 		if !spec.ReadOnly && (spec.Permissions == nil || spec.Permissions.GetEdit()) && !slices.Contains(spec.WriteDirs, t.GetScratch()) {
@@ -1843,8 +1889,15 @@ func (h *Harness) drain(r *run) Result {
 	}
 }
 
-// record writes an event of the worker, with the task when the event changes it.
+// record writes an event of the worker, with the task when the event changes it. The quota of its sign-in it tells is
+// kept (quota.go), and an event of no kind that only tells it is not written.
 func (h *Harness) record(r *run, ev Event) {
+	if ev.Quota != nil {
+		h.noteQuota(agentOf(r.task), r.task.GetAccount(), *ev.Quota)
+		if ev.Kind == planv1.TaskEventKind_TASK_EVENT_KIND_UNSPECIFIED {
+			return
+		}
+	}
 	changed := false
 	if ev.Model != "" {
 		if r.requestedModel != "" && isModelAlias(r.requestedModel) {
@@ -2324,6 +2377,9 @@ func (h *Harness) end(r *run, res Result) {
 		h.networkCut(r, t, streamIdleEnd)
 	}
 	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
+		h.sessionLost(r, t)
+	}
+	if t.GetStatus() == planv1.TaskStatus_TASK_STATUS_FAILED {
 		if cause, isEnv := classifyFailure(r, t, res); isEnv {
 			t.EnvCause = cause
 			t.EnvBuild = h.version
@@ -2371,6 +2427,9 @@ func (h *Harness) end(r *run, res Result) {
 		text = "resuming: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it once the network is back"
 	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING && t.GetResumeAfter() != nil:
 		text = "waiting for the limit: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it then"
+	case t.GetStatus() == planv1.TaskStatus_TASK_STATUS_RESUMING &&
+		(strings.Contains(t.GetWaitReason(), whyAccountMoved) || strings.HasPrefix(t.GetWaitReason(), whySessionLost)):
+		text = "resuming: " + t.GetWaitReason() + " (" + why + "); Djinn resumes it now"
 	case t.GetError() != "":
 		text += ": " + t.GetError()
 	}

@@ -120,9 +120,9 @@ esac
 		s.AgentPath = func() string { return dir }
 		settings := `{"accounts": [
   {"name": "work", "provider": "PROVIDER_CLAUDE", "label": "Work", "configDirectory": "` + work + `"},
-  {"name": "home", "provider": "PROVIDER_CLAUDE", "configDirectory": "` + home + `"},
+  {"name": "home", "provider": "PROVIDER_CLAUDE", "configDirectory": "` + home + `", "paused": true},
   {"name": "gpt", "provider": "PROVIDER_CODEX", "configDirectory": "/nowhere"}
-]}`
+], "pausedSignIns": ["PROVIDER_CODEX"]}`
 		if err := os.WriteFile(filepath.Join(s.Home, "settings.json"), []byte(settings), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -144,6 +144,14 @@ esac
 		}
 		if codex := got["codex"].GetAccounts(); len(codex) != 1 || codex[0].GetState() != uiv1.ProviderState_PROVIDER_STATE_MISSING {
 			t.Errorf("codex's accounts = %v; want gpt, codex missing", codex)
+		}
+		// The window shows each pause: an account's, and an agent's own sign-in's.
+		if !got["codex"].GetPaused() || got["claude"].GetPaused() || got["antigravity"].GetPaused() {
+			t.Errorf("own sign-ins paused: claude %v, codex %v, antigravity %v; want codex alone",
+				got["claude"].GetPaused(), got["codex"].GetPaused(), got["antigravity"].GetPaused())
+		}
+		if accounts[0].GetAccount().GetPaused() || !accounts[1].GetAccount().GetPaused() {
+			t.Errorf("claude's accounts = %v; want home paused, work not", accounts)
 		}
 	})
 	// Antigravity documents no status command nor version flag: installed, its sign-in is unknown, and Djinn runs it
@@ -318,7 +326,7 @@ func TestAccount(t *testing.T) {
 			bin := launchHome(t)
 			fake(t, bin, "claude", c.claude)
 			fake(t, bin, "agy", "exit 0\n")
-			if got := Account(context.Background(), c.provider); got != c.want {
+			if got := Account(context.Background(), c.provider, nil); got != c.want {
 				t.Errorf("Account(%v) = %q, want %q", c.provider, got, c.want)
 			}
 		})

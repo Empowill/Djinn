@@ -73,6 +73,17 @@ type Situation struct {
 	questionCode func(id string) string
 	// network is what the network allows now (W285); nil: it holds nothing back.
 	network *Network
+	// accounts tells why no sign-in of a task's agent may take its worker now, and whether a task that waits for its
+	// own account's limit moves to another sign-in (WithAccounts); nil: the sign-ins hold nothing back.
+	accounts func(t *planv1.Task) (why string, moves bool)
+}
+
+// WithAccounts tells the situation the sign-ins of the agents (T33): f says why no sign-in of a task's agent may take
+// its worker now, each paused or held by a limit ("" when one may), and whether the task, waiting for the limit of the
+// account it ran on, moves now to another one free.
+func (s *Situation) WithAccounts(f func(t *planv1.Task) (why string, moves bool)) *Situation {
+	s.accounts = f
+	return s
 }
 
 // Network is what the network allows now (W285).
@@ -959,12 +970,21 @@ func taskModel(t *planv1.Task) string {
 	return ""
 }
 
-// limited says why the task waits for a usage limit: its own, until it resets, or a model's limit that another task of
-// the same provider on that model hit and still waits for; "" when none holds. A limit message that names no model
-// holds only the task that hit it, never every task of the provider (W409).
+// limited says why the task waits for a usage limit: its own, until it resets, unless another sign-in of its agent
+// takes it now; no sign-in of its agent free, each paused or limited; or a model's limit that another task of the
+// same provider and account on that model hit and still waits for; "" when none holds. A limit message that names no
+// model holds only the task that hit it, never every task of the provider (W409).
 func (s *Situation) limited(t *planv1.Task) string {
-	if Resuming(t) && t.GetResumeAfter() != nil && t.GetResumeAfter().AsTime().After(s.now) {
+	var signIn string
+	moves := false
+	if s.accounts != nil {
+		signIn, moves = s.accounts(t)
+	}
+	if Resuming(t) && t.GetResumeAfter() != nil && t.GetResumeAfter().AsTime().After(s.now) && !moves {
 		return cmp.Or(t.GetWaitReason(), "its provider's usage limit")
+	}
+	if signIn != "" {
+		return signIn
 	}
 	tm := taskModel(t)
 	if tm == "" {
@@ -974,7 +994,7 @@ func (s *Situation) limited(t *planv1.Task) string {
 	var holder *planv1.Task
 	for _, o := range s.tasks {
 		if o.GetId() == t.GetId() || !Resuming(o) || o.GetResumeAfter() == nil || !o.GetResumeAfter().AsTime().After(s.now) ||
-			provider(o) != provider(t) {
+			provider(o) != provider(t) || o.GetAccount() != t.GetAccount() {
 			continue
 		}
 		m := LimitModel(cmp.Or(o.GetWaitReason(), o.GetError()))

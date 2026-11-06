@@ -231,7 +231,7 @@ func TestHealthLimitResetMidPass(t *testing.T) {
 	clock := &fakeClock{at: time.Date(2026, 10, 17, 4, 28, 30, 0, time.UTC)}
 	var mu sync.Mutex
 	var reset time.Time
-	account := func(context.Context, planv1.Provider) string {
+	account := func(context.Context, planv1.Provider, []string) string {
 		mu.Lock()
 		defer mu.Unlock()
 		if !reset.IsZero() && clock.now().Before(reset) {
@@ -268,7 +268,7 @@ type accounts struct {
 	read int
 }
 
-func (a *accounts) of(_ context.Context, _ planv1.Provider) string {
+func (a *accounts) of(_ context.Context, _ planv1.Provider, _ []string) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.read++
