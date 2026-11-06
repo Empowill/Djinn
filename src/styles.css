@@ -1391,9 +1391,12 @@ html[data-theme="light"] .wordmark-period {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.sign-in-overflow {
-  color: var(--accent);
-  border-color: var(--n-9c);
+/* An overflow is a warning: the badge takes the tone of what waits, on its own opaque ground (8% of the tone over the
+   card's surface), so it reads at 4.5:1 whatever the line under it, and outweighs the light theme's grey badge. */
+.sign-in-line .badge.sign-in-overflow {
+  color: var(--st-waiting);
+  border-color: color-mix(in srgb, var(--st-waiting) 45%, transparent);
+  background: color-mix(in srgb, var(--st-waiting) 8%, var(--surface));
 }
 .lead-pin {
   display: flex;
