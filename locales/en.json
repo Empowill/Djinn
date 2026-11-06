@@ -1669,7 +1669,9 @@
   "wish.bilan_cost_sub.one": "Cumulative cost across {count} worker run",
   "wish.bilan_cost_sub.other": "Cumulative cost across {count} worker runs",
   "wish.bilan_quote_dark": "“The pact is settled and the keys are under seal. I return to the brass; try not to rub the lamp for a comma.”",
-  "wish.bilan_quote_light": "“Your wish is fulfilled from end to end. The lamp rests on watch, ready for your next call.”"
+  "wish.bilan_quote_light": "“Your wish is fulfilled from end to end. The lamp rests on watch, ready for your next call.”",
+  "charts.log_scale": "{label}, log scale",
+  "charts.others": "Others"
 }
 
 

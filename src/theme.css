@@ -58,6 +58,14 @@
   --sand-bg: #151517;
   --sand-raised: #1b1b1e;
   --danger: #e0a0a0;
+  /* The series of a chart (src/charts), in their fixed order, then "Others": the dataviz reference palette's first
+     five hues, stepped for this ground and checked for colour blindness (adjacent pairs) by its validator. */
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-other: #6f6f76;
   /* The smoke study follows the selected theme, including its GPU canvas and ASCII fallback. */
   --smoke-bg: #060908;
   --smoke-fg: #d4e0dc;
@@ -186,6 +194,14 @@ html[data-theme="light"] {
   --sand-bg: #ffffff;
   --sand-raised: #fafafb;
   --danger: #a3261b;
+  /* The same hues stepped for the light ground: three read under 3:1 on it, so a chart names its values in its
+     tooltip and its series in its legend. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
+  --chart-other: #8e8e96;
   --smoke-bg: #f4f5f2;
   --smoke-fg: #1d2825;
   --smoke-tint-low: #3f5e56;
