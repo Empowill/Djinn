@@ -3,6 +3,7 @@
 package harness
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -37,6 +38,18 @@ func wantClass(t *testing.T, low bool) uint32 {
 	return own
 }
 
+// ownLevel is the priority class of the calling process, as fakePriorityArg prints it.
+func ownLevel() string {
+	cls, err := windows.GetPriorityClass(windows.CurrentProcess())
+	if err != nil {
+		return err.Error()
+	}
+	return fmt.Sprintf("0x%08x", cls)
+}
+
+// wantLevel is wantClass as ownLevel prints it.
+func wantLevel(t *testing.T, low bool) string { return fmt.Sprintf("0x%08x", wantClass(t, low)) }
+
 func checkWorkerPriority(t *testing.T, what string, pid int, low bool) {
 	t.Helper()
 	want := wantClass(t, low)
@@ -54,7 +67,7 @@ func checkWorkerPriority(t *testing.T, what string, pid int, low bool) {
 // Djinn's own class (PR #2's CI). The Unix twin starts it under nice -n 5.
 func TestWorkerPriorityUnderBelowNormal(t *testing.T) {
 	t.Parallel()
-	tests := []string{"TestWorkerPriority", "TestWorkerPriorityPolicyChange"}
+	tests := []string{"TestWorkerPriority", "TestWorkerPriorityAnyNotch", "TestCheckPriority"}
 	cmd := exec.CommandContext(t.Context(), os.Args[0],
 		"-test.run", "^("+strings.Join(tests, "|")+")$", "-test.count=1", "-test.v")
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.BELOW_NORMAL_PRIORITY_CLASS}
@@ -62,7 +75,8 @@ func TestWorkerPriorityUnderBelowNormal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the priority tests fail at BELOW_NORMAL_PRIORITY_CLASS: %v\n%s", err, out)
 	}
-	for _, name := range []string{"TestWorkerPriority/normal_priority", "TestWorkerPriorityPolicyChange"} {
+	for _, name := range []string{"TestWorkerPriority/normal_priority", "TestWorkerPriorityAnyNotch",
+		"TestCheckPriority/install_by_the_developer"} {
 		if !strings.Contains(string(out), "--- PASS: "+name+" ") {
 			t.Errorf("%s did not pass at BELOW_NORMAL_PRIORITY_CLASS:\n%s", name, out)
 		}

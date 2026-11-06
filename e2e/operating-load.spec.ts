@@ -495,9 +495,10 @@ test.describe("operating load slider", () => {
       forecastEl.locator(".operating-load-forecast-binding"),
     ).toContainText(/limited by (memory|CPU): \d+ workers? of ~[\d.]+ \w+/i);
 
-    // CPU line: "CPU: X of Y workers run, (low|standard) priority"
-    await expect(forecastEl).toContainText(/CPU:\s*\d+ of \d+ workers run/i);
-    await expect(forecastEl).toContainText(/(low|standard) priority/i);
+    // CPU line: "CPU: X of Y workers run, at low priority"
+    await expect(forecastEl).toContainText(
+      /CPU:\s*\d+ of \d+ workers run, at low priority/i,
+    );
 
     // Memory line: "Memory: X of Y may be engaged; Z used now"
     await expect(forecastEl).toContainText(/Memory:\s*.+may be engaged/i);
@@ -577,7 +578,8 @@ test.describe("operating load slider", () => {
     // Hover over overclock button
     await ocBtn.hover();
     await expect(forecastEl).toHaveAttribute("data-notch", "overclock");
-    await expect(forecastEl).toContainText(/standard priority/i);
+    // Every notch runs the workers at low priority, below the window (Q298).
+    await expect(forecastEl).toContainText(/low priority/i);
 
     // But server notch is still medium
     expect(getNotch()).toBe("medium");

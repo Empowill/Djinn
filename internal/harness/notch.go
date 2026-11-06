@@ -31,23 +31,6 @@ func (h *Harness) Paused() int {
 	return n
 }
 
-// updatePriorities dynamically updates CPU priority on every running worker's process tree (Q120 A).
-func (h *Harness) updatePriorities(low bool) {
-	h.mu.Lock()
-	var workers []Prioritizer
-	for _, r := range h.runs {
-		if r.worker != nil && !r.stopping && !r.final {
-			if pr, ok := r.worker.(Prioritizer); ok {
-				workers = append(workers, pr)
-			}
-		}
-	}
-	h.mu.Unlock()
-	for _, w := range workers {
-		_ = w.SetPriority(low)
-	}
-}
-
 // enforceNotchCapacity pauses extra workers when the operating load notch allows fewer workers than run: the newest
 // first (Q121: Q117's order reversed), never an investigator, a correction, a review, a worker holding or waiting for
 // a gate (it pauses once it lets the gate go), one started by hand, nor any on Windows, where a worker cannot pause:

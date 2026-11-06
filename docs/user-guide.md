@@ -53,7 +53,7 @@ djinn up --browser    # no window: prints the URL to open in your browser
   notch's label or its round stop on the track (or Tab to a stop, then Enter or Space).
   Hovering the slider, or reaching it with the keyboard, shows a dual gauge forecast under it: CPU (how many workers run of the most the notch lets run, exactly what the
   scheduler allows there, every agent counted and watchers not, with the workers started by hand and those finishing
-  their run above the limit; standard versus low CPU priority) and Memory
+  their run above the limit, all at low CPU priority, below the window, whatever the notch) and Memory
   (peak memory Djinn may engage against current usage and total machine RAM). The **Overclock** notch pushes up to
   150 % of standard memory capacity with an amber visual pulse. In Auto mode, Djinn follows the load of the
   programs outside it, never its own: the machine's CPU and memory beyond the Djinn line of the Hourglass (djinn up, its
@@ -63,7 +63,7 @@ djinn up --browser    # no window: prints the URL to open in your browser
   level down; when it stays below 15 % (and 60 %) for 10 minutes, one level up, towards your chosen ceiling; in between
   it holds. Each step starts the wait again, so a short spike changes nothing and the climb back is slow. Hovering the
   slider shows why, in one line: `Outside load 12 % for 5m: up to Max`; `djinn load get` gives it as `auto_reason`.
-  The lead hears nothing of these steps. In Auto, lowering the notch lowers CPU priority and stops starting new workers, never
+  The lead hears nothing of these steps. In Auto, lowering the notch stops starting new workers, never
   pausing running ones (Decision Q124 (C)). From the command line: `djinn load get`, `djinn load set minimal` (or any notch),
   and `djinn load watch`.
   Each notch engages a worker's memory at a percentile of its readings (a running worker at its own, a new one at the

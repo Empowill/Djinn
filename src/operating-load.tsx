@@ -401,10 +401,6 @@ function notchShare(notch: LoadNotch): number {
   }
 }
 
-function notchLowPriority(notch: LoadNotch): boolean {
-  return notch === LoadNotch.MINIMAL || notch === LoadNotch.MEDIUM;
-}
-
 function computeWorkers(notch: LoadNotch, baseSlots: number): number {
   const share = notchShare(notch);
   return Math.max(1, Math.round(share * (baseSlots || 1)));
@@ -901,10 +897,6 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
   if (data.memoryTotalBytes === 0n && data.memoryAvailableBytes === 0n)
     return null;
 
-  const priorityText = notchLowPriority(displayNotch)
-    ? t("load.priority_low")
-    : t("load.priority_standard");
-
   const maxPossibleWorkers = Math.max(1, workersAt(data, LoadNotch.OVERCLOCK));
   const cpuLimitPct = Math.min(
     100,
@@ -966,7 +958,6 @@ const OperatingLoadForecast = React.memo(function OperatingLoadForecast() {
           {t("load.forecast_cpu_running", {
             running: data.runningWorkers,
             workers: Math.round(animatedWorkers),
-            priority: priorityText,
           })}
           {data.pausedWorkers > 0 && (
             <span className="operating-load-forecast-paused">

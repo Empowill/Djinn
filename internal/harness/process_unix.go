@@ -15,11 +15,7 @@ import (
 	"github.com/empowill/djinn/internal/machine"
 )
 
-var (
-	setPriorityFn     = syscall.Setpriority
-	setCgroupWeightFn = machine.SetCgroupWeight
-	workerPIDsFn      = machine.WorkerPIDs
-)
+var setPriorityFn = syscall.Setpriority
 
 // ownGroup makes the process lead a group of its own: a signal to the group reaches what it started. On Linux, it
 // dies with Djinn (dieWithParent).
@@ -85,35 +81,6 @@ func applyPriority(cmd *exec.Cmd, lowPriority bool) {
 		return
 	}
 	_ = setPriorityFn(syscall.PRIO_PROCESS, cmd.Process.Pid, workerNice(true))
-}
-
-// setPriority sets CPU priority on the running process and its process tree,
-// and adjusts the systemd scope cpu.weight if a cgroup is configured.
-func setPriority(p *process, low bool) error {
-	if p.cmd.Process == nil {
-		return errors.New("the process has not started")
-	}
-	var errs []error
-	if p.cgroup != "" {
-		weight := 100
-		if low {
-			weight = 10
-		}
-		if err := setCgroupWeightFn(p.cgroup, weight); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	nice := workerNice(low)
-	pids, err := workerPIDsFn(p.cmd.Process.Pid, p.cgroup)
-	if err != nil && len(pids) == 0 {
-		pids = []int{p.cmd.Process.Pid}
-	}
-	for _, pid := range pids {
-		if err := setPriorityFn(syscall.PRIO_PROCESS, pid, nice); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
 }
 
 // terminate asks the process group to stop, and in a scope every process of its cgroup that left the group. A

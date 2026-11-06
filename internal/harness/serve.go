@@ -644,7 +644,7 @@ func (h *Harness) stopServing(s *serving, why string, forget bool) (*planv1.Serv
 		if s.stop != "" {
 			s.logLine(fmt.Sprintf("== %s stop command: %s", h.now().Format(time.RFC3339), s.stop))
 			ctx, cancel := context.WithTimeout(context.Background(), serveStopLimit)
-			_, code, err := runTracked(ctx, s.dir, shellArgs(s.stop), h.children.tracker(s.code, "serve stop"), s.logLine, false)
+			_, code, err := runTracked(ctx, s.dir, shellArgs(s.stop), h.children.tracker(s.code, "serve stop"), s.logLine, false, false)
 			late := ctx.Err() != nil
 			cancel()
 			switch {
