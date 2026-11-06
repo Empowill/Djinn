@@ -180,6 +180,7 @@ func run(ctx context.Context, args []string, cfg Config) error {
 			if errors.As(err, new(*connect.Error)) {
 				return retried(err, command(sd)+" "+name, l)
 			}
+			err = retried(err, command(sd)+" "+name, l) // Its own say what fits too: a title of several wishes.
 		} else {
 			err = check(req, label)
 		}

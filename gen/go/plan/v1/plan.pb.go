@@ -18178,7 +18178,7 @@ type WishServiceAddProjectRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The wish.
 	WishId string `protobuf:"bytes,1,opt,name=wish_id,json=wishId,proto3" json:"wish_id,omitempty"`
-	// The project to add, by name (case ignored) or identifier.
+	// The project to add, by name (case ignored) or identifier: djinn wish add-project <wish> djinn, or --project-id.
 	ProjectId     string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -28590,11 +28590,11 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06family\x18\x02 \x01(\tR\x06family\x12\x14\n" +
 	"\x05words\x18\x03 \x01(\tR\x05words\x12\x19\n" +
-	"\bwords_fr\x18\x04 \x01(\tR\awordsFr\"n\n" +
+	"\bwords_fr\x18\x04 \x01(\tR\awordsFr\"r\n" +
 	"\x1cWishServiceAddProjectRequest\x12$\n" +
-	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12(\n" +
+	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12,\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18dR\tprojectId\"B\n" +
+	"project_id\x18\x02 \x01(\tB\r\xbaH\x06r\x04\x10\x01\x18d\x88\xf4\x18\x01R\tprojectId\"B\n" +
 	"\x1dWishServiceAddProjectResponse\x12!\n" +
 	"\x04wish\x18\x01 \x01(\v2\r.plan.v1.WishR\x04wish\"?\n" +
 	"\x17WishServiceBriefRequest\x12$\n" +

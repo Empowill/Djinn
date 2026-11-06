@@ -585,7 +585,9 @@ func (q *Questions) Launch(
 	precondition := func(format string, a ...any) error {
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(format, a...))
 	}
-	question, err := find(ctx, q.Store, req.Msg.GetQuestion(), req.Msg.GetWishId())
+	question, err := findAmong(ctx, q.Store, req.Msg.GetQuestion(), req.Msg.GetWishId(), func(c *planv1.Question) bool {
+		return c.GetAnswer() != nil // A code in several wishes: the answered question of them, its plan launched.
+	})
 	if err != nil {
 		return nil, Status(err)
 	}
