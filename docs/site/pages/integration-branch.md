@@ -112,8 +112,9 @@ keeps each active wish's branch up with main by itself, with no model:
    the Djinn, and tries again once main moves.
 
 The top of the wish shows the last merge, **origin/main merged into feat/invoice-pdf: 4 commits, v0.2.0**, with its
-commits on hover, and, when the next one waits, **The merge of main waits** and why. The merge reaches the remote with
-the next push.
+commits on hover, and, when the next one waits, **The merge of main waits** and why. Once the branch was pushed, the
+merge makes a push due by itself, under the Standard cadence: the branch's pull request then runs its checks on main as
+it is. A branch never pushed takes the merge to the remote with its first push.
 
 **A merge, never a rebase.** A rebase would rewrite every commit of the branch, which Djinn would then have to push by
 force, and Djinn never forces a push: the people who fetched the branch, and its pull request's reviews, would lose

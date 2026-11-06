@@ -29,7 +29,8 @@ import (
 // branch to its remote is the orchestrator's, never an agent's (.agents/ denies git push). Djinn checks it each time
 // a task's merge ends: a push is due when an azima ends, its last part committed (a watcher part, which runs until the
 // merge, does not count), or once enough tasks are committed since the last push and more than an hour has passed
-// since it. In auto mode, the default, Djinn pushes, through git with the person's own credentials, never forcing; in
+// since it; also once main is merged into a branch its remote holds: a wish's integration branch, or an open azima's
+// (Q243, Q245). In auto mode, the default, Djinn pushes, through git with the person's own credentials, never forcing; in
 // ask mode it asks first. The project's push checks run first: red, they hold the push (checks.go). A push the remote
 // refuses is said, and asked about. Once pushed, a project that names an install command proposes the build.
 
@@ -108,7 +109,8 @@ func (h *Harness) pushIfDue(ctx context.Context, wishID string, project *planv1.
 	since := lastPush(wish, state)
 	committed := committedSince(tasks, project.GetId(), since)
 	every := time.Duration(wish.GetPushAfterMinutes()) * time.Minute
-	why := pushDue(committed, tasks, since, h.now(), cmp.Or(every, DefaultPushAfter), int(cmp.Or(wish.GetPushAfterTasks(), DefaultPushTasks)))
+	merged := mainUnpushed(ctx, project.GetDirectory(), mainState(wish, project.GetId()), branch)
+	why := pushDue(committed, tasks, merged, since, h.now(), cmp.Or(every, DefaultPushAfter), int(cmp.Or(wish.GetPushAfterTasks(), DefaultPushTasks)))
 	if hold.GetHeld() != "" && why == "" {
 		switch {
 		case len(committed) > 0:
@@ -241,14 +243,18 @@ func committedSince(tasks []*planv1.Task, projectID string, since time.Time) []*
 }
 
 // pushDue says why a push is due, "" when it is not: an azima that a task of committed, committed since the last push,
-// is part of has ended; or n tasks are committed since the last push, at since, and more than every has passed since.
-// tasks are all the wish's.
-func pushDue(committed, tasks []*planv1.Task, since, now time.Time, every time.Duration, n int) string {
+// is part of has ended; main merged into the branch, merged, its remote lacks (Q245: its pull request's checks run on
+// main as it is); or n tasks are committed since the last push, at since, and more than every has passed since. tasks
+// are all the wish's.
+func pushDue(committed, tasks []*planv1.Task, merged *planv1.MainMerge, since, now time.Time, every time.Duration, n int) string {
 	tasks = plan.WithAzimas(withoutWatchers(tasks))
 	for _, t := range slices.Backward(committed) {
 		if a := t.GetPartOf(); a != "" && azimaEnded(a, tasks) {
 			return "the azima " + codeOf(a, tasks) + " ends"
 		}
+	}
+	if merged != nil {
+		return cmp.Or(merged.GetMain(), "main") + " merged into it"
 	}
 	if len(committed) >= n && now.Sub(since) > every {
 		return fmt.Sprintf("%d tasks committed, and more than %s since the last push", len(committed), duration(every))
@@ -731,16 +737,42 @@ func (h *Harness) committedBranchTasks(ctx context.Context, repo string, tasks [
 	return out
 }
 
-// pushDueAzima says why a push of azima's branch is due, "" when it is not.
-func pushDueAzima(azima *planv1.Task, committed, tasks []*planv1.Task, since, now time.Time, every time.Duration, n int) string {
+// pushDueAzima says why a push of azima's branch is due, "" when it is not: the azima ends with work committed since
+// the last push; main merged into the branch, merged, its remote lacks (Q243: its pull request's checks run on main
+// as it is); or the cadence.
+func pushDueAzima(
+	azima *planv1.Task, committed, tasks []*planv1.Task, merged *planv1.MainMerge, since, now time.Time, every time.Duration, n int,
+) string {
 	tasks = plan.WithAzimas(withoutWatchers(tasks))
 	if azimaEnded(azima.GetId(), tasks) && len(committed) > 0 {
 		return "the azima " + azima.GetCode() + " ends"
+	}
+	if merged != nil {
+		return cmp.Or(merged.GetMain(), "main") + " merged into it"
 	}
 	if len(committed) >= n && now.Sub(since) > every {
 		return fmt.Sprintf("%d tasks committed, and more than %s since the last push", len(committed), duration(every))
 	}
 	return ""
+}
+
+// mainUnpushed is the last merge of main into branch, in repo, as m records it (a wish's integration branch, or an
+// azima's), when the branch's remote lacks it; nil when the remote holds it, or holds no such branch: a branch never
+// pushed waits for its work, whose push brings main too.
+func mainUnpushed(ctx context.Context, repo string, m *planv1.WishMain, branch string) *planv1.MainMerge {
+	last := m.GetLast()
+	if last.GetNewSha() == "" || last.GetBranch() != branch {
+		return nil
+	}
+	remote, target := pushTarget(ctx, repo, branch)
+	if remote == "" || target == "" {
+		return nil
+	}
+	pushed := commitOf(ctx, repo, "refs/remotes/"+remote+"/"+target)
+	if pushed == "" || isAncestor(ctx, repo, last.GetNewSha(), pushed) {
+		return nil
+	}
+	return last
 }
 
 // pushAzimaBranchesIfDue checks all azima branches of wish in project and pushes any whose push is due.
@@ -798,7 +830,8 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		}
 		since := h.lastBranchPush(ctx, repo, wish, pushState(wish, project.GetId()), branch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), branch, since)
-		why := pushDueAzima(azima, committed, tasks, since, h.now(), pushAfterEvery, pushAfterTasks)
+		merged := mainUnpushed(ctx, repo, azima.GetAzima().GetMain(), branch)
+		why := pushDueAzima(azima, committed, tasks, merged, since, h.now(), pushAfterEvery, pushAfterTasks)
 		if hold.GetHeld() != "" && why == "" && len(committed) > 0 {
 			why = "push checks corrected"
 		}
@@ -820,7 +853,8 @@ func (h *Harness) pushAzimaBranchesIfDue(ctx context.Context, wish *planv1.Wish,
 		}
 		since := h.lastBranchPush(ctx, repo, wish, pushState(wish, project.GetId()), wishBranch)
 		committed := h.committedBranchTasks(ctx, repo, tasks, project.GetId(), wishBranch, since)
-		why := pushDue(committed, tasks, since, h.now(), pushAfterEvery, pushAfterTasks)
+		merged := mainUnpushed(ctx, repo, mainState(wish, project.GetId()), wishBranch)
+		why := pushDue(committed, tasks, merged, since, h.now(), pushAfterEvery, pushAfterTasks)
 		if hold.GetHeld() != "" && why == "" && len(committed) > 0 {
 			why = "push checks corrected"
 		}
@@ -1453,8 +1487,12 @@ func lastLine(out string) string {
 	return strings.TrimSpace(lines[len(lines)-1])
 }
 
-// commitsText says how many commits a push brings, with the titles of the first three: "3 commits: a, b, c".
+// commitsText says how many commits a push brings, with the titles of the first three: "3 commits: a, b, c"; "merges
+// only" when it brings none of its own, as a merge of main that the remote's main holds already.
 func commitsText(count int, titles []string) string {
+	if count == 0 {
+		return "merges only"
+	}
 	s := fmt.Sprintf("%d commits", count)
 	if count == 1 {
 		s = "1 commit"

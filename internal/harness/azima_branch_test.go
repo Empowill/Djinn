@@ -691,6 +691,62 @@ func TestIntegrate_AzimaBranch(t *testing.T) {
 		}
 	})
 
+	// Q243: main merged into the branch of an open azima, pushed already, makes its push due though no task was
+	// committed since: its pull request's checks run on main as it is. Pushed by itself in auto mode; asked in ask mode,
+	// as for a task's work. A branch whose remote holds that merge already is not pushed again.
+	t.Run("main merged pushes the azima's branch", func(t *testing.T) {
+		t.Parallel()
+		for _, ask := range []bool{false, true} {
+			t.Run(map[bool]string{false: "auto", true: "ask"}[ask], func(t *testing.T) {
+				t.Parallel()
+				u := keepingUp(t, "merge_main: MERGE_MAIN_COMMIT\n")
+				u.setAzimaStrategy(t)
+				t1 := u.azima(t, u.wishID, "Letters")
+				b1 := "djinn/T1-letters"
+				u.finished(t, "W1", map[string]string{"app/src/a.txt": "a\n"}, func(task *planv1.Task) { task.PartOf = t1.GetId() })
+				u.pass(t, 0)
+				pushed := u.git(t, u.repo, "rev-parse", "refs/heads/"+b1)
+				if got := u.git(t, u.other, "ls-remote", "origin", "refs/heads/"+b1); !strings.HasPrefix(got, pushed) {
+					t.Fatalf("origin's %s: %q; want pushed at %s, the azima ending", b1, got, pushed)
+				}
+				pushes := len(u.pushes(t))
+				if ask {
+					if _, err := u.wishes.SetIntegration(t.Context(), connect.NewRequest(&planv1.WishServiceSetIntegrationRequest{
+						WishId: u.wishID, PushMode: planv1.PushMode_PUSH_MODE_ASK,
+					})); err != nil {
+						t.Fatal(err)
+					}
+				}
+
+				fix := u.onMain(t, "Fix on main", map[string]string{"app/src/fix.txt": "fix\n"})
+				u.pass(t, 2*time.Hour) // The next look at main merges it.
+				u.pass(t, 0)
+				tip := u.git(t, u.repo, "rev-parse", "refs/heads/"+b1)
+				if !isAncestor(t.Context(), u.repo, fix, tip) || tip == pushed {
+					t.Fatalf("%s at %s does not hold main's %s", b1, tip, fix)
+				}
+				remote := strings.Fields(u.git(t, u.other, "ls-remote", "origin", "refs/heads/"+b1))[0]
+				if ask {
+					q := u.pushQuestion(t)
+					if remote != pushed || len(u.pushes(t)) != pushes || q.GetText() != "Push "+b1+" to origin? (merges only)" ||
+						!strings.HasPrefix(q.GetContext(), "**Why now.** Origin/"+u.main+" merged into it.") {
+						t.Errorf("ask mode: origin's %s at %s, %d pushes, question %q, %q; want at %s, %d, asked why",
+							b1, remote, len(u.pushes(t)), q.GetText(), q.GetContext(), pushed, pushes)
+					}
+					return
+				}
+				all := u.pushes(t)
+				if remote != tip || len(all) != pushes+1 || all[len(all)-1].GetBranch() != b1 || len(all[len(all)-1].GetTaskIds()) > 0 {
+					t.Fatalf("origin's %s at %s, pushes %v; want one more, of %s at %s", b1, remote, all, b1, tip)
+				}
+				u.pass(t, 2*time.Hour) // Main still: nothing more to push.
+				if got := len(u.pushes(t)); got != pushes+1 {
+					t.Errorf("%d pushes after a quiet pass; want %d", got, pushes+1)
+				}
+			})
+		}
+	})
+
 	// Main conflicting with an azima's branch starts a correction worker as for a wish's, part of the azima: its work
 	// merges into the azima's branch, which then holds main, recorded on the azima as merged by it.
 	t.Run("main conflict starts correction", func(t *testing.T) {

@@ -218,7 +218,7 @@ func TestPushDue(t *testing.T) {
 			"3 tasks committed, and more than an hour since the last push"},
 		{"two tasks, a day", []*planv1.Task{w2, w3}, nil, 24 * time.Hour, ""},
 	} {
-		if got := pushDue(c.committed, c.tasks, now.Add(-c.since), now, time.Hour, 3); got != c.want {
+		if got := pushDue(c.committed, c.tasks, nil, now.Add(-c.since), now, time.Hour, 3); got != c.want {
 			t.Errorf("%s: %q; want %q", c.name, got, c.want)
 		}
 	}
