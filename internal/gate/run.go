@@ -14,6 +14,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	"github.com/empowill/djinn/gen/go/machine/v1/machinev1connect"
 	"github.com/empowill/djinn/internal/logx"
+	"github.com/empowill/djinn/internal/machine"
 )
 
 // Command is a command to run under a gate, with its standard streams.
@@ -33,17 +34,12 @@ func Run(ctx context.Context, client machinev1connect.GateServiceClient, name, t
 	if len(c.Args) == 0 {
 		return -1, errors.New("no command to run")
 	}
-	what := c.Args[0]
-	for _, a := range c.Args[1:] {
-		if len(what)+1+len(a) > 200 {
-			break
-		}
-		what += " " + a
-	}
 	dir := c.Dir
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
+	// Its key: sh -c '…' is kept as the command it runs, not cut to sh -c by its length (93 runs were, W14).
+	what := machine.KeyArgs(c.Args, dir)
 	hold, give := context.WithCancel(ctx)
 	defer give()
 	askedAt := time.Now()

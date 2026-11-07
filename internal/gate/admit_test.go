@@ -65,21 +65,6 @@ func TestPlain(t *testing.T) {
 	}
 }
 
-// TestWhat: a command is kept by its words, one space apart, up to 200 characters.
-func TestWhat(t *testing.T) {
-	t.Parallel()
-	if got := What("  go   test\n ./...  "); got != "go test ./..." {
-		t.Errorf("What = %q", got)
-	}
-	long := What(strings.Repeat("word ", 100))
-	if len(long) > 200 || !strings.HasPrefix(long, "word word") || strings.HasSuffix(long, " ") {
-		t.Errorf("What of a long command = %q (%d)", long, len(long))
-	}
-	if got := What(strings.Repeat("\u00e9", 150)); len(got) > 200 || !strings.HasPrefix(got, "\u00e9") || strings.ContainsRune(got, '\uFFFD') {
-		t.Errorf("What of a long word = %q", got)
-	}
-}
-
 // TestHook: Claude's hook lets a reading command go at once; any other, Bash or Monitor, waits for its admission and
 // then goes unchanged, the hook telling only why it waited; with no Djinn to answer, the command goes on.
 func TestHook(t *testing.T) {
@@ -115,7 +100,7 @@ func TestHook(t *testing.T) {
 					asked = append(asked, what+" in "+dir+" by "+match)
 					return "", nil
 				})
-			if !slices.Equal(asked, []string{"go test ./... echo done in /src by gotest"}) || got != "" {
+			if !slices.Equal(asked, []string{"go test ./... in /src by gotest"}) || got != "" {
 				t.Errorf("%s: asked %q, output %q", tool, asked, got)
 			}
 		}

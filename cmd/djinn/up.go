@@ -308,6 +308,7 @@ func runUp(args []string) (restart bool, err error) {
 	workers.Schedule()
 	gates = gate.New(monitor, machine.NewPeaks(db), workers)
 	gates.Heavy(machine.ReadHeavy(home))
+	gates.Keep(machine.NewIntervals(db))
 	workers.HeldGates(gates.Held, gates.Waiting)
 	workers.GatesOutside(gates.Outside)
 	gates.Freed(workers.Wake)

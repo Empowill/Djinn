@@ -68,7 +68,7 @@ func TestService_Hold(t *testing.T) {
 			}
 		}
 		if n, _ := g.Outside(); !gate.GetTakesSlot() || gate.GetResources().GetProcesses() < 1 || gate.GetResources().GetMemoryBytes() == 0 ||
-			gate.GetExpireTime().AsTime().Sub(gate.GetSince().AsTime()) != DefaultTimeout || n != 1 {
+			gate.GetExpireTime() != nil || n != 1 {
 			t.Fatalf("held by process %d: %v", pid, gate)
 		}
 

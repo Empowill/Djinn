@@ -744,8 +744,9 @@ admission, then lets the command run unchanged, so the worker's permissions judg
 commands (`ls`, `cat`, `rg`, `sed`, `cp`, `git status`, `git diff`, Djinn's own commands, and the like) go at once.
 An admission is shared: it waits only while the machine is under pressure or lacks the memory the command peaked at, in the gates'
 order. Djinn finds the command's shell among the worker's processes (Linux and macOS), reads what it uses, and records
-its cost (`djinn machine commands`, gate `commands`, exit code `-1`) when it ends; a command too short to be found
-within 3 seconds is counted asked only. The task's events say `gate commands: asked`, `taken`, `given back`; a worker
+its cost (`djinn machine commands`, gate `commands`, exit code `-1`) when it ends. It reads the shell each second for
+its first five readings, then every 5 seconds: a command too short to be read twice (under about a second), or to be
+found within 3 seconds, is counted asked only; its peak is the highest reading, not the kernel's own count. The task's events say `gate commands: asked`, `taken`, `given back`; a worker
 whose command waited reads why beside its result.
 
 A command measured heavy, past 2 GiB of peak memory or 60 s of CPU time, goes one at a time: it waits while another
@@ -755,6 +756,29 @@ for 40s`), a merge or a push keeping its place before the workers. `heavyCommand
 starts. A gate's name keeps its own turn as before.
 
 A worker holding or waiting for an admission is neither paused for a slot nor judged silent; you may still pause it.
+
+A command's cost is kept and found by its key, so the same command run by another task finds the cost measured
+before: the folder it runs in becomes `.`, a worktree of Djinn `$WORKTREE`, a scratch folder `$DJINN_SCRATCH`, a file
+under `/tmp` `/tmp/*`, any other UUID `$ID`; a variable set for it keeps its name only (`GOFLAGS=*`); `sh -c '…'` is
+the command it runs; what only sets the shell up (`cd`, `export`, `echo`…), wrappers such as `time`, `nohup`, `env` or
+`timeout 600`, redirections and the filters a pipe ends with (`| tail -50`) are left out. Arguments stay: `go test
+./...` and `go test ./internal/gate` are two keys. A command never measured is given the median cost of the others of
+its head in its project (`go test`, `go tool task lint`, `npm run build`, `npx playwright test`), else none. A cost
+kept under a command from before the keys were normalized is found too, and takes its key once counted again.
+
+A gate or an admission is never taken back from a holder that lives: it goes back when its holder gives it, its
+connection ends or its process ends. Only a timeout its holder asked for (`timeout_seconds` of `GateService.Hold`), or
+a lit ifrit going out, takes it back. Past 3 times its command's usual hold (the 95th percentile of its last runs, 10
+minutes at least), or an hour when its command was never measured, the lead of its task hears it once (`Djinn: W12:
+go tool task e2e has held gate e2e for 1h0m0s, its command never measured; nothing is taken back: see whether it
+hangs.`), and the task's events say it.
+
+Every gate and admission held is kept in Djinn's database a week as it is released, and survives a restart: when it
+was asked, granted and released, its mode (exclusive for a named gate, shared for an admission), whether its command
+was heavy or had no measured cost of its own, what it waited for last (another holder, the pressure, the memory, a
+merge first, a heavy command) and why, the highest memory its holder used, and whether it took a slot outside a
+worker. The Hourglass reads them (`MachineService.Series`): the gates, and the admissions that waited a second or more
+or ran a heavy command; every admission with `all_admissions`.
 
 A gate held outside a running worker (a merge's, a push's, your terminal's) takes one of the machine's slots; a
 worker's own gate is in its slot. An admission takes none, unless its command is heavy. On a machine of more than one slot, one stays free for the merges and pushes: a new

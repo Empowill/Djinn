@@ -32,8 +32,9 @@ func WithSeriesWorkers(fn func(cutoff time.Time, gateIntervals []*machinev1.Gate
 	return func(s *service) { s.workers = fn }
 }
 
-// WithSeriesIntervals sets the function returning gate intervals.
-func WithSeriesIntervals(fn func(cutoff time.Time) []*machinev1.GateInterval) HandlerOption {
+// WithSeriesIntervals sets the function returning the gate intervals released after cutoff, then those held now: every
+// admission when all is true (gate.Gates.Intervals, kept in the store for a week).
+func WithSeriesIntervals(fn func(cutoff time.Time, all bool) []*machinev1.GateInterval) HandlerOption {
 	return func(s *service) { s.intervals = fn }
 }
 
@@ -71,7 +72,7 @@ type service struct {
 	recorder    *SeriesRecorder
 	history     *History
 	workers     func(cutoff time.Time, gateIntervals []*machinev1.GateInterval) []*machinev1.WorkerSeries
-	intervals   func(cutoff time.Time) []*machinev1.GateInterval
+	intervals   func(cutoff time.Time, all bool) []*machinev1.GateInterval
 	network     func() *timestamppb.Timestamp
 	diskFolders func() []*machinev1.DiskFolder
 	diskItems   func() []*machinev1.DiskItem
@@ -168,7 +169,7 @@ func (s *service) Series(
 
 	var gateIntervals []*machinev1.GateInterval
 	if s.intervals != nil {
-		gateIntervals = s.intervals(cutoff)
+		gateIntervals = s.intervals(cutoff, req.Msg.GetAllAdmissions())
 	}
 
 	var workerSeries []*machinev1.WorkerSeries

@@ -339,8 +339,68 @@ func TestPeaks_Record(t *testing.T) {
 		PeakMemoryBytes: 3 << 30, ExitCode: -1, HeldSeconds: 30,
 	})
 	peaks.Record(t.Context(), &machinev1.CommandServiceRecordRequest{Directory: os.TempDir(), Command: "npm run build"})
-	if got := peaks.Cost(t.Context(), "", r.dir, "npm run build"); got != (Cost{Peak: 3 << 30, CPU: 90 * time.Second}) {
+	if got := peaks.Cost(t.Context(), "", r.dir, "npm run build"); got != (Cost{Peak: 3 << 30, CPU: 90 * time.Second, Held: 30 * time.Second}) {
 		t.Errorf("cost after the record = %+v", got)
+	}
+}
+
+// TestPeaks_Key: a command is found by its key (Key): run by another task, in its own scratch folder, it finds the
+// cost measured before; a cost kept under a command from before the keys were normalized is found too, and takes its
+// key once counted again. A command never measured is given the median of the others of its head, Head naming it; a
+// command whose head was never measured costs nothing known.
+func TestPeaks_Key(t *testing.T) {
+	t.Parallel()
+	r := newCostsRig(t)
+	ctx := t.Context()
+	peaks := NewPeaks(r.db)
+	const (
+		scratchA = "/home/dev/.config/djinn/scratch/01a118fa-4308-736a-9ff9-5fc373a4294f/01a1b6c3-8eec-7b18-86dd-bbf69031f639"
+		scratchB = "/home/dev/.config/djinn/scratch/01a118fa-4308-736a-9ff9-5fc373a4294f/01a1b6c4-0000-7b18-86dd-bbf69031f639"
+	)
+	peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{
+		Directory: r.dir, Command: "go build -o " + scratchA + "/djinn ./cmd/djinn", CpuSeconds: 40, PeakMemoryBytes: 1 << 30,
+		HeldSeconds: 20,
+	})
+	if got := peaks.Cost(ctx, "", r.dir, "export PATH=/usr/bin:$PATH && go build -o "+scratchB+"/djinn ./cmd/djinn 2>&1 | tail"); got != (Cost{Peak: 1 << 30, CPU: 40 * time.Second, Held: 20 * time.Second}) {
+		t.Errorf("another task's same command costs %+v", got)
+	}
+
+	// A cost kept under its raw command, before the keys: found, then kept under its key.
+	old := &machinev1.CommandCost{
+		Id: store.NewID(), ProjectId: r.app.GetId(), Command: "go test -o " + scratchA + "/x.test ./internal/gate",
+		Runs: 1, PeakMemoryBytes: 500 << 20,
+	}
+	if err := r.db.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "setup", old); err != nil {
+			return err
+		}
+		return tx.Put(old)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := peaks.Cost(ctx, "", r.dir, "go test -o "+scratchB+"/x.test ./internal/gate"); got.Peak != 500<<20 || got.Head != "" {
+		t.Errorf("a cost kept before the keys: %+v", got)
+	}
+	got := r.record(t, &machinev1.CommandServiceRecordRequest{
+		Directory: r.dir, Command: "go test -o " + scratchB + "/x.test ./internal/gate", PeakMemoryBytes: 100 << 20,
+	})
+	if got.GetId() != old.GetId() || got.GetCommand() != "go test -o $DJINN_SCRATCH/x.test ./internal/gate" || got.GetRuns() != 2 {
+		t.Errorf("counted again: %v", got)
+	}
+
+	// Never measured: the median of its head's, go build's here (1 GiB alone), go test's (500 and 2048 MiB: 1274 MiB).
+	peaks.Record(ctx, &machinev1.CommandServiceRecordRequest{
+		Directory: r.dir, Command: "go test ./...", CpuSeconds: 100, PeakMemoryBytes: 2 << 30,
+	})
+	for command, want := range map[string]Cost{
+		"go build ./cmd/other":            {Peak: 1 << 30, CPU: 40 * time.Second, Head: "go build"},
+		"go test -race ./internal/plan":   {Peak: 1274 << 20, CPU: 50 * time.Second, Head: "go test"},
+		"cargo build --release":           {},
+		"GOFLAGS=-race go test ./cmd/...": {Peak: 1274 << 20, CPU: 50 * time.Second, Head: "go test"},
+	} {
+		if got := peaks.Cost(ctx, "", r.dir, command); got != want {
+			t.Errorf("cost of %q, never measured = %+v, want %+v", command, got, want)
+		}
 	}
 }
 
