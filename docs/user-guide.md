@@ -836,7 +836,7 @@ cuts a command the gates admitted.
 - **Then.** Still frozen after 30 s with the memory short, it is interrupted (`resuming: memory brake: frozen 30 s, the
   memory stayed short…`), its containers removed. Its task resumes in its session once calm, after the workers the
   brake froze thawed (`waiting: memory brake: interrupted, it resumes after 1 min of calm…`): resumed at once, it would
-  grow again into the memory still short. **Start** (`djinn task start`) resumes it before; the brake turned off, it
+  grow again into the memory still short. **Start anyway** (`djinn task start`) resumes it before; the brake turned off, it
   resumes at once. An agent that cannot resume its session (Antigravity) stays frozen until calm instead.
 - **Admitted commands.** A worker whose command a gate admitted is never interrupted, nor frozen while anything else
   grows, nor while a worker frozen for a growth outside the gates waits for its interruption. Only when admitted
