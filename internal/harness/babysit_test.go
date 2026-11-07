@@ -313,6 +313,7 @@ func TestBabysit(t *testing.T) {
 		if w.GetProvider() != planv1.Provider_PROVIDER_WATCH || w.GetStatus() != planv1.TaskStatus_TASK_STATUS_PENDING || !w.GetRestart() {
 			t.Fatalf("babysit %s %s, restart %v: want a planned watcher that restarts", w.GetProvider(), w.GetStatus(), w.GetRestart())
 		}
+		assertKind(t, e.get(t, w.GetId()), planv1.TaskKind_TASK_KIND_WATCHER)
 		if _, err := e.tasks.Send(t.Context(), connect.NewRequest(&planv1.TaskServiceSendRequest{TaskId: opener.Msg.GetTask().GetId(), Text: "go"})); err != nil {
 			t.Fatal(err)
 		}

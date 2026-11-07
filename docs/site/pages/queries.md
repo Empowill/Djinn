@@ -23,8 +23,9 @@ runs and gate waits, as the task list does, as of the moment it runs. A task rea
 excluded, its time waiting for a gate, its time paused or interrupted between its first start and its end, and its
 wait before its first start. A task that never started has none of them but that wait. An azima's times sum its
 parts', so leave the azimas out when you add up work. Every task has one kind, its type: work, correction, review,
-investigation, mockup, ifrit, watcher or azima. Djinn alone makes a correction, a review or a watcher; a task stored
-before these were kinds reads its own from what Djinn started it for. Measure, bin and group by these as by any ref: the
+investigation, mockup, ifrit, watcher or azima. Djinn alone makes a correction, a review or a watcher, and stores its
+kind as it makes it; a task stored before these were kinds gets its own from what Djinn started it for, the next time
+Djinn starts. Measure, bin and group by these as by any ref: the
 median time running of the work done this week, the tasks created each day by type.
 
 **Filters.** Each filter names a ref, compares it and gives a value, and its kind follows the type of the ref: a text

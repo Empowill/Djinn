@@ -106,8 +106,8 @@ var TaskRefs = []Derived{
 		}
 		return between(t.GetEndTime(), t.GetIntegration().GetUpdateTime())
 	}),
-	DeriveEnum("type", "What the task is, for every task, as plan.Kind reads it: its kind, or for a task stored "+
-		"before correction, review and watcher were kinds, what its fields say; work when none.", plan.Kind),
+	DeriveEnum("type", "What the task is, for every task, as plan.Kind reads it: its kind, work when it holds none.",
+		plan.Kind),
 }
 
 // QuestionRefs are the derived refs of the questions.

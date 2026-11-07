@@ -47,6 +47,7 @@ const (
 	methodMeasure  = "harness/measure"  // what the task's worker uses was read; the request is the reading
 	methodAzima    = "harness/azima"    // djinn up found an azima stored as work, from before kinds; the request is the task
 	methodUngroup  = "harness/ungroup"  // djinn up found a task part of an azima that is gone; the request is the task, part of none
+	methodKind     = "harness/kind"     // djinn up gave a task stored before its kind was one the kind its fields tell; the request is the task
 )
 
 // maxText is the most of an event's text, and of its raw line, that is kept.
@@ -403,7 +404,8 @@ func (h *Harness) Close() {
 // what resuming them needs (provider, session, worktree). Then every interrupted task Djinn may resume waits for the
 // scheduler to resume it (queueInterrupted). The lead's restart event names the workers the last djinn up left
 // running, and those it stopped as it ended, interrupted since it started (lastStart). First, the azimas stored as
-// work before tasks had kinds become azimas (migrateAzimas), a task part of an azima that is gone becomes part of
+// work before tasks had kinds become azimas (migrateAzimas), the corrections, reviews and watchers stored before
+// they were kinds take theirs (migrateKinds), a task part of an azima that is gone becomes part of
 // none (ungroupOrphans), the push holds and questions stored before W63 take their shape now (migratePushes), and the
 // tasks from before PromptSize get their prompt's size (plan.KeepPromptSizes).
 // Before all, the processes the last djinn up started and left running are stopped (children.sweep), so that no task
@@ -426,6 +428,9 @@ func (h *Harness) Recover(ctx context.Context) error {
 		return err
 	}
 	if err := h.migrateAzimas(ctx, tasks); err != nil {
+		return err
+	}
+	if err := h.migrateKinds(ctx, tasks); err != nil {
 		return err
 	}
 	if err := h.ungroupOrphans(ctx, tasks); err != nil {
@@ -1039,6 +1044,7 @@ func (h *Harness) spawn(
 			return nil, err
 		}
 	}
+	plan.FillKind(task) // A correction, a review or a watcher is stored as one from its creation (Q382).
 	for _, b := range blocked {
 		tasks[slices.IndexFunc(tasks, func(t *planv1.Task) bool { return t.GetId() == b.GetId() })] = b
 	}
