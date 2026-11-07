@@ -3,6 +3,7 @@ package machine
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"io/fs"
 	"math"
 	"os"
@@ -42,6 +43,7 @@ type SeriesRecorder struct {
 	cpuRead        bool                 // the machine's CPU was read from /proc/stat: the points' CpuPercent is the machine's
 	memoryTotal    uint64               // the machine's memory, as the last sample read it
 	history        *History             // nil: the samples are kept in memory only
+	writeAbove     float64              // a reading at or above this percent of the memory is kept at once (WriteAbove)
 }
 
 // NewSeriesRecorder returns a recorder for machine metrics.
@@ -184,7 +186,19 @@ func (r *SeriesRecorder) Sample() {
 	}
 	if r.history != nil && !first {
 		r.history.Machine(point)
+		if r.writeAbove > 0 && snap.MemoryTotal > 0 && float64(memUsed) >= r.writeAbove/100*float64(snap.MemoryTotal) {
+			go r.history.Flush(context.Background()) // Not under r.mu: the store may be slow under pressure.
+		}
 	}
+}
+
+// WriteAbove keeps each reading of the machine at or above percent of its memory in the store at once, not at the
+// next flush: a machine that goes down with its memory full keeps the reading that says so, which the next djinn up
+// reads (cmd/djinn/held.go). 0, the default, waits for the flush.
+func (r *SeriesRecorder) WriteAbove(percent float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.writeAbove = percent
 }
 
 // ReadSelf reads Djinn's own process alone with read: ReadSelf in djinn up.

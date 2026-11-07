@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -203,5 +204,51 @@ func TestSeriesRecorder_Keep(t *testing.T) {
 	rec.Sample()
 	if pts := h.MachinePoints(t.Context(), start, time.Now().Add(time.Second)); len(pts) != 1 || pts[0].GetCpuPercent() != 50 {
 		t.Errorf("history points %v, want the second sample's", pts)
+	}
+}
+
+// TestSeriesRecorder_WriteAbove: a reading at or above the percent set goes to the store at once, before any flush, so
+// that the next djinn up reads it even when the machine went down meanwhile; one under it waits for the flush.
+func TestSeriesRecorder_WriteAbove(t *testing.T) {
+	t.Parallel()
+	db, err := store.Open(t.Context(), "", plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	h := NewHistory(db)
+	var available atomic.Uint64
+	available.Store(50)
+	m := NewMonitor(Policy{}, func() (Snapshot, error) {
+		return Snapshot{Cores: 1, MemoryTotal: 100, MemoryAvailable: available.Load()}, nil
+	})
+	m.every = 0
+	fsys := fstest.MapFS{"proc/stat": &fstest.MapFile{Data: []byte("cpu  100 20 50 830 0 0 0 0 0 0\n")}}
+	rec := NewSeriesRecorder(m, nil)
+	rec.SetFS(fsys)
+	rec.Keep(h)
+	rec.WriteAbove(90)
+	rec.Sample()
+	fsys["proc/stat"] = &fstest.MapFile{Data: []byte("cpu  140 20 60 880 0 0 0 0 0 0\n")}
+	rec.Sample() // 50 %: it waits.
+	if _, ok, err := h.LastMachine(t.Context()); ok || err != nil {
+		t.Fatalf("a reading at 50 %% was kept before a flush (%v)", err)
+	}
+	available.Store(5)
+	fsys["proc/stat"] = &fstest.MapFile{Data: []byte("cpu  180 20 70 930 0 0 0 0 0 0\n")}
+	rec.Sample() // 95 %: kept at once, the one waiting with it.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		last, ok, err := h.LastMachine(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok && last.Memory == 95 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the reading at 95 %% is not in the store: %v, %v", last, ok)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

@@ -734,6 +734,23 @@ func TestSetNotResumed(t *testing.T) {
 	}
 }
 
+// TestSetHeld: why a start resumed no worker, and the tasks it held, reach the window with the update.
+func TestSetHeld(t *testing.T) {
+	t.Parallel()
+	s, _ := newService(t)
+	if got := state(s); got.GetHeldStart() != uiv1.HeldStart_HELD_START_UNSPECIFIED || len(got.GetHeldTasks()) != 0 {
+		t.Errorf("before SetHeld: %v", got)
+	}
+	tasks := []string{"W1", "W2"}
+	s.SetHeld(uiv1.HeldStart_HELD_START_MEMORY, 95, tasks)
+	tasks[0] = "changed after"
+	got := state(s)
+	if got.GetHeldStart() != uiv1.HeldStart_HELD_START_MEMORY || got.GetHeldMemoryPercent() != 95 ||
+		!slices.Equal(got.GetHeldTasks(), []string{"W1", "W2"}) {
+		t.Errorf("held = %v", got)
+	}
+}
+
 // TestWatch: the window's one stream says the update first, then each show, update and load as they come.
 func TestWatch(t *testing.T) {
 	t.Parallel()

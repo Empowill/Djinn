@@ -401,3 +401,54 @@ func TestRestartBeforeNewSpawn(t *testing.T) {
 			resumed.GetEndTime().AsTime())
 	}
 }
+
+// TestRestartHeld: Djinn restarts held (held.go), as djinn up asks after a crash under memory pressure (the
+// Hourglass's last reading at 95 %), with two workers cut short and one planned task. Neither worker resumes: both
+// stay interrupted, Held names them, and the lead's restart event says why and that the move is the lead's. The
+// planned task, which no worker ever ran, starts as usual.
+func TestRestartHeld(t *testing.T) {
+	testx.Portable(t)
+	t.Parallel()
+	home := t.TempDir()
+	e := up(t, home)
+	wishID, projectID := e.wish(t, gitRepo(t))
+	e.down()
+	db, err := store.Open(t.Context(), filepath.Join(home, store.File), plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().Add(-time.Hour)
+	cut := []*planv1.Task{
+		leftRunning(t, db, wishID, projectID, "W1", t.TempDir(), at),
+		leftRunning(t, db, wishID, projectID, "W2", t.TempDir(), at.Add(time.Minute)),
+	}
+	planned := &planv1.Task{
+		Id: store.NewID(), WishId: wishID, ProjectId: projectID, Code: "W3", Title: "W3", Scheduled: true,
+		Status: planv1.TaskStatus_TASK_STATUS_PENDING, Provider: planv1.Provider_PROVIDER_FAKE,
+		CreateTime: timestamppb.New(at.Add(2 * time.Minute)),
+	}
+	putTask(t, db, planned, "text W3")
+	db.Close()
+
+	why := "the Hourglass's last reading had the machine's memory at 95 % (--paused-memory 90)"
+	providers, c := countingProviders()
+	e = upWith(t, home, providers, WithVersion("v9.9.9"), WithResumeHeld(why))
+	defer e.down()
+	e.until(t, planned.GetId(), isStatus(planv1.TaskStatus_TASK_STATUS_DONE))
+	if starts, _ := c.seen(); !slices.Equal(starts, []string{planned.GetId()}) {
+		t.Errorf("workers started %v, want only the planned task's", starts)
+	}
+	for _, tk := range cut {
+		if got := e.get(t, tk.GetId()); got.GetStatus() != planv1.TaskStatus_TASK_STATUS_INTERRUPTED {
+			t.Errorf("%s after a held restart: %v, want interrupted", tk.GetCode(), got.GetStatus())
+		}
+	}
+	if held := e.h.Held(); !slices.Equal(held, []string{"W1", "W2"}) {
+		t.Errorf("held %v, want W1, W2", held)
+	}
+	want := "Djinn: restarted on version v9.9.9: it resumes no worker by itself, as " + why +
+		"; 2 workers interrupted (W1, W2); not resumed, the move is yours: W1, W2."
+	if restarts := restartEvents(t, e); len(restarts) != 2 || restarts[1] != want {
+		t.Errorf("restart events %q, want the second %q", restarts, want)
+	}
+}

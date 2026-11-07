@@ -341,6 +341,26 @@ message UiServiceWatchUpdateResponse {
   // The newer Djinn of version ready is at the path of the running one already: Update only restarts on it. False for
   // a release found, which Update downloads first.
   bool installed = 9;
+  // Why the running Djinn resumed none of the workers the last djinn up left interrupted (djinn up --paused, a stop
+  // that was not clean, the machine's memory near full at the Hourglass's last reading); unspecified when it resumed
+  // them as usual. The window says it until dismissed.
+  HeldStart held_start = 10;
+  // The machine's memory at the Hourglass's last reading of the last djinn up, in percent of the machine's, for
+  // HELD_START_MEMORY; 0 otherwise.
+  double held_memory_percent = 11;
+  // The codes of the tasks interrupted that the running Djinn held, oldest first; empty for none.
+  repeated string held_tasks = 12;
+}
+
+// HeldStart is why a djinn up resumed none of the workers it found interrupted.
+enum HeldStart {
+  HELD_START_UNSPECIFIED = 0;
+  // djinn up --paused asked it.
+  HELD_START_PAUSED = 1;
+  // The last djinn up did not stop cleanly: it crashed, or was killed, or the machine went down.
+  HELD_START_UNCLEAN = 2;
+  // The Hourglass's last reading of the last djinn up had the machine's memory at or above djinn up's --paused-memory.
+  HELD_START_MEMORY = 3;
 }
 
 message UiServiceWatchRequest {}
