@@ -543,9 +543,9 @@ func findTilasm(ctx context.Context, r store.Reader, ref *planv1.TilasmRef, wish
 	case 1:
 		return found[0], nil
 	}
-	return nil, Retry(connect.CodeFailedPrecondition, fmt.Errorf(
-		"%d wishes have a tilasm %s: give its identifier, or the wish with --wish", len(found), strings.ToUpper(ref.GetCode())),
-		"wish", WishValues(ctx, r, wishesOf(found))...)
+	return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
+		"%d wishes have a tilasm %s: run it again with %s", len(found), strings.ToUpper(ref.GetCode()),
+		WishFlags(ctx, r, "--wish", wishesOf(found))))
 }
 
 // nextTilasmCode follows the highest code of the wish's tilasms.

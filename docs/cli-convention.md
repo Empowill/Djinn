@@ -106,19 +106,15 @@ spawn's project comes from `--part-of` alone, an azima's too: the azima's projec
 
 **A question code in several wishes** is, on the server, the only open question of them that has it (W481): the lead
 types `Q05` for the one it waits on. `djinn question launch` takes the only answered one instead. When none or several
-fit, the refusal gives the command again with `--wish-id` for each wish.
+fit, the refusal gives `--wish-id` with each wish to run it again.
 
-**A refusal says what fits.** The server puts a `djinn.v1.Retry` (a field, and the values that fit it, each with a
-label) as a detail of an error: a spawn that names no project in a wish of several, a code in several wishes. The
-command line prints the command again with each value, ready to run, a text longer than 200 characters or of several
-lines cut to `…`; `djinn mcp` adds a line that names the field and the values:
+**A refusal says what fits.** A spawn that names no project in a wish of several, or a code in several wishes, is
+refused with, in its text, the flag to add and each value that fits it, a wish's title beside its identifier; the
+lead reads it and runs the command again. Djinn tries nothing again by itself:
 
 ```
 $ djinn tilasm comments L01 --send 1
-error: failed_precondition: 2 wishes have a tilasm L01: give its identifier, or the wish with --wish
-  run it again with what fits:
-  djinn tilasm comments L01 --wish 01a1… --send 1  # Dew
-  djinn tilasm comments L01 --wish 01a1… --send 1  # Other
+error: failed_precondition: 2 wishes have a tilasm L01: run it again with --wish 01a1… (Dew) or --wish 01a2… (Other)
 ```
 
 `--` ends the flags: what follows is positional, even when it starts with `--`. The zero value of an enum

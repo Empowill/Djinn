@@ -119,7 +119,7 @@ func (l *leadCalls) refused(t *testing.T, code int, args []string, want ...strin
 }
 
 // TestLeadCallsWishTitle (W481): a wish is named by its exact title, case ignored, or by the start of only one title,
-// as a positional <wish-id> and as --wish-id; a start of several titles is refused with the command again for each.
+// as a positional <wish-id> and as --wish-id; a start of several titles is refused with each one's UUID and title.
 func TestLeadCallsWishTitle(t *testing.T) {
 	t.Parallel()
 	l := newLeadCalls(t)
@@ -142,8 +142,7 @@ func TestLeadCallsWishTitle(t *testing.T) {
 
 	l.refused(t, 2, []string{"question", "ask", "Push?", "Ship the"},
 		`<wish-id>: 2 wishes are titled "Ship the" or start so: give one by its UUID`,
-		"djinn question ask 'Push?' "+calls+"  # Ship the lead calls",
-		"djinn question ask 'Push?' "+docs+"  # Ship the docs")
+		calls+" (Ship the lead calls) or "+docs+" (Ship the docs)")
 	l.refused(t, 2, []string{"question", "list", "--wish-id", "Lamp"},
 		`--wish-id: no wish is titled "Lamp", nor starts so; expected a wish's UUID, its title, or the start of only one title`)
 }
@@ -189,9 +188,9 @@ func TestLeadCallsQuestionCode(t *testing.T) {
 		ids[wish] = q.Msg.GetQuestion().GetId()
 	}
 
-	// Both open: refused, the commands given.
+	// Both open: refused, the flag given for each.
 	l.refused(t, 1, []string{"question", "get", "Q01"}, "2 wishes have a question Q01",
-		"djinn question get Q01 --wish-id "+calls+"  # Ship the lead calls")
+		"run it again with --wish-id "+calls+" (Ship the lead calls) or --wish-id "+docs+" (Ship the docs)")
 
 	// The docs' answered: Q01 is the lead calls' one, the only one open.
 	if _, err := l.questions.Answer(t.Context(), connect.NewRequest(&planv1.QuestionServiceAnswerRequest{
@@ -228,5 +227,5 @@ func TestLeadCallsQuestionCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.refused(t, 1, []string{"question", "get", "Q01"}, "2 wishes have a question Q01",
-		"djinn question get Q01 --wish-id "+docs+"  # Ship the docs")
+		"--wish-id "+docs+" (Ship the docs)")
 }

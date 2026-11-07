@@ -12,8 +12,8 @@ import (
 )
 
 // TestResolve (W474): the command line sends a project named by its name as its identifier, and takes --wish for
-// --wish-id where a request spells it so; a refusal that says what fits prints the command again with each value,
-// a long text cut to "…", and djinn mcp names the field and the values.
+// --wish-id where a request spells it so; a refusal names in its text the flag and the values that fit, on the
+// command line as in djinn mcp, and nothing is tried again.
 func TestResolve(t *testing.T) {
 	t.Parallel()
 	t.Run("a project by its name", func(t *testing.T) {
@@ -28,17 +28,16 @@ func TestResolve(t *testing.T) {
 			t.Errorf("the server received %v, want the projects listed, then %v", calls, want)
 		}
 	})
-	t.Run("the commands that fit", func(t *testing.T) {
+	t.Run("the refusal names what fits", func(t *testing.T) {
 		t.Parallel()
-		_, run := serve(t)
-		prompt := strings.Repeat("Order the accounts. ", 20)
-		code, _, errs := run("task", "spawn", wishID, "--title", "Ship it", "--prompt", prompt)
-		want := "error: invalid_argument: the wish has 2 projects: name one with --project-id\n" +
-			"  run it again with what fits (… stands for the long text you gave):\n" +
-			"  djinn task spawn " + wishID + " --title 'Ship it' --project-id api --prompt …\n" +
-			"  djinn task spawn " + wishID + " --title 'Ship it' --project-id web --prompt …\n"
+		f, run := serve(t)
+		code, _, errs := run("task", "spawn", wishID, "--title", "Ship it")
+		want := "error: invalid_argument: the wish has 2 projects: run it again with --project-id api or --project-id web\n"
 		if code != 1 || errs != want {
 			t.Errorf("exit %d, stderr\n%s\nwant 1 and\n%s", code, errs, want)
+		}
+		if calls := f.seen(); len(calls) != 1 {
+			t.Errorf("the server received %v, want the one call refused, not tried again", calls)
 		}
 	})
 	t.Run("wish for wish-id", func(t *testing.T) {
@@ -90,10 +89,8 @@ func TestResolve(t *testing.T) {
 		t.Parallel()
 		f, run := serve(t)
 		code, _, errs := run("task", "spawn", "Ship", "--title", "Ship", "--project-id", projectID)
-		want := "error: <wish-id>: 2 wishes are titled \"Ship\" or start so: give one by its UUID\n" +
-			"  run it again with what fits:\n" +
-			"  djinn task spawn " + wishID + " --title Ship --project-id " + projectID + "  # Ship it\n" +
-			"  djinn task spawn " + docsID + " --title Ship --project-id " + projectID + "  # Ship the docs\n" +
+		want := "error: <wish-id>: 2 wishes are titled \"Ship\" or start so: give one by its UUID, " +
+			wishID + " (Ship it) or " + docsID + " (Ship the docs)\n" +
 			"  run djinn task spawn --help for the arguments\n"
 		if code != 2 || errs != want {
 			t.Errorf("exit %d, stderr\n%s\nwant 2 and\n%s", code, errs, want)
@@ -137,7 +134,7 @@ func TestResolve(t *testing.T) {
 			wishID+`","title":"Ship"}}}`)
 		res := result[mcpCallResult](t, answers["1"])
 		if !res.IsError || len(res.Content) != 1 || !strings.HasSuffix(res.Content[0].Text,
-			"\ncall it again with project_id set to one of: api; web") {
+			"the wish has 2 projects: run it again with --project-id api or --project-id web") {
 			t.Errorf("tool result %+v", res)
 		}
 	})

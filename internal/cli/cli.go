@@ -178,9 +178,8 @@ func run(ctx context.Context, args []string, cfg Config) error {
 		if err = resolve(ctx, cfg, req, l.wish); err != nil {
 			// What the server refused, it says; the command line's own refusals are usage errors.
 			if errors.As(err, new(*connect.Error)) {
-				return retried(err, command(sd)+" "+name, l)
+				return err
 			}
-			err = retried(err, command(sd)+" "+name, l) // Its own say what fits too: a title of several wishes.
 		} else {
 			err = check(req, label)
 		}
@@ -214,7 +213,7 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 	res, err := call(ctx, cfg, md, req)
 	if err != nil {
-		return retried(err, command(sd)+" "+name, l)
+		return err
 	}
 	if asJSON {
 		out, err := indentedJSON(res)
