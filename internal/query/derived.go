@@ -3,10 +3,12 @@ package query
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -95,8 +97,9 @@ func (d Derived) check(md protoreflect.MessageDescriptor) error {
 
 // TaskRefs are the derived refs of the tasks.
 var TaskRefs = []Derived{
-	Derive("prompt::size", TypeInt, "The prompt's size in tokens, estimated as its characters divided by 4, rounded up: "+
-		"the prompt itself stays hidden.", func(t *planv1.Task) any { return size(t.GetPrompt()) }).WithUnit(tokens),
+	Derive("prompt::size", TypeInt, "The size in tokens of the task's first prompt, the text it was given, estimated "+
+		"as its characters divided by 4, rounded up: the prompt itself stays hidden.",
+		func(t *planv1.Task) any { return tokensOf(t.GetPromptLength()) }).WithUnit(tokens),
 	Derive("integration::delay", TypeDuration, "From the task's end to its work's commit into its wish's integration "+
 		"branch (integration.update_time - end_time), for a work committed only.", func(t *planv1.Task) any {
 		if t.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
@@ -144,12 +147,14 @@ var QuestionRefs = []Derived{
 }
 
 // size estimates the tokens of a text without a model, as its characters divided by 4, rounded up: nil for none.
-func size(s string) any {
-	n := utf8.RuneCountInString(s)
-	if n == 0 {
+func size(s string) any { return tokensOf(int64(utf8.RuneCountInString(s))) }
+
+// tokensOf estimates the tokens of a text of n characters, as size does: nil for none.
+func tokensOf(n int64) any {
+	if n <= 0 {
 		return nil
 	}
-	return int64((n + 3) / 4)
+	return (n + 3) / 4
 }
 
 // between is the time from a to b: nil when one is absent, or b is before a, which no clock of Djinn's makes.
@@ -166,18 +171,47 @@ func between(a, b *timestamppb.Timestamp) any {
 
 // Timed gives the tasks of src with their times, which the store does not keep: running, waiting_gate, paused and
 // waiting_before_start, as the task list computes them from their runs and gate waits as of now (plan.ReadTimes), an
-// azima's summing its parts'. A task that never started has none but waiting_before_start: null, never 0.
+// azima's summing its parts'. A task that never started has none but waiting_before_start: null, never 0. Each comes
+// with the length of its first prompt (plan.PromptLengths). Loads asked at the same time with the same where share one
+// read: the Statistics tab asks a dozen at once, and the store reads on one connection.
 func Timed(r store.Reader, src Source, now func() time.Time) Source {
 	return &timed{Source: src, r: r, now: now}
 }
 
 type timed struct {
 	Source
-	r   store.Reader
-	now func() time.Time
+	r      store.Reader
+	now    func() time.Time
+	flight singleflight.Group
 }
 
+// Load gives the tasks to every caller of the same where while one read runs; they share the messages, which a
+// query only reads. The read goes on when its first caller leaves, for the others.
 func (s *timed) Load(ctx context.Context, where map[string]string) ([]proto.Message, error) {
+	keys := make([]string, 0, len(where))
+	for k := range where {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	var key strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&key, "%q=%q;", k, where[k])
+	}
+	ch := s.flight.DoChan(key.String(), func() (any, error) {
+		return s.load(context.WithoutCancel(ctx), where)
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		return res.Val.([]proto.Message), nil
+	}
+}
+
+func (s *timed) load(ctx context.Context, where map[string]string) ([]proto.Message, error) {
 	msgs, err := s.Source.Load(ctx, where)
 	if err != nil {
 		return nil, err
@@ -188,13 +222,19 @@ func (s *timed) Load(ctx context.Context, where map[string]string) ([]proto.Mess
 			tasks = append(tasks, t)
 		}
 	}
-	if err := plan.ReadTimes(ctx, s.r, tasks, s.now()); err != nil {
+	if err := plan.ReadTimes(ctx, s.r, tasks, s.now(), len(where) == 0); err != nil {
 		return nil, err
 	}
 	for _, t := range tasks {
 		if t.GetFirstStartTime() == nil {
 			t.Running, t.WaitingGate, t.Paused = nil, nil, nil
 		}
+	}
+	if len(tasks) == 0 {
+		return msgs, nil
+	}
+	if err := plan.PromptLengths(ctx, s.r, tasks); err != nil {
+		return nil, err
 	}
 	return msgs, nil
 }

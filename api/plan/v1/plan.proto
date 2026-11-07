@@ -1470,6 +1470,9 @@ message Task {
     (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
     (buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9-]{0,31}$"
   ];
+  // How many characters (Unicode code points) the task's first prompt holds, from its PromptSize: computed on a
+  // QueryService read, never stored; 0 when unknown or without a prompt.
+  int64 prompt_length = 81 [(djinn.v1.query) = QUERY_HIDDEN];
 }
 
 // TaskHold is what holds a planned task that waits (Task.hold).
@@ -2120,6 +2123,16 @@ message GateWait {
   map<string, google.protobuf.Timestamp> asked = 2;
   // The time between each gate asked and taken.
   google.protobuf.Duration waited = 3;
+}
+
+// PromptSize is the size of a task's first prompt, the text it was given: Djinn keeps it beside the task as it writes
+// the task's first prompt event, as the task never stores its prompt. A task from before it gets its size at the first
+// start after the update. Apart from the task, as the copy of its task a run holds would write over it.
+message PromptSize {
+  // The task's identifier.
+  string id = 1;
+  // How many characters (Unicode code points) the prompt holds; 0 for a task without a prompt event.
+  int64 length = 2;
 }
 
 // Choice is an answer to a question: YES for a question without options, or the letter of an option.

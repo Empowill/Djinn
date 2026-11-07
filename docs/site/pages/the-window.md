@@ -260,7 +260,8 @@ A running task's card links to its row, **Live in the Hourglass**, on the Machin
 only while it shows: leave it, or fold its panel, and the reads stop. See [Machine and load](#machine-and-load).
 
 **Statistics.** The tasks of every wish, granted ones included, read as [queries](#queries): each figure and each card
-asks Djinn for its own total, computed by Djinn, and the window draws it as it comes. The tab reads them when it opens
+asks Djinn for its own total, computed by Djinn, and the window draws it as it comes; the cards asked together share
+one read of the tasks, under a second on thousands of them. The tab reads them when it opens
 and when you change a filter, never in the background. Its filters, in one line: a **project** or all, the **period**
 (7 days, 30 days, all), counted from the tasks' creation, and the buckets of the time charts (**Day**, **Week**).
 Then six figures:
@@ -275,7 +276,8 @@ Then six figures:
 And the cards: the tasks created by day or week, by type (work, correction, review, investigation, mockup, then the
 others in one series); the azimas merged on main; how long work took to reach its wish's branch; the time of a task by
 type, waiting before its start, running, held by a gate, paused, each as a median and a p90, never a sum nor a mean;
-how long your answers took; the size of the prompts, in tokens estimated as characters divided by four; and a line per
+how long your answers took; the size of each task's first prompt, the text it was given, in tokens estimated as
+characters divided by four; and a line per
 project, whose name filters the whole tab. A time is drawn from zero, or on a scale that says it is logarithmic; a
 chart shows six series at most, the smallest folded into **Others**; and a value Djinn does not know shows a dash,
 never a zero.

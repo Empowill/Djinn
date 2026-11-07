@@ -1,10 +1,14 @@
 package query
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -113,8 +117,8 @@ func TestDerivedValues(t *testing.T) {
 		m    proto.Message
 		want any
 	}{
-		{"size rounds up", TaskRefs, "prompt::size", &planv1.Task{Prompt: "abcde"}, int64(2)},
-		{"size counts letters, not bytes", TaskRefs, "prompt::size", &planv1.Task{Prompt: strings.Repeat(string(rune(0xe9)), 4)}, int64(1)},
+		{"size rounds up", TaskRefs, "prompt::size", &planv1.Task{PromptLength: 5}, int64(2)},
+		{"size reads the length kept, not the prompt", TaskRefs, "prompt::size", &planv1.Task{Prompt: "abcde", PromptLength: 4}, int64(1)},
 		{"no prompt is null", TaskRefs, "prompt::size", &planv1.Task{}, nil},
 		{"delay of a commit", TaskRefs, "integration::delay",
 			&planv1.Task{EndTime: at(0), Integration: committed(at(time.Minute))}, time.Minute},
@@ -164,7 +168,7 @@ func TestDerivedValues(t *testing.T) {
 func TestDerivedDeclared(t *testing.T) {
 	t.Parallel()
 	full := map[string]proto.Message{
-		"plan.v1.Task": &planv1.Task{Prompt: "p", EndTime: timestamppb.New(day0),
+		"plan.v1.Task": &planv1.Task{PromptLength: 1, EndTime: timestamppb.New(day0),
 			Integration: &planv1.TaskIntegration{State: planv1.IntegrationState_INTEGRATION_STATE_COMMITTED,
 				UpdateTime: timestamppb.New(day0)}},
 		"plan.v1.Question": &planv1.Question{Context: "c", CreateTime: timestamppb.New(day0),
@@ -261,6 +265,7 @@ func TestTimed(t *testing.T) {
 			FirstStartTime: at(0), StartTime: at(2 * time.Hour), EndTime: at(3 * time.Hour),
 			Runs: []*planv1.TaskRun{run(0, time.Hour), run(2*time.Hour, 3*time.Hour)}},
 		&planv1.GateWait{Id: id(3), Waited: durationpb.New(10 * time.Minute)},
+		&planv1.PromptSize{Id: id(3), Length: 9},
 		// W3: from before GateWait, its 5 min of gate counted from its events, and not kept.
 		&planv1.Task{Id: id(4), WishId: wish, Code: "W3", Status: done, PartOf: azima, CreateTime: at(0),
 			StartTime: at(0), EndTime: at(time.Hour), Runs: []*planv1.TaskRun{run(0, time.Hour)}},
@@ -332,6 +337,16 @@ func TestTimed(t *testing.T) {
 		})
 	})
 
+	t.Run("prompt size", func(t *testing.T) {
+		t.Parallel()
+		// W2's prompt length is kept beside it (PromptSize), never on the task: the size reads it.
+		table, err := c.Run(ctx, Query{Collection: "TASKS", Selects: []string{"code", "prompt::size"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows(t, table, [][]any{{"W1", nil}, {"W2", int64(3)}, {"W3", nil}, {"W4", nil}})
+	})
+
 	t.Run("by type", func(t *testing.T) {
 		t.Parallel()
 		table, err := c.Run(ctx, Query{Collection: "TASKS", Aggregation: &Aggregation{
@@ -347,6 +362,70 @@ func TestTimed(t *testing.T) {
 		}
 		if want := "type,count,running::sum\nwork,3,2h45m\nazima,1,2h45m\n"; b.String() != want {
 			t.Errorf("csv:\n%s\nwant:\n%s", b.String(), want)
+		}
+	})
+}
+
+// gated is a source whose loads wait for open, counting them.
+type gated struct {
+	Source
+	open  chan struct{}
+	loads atomic.Int32
+}
+
+func (g *gated) Load(ctx context.Context, where map[string]string) ([]proto.Message, error) {
+	g.loads.Add(1)
+	<-g.open
+	return []proto.Message{&planv1.Project{Id: id(1)}}, nil
+}
+
+// TestTimedShares pins that the loads asked at the same time with the same where share one read, as the Statistics
+// tab asks a dozen at once, and that a caller who leaves neither cancels the read for the others nor waits for it.
+func TestTimedShares(t *testing.T) {
+	t.Parallel()
+	s := openFrozen(t)
+	synctest.Test(t, func(t *testing.T) {
+		src := &gated{open: make(chan struct{})}
+		timed := Timed(s, src, time.Now)
+		ctx := t.Context()
+		var wg sync.WaitGroup
+		got := make([]int, 6)
+		for i := range 5 {
+			wg.Go(func() {
+				msgs, err := timed.Load(ctx, map[string]string{"project_id": "p"})
+				if err != nil {
+					t.Error(err)
+				}
+				got[i] = len(msgs)
+			})
+		}
+		left, leave := context.WithCancel(ctx)
+		wg.Go(func() {
+			if _, err := timed.Load(left, map[string]string{"project_id": "p"}); !errors.Is(err, context.Canceled) {
+				t.Errorf("a caller who left: %v; want canceled", err)
+			}
+		})
+		other := make(chan int, 1)
+		go func() {
+			msgs, _ := timed.Load(ctx, nil)
+			other <- len(msgs)
+		}()
+		synctest.Wait()
+		if n := src.loads.Load(); n != 2 {
+			t.Errorf("loads = %d; want 2: one per where", n)
+		}
+		leave()
+		synctest.Wait()
+		close(src.open)
+		wg.Wait()
+		if !slices.Equal(got, []int{1, 1, 1, 1, 1, 0}) {
+			t.Errorf("messages per caller = %v; want the shared read for each", got)
+		}
+		if n := <-other; n != 1 {
+			t.Errorf("another where got %d messages", n)
+		}
+		if _, err := timed.Load(ctx, nil); err != nil || src.loads.Load() != 3 {
+			t.Errorf("a load after the others: %v, %d loads; want a read of its own", err, src.loads.Load())
 		}
 	})
 }
