@@ -108,6 +108,7 @@ func (q *Questions) Revise(
 	ctx context.Context, req *connect.Request[planv1.QuestionServiceReviseRequest],
 ) (*connect.Response[planv1.QuestionServiceReviseResponse], error) {
 	m := req.Msg
+	var linkWarnings []string // A tilasm link that names no tilasm, left as written.
 	question, err := q.round(ctx, req.Spec(), m, m.GetQuestion(), m.GetWishId(),
 		func(tx *store.Tx, question *planv1.Question, round *planv1.Round) error {
 			if m.About != nil {
@@ -143,6 +144,10 @@ func (q *Questions) Revise(
 					return err
 				}
 			}
+			var err error
+			if linkWarnings, err = linkTilasms(ctx, tx, question); err != nil {
+				return err
+			}
 			question.Revision++
 			return nil
 		})
@@ -153,7 +158,7 @@ func (q *Questions) Revise(
 		question.Rounds = nil // The current version only: its earlier ones are behind history.
 	}
 	return connect.NewResponse(&planv1.QuestionServiceReviseResponse{
-		Question: question, Warnings: ContextWarnings(question.GetContext()),
+		Question: question, Warnings: append(ContextWarnings(question.GetContext()), linkWarnings...),
 	}), nil
 }
 
