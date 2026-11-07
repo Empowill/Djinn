@@ -114,6 +114,9 @@ func TestSay(t *testing.T) {
 		// At an idle prompt that asked for bracketed paste, the line arrives as one paste, then Enter on its own: the
 		// agent submits it, it does not take Enter for a line break.
 		{name: "pastes a line then enter", want: `pasted, enter apart`},
+		// A program that reads late (an agent busy, a machine under load) still gets Enter in a read of its own: Say
+		// waits for it to read the paste, as fixed a pause would not (W659).
+		{name: "enter apart for a late reader", keys: []string{"busy\r"}, shown: `"busy"`, want: `pasted, enter apart`},
 		// A choice that keys answer (a permission prompt) holds the line: it would pick an option. The keys that answer
 		// it are not a line under way.
 		{name: "waits for a choice", keys: []string{"dialog\r"}, shown: "Esc to cancel", held: "a choice is on screen",
@@ -530,7 +533,7 @@ var screens = map[string]struct {
 // TestLeadProcess is the fake lead the Say tests run in a terminal, not a test. In raw mode with bracketed paste, as
 // Claude Code and Codex are, it reports each line it gets: whether it came as a paste, and whether Enter came in a
 // read of its own. A line of screens shows its screen; a choice stays until a key answers it (an approval, until
-// Enter), then is erased in place, as Claude Code redraws. The line trust shows Claude Code's folder trust as
+// Enter), then is erased in place, as Claude Code redraws. After the line busy, it reads nothing for a while. The line trust shows Claude Code's folder trust as
 // recorded (claude 2.1.295), the line "replay <file>" a screen of testdata as recorded; after "replay
 // <agent>-idle.out", the keys "Est" and Ctrl+U draw what that agent drew for them, as recorded (<agent>-est.out,
 // <agent>-cleared.out). It erases as an agent's prompt does: Ctrl+W and Alt+Backspace a word, Ctrl+U and Esc twice
@@ -652,6 +655,9 @@ func TestLeadProcess(t *testing.T) {
 						approval = strings.HasSuffix(string(line), "-approval")
 						erase = strings.Repeat("\x1b[1A\x1b[2K", strings.Count(screen.out, "\n"))
 					}
+				}
+				if string(line) == "busy" { // Reads nothing for a while, well past the pause before Enter.
+					time.Sleep(400 * time.Millisecond)
 				}
 				line, pasted = line[:0], false
 			case in[i] == 0x7f:
