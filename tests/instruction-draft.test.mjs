@@ -33,3 +33,23 @@ test("blank input sends nothing and drafts remain independent", () => {
   assert.equal(a.begin(), "For wish A");
   assert.equal(b.begin(), undefined);
 });
+
+test("a key keeps its text and wakes no one, unless the pill shows something new", () => {
+  const draft = createDraft();
+  let heard = 0;
+  draft.subscribe(() => heard++);
+  draft.type("H");
+  assert.equal(heard, 1, "the first letter enables Send");
+  draft.type("He");
+  draft.type("Hel\nlo");
+  assert.equal(heard, 1);
+  assert.equal(draft.get().text, "Hel\nlo", "read at once, as sent");
+  draft.set({ error: "Lead stopped" });
+  heard = 0;
+  draft.type("Hel\nlo!");
+  assert.equal(heard, 1, "a key clears the error");
+  assert.equal(draft.get().error, "");
+  draft.type(" ");
+  assert.equal(heard, 2, "a blank box disables Send");
+  assert.equal(draft.begin(), undefined);
+});

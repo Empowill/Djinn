@@ -79,7 +79,8 @@ export function anchorKind(comment: TilasmComment): AnchorKind {
 export interface Column {
   // The card being written: NEW for a new comment on the whole tilasm, a draft's identifier, or "" for none.
   editing: string;
-  // Its text, as typed.
+  // The text it opens with: a draft's, or none for a new one. What is typed since is the editor's own (W567): a
+  // key renders not the column.
   text: string;
   // The passage or the element a new comment is on; none for the whole tilasm.
   anchor?: Pick;
@@ -94,11 +95,10 @@ export const emptyColumn: Column = { editing: "", text: "" };
 
 export type ColumnAction =
   // "On the whole tilasm", Comment on a passage, or an element aimed at: a new card, below the others. A card being
-  // written takes the passage or the element, and keeps its text.
+  // written takes the passage or the element, and its editor keeps what is typed.
   | { type: "write"; anchor?: Pick }
   // A draft opened for editing, with its text.
   | { type: "edit"; comment: TilasmComment }
-  | { type: "type"; text: string }
   // Escape, or Cancel: the card goes back to what is stored.
   | { type: "cancel" }
   // The card was stored.
@@ -127,8 +127,6 @@ export function column(state: Column, action: ColumnAction): Column {
         editing: action.comment.id,
         text: action.comment.text,
       };
-    case "type":
-      return { ...state, text: action.text };
     case "cancel":
       return { ...unanchored(state), editing: "", text: "" };
     case "saved":
@@ -154,11 +152,6 @@ export function column(state: Column, action: ColumnAction): Column {
 function unanchored(state: Column): Column {
   const { anchor: _, ...rest } = state;
   return rest;
-}
-
-// canSave tells whether the card being written can be stored: a comment says something.
-export function canSave(state: Column): boolean {
-  return state.editing !== "" && state.text.trim() !== "";
 }
 
 // SendFoot is what the foot of the column allows (decision Q29): a comment on the whole tilasm above two buttons,

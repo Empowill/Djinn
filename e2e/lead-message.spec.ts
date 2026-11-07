@@ -118,16 +118,21 @@ test("a word written in the pill reaches the lead's terminal", async ({
     await box.press("Shift+Enter");
     await box.pressSequentially("lead");
     await expect(box).toHaveValue("Hello\nlead");
+    await expect
+      .poll(() =>
+        box.evaluate((element) => element.getBoundingClientRect().height),
+      )
+      .toBeGreaterThan(oneLineHeight);
     const multilineHeight = await box.evaluate(
       (element) => element.getBoundingClientRect().height,
     );
-    expect(multilineHeight).toBeGreaterThan(oneLineHeight);
     await box.press("Enter");
     await expect(box).toHaveValue("");
-    const clearedHeight = await box.evaluate(
-      (element) => element.getBoundingClientRect().height,
-    );
-    expect(clearedHeight).toBeLessThan(multilineHeight);
+    await expect
+      .poll(() =>
+        box.evaluate((element) => element.getBoundingClientRect().height),
+      )
+      .toBeLessThan(multilineHeight);
     await expect(panel.getByRole("status")).toContainText("Sent");
     await page.screenshot({ path: "test-results/e2e/lead-message-box.png" });
     // The fake lead takes no paste: the lines come joined by a space, after the wish they are about.

@@ -43,6 +43,7 @@ import { t } from "./i18n";
 import { EmptyState } from "./empty-art";
 import { placeTaken, useKeepPlace } from "./scroll-anchor";
 import "./diff.css";
+import { hasText, TextField, useTyped } from "./text-field";
 
 // Map Chroma token categories to CSS syntax classes.
 const tokenClassMap: Record<string, string> = {
@@ -133,7 +134,8 @@ export function CommentBox({
 }: CommentBoxProps) {
   const djinn = useDjinn();
   const clients = djinn?.clients;
-  const [text, setText] = useState("");
+  // The comment is the field's own: a key renders the box only when it starts or stops holding something (W526).
+  const typed = useTyped(hasText);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,7 +146,7 @@ export function CommentBox({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const trimmed = text.trim();
+    const trimmed = typed.read().trim();
     if (!trimmed || submitting) return;
     if (!clients || !taskId) return;
     setSubmitting(true);
@@ -172,10 +174,11 @@ export function CommentBox({
   return (
     <form className="diff-comment-box" onSubmit={handleSubmit}>
       <div className="diff-comment-box-title">{title}</div>
-      <textarea
+      <TextField
         className="diff-comment-textarea"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
+        text={typed.text}
+        onText={typed.type}
+        grow={false}
         placeholder={t("diff.comment_placeholder")}
         aria-label={title}
         autoFocus
@@ -199,7 +202,7 @@ export function CommentBox({
         <button
           type="submit"
           className="diff-comment-btn-submit"
-          disabled={submitting || !text.trim() || !clients || !taskId}
+          disabled={submitting || !typed.shown || !clients || !taskId}
         >
           {t("diff.comment_submit")}
         </button>

@@ -73,6 +73,16 @@ export function placeTaken(scroller: HTMLElement) {
   places.get(scroller)?.();
 }
 
+// skipped says a mutation is inside an element marked data-anchor-skip, whose changes move nothing around it.
+function skipped(record: MutationRecord): boolean {
+  const node = record.target;
+  const el =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as Element)
+      : node.parentElement;
+  return !!el?.closest("[data-anchor-skip]");
+}
+
 // keepPlace keeps the place of the reader in scroller until the returned function is called.
 export function keepPlace(scroller: HTMLElement): () => void {
   if (CSS.supports("overflow-anchor", "auto")) return () => {};
@@ -109,7 +119,12 @@ export function keepPlace(scroller: HTMLElement): () => void {
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(mark);
   };
-  const mutations = new MutationObserver(hold);
+  // A count that changes at each key (NoteCounter, text-field.tsx) moves nothing: it is not heard, or each key in a
+  // note would read the anchors again and force a layout (L55).
+  const mutations = new MutationObserver((records) => {
+    if (records.every(skipped)) return;
+    hold();
+  });
   mutations.observe(scroller, {
     subtree: true,
     childList: true,
