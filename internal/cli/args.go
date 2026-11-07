@@ -26,10 +26,11 @@ const (
 )
 
 // parse builds the request md from the arguments of a command line: the required fields are positional, in
-// field-number order, and the other fields are --kebab-case flags.
-func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message, error) {
+// field-number order, and the other fields are --kebab-case flags. The texts given for a field with a text form come
+// back apart, for readTexts once a server answers.
+func parse(md protoreflect.MessageDescriptor, args []string) (*dynamicpb.Message, []pendingText, error) {
 	l, err := parseLine(md, args)
-	return l.req, err
+	return l.req, l.texts, err
 }
 
 // parseLine reads a command line as parse does, the command line's own --wish-id of a scoped request, and its own
@@ -91,6 +92,10 @@ func parseLine(md protoreflect.MessageDescriptor, args []string) (line, error) {
 			}
 			i++
 			value = args[i]
+		}
+		if hasForm(fd) {
+			l.texts = append(l.texts, pendingText{fd, value})
+			continue
 		}
 		if err := set(msg, fd, value); err != nil {
 			return line{}, fmt.Errorf("%s: %w", label(fd), err)
@@ -287,8 +292,8 @@ func supported(fd protoreflect.FieldDescriptor) error {
 		return errors.New("maps are not supported")
 	case fd.Kind() == protoreflect.BytesKind || fd.Kind() == protoreflect.GroupKind:
 		return fmt.Errorf("%s fields are not supported", fd.Kind())
-	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName && ref(fd) == nil && !isPair(fd):
-		return errors.New("only a Timestamp, a Duration, a message holding a single oneof of scalars, or a string and a list of strings is supported")
+	case fd.Kind() == protoreflect.MessageKind && fd.Message().FullName() != timestampName && fd.Message().FullName() != durationName && ref(fd) == nil && !isPair(fd) && !hasForm(fd):
+		return errors.New("only a Timestamp, a Duration, a message holding a single oneof of scalars, a string and a list of strings, or a message with a text form (textForms) is supported")
 	}
 	return nil
 }
@@ -502,6 +507,9 @@ func scalar(fd protoreflect.FieldDescriptor, s string) (protoreflect.Value, erro
 // text writes one value as the command line reads it.
 func text(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 	switch {
+	case hasForm(fd):
+		form, _ := formOf(fd)
+		return formText(fd, form, v)
 	case ref(fd) != nil:
 		sub := v.Message()
 		if member := sub.WhichOneof(ref(fd)); member != nil {
@@ -538,6 +546,9 @@ func text(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 
 // expect says what a field accepts, for help and errors.
 func expect(fd protoreflect.FieldDescriptor) string {
+	if form, ok := formOf(fd); ok {
+		return form.help
+	}
 	switch {
 	case projectField(fd):
 		return "a project's name or UUID"
@@ -628,8 +639,17 @@ func envName(fd protoreflect.FieldDescriptor) string {
 }
 
 // fromEnv fills each field of msg left empty from the environment variable it defaults to, read with getenv: a
-// worker's djinn block put names its task by $DJINN_TASK_ID.
+// worker's djinn block put names its task by $DJINN_TASK_ID. A field still empty then takes its client default:
+// djinn query asks a text table.
 func fromEnv(msg *dynamicpb.Message, getenv func(string) string) {
+	defer func() {
+		for _, fd := range byNumber(msg.Descriptor()) {
+			def, _ := proto.GetExtension(fd.Options(), djinnv1.E_ClientDefault).(string)
+			if def != "" && !fd.IsList() && !msg.Has(fd) {
+				_ = set(msg, fd, def) // A default the proto names wrong shows in TestClientDefaults.
+			}
+		}
+	}()
 	for _, fd := range byNumber(msg.Descriptor()) {
 		names := strings.Fields(envName(fd))
 		if len(names) == 0 || fd.IsList() || fd.Kind() != protoreflect.StringKind || msg.Has(fd) {

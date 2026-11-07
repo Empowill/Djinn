@@ -92,10 +92,12 @@ func wishAlias(name string) string {
 	return ""
 }
 
-// line is a command line read: its request, and the wish its own --wish-id gives (scoped).
+// line is a command line read: its request, the wish its own --wish-id gives (scoped), and the texts given for a
+// field with a text form, which readTexts reads once a server answers.
 type line struct {
-	req  *dynamicpb.Message
-	wish string
+	req   *dynamicpb.Message
+	wish  string
+	texts []pendingText
 }
 
 // resolve turns, in req, a project's name, a wish's title and a task's code into their identifiers, asking the server

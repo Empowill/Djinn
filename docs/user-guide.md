@@ -210,18 +210,78 @@ Under them, one line says the machine's load, with a link to the [Hourglass](#th
 
 ## The Hourglass
 
-**Hourglass**, near the bottom of the side panel, after Import a wish, or Ctrl+2 (Cmd+2 on macOS), is where the live metrics are, as
-time goes by. First the machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share,
+**Hourglass**, near the bottom of the side panel, after Import a wish, or Ctrl+2 (Cmd+2 on macOS), has two tabs:
+**Machine**, where the live metrics are, as time goes by, and **Statistics**, what the work has been. On Machine, first
+the machine: its CPU and memory over the time you pick (10 minutes to 7 days), with Djinn's share,
 the load limit and the gates held; each running worker, its facts and its own graphs (its eye opens the task in its
 wish); where the time of the commands goes, by project and gate; and on the **Disk** tab, a bar of the whole disk above
 **Djinn and its workers** and **Machine** (caches and Docker storage grouped by risk—**Safe**, **Rebuilds**, **Data
 loss**—with each item's reclaimable space and cleanup command to copy). The page reads them only while it shows: leave it,
 and its reads stop. A running task's card links to its worker's row (**Live in the Hourglass**).
 
+**Statistics** reads the tasks and questions of every wish as [queries](#queries), one per figure or card, when the tab
+opens and when a filter changes, never polled: Djinn computes each total, the window only draws it. Filters: a project
+or all, the period (7 days, 30 days, all, from the tasks' creation), and day or week buckets. Six figures (tasks done,
+azimas merged, the median run of a work task and its p90, from a task's end to its wish's branch, the developer's
+answer time, the estimated cost), then the tasks created by type, the azimas merged on main, the time to the wish's
+branch, the time of a task by type (waiting before its start, running, gates, pauses: median and p90), the answer
+times, the prompt sizes (characters divided by 4) and a line per project, whose name filters the tab. Azimas and
+watchers stay out of the times: an azima sums its parts'.
+
 Ctrl+1 and Ctrl+2 are the keys' places, not their characters: on a French AZERTY keyboard, Ctrl with the key of &
 and Ctrl with the key of the e acute next to it; the numpad's 1 and 2 work too. They work in a text field, never in
 the terminal, which keeps its own Ctrl and digit keys. Each entry's tooltip names its shortcut as your keyboard writes
 it, once the window knows your layout: at once in a Chromium browser, elsewhere once you typed on the digit row.
+
+## Queries
+
+`djinn query query <collection>` reads the tasks, questions, wishes or projects of every wish as a table, and
+`djinn query schema <collection>` lists the refs a query can name: each one's type, label, unit, comment, and the
+collection a jump leads to. Nothing is written: an agent runs them freely, through MCP too.
+
+```sh
+# Every task of a wish, the latest first
+djinn query query tasks --filter "wish_id->title=Stats tab" --sort -create_time --limit 20
+# Columns of your own, in CSV
+djinn query query tasks --select code --select status --select usage.cost_usd --select wish_id->title --format csv
+# How long questions wait for their answer, by bins: every bin shows, empty or not
+djinn query query questions --group-by "answer::delay::bins(0s,1m,10m,1h,24h)" --measure count
+# Tasks and cost per week, median time from a task's end to its commit
+djinn query query tasks --group-by create_time::week --measure count --measure usage.cost_usd::sum \
+  --measure integration::delay::median
+# Tasks created per day by type, and how long the work ran, by bins
+djinn query query tasks --group-by create_time::day --group-by type --measure count
+djinn query query tasks --filter type=work --filter status=done --group-by "running::bins(0s,1m,10m,1h)" --measure count
+```
+
+- **Refs**: a field by its path (`code`, `usage.cost_usd`), across a field that holds an id (`wish_id->title`,
+  `wait_question_id->answer::delay`), or one Djinn computes (`prompt::size`, of the task's first prompt, and `context::size`, in tokens,
+  `answer::delay`, `integration::delay`, a task's `type`). Prompts, contexts and last lines are never columns.
+- **Task times**: `running`, `waiting_gate`, `paused` and `waiting_before_start` are computed from the runs and gate
+  waits as the task list does, as of the query; null for a task that never started (but its wait), an azima's the sum
+  of its parts'. `type` is the task's kind, the one type of a task:
+  `work`, `correction`, `review`, `investigation`, `mockup`, `ifrit`, `watcher` or `azima`; a spawn never asks the
+  three Djinn makes alone (correction, review, watcher), which it stores as it makes them.
+- **Filters** (`--filter`, all of them hold): `=` (text ignoring case; `a|b` one of), `!=` (none of, an absent value
+  included), `>` `>=` `<` `<=` (numbers, times such as `2026-11-01` or RFC 3339, durations such as `90s`), `*=`
+  contains, `^=` begins with; `null` is the absent value (`status=null`, `status=pending|null`).
+- **Sorts**: `--sort ref`, `--sort -ref` descending; an absent value comes last. Aggregated, a sort names a column of
+  the table (`--sort -count`).
+- **Aggregates**: `--group-by ref`, `ref::day`, `ref::week`, `ref::month` (the machine's time zone), or
+  `ref::bins(b1,b2,...)` for a number or a duration: a value goes to the greatest bound at or below it, the first
+  bound's when below them all. `--measure count`, `ref::count|sum|avg|min|max|median|p90`, `name=ref::fn` to name a
+  column. Absent values are skipped; an empty period never shows, an empty bin does.
+- **Formats**: an aligned table with its row count (the command line's and MCP's default, `--format text`),
+  `--format csv`, or `--format arrow` (the API's default and the window's: an Arrow IPC stream in the `table` field of
+  `--json`, each column typed from the proto with its ref, label and unit in its `djinn` metadata). An absent value is
+  empty in text, null in Arrow, never 0.
+- **Typed requests**: over the API, a filter is a message typed by its ref (`string`, `string_in`, `number`, `time`,
+  `duration`, `bool`, `null`, or a `group` joined by and, or, not), a sort an `Order` (ref, desc), a group a `GroupBy`
+  (ref, and a period or bins), a measure a `Measure` (ref, function, name). The command line and MCP read the texts above into
+  these messages themselves, a filter typed by its ref from the collection's schema: QueryService reads typed messages
+  only.
+
+The questions keep their short word: q is an alias of the question command, beside query.
 
 ## A wish's view
 

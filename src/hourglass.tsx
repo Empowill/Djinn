@@ -1,8 +1,9 @@
 // The Hourglass (Decision Q253): the home of every live metric, the work as a function of time. Each section reads its
 // live data only while the page shows: leaving the page unmounts its sections, and their polls and timers stop with
 // them. The machine comes first (consumption-panel.tsx); a later metric is one more entry of sections, and the flying
-// carpet keeps no live graph.
-import { type ComponentType, useEffect, useMemo } from "react";
+// carpet keeps no live graph. Its second tab, Statistics (statistics.tsx, L53 A), reads the past: one query per card,
+// as the tab opens, never polled.
+import { type ComponentType, useEffect, useMemo, useState } from "react";
 
 import type { Wish } from "../gen/ts/plan/v1/plan_pb";
 import { jump } from "./attention";
@@ -12,6 +13,7 @@ import { t } from "./i18n";
 import { OperatingLoad } from "./operating-load";
 import { PageHeader } from "./page-header";
 import { formatValue } from "./resource-chart";
+import { Statistics } from "./statistics";
 import "./hourglass.css";
 
 // What the window shows instead of a wish: the Hourglass. A wish's id is a UUID: never this.
@@ -59,6 +61,12 @@ const sections: readonly Section[] = [
   { id: "hourglass-machine", Section: MachineSection },
 ];
 
+// The tabs of the Hourglass: what runs now, the machine, and what ran, the statistics.
+export type HourglassTab = "machine" | "statistics";
+
+// The tab shown last: back on the Hourglass, the window shows it again.
+let shownTab: HourglassTab = "machine";
+
 // How long a link to a row waits for it: the series are read as the page opens.
 const SETTLE = 3000;
 
@@ -71,9 +79,19 @@ export function Hourglass({
   // An element to bring into sight, a worker's row as a link asks (worker-<task id>); a new object at each request.
   target?: { target: string };
 }) {
-  // The row shows once its series are read: tried again a while, then given up.
+  const [tab, setTab] = useState<HourglassTab>(() =>
+    target ? "machine" : shownTab,
+  );
+  const show = (next: HourglassTab) => {
+    shownTab = next;
+    setTab(next);
+  };
+  // The row shows once its series are read: tried again a while, then given up. A worker's row is on the machine.
   useEffect(() => {
-    if (!target || jump(target.target)) return;
+    if (!target) return;
+    shownTab = "machine";
+    setTab("machine");
+    if (jump(target.target)) return;
     const timer = setInterval(() => {
       if (jump(target.target)) clearInterval(timer);
     }, 100);
@@ -96,7 +114,35 @@ export function Hourglass({
             <p>{t("hourglass.detail")}</p>
           </div>
         </div>
-        <HourglassSections wishes={wishes} />
+        <div className="overview-content hourglass-body">
+          <div className="view-tabs hourglass-tabs" role="tablist">
+            {(
+              [
+                ["machine", t("hourglass.tab_machine")],
+                ["statistics", t("hourglass.tab_statistics")],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`hourglass-tab-${id}`}
+                aria-selected={tab === id}
+                className={tab === id ? "active" : ""}
+                onClick={() => show(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div role="tabpanel" aria-labelledby={`hourglass-tab-${tab}`}>
+            {tab === "machine" ? (
+              <HourglassSections wishes={wishes} />
+            ) : (
+              <Statistics />
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -106,7 +152,7 @@ export function Hourglass({
 // stops.
 export function HourglassSections({ wishes }: { wishes: readonly Wish[] }) {
   return (
-    <div className="overview-content hourglass-sections">
+    <div className="hourglass-sections">
       {sections.map(({ id, Section }) => (
         <div key={id} id={id} className="hourglass-section">
           <Section wishes={wishes} />

@@ -83,6 +83,9 @@ func ParsePlan(text string) (*planv1.PlannedTask, error) {
 			var n int32
 			n, err = enumWord(planv1.TaskKind_value, "TASK_KIND_", key, value)
 			p.Kind = planv1.TaskKind(n)
+			if err == nil && DjinnKind(p.Kind) {
+				err = fmt.Errorf("plan kind %q: Djinn alone makes a %s", value, value)
+			}
 		case "rounds":
 			n, convErr := strconv.Atoi(value)
 			if convErr != nil || n < 1 || n > maxMockupRounds {

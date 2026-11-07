@@ -1,0 +1,130 @@
+/* The Statistics tab of the Hourglass (statistics.tsx, L53 variant A): filters in one line, six figures, then cards
+   two by two, a wide card across. Every card is a rounded box with one border all round. */
+.statistics-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  margin-bottom: var(--space-3, 0.75rem);
+}
+
+.statistics-select {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
+.statistics-read {
+  margin-left: auto;
+}
+
+.statistics-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--space-2, 0.5rem);
+  margin-bottom: var(--space-3, 0.75rem);
+}
+
+.statistics-figure,
+.statistics-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel, 0.625rem);
+  background: var(--surface);
+}
+
+.statistics-figure {
+  display: flex;
+  flex-direction: column;
+  padding: 0.625rem 0.75rem;
+}
+
+.statistics-figure-label,
+.statistics-detail {
+  color: var(--muted);
+  font-size: var(--font-size-body, 0.75rem);
+}
+
+.statistics-figure-value {
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.statistics-figure-sub {
+  color: var(--muted-dim);
+  font-size: var(--font-size-body, 0.75rem);
+}
+
+.statistics-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3, 0.75rem);
+}
+
+.statistics-card {
+  padding: 0.75rem 0.875rem;
+}
+
+.statistics-card.wide {
+  grid-column: 1 / -1;
+}
+
+.statistics-card h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.statistics-detail {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.statistics-empty {
+  margin: var(--space-3, 0.75rem) 0;
+}
+
+.statistics-error {
+  color: var(--st-failed);
+}
+
+.statistics-table {
+  width: 100%;
+  margin-top: var(--space-2, 0.5rem);
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.statistics-table th,
+.statistics-table td {
+  padding: 0.3125rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.statistics-table th:first-child {
+  text-align: left;
+  font-weight: 500;
+}
+
+.statistics-table thead th {
+  color: var(--muted);
+  font-size: var(--font-size-body, 0.75rem);
+  font-weight: 500;
+}
+
+.statistics-project {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 52rem) {
+  .statistics-cards {
+    grid-template-columns: 1fr;
+  }
+}

@@ -345,9 +345,11 @@ func tilasmHolds(ctx context.Context, r store.Reader, wishID string, tilasms []*
 		return nil, err
 	}
 	tasks = slices.DeleteFunc(tasks, func(task *planv1.Task) bool {
-		kind := task.GetKind()
-		return !slices.Contains(holdingStatus, task.GetStatus()) || (kind != planv1.TaskKind_TASK_KIND_WORK &&
-			kind != planv1.TaskKind_TASK_KIND_UNSPECIFIED && kind != planv1.TaskKind_TASK_KIND_MOCKUP)
+		switch Kind(task) {
+		case planv1.TaskKind_TASK_KIND_AZIMA, planv1.TaskKind_TASK_KIND_IFRIT, planv1.TaskKind_TASK_KIND_INVESTIGATION:
+			return true
+		}
+		return !slices.Contains(holdingStatus, task.GetStatus())
 	})
 	slices.SortFunc(tasks, func(a, b *planv1.Task) int { return CompareCodes(a.GetCode(), b.GetCode()) })
 	questions, err := store.List[*planv1.Question](ctx, r, where)

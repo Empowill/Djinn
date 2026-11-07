@@ -35,6 +35,7 @@ import (
 	"github.com/empowill/djinn/internal/logx"
 	"github.com/empowill/djinn/internal/machine"
 	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/query"
 	"github.com/empowill/djinn/internal/render"
 	"github.com/empowill/djinn/internal/server"
 	"github.com/empowill/djinn/internal/store"
@@ -559,6 +560,11 @@ func runUp(args []string) (restart bool, err error) {
 	svc[costsPrefix] = costsHandler
 	backupPrefix, backupHandler := backup.Handler(db, home, version)
 	svc[backupPrefix] = backupHandler
+	queryPrefix, queryHandler, err := query.Handler(db)
+	if err != nil {
+		return false, err
+	}
+	svc[queryPrefix] = queryHandler
 	if profiles {
 		svc[server.ProfilePath] = server.Profiles()
 	}

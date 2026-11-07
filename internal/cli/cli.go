@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"text/tabwriter"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -172,7 +173,7 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 
 	l, err := parseLine(md.Input(), rest[2:])
-	req := l.req
+	req, texts := l.req, l.texts
 	if err == nil {
 		fromEnv(req, cfg.getenv())
 		if err = resolve(ctx, cfg, req, l.wish); err != nil {
@@ -189,6 +190,16 @@ func run(ctx context.Context, args []string, cfg Config) error {
 	}
 	if cfg, err = autostart(ctx, cfg, md); err != nil {
 		return err
+	}
+	if len(texts) > 0 {
+		// A text such as a query's filter reads with what the server knows, a ref's type: once it answers.
+		err = readTexts(ctx, req, texts, serverLookup(cfg))
+		if err == nil {
+			err = check(req, label)
+		}
+		if err != nil {
+			return usageError{fmt.Errorf("%w\nrun djinn %s %s --help for the arguments", err, command(sd), name)}
+		}
 	}
 	if md.IsStreamingServer() && !md.IsStreamingClient() {
 		// A stream prints each message as it comes: a JSON object per line with --json, a blank line between
@@ -384,8 +395,14 @@ func pick(word string, names []string, what string) (string, error) {
 }
 
 // aliased resolves a word no command's own name takes to the command of a service it is an alias of, in full or by
-// a unique prefix: djinn talisman is djinn tilasm.
+// a unique prefix: djinn talisman is djinn tilasm. An alias typed in full wins over the names it is a prefix of: djinn
+// q is djinn question, beside djinn query.
 func aliased(word string, names []string, services []protoreflect.ServiceDescriptor) (string, bool) {
+	for _, sd := range services {
+		if slices.Contains(aliases(sd), word) {
+			return command(sd), true
+		}
+	}
 	if slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, word) }) {
 		return "", false
 	}
@@ -622,6 +639,30 @@ func jsonOnly(fd protoreflect.FieldDescriptor) bool {
 	return proto.GetExtension(fd.Options(), djinnv1.E_JsonOnly) == true
 }
 
+// raw tells whether the command line prints the string or bytes field as it is, without its name: a table or a CSV.
+func raw(fd protoreflect.FieldDescriptor) bool {
+	kind := fd.Kind()
+	return (kind == protoreflect.StringKind || kind == protoreflect.BytesKind) && !fd.IsList() &&
+		proto.GetExtension(fd.Options(), djinnv1.E_Raw) == true
+}
+
+// rawText is the text of m's raw field, when it has one set that holds UTF-8: what djinn mcp returns in place of
+// the JSON of m, a table an agent reads as it is.
+func rawText(m proto.Message) (string, bool) {
+	r := m.ProtoReflect()
+	for _, fd := range byNumber(r.Descriptor()) {
+		if !raw(fd) || !r.Has(fd) {
+			continue
+		}
+		if fd.Kind() == protoreflect.BytesKind {
+			b := r.Get(fd).Bytes()
+			return string(b), utf8.Valid(b)
+		}
+		return r.Get(fd).String(), true
+	}
+	return "", false
+}
+
 func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 	for _, fd := range byNumber(m.Descriptor()) {
 		if !m.Has(fd) || fd.IsMap() || jsonOnly(fd) {
@@ -629,6 +670,15 @@ func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 		}
 		v := m.Get(fd)
 		switch {
+		case raw(fd):
+			s := v.String()
+			if fd.Kind() == protoreflect.BytesKind {
+				s = string(v.Bytes())
+			}
+			fmt.Fprint(w, s)
+			if !strings.HasSuffix(s, "\n") {
+				fmt.Fprintln(w)
+			}
 		case fd.IsList():
 			fmt.Fprintf(w, "%s%s:\n", indent, fd.Name())
 			writeList(w, fd, v.List(), indent+"  ")

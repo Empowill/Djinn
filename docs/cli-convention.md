@@ -12,8 +12,9 @@ arguments and their validation.
 - The command is the service name without `Service`, then the method, both in kebab-case:
   `QuestionService.Answer` is `djinn question answer`.
 - A service may name another word for its command, `option (djinn.v1.alias) = "talisman"`: `djinn talisman list` is
-  `djinn tilasm list`. An alias answers in full, or by a prefix no command's own name takes (`djinn t` stays
-  ambiguous); the help and the documentation list it, and MCP knows the command's own name only.
+  `djinn tilasm list`. An alias answers in full, even where it is a prefix of several commands (`djinn q` is
+  `djinn question`, beside `djinn query`), or by a prefix no command's own name takes (`djinn t` stays ambiguous); the
+  help and the documentation list it, and MCP knows the command's own name only.
 - A unique prefix is enough: `djinn q answer`, `djinn pr l`. An ambiguous one is an error that lists the
   candidates (`djinn question a` matches `ask` and `answer`).
 - `djinn version` prints the version.
@@ -54,6 +55,7 @@ The arguments are the fields of the request.
 | `google.protobuf.Timestamp`                 | RFC 3339: `2026-10-07T09:00:00Z`                         |
 | a message holding only a `oneof` of scalars | One input, stored in the first member whose rules pass   |
 | a message of a required string, then a repeated string | One input `key=a,b`: `--also W6=W5,W3`; `W7=` for an empty list |
+| a message with a text form (`textForms` in `internal/cli`) | One input the command line reads into the message itself, asking the server what it needs: `--filter status=running` |
 | `string directory` or `*_directory`         | A folder: a relative path is made absolute, from the current directory, before sending |
 | `string file` or `*_file`                   | A file, made absolute the same way: the server reads or writes it on this machine |
 | `string path` or `*_path`                   | A folder or a file, made absolute the same way: `djinn tilasm put` takes either |
@@ -66,6 +68,14 @@ or a tool call of `djinn mcp`, leaves it empty: Djinn sets `$DJINN_TASK_ID` for 
 lead's terminal, so commands name the caller by themselves. A value given wins. The help says it, from the field's comment.
 The option may name several variables, separated by spaces: the first one set wins. `djinn lead watch` names its session
 by `"CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID ANTIGRAVITY_CONVERSATION_ID"`, the variable each agent sets for its commands.
+
+A text form keeps a typed request typed: the server never reads the text. `djinn query query --filter status=running`
+reads the collection's schema first, once per command, to type the filter by its ref (`internal/querytext`), then sends
+the typed message; a text that does not read fails before the query, as a usage error.
+
+A field marked `(djinn.v1.client_default) = "text"` takes that value when the command line, or a tool call of
+`djinn mcp`, leaves it empty, where the server reads it empty as another: `djinn query query` asks a text table, where
+the API's default is Arrow. A value given wins.
 
 A field marked `(djinn.v1.positional) = true` keeps its positional spelling even when validation allows
 it to be omitted; the help displays it in brackets. For example, `djinn wish make "Short title"` keeps its
@@ -144,8 +154,10 @@ The help is the proto comments: the service comment for `djinn question`, the me
 `djinn question answer --help`. Write them for the person typing the command.
 
 The output is text by default: one `name: value` line per field set, nested messages indented, lists as
-`- ` items, and the single field of a response shown directly. `--json` prints the response as protobuf JSON
-with the proto field names.
+`- ` items, and the single field of a response shown directly. A field marked `(djinn.v1.json_only)` prints with
+`--json` only; a string or bytes field marked `(djinn.v1.raw)` prints as it is, without its name, so that a table or a
+CSV pipes (`djinn query query tasks --format csv`), and `djinn mcp` returns it as the tool's text when it is UTF-8. `--json` prints the response as protobuf JSON with the proto field
+names.
 
 ## Global flags
 

@@ -21,13 +21,33 @@ import (
 // - waiting_gate: while running, the time it waited for a gate to be granted;
 // - paused: every gap between the first start and now or the end where the task was not running;
 // - waiting_before_start: the wait before the first start (from planned/create_time to first start, or to now).
-// An azima's time sums its parts' work times.
+// An azima's time sums its parts' work times. The gate waits it counts from the events of a task from before GateWait
+// are kept in s.
 func FillTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, now time.Time) error {
+	var r store.Reader
+	if s != nil {
+		r = s
+	}
+	return fillTimes(ctx, r, s, tasks, now, false)
+}
+
+// ReadTimes sets the durations on tasks as FillTimes does, reading r only: the gate waits it counts from the events of
+// a task from before GateWait are not kept. QueryService reads the tasks through it. whole says tasks hold every task
+// of the store: an azima's parts are then all there, and no wish's tasks are read again.
+func ReadTimes(ctx context.Context, r store.Reader, tasks []*planv1.Task, now time.Time, whole bool) error {
+	return fillTimes(ctx, r, nil, tasks, now, whole)
+}
+
+// fillTimes sets the durations on tasks, reading r when not nil, keeping in keep when not nil the gate waits counted;
+// whole when tasks are every task of the store.
+func fillTimes(
+	ctx context.Context, r store.Reader, keep *store.Store, tasks []*planv1.Task, now time.Time, whole bool,
+) error {
 	if len(tasks) == 0 {
 		return nil
 	}
 
-	if err := fillLeavesTimes(ctx, s, tasks, now); err != nil {
+	if err := fillLeavesTimes(ctx, r, keep, tasks, now); err != nil {
 		return err
 	}
 
@@ -48,8 +68,8 @@ func FillTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, now ti
 
 	for wishID := range wishes {
 		wishTasks := tasksByWish[wishID]
-		if s != nil {
-			all, err := store.List[*planv1.Task](ctx, s, store.Where{"wish_id": wishID})
+		if r != nil && !whole {
+			all, err := store.List[*planv1.Task](ctx, r, store.Where{"wish_id": wishID})
 			if err == nil && len(all) > len(wishTasks) {
 				taskMap := make(map[string]*planv1.Task, len(all))
 				for _, t := range wishTasks {
@@ -62,7 +82,7 @@ func FillTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, now ti
 						taskMap[t.GetId()] = t
 					}
 				}
-				_ = fillLeavesTimes(ctx, s, others, now)
+				_ = fillLeavesTimes(ctx, r, keep, others, now)
 				wishTasks = make([]*planv1.Task, 0, len(taskMap))
 				for _, t := range taskMap {
 					wishTasks = append(wishTasks, t)
@@ -77,7 +97,9 @@ func FillTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, now ti
 }
 
 // fillLeavesTimes sets the times of the tasks that are not azimas, with the gate waits of those that started.
-func fillLeavesTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, now time.Time) error {
+func fillLeavesTimes(
+	ctx context.Context, r store.Reader, keep *store.Store, tasks []*planv1.Task, now time.Time,
+) error {
 	var started []*planv1.Task
 	for _, t := range tasks {
 		if !IsAzima(t) && t.GetId() != "" && (t.FirstStartTime != nil || t.StartTime != nil) {
@@ -85,9 +107,9 @@ func fillLeavesTimes(ctx context.Context, s *store.Store, tasks []*planv1.Task, 
 		}
 	}
 	var waits map[string]*planv1.GateWait
-	if s != nil && len(started) > 0 {
+	if r != nil && len(started) > 0 {
 		var err error
-		if waits, err = gateWaits(ctx, s, started); err != nil {
+		if waits, err = gateWaits(ctx, r, keep, started); err != nil {
 			return err
 		}
 	}
@@ -288,14 +310,26 @@ func CountGate(ctx context.Context, tx *store.Tx, ev *planv1.TaskEvent) error {
 	return tx.Put(w)
 }
 
-// gateWaits is the gate wait of each task, by id. Those from before GateWait are counted from their gate events, then
-// kept, all in one transaction: the first list after an update reads their events once, and never again. Should
-// keeping them fail, the list still has their count, and the next counts them again.
-func gateWaits(ctx context.Context, s *store.Store, tasks []*planv1.Task) (map[string]*planv1.GateWait, error) {
-	waits := make(map[string]*planv1.GateWait, len(tasks))
+// gateWaits is the gate wait of each task, by id, those kept read in one pass (store.GetMany). Those from before GateWait are counted from their gate events, then
+// kept in s when not nil, all in one transaction: the first list after an update reads their events once, and never
+// again. Should keeping them fail, the list still has their count, and the next counts them again.
+func gateWaits(
+	ctx context.Context, r store.Reader, s *store.Store, tasks []*planv1.Task,
+) (map[string]*planv1.GateWait, error) {
+	ids := make([]string, len(tasks))
+	for i, t := range tasks {
+		ids[i] = t.GetId()
+	}
+	waits, err := store.GetMany[*planv1.GateWait](ctx, r, ids)
+	if err != nil {
+		return nil, err
+	}
 	var counted []*planv1.GateWait
 	for _, t := range tasks {
-		w, kept, err := gateWait(ctx, s, t.GetId())
+		if _, ok := waits[t.GetId()]; ok {
+			continue
+		}
+		w, kept, err := gateWait(ctx, r, t.GetId())
 		if err != nil {
 			return nil, err
 		}
@@ -304,10 +338,10 @@ func gateWaits(ctx context.Context, s *store.Store, tasks []*planv1.Task) (map[s
 			counted = append(counted, w)
 		}
 	}
-	if len(counted) == 0 {
+	if len(counted) == 0 || s == nil {
 		return waits, nil
 	}
-	err := s.Tx(ctx, func(tx *store.Tx) error {
+	err = s.Tx(ctx, func(tx *store.Tx) error {
 		for _, w := range counted {
 			// A gate event written since counted all the task's events itself (CountGate): its count stands.
 			if kept, err := store.Get[*planv1.GateWait](ctx, tx, w.GetId()); err == nil {

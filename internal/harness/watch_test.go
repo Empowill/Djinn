@@ -591,6 +591,7 @@ func TestWatcher(t *testing.T) {
 		if err != nil || len(tasks) != 1 || tasks[0].GetProvider() != planv1.Provider_PROVIDER_WATCH || tasks[0].GetProjectId() != projectID {
 			t.Fatalf("tasks = %v, %v", tasks, err)
 		}
+		assertKind(t, tasks[0], planv1.TaskKind_TASK_KIND_WATCHER)
 		e.ended(t, tasks[0].GetId())
 		mu.Lock()
 		got := slices.Clone(paragraphs)

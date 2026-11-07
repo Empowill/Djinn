@@ -51,7 +51,7 @@ export async function bundle(name, source) {
       continue;
     }
     try {
-      await compile(name, source, base);
+      if (!fresh(`${base}.json`)) await compile(name, source, base, key);
     } finally {
       fs.rmSync(lock, { recursive: true, force: true });
     }
@@ -65,12 +65,15 @@ export async function bundle(name, source) {
 
 // fresh says whether every file a bundle read still has the size and time it had.
 function fresh(meta) {
+  const bundleFile = meta.replace(/\.json$/, ".mjs");
+  if (!fs.existsSync(bundleFile)) return false;
   let inputs;
   try {
     inputs = JSON.parse(fs.readFileSync(meta, "utf8"));
   } catch {
     return false;
   }
+  if (!inputs || typeof inputs !== "object") return false;
   return Object.entries(inputs).every(([file, [size, time]]) => {
     const now = fs.statSync(file, { throwIfNoEntry: false });
     return now?.size === size && now.mtimeMs === time;
@@ -79,10 +82,7 @@ function fresh(meta) {
 
 // compile bundles source into base.mjs, then writes base.json, the files it read; the bundles of the same name it
 // replaces are removed.
-async function compile(name, source, base) {
-  for (const file of fs.readdirSync(cache))
-    if (new RegExp(`^${name}-[0-9a-f]{16}\\.(mjs|json|ts)$`).test(file))
-      fs.rmSync(path.join(cache, file), { force: true });
+async function compile(name, source, base, key) {
   fs.writeFileSync(
     `${base}.ts`,
     source.replace(/"@\/([^"]+)"/g, (_, p) =>
@@ -90,38 +90,59 @@ async function compile(name, source, base) {
     ),
   );
   const started = Date.now();
-  const { metafile } = await build({
-    entryPoints: [`${base}.ts`],
-    outfile: `${base}.mjs`,
-    absWorkingDir: root,
-    metafile: true,
-    bundle: true,
-    format: "esm",
-    platform: "node",
-    nodePaths: [path.join(root, "node_modules")],
-    // React's development build, which Node picks with no NODE_ENV, alone: its production build stays out.
-    define: {
-      "import.meta.env.PROD": "false",
-      "process.env.NODE_ENV": '"development"',
-    },
-    // The ES modules of a package before its CommonJS: the icons a component does not draw stay out.
-    mainFields: ["module", "main"],
-    // An imported image is a URL, as Vite makes it (the brand mark, src/frame.tsx).
-    loader: { ".json": "json", ".css": "empty", ".svg": "dataurl" },
-    // CommonJS dependencies (react-dom/server) require Node's own modules.
-    banner: {
-      js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
-    },
-    plugins: [raw],
-    logLevel: "error",
-  });
+  const tmpMjs = `${base}.${process.pid}.tmp.mjs`;
+  let metafile;
+  try {
+    const res = await build({
+      entryPoints: [`${base}.ts`],
+      outfile: tmpMjs,
+      absWorkingDir: root,
+      metafile: true,
+      bundle: true,
+      format: "esm",
+      platform: "node",
+      nodePaths: [path.join(root, "node_modules")],
+      // React's development build, which Node picks with no NODE_ENV, alone: its production build stays out.
+      define: {
+        "import.meta.env.PROD": "false",
+        "process.env.NODE_ENV": '"development"',
+      },
+      // The ES modules of a package before its CommonJS: the icons a component does not draw stay out.
+      mainFields: ["module", "main"],
+      // An imported image is a URL, as Vite makes it (the brand mark, src/frame.tsx).
+      loader: { ".json": "json", ".css": "empty", ".svg": "dataurl" },
+      // CommonJS dependencies (react-dom/server) require Node's own modules.
+      banner: {
+        js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
+      },
+      plugins: [raw],
+      logLevel: "error",
+    });
+    metafile = res.metafile;
+    fs.renameSync(tmpMjs, `${base}.mjs`);
+  } finally {
+    fs.rmSync(tmpMjs, { force: true });
+  }
   const inputs = {};
   for (const input of Object.keys(metafile.inputs)) {
     const file = path.resolve(root, input.replace(/^raw:/, ""));
     const now = fs.statSync(file);
     // A file changed while it was read: no record, the next test file builds again.
-    if (now.mtimeMs > started && file !== `${base}.ts`) return;
+    if (Math.floor(now.mtimeMs) > started && file !== `${base}.ts`) return;
     inputs[file] = [now.size, now.mtimeMs];
   }
-  fs.writeFileSync(`${base}.json`, JSON.stringify(inputs));
+  const tmpJson = `${base}.${process.pid}.tmp.json`;
+  try {
+    fs.writeFileSync(tmpJson, JSON.stringify(inputs));
+    fs.renameSync(tmpJson, `${base}.json`);
+  } finally {
+    fs.rmSync(tmpJson, { force: true });
+  }
+  for (const file of fs.readdirSync(cache)) {
+    const match = file.match(
+      new RegExp(`^${name}-([0-9a-f]{16})\\.(mjs|json|ts)$`),
+    );
+    if (match && match[1] !== key)
+      fs.rmSync(path.join(cache, file), { force: true });
+  }
 }

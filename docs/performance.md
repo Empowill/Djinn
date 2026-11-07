@@ -140,6 +140,11 @@ On a copy of the developer's data (1,418 tasks, 480,000 events), cold start, pag
 reads (the wishes, then each active wish's tasks) all answered 6.9 to 13.8 s after the start before and 1.7 to 1.8 s
 after, at load 9 to 16; 13 to 19 s before and 2.0 to 3.1 s after at load 45 to 50. The first start after the update,
 which counts the 446 started tasks of the active wishes, takes as long as before, once.
+QueryService's task queries read the same counts, but each read a gate wait per task: the Statistics tab's 13 cards,
+asked at once, waited their turn on the connection, 2.4 s on a copy of the developer's data (2,673 tasks, 690,000
+events), 4.1 to 4.8 s in the window (W576). They now read the kept gate waits in one statement per 500 tasks
+(`store.GetMany`), no wish's tasks again when the load holds them all, and the loads asked together with the same
+filter share one read (`query.Timed`): 75 to 105 ms for the 13 (W616).
 Every git command Djinn
 runs has a deadline (`internal/gitx`): 5 minutes for one that reaches a remote, 10 for one that stays in the
 repository, and its output is let go 5 s after it is killed, even when an ssh it started still holds it.

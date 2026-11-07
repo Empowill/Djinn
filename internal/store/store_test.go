@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -122,6 +124,51 @@ func TestList(t *testing.T) {
 	})
 }
 
+func TestEach(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	s := open(t)
+	a := &planv1.Project{Id: NewID(), Name: "a", Directory: "/a"}
+	b := &planv1.Project{Id: NewID(), Name: "b", Directory: "/b"}
+	if err := put(ctx, s, a, b); err != nil {
+		t.Fatal(err)
+	}
+	mt := a.ProtoReflect().Type()
+	names := func(where Where, n int) []string {
+		var out []string
+		err := Each(ctx, s, mt, where, func(m proto.Message) bool {
+			out = append(out, m.(*planv1.Project).GetName())
+			return len(out) < n
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if got := names(nil, 9); !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("Each all = %v; want a, b", got)
+	}
+	if got := names(Where{"name": "B"}, 9); !slices.Equal(got, []string{"b"}) {
+		t.Errorf("Each where name B = %v; want b", got)
+	}
+	if got := names(nil, 1); !slices.Equal(got, []string{"a"}) {
+		t.Errorf("Each stopped after one = %v; want a", got)
+	}
+}
+
+func TestIndexed(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	got, err := Indexed(s, (&planv1.Question{}).ProtoReflect().Descriptor())
+	if err != nil || got[0] != "id" || !slices.Contains(got, "wish_id") || !slices.Contains(got, "code") ||
+		slices.Contains(got, "text") {
+		t.Errorf("Indexed(Question) = %v, %v; want id, the *_id fields and code, never text", got, err)
+	}
+	if _, err := Indexed(s, (&planv1.Task{}).ProtoReflect().Descriptor()); err == nil {
+		t.Error("Indexed of a type the store does not hold: no error")
+	}
+}
+
 func TestListAfter(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -213,6 +260,69 @@ func TestLatest(t *testing.T) {
 			t.Errorf("Latest by name = %v, %v", seen, err)
 		}
 	})
+}
+
+func TestOldest(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	s := open(t)
+	var ids []string
+	for _, name := range []string{"a", "b", "c"} {
+		p := &planv1.Project{Id: NewID(), Name: name, Directory: "/src/" + name}
+		ids = append(ids, p.GetId())
+		if err := put(ctx, s, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// a put again keeps its place: the first written is still a.
+	if err := put(ctx, s, &planv1.Project{Id: ids[0], Name: "a2", Directory: "/src/a"}); err != nil {
+		t.Fatal(err)
+	}
+	var seen []string
+	err := Oldest(ctx, s, nil, func(p *planv1.Project) bool { seen = append(seen, p.GetName()); return len(seen) < 2 })
+	if err != nil || !slices.Equal(seen, []string{"a2", "b"}) {
+		t.Errorf("Oldest = %v, %v; want a2, b and no further", seen, err)
+	}
+}
+
+func TestGetMany(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	s := open(t)
+	// More than a statement holds: 1 200 ids read in 3, the missing ones absent, an id in any case found.
+	var ids []string
+	err := s.Tx(ctx, func(tx *Tx) error {
+		if err := tx.Journal("test", "test/put", &planv1.Project{}); err != nil {
+			return err
+		}
+		for i := range 1100 {
+			p := &planv1.Project{Id: NewID(), Name: fmt.Sprint("p", i), Directory: fmt.Sprint("/src/", i)}
+			ids = append(ids, p.GetId())
+			if err := tx.Put(p); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked := append(slices.Clone(ids), strings.ToUpper(ids[0]))
+	for range 99 {
+		asked = append(asked, NewID())
+	}
+	var n atomic.Int64
+	got, err := GetMany[*planv1.Project](ctx, Counted(s, &n), asked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(ids) || got[ids[1099]].GetName() != "p1099" || n.Load() != 3 {
+		t.Errorf("GetMany = %d entities in %d statements, last %v; want %d in 3", len(got), n.Load(),
+			got[ids[1099]], len(ids))
+	}
+	if none, err := GetMany[*planv1.Project](ctx, s, nil); err != nil || len(none) != 0 {
+		t.Errorf("GetMany of no id = %v, %v", none, err)
+	}
 }
 
 func TestTx(t *testing.T) {

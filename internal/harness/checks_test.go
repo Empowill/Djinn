@@ -521,6 +521,8 @@ func TestHoldPush(t *testing.T) {
 		in.mu.Unlock()
 		if w4 := in.repairByLead(t, "Make the tests pass"); w4.GetCode() != "W4" || w4.GetCorrection() == nil {
 			t.Errorf("the lead's repair %s, correction %v; want W4, a correction", w4.GetCode(), w4.GetCorrection())
+		} else {
+			assertKind(t, in.get(t, w4.GetId()), planv1.TaskKind_TASK_KIND_CORRECTION)
 		}
 		in.pass(t, time.Second)
 		if got, tip := in.remoteTip(t, bare), in.tip(t); got != tip {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -283,6 +284,18 @@ func TestComment(t *testing.T) {
 		}
 		if p, err := lastPrompt(ctx, e.db, first.GetId()); err != nil || !strings.Contains(p, "Fix typo here") {
 			t.Errorf("continued prompt = %q, %v; want the comment", p, err)
+		}
+		// Its prompt size is its first prompt's, kept as it was written; the continued turn's prompt keeps it (W616).
+		var firstPrompt string
+		_ = store.Oldest(ctx, e.db, store.Where{"task_id": first.GetId()}, func(ev *planv1.TaskEvent) bool {
+			if ev.GetKind() == planv1.TaskEventKind_TASK_EVENT_KIND_PROMPT {
+				firstPrompt = ev.GetText()
+			}
+			return firstPrompt == ""
+		})
+		size, err := store.Get[*planv1.PromptSize](ctx, e.db, first.GetId())
+		if err != nil || firstPrompt == "" || size.GetLength() != int64(utf8.RuneCountInString(firstPrompt)) {
+			t.Errorf("prompt size = %v, %v; want the length of %q", size, err, firstPrompt)
 		}
 		// The comment went to a worker: turning comments again finds none waiting, instead of a second turn.
 		_, err = e.tasks.TurnComments(ctx, connect.NewRequest(&planv1.TaskServiceTurnCommentsRequest{TaskId: first.GetId()}))
