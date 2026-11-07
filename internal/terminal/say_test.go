@@ -722,7 +722,11 @@ func TestLeadProcess(t *testing.T) {
 					time.Sleep(400 * time.Millisecond)
 				}
 				if string(line) == "deaf" { // Reads nothing ever again, until its terminal hangs up.
-					select {}
+					// A sleep, not select {}: without cgo (macOS), the runtime finds every goroutine asleep and
+					// ends the program on a deadlock, which reads its input no more either, but leaves none unread.
+					for {
+						time.Sleep(time.Hour)
+					}
 				}
 				line, pasted = line[:0], false
 			case in[i] == 0x7f:
