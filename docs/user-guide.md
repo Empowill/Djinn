@@ -256,7 +256,9 @@ djinn query query tasks --filter type=work --filter status=done --group-by "runn
   `answer::delay`, `integration::delay`, a task's `type`). Prompts, contexts and last lines are never columns.
 - **Task times**: `running`, `waiting_gate`, `paused` and `waiting_before_start` are computed from the runs and gate
   waits as the task list does, as of the query; null for a task that never started (but its wait), an azima's the sum
-  of its parts'. `type` is `work`, `correction`, `review`, `investigation`, `mockup`, `ifrit`, `watcher` or `azima`.
+  of its parts'. `type` is the task's kind, the one type of a task:
+  `work`, `correction`, `review`, `investigation`, `mockup`, `ifrit`, `watcher` or `azima`; a spawn never asks the
+  three Djinn makes alone (correction, review, watcher).
 - **Filters** (`--filter`, all of them hold): `=` (text ignoring case; `a|b` one of), `!=` (none of, an absent value
   included), `>` `>=` `<` `<=` (numbers, times such as `2026-11-01` or RFC 3339, durations such as `90s`), `*=`
   contains, `^=` begins with; `null` is the absent value (`status=null`, `status=pending|null`).
@@ -266,9 +268,15 @@ djinn query query tasks --filter type=work --filter status=done --group-by "runn
   `ref::bins(b1,b2,...)` for a number or a duration: a value goes to the greatest bound at or below it, the first
   bound's when below them all. `--measure count`, `ref::count|sum|avg|min|max|median|p90`, `name=ref::fn` to name a
   column. Absent values are skipped; an empty period never shows, an empty bin does.
-- **Formats**: an aligned table with its row count (not set), `--format csv`, or `--format arrow` (the window's: an
-  Arrow IPC stream in the `arrow` field of `--json`, each column typed from the proto with its ref, label and unit in
-  its `djinn` metadata). An absent value is empty in text, null in Arrow, never 0.
+- **Formats**: an aligned table with its row count (the command line's and MCP's default, `--format text`),
+  `--format csv`, or `--format arrow` (the API's default and the window's: an Arrow IPC stream in the `table` field of
+  `--json`, each column typed from the proto with its ref, label and unit in its `djinn` metadata). An absent value is
+  empty in text, null in Arrow, never 0.
+- **Typed requests**: over the API, a filter is a message typed by its ref (`string`, `string_in`, `number`, `time`,
+  `duration`, `bool`, `null`, or a `group` joined by and, or, not), a sort an `Order` (ref, desc), a group a `GroupBy`
+  (ref, and a period or bins), a measure a `Measure` (ref, function, name). The command line and MCP read the texts above into
+  these messages themselves, a filter typed by its ref from the collection's schema: QueryService reads typed messages
+  only.
 
 The questions keep their short word: q is an alias of the question command, beside query.
 

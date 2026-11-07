@@ -1700,7 +1700,9 @@ func (Prover) EnumDescriptor() ([]byte, []int) {
 	return file_plan_v1_plan_proto_rawDescGZIP(), []int{24}
 }
 
-// TaskKind says what a task is.
+// TaskKind says what a task is: the one type of a task, which the window and the queries read (plan.Kind). Djinn
+// sets correction, review and watcher itself, never a spawn. A task stored before they were kinds holds none of the
+// three: plan.Kind reads it from the fields that say it (Task.correction, Task.review, PROVIDER_WATCH).
 type TaskKind int32
 
 const (
@@ -1735,6 +1737,12 @@ const (
 	// plan is a mockup (kind: mockup), within its rounds (Round ROUND_KIND_ITERATE); the lead spawns one with --kind
 	// mockup. Unlike an investigation it may be marked urgent, for the developer's feedback.
 	TaskKind_TASK_KIND_MOCKUP TaskKind = 5
+	// A correction worker, which Djinn starts when a merge conflicts or its checks fail (Task.correction).
+	TaskKind_TASK_KIND_CORRECTION TaskKind = 6
+	// A review worker, which Djinn starts on a worktree left with changes not committed (Task.review).
+	TaskKind_TASK_KIND_REVIEW TaskKind = 7
+	// A watcher: a command Djinn runs, no agent (PROVIDER_WATCH).
+	TaskKind_TASK_KIND_WATCHER TaskKind = 8
 )
 
 // Enum value maps for TaskKind.
@@ -1746,6 +1754,9 @@ var (
 		3: "TASK_KIND_IFRIT",
 		4: "TASK_KIND_INVESTIGATION",
 		5: "TASK_KIND_MOCKUP",
+		6: "TASK_KIND_CORRECTION",
+		7: "TASK_KIND_REVIEW",
+		8: "TASK_KIND_WATCHER",
 	}
 	TaskKind_value = map[string]int32{
 		"TASK_KIND_UNSPECIFIED":   0,
@@ -1754,6 +1765,9 @@ var (
 		"TASK_KIND_IFRIT":         3,
 		"TASK_KIND_INVESTIGATION": 4,
 		"TASK_KIND_MOCKUP":        5,
+		"TASK_KIND_CORRECTION":    6,
+		"TASK_KIND_REVIEW":        7,
+		"TASK_KIND_WATCHER":       8,
 	}
 )
 
@@ -11053,7 +11067,8 @@ type QuestionServiceLaunchRequest struct {
 	// The tilasms given to the worker, by code (L01) or identifier, in place of the plan's. Given empty (--tilasm ""),
 	// none.
 	Tilasm []string `protobuf:"bytes,11,rep,name=tilasm,proto3" json:"tilasm,omitempty"`
-	// What the task is, in place of the plan's kind.
+	// What the task is, in place of the plan's kind: work, azima, ifrit, investigation or mockup; Djinn alone makes
+	// the others.
 	Kind          TaskKind `protobuf:"varint,12,opt,name=kind,proto3,enum=plan.v1.TaskKind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -22533,7 +22548,8 @@ type TaskServiceSpawnRequest struct {
 	// scheduled; work is spawned part of it. ifrit makes an ifrit: an agent that stays lit while you are there, to
 	// iterate with you through the lead (djinn task send), in a project. investigation makes a short study or audit that
 	// ends in a tilasm and a question, served first, its commits never merged (--minutes, --max-budget-usd). mockup
-	// makes a mockup task, framed like an investigation, that puts a tilasm's next version.
+	// makes a mockup task, framed like an investigation, that puts a tilasm's next version. correction, review and
+	// watcher are Djinn's own: a spawn never makes them.
 	Kind TaskKind `protobuf:"varint,16,opt,name=kind,proto3,enum=plan.v1.TaskKind" json:"kind,omitempty"`
 	// What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
 	// Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
@@ -28125,7 +28141,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\vQuestionRef\x12*\n" +
 	"\x04code\x18\x01 \x01(\tB\x14\xbaH\x11r\x0f2\r^Q[0-9]{2,3}$H\x00R\x04code\x12\x1a\n" +
 	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\x02idB\f\n" +
-	"\x03ref\x12\x05\xbaH\x02\b\x01\"\x92\x05\n" +
+	"\x03ref\x12\x05\xbaH\x02\b\x01\"\x98\x05\n" +
 	"\x1cQuestionServiceLaunchRequest\x128\n" +
 	"\bquestion\x18\x01 \x01(\v2\x14.plan.v1.QuestionRefB\x06\xbaH\x03\xc8\x01\x01R\bquestion\x12$\n" +
 	"\awish_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12\x1e\n" +
@@ -28139,8 +28155,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x05after\x18\t \x03(\tB\x0f\xbaH\f\x92\x01\t\x10d\"\x05r\x03\x18\xe8\aR\x05after\x12'\n" +
 	"\x06blocks\x18\n" +
 	" \x03(\tB\x0f\xbaH\f\x92\x01\t\x10d\"\x05r\x03\x18\xe8\aR\x06blocks\x12'\n" +
-	"\x06tilasm\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x14\"\x05r\x03\x18\xe8\aR\x06tilasm\x12/\n" +
-	"\x04kind\x18\f \x01(\x0e2\x11.plan.v1.TaskKindB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04kindB\r\n" +
+	"\x06tilasm\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10\x14\"\x05r\x03\x18\xe8\aR\x06tilasm\x125\n" +
+	"\x04kind\x18\f \x01(\x0e2\x11.plan.v1.TaskKindB\x0e\xbaH\v\x82\x01\b\x10\x01 \x06 \a \bR\x04kindB\r\n" +
 	"\v_project_idB\b\n" +
 	"\x06_modelB\n" +
 	"\n" +
@@ -28921,7 +28937,7 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x16MarkServiceListRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\"@\n" +
 	"\x17MarkServiceListResponse\x12%\n" +
-	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xdb\t\n" +
+	"\x05marks\x18\x01 \x03(\v2\x0f.plan.v1.MarkedR\x05marks\"\xe1\t\n" +
 	"\x17TaskServiceSpawnRequest\x12$\n" +
 	"\awish_id\x18\x01 \x01(\tB\v\xbaH\b\xc8\x01\x01r\x03\xb0\x01\x01R\x06wishId\x12 \n" +
 	"\x05title\x18\x02 \x01(\tB\n" +
@@ -28941,8 +28957,8 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\tfrom_lead\x18\f \x01(\bR\bfromLead\x12\x18\n" +
 	"\arestart\x18\r \x01(\bR\arestart\x12\x84\x01\n" +
 	"\bdecision\x18\x0e \x01(\tBh\xbaHe\xd8\x01\x01r`2^^([Qq][0-9]{2,3}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$R\bdecision\x12 \n" +
-	"\apart_of\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18@R\x06partOf\x12/\n" +
-	"\x04kind\x18\x10 \x01(\x0e2\x11.plan.v1.TaskKindB\b\xbaH\x05\x82\x01\x02\x10\x01R\x04kind\x12'\n" +
+	"\apart_of\x18\x0f \x01(\tB\a\xbaH\x04r\x02\x18@R\x06partOf\x125\n" +
+	"\x04kind\x18\x10 \x01(\x0e2\x11.plan.v1.TaskKindB\x0e\xbaH\v\x82\x01\b\x10\x01 \x06 \a \bR\x04kind\x12'\n" +
 	"\x05after\x18\x11 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x05after\x12)\n" +
 	"\x06blocks\x18\x12 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10d\"\ar\x05\x10\x01\x18\xe8\aR\x06blocks\x12)\n" +
 	"\x06tilasm\x18\x13 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10\x14\"\ar\x05\x10\x01\x18\xe8\aR\x06tilasm\x12\x14\n" +
@@ -29463,14 +29479,17 @@ const file_plan_v1_plan_proto_rawDesc = "" +
 	"\x0ePROVER_RELEASE\x10\x04\x12\x15\n" +
 	"\x11PROVER_REAL_MODEL\x10\x05\x12\x11\n" +
 	"\rPROVER_PERSON\x10\x06\x12\x10\n" +
-	"\fPROVER_OTHER\x10\a*\x96\x01\n" +
+	"\fPROVER_OTHER\x10\a*\xdd\x01\n" +
 	"\bTaskKind\x12\x19\n" +
 	"\x15TASK_KIND_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eTASK_KIND_WORK\x10\x01\x12\x13\n" +
 	"\x0fTASK_KIND_AZIMA\x10\x02\x12\x13\n" +
 	"\x0fTASK_KIND_IFRIT\x10\x03\x12\x1b\n" +
 	"\x17TASK_KIND_INVESTIGATION\x10\x04\x12\x14\n" +
-	"\x10TASK_KIND_MOCKUP\x10\x05*r\n" +
+	"\x10TASK_KIND_MOCKUP\x10\x05\x12\x18\n" +
+	"\x14TASK_KIND_CORRECTION\x10\x06\x12\x14\n" +
+	"\x10TASK_KIND_REVIEW\x10\a\x12\x15\n" +
+	"\x11TASK_KIND_WATCHER\x10\b*r\n" +
 	"\n" +
 	"IfritState\x12\x1b\n" +
 	"\x17IFRIT_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +

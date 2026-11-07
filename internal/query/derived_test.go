@@ -135,19 +135,13 @@ func TestDerivedValues(t *testing.T) {
 		{"answer delay", QuestionRefs, "answer::delay",
 			&planv1.Question{CreateTime: at(0), Answer: &planv1.Answer{CreateTime: at(90 * time.Second)}}, 90 * time.Second},
 		{"another message is null", QuestionRefs, "context::size", &planv1.Task{Prompt: "abcd"}, nil},
-		{"a task without kind is work", TaskRefs, "type", &planv1.Task{}, "TASK_TYPE_WORK"},
-		{"work", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_WORK}, "TASK_TYPE_WORK"},
-		{"a question worker is work", TaskRefs, "type", &planv1.Task{Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR},
-			"TASK_TYPE_WORK"},
-		{"correction", TaskRefs, "type", &planv1.Task{Correction: &planv1.TaskCorrection{}}, "TASK_TYPE_CORRECTION"},
-		{"review", TaskRefs, "type", &planv1.Task{Review: &planv1.TaskReview{}}, "TASK_TYPE_REVIEW"},
-		{"investigation", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION},
-			"TASK_TYPE_INVESTIGATION"},
-		{"mockup", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_MOCKUP}, "TASK_TYPE_MOCKUP"},
-		{"ifrit", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_IFRIT}, "TASK_TYPE_IFRIT"},
-		{"watcher, by its provider", TaskRefs, "type", &planv1.Task{Provider: planv1.Provider_PROVIDER_WATCH},
-			"TASK_TYPE_WATCHER"},
-		{"azima", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_AZIMA}, "TASK_TYPE_AZIMA"},
+		// Every case of plan.Kind is TestKind's: the ref gives its value by name.
+		{"a task without kind is work", TaskRefs, "type", &planv1.Task{}, "TASK_KIND_WORK"},
+		{"an old review, by its field", TaskRefs, "type", &planv1.Task{Review: &planv1.TaskReview{}},
+			"TASK_KIND_REVIEW"},
+		{"a watcher, by its provider", TaskRefs, "type", &planv1.Task{Provider: planv1.Provider_PROVIDER_WATCH},
+			"TASK_KIND_WATCHER"},
+		{"azima", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_AZIMA}, "TASK_KIND_AZIMA"},
 		{"type of another message is null", TaskRefs, "type", &planv1.Question{}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -222,7 +216,7 @@ func TestNewCatalogDerived(t *testing.T) {
 		{"no name", []Derived{Derive("", TypeInt, "d", size)}, "without ->"},
 		{"an enum without its values", []Derived{Derive("x::y", TypeEnum, "d", size)}, "an enum"},
 		{"values of an int", []Derived{func() Derived {
-			d := DeriveEnum("x::y", "d", taskType)
+			d := DeriveEnum("x::y", "d", plan.Kind)
 			d.Type = TypeInt
 			return d
 		}()}, "an enum"},
@@ -308,11 +302,11 @@ func TestTimed(t *testing.T) {
 		}
 		rows(t, table, [][]any{
 			// An azima's times sum its parts'.
-			{"W1", "TASK_TYPE_AZIMA", 165 * time.Minute, 15 * time.Minute, time.Hour, 30 * time.Minute, nil},
-			{"W2", "TASK_TYPE_WORK", 110 * time.Minute, 10 * time.Minute, time.Hour, 30 * time.Minute, 165 * time.Minute},
-			{"W3", "TASK_TYPE_WORK", 55 * time.Minute, 5 * time.Minute, time.Duration(0), time.Duration(0),
+			{"W1", "TASK_KIND_AZIMA", 165 * time.Minute, 15 * time.Minute, time.Hour, 30 * time.Minute, nil},
+			{"W2", "TASK_KIND_WORK", 110 * time.Minute, 10 * time.Minute, time.Hour, 30 * time.Minute, 165 * time.Minute},
+			{"W3", "TASK_KIND_WORK", 55 * time.Minute, 5 * time.Minute, time.Duration(0), time.Duration(0),
 				165 * time.Minute},
-			{"W4", "TASK_TYPE_WORK", nil, nil, nil, 5 * time.Hour, nil},
+			{"W4", "TASK_KIND_WORK", nil, nil, nil, 5 * time.Hour, nil},
 		})
 		if _, err := store.Get[*planv1.GateWait](ctx, s, id(4)); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("W3's gate wait = %v; want none kept: a query only reads", err)
@@ -355,7 +349,7 @@ func TestTimed(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows(t, table, [][]any{{"TASK_TYPE_WORK", int64(3), 165 * time.Minute}, {"TASK_TYPE_AZIMA", int64(1), 165 * time.Minute}})
+		rows(t, table, [][]any{{"TASK_KIND_WORK", int64(3), 165 * time.Minute}, {"TASK_KIND_AZIMA", int64(1), 165 * time.Minute}})
 		var b strings.Builder
 		if err := table.WriteCSV(&b); err != nil {
 			t.Fatal(err)

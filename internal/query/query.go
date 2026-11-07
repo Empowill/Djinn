@@ -371,6 +371,9 @@ func order(cols []Column, desc []bool, a, b []any) int {
 func pushdown(src Source, filters []Filter) map[string]string {
 	where := map[string]string{}
 	for _, f := range filters {
+		if t, ok := f.(typed); ok {
+			f = t.Filter // A typed comparison of QueryService narrows as its filter does.
+		}
 		e, ok := f.(Equal)
 		if !ok {
 			continue

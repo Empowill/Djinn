@@ -1750,7 +1750,9 @@ enum Prover {
   PROVER_OTHER = 7;
 }
 
-// TaskKind says what a task is.
+// TaskKind says what a task is: the one type of a task, which the window and the queries read (plan.Kind). Djinn
+// sets correction, review and watcher itself, never a spawn. A task stored before they were kinds holds none of the
+// three: plan.Kind reads it from the fields that say it (Task.correction, Task.review, PROVIDER_WATCH).
 enum TaskKind {
   // Not set: work, as every task was before kinds.
   TASK_KIND_UNSPECIFIED = 0;
@@ -1783,6 +1785,12 @@ enum TaskKind {
   // plan is a mockup (kind: mockup), within its rounds (Round ROUND_KIND_ITERATE); the lead spawns one with --kind
   // mockup. Unlike an investigation it may be marked urgent, for the developer's feedback.
   TASK_KIND_MOCKUP = 5;
+  // A correction worker, which Djinn starts when a merge conflicts or its checks fail (Task.correction).
+  TASK_KIND_CORRECTION = 6;
+  // A review worker, which Djinn starts on a worktree left with changes not committed (Task.review).
+  TASK_KIND_REVIEW = 7;
+  // A watcher: a command Djinn runs, no agent (PROVIDER_WATCH).
+  TASK_KIND_WATCHER = 8;
 }
 
 // TaskInvestigation is what bounds an investigation (TASK_KIND_INVESTIGATION). Its budget is Task.max_budget_usd.
@@ -2616,8 +2624,12 @@ message QuestionServiceLaunchRequest {
     (buf.validate.field).repeated.max_items = 20,
     (buf.validate.field).repeated.items.string.max_len = 1000
   ];
-  // What the task is, in place of the plan's kind.
-  TaskKind kind = 12 [(buf.validate.field).enum.defined_only = true];
+  // What the task is, in place of the plan's kind: work, azima, ifrit, investigation or mockup; Djinn alone makes
+  // the others.
+  TaskKind kind = 12 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [6, 7, 8]
+  }];
 }
 
 message QuestionServiceLaunchResponse {
@@ -5479,8 +5491,12 @@ message TaskServiceSpawnRequest {
   // scheduled; work is spawned part of it. ifrit makes an ifrit: an agent that stays lit while you are there, to
   // iterate with you through the lead (djinn task send), in a project. investigation makes a short study or audit that
   // ends in a tilasm and a question, served first, its commits never merged (--minutes, --max-budget-usd). mockup
-  // makes a mockup task, framed like an investigation, that puts a tilasm's next version.
-  TaskKind kind = 16 [(buf.validate.field).enum.defined_only = true];
+  // makes a mockup task, framed like an investigation, that puts a tilasm's next version. correction, review and
+  // watcher are Djinn's own: a spawn never makes them.
+  TaskKind kind = 16 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [6, 7, 8]
+  }];
   // What comes before the task: tasks of the same wish that must be done first, by code (W1, T07) or identifier.
   // Repeat it, or separate them with commas: --after W1,W2. Give a task what comes before it here, at its spawn.
   repeated string after = 17 [

@@ -84,6 +84,12 @@ extend google.protobuf.FieldOptions {
   string ref = 51012;
   // How internal/query shows the field.
   Query query = 51013;
-  // A response field the command line prints as it is, without its name: a table or a CSV that its reader pipes.
+  // A response field the command line prints as it is, without its name, and djinn mcp returns as text: a table or
+  // a CSV that its reader pipes. A bytes field holding text that is not UTF-8, such as Arrow, stays in base64.
   bool raw = 51014;
+  // 51015 is left out: (djinn.v1.text) marked a field a message was filled from, before the command line read the
+  // texts of a query itself (internal/querytext).
+  // The value the command line and djinn mcp give the field when the caller leaves it empty, where a request that
+  // leaves it empty means another for the window: djinn query asks a text table, where the window reads Arrow.
+  string client_default = 51016;
 }

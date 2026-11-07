@@ -9,13 +9,15 @@ import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobu
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
 import { file_djinn_v1_options } from "../../djinn/v1/options_pb";
+import type { Duration, Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_duration, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file query/v1/query.proto.
  */
 export const file_query_v1_query: GenFile = /*@__PURE__*/
-  fileDesc("ChRxdWVyeS92MS9xdWVyeS5wcm90bxIIcXVlcnkudjEixQIKGFF1ZXJ5U2VydmljZVF1ZXJ5UmVxdWVzdBI1Cgpjb2xsZWN0aW9uGAEgASgOMhQucXVlcnkudjEuQ29sbGVjdGlvbkILukgIyAEBggECEAESIQoGZmlsdGVyGAIgAygJQhG6SA6SAQsQMiIHcgUQAhjQDxIfCgRzb3J0GAMgAygJQhG6SA6SAQsQCiIHcgUQARjIARIhCgZzZWxlY3QYBCADKAlCEbpIDpIBCxBkIgdyBRABGMgBEiMKCGdyb3VwX2J5GAUgAygJQhG6SA6SAQsQBSIHcgUQARj0AxIiCgdtZWFzdXJlGAYgAygJQhG6SA6SAQsQFCIHcgUQARjIARIWCgVsaW1pdBgHIAEoBUIHukgEGgIoABIqCgZmb3JtYXQYCCABKA4yEC5xdWVyeS52MS5Gb3JtYXRCCLpIBYIBAhABIlkKGVF1ZXJ5U2VydmljZVF1ZXJ5UmVzcG9uc2USEgoEdGV4dBgBIAEoCUIEsPQYARITCgVhcnJvdxgCIAEoDEIEkPQYARITCgV0b3RhbBgDIAEoA0IEkPQYASJSChlRdWVyeVNlcnZpY2VTY2hlbWFSZXF1ZXN0EjUKCmNvbGxlY3Rpb24YASABKA4yFC5xdWVyeS52MS5Db2xsZWN0aW9uQgu6SAjIAQGCAQIQASKqAQoLUXVlcnlDb2x1bW4SCwoDcmVmGAEgASgJEg0KBWxhYmVsGAIgASgJEiIKBHR5cGUYAyABKA4yFC5xdWVyeS52MS5Db2x1bW5UeXBlEgwKBGxpc3QYBCABKAgSDAoEdW5pdBgFIAEoCRILCgNkb2MYBiABKAkSIgoEanVtcBgHIAEoDjIULnF1ZXJ5LnYxLkNvbGxlY3Rpb24SDgoGdmFsdWVzGAggAygJIkQKGlF1ZXJ5U2VydmljZVNjaGVtYVJlc3BvbnNlEiYKB2NvbHVtbnMYASADKAsyFS5xdWVyeS52MS5RdWVyeUNvbHVtbiqIAQoKQ29sbGVjdGlvbhIaChZDT0xMRUNUSU9OX1VOU1BFQ0lGSUVEEAASFAoQQ09MTEVDVElPTl9UQVNLUxABEhgKFENPTExFQ1RJT05fUVVFU1RJT05TEAISFQoRQ09MTEVDVElPTl9XSVNIRVMQAxIXChNDT0xMRUNUSU9OX1BST0pFQ1RTEAQq3QEKCFRhc2tUeXBlEhkKFVRBU0tfVFlQRV9VTlNQRUNJRklFRBAAEhIKDlRBU0tfVFlQRV9XT1JLEAESGAoUVEFTS19UWVBFX0NPUlJFQ1RJT04QAhIUChBUQVNLX1RZUEVfUkVWSUVXEAMSGwoXVEFTS19UWVBFX0lOVkVTVElHQVRJT04QBBIUChBUQVNLX1RZUEVfTU9DS1VQEAUSEwoPVEFTS19UWVBFX0lGUklUEAYSFQoRVEFTS19UWVBFX1dBVENIRVIQBxITCg9UQVNLX1RZUEVfQVpJTUEQCCpCCgZGb3JtYXQSFgoSRk9STUFUX1VOU1BFQ0lGSUVEEAASDgoKRk9STUFUX0NTVhABEhAKDEZPUk1BVF9BUlJPVxACKskBCgpDb2x1bW5UeXBlEhsKF0NPTFVNTl9UWVBFX1VOU1BFQ0lGSUVEEAASFgoSQ09MVU1OX1RZUEVfU1RSSU5HEAESFAoQQ09MVU1OX1RZUEVfRU5VTRACEhMKD0NPTFVNTl9UWVBFX0lOVBADEhUKEUNPTFVNTl9UWVBFX0ZMT0FUEAQSFAoQQ09MVU1OX1RZUEVfQk9PTBAFEhQKEENPTFVNTl9UWVBFX1RJTUUQBhIYChRDT0xVTU5fVFlQRV9EVVJBVElPThAHMscBCgxRdWVyeVNlcnZpY2USWQoFUXVlcnkSIi5xdWVyeS52MS5RdWVyeVNlcnZpY2VRdWVyeVJlcXVlc3QaIy5xdWVyeS52MS5RdWVyeVNlcnZpY2VRdWVyeVJlc3BvbnNlIgeQAgHI8xgBElwKBlNjaGVtYRIjLnF1ZXJ5LnYxLlF1ZXJ5U2VydmljZVNjaGVtYVJlcXVlc3QaJC5xdWVyeS52MS5RdWVyeVNlcnZpY2VTY2hlbWFSZXNwb25zZSIHkAIByPMYAUKOAQoMY29tLnF1ZXJ5LnYxQgpRdWVyeVByb3RvUAFaMWdpdGh1Yi5jb20vZW1wb3dpbGwvZGppbm4vZ2VuL2dvL3F1ZXJ5L3YxO3F1ZXJ5djGiAgNRWFiqAghRdWVyeS5WMcoCCFF1ZXJ5XFYx4gIUUXVlcnlcVjFcR1BCTWV0YWRhdGHqAglRdWVyeTo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_djinn_v1_options]);
+  fileDesc("ChRxdWVyeS92MS9xdWVyeS5wcm90bxIIcXVlcnkudjEi8gIKGFF1ZXJ5U2VydmljZVF1ZXJ5UmVxdWVzdBI1Cgpjb2xsZWN0aW9uGAEgASgOMhQucXVlcnkudjEuQ29sbGVjdGlvbkILukgIyAEBggECEAESKgoGZmlsdGVyGAIgAygLMhAucXVlcnkudjEuRmlsdGVyQgi6SAWSAQIQMhInCgRzb3J0GAMgAygLMg8ucXVlcnkudjEuT3JkZXJCCLpIBZIBAhAKEiEKBnNlbGVjdBgEIAMoCUIRukgOkgELEGQiB3IFEAEYyAESLQoIZ3JvdXBfYnkYBSADKAsyES5xdWVyeS52MS5Hcm91cEJ5Qgi6SAWSAQIQBRIsCgdtZWFzdXJlGAYgAygLMhEucXVlcnkudjEuTWVhc3VyZUIIukgFkgECEBQSFgoFbGltaXQYByABKAVCB7pIBBoCKAASMgoGZm9ybWF0GAggASgOMhAucXVlcnkudjEuRm9ybWF0QhC6SAWCAQIQAcL0GAR0ZXh0IvECCgZGaWx0ZXISJgoFZ3JvdXAYASABKAsyFS5xdWVyeS52MS5GaWx0ZXJHcm91cEgAEiQKBG51bGwYAiABKAsyFC5xdWVyeS52MS5OdWxsRmlsdGVySAASKAoEYm9vbBgDIAEoCzIYLnF1ZXJ5LnYxLkJvb2xDb21wYXJpc29uSAASLAoGc3RyaW5nGAQgASgLMhoucXVlcnkudjEuU3RyaW5nQ29tcGFyaXNvbkgAEicKCXN0cmluZ19pbhgFIAEoCzISLnF1ZXJ5LnYxLlN0cmluZ0luSAASLAoGbnVtYmVyGAYgASgLMhoucXVlcnkudjEuTnVtYmVyQ29tcGFyaXNvbkgAEigKBHRpbWUYByABKAsyGC5xdWVyeS52MS5UaW1lQ29tcGFyaXNvbkgAEjAKCGR1cmF0aW9uGAggASgLMhwucXVlcnkudjEuRHVyYXRpb25Db21wYXJpc29uSABCDgoFd2hlcmUSBbpIAggBImsKC0ZpbHRlckdyb3VwEi0KAm9wGAEgASgOMhcucXVlcnkudjEuRmlsdGVyR3JvdXBPcEIIukgFggECEAESLQoHZmlsdGVycxgCIAMoCzIQLnF1ZXJ5LnYxLkZpbHRlckIKukgHkgEECAEQMiIlCgpOdWxsRmlsdGVyEhcKA3JlZhgBIAEoCUIKukgHcgUQARjIASI4Cg5Cb29sQ29tcGFyaXNvbhIXCgNyZWYYASABKAlCCrpIB3IFEAEYyAESDQoFdmFsdWUYAiABKAgibgoQU3RyaW5nQ29tcGFyaXNvbhIXCgNyZWYYASABKAlCCrpIB3IFEAEYyAESKAoCb3AYAiABKA4yEi5xdWVyeS52MS5TdHJpbmdPcEIIukgFggECEAESFwoFdmFsdWUYAyABKAlCCLpIBXIDGNAPIlQKCFN0cmluZ0luEhcKA3JlZhgBIAEoCUIKukgHcgUQARjIARIZCgZ2YWx1ZXMYAiADKAlCCbpIBpIBAxDIARIUCgxpbmNsdWRlX251bGwYAyABKAgiZQoQTnVtYmVyQ29tcGFyaXNvbhIXCgNyZWYYASABKAlCCrpIB3IFEAEYyAESKQoCb3AYAiABKA4yEy5xdWVyeS52MS5Db21wYXJlT3BCCLpIBYIBAhABEg0KBXZhbHVlGAMgASgBIocBCg5UaW1lQ29tcGFyaXNvbhIXCgNyZWYYASABKAlCCrpIB3IFEAEYyAESKQoCb3AYAiABKA4yEy5xdWVyeS52MS5Db21wYXJlT3BCCLpIBYIBAhABEjEKBXZhbHVlGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIGukgDyAEBIooBChJEdXJhdGlvbkNvbXBhcmlzb24SFwoDcmVmGAEgASgJQgq6SAdyBRABGMgBEikKAm9wGAIgASgOMhMucXVlcnkudjEuQ29tcGFyZU9wQgi6SAWCAQIQARIwCgV2YWx1ZRgDIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbkIGukgDyAEBIi4KBU9yZGVyEhcKA3JlZhgBIAEoCUIKukgHcgUQARjIARIMCgRkZXNjGAIgASgIIroBCgdHcm91cEJ5EhcKA3JlZhgBIAEoCUIKukgHcgUQARj0AxIuCgZwZXJpb2QYAiABKA4yEC5xdWVyeS52MS5QZXJpb2RCCrpIB4IBBBABIABIABIrCgtudW1iZXJfYmlucxgDIAEoCzIULnF1ZXJ5LnYxLk51bWJlckJpbnNIABIvCg1kdXJhdGlvbl9iaW5zGAQgASgLMhYucXVlcnkudjEuRHVyYXRpb25CaW5zSABCCAoGYnVja2V0IigKCk51bWJlckJpbnMSGgoGYm91bmRzGAEgAygBQgq6SAeSAQQIARBkIkUKDER1cmF0aW9uQmlucxI1CgZib3VuZHMYASADKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CCrpIB5IBBAgBEGQiYgoHTWVhc3VyZRIVCgNyZWYYASABKAlCCLpIBXIDGMgBEikKAmZuGAIgASgOMhMucXVlcnkudjEuTWVhc3VyZUZuQgi6SAWCAQIQARIVCgRuYW1lGAMgASgJQge6SARyAhhkIkUKGVF1ZXJ5U2VydmljZVF1ZXJ5UmVzcG9uc2USEwoFdGFibGUYASABKAxCBLD0GAESEwoFdG90YWwYAiABKANCBJD0GAEiUgoZUXVlcnlTZXJ2aWNlU2NoZW1hUmVxdWVzdBI1Cgpjb2xsZWN0aW9uGAEgASgOMhQucXVlcnkudjEuQ29sbGVjdGlvbkILukgIyAEBggECEAEiqgEKC1F1ZXJ5Q29sdW1uEgsKA3JlZhgBIAEoCRINCgVsYWJlbBgCIAEoCRIiCgR0eXBlGAMgASgOMhQucXVlcnkudjEuQ29sdW1uVHlwZRIMCgRsaXN0GAQgASgIEgwKBHVuaXQYBSABKAkSCwoDZG9jGAYgASgJEiIKBGp1bXAYByABKA4yFC5xdWVyeS52MS5Db2xsZWN0aW9uEg4KBnZhbHVlcxgIIAMoCSJEChpRdWVyeVNlcnZpY2VTY2hlbWFSZXNwb25zZRImCgdjb2x1bW5zGAEgAygLMhUucXVlcnkudjEuUXVlcnlDb2x1bW4qiAEKCkNvbGxlY3Rpb24SGgoWQ09MTEVDVElPTl9VTlNQRUNJRklFRBAAEhQKEENPTExFQ1RJT05fVEFTS1MQARIYChRDT0xMRUNUSU9OX1FVRVNUSU9OUxACEhUKEUNPTExFQ1RJT05fV0lTSEVTEAMSFwoTQ09MTEVDVElPTl9QUk9KRUNUUxAEKlMKBkZvcm1hdBIWChJGT1JNQVRfVU5TUEVDSUZJRUQQABIQCgxGT1JNQVRfQVJST1cQARIOCgpGT1JNQVRfQ1NWEAISDwoLRk9STUFUX1RFWFQQAyrJAQoKQ29sdW1uVHlwZRIbChdDT0xVTU5fVFlQRV9VTlNQRUNJRklFRBAAEhYKEkNPTFVNTl9UWVBFX1NUUklORxABEhQKEENPTFVNTl9UWVBFX0VOVU0QAhITCg9DT0xVTU5fVFlQRV9JTlQQAxIVChFDT0xVTU5fVFlQRV9GTE9BVBAEEhQKEENPTFVNTl9UWVBFX0JPT0wQBRIUChBDT0xVTU5fVFlQRV9USU1FEAYSGAoUQ09MVU1OX1RZUEVfRFVSQVRJT04QByp6Cg1GaWx0ZXJHcm91cE9wEh8KG0ZJTFRFUl9HUk9VUF9PUF9VTlNQRUNJRklFRBAAEhcKE0ZJTFRFUl9HUk9VUF9PUF9BTkQQARIWChJGSUxURVJfR1JPVVBfT1BfT1IQAhIXChNGSUxURVJfR1JPVVBfT1BfTk9UEAMqbQoIU3RyaW5nT3ASGQoVU1RSSU5HX09QX1VOU1BFQ0lGSUVEEAASEwoPU1RSSU5HX09QX0VRVUFMEAESFgoSU1RSSU5HX09QX0NPTlRBSU5TEAISGQoVU1RSSU5HX09QX0JFR0lOU19XSVRIEAMqtwEKCUNvbXBhcmVPcBIaChZDT01QQVJFX09QX1VOU1BFQ0lGSUVEEAASFAoQQ09NUEFSRV9PUF9FUVVBTBABEhsKF0NPTVBBUkVfT1BfR1JFQVRFUl9USEFOEAISIQodQ09NUEFSRV9PUF9HUkVBVEVSX1RIQU5fRVFVQUwQAxIYChRDT01QQVJFX09QX0xFU1NfVEhBThAEEh4KGkNPTVBBUkVfT1BfTEVTU19USEFOX0VRVUFMEAUqUwoGUGVyaW9kEhYKElBFUklPRF9VTlNQRUNJRklFRBAAEg4KClBFUklPRF9EQVkQARIPCgtQRVJJT0RfV0VFSxACEhAKDFBFUklPRF9NT05USBADKrgBCglNZWFzdXJlRm4SGgoWTUVBU1VSRV9GTl9VTlNQRUNJRklFRBAAEhQKEE1FQVNVUkVfRk5fQ09VTlQQARISCg5NRUFTVVJFX0ZOX1NVTRACEhIKDk1FQVNVUkVfRk5fQVZHEAMSEgoOTUVBU1VSRV9GTl9NSU4QBBISCg5NRUFTVVJFX0ZOX01BWBAFEhUKEU1FQVNVUkVfRk5fTUVESUFOEAYSEgoOTUVBU1VSRV9GTl9QOTAQBzLHAQoMUXVlcnlTZXJ2aWNlElkKBVF1ZXJ5EiIucXVlcnkudjEuUXVlcnlTZXJ2aWNlUXVlcnlSZXF1ZXN0GiMucXVlcnkudjEuUXVlcnlTZXJ2aWNlUXVlcnlSZXNwb25zZSIHkAIByPMYARJcCgZTY2hlbWESIy5xdWVyeS52MS5RdWVyeVNlcnZpY2VTY2hlbWFSZXF1ZXN0GiQucXVlcnkudjEuUXVlcnlTZXJ2aWNlU2NoZW1hUmVzcG9uc2UiB5ACAcjzGAFCjgEKDGNvbS5xdWVyeS52MUIKUXVlcnlQcm90b1ABWjFnaXRodWIuY29tL2VtcG93aWxsL2RqaW5uL2dlbi9nby9xdWVyeS92MTtxdWVyeXYxogIDUVhYqgIIUXVlcnkuVjHKAghRdWVyeVxWMeICFFF1ZXJ5XFYxXEdQQk1ldGFkYXRh6gIJUXVlcnk6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_djinn_v1_options, file_google_protobuf_duration, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message query.v1.QueryServiceQueryRequest
@@ -29,22 +31,20 @@ export type QueryServiceQueryRequest = Message<"query.v1.QueryServiceQueryReques
   collection: Collection;
 
   /**
-   * A filter each row keeps must hold, all of them: ref, an operator, a value. = is equal, text ignoring case, and
-   * a|b one of; != is none of, an absent value included; > >= < <= bound a number, a time (2026-11-01, or RFC 3339)
-   * or a duration (90s); *= contains, ^= begins with, ignoring case; null is the absent value: status=null,
-   * status!=null, status=pending|null. An enum takes its value's name, prefix or not: status=running.
+   * The filters each row kept must hold, all of them.
    *
-   * @generated from field: repeated string filter = 2;
+   * @generated from field: repeated query.v1.Filter filter = 2;
    */
-  filter: string[];
+  filter: Filter[];
 
   /**
-   * The order of the rows, by a ref, -ref for descending; an absent value comes last either way. When aggregated, a
-   * column of the table: create_time::day, count.
+   * The order of the rows, the first sort before the next, then the default. The default never changes, so that a
+   * test or a client may lean on it: the order the collection is stored in, by id, which is the order of creation;
+   * when aggregated, the order of the groups' values. An absent value comes last either way.
    *
-   * @generated from field: repeated string sort = 3;
+   * @generated from field: repeated query.v1.Order sort = 3;
    */
-  sort: string[];
+  sort: Order[];
 
   /**
    * The refs of the columns, in order: code, usage.cost_usd, wish_id->title. Not set: the collection's usual
@@ -55,22 +55,18 @@ export type QueryServiceQueryRequest = Message<"query.v1.QueryServiceQueryReques
   select: string[];
 
   /**
-   * Aggregate: a row per group of rows holding the same value of this ref. A time groups by period with ::day, ::week
-   * or ::month (create_time::day, in the machine's time zone). A number or a duration groups by bins with
-   * ::bins(bounds), a value going to the greatest bound at or below it, the first bound's when below them all; every
-   * bin shows, empty or not: answer::delay::bins(0s,1m,10m,1h).
+   * Aggregate: a row per group of rows holding the same value of each of these refs.
    *
-   * @generated from field: repeated string group_by = 5;
+   * @generated from field: repeated query.v1.GroupBy group_by = 5;
    */
-  groupBy: string[];
+  groupBy: GroupBy[];
 
   /**
-   * Aggregate: a column computed over each group's rows, absent values skipped: count counts the rows, ref::fn reads
-   * a ref with count, sum, avg, min, max, median or p90 (running::median), name=ref::fn names the column.
+   * Aggregate: the columns computed over each group's rows, absent values skipped.
    *
-   * @generated from field: repeated string measure = 6;
+   * @generated from field: repeated query.v1.Measure measure = 6;
    */
-  measure: string[];
+  measure: Measure[];
 
   /**
    * The most rows to return: the first ones, after the sorts. Not set: all of them.
@@ -80,7 +76,7 @@ export type QueryServiceQueryRequest = Message<"query.v1.QueryServiceQueryReques
   limit: number;
 
   /**
-   * How the table comes back: a text table (not set), csv, or arrow for the window.
+   * How the table comes back: arrow when not set; the command line and djinn mcp ask text unless told csv or arrow.
    *
    * @generated from field: query.v1.Format format = 8;
    */
@@ -95,29 +91,519 @@ export const QueryServiceQueryRequestSchema: GenMessage<QueryServiceQueryRequest
   messageDesc(file_query_v1_query, 0);
 
 /**
+ * Filter is one condition a row must hold: a comparison typed by the ref it reads, or a group of filters. The command
+ * line types it as a text it reads into this message (internal/querytext): status=running. A null value holds for none but Null and StringIn with include_null. On a list, a filter holds
+ * when it holds for one of the list's values.
+ *
+ * @generated from message query.v1.Filter
+ */
+export type Filter = Message<"query.v1.Filter"> & {
+  /**
+   * @generated from oneof query.v1.Filter.where
+   */
+  where: {
+    /**
+     * Filters joined by an op.
+     *
+     * @generated from field: query.v1.FilterGroup group = 1;
+     */
+    value: FilterGroup;
+    case: "group";
+  } | {
+    /**
+     * The ref's value is absent.
+     *
+     * @generated from field: query.v1.NullFilter null = 2;
+     */
+    value: NullFilter;
+    case: "null";
+  } | {
+    /**
+     * A true or false ref.
+     *
+     * @generated from field: query.v1.BoolComparison bool = 3;
+     */
+    value: BoolComparison;
+    case: "bool";
+  } | {
+    /**
+     * A text or an enum ref, compared ignoring case.
+     *
+     * @generated from field: query.v1.StringComparison string = 4;
+     */
+    value: StringComparison;
+    case: "string";
+  } | {
+    /**
+     * A text or an enum ref holding one of values.
+     *
+     * @generated from field: query.v1.StringIn string_in = 5;
+     */
+    value: StringIn;
+    case: "stringIn";
+  } | {
+    /**
+     * A number ref.
+     *
+     * @generated from field: query.v1.NumberComparison number = 6;
+     */
+    value: NumberComparison;
+    case: "number";
+  } | {
+    /**
+     * A time ref.
+     *
+     * @generated from field: query.v1.TimeComparison time = 7;
+     */
+    value: TimeComparison;
+    case: "time";
+  } | {
+    /**
+     * A duration ref.
+     *
+     * @generated from field: query.v1.DurationComparison duration = 8;
+     */
+    value: DurationComparison;
+    case: "duration";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message query.v1.Filter.
+ * Use `create(FilterSchema)` to create a new message.
+ */
+export const FilterSchema: GenMessage<Filter> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 1);
+
+/**
+ * FilterGroup joins filters: one at least.
+ *
+ * @generated from message query.v1.FilterGroup
+ */
+export type FilterGroup = Message<"query.v1.FilterGroup"> & {
+  /**
+   * How they join: and when not set.
+   *
+   * @generated from field: query.v1.FilterGroupOp op = 1;
+   */
+  op: FilterGroupOp;
+
+  /**
+   * The filters joined.
+   *
+   * @generated from field: repeated query.v1.Filter filters = 2;
+   */
+  filters: Filter[];
+};
+
+/**
+ * Describes the message query.v1.FilterGroup.
+ * Use `create(FilterGroupSchema)` to create a new message.
+ */
+export const FilterGroupSchema: GenMessage<FilterGroup> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 2);
+
+/**
+ * NullFilter holds when the ref's value is absent.
+ *
+ * @generated from message query.v1.NullFilter
+ */
+export type NullFilter = Message<"query.v1.NullFilter"> & {
+  /**
+   * The ref read.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+};
+
+/**
+ * Describes the message query.v1.NullFilter.
+ * Use `create(NullFilterSchema)` to create a new message.
+ */
+export const NullFilterSchema: GenMessage<NullFilter> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 3);
+
+/**
+ * BoolComparison holds when the ref's value is value; an absent value is not false.
+ *
+ * @generated from message query.v1.BoolComparison
+ */
+export type BoolComparison = Message<"query.v1.BoolComparison"> & {
+  /**
+   * The ref read.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+
+  /**
+   * The value it holds.
+   *
+   * @generated from field: bool value = 2;
+   */
+  value: boolean;
+};
+
+/**
+ * Describes the message query.v1.BoolComparison.
+ * Use `create(BoolComparisonSchema)` to create a new message.
+ */
+export const BoolComparisonSchema: GenMessage<BoolComparison> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 4);
+
+/**
+ * StringComparison compares a text or an enum ref with value, ignoring case. An enum takes its value's name, prefix
+ * or not: running.
+ *
+ * @generated from message query.v1.StringComparison
+ */
+export type StringComparison = Message<"query.v1.StringComparison"> & {
+  /**
+   * The ref read.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+
+  /**
+   * How it compares: equal when not set.
+   *
+   * @generated from field: query.v1.StringOp op = 2;
+   */
+  op: StringOp;
+
+  /**
+   * The value compared with.
+   *
+   * @generated from field: string value = 3;
+   */
+  value: string;
+};
+
+/**
+ * Describes the message query.v1.StringComparison.
+ * Use `create(StringComparisonSchema)` to create a new message.
+ */
+export const StringComparisonSchema: GenMessage<StringComparison> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 5);
+
+/**
+ * StringIn holds when a text or an enum ref's value is one of values, ignoring case, or absent with include_null.
+ *
+ * @generated from message query.v1.StringIn
+ */
+export type StringIn = Message<"query.v1.StringIn"> & {
+  /**
+   * The ref read.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+
+  /**
+   * The values it may hold.
+   *
+   * @generated from field: repeated string values = 2;
+   */
+  values: string[];
+
+  /**
+   * An absent value holds too.
+   *
+   * @generated from field: bool include_null = 3;
+   */
+  includeNull: boolean;
+};
+
+/**
+ * Describes the message query.v1.StringIn.
+ * Use `create(StringInSchema)` to create a new message.
+ */
+export const StringInSchema: GenMessage<StringIn> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 6);
+
+/**
+ * NumberComparison compares a number ref with value; an absent value is not 0.
+ *
+ * @generated from message query.v1.NumberComparison
+ */
+export type NumberComparison = Message<"query.v1.NumberComparison"> & {
+  /**
+   * The ref read.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+
+  /**
+   * How it compares: equal when not set.
+   *
+   * @generated from field: query.v1.CompareOp op = 2;
+   */
+  op: CompareOp;
+
+  /**
+   * The value compared with.
+   *
+   * @generated from field: double value = 3;
+   */
+  value: number;
+};
+
+/**
+ * Describes the message query.v1.NumberComparison.
+ * Use `create(NumberComparisonSchema)` to create a new message.
+ */
+export const NumberComparisonSchema: GenMessage<NumberComparison> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 7);
+
+/**
+ * TimeComparison compares a time ref with value.
+ *
+ * @generated from message query.v1.TimeComparison
+ */
+export type TimeComparison = Message<"query.v1.TimeComparison"> & {
+  /**
+   * The ref read.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+
+  /**
+   * How it compares: equal when not set.
+   *
+   * @generated from field: query.v1.CompareOp op = 2;
+   */
+  op: CompareOp;
+
+  /**
+   * The time compared with.
+   *
+   * @generated from field: google.protobuf.Timestamp value = 3;
+   */
+  value?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message query.v1.TimeComparison.
+ * Use `create(TimeComparisonSchema)` to create a new message.
+ */
+export const TimeComparisonSchema: GenMessage<TimeComparison> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 8);
+
+/**
+ * DurationComparison compares a duration ref with value.
+ *
+ * @generated from message query.v1.DurationComparison
+ */
+export type DurationComparison = Message<"query.v1.DurationComparison"> & {
+  /**
+   * The ref read.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+
+  /**
+   * How it compares: equal when not set.
+   *
+   * @generated from field: query.v1.CompareOp op = 2;
+   */
+  op: CompareOp;
+
+  /**
+   * The duration compared with.
+   *
+   * @generated from field: google.protobuf.Duration value = 3;
+   */
+  value?: Duration | undefined;
+};
+
+/**
+ * Describes the message query.v1.DurationComparison.
+ * Use `create(DurationComparisonSchema)` to create a new message.
+ */
+export const DurationComparisonSchema: GenMessage<DurationComparison> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 9);
+
+/**
+ * Order is one sort of the rows: by a ref, or when aggregated by a column of the table (create_time::day, count).
+ *
+ * @generated from message query.v1.Order
+ */
+export type Order = Message<"query.v1.Order"> & {
+  /**
+   * The ref, or the column, sorted by.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+
+  /**
+   * Descending: ascending when not set.
+   *
+   * @generated from field: bool desc = 2;
+   */
+  desc: boolean;
+};
+
+/**
+ * Describes the message query.v1.Order.
+ * Use `create(OrderSchema)` to create a new message.
+ */
+export const OrderSchema: GenMessage<Order> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 10);
+
+/**
+ * GroupBy is one key of an aggregate: a row per value of its ref, by period for a time, by bins for a number or a
+ * duration.
+ *
+ * @generated from message query.v1.GroupBy
+ */
+export type GroupBy = Message<"query.v1.GroupBy"> & {
+  /**
+   * The ref grouped by.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+
+  /**
+   * How its values are bucketed: each value its own group when not set.
+   *
+   * @generated from oneof query.v1.GroupBy.bucket
+   */
+  bucket: {
+    /**
+     * A time by period, in the machine's time zone.
+     *
+     * @generated from field: query.v1.Period period = 2;
+     */
+    value: Period;
+    case: "period";
+  } | {
+    /**
+     * A number by bins.
+     *
+     * @generated from field: query.v1.NumberBins number_bins = 3;
+     */
+    value: NumberBins;
+    case: "numberBins";
+  } | {
+    /**
+     * A duration by bins.
+     *
+     * @generated from field: query.v1.DurationBins duration_bins = 4;
+     */
+    value: DurationBins;
+    case: "durationBins";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message query.v1.GroupBy.
+ * Use `create(GroupBySchema)` to create a new message.
+ */
+export const GroupBySchema: GenMessage<GroupBy> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 11);
+
+/**
+ * NumberBins groups a number by bins: a value goes to the greatest bound at or below it, the first bound's when below
+ * them all; every bin shows, empty or not.
+ *
+ * @generated from message query.v1.NumberBins
+ */
+export type NumberBins = Message<"query.v1.NumberBins"> & {
+  /**
+   * The bounds, ascending.
+   *
+   * @generated from field: repeated double bounds = 1;
+   */
+  bounds: number[];
+};
+
+/**
+ * Describes the message query.v1.NumberBins.
+ * Use `create(NumberBinsSchema)` to create a new message.
+ */
+export const NumberBinsSchema: GenMessage<NumberBins> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 12);
+
+/**
+ * DurationBins groups a duration by bins, as NumberBins groups a number.
+ *
+ * @generated from message query.v1.DurationBins
+ */
+export type DurationBins = Message<"query.v1.DurationBins"> & {
+  /**
+   * The bounds, ascending.
+   *
+   * @generated from field: repeated google.protobuf.Duration bounds = 1;
+   */
+  bounds: Duration[];
+};
+
+/**
+ * Describes the message query.v1.DurationBins.
+ * Use `create(DurationBinsSchema)` to create a new message.
+ */
+export const DurationBinsSchema: GenMessage<DurationBins> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 13);
+
+/**
+ * Measure is one column of an aggregate, computed over each group's rows, absent values skipped.
+ *
+ * @generated from message query.v1.Measure
+ */
+export type Measure = Message<"query.v1.Measure"> & {
+  /**
+   * The ref read: not set for a count of the rows.
+   *
+   * @generated from field: string ref = 1;
+   */
+  ref: string;
+
+  /**
+   * The function: count when not set.
+   *
+   * @generated from field: query.v1.MeasureFn fn = 2;
+   */
+  fn: MeasureFn;
+
+  /**
+   * The column's name: fn, or ref::fn, when not set.
+   *
+   * @generated from field: string name = 3;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message query.v1.Measure.
+ * Use `create(MeasureSchema)` to create a new message.
+ */
+export const MeasureSchema: GenMessage<Measure> = /*@__PURE__*/
+  messageDesc(file_query_v1_query, 14);
+
+/**
  * @generated from message query.v1.QueryServiceQueryResponse
  */
 export type QueryServiceQueryResponse = Message<"query.v1.QueryServiceQueryResponse"> & {
   /**
-   * The table, as the format asks: aligned text, its row count last, or CSV.
+   * The table, in the format asked: an Arrow IPC stream, CSV, or aligned text. In Arrow, one record batch: a column
+   * per ref, its type from the proto, an absent value null, never 0; each field's metadata "djinn" holds a JSON
+   * object: ref, label, unit and type, and for an aggregated column of, fn, granularity or bounds.
    *
-   * @generated from field: string text = 1;
+   * @generated from field: bytes table = 1;
    */
-  text: string;
-
-  /**
-   * The table as an Arrow IPC stream, one record batch, with format arrow: a column per ref, its type from the proto,
-   * an absent value null, never 0. Each field's metadata "djinn" holds a JSON object: ref, label, unit and type, and
-   * for an aggregated column of, fn, granularity or bounds.
-   *
-   * @generated from field: bytes arrow = 2;
-   */
-  arrow: Uint8Array;
+  table: Uint8Array;
 
   /**
    * The rows before the limit: the groups when aggregated.
    *
-   * @generated from field: int64 total = 3;
+   * @generated from field: int64 total = 2;
    */
   total: bigint;
 };
@@ -127,7 +613,7 @@ export type QueryServiceQueryResponse = Message<"query.v1.QueryServiceQueryRespo
  * Use `create(QueryServiceQueryResponseSchema)` to create a new message.
  */
 export const QueryServiceQueryResponseSchema: GenMessage<QueryServiceQueryResponse> = /*@__PURE__*/
-  messageDesc(file_query_v1_query, 1);
+  messageDesc(file_query_v1_query, 15);
 
 /**
  * @generated from message query.v1.QueryServiceSchemaRequest
@@ -146,7 +632,7 @@ export type QueryServiceSchemaRequest = Message<"query.v1.QueryServiceSchemaRequ
  * Use `create(QueryServiceSchemaRequestSchema)` to create a new message.
  */
 export const QueryServiceSchemaRequestSchema: GenMessage<QueryServiceSchemaRequest> = /*@__PURE__*/
-  messageDesc(file_query_v1_query, 2);
+  messageDesc(file_query_v1_query, 16);
 
 /**
  * QueryColumn is one ref of a collection.
@@ -216,7 +702,7 @@ export type QueryColumn = Message<"query.v1.QueryColumn"> & {
  * Use `create(QueryColumnSchema)` to create a new message.
  */
 export const QueryColumnSchema: GenMessage<QueryColumn> = /*@__PURE__*/
-  messageDesc(file_query_v1_query, 3);
+  messageDesc(file_query_v1_query, 17);
 
 /**
  * @generated from message query.v1.QueryServiceSchemaResponse
@@ -235,7 +721,7 @@ export type QueryServiceSchemaResponse = Message<"query.v1.QueryServiceSchemaRes
  * Use `create(QueryServiceSchemaResponseSchema)` to create a new message.
  */
 export const QueryServiceSchemaResponseSchema: GenMessage<QueryServiceSchemaResponse> = /*@__PURE__*/
-  messageDesc(file_query_v1_query, 4);
+  messageDesc(file_query_v1_query, 18);
 
 /**
  * Collection is a kind of stored entity a query reads.
@@ -286,115 +772,46 @@ export const CollectionSchema: GenEnum<Collection> = /*@__PURE__*/
   enumDesc(file_query_v1_query, 0);
 
 /**
- * TaskType is what a task is, as the ref type of the tasks reads it: every task has one, where kind is set on a few.
- * The first that fits wins, in the order of the values from azima down.
- *
- * @generated from enum query.v1.TaskType
- */
-export enum TaskType {
-  /**
-   * Not set: never served, a task always has a type.
-   *
-   * @generated from enum value: TASK_TYPE_UNSPECIFIED = 0;
-   */
-  UNSPECIFIED = 0,
-
-  /**
-   * Work a worker does, of no other type: what the lead or the developer spawns, and the question workers.
-   *
-   * @generated from enum value: TASK_TYPE_WORK = 1;
-   */
-  WORK = 1,
-
-  /**
-   * A correction worker, which Djinn starts when a merge conflicts or its tests fail (Task.correction).
-   *
-   * @generated from enum value: TASK_TYPE_CORRECTION = 2;
-   */
-  CORRECTION = 2,
-
-  /**
-   * A review worker, which Djinn starts on a worktree left with changes not committed (Task.review).
-   *
-   * @generated from enum value: TASK_TYPE_REVIEW = 3;
-   */
-  REVIEW = 3,
-
-  /**
-   * An investigation: a short study that ends in a tilasm and a question (TASK_KIND_INVESTIGATION).
-   *
-   * @generated from enum value: TASK_TYPE_INVESTIGATION = 4;
-   */
-  INVESTIGATION = 4,
-
-  /**
-   * A mockup, whose work is a tilasm (TASK_KIND_MOCKUP).
-   *
-   * @generated from enum value: TASK_TYPE_MOCKUP = 5;
-   */
-  MOCKUP = 5,
-
-  /**
-   * An ifrit, a worker that stays lit while the developer is there (TASK_KIND_IFRIT).
-   *
-   * @generated from enum value: TASK_TYPE_IFRIT = 6;
-   */
-  IFRIT = 6,
-
-  /**
-   * A watcher: a command Djinn runs, no agent (PROVIDER_WATCH).
-   *
-   * @generated from enum value: TASK_TYPE_WATCHER = 7;
-   */
-  WATCHER = 7,
-
-  /**
-   * An azima, a part of the plan no worker runs (TASK_KIND_AZIMA): its times sum its parts'.
-   *
-   * @generated from enum value: TASK_TYPE_AZIMA = 8;
-   */
-  AZIMA = 8,
-}
-
-/**
- * Describes the enum query.v1.TaskType.
- */
-export const TaskTypeSchema: GenEnum<TaskType> = /*@__PURE__*/
-  enumDesc(file_query_v1_query, 1);
-
-/**
- * Format is how a query's table comes back.
+ * Format is how a query's table comes back, in the table field of the response.
  *
  * @generated from enum query.v1.Format
  */
 export enum Format {
   /**
-   * Not set: a table in text, aligned, for a person or an agent to read.
+   * Not set: Arrow, as FORMAT_ARROW.
    *
    * @generated from enum value: FORMAT_UNSPECIFIED = 0;
    */
   UNSPECIFIED = 0,
 
   /**
-   * CSV, a header of refs then a line per row: an absent value is an empty cell.
+   * An Arrow IPC stream, one record batch: the standard, what the window reads.
    *
-   * @generated from enum value: FORMAT_CSV = 1;
+   * @generated from enum value: FORMAT_ARROW = 1;
    */
-  CSV = 1,
+  ARROW = 1,
 
   /**
-   * An Arrow IPC stream, in the arrow field: what the window reads.
+   * CSV, a header of refs then a line per row: an absent value is an empty cell.
    *
-   * @generated from enum value: FORMAT_ARROW = 2;
+   * @generated from enum value: FORMAT_CSV = 2;
    */
-  ARROW = 2,
+  CSV = 2,
+
+  /**
+   * A table in text, aligned, its row count last: what the command line and djinn mcp ask, for a person or an agent
+   * to read.
+   *
+   * @generated from enum value: FORMAT_TEXT = 3;
+   */
+  TEXT = 3,
 }
 
 /**
  * Describes the enum query.v1.Format.
  */
 export const FormatSchema: GenEnum<Format> = /*@__PURE__*/
-  enumDesc(file_query_v1_query, 2);
+  enumDesc(file_query_v1_query, 1);
 
 /**
  * ColumnType is the type of a column, taken from the proto, never from the values a row holds.
@@ -463,7 +880,254 @@ export enum ColumnType {
  * Describes the enum query.v1.ColumnType.
  */
 export const ColumnTypeSchema: GenEnum<ColumnType> = /*@__PURE__*/
+  enumDesc(file_query_v1_query, 2);
+
+/**
+ * FilterGroupOp is how a FilterGroup joins its filters.
+ *
+ * @generated from enum query.v1.FilterGroupOp
+ */
+export enum FilterGroupOp {
+  /**
+   * Not set: and.
+   *
+   * @generated from enum value: FILTER_GROUP_OP_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Every filter holds.
+   *
+   * @generated from enum value: FILTER_GROUP_OP_AND = 1;
+   */
+  AND = 1,
+
+  /**
+   * One filter holds.
+   *
+   * @generated from enum value: FILTER_GROUP_OP_OR = 2;
+   */
+  OR = 2,
+
+  /**
+   * The filters, joined as and, do not hold.
+   *
+   * @generated from enum value: FILTER_GROUP_OP_NOT = 3;
+   */
+  NOT = 3,
+}
+
+/**
+ * Describes the enum query.v1.FilterGroupOp.
+ */
+export const FilterGroupOpSchema: GenEnum<FilterGroupOp> = /*@__PURE__*/
   enumDesc(file_query_v1_query, 3);
+
+/**
+ * StringOp is how a StringComparison compares.
+ *
+ * @generated from enum query.v1.StringOp
+ */
+export enum StringOp {
+  /**
+   * Not set: equal.
+   *
+   * @generated from enum value: STRING_OP_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Equal, ignoring case.
+   *
+   * @generated from enum value: STRING_OP_EQUAL = 1;
+   */
+  EQUAL = 1,
+
+  /**
+   * Contains value, ignoring case.
+   *
+   * @generated from enum value: STRING_OP_CONTAINS = 2;
+   */
+  CONTAINS = 2,
+
+  /**
+   * Begins with value, ignoring case.
+   *
+   * @generated from enum value: STRING_OP_BEGINS_WITH = 3;
+   */
+  BEGINS_WITH = 3,
+}
+
+/**
+ * Describes the enum query.v1.StringOp.
+ */
+export const StringOpSchema: GenEnum<StringOp> = /*@__PURE__*/
+  enumDesc(file_query_v1_query, 4);
+
+/**
+ * CompareOp is how a number, a time or a duration compares with a value: the ref on the left.
+ *
+ * @generated from enum query.v1.CompareOp
+ */
+export enum CompareOp {
+  /**
+   * Not set: equal.
+   *
+   * @generated from enum value: COMPARE_OP_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Equal.
+   *
+   * @generated from enum value: COMPARE_OP_EQUAL = 1;
+   */
+  EQUAL = 1,
+
+  /**
+   * Greater than.
+   *
+   * @generated from enum value: COMPARE_OP_GREATER_THAN = 2;
+   */
+  GREATER_THAN = 2,
+
+  /**
+   * Greater than or equal.
+   *
+   * @generated from enum value: COMPARE_OP_GREATER_THAN_EQUAL = 3;
+   */
+  GREATER_THAN_EQUAL = 3,
+
+  /**
+   * Less than.
+   *
+   * @generated from enum value: COMPARE_OP_LESS_THAN = 4;
+   */
+  LESS_THAN = 4,
+
+  /**
+   * Less than or equal.
+   *
+   * @generated from enum value: COMPARE_OP_LESS_THAN_EQUAL = 5;
+   */
+  LESS_THAN_EQUAL = 5,
+}
+
+/**
+ * Describes the enum query.v1.CompareOp.
+ */
+export const CompareOpSchema: GenEnum<CompareOp> = /*@__PURE__*/
+  enumDesc(file_query_v1_query, 5);
+
+/**
+ * Period is the bucket of a time a GroupBy groups by.
+ *
+ * @generated from enum query.v1.Period
+ */
+export enum Period {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: PERIOD_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A day.
+   *
+   * @generated from enum value: PERIOD_DAY = 1;
+   */
+  DAY = 1,
+
+  /**
+   * A week, from Monday.
+   *
+   * @generated from enum value: PERIOD_WEEK = 2;
+   */
+  WEEK = 2,
+
+  /**
+   * A month.
+   *
+   * @generated from enum value: PERIOD_MONTH = 3;
+   */
+  MONTH = 3,
+}
+
+/**
+ * Describes the enum query.v1.Period.
+ */
+export const PeriodSchema: GenEnum<Period> = /*@__PURE__*/
+  enumDesc(file_query_v1_query, 6);
+
+/**
+ * MeasureFn is the function of a Measure.
+ *
+ * @generated from enum query.v1.MeasureFn
+ */
+export enum MeasureFn {
+  /**
+   * Not set: count.
+   *
+   * @generated from enum value: MEASURE_FN_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The rows, or the values of the ref present.
+   *
+   * @generated from enum value: MEASURE_FN_COUNT = 1;
+   */
+  COUNT = 1,
+
+  /**
+   * The sum.
+   *
+   * @generated from enum value: MEASURE_FN_SUM = 2;
+   */
+  SUM = 2,
+
+  /**
+   * The mean.
+   *
+   * @generated from enum value: MEASURE_FN_AVG = 3;
+   */
+  AVG = 3,
+
+  /**
+   * The least.
+   *
+   * @generated from enum value: MEASURE_FN_MIN = 4;
+   */
+  MIN = 4,
+
+  /**
+   * The greatest.
+   *
+   * @generated from enum value: MEASURE_FN_MAX = 5;
+   */
+  MAX = 5,
+
+  /**
+   * The median.
+   *
+   * @generated from enum value: MEASURE_FN_MEDIAN = 6;
+   */
+  MEDIAN = 6,
+
+  /**
+   * The 90th percentile.
+   *
+   * @generated from enum value: MEASURE_FN_P90 = 7;
+   */
+  P90 = 7,
+}
+
+/**
+ * Describes the enum query.v1.MeasureFn.
+ */
+export const MeasureFnSchema: GenEnum<MeasureFn> = /*@__PURE__*/
+  enumDesc(file_query_v1_query, 7);
 
 /**
  * QueryService reads a collection of Djinn's data as a table. A ref names a column: a field by its path (code,

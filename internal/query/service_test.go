@@ -1,6 +1,7 @@
 package query
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,9 +12,11 @@ import (
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	queryv1 "github.com/empowill/djinn/gen/go/query/v1"
 	"github.com/empowill/djinn/gen/go/query/v1/queryv1connect"
+	"github.com/empowill/djinn/internal/querytext"
 )
 
 // route serves QueryService on the frozen set, and gives a client of it.
@@ -30,25 +33,93 @@ func route(t *testing.T) queryv1connect.QueryServiceClient {
 	return queryv1connect.NewQueryServiceClient(srv.Client(), srv.URL)
 }
 
+// texts reads the texts of a query as the command line does (internal/querytext), the refs typed by the schema
+// QueryService serves.
+type texts struct {
+	t     *testing.T
+	types *querytext.Types
+	c     queryv1.Collection
+}
+
+func textsOf(t *testing.T, client queryv1connect.QueryServiceClient, c queryv1.Collection) texts {
+	return texts{t, querytext.NewTypes(func(ctx context.Context, c queryv1.Collection) ([]*queryv1.QueryColumn, error) {
+		res, err := client.Schema(ctx, connect.NewRequest(&queryv1.QueryServiceSchemaRequest{Collection: c}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg.GetColumns(), nil
+	}), c}
+}
+
+func (x texts) filters(in ...string) []*queryv1.Filter {
+	out := make([]*queryv1.Filter, len(in))
+	for i, s := range in {
+		f, err := querytext.Filter(x.t.Context(), s, x.c, x.types)
+		if err != nil {
+			x.t.Fatal(err)
+		}
+		out[i] = f
+	}
+	return out
+}
+
+func (x texts) sorts(in ...string) []*queryv1.Order {
+	out := make([]*queryv1.Order, len(in))
+	for i, s := range in {
+		o, err := querytext.Order(s)
+		if err != nil {
+			x.t.Fatal(err)
+		}
+		out[i] = o
+	}
+	return out
+}
+
+func (x texts) groups(in ...string) []*queryv1.GroupBy {
+	out := make([]*queryv1.GroupBy, len(in))
+	for i, s := range in {
+		g, err := querytext.Group(x.t.Context(), s, x.c, x.types)
+		if err != nil {
+			x.t.Fatal(err)
+		}
+		out[i] = g
+	}
+	return out
+}
+
+func (x texts) measures(in ...string) []*queryv1.Measure {
+	out := make([]*queryv1.Measure, len(in))
+	for i, s := range in {
+		m, err := querytext.Measure(s)
+		if err != nil {
+			x.t.Fatal(err)
+		}
+		out[i] = m
+	}
+	return out
+}
+
 func TestRoute(t *testing.T) {
 	t.Parallel()
 	client := route(t)
 	tasks := queryv1.Collection_COLLECTION_TASKS
 
-	t.Run("a table in text by default, its usual columns", func(t *testing.T) {
+	t.Run("a table in text, its usual columns", func(t *testing.T) {
 		t.Parallel()
+		x := textsOf(t, client, tasks)
 		res, err := client.Query(t.Context(), connect.NewRequest(&queryv1.QueryServiceQueryRequest{
-			Collection: tasks, Filter: []string{"wish_id->title=stats"}, Sort: []string{"-code"}}))
+			Collection: tasks, Filter: x.filters("wish_id->title=stats"), Sort: x.sorts("-code"),
+			Format: queryv1.Format_FORMAT_TEXT}))
 		if err != nil {
 			t.Fatal(err)
 		}
-		lines := strings.Split(strings.TrimSpace(res.Msg.GetText()), "\n")
+		lines := strings.Split(strings.TrimSpace(string(res.Msg.GetTable())), "\n")
 		if len(lines) != 4 || !strings.HasPrefix(lines[0], "code  title") || !strings.HasPrefix(lines[1], "W2") ||
 			lines[3] != "2 rows" {
-			t.Errorf("text:\n%s", res.Msg.GetText())
+			t.Errorf("text:\n%s", res.Msg.GetTable())
 		}
-		if res.Msg.GetTotal() != 2 || len(res.Msg.GetArrow()) != 0 {
-			t.Errorf("total %d, arrow %d bytes; want 2, none", res.Msg.GetTotal(), len(res.Msg.GetArrow()))
+		if res.Msg.GetTotal() != 2 {
+			t.Errorf("total %d; want 2", res.Msg.GetTotal())
 		}
 	})
 
@@ -60,25 +131,51 @@ func TestRoute(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := "code,answer::delay\nQ1,1h\nQ2,\n"; res.Msg.GetText() != want {
-			t.Errorf("csv %q; want %q", res.Msg.GetText(), want)
+		if want := "code,answer::delay\nQ1,1h\nQ2,\n"; string(res.Msg.GetTable()) != want {
+			t.Errorf("csv %q; want %q", res.Msg.GetTable(), want)
 		}
 	})
 
-	t.Run("arrow, aggregated, limited", func(t *testing.T) {
+	t.Run("arrow by default, aggregated, limited", func(t *testing.T) {
 		t.Parallel()
+		x := textsOf(t, client, tasks)
 		res, err := client.Query(t.Context(), connect.NewRequest(&queryv1.QueryServiceQueryRequest{
-			Collection: tasks, GroupBy: []string{"wish_id->title"}, Measure: []string{"n=count", "usage.cost_usd::sum"},
-			Sort: []string{"-n"}, Limit: 1, Format: queryv1.Format_FORMAT_ARROW}))
+			Collection: tasks, GroupBy: x.groups("wish_id->title"), Measure: x.measures("n=count", "usage.cost_usd::sum"),
+			Sort: x.sorts("-n"), Limit: 1}))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Msg.GetText() != "" || res.Msg.GetTotal() != 3 {
-			t.Errorf("text %q, total %d; want none, 3 groups", res.Msg.GetText(), res.Msg.GetTotal())
+		if res.Msg.GetTotal() != 3 {
+			t.Errorf("total %d; want 3 groups", res.Msg.GetTotal())
 		}
-		rec := readArrow(t, res.Msg.GetArrow())
+		rec := readArrow(t, res.Msg.GetTable())
 		if rec.NumRows() != 1 || rec.Schema().Field(0).Name != "wish_id->title" || rec.Schema().Field(1).Name != "n" {
 			t.Errorf("record %v", rec)
+		}
+	})
+
+	t.Run("typed messages, as the window sends them", func(t *testing.T) {
+		t.Parallel()
+		res, err := client.Query(t.Context(), connect.NewRequest(&queryv1.QueryServiceQueryRequest{
+			Collection: tasks,
+			Filter: []*queryv1.Filter{
+				{Where: &queryv1.Filter_StringIn{StringIn: &queryv1.StringIn{Ref: "wish_id->title", Values: []string{"stats"}}}},
+				{Where: &queryv1.Filter_Number{Number: &queryv1.NumberComparison{
+					Ref: "usage.cost_usd", Op: queryv1.CompareOp_COMPARE_OP_GREATER_THAN, Value: 1}}},
+				{Where: &queryv1.Filter_Time{Time: &queryv1.TimeComparison{
+					Ref: "create_time", Op: queryv1.CompareOp_COMPARE_OP_LESS_THAN, Value: timestamppb.New(time.Now())}}},
+			},
+			GroupBy: []*queryv1.GroupBy{{Ref: "create_time", Bucket: &queryv1.GroupBy_Period{Period: queryv1.Period_PERIOD_DAY}}},
+			Measure: []*queryv1.Measure{{Name: "n"}, {Ref: "usage.cost_usd", Fn: queryv1.MeasureFn_MEASURE_FN_SUM}},
+			Sort:    []*queryv1.Order{{Ref: "n", Desc: true}},
+			Format:  queryv1.Format_FORMAT_CSV,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(string(res.Msg.GetTable())), "\n")
+		if len(lines) != 2 || lines[0] != "create_time::day,n,usage.cost_usd::sum" || !strings.HasSuffix(lines[1], ",1,1.5") {
+			t.Errorf("csv:\n%s", res.Msg.GetTable())
 		}
 	})
 
@@ -88,17 +185,25 @@ func TestRoute(t *testing.T) {
 		want string
 	}{
 		{"no collection", &queryv1.QueryServiceQueryRequest{}, "collection"},
-		{"a filter without operator", &queryv1.QueryServiceQueryRequest{Collection: tasks, Filter: []string{"status"}},
-			"no operator"},
 		{"an unknown ref", &queryv1.QueryServiceQueryRequest{Collection: tasks, Select: []string{"nope"}}, "no field nope"},
-		{"a hidden ref", &queryv1.QueryServiceQueryRequest{Collection: tasks, Filter: []string{"prompt*=x"}}, "hidden"},
-		{"a value of the wrong type", &queryv1.QueryServiceQueryRequest{Collection: tasks,
-			Filter: []string{"running>soon"}}, "is not a duration"},
-		{"an unknown function", &queryv1.QueryServiceQueryRequest{Collection: tasks, Measure: []string{"running::mean"}},
-			"no function"},
-		{"bins on a text", &queryv1.QueryServiceQueryRequest{Collection: tasks, GroupBy: []string{"code::bins(a,b)"},
-			Measure: []string{"count"}}, "has no bins"},
+		{"a hidden ref", &queryv1.QueryServiceQueryRequest{Collection: tasks, Filter: []*queryv1.Filter{
+			{Where: &queryv1.Filter_String_{String_: &queryv1.StringComparison{Ref: "prompt", Value: "x"}}}}}, "hidden"},
+		{"an unknown function", &queryv1.QueryServiceQueryRequest{Collection: tasks,
+			Measure: []*queryv1.Measure{{Ref: "running", Fn: 99}}}, "fn"},
+		{"bins on a text", &queryv1.QueryServiceQueryRequest{Collection: tasks, GroupBy: []*queryv1.GroupBy{
+			{Ref: "code", Bucket: &queryv1.GroupBy_NumberBins{NumberBins: &queryv1.NumberBins{Bounds: []float64{0, 1}}}}},
+			Measure: []*queryv1.Measure{{}}}, "has no bins"},
 		{"a negative limit", &queryv1.QueryServiceQueryRequest{Collection: tasks, Limit: -1}, "limit"},
+		{"a number filter on a duration", &queryv1.QueryServiceQueryRequest{Collection: tasks,
+			Filter: []*queryv1.Filter{{Where: &queryv1.Filter_Number{Number: &queryv1.NumberComparison{Ref: "running"}}}}},
+			"a number filter on running"},
+		{"a text filter on a time", &queryv1.QueryServiceQueryRequest{Collection: tasks,
+			Filter: []*queryv1.Filter{{Where: &queryv1.Filter_String_{String_: &queryv1.StringComparison{
+				Ref: "create_time", Value: "x"}}}}}, "a string filter on create_time"},
+		{"an empty filter", &queryv1.QueryServiceQueryRequest{Collection: tasks, Filter: []*queryv1.Filter{{}}},
+			"filter"},
+		{"a sort without ref", &queryv1.QueryServiceQueryRequest{Collection: tasks, Sort: []*queryv1.Order{{}}},
+			"sort[0].ref"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -153,7 +258,7 @@ func TestRouteSchema(t *testing.T) {
 	}
 	// A derived enum serves its values as a field's do, and its doc.
 	if c := cols["type"]; c == nil || c.GetType() != queryv1.ColumnType_COLUMN_TYPE_ENUM || c.GetLabel() != "Type" ||
-		len(c.GetValues()) != 8 || c.GetValues()[0] != "TASK_TYPE_WORK" || c.GetDoc() == "" {
+		len(c.GetValues()) != 8 || c.GetValues()[0] != "TASK_KIND_WORK" || c.GetDoc() == "" {
 		t.Errorf("type = %v", c)
 	}
 }
