@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"iter"
 	"math"
 	"slices"
 	"strings"
@@ -12,9 +13,9 @@ import (
 
 // Aggregation turns a query's rows into groups: a row per group of rows whose By refs hold the same values, with a
 // column per group ref, then a column per measure. Without By, the whole set is one group, and the table one row, even
-// when no row holds: its count is 0, its other measures null. Otherwise a group holds one row at least: an empty
-// period never shows. Rows come ordered by their groups' values, nulls last, before the query's sorts, which name the
-// table's columns.
+// when no row holds: its count is 0, its other measures null. Otherwise a group holds one row at least, but for the
+// bins of GroupBy.Bounds: an empty period never shows, an empty bin does. Rows come ordered by their groups' values,
+// nulls last, before the query's sorts, which name the table's columns.
 type Aggregation struct {
 	By       []GroupBy
 	Measures []Measure
@@ -29,6 +30,12 @@ type GroupBy struct {
 	// Granularity truncates a time to the start of its period: the column is then named Ref::day, ::week or ::month,
 	// and holds that start, in UTC.
 	Granularity Granularity
+	// Bounds split a number or a duration into bins, two bounds at least, each above the one before, of the ref's type
+	// or a text that reads as one (10s, 1m). A value goes to the bin of the greatest bound at or below it, the first
+	// bound's when it is below them all: the first bin holds every value below the second bound, the last one every
+	// value from the last bound up. The column is then named Ref::bins and holds the bin's bound. Unlike a period,
+	// every bin shows, a count of 0 for an empty one, beside each set of the other groups' values that rows hold.
+	Bounds []any
 }
 
 // Granularity is the period a group truncates a time to.
@@ -145,6 +152,25 @@ func (c *compiler) aggregation(md protoreflect.MessageDescriptor, a Aggregation)
 		}
 		col := r.col
 		col.Of = g.Ref
+		if g.Granularity != 0 && len(g.Bounds) > 0 {
+			return nil, fmt.Errorf("%w: ref %q: a period or bins, not both", ErrInvalid, g.Ref)
+		}
+		if len(g.Bounds) > 0 {
+			bounds, err := binBounds(col, g.Bounds)
+			if err != nil {
+				return nil, err
+			}
+			col.Ref = g.Ref + "::bins"
+			col.Bounds = bounds
+			get, bcol := r.get, col
+			r.get = func(m protoreflect.Message) any {
+				v := get(m)
+				if v == nil {
+					return nil
+				}
+				return bin(bcol, v)
+			}
+		}
 		if g.Granularity != 0 {
 			if g.Granularity.String() == "" {
 				return nil, fmt.Errorf("%w: ref %q: no granularity %d", ErrInvalid, g.Ref, g.Granularity)
@@ -188,6 +214,9 @@ func (c *compiler) aggregation(md protoreflect.MessageDescriptor, a Aggregation)
 			}
 			m.ref = &r
 			col.Field, col.Doc = r.col.Field, r.col.Doc
+			if ms.Fn != Count {
+				col.Unit = r.col.Unit
+			}
 			name = ms.Ref + "::" + name
 			if ms.Fn != Count && r.col.List {
 				return nil, fmt.Errorf("%w: ref %q: a list only counts", ErrInvalid, ms.Ref)
@@ -210,6 +239,41 @@ func (c *compiler) aggregation(md protoreflect.MessageDescriptor, a Aggregation)
 		ag.columns = append(ag.columns, col)
 	}
 	return ag, nil
+}
+
+// binBounds reads the bounds of col's bins in its type: two at least, each above the one before.
+func binBounds(col Column, bounds []any) ([]any, error) {
+	switch col.Type {
+	case TypeInt, TypeFloat, TypeDuration:
+	default:
+		return nil, fmt.Errorf("%w: ref %q: a %s has no bins: a number or a duration has", ErrInvalid, col.Ref, col.Type)
+	}
+	if len(bounds) < 2 {
+		return nil, fmt.Errorf("%w: ref %q: bins need two bounds at least", ErrInvalid, col.Ref)
+	}
+	out := make([]any, len(bounds))
+	for i, b := range bounds {
+		v, err := coerce(col, b)
+		if err != nil {
+			return nil, fmt.Errorf("%w: bound %w", ErrInvalid, err)
+		}
+		if i > 0 && compare(col, out[i-1], v) >= 0 {
+			return nil, fmt.Errorf("%w: ref %q: bound %v is not above %v", ErrInvalid, col.Ref, v, out[i-1])
+		}
+		out[i] = v
+	}
+	return out, nil
+}
+
+// bin is the bound of the bin v falls in, among col's bounds: the greatest at or below v, the first when none is.
+func bin(col Column, v any) any {
+	i, _ := slices.BinarySearchFunc(col.Bounds, v, func(b, v any) int {
+		if compare(col, b, v) <= 0 {
+			return -1
+		}
+		return 1
+	})
+	return col.Bounds[max(i-1, 0)]
 }
 
 // measured is the type fn gives over values of typ: 0 when it takes none.
@@ -292,6 +356,21 @@ func (ag *aggregator) run(rows []protoreflect.Message) [][]any {
 			g.values[i] = append(g.values[i], v)
 		}
 	}
+	ag.fillBins(func(keys []any) {
+		k := key(keys)
+		if _, ok := byKey[k]; ok {
+			return
+		}
+		g := &group{keys: keys, values: make([][]any, len(ag.measures)), count: make([]int64, len(ag.measures))}
+		byKey[k] = g
+		groups = append(groups, g)
+	}, func(yield func([]any) bool) {
+		for _, g := range groups {
+			if !yield(g.keys) {
+				return
+			}
+		}
+	})
 	slices.SortStableFunc(groups, func(a, b *group) int {
 		return order(ag.columns, nil, a.keys, b.keys)
 	})
@@ -308,6 +387,52 @@ func (ag *aggregator) run(rows []protoreflect.Message) [][]any {
 		out = append(out, row)
 	}
 	return out
+}
+
+// fillBins adds the bins no row fell in: beside each set of values of the other groups that seen gives (a single one
+// when every group is a bin's), each combination of the bins' bounds. add skips the groups that exist.
+func (ag *aggregator) fillBins(add func(keys []any), seen iter.Seq[[]any]) {
+	var at []int
+	for i, r := range ag.groups {
+		if r.col.Bounds != nil {
+			at = append(at, i)
+		}
+	}
+	if len(at) == 0 {
+		return
+	}
+	var others [][]any
+	known := map[string]bool{}
+	keep := func(keys []any) {
+		others = append(others, keys)
+		known[key(keys)] = true
+	}
+	if len(at) == len(ag.groups) {
+		keep(make([]any, len(ag.groups)))
+	}
+	for keys := range seen {
+		other := slices.Clone(keys)
+		for _, i := range at {
+			other[i] = nil
+		}
+		if !known[key(other)] {
+			keep(other)
+		}
+	}
+	var fill func(j int, keys []any)
+	fill = func(j int, keys []any) {
+		if j == len(at) {
+			add(slices.Clone(keys))
+			return
+		}
+		for _, b := range ag.groups[at[j]].col.Bounds {
+			keys[at[j]] = b
+			fill(j+1, keys)
+		}
+	}
+	for _, keys := range others {
+		fill(0, keys)
+	}
 }
 
 // key is a map key for a group's values: Go syntax quotes text, and a time reads as its instant.

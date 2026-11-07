@@ -376,8 +376,14 @@ func pick(word string, names []string, what string) (string, error) {
 }
 
 // aliased resolves a word no command's own name takes to the command of a service it is an alias of, in full or by
-// a unique prefix: djinn talisman is djinn tilasm.
+// a unique prefix: djinn talisman is djinn tilasm. An alias typed in full wins over the names it is a prefix of: djinn
+// q is djinn question, beside djinn query.
 func aliased(word string, names []string, services []protoreflect.ServiceDescriptor) (string, bool) {
+	for _, sd := range services {
+		if slices.Contains(aliases(sd), word) {
+			return command(sd), true
+		}
+	}
 	if slices.ContainsFunc(names, func(n string) bool { return strings.HasPrefix(n, word) }) {
 		return "", false
 	}
@@ -614,6 +620,11 @@ func jsonOnly(fd protoreflect.FieldDescriptor) bool {
 	return proto.GetExtension(fd.Options(), djinnv1.E_JsonOnly) == true
 }
 
+// raw tells whether the command line prints the string field as it is, without its name: a table or a CSV.
+func raw(fd protoreflect.FieldDescriptor) bool {
+	return fd.Kind() == protoreflect.StringKind && !fd.IsList() && proto.GetExtension(fd.Options(), djinnv1.E_Raw) == true
+}
+
 func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 	for _, fd := range byNumber(m.Descriptor()) {
 		if !m.Has(fd) || fd.IsMap() || jsonOnly(fd) {
@@ -621,6 +632,12 @@ func writeFields(w io.Writer, m protoreflect.Message, indent string) {
 		}
 		v := m.Get(fd)
 		switch {
+		case raw(fd):
+			s := v.String()
+			fmt.Fprint(w, s)
+			if !strings.HasSuffix(s, "\n") {
+				fmt.Fprintln(w)
+			}
 		case fd.IsList():
 			fmt.Fprintf(w, "%s%s:\n", indent, fd.Name())
 			writeList(w, fd, v.List(), indent+"  ")

@@ -220,6 +220,42 @@ and Ctrl with the key of the e acute next to it; the numpad's 1 and 2 work too. 
 the terminal, which keeps its own Ctrl and digit keys. Each entry's tooltip names its shortcut as your keyboard writes
 it, once the window knows your layout: at once in a Chromium browser, elsewhere once you typed on the digit row.
 
+## Queries
+
+`djinn query query <collection>` reads the tasks, questions, wishes or projects of every wish as a table, and
+`djinn query schema <collection>` lists the refs a query can name: each one's type, label, unit, comment, and the
+collection a jump leads to. Nothing is written: an agent runs them freely, through MCP too.
+
+```sh
+# Every task of a wish, the latest first
+djinn query query tasks --filter "wish_id->title=Stats tab" --sort -create_time --limit 20
+# Columns of your own, in CSV
+djinn query query tasks --select code --select status --select usage.cost_usd --select wish_id->title --format csv
+# How long questions wait for their answer, by bins: every bin shows, empty or not
+djinn query query questions --group-by "answer::delay::bins(0s,1m,10m,1h,24h)" --measure count
+# Tasks and cost per week, median time from a task's end to its commit
+djinn query query tasks --group-by create_time::week --measure count --measure usage.cost_usd::sum \
+  --measure integration::delay::median
+```
+
+- **Refs**: a field by its path (`code`, `usage.cost_usd`), across a field that holds an id (`wish_id->title`,
+  `wait_question_id->answer::delay`), or one Djinn computes (`prompt::size` and `context::size` in tokens,
+  `answer::delay`, `integration::delay`). Prompts, contexts and last lines are never columns.
+- **Filters** (`--filter`, all of them hold): `=` (text ignoring case; `a|b` one of), `!=` (none of, an absent value
+  included), `>` `>=` `<` `<=` (numbers, times such as `2026-11-01` or RFC 3339, durations such as `90s`), `*=`
+  contains, `^=` begins with; `null` is the absent value (`status=null`, `status=pending|null`).
+- **Sorts**: `--sort ref`, `--sort -ref` descending; an absent value comes last. Aggregated, a sort names a column of
+  the table (`--sort -count`).
+- **Aggregates**: `--group-by ref`, `ref::day`, `ref::week`, `ref::month` (the machine's time zone), or
+  `ref::bins(b1,b2,...)` for a number or a duration: a value goes to the greatest bound at or below it, the first
+  bound's when below them all. `--measure count`, `ref::count|sum|avg|min|max|median|p90`, `name=ref::fn` to name a
+  column. Absent values are skipped; an empty period never shows, an empty bin does.
+- **Formats**: an aligned table with its row count (not set), `--format csv`, or `--format arrow` (the window's: an
+  Arrow IPC stream in the `arrow` field of `--json`, each column typed from the proto with its ref, label and unit in
+  its `djinn` metadata). An absent value is empty in text, null in Arrow, never 0.
+
+The questions keep their short word: q is an alias of the question command, beside query.
+
 ## A wish's view
 
 The **Wish** tab: what waits for you (**Your move**), the questions being investigated, and the

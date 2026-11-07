@@ -12,8 +12,9 @@ arguments and their validation.
 - The command is the service name without `Service`, then the method, both in kebab-case:
   `QuestionService.Answer` is `djinn question answer`.
 - A service may name another word for its command, `option (djinn.v1.alias) = "talisman"`: `djinn talisman list` is
-  `djinn tilasm list`. An alias answers in full, or by a prefix no command's own name takes (`djinn t` stays
-  ambiguous); the help and the documentation list it, and MCP knows the command's own name only.
+  `djinn tilasm list`. An alias answers in full, even where it is a prefix of several commands (`djinn q` is
+  `djinn question`, beside `djinn query`), or by a prefix no command's own name takes (`djinn t` stays ambiguous); the
+  help and the documentation list it, and MCP knows the command's own name only.
 - A unique prefix is enough: `djinn q answer`, `djinn pr l`. An ambiguous one is an error that lists the
   candidates (`djinn question a` matches `ask` and `answer`).
 - `djinn version` prints the version.
@@ -100,8 +101,10 @@ The help is the proto comments: the service comment for `djinn question`, the me
 `djinn question answer --help`. Write them for the person typing the command.
 
 The output is text by default: one `name: value` line per field set, nested messages indented, lists as
-`- ` items, and the single field of a response shown directly. `--json` prints the response as protobuf JSON
-with the proto field names.
+`- ` items, and the single field of a response shown directly. A field marked `(djinn.v1.json_only)` prints with
+`--json` only; a string field marked `(djinn.v1.raw)` prints as it is, without its name, so that a table or a CSV
+pipes (`djinn query query tasks --format csv`). `--json` prints the response as protobuf JSON with the proto field
+names.
 
 ## Global flags
 

@@ -5,3 +5,13 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
 It includes or adapts third-party software under their own licenses; see
 docs/THIRD_PARTY_NOTICES.md (THIRD_PARTY_NOTICES.md beside this file in a release).
+
+The djinn binary includes software developed at The Apache Software Foundation
+(http://www.apache.org/): Apache Arrow Go, Copyright 2016-2025 The Apache Software
+Foundation. It also links, through Apache Arrow Go, FlatBuffers (Apache-2.0,
+Copyright Google Inc.), go-json (MIT, Copyright (c) 2020 Masaaki Goshima),
+compress (BSD-3-Clause, Copyright (c) 2012 The Go Authors, (c) 2019 Klaus Post,
+(c) 2011 The Snappy-Go Authors), cpuid (MIT, Copyright (c) 2015 Klaus Post),
+lz4 (BSD-3-Clause, Copyright (c) 2015 Pierre Curto) and xxh3 (BSD-2-Clause,
+Copyright (c) 2012-2014 Yann Collet, (c) 2019 Jeff Wendling): their license texts
+are in the same third-party notices.

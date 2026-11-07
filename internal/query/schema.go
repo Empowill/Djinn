@@ -7,6 +7,9 @@
 //
 // The store keeps each entity as a protobuf payload, its *_id fields aside as columns: an equality on one of them
 // narrows the rows SQLite reads, and everything else runs in Go, on the decoded messages.
+//
+// A table writes itself in Arrow, typed, for the window, or as aligned text and CSV, for the command line; Handler
+// serves Djinn's collections as QueryService, its filters, sorts, groups and measures read from their texts.
 package query
 
 import (
@@ -74,12 +77,17 @@ type Column struct {
 	Jump protoreflect.FullName
 	// Doc says what a derived ref is.
 	Doc string
+	// Unit is the unit of its numbers, when they have one: usd, tokens. A time or a duration has none: its type says
+	// it.
+	Unit string
 
 	// In an aggregated table, Of is the ref a group or a measure reads ("" for a count of rows), Fn the measure's
-	// function, and Granularity the period a group of times truncates them to.
+	// function, Granularity the period a group of times truncates them to, and Bounds the bounds of a group's bins,
+	// in Type.
 	Of          string
 	Fn          Fn
 	Granularity Granularity
+	Bounds      []any
 }
 
 // maxDepth bounds how deep Schema walks nested messages.
@@ -102,7 +110,7 @@ func walk(md protoreflect.MessageDescriptor, prefix string, path []protoreflect.
 		}
 		ref := prefix + string(fd.Name())
 		if typ, ok := leaf(fd); ok {
-			*out = append(*out, Column{Ref: ref, Type: typ, List: fd.IsList(), Field: fd, Jump: jump(fd)})
+			*out = append(*out, Column{Ref: ref, Type: typ, List: fd.IsList(), Field: fd, Jump: jump(fd), Unit: unit(fd)})
 			continue
 		}
 		if fd.Kind() != protoreflect.MessageKind || fd.IsList() || len(path) >= maxDepth {

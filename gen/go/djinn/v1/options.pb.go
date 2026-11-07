@@ -325,6 +325,14 @@ var file_djinn_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Tag:           "varint,51013,opt,name=query,enum=djinn.v1.Query",
 		Filename:      "djinn/v1/options.proto",
 	},
+	{
+		ExtendedType:  (*descriptorpb.FieldOptions)(nil),
+		ExtensionType: (*bool)(nil),
+		Field:         51014,
+		Name:          "djinn.v1.raw",
+		Tag:           "varint,51014,opt,name=raw",
+		Filename:      "djinn/v1/options.proto",
+	},
 }
 
 // Extension fields to descriptorpb.MethodOptions.
@@ -397,6 +405,10 @@ var (
 	//
 	// optional djinn.v1.Query query = 51013;
 	E_Query = &file_djinn_v1_options_proto_extTypes[11]
+	// A response field the command line prints as it is, without its name: a table or a CSV that its reader pipes.
+	//
+	// optional bool raw = 51014;
+	E_Raw = &file_djinn_v1_options_proto_extTypes[12]
 )
 
 var File_djinn_v1_options_proto protoreflect.FileDescriptor
@@ -433,7 +445,8 @@ const file_djinn_v1_options_proto_rawDesc = "" +
 	"positional:<\n" +
 	"\tjson_only\x12\x1d.google.protobuf.FieldOptions\x18\u008e\x03 \x01(\bR\bjsonOnly:1\n" +
 	"\x03ref\x12\x1d.google.protobuf.FieldOptions\x18Ď\x03 \x01(\tR\x03ref:F\n" +
-	"\x05query\x12\x1d.google.protobuf.FieldOptions\x18Ŏ\x03 \x01(\x0e2\x0f.djinn.v1.QueryR\x05queryB\x90\x01\n" +
+	"\x05query\x12\x1d.google.protobuf.FieldOptions\x18Ŏ\x03 \x01(\x0e2\x0f.djinn.v1.QueryR\x05query:1\n" +
+	"\x03raw\x12\x1d.google.protobuf.FieldOptions\x18Ǝ\x03 \x01(\bR\x03rawB\x90\x01\n" +
 	"\fcom.djinn.v1B\fOptionsProtoP\x01Z1github.com/empowill/djinn/gen/go/djinn/v1;djinnv1\xa2\x02\x03DXX\xaa\x02\bDjinn.V1\xca\x02\bDjinn\\V1\xe2\x02\x14Djinn\\V1\\GPBMetadata\xea\x02\tDjinn::V1b\x06proto3"
 
 var (
@@ -473,14 +486,15 @@ var file_djinn_v1_options_proto_depIdxs = []int32{
 	7,  // 9: djinn.v1.json_only:extendee -> google.protobuf.FieldOptions
 	7,  // 10: djinn.v1.ref:extendee -> google.protobuf.FieldOptions
 	7,  // 11: djinn.v1.query:extendee -> google.protobuf.FieldOptions
-	0,  // 12: djinn.v1.visibility:type_name -> djinn.v1.Visibility
-	1,  // 13: djinn.v1.writes:type_name -> djinn.v1.Writes
-	3,  // 14: djinn.v1.unique:type_name -> djinn.v1.Unique
-	2,  // 15: djinn.v1.query:type_name -> djinn.v1.Query
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	12, // [12:16] is the sub-list for extension type_name
-	0,  // [0:12] is the sub-list for extension extendee
+	7,  // 12: djinn.v1.raw:extendee -> google.protobuf.FieldOptions
+	0,  // 13: djinn.v1.visibility:type_name -> djinn.v1.Visibility
+	1,  // 14: djinn.v1.writes:type_name -> djinn.v1.Writes
+	3,  // 15: djinn.v1.unique:type_name -> djinn.v1.Unique
+	2,  // 16: djinn.v1.query:type_name -> djinn.v1.Query
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	13, // [13:17] is the sub-list for extension type_name
+	0,  // [0:13] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
 }
 
@@ -496,7 +510,7 @@ func file_djinn_v1_options_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_djinn_v1_options_proto_rawDesc), len(file_djinn_v1_options_proto_rawDesc)),
 			NumEnums:      3,
 			NumMessages:   1,
-			NumExtensions: 12,
+			NumExtensions: 13,
 			NumServices:   0,
 		},
 		GoTypes:           file_djinn_v1_options_proto_goTypes,

@@ -20,8 +20,10 @@ type Derived struct {
 	Type Type
 	// Doc says what it is, as a field's comment would.
 	Doc string
-	of  protoreflect.FullName
-	get func(proto.Message) any
+	// Unit is the unit of its numbers, when they have one (WithUnit).
+	Unit string
+	of   protoreflect.FullName
+	get  func(proto.Message) any
 }
 
 // Derive declares a derived ref of the collection whose messages are M's. get gives a value of typ, as Column says,
@@ -37,7 +39,13 @@ func Derive[M proto.Message](ref string, typ Type, doc string, get func(M) any) 
 		}}
 }
 
-func (d Derived) column() Column { return Column{Ref: d.Ref, Type: d.Type, Doc: d.Doc} }
+func (d Derived) column() Column { return Column{Ref: d.Ref, Type: d.Type, Doc: d.Doc, Unit: d.Unit} }
+
+// WithUnit gives d the unit of its numbers.
+func (d Derived) WithUnit(unit string) Derived {
+	d.Unit = unit
+	return d
+}
 
 // check refuses a derived ref of another message than md, or whose name a query could not read.
 func (d Derived) check(md protoreflect.MessageDescriptor) error {
@@ -60,7 +68,7 @@ func (d Derived) check(md protoreflect.MessageDescriptor) error {
 // TaskRefs are the derived refs of the tasks.
 var TaskRefs = []Derived{
 	Derive("prompt::size", TypeInt, "The prompt's size in tokens, estimated as its characters divided by 4, rounded up: "+
-		"the prompt itself stays hidden.", func(t *planv1.Task) any { return size(t.GetPrompt()) }),
+		"the prompt itself stays hidden.", func(t *planv1.Task) any { return size(t.GetPrompt()) }).WithUnit(tokens),
 	Derive("integration::delay", TypeDuration, "From the task's end to its work's commit into its wish's integration "+
 		"branch (integration.update_time - end_time), for a work committed only.", func(t *planv1.Task) any {
 		if t.GetIntegration().GetState() != planv1.IntegrationState_INTEGRATION_STATE_COMMITTED {
@@ -73,9 +81,10 @@ var TaskRefs = []Derived{
 // QuestionRefs are the derived refs of the questions.
 var QuestionRefs = []Derived{
 	Derive("context::size", TypeInt, "The context's size in tokens, estimated as its characters divided by 4, "+
-		"rounded up: the context itself stays hidden.", func(q *planv1.Question) any { return size(q.GetContext()) }),
+		"rounded up: the context itself stays hidden.",
+		func(q *planv1.Question) any { return size(q.GetContext()) }).WithUnit(tokens),
 	Derive("answer.note::size", TypeInt, "The answer's note size in tokens, estimated as its characters divided by 4, "+
-		"rounded up.", func(q *planv1.Question) any { return size(q.GetAnswer().GetNote()) }),
+		"rounded up.", func(q *planv1.Question) any { return size(q.GetAnswer().GetNote()) }).WithUnit(tokens),
 	Derive("answer::delay", TypeDuration, "How long the question waited for its answer (answer.create_time - "+
 		"create_time), whoever answered.", func(q *planv1.Question) any {
 		return between(q.GetCreateTime(), q.GetAnswer().GetCreateTime())
