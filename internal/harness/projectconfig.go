@@ -17,7 +17,9 @@ var projectConfigWarned sync.Map
 
 // projectContainers are the ceilings project sets in its djinn.yaml, and the file Djinn read them in, relative to the
 // project: nil, and Djinn's defaults hold, when it sets none or when its file is unreadable, which is warned once with
-// the file and the error. With both files, the root's is read, and a warning says the other is not.
+// the file and the error. A field Djinn does not know is ignored, warned once with the file and the field, and the
+// rest of the file applies. With both files, the root's is read, and a warning says the other is not. The project
+// view's To fix says the same (plan.projectConfigNotices).
 func (h *Harness) projectContainers(project *planv1.Project) (*djinnv1.Containers, string) {
 	dir := plan.ConfigDir(h.home, project)
 	if dir == "" {
@@ -27,6 +29,10 @@ func (h *Harness) projectContainers(project *planv1.Project) (*djinnv1.Container
 	if read.Ignored != "" {
 		warnProjectConfig(project, dir+"\x00both", "two files configure Djinn: the first is read, the other is not",
 			"read", read.File, "ignored", read.Ignored)
+	}
+	for _, u := range read.Unknown {
+		warnProjectConfig(project, dir+"\x00unknown\x00"+read.File+"\x00"+u,
+			"Djinn ignores a field of its configuration it does not know: the rest applies", "file", read.File, "field", u)
 	}
 	if err != nil {
 		warnProjectConfig(project, dir+"\x00"+err.Error(), "Djinn's configuration unread: Djinn's defaults hold",
