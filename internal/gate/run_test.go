@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/empowill/djinn/internal/machine"
 )
 
 // TestRun covers Run: holding the gate while the command runs, waiting under pressure, releasing when the command fails
@@ -70,7 +72,7 @@ func TestRun(t *testing.T) {
 		}
 		got := rec.got[0]
 		dir, _ := os.Getwd()
-		if got.GetCommand() != os.Args[0]+" -test.run=^$" || got.GetDirectory() != dir || got.GetExitCode() != 0 {
+		if got.GetCommand() != machine.KeyArgs([]string{os.Args[0], "-test.run=^$"}, dir) || got.GetDirectory() != dir || got.GetExitCode() != 0 {
 			t.Errorf("recorded %v", got)
 		}
 		if got.GetCpuSeconds() < 0.1 || got.GetSeconds() < 0.3 || got.GetSeconds() < got.GetCpuSeconds()/float64(runtime.NumCPU()) {

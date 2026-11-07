@@ -8,7 +8,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/empowill/djinn/internal/machine"
 )
@@ -26,7 +25,7 @@ type HookInput struct {
 }
 
 // Hook is Claude's PreToolUse hook on Bash and Monitor: it reads the call from in and, when its command neither reads
-// nor edits (Plain), has admit wait for its admission, given the command as its cost is kept (What), its folder and
+// nor edits (Plain), has admit wait for its admission, given the command as its cost is kept (machine.Key), its folder and
 // what its shell is found by (machine.Match). admit says why the command waited, "" when it did not: the hook then
 // writes it to out, for the worker to read beside the command's result. It writes nothing else: Claude runs the call
 // as it was. It fails only when it cannot read the call; admit failing (no Djinn answers) lets the command run.
@@ -39,35 +38,13 @@ func Hook(in io.Reader, out io.Writer, admit func(what, dir, match string) (stri
 	if command == "" || Plain(command) {
 		return nil
 	}
-	waited, err := admit(What(command), call.Cwd, machine.Match(command))
+	waited, err := admit(machine.Key(command, call.Cwd), call.Cwd, machine.Match(command))
 	if err != nil || waited == "" {
 		return nil //nolint:nilerr // The command runs: the gates never stop a worker's command.
 	}
 	return json.NewEncoder(out).Encode(map[string]any{
 		"hookSpecificOutput": map[string]any{"hookEventName": "PreToolUse", "additionalContext": waited},
 	})
-}
-
-// What is the command as its cost is kept: its words, one space apart, up to 200 characters, as djinn gate run
-// keeps its own.
-func What(command string) string {
-	what := ""
-	for _, word := range strings.Fields(command) {
-		if what != "" && len(what)+1+len(word) > 200 {
-			break
-		}
-		if what != "" {
-			what += " "
-		}
-		what += word
-	}
-	if len(what) > 200 {
-		what = what[:200]
-		for !utf8.ValidString(what) {
-			what = what[:len(what)-1]
-		}
-	}
-	return what
 }
 
 // readHeads are the commands that read or edit and run nothing else: they pass with no admission. Anything else, a

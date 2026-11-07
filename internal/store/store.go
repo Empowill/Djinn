@@ -124,7 +124,10 @@ func (s *Store) migrate(ctx context.Context, entities []proto.Message) error {
 		if err := s.migrateSamples(ctx, tx); err != nil {
 			return err
 		}
-		names := map[string]bool{"command": true, "sample": true}
+		if err := s.migrateIntervals(ctx, tx); err != nil {
+			return err
+		}
+		names := map[string]bool{"command": true, "sample": true, "gate_interval": true}
 		for _, e := range entities {
 			t, err := newTable(e.ProtoReflect().Descriptor())
 			if err != nil {

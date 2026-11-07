@@ -42,13 +42,17 @@ func (c *costs) Record(
 		return connect.NewResponse(&machinev1.CommandServiceRecordResponse{}), plan.Status(err)
 	}
 	var out *machinev1.CommandCost
+	key := Key(in.GetCommand(), in.GetDirectory())
 	err = c.db.Tx(ctx, func(tx *store.Tx) error {
 		all, err := store.List[*machinev1.CommandCost](ctx, tx, store.Where{"project_id": projectID})
 		if err != nil {
 			return err
 		}
-		if out = find(all, in.GetCommand()); out == nil {
-			out = &machinev1.CommandCost{Id: store.NewID(), ProjectId: projectID, Command: in.GetCommand()}
+		if out = find(all, key); out == nil {
+			out = &machinev1.CommandCost{Id: store.NewID(), ProjectId: projectID}
+		}
+		if !strings.EqualFold(out.GetCommand(), key) {
+			out.Command = key
 		}
 		Add(out, in)
 		if err := tx.Journal("local", machinev1connect.CommandServiceRecordProcedure, in); err != nil {
@@ -62,12 +66,43 @@ func (c *costs) Record(
 	return connect.NewResponse(&machinev1.CommandServiceRecordResponse{Cost: out}), nil
 }
 
-// find is the cost of the command among all, case ignored; nil when it is not there.
-func find(all []*machinev1.CommandCost, command string) *machinev1.CommandCost {
-	if i := slices.IndexFunc(all, func(o *machinev1.CommandCost) bool { return strings.EqualFold(o.GetCommand(), command) }); i >= 0 {
+// find is the cost of the command whose key is key among all, case ignored: the one kept under key, else one kept
+// under a command of that key, from before the keys were normalized (it then takes key, once counted again); nil when
+// there is none.
+func find(all []*machinev1.CommandCost, key string) *machinev1.CommandCost {
+	if i := slices.IndexFunc(all, func(o *machinev1.CommandCost) bool { return strings.EqualFold(o.GetCommand(), key) }); i >= 0 {
+		return all[i]
+	}
+	if i := slices.IndexFunc(all, func(o *machinev1.CommandCost) bool { return strings.EqualFold(Key(o.GetCommand()), key) }); i >= 0 {
 		return all[i]
 	}
 	return nil
+}
+
+// byHead is what the commands of all with the head of key cost, key's own left out: the median of their highest peaks,
+// and of their CPU times, with how many they are; zero when there is none.
+func byHead(all []*machinev1.CommandCost, key string) (Cost, int) {
+	head := Head(key)
+	if head == "" {
+		return Cost{}, 0
+	}
+	var peaks, cpus []float64
+	for _, o := range all {
+		if o.GetRuns() == 0 || strings.EqualFold(o.GetCommand(), key) {
+			continue
+		}
+		if h := Head(Key(o.GetCommand())); !strings.EqualFold(h, head) {
+			continue
+		}
+		peaks = append(peaks, float64(o.GetPeakMemoryBytes()))
+		cpus = append(cpus, max(o.GetCpuSeconds(), o.GetLastCpuSeconds()))
+	}
+	if len(peaks) == 0 {
+		return Cost{}, 0
+	}
+	return Cost{
+		Peak: uint64(percentile(peaks, 0.5)), CPU: time.Duration(percentile(cpus, 0.5) * float64(time.Second)), Head: head,
+	}, len(peaks)
 }
 
 // Peaks reads what each command was measured to cost, for the gates.
@@ -77,14 +112,19 @@ type Peaks struct{ db *store.Store }
 func NewPeaks(db *store.Store) *Peaks { return &Peaks{db: db} }
 
 // Cost is what a command was measured to cost: its highest peak memory, in bytes, and its CPU time, user and system,
-// the higher of its mean and its last run's.
+// the higher of its mean and its last run's; how long it usually holds its gate, the 95th percentile of its last runs.
+// A command never measured is given the cost of the others of its head in its project (Head), their median: Head
+// then names it, and Held is zero.
 type Cost struct {
 	Peak uint64
 	CPU  time.Duration
+	Held time.Duration
+	Head string
 }
 
-// Cost is what the command was measured to cost in its project: the task's, else the one holding dir. It is zero
-// when the command was never measured, or outside any project.
+// Cost is what the command was measured to cost in its project: the task's, else the one holding dir, found by its key
+// (Key); never measured, what the others of its head cost. It is zero when neither was measured, or outside any
+// project.
 func (p *Peaks) Cost(ctx context.Context, taskID, dir, command string) Cost {
 	c := &costs{db: p.db}
 	projectID, err := c.project(ctx, taskID, dir)
@@ -95,9 +135,17 @@ func (p *Peaks) Cost(ctx context.Context, taskID, dir, command string) Cost {
 	if err != nil {
 		return Cost{}
 	}
-	found := find(all, command)
+	key := Key(command, dir)
+	found := find(all, key)
+	if found.GetRuns() == 0 {
+		guess, _ := byHead(all, key)
+		return guess
+	}
 	cpu := max(found.GetCpuSeconds(), found.GetLastCpuSeconds())
-	return Cost{Peak: found.GetPeakMemoryBytes(), CPU: time.Duration(cpu * float64(time.Second))}
+	return Cost{
+		Peak: found.GetPeakMemoryBytes(), CPU: time.Duration(cpu * float64(time.Second)),
+		Held: time.Duration(found.GetP95HeldSeconds() * float64(time.Second)),
+	}
 }
 
 // Record counts a run of a command that Djinn measured itself, as djinn gate run would send it: a worker's command
@@ -121,9 +169,13 @@ func (p *Peaks) Ask(ctx context.Context, gate, taskID, dir, command string) {
 		if err != nil {
 			return err
 		}
-		out := find(all, command)
+		key := Key(command, dir)
+		out := find(all, key)
 		if out == nil {
-			out = &machinev1.CommandCost{Id: store.NewID(), ProjectId: projectID, Command: command}
+			out = &machinev1.CommandCost{Id: store.NewID(), ProjectId: projectID}
+		}
+		if !strings.EqualFold(out.GetCommand(), key) {
+			out.Command = key
 		}
 		out.Asked = max(out.GetAsked(), out.GetRuns()) + 1
 		hold := &machinev1.GateServiceHoldRequest{Name: gate, TaskId: taskID, What: command, Directory: dir}

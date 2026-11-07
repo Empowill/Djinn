@@ -162,7 +162,7 @@ func TestService_Series(t *testing.T) {
 					asked = cutoff
 					return workerList()
 				}),
-				WithSeriesIntervals(func(cutoff time.Time) []*machinev1.GateInterval { return gateIvs }),
+				WithSeriesIntervals(func(time.Time, bool) []*machinev1.GateInterval { return gateIvs }),
 			)
 			client := serveMachine(t, NewMonitor(Policy{Share: 0.8}, func() (Snapshot, error) {
 				return Snapshot{Cores: 8, MemoryTotal: 16 << 30, MemoryAvailable: 8 << 30}, nil

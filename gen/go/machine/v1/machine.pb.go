@@ -87,6 +87,128 @@ func (DiskRisk) EnumDescriptor() ([]byte, []int) {
 	return file_machine_v1_machine_proto_rawDescGZIP(), []int{0}
 }
 
+// How a gate is held.
+type GateMode int32
+
+const (
+	// Not set: an interval kept before the modes were.
+	GateMode_GATE_MODE_UNSPECIFIED GateMode = 0
+	// A named gate, held by one at a time.
+	GateMode_GATE_MODE_EXCLUSIVE GateMode = 1
+	// The admission of a worker's command, held by as many as the machine admits.
+	GateMode_GATE_MODE_SHARED GateMode = 2
+)
+
+// Enum value maps for GateMode.
+var (
+	GateMode_name = map[int32]string{
+		0: "GATE_MODE_UNSPECIFIED",
+		1: "GATE_MODE_EXCLUSIVE",
+		2: "GATE_MODE_SHARED",
+	}
+	GateMode_value = map[string]int32{
+		"GATE_MODE_UNSPECIFIED": 0,
+		"GATE_MODE_EXCLUSIVE":   1,
+		"GATE_MODE_SHARED":      2,
+	}
+)
+
+func (x GateMode) Enum() *GateMode {
+	p := new(GateMode)
+	*p = x
+	return p
+}
+
+func (x GateMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GateMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_machine_v1_machine_proto_enumTypes[1].Descriptor()
+}
+
+func (GateMode) Type() protoreflect.EnumType {
+	return &file_machine_v1_machine_proto_enumTypes[1]
+}
+
+func (x GateMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GateMode.Descriptor instead.
+func (GateMode) EnumDescriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{1}
+}
+
+// What a gate's holder waited for before it was granted.
+type GateWaitCause int32
+
+const (
+	// Not set: an interval kept before the causes were.
+	GateWaitCause_GATE_WAIT_CAUSE_UNSPECIFIED GateWaitCause = 0
+	// It did not wait.
+	GateWaitCause_GATE_WAIT_CAUSE_NONE GateWaitCause = 1
+	// Another held the gate.
+	GateWaitCause_GATE_WAIT_CAUSE_HELD GateWaitCause = 2
+	// The machine was under pressure.
+	GateWaitCause_GATE_WAIT_CAUSE_PRESSURE GateWaitCause = 3
+	// The machine lacked the memory the command peaked at.
+	GateWaitCause_GATE_WAIT_CAUSE_MEMORY GateWaitCause = 4
+	// A merge or a push of Djinn went first.
+	GateWaitCause_GATE_WAIT_CAUSE_MERGE_FIRST GateWaitCause = 5
+	// Another task's heavy command ran: heavy commands go one at a time.
+	GateWaitCause_GATE_WAIT_CAUSE_HEAVY GateWaitCause = 6
+)
+
+// Enum value maps for GateWaitCause.
+var (
+	GateWaitCause_name = map[int32]string{
+		0: "GATE_WAIT_CAUSE_UNSPECIFIED",
+		1: "GATE_WAIT_CAUSE_NONE",
+		2: "GATE_WAIT_CAUSE_HELD",
+		3: "GATE_WAIT_CAUSE_PRESSURE",
+		4: "GATE_WAIT_CAUSE_MEMORY",
+		5: "GATE_WAIT_CAUSE_MERGE_FIRST",
+		6: "GATE_WAIT_CAUSE_HEAVY",
+	}
+	GateWaitCause_value = map[string]int32{
+		"GATE_WAIT_CAUSE_UNSPECIFIED": 0,
+		"GATE_WAIT_CAUSE_NONE":        1,
+		"GATE_WAIT_CAUSE_HELD":        2,
+		"GATE_WAIT_CAUSE_PRESSURE":    3,
+		"GATE_WAIT_CAUSE_MEMORY":      4,
+		"GATE_WAIT_CAUSE_MERGE_FIRST": 5,
+		"GATE_WAIT_CAUSE_HEAVY":       6,
+	}
+)
+
+func (x GateWaitCause) Enum() *GateWaitCause {
+	p := new(GateWaitCause)
+	*p = x
+	return p
+}
+
+func (x GateWaitCause) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GateWaitCause) Descriptor() protoreflect.EnumDescriptor {
+	return file_machine_v1_machine_proto_enumTypes[2].Descriptor()
+}
+
+func (GateWaitCause) Type() protoreflect.EnumType {
+	return &file_machine_v1_machine_proto_enumTypes[2]
+}
+
+func (x GateWaitCause) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GateWaitCause.Descriptor instead.
+func (GateWaitCause) EnumDescriptor() ([]byte, []int) {
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{2}
+}
+
 // GateState is where a holder stands with its gate.
 type GateState int32
 
@@ -129,11 +251,11 @@ func (x GateState) String() string {
 }
 
 func (GateState) Descriptor() protoreflect.EnumDescriptor {
-	return file_machine_v1_machine_proto_enumTypes[1].Descriptor()
+	return file_machine_v1_machine_proto_enumTypes[3].Descriptor()
 }
 
 func (GateState) Type() protoreflect.EnumType {
-	return &file_machine_v1_machine_proto_enumTypes[1]
+	return &file_machine_v1_machine_proto_enumTypes[3]
 }
 
 func (x GateState) Number() protoreflect.EnumNumber {
@@ -142,7 +264,7 @@ func (x GateState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GateState.Descriptor instead.
 func (GateState) EnumDescriptor() ([]byte, []int) {
-	return file_machine_v1_machine_proto_rawDescGZIP(), []int{1}
+	return file_machine_v1_machine_proto_rawDescGZIP(), []int{3}
 }
 
 // Pressure is how much of the time tasks of the machine waited for a resource: the pressure stall information of
@@ -979,7 +1101,10 @@ type MachineServiceSeriesRequest struct {
 	Minutes int32 `protobuf:"varint,1,opt,name=minutes,proto3" json:"minutes,omitempty"`
 	// When set, only the points measured after it: the window reads the whole series once, then what came since, as
 	// the samples arrive. The workers running and the gate intervals come whole each time.
-	Since         *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=since,proto3" json:"since,omitempty"`
+	Since *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=since,proto3" json:"since,omitempty"`
+	// When set, the gate intervals hold every admission of a worker's command; otherwise only those that waited a
+	// second or more or ran a heavy command, the many that pass at once left out.
+	AllAdmissions bool `protobuf:"varint,3,opt,name=all_admissions,json=allAdmissions,proto3" json:"all_admissions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1026,6 +1151,13 @@ func (x *MachineServiceSeriesRequest) GetSince() *timestamppb.Timestamp {
 		return x.Since
 	}
 	return nil
+}
+
+func (x *MachineServiceSeriesRequest) GetAllAdmissions() bool {
+	if x != nil {
+		return x.AllAdmissions
+	}
+	return false
 }
 
 type MachineServiceSeriesResponse struct {
@@ -1512,7 +1644,21 @@ type GateInterval struct {
 	// When the gate was granted (acquire time).
 	GrantTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=grant_time,json=grantTime,proto3" json:"grant_time,omitempty"`
 	// When the gate was released; absent if still held.
-	ReleaseTime   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=release_time,json=releaseTime,proto3" json:"release_time,omitempty"`
+	ReleaseTime *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=release_time,json=releaseTime,proto3" json:"release_time,omitempty"`
+	// How the gate was held: alone under its name, or shared, the admission of a worker's command.
+	Mode GateMode `protobuf:"varint,8,opt,name=mode,proto3,enum=machine.v1.GateMode" json:"mode,omitempty"`
+	// The command was measured heavy: it ran one at a time, whatever its mode.
+	Heavy bool `protobuf:"varint,9,opt,name=heavy,proto3" json:"heavy,omitempty"`
+	// What it waited for last before it was granted; GATE_WAIT_CAUSE_NONE when it did not wait.
+	WaitCause GateWaitCause `protobuf:"varint,10,opt,name=wait_cause,json=waitCause,proto3,enum=machine.v1.GateWaitCause" json:"wait_cause,omitempty"`
+	// Why it waited last, as the holder was told.
+	WaitReason string `protobuf:"bytes,11,opt,name=wait_reason,json=waitReason,proto3" json:"wait_reason,omitempty"`
+	// The highest memory its holder's processes used while it held the gate, in bytes; 0 when not measured.
+	PeakMemoryBytes uint64 `protobuf:"varint,12,opt,name=peak_memory_bytes,json=peakMemoryBytes,proto3" json:"peak_memory_bytes,omitempty"`
+	// The command had no measured cost of its own when it asked: its peak was its head's, or unknown.
+	Unmeasured bool `protobuf:"varint,13,opt,name=unmeasured,proto3" json:"unmeasured,omitempty"`
+	// Held outside a running worker (a terminal, a lead, a script, Djinn's merges): it took a worker's slot.
+	Outside       bool `protobuf:"varint,14,opt,name=outside,proto3" json:"outside,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1594,6 +1740,55 @@ func (x *GateInterval) GetReleaseTime() *timestamppb.Timestamp {
 		return x.ReleaseTime
 	}
 	return nil
+}
+
+func (x *GateInterval) GetMode() GateMode {
+	if x != nil {
+		return x.Mode
+	}
+	return GateMode_GATE_MODE_UNSPECIFIED
+}
+
+func (x *GateInterval) GetHeavy() bool {
+	if x != nil {
+		return x.Heavy
+	}
+	return false
+}
+
+func (x *GateInterval) GetWaitCause() GateWaitCause {
+	if x != nil {
+		return x.WaitCause
+	}
+	return GateWaitCause_GATE_WAIT_CAUSE_UNSPECIFIED
+}
+
+func (x *GateInterval) GetWaitReason() string {
+	if x != nil {
+		return x.WaitReason
+	}
+	return ""
+}
+
+func (x *GateInterval) GetPeakMemoryBytes() uint64 {
+	if x != nil {
+		return x.PeakMemoryBytes
+	}
+	return 0
+}
+
+func (x *GateInterval) GetUnmeasured() bool {
+	if x != nil {
+		return x.Unmeasured
+	}
+	return false
+}
+
+func (x *GateInterval) GetOutside() bool {
+	if x != nil {
+		return x.Outside
+	}
+	return false
 }
 
 type CommandRun struct {
@@ -2003,8 +2198,9 @@ type GateServiceHoldRequest struct {
 	// Process holding the gate, when known: djinn gate run gives its own. Djinn reads what it uses while it holds the
 	// gate (Linux and macOS), and takes the gate back once it ends.
 	Pid int32 `protobuf:"varint,5,opt,name=pid,proto3" json:"pid,omitempty"`
-	// How long the gate may be held, in seconds: Djinn takes it back after that even if the holder still runs, so a
-	// forgotten hold never blocks the others. 0: one hour.
+	// How long the gate may be held, in seconds: Djinn takes it back after that even if the holder still runs. 0: no
+	// limit, the gate held as long as its holder lives; past 3 times its command's usual hold, or an hour unmeasured,
+	// the lead of its task is told, and nothing is taken back.
 	TimeoutSeconds uint32 `protobuf:"varint,6,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -2813,10 +3009,11 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x0eunified_memory\x18\x06 \x01(\bR\runifiedMemory\"\x1b\n" +
 	"\x19MachineServiceShowRequest\"K\n" +
 	"\x1aMachineServiceShowResponse\x12-\n" +
-	"\amachine\x18\x01 \x01(\v2\x13.machine.v1.MachineR\amachine\"i\n" +
+	"\amachine\x18\x01 \x01(\v2\x13.machine.v1.MachineR\amachine\"\x90\x01\n" +
 	"\x1bMachineServiceSeriesRequest\x12\x18\n" +
 	"\aminutes\x18\x01 \x01(\x05R\aminutes\x120\n" +
-	"\x05since\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\"\x84\x02\n" +
+	"\x05since\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12%\n" +
+	"\x0eall_admissions\x18\x03 \x01(\bR\rallAdmissions\"\x84\x02\n" +
 	"\x1cMachineServiceSeriesResponse\x123\n" +
 	"\amachine\x18\x01 \x01(\v2\x19.machine.v1.MachineSeriesR\amachine\x122\n" +
 	"\aworkers\x18\x02 \x03(\v2\x18.machine.v1.WorkerSeriesR\aworkers\x12.\n" +
@@ -2856,7 +3053,7 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
 	"cpuPercent\x12!\n" +
-	"\fmemory_bytes\x18\x03 \x01(\x04R\vmemoryBytes\"\xa4\x02\n" +
+	"\fmemory_bytes\x18\x03 \x01(\x04R\vmemoryBytes\"\xa5\x04\n" +
 	"\fGateInterval\x12\x12\n" +
 	"\x04gate\x18\x01 \x01(\tR\x04gate\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x17\n" +
@@ -2866,7 +3063,19 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"asked_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\taskedTime\x129\n" +
 	"\n" +
 	"grant_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tgrantTime\x12=\n" +
-	"\frelease_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vreleaseTime\"\xc7\x02\n" +
+	"\frelease_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vreleaseTime\x12(\n" +
+	"\x04mode\x18\b \x01(\x0e2\x14.machine.v1.GateModeR\x04mode\x12\x14\n" +
+	"\x05heavy\x18\t \x01(\bR\x05heavy\x128\n" +
+	"\n" +
+	"wait_cause\x18\n" +
+	" \x01(\x0e2\x19.machine.v1.GateWaitCauseR\twaitCause\x12\x1f\n" +
+	"\vwait_reason\x18\v \x01(\tR\n" +
+	"waitReason\x12*\n" +
+	"\x11peak_memory_bytes\x18\f \x01(\x04R\x0fpeakMemoryBytes\x12\x1e\n" +
+	"\n" +
+	"unmeasured\x18\r \x01(\bR\n" +
+	"unmeasured\x12\x18\n" +
+	"\aoutside\x18\x0e \x01(\bR\aoutside\"\xc7\x02\n" +
 	"\n" +
 	"CommandRun\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x18\n" +
@@ -2972,7 +3181,19 @@ const file_machine_v1_machine_proto_rawDesc = "" +
 	"\x15DISK_RISK_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eDISK_RISK_SAFE\x10\x01\x12\x15\n" +
 	"\x11DISK_RISK_REBUILD\x10\x02\x12\x12\n" +
-	"\x0eDISK_RISK_LOSS\x10\x03*o\n" +
+	"\x0eDISK_RISK_LOSS\x10\x03*T\n" +
+	"\bGateMode\x12\x19\n" +
+	"\x15GATE_MODE_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13GATE_MODE_EXCLUSIVE\x10\x01\x12\x14\n" +
+	"\x10GATE_MODE_SHARED\x10\x02*\xda\x01\n" +
+	"\rGateWaitCause\x12\x1f\n" +
+	"\x1bGATE_WAIT_CAUSE_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14GATE_WAIT_CAUSE_NONE\x10\x01\x12\x18\n" +
+	"\x14GATE_WAIT_CAUSE_HELD\x10\x02\x12\x1c\n" +
+	"\x18GATE_WAIT_CAUSE_PRESSURE\x10\x03\x12\x1a\n" +
+	"\x16GATE_WAIT_CAUSE_MEMORY\x10\x04\x12\x1f\n" +
+	"\x1bGATE_WAIT_CAUSE_MERGE_FIRST\x10\x05\x12\x19\n" +
+	"\x15GATE_WAIT_CAUSE_HEAVY\x10\x06*o\n" +
 	"\tGateState\x12\x1a\n" +
 	"\x16GATE_STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12GATE_STATE_WAITING\x10\x01\x12\x13\n" +
@@ -3004,103 +3225,107 @@ func file_machine_v1_machine_proto_rawDescGZIP() []byte {
 	return file_machine_v1_machine_proto_rawDescData
 }
 
-var file_machine_v1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_machine_v1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_machine_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_machine_v1_machine_proto_goTypes = []any{
 	(DiskRisk)(0),                        // 0: machine.v1.DiskRisk
-	(GateState)(0),                       // 1: machine.v1.GateState
-	(*Pressure)(nil),                     // 2: machine.v1.Pressure
-	(*Machine)(nil),                      // 3: machine.v1.Machine
-	(*WorkerUse)(nil),                    // 4: machine.v1.WorkerUse
-	(*Disk)(nil),                         // 5: machine.v1.Disk
-	(*DiskFolder)(nil),                   // 6: machine.v1.DiskFolder
-	(*DiskItem)(nil),                     // 7: machine.v1.DiskItem
-	(*Gpu)(nil),                          // 8: machine.v1.Gpu
-	(*MachineServiceShowRequest)(nil),    // 9: machine.v1.MachineServiceShowRequest
-	(*MachineServiceShowResponse)(nil),   // 10: machine.v1.MachineServiceShowResponse
-	(*MachineServiceSeriesRequest)(nil),  // 11: machine.v1.MachineServiceSeriesRequest
-	(*MachineServiceSeriesResponse)(nil), // 12: machine.v1.MachineServiceSeriesResponse
-	(*MachineSeries)(nil),                // 13: machine.v1.MachineSeries
-	(*MachinePoint)(nil),                 // 14: machine.v1.MachinePoint
-	(*WorkerSeries)(nil),                 // 15: machine.v1.WorkerSeries
-	(*WorkerPoint)(nil),                  // 16: machine.v1.WorkerPoint
-	(*GateInterval)(nil),                 // 17: machine.v1.GateInterval
-	(*CommandRun)(nil),                   // 18: machine.v1.CommandRun
-	(*GateServiceAdmitRequest)(nil),      // 19: machine.v1.GateServiceAdmitRequest
-	(*GateServiceAdmitResponse)(nil),     // 20: machine.v1.GateServiceAdmitResponse
-	(*Gate)(nil),                         // 21: machine.v1.Gate
-	(*GateServiceHoldRequest)(nil),       // 22: machine.v1.GateServiceHoldRequest
-	(*GateServiceHoldResponse)(nil),      // 23: machine.v1.GateServiceHoldResponse
-	(*GateServiceListRequest)(nil),       // 24: machine.v1.GateServiceListRequest
-	(*GateServiceListResponse)(nil),      // 25: machine.v1.GateServiceListResponse
-	(*CommandCost)(nil),                  // 26: machine.v1.CommandCost
-	(*CommandServiceListRequest)(nil),    // 27: machine.v1.CommandServiceListRequest
-	(*CommandServiceListResponse)(nil),   // 28: machine.v1.CommandServiceListResponse
-	(*CommandServiceRecordRequest)(nil),  // 29: machine.v1.CommandServiceRecordRequest
-	(*CommandServiceRecordResponse)(nil), // 30: machine.v1.CommandServiceRecordResponse
-	(*timestamppb.Timestamp)(nil),        // 31: google.protobuf.Timestamp
-	(v1.LoadNotch)(0),                    // 32: djinn.v1.LoadNotch
-	(*v11.Resources)(nil),                // 33: plan.v1.Resources
-	(v11.Provider)(0),                    // 34: plan.v1.Provider
+	(GateMode)(0),                        // 1: machine.v1.GateMode
+	(GateWaitCause)(0),                   // 2: machine.v1.GateWaitCause
+	(GateState)(0),                       // 3: machine.v1.GateState
+	(*Pressure)(nil),                     // 4: machine.v1.Pressure
+	(*Machine)(nil),                      // 5: machine.v1.Machine
+	(*WorkerUse)(nil),                    // 6: machine.v1.WorkerUse
+	(*Disk)(nil),                         // 7: machine.v1.Disk
+	(*DiskFolder)(nil),                   // 8: machine.v1.DiskFolder
+	(*DiskItem)(nil),                     // 9: machine.v1.DiskItem
+	(*Gpu)(nil),                          // 10: machine.v1.Gpu
+	(*MachineServiceShowRequest)(nil),    // 11: machine.v1.MachineServiceShowRequest
+	(*MachineServiceShowResponse)(nil),   // 12: machine.v1.MachineServiceShowResponse
+	(*MachineServiceSeriesRequest)(nil),  // 13: machine.v1.MachineServiceSeriesRequest
+	(*MachineServiceSeriesResponse)(nil), // 14: machine.v1.MachineServiceSeriesResponse
+	(*MachineSeries)(nil),                // 15: machine.v1.MachineSeries
+	(*MachinePoint)(nil),                 // 16: machine.v1.MachinePoint
+	(*WorkerSeries)(nil),                 // 17: machine.v1.WorkerSeries
+	(*WorkerPoint)(nil),                  // 18: machine.v1.WorkerPoint
+	(*GateInterval)(nil),                 // 19: machine.v1.GateInterval
+	(*CommandRun)(nil),                   // 20: machine.v1.CommandRun
+	(*GateServiceAdmitRequest)(nil),      // 21: machine.v1.GateServiceAdmitRequest
+	(*GateServiceAdmitResponse)(nil),     // 22: machine.v1.GateServiceAdmitResponse
+	(*Gate)(nil),                         // 23: machine.v1.Gate
+	(*GateServiceHoldRequest)(nil),       // 24: machine.v1.GateServiceHoldRequest
+	(*GateServiceHoldResponse)(nil),      // 25: machine.v1.GateServiceHoldResponse
+	(*GateServiceListRequest)(nil),       // 26: machine.v1.GateServiceListRequest
+	(*GateServiceListResponse)(nil),      // 27: machine.v1.GateServiceListResponse
+	(*CommandCost)(nil),                  // 28: machine.v1.CommandCost
+	(*CommandServiceListRequest)(nil),    // 29: machine.v1.CommandServiceListRequest
+	(*CommandServiceListResponse)(nil),   // 30: machine.v1.CommandServiceListResponse
+	(*CommandServiceRecordRequest)(nil),  // 31: machine.v1.CommandServiceRecordRequest
+	(*CommandServiceRecordResponse)(nil), // 32: machine.v1.CommandServiceRecordResponse
+	(*timestamppb.Timestamp)(nil),        // 33: google.protobuf.Timestamp
+	(v1.LoadNotch)(0),                    // 34: djinn.v1.LoadNotch
+	(*v11.Resources)(nil),                // 35: plan.v1.Resources
+	(v11.Provider)(0),                    // 36: plan.v1.Provider
 }
 var file_machine_v1_machine_proto_depIdxs = []int32{
-	2,  // 0: machine.v1.Machine.cpu_pressure:type_name -> machine.v1.Pressure
-	2,  // 1: machine.v1.Machine.memory_pressure:type_name -> machine.v1.Pressure
-	31, // 2: machine.v1.Machine.read_time:type_name -> google.protobuf.Timestamp
-	5,  // 3: machine.v1.Machine.disk:type_name -> machine.v1.Disk
-	8,  // 4: machine.v1.Machine.gpus:type_name -> machine.v1.Gpu
-	4,  // 5: machine.v1.Machine.worker_uses:type_name -> machine.v1.WorkerUse
-	32, // 6: machine.v1.Machine.load:type_name -> djinn.v1.LoadNotch
-	31, // 7: machine.v1.Machine.network_down_since:type_name -> google.protobuf.Timestamp
-	33, // 8: machine.v1.WorkerUse.resources:type_name -> plan.v1.Resources
-	6,  // 9: machine.v1.Disk.folders:type_name -> machine.v1.DiskFolder
-	7,  // 10: machine.v1.Disk.items:type_name -> machine.v1.DiskItem
+	4,  // 0: machine.v1.Machine.cpu_pressure:type_name -> machine.v1.Pressure
+	4,  // 1: machine.v1.Machine.memory_pressure:type_name -> machine.v1.Pressure
+	33, // 2: machine.v1.Machine.read_time:type_name -> google.protobuf.Timestamp
+	7,  // 3: machine.v1.Machine.disk:type_name -> machine.v1.Disk
+	10, // 4: machine.v1.Machine.gpus:type_name -> machine.v1.Gpu
+	6,  // 5: machine.v1.Machine.worker_uses:type_name -> machine.v1.WorkerUse
+	34, // 6: machine.v1.Machine.load:type_name -> djinn.v1.LoadNotch
+	33, // 7: machine.v1.Machine.network_down_since:type_name -> google.protobuf.Timestamp
+	35, // 8: machine.v1.WorkerUse.resources:type_name -> plan.v1.Resources
+	8,  // 9: machine.v1.Disk.folders:type_name -> machine.v1.DiskFolder
+	9,  // 10: machine.v1.Disk.items:type_name -> machine.v1.DiskItem
 	0,  // 11: machine.v1.DiskItem.risk:type_name -> machine.v1.DiskRisk
-	3,  // 12: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
-	31, // 13: machine.v1.MachineServiceSeriesRequest.since:type_name -> google.protobuf.Timestamp
-	13, // 14: machine.v1.MachineServiceSeriesResponse.machine:type_name -> machine.v1.MachineSeries
-	15, // 15: machine.v1.MachineServiceSeriesResponse.workers:type_name -> machine.v1.WorkerSeries
-	17, // 16: machine.v1.MachineServiceSeriesResponse.gates:type_name -> machine.v1.GateInterval
-	5,  // 17: machine.v1.MachineServiceSeriesResponse.disk:type_name -> machine.v1.Disk
-	14, // 18: machine.v1.MachineSeries.points:type_name -> machine.v1.MachinePoint
-	31, // 19: machine.v1.MachinePoint.time:type_name -> google.protobuf.Timestamp
-	34, // 20: machine.v1.WorkerSeries.provider:type_name -> plan.v1.Provider
-	16, // 21: machine.v1.WorkerSeries.points:type_name -> machine.v1.WorkerPoint
-	17, // 22: machine.v1.WorkerSeries.gates:type_name -> machine.v1.GateInterval
-	31, // 23: machine.v1.WorkerPoint.time:type_name -> google.protobuf.Timestamp
-	31, // 24: machine.v1.GateInterval.asked_time:type_name -> google.protobuf.Timestamp
-	31, // 25: machine.v1.GateInterval.grant_time:type_name -> google.protobuf.Timestamp
-	31, // 26: machine.v1.GateInterval.release_time:type_name -> google.protobuf.Timestamp
-	31, // 27: machine.v1.CommandRun.time:type_name -> google.protobuf.Timestamp
-	1,  // 28: machine.v1.GateServiceAdmitResponse.state:type_name -> machine.v1.GateState
-	31, // 29: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
-	33, // 30: machine.v1.Gate.resources:type_name -> plan.v1.Resources
-	31, // 31: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
-	1,  // 32: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
-	21, // 33: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
-	31, // 34: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
-	18, // 35: machine.v1.CommandCost.recent_runs:type_name -> machine.v1.CommandRun
-	26, // 36: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
-	26, // 37: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
-	9,  // 38: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
-	11, // 39: machine.v1.MachineService.Series:input_type -> machine.v1.MachineServiceSeriesRequest
-	22, // 40: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
-	24, // 41: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
-	19, // 42: machine.v1.GateService.Admit:input_type -> machine.v1.GateServiceAdmitRequest
-	27, // 43: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
-	29, // 44: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
-	10, // 45: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
-	12, // 46: machine.v1.MachineService.Series:output_type -> machine.v1.MachineServiceSeriesResponse
-	23, // 47: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
-	25, // 48: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
-	20, // 49: machine.v1.GateService.Admit:output_type -> machine.v1.GateServiceAdmitResponse
-	28, // 50: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
-	30, // 51: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
-	45, // [45:52] is the sub-list for method output_type
-	38, // [38:45] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	5,  // 12: machine.v1.MachineServiceShowResponse.machine:type_name -> machine.v1.Machine
+	33, // 13: machine.v1.MachineServiceSeriesRequest.since:type_name -> google.protobuf.Timestamp
+	15, // 14: machine.v1.MachineServiceSeriesResponse.machine:type_name -> machine.v1.MachineSeries
+	17, // 15: machine.v1.MachineServiceSeriesResponse.workers:type_name -> machine.v1.WorkerSeries
+	19, // 16: machine.v1.MachineServiceSeriesResponse.gates:type_name -> machine.v1.GateInterval
+	7,  // 17: machine.v1.MachineServiceSeriesResponse.disk:type_name -> machine.v1.Disk
+	16, // 18: machine.v1.MachineSeries.points:type_name -> machine.v1.MachinePoint
+	33, // 19: machine.v1.MachinePoint.time:type_name -> google.protobuf.Timestamp
+	36, // 20: machine.v1.WorkerSeries.provider:type_name -> plan.v1.Provider
+	18, // 21: machine.v1.WorkerSeries.points:type_name -> machine.v1.WorkerPoint
+	19, // 22: machine.v1.WorkerSeries.gates:type_name -> machine.v1.GateInterval
+	33, // 23: machine.v1.WorkerPoint.time:type_name -> google.protobuf.Timestamp
+	33, // 24: machine.v1.GateInterval.asked_time:type_name -> google.protobuf.Timestamp
+	33, // 25: machine.v1.GateInterval.grant_time:type_name -> google.protobuf.Timestamp
+	33, // 26: machine.v1.GateInterval.release_time:type_name -> google.protobuf.Timestamp
+	1,  // 27: machine.v1.GateInterval.mode:type_name -> machine.v1.GateMode
+	2,  // 28: machine.v1.GateInterval.wait_cause:type_name -> machine.v1.GateWaitCause
+	33, // 29: machine.v1.CommandRun.time:type_name -> google.protobuf.Timestamp
+	3,  // 30: machine.v1.GateServiceAdmitResponse.state:type_name -> machine.v1.GateState
+	33, // 31: machine.v1.Gate.since:type_name -> google.protobuf.Timestamp
+	35, // 32: machine.v1.Gate.resources:type_name -> plan.v1.Resources
+	33, // 33: machine.v1.Gate.expire_time:type_name -> google.protobuf.Timestamp
+	3,  // 34: machine.v1.GateServiceHoldResponse.state:type_name -> machine.v1.GateState
+	23, // 35: machine.v1.GateServiceListResponse.gates:type_name -> machine.v1.Gate
+	33, // 36: machine.v1.CommandCost.last_time:type_name -> google.protobuf.Timestamp
+	20, // 37: machine.v1.CommandCost.recent_runs:type_name -> machine.v1.CommandRun
+	28, // 38: machine.v1.CommandServiceListResponse.costs:type_name -> machine.v1.CommandCost
+	28, // 39: machine.v1.CommandServiceRecordResponse.cost:type_name -> machine.v1.CommandCost
+	11, // 40: machine.v1.MachineService.Show:input_type -> machine.v1.MachineServiceShowRequest
+	13, // 41: machine.v1.MachineService.Series:input_type -> machine.v1.MachineServiceSeriesRequest
+	24, // 42: machine.v1.GateService.Hold:input_type -> machine.v1.GateServiceHoldRequest
+	26, // 43: machine.v1.GateService.List:input_type -> machine.v1.GateServiceListRequest
+	21, // 44: machine.v1.GateService.Admit:input_type -> machine.v1.GateServiceAdmitRequest
+	29, // 45: machine.v1.CommandService.List:input_type -> machine.v1.CommandServiceListRequest
+	31, // 46: machine.v1.CommandService.Record:input_type -> machine.v1.CommandServiceRecordRequest
+	12, // 47: machine.v1.MachineService.Show:output_type -> machine.v1.MachineServiceShowResponse
+	14, // 48: machine.v1.MachineService.Series:output_type -> machine.v1.MachineServiceSeriesResponse
+	25, // 49: machine.v1.GateService.Hold:output_type -> machine.v1.GateServiceHoldResponse
+	27, // 50: machine.v1.GateService.List:output_type -> machine.v1.GateServiceListResponse
+	22, // 51: machine.v1.GateService.Admit:output_type -> machine.v1.GateServiceAdmitResponse
+	30, // 52: machine.v1.CommandService.List:output_type -> machine.v1.CommandServiceListResponse
+	32, // 53: machine.v1.CommandService.Record:output_type -> machine.v1.CommandServiceRecordResponse
+	47, // [47:54] is the sub-list for method output_type
+	40, // [40:47] is the sub-list for method input_type
+	40, // [40:40] is the sub-list for extension type_name
+	40, // [40:40] is the sub-list for extension extendee
+	0,  // [0:40] is the sub-list for field type_name
 }
 
 func init() { file_machine_v1_machine_proto_init() }
@@ -3114,7 +3339,7 @@ func file_machine_v1_machine_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_machine_v1_machine_proto_rawDesc), len(file_machine_v1_machine_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      4,
 			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   3,

@@ -197,6 +197,9 @@ message MachineServiceSeriesRequest {
   // When set, only the points measured after it: the window reads the whole series once, then what came since, as
   // the samples arrive. The workers running and the gate intervals come whole each time.
   google.protobuf.Timestamp since = 2;
+  // When set, the gate intervals hold every admission of a worker's command; otherwise only those that waited a
+  // second or more or ran a heavy command, the many that pass at once left out.
+  bool all_admissions = 3;
 }
 
 message MachineServiceSeriesResponse {
@@ -294,6 +297,48 @@ message GateInterval {
   google.protobuf.Timestamp grant_time = 6;
   // When the gate was released; absent if still held.
   google.protobuf.Timestamp release_time = 7;
+  // How the gate was held: alone under its name, or shared, the admission of a worker's command.
+  GateMode mode = 8;
+  // The command was measured heavy: it ran one at a time, whatever its mode.
+  bool heavy = 9;
+  // What it waited for last before it was granted; GATE_WAIT_CAUSE_NONE when it did not wait.
+  GateWaitCause wait_cause = 10;
+  // Why it waited last, as the holder was told.
+  string wait_reason = 11;
+  // The highest memory its holder's processes used while it held the gate, in bytes; 0 when not measured.
+  uint64 peak_memory_bytes = 12;
+  // The command had no measured cost of its own when it asked: its peak was its head's, or unknown.
+  bool unmeasured = 13;
+  // Held outside a running worker (a terminal, a lead, a script, Djinn's merges): it took a worker's slot.
+  bool outside = 14;
+}
+
+// How a gate is held.
+enum GateMode {
+  // Not set: an interval kept before the modes were.
+  GATE_MODE_UNSPECIFIED = 0;
+  // A named gate, held by one at a time.
+  GATE_MODE_EXCLUSIVE = 1;
+  // The admission of a worker's command, held by as many as the machine admits.
+  GATE_MODE_SHARED = 2;
+}
+
+// What a gate's holder waited for before it was granted.
+enum GateWaitCause {
+  // Not set: an interval kept before the causes were.
+  GATE_WAIT_CAUSE_UNSPECIFIED = 0;
+  // It did not wait.
+  GATE_WAIT_CAUSE_NONE = 1;
+  // Another held the gate.
+  GATE_WAIT_CAUSE_HELD = 2;
+  // The machine was under pressure.
+  GATE_WAIT_CAUSE_PRESSURE = 3;
+  // The machine lacked the memory the command peaked at.
+  GATE_WAIT_CAUSE_MEMORY = 4;
+  // A merge or a push of Djinn went first.
+  GATE_WAIT_CAUSE_MERGE_FIRST = 5;
+  // Another task's heavy command ran: heavy commands go one at a time.
+  GATE_WAIT_CAUSE_HEAVY = 6;
 }
 
 message CommandRun {
@@ -430,8 +475,9 @@ message GateServiceHoldRequest {
   // Process holding the gate, when known: djinn gate run gives its own. Djinn reads what it uses while it holds the
   // gate (Linux and macOS), and takes the gate back once it ends.
   int32 pid = 5 [(buf.validate.field).int32.gte = 0];
-  // How long the gate may be held, in seconds: Djinn takes it back after that even if the holder still runs, so a
-  // forgotten hold never blocks the others. 0: one hour.
+  // How long the gate may be held, in seconds: Djinn takes it back after that even if the holder still runs. 0: no
+  // limit, the gate held as long as its holder lives; past 3 times its command's usual hold, or an hour unmeasured,
+  // the lead of its task is told, and nothing is taken back.
   uint32 timeout_seconds = 6 [(buf.validate.field).uint32.lte = 86400];
 }
 

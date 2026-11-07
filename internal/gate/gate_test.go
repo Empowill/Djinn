@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -16,6 +18,7 @@ import (
 	machinev1 "github.com/empowill/djinn/gen/go/machine/v1"
 	"github.com/empowill/djinn/internal/harness"
 	"github.com/empowill/djinn/internal/machine"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // TestTake covers Gates.Take: one holder at a time, CPU pressure, wish and azima rank order, merge priority, memory
@@ -287,8 +290,7 @@ func TestTake(t *testing.T) {
 		}
 	})
 
-	// A gate held past its timeout is taken back, its task told, and goes to the next waiter: a forgotten hold never
-	// blocks the others.
+	// A gate held past the timeout it asked for is taken back, its task told, and goes to the next waiter.
 	t.Run("timeout takes gate back", func(t *testing.T) {
 		t.Parallel()
 		f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
@@ -308,6 +310,51 @@ func TestTake(t *testing.T) {
 		notes := f.noted()
 		if !slices.Contains(notes, "W1 gate e2e: taken back: held past its timeout of 50ms") ||
 			slices.ContainsFunc(notes, func(n string) bool { return strings.HasPrefix(n, "W1 gate e2e: given back") }) {
+			t.Errorf("notes = %q", notes)
+		}
+	})
+
+	// A hold that asked for no timeout is never taken back while its holder lives (G5 of L04): past 3 times its
+	// command's usual hold, or long unmeasured, its task's lead is told, once, and the hold goes on.
+	t.Run("long hold never taken back, lead told", func(t *testing.T) {
+		t.Parallel()
+		f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
+		m := &measured{costs: map[string]machine.Cost{"go tool task e2e": {Held: 20 * time.Millisecond}}}
+		g := New(nil, m, f)
+		g.tick, g.minLong, g.noLong = 10*time.Millisecond, 30*time.Millisecond, 80*time.Millisecond
+		e2e, err := g.Take(t.Context(), Request{Name: "e2e", TaskID: "W1", What: "go tool task e2e", PID: os.Getpid()}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bench, err := g.Take(t.Context(), Request{Name: "paid", TaskID: "W2", What: "./bench.sh", PID: os.Getpid()}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l := g.List(); len(l) != 2 || !l[0].Until.IsZero() {
+			t.Errorf("a hold with no timeout has an end: %+v", l)
+		}
+		time.Sleep(400 * time.Millisecond)
+		select {
+		case <-e2e.Done():
+			t.Fatalf("a long hold taken back: %s", e2e.TakenBack())
+		case <-bench.Done():
+			t.Fatalf("a long hold taken back: %s", bench.TakenBack())
+		default:
+		}
+		told := f.told()
+		slices.Sort(told)
+		if len(told) != 2 ||
+			!strings.HasPrefix(told[0], "W1 Djinn: W1: go tool task e2e has held gate e2e for ") ||
+			!strings.HasSuffix(told[0], "past 3 times its usual hold of 20ms; nothing is taken back: see whether it hangs.") ||
+			!strings.HasPrefix(told[1], "W2 Djinn: W2: ./bench.sh has held gate paid for ") ||
+			!strings.HasSuffix(told[1], "its command never measured; nothing is taken back: see whether it hangs.") {
+			t.Errorf("told %q", told)
+		}
+		e2e.Give()
+		bench.Give()
+		if notes := f.noted(); !slices.ContainsFunc(notes, func(n string) bool {
+			return strings.HasPrefix(n, "W1 gate e2e: held for ") && strings.HasSuffix(n, ": nothing is taken back")
+		}) {
 			t.Errorf("notes = %q", notes)
 		}
 	})
@@ -382,7 +429,7 @@ func TestTake(t *testing.T) {
 
 		// Djinn's merge of its work is no ifrit's gate; nor does a timeout it asks for go.
 		lint := await(t, func() <-chan func() { c, _ := merge(t, g, "lint", "W12", "go tool task lint"); return c }(), "the merge's grant")
-		if l := g.List(); len(l) != 1 || l[0].Ifrit || l[0].Until.Sub(l[0].Since) != DefaultTimeout {
+		if l := g.List(); len(l) != 1 || l[0].Ifrit || !l[0].Until.IsZero() {
 			t.Errorf("the merge of an ifrit's work: %+v", l)
 		}
 		lint()
@@ -463,7 +510,7 @@ func TestOutside(t *testing.T) {
 		t.Errorf("two gates held outside the workers: %d, %d of merges", n, merges)
 	}
 	l := g.List()
-	if len(l) != 3 || !l[0].TakesSlot || !l[1].TakesSlot || l[2].TakesSlot || l[0].Until.Sub(l[0].Since) != DefaultTimeout {
+	if len(l) != 3 || !l[0].TakesSlot || !l[1].TakesSlot || l[2].TakesSlot || !l[0].Until.IsZero() {
 		t.Errorf("list = %+v", l)
 	}
 	direct()
@@ -474,29 +521,87 @@ func TestOutside(t *testing.T) {
 	worker()
 }
 
-// TestIntervals covers Gates.Intervals, Gates.AddInterval, and Gates.ProjectResolver.
+// TestIntervals: every hold is kept in the store as it is released, with its mode, what it waited for and why; the
+// series read the gates and the admissions that waited or were heavy, all of them when asked; the intervals are read
+// back after a restart, and go after a week.
 func TestIntervals(t *testing.T) {
 	t.Parallel()
-	f := &tasks{rank: map[string]int{"W1": 0}}
-	g := New(nil, nil, f)
-	g.ProjectResolver(func(taskID, _ string) string { return "proj-" + taskID })
-
-	old := time.Now().Add(-2 * time.Hour)
-	g.AddInterval(&machinev1.GateInterval{
-		Gate:        "old",
-		ReleaseTime: timestamppb.New(old),
-	})
-
-	cutoff := time.Now().Add(-time.Minute)
-	hold, err := g.Take(t.Context(), Request{Name: "test", TaskID: "W1", What: "go test"}, nil)
+	path := filepath.Join(t.TempDir(), "djinn.db")
+	db, err := store.Open(t.Context(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := g.Intervals(cutoff); len(got) != 1 || got[0].GetGate() != "test" || got[0].GetProject() != "proj-W1" || got[0].GetReleaseTime() != nil {
+	log := machine.NewIntervals(db)
+	log.Add(t.Context(), &machinev1.GateInterval{Gate: "old", ReleaseTime: timestamppb.New(time.Now().Add(-8 * 24 * time.Hour))})
+	f := &tasks{rank: map[string]int{"W1": 0, "W2": 0}}
+	m := &measured{costs: map[string]machine.Cost{"go test ./...": {Peak: machine.GiB, Held: time.Minute}}}
+	g := New(nil, m, f)
+	g.tick = 10 * time.Millisecond
+	g.Keep(log)
+	g.ProjectResolver(func(taskID, _ string) string { return "proj-" + taskID })
+
+	cutoff := time.Now().Add(-time.Minute)
+	first, err := g.Take(t.Context(), Request{Name: "test", TaskID: "W1", What: "go test ./..."}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := g.Intervals(cutoff, false); len(got) != 1 || got[0].GetGate() != "test" || got[0].GetProject() != "proj-W1" ||
+		got[0].GetReleaseTime() != nil || got[0].GetMode() != machinev1.GateMode_GATE_MODE_EXCLUSIVE {
 		t.Errorf("while held: Intervals = %v", got)
 	}
-	hold.Give()
-	if got := g.Intervals(cutoff); len(got) != 1 || got[0].GetGate() != "test" || got[0].GetProject() != "proj-W1" || got[0].GetReleaseTime() == nil {
-		t.Errorf("once released: Intervals = %v", got)
+	second, why := run(t, g, "test", "W2", "go vet ./...")
+	if w := await(t, why, "the second's wait"); w == "" {
+		t.Fatal("the second did not wait")
 	}
+	admitted, err := g.Take(t.Context(), Request{Shared: true, TaskID: "W2", What: "npm ci", PID: os.Getpid()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitted.Give()
+	first.Give()
+	await(t, second, "the second's grant")()
+
+	check := func(g *Gates, when string) {
+		t.Helper()
+		shown, all := g.Intervals(cutoff, false), g.Intervals(cutoff, true)
+		if len(shown) != 2 || len(all) != 3 {
+			t.Fatalf("%s: %d shown, %d in all: %v", when, len(shown), len(all), all)
+		}
+		byCommand := map[string]*machinev1.GateInterval{}
+		for _, iv := range all {
+			byCommand[iv.GetCommand()] = iv
+			if iv.GetReleaseTime() == nil || iv.GetGrantTime() == nil || iv.GetAskedTime() == nil {
+				t.Errorf("%s: not released: %v", when, iv)
+			}
+		}
+		if iv := byCommand["go test ./..."]; iv.GetWaitCause() != machinev1.GateWaitCause_GATE_WAIT_CAUSE_NONE ||
+			iv.GetWaitReason() != "" || iv.GetUnmeasured() || !iv.GetOutside() || iv.GetProject() != "proj-W1" {
+			t.Errorf("%s: the first, with no wait: %v", when, iv)
+		}
+		if iv := byCommand["go vet ./..."]; iv.GetWaitCause() != machinev1.GateWaitCause_GATE_WAIT_CAUSE_HELD ||
+			!strings.HasPrefix(iv.GetWaitReason(), "held by W1: go test ./..., for ") || !iv.GetUnmeasured() {
+			t.Errorf("%s: the second, waiting for the first: %v", when, iv)
+		}
+		if iv := byCommand["npm ci"]; iv.GetMode() != machinev1.GateMode_GATE_MODE_SHARED || iv.GetGate() != Commands ||
+			iv.GetOutside() || slices.Contains(shown, iv) {
+			t.Errorf("%s: the admission passed at once: %v", when, iv)
+		}
+		if slices.ContainsFunc(all, func(iv *machinev1.GateInterval) bool { return iv.GetGate() == "old" }) {
+			t.Errorf("%s: a week-old interval kept", when)
+		}
+	}
+	check(g, "before a restart")
+
+	// After a restart: the same intervals, from the store.
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = store.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	again := New(nil, nil, f)
+	again.Keep(machine.NewIntervals(db))
+	check(again, "after a restart")
 }

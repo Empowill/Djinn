@@ -72,6 +72,20 @@ type tasks struct {
 	works  map[string]bool
 	ifrits map[string]ifritAt
 	notes  []string
+	long   []string // what HoldsLong told
+}
+
+func (f *tasks) HoldsLong(id, line string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.long = append(f.long, id+" "+line)
+}
+
+// told is what HoldsLong told, by task.
+func (f *tasks) told() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.long)
 }
 
 // ifritAt is where an ifrit stands: lit, going out at out, or no longer lit, and why.
