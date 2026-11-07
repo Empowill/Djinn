@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 	"github.com/empowill/djinn/internal/testx"
 )
@@ -83,7 +84,7 @@ func frozen() []proto.Message {
 func openFrozen(t *testing.T) *store.Store {
 	t.Helper()
 	ctx := t.Context()
-	s, err := store.Open(ctx, "", &planv1.Project{}, &planv1.Wish{}, &planv1.Task{}, &planv1.Question{})
+	s, err := store.Open(ctx, "", plan.Entities()...)
 	if err != nil {
 		t.Fatal(err)
 	}

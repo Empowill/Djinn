@@ -1,15 +1,20 @@
 package query
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 )
 
 func TestDerived(t *testing.T) {
@@ -126,6 +131,20 @@ func TestDerivedValues(t *testing.T) {
 		{"answer delay", QuestionRefs, "answer::delay",
 			&planv1.Question{CreateTime: at(0), Answer: &planv1.Answer{CreateTime: at(90 * time.Second)}}, 90 * time.Second},
 		{"another message is null", QuestionRefs, "context::size", &planv1.Task{Prompt: "abcd"}, nil},
+		{"a task without kind is work", TaskRefs, "type", &planv1.Task{}, "TASK_TYPE_WORK"},
+		{"work", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_WORK}, "TASK_TYPE_WORK"},
+		{"a question worker is work", TaskRefs, "type", &planv1.Task{Role: planv1.TaskRole_TASK_ROLE_INVESTIGATOR},
+			"TASK_TYPE_WORK"},
+		{"correction", TaskRefs, "type", &planv1.Task{Correction: &planv1.TaskCorrection{}}, "TASK_TYPE_CORRECTION"},
+		{"review", TaskRefs, "type", &planv1.Task{Review: &planv1.TaskReview{}}, "TASK_TYPE_REVIEW"},
+		{"investigation", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_INVESTIGATION},
+			"TASK_TYPE_INVESTIGATION"},
+		{"mockup", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_MOCKUP}, "TASK_TYPE_MOCKUP"},
+		{"ifrit", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_IFRIT}, "TASK_TYPE_IFRIT"},
+		{"watcher, by its provider", TaskRefs, "type", &planv1.Task{Provider: planv1.Provider_PROVIDER_WATCH},
+			"TASK_TYPE_WATCHER"},
+		{"azima", TaskRefs, "type", &planv1.Task{Kind: planv1.TaskKind_TASK_KIND_AZIMA}, "TASK_TYPE_AZIMA"},
+		{"type of another message is null", TaskRefs, "type", &planv1.Question{}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -160,7 +179,8 @@ func TestDerivedDeclared(t *testing.T) {
 			if err := d.check(m.ProtoReflect().Descriptor()); err != nil {
 				t.Error(err)
 			}
-			if d.Doc == "" || !strings.Contains(d.Ref, "::") {
+			// A value of the task itself, such as its type, reads no one field: its name holds no ::.
+			if d.Doc == "" || (!strings.Contains(d.Ref, "::") && d.Type != TypeEnum) {
 				t.Errorf("%s: a doc and a name with :: each", d.Ref)
 			}
 			v := d.get(m)
@@ -170,6 +190,9 @@ func TestDerivedDeclared(t *testing.T) {
 				_, ok2 = v.(int64)
 			case TypeDuration:
 				_, ok2 = v.(time.Duration)
+			case TypeEnum:
+				s, _ := v.(string)
+				ok2 = d.Enum != nil && d.Enum.Values().ByName(protoreflect.Name(s)) != nil
 			}
 			if !ok2 {
 				t.Errorf("%s = %#v; want a %s", d.Ref, v, d.Type)
@@ -193,7 +216,12 @@ func TestNewCatalogDerived(t *testing.T) {
 		{"a field's name", []Derived{Derive("usage.cost_usd", TypeFloat, "d", size)}, "a field's ref"},
 		{"a jump", []Derived{Derive("wish_id->x", TypeInt, "d", size)}, "without ->"},
 		{"no name", []Derived{Derive("", TypeInt, "d", size)}, "without ->"},
-		{"an enum", []Derived{Derive("x::y", TypeEnum, "d", size)}, "an enum"},
+		{"an enum without its values", []Derived{Derive("x::y", TypeEnum, "d", size)}, "an enum"},
+		{"values of an int", []Derived{func() Derived {
+			d := DeriveEnum("x::y", "d", taskType)
+			d.Type = TypeInt
+			return d
+		}()}, "an enum"},
 		{"no type", []Derived{Derive("x::y", 0, "d", size)}, "no type"},
 		{"not by Derive", []Derived{{Ref: "x::y", Type: TypeInt}}, "not declared by Derive"},
 	} {
@@ -204,4 +232,121 @@ func TestNewCatalogDerived(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTimed reads the times of the tasks as the task list computes them, which the store does not keep, without
+// writing to the store.
+func TestTimed(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	s, err := store.Open(ctx, "", plan.Entities()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	at := func(d time.Duration) *timestamppb.Timestamp { return timestamppb.New(day0.Add(d)) }
+	run := func(from, to time.Duration) *planv1.TaskRun {
+		return &planv1.TaskRun{StartTime: at(from), EndTime: at(to)}
+	}
+	wish, azima := id(1), id(2)
+	done := planv1.TaskStatus_TASK_STATUS_DONE
+	gate := func(task string, seq int64, text string, when time.Duration) *planv1.TaskEvent {
+		return &planv1.TaskEvent{Id: id(int(10 + seq)), TaskId: task, Seq: seq, Text: text, CreateTime: at(when),
+			Kind: planv1.TaskEventKind_TASK_EVENT_KIND_GATE}
+	}
+	msgs := []proto.Message{
+		&planv1.Task{Id: azima, WishId: wish, Code: "W1", Kind: planv1.TaskKind_TASK_KIND_AZIMA, CreateTime: at(0)},
+		// W2: two runs of an hour an hour apart, 10 min of gates kept, started 30 min after its creation.
+		&planv1.Task{Id: id(3), WishId: wish, Code: "W2", Status: done, PartOf: azima, CreateTime: at(-30 * time.Minute),
+			FirstStartTime: at(0), StartTime: at(2 * time.Hour), EndTime: at(3 * time.Hour),
+			Runs: []*planv1.TaskRun{run(0, time.Hour), run(2*time.Hour, 3*time.Hour)}},
+		&planv1.GateWait{Id: id(3), Waited: durationpb.New(10 * time.Minute)},
+		// W3: from before GateWait, its 5 min of gate counted from its events, and not kept.
+		&planv1.Task{Id: id(4), WishId: wish, Code: "W3", Status: done, PartOf: azima, CreateTime: at(0),
+			StartTime: at(0), EndTime: at(time.Hour), Runs: []*planv1.TaskRun{run(0, time.Hour)}},
+		gate(id(4), 1, "gate test: asked", 10*time.Minute),
+		gate(id(4), 2, "gate test: taken", 15*time.Minute),
+		// W4: never started, planned for 5 hours now.
+		&planv1.Task{Id: id(5), WishId: wish, Code: "W4", CreateTime: at(0)},
+	}
+	err = s.Tx(ctx, func(tx *store.Tx) error {
+		if err := tx.Journal("test", "/test.v1.TestService/Put", &planv1.ProjectServiceListRequest{}); err != nil {
+			return err
+		}
+		for _, m := range msgs {
+			if err := tx.Put(m); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := FromStore(s, &planv1.Task{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := NewCatalog(Collection{Name: "TASKS", Derived: TaskRefs,
+		Source: Timed(s, src, func() time.Time { return day0.Add(5 * time.Hour) })})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("rows", func(t *testing.T) {
+		t.Parallel()
+		table, err := c.Run(ctx, Query{Collection: "TASKS", Selects: []string{
+			"code", "type", "running", "waiting_gate", "paused", "waiting_before_start", "part_of->running",
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows(t, table, [][]any{
+			// An azima's times sum its parts'.
+			{"W1", "TASK_TYPE_AZIMA", 165 * time.Minute, 15 * time.Minute, time.Hour, 30 * time.Minute, nil},
+			{"W2", "TASK_TYPE_WORK", 110 * time.Minute, 10 * time.Minute, time.Hour, 30 * time.Minute, 165 * time.Minute},
+			{"W3", "TASK_TYPE_WORK", 55 * time.Minute, 5 * time.Minute, time.Duration(0), time.Duration(0),
+				165 * time.Minute},
+			{"W4", "TASK_TYPE_WORK", nil, nil, nil, 5 * time.Hour, nil},
+		})
+		if _, err := store.Get[*planv1.GateWait](ctx, s, id(4)); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("W3's gate wait = %v; want none kept: a query only reads", err)
+		}
+	})
+
+	t.Run("measure and bins", func(t *testing.T) {
+		t.Parallel()
+		table, err := c.Run(ctx, Query{Collection: "TASKS", Filters: []Filter{Equal{Ref: "type", Value: "work"}},
+			Aggregation: &Aggregation{
+				By:       []GroupBy{{Ref: "running", Bounds: []any{"0s", "1h", "2h"}}},
+				Measures: []Measure{{Fn: Count}, {Ref: "paused", Fn: Sum}},
+			}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows(t, table, [][]any{
+			{time.Duration(0), int64(1), time.Duration(0)},
+			{time.Hour, int64(1), time.Hour},
+			{2 * time.Hour, int64(0), nil},
+			{nil, int64(1), nil},
+		})
+	})
+
+	t.Run("by type", func(t *testing.T) {
+		t.Parallel()
+		table, err := c.Run(ctx, Query{Collection: "TASKS", Aggregation: &Aggregation{
+			By: []GroupBy{{Ref: "type"}}, Measures: []Measure{{Fn: Count}, {Ref: "running", Fn: Sum}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows(t, table, [][]any{{"TASK_TYPE_WORK", int64(3), 165 * time.Minute}, {"TASK_TYPE_AZIMA", int64(1), 165 * time.Minute}})
+		var b strings.Builder
+		if err := table.WriteCSV(&b); err != nil {
+			t.Fatal(err)
+		}
+		if want := "type,count,running::sum\nwork,3,2h45m\nazima,1,2h45m\n"; b.String() != want {
+			t.Errorf("csv:\n%s\nwant:\n%s", b.String(), want)
+		}
+	})
 }

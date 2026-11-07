@@ -157,8 +157,8 @@ func cell(col Column, v any) string {
 	case nil:
 		return ""
 	case string:
-		if col.Type == TypeEnum && col.Field != nil {
-			return strings.ToLower(strings.TrimPrefix(x, enumPrefix(col.Field.Enum())))
+		if col.Type == TypeEnum && col.Enum != nil {
+			return strings.ToLower(strings.TrimPrefix(x, enumPrefix(col.Enum)))
 		}
 		return x
 	case int64:

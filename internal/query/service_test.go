@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/descriptorpb"
@@ -129,7 +130,7 @@ func TestRouteSchema(t *testing.T) {
 	}
 	if c := cols["prompt::size"]; c == nil || c.GetUnit() != "tokens" ||
 		c.GetType() != queryv1.ColumnType_COLUMN_TYPE_INT || !strings.Contains(c.GetDoc(), "tokens") ||
-		refs[len(refs)-1] != "integration::delay" {
+		refs[len(refs)-1] != "type" {
 		t.Errorf("prompt::size = %v; derived refs last: %v", c, refs[len(refs)-3:])
 	}
 	if c := cols["wish_id"]; c == nil || c.GetJump() != queryv1.Collection_COLLECTION_WISHES {
@@ -150,6 +151,11 @@ func TestRouteSchema(t *testing.T) {
 	if c := cols["running"]; c == nil || c.GetType() != queryv1.ColumnType_COLUMN_TYPE_DURATION {
 		t.Errorf("running = %v", c)
 	}
+	// A derived enum serves its values as a field's do, and its doc.
+	if c := cols["type"]; c == nil || c.GetType() != queryv1.ColumnType_COLUMN_TYPE_ENUM || c.GetLabel() != "Type" ||
+		len(c.GetValues()) != 8 || c.GetValues()[0] != "TASK_TYPE_WORK" || c.GetDoc() == "" {
+		t.Errorf("type = %v", c)
+	}
 }
 
 // TestColumnTypes keeps the proto's ColumnType on Type's numbers, which Schema converts as they are.
@@ -167,7 +173,7 @@ func TestColumnTypes(t *testing.T) {
 // methods only read.
 func TestCollectionsMatch(t *testing.T) {
 	t.Parallel()
-	c, err := Collections(openFrozen(t))
+	c, err := Collections(openFrozen(t), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,8 +1,10 @@
 package query
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"google.golang.org/protobuf/proto"
@@ -10,6 +12,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
+	queryv1 "github.com/empowill/djinn/gen/go/query/v1"
+	"github.com/empowill/djinn/internal/plan"
+	"github.com/empowill/djinn/internal/store"
 )
 
 // Derived is a ref a collection computes in Go, where no field holds the value: the size of a hidden text, the time
@@ -22,6 +27,8 @@ type Derived struct {
 	Doc string
 	// Unit is the unit of its numbers, when they have one (WithUnit).
 	Unit string
+	// Enum is the enum of its values, for a TypeEnum (DeriveEnum).
+	Enum protoreflect.EnumDescriptor
 	of   protoreflect.FullName
 	get  func(proto.Message) any
 }
@@ -39,7 +46,26 @@ func Derive[M proto.Message](ref string, typ Type, doc string, get func(M) any) 
 		}}
 }
 
-func (d Derived) column() Column { return Column{Ref: d.Ref, Type: d.Type, Doc: d.Doc, Unit: d.Unit} }
+// DeriveEnum declares a derived ref whose values are those of the enum E: get gives one, never its zero, or nil.
+func DeriveEnum[M proto.Message, E protoreflect.Enum](ref, doc string, get func(M) E) Derived {
+	var zero E
+	d := Derive(ref, TypeEnum, doc, func(m M) any {
+		e := get(m)
+		if e.Number() == 0 {
+			return nil
+		}
+		if v := e.Descriptor().Values().ByNumber(e.Number()); v != nil {
+			return string(v.Name())
+		}
+		return nil
+	})
+	d.Enum = zero.Descriptor()
+	return d
+}
+
+func (d Derived) column() Column {
+	return Column{Ref: d.Ref, Type: d.Type, Doc: d.Doc, Unit: d.Unit, Enum: d.Enum}
+}
 
 // WithUnit gives d the unit of its numbers.
 func (d Derived) WithUnit(unit string) Derived {
@@ -56,8 +82,10 @@ func (d Derived) check(md protoreflect.MessageDescriptor) error {
 		return fmt.Errorf("derived ref %q reads %s, not %s", d.Ref, d.of, md.FullName())
 	case d.Ref == "" || strings.Contains(d.Ref, "->"):
 		return fmt.Errorf("derived ref %q: a name without ->", d.Ref)
-	case d.Type < TypeString || d.Type > TypeDuration || d.Type == TypeEnum:
-		return fmt.Errorf("derived ref %q: no type, or an enum, which has no descriptor here", d.Ref)
+	case d.Type < TypeString || d.Type > TypeDuration:
+		return fmt.Errorf("derived ref %q: no type", d.Ref)
+	case (d.Type == TypeEnum) != (d.Enum != nil):
+		return fmt.Errorf("derived ref %q: an enum, and only an enum, names its values (DeriveEnum)", d.Ref)
 	}
 	if _, _, err := path(md, d.Ref, false); err == nil {
 		return fmt.Errorf("derived ref %q: a field's ref already", d.Ref)
@@ -76,6 +104,30 @@ var TaskRefs = []Derived{
 		}
 		return between(t.GetEndTime(), t.GetIntegration().GetUpdateTime())
 	}),
+	DeriveEnum("type", "What the task is, for every task, where kind is set on a few: azima, watcher, ifrit, mockup, "+
+		"investigation, review, correction, or else work.", taskType),
+}
+
+// taskType is what t is, the first that fits from azima down: its kind, its provider for a watcher, then what Djinn
+// started it for, a review or a correction; work for any other.
+func taskType(t *planv1.Task) queryv1.TaskType {
+	switch {
+	case t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA:
+		return queryv1.TaskType_TASK_TYPE_AZIMA
+	case t.GetProvider() == planv1.Provider_PROVIDER_WATCH:
+		return queryv1.TaskType_TASK_TYPE_WATCHER
+	case t.GetKind() == planv1.TaskKind_TASK_KIND_IFRIT:
+		return queryv1.TaskType_TASK_TYPE_IFRIT
+	case t.GetKind() == planv1.TaskKind_TASK_KIND_MOCKUP:
+		return queryv1.TaskType_TASK_TYPE_MOCKUP
+	case t.GetKind() == planv1.TaskKind_TASK_KIND_INVESTIGATION:
+		return queryv1.TaskType_TASK_TYPE_INVESTIGATION
+	case t.GetReview() != nil:
+		return queryv1.TaskType_TASK_TYPE_REVIEW
+	case t.GetCorrection() != nil:
+		return queryv1.TaskType_TASK_TYPE_CORRECTION
+	}
+	return queryv1.TaskType_TASK_TYPE_WORK
 }
 
 // QuestionRefs are the derived refs of the questions.
@@ -110,4 +162,39 @@ func between(a, b *timestamppb.Timestamp) any {
 		return nil
 	}
 	return d
+}
+
+// Timed gives the tasks of src with their times, which the store does not keep: running, waiting_gate, paused and
+// waiting_before_start, as the task list computes them from their runs and gate waits as of now (plan.ReadTimes), an
+// azima's summing its parts'. A task that never started has none but waiting_before_start: null, never 0.
+func Timed(r store.Reader, src Source, now func() time.Time) Source {
+	return &timed{Source: src, r: r, now: now}
+}
+
+type timed struct {
+	Source
+	r   store.Reader
+	now func() time.Time
+}
+
+func (s *timed) Load(ctx context.Context, where map[string]string) ([]proto.Message, error) {
+	msgs, err := s.Source.Load(ctx, where)
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]*planv1.Task, 0, len(msgs))
+	for _, m := range msgs {
+		if t, ok := m.(*planv1.Task); ok {
+			tasks = append(tasks, t)
+		}
+	}
+	if err := plan.ReadTimes(ctx, s.r, tasks, s.now()); err != nil {
+		return nil, err
+	}
+	for _, t := range tasks {
+		if t.GetFirstStartTime() == nil {
+			t.Running, t.WaitingGate, t.Paused = nil, nil, nil
+		}
+	}
+	return msgs, nil
 }

@@ -236,11 +236,17 @@ djinn query query questions --group-by "answer::delay::bins(0s,1m,10m,1h,24h)" -
 # Tasks and cost per week, median time from a task's end to its commit
 djinn query query tasks --group-by create_time::week --measure count --measure usage.cost_usd::sum \
   --measure integration::delay::median
+# Tasks created per day by type, and how long the work ran, by bins
+djinn query query tasks --group-by create_time::day --group-by type --measure count
+djinn query query tasks --filter type=work --filter status=done --group-by "running::bins(0s,1m,10m,1h)" --measure count
 ```
 
 - **Refs**: a field by its path (`code`, `usage.cost_usd`), across a field that holds an id (`wish_id->title`,
   `wait_question_id->answer::delay`), or one Djinn computes (`prompt::size` and `context::size` in tokens,
-  `answer::delay`, `integration::delay`). Prompts, contexts and last lines are never columns.
+  `answer::delay`, `integration::delay`, a task's `type`). Prompts, contexts and last lines are never columns.
+- **Task times**: `running`, `waiting_gate`, `paused` and `waiting_before_start` are computed from the runs and gate
+  waits as the task list does, as of the query; null for a task that never started (but its wait), an azima's the sum
+  of its parts'. `type` is `work`, `correction`, `review`, `investigation`, `mockup`, `ifrit`, `watcher` or `azima`.
 - **Filters** (`--filter`, all of them hold): `=` (text ignoring case; `a|b` one of), `!=` (none of, an absent value
   included), `>` `>=` `<` `<=` (numbers, times such as `2026-11-01` or RFC 3339, durations such as `90s`), `*=`
   contains, `^=` begins with; `null` is the absent value (`status=null`, `status=pending|null`).

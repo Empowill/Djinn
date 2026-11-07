@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -24,8 +25,8 @@ import (
 )
 
 // Collections are the collections QueryService reads, by the name its Collection enum gives each (COLLECTION_TASKS
-// is TASKS), with their usual columns and their derived refs.
-func Collections(r store.Reader) (*Catalog, error) {
+// is TASKS), with their usual columns and their derived refs. The tasks come with their times, as of now (Timed).
+func Collections(r store.Reader, now func() time.Time) (*Catalog, error) {
 	type entry struct {
 		name     string
 		m        proto.Message
@@ -45,6 +46,9 @@ func Collections(r store.Reader) (*Catalog, error) {
 		if err != nil {
 			return nil, err
 		}
+		if _, ok := e.m.(*planv1.Task); ok {
+			src = Timed(r, src, now)
+		}
 		cols = append(cols, Collection{Name: e.name, Source: src, Defaults: e.defaults, Derived: e.derived})
 	}
 	return NewCatalog(cols...)
@@ -52,7 +56,7 @@ func Collections(r store.Reader) (*Catalog, error) {
 
 // Handler serves QueryService on the store r. Every method only reads: a worker calls them as the developer does.
 func Handler(r store.Reader) (string, http.Handler, error) {
-	c, err := Collections(r)
+	c, err := Collections(r, time.Now)
 	if err != nil {
 		return "", nil, err
 	}
@@ -157,12 +161,12 @@ func (s *service) Schema(
 			Unit: c.Unit, Doc: c.Doc}
 		if c.Field != nil {
 			qc.Doc = doc(c.Field)
-			if c.Type == TypeEnum {
-				values := c.Field.Enum().Values()
-				for i := range values.Len() {
-					if v := values.Get(i); v.Number() != 0 {
-						qc.Values = append(qc.Values, string(v.Name()))
-					}
+		}
+		if c.Type == TypeEnum && c.Enum != nil {
+			values := c.Enum.Values()
+			for i := range values.Len() {
+				if v := values.Get(i); v.Number() != 0 {
+					qc.Values = append(qc.Values, string(v.Name()))
 				}
 			}
 		}

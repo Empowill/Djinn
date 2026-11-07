@@ -72,6 +72,8 @@ type Column struct {
 	// Field is the field read last, past the jumps: its descriptor holds its comment, its enum, its options. It is
 	// nil for a derived ref, and for a count of rows.
 	Field protoreflect.FieldDescriptor
+	// Enum is the enum of a TypeEnum column: its field's, or the one a derived ref declares.
+	Enum protoreflect.EnumDescriptor
 	// Jump is the full name of the message whose id the field holds, by its (djinn.v1.ref) option: the ref
 	// Ref+"->"+r reads r there.
 	Jump protoreflect.FullName
@@ -110,7 +112,7 @@ func walk(md protoreflect.MessageDescriptor, prefix string, path []protoreflect.
 		}
 		ref := prefix + string(fd.Name())
 		if typ, ok := leaf(fd); ok {
-			*out = append(*out, Column{Ref: ref, Type: typ, List: fd.IsList(), Field: fd, Jump: jump(fd), Unit: unit(fd)})
+			*out = append(*out, fieldColumn(ref, fd, typ))
 			continue
 		}
 		if fd.Kind() != protoreflect.MessageKind || fd.IsList() || len(path) >= maxDepth {
@@ -147,6 +149,11 @@ func leaf(fd protoreflect.FieldDescriptor) (Type, bool) {
 		}
 	}
 	return 0, false
+}
+
+// fieldColumn is the column of fd, read as ref, of type typ.
+func fieldColumn(ref string, fd protoreflect.FieldDescriptor, typ Type) Column {
+	return Column{Ref: ref, Type: typ, List: fd.IsList(), Field: fd, Enum: fd.Enum(), Jump: jump(fd), Unit: unit(fd)}
 }
 
 func hidden(fd protoreflect.FieldDescriptor) bool {
