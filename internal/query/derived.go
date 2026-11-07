@@ -14,7 +14,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	planv1 "github.com/empowill/djinn/gen/go/plan/v1"
-	queryv1 "github.com/empowill/djinn/gen/go/query/v1"
 	"github.com/empowill/djinn/internal/plan"
 	"github.com/empowill/djinn/internal/store"
 )
@@ -107,30 +106,8 @@ var TaskRefs = []Derived{
 		}
 		return between(t.GetEndTime(), t.GetIntegration().GetUpdateTime())
 	}),
-	DeriveEnum("type", "What the task is, for every task, where kind is set on a few: azima, watcher, ifrit, mockup, "+
-		"investigation, review, correction, or else work.", taskType),
-}
-
-// taskType is what t is, the first that fits from azima down: its kind, its provider for a watcher, then what Djinn
-// started it for, a review or a correction; work for any other.
-func taskType(t *planv1.Task) queryv1.TaskType {
-	switch {
-	case t.GetKind() == planv1.TaskKind_TASK_KIND_AZIMA:
-		return queryv1.TaskType_TASK_TYPE_AZIMA
-	case t.GetProvider() == planv1.Provider_PROVIDER_WATCH:
-		return queryv1.TaskType_TASK_TYPE_WATCHER
-	case t.GetKind() == planv1.TaskKind_TASK_KIND_IFRIT:
-		return queryv1.TaskType_TASK_TYPE_IFRIT
-	case t.GetKind() == planv1.TaskKind_TASK_KIND_MOCKUP:
-		return queryv1.TaskType_TASK_TYPE_MOCKUP
-	case t.GetKind() == planv1.TaskKind_TASK_KIND_INVESTIGATION:
-		return queryv1.TaskType_TASK_TYPE_INVESTIGATION
-	case t.GetReview() != nil:
-		return queryv1.TaskType_TASK_TYPE_REVIEW
-	case t.GetCorrection() != nil:
-		return queryv1.TaskType_TASK_TYPE_CORRECTION
-	}
-	return queryv1.TaskType_TASK_TYPE_WORK
+	DeriveEnum("type", "What the task is, for every task, as plan.Kind reads it: its kind, or for a task stored "+
+		"before correction, review and watcher were kinds, what its fields say; work when none.", plan.Kind),
 }
 
 // QuestionRefs are the derived refs of the questions.

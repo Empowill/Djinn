@@ -56,25 +56,25 @@ export interface Filters {
 // The types of a task as the ref type gives them, in the order a chart gives them their colours; azimas and watchers
 // come last: an azima sums its parts' times, a watcher runs a command and sleeps.
 const TYPES = [
-  "TASK_TYPE_WORK",
-  "TASK_TYPE_CORRECTION",
-  "TASK_TYPE_REVIEW",
-  "TASK_TYPE_INVESTIGATION",
-  "TASK_TYPE_MOCKUP",
-  "TASK_TYPE_IFRIT",
-  "TASK_TYPE_WATCHER",
-  "TASK_TYPE_AZIMA",
+  "TASK_KIND_WORK",
+  "TASK_KIND_CORRECTION",
+  "TASK_KIND_REVIEW",
+  "TASK_KIND_INVESTIGATION",
+  "TASK_KIND_MOCKUP",
+  "TASK_KIND_IFRIT",
+  "TASK_KIND_WATCHER",
+  "TASK_KIND_AZIMA",
 ] as const;
 
 const typeKeys = {
-  TASK_TYPE_WORK: "statistics.type_work",
-  TASK_TYPE_CORRECTION: "statistics.type_correction",
-  TASK_TYPE_REVIEW: "statistics.type_review",
-  TASK_TYPE_INVESTIGATION: "statistics.type_investigation",
-  TASK_TYPE_MOCKUP: "statistics.type_mockup",
-  TASK_TYPE_IFRIT: "statistics.type_ifrit",
-  TASK_TYPE_WATCHER: "statistics.type_watcher",
-  TASK_TYPE_AZIMA: "statistics.type_azima",
+  TASK_KIND_WORK: "statistics.type_work",
+  TASK_KIND_CORRECTION: "statistics.type_correction",
+  TASK_KIND_REVIEW: "statistics.type_review",
+  TASK_KIND_INVESTIGATION: "statistics.type_investigation",
+  TASK_KIND_MOCKUP: "statistics.type_mockup",
+  TASK_KIND_IFRIT: "statistics.type_ifrit",
+  TASK_KIND_WATCHER: "statistics.type_watcher",
+  TASK_KIND_AZIMA: "statistics.type_azima",
 } as const;
 
 // typeText names a task's type; an unknown one keeps its value.

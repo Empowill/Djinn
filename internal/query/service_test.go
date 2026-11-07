@@ -226,7 +226,7 @@ func TestRouteSchema(t *testing.T) {
 	}
 	// A derived enum serves its values as a field's do, and its doc.
 	if c := cols["type"]; c == nil || c.GetType() != queryv1.ColumnType_COLUMN_TYPE_ENUM || c.GetLabel() != "Type" ||
-		len(c.GetValues()) != 8 || c.GetValues()[0] != "TASK_TYPE_WORK" || c.GetDoc() == "" {
+		len(c.GetValues()) != 8 || c.GetValues()[0] != "TASK_KIND_WORK" || c.GetDoc() == "" {
 		t.Errorf("type = %v", c)
 	}
 }

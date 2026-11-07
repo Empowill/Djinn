@@ -256,7 +256,9 @@ djinn query query tasks --filter type=work --filter status=done --group-by "runn
   `answer::delay`, `integration::delay`, a task's `type`). Prompts, contexts and last lines are never columns.
 - **Task times**: `running`, `waiting_gate`, `paused` and `waiting_before_start` are computed from the runs and gate
   waits as the task list does, as of the query; null for a task that never started (but its wait), an azima's the sum
-  of its parts'. `type` is `work`, `correction`, `review`, `investigation`, `mockup`, `ifrit`, `watcher` or `azima`.
+  of its parts'. `type` is the task's kind, the one type of a task:
+  `work`, `correction`, `review`, `investigation`, `mockup`, `ifrit`, `watcher` or `azima`; a spawn never asks the
+  three Djinn makes alone (correction, review, watcher).
 - **Filters** (`--filter`, all of them hold): `=` (text ignoring case; `a|b` one of), `!=` (none of, an absent value
   included), `>` `>=` `<` `<=` (numbers, times such as `2026-11-01` or RFC 3339, durations such as `90s`), `*=`
   contains, `^=` begins with; `null` is the absent value (`status=null`, `status=pending|null`).

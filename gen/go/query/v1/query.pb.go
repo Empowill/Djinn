@@ -89,84 +89,6 @@ func (Collection) EnumDescriptor() ([]byte, []int) {
 	return file_query_v1_query_proto_rawDescGZIP(), []int{0}
 }
 
-// TaskType is what a task is, as the ref type of the tasks reads it: every task has one, where kind is set on a few.
-// The first that fits wins, in the order of the values from azima down.
-type TaskType int32
-
-const (
-	// Not set: never served, a task always has a type.
-	TaskType_TASK_TYPE_UNSPECIFIED TaskType = 0
-	// Work a worker does, of no other type: what the lead or the developer spawns, and the question workers.
-	TaskType_TASK_TYPE_WORK TaskType = 1
-	// A correction worker, which Djinn starts when a merge conflicts or its tests fail (Task.correction).
-	TaskType_TASK_TYPE_CORRECTION TaskType = 2
-	// A review worker, which Djinn starts on a worktree left with changes not committed (Task.review).
-	TaskType_TASK_TYPE_REVIEW TaskType = 3
-	// An investigation: a short study that ends in a tilasm and a question (TASK_KIND_INVESTIGATION).
-	TaskType_TASK_TYPE_INVESTIGATION TaskType = 4
-	// A mockup, whose work is a tilasm (TASK_KIND_MOCKUP).
-	TaskType_TASK_TYPE_MOCKUP TaskType = 5
-	// An ifrit, a worker that stays lit while the developer is there (TASK_KIND_IFRIT).
-	TaskType_TASK_TYPE_IFRIT TaskType = 6
-	// A watcher: a command Djinn runs, no agent (PROVIDER_WATCH).
-	TaskType_TASK_TYPE_WATCHER TaskType = 7
-	// An azima, a part of the plan no worker runs (TASK_KIND_AZIMA): its times sum its parts'.
-	TaskType_TASK_TYPE_AZIMA TaskType = 8
-)
-
-// Enum value maps for TaskType.
-var (
-	TaskType_name = map[int32]string{
-		0: "TASK_TYPE_UNSPECIFIED",
-		1: "TASK_TYPE_WORK",
-		2: "TASK_TYPE_CORRECTION",
-		3: "TASK_TYPE_REVIEW",
-		4: "TASK_TYPE_INVESTIGATION",
-		5: "TASK_TYPE_MOCKUP",
-		6: "TASK_TYPE_IFRIT",
-		7: "TASK_TYPE_WATCHER",
-		8: "TASK_TYPE_AZIMA",
-	}
-	TaskType_value = map[string]int32{
-		"TASK_TYPE_UNSPECIFIED":   0,
-		"TASK_TYPE_WORK":          1,
-		"TASK_TYPE_CORRECTION":    2,
-		"TASK_TYPE_REVIEW":        3,
-		"TASK_TYPE_INVESTIGATION": 4,
-		"TASK_TYPE_MOCKUP":        5,
-		"TASK_TYPE_IFRIT":         6,
-		"TASK_TYPE_WATCHER":       7,
-		"TASK_TYPE_AZIMA":         8,
-	}
-)
-
-func (x TaskType) Enum() *TaskType {
-	p := new(TaskType)
-	*p = x
-	return p
-}
-
-func (x TaskType) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (TaskType) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[1].Descriptor()
-}
-
-func (TaskType) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[1]
-}
-
-func (x TaskType) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use TaskType.Descriptor instead.
-func (TaskType) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{1}
-}
-
 // Format is how a query's table comes back, in the table field of the response.
 type Format int32
 
@@ -209,11 +131,11 @@ func (x Format) String() string {
 }
 
 func (Format) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[2].Descriptor()
+	return file_query_v1_query_proto_enumTypes[1].Descriptor()
 }
 
 func (Format) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[2]
+	return &file_query_v1_query_proto_enumTypes[1]
 }
 
 func (x Format) Number() protoreflect.EnumNumber {
@@ -222,7 +144,7 @@ func (x Format) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Format.Descriptor instead.
 func (Format) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{2}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{1}
 }
 
 // ColumnType is the type of a column, taken from the proto, never from the values a row holds.
@@ -282,11 +204,11 @@ func (x ColumnType) String() string {
 }
 
 func (ColumnType) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[3].Descriptor()
+	return file_query_v1_query_proto_enumTypes[2].Descriptor()
 }
 
 func (ColumnType) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[3]
+	return &file_query_v1_query_proto_enumTypes[2]
 }
 
 func (x ColumnType) Number() protoreflect.EnumNumber {
@@ -295,7 +217,7 @@ func (x ColumnType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ColumnType.Descriptor instead.
 func (ColumnType) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{3}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{2}
 }
 
 // FilterGroupOp is how a FilterGroup joins its filters.
@@ -339,11 +261,11 @@ func (x FilterGroupOp) String() string {
 }
 
 func (FilterGroupOp) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[4].Descriptor()
+	return file_query_v1_query_proto_enumTypes[3].Descriptor()
 }
 
 func (FilterGroupOp) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[4]
+	return &file_query_v1_query_proto_enumTypes[3]
 }
 
 func (x FilterGroupOp) Number() protoreflect.EnumNumber {
@@ -352,7 +274,7 @@ func (x FilterGroupOp) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FilterGroupOp.Descriptor instead.
 func (FilterGroupOp) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{4}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{3}
 }
 
 // StringOp is how a StringComparison compares.
@@ -396,11 +318,11 @@ func (x StringOp) String() string {
 }
 
 func (StringOp) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[5].Descriptor()
+	return file_query_v1_query_proto_enumTypes[4].Descriptor()
 }
 
 func (StringOp) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[5]
+	return &file_query_v1_query_proto_enumTypes[4]
 }
 
 func (x StringOp) Number() protoreflect.EnumNumber {
@@ -409,7 +331,7 @@ func (x StringOp) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use StringOp.Descriptor instead.
 func (StringOp) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{5}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{4}
 }
 
 // CompareOp is how a number, a time or a duration compares with a value: the ref on the left.
@@ -461,11 +383,11 @@ func (x CompareOp) String() string {
 }
 
 func (CompareOp) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[6].Descriptor()
+	return file_query_v1_query_proto_enumTypes[5].Descriptor()
 }
 
 func (CompareOp) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[6]
+	return &file_query_v1_query_proto_enumTypes[5]
 }
 
 func (x CompareOp) Number() protoreflect.EnumNumber {
@@ -474,7 +396,7 @@ func (x CompareOp) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CompareOp.Descriptor instead.
 func (CompareOp) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{6}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{5}
 }
 
 // Period is the bucket of a time a GroupBy groups by.
@@ -518,11 +440,11 @@ func (x Period) String() string {
 }
 
 func (Period) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[7].Descriptor()
+	return file_query_v1_query_proto_enumTypes[6].Descriptor()
 }
 
 func (Period) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[7]
+	return &file_query_v1_query_proto_enumTypes[6]
 }
 
 func (x Period) Number() protoreflect.EnumNumber {
@@ -531,7 +453,7 @@ func (x Period) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Period.Descriptor instead.
 func (Period) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{7}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{6}
 }
 
 // MeasureFn is the function of a Measure.
@@ -591,11 +513,11 @@ func (x MeasureFn) String() string {
 }
 
 func (MeasureFn) Descriptor() protoreflect.EnumDescriptor {
-	return file_query_v1_query_proto_enumTypes[8].Descriptor()
+	return file_query_v1_query_proto_enumTypes[7].Descriptor()
 }
 
 func (MeasureFn) Type() protoreflect.EnumType {
-	return &file_query_v1_query_proto_enumTypes[8]
+	return &file_query_v1_query_proto_enumTypes[7]
 }
 
 func (x MeasureFn) Number() protoreflect.EnumNumber {
@@ -604,7 +526,7 @@ func (x MeasureFn) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MeasureFn.Descriptor instead.
 func (MeasureFn) EnumDescriptor() ([]byte, []int) {
-	return file_query_v1_query_proto_rawDescGZIP(), []int{8}
+	return file_query_v1_query_proto_rawDescGZIP(), []int{7}
 }
 
 type QueryServiceQueryRequest struct {
@@ -2129,17 +2051,7 @@ const file_query_v1_query_proto_rawDesc = "" +
 	"\x10COLLECTION_TASKS\x10\x01\x12\x18\n" +
 	"\x14COLLECTION_QUESTIONS\x10\x02\x12\x15\n" +
 	"\x11COLLECTION_WISHES\x10\x03\x12\x17\n" +
-	"\x13COLLECTION_PROJECTS\x10\x04*\xdd\x01\n" +
-	"\bTaskType\x12\x19\n" +
-	"\x15TASK_TYPE_UNSPECIFIED\x10\x00\x12\x12\n" +
-	"\x0eTASK_TYPE_WORK\x10\x01\x12\x18\n" +
-	"\x14TASK_TYPE_CORRECTION\x10\x02\x12\x14\n" +
-	"\x10TASK_TYPE_REVIEW\x10\x03\x12\x1b\n" +
-	"\x17TASK_TYPE_INVESTIGATION\x10\x04\x12\x14\n" +
-	"\x10TASK_TYPE_MOCKUP\x10\x05\x12\x13\n" +
-	"\x0fTASK_TYPE_IFRIT\x10\x06\x12\x15\n" +
-	"\x11TASK_TYPE_WATCHER\x10\a\x12\x13\n" +
-	"\x0fTASK_TYPE_AZIMA\x10\b*S\n" +
+	"\x13COLLECTION_PROJECTS\x10\x04*S\n" +
 	"\x06Format\x12\x16\n" +
 	"\x12FORMAT_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fFORMAT_ARROW\x10\x01\x12\x0e\n" +
@@ -2206,76 +2118,75 @@ func file_query_v1_query_proto_rawDescGZIP() []byte {
 	return file_query_v1_query_proto_rawDescData
 }
 
-var file_query_v1_query_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
+var file_query_v1_query_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
 var file_query_v1_query_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_query_v1_query_proto_goTypes = []any{
 	(Collection)(0),                    // 0: query.v1.Collection
-	(TaskType)(0),                      // 1: query.v1.TaskType
-	(Format)(0),                        // 2: query.v1.Format
-	(ColumnType)(0),                    // 3: query.v1.ColumnType
-	(FilterGroupOp)(0),                 // 4: query.v1.FilterGroupOp
-	(StringOp)(0),                      // 5: query.v1.StringOp
-	(CompareOp)(0),                     // 6: query.v1.CompareOp
-	(Period)(0),                        // 7: query.v1.Period
-	(MeasureFn)(0),                     // 8: query.v1.MeasureFn
-	(*QueryServiceQueryRequest)(nil),   // 9: query.v1.QueryServiceQueryRequest
-	(*Filter)(nil),                     // 10: query.v1.Filter
-	(*FilterGroup)(nil),                // 11: query.v1.FilterGroup
-	(*NullFilter)(nil),                 // 12: query.v1.NullFilter
-	(*BoolComparison)(nil),             // 13: query.v1.BoolComparison
-	(*StringComparison)(nil),           // 14: query.v1.StringComparison
-	(*StringIn)(nil),                   // 15: query.v1.StringIn
-	(*NumberComparison)(nil),           // 16: query.v1.NumberComparison
-	(*TimeComparison)(nil),             // 17: query.v1.TimeComparison
-	(*DurationComparison)(nil),         // 18: query.v1.DurationComparison
-	(*Order)(nil),                      // 19: query.v1.Order
-	(*GroupBy)(nil),                    // 20: query.v1.GroupBy
-	(*NumberBins)(nil),                 // 21: query.v1.NumberBins
-	(*DurationBins)(nil),               // 22: query.v1.DurationBins
-	(*Measure)(nil),                    // 23: query.v1.Measure
-	(*QueryServiceQueryResponse)(nil),  // 24: query.v1.QueryServiceQueryResponse
-	(*QueryServiceSchemaRequest)(nil),  // 25: query.v1.QueryServiceSchemaRequest
-	(*QueryColumn)(nil),                // 26: query.v1.QueryColumn
-	(*QueryServiceSchemaResponse)(nil), // 27: query.v1.QueryServiceSchemaResponse
-	(*timestamppb.Timestamp)(nil),      // 28: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),        // 29: google.protobuf.Duration
+	(Format)(0),                        // 1: query.v1.Format
+	(ColumnType)(0),                    // 2: query.v1.ColumnType
+	(FilterGroupOp)(0),                 // 3: query.v1.FilterGroupOp
+	(StringOp)(0),                      // 4: query.v1.StringOp
+	(CompareOp)(0),                     // 5: query.v1.CompareOp
+	(Period)(0),                        // 6: query.v1.Period
+	(MeasureFn)(0),                     // 7: query.v1.MeasureFn
+	(*QueryServiceQueryRequest)(nil),   // 8: query.v1.QueryServiceQueryRequest
+	(*Filter)(nil),                     // 9: query.v1.Filter
+	(*FilterGroup)(nil),                // 10: query.v1.FilterGroup
+	(*NullFilter)(nil),                 // 11: query.v1.NullFilter
+	(*BoolComparison)(nil),             // 12: query.v1.BoolComparison
+	(*StringComparison)(nil),           // 13: query.v1.StringComparison
+	(*StringIn)(nil),                   // 14: query.v1.StringIn
+	(*NumberComparison)(nil),           // 15: query.v1.NumberComparison
+	(*TimeComparison)(nil),             // 16: query.v1.TimeComparison
+	(*DurationComparison)(nil),         // 17: query.v1.DurationComparison
+	(*Order)(nil),                      // 18: query.v1.Order
+	(*GroupBy)(nil),                    // 19: query.v1.GroupBy
+	(*NumberBins)(nil),                 // 20: query.v1.NumberBins
+	(*DurationBins)(nil),               // 21: query.v1.DurationBins
+	(*Measure)(nil),                    // 22: query.v1.Measure
+	(*QueryServiceQueryResponse)(nil),  // 23: query.v1.QueryServiceQueryResponse
+	(*QueryServiceSchemaRequest)(nil),  // 24: query.v1.QueryServiceSchemaRequest
+	(*QueryColumn)(nil),                // 25: query.v1.QueryColumn
+	(*QueryServiceSchemaResponse)(nil), // 26: query.v1.QueryServiceSchemaResponse
+	(*timestamppb.Timestamp)(nil),      // 27: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),        // 28: google.protobuf.Duration
 }
 var file_query_v1_query_proto_depIdxs = []int32{
 	0,  // 0: query.v1.QueryServiceQueryRequest.collection:type_name -> query.v1.Collection
-	10, // 1: query.v1.QueryServiceQueryRequest.filter:type_name -> query.v1.Filter
-	19, // 2: query.v1.QueryServiceQueryRequest.sort:type_name -> query.v1.Order
-	20, // 3: query.v1.QueryServiceQueryRequest.group_by:type_name -> query.v1.GroupBy
-	23, // 4: query.v1.QueryServiceQueryRequest.measure:type_name -> query.v1.Measure
-	2,  // 5: query.v1.QueryServiceQueryRequest.format:type_name -> query.v1.Format
-	11, // 6: query.v1.Filter.group:type_name -> query.v1.FilterGroup
-	12, // 7: query.v1.Filter.null:type_name -> query.v1.NullFilter
-	13, // 8: query.v1.Filter.bool:type_name -> query.v1.BoolComparison
-	14, // 9: query.v1.Filter.string:type_name -> query.v1.StringComparison
-	15, // 10: query.v1.Filter.string_in:type_name -> query.v1.StringIn
-	16, // 11: query.v1.Filter.number:type_name -> query.v1.NumberComparison
-	17, // 12: query.v1.Filter.time:type_name -> query.v1.TimeComparison
-	18, // 13: query.v1.Filter.duration:type_name -> query.v1.DurationComparison
-	4,  // 14: query.v1.FilterGroup.op:type_name -> query.v1.FilterGroupOp
-	10, // 15: query.v1.FilterGroup.filters:type_name -> query.v1.Filter
-	5,  // 16: query.v1.StringComparison.op:type_name -> query.v1.StringOp
-	6,  // 17: query.v1.NumberComparison.op:type_name -> query.v1.CompareOp
-	6,  // 18: query.v1.TimeComparison.op:type_name -> query.v1.CompareOp
-	28, // 19: query.v1.TimeComparison.value:type_name -> google.protobuf.Timestamp
-	6,  // 20: query.v1.DurationComparison.op:type_name -> query.v1.CompareOp
-	29, // 21: query.v1.DurationComparison.value:type_name -> google.protobuf.Duration
-	7,  // 22: query.v1.GroupBy.period:type_name -> query.v1.Period
-	21, // 23: query.v1.GroupBy.number_bins:type_name -> query.v1.NumberBins
-	22, // 24: query.v1.GroupBy.duration_bins:type_name -> query.v1.DurationBins
-	29, // 25: query.v1.DurationBins.bounds:type_name -> google.protobuf.Duration
-	8,  // 26: query.v1.Measure.fn:type_name -> query.v1.MeasureFn
+	9,  // 1: query.v1.QueryServiceQueryRequest.filter:type_name -> query.v1.Filter
+	18, // 2: query.v1.QueryServiceQueryRequest.sort:type_name -> query.v1.Order
+	19, // 3: query.v1.QueryServiceQueryRequest.group_by:type_name -> query.v1.GroupBy
+	22, // 4: query.v1.QueryServiceQueryRequest.measure:type_name -> query.v1.Measure
+	1,  // 5: query.v1.QueryServiceQueryRequest.format:type_name -> query.v1.Format
+	10, // 6: query.v1.Filter.group:type_name -> query.v1.FilterGroup
+	11, // 7: query.v1.Filter.null:type_name -> query.v1.NullFilter
+	12, // 8: query.v1.Filter.bool:type_name -> query.v1.BoolComparison
+	13, // 9: query.v1.Filter.string:type_name -> query.v1.StringComparison
+	14, // 10: query.v1.Filter.string_in:type_name -> query.v1.StringIn
+	15, // 11: query.v1.Filter.number:type_name -> query.v1.NumberComparison
+	16, // 12: query.v1.Filter.time:type_name -> query.v1.TimeComparison
+	17, // 13: query.v1.Filter.duration:type_name -> query.v1.DurationComparison
+	3,  // 14: query.v1.FilterGroup.op:type_name -> query.v1.FilterGroupOp
+	9,  // 15: query.v1.FilterGroup.filters:type_name -> query.v1.Filter
+	4,  // 16: query.v1.StringComparison.op:type_name -> query.v1.StringOp
+	5,  // 17: query.v1.NumberComparison.op:type_name -> query.v1.CompareOp
+	5,  // 18: query.v1.TimeComparison.op:type_name -> query.v1.CompareOp
+	27, // 19: query.v1.TimeComparison.value:type_name -> google.protobuf.Timestamp
+	5,  // 20: query.v1.DurationComparison.op:type_name -> query.v1.CompareOp
+	28, // 21: query.v1.DurationComparison.value:type_name -> google.protobuf.Duration
+	6,  // 22: query.v1.GroupBy.period:type_name -> query.v1.Period
+	20, // 23: query.v1.GroupBy.number_bins:type_name -> query.v1.NumberBins
+	21, // 24: query.v1.GroupBy.duration_bins:type_name -> query.v1.DurationBins
+	28, // 25: query.v1.DurationBins.bounds:type_name -> google.protobuf.Duration
+	7,  // 26: query.v1.Measure.fn:type_name -> query.v1.MeasureFn
 	0,  // 27: query.v1.QueryServiceSchemaRequest.collection:type_name -> query.v1.Collection
-	3,  // 28: query.v1.QueryColumn.type:type_name -> query.v1.ColumnType
+	2,  // 28: query.v1.QueryColumn.type:type_name -> query.v1.ColumnType
 	0,  // 29: query.v1.QueryColumn.jump:type_name -> query.v1.Collection
-	26, // 30: query.v1.QueryServiceSchemaResponse.columns:type_name -> query.v1.QueryColumn
-	9,  // 31: query.v1.QueryService.Query:input_type -> query.v1.QueryServiceQueryRequest
-	25, // 32: query.v1.QueryService.Schema:input_type -> query.v1.QueryServiceSchemaRequest
-	24, // 33: query.v1.QueryService.Query:output_type -> query.v1.QueryServiceQueryResponse
-	27, // 34: query.v1.QueryService.Schema:output_type -> query.v1.QueryServiceSchemaResponse
+	25, // 30: query.v1.QueryServiceSchemaResponse.columns:type_name -> query.v1.QueryColumn
+	8,  // 31: query.v1.QueryService.Query:input_type -> query.v1.QueryServiceQueryRequest
+	24, // 32: query.v1.QueryService.Schema:input_type -> query.v1.QueryServiceSchemaRequest
+	23, // 33: query.v1.QueryService.Query:output_type -> query.v1.QueryServiceQueryResponse
+	26, // 34: query.v1.QueryService.Schema:output_type -> query.v1.QueryServiceSchemaResponse
 	33, // [33:35] is the sub-list for method output_type
 	31, // [31:33] is the sub-list for method input_type
 	31, // [31:31] is the sub-list for extension type_name
@@ -2309,7 +2220,7 @@ func file_query_v1_query_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_query_v1_query_proto_rawDesc), len(file_query_v1_query_proto_rawDesc)),
-			NumEnums:      9,
+			NumEnums:      8,
 			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,

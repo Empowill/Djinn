@@ -239,7 +239,7 @@ test("a bin is named by its range, a type by its name; every value stays the ser
     ipc([
       [
         field("type", enumType(), { label: "Type", type: "enum" }),
-        ["TASK_TYPE_WORK", "TASK_TYPE_MOCKUP"],
+        ["TASK_KIND_WORK", "TASK_KIND_MOCKUP"],
       ],
       [
         field("running::median", durationType(), {
@@ -260,8 +260,8 @@ test("a bin is named by its range, a type by its name; every value stays the ser
       ["Mockup", null],
     ],
   );
-  assert.equal(s.typeText("TASK_TYPE_WATCHER"), "Watcher");
-  assert.equal(s.typeText("TASK_TYPE_NEW"), "TASK_TYPE_NEW");
+  assert.equal(s.typeText("TASK_KIND_WATCHER"), "Watcher");
+  assert.equal(s.typeText("TASK_KIND_NEW"), "TASK_KIND_NEW");
 });
 
 // answers is what a QueryService answers each card's query in the figures' test.

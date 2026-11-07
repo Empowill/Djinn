@@ -42,29 +42,6 @@ enum Collection {
   COLLECTION_PROJECTS = 4;
 }
 
-// TaskType is what a task is, as the ref type of the tasks reads it: every task has one, where kind is set on a few.
-// The first that fits wins, in the order of the values from azima down.
-enum TaskType {
-  // Not set: never served, a task always has a type.
-  TASK_TYPE_UNSPECIFIED = 0;
-  // Work a worker does, of no other type: what the lead or the developer spawns, and the question workers.
-  TASK_TYPE_WORK = 1;
-  // A correction worker, which Djinn starts when a merge conflicts or its tests fail (Task.correction).
-  TASK_TYPE_CORRECTION = 2;
-  // A review worker, which Djinn starts on a worktree left with changes not committed (Task.review).
-  TASK_TYPE_REVIEW = 3;
-  // An investigation: a short study that ends in a tilasm and a question (TASK_KIND_INVESTIGATION).
-  TASK_TYPE_INVESTIGATION = 4;
-  // A mockup, whose work is a tilasm (TASK_KIND_MOCKUP).
-  TASK_TYPE_MOCKUP = 5;
-  // An ifrit, a worker that stays lit while the developer is there (TASK_KIND_IFRIT).
-  TASK_TYPE_IFRIT = 6;
-  // A watcher: a command Djinn runs, no agent (PROVIDER_WATCH).
-  TASK_TYPE_WATCHER = 7;
-  // An azima, a part of the plan no worker runs (TASK_KIND_AZIMA): its times sum its parts'.
-  TASK_TYPE_AZIMA = 8;
-}
-
 // Format is how a query's table comes back, in the table field of the response.
 enum Format {
   // Not set: Arrow, as FORMAT_ARROW.
