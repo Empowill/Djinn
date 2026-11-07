@@ -1331,6 +1331,51 @@ func TestPass(t *testing.T) {
 		}
 	})
 
+	// TestRedBranchHoldsItsLaneOnly (W630): under the per-azima strategy, a red push check on one azima's branch, and
+	// the correction that repairs it, hold only the tasks whose work merges into that branch; another azima's task of
+	// the same project starts. Without lanes (WithLanes), every branch of the wish in the project holds it, as before.
+	t.Run("red_branch_holds_its_lane_only", func(t *testing.T) {
+		t.Parallel()
+		wish := &planv1.Wish{
+			Id: "w", State: planv1.WishState_WISH_STATE_ACTIVE,
+			Pushes: []*planv1.WishPush{{ProjectId: "p", Holds: map[string]*planv1.PushHold{"djinn/T1-a": {
+				Held: "at 0f2e0240, test: exit status 1", FailedSha: "0f2e02401234", CorrectedBy: "fix",
+				Failure: &planv1.IntegrationFailure{Reason: "test: exit status 1", Base: "0f2e02401234"},
+			}}}},
+		}
+		lanes := map[string]string{"a": "djinn/T1-a", "fix": "djinn/T1-a", "b": "djinn/T2-b"}
+		fix := &planv1.Task{Id: "fix", WishId: "w", ProjectId: "p", Code: "W1", Status: planv1.TaskStatus_TASK_STATUS_RUNNING,
+			Correction: &planv1.TaskCorrection{Failure: &planv1.IntegrationFailure{Base: "0f2e02401234"}}}
+		a := &planv1.Task{Id: "a", WishId: "w", ProjectId: "p", Code: "W2", Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true}
+		b := &planv1.Task{Id: "b", WishId: "w", ProjectId: "p", Code: "W3", Status: planv1.TaskStatus_TASK_STATUS_PENDING, Scheduled: true}
+		situation := func(withLanes bool) *Situation {
+			sit := New([]*planv1.Task{fix, a, b}, []*planv1.Wish{wish}, map[string]bool{"p": true}, &Machine{Slots: 4, Rule: "test"})
+			if withLanes {
+				sit.WithLanes(func(_ *planv1.Wish, t *planv1.Task) string { return lanes[t.GetId()] })
+			}
+			return sit
+		}
+		sit := situation(true)
+		if why, _ := sit.Blocker(a); why != "waits for djinn/T1-a to be green again (push checks red at 0f2e0240: test)" {
+			t.Errorf("the task on the red branch: %q", why)
+		}
+		if why, failed := sit.Blocker(b); why != "" || failed != "" {
+			t.Errorf("the task of the other azima: %q %q; want it started", why, failed)
+		}
+		// The hold lifted, its correction still at work: it holds its own branch only.
+		wish.Pushes[0].Holds = nil
+		sit = situation(true)
+		if why, _ := sit.Blocker(a); why != "waits for W1 to repair the integration branch" {
+			t.Errorf("the task on the branch repaired: %q", why)
+		}
+		if why, failed := sit.Blocker(b); why != "" || failed != "" {
+			t.Errorf("the task of the other azima, a repair on another branch: %q %q; want it started", why, failed)
+		}
+		if why, _ := situation(false).Blocker(b); why == "" {
+			t.Errorf("without lanes, the task of the other azima starts; want it held by the repair, as before")
+		}
+	})
+
 	// TestUrgentRepairAndFeedback (W213): a repair and a task for the developer's quick feedback may be urgent at once in a
 	// wish, one of each class; both pass the queue, the repair first, and both start on a full machine and a red branch.
 	t.Run("urgent_repair_and_feedback", func(t *testing.T) {

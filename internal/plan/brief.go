@@ -1013,7 +1013,8 @@ func heldPushesBrief(b *strings.Builder, wish *planv1.Wish, exp *planv1.WishExpo
 					}
 				}
 			}
-			if len(holds) > 1 {
+			// An azima's branch is named even alone (W630): its hold is that branch's, not the project's.
+			if len(holds) > 1 || p.Branch != IntegrationBranchOf(wish, push.GetProjectId()) {
 				proj = " of " + p.Branch + proj
 			}
 			corr := ""
