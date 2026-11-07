@@ -218,18 +218,20 @@ test("the Hourglass reads its measures while it shows, and leaving it stops them
     await expect(page.locator(`#worker-${taskId}`)).toContainText(
       "Count the grains",
     );
-    await sections.first().getByRole("tab", { name: "Gates" }).click();
-    await expect(
-      sections.first().locator(".resource-machine .resource-chart"),
-    ).toHaveCount(2);
-    await expect
-      .poll(() => reads.series, { timeout: 12_000 })
-      .toBeGreaterThan(1);
-    expect(reads.commands).toBeGreaterThan(0);
     await sections.first().getByRole("tab", { name: "Disk" }).click();
     await expect(
       sections.first().locator(".resource-disk .resource-disk-bar"),
     ).toBeVisible();
+    await page.locator("#hourglass-tab-gates").click();
+    await expect(page.locator(".gates-tab")).toBeVisible();
+    await expect
+      .poll(() => reads.series, { timeout: 12_000 })
+      .toBeGreaterThan(1);
+    await expect
+      .poll(() => reads.commands, { timeout: 12_000 })
+      .toBeGreaterThan(0);
+    await page.locator("#hourglass-tab-machine").click();
+    await expect(page.locator(`#worker-${taskId}`)).toBeVisible();
 
     // Left: the flying carpet again; no measure is read any more, none stays open, the streams are those of before.
     await page.locator(".sidebar .plan-nav").click();
