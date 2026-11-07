@@ -252,6 +252,8 @@ never merged.
 - **Send, don't stop, to correct course.** An instruction to a running worker keeps its context.
 - **Continue, don't respawn.** A failed task continued keeps its session and its worktree; a new task starts from
   nothing.
+- **Fork a merged task.** Once a task's work is merged, its worktree is gone and it cannot be continued: fork it into
+  its azima, a new task that starts from its conversation. Djinn's refusal gives the exact command.
 - **Look at the waiting reason.** A planned task that does not start always says why.
 
 ## Read next

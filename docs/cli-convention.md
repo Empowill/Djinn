@@ -98,6 +98,12 @@ line reads the file, its last line breaks cut, and sends its text as the prompt;
 `djinn task spawn` has a `prompt_file` the server reads, the same way. The lead writes a prompt of several lines with
 its Write tool and passes the file: a `#` line inside `--prompt` is refused by Claude Code's shell guard.
 
+**A refusal that names another command gives it whole** (W592). `djinn task continue` on a task whose worktree is
+gone, removed once its work merged into its azima's branch, says so and prints the spawn that goes on from its
+session: `djinn task spawn <wish> --title '…' --part-of T44 --fork W588 --after W588 --write-scopes … --prompt '…'`.
+A prompt of several lines or past 2000 characters becomes `--prompt-file <file>`, which the lead writes first. A
+spawn's project comes from `--part-of` alone, an azima's too: the azima's project.
+
 **A question code in several wishes** is, on the server, the only open question of them that has it (W481): the lead
 types `Q05` for the one it waits on. `djinn question launch` takes the only answered one instead. When none or several
 fit, the refusal gives the command again with `--wish-id` for each wish.
