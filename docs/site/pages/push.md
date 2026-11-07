@@ -140,8 +140,11 @@ When a push check is red, the push is **held**:
 
 - The top of the wish says **The push is held: its checks are red**, and the branch's line shows the cross, with the
   check that failed.
-- New tasks of the wish in that project wait, saying the branch must be green again first: nothing more piles onto a
-  red branch. Corrections, investigators and [investigations](#investigation) still start, and so do the **urgent**
+- New tasks of the wish in that project whose work merges into that branch wait, saying the branch must be green
+  again first: nothing more piles onto a red branch. Under the per-azima [push strategy](#push-strategy), only the
+  tasks of the azima whose branch is red wait: another azima's tasks start, its branch gets its own push checks and
+  pushes once they are green. The same holds while a correction repairs one azima's branch. On 07/11/2026, before this
+  rule, one azima's red branch held the tasks of every other azima of the project. Corrections, investigators and [investigations](#investigation) still start, and so do the **urgent**
   tasks the Djinn marks: the one that repairs the branch once Djinn's corrections gave up on it, and one for your
   quick feedback ([Task and worker](#task-and-worker)). A repair of the red push checks the Djinn spawns starts too:
   it becomes their correction (see below). The workers already running go on, and so do those Djinn resumes, after a
@@ -235,7 +238,7 @@ on it. A push made without its checks is never installed by itself.
 
 - **Name a push check.** It is the last guard before your team sees the work: the whole test suite, the long build.
 - **On demand is per person.** The switch writes your own file; your teammates keep their cadence.
-- **A held push stops new work.** Look at the red check first: a correction may already be on it.
+- **A held push stops new work on its branch.** Look at the red check first: a correction may already be on it.
 - **Never force-push a branch Djinn pushes.** Djinn would then find the remote apart from its branch, and stop.
 - **Your credentials must work without a prompt.** A push that waits for a password fails.
 

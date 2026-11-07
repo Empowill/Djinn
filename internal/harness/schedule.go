@@ -360,7 +360,9 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 	}
 	projectGit := make(map[string]bool, len(projects))
 	projectDirs := make(map[string]string, len(projects))
+	projectsByID := make(map[string]*planv1.Project, len(projects))
 	for _, p := range projects {
+		projectsByID[p.GetId()] = p
 		projectGit[p.GetId()] = p.GetGit()
 		projectDirs[p.GetId()] = p.GetDirectory()
 	}
@@ -438,6 +440,15 @@ func (h *Harness) situation(ctx context.Context, tasks []*planv1.Task) (*dispatc
 			return ""
 		}
 		return q.GetCode()
+	})
+	// The branch each task's work merges into, read only (laneKnown): a red push check holds only that branch's
+	// tasks (W630). Asked only of a task whose wish has a hold or a repair in its project.
+	sit.WithLanes(func(wish *planv1.Wish, t *planv1.Task) string {
+		project := projectsByID[t.GetProjectId()]
+		if wish == nil || project == nil {
+			return ""
+		}
+		return h.laneKnown(ctx, wish, project, t)
 	})
 	sit.WithRunning(func(taskID string) bool {
 		h.mu.Lock()
